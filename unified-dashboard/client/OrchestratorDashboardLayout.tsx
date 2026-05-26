@@ -177,7 +177,7 @@ export function OrchestratorDashboardLayout() {
             hasMore={hasMore}
           />
         ) : viewMode === "tasks" ? (
-          <TaskTreeView sessions={sessions} />
+          <TaskTreeView sessions={sessions} onNewSession={() => openNewSessionModal("feed")} />
         ) : (
           <>
             <SessionsTopBar />
@@ -220,7 +220,7 @@ export function OrchestratorDashboardLayout() {
       mobileFolderContents={
         <FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
       }
-      mobileTasksView={<TaskTreeView sessions={sessions} />}
+      mobileTasksView={<TaskTreeView sessions={sessions} onNewSession={() => openNewSessionModal("feed")} />}
       onNewSession={() => openNewSessionModal("folder")}
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={

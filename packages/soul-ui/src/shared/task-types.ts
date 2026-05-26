@@ -27,6 +27,7 @@ export interface TaskItem {
   navigationNodeId: string | null;
   navigationEventId: number | null;
   archived: boolean;
+  pinned: boolean;
   version: number;
   createdAt: string;
   updatedAt: string;

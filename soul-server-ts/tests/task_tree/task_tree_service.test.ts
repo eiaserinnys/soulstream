@@ -28,6 +28,7 @@ function makeTask(overrides: Partial<TaskItemRow> = {}): TaskItemRow {
     navigation_node_id: "node-1",
     navigation_event_id: null,
     archived: false,
+    pinned: false,
     version: 1,
     created_at: new Date("2026-05-26T00:00:00Z"),
     updated_at: new Date("2026-05-26T00:00:00Z"),
@@ -53,7 +54,13 @@ function makeOperation(overrides: Partial<TaskOperationRow> = {}): TaskOperation
 }
 
 function makeHarness() {
-  let currentTask = makeTask();
+  let currentTask = makeTask({
+    linked_session_id: "child-session",
+    linked_node_id: "node-child",
+    navigation_session_id: "child-session",
+    navigation_node_id: "node-child",
+    navigation_event_id: 77,
+  });
   const repo = {
     nextPositionKey: vi.fn().mockResolvedValue(1),
     createTaskItem: vi.fn(async (params) => {
@@ -62,10 +69,13 @@ function makeHarness() {
         parent_id: params.parentId ?? null,
         title: params.title,
         status: params.status ?? "open",
+        linked_session_id: params.linkedSessionId ?? null,
+        linked_node_id: params.linkedNodeId ?? null,
         active_for_session_id: params.activeForSessionId ?? null,
         created_from_session_id: params.createdFromSessionId ?? null,
         navigation_session_id: params.navigationSessionId ?? null,
         navigation_node_id: params.navigationNodeId ?? null,
+        navigation_event_id: params.navigationEventId ?? null,
       });
       return currentTask;
     }),
@@ -81,6 +91,7 @@ function makeHarness() {
     getTaskItem: vi.fn(async (taskId) =>
       taskId === currentTask.id ? currentTask : null,
     ),
+    wouldCreateCycle: vi.fn().mockResolvedValue(false),
     appendTaskOperation: vi.fn(async (params) =>
       makeOperation({
         id: params.id,
@@ -156,6 +167,27 @@ describe("TaskTreeService", () => {
     );
   });
 
+  it("creates a historical linked task with row navigation on the linked session top", async () => {
+    const h = makeHarness();
+
+    const result = await h.service.createTaskItem({
+      sessionId: "parent-session",
+      title: "Historical child",
+      linkedSessionId: "historical-session",
+      linkedNodeId: "node-child",
+      status: "verified_done",
+    });
+
+    expect(result.task).toMatchObject({
+      linked_session_id: "historical-session",
+      linked_node_id: "node-child",
+      navigation_session_id: "historical-session",
+      navigation_node_id: "node-child",
+      navigation_event_id: null,
+      created_from_event_id: 101,
+    });
+  });
+
   it("marks delegated child tasks as the delegated session active task", async () => {
     const h = makeHarness();
 
@@ -186,5 +218,83 @@ describe("TaskTreeService", () => {
     );
     expect(result.task?.active_for_session_id).toBe(result.delegated_session_id);
     expect(h.runtime.taskExecutor.startExecution).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ["setStatus", async (h: ReturnType<typeof makeHarness>) =>
+      h.service.setStatus({
+        sessionId: "parent-session",
+        taskId: "task-1",
+        status: "agent_done",
+      })],
+    ["moveTaskItem", async (h: ReturnType<typeof makeHarness>) =>
+      h.service.moveTaskItem({
+        sessionId: "parent-session",
+        taskId: "task-1",
+        newParentTaskId: "task-parent-2",
+        positionKey: 2,
+      })],
+    ["updateTaskItem", async (h: ReturnType<typeof makeHarness>) =>
+      h.service.updateTaskItem({
+        sessionId: "parent-session",
+        taskId: "task-1",
+        title: "Updated task",
+      })],
+    ["setActiveTask", async (h: ReturnType<typeof makeHarness>) =>
+      h.service.setActiveTask({
+        sessionId: "parent-session",
+        taskId: "task-1",
+      })],
+    ["archiveTaskItem", async (h: ReturnType<typeof makeHarness>) =>
+      h.service.archiveTaskItem({
+        sessionId: "parent-session",
+        taskId: "task-1",
+      })],
+    ["setPinned", async (h: ReturnType<typeof makeHarness>) =>
+      h.service.setPinned({
+        sessionId: "parent-session",
+        taskId: "task-1",
+        pinned: true,
+      })],
+    ["holdTaskItem", async (h: ReturnType<typeof makeHarness>) =>
+      h.service.holdTaskItem({
+        sessionId: "parent-session",
+        taskId: "task-1",
+      })],
+  ])("%s preserves the existing row navigation anchor", async (_name, run) => {
+    const h = makeHarness();
+
+    const result = await run(h);
+
+    expect(result.task).toMatchObject({
+      navigation_session_id: "child-session",
+      navigation_node_id: "node-child",
+      navigation_event_id: 77,
+    });
+    expect(h.repo.patchTaskItem).not.toHaveBeenCalledWith(
+      "task-1",
+      expect.objectContaining({
+        navigation_session_id: "parent-session",
+        navigation_event_id: expect.any(Number),
+      }),
+    );
+  });
+
+  it("links a task to the linked session top when navigation event is omitted", async () => {
+    const h = makeHarness();
+
+    const result = await h.service.linkSession({
+      sessionId: "parent-session",
+      taskId: "task-1",
+      linkedSessionId: "new-child-session",
+      linkedNodeId: "node-child",
+    });
+
+    expect(result.task).toMatchObject({
+      linked_session_id: "new-child-session",
+      navigation_session_id: "new-child-session",
+      navigation_node_id: "node-child",
+      navigation_event_id: null,
+    });
   });
 });

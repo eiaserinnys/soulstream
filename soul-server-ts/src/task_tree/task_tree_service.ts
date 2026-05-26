@@ -36,6 +36,9 @@ export class TaskTreeService {
     idempotencyKey?: string | null;
     linkedSessionId?: string | null;
     linkedNodeId?: string | null;
+    navigationSessionId?: string | null;
+    navigationNodeId?: string | null;
+    navigationEventId?: number | null;
   }): Promise<TaskMutationResult> {
     const idempotent = await this.resolveIdempotent(params.idempotencyKey);
     if (idempotent) return idempotent;
@@ -44,6 +47,12 @@ export class TaskTreeService {
       await this.repo.clearActiveTaskForSession(params.sessionId);
     }
     const positionKey = await this.repo.nextPositionKey(params.parentTaskId ?? null);
+    const linkedNodeId = params.linkedNodeId ?? (params.linkedSessionId ? this.runtime.nodeId : null);
+    const navigationSessionId =
+      params.navigationSessionId ?? params.linkedSessionId ?? params.sessionId;
+    const navigationNodeId =
+      params.navigationNodeId ??
+      (navigationSessionId === params.linkedSessionId ? linkedNodeId : this.runtime.nodeId);
     let task = await this.repo.createTaskItem({
       id: randomUUID(),
       parentId: params.parentTaskId ?? null,
@@ -54,11 +63,12 @@ export class TaskTreeService {
       verificationOwner: params.verificationOwner,
       status: params.status ?? "open",
       linkedSessionId: params.linkedSessionId ?? null,
-      linkedNodeId: params.linkedNodeId ?? null,
+      linkedNodeId,
       activeForSessionId: params.setActive ? params.sessionId : null,
       createdFromSessionId: params.sessionId,
-      navigationSessionId: params.sessionId,
-      navigationNodeId: this.runtime.nodeId,
+      navigationSessionId,
+      navigationNodeId,
+      navigationEventId: params.navigationEventId ?? null,
     });
     const recorded = await this.recordOperation({
       task,
@@ -69,11 +79,22 @@ export class TaskTreeService {
         parent_task_id: params.parentTaskId ?? null,
         title: params.title,
         status: task.status,
+        linked_session_id: params.linkedSessionId ?? null,
+        linked_node_id: linkedNodeId,
+        navigation_session_id: navigationSessionId,
+        navigation_node_id: navigationNodeId,
+        navigation_event_id: params.navigationEventId ?? null,
       },
     });
+    const shouldUseCreateOperationAnchor =
+      !params.linkedSessionId &&
+      params.navigationSessionId === undefined &&
+      params.navigationEventId === undefined;
     task = await this.repo.patchTaskItem(task.id, {
       created_from_event_id: recorded.event_id,
-      navigation_event_id: recorded.event_id,
+      navigation_event_id: shouldUseCreateOperationAnchor
+        ? recorded.event_id
+        : params.navigationEventId ?? null,
     });
     return { ...recorded, task };
   }
@@ -231,7 +252,6 @@ export class TaskTreeService {
         verification_owner: params.verificationOwner,
       },
     });
-    task = await this.updateNavigationToOperation(task, recorded.event_id, params.sessionId);
     return { ...recorded, task };
   }
 
@@ -259,7 +279,6 @@ export class TaskTreeService {
       idempotencyKey: params.idempotencyKey,
       payload: { status: params.status },
     });
-    task = await this.updateNavigationToOperation(task, recorded.event_id, params.sessionId);
     return { ...recorded, task };
   }
 
@@ -300,7 +319,6 @@ export class TaskTreeService {
         position_key: positionKey,
       },
     });
-    task = await this.updateNavigationToOperation(task, recorded.event_id, params.sessionId);
     return { ...recorded, task };
   }
 
@@ -310,6 +328,7 @@ export class TaskTreeService {
     linkedSessionId: string;
     linkedNodeId?: string | null;
     navigationEventId?: number | null;
+    useOperationAnchor?: boolean;
     reason?: string | null;
     expectedVersion?: number | null;
   }): Promise<TaskMutationResult> {
@@ -320,7 +339,9 @@ export class TaskTreeService {
         linked_node_id: params.linkedNodeId ?? this.runtime.nodeId,
         navigation_session_id: params.linkedSessionId,
         navigation_node_id: params.linkedNodeId ?? this.runtime.nodeId,
-        navigation_event_id: params.navigationEventId ?? null,
+        navigation_event_id: params.useOperationAnchor
+          ? null
+          : params.navigationEventId ?? null,
       },
       params.expectedVersion,
     );
@@ -333,9 +354,10 @@ export class TaskTreeService {
         linked_session_id: params.linkedSessionId,
         linked_node_id: params.linkedNodeId ?? this.runtime.nodeId,
         navigation_event_id: params.navigationEventId ?? null,
+        use_operation_anchor: params.useOperationAnchor ?? false,
       },
     });
-    if (params.navigationEventId == null) {
+    if (params.useOperationAnchor) {
       task = await this.updateNavigationToOperation(
         task,
         recorded.event_id,
@@ -370,12 +392,7 @@ export class TaskTreeService {
       payload: { active_task_id: params.taskId ?? null },
     });
     if (!task) return recorded;
-    const updated = await this.updateNavigationToOperation(
-      task,
-      recorded.event_id,
-      params.sessionId,
-    );
-    return { ...recorded, task: updated };
+    return { ...recorded, task };
   }
 
   async archiveTaskItem(params: {
@@ -399,7 +416,59 @@ export class TaskTreeService {
       reason: params.reason,
       payload: { archived: true },
     });
-    task = await this.updateNavigationToOperation(task, recorded.event_id, params.sessionId);
+    return { ...recorded, task };
+  }
+
+  async setPinned(params: {
+    sessionId: string;
+    taskId: string;
+    pinned: boolean;
+    reason?: string | null;
+    expectedVersion?: number | null;
+    idempotencyKey?: string | null;
+  }): Promise<TaskMutationResult> {
+    const idempotent = await this.resolveIdempotent(params.idempotencyKey);
+    if (idempotent) return idempotent;
+
+    const task = await this.repo.patchTaskItem(
+      params.taskId,
+      { pinned: params.pinned },
+      params.expectedVersion,
+    );
+    const recorded = await this.recordOperation({
+      task,
+      operationType: "set_task_pinned",
+      actorSessionId: params.sessionId,
+      reason: params.reason,
+      idempotencyKey: params.idempotencyKey,
+      payload: { pinned: params.pinned },
+    });
+    return { ...recorded, task };
+  }
+
+  async holdTaskItem(params: {
+    sessionId: string;
+    taskId: string;
+    reason?: string | null;
+    expectedVersion?: number | null;
+    idempotencyKey?: string | null;
+  }): Promise<TaskMutationResult> {
+    const idempotent = await this.resolveIdempotent(params.idempotencyKey);
+    if (idempotent) return idempotent;
+
+    const task = await this.repo.patchTaskItem(
+      params.taskId,
+      { status: "blocked" },
+      params.expectedVersion,
+    );
+    const recorded = await this.recordOperation({
+      task,
+      operationType: "hold_task_item",
+      actorSessionId: params.sessionId,
+      reason: params.reason,
+      idempotencyKey: params.idempotencyKey,
+      payload: { status: "blocked" },
+    });
     return { ...recorded, task };
   }
 

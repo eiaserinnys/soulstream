@@ -2,6 +2,11 @@
 
 Explicit Task Tree operations share the same PostgreSQL tables as TS MCP tools.
 The API exists for dashboard clients; agents should prefer MCP tools.
+
+This router predates the 500-line module limit and still owns the REST task
+contract in one file. New realtime behavior is split into task_stream.py; the
+remaining router split should be done as a focused follow-up to avoid changing
+wire behavior while fixing navigation-anchor semantics.
 """
 
 from __future__ import annotations
@@ -11,10 +16,12 @@ from datetime import datetime, timezone
 from typing import Any, Literal, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from soul_common.db.session_db import PostgresSessionDB
+from soulstream_server.api.task_stream import create_task_stream_response
+from soulstream_server.service.task_broadcaster import TaskBroadcaster
 
 TaskStatus = Literal[
     "open",
@@ -38,6 +45,11 @@ class CreateTaskRequest(BaseModel):
     status: TaskStatus = "open"
     set_active: bool = Field(default=False, alias="setActive")
     idempotency_key: Optional[str] = Field(default=None, alias="idempotencyKey")
+    linked_session_id: Optional[str] = Field(default=None, alias="linkedSessionId")
+    linked_node_id: Optional[str] = Field(default=None, alias="linkedNodeId")
+    navigation_session_id: Optional[str] = Field(default=None, alias="navigationSessionId")
+    navigation_node_id: Optional[str] = Field(default=None, alias="navigationNodeId")
+    navigation_event_id: Optional[int] = Field(default=None, alias="navigationEventId")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -68,6 +80,7 @@ class LinkRequest(BaseModel):
     linked_session_id: str = Field(alias="linkedSessionId")
     linked_node_id: Optional[str] = Field(default=None, alias="linkedNodeId")
     navigation_event_id: Optional[int] = Field(default=None, alias="navigationEventId")
+    use_operation_anchor: bool = Field(default=False, alias="useOperationAnchor")
     reason: Optional[str] = None
     expected_version: Optional[int] = Field(default=None, alias="expectedVersion")
 
@@ -82,9 +95,29 @@ class ArchiveRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class PinRequest(BaseModel):
+    session_id: str = Field(alias="sessionId")
+    pinned: bool
+    reason: Optional[str] = None
+    expected_version: Optional[int] = Field(default=None, alias="expectedVersion")
+    idempotency_key: Optional[str] = Field(default=None, alias="idempotencyKey")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class HoldRequest(BaseModel):
+    session_id: str = Field(alias="sessionId")
+    reason: Optional[str] = None
+    expected_version: Optional[int] = Field(default=None, alias="expectedVersion")
+    idempotency_key: Optional[str] = Field(default=None, alias="idempotencyKey")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 def create_tasks_router(
     db: PostgresSessionDB,
     *,
+    broadcaster: TaskBroadcaster | None = None,
     dependencies: list | None = None,
 ) -> APIRouter:
     router = APIRouter(
@@ -112,6 +145,18 @@ def create_tasks_router(
             limit=limit,
         )
         return {"tasks": [_serialize_task(row) for row in rows]}
+
+    @router.get("/stream")
+    async def task_stream(request: Request):
+        async def load_snapshot() -> list[dict[str, Any]]:
+            rows = await _list_tasks(db, include_archived=False, limit=1000)
+            return [_serialize_task(row) for row in rows]
+
+        return await create_task_stream_response(
+            request,
+            broadcaster=broadcaster,
+            load_snapshot=load_snapshot,
+        )
 
     @router.get("/context")
     async def get_task_context(sessionId: str = Query(...)) -> dict[str, Any]:
@@ -157,15 +202,25 @@ def create_tasks_router(
                 """,
                 body.session_id,
             )
+        navigation_session_id = (
+            body.navigation_session_id
+            or body.linked_session_id
+            or body.session_id
+        )
+        navigation_node_id = (
+            body.navigation_node_id
+            or (body.linked_node_id if navigation_session_id == body.linked_session_id else None)
+        )
         task = await db.pool.fetchrow(
             """
             INSERT INTO task_items (
                 id, parent_id, position_key, title, description,
                 acceptance_criteria, verification_owner, status,
+                linked_session_id, linked_node_id,
                 active_for_session_id, created_from_session_id,
-                navigation_session_id
+                navigation_session_id, navigation_node_id, navigation_event_id
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
             RETURNING *
             """,
             task_id,
@@ -176,23 +231,43 @@ def create_tasks_router(
             body.acceptance_criteria,
             body.verification_owner,
             body.status,
+            body.linked_session_id,
+            body.linked_node_id,
             body.session_id if body.set_active else None,
             body.session_id,
+            navigation_session_id,
+            navigation_node_id,
+            body.navigation_event_id,
         )
         operation, event_id = await _record_operation(
             db,
             actor_session_id=body.session_id,
             task=task,
             operation_type="create_task_item",
-            payload={"title": body.title, "parent_task_id": body.parent_task_id},
+            payload={
+                "title": body.title,
+                "parent_task_id": body.parent_task_id,
+                "linked_session_id": body.linked_session_id,
+                "linked_node_id": body.linked_node_id,
+                "navigation_session_id": navigation_session_id,
+                "navigation_node_id": navigation_node_id,
+                "navigation_event_id": body.navigation_event_id,
+            },
             idempotency_key=body.idempotency_key,
+        )
+        should_use_create_operation_anchor = (
+            body.linked_session_id is None
+            and body.navigation_session_id is None
+            and body.navigation_event_id is None
         )
         task = await _patch_task(
             db,
             task_id,
             {
                 "created_from_event_id": event_id,
-                "navigation_event_id": event_id,
+                "navigation_event_id": event_id
+                if should_use_create_operation_anchor
+                else body.navigation_event_id,
             },
         )
         return _mutation_response(task, operation, event_id)
@@ -216,14 +291,6 @@ def create_tasks_router(
             payload={"status": body.status},
             reason=body.reason,
             idempotency_key=body.idempotency_key,
-        )
-        task = await _patch_task(
-            db,
-            task_id,
-            {
-                "navigation_session_id": body.session_id,
-                "navigation_event_id": event_id,
-            },
         )
         return _mutation_response(task, operation, event_id)
 
@@ -258,14 +325,6 @@ def create_tasks_router(
             reason=body.reason,
             idempotency_key=body.idempotency_key,
         )
-        task = await _patch_task(
-            db,
-            task_id,
-            {
-                "navigation_session_id": body.session_id,
-                "navigation_event_id": event_id,
-            },
-        )
         return _mutation_response(task, operation, event_id)
 
     @router.post("/{task_id}/link")
@@ -278,7 +337,9 @@ def create_tasks_router(
                 "linked_node_id": body.linked_node_id,
                 "navigation_session_id": body.linked_session_id,
                 "navigation_node_id": body.linked_node_id,
-                "navigation_event_id": body.navigation_event_id,
+                "navigation_event_id": None
+                if body.use_operation_anchor
+                else body.navigation_event_id,
             },
             expected_version=body.expected_version,
         )
@@ -291,10 +352,11 @@ def create_tasks_router(
                 "linked_session_id": body.linked_session_id,
                 "linked_node_id": body.linked_node_id,
                 "navigation_event_id": body.navigation_event_id,
+                "use_operation_anchor": body.use_operation_anchor,
             },
             reason=body.reason,
         )
-        if body.navigation_event_id is None:
+        if body.use_operation_anchor:
             task = await _patch_task(
                 db,
                 task_id,
@@ -303,6 +365,28 @@ def create_tasks_router(
                     "navigation_event_id": event_id,
                 },
             )
+        return _mutation_response(task, operation, event_id)
+
+    @router.post("/{task_id}/hold")
+    async def hold_task(task_id: str, body: HoldRequest) -> dict[str, Any]:
+        existing = await _idempotent_result(db, body.idempotency_key)
+        if existing:
+            return existing
+        task = await _patch_task(
+            db,
+            task_id,
+            {"status": "blocked"},
+            expected_version=body.expected_version,
+        )
+        operation, event_id = await _record_operation(
+            db,
+            actor_session_id=body.session_id,
+            task=task,
+            operation_type="hold_task_item",
+            payload={"status": "blocked"},
+            reason=body.reason,
+            idempotency_key=body.idempotency_key,
+        )
         return _mutation_response(task, operation, event_id)
 
     @router.post("/{task_id}/archive")
@@ -324,13 +408,27 @@ def create_tasks_router(
             payload={"archived": True},
             reason=body.reason,
         )
+        return _mutation_response(task, operation, event_id)
+
+    @router.post("/{task_id}/pin")
+    async def pin_task(task_id: str, body: PinRequest) -> dict[str, Any]:
+        existing = await _idempotent_result(db, body.idempotency_key)
+        if existing:
+            return existing
         task = await _patch_task(
             db,
             task_id,
-            {
-                "navigation_session_id": body.session_id,
-                "navigation_event_id": event_id,
-            },
+            {"pinned": body.pinned},
+            expected_version=body.expected_version,
+        )
+        operation, event_id = await _record_operation(
+            db,
+            actor_session_id=body.session_id,
+            task=task,
+            operation_type="set_task_pinned",
+            payload={"pinned": body.pinned},
+            reason=body.reason,
+            idempotency_key=body.idempotency_key,
         )
         return _mutation_response(task, operation, event_id)
 
@@ -433,7 +531,7 @@ async def _task_path(db: PostgresSessionDB, task_id: str):
                linked_session_id, linked_node_id, active_for_session_id,
                created_from_session_id, created_from_event_id,
                navigation_session_id, navigation_node_id, navigation_event_id,
-               archived, version, created_at, updated_at
+               archived, pinned, version, created_at, updated_at
         FROM ancestors
         ORDER BY depth DESC
         """,
@@ -619,6 +717,7 @@ def _serialize_task(row) -> dict[str, Any]:
         "navigationNodeId": row["navigation_node_id"],
         "navigationEventId": row["navigation_event_id"],
         "archived": row["archived"],
+        "pinned": row["pinned"],
         "version": row["version"],
         "createdAt": _iso(row["created_at"]),
         "updatedAt": _iso(row["updated_at"]),
