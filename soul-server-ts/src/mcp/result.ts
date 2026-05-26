@@ -19,7 +19,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 export function jsonResult(value: unknown): CallToolResult {
   return {
     content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
-    structuredContent: value as Record<string, unknown>,
+    structuredContent: toStructuredContent(value),
   };
 }
 
@@ -29,4 +29,12 @@ export function errorResult(message: string): CallToolResult {
     content: [{ type: "text", text: message }],
     structuredContent: { error: message },
   };
+}
+
+function toStructuredContent(value: unknown): Record<string, unknown> {
+  if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+
+  return { result: value };
 }

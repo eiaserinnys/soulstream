@@ -18,6 +18,15 @@ describe("jsonResult", () => {
     expect(JSON.parse((result.content[0] as { text: string }).text)).toEqual([
       1, 2, 3,
     ]);
+    expect(result.structuredContent).toEqual({ result: [1, 2, 3] });
+  });
+
+  it("원시값 응답은 structuredContent.result로 감싼다", () => {
+    const result = jsonResult("ok");
+    expect(result.content).toEqual([
+      { type: "text", text: JSON.stringify("ok", null, 2) },
+    ]);
+    expect(result.structuredContent).toEqual({ result: "ok" });
   });
 });
 
