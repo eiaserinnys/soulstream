@@ -1,8 +1,9 @@
-import type {
-  PermissionResult,
-  Query as ClaudeSdkQuery,
-  SDKMessage,
-  SDKUserMessage,
+import {
+  SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+  type PermissionResult,
+  type Query as ClaudeSdkQuery,
+  type SDKMessage,
+  type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -93,7 +94,7 @@ describe("ClaudeSdkClient", () => {
       promptSuggestions: true,
       includePartialMessages: false,
       model: "claude-sonnet-4.5",
-      systemPrompt: "system",
+      systemPrompt: ["system", SYSTEM_PROMPT_DYNAMIC_BOUNDARY],
       resume: "resume-1",
       pathToClaudeCodeExecutable: "/opt/claude",
     });
@@ -144,6 +145,38 @@ describe("ClaudeSdkClient", () => {
       type: "complete",
       result: "done",
       claudeSessionId: "claude-sess-1",
+    });
+  });
+
+  it("context_usage includes cached input tokens because they still occupy the request context", async () => {
+    const queryFn: ClaudeSdkQueryFn = () => makeQuery(
+      sdkMessages([
+        sdkSuccessResult("claude-sess-1", "done", {
+          usage: {
+            input_tokens: 6,
+            output_tokens: 2,
+            cache_creation_input_tokens: 10,
+            cache_read_input_tokens: 20,
+          },
+        }),
+      ]),
+    );
+    const client = new ClaudeSdkClient({ query: queryFn }, silentLogger);
+
+    const events = await collect(
+      client.run(
+        {
+          prompt: "hi",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.find((event) => event.type === "context_usage")).toMatchObject({
+      type: "context_usage",
+      usedTokens: 38,
     });
   });
 

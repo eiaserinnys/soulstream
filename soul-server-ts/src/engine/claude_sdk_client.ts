@@ -2,7 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-import { query as defaultQuery } from "@anthropic-ai/claude-agent-sdk";
+import {
+  SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+  query as defaultQuery,
+} from "@anthropic-ai/claude-agent-sdk";
 import type {
   CanUseTool,
   McpServerConfig,
@@ -241,6 +244,10 @@ export class ClaudeSdkClient implements ClaudeClient {
     output: EventQueue<ClaudeClientEvent>,
   ): ClaudeSdkOptions {
     const executablePath = options.env[CLAUDE_CODE_EXECPATH_ENV]?.trim();
+    const systemPrompt = options.systemPrompt
+      ? makeCacheableSystemPrompt(options.systemPrompt)
+      : undefined;
+
     return {
       abortController,
       cwd: options.workspaceDir,
@@ -254,7 +261,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       canUseTool: this.makeCanUseTool(output),
       hooks: this.buildHooks(output),
       ...(options.model ? { model: options.model } : {}),
-      ...(options.systemPrompt ? { systemPrompt: options.systemPrompt } : {}),
+      ...(systemPrompt ? { systemPrompt } : {}),
       ...(options.resumeSessionId ? { resume: options.resumeSessionId } : {}),
       ...(executablePath ? { pathToClaudeCodeExecutable: executablePath } : {}),
       ...(options.allowedTools !== undefined ? { allowedTools: options.allowedTools } : {}),
@@ -1181,7 +1188,17 @@ function makeContextUsageEvent(usage: unknown): ClaudeClientEvent | undefined {
 
   const inputTokens = asNumber(record.input_tokens) ?? asNumber(record.inputTokens) ?? 0;
   const outputTokens = asNumber(record.output_tokens) ?? asNumber(record.outputTokens) ?? 0;
-  const usedTokens = inputTokens + outputTokens;
+  const cacheCreationTokens =
+    asNumber(record.cache_creation_input_tokens)
+    ?? asNumber(record.cacheCreationInputTokens)
+    ?? sumNumericObject(record.cache_creation)
+    ?? sumNumericObject(record.cacheCreation)
+    ?? 0;
+  const cacheReadTokens =
+    asNumber(record.cache_read_input_tokens)
+    ?? asNumber(record.cacheReadInputTokens)
+    ?? 0;
+  const usedTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
   if (usedTokens <= 0) return undefined;
 
   return {
@@ -1190,6 +1207,27 @@ function makeContextUsageEvent(usage: unknown): ClaudeClientEvent | undefined {
     maxTokens: DEFAULT_MAX_CONTEXT_TOKENS,
     percent: Math.round((usedTokens / DEFAULT_MAX_CONTEXT_TOKENS) * 1000) / 10,
   };
+}
+
+function makeCacheableSystemPrompt(systemPrompt: string | string[]): string[] {
+  // Prompt caching lowers cost/latency, but the prompt still counts in the request context.
+  if (Array.isArray(systemPrompt)) {
+    if (systemPrompt.includes(SYSTEM_PROMPT_DYNAMIC_BOUNDARY)) return systemPrompt;
+    return [...systemPrompt, SYSTEM_PROMPT_DYNAMIC_BOUNDARY];
+  }
+  return [systemPrompt, SYSTEM_PROMPT_DYNAMIC_BOUNDARY];
+}
+
+function sumNumericObject(value: unknown): number | undefined {
+  const record = asRecord(value);
+  if (!record) return undefined;
+  let total = 0;
+  for (const item of Object.values(record)) {
+    if (typeof item === "number" && Number.isFinite(item)) {
+      total += item;
+    }
+  }
+  return total > 0 ? total : undefined;
 }
 
 function epochNumberToIso(value: number | undefined): string | undefined {

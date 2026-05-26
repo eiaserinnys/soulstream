@@ -14,7 +14,9 @@
  * `20260517-2338-codex-ts-context-builder-B-6.md` §B), `composeFirstTurnPrompt` helper로
  * 합성 prompt를 만들어 engine.execute에 넘긴다.
  *
- * 신규 task에만 적용 — auto-resume·intervention turn은 PR #54·#55 흐름 그대로 유지.
+ * 신규 task는 system prompt + context items 전체를 조립한다.
+ * Auto-resume·intervention turn은 `buildSystemPrompt()`만 호출해 Claude SDK option을 유지하고,
+ * user_message/context 재영속화는 하지 않는다.
  */
 
 import type { Logger } from "pino";
@@ -73,15 +75,14 @@ export class ExecutionContextBuilder {
   ) {}
 
   /**
-   * Auto-resume·intervention 흐름이 user_message wire에 박을 context_items를 조립한다.
+   * Auto-resume·intervention 흐름이 user_message wire에 담을 context_items를 조립한다.
    *
    * Phase A context 정본 진입점 (atom d7a1ad86 정본 둘 안티패턴 차단):
    * - 첫 턴(`build()` → `_assembleContext` 내부 `buildSoulstreamContextItem`)과 본 method가
    *   *같은 helper `buildSoulstreamContextItem`을 호출*하여 soulstream_session context_item을
    *   조립 — design-principles §3 정본 하나.
-   * - 본 method는 system_prompt 합성 / atom_context fetch / 첫 턴 prompt 합성을 *제외*하고
-   *   soulstream_item만 만든다. auto-resume은 SDK가 system_prompt를 보유 + atom_context는
-   *   신규 task 전용 (Python `task.resume_session_id is None` 정합).
+   * - 본 method는 context_item용 atom_context fetch / 첫 턴 prompt 합성을 *제외*하고
+   *   soulstream_item만 만든다. system prompt는 Claude SDK option으로 별도 재전달한다.
    *
    * 호출자: `TaskManager._addInterventionAutoResume` (terminal-resume 시 user_message context).
    * 실패 격리: 본 method가 throw하면 호출자는 context 없이 user_message만 박는다
@@ -102,6 +103,23 @@ export class ExecutionContextBuilder {
       callerInfo: task.callerInfo,
     });
     return [soulstreamItem];
+  }
+
+  /**
+   * Claude resume/intervention turn용 system prompt만 조립한다.
+   *
+   * 첫 턴의 `system_message` durable event를 다시 쓰지 않고, Claude SDK의 `systemPrompt`
+   * option으로만 넘겨 대화 히스토리 중복 누적을 막는다. folder atomContextNode·cogito·
+   * task.contextItems는 user/context 영역이라 여기서 제외한다.
+   */
+  async buildSystemPrompt(task: Task, agent: AgentProfile): Promise<string | undefined> {
+    const { folderPrompt } = await this._resolveFolder(task);
+    const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
+    return this._composeSystemPrompt({
+      agentAtomMarkdown,
+      folderPrompt,
+      taskSystemPrompt: task.systemPrompt,
+    });
   }
 
   /**
@@ -267,19 +285,11 @@ export class ExecutionContextBuilder {
     workingDir?: string;
     maxTurns?: number;
   }): PreparedContext {
-    const taskSystemPrompt = args.task.systemPrompt;
-    const systemParts: string[] = [];
-    if (args.agentAtomMarkdown) {
-      systemParts.push(args.agentAtomMarkdown);
-    }
-    if (args.folderPrompt) {
-      systemParts.push(args.folderPrompt);
-    }
-    if (taskSystemPrompt) {
-      systemParts.push(taskSystemPrompt);
-    }
-    const effectiveSystemPrompt =
-      systemParts.length > 0 ? systemParts.join("\n\n") : undefined;
+    const effectiveSystemPrompt = this._composeSystemPrompt({
+      agentAtomMarkdown: args.agentAtomMarkdown,
+      folderPrompt: args.folderPrompt,
+      taskSystemPrompt: args.task.systemPrompt,
+    });
 
     const effectiveWorkspaceDir = args.workingDir ?? args.agent.workspace_dir;
 
@@ -316,6 +326,24 @@ export class ExecutionContextBuilder {
       maxTurns: args.maxTurns,
       assembledPrompt,
     };
+  }
+
+  private _composeSystemPrompt(args: {
+    agentAtomMarkdown: string | null;
+    folderPrompt?: string;
+    taskSystemPrompt?: string;
+  }): string | undefined {
+    const systemParts: string[] = [];
+    if (args.agentAtomMarkdown) {
+      systemParts.push(args.agentAtomMarkdown);
+    }
+    if (args.folderPrompt) {
+      systemParts.push(args.folderPrompt);
+    }
+    if (args.taskSystemPrompt) {
+      systemParts.push(args.taskSystemPrompt);
+    }
+    return systemParts.length > 0 ? systemParts.join("\n\n") : undefined;
   }
 }
 

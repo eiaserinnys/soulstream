@@ -1059,7 +1059,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(captured[1].prompt.endsWith("이 이미지 봐줘")).toBe(true);
   });
 
-  it("Claude intervention turn은 첫 turn systemPrompt를 다시 전달하지 않는다", async () => {
+  it("Claude intervention turn에도 첫 turn systemPrompt를 SDK 옵션으로 다시 전달한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     task.profileId = claudeAgent.id;
@@ -1102,7 +1102,10 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
-    expect(capturedSystemPrompts).toEqual(["folder prompt\n\nagent prompt", undefined]);
+    expect(capturedSystemPrompts).toEqual([
+      "folder prompt\n\nagent prompt",
+      "folder prompt\n\nagent prompt",
+    ]);
   });
 
   it("Codex execute params에는 onIntervention을 넘기지 않아 turn 사이 큐잉 semantics를 보존한다", async () => {
@@ -1288,6 +1291,47 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       "sess-1",
       "claude-new-should-not-overwrite",
     );
+  });
+
+  it("terminal auto-resume Claude turn은 systemPrompt를 SDK 옵션으로 다시 전달한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-existing";
+    task.interventionQueue.push({ text: "resume", user: "u" });
+    const capturedSystemPrompts: Array<string | undefined> = [];
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedSystemPrompts.push(params.systemPrompt);
+        yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const fakeBuilder = {
+      build: vi.fn(async () => ({
+        combinedContextItems: [],
+        assembledPrompt: "unused",
+      })),
+      buildSystemPrompt: vi.fn(async () => "resume system prompt"),
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(fakeBuilder.build).not.toHaveBeenCalled();
+    expect(fakeBuilder.buildSystemPrompt).toHaveBeenCalledWith(task, claudeAgent);
+    expect(capturedSystemPrompts).toEqual(["resume system prompt"]);
   });
 
   it("Claude compact 이벤트는 P3 wire 그대로 persist/broadcast된다", async () => {

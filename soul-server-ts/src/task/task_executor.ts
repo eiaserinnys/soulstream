@@ -162,6 +162,7 @@ export class TaskExecutor {
     const initialTurnInput = await this.turnInputBuilder.prepareInitialTurnInput(task, agent);
     let turnPrompt = initialTurnInput.prompt;
     let turnImageAttachmentPaths = initialTurnInput.imageAttachmentPaths;
+    const stableSystemPrompt = initialTurnInput.systemPrompt;
     let turnSystemPrompt = initialTurnInput.systemPrompt;
     try {
       while (true) {
@@ -189,7 +190,7 @@ export class TaskExecutor {
         }
         turnPrompt = transition.prompt;
         turnImageAttachmentPaths = transition.imageAttachmentPaths;
-        turnSystemPrompt = undefined;
+        turnSystemPrompt = stableSystemPrompt;
         // (intervention_sent는 addIntervention에서 이미 broadcast됨 — 여기서 재발행 안 함.)
       }
     } finally {

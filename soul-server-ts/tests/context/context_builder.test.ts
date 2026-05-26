@@ -513,3 +513,56 @@ describe("ExecutionContextBuilder.buildResumeContextItems — Phase A context �
     });
   });
 });
+
+describe("ExecutionContextBuilder.buildSystemPrompt — Claude resume system prompt", () => {
+  const originalFetch = globalThis.fetch;
+  beforeEach(() => {
+    globalThis.fetch = vi.fn() as typeof fetch;
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("agent atom_contexts + folderPrompt + task.systemPrompt만 조립하고 context item용 atomContextNode는 제외", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ markdown: "# agent rules\nbody" }), { status: 200 }),
+    );
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "f-1" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "f-1",
+      name: "folder",
+      sort_order: 0,
+      settings: {
+        folderPrompt: "folder prompt",
+        atomContextNode: {
+          nodeId: "11111111-2222-3333-4444-555555555555",
+          depth: 2,
+        },
+      },
+    });
+    const agent: AgentProfile = {
+      ...codexAgent,
+      atom_contexts: [
+        {
+          node_id: "22222222-3333-4444-5555-666666666666",
+          depth: 3,
+          titles_only: false,
+        },
+      ],
+    };
+    const cb = makeBuilder(
+      { getSession, getFolderById } as Partial<SessionDB>,
+      new AgentRegistry([agent]),
+      true,
+    );
+
+    const prompt = await cb.buildSystemPrompt(
+      makeTask({ systemPrompt: "task prompt" }),
+      agent,
+    );
+
+    expect(prompt).toContain("# agent rules");
+    expect(prompt).toContain("\n\nfolder prompt\n\ntask prompt");
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(1);
+  });
+});
