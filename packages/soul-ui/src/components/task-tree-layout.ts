@@ -5,6 +5,7 @@ export interface TaskTreeRow {
   depth: number;
   isLast: boolean;
   ancestorLast: boolean[];
+  hasChildren: boolean;
 }
 
 const USER_COMPLETED_STATUSES = new Set<TaskStatus>(["verified_done"]);
@@ -34,8 +35,8 @@ export function buildTaskTreeRows(
   const visit = (task: TaskItem, depth: number, isLast: boolean, ancestorLast: boolean[]) => {
     if (seen.has(task.id)) return;
     seen.add(task.id);
-    rows.push({ task, depth, isLast, ancestorLast });
     const childTasks = children.get(task.id) ?? [];
+    rows.push({ task, depth, isLast, ancestorLast, hasChildren: childTasks.length > 0 });
     childTasks.forEach((child, index) => {
       visit(child, depth + 1, index === childTasks.length - 1, [...ancestorLast, isLast]);
     });

@@ -48,12 +48,19 @@ describe("buildTaskTreeRows", () => {
       depth: row.depth,
       isLast: row.isLast,
       ancestorLast: row.ancestorLast,
+      hasChildren: row.hasChildren,
     }))).toEqual([
-      { id: "root-a", depth: 0, isLast: false, ancestorLast: [] },
-      { id: "child-a1", depth: 1, isLast: false, ancestorLast: [false] },
-      { id: "grandchild-a1", depth: 2, isLast: true, ancestorLast: [false, false] },
-      { id: "child-a2", depth: 1, isLast: true, ancestorLast: [false] },
-      { id: "root-b", depth: 0, isLast: true, ancestorLast: [] },
+      { id: "root-a", depth: 0, isLast: false, ancestorLast: [], hasChildren: true },
+      { id: "child-a1", depth: 1, isLast: false, ancestorLast: [false], hasChildren: true },
+      {
+        id: "grandchild-a1",
+        depth: 2,
+        isLast: true,
+        ancestorLast: [false, false],
+        hasChildren: false,
+      },
+      { id: "child-a2", depth: 1, isLast: true, ancestorLast: [false], hasChildren: false },
+      { id: "root-b", depth: 0, isLast: true, ancestorLast: [], hasChildren: false },
     ]);
   });
 
@@ -87,6 +94,8 @@ describe("buildTaskTreeRows", () => {
 
     expect(rows.map((row) => row.task.id)).toEqual(["root", "active-child"]);
     expect(rows[1].depth).toBe(1);
+    expect(rows[0].hasChildren).toBe(true);
+    expect(rows[1].hasChildren).toBe(false);
   });
 
   it("keeps agent_done visible when hiding user-completed tasks", () => {

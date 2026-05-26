@@ -55,7 +55,13 @@ export function TaskTreeLines({ row }: { row: TaskTreeRow }) {
               <span className="absolute left-1/2 top-0 bottom-0 border-l border-border/70" />
             )}
             {isBranchSlot && (
-              <span className="absolute left-1/2 right-[-1rem] top-1/2 border-t border-border/70" />
+              <>
+                <span className="absolute left-1/2 top-0 h-1/2 border-l border-border/70" />
+                {!row.isLast && (
+                  <span className="absolute left-1/2 top-1/2 bottom-0 border-l border-border/70" />
+                )}
+                <span className="absolute left-1/2 right-[-1rem] top-1/2 border-t border-border/70" />
+              </>
             )}
           </span>
         );
@@ -65,14 +71,9 @@ export function TaskTreeLines({ row }: { row: TaskTreeRow }) {
 }
 
 export function TaskStatusLineOverlay({ row }: { row: TaskTreeRow }) {
-  if (row.depth === 0) return null;
+  if (!row.hasChildren) return null;
   return (
-    <>
-      <span className="absolute left-1/2 top-0 h-1/2 border-l border-border/70" aria-hidden />
-      {!row.isLast && (
-        <span className="absolute left-1/2 top-1/2 bottom-0 border-l border-border/70" aria-hidden />
-      )}
-    </>
+    <span className="absolute left-1/2 top-1/2 bottom-0 border-l border-border/70" aria-hidden />
   );
 }
 
