@@ -65,7 +65,7 @@ export type FolderSortMode =
 
 // === Mobile Tab ===
 
-export type MobileTab = "feed" | "folder" | "chat" | "settings";
+export type MobileTab = "feed" | "folder" | "tasks" | "chat" | "settings";
 
 // === ProcessEventsResult ===
 
@@ -77,8 +77,8 @@ export interface ProcessEventsResult {
 // === State Interface ===
 
 export interface DashboardState {
-  /** 뷰 모드 — URL 해시에서 파생. 'feed' = 피드 뷰, 'folder' = 기존 폴더 뷰 */
-  viewMode: "feed" | "folder";
+  /** 뷰 모드 — URL 해시에서 파생. tasks는 Task Tree center view */
+  viewMode: "feed" | "folder" | "tasks";
 
   /** 피드 스크롤 오프셋 (뷰 전환 시 위치 복원용) */
   feedScrollOffset: number;
@@ -281,7 +281,7 @@ export interface DashboardActions {
   setFocusEventId: (eventId: number | null) => void;
 
   // 뷰 모드 (URL 동기화 전용)
-  setViewMode: (mode: "feed" | "folder") => void;
+  setViewMode: (mode: "feed" | "folder" | "tasks") => void;
   selectFeed: () => void;
   setFeedScrollOffset: (offset: number) => void;
 

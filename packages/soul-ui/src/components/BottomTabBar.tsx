@@ -1,4 +1,4 @@
-import { Activity, Folder, MessageSquare, Settings } from "lucide-react";
+import { Activity, Folder, ListChecks, MessageSquare, Settings } from "lucide-react";
 import type React from "react";
 import type { MobileTab } from "../stores/dashboard-store";
 import { TabsList, TabsTrigger } from "./ui/tabs";
@@ -6,6 +6,7 @@ import { TabsList, TabsTrigger } from "./ui/tabs";
 const TABS: { id: MobileTab; label: string; icon: React.ReactNode }[] = [
   { id: "feed",     label: "피드",  icon: <Activity className="h-5 w-5" /> },
   { id: "folder",   label: "폴더",  icon: <Folder className="h-5 w-5" /> },
+  { id: "tasks",    label: "작업",  icon: <ListChecks className="h-5 w-5" /> },
   { id: "chat",     label: "채팅",  icon: <MessageSquare className="h-5 w-5" /> },
   { id: "settings", label: "설정",  icon: <Settings className="h-5 w-5" /> },
 ];

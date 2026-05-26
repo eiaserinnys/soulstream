@@ -50,6 +50,7 @@ import {
   useSessionListProvider,
   useIsMobile,
   shouldLoadMoreAfterSessionMove,
+  TaskTreeView,
 } from "@seosoyoung/soul-ui";
 import { FeedView } from "./components/FeedView";
 import { useAppConfig } from "./config/AppConfigContext";
@@ -175,6 +176,8 @@ export function OrchestratorDashboardLayout() {
             onLoadMore={loadMore}
             hasMore={hasMore}
           />
+        ) : viewMode === "tasks" ? (
+          <TaskTreeView sessions={sessions} />
         ) : (
           <>
             <SessionsTopBar />
@@ -208,22 +211,16 @@ export function OrchestratorDashboardLayout() {
         </>
       }
       mobileSessionsView={
-        viewMode === "feed" ? (
-          <FeedView
-            onNewSession={() => openNewSessionModal("feed")}
-            onLoadMore={loadMore}
-            hasMore={hasMore}
-          />
-        ) : (
-          <>
-            <SessionsTopBar />
-            <FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
-          </>
-        )
+        <FeedView
+          onNewSession={() => openNewSessionModal("feed")}
+          onLoadMore={loadMore}
+          hasMore={hasMore}
+        />
       }
       mobileFolderContents={
         <FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
       }
+      mobileTasksView={<TaskTreeView sessions={sessions} />}
       onNewSession={() => openNewSessionModal("folder")}
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={

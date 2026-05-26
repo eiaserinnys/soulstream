@@ -72,6 +72,8 @@ export interface DashboardShellProps {
   mobileSessionsView?: ReactNode;
   /** 모바일 폴더 탭에서 폴더 선택 후 표시할 세션 목록 뷰 */
   mobileFolderContents?: ReactNode;
+  /** 모바일 Tasks 탭 내용물 */
+  mobileTasksView?: ReactNode;
   /** 모바일 채팅 뷰 내용물. 미지정 시 rightPanel 사용 */
   mobileChatView?: ReactNode;
   /**
@@ -125,6 +127,7 @@ export function DashboardShell({
   leftSplitStorageKey,
   mobileSessionsView,
   mobileFolderContents,
+  mobileTasksView,
   mobileChatView,
   mobileChatHeader,
   mobileSettingsContent,
@@ -168,6 +171,7 @@ export function DashboardShell({
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
   const clearSelectedFolder = useDashboardStore((s) => s.clearSelectedFolder);
+  const setViewMode = useDashboardStore((s) => s.setViewMode);
 
   // 채팅 탭 뒤로가기 시 돌아갈 이전 탭 추적
   const [previousTab, setPreviousTab] = useState<typeof activeTab>("feed");
@@ -204,8 +208,10 @@ export function DashboardShell({
     } else if (tabId === "folder") {
       // 폴더 탭: 항상 폴더 리스트에서 시작. viewMode는 건드리지 않아 세션 쿼리가 꼬이지 않게 한다 (기존 BottomTabBar L33-36 동작)
       useDashboardStore.setState({ selectedFolderId: null });
+    } else if (tabId === "tasks") {
+      setViewMode("tasks");
     }
-  }, [setActiveTab, clearSelectedFolder]);
+  }, [setActiveTab, clearSelectedFolder, setViewMode]);
 
   const centerPercent = Math.max(MIN_CENTER, 100 - leftPercent - rightPercent);
 
@@ -286,6 +292,10 @@ export function DashboardShell({
                 onBack={() => clearSelectedFolder()}
                 onNewSession={onNewSession}
               />
+            </TabsPanel>
+
+            <TabsPanel value="tasks" keepMounted className="h-full">
+              {mobileTasksView ?? centerPanel}
             </TabsPanel>
 
             {/* 채팅 탭 */}
