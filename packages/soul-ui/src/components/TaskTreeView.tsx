@@ -18,6 +18,7 @@ import {
   resolveTaskNavigationSummary,
   resolveTaskTreeHeaderAction,
 } from "./task-tree-layout";
+import { createTaskStreamSubscribe } from "./task-stream-subscribe";
 import {
   AgentAvatar,
   LinkedSessionRuntimeIndicator,
@@ -111,57 +112,53 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
   }, [refresh]);
 
   useEffect(() => {
-    let closed = false;
-    const eventSource = new EventSource(
-      buildTaskStreamUrl(lastTaskEventIdRef.current, taskStreamInstanceIdRef.current),
-    );
-
     const updateLastEventId = (event: MessageEvent) => {
       if (event.lastEventId) lastTaskEventIdRef.current = event.lastEventId;
     };
-    const parse = (event: MessageEvent) => {
-      try {
-        return JSON.parse(event.data || "{}") as Record<string, unknown>;
-      } catch {
-        return {};
-      }
-    };
 
-    eventSource.addEventListener("stream_meta", (event) => {
-      const data = parse(event as MessageEvent);
-      const instanceId = typeof data.instance_id === "string" ? data.instance_id : undefined;
-      if (
-        instanceId &&
-        taskStreamInstanceIdRef.current &&
-        taskStreamInstanceIdRef.current !== instanceId
-      ) {
-        void refresh();
-        lastTaskEventIdRef.current = String(data.latest_id ?? 0);
-      }
-      if (instanceId) taskStreamInstanceIdRef.current = instanceId;
-    });
-    eventSource.addEventListener("task_list", (event) => {
-      const data = parse(event as MessageEvent);
-      if (Array.isArray(data.tasks)) setTasks(data.tasks as TaskItem[]);
-      setLoading(false);
-    });
-    eventSource.addEventListener("task_changed", (event) => {
-      updateLastEventId(event as MessageEvent);
-      void refresh();
-    });
-    eventSource.addEventListener("replay_gap", (event) => {
-      const data = parse(event as MessageEvent);
-      lastTaskEventIdRef.current = String(data.latest_id ?? 0);
-      void refresh();
-    });
-    eventSource.onerror = () => {
-      if (!closed) setError("Task stream disconnected; retrying automatically.");
-    };
+    return createTaskStreamSubscribe({
+      buildUrl: () =>
+        buildTaskStreamUrl(lastTaskEventIdRef.current, taskStreamInstanceIdRef.current),
+      onStatusChange: (status) => {
+        if (status === "error") {
+          setError("Task stream disconnected; retrying automatically.");
+          return;
+        }
+        if (status === "connected") setError(null);
+      },
+      onEvent: (eventType, data, event) => {
+        if (eventType === "stream_meta") {
+          const instanceId = typeof data.instance_id === "string" ? data.instance_id : undefined;
+          if (
+            instanceId &&
+            taskStreamInstanceIdRef.current &&
+            taskStreamInstanceIdRef.current !== instanceId
+          ) {
+            void refresh();
+            lastTaskEventIdRef.current = String(data.latest_id ?? 0);
+          }
+          if (instanceId) taskStreamInstanceIdRef.current = instanceId;
+          return;
+        }
 
-    return () => {
-      closed = true;
-      eventSource.close();
-    };
+        if (eventType === "task_list") {
+          if (Array.isArray(data.tasks)) setTasks(data.tasks as TaskItem[]);
+          setLoading(false);
+          return;
+        }
+
+        if (eventType === "task_changed") {
+          updateLastEventId(event);
+          void refresh();
+          return;
+        }
+
+        if (eventType === "replay_gap") {
+          lastTaskEventIdRef.current = String(data.latest_id ?? 0);
+          void refresh();
+        }
+      },
+    });
   }, [refresh]);
 
   const rows = useMemo(
