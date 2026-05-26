@@ -5,6 +5,7 @@ import {
   buildTaskTreeRows,
   resolveTaskTreeHeaderAction,
 } from "./task-tree-layout";
+import { STATUS_OPTIONS } from "./TaskTreeParts";
 
 function task(id: string, parentId: string | null, positionKey: number): TaskItem {
   return {
@@ -86,6 +87,49 @@ describe("buildTaskTreeRows", () => {
 
     expect(rows.map((row) => row.task.id)).toEqual(["root", "active-child"]);
     expect(rows[1].depth).toBe(1);
+  });
+
+  it("keeps agent_done visible when hiding user-completed tasks", () => {
+    const rows = buildTaskTreeRows(
+      [
+        { ...task("root", null, 1), status: "in_progress" as const },
+        { ...task("agent-done-child", "root", 1), status: "agent_done" as const },
+        { ...task("verified-child", "root", 2), status: "verified_done" as const },
+      ],
+      { hideCompleted: true },
+    );
+
+    expect(rows.map((row) => row.task.id)).toEqual(["root", "agent-done-child"]);
+    expect(rows[1].depth).toBe(1);
+  });
+
+  it("uses descendant updates when sorting ancestor sibling groups", () => {
+    const quietParent = {
+      ...task("quiet-parent", null, 1),
+      updatedAt: "2026-05-26T00:00:10.000Z",
+    };
+    const activeParent = {
+      ...task("active-parent", null, 2),
+      updatedAt: "2026-05-26T00:00:00.000Z",
+    };
+    const activeChild = {
+      ...task("active-child", "active-parent", 1),
+      updatedAt: "2026-05-26T00:00:20.000Z",
+    };
+
+    const rows = buildTaskTreeRows([quietParent, activeParent, activeChild]);
+
+    expect(rows.map((row) => row.task.id)).toEqual([
+      "active-parent",
+      "active-child",
+      "quiet-parent",
+    ]);
+  });
+});
+
+describe("Task status menu options", () => {
+  it("includes the user verified completion status", () => {
+    expect(STATUS_OPTIONS).toContain("verified_done");
   });
 });
 

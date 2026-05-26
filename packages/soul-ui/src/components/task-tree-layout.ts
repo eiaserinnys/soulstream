@@ -7,14 +7,15 @@ export interface TaskTreeRow {
   ancestorLast: boolean[];
 }
 
-const COMPLETED_STATUSES = new Set<TaskStatus>(["agent_done", "verified_done"]);
+const USER_COMPLETED_STATUSES = new Set<TaskStatus>(["verified_done"]);
 
 export function buildTaskTreeRows(
   tasks: readonly TaskItem[],
   options: { hideCompleted?: boolean } = {},
 ): TaskTreeRow[] {
+  const subtreeUpdatedAt = buildSubtreeUpdatedAt(tasks);
   const visibleTasks = options.hideCompleted
-    ? tasks.filter((task) => !COMPLETED_STATUSES.has(task.status))
+    ? tasks.filter((task) => !USER_COMPLETED_STATUSES.has(task.status))
     : [...tasks];
   const children = new Map<string | null, TaskItem[]>();
 
@@ -25,7 +26,7 @@ export function buildTaskTreeRows(
     children.set(key, bucket);
   }
   for (const bucket of children.values()) {
-    bucket.sort(compareTaskSiblings);
+    bucket.sort((a, b) => compareTaskSiblings(a, b, subtreeUpdatedAt));
   }
 
   const rows: TaskTreeRow[] = [];
@@ -79,14 +80,54 @@ export function resolveTaskNavigationSummary(
   };
 }
 
-function compareTaskSiblings(a: TaskItem, b: TaskItem): number {
+function buildSubtreeUpdatedAt(tasks: readonly TaskItem[]): ReadonlyMap<string, number> {
+  const byParent = new Map<string, TaskItem[]>();
+  for (const task of tasks) {
+    if (!task.parentId) continue;
+    const bucket = byParent.get(task.parentId) ?? [];
+    bucket.push(task);
+    byParent.set(task.parentId, bucket);
+  }
+
+  const memo = new Map<string, number>();
+  const visiting = new Set<string>();
+  const resolve = (task: TaskItem): number => {
+    if (memo.has(task.id)) return memo.get(task.id)!;
+    if (visiting.has(task.id)) return taskUpdatedAt(task);
+    visiting.add(task.id);
+    let latest = taskUpdatedAt(task);
+    for (const child of byParent.get(task.id) ?? []) {
+      latest = Math.max(latest, resolve(child));
+    }
+    visiting.delete(task.id);
+    memo.set(task.id, latest);
+    return latest;
+  };
+
+  for (const task of tasks) {
+    resolve(task);
+  }
+  return memo;
+}
+
+function compareTaskSiblings(
+  a: TaskItem,
+  b: TaskItem,
+  subtreeUpdatedAt: ReadonlyMap<string, number>,
+): number {
   return (
     taskSortRank(a) - taskSortRank(b) ||
-    Date.parse(b.updatedAt) - Date.parse(a.updatedAt) ||
+    (subtreeUpdatedAt.get(b.id) ?? taskUpdatedAt(b)) -
+      (subtreeUpdatedAt.get(a.id) ?? taskUpdatedAt(a)) ||
     a.positionKey - b.positionKey ||
     a.createdAt.localeCompare(b.createdAt) ||
     a.id.localeCompare(b.id)
   );
+}
+
+function taskUpdatedAt(task: TaskItem): number {
+  const timestamp = Date.parse(task.updatedAt);
+  return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
 function taskSortRank(task: TaskItem): number {
