@@ -161,7 +161,7 @@ export function DashboardLayout() {
             hasMore={hasMore}
           />
         ) : viewMode === "tasks" ? (
-          <TaskTreeView sessions={sessions} />
+          <TaskTreeView sessions={sessions} onNewSession={() => openNewSessionModal("feed")} />
         ) : (
           <>
             <SessionsTopBar />
@@ -209,7 +209,7 @@ export function DashboardLayout() {
           hasMore={hasMore}
         />
       }
-      mobileTasksView={<TaskTreeView sessions={sessions} />}
+      mobileTasksView={<TaskTreeView sessions={sessions} onNewSession={() => openNewSessionModal("feed")} />}
       onNewSession={() => openNewSessionModal("folder")}
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={

@@ -23,7 +23,7 @@ export function registerTaskTreeTools(
     "create_task_item",
     {
       description:
-        "명시적으로 Task Tree item을 생성한다. 세션 시작 시 자동 생성되지 않으며 operation event anchor를 남긴다.",
+        "명시적으로 Task Tree item을 생성한다. linked_session_id가 있으면 기본 row navigation은 linked session top으로 잡고, operation provenance는 별도 event로 남긴다.",
       inputSchema: {
         session_id: z.string(),
         title: z.string().min(1),
@@ -36,6 +36,9 @@ export function registerTaskTreeTools(
         idempotency_key: z.string().nullable().optional(),
         linked_session_id: z.string().nullable().optional(),
         linked_node_id: z.string().nullable().optional(),
+        navigation_session_id: z.string().nullable().optional(),
+        navigation_node_id: z.string().nullable().optional(),
+        navigation_event_id: z.number().int().positive().nullable().optional(),
       },
     },
     async (input) => {
@@ -53,6 +56,9 @@ export function registerTaskTreeTools(
             idempotencyKey: input.idempotency_key,
             linkedSessionId: input.linked_session_id,
             linkedNodeId: input.linked_node_id,
+            navigationSessionId: input.navigation_session_id,
+            navigationNodeId: input.navigation_node_id,
+            navigationEventId: input.navigation_event_id,
           }),
         );
       } catch (err) {
@@ -255,13 +261,14 @@ export function registerTaskTreeTools(
     "link_task_session",
     {
       description:
-        "Task item을 session/node/event anchor에 연결한다. navigation_event_id가 없으면 operation event anchor로 fallback한다.",
+        "Task item을 session/node/event anchor에 연결한다. navigation_event_id 생략 시 linked session top(NULL event)으로 이동한다. operation event로 이동해야 할 때만 use_operation_anchor=true를 사용한다.",
       inputSchema: {
         session_id: z.string(),
         task_id: z.string(),
         linked_session_id: z.string(),
         linked_node_id: z.string().nullable().optional(),
         navigation_event_id: z.number().int().positive().nullable().optional(),
+        use_operation_anchor: z.boolean().default(false),
         reason: z.string().nullable().optional(),
         expected_version: z.number().int().positive().nullable().optional(),
       },
@@ -275,6 +282,7 @@ export function registerTaskTreeTools(
             linkedSessionId: input.linked_session_id,
             linkedNodeId: input.linked_node_id,
             navigationEventId: input.navigation_event_id,
+            useOperationAnchor: input.use_operation_anchor,
             reason: input.reason,
             expectedVersion: input.expected_version,
           }),
@@ -333,6 +341,152 @@ export function registerTaskTreeTools(
             expectedVersion: input.expected_version,
           }),
         );
+      } catch (err) {
+        return errorResult(errorMessage(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "set_task_pinned",
+    {
+      description:
+        "Task item의 pinned canonical state를 설정한다. pinned task는 같은 sibling 그룹 안에서 최상단에 정렬된다.",
+      inputSchema: {
+        session_id: z.string(),
+        task_id: z.string(),
+        pinned: z.boolean(),
+        reason: z.string().nullable().optional(),
+        expected_version: z.number().int().positive().nullable().optional(),
+        idempotency_key: z.string().nullable().optional(),
+      },
+    },
+    async (input) => {
+      try {
+        return jsonResult(
+          await getService().setPinned({
+            sessionId: input.session_id,
+            taskId: input.task_id,
+            pinned: input.pinned,
+            reason: input.reason,
+            expectedVersion: input.expected_version,
+            idempotencyKey: input.idempotency_key,
+          }),
+        );
+      } catch (err) {
+        return errorResult(errorMessage(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "pin_task_item",
+    {
+      description:
+        "Task item을 같은 sibling 그룹 최상단에 고정한다. set_task_pinned(pinned=true)의 명시 alias.",
+      inputSchema: {
+        session_id: z.string(),
+        task_id: z.string(),
+        reason: z.string().nullable().optional(),
+        expected_version: z.number().int().positive().nullable().optional(),
+        idempotency_key: z.string().nullable().optional(),
+      },
+    },
+    async (input) => {
+      try {
+        return jsonResult(
+          await getService().setPinned({
+            sessionId: input.session_id,
+            taskId: input.task_id,
+            pinned: true,
+            reason: input.reason,
+            expectedVersion: input.expected_version,
+            idempotencyKey: input.idempotency_key,
+          }),
+        );
+      } catch (err) {
+        return errorResult(errorMessage(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "unpin_task_item",
+    {
+      description:
+        "Task item의 고정을 해제한다. set_task_pinned(pinned=false)의 명시 alias.",
+      inputSchema: {
+        session_id: z.string(),
+        task_id: z.string(),
+        reason: z.string().nullable().optional(),
+        expected_version: z.number().int().positive().nullable().optional(),
+        idempotency_key: z.string().nullable().optional(),
+      },
+    },
+    async (input) => {
+      try {
+        return jsonResult(
+          await getService().setPinned({
+            sessionId: input.session_id,
+            taskId: input.task_id,
+            pinned: false,
+            reason: input.reason,
+            expectedVersion: input.expected_version,
+            idempotencyKey: input.idempotency_key,
+          }),
+        );
+      } catch (err) {
+        return errorResult(errorMessage(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "hold_task_item",
+    {
+      description:
+        "Task item을 보류 상태로 둔다. 별도 paused status를 만들지 않고 기존 blocked status로 매핑하되 operation_type=hold_task_item으로 의도를 남긴다.",
+      inputSchema: {
+        session_id: z.string(),
+        task_id: z.string(),
+        reason: z.string().nullable().optional(),
+        expected_version: z.number().int().positive().nullable().optional(),
+        idempotency_key: z.string().nullable().optional(),
+      },
+    },
+    async (input) => {
+      try {
+        return jsonResult(
+          await getService().holdTaskItem({
+            sessionId: input.session_id,
+            taskId: input.task_id,
+            reason: input.reason,
+            expectedVersion: input.expected_version,
+            idempotencyKey: input.idempotency_key,
+          }),
+        );
+      } catch (err) {
+        return errorResult(errorMessage(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "list_task_delegate_agents",
+    {
+      description:
+        "delegate_task_item에 사용할 수 있는 agent id 목록을 조회한다. 잘못된 agent_id로 blocked child를 만들기 전 discovery에 사용한다.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        return jsonResult({
+          agents: runtime.agentRegistry.list().map((agent) => ({
+            id: agent.id,
+            name: agent.name,
+            backend: "backend" in agent ? agent.backend : undefined,
+          })),
+        });
       } catch (err) {
         return errorResult(errorMessage(err));
       }

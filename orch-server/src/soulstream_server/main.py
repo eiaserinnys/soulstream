@@ -44,6 +44,8 @@ from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.nodes.ws_handler import handle_node_ws
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
 from soulstream_server.service.session_router import SessionRouter
+from soulstream_server.service.task_broadcaster import TaskBroadcaster
+from soulstream_server.service.task_change_listener import TaskChangeListener
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +232,7 @@ def _mount_api_routers(
     node_manager: NodeManager,
     session_router: SessionRouter,
     broadcaster: SessionBroadcaster,
+    task_broadcaster: TaskBroadcaster,
     catalog_service: CatalogService,
     settings: Settings,
     push_repo: PushRepository | None = None,
@@ -261,7 +264,7 @@ def _mount_api_routers(
     app.include_router(create_attachments_router(node_manager, dependencies=api_deps))
     app.include_router(create_cogito_router(node_manager, dependencies=api_deps))
     app.include_router(create_atom_router(dependencies=api_deps))
-    app.include_router(create_tasks_router(db, dependencies=api_deps))
+    app.include_router(create_tasks_router(db, broadcaster=task_broadcaster, dependencies=api_deps))
     app.include_router(
         create_execute_proxy_router(
             db, node_manager, session_router, catalog_service,
@@ -321,6 +324,9 @@ async def lifespan(app: FastAPI):
     # PushNotifier가 push_tokens 조회 키로 매칭할 수 있도록 함.
     node_manager = NodeManager(default_user_email=settings.allowed_email)
     broadcaster = SessionBroadcaster()
+    task_broadcaster = TaskBroadcaster()
+    task_change_listener = TaskChangeListener(db=db, broadcaster=task_broadcaster)
+    await task_change_listener.start()
     session_router = SessionRouter(node_manager)
     catalog_service = CatalogService(session_db=db, broadcaster=broadcaster)
 
@@ -345,6 +351,8 @@ async def lifespan(app: FastAPI):
     app.state.db = db
     app.state.node_manager = node_manager
     app.state.broadcaster = broadcaster
+    app.state.task_broadcaster = task_broadcaster
+    app.state.task_change_listener = task_change_listener
     app.state.session_router = session_router
     app.state.catalog_service = catalog_service
     app.state.push_repo = push_repo
@@ -357,6 +365,7 @@ async def lifespan(app: FastAPI):
         node_manager=node_manager,
         session_router=session_router,
         broadcaster=broadcaster,
+        task_broadcaster=task_broadcaster,
         catalog_service=catalog_service,
         settings=settings,
         push_repo=push_repo,
@@ -370,6 +379,8 @@ async def lifespan(app: FastAPI):
 
     # 종료
     broadcaster.disconnect_all()
+    task_broadcaster.disconnect_all()
+    await task_change_listener.stop()
     await db.close()
     logger.info("soulstream-orch-server stopped")
 
@@ -380,6 +391,7 @@ def create_app(
     node_manager: NodeManager | None = None,
     session_router: SessionRouter | None = None,
     broadcaster: SessionBroadcaster | None = None,
+    task_broadcaster: TaskBroadcaster | None = None,
     catalog_service: CatalogService | None = None,
     push_repo: PushRepository | None = None,
 ) -> FastAPI:
@@ -407,6 +419,8 @@ def create_app(
         obj is not None
         for obj in (db, node_manager, session_router, broadcaster, catalog_service)
     )
+    if test_mode and task_broadcaster is None:
+        task_broadcaster = TaskBroadcaster()
 
     app = FastAPI(
         title="soulstream-orch-server",
@@ -483,6 +497,7 @@ def create_app(
         app.state.db = db
         app.state.node_manager = node_manager
         app.state.broadcaster = broadcaster
+        app.state.task_broadcaster = task_broadcaster
         app.state.session_router = session_router
         app.state.catalog_service = catalog_service
         _mount_api_routers(
@@ -491,6 +506,7 @@ def create_app(
             node_manager=node_manager,
             session_router=session_router,
             broadcaster=broadcaster,
+            task_broadcaster=task_broadcaster,
             catalog_service=catalog_service,
             settings=settings,
             push_repo=push_repo,

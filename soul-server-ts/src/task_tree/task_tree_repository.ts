@@ -31,6 +31,7 @@ export interface TaskItemRow {
   navigation_node_id: string | null;
   navigation_event_id: number | null;
   archived: boolean;
+  pinned: boolean;
   version: number;
   created_at: Date;
   updated_at: Date;
@@ -65,6 +66,7 @@ export interface CreateTaskItemParams {
   createdFromSessionId?: string | null;
   navigationSessionId?: string | null;
   navigationNodeId?: string | null;
+  navigationEventId?: number | null;
 }
 
 export interface PatchTaskItemParams {
@@ -84,6 +86,7 @@ export interface PatchTaskItemParams {
   navigation_node_id?: string | null;
   navigation_event_id?: number | null;
   archived?: boolean;
+  pinned?: boolean;
 }
 
 export interface AppendTaskOperationParams {
@@ -117,7 +120,8 @@ export class TaskTreeRepository {
         active_for_session_id,
         created_from_session_id,
         navigation_session_id,
-        navigation_node_id
+        navigation_node_id,
+        navigation_event_id
       )
       VALUES (
         ${params.id},
@@ -133,7 +137,8 @@ export class TaskTreeRepository {
         ${params.activeForSessionId ?? null},
         ${params.createdFromSessionId ?? null},
         ${params.navigationSessionId ?? null},
-        ${params.navigationNodeId ?? null}
+        ${params.navigationNodeId ?? null},
+        ${params.navigationEventId ?? null}
       )
       RETURNING *
     `;
@@ -271,7 +276,7 @@ export class TaskTreeRepository {
              linked_session_id, linked_node_id, active_for_session_id,
              created_from_session_id, created_from_event_id,
              navigation_session_id, navigation_node_id, navigation_event_id,
-             archived, version, created_at, updated_at
+             archived, pinned, version, created_at, updated_at
       FROM ancestors
       ORDER BY depth DESC
     `;

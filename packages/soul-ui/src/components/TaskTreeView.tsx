@@ -1,35 +1,32 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type React from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Ban,
-  CheckCircle2,
-  Circle,
-  CircleSlash,
   ListChecks,
   Loader2,
-  OctagonAlert,
-  Play,
-  RotateCcw,
-  ShieldCheck,
+  MoreVertical,
+  Pin,
+  Plus,
+  Settings,
 } from "lucide-react";
 
 import type { SessionSummary, TaskItem, TaskListResponse, TaskStatus } from "../shared";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
+import {
+  buildTaskStreamUrl,
+  buildTaskTreeRows,
+  resolveTaskNavigationSummary,
+  resolveTaskTreeHeaderAction,
+} from "./task-tree-layout";
+import {
+  AgentAvatar,
+  LinkedSessionRuntimeIndicator,
+  STATUS_META,
+  TaskContextMenu,
+  TaskTreeLines,
+} from "./TaskTreeParts";
 
-const STATUS_META: Record<
-  TaskStatus,
-  { label: string; icon: React.ComponentType<{ className?: string }>; className: string }
-> = {
-  open: { label: "Open", icon: Circle, className: "text-muted-foreground" },
-  in_progress: { label: "In Progress", icon: Play, className: "text-info" },
-  agent_done: { label: "Agent Done", icon: CheckCircle2, className: "text-primary" },
-  verified_done: { label: "Verified", icon: ShieldCheck, className: "text-success" },
-  reopened: { label: "Reopened", icon: RotateCcw, className: "text-accent-amber" },
-  blocked: { label: "Blocked", icon: OctagonAlert, className: "text-accent-red" },
-  cancelled: { label: "Cancelled", icon: CircleSlash, className: "text-muted-foreground" },
-};
+const HIDE_COMPLETED_STORAGE_KEY = "soulstream:task-tree:hide-completed:v1";
 
 const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
   open: "in_progress",
@@ -43,20 +40,33 @@ const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
 
 export interface TaskTreeViewProps {
   sessions?: SessionSummary[];
+  onNewSession?: () => void;
 }
 
-interface TaskNode {
-  task: TaskItem;
-  depth: number;
+interface ContextMenuState {
+  x: number;
+  y: number;
+  taskId: string;
 }
 
-export function TaskTreeView({ sessions = [] }: TaskTreeViewProps) {
+export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps) {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [hideCompleted, setHideCompleted] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(HIDE_COMPLETED_STORAGE_KEY) === "1";
+  });
+
+  const lastTaskEventIdRef = useRef<string | undefined>(undefined);
+  const taskStreamInstanceIdRef = useRef<string | undefined>(undefined);
+
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
+  const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
 
@@ -68,8 +78,18 @@ export function TaskTreeView({ sessions = [] }: TaskTreeViewProps) {
     return map;
   }, [sessions]);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
+  const headerAction = useMemo(
+    () => resolveTaskTreeHeaderAction(onNewSession),
+    [onNewSession],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(HIDE_COMPLETED_STORAGE_KEY, hideCompleted ? "1" : "0");
+  }, [hideCompleted]);
+
+  const refresh = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setLoading(true);
     setError(null);
     try {
       const response = await fetch("/api/tasks?includeArchived=false&limit=1000");
@@ -86,50 +106,147 @@ export function TaskTreeView({ sessions = [] }: TaskTreeViewProps) {
   }, []);
 
   useEffect(() => {
-    void refresh();
+    void refresh(true);
   }, [refresh]);
 
-  const flattened = useMemo(() => flattenTasks(tasks), [tasks]);
+  useEffect(() => {
+    let closed = false;
+    const eventSource = new EventSource(
+      buildTaskStreamUrl(lastTaskEventIdRef.current, taskStreamInstanceIdRef.current),
+    );
+
+    const updateLastEventId = (event: MessageEvent) => {
+      if (event.lastEventId) lastTaskEventIdRef.current = event.lastEventId;
+    };
+    const parse = (event: MessageEvent) => {
+      try {
+        return JSON.parse(event.data || "{}") as Record<string, unknown>;
+      } catch {
+        return {};
+      }
+    };
+
+    eventSource.addEventListener("stream_meta", (event) => {
+      const data = parse(event as MessageEvent);
+      const instanceId = typeof data.instance_id === "string" ? data.instance_id : undefined;
+      if (
+        instanceId &&
+        taskStreamInstanceIdRef.current &&
+        taskStreamInstanceIdRef.current !== instanceId
+      ) {
+        void refresh();
+        lastTaskEventIdRef.current = String(data.latest_id ?? 0);
+      }
+      if (instanceId) taskStreamInstanceIdRef.current = instanceId;
+    });
+    eventSource.addEventListener("task_list", (event) => {
+      const data = parse(event as MessageEvent);
+      if (Array.isArray(data.tasks)) setTasks(data.tasks as TaskItem[]);
+      setLoading(false);
+    });
+    eventSource.addEventListener("task_changed", (event) => {
+      updateLastEventId(event as MessageEvent);
+      void refresh();
+    });
+    eventSource.addEventListener("replay_gap", (event) => {
+      const data = parse(event as MessageEvent);
+      lastTaskEventIdRef.current = String(data.latest_id ?? 0);
+      void refresh();
+    });
+    eventSource.onerror = () => {
+      if (!closed) setError("Task stream disconnected; retrying automatically.");
+    };
+
+    return () => {
+      closed = true;
+      eventSource.close();
+    };
+  }, [refresh]);
+
+  const rows = useMemo(
+    () => buildTaskTreeRows(tasks, { hideCompleted }),
+    [hideCompleted, tasks],
+  );
+  const contextTask = contextMenu
+    ? tasks.find((task) => task.id === contextMenu.taskId) ?? null
+    : null;
+
+  const actorSessionIdFor = useCallback(
+    (task: TaskItem) =>
+      activeSessionKey ?? task.navigationSessionId ?? task.linkedSessionId ?? task.createdFromSessionId,
+    [activeSessionKey],
+  );
 
   const navigateToTask = useCallback(
     (task: TaskItem) => {
       const sessionId = task.navigationSessionId ?? task.linkedSessionId;
       if (!sessionId) return;
       setActiveSession(sessionId);
+      setActiveSessionSummary(resolveTaskNavigationSummary(sessionById, sessionId));
       setFocusEventId(task.navigationEventId ?? null);
       setActiveTab("chat");
     },
-    [setActiveSession, setActiveTab, setFocusEventId],
+    [sessionById, setActiveSession, setActiveSessionSummary, setActiveTab, setFocusEventId],
   );
 
-  const cycleStatus = useCallback(
-    async (task: TaskItem) => {
-      const actorSessionId =
-        activeSessionKey ?? task.navigationSessionId ?? task.createdFromSessionId;
+  const mutateTask = useCallback(
+    async (
+      task: TaskItem,
+      path: string,
+      body: Record<string, unknown>,
+    ) => {
+      const actorSessionId = actorSessionIdFor(task);
       if (!actorSessionId) return;
       setPendingTaskId(task.id);
+      setError(null);
       try {
-        const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}/status`, {
+        const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}${path}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             sessionId: actorSessionId,
-            status: NEXT_STATUS[task.status],
             expectedVersion: task.version,
+            ...body,
           }),
         });
         if (!response.ok) {
-          throw new Error(`/api/tasks/${task.id}/status returned ${response.status}`);
+          throw new Error(`/api/tasks/${task.id}${path} returned ${response.status}`);
         }
         await refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
         setPendingTaskId(null);
+        setContextMenu(null);
       }
     },
-    [activeSessionKey, refresh],
+    [actorSessionIdFor, refresh],
   );
+
+  const setTaskStatus = useCallback(
+    (task: TaskItem, status: TaskStatus) =>
+      mutateTask(task, "/status", { status }),
+    [mutateTask],
+  );
+  const holdTask = useCallback(
+    (task: TaskItem) =>
+      mutateTask(task, "/hold", { reason: "Held from Task Tree context menu" }),
+    [mutateTask],
+  );
+  const setPinned = useCallback(
+    (task: TaskItem, pinned: boolean) =>
+      mutateTask(task, "/pin", { pinned, reason: pinned ? "Pinned from Task Tree" : "Unpinned from Task Tree" }),
+    [mutateTask],
+  );
+  const cycleStatus = useCallback(
+    (task: TaskItem) => setTaskStatus(task, NEXT_STATUS[task.status]),
+    [setTaskStatus],
+  );
+
+  const copyTaskId = useCallback((task: TaskItem) => {
+    void navigator.clipboard.writeText(task.id);
+    setContextMenu(null);
+  }, []);
 
   return (
     <div className="h-full flex flex-col bg-background">
@@ -138,9 +255,34 @@ export function TaskTreeView({ sessions = [] }: TaskTreeViewProps) {
           <ListChecks className="h-5 w-5 text-muted-foreground shrink-0" />
           <h2 className="text-sm font-semibold truncate">Task Tree</h2>
         </div>
-        <Button variant="ghost" size="sm" onClick={refresh} disabled={loading}>
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh"}
-        </Button>
+        <div className="relative flex items-center gap-1">
+          {headerAction.visible && (
+            <Button variant="ghost" size="sm" onClick={onNewSession} title={headerAction.title}>
+              <Plus className="h-4 w-4" />
+              <span className="ml-1">{headerAction.label}</span>
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            title="Task Tree settings"
+            onClick={() => setSettingsOpen((open) => !open)}
+          >
+            <Settings className="h-4 w-4" />
+          </Button>
+          {settingsOpen && (
+            <div className="absolute right-0 top-10 z-20 w-56 rounded-md border border-border bg-popover p-2 shadow-lg">
+              <label className="flex items-center gap-2 rounded px-2 py-1.5 text-sm">
+                <input
+                  type="checkbox"
+                  checked={hideCompleted}
+                  onChange={(event) => setHideCompleted(event.currentTarget.checked)}
+                />
+                완료된 태스크 숨기기
+              </label>
+            </div>
+          )}
+        </div>
       </header>
 
       {error && (
@@ -154,13 +296,14 @@ export function TaskTreeView({ sessions = [] }: TaskTreeViewProps) {
           <div className="h-full flex items-center justify-center text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />
           </div>
-        ) : flattened.length === 0 ? (
+        ) : rows.length === 0 ? (
           <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
             No task items
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {flattened.map(({ task, depth }) => {
+            {rows.map((row) => {
+              const { task } = row;
               const StatusIcon = STATUS_META[task.status].icon;
               const navigationDisabled = !(task.navigationSessionId ?? task.linkedSessionId);
               const linkedSession = task.linkedSessionId
@@ -171,10 +314,17 @@ export function TaskTreeView({ sessions = [] }: TaskTreeViewProps) {
                 <div
                   key={task.id}
                   className={cn(
-                    "group min-h-[58px] flex items-center gap-2 px-3 py-2 transition-colors",
+                    "group flex items-center gap-2 px-3 py-2 transition-colors",
+                    row.depth === 0 ? "min-h-[62px]" : "min-h-[52px]",
                     navigationDisabled ? "text-muted-foreground" : "hover:bg-muted/45",
                   )}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setContextMenu({ x: event.clientX, y: event.clientY, taskId: task.id });
+                  }}
                 >
+                  <TaskTreeLines row={row} />
+
                   <Button
                     variant="ghost"
                     size="icon"
@@ -193,81 +343,74 @@ export function TaskTreeView({ sessions = [] }: TaskTreeViewProps) {
                   <button
                     type="button"
                     className="min-w-0 flex-1 text-left"
-                    style={{ paddingLeft: depth * 18 }}
                     disabled={navigationDisabled}
                     onClick={() => navigateToTask(task)}
                   >
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="font-medium text-sm truncate">{task.title}</span>
-                      <span className="text-[11px] text-muted-foreground shrink-0">
+                      {task.pinned && <Pin className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                      <span
+                        className={cn(
+                          "font-semibold truncate",
+                          row.depth === 0 ? "text-[15px] leading-5" : "text-[13px] leading-4",
+                        )}
+                      >
+                        {task.title}
+                      </span>
+                      <span
+                        className={cn(
+                          "text-muted-foreground shrink-0",
+                          row.depth === 0 ? "text-[11px] leading-4" : "text-[10px] leading-4",
+                        )}
+                      >
                         {STATUS_META[task.status].label}
                       </span>
                     </div>
                     {(task.acceptanceCriteria || task.description) && (
-                      <div className="text-xs text-muted-foreground truncate">
+                      <div
+                        className={cn(
+                          "text-muted-foreground truncate",
+                          row.depth === 0 ? "text-xs leading-4" : "text-[11px] leading-4",
+                        )}
+                      >
                         {task.acceptanceCriteria || task.description}
                       </div>
                     )}
                   </button>
 
+                  <LinkedSessionRuntimeIndicator status={linkedSession?.status} />
                   <AgentAvatar portraitUrl={portraitUrl} />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 shrink-0 opacity-70 group-hover:opacity-100"
+                    title="Task menu"
+                    onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setContextMenu({ x: rect.right, y: rect.bottom, taskId: task.id });
+                    }}
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {contextMenu && contextTask && (
+        <TaskContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          task={contextTask}
+          pending={pendingTaskId === contextTask.id}
+          onClose={() => setContextMenu(null)}
+          onCopy={() => copyTaskId(contextTask)}
+          onStatus={(status) => void setTaskStatus(contextTask, status)}
+          onPin={(pinned) => void setPinned(contextTask, pinned)}
+          onHold={() => void holdTask(contextTask)}
+        />
+      )}
     </div>
   );
-}
-
-function AgentAvatar({ portraitUrl }: { portraitUrl: string | null }) {
-  if (portraitUrl) {
-    return (
-      <img
-        src={portraitUrl}
-        alt=""
-        className="h-8 w-8 rounded-lg object-cover shrink-0"
-      />
-    );
-  }
-  return (
-    <span className="h-8 w-8 rounded-lg border border-border bg-muted flex items-center justify-center text-xs text-muted-foreground shrink-0">
-      A
-    </span>
-  );
-}
-
-function flattenTasks(tasks: TaskItem[]): TaskNode[] {
-  const children = new Map<string | null, TaskItem[]>();
-  for (const task of tasks) {
-    const key = task.parentId ?? null;
-    const bucket = children.get(key) ?? [];
-    bucket.push(task);
-    children.set(key, bucket);
-  }
-  for (const bucket of children.values()) {
-    bucket.sort((a, b) => a.positionKey - b.positionKey || a.createdAt.localeCompare(b.createdAt));
-  }
-
-  const result: TaskNode[] = [];
-  const seen = new Set<string>();
-  const visit = (task: TaskItem, depth: number) => {
-    if (seen.has(task.id)) return;
-    seen.add(task.id);
-    result.push({ task, depth });
-    for (const child of children.get(task.id) ?? []) {
-      visit(child, depth + 1);
-    }
-  };
-
-  for (const root of children.get(null) ?? []) {
-    visit(root, 0);
-  }
-  for (const task of tasks) {
-    if (!seen.has(task.id)) {
-      visit(task, 0);
-    }
-  }
-  return result;
 }
