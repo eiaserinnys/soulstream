@@ -6,7 +6,10 @@ use tauri::webview::NewWindowResponse;
 use tauri::{State, WebviewUrl, WebviewWindowBuilder};
 use url::Url;
 
-use external_nav::{is_external_http, is_tauri_app_url};
+use external_nav::{
+    classify_navigation, should_open_new_window_in_external_browser, AuthFlowTransition,
+    NavigationAction,
+};
 
 /// dashboard origin 런타임 정본.
 ///
@@ -14,6 +17,7 @@ use external_nav::{is_external_http, is_tauri_app_url};
 /// 등록 전(setup 화면)에서는 `None` — 모든 외부 HTTP(S)이 OS 위임 대상.
 /// persistent 정본은 `tauri-plugin-store`의 `server_url`(full URL); 본 state는 그 파생물(origin).
 type OriginState = Arc<Mutex<Option<Url>>>;
+type AuthFlowState = Arc<Mutex<bool>>;
 
 /// frontend(`src/utils/origin.ts`의 `registerDashboardOrigin`)가 호출하는 command.
 ///
@@ -40,10 +44,30 @@ fn snapshot_allowed(state: &OriginState) -> Vec<Url> {
         .collect()
 }
 
+fn snapshot_auth_flow(state: &AuthFlowState) -> bool {
+    *state.lock().expect("auth flow state mutex poisoned")
+}
+
+fn apply_auth_transition(state: &AuthFlowState, transition: AuthFlowTransition) {
+    match transition {
+        AuthFlowTransition::None => {}
+        AuthFlowTransition::Start => {
+            *state.lock().expect("auth flow state mutex poisoned") = true;
+        }
+        AuthFlowTransition::Complete => {
+            *state.lock().expect("auth flow state mutex poisoned") = false;
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let origin_state: OriginState = Arc::new(Mutex::new(None));
     let origin_state_nav = Arc::clone(&origin_state);
+    let origin_state_new_window = Arc::clone(&origin_state);
+    let auth_flow_state: AuthFlowState = Arc::new(Mutex::new(false));
+    let auth_flow_state_nav = Arc::clone(&auth_flow_state);
+    let auth_flow_state_new_window = Arc::clone(&auth_flow_state);
 
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -57,7 +81,9 @@ pub fn run() {
             //  - 그 외 비-HTTP(S) scheme: `on_navigation`은 차단,
             //    `on_new_window`는 모두 `Deny` only(`open::that` 호출 없음) — about:blank/javascript:
             //    같은 사전작업 URL이 OS 브라우저에 빈 창을 띄우는 결함을 차단한다.
-            //  - HTTP(S) external origin: 두 핸들러 모두 `open::that(url)`로 OS 기본 브라우저에
+            //  - dashboard Google login flow(`/api/auth/google` → `accounts.google.com` →
+            //    `/api/auth/google/callback`)는 app webview 안에 남겨 app 쿠키 정본으로 완료한다.
+            //  - 그 외 HTTP(S) external origin: 두 핸들러 모두 `open::that(url)`로 OS 기본 브라우저에
             //    위임 + (`on_navigation`은 navigation 취소).
             //  - HTTP(S) internal origin: `on_navigation` 허용, `on_new_window`도 OS 위임
             //    (일관성을 위해 — dashboard 안에서 같은 origin을 _blank로 여는 사례는 없음).
@@ -67,30 +93,35 @@ pub fn run() {
                 .min_inner_size(800.0, 600.0)
                 .resizable(true)
                 .on_navigation(move |url| {
-                    if is_tauri_app_url(url) {
-                        return true;
-                    }
-                    if !matches!(url.scheme(), "http" | "https") {
-                        // `file://`, `javascript:` 등은 차단(navigation 취소).
-                        return false;
-                    }
                     let allowed = snapshot_allowed(&origin_state_nav);
-                    if is_external_http(url, &allowed) {
-                        // 외부 origin → OS 브라우저 위임 + navigation 취소.
-                        // `open::that` 5.x는 실패 시 `Result`를 반환하므로 무시해 crash 방지.
-                        let _ = open::that(url.as_str());
-                        return false;
+                    let auth_flow_active = snapshot_auth_flow(&auth_flow_state_nav);
+                    let decision = classify_navigation(url, &allowed, auth_flow_active);
+                    apply_auth_transition(&auth_flow_state_nav, decision.auth_transition);
+                    match decision.action {
+                        NavigationAction::Allow => true,
+                        NavigationAction::OpenExternal => {
+                            // 외부 origin → OS 브라우저 위임 + navigation 취소.
+                            // `open::that` 5.x는 실패 시 `Result`를 반환하므로 무시해 crash 방지.
+                            let _ = open::that(url.as_str());
+                            false
+                        }
+                        NavigationAction::Block => {
+                            // `file://`, `javascript:` 등은 차단(navigation 취소).
+                            false
+                        }
                     }
-                    // 같은 origin — 허용.
-                    true
                 })
-                .on_new_window(|url, _features| {
+                .on_new_window(move |url, _features| {
                     // 사용자가 `target="_blank"` anchor를 클릭하거나 `window.open(url)`을 호출한 경우.
                     // HTTP(S)이면 origin 무관하게 OS 브라우저로 위임(현재 동작 보존 + 외부 일관성).
+                    // 단, app 로그인 flow URL은 OS 브라우저로 보내지 않는다.
                     // 비-HTTP(S)(`about:blank` 사전작업 등)는 `open::that` 호출 없이 `Deny` only —
-                    // useClaudeAuthFlow.ts:126의 popup-blocker 우회 사전작업이 OS 브라우저에
+                    // useClaudeAuthFlow.ts:154의 popup-blocker 우회 사전작업이 OS 브라우저에
                     // 빈 about:blank 창을 띄우던 결함을 차단한다.
-                    if matches!(url.scheme(), "http" | "https") && !is_tauri_app_url(&url) {
+                    let allowed = snapshot_allowed(&origin_state_new_window);
+                    let auth_flow_active = snapshot_auth_flow(&auth_flow_state_new_window);
+                    if should_open_new_window_in_external_browser(&url, &allowed, auth_flow_active)
+                    {
                         let _ = open::that(url.as_str());
                     }
                     NewWindowResponse::Deny
