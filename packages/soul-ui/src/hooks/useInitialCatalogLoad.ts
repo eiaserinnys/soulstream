@@ -33,7 +33,7 @@ export function useInitialCatalogLoad(enabled: boolean): void {
         if (
           store.selectedFolderId === null &&
           !store.activeSessionKey &&
-          store.viewMode !== "feed"
+          store.viewMode === "folder"
         ) {
           const claudeFolder = data.folders.find(
             (f: { name: string }) => f.name === SYSTEM_FOLDERS.claude,

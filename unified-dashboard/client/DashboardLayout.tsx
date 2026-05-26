@@ -46,6 +46,7 @@ import {
   ConnectionBadge,
   useSessionListProvider,
   shouldLoadMoreAfterSessionMove,
+  TaskTreeView,
 } from "@seosoyoung/soul-ui";
 import { FeedView } from "./components/FeedView";
 import { getSessionProvider } from "./providers";
@@ -159,6 +160,8 @@ export function DashboardLayout() {
             onLoadMore={loadMore}
             hasMore={hasMore}
           />
+        ) : viewMode === "tasks" ? (
+          <TaskTreeView sessions={sessions} />
         ) : (
           <>
             <SessionsTopBar />
@@ -206,6 +209,7 @@ export function DashboardLayout() {
           hasMore={hasMore}
         />
       }
+      mobileTasksView={<TaskTreeView sessions={sessions} />}
       onNewSession={() => openNewSessionModal("folder")}
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={

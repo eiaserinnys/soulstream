@@ -19,6 +19,7 @@
 import postgres from "postgres";
 
 import type { TaskStatus } from "../task/task_models.js";
+import { TaskTreeRepository } from "../task_tree/task_tree_repository.js";
 
 export type SessionType = "claude" | "llm";
 
@@ -130,6 +131,7 @@ export type SqlClient = postgres.Sql<any>;
 export class SessionDB {
   private readonly sql: SqlClient;
   private readonly ownsSql: boolean;
+  private taskTreeRepository?: TaskTreeRepository;
 
   /**
    * @param sqlOrUrl `postgres()` 인스턴스 또는 DATABASE_URL 문자열.
@@ -157,6 +159,11 @@ export class SessionDB {
   /** Lightweight liveness probe for runtime reflection. */
   async ping(): Promise<void> {
     await this.sql`SELECT 1`;
+  }
+
+  taskTree(): TaskTreeRepository {
+    this.taskTreeRepository ??= new TaskTreeRepository(this.sql);
+    return this.taskTreeRepository;
   }
 
   /** Python `session_register` stored procedure 호출 (schema.sql L196-218). */

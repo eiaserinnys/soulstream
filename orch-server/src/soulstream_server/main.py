@@ -35,6 +35,7 @@ from soulstream_server.api.provider_usage import create_provider_usage_router
 from soulstream_server.api.push import create_push_router
 from soulstream_server.api.sessions import create_sessions_router
 from soulstream_server.api.system_portraits import create_system_portraits_router
+from soulstream_server.api.tasks import create_tasks_router
 from soulstream_server.push import ExpoPushProvider, PushNotifier, PushRepository
 from soulstream_server.config import Settings, get_settings
 from soulstream_server.dashboard.auth import create_auth_router
@@ -260,6 +261,7 @@ def _mount_api_routers(
     app.include_router(create_attachments_router(node_manager, dependencies=api_deps))
     app.include_router(create_cogito_router(node_manager, dependencies=api_deps))
     app.include_router(create_atom_router(dependencies=api_deps))
+    app.include_router(create_tasks_router(db, dependencies=api_deps))
     app.include_router(
         create_execute_proxy_router(
             db, node_manager, session_router, catalog_service,

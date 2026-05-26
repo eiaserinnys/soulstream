@@ -1,7 +1,7 @@
 import type { CatalogState } from "../shared/types";
 
 export interface SessionMoveLoadMoreState {
-  viewMode: "feed" | "folder";
+  viewMode: "feed" | "folder" | "tasks";
   selectedFolderId: string | null;
   catalog: CatalogState | null;
   sessionIds: readonly string[];
@@ -32,6 +32,7 @@ export function shouldLoadMoreAfterSessionMove({
   targetFolderId,
 }: SessionMoveLoadMoreState): boolean {
   if (sessionIds.length === 0) return false;
+  if (viewMode === "tasks") return false;
 
   if (!catalog) {
     if (viewMode === "folder") return targetFolderId !== selectedFolderId;
