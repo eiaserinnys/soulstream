@@ -26,6 +26,7 @@ import { FolderDialog } from "./FolderDialog";
 import { FolderSettingsDialog } from "./FolderSettingsDialog";
 import { FolderSortButton } from "./FolderSortButton";
 import { FeedItem } from "./FeedItem";
+import { TasksItem } from "./TasksItem";
 import { FolderItem } from "./FolderItem";
 import { FolderContextMenu, type FolderContextMenuTarget } from "./FolderContextMenu";
 import type { FolderSettings } from "../shared/types";
@@ -154,6 +155,7 @@ export function FolderTree({
 
       <div className="flex-1 overflow-y-auto py-1">
         <FeedItem />
+        <TasksItem />
 
         <div className="border-t border-border my-1 mx-3" />
 
