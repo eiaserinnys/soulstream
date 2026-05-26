@@ -5,7 +5,7 @@ import {
   buildTaskTreeRows,
   resolveTaskTreeHeaderAction,
 } from "./task-tree-layout";
-import { STATUS_OPTIONS } from "./TaskTreeParts";
+import { STATUS_META, STATUS_OPTIONS } from "./TaskTreeParts";
 
 function task(id: string, parentId: string | null, positionKey: number): TaskItem {
   return {
@@ -130,6 +130,7 @@ describe("buildTaskTreeRows", () => {
 describe("Task status menu options", () => {
   it("includes the user verified completion status", () => {
     expect(STATUS_OPTIONS).toContain("verified_done");
+    expect(STATUS_META.verified_done.label).toBe("완료");
   });
 });
 

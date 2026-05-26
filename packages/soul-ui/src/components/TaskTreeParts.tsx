@@ -25,7 +25,7 @@ export const STATUS_META: Record<
   open: { label: "Open", icon: Circle, className: "text-muted-foreground" },
   in_progress: { label: "In Progress", icon: Play, className: "text-info" },
   agent_done: { label: "Agent Done", icon: CheckCircle2, className: "text-primary" },
-  verified_done: { label: "Verified", icon: ShieldCheck, className: "text-muted-foreground" },
+  verified_done: { label: "완료", icon: ShieldCheck, className: "text-muted-foreground" },
   reopened: { label: "Reopened", icon: RotateCcw, className: "text-accent-amber" },
   blocked: { label: "Blocked", icon: OctagonAlert, className: "text-accent-red" },
   cancelled: { label: "Cancelled", icon: CircleSlash, className: "text-muted-foreground" },
