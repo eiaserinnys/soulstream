@@ -52,13 +52,13 @@ function changeControlValue(
 describe("TaskTreeDetailPanel", () => {
   let container: HTMLDivElement;
   let root: Root;
-  let onSave: ReturnType<typeof vi.fn<[TaskItem, TaskEditDraft], void>>;
+  let onSave: (task: TaskItem, draft: TaskEditDraft) => void;
 
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
-    onSave = vi.fn();
+    onSave = vi.fn<(task: TaskItem, draft: TaskEditDraft) => void>();
   });
 
   afterEach(() => {
