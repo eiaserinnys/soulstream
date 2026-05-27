@@ -302,21 +302,21 @@ class NodeConnection:
             payload["caller_session_id"] = caller_session_id
         if caller_info is not None:
             payload["caller_info"] = caller_info
-        if extra_context_items:
-            # 호출자가 직접 extra_context_items를 제공한 경우 그대로 전달
-            payload["extra_context_items"] = extra_context_items
-        elif attachment_paths:
+        context_items = list(extra_context_items or [])
+        if attachment_paths:
             # soul-server upstream/adapter.py가 extra_context_items=cmd.get("extra_context_items")로
             # 처리하므로 여기서 변환한다. adapter.py 수정 불필요 (create_session 경로).
             # 변환 책임은 soul-server WS 프로토콜을 아는 node_connection.py에 있다.
-            payload["extra_context_items"] = [{
+            context_items.append({
                 "key": "attached_files",
                 "label": "첨부 파일",
                 "content": (
                     "다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n"
                     + "\n".join(f"- {p}" for p in attachment_paths)
                 ),
-            }]
+            })
+        if context_items:
+            payload["extra_context_items"] = context_items
         if model is not None:
             payload["model"] = model
         if reasoning_effort is not None:

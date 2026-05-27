@@ -937,6 +937,29 @@ class TestAttachmentPaths:
         assert "/incoming/abc/file.txt" in items[0]["content"]
         assert "/incoming/abc/img.png" in items[0]["content"]
 
+    async def test_send_create_session_merges_explicit_context_and_attachment_paths(self, node, ws):
+        """parent task context와 첨부 파일 context가 함께 전달된다."""
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({"agentSessionId": "sess-r"})
+
+        ws.send_json.side_effect = resolve_future
+
+        await node.send_create_session(
+            prompt="test",
+            session_id="sid-1",
+            extra_context_items=[{"key": "task_tree_parent", "content": "parent"}],
+            attachment_paths=["/incoming/abc/file.txt"],
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert [item["key"] for item in sent["extra_context_items"]] == [
+            "task_tree_parent",
+            "attached_files",
+        ]
+
     async def test_send_create_session_no_extra_context_items_when_no_attachment_paths(self, node, ws):
         """attachment_paths가 None이면 extra_context_items를 payload에 포함하지 않는다."""
         async def resolve_future(*args, **kwargs):

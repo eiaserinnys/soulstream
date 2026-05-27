@@ -13,6 +13,7 @@ from soulstream_server.api.tasks import (
     MoveRequest,
     PinRequest,
     StatusRequest,
+    UpdateTaskRequest,
     create_tasks_router,
 )
 
@@ -163,10 +164,20 @@ def _endpoint(path: str, method: str = "POST"):
             "/api/tasks/{task_id}/hold",
             HoldRequest(sessionId="parent-session"),
         ),
+        (
+            "/api/tasks/{task_id}",
+            UpdateTaskRequest(
+                sessionId="parent-session",
+                title="Renamed task",
+                description="New description",
+                acceptanceCriteria="New criteria",
+            ),
+        ),
     ],
 )
 async def test_mutation_operations_preserve_navigation_anchor(path, body):
-    endpoint = _endpoint(path)
+    method = "PATCH" if path == "/api/tasks/{task_id}" else "POST"
+    endpoint = _endpoint(path, method=method)
 
     result = await endpoint("task-1", body)
 
@@ -174,6 +185,27 @@ async def test_mutation_operations_preserve_navigation_anchor(path, body):
     assert result["task"]["navigationNodeId"] == "node-child"
     assert result["task"]["navigationEventId"] == 77
     assert result["operation"]["actorEventId"] == 101
+
+
+@pytest.mark.asyncio
+async def test_update_task_changes_only_editable_detail_fields():
+    endpoint = _endpoint("/api/tasks/{task_id}", method="PATCH")
+
+    result = await endpoint(
+        "task-1",
+        UpdateTaskRequest(
+            sessionId="parent-session",
+            title="  Renamed task  ",
+            description="New description",
+            acceptanceCriteria="New criteria",
+        ),
+    )
+
+    assert result["task"]["title"] == "Renamed task"
+    assert result["task"]["description"] == "New description"
+    assert result["task"]["acceptanceCriteria"] == "New criteria"
+    assert result["task"]["linkedSessionId"] == "child-session"
+    assert result["operation"]["operationType"] == "update_task_item"
 
 
 @pytest.mark.asyncio

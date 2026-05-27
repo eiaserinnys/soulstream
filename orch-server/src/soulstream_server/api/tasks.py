@@ -64,6 +64,18 @@ class StatusRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class UpdateTaskRequest(BaseModel):
+    session_id: str = Field(alias="sessionId")
+    title: Optional[str] = None
+    description: Optional[str] = None
+    acceptance_criteria: Optional[str] = Field(default=None, alias="acceptanceCriteria")
+    reason: Optional[str] = None
+    expected_version: Optional[int] = Field(default=None, alias="expectedVersion")
+    idempotency_key: Optional[str] = Field(default=None, alias="idempotencyKey")
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
 class MoveRequest(BaseModel):
     session_id: str = Field(alias="sessionId")
     new_parent_task_id: Optional[str] = Field(default=None, alias="newParentTaskId")
@@ -289,6 +301,44 @@ def create_tasks_router(
             task=task,
             operation_type="set_task_status",
             payload={"status": body.status},
+            reason=body.reason,
+            idempotency_key=body.idempotency_key,
+        )
+        return _mutation_response(task, operation, event_id)
+
+    @router.patch("/{task_id}")
+    async def update_task(task_id: str, body: UpdateTaskRequest) -> dict[str, Any]:
+        existing = await _idempotent_result(db, body.idempotency_key)
+        if existing:
+            return existing
+        fields: dict[str, Any] = {}
+        payload: dict[str, Any] = {}
+        if body.title is not None:
+            title = body.title.strip()
+            if not title:
+                raise HTTPException(status_code=422, detail="title must not be empty")
+            fields["title"] = title
+            payload["title"] = title
+        if body.description is not None:
+            fields["description"] = body.description
+            payload["description"] = body.description
+        if body.acceptance_criteria is not None:
+            fields["acceptance_criteria"] = body.acceptance_criteria
+            payload["acceptance_criteria"] = body.acceptance_criteria
+        if not fields:
+            raise HTTPException(status_code=422, detail="no task fields to update")
+        task = await _patch_task(
+            db,
+            task_id,
+            fields,
+            expected_version=body.expected_version,
+        )
+        operation, event_id = await _record_operation(
+            db,
+            actor_session_id=body.session_id,
+            task=task,
+            operation_type="update_task_item",
+            payload=payload,
             reason=body.reason,
             idempotency_key=body.idempotency_key,
         )

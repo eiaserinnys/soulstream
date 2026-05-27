@@ -1,8 +1,99 @@
 """Tests for Sessions API (/api/sessions)."""
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
 import pytest
+
+from soulstream_server.api.task_scoped_sessions import existing_task_scoped_session_response
+
+
+def _task_row(**overrides):
+    base = {
+        "id": "parent-task",
+        "parent_id": None,
+        "position_key": 1.0,
+        "title": "Parent task",
+        "description": "Parent description",
+        "acceptance_criteria": "Parent criteria",
+        "verification_owner": "both",
+        "status": "verified_done",
+        "linked_session_id": "parent-linked",
+        "linked_node_id": "node-parent",
+        "active_for_session_id": None,
+        "created_from_session_id": "parent-session",
+        "created_from_event_id": 10,
+        "navigation_session_id": "parent-session",
+        "navigation_node_id": "node-parent",
+        "navigation_event_id": 11,
+        "archived": False,
+        "pinned": False,
+        "version": 1,
+        "created_at": datetime(2026, 5, 27, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 5, 27, tzinfo=timezone.utc),
+    }
+    base.update(overrides)
+    return base
+
+
+class FakeTaskScopedPool:
+    def __init__(self):
+        self.parent = _task_row()
+        self.child = None
+        self.operation = None
+
+    async def fetchrow(self, query, *args):
+        normalized = " ".join(str(query).split())
+        if "SELECT * FROM task_operations WHERE idempotency_key" in normalized:
+            return None
+        if "SELECT * FROM task_items WHERE id = $1 AND archived = FALSE" in normalized:
+            return self.parent if args[0] == self.parent["id"] else None
+        if "INSERT INTO task_items" in normalized:
+            self.child = _task_row(
+                id=args[0],
+                parent_id=args[1],
+                position_key=args[2],
+                title=args[3],
+                description=args[4],
+                acceptance_criteria=args[5],
+                verification_owner=args[6],
+                status=args[7],
+                linked_session_id=args[8],
+                linked_node_id=args[9],
+                active_for_session_id=args[10],
+                created_from_session_id=args[11],
+                navigation_session_id=args[12],
+                navigation_node_id=args[13],
+                navigation_event_id=args[14],
+            )
+            return self.child
+        if "INSERT INTO task_operations" in normalized:
+            self.operation = {
+                "id": args[0],
+                "task_id": args[1],
+                "operation_type": args[2],
+                "actor_kind": "agent",
+                "actor_session_id": args[3],
+                "actor_event_id": None,
+                "actor_user_id": None,
+                "idempotency_key": args[4],
+                "payload_json": args[5],
+                "reason": args[6],
+                "created_at": datetime(2026, 5, 27, tzinfo=timezone.utc),
+            }
+            return self.operation
+        if "UPDATE task_operations SET actor_event_id" in normalized:
+            self.operation = {**self.operation, "actor_event_id": args[0]}
+            return self.operation
+        if "UPDATE task_items" in normalized:
+            self.child = {**self.child, "created_from_event_id": args[2]}
+            return self.child
+        if "SELECT * FROM task_items WHERE id" in normalized:
+            return self.child
+        raise AssertionError(f"unhandled fetchrow query: {normalized}")
+
+    async def fetchval(self, query, *args):
+        return 2.0
 
 
 class TestListSessions:
@@ -183,6 +274,66 @@ class TestCreateSession:
 
         assert resp.status_code == 201
         mock_catalog_service.broadcast_catalog.assert_awaited_once()
+
+    async def test_create_session_with_parent_task_creates_linked_child_task(
+        self, client, mock_db, node_manager
+    ):
+        """Task Tree 하위 대화 시작은 세션 생성과 child task link를 서버에서 묶는다."""
+        mock_db.pool = FakeTaskScopedPool()
+        mock_db.append_event = AsyncMock(return_value=303)
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "api-node"})
+
+        async def resolve_on_send(data):
+            assert data["extra_context_items"][0]["key"] == "task_tree_parent"
+            assert "Parent task" in data["extra_context_items"][0]["content"]
+            req_id = data.get("requestId")
+            if req_id and req_id in node._pending:
+                node._pending[req_id].set_result({"agentSessionId": "child-session"})
+
+        ws.send_json.side_effect = resolve_on_send
+
+        resp = await client.post(
+            "/api/sessions",
+            json={
+                "prompt": "하위 대화 내용",
+                "parentTaskId": "parent-task",
+                "taskIdempotencyKey": "idem-child",
+            },
+        )
+
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["agentSessionId"] == "child-session"
+        assert body["task"]["parentId"] == "parent-task"
+        assert body["task"]["linkedSessionId"] == "child-session"
+        assert body["task"]["status"] == "in_progress"
+        assert body["task"]["verificationOwner"] == "both"
+        assert body["taskOperation"]["operationType"] == "start_child_session"
+
+    def test_task_scoped_idempotent_response_uses_create_session_keys(self):
+        """중복 제출 응답도 일반 create session 성공 응답과 같은 task 키를 쓴다."""
+        existing = {
+            "agentSessionId": "child-session",
+            "nodeId": "api-node",
+            "task": {"id": "child-task"},
+            "operation": {"operationType": "start_child_session"},
+            "eventId": 303,
+            "idempotent": True,
+        }
+
+        response = existing_task_scoped_session_response(existing)
+
+        assert response == {
+            "agentSessionId": "child-session",
+            "nodeId": "api-node",
+            "task": {"id": "child-task"},
+            "taskOperation": {"operationType": "start_child_session"},
+            "taskEventId": 303,
+            "idempotent": True,
+        }
 
 
 class TestRespond:

@@ -1,34 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ListChecks,
-  Loader2,
-  MoreVertical,
-  Pin,
   Plus,
   Settings,
 } from "lucide-react";
 
 import type { SessionSummary, TaskItem, TaskListResponse, TaskStatus } from "../shared";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
+import { VerticalSplitPane } from "./VerticalSplitPane";
+import {
+  TaskTreeDetailPanel,
+  type TaskEditDraft,
+} from "./TaskTreeDetailPanel";
 import {
   buildTaskStreamUrl,
   buildTaskTreeRows,
   resolveTaskNavigationSummary,
   resolveTaskTreeHeaderAction,
+  TASK_DETAIL_SPLIT_DEFAULT_TOP_PERCENT,
+  TASK_DETAIL_SPLIT_MIN_BOTTOM_PX,
+  TASK_DETAIL_SPLIT_MIN_TOP_PX,
 } from "./task-tree-layout";
 import { createTaskStreamSubscribe } from "./task-stream-subscribe";
-import {
-  AgentAvatar,
-  LinkedSessionRuntimeIndicator,
-  STATUS_META,
-  TaskContextMenu,
-  TaskStatusLineOverlay,
-  TaskTreeLines,
-} from "./TaskTreeParts";
+import { TaskContextMenu } from "./TaskTreeParts";
+import { TaskTreeListPanel } from "./TaskTreeListPanel";
 
 const HIDE_COMPLETED_STORAGE_KEY = "soulstream:task-tree:hide-completed:v1";
+const DETAIL_SPLIT_STORAGE_KEY = "soulstream:task-tree:detail-split-top-percent:v1";
 
 const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
   open: "in_progress",
@@ -42,7 +41,7 @@ const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
 
 export interface TaskTreeViewProps {
   sessions?: SessionSummary[];
-  onNewSession?: () => void;
+  onNewSession?: (parentTask?: TaskItem) => void;
 }
 
 interface ContextMenuState {
@@ -56,6 +55,8 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  const [savingTaskId, setSavingTaskId] = useState<string | null>(null);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [hideCompleted, setHideCompleted] = useState(() => {
@@ -165,9 +166,25 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
     () => buildTaskTreeRows(tasks, { hideCompleted }),
     [hideCompleted, tasks],
   );
+  const selectedTask =
+    (selectedTaskId
+      ? tasks.find((task) => task.id === selectedTaskId)
+      : null) ??
+    rows[0]?.task ??
+    null;
   const contextTask = contextMenu
     ? tasks.find((task) => task.id === contextMenu.taskId) ?? null
     : null;
+
+  useEffect(() => {
+    if (rows.length === 0) {
+      if (selectedTaskId !== null) setSelectedTaskId(null);
+      return;
+    }
+    if (!selectedTaskId || !rows.some((row) => row.task.id === selectedTaskId)) {
+      setSelectedTaskId(rows[0].task.id);
+    }
+  }, [rows, selectedTaskId]);
 
   const actorSessionIdFor = useCallback(
     (task: TaskItem) =>
@@ -177,6 +194,7 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
 
   const navigateToTask = useCallback(
     (task: TaskItem) => {
+      setSelectedTaskId(task.id);
       const sessionId = task.navigationSessionId ?? task.linkedSessionId;
       if (!sessionId) return;
       setActiveSession(sessionId);
@@ -236,6 +254,37 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
       mutateTask(task, "/pin", { pinned, reason: pinned ? "Pinned from Task Tree" : "Unpinned from Task Tree" }),
     [mutateTask],
   );
+  const updateTaskDetail = useCallback(
+    async (task: TaskItem, draft: TaskEditDraft) => {
+      const actorSessionId = actorSessionIdFor(task);
+      if (!actorSessionId) return;
+      setSavingTaskId(task.id);
+      setError(null);
+      try {
+        const response = await fetch(`/api/tasks/${encodeURIComponent(task.id)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: actorSessionId,
+            expectedVersion: task.version,
+            title: draft.title,
+            description: draft.description,
+            acceptanceCriteria: draft.acceptanceCriteria,
+            reason: "Edited from Task Tree detail panel",
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`/api/tasks/${task.id} returned ${response.status}`);
+        }
+        await refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setSavingTaskId(null);
+      }
+    },
+    [actorSessionIdFor, refresh],
+  );
   const cycleStatus = useCallback(
     (task: TaskItem) => setTaskStatus(task, NEXT_STATUS[task.status]),
     [setTaskStatus],
@@ -246,6 +295,36 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
     setContextMenu(null);
   }, []);
 
+  const openTaskDetail = useCallback((task: TaskItem) => {
+    setSelectedTaskId(task.id);
+    setContextMenu(null);
+  }, []);
+
+  const startChildSession = useCallback(
+    (task: TaskItem) => {
+      setSelectedTaskId(task.id);
+      setContextMenu(null);
+      onNewSession?.(task);
+    },
+    [onNewSession],
+  );
+
+  const listContent = (
+    <TaskTreeListPanel
+      loading={loading}
+      tasks={tasks}
+      rows={rows}
+      selectedTaskId={selectedTask?.id ?? null}
+      pendingTaskId={pendingTaskId}
+      sessionById={sessionById}
+      nextStatus={NEXT_STATUS}
+      onSelectTask={(task) => setSelectedTaskId(task.id)}
+      onNavigateTask={navigateToTask}
+      onCycleStatus={cycleStatus}
+      onContextMenu={(x, y, taskId) => setContextMenu({ x, y, taskId })}
+    />
+  );
+
   return (
     <div className="h-full flex flex-col bg-background">
       <header className="h-[52px] shrink-0 border-b border-border px-4 flex items-center justify-between">
@@ -255,7 +334,7 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
         </div>
         <div className="relative flex items-center gap-1">
           {headerAction.visible && (
-            <Button variant="ghost" size="sm" onClick={onNewSession} title={headerAction.title}>
+            <Button variant="ghost" size="sm" onClick={() => onNewSession?.()} title={headerAction.title}>
               <Plus className="h-4 w-4" />
               <span className="ml-1">{headerAction.label}</span>
             </Button>
@@ -289,116 +368,21 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
         </div>
       )}
 
-      <div className="flex-1 overflow-auto">
-        {loading && tasks.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-            No task items
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {rows.map((row) => {
-              const { task } = row;
-              const StatusIcon = STATUS_META[task.status].icon;
-              const navigationDisabled = !(task.navigationSessionId ?? task.linkedSessionId);
-              const linkedSession = task.linkedSessionId
-                ? sessionById.get(task.linkedSessionId)
-                : undefined;
-              const portraitUrl = linkedSession?.agentPortraitUrl ?? null;
-              const verifiedDone = task.status === "verified_done";
-              return (
-                <div
-                  key={task.id}
-                  className={cn(
-                    "group flex items-center gap-2 px-3 py-2 transition-colors",
-                    row.depth === 0 ? "min-h-[62px]" : "min-h-[52px]",
-                    navigationDisabled ? "text-muted-foreground" : "hover:bg-muted/45",
-                    verifiedDone && "opacity-70",
-                  )}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    setContextMenu({ x: event.clientX, y: event.clientY, taskId: task.id });
-                  }}
-                >
-                  <TaskTreeLines row={row} />
-
-                  <div className="relative flex w-8 shrink-0 self-stretch items-center justify-center">
-                    <TaskStatusLineOverlay row={row} />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="relative z-10 h-8 w-8 shrink-0"
-                      disabled={pendingTaskId === task.id}
-                      title={`Set ${NEXT_STATUS[task.status]}`}
-                      onClick={() => void cycleStatus(task)}
-                    >
-                      {pendingTaskId === task.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <StatusIcon className={cn("h-4 w-4", STATUS_META[task.status].className)} />
-                      )}
-                    </Button>
-                  </div>
-
-                  <button
-                    type="button"
-                    className="min-w-0 flex-1 text-left"
-                    disabled={navigationDisabled}
-                    onClick={() => navigateToTask(task)}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      {task.pinned && <Pin className="h-3.5 w-3.5 shrink-0 text-primary" />}
-                      <span
-                        className={cn(
-                          "font-semibold truncate",
-                          row.depth === 0 ? "text-[15px] leading-5" : "text-[13px] leading-4",
-                        )}
-                      >
-                        {task.title}
-                      </span>
-                      <span
-                        className={cn(
-                          "text-muted-foreground shrink-0",
-                          row.depth === 0 ? "text-[11px] leading-4" : "text-[10px] leading-4",
-                        )}
-                      >
-                        {STATUS_META[task.status].label}
-                      </span>
-                    </div>
-                    {(task.acceptanceCriteria || task.description) && (
-                      <div
-                        className={cn(
-                          "text-muted-foreground truncate",
-                          row.depth === 0 ? "text-xs leading-4" : "text-[11px] leading-4",
-                        )}
-                      >
-                        {task.acceptanceCriteria || task.description}
-                      </div>
-                    )}
-                  </button>
-
-                  <LinkedSessionRuntimeIndicator status={linkedSession?.status} />
-                  <AgentAvatar portraitUrl={portraitUrl} />
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 shrink-0 opacity-70 group-hover:opacity-100"
-                    title="Task menu"
-                    onClick={(event) => {
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      setContextMenu({ x: rect.right, y: rect.bottom, taskId: task.id });
-                    }}
-                  >
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </div>
-              );
-            })}
-          </div>
-        )}
+      <div className="min-h-0 flex-1">
+        <VerticalSplitPane
+          top={listContent}
+          bottom={
+            <TaskTreeDetailPanel
+              task={selectedTask}
+              saving={selectedTask ? savingTaskId === selectedTask.id : false}
+              onSave={(task, draft) => void updateTaskDetail(task, draft)}
+            />
+          }
+          defaultTopPercent={TASK_DETAIL_SPLIT_DEFAULT_TOP_PERCENT}
+          minTopPx={TASK_DETAIL_SPLIT_MIN_TOP_PX}
+          minBottomPx={TASK_DETAIL_SPLIT_MIN_BOTTOM_PX}
+          storageKey={DETAIL_SPLIT_STORAGE_KEY}
+        />
       </div>
 
       {contextMenu && contextTask && (
@@ -409,6 +393,8 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
           pending={pendingTaskId === contextTask.id}
           onClose={() => setContextMenu(null)}
           onCopy={() => copyTaskId(contextTask)}
+          onStartChildSession={onNewSession ? () => startChildSession(contextTask) : undefined}
+          onEdit={() => openTaskDetail(contextTask)}
           onStatus={(status) => void setTaskStatus(contextTask, status)}
           onPin={(pinned) => void setPinned(contextTask, pinned)}
           onHold={() => void holdTask(contextTask)}
