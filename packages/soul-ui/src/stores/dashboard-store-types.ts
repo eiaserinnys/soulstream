@@ -16,6 +16,7 @@ import type {
   CatalogState,
   CatalogFolder,
   TokenUsage,
+  TaskItem,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
 
@@ -146,6 +147,9 @@ export interface DashboardState {
   /** New Session 모달을 연 진입 경로 ('folder': 폴더 뷰, 'feed': 피드 뷰) */
   newSessionSource: "folder" | "feed";
 
+  /** Task Tree에서 특정 parent task 아래 새 일반 세션을 시작할 때의 parent task */
+  newSessionParentTask: TaskItem | null;
+
   /** 오른쪽 패널 활성 탭 */
   activeRightTab: "detail" | "chat" | "info";
 
@@ -253,7 +257,7 @@ export interface DashboardActions {
   ) => void;
 
   // New Session 모달
-  openNewSessionModal: (source?: "folder" | "feed") => void;
+  openNewSessionModal: (source?: "folder" | "feed", parentTask?: TaskItem | null) => void;
   closeNewSessionModal: () => void;
 
   // 상태 초기화

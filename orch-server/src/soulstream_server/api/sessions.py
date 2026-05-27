@@ -32,6 +32,10 @@ from soulstream_server.api.session_models import (
 )
 from soulstream_server.api.session_serializer import _session_to_response
 from soulstream_server.api.session_stream import create_session_stream_response
+from soulstream_server.api.task_scoped_sessions import (
+    prepare_task_scoped_session_request,
+    task_scoped_response_fields,
+)
 from soulstream_server.models import BatchMoveRequest
 from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
@@ -93,7 +97,6 @@ def create_sessions_router(
             folder_id=folderId,
         )
 
-        # snake_case -> camelCase 변환 (크로스-노드 에이전트 프로필 fallback 포함)
         result = [_session_to_response(s, node_manager=node_manager) for s in sessions]
 
         next_cursor = None
@@ -115,14 +118,7 @@ def create_sessions_router(
 
     @router.post("", status_code=201)
     async def create_session(body: CreateSessionRequest, request: Request) -> dict:
-        """세션 생성. 노드에 라우팅.
-
-        caller_info 조립은 `resolve_caller_info_or_system` dispatcher 정본에 위임:
-        - body.caller_info 있으면 그대로 (슬랙·RN·위임 케이스).
-        - JWT minimal payload(name 부재)면 system 분류 — cron-jobs 등 외부 자동 호출자 (R-6).
-        - 그 외 build_browser_caller_info 흐름 (방안 B, 2026-05-07).
-        """
-        # 정본은 lru_cache된 get_settings — caller_info 조립 시점에 호출 (성능 영향 없음)
+        """세션 생성. caller_info 조립은 dispatcher 정본에 위임한다."""
         from soulstream_server.config import get_settings
         settings = get_settings()
         caller_info = resolve_caller_info_or_system(
@@ -131,23 +127,36 @@ def create_sessions_router(
             jwt_secret=settings.jwt_secret or "",
             system_node_id=body.nodeId or "",
         )
+        task_scope = await prepare_task_scoped_session_request(
+            db,
+            parent_task_id=body.parentTaskId,
+            idempotency_key=body.taskIdempotencyKey,
+        )
+        if task_scope.existing_response:
+            return task_scope.existing_response
         payload = body.model_dump(exclude_none=True)
         payload["caller_info"] = caller_info
+        if task_scope.extra_context_items:
+            payload["extra_context_items"] = task_scope.extra_context_items
         session_id, node_id = await session_router.route_create_session(payload)
-        # folderId DB 저장은 soul-server create_task에서 처리.
-        # soul-stream은 대시보드 폴더 뷰 실시간 반영을 위한 catalog broadcast만 담당.
-        # soul-server는 folderId=None인 경우에도 _assign_default_folder_and_broadcast()로
-        # 기본 폴더를 배정하므로, folderId 유무와 무관하게 broadcast_catalog()를 호출해야 한다.
-        # catalog_service=None(테스트/독립 실행)이면 broadcast할 클라이언트가 없으므로 생략이 의도된 동작.
+        # folderId 저장은 soul-server 담당. orch는 catalog broadcast만 맡는다.
+        # folderId가 없어도 soul-server 기본 폴더 배정이 있어 broadcast는 필요하다.
         if catalog_service:
             await catalog_service.broadcast_catalog()
-        return {"agentSessionId": session_id, "nodeId": node_id}
+        response = {"agentSessionId": session_id, "nodeId": node_id}
+        response.update(await task_scoped_response_fields(
+            db,
+            parent_task=task_scope.parent_task,
+            child_session_id=session_id,
+            child_node_id=node_id,
+            prompt=body.prompt,
+            idempotency_key=body.taskIdempotencyKey,
+            logger=logger,
+        ))
+        return response
 
     # === DB 직접 조회 라우트 ===
-    # orch-server와 soul-server가 같은 PostgreSQL을 공유하므로
-    # messages/viewport는 노드 통신 없이 DB 직접 SELECT.
-    # `/{session_id}/events/viewport`는 `/{session_id}/events`보다 먼저 등록하여
-    # FastAPI 경로 매칭 순서를 보장한��.
+    # messages/viewport는 공유 PostgreSQL 직접 SELECT. viewport는 events보다 먼저 등록한다.
 
     @router.get("/{session_id}/events/viewport")
     async def get_session_viewport(

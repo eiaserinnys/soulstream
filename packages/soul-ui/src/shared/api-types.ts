@@ -6,6 +6,7 @@
  */
 
 import type { SessionSummary } from "./session-types";
+import type { TaskItem } from "./task-types";
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -43,6 +44,9 @@ export interface CreateSessionRequest {
   profile?: string;
   /** 추론 backend(codex/claude)용 reasoning effort. 생략 시 서버 기본값 xhigh. */
   reasoningEffort?: ReasoningEffort;
+  /** Task Tree parent task 아래 일반 New Session을 시작할 때 사용. */
+  parentTaskId?: string;
+  taskIdempotencyKey?: string;
 }
 
 /** POST /api/sessions 응답 */
@@ -50,6 +54,8 @@ export interface CreateSessionResponse {
   agentSessionId: string;
   status: "running";
   nodeId?: string;
+  task?: TaskItem;
+  taskLinkError?: { message: string; type: string };
 }
 
 /** POST /api/sessions/:id/intervene 요청 */

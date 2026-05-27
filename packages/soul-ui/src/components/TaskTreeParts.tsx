@@ -5,6 +5,8 @@ import {
   Circle,
   CircleSlash,
   Copy,
+  Edit3,
+  MessageSquarePlus,
   OctagonAlert,
   PauseCircle,
   Pin,
@@ -84,6 +86,8 @@ export function TaskContextMenu({
   pending,
   onClose,
   onCopy,
+  onStartChildSession,
+  onEdit,
   onStatus,
   onPin,
   onHold,
@@ -94,6 +98,8 @@ export function TaskContextMenu({
   pending: boolean;
   onClose: () => void;
   onCopy: () => void;
+  onStartChildSession?: () => void;
+  onEdit: () => void;
   onStatus: (status: TaskStatus) => void;
   onPin: (pinned: boolean) => void;
   onHold: () => void;
@@ -112,6 +118,14 @@ export function TaskContextMenu({
       >
         <MenuButton icon={<Copy className="h-4 w-4" />} onClick={onCopy}>
           Task ID 복사
+        </MenuButton>
+        {onStartChildSession && (
+          <MenuButton icon={<MessageSquarePlus className="h-4 w-4" />} onClick={onStartChildSession}>
+            하위 대화 시작
+          </MenuButton>
+        )}
+        <MenuButton icon={<Edit3 className="h-4 w-4" />} onClick={onEdit}>
+          태스크 편집
         </MenuButton>
         <div className="my-1 border-t border-border" />
         {STATUS_OPTIONS.filter((status) => status !== task.status).map((status) => (

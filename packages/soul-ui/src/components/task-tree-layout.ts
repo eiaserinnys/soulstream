@@ -9,6 +9,22 @@ export interface TaskTreeRow {
 }
 
 const USER_COMPLETED_STATUSES = new Set<TaskStatus>(["verified_done"]);
+export const TASK_DETAIL_SPLIT_DEFAULT_TOP_PERCENT = 64;
+export const TASK_DETAIL_SPLIT_MIN_TOP_PX = 160;
+export const TASK_DETAIL_SPLIT_MIN_BOTTOM_PX = 160;
+
+export function clampTaskDetailSplitTopPercent(
+  topPercent: number,
+  containerHeight: number,
+): number {
+  if (!Number.isFinite(topPercent)) return TASK_DETAIL_SPLIT_DEFAULT_TOP_PERCENT;
+  if (!Number.isFinite(containerHeight) || containerHeight <= 0) {
+    return TASK_DETAIL_SPLIT_DEFAULT_TOP_PERCENT;
+  }
+  const minTopPercent = (TASK_DETAIL_SPLIT_MIN_TOP_PX / containerHeight) * 100;
+  const maxTopPercent = 100 - (TASK_DETAIL_SPLIT_MIN_BOTTOM_PX / containerHeight) * 100;
+  return Math.max(minTopPercent, Math.min(maxTopPercent, topPercent));
+}
 
 export function buildTaskTreeRows(
   tasks: readonly TaskItem[],

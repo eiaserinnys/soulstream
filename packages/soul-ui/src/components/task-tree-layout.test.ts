@@ -3,6 +3,7 @@ import type { TaskItem } from "../shared";
 import {
   buildTaskStreamUrl,
   buildTaskTreeRows,
+  clampTaskDetailSplitTopPercent,
   resolveTaskTreeHeaderAction,
 } from "./task-tree-layout";
 import { STATUS_META, STATUS_OPTIONS } from "./TaskTreeParts";
@@ -149,6 +150,19 @@ describe("buildTaskStreamUrl", () => {
     expect(buildTaskStreamUrl("42", "orch-A")).toBe(
       "/api/tasks/stream?lastEventId=42&instanceId=orch-A",
     );
+  });
+});
+
+describe("clampTaskDetailSplitTopPercent", () => {
+  it("keeps both task list and detail panel above their minimum heights", () => {
+    expect(clampTaskDetailSplitTopPercent(10, 800)).toBe(20);
+    expect(clampTaskDetailSplitTopPercent(90, 800)).toBe(80);
+    expect(clampTaskDetailSplitTopPercent(64, 800)).toBe(64);
+  });
+
+  it("falls back when layout numbers are invalid", () => {
+    expect(clampTaskDetailSplitTopPercent(Number.NaN, 800)).toBe(64);
+    expect(clampTaskDetailSplitTopPercent(50, 0)).toBe(64);
   });
 });
 
