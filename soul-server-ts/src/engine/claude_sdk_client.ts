@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { accessSync, constants, existsSync, readFileSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 import {
@@ -74,6 +74,7 @@ export interface ClaudeSdkClientConfig {
    * 기본 2초 — Python `PROMPT_SUGGESTION_DRAIN_TIMEOUT` 정합. 테스트에서 가속용으로만 override.
    */
   postResultDrainMs?: number;
+  resolveClaudeExecutablePath?: () => string | undefined;
 }
 
 type PendingInputRequest = {
@@ -95,6 +96,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly inputRequestTimeoutMs: number;
   private readonly interventionPollIntervalMs: number;
   private readonly postResultDrainMs: number;
+  private readonly resolveClaudeExecutablePath: () => string | undefined;
   private readonly pendingInputRequests = new Map<string, PendingInputRequest>();
   private readonly toolNamesById = new Map<string, string>();
   private readonly emittedToolResultIds = new Set<string>();
@@ -105,7 +107,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private activeQuery: ClaudeSdkQuery | null = null;
   private activeInput: PushAsyncIterable<SDKUserMessage> | null = null;
   private lastWorkspaceDir: string | null = null;
-  private lastEnv: Record<string, string> | null = null;
+  private lastEnv: Record<string, string> | undefined;
 
   constructor(config: ClaudeSdkClientConfig = {}, logger: Logger) {
     this.queryFn = config.query ?? defaultQuery;
@@ -116,6 +118,8 @@ export class ClaudeSdkClient implements ClaudeClient {
       config.interventionPollIntervalMs ?? DEFAULT_INTERVENTION_POLL_INTERVAL_MS;
     this.postResultDrainMs =
       config.postResultDrainMs ?? DEFAULT_POST_RESULT_DRAIN_MS;
+    this.resolveClaudeExecutablePath =
+      config.resolveClaudeExecutablePath ?? resolveClaudeExecutableFromPath;
   }
 
   async *run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
@@ -172,7 +176,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   async compact(sessionId: string): Promise<void> {
-    if (!this.lastWorkspaceDir || !this.lastEnv) {
+    if (!this.lastWorkspaceDir) {
       throw new Error("ClaudeSdkClient.compact requires a previous run context");
     }
 
@@ -186,7 +190,7 @@ export class ClaudeSdkClient implements ClaudeClient {
         prompt: "/compact",
         workspaceDir: this.lastWorkspaceDir,
         resumeSessionId: sessionId,
-        env: this.lastEnv,
+        ...(this.lastEnv !== undefined ? { env: this.lastEnv } : {}),
       },
       controller,
       output,
@@ -243,7 +247,9 @@ export class ClaudeSdkClient implements ClaudeClient {
     abortController: AbortController,
     output: EventQueue<ClaudeClientEvent>,
   ): ClaudeSdkOptions {
-    const executablePath = options.env[CLAUDE_CODE_EXECPATH_ENV]?.trim();
+    const executablePath =
+      options.env?.[CLAUDE_CODE_EXECPATH_ENV]?.trim()
+      || this.resolveClaudeExecutablePath();
     const systemPrompt = options.systemPrompt
       ? makeCacheableSystemPrompt(options.systemPrompt)
       : undefined;
@@ -251,7 +257,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     return {
       abortController,
       cwd: options.workspaceDir,
-      env: options.env,
+      env: options.env ?? {},
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
       settingSources: ["project"],
@@ -1216,6 +1222,43 @@ function makeCacheableSystemPrompt(systemPrompt: string | string[]): string[] {
     return [...systemPrompt, SYSTEM_PROMPT_DYNAMIC_BOUNDARY];
   }
   return [systemPrompt, SYSTEM_PROMPT_DYNAMIC_BOUNDARY];
+}
+
+function resolveClaudeExecutableFromPath(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): string | undefined {
+  const pathValue = env.PATH ?? env.Path ?? env.path;
+  if (!pathValue) return undefined;
+
+  const baseNames = process.platform === "win32" ? ["claude.exe", "claude"] : ["claude"];
+  const pathExts = process.platform === "win32"
+    ? (env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM")
+      .split(";")
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
+    : [""];
+
+  const candidateNames = new Set<string>();
+  for (const baseName of baseNames) {
+    candidateNames.add(baseName);
+    if (process.platform === "win32" && !baseName.includes(".")) {
+      for (const ext of pathExts) candidateNames.add(`${baseName}${ext}`);
+    }
+  }
+
+  for (const dir of pathValue.split(delimiter)) {
+    if (!dir) continue;
+    for (const name of candidateNames) {
+      const candidate = join(dir, name);
+      try {
+        accessSync(candidate, constants.X_OK);
+        return candidate;
+      } catch {
+        // Try the next PATH candidate.
+      }
+    }
+  }
+  return undefined;
 }
 
 function sumNumericObject(value: unknown): number | undefined {

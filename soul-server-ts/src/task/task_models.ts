@@ -119,7 +119,7 @@ export interface Task {
 
   /** 모델 override (Codex SDK ThreadOptions.model). */
   model?: string | null;
-  /** Claude Code per-task OAuth token. 있으면 CLAUDE_CODE_OAUTH_TOKEN extraEnv로 전달. */
+  /** Legacy per-task Claude OAuth token. Claude Code now resolves auth from its own config. */
   oauthToken?: string;
   /** 추론 모델 effort override. Codex는 ThreadOptions.modelReasoningEffort로 전달. */
   reasoningEffort?: ReasoningEffort;

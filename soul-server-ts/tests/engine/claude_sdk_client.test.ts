@@ -148,6 +148,60 @@ describe("ClaudeSdkClient", () => {
     });
   });
 
+  it("does not inherit Node process env when run options omit env", async () => {
+    const captured: ClaudeSdkQueryParams[] = [];
+    const client = new ClaudeSdkClient(
+      {
+        resolveClaudeExecutablePath: () => undefined,
+        query: (params) => {
+          captured.push(params);
+          return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-env", "done")]));
+        },
+      },
+      silentLogger,
+    );
+
+    await collect(
+      client.run(
+        {
+          prompt: "hi",
+          workspaceDir: "/tmp/claude-work",
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(captured[0]?.options?.env).toEqual({});
+    expect(captured[0]?.options).not.toHaveProperty("pathToClaudeCodeExecutable");
+  });
+
+  it("uses resolved Claude Code executable path without passing it through env", async () => {
+    const captured: ClaudeSdkQueryParams[] = [];
+    const client = new ClaudeSdkClient(
+      {
+        resolveClaudeExecutablePath: () => "/usr/local/bin/claude",
+        query: (params) => {
+          captured.push(params);
+          return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-path", "done")]));
+        },
+      },
+      silentLogger,
+    );
+
+    await collect(
+      client.run(
+        {
+          prompt: "hi",
+          workspaceDir: "/tmp/claude-work",
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(captured[0]?.options?.env).toEqual({});
+    expect(captured[0]?.options?.pathToClaudeCodeExecutable).toBe("/usr/local/bin/claude");
+  });
+
   it("context_usage includes cached input tokens because they still occupy the request context", async () => {
     const queryFn: ClaudeSdkQueryFn = () => makeQuery(
       sdkMessages([
@@ -351,6 +405,7 @@ describe("ClaudeSdkClient", () => {
     const captured: ClaudeSdkQueryParams[] = [];
     const client = new ClaudeSdkClient(
       {
+        resolveClaudeExecutablePath: () => undefined,
         query: (params) => {
           captured.push(params);
           return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-2", "done")]));

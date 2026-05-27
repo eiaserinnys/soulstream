@@ -111,9 +111,9 @@ describe("TaskEngineTurnRunner", () => {
       disallowedTools: ["Edit"],
       useMcp: false,
       maxTurns: 25,
-      extraEnv: { CLAUDE_CODE_OAUTH_TOKEN: "oauth-token" },
     });
     expect(captured?.onIntervention).toBeUndefined();
+    expect(captured?.extraEnv).toBeUndefined();
   });
 
   it("falls back to agent tool policy when task-level policy is absent", async () => {

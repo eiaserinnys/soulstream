@@ -296,7 +296,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(capturedReasoningEffort).toBe("low");
   });
 
-  it("Claude task oauthToken을 engine.execute extraEnv로 전달하고 semantic assistant history를 영속한다", async () => {
+  it("Claude task oauthToken을 subprocess env로 전달하지 않고 semantic assistant history를 영속한다", async () => {
     const mocks = makeMocks();
     let capturedExtraEnv: Record<string, string> | undefined;
     const engine: EnginePort = {
@@ -328,9 +328,7 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
-    expect(capturedExtraEnv).toEqual({
-      CLAUDE_CODE_OAUTH_TOKEN: "task-oauth-token",
-    });
+    expect(capturedExtraEnv).toBeUndefined();
     expect(task.status).toBe("completed");
     expect(task.codexThreadId).toBe("claude-sess-1");
     expect(task.lastAssistantText).toBe("claude says hi");

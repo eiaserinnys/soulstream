@@ -44,7 +44,7 @@ export interface ClaudeRunOptions {
   maxTurns?: number;
   /** Python `Task.use_mcp` → SDK mcpServers 로딩 게이트. undefined면 true. */
   useMcp?: boolean;
-  env: Record<string, string>;
+  env?: Record<string, string>;
   onIntervention?: () => Promise<InterventionInput | null>;
 }
 
@@ -209,6 +209,9 @@ export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse, S
 
   private buildRunOptions(params: EngineExecuteParams): ClaudeRunOptions {
     const model = normalizeClaudeModel(params.model);
+    const env = buildClaudeEnvironment({
+      extraEnv: params.extraEnv,
+    });
     return {
       prompt: params.prompt,
       workspaceDir: this.workspaceDir,
@@ -222,10 +225,7 @@ export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse, S
       ...(params.disallowedTools !== undefined ? { disallowedTools: params.disallowedTools } : {}),
       ...(params.maxTurns !== undefined ? { maxTurns: params.maxTurns } : {}),
       ...(params.useMcp !== undefined ? { useMcp: params.useMcp } : {}),
-      env: buildClaudeEnvironment({
-        processEnv: this.processEnv,
-        extraEnv: params.extraEnv,
-      }),
+      ...(env !== undefined ? { env } : {}),
       ...(params.onIntervention ? { onIntervention: params.onIntervention } : {}),
     };
   }

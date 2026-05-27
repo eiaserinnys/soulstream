@@ -1,5 +1,4 @@
 import type { AgentProfile } from "../agent_registry.js";
-import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 import type {
   EnginePort,
   EngineRunStateSnapshot,
@@ -63,7 +62,6 @@ export class TaskEngineTurnRunner {
       conversationId: task.agentsConversationId,
       sessionItems: task.agentsSessionItems,
       ...(queuedToolApproval ? { queuedToolApproval } : {}),
-      extraEnv: buildTaskExtraEnv(task),
       onRunStateSnapshot: (snapshot) =>
         this.deps.snapshotPersistence.persistRunStateSnapshot(task, snapshot),
       onSessionItemsSnapshot: (snapshot) =>
@@ -79,11 +77,4 @@ export class TaskEngineTurnRunner {
       ...(agent.max_turns !== undefined ? { maxTurns: agent.max_turns } : {}),
     });
   }
-}
-
-function buildTaskExtraEnv(task: Task): Record<string, string> | undefined {
-  if (!task.oauthToken) {
-    return undefined;
-  }
-  return { [CLAUDE_OAUTH_TOKEN_ENV]: task.oauthToken };
 }

@@ -104,35 +104,48 @@ describe("ClaudeEngineAdapter options parity", () => {
     });
   });
 
-  it("task-level OAuth extraEnv가 process env 토큰보다 우선한다", () => {
+  it("Claude subprocess env는 부모 process env를 상속하지 않는다", () => {
     const env = buildClaudeEnvironment({
       processEnv: {
         HOME: "/home/test",
         [CLAUDE_OAUTH_TOKEN_ENV]: "env-token",
-      },
-      extraEnv: {
-        [CLAUDE_OAUTH_TOKEN_ENV]: "task-token",
+        CLAUDE_CODE_EXECPATH: "/stale/python-sdk/claude",
+        CLAUDE_AGENT_SDK_VERSION: "0.2.82",
+        CLAUDE_CODE_ENTRYPOINT: "sdk-py",
+        CLAUDE_CODE_SESSION_ID: "parent-session",
+        ANTHROPIC_API_KEY: "api-key",
+        ANTHROPIC_MODEL: "unsupported-model",
+        LLM_ANTHROPIC_API_KEY: "llm-key",
+        CLAUDE_OPUS_MODEL: "unsupported-model",
       },
     });
 
-    expect(env[CLAUDE_OAUTH_TOKEN_ENV]).toBe("task-token");
-    expect(env.CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION).toBe("1");
-    expect(env.HOME).toBe("/home/test");
+    expect(env).toBeUndefined();
   });
 
-  it("task-level OAuth가 없으면 process env 토큰을 보존하고, 둘 다 없으면 토큰 키를 만들지 않는다", () => {
-    expect(
-      buildClaudeEnvironment({
-        processEnv: { [CLAUDE_OAUTH_TOKEN_ENV]: "env-token" },
-      })[CLAUDE_OAUTH_TOKEN_ENV],
-    ).toBe("env-token");
+  it("명시 extraEnv만 Claude subprocess env로 전달한다", () => {
+    const env = buildClaudeEnvironment({
+      processEnv: {
+        HOME: "/home/test",
+        CLAUDE_CODE_EXECPATH: "/stale/python-sdk/claude",
+        CLAUDE_AGENT_SDK_VERSION: "0.2.82",
+        CLAUDE_CODE_ENTRYPOINT: "sdk-py",
+        CLAUDE_CODE_SESSION_ID: "parent-session",
+        ANTHROPIC_API_KEY: "api-key",
+        ANTHROPIC_MODEL: "unsupported-model",
+        LLM_ANTHROPIC_API_KEY: "llm-key",
+        CLAUDE_OPUS_MODEL: "unsupported-model",
+      },
+      extraEnv: {
+        CLAUDE_CODE_EXECPATH: "/opt/claude",
+      },
+    });
 
-    expect(
-      buildClaudeEnvironment({
-        processEnv: { HOME: "/home/test" },
-      }),
-    ).not.toHaveProperty(CLAUDE_OAUTH_TOKEN_ENV);
+    expect(env).toEqual({
+      CLAUDE_CODE_EXECPATH: "/opt/claude",
+    });
   });
+
 });
 
 describe("ClaudeEngineAdapter fake client flow", () => {
