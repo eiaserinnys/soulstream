@@ -89,9 +89,10 @@ export function TaskTreeDetailPanel({
           <span className="text-xs font-medium text-muted-foreground">제목</span>
           <Input
             value={draft.title}
-            onChange={(event) =>
-              setDraft((current) => ({ ...current, title: event.currentTarget.value }))
-            }
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              setDraft((current) => ({ ...current, title: value }));
+            }}
             className={cn(!draft.title.trim() && "border-accent-red")}
           />
         </label>
@@ -101,12 +102,13 @@ export function TaskTreeDetailPanel({
             value={draft.description}
             placeholder="설명 추가"
             rows={4}
-            onChange={(event) =>
+            onChange={(event) => {
+              const value = event.currentTarget.value;
               setDraft((current) => ({
                 ...current,
-                description: event.currentTarget.value,
-              }))
-            }
+                description: value,
+              }));
+            }}
           />
         </label>
         <label className="grid gap-1.5">
@@ -115,12 +117,13 @@ export function TaskTreeDetailPanel({
             value={draft.acceptanceCriteria}
             placeholder="완료 기준 추가"
             rows={4}
-            onChange={(event) =>
+            onChange={(event) => {
+              const value = event.currentTarget.value;
               setDraft((current) => ({
                 ...current,
-                acceptanceCriteria: event.currentTarget.value,
-              }))
-            }
+                acceptanceCriteria: value,
+              }));
+            }}
           />
         </label>
       </div>
