@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 76개 $defs (wire 36 + SSE event 40). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 81개 $defs (wire 36 + SSE event 45). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -145,6 +145,11 @@ export interface SessionEventEnvelope {
     | SSEEventPromptSuggestion
     | SSEEventSubagentStart
     | SSEEventSubagentStop
+    | SSEEventClaudeRuntimeSessionState
+    | SSEEventClaudeRuntimeTaskStarted
+    | SSEEventClaudeRuntimeTaskUpdated
+    | SSEEventClaudeRuntimeTaskProgress
+    | SSEEventClaudeRuntimeTaskNotification
     | SSEEventContextUsage
     | SSEEventCompact
     | SSEEventReconnect
@@ -395,6 +400,86 @@ export interface SSEEventSubagentStart {
  */
 export interface SSEEventSubagentStop {
   type: "subagent_stop";
+  [k: string]: unknown;
+}
+/**
+ * SSE: Claude Agent SDK session runtime 상태. idle은 background-agent loop 종료 후 authoritative turn-over signal.
+ */
+export interface SSEEventClaudeRuntimeSessionState {
+  type: "claude_runtime_session_state";
+  state: "idle" | "running" | "requires_action";
+  session_id?: string;
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: Claude Agent SDK background/runtime task 시작.
+ */
+export interface SSEEventClaudeRuntimeTaskStarted {
+  type: "claude_runtime_task_started";
+  task_id: string;
+  session_id?: string;
+  tool_use_id?: string;
+  description?: string;
+  task_type?: string;
+  workflow_name?: string;
+  prompt?: string;
+  skip_transcript?: boolean;
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: Claude Agent SDK runtime task 상태 patch.
+ */
+export interface SSEEventClaudeRuntimeTaskUpdated {
+  type: "claude_runtime_task_updated";
+  task_id: string;
+  session_id?: string;
+  patch: {
+    status?: "pending" | "running" | "completed" | "failed" | "stopped" | "killed";
+    description?: string;
+    end_time?: number;
+    total_paused_ms?: number;
+    error?: string;
+    is_backgrounded?: boolean;
+    [k: string]: unknown;
+  };
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: Claude Agent SDK runtime task 진행 상태.
+ */
+export interface SSEEventClaudeRuntimeTaskProgress {
+  type: "claude_runtime_task_progress";
+  task_id: string;
+  session_id?: string;
+  tool_use_id?: string;
+  description?: string;
+  usage?: {
+    [k: string]: unknown;
+  };
+  last_tool_name?: string;
+  summary?: string;
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: Claude Agent SDK runtime task terminal notification. 기존 subagent_stop과 병행 발행.
+ */
+export interface SSEEventClaudeRuntimeTaskNotification {
+  type: "claude_runtime_task_notification";
+  task_id: string;
+  status: "completed" | "failed" | "stopped";
+  session_id?: string;
+  tool_use_id?: string;
+  output_file?: string;
+  summary?: string;
+  usage?: {
+    [k: string]: unknown;
+  };
+  skip_transcript?: boolean;
+  timestamp?: number;
   [k: string]: unknown;
 }
 /**

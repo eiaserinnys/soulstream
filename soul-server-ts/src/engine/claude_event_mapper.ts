@@ -148,6 +148,59 @@ export type ClaudeClientEvent =
       agentId: string;
       timestamp?: number;
       parentEventId?: ParentEventId;
+    }
+  | {
+      type: "claude_runtime_session_state";
+      state: "idle" | "running" | "requires_action";
+      sessionId?: string;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
+      type: "claude_runtime_task_started";
+      taskId: string;
+      sessionId?: string;
+      toolUseId?: string;
+      description?: string;
+      taskType?: string;
+      workflowName?: string;
+      prompt?: string;
+      skipTranscript?: boolean;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
+      type: "claude_runtime_task_updated";
+      taskId: string;
+      sessionId?: string;
+      patch: Record<string, unknown>;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
+      type: "claude_runtime_task_progress";
+      taskId: string;
+      sessionId?: string;
+      toolUseId?: string;
+      description?: string;
+      usage?: unknown;
+      lastToolName?: string;
+      summary?: string;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
+      type: "claude_runtime_task_notification";
+      taskId: string;
+      sessionId?: string;
+      toolUseId?: string;
+      status: "completed" | "failed" | "stopped";
+      outputFile?: string;
+      summary?: string;
+      usage?: unknown;
+      skipTranscript?: boolean;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
     };
 
 export interface ClaudeEventMapperOptions {
@@ -404,6 +457,83 @@ export function mapClaudeClientEvent(
         asSSE({
           type: "subagent_stop",
           agent_id: event.agentId,
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "claude_runtime_session_state":
+      return [
+        asSSE({
+          type: "claude_runtime_session_state",
+          state: event.state,
+          ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "claude_runtime_task_started":
+      return [
+        asSSE({
+          type: "claude_runtime_task_started",
+          task_id: event.taskId,
+          ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
+          ...(event.toolUseId !== undefined ? { tool_use_id: event.toolUseId } : {}),
+          ...(event.description !== undefined ? { description: event.description } : {}),
+          ...(event.taskType !== undefined ? { task_type: event.taskType } : {}),
+          ...(event.workflowName !== undefined ? { workflow_name: event.workflowName } : {}),
+          ...(event.prompt !== undefined ? { prompt: event.prompt } : {}),
+          ...(event.skipTranscript !== undefined
+            ? { skip_transcript: event.skipTranscript }
+            : {}),
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "claude_runtime_task_updated":
+      return [
+        asSSE({
+          type: "claude_runtime_task_updated",
+          task_id: event.taskId,
+          ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
+          patch: event.patch,
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "claude_runtime_task_progress":
+      return [
+        asSSE({
+          type: "claude_runtime_task_progress",
+          task_id: event.taskId,
+          ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
+          ...(event.toolUseId !== undefined ? { tool_use_id: event.toolUseId } : {}),
+          ...(event.description !== undefined ? { description: event.description } : {}),
+          ...(event.usage !== undefined ? { usage: event.usage } : {}),
+          ...(event.lastToolName !== undefined ? { last_tool_name: event.lastToolName } : {}),
+          ...(event.summary !== undefined ? { summary: event.summary } : {}),
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "claude_runtime_task_notification":
+      return [
+        asSSE({
+          type: "claude_runtime_task_notification",
+          task_id: event.taskId,
+          status: event.status,
+          ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
+          ...(event.toolUseId !== undefined ? { tool_use_id: event.toolUseId } : {}),
+          ...(event.outputFile !== undefined ? { output_file: event.outputFile } : {}),
+          ...(event.summary !== undefined ? { summary: event.summary } : {}),
+          ...(event.usage !== undefined ? { usage: event.usage } : {}),
+          ...(event.skipTranscript !== undefined
+            ? { skip_transcript: event.skipTranscript }
+            : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
           ...parentField(event.parentEventId),
         }),

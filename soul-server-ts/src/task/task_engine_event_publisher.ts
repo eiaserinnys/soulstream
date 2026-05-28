@@ -8,6 +8,7 @@ import type { SessionDB } from "../db/session_db.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
+import { applyClaudeRuntimeEvent } from "./claude_runtime_state.js";
 import type { Task } from "./task_models.js";
 
 export interface TaskEngineEventPublisherDeps {
@@ -30,9 +31,24 @@ export class TaskEngineEventPublisher {
     const eventType = (event as { type: string }).type;
 
     await this.captureSessionId(task, event, eventType);
+    this.captureClaudeRuntimeState(task, event);
+    this.captureFatalEngineError(task, event, eventType);
     await this.persistEventIfNeeded(task, event, eventType);
     await this.broadcastEvent(task, event, eventType);
     await this.handleSideEffects(task, event, eventType);
+  }
+
+  private captureClaudeRuntimeState(task: Task, event: SSEEventPayload): void {
+    applyClaudeRuntimeEvent(task, event);
+  }
+
+  private captureFatalEngineError(task: Task, event: SSEEventPayload, eventType: string): void {
+    if (eventType !== "error") return;
+    const payload = event as { fatal?: unknown; message?: unknown };
+    if (payload.fatal === false) return;
+    task.status = "error";
+    task.error = typeof payload.message === "string" ? payload.message : "Engine fatal error";
+    task.result = undefined;
   }
 
   private async captureSessionId(

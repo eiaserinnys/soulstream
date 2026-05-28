@@ -2,11 +2,13 @@ import type { AgentProfile } from "../agent_registry.js";
 import { formatContextItems } from "../context/prompt_assembler.js";
 
 import { buildAttachmentContextItems, splitAttachmentPaths } from "./attachment_context.js";
+import { hasPendingClaudeRuntimeWork } from "./claude_runtime_state.js";
 import type { Task, InterventionMessage } from "./task_models.js";
 
 export type TurnLoopTransitionDecision =
   | { kind: "stop" }
   | { kind: "awaiting_approval" }
+  | { kind: "awaiting_runtime" }
   | {
       kind: "continue";
       prompt: string;
@@ -22,6 +24,9 @@ export function resolveTurnLoopTransition(
   }
   if (agent.backend === "openai-agents" && isOpenAiAgentsApprovalPending(task)) {
     return { kind: "awaiting_approval" };
+  }
+  if (hasPendingClaudeRuntimeWork(task)) {
+    return { kind: "awaiting_runtime" };
   }
 
   const next = task.interventionQueue.shift();

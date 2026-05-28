@@ -164,6 +164,7 @@ export class TaskExecutor {
     let turnImageAttachmentPaths = initialTurnInput.imageAttachmentPaths;
     const stableSystemPrompt = initialTurnInput.systemPrompt;
     let turnSystemPrompt = initialTurnInput.systemPrompt;
+    let awaitingClaudeRuntime = false;
     try {
       while (true) {
         try {
@@ -185,6 +186,10 @@ export class TaskExecutor {
         }
         // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정
         const transition = resolveTurnLoopTransition(task, agent);
+        if (transition.kind === "awaiting_runtime") {
+          awaitingClaudeRuntime = true;
+          break;
+        }
         if (transition.kind !== "continue") {
           break;
         }
@@ -194,6 +199,9 @@ export class TaskExecutor {
         // (intervention_sent는 addIntervention에서 이미 broadcast됨 — 여기서 재발행 안 함.)
       }
     } finally {
+      if (awaitingClaudeRuntime) {
+        return;
+      }
       if (!isOpenAiAgentsApprovalPending(task)) {
         task.completedAt = new Date();
       }

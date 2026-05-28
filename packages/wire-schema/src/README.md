@@ -4,9 +4,9 @@
 
 ## 정본
 
-- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 48개 (`$defs`).
-  - wire 메시지 20종 (노드→orch 9, orch→노드 11)
-  - SSE event payload 28종 (`event` 메시지의 `event` 키 안에 packed — orch-server/constants.py KNOWN_SSE_EVENT_TYPES 그대로)
+- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 81개 (`$defs`).
+  - wire 메시지 36종
+  - SSE event payload 45종 (`event` 메시지의 `event` 키 안에 packed — orch-server/constants.py KNOWN_SSE_EVENT_TYPES + Agents SDK events)
 
 ## 생성물 (직접 편집 금지)
 

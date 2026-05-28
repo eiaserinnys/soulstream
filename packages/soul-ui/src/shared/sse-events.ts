@@ -45,6 +45,12 @@ export type SSEEventType =
   // 서브에이전트 이벤트
   | "subagent_start"
   | "subagent_stop"
+  // Claude SDK runtime 상태 이벤트
+  | "claude_runtime_session_state"
+  | "claude_runtime_task_started"
+  | "claude_runtime_task_updated"
+  | "claude_runtime_task_progress"
+  | "claude_runtime_task_notification"
   // 대시보드 내부 이벤트
   | "context_usage"
   | "compact"
@@ -441,6 +447,67 @@ export interface SubagentStopEvent {
   parent_event_id?: string;
 }
 
+export interface ClaudeRuntimeSessionStateEvent {
+  type: "claude_runtime_session_state";
+  state: "idle" | "running" | "requires_action";
+  session_id?: string;
+  timestamp: number;
+}
+
+export interface ClaudeRuntimeTaskStartedEvent {
+  type: "claude_runtime_task_started";
+  task_id: string;
+  session_id?: string;
+  tool_use_id?: string;
+  description?: string;
+  task_type?: string;
+  workflow_name?: string;
+  prompt?: string;
+  skip_transcript?: boolean;
+  timestamp: number;
+}
+
+export interface ClaudeRuntimeTaskUpdatedEvent {
+  type: "claude_runtime_task_updated";
+  task_id: string;
+  session_id?: string;
+  patch: {
+    status?: "pending" | "running" | "completed" | "failed" | "stopped" | "killed";
+    description?: string;
+    end_time?: number;
+    total_paused_ms?: number;
+    error?: string;
+    is_backgrounded?: boolean;
+    [key: string]: unknown;
+  };
+  timestamp: number;
+}
+
+export interface ClaudeRuntimeTaskProgressEvent {
+  type: "claude_runtime_task_progress";
+  task_id: string;
+  session_id?: string;
+  tool_use_id?: string;
+  description?: string;
+  usage?: Record<string, unknown>;
+  last_tool_name?: string;
+  summary?: string;
+  timestamp: number;
+}
+
+export interface ClaudeRuntimeTaskNotificationEvent {
+  type: "claude_runtime_task_notification";
+  task_id: string;
+  status: "completed" | "failed" | "stopped";
+  session_id?: string;
+  tool_use_id?: string;
+  output_file?: string;
+  summary?: string;
+  usage?: Record<string, unknown>;
+  skip_transcript?: boolean;
+  timestamp: number;
+}
+
 export interface ReconnectEvent {
   type: "reconnect";
   last_event_id?: number;
@@ -563,6 +630,11 @@ export type SoulSSEEvent =
   | ResultEvent
   | SubagentStartEvent
   | SubagentStopEvent
+  | ClaudeRuntimeSessionStateEvent
+  | ClaudeRuntimeTaskStartedEvent
+  | ClaudeRuntimeTaskUpdatedEvent
+  | ClaudeRuntimeTaskProgressEvent
+  | ClaudeRuntimeTaskNotificationEvent
   | ReconnectEvent
   | InputRequestEvent
   | InputRequestExpiredEvent

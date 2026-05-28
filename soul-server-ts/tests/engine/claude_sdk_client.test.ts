@@ -440,7 +440,20 @@ describe("ClaudeSdkClient", () => {
 
     expect(events).toEqual([
       { type: "progress", text: "Analyzing files" },
+      {
+        type: "claude_runtime_task_progress",
+        taskId: "task-1",
+        sessionId: "claude-sess-progress",
+        description: "Analyzing files",
+        usage: { total_tokens: 10, tool_uses: 1, duration_ms: 1000 },
+      },
       { type: "progress", text: "hook output" },
+      {
+        type: "error",
+        fatal: true,
+        errorCode: "claude_runtime_ended_before_idle",
+        message: "Claude SDK stream ended while runtime work was still pending.",
+      },
     ]);
   });
 
@@ -1025,6 +1038,248 @@ describe("ClaudeSdkClient", () => {
 
     expect(events.map((event) => event.type)).toEqual(["result", "context_usage", "complete"]);
     expect(queryRef?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the query open after result until Claude runtime reaches idle and no task is pending", async () => {
+    let queryRef: ClaudeSdkQuery | undefined;
+    const client = new ClaudeSdkClient(
+      {
+        query: () => {
+          queryRef = makeQuery(
+            (async function* () {
+              yield {
+                type: "system",
+                subtype: "session_state_changed",
+                state: "running",
+                uuid: "runtime-running",
+                session_id: "claude-sess-runtime",
+              } as unknown as SDKMessage;
+              yield {
+                type: "system",
+                subtype: "task_started",
+                task_id: "task-bg-1",
+                tool_use_id: "toolu-bg",
+                description: "sleep in background",
+                task_type: "bash",
+                uuid: "task-started",
+                session_id: "claude-sess-runtime",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-runtime", "done");
+              yield {
+                type: "system",
+                subtype: "task_notification",
+                task_id: "task-bg-1",
+                tool_use_id: "toolu-bg",
+                status: "completed",
+                output_file: "/tmp/task.out",
+                summary: "background complete",
+                uuid: "task-notification",
+                session_id: "claude-sess-runtime",
+              } as unknown as SDKMessage;
+              yield {
+                type: "system",
+                subtype: "session_state_changed",
+                state: "idle",
+                uuid: "runtime-idle",
+                session_id: "claude-sess-runtime",
+              } as unknown as SDKMessage;
+            })(),
+          );
+          return queryRef;
+        },
+        postResultDrainMs: 10,
+        runtimeDrainMaxMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "claude_runtime_session_state",
+      "subagent_start",
+      "claude_runtime_task_started",
+      "subagent_stop",
+      "claude_runtime_task_notification",
+      "claude_runtime_session_state",
+      "result",
+      "context_usage",
+      "complete",
+    ]);
+    expect(events[0]).toMatchObject({ type: "claude_runtime_session_state", state: "running" });
+    expect(events[5]).toMatchObject({ type: "claude_runtime_session_state", state: "idle" });
+    expect(events[4]).toMatchObject({
+      type: "claude_runtime_task_notification",
+      taskId: "task-bg-1",
+      status: "completed",
+    });
+    expect(queryRef?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a bounded runtime drain when Claude never reports idle", async () => {
+    let queryRef: ClaudeSdkQuery | undefined;
+    const client = new ClaudeSdkClient(
+      {
+        query: () => {
+          queryRef = makeQuery(
+            (async function* () {
+              yield {
+                type: "system",
+                subtype: "session_state_changed",
+                state: "running",
+                uuid: "runtime-running",
+                session_id: "claude-sess-timeout",
+              } as unknown as SDKMessage;
+              yield {
+                type: "system",
+                subtype: "task_started",
+                task_id: "task-bg-timeout",
+                tool_use_id: "toolu-timeout",
+                description: "never settles",
+                task_type: "bash",
+                uuid: "task-started-timeout",
+                session_id: "claude-sess-timeout",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-timeout", "done");
+              await new Promise<never>(() => {});
+            })(),
+          );
+          return queryRef;
+        },
+        postResultDrainMs: 10,
+        runtimeDrainMaxMs: 30,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "claude_runtime_session_state",
+      "subagent_start",
+      "claude_runtime_task_started",
+      "debug",
+      "claude_runtime_task_notification",
+      "claude_runtime_session_state",
+      "error",
+    ]);
+    expect(events[3]).toMatchObject({
+      type: "debug",
+      message: "Claude runtime drain timed out after 30ms; closing query.",
+    });
+    expect(events[4]).toMatchObject({
+      type: "claude_runtime_task_notification",
+      taskId: "task-bg-timeout",
+      status: "failed",
+    });
+    expect(events[5]).toMatchObject({
+      type: "claude_runtime_session_state",
+      state: "idle",
+    });
+    expect(events[6]).toMatchObject({
+      type: "error",
+      fatal: true,
+      errorCode: "claude_runtime_timeout",
+    });
+    expect(queryRef?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("drains runtime idle after a tool_use continuation result before emitting terminal events", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            (async function* () {
+              yield sdkSuccessResult("claude-sess-tool-runtime", "", {
+                stop_reason: "tool_use",
+              });
+              yield {
+                type: "system",
+                subtype: "session_state_changed",
+                state: "running",
+                uuid: "runtime-running-after-tool",
+                session_id: "claude-sess-tool-runtime",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-tool-runtime", "final");
+              yield {
+                type: "system",
+                subtype: "session_state_changed",
+                state: "idle",
+                uuid: "runtime-idle-after-tool",
+                session_id: "claude-sess-tool-runtime",
+              } as unknown as SDKMessage;
+            })(),
+          ),
+        postResultDrainMs: 10,
+        runtimeDrainMaxMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "claude_runtime_session_state",
+      "claude_runtime_session_state",
+      "result",
+      "context_usage",
+      "complete",
+    ]);
+    expect(events[0]).toMatchObject({ type: "claude_runtime_session_state", state: "running" });
+    expect(events[1]).toMatchObject({ type: "claude_runtime_session_state", state: "idle" });
+    expect(events[2]).toMatchObject({ type: "result", output: "final" });
+  });
+
+  it("emits a fatal error when the SDK stream ends before pending runtime work reaches idle", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            sdkMessages([
+              {
+                type: "system",
+                subtype: "session_state_changed",
+                state: "running",
+                uuid: "runtime-running",
+                session_id: "claude-sess-eos",
+              } as unknown as SDKMessage,
+            ]),
+          ),
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "claude_runtime_session_state",
+      "error",
+    ]);
+    expect(events[1]).toMatchObject({
+      type: "error",
+      fatal: true,
+      errorCode: "claude_runtime_ended_before_idle",
+    });
   });
 
   it("post-result drain ignores non prompt_suggestion messages (Python drain phase narrowing)", async () => {

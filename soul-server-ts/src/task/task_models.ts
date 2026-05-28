@@ -66,6 +66,48 @@ export interface LastMessage {
 
 export type SessionType = "claude" | "llm";
 
+export type ClaudeRuntimeSessionState = "idle" | "running" | "requires_action";
+
+export type ClaudeRuntimeTaskStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "stopped"
+  | "killed";
+
+export interface ClaudeRuntimeTaskState {
+  taskId: string;
+  status: ClaudeRuntimeTaskStatus;
+  updatedAt: number;
+  sessionId?: string;
+  toolUseId?: string;
+  description?: string;
+  taskType?: string;
+  workflowName?: string;
+  prompt?: string;
+  skipTranscript?: boolean;
+  outputFile?: string;
+  summary?: string;
+  usage?: Record<string, unknown>;
+  lastToolName?: string;
+  error?: string;
+  isBackgrounded?: boolean;
+  endTime?: number;
+  totalPausedMs?: number;
+}
+
+/**
+ * Claude Agent SDK runtime state. This is intentionally separate from
+ * Soulstream's Task Tree model; SDK task ids live only under claudeRuntime.
+ */
+export interface ClaudeRuntimeState {
+  sessionState?: ClaudeRuntimeSessionState;
+  sessionId?: string;
+  updatedAt: number;
+  tasks: Record<string, ClaudeRuntimeTaskState>;
+}
+
 /**
  * Task — Codex 세션 1개의 런타임 상태.
  *
@@ -159,6 +201,9 @@ export interface Task {
   /** 정상 완료 시 결과 텍스트, 실패 시 error 메시지. */
   result?: string;
   error?: string;
+
+  /** Claude Agent SDK 장기 실행 runtime 상태. Task Tree와 별도 정본이다. */
+  claudeRuntime?: ClaudeRuntimeState;
 
   // === 런타임 전용 (DB·wire에 직접 박지 않음) ===
 

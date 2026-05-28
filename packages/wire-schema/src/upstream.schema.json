@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 76개 $defs (wire 36 + SSE event 40). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 81개 $defs (wire 36 + SSE event 45). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -117,6 +117,11 @@
             { "$ref": "#/$defs/SSEEventPromptSuggestion" },
             { "$ref": "#/$defs/SSEEventSubagentStart" },
             { "$ref": "#/$defs/SSEEventSubagentStop" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeSessionState" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskStarted" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskUpdated" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskProgress" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskNotification" },
             { "$ref": "#/$defs/SSEEventContextUsage" },
             { "$ref": "#/$defs/SSEEventCompact" },
             { "$ref": "#/$defs/SSEEventReconnect" },
@@ -1148,6 +1153,98 @@
       "required": ["type"],
       "additionalProperties": true,
       "properties": { "type": { "const": "subagent_stop" } }
+    },
+    "SSEEventClaudeRuntimeSessionState": {
+      "type": "object",
+      "description": "SSE: Claude Agent SDK session runtime 상태. idle은 background-agent loop 종료 후 authoritative turn-over signal.",
+      "required": ["type", "state"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_session_state" },
+        "state": { "type": "string", "enum": ["idle", "running", "requires_action"] },
+        "session_id": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventClaudeRuntimeTaskStarted": {
+      "type": "object",
+      "description": "SSE: Claude Agent SDK background/runtime task 시작.",
+      "required": ["type", "task_id"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_task_started" },
+        "task_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "tool_use_id": { "type": "string" },
+        "description": { "type": "string" },
+        "task_type": { "type": "string" },
+        "workflow_name": { "type": "string" },
+        "prompt": { "type": "string" },
+        "skip_transcript": { "type": "boolean" },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventClaudeRuntimeTaskUpdated": {
+      "type": "object",
+      "description": "SSE: Claude Agent SDK runtime task 상태 patch.",
+      "required": ["type", "task_id", "patch"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_task_updated" },
+        "task_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "patch": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "status": {
+              "type": "string",
+              "enum": ["pending", "running", "completed", "failed", "stopped", "killed"]
+            },
+            "description": { "type": "string" },
+            "end_time": { "type": "number" },
+            "total_paused_ms": { "type": "number" },
+            "error": { "type": "string" },
+            "is_backgrounded": { "type": "boolean" }
+          }
+        },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventClaudeRuntimeTaskProgress": {
+      "type": "object",
+      "description": "SSE: Claude Agent SDK runtime task 진행 상태.",
+      "required": ["type", "task_id"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_task_progress" },
+        "task_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "tool_use_id": { "type": "string" },
+        "description": { "type": "string" },
+        "usage": { "type": "object", "additionalProperties": true },
+        "last_tool_name": { "type": "string" },
+        "summary": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventClaudeRuntimeTaskNotification": {
+      "type": "object",
+      "description": "SSE: Claude Agent SDK runtime task terminal notification. 기존 subagent_stop과 병행 발행.",
+      "required": ["type", "task_id", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_task_notification" },
+        "task_id": { "type": "string" },
+        "status": { "type": "string", "enum": ["completed", "failed", "stopped"] },
+        "session_id": { "type": "string" },
+        "tool_use_id": { "type": "string" },
+        "output_file": { "type": "string" },
+        "summary": { "type": "string" },
+        "usage": { "type": "object", "additionalProperties": true },
+        "skip_transcript": { "type": "boolean" },
+        "timestamp": { "type": "number" }
+      }
     },
     "SSEEventContextUsage": {
       "type": "object",
