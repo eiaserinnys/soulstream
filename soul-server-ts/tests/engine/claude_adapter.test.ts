@@ -3,6 +3,7 @@ import pino from "pino";
 
 import {
   CLAUDE_OAUTH_TOKEN_ENV,
+  CLAUDE_PROMPT_SUGGESTION_ENV,
   ClaudeEngineAdapter,
   buildClaudeEnvironment,
   normalizeClaudeModel,
@@ -104,46 +105,56 @@ describe("ClaudeEngineAdapter options parity", () => {
     });
   });
 
-  it("Claude subprocess env는 부모 process env를 상속하지 않는다", () => {
+  it("Claude subprocess env는 부모 process env를 보존하고 prompt suggestion 기본값을 더한다", () => {
     const env = buildClaudeEnvironment({
       processEnv: {
         HOME: "/home/test",
+        PATH: "/usr/local/bin:/usr/bin",
+        USER: "soul",
+        LANG: "C.UTF-8",
+        SHELL: "/bin/bash",
+        LOGNAME: "soul",
         [CLAUDE_OAUTH_TOKEN_ENV]: "env-token",
-        CLAUDE_CODE_EXECPATH: "/stale/python-sdk/claude",
-        CLAUDE_AGENT_SDK_VERSION: "0.2.82",
-        CLAUDE_CODE_ENTRYPOINT: "sdk-py",
-        CLAUDE_CODE_SESSION_ID: "parent-session",
-        ANTHROPIC_API_KEY: "api-key",
-        ANTHROPIC_MODEL: "unsupported-model",
-        LLM_ANTHROPIC_API_KEY: "llm-key",
-        CLAUDE_OPUS_MODEL: "unsupported-model",
       },
     });
 
-    expect(env).toBeUndefined();
+    expect(env).toMatchObject({
+      HOME: "/home/test",
+      PATH: "/usr/local/bin:/usr/bin",
+      USER: "soul",
+      LANG: "C.UTF-8",
+      SHELL: "/bin/bash",
+      LOGNAME: "soul",
+      [CLAUDE_OAUTH_TOKEN_ENV]: "env-token",
+      [CLAUDE_PROMPT_SUGGESTION_ENV]: "1",
+    });
   });
 
-  it("명시 extraEnv만 Claude subprocess env로 전달한다", () => {
+  it("task extraEnv가 부모 env와 prompt suggestion 기본값을 override한다", () => {
     const env = buildClaudeEnvironment({
       processEnv: {
         HOME: "/home/test",
-        CLAUDE_CODE_EXECPATH: "/stale/python-sdk/claude",
-        CLAUDE_AGENT_SDK_VERSION: "0.2.82",
-        CLAUDE_CODE_ENTRYPOINT: "sdk-py",
-        CLAUDE_CODE_SESSION_ID: "parent-session",
-        ANTHROPIC_API_KEY: "api-key",
-        ANTHROPIC_MODEL: "unsupported-model",
-        LLM_ANTHROPIC_API_KEY: "llm-key",
-        CLAUDE_OPUS_MODEL: "unsupported-model",
+        PATH: "/usr/bin",
+        [CLAUDE_OAUTH_TOKEN_ENV]: "process-token",
       },
       extraEnv: {
-        CLAUDE_CODE_EXECPATH: "/opt/claude",
+        [CLAUDE_OAUTH_TOKEN_ENV]: "task-token",
+        [CLAUDE_PROMPT_SUGGESTION_ENV]: "0",
+        OMITTED: undefined,
       },
     });
 
-    expect(env).toEqual({
-      CLAUDE_CODE_EXECPATH: "/opt/claude",
+    expect(env).toMatchObject({
+      HOME: "/home/test",
+      PATH: "/usr/bin",
+      [CLAUDE_OAUTH_TOKEN_ENV]: "task-token",
+      [CLAUDE_PROMPT_SUGGESTION_ENV]: "0",
     });
+    expect(env).not.toHaveProperty("OMITTED");
+  });
+
+  it("processEnv와 extraEnv가 모두 없으면 SDK 기본 env 동작을 보존한다", () => {
+    expect(buildClaudeEnvironment()).toBeUndefined();
   });
 
 });

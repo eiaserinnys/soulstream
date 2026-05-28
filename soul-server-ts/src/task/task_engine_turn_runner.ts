@@ -5,6 +5,7 @@ import type {
   EngineSessionItemsSnapshot,
   SSEEventPayload,
 } from "../engine/protocol.js";
+import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
 
 import type { Task } from "./task_models.js";
 
@@ -50,6 +51,9 @@ export class TaskEngineTurnRunner {
 
     const effectiveAllowedTools = task.allowedTools ?? agent.allowed_tools;
     const effectiveDisallowedTools = task.disallowedTools ?? agent.disallowed_tools;
+    const extraEnv = task.oauthToken && engine.backendId === "claude"
+      ? { [CLAUDE_OAUTH_TOKEN_ENV]: task.oauthToken }
+      : undefined;
 
     return engine.execute({
       prompt: input.prompt,
@@ -75,6 +79,7 @@ export class TaskEngineTurnRunner {
         : {}),
       ...(task.useMcp !== undefined ? { useMcp: task.useMcp } : {}),
       ...(agent.max_turns !== undefined ? { maxTurns: agent.max_turns } : {}),
+      ...(extraEnv !== undefined ? { extraEnv } : {}),
     });
   }
 }

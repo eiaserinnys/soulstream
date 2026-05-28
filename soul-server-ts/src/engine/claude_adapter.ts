@@ -281,6 +281,7 @@ export class ClaudeEngineAdapter
   private buildRunOptions(params: EngineExecuteParams): ClaudeRunOptions {
     const model = normalizeClaudeModel(params.model);
     const env = buildClaudeEnvironment({
+      processEnv: this.processEnv,
       extraEnv: params.extraEnv,
     });
     return {

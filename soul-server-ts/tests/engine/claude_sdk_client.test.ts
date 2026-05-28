@@ -150,7 +150,7 @@ describe("ClaudeSdkClient", () => {
     });
   });
 
-  it("does not inherit Node process env when run options omit env", async () => {
+  it("omits SDK env options when run options omit env so the SDK can default to process.env", async () => {
     const captured: ClaudeSdkQueryParams[] = [];
     const client = new ClaudeSdkClient(
       {
@@ -173,7 +173,7 @@ describe("ClaudeSdkClient", () => {
       ),
     );
 
-    expect(captured[0]?.options?.env).toEqual({});
+    expect(captured[0]?.options).not.toHaveProperty("env");
     expect(captured[0]?.options).not.toHaveProperty("pathToClaudeCodeExecutable");
   });
 
@@ -200,7 +200,7 @@ describe("ClaudeSdkClient", () => {
       ),
     );
 
-    expect(captured[0]?.options?.env).toEqual({});
+    expect(captured[0]?.options).not.toHaveProperty("env");
     expect(captured[0]?.options?.pathToClaudeCodeExecutable).toBe("/usr/local/bin/claude");
   });
 

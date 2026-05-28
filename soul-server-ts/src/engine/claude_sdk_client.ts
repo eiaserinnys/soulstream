@@ -338,7 +338,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     return {
       abortController,
       cwd: options.workspaceDir,
-      env: options.env ?? {},
+      ...(options.env !== undefined ? { env: options.env } : {}),
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
       settingSources: ["project"],

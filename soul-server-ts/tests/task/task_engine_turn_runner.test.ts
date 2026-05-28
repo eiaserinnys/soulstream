@@ -6,6 +6,7 @@ import type {
   EnginePort,
   SSEEventPayload,
 } from "../../src/engine/protocol.js";
+import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
 import { TaskEngineTurnRunner } from "../../src/task/task_engine_turn_runner.js";
 import type { Task } from "../../src/task/task_models.js";
 
@@ -111,9 +112,9 @@ describe("TaskEngineTurnRunner", () => {
       disallowedTools: ["Edit"],
       useMcp: false,
       maxTurns: 25,
+      extraEnv: { [CLAUDE_OAUTH_TOKEN_ENV]: "oauth-token" },
     });
     expect(captured?.onIntervention).toBeUndefined();
-    expect(captured?.extraEnv).toBeUndefined();
   });
 
   it("falls back to agent tool policy when task-level policy is absent", async () => {
@@ -134,6 +135,31 @@ describe("TaskEngineTurnRunner", () => {
     expect(captured?.allowedTools).toEqual(["Read"]);
     expect(captured?.disallowedTools).toEqual(["WebFetch"]);
     expect(captured?.maxTurns).toBe(25);
+    expect(captured?.extraEnv).toBeUndefined();
+  });
+
+  it("does not forward Claude oauthToken to non-Claude backends", async () => {
+    const task = makeTask({ oauthToken: "oauth-token" });
+    let captured: EngineExecuteParams | undefined;
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/agent",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        captured = params;
+        yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const { runner } = makeSubject();
+
+    await drain(runner.executeTurn({
+      task,
+      agent: { ...agent, backend: "codex" },
+      engine,
+      input: { prompt: "turn prompt" },
+    }));
+
     expect(captured?.extraEnv).toBeUndefined();
   });
 

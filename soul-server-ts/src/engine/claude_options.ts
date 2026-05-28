@@ -11,11 +11,27 @@ export function buildClaudeEnvironment(params: {
   processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
   extraEnv?: Record<string, string | undefined>;
 } = {}): Record<string, string> | undefined {
+  const hasExtraEnv = Object.values(params.extraEnv ?? {}).some(
+    (value) => value !== undefined,
+  );
+  if (params.processEnv === undefined && !hasExtraEnv) {
+    return undefined;
+  }
+
   const out: Record<string, string> = {};
+  const baseEnv = params.processEnv ?? process.env;
+  for (const [key, value] of Object.entries(baseEnv)) {
+    if (value !== undefined) {
+      out[key] = value;
+    }
+  }
+  out[CLAUDE_PROMPT_SUGGESTION_ENV] = "1";
+
   for (const [key, value] of Object.entries(params.extraEnv ?? {})) {
     if (value !== undefined) {
       out[key] = value;
     }
   }
+
   return Object.keys(out).length > 0 ? out : undefined;
 }

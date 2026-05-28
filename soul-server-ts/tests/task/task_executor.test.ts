@@ -10,6 +10,7 @@ import type {
   SSEEventPayload,
   SupportsToolApproval,
 } from "../../src/engine/protocol.js";
+import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
 import { TaskExecutor, isTerminalStatus } from "../../src/task/task_executor.js";
 import { TaskTurnInputBuilder } from "../../src/task/task_turn_input_builder.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -296,7 +297,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(capturedReasoningEffort).toBe("low");
   });
 
-  it("Claude task oauthToken을 subprocess env로 전달하지 않고 semantic assistant history를 영속한다", async () => {
+  it("Claude task oauthToken을 task-level extraEnv로 전달하고 semantic assistant history를 영속한다", async () => {
     const mocks = makeMocks();
     let capturedExtraEnv: Record<string, string> | undefined;
     const engine: EnginePort = {
@@ -328,7 +329,7 @@ describe("TaskExecutor.startExecution", () => {
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
-    expect(capturedExtraEnv).toBeUndefined();
+    expect(capturedExtraEnv).toEqual({ [CLAUDE_OAUTH_TOKEN_ENV]: "task-oauth-token" });
     expect(task.status).toBe("completed");
     expect(task.codexThreadId).toBe("claude-sess-1");
     expect(task.lastAssistantText).toBe("claude says hi");
