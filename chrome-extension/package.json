@@ -1,0 +1,16 @@
+{
+  "name": "@soulstream/chrome-extension",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Chrome MV3 extension for sending page actions to Soulstream sessions.",
+  "scripts": {
+    "build": "node scripts/copy-static.mjs && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
