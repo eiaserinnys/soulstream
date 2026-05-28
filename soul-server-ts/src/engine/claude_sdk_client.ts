@@ -627,20 +627,14 @@ export class ClaudeSdkClient implements ClaudeClient {
         : this.postResultDrainMs;
 
       if (waitMs <= 0) {
-        events.push({
-          type: "debug",
-          message: `Claude runtime drain timed out after ${this.runtimeDrainMaxMs}ms; closing query.`,
-        });
+        events.push(...this.makeRuntimeTimeoutEvents());
         return { action: "finish", events };
       }
 
       const settled = await this.nextWithDrainTimeout(queryIter, waitMs);
       if (settled === DRAIN_TIMEOUT) {
         if (pendingRuntime) {
-          events.push({
-            type: "debug",
-            message: `Claude runtime drain timed out after ${this.runtimeDrainMaxMs}ms; closing query.`,
-          });
+          events.push(...this.makeRuntimeTimeoutEvents());
         } else {
           this.logger.debug?.({ ms: this.postResultDrainMs }, "post-result drain timed out");
         }
@@ -675,14 +669,23 @@ export class ClaudeSdkClient implements ClaudeClient {
           { messageType: msg?.type ?? "unknown" },
           "post-tool-use-result drain received continuation message",
         );
-        const mapped =
-          msg?.type === "result"
-            ? this.mapResultMessage(msg)
-            : this.mapSdkMessage(settled.value);
-        events.push(...mapped);
         if (msg?.type === "result") {
-          return { action: "finish", events };
+          const terminalEvents = this.mapResultMessage(msg);
+          const resultEvent = terminalEvents.find((event) => event.type === "result");
+          const nextContinuations =
+            resultEvent?.type === "result"
+              ? this.postResultContinuations(resultEvent, 0)
+              : new Set<PostResultContinuationKind>();
+          const drain = await this.drainAfterResult(queryIter, nextContinuations);
+          if (drain.action === "continue") {
+            events.push(...drain.events);
+            return { action: "continue", reason: drain.reason, events };
+          }
+          events.push(...this.orderTerminalEvents(terminalEvents, drain.events));
+          return { action: "continue", reason: "tool_use", events };
         }
+        const mapped = this.mapSdkMessage(settled.value);
+        events.push(...mapped);
         return { action: "continue", reason: "tool_use", events };
       }
       // Runtime이 이미 pending이면 stray 메시지 하나 때문에 query를 닫지 않는다.
@@ -722,13 +725,59 @@ export class ClaudeSdkClient implements ClaudeClient {
     terminalEvents: ClaudeClientEvent[],
     drainEvents: ClaudeClientEvent[],
   ): void {
-    if (this.hasPendingRuntimeWork() || drainEvents.some(isRuntimeClientEvent)) {
-      for (const event of drainEvents) output.push(event);
-      for (const event of terminalEvents) output.push(event);
-      return;
+    for (const event of this.orderTerminalEvents(terminalEvents, drainEvents)) {
+      output.push(event);
     }
-    for (const event of terminalEvents) output.push(event);
-    for (const event of drainEvents) output.push(event);
+  }
+
+  private orderTerminalEvents(
+    terminalEvents: ClaudeClientEvent[],
+    drainEvents: ClaudeClientEvent[],
+  ): ClaudeClientEvent[] {
+    if (drainEvents.some(isFatalClientError)) {
+      return drainEvents;
+    }
+    if (this.hasPendingRuntimeWork() || drainEvents.some(isRuntimeClientEvent)) {
+      return [...drainEvents, ...terminalEvents];
+    }
+    return [...terminalEvents, ...drainEvents];
+  }
+
+  private makeRuntimeTimeoutEvents(): ClaudeClientEvent[] {
+    const message = `Claude runtime drain timed out after ${this.runtimeDrainMaxMs}ms; closing query.`;
+    const events: ClaudeClientEvent[] = [
+      {
+        type: "debug",
+        message,
+      },
+    ];
+
+    for (const [taskId, runtimeTask] of this.runtimeTasksById.entries()) {
+      if (TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES.has(runtimeTask.status)) continue;
+      this.runtimeTasksById.set(taskId, { status: "failed" });
+      events.push({
+        type: "claude_runtime_task_notification",
+        taskId,
+        status: "failed",
+        summary: message,
+      });
+    }
+
+    if (this.runtimeSessionState && this.runtimeSessionState !== "idle") {
+      this.runtimeSessionState = "idle";
+      events.push({
+        type: "claude_runtime_session_state",
+        state: "idle",
+      });
+    }
+
+    events.push({
+      type: "error",
+      fatal: true,
+      errorCode: "claude_runtime_timeout",
+      message,
+    });
+    return events;
   }
 
   private mapSdkMessage(message: SDKMessage): ClaudeClientEvent[] {
@@ -1339,6 +1388,10 @@ function isRuntimeSystemMessage(message: Record<string, unknown> | undefined): b
 
 function isRuntimeClientEvent(event: ClaudeClientEvent): boolean {
   return event.type.startsWith("claude_runtime_");
+}
+
+function isFatalClientError(event: ClaudeClientEvent): boolean {
+  return event.type === "error" && event.fatal !== false;
 }
 
 function parseRuntimeSessionState(value: unknown): ClaudeRuntimeSessionState | undefined {

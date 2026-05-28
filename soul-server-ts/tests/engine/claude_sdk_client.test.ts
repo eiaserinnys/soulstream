@@ -1135,6 +1135,16 @@ describe("ClaudeSdkClient", () => {
                 uuid: "runtime-running",
                 session_id: "claude-sess-timeout",
               } as unknown as SDKMessage;
+              yield {
+                type: "system",
+                subtype: "task_started",
+                task_id: "task-bg-timeout",
+                tool_use_id: "toolu-timeout",
+                description: "never settles",
+                task_type: "bash",
+                uuid: "task-started-timeout",
+                session_id: "claude-sess-timeout",
+              } as unknown as SDKMessage;
               yield sdkSuccessResult("claude-sess-timeout", "done");
               await new Promise<never>(() => {});
             })(),
@@ -1156,16 +1166,83 @@ describe("ClaudeSdkClient", () => {
 
     expect(events.map((event) => event.type)).toEqual([
       "claude_runtime_session_state",
+      "subagent_start",
+      "claude_runtime_task_started",
       "debug",
+      "claude_runtime_task_notification",
+      "claude_runtime_session_state",
+      "error",
+    ]);
+    expect(events[3]).toMatchObject({
+      type: "debug",
+      message: "Claude runtime drain timed out after 30ms; closing query.",
+    });
+    expect(events[4]).toMatchObject({
+      type: "claude_runtime_task_notification",
+      taskId: "task-bg-timeout",
+      status: "failed",
+    });
+    expect(events[5]).toMatchObject({
+      type: "claude_runtime_session_state",
+      state: "idle",
+    });
+    expect(events[6]).toMatchObject({
+      type: "error",
+      fatal: true,
+      errorCode: "claude_runtime_timeout",
+    });
+    expect(queryRef?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("drains runtime idle after a tool_use continuation result before emitting terminal events", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            (async function* () {
+              yield sdkSuccessResult("claude-sess-tool-runtime", "", {
+                stop_reason: "tool_use",
+              });
+              yield {
+                type: "system",
+                subtype: "session_state_changed",
+                state: "running",
+                uuid: "runtime-running-after-tool",
+                session_id: "claude-sess-tool-runtime",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-tool-runtime", "final");
+              yield {
+                type: "system",
+                subtype: "session_state_changed",
+                state: "idle",
+                uuid: "runtime-idle-after-tool",
+                session_id: "claude-sess-tool-runtime",
+              } as unknown as SDKMessage;
+            })(),
+          ),
+        postResultDrainMs: 10,
+        runtimeDrainMaxMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "claude_runtime_session_state",
+      "claude_runtime_session_state",
       "result",
       "context_usage",
       "complete",
     ]);
-    expect(events[1]).toMatchObject({
-      type: "debug",
-      message: "Claude runtime drain timed out after 30ms; closing query.",
-    });
-    expect(queryRef?.close).toHaveBeenCalledTimes(1);
+    expect(events[0]).toMatchObject({ type: "claude_runtime_session_state", state: "running" });
+    expect(events[1]).toMatchObject({ type: "claude_runtime_session_state", state: "idle" });
+    expect(events[2]).toMatchObject({ type: "result", output: "final" });
   });
 
   it("emits a fatal error when the SDK stream ends before pending runtime work reaches idle", async () => {

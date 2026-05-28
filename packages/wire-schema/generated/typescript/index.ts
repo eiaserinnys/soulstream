@@ -436,7 +436,7 @@ export interface SSEEventClaudeRuntimeTaskUpdated {
   task_id: string;
   session_id?: string;
   patch: {
-    status?: "pending" | "running" | "completed" | "failed" | "killed";
+    status?: "pending" | "running" | "completed" | "failed" | "stopped" | "killed";
     description?: string;
     end_time?: number;
     total_paused_ms?: number;

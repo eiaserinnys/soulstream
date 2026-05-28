@@ -874,7 +874,9 @@ class SSEEventClaudeRuntimeTaskStarted(TypedDict):
 
 
 class Patch(TypedDict):
-    status: NotRequired[Literal['pending', 'running', 'completed', 'failed', 'killed']]
+    status: NotRequired[
+        Literal['pending', 'running', 'completed', 'failed', 'stopped', 'killed']
+    ]
     description: NotRequired[str]
     end_time: NotRequired[float]
     total_paused_ms: NotRequired[float]

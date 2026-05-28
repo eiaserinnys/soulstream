@@ -1199,7 +1199,7 @@
           "properties": {
             "status": {
               "type": "string",
-              "enum": ["pending", "running", "completed", "failed", "killed"]
+              "enum": ["pending", "running", "completed", "failed", "stopped", "killed"]
             },
             "description": { "type": "string" },
             "end_time": { "type": "number" },

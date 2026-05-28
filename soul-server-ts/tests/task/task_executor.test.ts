@@ -573,6 +573,79 @@ describe("TaskExecutor.startExecution", () => {
     });
   });
 
+  it("Claude runtime timeout fatal event clears pending runtime and finalizes as error", async () => {
+    const mocks = makeMocks();
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield {
+          type: "claude_runtime_session_state",
+          state: "running",
+          session_id: "claude-sess-timeout",
+        } as SSEEventPayload;
+        yield {
+          type: "claude_runtime_task_started",
+          task_id: "task-bg-timeout",
+          task_type: "bash",
+        } as SSEEventPayload;
+        yield {
+          type: "debug",
+          message: "Claude runtime drain timed out after 30ms; closing query.",
+        } as SSEEventPayload;
+        yield {
+          type: "claude_runtime_task_notification",
+          task_id: "task-bg-timeout",
+          status: "failed",
+          summary: "Claude runtime drain timed out after 30ms; closing query.",
+        } as SSEEventPayload;
+        yield {
+          type: "claude_runtime_session_state",
+          state: "idle",
+          session_id: "claude-sess-timeout",
+        } as SSEEventPayload;
+        yield {
+          type: "error",
+          message: "Claude runtime drain timed out after 30ms; closing query.",
+          error_code: "claude_runtime_timeout",
+          fatal: true,
+        } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("error");
+    expect(task.error).toBe("Claude runtime drain timed out after 30ms; closing query.");
+    expect(task.engine).toBeUndefined();
+    expect(task.completedAt).toBeInstanceOf(Date);
+    expect(task.claudeRuntime).toMatchObject({
+      sessionState: "idle",
+      tasks: {
+        "task-bg-timeout": {
+          status: "failed",
+        },
+      },
+    });
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+      status: "error",
+      last_event_id: 7,
+    });
+    expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
+  });
+
   it("persistEvent 실패는 격리 (계속 진행)", async () => {
     const mocks = makeMocks();
     mocks.persistEvent.mockImplementationOnce(async () => {
