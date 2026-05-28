@@ -32,6 +32,40 @@ pnpm --dir chrome-extension build
 
 Load `chrome-extension/dist` from `chrome://extensions` with Developer Mode enabled.
 
+## Release artifact
+
+Chrome extension releases use tags that match `chrome-extension-v*`.
+
+```bash
+git tag chrome-extension-v0.0.1
+git push origin chrome-extension-v0.0.1
+```
+
+Pushing that tag runs the `Release Chrome Extension` workflow. The workflow tests, typechecks, builds, packages `chrome-extension/dist`, creates a GitHub Release, and uploads a zip named like:
+
+```text
+soulstream-chrome-extension-chrome-extension-v0.0.1.zip
+```
+
+The workflow can also be run manually from GitHub Actions. Manual runs upload the same zip as a workflow artifact, but they do not create or update a GitHub Release.
+
+To create the same zip locally:
+
+```bash
+pnpm --dir chrome-extension build
+pnpm --dir chrome-extension package -- --tag chrome-extension-v0.0.1-test
+```
+
+The package step verifies that the zip contains `manifest.json` at the root, so the extracted folder can be loaded directly.
+
+## Install from a release zip
+
+1. Download the zip asset from the GitHub Release.
+2. Unzip it.
+3. Open `chrome://extensions` or `edge://extensions`.
+4. Enable Developer Mode.
+5. Choose Load unpacked and select the extracted folder that contains `manifest.json`.
+
 ## Context menu actions
 
 - 북마크하기

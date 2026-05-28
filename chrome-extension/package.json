@@ -6,6 +6,7 @@
   "description": "Chrome MV3 extension for sending page actions to Soulstream sessions.",
   "scripts": {
     "build": "node scripts/copy-static.mjs && tsc -p tsconfig.json",
+    "package": "node scripts/package-extension.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },

@@ -1,0 +1,105 @@
+name: Release Chrome Extension
+
+on:
+  push:
+    tags:
+      - 'chrome-extension-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      artifact_name: ${{ steps.vars.outputs.artifact_name }}
+      tag_name: ${{ steps.vars.outputs.tag_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Resolve artifact name
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            tag_name="${GITHUB_REF_NAME}"
+          else
+            tag_name="manual-${GITHUB_RUN_NUMBER}"
+          fi
+          artifact_name="soulstream-chrome-extension-${tag_name}.zip"
+          echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=${artifact_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test extension
+        run: pnpm --dir chrome-extension test
+
+      - name: Typecheck extension
+        run: pnpm --dir chrome-extension typecheck
+
+      - name: Build extension
+        run: pnpm --dir chrome-extension build
+
+      - name: Package extension zip
+        env:
+          TAG_NAME: ${{ steps.vars.outputs.tag_name }}
+        run: pnpm --dir chrome-extension package -- --tag "$TAG_NAME"
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.vars.outputs.artifact_name }}
+          path: chrome-extension/release/${{ steps.vars.outputs.artifact_name }}
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/chrome-extension-v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Download extension artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: release-assets
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+          ZIP_PATH: release-assets/${{ needs.build.outputs.artifact_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" "$ZIP_PATH" --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$TAG_NAME" "$ZIP_PATH" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Soulstream Chrome Extension $TAG_NAME" \
+              --notes "Download the zip asset, unzip it, then load the extracted folder with manifest.json from Chrome or Edge Developer Mode."
+          fi
