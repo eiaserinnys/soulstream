@@ -2,6 +2,11 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import type { EventPersistence } from "../../src/db/event_persistence.js";
+import {
+  ClaudeEngineAdapter,
+  type ClaudeClient,
+  type ClaudeClientEvent,
+} from "../../src/engine/claude_adapter.js";
 import type {
   EnginePort,
   SupportsLiveTurnSteering,
@@ -33,6 +38,63 @@ function makeBroadcaster(
 }
 
 describe("RunningInterventionTransition", () => {
+  it("ClaudeEngineAdapter live steering delivered → intervention_sent 유지 + queue 없음", async () => {
+    const release = deferred<void>();
+    const steered: unknown[] = [];
+    const client: ClaudeClient = {
+      async *run(): AsyncIterable<ClaudeClientEvent> {
+        yield { type: "session", sessionId: "claude-sess-live" };
+        await release.promise;
+        yield { type: "complete" };
+      },
+      steerActiveTurn(input) {
+        steered.push(input);
+        return true;
+      },
+    };
+    const engine = new ClaudeEngineAdapter(
+      { workspaceDir: "/tmp/claude", client, processEnv: {} },
+      silentLogger,
+    );
+    const iterator = engine.execute({ prompt: "hi" })[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { type: "session", session_id: "claude-sess-live" },
+    });
+
+    const task = makeRunningTask({ engine });
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(emitEventEnvelope),
+      logger: silentLogger,
+    });
+
+    await expect(
+      transition.deliver(task, {
+        text: "지금 반영",
+        user: "alice",
+        attachmentPaths: ["/tmp/a.png"],
+      }),
+    ).resolves.toEqual({ delivered: true });
+
+    expect(task.interventionQueue).toEqual([]);
+    expect(steered).toEqual([
+      {
+        prompt: "지금 반영",
+        imageAttachmentPaths: ["/tmp/a.png"],
+      },
+    ]);
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        type: "intervention_sent",
+        text: "지금 반영",
+      }),
+    );
+
+    release.resolve();
+    await collectIterator(iterator);
+  });
+
   it("persists and broadcasts intervention_sent before live steering; delivered skips fallback queue", async () => {
     const order: string[] = [];
     const callerInfo = { source: "slack", display_name: "Alice" };
@@ -228,3 +290,22 @@ describe("RunningInterventionTransition", () => {
     expect(task.interventionQueue).toEqual([{ text: "keep going", user: "alice" }]);
   });
 });
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
+async function collectIterator<T>(iterator: AsyncIterator<T>): Promise<T[]> {
+  const items: T[] = [];
+  for (;;) {
+    const next = await iterator.next();
+    if (next.done) return items;
+    items.push(next.value);
+  }
+}

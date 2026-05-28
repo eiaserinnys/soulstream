@@ -653,8 +653,9 @@ describe("ClaudeSdkClient", () => {
     ]);
   });
 
-  it("injects running interventions through the SDK streaming input", async () => {
+  it("steers active turns through the SDK streaming input without polling", async () => {
     const prompts: string[] = [];
+    const readyForSteer = deferred<void>();
     const client = new ClaudeSdkClient(
       {
         query: (params) =>
@@ -664,6 +665,7 @@ describe("ClaudeSdkClient", () => {
               const iterator = input[Symbol.asyncIterator]();
               const initial = await iterator.next();
               prompts.push(messageText(initial.value));
+              readyForSteer.resolve();
               const injected = await iterator.next();
               prompts.push(messageText(injected.value));
               yield {
@@ -676,37 +678,41 @@ describe("ClaudeSdkClient", () => {
               yield sdkSuccessResult("claude-sess-4", "done");
             })(),
           ),
-        interventionPollIntervalMs: 1,
       },
       silentLogger,
     );
 
-    const events = await collect(
+    expect(client.steerActiveTurn({ prompt: "before run" })).toBe(false);
+    const eventsPromise = collect(
       client.run(
         {
           prompt: "first",
           workspaceDir: "/tmp/claude-work",
           env: {},
-          onIntervention: vi.fn().mockResolvedValueOnce("while running").mockResolvedValue(null),
         },
         new AbortController().signal,
       ),
     );
+    await readyForSteer.promise;
+    expect(client.steerActiveTurn({ prompt: "while running" })).toBe(true);
+    const events = await eventsPromise;
 
     expect(prompts).toEqual(["first", "while running"]);
     expect(events.find((event) => event.type === "text")).toMatchObject({
       type: "text",
       text: "while running",
     });
+    expect(client.steerActiveTurn({ prompt: "after run" })).toBe(false);
   });
 
-  it("injects running intervention image attachments as content blocks", async () => {
+  it("steers active turn image attachments as content blocks", async () => {
     const dir = mkdtempSync(join(tmpdir(), "claude-intervention-image-"));
     try {
       const imagePath = join(dir, "sample.webp");
       const bytes = Buffer.from([0x52, 0x49, 0x46, 0x46]);
       writeFileSync(imagePath, bytes);
       const contents: Array<SDKUserMessage["message"]["content"]> = [];
+      const readyForSteer = deferred<void>();
       const client = new ClaudeSdkClient(
         {
           query: (params) =>
@@ -716,32 +722,34 @@ describe("ClaudeSdkClient", () => {
                 const iterator = input[Symbol.asyncIterator]();
                 const initial = await iterator.next();
                 contents.push(initial.value.message.content);
+                readyForSteer.resolve();
                 const injected = await iterator.next();
                 contents.push(injected.value.message.content);
                 yield sdkSuccessResult("claude-sess-img-in", "done");
               })(),
             ),
-          interventionPollIntervalMs: 1,
         },
         silentLogger,
       );
 
-      await collect(
+      const eventsPromise = collect(
         client.run(
           {
             prompt: "first",
             workspaceDir: "/tmp/claude-work",
             env: {},
-            onIntervention: vi.fn()
-              .mockResolvedValueOnce({
-                prompt: "이미지 추가",
-                imageAttachmentPaths: [imagePath],
-              })
-              .mockResolvedValue(null),
           },
           new AbortController().signal,
         ),
       );
+      await readyForSteer.promise;
+      expect(
+        client.steerActiveTurn({
+          prompt: "이미지 추가",
+          imageAttachmentPaths: [imagePath],
+        }),
+      ).toBe(true);
+      await eventsPromise;
 
       expect(contents[0]).toBe("first");
       expect(contents[1]).toEqual([
@@ -1458,6 +1466,16 @@ async function collectIterator(
     if (next.done) return events;
     events.push(next.value);
   }
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 }
 
 async function* sdkMessages(messages: unknown[]): AsyncGenerator<SDKMessage> {

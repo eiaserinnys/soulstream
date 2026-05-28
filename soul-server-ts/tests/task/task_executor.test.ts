@@ -921,7 +921,7 @@ describe("isTerminalStatus", () => {
 });
 
 describe("TaskExecutor multi-turn (B-4)", () => {
-  it("Claude running intervention도 active SDK input에 주입하지 않고 다음 turn으로 처리한다", async () => {
+  it("Claude queued fallback intervention은 다음 turn으로 처리한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     task.profileId = claudeAgent.id;

@@ -66,8 +66,8 @@ export class TaskEngineTurnRunner {
         this.deps.snapshotPersistence.persistRunStateSnapshot(task, snapshot),
       onSessionItemsSnapshot: (snapshot) =>
         this.deps.snapshotPersistence.persistSessionItemsSnapshot(task, snapshot),
-      // Running interventions stay queued until a turn completes. Passing onIntervention would
-      // re-open active-turn injection semantics and can terminate resumed Claude SDK sessions.
+      // Do not pass the legacy polling hook. Active-turn delivery is handled out-of-band
+      // through SupportsLiveTurnSteering; queued fallback remains a next-turn input.
       ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
       ...(effectiveAllowedTools !== undefined ? { allowedTools: effectiveAllowedTools } : {}),
       ...(effectiveDisallowedTools !== undefined

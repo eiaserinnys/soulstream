@@ -112,6 +112,10 @@ export interface EngineExecuteParams {
   onEvent?: EventCallback;
   onProgress?: ProgressCallback;
   onSession?: SessionCallback;
+  /**
+   * Legacy polling hook. TaskEngineTurnRunner must not pass this for Claude resumed turns.
+   * Active-turn delivery uses SupportsLiveTurnSteering.steerActiveTurn instead.
+   */
   onIntervention?: InterventionCallback;
   onCompact?: CompactCallback;
   onRunStateSnapshot?: RunStateSnapshotCallback;
@@ -141,7 +145,7 @@ export interface EnginePort {
    * - resumeSessionId 있으면 해당 세션 이어 실행. 없으면 새 thread/session 생성.
    * - 새 세션 시작 시 onSession 콜백으로 sessionId 통지 (호출자가 task에 영속).
    * - 첫 yield되는 SSEEvent는 보통 `session` 타입 (session_id 운반).
-   * - onIntervention: Codex 어댑터는 *조용히 무시* (SDK 표면 없음). 본 PR 범위 외.
+   * - onIntervention: legacy polling hook. Live input steering uses SupportsLiveTurnSteering.
    * - onCompact: Codex는 호출되지 않음 (no-op).
    */
   execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload>;

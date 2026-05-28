@@ -4,11 +4,13 @@ import type {
   BackendId,
   EngineExecuteParams,
   EnginePort,
-  InterventionInput,
+  EngineUserInput,
+  LiveTurnSteerResult,
   InputResponseDeliveryResult,
   SSEEventPayload,
   SupportsCompact,
   SupportsInputResponse,
+  SupportsLiveTurnSteering,
 } from "./protocol.js";
 import {
   mapClaudeClientEvent,
@@ -45,12 +47,12 @@ export interface ClaudeRunOptions {
   /** Python `Task.use_mcp` → SDK mcpServers 로딩 게이트. undefined면 true. */
   useMcp?: boolean;
   env?: Record<string, string>;
-  onIntervention?: () => Promise<InterventionInput | null>;
 }
 
 export interface ClaudeClient {
   run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent>;
   compact?(sessionId: string): Promise<void>;
+  steerActiveTurn?(input: EngineUserInput): Promise<boolean> | boolean;
   deliverInputResponse?(
     requestId: string,
     answers: Record<string, unknown>,
@@ -65,7 +67,9 @@ export interface ClaudeAdapterConfig {
   processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
 }
 
-export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse, SupportsCompact {
+export class ClaudeEngineAdapter
+  implements EnginePort, SupportsInputResponse, SupportsCompact, SupportsLiveTurnSteering
+{
   public readonly backendId: BackendId = "claude";
   public readonly workspaceDir: string;
 
@@ -157,6 +161,38 @@ export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse, S
     return true;
   }
 
+  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
+    const currentTurn = this.currentTurn;
+    if (!currentTurn || currentTurn.signal.aborted) {
+      return {
+        status: "no_active_turn",
+        message: "No active Claude turn",
+      };
+    }
+    if (!this.client.steerActiveTurn) {
+      return {
+        status: "not_supported",
+        message: "Claude client does not support live turn steering",
+      };
+    }
+
+    try {
+      const delivered = await this.client.steerActiveTurn(input);
+      if (!delivered) {
+        return {
+          status: "no_active_turn",
+          message: "Claude active input is not accepting steering",
+        };
+      }
+      return { status: "delivered" };
+    } catch (err) {
+      return {
+        status: "failed",
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
   async compact(sessionId: string): Promise<void> {
     if (!sessionId) {
       throw new Error("ClaudeEngineAdapter.compact requires sessionId");
@@ -226,7 +262,6 @@ export class ClaudeEngineAdapter implements EnginePort, SupportsInputResponse, S
       ...(params.maxTurns !== undefined ? { maxTurns: params.maxTurns } : {}),
       ...(params.useMcp !== undefined ? { useMcp: params.useMcp } : {}),
       ...(env !== undefined ? { env } : {}),
-      ...(params.onIntervention ? { onIntervention: params.onIntervention } : {}),
     };
   }
 

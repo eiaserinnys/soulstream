@@ -18,12 +18,11 @@ import type { Logger } from "pino";
 
 import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
-import type { InterventionInput } from "./protocol.js";
+import type { EngineUserInput } from "./protocol.js";
 import { getImageAttachmentMediaType } from "../attachments/image_media.js";
 
 const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
 const DEFAULT_INPUT_REQUEST_TIMEOUT_MS = 300_000;
-const DEFAULT_INTERVENTION_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_MAX_CONTEXT_TOKENS = 200_000;
 const MCP_CONFIG_FILE = "mcp_config.json";
 const MAX_COMPACT_RETRIES = 3;
@@ -68,7 +67,6 @@ export type ClaudeSdkQueryFn = (params: ClaudeSdkQueryParams) => ClaudeSdkQuery;
 export interface ClaudeSdkClientConfig {
   query?: ClaudeSdkQueryFn;
   inputRequestTimeoutMs?: number;
-  interventionPollIntervalMs?: number;
   /**
    * Result 메시지 도착 후 prompt_suggestion 1메시지를 기다리는 best-effort drain timeout.
    * 기본 2초 — Python `PROMPT_SUGGESTION_DRAIN_TIMEOUT` 정합. 테스트에서 가속용으로만 override.
@@ -94,7 +92,6 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly queryFn: ClaudeSdkQueryFn;
   private readonly logger: Logger;
   private readonly inputRequestTimeoutMs: number;
-  private readonly interventionPollIntervalMs: number;
   private readonly postResultDrainMs: number;
   private readonly resolveClaudeExecutablePath: () => string | undefined;
   private readonly pendingInputRequests = new Map<string, PendingInputRequest>();
@@ -114,8 +111,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.logger = logger;
     this.inputRequestTimeoutMs =
       config.inputRequestTimeoutMs ?? DEFAULT_INPUT_REQUEST_TIMEOUT_MS;
-    this.interventionPollIntervalMs =
-      config.interventionPollIntervalMs ?? DEFAULT_INTERVENTION_POLL_INTERVAL_MS;
     this.postResultDrainMs =
       config.postResultDrainMs ?? DEFAULT_POST_RESULT_DRAIN_MS;
     this.resolveClaudeExecutablePath =
@@ -140,7 +135,6 @@ export class ClaudeSdkClient implements ClaudeClient {
       signal.addEventListener("abort", abortSdk, { once: true });
     }
 
-    const pollController = new AbortController();
     const queryOptions = this.buildSdkOptions(options, abortController, output);
     let query: ClaudeSdkQuery;
     try {
@@ -153,10 +147,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.activeQuery = query;
     const pump = this.pumpQuery(query, output);
 
-    if (options.onIntervention) {
-      this.startInterventionPolling(options.onIntervention, input, pollController.signal);
-    }
-
     try {
       for await (const event of output) {
         yield event;
@@ -166,7 +156,6 @@ export class ClaudeSdkClient implements ClaudeClient {
       throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
     } finally {
       signal.removeEventListener("abort", abortSdk);
-      pollController.abort();
       input.close();
       if (this.activeInput === input) this.activeInput = null;
       if (this.activeQuery === query) this.activeQuery = null;
@@ -221,6 +210,12 @@ export class ClaudeSdkClient implements ClaudeClient {
     if (!pending) return false;
     pending.resolve(answers);
     return true;
+  }
+
+  steerActiveTurn(input: EngineUserInput): boolean {
+    const activeInput = this.activeInput;
+    if (!activeInput) return false;
+    return activeInput.push(makeUserMessage(input.prompt, input.imageAttachmentPaths));
   }
 
   async interrupt(): Promise<boolean> {
@@ -621,26 +616,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     } finally {
       if (timer) clearTimeout(timer);
     }
-  }
-
-  private startInterventionPolling(
-    onIntervention: () => Promise<InterventionInput | null>,
-    input: PushAsyncIterable<SDKUserMessage>,
-    signal: AbortSignal,
-  ): void {
-    void (async () => {
-      while (!signal.aborted) {
-        await sleep(this.interventionPollIntervalMs, signal);
-        if (signal.aborted) break;
-
-        try {
-          const text = await onIntervention();
-          if (text) input.push(makeInterventionUserMessage(text));
-        } catch (err) {
-          this.logger.warn({ err }, "Claude intervention poll failed");
-        }
-      }
-    })();
   }
 
   private mapSdkMessage(message: SDKMessage): ClaudeClientEvent[] {
@@ -1050,11 +1025,6 @@ function makeUserMessage(content: string, imageAttachmentPaths?: string[]): SDKU
   };
 }
 
-function makeInterventionUserMessage(input: InterventionInput): SDKUserMessage {
-  if (typeof input === "string") return makeUserMessage(input);
-  return makeUserMessage(input.prompt, input.imageAttachmentPaths);
-}
-
 type ClaudeUserContentBlock = Exclude<SDKUserMessage["message"]["content"], string>[number];
 
 function buildUserMessageContent(
@@ -1296,20 +1266,4 @@ function coerceResetsAt(value: unknown): string | undefined {
     return value;
   }
   return undefined;
-}
-
-function sleep(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve) => {
-    const done = () => {
-      signal.removeEventListener("abort", abort);
-      resolve();
-    };
-    const timeout = setTimeout(done, ms);
-    const abort = () => {
-      clearTimeout(timeout);
-      done();
-    };
-    signal.addEventListener("abort", abort, { once: true });
-  });
 }
