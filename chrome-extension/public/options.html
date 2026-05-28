@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Soulstream Page Actions</title>
+    <link rel="stylesheet" href="./options.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <h1>Soulstream Page Actions</h1>
+        <p>Configure the Soulstream server used by the context menu actions.</p>
+      </header>
+
+      <form id="settings-form">
+        <label>
+          Soulstream URL
+          <input id="base-url" name="baseUrl" type="url" placeholder="https://soulstream.example.com" autocomplete="url" required>
+        </label>
+
+        <label>
+          Bearer token
+          <input id="bearer-token" name="bearerToken" type="password" autocomplete="off" placeholder="Optional">
+        </label>
+
+        <div class="grid">
+          <label>
+            Node ID
+            <input id="node-id" name="nodeId" type="text" autocomplete="off" placeholder="Optional">
+          </label>
+          <label>
+            Agent profile
+            <input id="profile" name="profile" type="text" autocomplete="off" placeholder="Optional">
+          </label>
+        </div>
+
+        <div class="grid">
+          <label>
+            Folder ID
+            <input id="folder-id" name="folderId" type="text" autocomplete="off" placeholder="Optional">
+          </label>
+          <label>
+            Reasoning effort
+            <select id="reasoning-effort" name="reasoningEffort">
+              <option value="">Server default</option>
+              <option value="minimal">Minimal</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="xhigh">X High</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="check">
+          <input id="include-body" name="includeBody" type="checkbox">
+          Include body candidate
+        </label>
+
+        <label>
+          Body character limit
+          <input id="body-char-limit" name="bodyCharLimit" type="number" min="0" max="50000" step="1000">
+        </label>
+
+        <footer>
+          <button type="submit">Save</button>
+          <button id="test-connection" type="button">Test connection</button>
+        </footer>
+      </form>
+
+      <p id="status" role="status" aria-live="polite"></p>
+    </main>
+    <script type="module" src="./options.js"></script>
+  </body>
+</html>

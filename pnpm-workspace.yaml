@@ -3,5 +3,6 @@ packages:
   - 'unified-dashboard'
   - 'soul-desktop'
   - 'soul-server-ts'
+  - 'chrome-extension'
 onlyBuiltDependencies:
   - esbuild
