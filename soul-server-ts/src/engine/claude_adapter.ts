@@ -7,7 +7,9 @@ import type {
   EngineUserInput,
   LiveTurnSteerResult,
   InputResponseDeliveryResult,
+  ClaudeBackgroundTaskControlResult,
   SSEEventPayload,
+  SupportsClaudeBackgroundTasks,
   SupportsCompact,
   SupportsInputResponse,
   SupportsLiveTurnSteering,
@@ -57,6 +59,12 @@ export interface ClaudeClient {
     requestId: string,
     answers: Record<string, unknown>,
   ): Promise<boolean> | boolean;
+  backgroundClaudeRuntimeTasks?(
+    toolUseId?: string,
+  ): Promise<ClaudeBackgroundTaskControlResult> | ClaudeBackgroundTaskControlResult;
+  stopClaudeRuntimeTask?(
+    taskId: string,
+  ): Promise<ClaudeBackgroundTaskControlResult> | ClaudeBackgroundTaskControlResult;
   interrupt?(): Promise<boolean>;
   close?(): Promise<void>;
 }
@@ -68,7 +76,12 @@ export interface ClaudeAdapterConfig {
 }
 
 export class ClaudeEngineAdapter
-  implements EnginePort, SupportsInputResponse, SupportsCompact, SupportsLiveTurnSteering
+  implements
+    EnginePort,
+    SupportsInputResponse,
+    SupportsCompact,
+    SupportsLiveTurnSteering,
+    SupportsClaudeBackgroundTasks
 {
   public readonly backendId: BackendId = "claude";
   public readonly workspaceDir: string;
@@ -201,6 +214,28 @@ export class ClaudeEngineAdapter
       throw new Error("Claude client does not support compact");
     }
     await this.client.compact(sessionId);
+  }
+
+  async backgroundClaudeRuntimeTasks(
+    toolUseId?: string,
+  ): Promise<ClaudeBackgroundTaskControlResult> {
+    if (!this.client.backgroundClaudeRuntimeTasks) {
+      return {
+        status: "not_supported",
+        message: "Claude client does not support background task control",
+      };
+    }
+    return await this.client.backgroundClaudeRuntimeTasks(toolUseId);
+  }
+
+  async stopClaudeRuntimeTask(taskId: string): Promise<ClaudeBackgroundTaskControlResult> {
+    if (!this.client.stopClaudeRuntimeTask) {
+      return {
+        status: "not_supported",
+        message: "Claude client does not support background task control",
+      };
+    }
+    return await this.client.stopClaudeRuntimeTask(taskId);
   }
 
   async deliverInputResponse(

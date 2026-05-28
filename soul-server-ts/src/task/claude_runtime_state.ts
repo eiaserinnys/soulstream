@@ -59,7 +59,12 @@ export function applyClaudeRuntimeEvent(task: Task, event: SSEEventPayload): boo
       const patch = asRecord(payload.patch) ?? {};
       const status = parseTaskStatus(patch.status);
       if (status) runtimeTask.status = status;
+      const toolUseId = asString(patch.tool_use_id);
+      if (toolUseId) runtimeTask.toolUseId = toolUseId;
       copyString(patch, "description", runtimeTask);
+      copyString(patch, "task_type", runtimeTask, "taskType");
+      copyString(patch, "output_file", runtimeTask, "outputFile");
+      copyString(patch, "summary", runtimeTask);
       copyString(patch, "error", runtimeTask);
       copyBoolean(patch, "is_backgrounded", runtimeTask, "isBackgrounded");
       copyNumber(patch, "end_time", runtimeTask, "endTime");

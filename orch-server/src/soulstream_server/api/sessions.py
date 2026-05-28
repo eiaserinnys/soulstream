@@ -20,6 +20,7 @@ from soul_common.db.session_db import PostgresSessionDB
 from soulstream_server.api.node_utils import find_session_node
 from soulstream_server.api.session_events import create_session_events_response
 from soulstream_server.api.session_models import (
+    ClaudeRuntimeBackgroundTasksRequest,
     CreateSessionRequest,
     InterveneRequest,
     ReadPositionRequest,
@@ -292,6 +293,68 @@ def create_sessions_router(
             raise HTTPException(status_code=422, detail=msg)
         return result
 
+    @router.get("/{session_id}/background-tasks")
+    async def list_background_tasks(session_id: str) -> dict:
+        """Claude runtime background task 목록을 조회한다."""
+        node = await find_session_node(session_id, db, node_manager)
+        try:
+            return await node.send_claude_runtime_list_tasks(session_id)
+        except (WebSocketDisconnect, ConnectionError) as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Node disconnected, please retry: {e}",
+            )
+        except RuntimeError as e:
+            raise _claude_runtime_http_exception(e)
+
+    @router.get("/{session_id}/background-tasks/{task_id}/output")
+    async def get_background_task_output(session_id: str, task_id: str) -> dict:
+        """Claude runtime background task 출력 조회."""
+        node = await find_session_node(session_id, db, node_manager)
+        try:
+            return await node.send_claude_runtime_task_output(session_id, task_id)
+        except (WebSocketDisconnect, ConnectionError) as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Node disconnected, please retry: {e}",
+            )
+        except RuntimeError as e:
+            raise _claude_runtime_http_exception(e)
+
+    @router.post("/{session_id}/background-tasks/{task_id}/stop")
+    async def stop_background_task(session_id: str, task_id: str) -> dict:
+        """Claude runtime background task를 중단한다."""
+        node = await find_session_node(session_id, db, node_manager)
+        try:
+            return await node.send_claude_runtime_stop_task(session_id, task_id)
+        except (WebSocketDisconnect, ConnectionError) as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Node disconnected, please retry: {e}",
+            )
+        except RuntimeError as e:
+            raise _claude_runtime_http_exception(e)
+
+    @router.post("/{session_id}/background-tasks/background")
+    async def background_tasks(
+        session_id: str,
+        body: ClaudeRuntimeBackgroundTasksRequest | None = None,
+    ) -> dict:
+        """Claude SDK Query.backgroundTasks(toolUseId)를 호출한다."""
+        node = await find_session_node(session_id, db, node_manager)
+        try:
+            return await node.send_claude_runtime_background_tasks(
+                session_id,
+                body.tool_use_id if body else None,
+            )
+        except (WebSocketDisconnect, ConnectionError) as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Node disconnected, please retry: {e}",
+            )
+        except RuntimeError as e:
+            raise _claude_runtime_http_exception(e)
+
     @router.post("/{session_id}/respond")
     async def respond(session_id: str, body: RespondRequest) -> dict:
         """입력 요청 응답."""
@@ -479,6 +542,16 @@ def _raise_respond_ack_error(result: dict[str, Any]) -> None:
             },
         },
     )
+
+
+def _claude_runtime_http_exception(error: RuntimeError) -> HTTPException:
+    msg = str(error)
+    lower = msg.lower()
+    if "not found" in lower or "찾을 수 없" in msg:
+        return HTTPException(status_code=404, detail=msg)
+    if "not_supported" in lower or "support" in lower:
+        return HTTPException(status_code=422, detail=msg)
+    return HTTPException(status_code=422, detail=msg)
 
 
 def _raise_tool_approval_ack_error(result: dict[str, Any]) -> None:

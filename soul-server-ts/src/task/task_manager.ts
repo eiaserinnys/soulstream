@@ -52,6 +52,17 @@ import {
 } from "./task_intervention_route.js";
 import { ResponseEventPublisher } from "./task_response_event_publisher.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
+import {
+  isClaudeRuntimeTaskTerminal,
+  loadClaudeRuntimeStateFromEvents,
+  readClaudeRuntimeTaskOutput,
+  serializeClaudeRuntimeState,
+  supportsClaudeBackgroundTasks,
+  type ClaudeRuntimeBackgroundTasksResult,
+  type ClaudeRuntimeTaskListResult,
+  type ClaudeRuntimeTaskOutputResult,
+  type ClaudeRuntimeTaskStopResult,
+} from "./claude_runtime_control.js";
 
 export type { CreateTaskParams } from "./task_creation.js";
 export type {
@@ -187,6 +198,91 @@ export class TaskManager {
     return Array.from(this.tasks.values());
   }
 
+  async listClaudeRuntimeTasks(sessionId: string): Promise<ClaudeRuntimeTaskListResult> {
+    const runtime = await this.resolveClaudeRuntimeState(sessionId);
+    return serializeClaudeRuntimeState(sessionId, runtime);
+  }
+
+  async getClaudeRuntimeTaskOutput(
+    sessionId: string,
+    taskId: string,
+  ): Promise<ClaudeRuntimeTaskOutputResult> {
+    const runtime = await this.resolveClaudeRuntimeState(sessionId);
+    const task = runtime?.tasks[taskId];
+    return await readClaudeRuntimeTaskOutput(sessionId, taskId, task);
+  }
+
+  async stopClaudeRuntimeTask(
+    sessionId: string,
+    taskId: string,
+  ): Promise<ClaudeRuntimeTaskStopResult> {
+    const runtime = await this.resolveClaudeRuntimeState(sessionId);
+    const runtimeTask = runtime?.tasks[taskId];
+    if (runtimeTask && isClaudeRuntimeTaskTerminal(runtimeTask)) {
+      return {
+        sessionId,
+        taskId,
+        supported: true,
+        stopped: false,
+        alreadyTerminal: true,
+        status: "already_terminal",
+        task: runtimeTask,
+      };
+    }
+
+    const activeTask = this.tasks.get(sessionId);
+    if (!activeTask?.engine || !supportsClaudeBackgroundTasks(activeTask.engine)) {
+      return {
+        sessionId,
+        taskId,
+        supported: false,
+        stopped: false,
+        alreadyTerminal: false,
+        status: "not_supported",
+        message: "세션의 active Claude engine이 background task control을 지원하지 않습니다",
+        task: runtimeTask ?? null,
+      };
+    }
+
+    const result = await activeTask.engine.stopClaudeRuntimeTask(taskId);
+    return {
+      sessionId,
+      taskId,
+      supported: result.status !== "not_supported",
+      stopped: result.status === "ok",
+      alreadyTerminal: false,
+      status: result.status,
+      ...(result.message ? { message: result.message } : {}),
+      task: runtimeTask ?? null,
+    };
+  }
+
+  async backgroundClaudeRuntimeTasks(
+    sessionId: string,
+    toolUseId?: string,
+  ): Promise<ClaudeRuntimeBackgroundTasksResult> {
+    await this.resolveClaudeRuntimeState(sessionId);
+    const activeTask = this.tasks.get(sessionId);
+    if (!activeTask?.engine || !supportsClaudeBackgroundTasks(activeTask.engine)) {
+      return {
+        sessionId,
+        supported: false,
+        backgrounded: false,
+        status: "not_supported",
+        message: "세션의 active Claude engine이 background task control을 지원하지 않습니다",
+      };
+    }
+
+    const result = await activeTask.engine.backgroundClaudeRuntimeTasks(toolUseId);
+    return {
+      sessionId,
+      supported: result.status !== "not_supported",
+      backgrounded: result.status === "ok",
+      status: result.status,
+      ...(result.message ? { message: result.message } : {}),
+    };
+  }
+
   /**
    * AskUserQuestion/input_request 응답 전달.
    *
@@ -286,6 +382,16 @@ export class TaskManager {
     onResume: StartExecutionCallback,
   ): Promise<AddInterventionResult> {
     return await this.interventionRoute.addIntervention(params, onResume);
+  }
+
+  private async resolveClaudeRuntimeState(sessionId: string) {
+    const activeTask = this.tasks.get(sessionId);
+    if (activeTask?.claudeRuntime) return activeTask.claudeRuntime;
+    const session = await this.db.getSession(sessionId);
+    if (!session) {
+      throw new Error(`Task not found: ${sessionId}`);
+    }
+    return await loadClaudeRuntimeStateFromEvents(this.db, sessionId);
   }
 
   /**

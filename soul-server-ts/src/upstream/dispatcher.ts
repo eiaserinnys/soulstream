@@ -33,6 +33,14 @@ import {
   type ClaudeAuthCommand,
 } from "./claude_auth_commands.js";
 import {
+  ClaudeRuntimeCommandError,
+  ClaudeRuntimeCommands,
+  type ClaudeRuntimeBackgroundTasksCommand,
+  type ClaudeRuntimeListTasksCommand,
+  type ClaudeRuntimeStopTaskCommand,
+  type ClaudeRuntimeTaskOutputCommand,
+} from "./claude_runtime_commands.js";
+import {
   DeliveryCommandError,
   DeliveryCommands,
   type RespondCommand,
@@ -200,6 +208,7 @@ export class CommandDispatcher {
   private readonly claudeAuthCommands: ClaudeAuthCommands;
   private readonly providerUsageCommands: ProviderUsageCommands;
   private readonly deliveryCommands: DeliveryCommands;
+  private readonly claudeRuntimeCommands: ClaudeRuntimeCommands;
   private readonly realtimeCommands: RealtimeCommands;
   private readonly agentConfigCommands: AgentConfigCommands;
   private readonly reflectionCommands: ReflectionCommands;
@@ -242,6 +251,7 @@ export class CommandDispatcher {
       taskExecutor,
       logger,
     });
+    this.claudeRuntimeCommands = new ClaudeRuntimeCommands(taskManager);
     this.realtimeCommands = new RealtimeCommands(realtimeBroker);
     this.agentConfigCommands = new AgentConfigCommands(
       agentConfigService,
@@ -258,6 +268,14 @@ export class CommandDispatcher {
       respond: (cmd) => this.handleRespond(cmd as RespondCommand),
       approve_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCommand),
       reject_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCommand),
+      claude_runtime_list_tasks: (cmd) =>
+        this.handleClaudeRuntimeListTasks(cmd as ClaudeRuntimeListTasksCommand),
+      claude_runtime_task_output: (cmd) =>
+        this.handleClaudeRuntimeTaskOutput(cmd as ClaudeRuntimeTaskOutputCommand),
+      claude_runtime_stop_task: (cmd) =>
+        this.handleClaudeRuntimeStopTask(cmd as ClaudeRuntimeStopTaskCommand),
+      claude_runtime_background_tasks: (cmd) =>
+        this.handleClaudeRuntimeBackgroundTasks(cmd as ClaudeRuntimeBackgroundTasksCommand),
       realtime_create_call: (cmd) =>
         this.handleRealtimeCreateCall(cmd as RealtimeCreateCallCommand),
       realtime_event: (cmd) =>
@@ -351,6 +369,49 @@ export class CommandDispatcher {
       }
     } catch (err) {
       if (err instanceof DeliveryCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async handleClaudeRuntimeListTasks(
+    cmd: ClaudeRuntimeListTasksCommand,
+  ): Promise<void> {
+    await this.sendClaudeRuntimeCommand(() => this.claudeRuntimeCommands.listTasks(cmd), cmd);
+  }
+
+  private async handleClaudeRuntimeTaskOutput(
+    cmd: ClaudeRuntimeTaskOutputCommand,
+  ): Promise<void> {
+    await this.sendClaudeRuntimeCommand(() => this.claudeRuntimeCommands.taskOutput(cmd), cmd);
+  }
+
+  private async handleClaudeRuntimeStopTask(
+    cmd: ClaudeRuntimeStopTaskCommand,
+  ): Promise<void> {
+    await this.sendClaudeRuntimeCommand(() => this.claudeRuntimeCommands.stopTask(cmd), cmd);
+  }
+
+  private async handleClaudeRuntimeBackgroundTasks(
+    cmd: ClaudeRuntimeBackgroundTasksCommand,
+  ): Promise<void> {
+    await this.sendClaudeRuntimeCommand(
+      () => this.claudeRuntimeCommands.backgroundTasks(cmd),
+      cmd,
+    );
+  }
+
+  private async sendClaudeRuntimeCommand(
+    buildAck: () => Promise<Record<string, unknown> | null>,
+    cmd: CommandLike,
+  ): Promise<void> {
+    try {
+      const ack = await buildAck();
+      if (ack) await this.send(ack);
+    } catch (err) {
+      if (err instanceof ClaudeRuntimeCommandError) {
         await this.sendError(cmd, err.message);
         return;
       }

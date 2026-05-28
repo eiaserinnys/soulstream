@@ -31,6 +31,10 @@ from soulstream_server.constants import (
     CMD_CLAUDE_AUTH_DELETE_TOKEN,
     CMD_CLAUDE_AUTH_GET_USAGE,
     CMD_CLAUDE_AUTH_GET_PROFILE,
+    CMD_CLAUDE_RUNTIME_BACKGROUND_TASKS,
+    CMD_CLAUDE_RUNTIME_LIST_TASKS,
+    CMD_CLAUDE_RUNTIME_STOP_TASK,
+    CMD_CLAUDE_RUNTIME_TASK_OUTPUT,
     CMD_PLAN_AGENT_PROFILE_UPDATE,
     CMD_PROVIDER_USAGE_GET,
     CMD_REFLECT_BRIEF,
@@ -349,6 +353,36 @@ class NodeConnection:
             CMD_INTERRUPT_SESSION,
             {"agentSessionId": session_id},
         )
+
+    async def send_claude_runtime_list_tasks(self, session_id: str) -> dict:
+        """Claude runtime background task 목록 조회."""
+        return await self._send_command(
+            CMD_CLAUDE_RUNTIME_LIST_TASKS,
+            {"agentSessionId": session_id},
+        )
+
+    async def send_claude_runtime_task_output(self, session_id: str, task_id: str) -> dict:
+        """Claude runtime background task 출력 조회."""
+        return await self._send_command(
+            CMD_CLAUDE_RUNTIME_TASK_OUTPUT,
+            {"agentSessionId": session_id, "taskId": task_id},
+        )
+
+    async def send_claude_runtime_stop_task(self, session_id: str, task_id: str) -> dict:
+        """Claude runtime background task 중단."""
+        return await self._send_command(
+            CMD_CLAUDE_RUNTIME_STOP_TASK,
+            {"agentSessionId": session_id, "taskId": task_id},
+        )
+
+    async def send_claude_runtime_background_tasks(
+        self, session_id: str, tool_use_id: str | None = None
+    ) -> dict:
+        """현재 Claude query의 foreground task를 background 처리."""
+        payload: dict[str, Any] = {"agentSessionId": session_id}
+        if tool_use_id is not None:
+            payload["toolUseId"] = tool_use_id
+        return await self._send_command(CMD_CLAUDE_RUNTIME_BACKGROUND_TASKS, payload)
 
     # ─── Attachment WS reverse-proxy ────────────────────
     # 노드 self-reported host:port HTTP 가정 폐기 (운영 로그: eias-shopping host=127.0.0.1)
