@@ -1121,6 +1121,162 @@ describe("ClaudeSdkClient", () => {
     expect(queryRef?.close).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    {
+      label: "stringified BashOutput content",
+      content: JSON.stringify({
+        backgroundTaskId: "bg-task-1",
+        rawOutputPath: "/tmp/bg-task-1.out",
+      }),
+      taskId: "bg-task-1",
+      outputFile: "/tmp/bg-task-1.out",
+    },
+    {
+      label: "content block list",
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            backgroundTaskId: "bg-task-2",
+            rawOutputPath: "/tmp/bg-task-2.out",
+          }),
+        },
+      ],
+      taskId: "bg-task-2",
+      outputFile: "/tmp/bg-task-2.out",
+    },
+    {
+      label: "top-level tool_use_result",
+      content: "Background task started",
+      toolUseResult: {
+        stdout: "",
+        stderr: "",
+        interrupted: false,
+        backgroundTaskId: "bg-task-3",
+        rawOutputPath: "/tmp/bg-task-3.out",
+      },
+      taskId: "bg-task-3",
+      outputFile: "/tmp/bg-task-3.out",
+    },
+  ])(
+    "extracts BashOutput backgroundTaskId from $label into Claude runtime task wire",
+    async ({ content, outputFile, taskId, toolUseResult }) => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            sdkMessages([
+              sdkSystemInit("claude-sess-bg"),
+              {
+                type: "assistant",
+                message: {
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "toolu-bash",
+                      name: "Bash",
+                      input: { command: "sleep 30 &" },
+                    },
+                  ],
+                },
+                parent_tool_use_id: null,
+                uuid: "assistant-bg",
+                session_id: "claude-sess-bg",
+              },
+              {
+                type: "user",
+                message: {
+                  role: "user",
+                  content: [
+                    {
+                      type: "tool_result",
+                      tool_use_id: "toolu-bash",
+                      content,
+                      is_error: false,
+                    },
+                  ],
+                },
+                ...(toolUseResult ? { tool_use_result: toolUseResult } : {}),
+                parent_tool_use_id: null,
+                uuid: "user-bg",
+                session_id: "claude-sess-bg",
+              },
+              sdkSuccessResult("claude-sess-bg", "done"),
+            ]),
+          ),
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toContain("claude_runtime_task_started");
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "claude_runtime_task_started",
+          taskId,
+          toolUseId: "toolu-bash",
+          taskType: "bash",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_task_updated",
+          taskId,
+          patch: expect.objectContaining({
+            status: "running",
+            is_backgrounded: true,
+            task_type: "bash",
+            tool_use_id: "toolu-bash",
+            output_file: outputFile,
+          }),
+        }),
+      ]),
+    );
+  },
+  );
+
+  it("propagates Query.backgroundTasks false as no_match", async () => {
+    const readyForBackground = deferred<void>();
+    const finishRun = deferred<void>();
+    const backgroundTasks = vi.fn(async () => false);
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            (async function* () {
+              readyForBackground.resolve();
+              await finishRun.promise;
+              yield sdkSuccessResult("claude-sess-bg-no-match", "done");
+            })(),
+            { backgroundTasks },
+          ),
+      },
+      silentLogger,
+    );
+
+    const eventsPromise = collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+    await readyForBackground.promise;
+
+    await expect(client.backgroundClaudeRuntimeTasks("toolu-missing")).resolves.toMatchObject({
+      status: "no_match",
+      message: expect.stringContaining("toolu-missing"),
+    });
+    expect(backgroundTasks).toHaveBeenCalledWith("toolu-missing");
+
+    finishRun.resolve();
+    await eventsPromise;
+  });
+
   it("uses a bounded runtime drain when Claude never reports idle", async () => {
     let queryRef: ClaudeSdkQuery | undefined;
     const client = new ClaudeSdkClient(
@@ -1887,10 +2043,14 @@ async function* sdkMessages(messages: unknown[]): AsyncGenerator<SDKMessage> {
   }
 }
 
-function makeQuery(generator: AsyncGenerator<SDKMessage>): ClaudeSdkQuery {
+function makeQuery(
+  generator: AsyncGenerator<SDKMessage>,
+  overrides: Partial<ClaudeSdkQuery> = {},
+): ClaudeSdkQuery {
   return Object.assign(generator, {
     interrupt: vi.fn().mockResolvedValue(undefined),
     close: vi.fn(),
+    ...overrides,
   }) as unknown as ClaudeSdkQuery;
 }
 

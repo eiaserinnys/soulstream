@@ -19,6 +19,7 @@ import type {
   TaskItem,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
+import type { ClaudeRuntimeView } from "./claude-runtime-state";
 
 // === Dashboard Config ===
 
@@ -105,6 +106,9 @@ export interface DashboardState {
 
   /** 이벤트 트리 루트 (소스 오브 트루스) */
   tree: EventTreeNode | null;
+
+  /** Claude Agent SDK runtime task 상태. P0-A claude_runtime_* wire에서 복원한다. */
+  claudeRuntime: ClaudeRuntimeView | null;
 
   /** 트리 변경 감지용 카운터 (mutable tree이므로 참조 비교 불가) */
   treeVersion: number;

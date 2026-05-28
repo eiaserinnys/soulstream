@@ -6,6 +6,7 @@
  */
 
 import { useDashboardStore } from "../stores/dashboard-store";
+import { ClaudeRuntimeTasksPanel } from "./ClaudeRuntimeTasksPanel";
 import { SessionMetadata } from "./detail/SessionMetadata";
 import { ScrollArea } from "./ui/scroll-area";
 
@@ -13,6 +14,7 @@ export function SessionInfoView() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const metadata = useDashboardStore((s) => s.activeSessionSummary?.metadata);
   const callerSessionId = useDashboardStore((s) => s.activeSessionSummary?.callerSessionId);
+  const claudeRuntime = useDashboardStore((s) => s.claudeRuntime);
 
   if (!activeSessionKey) {
     return (
@@ -25,6 +27,7 @@ export function SessionInfoView() {
   return (
     <ScrollArea className="h-full">
       <SessionMetadata metadata={metadata ?? []} callerSessionId={callerSessionId} />
+      <ClaudeRuntimeTasksPanel sessionId={activeSessionKey} runtime={claudeRuntime} />
     </ScrollArea>
   );
 }

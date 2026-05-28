@@ -286,3 +286,24 @@ export interface SupportsToolApproval {
     options?: ToolApprovalDeliveryOptions,
   ): Promise<ToolApprovalDeliveryResult> | ToolApprovalDeliveryResult;
 }
+
+export type ClaudeBackgroundTaskControlStatus =
+  | "ok"
+  | "no_match"
+  | "not_supported"
+  | "no_active_query"
+  | "failed";
+
+export interface ClaudeBackgroundTaskControlResult {
+  status: ClaudeBackgroundTaskControlStatus;
+  message?: string;
+}
+
+export interface SupportsClaudeBackgroundTasks {
+  backgroundClaudeRuntimeTasks(
+    toolUseId?: string,
+  ): Promise<ClaudeBackgroundTaskControlResult> | ClaudeBackgroundTaskControlResult;
+  stopClaudeRuntimeTask(
+    taskId: string,
+  ): Promise<ClaudeBackgroundTaskControlResult> | ClaudeBackgroundTaskControlResult;
+}

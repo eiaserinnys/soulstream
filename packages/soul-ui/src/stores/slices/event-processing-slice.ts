@@ -34,6 +34,7 @@ import {
   processEventSingle,
   processEventsBatch,
 } from "../event-processor";
+import { applyClaudeRuntimeStoreEvent } from "../claude-runtime-state";
 import { flattenTree } from "../../lib/flatten-tree";
 import { groupMessages } from "../../lib/grouping";
 
@@ -48,6 +49,7 @@ import { groupMessages } from "../../lib/grouping";
 export function getEventProcessingInitialState(): Pick<
   DashboardState,
   | "tree"
+  | "claudeRuntime"
   | "treeVersion"
   | "chatPrependedCount"
   | "chatLastPrependAtMs"
@@ -57,6 +59,7 @@ export function getEventProcessingInitialState(): Pick<
 > {
   return {
     tree: null as EventTreeNode | null,
+    claudeRuntime: null,
     treeVersion: 0,
     chatPrependedCount: 0,
     chatLastPrependAtMs: null as number | null,
@@ -68,8 +71,9 @@ export function getEventProcessingInitialState(): Pick<
 
 export type EventProcessingSlice = Pick<
   DashboardState,
-  | "tree"
-  | "treeVersion"
+    | "tree"
+    | "claudeRuntime"
+    | "treeVersion"
   | "chatPrependedCount"
   | "chatLastPrependAtMs"
   | "lastEventId"
@@ -97,6 +101,7 @@ export const createEventProcessingSlice: StateCreator<
 
   processEvent: (event, eventId) => {
     const state = get();
+    const nextClaudeRuntime = applyClaudeRuntimeStoreEvent(state.claudeRuntime, event);
     const result = processEventSingle(
       event,
       eventId,
@@ -123,6 +128,9 @@ export const createEventProcessingSlice: StateCreator<
         ...(result.newLastEventId > state.lastEventId
           ? { lastEventId: result.newLastEventId }
           : {}),
+        ...(nextClaudeRuntime !== state.claudeRuntime
+          ? { claudeRuntime: nextClaudeRuntime }
+          : {}),
       });
       return result.statusUpdate;
     }
@@ -132,6 +140,9 @@ export const createEventProcessingSlice: StateCreator<
         tree: result.root,
         treeVersion: state.treeVersion + 1,
         lastEventId: result.newLastEventId,
+        ...(nextClaudeRuntime !== state.claudeRuntime
+          ? { claudeRuntime: nextClaudeRuntime }
+          : {}),
         ...(result.notify
           ? { pendingNotifications: [...state.pendingNotifications, event] }
           : {}),
@@ -139,6 +150,9 @@ export const createEventProcessingSlice: StateCreator<
     } else {
       set({
         lastEventId: result.newLastEventId,
+        ...(nextClaudeRuntime !== state.claudeRuntime
+          ? { claudeRuntime: nextClaudeRuntime }
+          : {}),
         ...(result.notify
           ? { pendingNotifications: [...state.pendingNotifications, event] }
           : {}),
@@ -154,6 +168,10 @@ export const createEventProcessingSlice: StateCreator<
     if (events.length === 0) return { statusUpdates: [] };
 
     const state = get();
+    const nextClaudeRuntime = events.reduce(
+      (runtime, item) => applyClaudeRuntimeStoreEvent(runtime, item.event),
+      state.claudeRuntime,
+    );
     const result = processEventsBatch(
       events,
       state.processingCtx,
@@ -177,6 +195,9 @@ export const createEventProcessingSlice: StateCreator<
     set({
       ...(result.updated
         ? { tree: result.root, treeVersion: state.treeVersion + 1 }
+        : {}),
+      ...(nextClaudeRuntime !== state.claudeRuntime
+        ? { claudeRuntime: nextClaudeRuntime }
         : {}),
       lastEventId: result.maxEventId,
       ...(result.notifications.length > 0
@@ -227,6 +248,10 @@ export const createEventProcessingSlice: StateCreator<
         state.lastEventId,
         true,
       );
+      const nextClaudeRuntime = events.reduce(
+        (runtime, item) => applyClaudeRuntimeStoreEvent(runtime, item.event),
+        state.claudeRuntime,
+      );
 
       // prompt_suggestion: clear → set 순서. 히스토리 prepend 경로에서도 동일하게 처리.
       if (result.clearPromptSuggestionFor) {
@@ -253,6 +278,9 @@ export const createEventProcessingSlice: StateCreator<
               // ChatView 1렌더 사이클 정합 보장 (async batching 무의존).
               chatPrependedCount: state.chatPrependedCount + addedGrouped,
             }
+          : {}),
+        ...(nextClaudeRuntime !== state.claudeRuntime
+          ? { claudeRuntime: nextClaudeRuntime }
           : {}),
         // chatLastPrependAtMs는 "마지막 prepend 시도 시각" — settle 가드용.
         // result.updated와 무관하게 항상 갱신한다 (events.length===0 early-return으로

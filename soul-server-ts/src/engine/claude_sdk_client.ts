@@ -18,7 +18,10 @@ import type { Logger } from "pino";
 
 import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
-import type { EngineUserInput } from "./protocol.js";
+import type {
+  ClaudeBackgroundTaskControlResult,
+  EngineUserInput,
+} from "./protocol.js";
 import { getImageAttachmentMediaType } from "../attachments/image_media.js";
 
 const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
@@ -251,6 +254,54 @@ export class ClaudeSdkClient implements ClaudeClient {
     const activeInput = this.activeInput;
     if (!activeInput) return false;
     return activeInput.push(makeUserMessage(input.prompt, input.imageAttachmentPaths));
+  }
+
+  async backgroundClaudeRuntimeTasks(
+    toolUseId?: string,
+  ): Promise<ClaudeBackgroundTaskControlResult> {
+    const query = this.activeQuery;
+    if (!query) {
+      return {
+        status: "no_active_query",
+        message: "No active Claude SDK query",
+      };
+    }
+    try {
+      const backgrounded = await query.backgroundTasks(toolUseId);
+      if (!backgrounded) {
+        return {
+          status: "no_match",
+          message: toolUseId
+            ? `No foreground Claude task matched toolUseId: ${toolUseId}`
+            : "No foreground Claude task was backgrounded",
+        };
+      }
+      return { status: "ok" };
+    } catch (err) {
+      return {
+        status: "failed",
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
+  async stopClaudeRuntimeTask(taskId: string): Promise<ClaudeBackgroundTaskControlResult> {
+    const query = this.activeQuery;
+    if (!query) {
+      return {
+        status: "no_active_query",
+        message: "No active Claude SDK query",
+      };
+    }
+    try {
+      await query.stopTask(taskId);
+      return { status: "ok" };
+    } catch (err) {
+      return {
+        status: "failed",
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   async interrupt(): Promise<boolean> {
@@ -1044,15 +1095,65 @@ export class ClaudeSdkClient implements ClaudeClient {
       const toolUseId = asString(record.tool_use_id) ?? null;
       if (toolUseId && this.emittedToolResultIds.has(toolUseId)) continue;
       if (toolUseId) this.emittedToolResultIds.add(toolUseId);
+      const toolName = toolUseId ? this.toolNamesById.get(toolUseId) : undefined;
       events.push({
         type: "tool_result",
-        toolName: toolUseId ? this.toolNamesById.get(toolUseId) : undefined,
+        toolName,
         toolUseId,
         result: record.content,
         isError: Boolean(record.is_error),
       });
+      events.push(
+        ...this.mapBackgroundBashTaskFromToolResult({
+          toolName,
+          toolUseId,
+          content: [record.content, message.tool_use_result],
+        }),
+      );
     }
     return events;
+  }
+
+  private mapBackgroundBashTaskFromToolResult(params: {
+    toolName?: string;
+    toolUseId: string | null;
+    content: unknown;
+  }): ClaudeClientEvent[] {
+    const background = extractBackgroundBashOutput(params.content);
+    if (!background.taskId) return [];
+    if (params.toolName && params.toolName !== "Bash" && params.toolName !== "bash") {
+      return [];
+    }
+
+    const patch: Record<string, unknown> = {
+      status: "running",
+      is_backgrounded: true,
+      task_type: "bash",
+    };
+    if (params.toolUseId) patch.tool_use_id = params.toolUseId;
+    if (background.outputFile) patch.output_file = background.outputFile;
+
+    const existing = this.runtimeTasksById.get(background.taskId);
+    this.runtimeTasksById.set(background.taskId, {
+      status: existing?.status ?? "running",
+    });
+
+    const updateEvent: ClaudeClientEvent = {
+      type: "claude_runtime_task_updated",
+      taskId: background.taskId,
+      patch,
+    };
+    if (existing) return [updateEvent];
+    return [
+      {
+        type: "claude_runtime_task_started",
+        taskId: background.taskId,
+        ...(params.toolUseId ? { toolUseId: params.toolUseId } : {}),
+        taskType: "bash",
+        description: "Background Bash task",
+      },
+      updateEvent,
+    ];
   }
 
   private mapResultMessage(message: Record<string, unknown>): ClaudeClientEvent[] {
@@ -1351,6 +1452,61 @@ function messageContent(message: Record<string, unknown>): unknown[] {
   const content = nested?.content ?? message.content;
   if (Array.isArray(content)) return content;
   return [];
+}
+
+function extractBackgroundBashOutput(value: unknown): {
+  taskId?: string;
+  outputFile?: string;
+} {
+  const record = extractBackgroundBashOutputRecord(value);
+  const taskId =
+    asString(record?.backgroundTaskId) ??
+    asString(record?.background_task_id);
+  const outputFile =
+    asString(record?.rawOutputPath) ??
+    asString(record?.raw_output_path);
+  return {
+    ...(taskId ? { taskId } : {}),
+    ...(outputFile ? { outputFile } : {}),
+  };
+}
+
+function extractBackgroundBashOutputRecord(
+  value: unknown,
+): Record<string, unknown> | undefined {
+  const record = asRecord(value);
+  if (record) {
+    if (
+      asString(record.backgroundTaskId) ||
+      asString(record.background_task_id)
+    ) {
+      return record;
+    }
+    for (const key of ["content", "text", "tool_use_result"]) {
+      const nested = extractBackgroundBashOutputRecord(record[key]);
+      if (nested) return nested;
+    }
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = extractBackgroundBashOutputRecord(item);
+      if (nested) return nested;
+    }
+    return undefined;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return undefined;
+    try {
+      return extractBackgroundBashOutputRecord(JSON.parse(trimmed));
+    } catch {
+      return undefined;
+    }
+  }
+
+  return undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

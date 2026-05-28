@@ -56,6 +56,14 @@ class RespondRequest(BaseModel):
     answers: dict
 
 
+class ClaudeRuntimeBackgroundTasksRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+    tool_use_id: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("toolUseId", "tool_use_id"),
+    )
+
+
 class ToolApprovalRequest(BaseModel):
     message: Optional[str] = None
     alwaysApprove: Optional[bool] = None

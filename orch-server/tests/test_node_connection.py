@@ -8,6 +8,10 @@ import pytest
 from soulstream_server.constants import (
     CMD_APPROVE_TOOL,
     CMD_APPLY_AGENT_PROFILE_UPDATE,
+    CMD_CLAUDE_RUNTIME_BACKGROUND_TASKS,
+    CMD_CLAUDE_RUNTIME_LIST_TASKS,
+    CMD_CLAUDE_RUNTIME_STOP_TASK,
+    CMD_CLAUDE_RUNTIME_TASK_OUTPUT,
     CMD_CREATE_SESSION,
     CMD_DELETE_SESSION_ATTACHMENTS,
     CMD_DOWNLOAD_ATTACHMENT,
@@ -287,6 +291,42 @@ class TestCommandSending:
         assert sent["type"] == CMD_INTERRUPT_SESSION
         assert sent["agentSessionId"] == "sess-1"
         assert result["interrupted"] is True
+
+    async def test_send_claude_runtime_background_task_commands(self, node, ws):
+        """Claude runtime background task commands proxy list/output/stop/background."""
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({
+                    "type": f"{data['type']}_ack",
+                    "requestId": req_id,
+                    "status": "ok",
+                    "tasks": [{"taskId": "bg-1"}],
+                    "output": "done",
+                    "stopped": True,
+                    "backgrounded": True,
+                })
+
+        ws.send_json.side_effect = resolve_future
+
+        await node.send_claude_runtime_list_tasks("sess-1")
+        await node.send_claude_runtime_task_output("sess-1", "bg-1")
+        await node.send_claude_runtime_stop_task("sess-1", "bg-1")
+        await node.send_claude_runtime_background_tasks("sess-1", "toolu-bash")
+
+        payloads = [call.args[0] for call in ws.send_json.await_args_list]
+        assert payloads[-4]["type"] == CMD_CLAUDE_RUNTIME_LIST_TASKS
+        assert payloads[-4]["agentSessionId"] == "sess-1"
+        assert payloads[-3]["type"] == CMD_CLAUDE_RUNTIME_TASK_OUTPUT
+        assert payloads[-3]["agentSessionId"] == "sess-1"
+        assert payloads[-3]["taskId"] == "bg-1"
+        assert payloads[-2]["type"] == CMD_CLAUDE_RUNTIME_STOP_TASK
+        assert payloads[-2]["taskId"] == "bg-1"
+        assert payloads[-1]["type"] == CMD_CLAUDE_RUNTIME_BACKGROUND_TASKS
+        assert payloads[-1]["agentSessionId"] == "sess-1"
+        assert payloads[-1]["toolUseId"] == "toolu-bash"
 
     async def test_send_provider_usage_get_sends_optional_provider(self, node, ws):
         """send_provider_usage_get proxies provider usage over node WS."""

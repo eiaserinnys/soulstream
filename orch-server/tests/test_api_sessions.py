@@ -439,6 +439,89 @@ class TestRespond:
         assert resp.json()["detail"]["error"]["code"] == code
 
 
+class TestClaudeBackgroundTasks:
+    """Claude runtime background task API tests."""
+
+    @staticmethod
+    def _make_resolve_by_request_id(node, result):
+        async def resolve_on_send(data):
+            ws_command_id = data.get("requestId", "")
+            future = node._pending.get(ws_command_id)
+            if future is not None and not future.done():
+                future.set_result(result)
+        return resolve_on_send
+
+    async def test_background_task_list_output_stop_routes_send_ws_commands(
+        self, client, node_manager
+    ):
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "runtime-node"})
+        ws.send_json.side_effect = self._make_resolve_by_request_id(
+            node,
+            {
+                "type": "claude_runtime_list_tasks_ack",
+                "status": "ok",
+                "tasks": [{"taskId": "bg-1"}],
+                "output": "done",
+                "stopped": True,
+            },
+        )
+
+        list_resp = await client.get("/api/sessions/test-session/background-tasks")
+        output_resp = await client.get(
+            "/api/sessions/test-session/background-tasks/bg-1/output"
+        )
+        stop_resp = await client.post(
+            "/api/sessions/test-session/background-tasks/bg-1/stop"
+        )
+
+        assert list_resp.status_code == 200
+        assert list_resp.json()["tasks"] == [{"taskId": "bg-1"}]
+        assert output_resp.status_code == 200
+        assert output_resp.json()["output"] == "done"
+        assert stop_resp.status_code == 200
+        assert stop_resp.json()["stopped"] is True
+
+        payloads = [call.args[0] for call in ws.send_json.await_args_list]
+        assert [payload["type"] for payload in payloads[-3:]] == [
+            "claude_runtime_list_tasks",
+            "claude_runtime_task_output",
+            "claude_runtime_stop_task",
+        ]
+        assert payloads[-2]["taskId"] == "bg-1"
+        assert payloads[-1]["taskId"] == "bg-1"
+
+    async def test_background_tasks_route_accepts_camel_case_tool_use_id(
+        self, client, node_manager
+    ):
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "runtime-node-2"})
+        ws.send_json.side_effect = self._make_resolve_by_request_id(
+            node,
+            {
+                "type": "claude_runtime_background_tasks_ack",
+                "status": "ok",
+                "backgrounded": True,
+            },
+        )
+
+        resp = await client.post(
+            "/api/sessions/test-session/background-tasks/background",
+            json={"toolUseId": "toolu-bash"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["backgrounded"] is True
+        payload = ws.send_json.await_args_list[-1].args[0]
+        assert payload["type"] == "claude_runtime_background_tasks"
+        assert payload["agentSessionId"] == "test-session"
+        assert payload["toolUseId"] == "toolu-bash"
+
+
 class TestToolApprovals:
     """POST /api/sessions/{session_id}/tool-approvals/{approval_id} tests."""
 
