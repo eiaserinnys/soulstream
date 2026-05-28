@@ -1233,27 +1233,14 @@ function makeCompactSystemReminder(systemPrompt: string[] | undefined): string |
   return `${COMPACT_SYSTEM_REMINDER_HEADER}\n\n<system_prompt>\n${promptBlocks.join("\n\n")}\n</system_prompt>`;
 }
 
-function resolveClaudeExecutableFromPath(
+export function resolveClaudeExecutableFromPath(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+  platform: NodeJS.Platform = process.platform,
 ): string | undefined {
   const pathValue = env.PATH ?? env.Path ?? env.path;
   if (!pathValue) return undefined;
 
-  const baseNames = process.platform === "win32" ? ["claude.exe", "claude"] : ["claude"];
-  const pathExts = process.platform === "win32"
-    ? (env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM")
-      .split(";")
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean)
-    : [""];
-
-  const candidateNames = new Set<string>();
-  for (const baseName of baseNames) {
-    candidateNames.add(baseName);
-    if (process.platform === "win32" && !baseName.includes(".")) {
-      for (const ext of pathExts) candidateNames.add(`${baseName}${ext}`);
-    }
-  }
+  const candidateNames = platform === "win32" ? ["claude.exe"] : ["claude"];
 
   for (const dir of pathValue.split(delimiter)) {
     if (!dir) continue;

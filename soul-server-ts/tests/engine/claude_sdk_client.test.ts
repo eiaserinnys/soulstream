@@ -5,16 +5,17 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import { ClaudeSdkClient } from "../../src/engine/claude_adapter.js";
-import type {
-  ClaudeSdkQueryFn,
-  ClaudeSdkQueryParams,
+import {
+  resolveClaudeExecutableFromPath,
+  type ClaudeSdkQueryFn,
+  type ClaudeSdkQueryParams,
 } from "../../src/engine/claude_sdk_client.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
 
@@ -201,6 +202,47 @@ describe("ClaudeSdkClient", () => {
 
     expect(captured[0]?.options?.env).toEqual({});
     expect(captured[0]?.options?.pathToClaudeCodeExecutable).toBe("/usr/local/bin/claude");
+  });
+
+  it("resolves only native Claude Code exe candidates on Windows PATH", () => {
+    const dir = mkdtempSync(join(tmpdir(), "claude-windows-path-"));
+    try {
+      const shimDir = join(dir, "npm");
+      const nativeDir = join(dir, "local-bin");
+      mkdirSync(shimDir, { recursive: true });
+      mkdirSync(nativeDir, { recursive: true });
+      writeFileSync(join(shimDir, "claude"), "", { mode: 0o755 });
+      writeFileSync(join(shimDir, "claude.cmd"), "", { mode: 0o755 });
+      writeFileSync(join(shimDir, "claude.ps1"), "", { mode: 0o755 });
+      writeFileSync(join(nativeDir, "claude.exe"), "", { mode: 0o755 });
+
+      expect(
+        resolveClaudeExecutableFromPath(
+          {
+            PATH: [shimDir, nativeDir].join(delimiter),
+            PATHEXT: ".COM;.EXE;.CMD;.PS1",
+          },
+          "win32",
+        ),
+      ).toBe(join(nativeDir, "claude.exe"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps non-Windows Claude Code PATH resolution unchanged", () => {
+    const dir = mkdtempSync(join(tmpdir(), "claude-posix-path-"));
+    try {
+      const binDir = join(dir, "bin");
+      mkdirSync(binDir, { recursive: true });
+      writeFileSync(join(binDir, "claude"), "", { mode: 0o755 });
+
+      expect(
+        resolveClaudeExecutableFromPath({ PATH: binDir }, "linux"),
+      ).toBe(join(binDir, "claude"));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("context_usage includes cached input tokens because they still occupy the request context", async () => {
