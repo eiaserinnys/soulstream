@@ -64,6 +64,51 @@ describe("Task turn loop transition", () => {
     expect(isOpenAiAgentsApprovalPending(task)).toBe(true);
   });
 
+  it("pending Claude runtime work pauses completion before consuming queued interventions", () => {
+    const task = makeTask({
+      claudeRuntime: {
+        sessionState: "running",
+        updatedAt: Date.now(),
+        tasks: {
+          "task-bg-1": {
+            taskId: "task-bg-1",
+            status: "running",
+            updatedAt: Date.now(),
+            isBackgrounded: true,
+          },
+        },
+      },
+      interventionQueue: [{ text: "later", user: "u" }],
+    });
+
+    const decision = resolveTurnLoopTransition(task, codexAgent);
+
+    expect(decision).toEqual({ kind: "awaiting_runtime" });
+    expect(task.interventionQueue).toHaveLength(1);
+    expect(task.status).toBe("running");
+  });
+
+  it("idle Claude runtime with terminal tasks allows normal completion", () => {
+    const task = makeTask({
+      claudeRuntime: {
+        sessionState: "idle",
+        updatedAt: Date.now(),
+        tasks: {
+          "task-bg-1": {
+            taskId: "task-bg-1",
+            status: "completed",
+            updatedAt: Date.now(),
+          },
+        },
+      },
+    });
+
+    const decision = resolveTurnLoopTransition(task, codexAgent);
+
+    expect(decision).toEqual({ kind: "stop" });
+    expect(task.status).toBe("completed");
+  });
+
   it("running task with empty queue marks the task completed and stops", () => {
     const task = makeTask();
 

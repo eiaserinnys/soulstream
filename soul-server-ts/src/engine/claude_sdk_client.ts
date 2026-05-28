@@ -47,12 +47,32 @@ const COMPACT_SYSTEM_REMINDER_HEADER = [
  *   - AskUserQuestion/tool_use 재개: `stop_reason="tool_use"` result 뒤 다음 SDK 메시지가 도착한 경우
  */
 const DEFAULT_POST_RESULT_DRAIN_MS = 2_000;
+const DEFAULT_CLAUDE_RUNTIME_DRAIN_MAX_MS = 6 * 60 * 60 * 1_000;
 const INPUT_REQUEST_TIMEOUT = Symbol("input_request_timeout");
 const INPUT_REQUEST_ABORTED = Symbol("input_request_aborted");
 const DRAIN_TIMEOUT = Symbol("post_result_drain_timeout");
 
 type ClaudeResultEvent = Extract<ClaudeClientEvent, { type: "result" }>;
 type PostResultContinuationKind = "compact_boundary" | "tool_use";
+type ClaudeRuntimeSessionState = "idle" | "running" | "requires_action";
+type ClaudeRuntimeTaskStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "stopped"
+  | "killed";
+
+type ClaudeRuntimeTaskSnapshot = {
+  status: ClaudeRuntimeTaskStatus;
+};
+
+const TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES = new Set<ClaudeRuntimeTaskStatus>([
+  "completed",
+  "failed",
+  "stopped",
+  "killed",
+]);
 
 type DrainAfterResultOutcome =
   | { action: "finish"; events: ClaudeClientEvent[] }
@@ -77,6 +97,11 @@ export interface ClaudeSdkClientConfig {
    * 기본 2초 — Python `PROMPT_SUGGESTION_DRAIN_TIMEOUT` 정합. 테스트에서 가속용으로만 override.
    */
   postResultDrainMs?: number;
+  /**
+   * Result 이후 Claude runtime task/session이 idle로 settle되길 기다리는 안전 상한.
+   * ScheduleWakeup 같은 장기 실행을 허용하되 프로세스가 영원히 붙잡히지는 않게 한다.
+   */
+  runtimeDrainMaxMs?: number;
   resolveClaudeExecutablePath?: () => string | undefined;
 }
 
@@ -98,6 +123,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly logger: Logger;
   private readonly inputRequestTimeoutMs: number;
   private readonly postResultDrainMs: number;
+  private readonly runtimeDrainMaxMs: number;
   private readonly resolveClaudeExecutablePath: () => string | undefined;
   private readonly pendingInputRequests = new Map<string, PendingInputRequest>();
   private readonly toolNamesById = new Map<string, string>();
@@ -105,6 +131,8 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly emittedSubagentStartIds = new Set<string>();
   private readonly emittedSubagentStopIds = new Set<string>();
   private readonly pendingCompactHookTriggers: string[] = [];
+  private readonly runtimeTasksById = new Map<string, ClaudeRuntimeTaskSnapshot>();
+  private runtimeSessionState: ClaudeRuntimeSessionState | undefined;
 
   private activeQuery: ClaudeSdkQuery | null = null;
   private activeInput: PushAsyncIterable<SDKUserMessage> | null = null;
@@ -118,6 +146,8 @@ export class ClaudeSdkClient implements ClaudeClient {
       config.inputRequestTimeoutMs ?? DEFAULT_INPUT_REQUEST_TIMEOUT_MS;
     this.postResultDrainMs =
       config.postResultDrainMs ?? DEFAULT_POST_RESULT_DRAIN_MS;
+    this.runtimeDrainMaxMs =
+      config.runtimeDrainMaxMs ?? DEFAULT_CLAUDE_RUNTIME_DRAIN_MAX_MS;
     this.resolveClaudeExecutablePath =
       config.resolveClaudeExecutablePath ?? resolveClaudeExecutableFromPath;
   }
@@ -505,15 +535,6 @@ export class ClaudeSdkClient implements ClaudeClient {
               ? this.postResultContinuations(resultEvent, compactRetryCount)
               : new Set<PostResultContinuationKind>();
 
-          if (continuations.size === 0) {
-            for (const event of terminalEvents) output.push(event);
-            const drain = await this.drainAfterResult(queryIter, continuations);
-            for (const event of drain.events) output.push(event);
-            query.close();
-            output.close();
-            return;
-          }
-
           const drain = await this.drainAfterResult(queryIter, continuations);
 
           if (drain.action === "continue") {
@@ -522,8 +543,7 @@ export class ClaudeSdkClient implements ClaudeClient {
             continue;
           }
 
-          for (const event of terminalEvents) output.push(event);
-          for (const event of drain.events) output.push(event);
+          this.pushTerminalEvents(output, terminalEvents, drain.events);
           query.close();
           output.close();
           return;
@@ -552,6 +572,14 @@ export class ClaudeSdkClient implements ClaudeClient {
           return;
         }
       }
+      if (this.hasPendingRuntimeWork()) {
+        output.push({
+          type: "error",
+          fatal: true,
+          errorCode: "claude_runtime_ended_before_idle",
+          message: "Claude SDK stream ended while runtime work was still pending.",
+        });
+      }
       output.close();
     } catch (err) {
       output.fail(err);
@@ -576,48 +604,70 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   /**
-   * Result 이후 SDK가 보낼 수 있는 trailing/continuation 메시지 1개를 short drain한다.
+   * Result 이후 SDK가 보낼 수 있는 trailing/continuation/runtime 메시지를 drain한다.
    *
    * Python `receive_loop._drain_after_result` 정본은 prompt_suggestion만 처리한다.
    * TS SDK에서는 같은 위치에 compact_boundary와 tool_use 재개 메시지도 올 수 있으므로,
    * result의 SDK 신호로 허용된 continuation만 통과시키고 나머지는 terminal drain으로 좁힌다.
    *
-   * `iter.next()`를 *호출만 하고 race*하는 패턴 — Python의 `extra_task = asyncio.create_task(aiter.__anext__())` 정합.
-   * timeout이 먼저 만료되어도 in-flight next()를 강제 cancel할 수 없으므로 fire-and-forget으로 두고
-   * 함수가 즉시 반환. 다음 호출자(`query.close()`)가 stream 종료 신호를 주면 in-flight next()도 함께 정리됨.
+   * runtime task/session이 pending이면 SDK `session_state_changed.idle` 또는 runtime task terminal
+   * 상태까지 기다린다. 단, `runtimeDrainMaxMs`를 넘기면 query를 닫아 무한 대기를 차단한다.
    */
   private async drainAfterResult(
     queryIter: AsyncIterator<SDKMessage>,
     continuations: ReadonlySet<PostResultContinuationKind>,
   ): Promise<DrainAfterResultOutcome> {
-    let timer: NodeJS.Timeout | undefined;
-    const timeoutPromise = new Promise<typeof DRAIN_TIMEOUT>((resolve) => {
-      timer = setTimeout(() => resolve(DRAIN_TIMEOUT), this.postResultDrainMs);
-    });
+    const startedAt = Date.now();
+    const events: ClaudeClientEvent[] = [];
 
-    const nextPromise = queryIter.next().then(
-      (res) => res,
-      (err) => ({ done: true as const, value: undefined as unknown as SDKMessage, _error: err }),
-    );
+    for (;;) {
+      const pendingRuntime = this.hasPendingRuntimeWork();
+      const waitMs = pendingRuntime
+        ? Math.max(0, this.runtimeDrainMaxMs - (Date.now() - startedAt))
+        : this.postResultDrainMs;
 
-    try {
-      const settled = await Promise.race([nextPromise, timeoutPromise]);
+      if (waitMs <= 0) {
+        events.push({
+          type: "debug",
+          message: `Claude runtime drain timed out after ${this.runtimeDrainMaxMs}ms; closing query.`,
+        });
+        return { action: "finish", events };
+      }
+
+      const settled = await this.nextWithDrainTimeout(queryIter, waitMs);
       if (settled === DRAIN_TIMEOUT) {
-        this.logger.debug?.({ ms: this.postResultDrainMs }, "post-result drain timed out");
-        return { action: "finish", events: [] };
+        if (pendingRuntime) {
+          events.push({
+            type: "debug",
+            message: `Claude runtime drain timed out after ${this.runtimeDrainMaxMs}ms; closing query.`,
+          });
+        } else {
+          this.logger.debug?.({ ms: this.postResultDrainMs }, "post-result drain timed out");
+        }
+        return { action: "finish", events };
       }
       if (settled.done) {
-        return { action: "finish", events: [] };
+        return { action: "finish", events };
       }
+
       const msg = asRecord(settled.value);
       if (msg && msg.type === "prompt_suggestion") {
-        return { action: "finish", events: this.mapPromptSuggestion(msg) };
+        events.push(...this.mapPromptSuggestion(msg));
+        if (this.hasPendingRuntimeWork()) continue;
+        return { action: "finish", events };
+      }
+      if (msg && isRuntimeSystemMessage(msg)) {
+        events.push(...this.mapSystemMessage(msg));
+        if (this.hasPendingRuntimeWork()) continue;
+        return { action: "finish", events };
       }
       if (msg?.type === "system" && msg.subtype === "compact_boundary") {
-        const events = this.mapSystemMessage(msg);
+        const mapped = this.mapSystemMessage(msg);
+        events.push(...mapped);
         if (continuations.has("compact_boundary")) {
           return { action: "continue", reason: "compact_boundary", events };
         }
+        if (this.hasPendingRuntimeWork()) continue;
         return { action: "finish", events };
       }
       if (continuations.has("tool_use")) {
@@ -625,27 +675,60 @@ export class ClaudeSdkClient implements ClaudeClient {
           { messageType: msg?.type ?? "unknown" },
           "post-tool-use-result drain received continuation message",
         );
-        const events =
+        const mapped =
           msg?.type === "result"
             ? this.mapResultMessage(msg)
             : this.mapSdkMessage(settled.value);
+        events.push(...mapped);
         if (msg?.type === "result") {
           return { action: "finish", events };
         }
         return { action: "continue", reason: "tool_use", events };
       }
-      // 비 prompt_suggestion 메시지는 무시 + warn (Python narrowing 정책 정합)
+      // Runtime이 이미 pending이면 stray 메시지 하나 때문에 query를 닫지 않는다.
       this.logger.warn?.(
         { messageType: msg?.type ?? "unknown" },
         "post-result drain received unexpected message type — ignoring",
       );
-      return { action: "finish", events: [] };
+      if (this.hasPendingRuntimeWork()) continue;
+      return { action: "finish", events };
+    }
+  }
+
+  private async nextWithDrainTimeout(
+    queryIter: AsyncIterator<SDKMessage>,
+    waitMs: number,
+  ): Promise<IteratorResult<SDKMessage> | typeof DRAIN_TIMEOUT> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeoutPromise = new Promise<typeof DRAIN_TIMEOUT>((resolve) => {
+      timer = setTimeout(() => resolve(DRAIN_TIMEOUT), waitMs);
+    });
+    const nextPromise = queryIter.next().then(
+      (res) => res,
+      (err) => ({ done: true as const, value: undefined as unknown as SDKMessage, _error: err }),
+    );
+    try {
+      return await Promise.race([nextPromise, timeoutPromise]);
     } catch (err) {
       this.logger.debug?.({ err }, "post-result drain errored — ignoring");
-      return { action: "finish", events: [] };
+      return { done: true, value: undefined as unknown as SDKMessage };
     } finally {
       if (timer) clearTimeout(timer);
     }
+  }
+
+  private pushTerminalEvents(
+    output: EventQueue<ClaudeClientEvent>,
+    terminalEvents: ClaudeClientEvent[],
+    drainEvents: ClaudeClientEvent[],
+  ): void {
+    if (this.hasPendingRuntimeWork() || drainEvents.some(isRuntimeClientEvent)) {
+      for (const event of drainEvents) output.push(event);
+      for (const event of terminalEvents) output.push(event);
+      return;
+    }
+    for (const event of terminalEvents) output.push(event);
+    for (const event of drainEvents) output.push(event);
   }
 
   private mapSdkMessage(message: SDKMessage): ClaudeClientEvent[] {
@@ -676,6 +759,20 @@ export class ClaudeSdkClient implements ClaudeClient {
       const sessionId = asString(message.session_id);
       return sessionId ? [{ type: "session", sessionId }] : [];
     }
+    if (subtype === "session_state_changed") {
+      const state = parseRuntimeSessionState(message.state);
+      if (!state) return [];
+      this.runtimeSessionState = state;
+      return [
+        {
+          type: "claude_runtime_session_state",
+          state,
+          ...(asString(message.session_id) !== undefined
+            ? { sessionId: asString(message.session_id) }
+            : {}),
+        },
+      ];
+    }
     if (subtype === "away_summary") {
       // Python `message_processor._handle_system_message` L113-120 정합:
       // SystemMessage(subtype="away_summary", data={content: ...}) → AwaySummaryEngineEvent
@@ -696,12 +793,85 @@ export class ClaudeSdkClient implements ClaudeClient {
       ];
     }
     if (subtype === "task_started") {
-      const agentId = asString(message.task_id);
-      return this.makeSubagentStartEvents(agentId, asString(message.task_type));
+      const taskId = asString(message.task_id);
+      if (!taskId) return [];
+      this.runtimeTasksById.set(taskId, { status: "running" });
+      return [
+        ...this.makeSubagentStartEvents(taskId, asString(message.task_type)),
+        {
+          type: "claude_runtime_task_started",
+          taskId,
+          ...(asString(message.session_id) !== undefined
+            ? { sessionId: asString(message.session_id) }
+            : {}),
+          ...(asString(message.tool_use_id) !== undefined
+            ? { toolUseId: asString(message.tool_use_id) }
+            : {}),
+          ...(asString(message.description) !== undefined
+            ? { description: asString(message.description) }
+            : {}),
+          ...(asString(message.task_type) !== undefined
+            ? { taskType: asString(message.task_type) }
+            : {}),
+          ...(asString(message.workflow_name) !== undefined
+            ? { workflowName: asString(message.workflow_name) }
+            : {}),
+          ...(asString(message.prompt) !== undefined ? { prompt: asString(message.prompt) } : {}),
+          ...(typeof message.skip_transcript === "boolean"
+            ? { skipTranscript: message.skip_transcript }
+            : {}),
+        },
+      ];
     }
     if (subtype === "task_notification") {
-      const agentId = asString(message.task_id);
-      return this.makeSubagentStopEvents(agentId);
+      const taskId = asString(message.task_id);
+      const status = parseRuntimeNotificationStatus(message.status);
+      if (!taskId || !status) return [];
+      this.runtimeTasksById.set(taskId, { status });
+      return [
+        ...this.makeSubagentStopEvents(taskId),
+        {
+          type: "claude_runtime_task_notification",
+          taskId,
+          status,
+          ...(asString(message.session_id) !== undefined
+            ? { sessionId: asString(message.session_id) }
+            : {}),
+          ...(asString(message.tool_use_id) !== undefined
+            ? { toolUseId: asString(message.tool_use_id) }
+            : {}),
+          ...(asString(message.output_file) !== undefined
+            ? { outputFile: asString(message.output_file) }
+            : {}),
+          ...(asString(message.summary) !== undefined
+            ? { summary: asString(message.summary) }
+            : {}),
+          ...(message.usage !== undefined ? { usage: message.usage } : {}),
+          ...(typeof message.skip_transcript === "boolean"
+            ? { skipTranscript: message.skip_transcript }
+            : {}),
+        },
+      ];
+    }
+    if (subtype === "task_updated") {
+      const taskId = asString(message.task_id);
+      const patch = asRecord(message.patch) ?? {};
+      if (!taskId) return [];
+      const status = parseRuntimeTaskStatus(patch.status);
+      const existing = this.runtimeTasksById.get(taskId);
+      this.runtimeTasksById.set(taskId, {
+        status: status ?? existing?.status ?? "pending",
+      });
+      return [
+        {
+          type: "claude_runtime_task_updated",
+          taskId,
+          patch,
+          ...(asString(message.session_id) !== undefined
+            ? { sessionId: asString(message.session_id) }
+            : {}),
+        },
+      ];
     }
     if (subtype === "notification") {
       const text = asString(message.text) ?? "";
@@ -725,10 +895,31 @@ export class ClaudeSdkClient implements ClaudeClient {
       ];
     }
     if (subtype === "task_progress") {
+      const taskId = asString(message.task_id);
+      if (taskId) this.runtimeTasksById.set(taskId, { status: "running" });
       const summary = asString(message.summary);
       const description = asString(message.description);
       const text = summary ?? description;
-      return text ? [{ type: "progress", text }] : [];
+      const events: ClaudeClientEvent[] = text ? [{ type: "progress", text }] : [];
+      if (taskId) {
+        events.push({
+          type: "claude_runtime_task_progress",
+          taskId,
+          ...(asString(message.session_id) !== undefined
+            ? { sessionId: asString(message.session_id) }
+            : {}),
+          ...(asString(message.tool_use_id) !== undefined
+            ? { toolUseId: asString(message.tool_use_id) }
+            : {}),
+          ...(description !== undefined ? { description } : {}),
+          ...(message.usage !== undefined ? { usage: message.usage } : {}),
+          ...(asString(message.last_tool_name) !== undefined
+            ? { lastToolName: asString(message.last_tool_name) }
+            : {}),
+          ...(summary !== undefined ? { summary } : {}),
+        });
+      }
+      return events;
     }
     if (subtype === "hook_progress") {
       const text = asString(message.output) ?? asString(message.stdout) ?? asString(message.stderr);
@@ -910,6 +1101,14 @@ export class ClaudeSdkClient implements ClaudeClient {
     return [{ type: "subagent_stop", agentId }];
   }
 
+  private hasPendingRuntimeWork(): boolean {
+    if (this.runtimeSessionState && this.runtimeSessionState !== "idle") return true;
+    for (const runtimeTask of this.runtimeTasksById.values()) {
+      if (!TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES.has(runtimeTask.status)) return true;
+    }
+    return false;
+  }
+
   private consumePendingCompactHookTrigger(trigger: string): boolean {
     const index = this.pendingCompactHookTriggers.indexOf(trigger);
     if (index === -1) return false;
@@ -937,6 +1136,8 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.emittedSubagentStartIds.clear();
     this.emittedSubagentStopIds.clear();
     this.pendingCompactHookTriggers.length = 0;
+    this.runtimeTasksById.clear();
+    this.runtimeSessionState = undefined;
   }
 
   private abortPendingInputRequests(): void {
@@ -1123,6 +1324,46 @@ function asNullableString(value: unknown): string | null | undefined {
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function isRuntimeSystemMessage(message: Record<string, unknown> | undefined): boolean {
+  if (message?.type !== "system") return false;
+  return (
+    message.subtype === "session_state_changed" ||
+    message.subtype === "task_started" ||
+    message.subtype === "task_updated" ||
+    message.subtype === "task_progress" ||
+    message.subtype === "task_notification"
+  );
+}
+
+function isRuntimeClientEvent(event: ClaudeClientEvent): boolean {
+  return event.type.startsWith("claude_runtime_");
+}
+
+function parseRuntimeSessionState(value: unknown): ClaudeRuntimeSessionState | undefined {
+  return value === "idle" || value === "running" || value === "requires_action"
+    ? value
+    : undefined;
+}
+
+function parseRuntimeTaskStatus(value: unknown): ClaudeRuntimeTaskStatus | undefined {
+  return value === "pending" ||
+    value === "running" ||
+    value === "completed" ||
+    value === "failed" ||
+    value === "stopped" ||
+    value === "killed"
+    ? value
+    : undefined;
+}
+
+function parseRuntimeNotificationStatus(
+  value: unknown,
+): "completed" | "failed" | "stopped" | undefined {
+  return value === "completed" || value === "failed" || value === "stopped"
+    ? value
+    : undefined;
 }
 
 function asStringArray(value: unknown): string[] | null {

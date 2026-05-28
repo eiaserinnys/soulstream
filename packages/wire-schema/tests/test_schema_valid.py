@@ -108,6 +108,11 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventPromptSuggestion",
         "SSEEventSubagentStart",
         "SSEEventSubagentStop",
+        "SSEEventClaudeRuntimeSessionState",
+        "SSEEventClaudeRuntimeTaskStarted",
+        "SSEEventClaudeRuntimeTaskUpdated",
+        "SSEEventClaudeRuntimeTaskProgress",
+        "SSEEventClaudeRuntimeTaskNotification",
         "SSEEventContextUsage",
         "SSEEventCompact",
         "SSEEventReconnect",
@@ -116,8 +121,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventAssistantError",
         "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 40, (
-        "SSE event $defs 40종 (orch-server/constants.py KNOWN_SSE_EVENT_TYPES + Agents SDK events)."
+    assert len(sse_types) == 45, (
+        "SSE event $defs 45종 (orch-server/constants.py KNOWN_SSE_EVENT_TYPES + Agents SDK events)."
     )
 
     expected = wire_types | sse_types
@@ -251,6 +256,11 @@ def test_known_sse_event_types_completeness() -> None:
         "prompt_suggestion",
         "subagent_start",
         "subagent_stop",
+        "claude_runtime_session_state",
+        "claude_runtime_task_started",
+        "claude_runtime_task_updated",
+        "claude_runtime_task_progress",
+        "claude_runtime_task_notification",
         "context_usage",
         "compact",
         "reconnect",

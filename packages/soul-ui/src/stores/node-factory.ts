@@ -168,8 +168,13 @@ export function createNodeFromEvent(
       );
     }
 
-    // R4: subagent_start/stop은 무시 — 가상 노드를 생성하지 않음
+    // R4/P0-A: subagent/runtime status events are state-only; no timeline node.
     case "subagent_start":
+    case "claude_runtime_session_state":
+    case "claude_runtime_task_started":
+    case "claude_runtime_task_updated":
+    case "claude_runtime_task_progress":
+    case "claude_runtime_task_notification":
       return null;
 
     case "tool_start": {
@@ -481,8 +486,13 @@ export function applyUpdate(
       return false;
     }
 
-    // R4: subagent_stop은 무시 — subagent 가상 노드가 없으므로 완료 마킹 불필요
+    // R4/P0-A: subagent/runtime status events are state-only; no timeline node.
     case "subagent_stop":
+    case "claude_runtime_session_state":
+    case "claude_runtime_task_started":
+    case "claude_runtime_task_updated":
+    case "claude_runtime_task_progress":
+    case "claude_runtime_task_notification":
       return false;
 
     default:

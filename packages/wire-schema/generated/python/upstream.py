@@ -845,6 +845,88 @@ class SSEEventSubagentStop(TypedDict):
     type: Literal['subagent_stop']
 
 
+class SSEEventClaudeRuntimeSessionState(TypedDict):
+    """
+    SSE: Claude Agent SDK session runtime 상태. idle은 background-agent loop 종료 후 authoritative turn-over signal.
+    """
+
+    type: Literal['claude_runtime_session_state']
+    state: Literal['idle', 'running', 'requires_action']
+    session_id: NotRequired[str]
+    timestamp: NotRequired[float]
+
+
+class SSEEventClaudeRuntimeTaskStarted(TypedDict):
+    """
+    SSE: Claude Agent SDK background/runtime task 시작.
+    """
+
+    type: Literal['claude_runtime_task_started']
+    task_id: str
+    session_id: NotRequired[str]
+    tool_use_id: NotRequired[str]
+    description: NotRequired[str]
+    task_type: NotRequired[str]
+    workflow_name: NotRequired[str]
+    prompt: NotRequired[str]
+    skip_transcript: NotRequired[bool]
+    timestamp: NotRequired[float]
+
+
+class Patch(TypedDict):
+    status: NotRequired[Literal['pending', 'running', 'completed', 'failed', 'killed']]
+    description: NotRequired[str]
+    end_time: NotRequired[float]
+    total_paused_ms: NotRequired[float]
+    error: NotRequired[str]
+    is_backgrounded: NotRequired[bool]
+
+
+class SSEEventClaudeRuntimeTaskUpdated(TypedDict):
+    """
+    SSE: Claude Agent SDK runtime task 상태 patch.
+    """
+
+    type: Literal['claude_runtime_task_updated']
+    task_id: str
+    session_id: NotRequired[str]
+    patch: Patch
+    timestamp: NotRequired[float]
+
+
+class SSEEventClaudeRuntimeTaskProgress(TypedDict):
+    """
+    SSE: Claude Agent SDK runtime task 진행 상태.
+    """
+
+    type: Literal['claude_runtime_task_progress']
+    task_id: str
+    session_id: NotRequired[str]
+    tool_use_id: NotRequired[str]
+    description: NotRequired[str]
+    usage: NotRequired[dict[str, Any]]
+    last_tool_name: NotRequired[str]
+    summary: NotRequired[str]
+    timestamp: NotRequired[float]
+
+
+class SSEEventClaudeRuntimeTaskNotification(TypedDict):
+    """
+    SSE: Claude Agent SDK runtime task terminal notification. 기존 subagent_stop과 병행 발행.
+    """
+
+    type: Literal['claude_runtime_task_notification']
+    task_id: str
+    status: Literal['completed', 'failed', 'stopped']
+    session_id: NotRequired[str]
+    tool_use_id: NotRequired[str]
+    output_file: NotRequired[str]
+    summary: NotRequired[str]
+    usage: NotRequired[dict[str, Any]]
+    skip_transcript: NotRequired[bool]
+    timestamp: NotRequired[float]
+
+
 class SSEEventContextUsage(TypedDict):
     """
     SSE: 컨텍스트 사용량.
@@ -947,6 +1029,11 @@ class SessionEventEnvelope(TypedDict):
         | SSEEventPromptSuggestion
         | SSEEventSubagentStart
         | SSEEventSubagentStop
+        | SSEEventClaudeRuntimeSessionState
+        | SSEEventClaudeRuntimeTaskStarted
+        | SSEEventClaudeRuntimeTaskUpdated
+        | SSEEventClaudeRuntimeTaskProgress
+        | SSEEventClaudeRuntimeTaskNotification
         | SSEEventContextUsage
         | SSEEventCompact
         | SSEEventReconnect

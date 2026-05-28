@@ -373,6 +373,17 @@ describe("createNodeFromEvent", () => {
       expect(node).toBeNull();
     });
 
+    it("should return null for Claude runtime status events (P0-A: state-only)", () => {
+      const node = createNodeFromEvent({
+        type: "claude_runtime_task_started",
+        task_id: "task-bg-1",
+        description: "background task",
+        timestamp: 1700000000,
+      }, 21);
+
+      expect(node).toBeNull();
+    });
+
     it("should create node for tool_start", () => {
       const event: ToolStartEvent = {
         type: "tool_start",

@@ -352,6 +352,64 @@ describe("Claude event mapper semantic history contract", () => {
     }
   });
 
+  it("Claude runtime events use claude_runtime_* wire keys", () => {
+    expect(
+      mapClaudeClientEvent({
+        type: "claude_runtime_session_state",
+        state: "idle",
+        sessionId: "claude-sess-runtime",
+        timestamp: 143,
+      })[0],
+    ).toEqual({
+      type: "claude_runtime_session_state",
+      state: "idle",
+      session_id: "claude-sess-runtime",
+      timestamp: 143,
+    });
+
+    expect(
+      mapClaudeClientEvent({
+        type: "claude_runtime_task_started",
+        taskId: "task-1",
+        sessionId: "claude-sess-runtime",
+        toolUseId: "toolu-bg",
+        description: "background bash",
+        taskType: "bash",
+        skipTranscript: true,
+        timestamp: 144,
+      })[0],
+    ).toEqual({
+      type: "claude_runtime_task_started",
+      task_id: "task-1",
+      session_id: "claude-sess-runtime",
+      tool_use_id: "toolu-bg",
+      description: "background bash",
+      task_type: "bash",
+      skip_transcript: true,
+      timestamp: 144,
+    });
+
+    expect(
+      mapClaudeClientEvent({
+        type: "claude_runtime_task_notification",
+        taskId: "task-1",
+        status: "completed",
+        outputFile: "/tmp/task.out",
+        summary: "done",
+        usage: { total_tokens: 10 },
+        timestamp: 145,
+      })[0],
+    ).toEqual({
+      type: "claude_runtime_task_notification",
+      task_id: "task-1",
+      status: "completed",
+      output_file: "/tmp/task.out",
+      summary: "done",
+      usage: { total_tokens: 10 },
+      timestamp: 145,
+    });
+  });
+
   it("golden fixture covers all P3 parity event families", () => {
     const fixture: ClaudeClientEvent[] = [
       { type: "session", sessionId: "claude-sess-1" },

@@ -80,6 +80,11 @@ KNOWN_SSE_EVENT_TYPES = frozenset({
     "guardrail_tripwire",
     "realtime_status", "realtime_transcript",
     "subagent_start", "subagent_stop",
+    "claude_runtime_session_state",
+    "claude_runtime_task_started",
+    "claude_runtime_task_updated",
+    "claude_runtime_task_progress",
+    "claude_runtime_task_notification",
     "context_usage", "compact", "reconnect", "history_sync",
     "metadata_updated",
 })
