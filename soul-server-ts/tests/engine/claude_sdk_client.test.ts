@@ -102,6 +102,7 @@ describe("ClaudeSdkClient", () => {
     expect(captured[0]?.options?.hooks).toMatchObject({
       PreToolUse: [{ matcher: "Agent", hooks: [expect.any(Function)] }],
       PreCompact: [{ hooks: [expect.any(Function)] }],
+      SessionStart: [{ matcher: "compact", hooks: [expect.any(Function)] }],
       SubagentStart: [{ hooks: [expect.any(Function)] }],
       SubagentStop: [{ hooks: [expect.any(Function)] }],
       Notification: [{ hooks: [expect.any(Function)] }],
@@ -651,6 +652,111 @@ describe("ClaudeSdkClient", () => {
         message: "Claude session compacted (auto)",
       },
     ]);
+  });
+
+  it("SessionStart compact hook adds model-visible system context before the same SDK continuation answers", async () => {
+    const hookOutputs: unknown[] = [];
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const hook = params.options?.hooks?.SessionStart?.[0]?.hooks[0];
+              hookOutputs.push(
+                await hook?.(
+                  {
+                    hook_event_name: "SessionStart",
+                    source: "compact",
+                    model: "claude-opus-4-6",
+                  } as any,
+                  undefined,
+                  { signal: new AbortController().signal },
+                ),
+              );
+              yield {
+                type: "system",
+                subtype: "compact_boundary",
+                compact_metadata: { trigger: "auto", pre_tokens: 199000 },
+                uuid: "compact-boundary-post-hook",
+                session_id: "claude-sess-postcompact",
+              } as unknown as SDKMessage;
+              yield {
+                type: "assistant",
+                message: { content: [{ type: "text", text: "after compact" }] },
+                parent_tool_use_id: null,
+                uuid: "assistant-after-postcompact",
+                session_id: "claude-sess-postcompact",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-postcompact", "final");
+            })(),
+          ),
+        postResultDrainMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        {
+          prompt: "hi",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+          systemPrompt: "STABLE SYSTEM PROMPT\n\n키키 페르소나를 유지한다.",
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    const hookOutput = hookOutputs[0] as {
+      systemMessage?: string;
+      hookSpecificOutput?: {
+        hookEventName?: string;
+        additionalContext?: string;
+      };
+    };
+    expect(hookOutput.systemMessage).toBeUndefined();
+    expect(hookOutput.hookSpecificOutput).toMatchObject({
+      hookEventName: "SessionStart",
+    });
+    expect(hookOutput.hookSpecificOutput?.additionalContext).toContain(
+      "Conversation compaction just occurred.",
+    );
+    expect(hookOutput.hookSpecificOutput?.additionalContext).toContain("STABLE SYSTEM PROMPT");
+    expect(hookOutput.hookSpecificOutput?.additionalContext).toContain("키키 페르소나를 유지한다.");
+    expect(hookOutput.hookSpecificOutput?.additionalContext).not.toContain(
+      SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
+    );
+    expect(events.map((event) => event.type)).toEqual([
+      "compact",
+      "text",
+      "result",
+      "context_usage",
+      "complete",
+    ]);
+    expect(events[1]).toMatchObject({ type: "text", text: "after compact" });
+    expect(events[2]).toMatchObject({ type: "result", output: "final" });
+  });
+
+  it("does not register compact system reminder hook when no system prompt exists", async () => {
+    const captured: ClaudeSdkQueryParams[] = [];
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) => {
+          captured.push(params);
+          return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-no-system", "done")]));
+        },
+      },
+      silentLogger,
+    );
+
+    await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(captured[0]?.options?.hooks).not.toHaveProperty("SessionStart");
   });
 
   it("steers active turns through the SDK streaming input without polling", async () => {

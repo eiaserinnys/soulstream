@@ -26,6 +26,11 @@ const DEFAULT_INPUT_REQUEST_TIMEOUT_MS = 300_000;
 const DEFAULT_MAX_CONTEXT_TOKENS = 200_000;
 const MCP_CONFIG_FILE = "mcp_config.json";
 const MAX_COMPACT_RETRIES = 3;
+const COMPACT_SYSTEM_REMINDER_HEADER = [
+  "Conversation compaction just occurred.",
+  "The following system instructions remain authoritative. Continue following them exactly.",
+  "Use them as instructions only; do not quote this reminder to the user.",
+].join(" ");
 /**
  * Result 도착 후 SDK가 발행하는 `prompt_suggestion` 메시지를 받기 위한 short drain 시간.
  *
@@ -260,7 +265,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       includePartialMessages: false,
       toolConfig: { askUserQuestion: { previewFormat: "markdown" } },
       canUseTool: this.makeCanUseTool(output),
-      hooks: this.buildHooks(output),
+      hooks: this.buildHooks(output, systemPrompt),
       ...(options.model ? { model: options.model } : {}),
       ...(systemPrompt ? { systemPrompt } : {}),
       ...(options.resumeSessionId ? { resume: options.resumeSessionId } : {}),
@@ -316,7 +321,11 @@ export class ClaudeSdkClient implements ClaudeClient {
     };
   }
 
-  private buildHooks(output: EventQueue<ClaudeClientEvent>): NonNullable<ClaudeSdkOptions["hooks"]> {
+  private buildHooks(
+    output: EventQueue<ClaudeClientEvent>,
+    systemPrompt: string[] | undefined,
+  ): NonNullable<ClaudeSdkOptions["hooks"]> {
+    const compactSystemReminder = makeCompactSystemReminder(systemPrompt);
     const hooks: NonNullable<ClaudeSdkOptions["hooks"]> = {
       PreToolUse: [
         {
@@ -418,6 +427,27 @@ export class ClaudeSdkClient implements ClaudeClient {
         },
       ],
     };
+    if (compactSystemReminder) {
+      hooks.SessionStart = [
+        {
+          matcher: "compact",
+          hooks: [
+            async (input) => {
+              const record = asRecord(input);
+              if (asString(record?.source) !== "compact") {
+                return {};
+              }
+              return {
+                hookSpecificOutput: {
+                  hookEventName: "SessionStart",
+                  additionalContext: compactSystemReminder,
+                },
+              };
+            },
+          ],
+        },
+      ];
+    }
     return hooks;
   }
 
@@ -1192,6 +1222,15 @@ function makeCacheableSystemPrompt(systemPrompt: string | string[]): string[] {
     return [...systemPrompt, SYSTEM_PROMPT_DYNAMIC_BOUNDARY];
   }
   return [systemPrompt, SYSTEM_PROMPT_DYNAMIC_BOUNDARY];
+}
+
+function makeCompactSystemReminder(systemPrompt: string[] | undefined): string | undefined {
+  const promptBlocks = systemPrompt
+    ?.filter((block) => block !== SYSTEM_PROMPT_DYNAMIC_BOUNDARY)
+    .map((block) => block.trim())
+    .filter((block) => block.length > 0);
+  if (!promptBlocks || promptBlocks.length === 0) return undefined;
+  return `${COMPACT_SYSTEM_REMINDER_HEADER}\n\n<system_prompt>\n${promptBlocks.join("\n\n")}\n</system_prompt>`;
 }
 
 function resolveClaudeExecutableFromPath(
