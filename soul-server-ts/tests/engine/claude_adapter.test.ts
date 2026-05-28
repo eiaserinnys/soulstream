@@ -130,6 +130,20 @@ describe("ClaudeEngineAdapter options parity", () => {
     });
   });
 
+  it("부모 process env의 prompt suggestion 명시값을 보존한다", () => {
+    const env = buildClaudeEnvironment({
+      processEnv: {
+        HOME: "/home/test",
+        [CLAUDE_PROMPT_SUGGESTION_ENV]: "0",
+      },
+    });
+
+    expect(env).toMatchObject({
+      HOME: "/home/test",
+      [CLAUDE_PROMPT_SUGGESTION_ENV]: "0",
+    });
+  });
+
   it("task extraEnv가 부모 env와 prompt suggestion 기본값을 override한다", () => {
     const env = buildClaudeEnvironment({
       processEnv: {

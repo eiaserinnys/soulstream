@@ -25,7 +25,7 @@ export function buildClaudeEnvironment(params: {
       out[key] = value;
     }
   }
-  out[CLAUDE_PROMPT_SUGGESTION_ENV] = "1";
+  out[CLAUDE_PROMPT_SUGGESTION_ENV] = out[CLAUDE_PROMPT_SUGGESTION_ENV] ?? "1";
 
   for (const [key, value] of Object.entries(params.extraEnv ?? {})) {
     if (value !== undefined) {
