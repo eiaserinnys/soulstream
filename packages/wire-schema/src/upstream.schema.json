@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 81개 $defs (wire 36 + SSE event 45). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 83개 $defs (wire 36 + SSE event 47). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -119,8 +119,10 @@
             { "$ref": "#/$defs/SSEEventSubagentStop" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeSessionState" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskStarted" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskCreated" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskUpdated" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskProgress" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskCompleted" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskNotification" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleUpdated" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleDeleted" },
@@ -1186,6 +1188,22 @@
         "timestamp": { "type": "number" }
       }
     },
+    "SSEEventClaudeRuntimeTaskCreated": {
+      "type": "object",
+      "description": "SSE: Claude Agent SDK TaskCreated hook lifecycle. Soulstream Task Tree와 별도 개념.",
+      "required": ["type", "task_id", "subject"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_task_created" },
+        "task_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "subject": { "type": "string" },
+        "description": { "type": "string" },
+        "teammate_name": { "type": "string" },
+        "team_name": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
+    },
     "SSEEventClaudeRuntimeTaskUpdated": {
       "type": "object",
       "description": "SSE: Claude Agent SDK runtime task 상태 patch.",
@@ -1227,6 +1245,22 @@
         "usage": { "type": "object", "additionalProperties": true },
         "last_tool_name": { "type": "string" },
         "summary": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventClaudeRuntimeTaskCompleted": {
+      "type": "object",
+      "description": "SSE: Claude Agent SDK TaskCompleted hook lifecycle. Soulstream Task Tree와 별도 개념.",
+      "required": ["type", "task_id", "subject"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_task_completed" },
+        "task_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "subject": { "type": "string" },
+        "description": { "type": "string" },
+        "teammate_name": { "type": "string" },
+        "team_name": { "type": "string" },
         "timestamp": { "type": "number" }
       }
     },

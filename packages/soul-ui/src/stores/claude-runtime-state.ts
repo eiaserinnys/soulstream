@@ -17,6 +17,9 @@ export interface ClaudeRuntimeTaskView {
   description?: string;
   taskType?: string;
   workflowName?: string;
+  subject?: string;
+  teammateName?: string;
+  teamName?: string;
   prompt?: string;
   skipTranscript?: boolean;
   outputFile?: string;
@@ -132,6 +135,13 @@ export function applyClaudeRuntimeStoreEvent(
         runtimeTask.skipTranscript = event.skip_transcript;
       }
       break;
+    case "claude_runtime_task_created":
+      runtimeTask.status = "pending";
+      copyString(event, "subject", runtimeTask);
+      copyString(event, "description", runtimeTask);
+      copyString(event, "teammate_name", runtimeTask, "teammateName");
+      copyString(event, "team_name", runtimeTask, "teamName");
+      break;
     case "claude_runtime_task_updated": {
       const patch = event.patch ?? {};
       if (isTaskStatus(patch.status)) runtimeTask.status = patch.status;
@@ -158,6 +168,13 @@ export function applyClaudeRuntimeStoreEvent(
       if (event.usage && typeof event.usage === "object") {
         runtimeTask.usage = event.usage;
       }
+      break;
+    case "claude_runtime_task_completed":
+      runtimeTask.status = "completed";
+      copyString(event, "subject", runtimeTask);
+      copyString(event, "description", runtimeTask);
+      copyString(event, "teammate_name", runtimeTask, "teammateName");
+      copyString(event, "team_name", runtimeTask, "teamName");
       break;
     case "claude_runtime_task_notification":
       runtimeTask.status = event.status;

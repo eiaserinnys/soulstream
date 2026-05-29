@@ -85,6 +85,9 @@ export interface ClaudeRuntimeTaskState {
   description?: string;
   taskType?: string;
   workflowName?: string;
+  subject?: string;
+  teammateName?: string;
+  teamName?: string;
   prompt?: string;
   skipTranscript?: boolean;
   outputFile?: string;

@@ -106,6 +106,8 @@ describe("ClaudeSdkClient", () => {
       SessionStart: [{ matcher: "compact", hooks: [expect.any(Function)] }],
       SubagentStart: [{ hooks: [expect.any(Function)] }],
       SubagentStop: [{ hooks: [expect.any(Function)] }],
+      TaskCreated: [{ hooks: [expect.any(Function)] }],
+      TaskCompleted: [{ hooks: [expect.any(Function)] }],
       Notification: [{ hooks: [expect.any(Function)] }],
       Stop: [{ hooks: [expect.any(Function)] }],
     });
@@ -801,13 +803,35 @@ describe("ClaudeSdkClient", () => {
     ]);
   });
 
-  it("PreToolUse Agent hook removes run_in_background before Claude sees the tool input", async () => {
+  it("installs a non-mutating Agent PreToolUse hook that records run_in_background intent", async () => {
     const captured: ClaudeSdkQueryParams[] = [];
+    let hookResult: unknown;
     const client = new ClaudeSdkClient(
       {
         query: (params) => {
           captured.push(params);
-          return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-hooks", "done")]));
+          return makeQuery(
+            (async function* () {
+              const hook = params.options?.hooks?.PreToolUse?.[0]?.hooks[0];
+              hookResult = await hook?.(
+                {
+                  hook_event_name: "PreToolUse",
+                  tool_name: "Agent",
+                  tool_use_id: "toolu-agent-pretool",
+                  tool_input: {
+                    prompt: "review",
+                    run_in_background: true,
+                  },
+                  session_id: "claude-sess-hooks",
+                  transcript_path: "/tmp/transcript.jsonl",
+                  cwd: "/tmp/claude-work",
+                } as any,
+                "pretool-agent-bg",
+                { signal: new AbortController().signal },
+              );
+              yield sdkSuccessResult("claude-sess-hooks", "done");
+            })(),
+          );
         },
       },
       silentLogger,
@@ -820,25 +844,448 @@ describe("ClaudeSdkClient", () => {
       ),
     );
 
-    const hook = captured[0]?.options?.hooks?.PreToolUse?.[0]?.hooks[0];
-    expect(hook).toEqual(expect.any(Function));
-    const result = await hook!(
+    expect(captured[0]?.options?.hooks?.PreToolUse).toMatchObject([
+      { matcher: "Agent", hooks: [expect.any(Function)] },
+    ]);
+    expect(hookResult).toEqual({});
+  });
+
+  it("marks background Agent tasks without emitting foreground subagent events", async () => {
+    const client = new ClaudeSdkClient(
       {
-        hook_event_name: "PreToolUse",
-        tool_name: "Agent",
-        tool_input: { prompt: "review", run_in_background: true },
-        tool_use_id: "toolu_agent",
-      } as any,
-      "toolu_agent",
-      { signal: new AbortController().signal },
+        query: () =>
+          makeQuery(
+            sdkMessages([
+              {
+                type: "assistant",
+                message: {
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "toolu-agent-bg",
+                      name: "Agent",
+                      input: {
+                        prompt: "review the diff",
+                        description: "Review diff",
+                        run_in_background: true,
+                      },
+                    },
+                  ],
+                },
+                parent_tool_use_id: null,
+                uuid: "assistant-agent-bg",
+                session_id: "claude-sess-agent-bg",
+              },
+              {
+                type: "system",
+                subtype: "task_started",
+                task_id: "agent-task-1",
+                tool_use_id: "toolu-agent-bg",
+                description: "Review diff",
+                session_id: "claude-sess-agent-bg",
+              },
+              {
+                type: "system",
+                subtype: "task_notification",
+                task_id: "agent-task-1",
+                tool_use_id: "toolu-agent-bg",
+                status: "completed",
+                output_file: "/tmp/agent-task-1.out",
+                summary: "review complete",
+                session_id: "claude-sess-agent-bg",
+              },
+              sdkSuccessResult("claude-sess-agent-bg", "done"),
+            ]),
+          ),
+      },
+      silentLogger,
     );
 
-    expect(result).toEqual({
-      hookSpecificOutput: {
-        hookEventName: "PreToolUse",
-        updatedInput: { prompt: "review" },
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).not.toContain("subagent_start");
+    expect(events.map((event) => event.type)).not.toContain("subagent_stop");
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "tool_start",
+          toolName: "Agent",
+          toolInput: expect.objectContaining({ run_in_background: true }),
+          toolUseId: "toolu-agent-bg",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_task_started",
+          taskId: "agent-task-1",
+          toolUseId: "toolu-agent-bg",
+          taskType: "agent",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_task_updated",
+          taskId: "agent-task-1",
+          patch: expect.objectContaining({
+            status: "running",
+            is_backgrounded: true,
+            task_type: "agent",
+            tool_use_id: "toolu-agent-bg",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("emits Claude SDK TaskCreated and TaskCompleted hook lifecycle events", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const createdHook = params.options?.hooks?.TaskCreated?.[0]?.hooks[0];
+              const completedHook = params.options?.hooks?.TaskCompleted?.[0]?.hooks[0];
+              await createdHook?.(
+                {
+                  hook_event_name: "TaskCreated",
+                  task_id: "sdk-task-1",
+                  task_subject: "Investigate queue",
+                  task_description: "Check pending queue",
+                  teammate_name: "analyst",
+                  team_name: "runtime",
+                  session_id: "claude-sess-task-hook",
+                } as any,
+                "task-hook-created",
+                { signal: new AbortController().signal },
+              );
+              await completedHook?.(
+                {
+                  hook_event_name: "TaskCompleted",
+                  task_id: "sdk-task-1",
+                  task_subject: "Investigate queue",
+                  task_description: "Check pending queue",
+                  teammate_name: "analyst",
+                  team_name: "runtime",
+                  session_id: "claude-sess-task-hook",
+                } as any,
+                "task-hook-completed",
+                { signal: new AbortController().signal },
+              );
+              yield sdkSuccessResult("claude-sess-task-hook", "done");
+            })(),
+          ),
       },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "claude_runtime_task_created",
+          taskId: "sdk-task-1",
+          subject: "Investigate queue",
+          description: "Check pending queue",
+          teammateName: "analyst",
+          teamName: "runtime",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_task_completed",
+          taskId: "sdk-task-1",
+          subject: "Investigate queue",
+          description: "Check pending queue",
+          teammateName: "analyst",
+          teamName: "runtime",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps post-result drain open until delayed SDK TaskCompleted hook settles TaskCreated", async () => {
+    let queryRef: ClaudeSdkQuery | undefined;
+    const resultDraining = deferred<void>();
+    const allowTaskComplete = deferred<void>();
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) => {
+          queryRef = makeQuery(
+            (async function* () {
+              const createdHook = params.options?.hooks?.TaskCreated?.[0]?.hooks[0];
+              const completedHook = params.options?.hooks?.TaskCompleted?.[0]?.hooks[0];
+              await createdHook?.(
+                {
+                  hook_event_name: "TaskCreated",
+                  task_id: "sdk-task-delayed",
+                  task_subject: "Delayed task",
+                  session_id: "claude-sess-task-delayed",
+                } as any,
+                "task-hook-created",
+                { signal: new AbortController().signal },
+              );
+              yield sdkSuccessResult("claude-sess-task-delayed", "done");
+              resultDraining.resolve();
+              await allowTaskComplete.promise;
+              await completedHook?.(
+                {
+                  hook_event_name: "TaskCompleted",
+                  task_id: "sdk-task-delayed",
+                  task_subject: "Delayed task",
+                  session_id: "claude-sess-task-delayed",
+                } as any,
+                "task-hook-completed",
+                { signal: new AbortController().signal },
+              );
+            })(),
+          );
+          return queryRef;
+        },
+        postResultDrainMs: 5,
+        runtimeDrainMaxMs: 250,
+      },
+      silentLogger,
+    );
+
+    const eventsPromise = collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    await resultDraining.promise;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(queryRef?.close).not.toHaveBeenCalled();
+
+    allowTaskComplete.resolve();
+    const events = await eventsPromise;
+    expect(events.map((event) => event.type)).toEqual([
+      "claude_runtime_task_created",
+      "claude_runtime_task_completed",
+      "result",
+      "context_usage",
+      "complete",
+    ]);
+    expect(queryRef?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("suppresses SDK SubagentStart and SubagentStop hooks for run_in_background Agent tasks", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const startHook = params.options?.hooks?.SubagentStart?.[0]?.hooks[0];
+              const stopHook = params.options?.hooks?.SubagentStop?.[0]?.hooks[0];
+              yield {
+                type: "assistant",
+                message: {
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "toolu-agent-hook-bg",
+                      name: "Agent",
+                      input: {
+                        prompt: "review the diff",
+                        description: "Review diff",
+                        run_in_background: true,
+                      },
+                    },
+                  ],
+                },
+                parent_tool_use_id: null,
+                uuid: "assistant-agent-hook-bg",
+                session_id: "claude-sess-agent-hook-bg",
+              } as unknown as SDKMessage;
+              yield {
+                type: "system",
+                subtype: "task_started",
+                task_id: "agent-task-hook-bg",
+                tool_use_id: "toolu-agent-hook-bg",
+                description: "Review diff",
+                session_id: "claude-sess-agent-hook-bg",
+              } as unknown as SDKMessage;
+              await startHook?.(
+                {
+                  hook_event_name: "SubagentStart",
+                  agent_id: "agent-task-hook-bg",
+                  agent_type: "agent",
+                } as any,
+                "subagent-start-bg",
+                { signal: new AbortController().signal },
+              );
+              yield sdkSuccessResult("claude-sess-agent-hook-bg", "done");
+              await stopHook?.(
+                {
+                  hook_event_name: "SubagentStop",
+                  stop_hook_active: false,
+                  agent_id: "agent-task-hook-bg",
+                  agent_transcript_path: "/tmp/agent-task-hook-bg.jsonl",
+                  agent_type: "agent",
+                } as any,
+                "subagent-stop-bg",
+                { signal: new AbortController().signal },
+              );
+              yield {
+                type: "system",
+                subtype: "task_notification",
+                task_id: "agent-task-hook-bg",
+                tool_use_id: "toolu-agent-hook-bg",
+                status: "completed",
+                output_file: "/tmp/agent-task-hook-bg.out",
+                summary: "review complete",
+                session_id: "claude-sess-agent-hook-bg",
+              } as unknown as SDKMessage;
+            })(),
+          ),
+        postResultDrainMs: 5,
+        runtimeDrainMaxMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "tool_start",
+      "claude_runtime_task_started",
+      "claude_runtime_task_updated",
+      "claude_runtime_task_notification",
+      "result",
+      "context_usage",
+      "complete",
+    ]);
+    expect(events.map((event) => event.type)).not.toContain("subagent_start");
+    expect(events.map((event) => event.type)).not.toContain("subagent_stop");
+    expect(events[2]).toMatchObject({
+      type: "claude_runtime_task_updated",
+      taskId: "agent-task-hook-bg",
+      patch: expect.objectContaining({ is_backgrounded: true }),
     });
+  });
+
+  it("suppresses background Agent subagent hooks even when SubagentStart arrives before task_started", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const preToolHook = params.options?.hooks?.PreToolUse?.[0]?.hooks[0];
+              const startHook = params.options?.hooks?.SubagentStart?.[0]?.hooks[0];
+              const stopHook = params.options?.hooks?.SubagentStop?.[0]?.hooks[0];
+              await preToolHook?.(
+                {
+                  hook_event_name: "PreToolUse",
+                  tool_name: "Agent",
+                  tool_use_id: "toolu-agent-reverse-bg",
+                  tool_input: {
+                    prompt: "review the diff",
+                    description: "Review diff",
+                    run_in_background: true,
+                  },
+                  session_id: "claude-sess-agent-reverse-bg",
+                  transcript_path: "/tmp/transcript.jsonl",
+                  cwd: "/tmp/claude-work",
+                } as any,
+                "pretool-agent-reverse-bg",
+                { signal: new AbortController().signal },
+              );
+              await startHook?.(
+                {
+                  hook_event_name: "SubagentStart",
+                  agent_id: "toolu-agent-reverse-bg",
+                  agent_type: "agent",
+                } as any,
+                "subagent-start-reverse-bg",
+                { signal: new AbortController().signal },
+              );
+              yield {
+                type: "assistant",
+                message: {
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "toolu-agent-reverse-bg",
+                      name: "Agent",
+                      input: {
+                        prompt: "review the diff",
+                        description: "Review diff",
+                        run_in_background: true,
+                      },
+                    },
+                  ],
+                },
+                parent_tool_use_id: null,
+                uuid: "assistant-agent-reverse-bg",
+                session_id: "claude-sess-agent-reverse-bg",
+              } as unknown as SDKMessage;
+              yield {
+                type: "system",
+                subtype: "task_started",
+                task_id: "agent-task-reverse-bg",
+                tool_use_id: "toolu-agent-reverse-bg",
+                description: "Review diff",
+                session_id: "claude-sess-agent-reverse-bg",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-agent-reverse-bg", "done");
+              await stopHook?.(
+                {
+                  hook_event_name: "SubagentStop",
+                  stop_hook_active: false,
+                  agent_id: "toolu-agent-reverse-bg",
+                  agent_transcript_path: "/tmp/agent-task-reverse-bg.jsonl",
+                  agent_type: "agent",
+                } as any,
+                "subagent-stop-reverse-bg",
+                { signal: new AbortController().signal },
+              );
+              yield {
+                type: "system",
+                subtype: "task_notification",
+                task_id: "agent-task-reverse-bg",
+                tool_use_id: "toolu-agent-reverse-bg",
+                status: "completed",
+                output_file: "/tmp/agent-task-reverse-bg.out",
+                summary: "review complete",
+                session_id: "claude-sess-agent-reverse-bg",
+              } as unknown as SDKMessage;
+            })(),
+          ),
+        postResultDrainMs: 5,
+        runtimeDrainMaxMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "tool_start",
+      "claude_runtime_task_started",
+      "claude_runtime_task_updated",
+      "claude_runtime_task_notification",
+      "result",
+      "context_usage",
+      "complete",
+    ]);
+    expect(events.map((event) => event.type)).not.toContain("subagent_start");
+    expect(events.map((event) => event.type)).not.toContain("subagent_stop");
   });
 
   it("Notification hook emits Python DebugEvent-compatible client event", async () => {

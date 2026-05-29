@@ -33,6 +33,26 @@ describe("applyClaudeRuntimeStoreEvent", () => {
       timestamp: 12,
     } as unknown as SoulSSEEvent);
 
+    state = applyClaudeRuntimeStoreEvent(state, {
+      type: "claude_runtime_task_created",
+      task_id: "sdk-task-1",
+      subject: "Investigate queue",
+      description: "Check pending queue",
+      teammate_name: "analyst",
+      team_name: "runtime",
+      timestamp: 13,
+    } as unknown as SoulSSEEvent);
+
+    state = applyClaudeRuntimeStoreEvent(state, {
+      type: "claude_runtime_task_completed",
+      task_id: "sdk-task-1",
+      subject: "Investigate queue",
+      description: "Check pending queue",
+      teammate_name: "analyst",
+      team_name: "runtime",
+      timestamp: 14,
+    } as unknown as SoulSSEEvent);
+
     expect(state).toMatchObject({
       sessionState: "running",
       runtimeSessionId: "claude-sess-1",
@@ -45,6 +65,14 @@ describe("applyClaudeRuntimeStoreEvent", () => {
           outputFile: "/tmp/bg-1.out",
           summary: "sleeping",
           isBackgrounded: true,
+        },
+        "sdk-task-1": {
+          taskId: "sdk-task-1",
+          status: "completed",
+          subject: "Investigate queue",
+          description: "Check pending queue",
+          teammateName: "analyst",
+          teamName: "runtime",
         },
       },
     });

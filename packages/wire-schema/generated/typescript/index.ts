@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 81개 $defs (wire 36 + SSE event 45). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 83개 $defs (wire 36 + SSE event 47). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -147,8 +147,10 @@ export interface SessionEventEnvelope {
     | SSEEventSubagentStop
     | SSEEventClaudeRuntimeSessionState
     | SSEEventClaudeRuntimeTaskStarted
+    | SSEEventClaudeRuntimeTaskCreated
     | SSEEventClaudeRuntimeTaskUpdated
     | SSEEventClaudeRuntimeTaskProgress
+    | SSEEventClaudeRuntimeTaskCompleted
     | SSEEventClaudeRuntimeTaskNotification
     | SSEEventClaudeRuntimeScheduleUpdated
     | SSEEventClaudeRuntimeScheduleDeleted
@@ -431,6 +433,20 @@ export interface SSEEventClaudeRuntimeTaskStarted {
   [k: string]: unknown;
 }
 /**
+ * SSE: Claude Agent SDK TaskCreated hook lifecycle. Soulstream Task Tree와 별도 개념.
+ */
+export interface SSEEventClaudeRuntimeTaskCreated {
+  type: "claude_runtime_task_created";
+  task_id: string;
+  session_id?: string;
+  subject: string;
+  description?: string;
+  teammate_name?: string;
+  team_name?: string;
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
  * SSE: Claude Agent SDK runtime task 상태 patch.
  */
 export interface SSEEventClaudeRuntimeTaskUpdated {
@@ -463,6 +479,20 @@ export interface SSEEventClaudeRuntimeTaskProgress {
   };
   last_tool_name?: string;
   summary?: string;
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: Claude Agent SDK TaskCompleted hook lifecycle. Soulstream Task Tree와 별도 개념.
+ */
+export interface SSEEventClaudeRuntimeTaskCompleted {
+  type: "claude_runtime_task_completed";
+  task_id: string;
+  session_id?: string;
+  subject: string;
+  description?: string;
+  teammate_name?: string;
+  team_name?: string;
   timestamp?: number;
   [k: string]: unknown;
 }

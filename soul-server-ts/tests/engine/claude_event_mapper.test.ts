@@ -408,6 +408,40 @@ describe("Claude event mapper semantic history contract", () => {
       usage: { total_tokens: 10 },
       timestamp: 145,
     });
+
+    expect(
+      mapClaudeClientEvent({
+        type: "claude_runtime_task_created",
+        taskId: "task-2",
+        subject: "Investigate queue",
+        description: "Check pending queue",
+        teammateName: "analyst",
+        teamName: "runtime",
+        timestamp: 146,
+      })[0],
+    ).toEqual({
+      type: "claude_runtime_task_created",
+      task_id: "task-2",
+      subject: "Investigate queue",
+      description: "Check pending queue",
+      teammate_name: "analyst",
+      team_name: "runtime",
+      timestamp: 146,
+    });
+
+    expect(
+      mapClaudeClientEvent({
+        type: "claude_runtime_task_completed",
+        taskId: "task-2",
+        subject: "Investigate queue",
+        timestamp: 147,
+      })[0],
+    ).toEqual({
+      type: "claude_runtime_task_completed",
+      task_id: "task-2",
+      subject: "Investigate queue",
+      timestamp: 147,
+    });
   });
 
   it("golden fixture covers all P3 parity event families", () => {

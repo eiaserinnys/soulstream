@@ -256,6 +256,24 @@ describe("TaskEngineEventPublisher", () => {
       timestamp: 11,
     } as unknown as SSEEventPayload);
     await publisher.publishEngineEvent(task, {
+      type: "claude_runtime_task_created",
+      task_id: "sdk-task-1",
+      subject: "Investigate queue",
+      description: "Check pending queue",
+      teammate_name: "analyst",
+      team_name: "runtime",
+      timestamp: 11.5,
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
+      type: "claude_runtime_task_completed",
+      task_id: "sdk-task-1",
+      subject: "Investigate queue",
+      description: "Check pending queue",
+      teammate_name: "analyst",
+      team_name: "runtime",
+      timestamp: 11.6,
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
       type: "claude_runtime_task_notification",
       task_id: "task-bg-1",
       status: "completed",
@@ -283,9 +301,17 @@ describe("TaskEngineEventPublisher", () => {
           outputFile: "/tmp/task.out",
           summary: "done",
         },
+        "sdk-task-1": {
+          taskId: "sdk-task-1",
+          status: "completed",
+          subject: "Investigate queue",
+          description: "Check pending queue",
+          teammateName: "analyst",
+          teamName: "runtime",
+        },
       },
     });
-    expect(deps.persistEvent).toHaveBeenCalledTimes(4);
-    expect(deps.emitEventEnvelope).toHaveBeenCalledTimes(4);
+    expect(deps.persistEvent).toHaveBeenCalledTimes(6);
+    expect(deps.emitEventEnvelope).toHaveBeenCalledTimes(6);
   });
 });

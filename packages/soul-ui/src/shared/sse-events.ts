@@ -48,8 +48,10 @@ export type SSEEventType =
   // Claude SDK runtime 상태 이벤트
   | "claude_runtime_session_state"
   | "claude_runtime_task_started"
+  | "claude_runtime_task_created"
   | "claude_runtime_task_updated"
   | "claude_runtime_task_progress"
+  | "claude_runtime_task_completed"
   | "claude_runtime_task_notification"
   | "claude_runtime_schedule_updated"
   | "claude_runtime_schedule_deleted"
@@ -469,6 +471,17 @@ export interface ClaudeRuntimeTaskStartedEvent {
   timestamp: number;
 }
 
+export interface ClaudeRuntimeTaskCreatedEvent {
+  type: "claude_runtime_task_created";
+  task_id: string;
+  session_id?: string;
+  subject: string;
+  description?: string;
+  teammate_name?: string;
+  team_name?: string;
+  timestamp: number;
+}
+
 export interface ClaudeRuntimeTaskUpdatedEvent {
   type: "claude_runtime_task_updated";
   task_id: string;
@@ -494,6 +507,17 @@ export interface ClaudeRuntimeTaskProgressEvent {
   usage?: Record<string, unknown>;
   last_tool_name?: string;
   summary?: string;
+  timestamp: number;
+}
+
+export interface ClaudeRuntimeTaskCompletedEvent {
+  type: "claude_runtime_task_completed";
+  task_id: string;
+  session_id?: string;
+  subject: string;
+  description?: string;
+  teammate_name?: string;
+  team_name?: string;
   timestamp: number;
 }
 
@@ -674,8 +698,10 @@ export type SoulSSEEvent =
   | SubagentStopEvent
   | ClaudeRuntimeSessionStateEvent
   | ClaudeRuntimeTaskStartedEvent
+  | ClaudeRuntimeTaskCreatedEvent
   | ClaudeRuntimeTaskUpdatedEvent
   | ClaudeRuntimeTaskProgressEvent
+  | ClaudeRuntimeTaskCompletedEvent
   | ClaudeRuntimeTaskNotificationEvent
   | ClaudeRuntimeScheduleUpdatedEvent
   | ClaudeRuntimeScheduleDeletedEvent
