@@ -60,8 +60,37 @@ const SOULSTREAM_SCHEDULE_TOOLS = new Set([
   "CronList",
   "CronDelete",
 ]);
+const GENERIC_HOOK_EVENTS = [
+  "PostToolUse",
+  "PostToolUseFailure",
+  "PostToolBatch",
+  "UserPromptSubmit",
+  "UserPromptExpansion",
+  "SessionEnd",
+  "StopFailure",
+  "PostCompact",
+  "PermissionRequest",
+  "PermissionDenied",
+  "Setup",
+  "TeammateIdle",
+  "Elicitation",
+  "ElicitationResult",
+  "ConfigChange",
+  "WorktreeCreate",
+  "WorktreeRemove",
+  "InstructionsLoaded",
+  "CwdChanged",
+  "FileChanged",
+] as const;
+const STRIPPED_HOOK_OUTPUT = "[stripped: persisted in tool_result]";
+const GENERIC_HOOK_OUTPUT_FIELDS = new Set([
+  "tool_response",
+  "tool_responses",
+  "tool_response_chunks",
+]);
 
 type ClaudeResultEvent = Extract<ClaudeClientEvent, { type: "result" }>;
+type GenericHookEventName = (typeof GENERIC_HOOK_EVENTS)[number];
 type PostResultContinuationKind = "compact_boundary" | "tool_use";
 type ClaudeRuntimeSessionState = "idle" | "running" | "requires_action";
 type ClaudeRuntimeTaskStatus =
@@ -345,13 +374,14 @@ export class ClaudeSdkClient implements ClaudeClient {
     const systemPrompt = options.systemPrompt
       ? makeCacheableSystemPrompt(options.systemPrompt)
       : undefined;
+    const permissionMode = options.claudePermissionMode ?? "bypassPermissions";
 
     return {
       abortController,
       cwd: options.workspaceDir,
       ...(options.env !== undefined ? { env: options.env } : {}),
-      permissionMode: "bypassPermissions",
-      allowDangerouslySkipPermissions: true,
+      permissionMode,
+      ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
       settingSources: ["project"],
       promptSuggestions: true,
       includePartialMessages: false,
@@ -616,6 +646,20 @@ export class ClaudeSdkClient implements ClaudeClient {
         },
       ],
     };
+    for (const hookEventName of GENERIC_HOOK_EVENTS) {
+      hooks[hookEventName] = [
+        {
+          hooks: [
+            async (input, toolUseID) => {
+              for (const event of this.makeGenericHookEvents(hookEventName, input, toolUseID)) {
+                output.push(event);
+              }
+              return {};
+            },
+          ],
+        },
+      ];
+    }
     if (compactSystemReminder) {
       hooks.SessionStart = [
         {
@@ -638,6 +682,117 @@ export class ClaudeSdkClient implements ClaudeClient {
       ];
     }
     return hooks;
+  }
+
+  private makeGenericHookEvents(
+    hookEventName: GenericHookEventName,
+    input: unknown,
+    toolUseID: string | undefined,
+  ): ClaudeClientEvent[] {
+    const record = asRecord(input) ?? {};
+    const toolUseId = asString(record.tool_use_id) ?? toolUseID;
+    const event: ClaudeClientEvent = {
+      type: "claude_runtime_hook_event",
+      hookEventName,
+      ...(asString(record.session_id) !== undefined
+        ? { sessionId: asString(record.session_id) }
+        : {}),
+      ...(asString(record.tool_name) !== undefined ? { toolName: asString(record.tool_name) } : {}),
+      ...(toolUseId !== undefined ? { toolUseId } : {}),
+      hookInput: stripGenericHookOutputFields(record),
+    };
+    const events: ClaudeClientEvent[] = [event];
+    if (hookEventName === "WorktreeCreate") {
+      events.push({
+        type: "claude_runtime_mode_state",
+        mode: "worktree",
+        active: true,
+        source: "hook",
+        ...(asString(record.session_id) !== undefined
+          ? { sessionId: asString(record.session_id) }
+          : {}),
+        ...(asString(record.name) !== undefined ? { worktreeName: asString(record.name) } : {}),
+      });
+    } else if (hookEventName === "WorktreeRemove") {
+      events.push({
+        type: "claude_runtime_mode_state",
+        mode: "worktree",
+        active: false,
+        source: "hook",
+        ...(asString(record.session_id) !== undefined
+          ? { sessionId: asString(record.session_id) }
+          : {}),
+        ...(asString(record.worktree_path) !== undefined
+          ? { worktreePath: asString(record.worktree_path) }
+          : {}),
+      });
+    }
+    return events;
+  }
+
+  private makeModeEventsFromToolUse(
+    toolName: string,
+    toolUseId: string | null,
+    toolInput: Record<string, unknown>,
+  ): ClaudeClientEvent[] {
+    if (toolName === "EnterPlanMode") {
+      return [
+        {
+          type: "claude_runtime_mode_state",
+          mode: "plan",
+          active: true,
+          source: "tool_use",
+          toolName,
+          ...(toolUseId !== null ? { toolUseId } : {}),
+        },
+      ];
+    }
+    if (toolName === "ExitPlanMode") {
+      return [
+        {
+          type: "claude_runtime_mode_state",
+          mode: "plan",
+          active: false,
+          source: "tool_use",
+          toolName,
+          ...(toolUseId !== null ? { toolUseId } : {}),
+        },
+      ];
+    }
+    if (toolName === "EnterWorktree") {
+      return [
+        {
+          type: "claude_runtime_mode_state",
+          mode: "worktree",
+          active: true,
+          source: "tool_use",
+          toolName,
+          ...(toolUseId !== null ? { toolUseId } : {}),
+          ...(asString(toolInput.name) !== undefined
+            ? { worktreeName: asString(toolInput.name) }
+            : {}),
+          ...(asString(toolInput.path) !== undefined
+            ? { worktreePath: asString(toolInput.path) }
+            : {}),
+        },
+      ];
+    }
+    if (toolName === "ExitWorktree") {
+      return [
+        {
+          type: "claude_runtime_mode_state",
+          mode: "worktree",
+          active: false,
+          source: "tool_use",
+          toolName,
+          ...(toolUseId !== null ? { toolUseId } : {}),
+          ...(asString(toolInput.action) !== undefined
+            ? { worktreeAction: asString(toolInput.action) }
+            : {}),
+        },
+      ];
+    }
+    return [];
   }
 
   private waitForInputResponse(
@@ -1222,6 +1377,7 @@ export class ClaudeSdkClient implements ClaudeClient {
           toolInput,
           toolUseId,
         });
+        events.push(...this.makeModeEventsFromToolUse(toolName, toolUseId, toolInput));
       }
     }
 
@@ -1695,6 +1851,27 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+}
+
+function stripGenericHookOutputFields(input: Record<string, unknown>): Record<string, unknown> {
+  const output: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (GENERIC_HOOK_OUTPUT_FIELDS.has(key)) {
+      output[key] = STRIPPED_HOOK_OUTPUT;
+    } else {
+      output[key] = stripGenericHookOutputValue(value);
+    }
+  }
+  return output;
+}
+
+function stripGenericHookOutputValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripGenericHookOutputValue(item));
+  }
+  const record = asRecord(value);
+  if (!record) return value;
+  return stripGenericHookOutputFields(record);
 }
 
 function asArray(value: unknown): unknown[] | undefined {

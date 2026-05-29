@@ -53,6 +53,7 @@ export class TaskEngineTurnRunner {
 
     const effectiveAllowedTools = task.allowedTools ?? agent.allowed_tools;
     const effectiveDisallowedTools = task.disallowedTools ?? agent.disallowed_tools;
+    const effectiveClaudePermissionMode = task.claudePermissionMode ?? agent.claude_permission_mode;
     const extraEnv = task.oauthToken && engine.backendId === "claude"
       ? { [CLAUDE_OAUTH_TOKEN_ENV]: task.oauthToken }
       : undefined;
@@ -81,6 +82,9 @@ export class TaskEngineTurnRunner {
         ? { disallowedTools: effectiveDisallowedTools }
         : {}),
       ...(task.useMcp !== undefined ? { useMcp: task.useMcp } : {}),
+      ...(effectiveClaudePermissionMode !== undefined
+        ? { claudePermissionMode: effectiveClaudePermissionMode }
+        : {}),
       ...(agent.max_turns !== undefined ? { maxTurns: agent.max_turns } : {}),
       ...(extraEnv !== undefined ? { extraEnv } : {}),
       ...(this.deps.scheduleToolHandler !== undefined

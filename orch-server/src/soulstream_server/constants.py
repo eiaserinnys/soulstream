@@ -93,6 +93,8 @@ KNOWN_SSE_EVENT_TYPES = frozenset({
     "claude_runtime_task_progress",
     "claude_runtime_task_completed",
     "claude_runtime_task_notification",
+    "claude_runtime_hook_event",
+    "claude_runtime_mode_state",
     "claude_runtime_schedule_updated",
     "claude_runtime_schedule_deleted",
     "context_usage", "compact", "reconnect", "history_sync",

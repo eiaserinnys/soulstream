@@ -7,6 +7,7 @@ import type {
   EngineUserInput,
   LiveTurnSteerResult,
   InputResponseDeliveryResult,
+  ClaudePermissionMode,
   ClaudeBackgroundTaskControlResult,
   ScheduleToolUseHandler,
   SSEEventPayload,
@@ -50,6 +51,8 @@ export interface ClaudeRunOptions {
   maxTurns?: number;
   /** Python `Task.use_mcp` → SDK mcpServers 로딩 게이트. undefined면 true. */
   useMcp?: boolean;
+  /** Claude Agent SDK permissionMode. undefined면 legacy bypassPermissions. */
+  claudePermissionMode?: ClaudePermissionMode;
   env?: Record<string, string>;
   onScheduleToolUse?: ScheduleToolUseHandler;
 }
@@ -301,6 +304,9 @@ export class ClaudeEngineAdapter
       ...(params.disallowedTools !== undefined ? { disallowedTools: params.disallowedTools } : {}),
       ...(params.maxTurns !== undefined ? { maxTurns: params.maxTurns } : {}),
       ...(params.useMcp !== undefined ? { useMcp: params.useMcp } : {}),
+      ...(params.claudePermissionMode !== undefined
+        ? { claudePermissionMode: params.claudePermissionMode }
+        : {}),
       ...(env !== undefined ? { env } : {}),
       ...(params.onScheduleToolUse !== undefined
         ? { onScheduleToolUse: params.onScheduleToolUse }

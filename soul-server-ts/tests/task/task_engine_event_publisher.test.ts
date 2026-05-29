@@ -282,6 +282,15 @@ describe("TaskEngineEventPublisher", () => {
       timestamp: 12,
     } as unknown as SSEEventPayload);
     await publisher.publishEngineEvent(task, {
+      type: "claude_runtime_mode_state",
+      mode: "plan",
+      active: true,
+      source: "tool_use",
+      tool_use_id: "toolu-plan",
+      tool_name: "EnterPlanMode",
+      timestamp: 12.5,
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
       type: "claude_runtime_session_state",
       state: "idle",
       session_id: "claude-sess-runtime",
@@ -310,8 +319,14 @@ describe("TaskEngineEventPublisher", () => {
           teamName: "runtime",
         },
       },
+      planMode: {
+        active: true,
+        source: "tool_use",
+        toolUseId: "toolu-plan",
+        toolName: "EnterPlanMode",
+      },
     });
-    expect(deps.persistEvent).toHaveBeenCalledTimes(6);
-    expect(deps.emitEventEnvelope).toHaveBeenCalledTimes(6);
+    expect(deps.persistEvent).toHaveBeenCalledTimes(7);
+    expect(deps.emitEventEnvelope).toHaveBeenCalledTimes(7);
   });
 });

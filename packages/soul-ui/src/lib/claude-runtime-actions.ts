@@ -1,4 +1,5 @@
 import type {
+  ClaudeRuntimeModeView,
   ClaudeRuntimeScheduleView,
   ClaudeRuntimeTaskView,
 } from "../stores/claude-runtime-state";
@@ -9,6 +10,8 @@ export interface ClaudeRuntimeTasksResponse {
   runtimeSessionId: string | null;
   updatedAt: number | null;
   tasks: ClaudeRuntimeTaskView[];
+  planMode?: ClaudeRuntimeModeView | null;
+  worktreeMode?: ClaudeRuntimeModeView | null;
 }
 
 export interface ClaudeRuntimeTaskOutputResponse {

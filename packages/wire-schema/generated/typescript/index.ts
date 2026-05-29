@@ -152,6 +152,8 @@ export interface SessionEventEnvelope {
     | SSEEventClaudeRuntimeTaskProgress
     | SSEEventClaudeRuntimeTaskCompleted
     | SSEEventClaudeRuntimeTaskNotification
+    | SSEEventClaudeRuntimeHookEvent
+    | SSEEventClaudeRuntimeModeState
     | SSEEventClaudeRuntimeScheduleUpdated
     | SSEEventClaudeRuntimeScheduleDeleted
     | SSEEventContextUsage
@@ -515,6 +517,38 @@ export interface SSEEventClaudeRuntimeTaskNotification {
   [k: string]: unknown;
 }
 /**
+ * SSE: Claude Agent SDK generic hook lifecycle payload preservation.
+ */
+export interface SSEEventClaudeRuntimeHookEvent {
+  type: "claude_runtime_hook_event";
+  hook_event_name: string;
+  session_id?: string;
+  tool_name?: string;
+  tool_use_id?: string;
+  hook_input?: {
+    [k: string]: unknown;
+  };
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: Claude Agent SDK plan/worktree mode state.
+ */
+export interface SSEEventClaudeRuntimeModeState {
+  type: "claude_runtime_mode_state";
+  mode: "plan" | "worktree";
+  active: boolean;
+  source: "hook" | "tool_use";
+  session_id?: string;
+  tool_name?: string;
+  tool_use_id?: string;
+  worktree_name?: string;
+  worktree_path?: string;
+  worktree_action?: string;
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
  * SSE: Soulstream durable schedule 상태 변경.
  */
 export interface SSEEventClaudeRuntimeScheduleUpdated {
@@ -772,6 +806,10 @@ export interface CreateSession {
   folderId?: string | null;
   allowed_tools?: string[];
   disallowed_tools?: string[];
+  /**
+   * Claude SDK permissionMode override. Missing preserves the node/profile default.
+   */
+  claude_permission_mode?: "default" | "acceptEdits" | "bypassPermissions" | "plan" | "dontAsk" | "auto";
   use_mcp?: boolean;
   context?: {
     [k: string]: unknown;

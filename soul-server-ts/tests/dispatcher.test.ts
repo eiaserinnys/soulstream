@@ -83,6 +83,7 @@ function createDispatcher(opts: {
         allowedTools: params.allowedTools,
         disallowedTools: params.disallowedTools,
         useMcp: params.useMcp,
+        claudePermissionMode: params.claudePermissionMode,
         contextItems: params.contextItems,
         attachmentPaths: params.attachmentPaths,
         createdAt: new Date(),
@@ -379,10 +380,12 @@ describe("CommandDispatcher.create_session", () => {
       allowed_tools: ["Read"],
       disallowed_tools: ["Bash"],
       use_mcp: false,
+      claude_permission_mode: "default",
     });
     expect(createdTasks[0].allowedTools).toEqual(["Read"]);
     expect(createdTasks[0].disallowedTools).toEqual(["Bash"]);
     expect(createdTasks[0].useMcp).toBe(false);
+    expect(createdTasks[0].claudePermissionMode).toBe("default");
   });
 
   it("create_session 과도기 camelCase 도구/MCP 옵션도 createTask로 전달", async () => {
@@ -395,10 +398,12 @@ describe("CommandDispatcher.create_session", () => {
       allowedTools: ["Read"],
       disallowedTools: ["Bash"],
       useMcp: false,
+      claudePermissionMode: "acceptEdits",
     });
     expect(createdTasks[0].allowedTools).toEqual(["Read"]);
     expect(createdTasks[0].disallowedTools).toEqual(["Bash"]);
     expect(createdTasks[0].useMcp).toBe(false);
+    expect(createdTasks[0].claudePermissionMode).toBe("acceptEdits");
   });
 
   it("oauth_token을 createTask.oauthToken으로 전달한다", async () => {

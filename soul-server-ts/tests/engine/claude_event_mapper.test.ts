@@ -442,6 +442,48 @@ describe("Claude event mapper semantic history contract", () => {
       subject: "Investigate queue",
       timestamp: 147,
     });
+
+    expect(
+      mapClaudeClientEvent({
+        type: "claude_runtime_hook_event",
+        hookEventName: "PermissionDenied",
+        sessionId: "claude-sess-runtime",
+        toolName: "Bash",
+        toolUseId: "toolu-denied",
+        hookInput: { reason: "policy" },
+        timestamp: 148,
+      })[0],
+    ).toEqual({
+      type: "claude_runtime_hook_event",
+      hook_event_name: "PermissionDenied",
+      session_id: "claude-sess-runtime",
+      tool_name: "Bash",
+      tool_use_id: "toolu-denied",
+      hook_input: { reason: "policy" },
+      timestamp: 148,
+    });
+
+    expect(
+      mapClaudeClientEvent({
+        type: "claude_runtime_mode_state",
+        mode: "worktree",
+        active: true,
+        source: "tool_use",
+        toolUseId: "toolu-wt",
+        toolName: "EnterWorktree",
+        worktreeName: "feature-x",
+        timestamp: 149,
+      })[0],
+    ).toEqual({
+      type: "claude_runtime_mode_state",
+      mode: "worktree",
+      active: true,
+      source: "tool_use",
+      tool_use_id: "toolu-wt",
+      tool_name: "EnterWorktree",
+      worktree_name: "feature-x",
+      timestamp: 149,
+    });
   });
 
   it("golden fixture covers all P3 parity event families", () => {

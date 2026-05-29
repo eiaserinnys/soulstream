@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
 
+from soulstream_server.api.session_models import ClaudePermissionMode
 from soulstream_server.api.node_utils import find_session_node
 from soulstream_server.service.session_router import SessionRouter
 
@@ -33,6 +34,10 @@ class ExecuteProxyRequest(BaseModel):
     use_mcp: Optional[bool] = None
     allowed_tools: Optional[list[str]] = None
     disallowed_tools: Optional[list[str]] = None
+    claude_permission_mode: Optional[ClaudePermissionMode] = Field(
+        default=None,
+        validation_alias=AliasChoices("claudePermissionMode", "claude_permission_mode"),
+    )
     context_items: Optional[list[dict]] = None
     model: Optional[str] = None
     reasoningEffort: Optional[ReasoningEffort] = None
@@ -107,6 +112,8 @@ def create_execute_proxy_router(
             request_dict["allowed_tools"] = body.allowed_tools
         if body.disallowed_tools is not None:
             request_dict["disallowed_tools"] = body.disallowed_tools
+        if body.claude_permission_mode is not None:
+            request_dict["claude_permission_mode"] = body.claude_permission_mode
         if body.use_mcp is not None:
             request_dict["use_mcp"] = body.use_mcp
         if body.folder_id is not None:

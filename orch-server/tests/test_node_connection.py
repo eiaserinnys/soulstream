@@ -243,12 +243,14 @@ class TestCommandSending:
             allowed_tools=["Read"],
             disallowed_tools=["Bash"],
             use_mcp=False,
+            claude_permission_mode="default",
         )
 
         sent = ws.send_json.call_args[0][0]
         assert sent["allowed_tools"] == ["Read"]
         assert sent["disallowed_tools"] == ["Bash"]
         assert sent["use_mcp"] is False
+        assert sent["claude_permission_mode"] == "default"
         assert "allowedTools" not in sent
         assert "disallowedTools" not in sent
         assert "useMcp" not in sent

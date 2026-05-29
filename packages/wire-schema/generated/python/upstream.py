@@ -215,6 +215,11 @@ class CreateSession(TypedDict):
     folderId: NotRequired[str | None]
     allowed_tools: NotRequired[list[str]]
     disallowed_tools: NotRequired[list[str]]
+    claude_permission_mode: NotRequired[
+        Literal[
+            'default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto'
+        ]
+    ]
     use_mcp: NotRequired[bool]
     context: NotRequired[dict[str, Any]]
     context_items: NotRequired[list[dict[str, Any]]]
@@ -959,6 +964,38 @@ class SSEEventClaudeRuntimeTaskNotification(TypedDict):
     timestamp: NotRequired[float]
 
 
+class SSEEventClaudeRuntimeHookEvent(TypedDict):
+    """
+    SSE: Claude Agent SDK generic hook lifecycle payload preservation.
+    """
+
+    type: Literal['claude_runtime_hook_event']
+    hook_event_name: str
+    session_id: NotRequired[str]
+    tool_name: NotRequired[str]
+    tool_use_id: NotRequired[str]
+    hook_input: NotRequired[dict[str, Any]]
+    timestamp: NotRequired[float]
+
+
+class SSEEventClaudeRuntimeModeState(TypedDict):
+    """
+    SSE: Claude Agent SDK plan/worktree mode state.
+    """
+
+    type: Literal['claude_runtime_mode_state']
+    mode: Literal['plan', 'worktree']
+    active: bool
+    source: Literal['hook', 'tool_use']
+    session_id: NotRequired[str]
+    tool_name: NotRequired[str]
+    tool_use_id: NotRequired[str]
+    worktree_name: NotRequired[str]
+    worktree_path: NotRequired[str]
+    worktree_action: NotRequired[str]
+    timestamp: NotRequired[float]
+
+
 class SSEEventClaudeRuntimeScheduleUpdated(TypedDict):
     """
     SSE: Soulstream durable schedule 상태 변경.
@@ -1123,6 +1160,8 @@ class SessionEventEnvelope(TypedDict):
         | SSEEventClaudeRuntimeTaskProgress
         | SSEEventClaudeRuntimeTaskCompleted
         | SSEEventClaudeRuntimeTaskNotification
+        | SSEEventClaudeRuntimeHookEvent
+        | SSEEventClaudeRuntimeModeState
         | SSEEventClaudeRuntimeScheduleUpdated
         | SSEEventClaudeRuntimeScheduleDeleted
         | SSEEventContextUsage

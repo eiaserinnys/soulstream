@@ -9,6 +9,14 @@ from typing import Any, Literal, Optional
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 ReasoningEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
+ClaudePermissionMode = Literal[
+    "default",
+    "acceptEdits",
+    "bypassPermissions",
+    "plan",
+    "dontAsk",
+    "auto",
+]
 
 
 class CreateSessionRequest(BaseModel):
@@ -28,6 +36,10 @@ class CreateSessionRequest(BaseModel):
     allowed_tools: Optional[list[str]] = None
     disallowed_tools: Optional[list[str]] = None
     use_mcp: Optional[bool] = None
+    claude_permission_mode: Optional[ClaudePermissionMode] = Field(
+        default=None,
+        validation_alias=AliasChoices("claudePermissionMode", "claude_permission_mode"),
+    )
     system_prompt: Optional[str] = None
     oauth_profile_name: Optional[str] = None
     caller_session_id: Optional[str] = None

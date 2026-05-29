@@ -14,7 +14,7 @@ import type { ContextItem } from "../context/prompt_assembler.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
-import type { ReasoningEffort } from "../engine/protocol.js";
+import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
@@ -103,9 +103,11 @@ interface CreateSessionCmd extends CommandLike {
   allowed_tools?: string[];
   disallowed_tools?: string[];
   use_mcp?: boolean;
+  claude_permission_mode?: ClaudePermissionMode;
   allowedTools?: string[];
   disallowedTools?: string[];
   useMcp?: boolean;
+  claudePermissionMode?: ClaudePermissionMode;
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
   /**
@@ -544,6 +546,7 @@ export class CommandDispatcher {
         allowedTools: cmd.allowed_tools ?? cmd.allowedTools,
         disallowedTools: cmd.disallowed_tools ?? cmd.disallowedTools,
         useMcp: cmd.use_mcp ?? cmd.useMcp,
+        claudePermissionMode: cmd.claude_permission_mode ?? cmd.claudePermissionMode,
         folderId: cmd.folderId ?? null,
         systemPrompt: cmd.systemPrompt,
         extraContextItems: cmd.extra_context_items,

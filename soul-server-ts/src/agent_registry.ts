@@ -12,6 +12,8 @@ import fs from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
+import { CLAUDE_PERMISSION_MODES } from "./engine/protocol.js";
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const AgentsSdkToolSchema = z.object({
@@ -212,6 +214,7 @@ export const AgentProfileSchema = z.object({
   max_turns: z.number().int().positive().optional(),
   allowed_tools: z.array(z.string()).optional(),
   disallowed_tools: z.array(z.string()).optional(),
+  claude_permission_mode: z.enum(CLAUDE_PERMISSION_MODES).optional(),
   mcp_profile: z.string().min(1).optional(),
   portrait_path: z.string().optional(),
   /**
