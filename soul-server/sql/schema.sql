@@ -1278,11 +1278,16 @@ CREATE OR REPLACE FUNCTION claude_transcript_append(
 ) RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE
     v_subpath TEXT := COALESCE(p_subpath, '');
+    v_entries JSONB := CASE jsonb_typeof(p_entries)
+        WHEN 'array' THEN p_entries
+        WHEN 'object' THEN jsonb_build_array(p_entries)
+        ELSE '[]'::jsonb
+    END;
     v_entry JSONB;
     v_uuid TEXT;
     v_count INTEGER := 0;
 BEGIN
-    FOR v_entry IN SELECT value FROM jsonb_array_elements(COALESCE(p_entries, '[]'::jsonb))
+    FOR v_entry IN SELECT value FROM jsonb_array_elements(v_entries)
     LOOP
         v_uuid := v_entry->>'uuid';
         INSERT INTO claude_transcript_entries (

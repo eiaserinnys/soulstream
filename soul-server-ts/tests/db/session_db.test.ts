@@ -666,3 +666,32 @@ describe("session_delete SQL", () => {
     }
   });
 });
+
+describe("claude_transcript_append SQL", () => {
+  it("normalizes JSONB batch shape before jsonb_array_elements", () => {
+    const schema = readFileSync(
+      new URL("../../../soul-server/sql/schema.sql", import.meta.url),
+      "utf8",
+    );
+    const migration = readFileSync(
+      new URL(
+        "../../../soul-server/sql/migrations/016_claude_transcript_append_jsonb_shape_guard.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    for (const sql of [schema, migration]) {
+      const start = sql.indexOf("CREATE OR REPLACE FUNCTION claude_transcript_append");
+      const end = sql.indexOf("$$;", start);
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(end).toBeGreaterThan(start);
+      const body = sql.slice(start, end);
+      expect(body).toContain("jsonb_typeof(p_entries)");
+      expect(body).toContain("WHEN 'array'");
+      expect(body).toContain("WHEN 'object'");
+      expect(body).toContain("'[]'::jsonb");
+      expect(body).toContain("jsonb_array_elements(v_entries)");
+    }
+  });
+});
