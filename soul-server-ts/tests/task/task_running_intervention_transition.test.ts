@@ -208,6 +208,55 @@ describe("RunningInterventionTransition", () => {
     expect(task.interventionQueue).toEqual([{ text: "queue me", user: "alice" }]);
   });
 
+  it("keeps intervention_sent visible and queues when Claude is not accepting live input", async () => {
+    const steerActiveTurn = vi.fn().mockResolvedValue({
+      status: "not_accepting_input",
+      message: "Claude active input is not accepting steering",
+    });
+    const task = makeRunningTask({
+      engine: {
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        steerActiveTurn,
+      } as EnginePort & SupportsLiveTurnSteering,
+    });
+    const persistEvent = vi.fn().mockResolvedValue(444);
+    const handleSideEffects = vi.fn().mockResolvedValue(undefined);
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(emitEventEnvelope),
+      logger: silentLogger,
+      persistence: {
+        persistEvent,
+        handleSideEffects,
+      } as unknown as EventPersistence,
+    });
+
+    await expect(
+      transition.deliver(task, { text: "wait until tool result", user: "alice" }),
+    ).resolves.toEqual({
+      queued: true,
+      queuePosition: 1,
+      liveSteerStatus: "not_accepting_input",
+    });
+
+    expect(persistEvent).toHaveBeenCalledTimes(1);
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        type: "intervention_sent",
+        text: "wait until tool result",
+        _event_id: 444,
+      }),
+    );
+    expect(task.interventionQueue).toEqual([
+      { text: "wait until tool result", user: "alice" },
+    ]);
+  });
+
   it("can defer running fallback without persisting or using the in-memory queue", async () => {
     const steerActiveTurn = vi.fn().mockResolvedValue({
       status: "no_active_turn",
