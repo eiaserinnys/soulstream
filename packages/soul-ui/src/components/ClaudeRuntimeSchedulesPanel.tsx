@@ -10,6 +10,7 @@ import type {
   ClaudeRuntimeScheduleView,
   ClaudeRuntimeView,
 } from "../stores/claude-runtime-state";
+import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
 
 interface ClaudeRuntimeSchedulesPanelProps {
@@ -128,51 +129,53 @@ export function ClaudeRuntimeSchedulesPanel({
         </Button>
       </div>
 
-      {expanded && error ? <div className="mt-2 text-xs text-destructive">{error}</div> : null}
+      {expanded ? (
+        <div className={runtimePanelScrollClass("space-y-2")}>
+          {error ? <div className="text-xs text-destructive">{error}</div> : null}
 
-      {expanded ? <div className="mt-2 space-y-2">
-        {schedules.map((schedule) => {
-          const canDelete = canDeleteClaudeRuntimeSchedule(schedule.status);
-          const busy = busyScheduleId === schedule.scheduleId;
-          return (
-            <div
-              key={schedule.scheduleId}
-              className="rounded-md border border-border bg-muted/20 p-2"
-            >
-              <div className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className={statusClassName(schedule.status)}>
-                      {schedule.status}
-                    </span>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {schedule.kind}
-                    </span>
-                    <span className="truncate font-mono text-xs text-muted-foreground">
-                      {schedule.scheduleId}
-                    </span>
+          {schedules.map((schedule) => {
+            const canDelete = canDeleteClaudeRuntimeSchedule(schedule.status);
+            const busy = busyScheduleId === schedule.scheduleId;
+            return (
+              <div
+                key={schedule.scheduleId}
+                className="rounded-md border border-border bg-muted/20 p-2"
+              >
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className={statusClassName(schedule.status)}>
+                        {schedule.status}
+                      </span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {schedule.kind}
+                      </span>
+                      <span className="truncate font-mono text-xs text-muted-foreground">
+                        {schedule.scheduleId}
+                      </span>
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                      {schedule.prompt ?? schedule.cronExpression ?? "scheduled prompt"}
+                    </div>
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      {schedule.nextRunAt ? formatDateTime(schedule.nextRunAt) : "no next run"}
+                    </div>
                   </div>
-                  <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                    {schedule.prompt ?? schedule.cronExpression ?? "scheduled prompt"}
-                  </div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {schedule.nextRunAt ? formatDateTime(schedule.nextRunAt) : "no next run"}
-                  </div>
+                  <Button
+                    variant="destructive-outline"
+                    size="icon-xs"
+                    title="삭제"
+                    disabled={!canDelete || busy}
+                    onClick={() => void removeSchedule(schedule.scheduleId)}
+                  >
+                    {busy ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                  </Button>
                 </div>
-                <Button
-                  variant="destructive-outline"
-                  size="icon-xs"
-                  title="삭제"
-                  disabled={!canDelete || busy}
-                  onClick={() => void removeSchedule(schedule.scheduleId)}
-                >
-                  {busy ? <Loader2 className="animate-spin" /> : <Trash2 />}
-                </Button>
               </div>
-            </div>
-          );
-        })}
-      </div> : null}
+            );
+          })}
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -14,6 +14,7 @@ import type {
   ClaudeRuntimeTaskView,
   ClaudeRuntimeView,
 } from "../stores/claude-runtime-state";
+import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
 
 interface ClaudeRuntimeTasksPanelProps {
@@ -144,82 +145,84 @@ export function ClaudeRuntimeTasksPanel({
         </Button>
       </div>
 
-      {expanded && error ? <div className="mt-2 text-xs text-destructive">{error}</div> : null}
+      {expanded ? (
+        <div className={runtimePanelScrollClass("space-y-2")}>
+          {error ? <div className="text-xs text-destructive">{error}</div> : null}
 
-      {expanded && hasModeState ? (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {planMode ? (
-            <ModeBadge
-              icon={<ListChecks className="size-3" />}
-              label={planMode.active ? "Plan mode" : "Plan off"}
-              active={planMode.active}
-            />
-          ) : null}
-          {worktreeMode ? (
-            <ModeBadge
-              icon={<GitBranch className="size-3" />}
-              label={worktreeLabel(worktreeMode)}
-              active={worktreeMode.active}
-            />
-          ) : null}
-        </div>
-      ) : null}
-
-      {expanded ? <div className="mt-2 space-y-2">
-        {tasks.map((task) => {
-          const output = outputs[task.taskId];
-          const terminal = TERMINAL_STATUSES.has(task.status);
-          const busy = busyTaskId === task.taskId;
-          return (
-            <div
-              key={task.taskId}
-              className="rounded-md border border-border bg-muted/20 p-2"
-            >
-              <div className="flex items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className={statusClassName(task.status)}>{task.status}</span>
-                    <span className="rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
-                      {taskKindLabel(task)}
-                    </span>
-                    <span className="truncate font-mono text-xs text-muted-foreground">
-                      {task.taskId}
-                    </span>
-                  </div>
-                  <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                    {task.summary ?? task.subject ?? task.description ?? task.toolUseId ?? "SDK task"}
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="icon-xs"
-                    title="출력 보기"
-                    disabled={busy}
-                    onClick={() => void openOutput(task.taskId)}
-                  >
-                    {busy ? <Loader2 className="animate-spin" /> : <TerminalSquare />}
-                  </Button>
-                  <Button
-                    variant="destructive-outline"
-                    size="icon-xs"
-                    title="중단"
-                    disabled={terminal || busy}
-                    onClick={() => void stopTask(task.taskId)}
-                  >
-                    <Square />
-                  </Button>
-                </div>
-              </div>
-              {output ? (
-                <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-md bg-background p-2 text-xs text-foreground">
-                  {output.output || output.message || "출력이 없습니다"}
-                </pre>
+          {hasModeState ? (
+            <div className="flex flex-wrap gap-1.5">
+              {planMode ? (
+                <ModeBadge
+                  icon={<ListChecks className="size-3" />}
+                  label={planMode.active ? "Plan mode" : "Plan off"}
+                  active={planMode.active}
+                />
+              ) : null}
+              {worktreeMode ? (
+                <ModeBadge
+                  icon={<GitBranch className="size-3" />}
+                  label={worktreeLabel(worktreeMode)}
+                  active={worktreeMode.active}
+                />
               ) : null}
             </div>
-          );
-        })}
-      </div> : null}
+          ) : null}
+
+          {tasks.map((task) => {
+            const output = outputs[task.taskId];
+            const terminal = TERMINAL_STATUSES.has(task.status);
+            const busy = busyTaskId === task.taskId;
+            return (
+              <div
+                key={task.taskId}
+                className="rounded-md border border-border bg-muted/20 p-2"
+              >
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className={statusClassName(task.status)}>{task.status}</span>
+                      <span className="rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                        {taskKindLabel(task)}
+                      </span>
+                      <span className="truncate font-mono text-xs text-muted-foreground">
+                        {task.taskId}
+                      </span>
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                      {task.summary ?? task.subject ?? task.description ?? task.toolUseId ?? "SDK task"}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="icon-xs"
+                      title="출력 보기"
+                      disabled={busy}
+                      onClick={() => void openOutput(task.taskId)}
+                    >
+                      {busy ? <Loader2 className="animate-spin" /> : <TerminalSquare />}
+                    </Button>
+                    <Button
+                      variant="destructive-outline"
+                      size="icon-xs"
+                      title="중단"
+                      disabled={terminal || busy}
+                      onClick={() => void stopTask(task.taskId)}
+                    >
+                      <Square />
+                    </Button>
+                  </div>
+                </div>
+                {output ? (
+                  <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap rounded-md bg-background p-2 text-xs text-foreground">
+                    {output.output || output.message || "출력이 없습니다"}
+                  </pre>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </section>
   );
 }
