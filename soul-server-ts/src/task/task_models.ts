@@ -112,6 +112,46 @@ export interface ClaudeRuntimeModeState {
   worktreeAction?: string;
 }
 
+export interface ClaudeRuntimeNotificationState {
+  notificationId: string;
+  source: "hook" | "system" | "tool_use";
+  message: string;
+  updatedAt: number;
+  title?: string;
+  notificationType?: string;
+  key?: string;
+  priority?: string;
+  sessionId?: string;
+  toolUseId?: string;
+}
+
+export interface ClaudeRuntimeRemoteTriggerState {
+  triggerId: string;
+  source: "message_origin" | "tool_use";
+  updatedAt: number;
+  sessionId?: string;
+  toolUseId?: string;
+  originKind?: string;
+  originFrom?: string;
+  originName?: string;
+  originServer?: string;
+  priority?: string;
+  prompt?: string;
+  triggerType?: string;
+  payload?: Record<string, unknown>;
+}
+
+export interface ClaudeRuntimeTranscriptMirrorState {
+  updatedAt: number;
+  errorCount: number;
+  lastError?: string;
+  mirrorId?: string;
+  sessionId?: string;
+  projectKey?: string;
+  transcriptSessionId?: string;
+  subpath?: string;
+}
+
 /**
  * Claude Agent SDK runtime state. This is intentionally separate from
  * Soulstream's Task Tree model; SDK task ids live only under claudeRuntime.
@@ -121,6 +161,9 @@ export interface ClaudeRuntimeState {
   sessionId?: string;
   updatedAt: number;
   tasks: Record<string, ClaudeRuntimeTaskState>;
+  notifications?: Record<string, ClaudeRuntimeNotificationState>;
+  remoteTriggers?: Record<string, ClaudeRuntimeRemoteTriggerState>;
+  transcriptMirror?: ClaudeRuntimeTranscriptMirrorState;
   planMode?: ClaudeRuntimeModeState;
   worktreeMode?: ClaudeRuntimeModeState;
 }

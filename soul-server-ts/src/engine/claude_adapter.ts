@@ -1,4 +1,8 @@
 import type { Logger } from "pino";
+import type {
+  SessionStore,
+  SessionStoreFlush,
+} from "@anthropic-ai/claude-agent-sdk";
 
 import type {
   BackendId,
@@ -55,6 +59,9 @@ export interface ClaudeRunOptions {
   claudePermissionMode?: ClaudePermissionMode;
   env?: Record<string, string>;
   onScheduleToolUse?: ScheduleToolUseHandler;
+  sessionStore?: SessionStore;
+  sessionStoreFlush?: SessionStoreFlush;
+  loadTimeoutMs?: number;
 }
 
 export interface ClaudeClient {
@@ -79,6 +86,9 @@ export interface ClaudeAdapterConfig {
   workspaceDir: string;
   client?: ClaudeClient;
   processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
+  sessionStore?: SessionStore;
+  sessionStoreFlush?: SessionStoreFlush;
+  loadTimeoutMs?: number;
 }
 
 export class ClaudeEngineAdapter
@@ -95,6 +105,9 @@ export class ClaudeEngineAdapter
   private readonly client: ClaudeClient;
   private readonly logger: Logger;
   private readonly processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
+  private readonly sessionStore?: SessionStore;
+  private readonly sessionStoreFlush?: SessionStoreFlush;
+  private readonly loadTimeoutMs?: number;
   private currentTurn: AbortController | null = null;
   private closed = false;
   private readonly inputRequests = new Map<string, "pending" | "responded" | "expired">();
@@ -103,6 +116,9 @@ export class ClaudeEngineAdapter
     this.workspaceDir = config.workspaceDir;
     this.client = config.client ?? new ClaudeSdkClient({}, logger);
     this.processEnv = config.processEnv;
+    this.sessionStore = config.sessionStore;
+    this.sessionStoreFlush = config.sessionStoreFlush;
+    this.loadTimeoutMs = config.loadTimeoutMs;
     this.logger = logger;
   }
 
@@ -311,6 +327,9 @@ export class ClaudeEngineAdapter
       ...(params.onScheduleToolUse !== undefined
         ? { onScheduleToolUse: params.onScheduleToolUse }
         : {}),
+      ...(this.sessionStore !== undefined ? { sessionStore: this.sessionStore } : {}),
+      ...(this.sessionStoreFlush !== undefined ? { sessionStoreFlush: this.sessionStoreFlush } : {}),
+      ...(this.loadTimeoutMs !== undefined ? { loadTimeoutMs: this.loadTimeoutMs } : {}),
     };
   }
 

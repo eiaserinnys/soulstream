@@ -1,8 +1,11 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
 
 import type {
+  ClaudeRuntimeNotificationState,
+  ClaudeRuntimeRemoteTriggerState,
   ClaudeRuntimeSessionState,
   ClaudeRuntimeState,
+  ClaudeRuntimeTranscriptMirrorState,
   ClaudeRuntimeTaskState,
   ClaudeRuntimeTaskStatus,
   Task,
@@ -63,6 +66,87 @@ export function applyClaudeRuntimeEvent(task: Task, event: SSEEventPayload): boo
     }
     const sessionId = asString(payload.session_id);
     if (sessionId) runtime.sessionId = sessionId;
+    return true;
+  }
+
+  if (eventType === "claude_runtime_notification") {
+    const notificationId = asString(payload.notification_id);
+    const message = asString(payload.message);
+    const source = parseNotificationSource(payload.source);
+    if (!notificationId || !message || !source) return true;
+    const notification: ClaudeRuntimeNotificationState = {
+      ...(runtime.notifications?.[notificationId] ?? {}),
+      notificationId,
+      source,
+      message,
+      updatedAt: now,
+    };
+    copyString(payload, "title", notification);
+    copyString(payload, "notification_type", notification, "notificationType");
+    copyString(payload, "key", notification);
+    copyString(payload, "priority", notification);
+    copyString(payload, "tool_use_id", notification, "toolUseId");
+    const sessionId = asString(payload.session_id);
+    if (sessionId) {
+      runtime.sessionId = sessionId;
+      notification.sessionId = sessionId;
+    }
+    runtime.notifications = {
+      ...(runtime.notifications ?? {}),
+      [notificationId]: notification,
+    };
+    return true;
+  }
+
+  if (eventType === "claude_runtime_remote_trigger") {
+    const triggerId = asString(payload.trigger_id);
+    const source = parseRemoteTriggerSource(payload.source);
+    if (!triggerId || !source) return true;
+    const trigger: ClaudeRuntimeRemoteTriggerState = {
+      ...(runtime.remoteTriggers?.[triggerId] ?? {}),
+      triggerId,
+      source,
+      updatedAt: now,
+    };
+    copyString(payload, "origin_kind", trigger, "originKind");
+    copyString(payload, "origin_from", trigger, "originFrom");
+    copyString(payload, "origin_name", trigger, "originName");
+    copyString(payload, "origin_server", trigger, "originServer");
+    copyString(payload, "priority", trigger);
+    copyString(payload, "prompt", trigger);
+    copyString(payload, "trigger_type", trigger, "triggerType");
+    copyString(payload, "tool_use_id", trigger, "toolUseId");
+    const triggerPayload = asRecord(payload.payload);
+    if (triggerPayload) trigger.payload = triggerPayload;
+    const sessionId = asString(payload.session_id);
+    if (sessionId) {
+      runtime.sessionId = sessionId;
+      trigger.sessionId = sessionId;
+    }
+    runtime.remoteTriggers = {
+      ...(runtime.remoteTriggers ?? {}),
+      [triggerId]: trigger,
+    };
+    return true;
+  }
+
+  if (eventType === "claude_runtime_transcript_mirror_error") {
+    const mirror: ClaudeRuntimeTranscriptMirrorState = {
+      ...(runtime.transcriptMirror ?? { errorCount: 0 }),
+      updatedAt: now,
+      errorCount: (runtime.transcriptMirror?.errorCount ?? 0) + 1,
+    };
+    copyString(payload, "mirror_id", mirror, "mirrorId");
+    copyString(payload, "error", mirror, "lastError");
+    copyString(payload, "project_key", mirror, "projectKey");
+    copyString(payload, "transcript_session_id", mirror, "transcriptSessionId");
+    copyString(payload, "subpath", mirror);
+    const sessionId = asString(payload.session_id);
+    if (sessionId) {
+      runtime.sessionId = sessionId;
+      mirror.sessionId = sessionId;
+    }
+    runtime.transcriptMirror = mirror;
     return true;
   }
 
@@ -157,8 +241,12 @@ function ensureClaudeRuntimeState(task: Task): ClaudeRuntimeState {
     task.claudeRuntime = {
       updatedAt: Date.now(),
       tasks: {},
+      notifications: {},
+      remoteTriggers: {},
     };
   }
+  task.claudeRuntime.notifications ??= {};
+  task.claudeRuntime.remoteTriggers ??= {};
   return task.claudeRuntime;
 }
 
@@ -186,6 +274,14 @@ function parseSessionState(value: unknown): ClaudeRuntimeSessionState | undefine
 
 function parseModeSource(value: unknown): "hook" | "tool_use" | undefined {
   return value === "hook" || value === "tool_use" ? value : undefined;
+}
+
+function parseNotificationSource(value: unknown): "hook" | "system" | "tool_use" | undefined {
+  return value === "hook" || value === "system" || value === "tool_use" ? value : undefined;
+}
+
+function parseRemoteTriggerSource(value: unknown): "message_origin" | "tool_use" | undefined {
+  return value === "message_origin" || value === "tool_use" ? value : undefined;
 }
 
 function parseTaskStatus(value: unknown): ClaudeRuntimeTaskStatus | undefined {

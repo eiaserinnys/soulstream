@@ -10,6 +10,7 @@ import { parseEnv } from "./config.js";
 import { SessionDB } from "./db/session_db.js";
 import { EventPersistence } from "./db/event_persistence.js";
 import { ClaudeEngineAdapter } from "./engine/claude_adapter.js";
+import { DbClaudeSessionStore } from "./engine/claude_session_store.js";
 import { CodexEngineAdapter } from "./engine/codex_adapter.js";
 import { CodexAppServerEngineAdapter } from "./engine/codex_app_server/index.js";
 import { resolveCodexCliPath } from "./engine/codex_cli_path.js";
@@ -150,6 +151,7 @@ async function main(): Promise<void> {
 
   // DB 초기화 (postgres.js)
   const db = new SessionDB(env.DATABASE_URL);
+  const claudeSessionStore = new DbClaudeSessionStore(db);
   const interruptedOnStartup = await db.interruptRunningSessionsForNode(
     env.SOULSTREAM_NODE_ID,
   );
@@ -259,6 +261,9 @@ async function main(): Promise<void> {
         {
           workspaceDir: agent.workspace_dir,
           processEnv: claudeAuth.buildProcessEnv(process.env),
+          sessionStore: claudeSessionStore,
+          sessionStoreFlush: "batched",
+          loadTimeoutMs: 60_000,
         },
         logger,
       );

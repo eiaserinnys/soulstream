@@ -484,6 +484,80 @@ describe("Claude event mapper semantic history contract", () => {
       worktree_name: "feature-x",
       timestamp: 149,
     });
+
+    expect(
+      mapClaudeClientEvent({
+        type: "claude_runtime_notification",
+        notificationId: "notif-1",
+        source: "system",
+        title: "Heads up",
+        message: "permission prompt waiting",
+        notificationType: "permission",
+        key: "permission",
+        priority: "high",
+        sessionId: "claude-sess-runtime",
+        timestamp: 150,
+      })[0],
+    ).toEqual({
+      type: "claude_runtime_notification",
+      notification_id: "notif-1",
+      source: "system",
+      title: "Heads up",
+      message: "permission prompt waiting",
+      notification_type: "permission",
+      key: "permission",
+      priority: "high",
+      session_id: "claude-sess-runtime",
+      timestamp: 150,
+    });
+
+    expect(
+      mapClaudeClientEvent({
+        type: "claude_runtime_remote_trigger",
+        triggerId: "remote-1",
+        source: "message_origin",
+        originKind: "peer",
+        originFrom: "ios-device",
+        originName: "iPhone",
+        priority: "now",
+        prompt: "continue",
+        sessionId: "claude-sess-runtime",
+        timestamp: 151,
+      })[0],
+    ).toEqual({
+      type: "claude_runtime_remote_trigger",
+      trigger_id: "remote-1",
+      source: "message_origin",
+      origin_kind: "peer",
+      origin_from: "ios-device",
+      origin_name: "iPhone",
+      priority: "now",
+      prompt: "continue",
+      session_id: "claude-sess-runtime",
+      timestamp: 151,
+    });
+
+    expect(
+      mapClaudeClientEvent({
+        type: "claude_runtime_transcript_mirror_error",
+        mirrorId: "mirror-1",
+        sessionId: "claude-sess-runtime",
+        projectKey: "project-a",
+        transcriptSessionId: "claude-sess-runtime",
+        subpath: "subagents/agent-a",
+        error: "db unavailable",
+        timestamp: 152,
+      })[0],
+    ).toEqual({
+      type: "claude_runtime_transcript_mirror_error",
+      mirror_id: "mirror-1",
+      session_id: "claude-sess-runtime",
+      project_key: "project-a",
+      transcript_session_id: "claude-sess-runtime",
+      subpath: "subagents/agent-a",
+      error: "db unavailable",
+      timestamp: 152,
+    });
   });
 
   it("golden fixture covers all P3 parity event families", () => {

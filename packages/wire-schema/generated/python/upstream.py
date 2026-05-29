@@ -964,6 +964,60 @@ class SSEEventClaudeRuntimeTaskNotification(TypedDict):
     timestamp: NotRequired[float]
 
 
+class SSEEventClaudeRuntimeNotification(TypedDict):
+    """
+    SSE: Claude Agent SDK Notification/PushNotification을 Soulstream in-app 알림으로 노출. 외부 APNs/Expo 발송은 포함하지 않는다.
+    """
+
+    type: Literal['claude_runtime_notification']
+    notification_id: str
+    source: Literal['hook', 'system', 'tool_use']
+    message: str
+    title: NotRequired[str]
+    notification_type: NotRequired[str]
+    key: NotRequired[str]
+    priority: NotRequired[str]
+    session_id: NotRequired[str]
+    tool_use_id: NotRequired[str]
+    timestamp: NotRequired[float]
+
+
+class SSEEventClaudeRuntimeRemoteTrigger(TypedDict):
+    """
+    SSE: Claude Agent SDK RemoteTrigger/tool 또는 remote-origin user message를 기존 intervention/capability 표면에 맞춘 runtime 관찰 이벤트로 노출.
+    """
+
+    type: Literal['claude_runtime_remote_trigger']
+    trigger_id: str
+    source: Literal['message_origin', 'tool_use']
+    session_id: NotRequired[str]
+    tool_use_id: NotRequired[str]
+    origin_kind: NotRequired[str]
+    origin_from: NotRequired[str]
+    origin_name: NotRequired[str]
+    origin_server: NotRequired[str]
+    priority: NotRequired[str]
+    prompt: NotRequired[str]
+    trigger_type: NotRequired[str]
+    payload: NotRequired[dict[str, Any]]
+    timestamp: NotRequired[float]
+
+
+class SSEEventClaudeRuntimeTranscriptMirrorError(TypedDict):
+    """
+    SSE: Claude Agent SDK SessionStore mirror_error. transcript mirror 손실을 조용히 삼키지 않고 runtime 표면에 남긴다.
+    """
+
+    type: Literal['claude_runtime_transcript_mirror_error']
+    mirror_id: str
+    session_id: NotRequired[str]
+    project_key: str
+    transcript_session_id: str
+    subpath: NotRequired[str]
+    error: str
+    timestamp: NotRequired[float]
+
+
 class SSEEventClaudeRuntimeHookEvent(TypedDict):
     """
     SSE: Claude Agent SDK generic hook lifecycle payload preservation.
@@ -1160,6 +1214,9 @@ class SessionEventEnvelope(TypedDict):
         | SSEEventClaudeRuntimeTaskProgress
         | SSEEventClaudeRuntimeTaskCompleted
         | SSEEventClaudeRuntimeTaskNotification
+        | SSEEventClaudeRuntimeNotification
+        | SSEEventClaudeRuntimeRemoteTrigger
+        | SSEEventClaudeRuntimeTranscriptMirrorError
         | SSEEventClaudeRuntimeHookEvent
         | SSEEventClaudeRuntimeModeState
         | SSEEventClaudeRuntimeScheduleUpdated

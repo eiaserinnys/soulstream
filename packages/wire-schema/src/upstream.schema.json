@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 83개 $defs (wire 36 + SSE event 47). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 86개 $defs (wire 36 + SSE event 50). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -124,6 +124,9 @@
             { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskProgress" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskCompleted" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskNotification" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeNotification" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeRemoteTrigger" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeTranscriptMirrorError" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeHookEvent" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeModeState" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleUpdated" },
@@ -1286,6 +1289,63 @@
         "summary": { "type": "string" },
         "usage": { "type": "object", "additionalProperties": true },
         "skip_transcript": { "type": "boolean" },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventClaudeRuntimeNotification": {
+      "type": "object",
+      "description": "SSE: Claude Agent SDK Notification/PushNotification을 Soulstream in-app 알림으로 노출. 외부 APNs/Expo 발송은 포함하지 않는다.",
+      "required": ["type", "notification_id", "source", "message"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_notification" },
+        "notification_id": { "type": "string" },
+        "source": { "type": "string", "enum": ["hook", "system", "tool_use"] },
+        "message": { "type": "string" },
+        "title": { "type": "string" },
+        "notification_type": { "type": "string" },
+        "key": { "type": "string" },
+        "priority": { "type": "string" },
+        "session_id": { "type": "string" },
+        "tool_use_id": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventClaudeRuntimeRemoteTrigger": {
+      "type": "object",
+      "description": "SSE: Claude Agent SDK RemoteTrigger/tool 또는 remote-origin user message를 기존 intervention/capability 표면에 맞춘 runtime 관찰 이벤트로 노출.",
+      "required": ["type", "trigger_id", "source"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_remote_trigger" },
+        "trigger_id": { "type": "string" },
+        "source": { "type": "string", "enum": ["message_origin", "tool_use"] },
+        "session_id": { "type": "string" },
+        "tool_use_id": { "type": "string" },
+        "origin_kind": { "type": "string" },
+        "origin_from": { "type": "string" },
+        "origin_name": { "type": "string" },
+        "origin_server": { "type": "string" },
+        "priority": { "type": "string" },
+        "prompt": { "type": "string" },
+        "trigger_type": { "type": "string" },
+        "payload": { "type": "object", "additionalProperties": true },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventClaudeRuntimeTranscriptMirrorError": {
+      "type": "object",
+      "description": "SSE: Claude Agent SDK SessionStore mirror_error. transcript mirror 손실을 조용히 삼키지 않고 runtime 표면에 남긴다.",
+      "required": ["type", "mirror_id", "project_key", "transcript_session_id", "error"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_transcript_mirror_error" },
+        "mirror_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "project_key": { "type": "string" },
+        "transcript_session_id": { "type": "string" },
+        "subpath": { "type": "string" },
+        "error": { "type": "string" },
         "timestamp": { "type": "number" }
       }
     },

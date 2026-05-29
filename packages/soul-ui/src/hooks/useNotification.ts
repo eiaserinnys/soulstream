@@ -128,6 +128,14 @@ function formatNotification(event: SoulSSEEvent): { title: string; body: string 
           : event.text,
       };
 
+    case "claude_runtime_notification":
+      return {
+        title: event.title ?? event.notification_type ?? "Runtime Notification",
+        body: event.message.length > 100
+          ? event.message.slice(0, 97) + "..."
+          : event.message,
+      };
+
     default:
       return {
         title: "Soul Dashboard",

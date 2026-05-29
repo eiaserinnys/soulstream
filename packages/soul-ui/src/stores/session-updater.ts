@@ -8,7 +8,12 @@
 import type { SoulSSEEvent, SessionStatus } from "@shared/types";
 
 /** 알림 대상 이벤트 타입 (모듈 스코프: 매 호출 재생성 방지) */
-const NOTIFY_TYPES = new Set(["complete", "error", "intervention_sent"]);
+const NOTIFY_TYPES = new Set([
+  "complete",
+  "error",
+  "intervention_sent",
+  "claude_runtime_notification",
+]);
 
 /**
  * 이벤트가 알림 대상인지 판별합니다.

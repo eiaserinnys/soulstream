@@ -616,6 +616,268 @@ describe("ClaudeSdkClient", () => {
     expect(captured[1]?.options).not.toHaveProperty("allowDangerouslySkipPermissions");
   });
 
+  it("forwards the DB-backed SessionStore mirror options to the Claude SDK", async () => {
+    const captured: ClaudeSdkQueryParams[] = [];
+    const sessionStore = {
+      append: vi.fn(async () => undefined),
+      load: vi.fn(async () => null),
+      listSubkeys: vi.fn(async () => []),
+    };
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) => {
+          captured.push(params);
+          return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-store", "done")]));
+        },
+        postResultDrainMs: 10,
+      },
+      silentLogger,
+    );
+
+    await collect(
+      client.run(
+        {
+          prompt: "hi",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+          sessionStore,
+          sessionStoreFlush: "batched",
+          loadTimeoutMs: 60000,
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(captured[0]?.options).toMatchObject({
+      sessionStore,
+      sessionStoreFlush: "batched",
+      loadTimeoutMs: 60000,
+    });
+  });
+
+  it("captures PushNotification and RemoteTrigger tools as Soulstream runtime events without invoking external push infra", async () => {
+    const permissionResults: PermissionResult[] = [];
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const push = await params.options?.canUseTool?.(
+                "PushNotification",
+                { title: "Heads up", message: "review is waiting", priority: "high" },
+                {
+                  signal: new AbortController().signal,
+                  toolUseID: "toolu-push",
+                },
+              );
+              if (push) permissionResults.push(push);
+              const remote = await params.options?.canUseTool?.(
+                "RemoteTrigger",
+                { trigger: "intervention", prompt: "continue now" },
+                {
+                  signal: new AbortController().signal,
+                  toolUseID: "toolu-remote",
+                },
+              );
+              if (remote) permissionResults.push(remote);
+              yield {
+                type: "system",
+                subtype: "permission_denied",
+                tool_name: "PushNotification",
+                tool_use_id: "toolu-push",
+                message:
+                  "Soulstream in-app notification captured. External APNs/Expo push is not configured for this runtime.",
+                session_id: "claude-sess-remote-tools",
+              } as unknown as SDKMessage;
+              yield {
+                type: "system",
+                subtype: "permission_denied",
+                tool_name: "RemoteTrigger",
+                tool_use_id: "toolu-remote",
+                message:
+                  "Soulstream intervention/capability routing is already the remote trigger path for this session.",
+                session_id: "claude-sess-remote-tools",
+              } as unknown as SDKMessage;
+              yield {
+                type: "user",
+                message: {
+                  role: "user",
+                  content: [
+                    {
+                      type: "tool_result",
+                      tool_use_id: "toolu-push",
+                      content: "permission denied",
+                      is_error: true,
+                    },
+                    {
+                      type: "tool_result",
+                      tool_use_id: "toolu-remote",
+                      content: "permission denied",
+                      is_error: true,
+                    },
+                  ],
+                },
+                uuid: "user-runtime-tool-result",
+                session_id: "claude-sess-remote-tools",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-remote-tools", "done");
+            })(),
+          ),
+        postResultDrainMs: 10,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(permissionResults).toEqual([
+      expect.objectContaining({
+        behavior: "deny",
+        toolUseID: "toolu-push",
+        message: expect.stringContaining("Soulstream in-app notification"),
+      }),
+      expect.objectContaining({
+        behavior: "deny",
+        toolUseID: "toolu-remote",
+        message: expect.stringContaining("Soulstream intervention"),
+      }),
+    ]);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "claude_runtime_notification",
+          notificationId: "toolu-push",
+          source: "tool_use",
+          toolUseId: "toolu-push",
+          title: "Heads up",
+          message: "review is waiting",
+          priority: "high",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_remote_trigger",
+          triggerId: "toolu-remote",
+          source: "tool_use",
+          toolUseId: "toolu-remote",
+          triggerType: "intervention",
+          prompt: "continue now",
+          payload: { trigger: "intervention", prompt: "continue now" },
+        }),
+      ]),
+    );
+    expect(events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "error", errorCode: "permission_denied" }),
+      ]),
+    );
+    expect(events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool_result", toolUseId: "toolu-push" }),
+      ]),
+    );
+    expect(events).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool_result", toolUseId: "toolu-remote" }),
+      ]),
+    );
+  });
+
+  it("maps SDK notification, remote-origin user message, and mirror_error into runtime events", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            sdkMessages([
+              {
+                type: "system",
+                subtype: "notification",
+                text: "permission prompt waiting",
+                key: "permission",
+                priority: "high",
+                uuid: "notif-1",
+                session_id: "claude-sess-p2",
+              },
+              {
+                type: "user",
+                message: {
+                  role: "user",
+                  content: "continue from phone",
+                },
+                origin: {
+                  kind: "peer",
+                  from: "ios-device",
+                  name: "iPhone",
+                },
+                priority: "now",
+                uuid: "remote-user-1",
+                session_id: "claude-sess-p2",
+              },
+              {
+                type: "system",
+                subtype: "mirror_error",
+                error: "db unavailable",
+                key: {
+                  projectKey: "project-a",
+                  sessionId: "claude-sess-p2",
+                  subpath: "subagents/agent-a",
+                },
+                uuid: "mirror-1",
+                session_id: "claude-sess-p2",
+              },
+              sdkSuccessResult("claude-sess-p2", "done"),
+            ]),
+          ),
+        postResultDrainMs: 10,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "claude_runtime_notification",
+          notificationId: "notif-1",
+          source: "system",
+          message: "permission prompt waiting",
+          key: "permission",
+          priority: "high",
+          sessionId: "claude-sess-p2",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_remote_trigger",
+          triggerId: "remote-user-1",
+          source: "message_origin",
+          originKind: "peer",
+          originFrom: "ios-device",
+          originName: "iPhone",
+          priority: "now",
+          prompt: "continue from phone",
+          sessionId: "claude-sess-p2",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_transcript_mirror_error",
+          mirrorId: "mirror-1",
+          sessionId: "claude-sess-p2",
+          projectKey: "project-a",
+          transcriptSessionId: "claude-sess-p2",
+          subpath: "subagents/agent-a",
+          error: "db unavailable",
+        }),
+      ]),
+    );
+  });
+
   it("preserves generic SDK hooks and updates worktree mode from worktree hooks", async () => {
     const client = new ClaudeSdkClient(
       {

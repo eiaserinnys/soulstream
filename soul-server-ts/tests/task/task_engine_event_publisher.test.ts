@@ -291,6 +291,38 @@ describe("TaskEngineEventPublisher", () => {
       timestamp: 12.5,
     } as unknown as SSEEventPayload);
     await publisher.publishEngineEvent(task, {
+      type: "claude_runtime_notification",
+      notification_id: "notif-1",
+      source: "system",
+      message: "permission prompt waiting",
+      key: "permission",
+      priority: "high",
+      session_id: "claude-sess-runtime",
+      timestamp: 12.6,
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
+      type: "claude_runtime_remote_trigger",
+      trigger_id: "remote-1",
+      source: "message_origin",
+      origin_kind: "peer",
+      origin_from: "ios-device",
+      origin_name: "iPhone",
+      priority: "now",
+      prompt: "continue",
+      session_id: "claude-sess-runtime",
+      timestamp: 12.7,
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
+      type: "claude_runtime_transcript_mirror_error",
+      mirror_id: "mirror-1",
+      session_id: "claude-sess-runtime",
+      project_key: "project-a",
+      transcript_session_id: "claude-sess-runtime",
+      subpath: "subagents/agent-a",
+      error: "db unavailable",
+      timestamp: 12.8,
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
       type: "claude_runtime_session_state",
       state: "idle",
       session_id: "claude-sess-runtime",
@@ -325,8 +357,35 @@ describe("TaskEngineEventPublisher", () => {
         toolUseId: "toolu-plan",
         toolName: "EnterPlanMode",
       },
+      notifications: {
+        "notif-1": {
+          notificationId: "notif-1",
+          source: "system",
+          message: "permission prompt waiting",
+          key: "permission",
+          priority: "high",
+        },
+      },
+      remoteTriggers: {
+        "remote-1": {
+          triggerId: "remote-1",
+          source: "message_origin",
+          originKind: "peer",
+          originFrom: "ios-device",
+          originName: "iPhone",
+          priority: "now",
+          prompt: "continue",
+        },
+      },
+      transcriptMirror: {
+        lastError: "db unavailable",
+        errorCount: 1,
+        projectKey: "project-a",
+        transcriptSessionId: "claude-sess-runtime",
+        subpath: "subagents/agent-a",
+      },
     });
-    expect(deps.persistEvent).toHaveBeenCalledTimes(7);
-    expect(deps.emitEventEnvelope).toHaveBeenCalledTimes(7);
+    expect(deps.persistEvent).toHaveBeenCalledTimes(10);
+    expect(deps.emitEventEnvelope).toHaveBeenCalledTimes(10);
   });
 });

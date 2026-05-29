@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 83개 $defs (wire 36 + SSE event 47). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 86개 $defs (wire 36 + SSE event 50). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -152,6 +152,9 @@ export interface SessionEventEnvelope {
     | SSEEventClaudeRuntimeTaskProgress
     | SSEEventClaudeRuntimeTaskCompleted
     | SSEEventClaudeRuntimeTaskNotification
+    | SSEEventClaudeRuntimeNotification
+    | SSEEventClaudeRuntimeRemoteTrigger
+    | SSEEventClaudeRuntimeTranscriptMirrorError
     | SSEEventClaudeRuntimeHookEvent
     | SSEEventClaudeRuntimeModeState
     | SSEEventClaudeRuntimeScheduleUpdated
@@ -513,6 +516,59 @@ export interface SSEEventClaudeRuntimeTaskNotification {
     [k: string]: unknown;
   };
   skip_transcript?: boolean;
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: Claude Agent SDK Notification/PushNotification을 Soulstream in-app 알림으로 노출. 외부 APNs/Expo 발송은 포함하지 않는다.
+ */
+export interface SSEEventClaudeRuntimeNotification {
+  type: "claude_runtime_notification";
+  notification_id: string;
+  source: "hook" | "system" | "tool_use";
+  message: string;
+  title?: string;
+  notification_type?: string;
+  key?: string;
+  priority?: string;
+  session_id?: string;
+  tool_use_id?: string;
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: Claude Agent SDK RemoteTrigger/tool 또는 remote-origin user message를 기존 intervention/capability 표면에 맞춘 runtime 관찰 이벤트로 노출.
+ */
+export interface SSEEventClaudeRuntimeRemoteTrigger {
+  type: "claude_runtime_remote_trigger";
+  trigger_id: string;
+  source: "message_origin" | "tool_use";
+  session_id?: string;
+  tool_use_id?: string;
+  origin_kind?: string;
+  origin_from?: string;
+  origin_name?: string;
+  origin_server?: string;
+  priority?: string;
+  prompt?: string;
+  trigger_type?: string;
+  payload?: {
+    [k: string]: unknown;
+  };
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: Claude Agent SDK SessionStore mirror_error. transcript mirror 손실을 조용히 삼키지 않고 runtime 표면에 남긴다.
+ */
+export interface SSEEventClaudeRuntimeTranscriptMirrorError {
+  type: "claude_runtime_transcript_mirror_error";
+  mirror_id: string;
+  session_id?: string;
+  project_key: string;
+  transcript_session_id: string;
+  subpath?: string;
+  error: string;
   timestamp?: number;
   [k: string]: unknown;
 }
