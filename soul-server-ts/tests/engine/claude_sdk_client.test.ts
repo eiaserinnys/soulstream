@@ -1967,9 +1967,11 @@ describe("ClaudeSdkClient", () => {
     expect(captured[0]?.options?.hooks).not.toHaveProperty("SessionStart");
   });
 
-  it("steers active turns through the SDK streaming input without polling", async () => {
+  it("rejects active-turn live steering without resolving a second SDK input read", async () => {
     const prompts: string[] = [];
     const readyForSteer = deferred<void>();
+    const releaseRun = deferred<void>();
+    let secondInputRead: Promise<IteratorResult<SDKUserMessage>> | undefined;
     const client = new ClaudeSdkClient(
       {
         query: (params) =>
@@ -1979,12 +1981,12 @@ describe("ClaudeSdkClient", () => {
               const iterator = input[Symbol.asyncIterator]();
               const initial = await iterator.next();
               prompts.push(messageText(initial.value));
+              secondInputRead = iterator.next();
               readyForSteer.resolve();
-              const injected = await iterator.next();
-              prompts.push(messageText(injected.value));
+              await releaseRun.promise;
               yield {
                 type: "assistant",
-                message: { content: [{ type: "text", text: messageText(injected.value) }] },
+                message: { content: [{ type: "text", text: "steady" }] },
                 parent_tool_use_id: null,
                 uuid: "assistant-2",
                 session_id: "claude-sess-4",
@@ -2008,14 +2010,18 @@ describe("ClaudeSdkClient", () => {
       ),
     );
     await readyForSteer.promise;
-    expect(client.steerActiveTurn({ prompt: "while running" })).toBe(true);
+    expect(client.steerActiveTurn({ prompt: "while running" })).toBe(false);
+    expect(secondInputRead).toBeDefined();
+    await expectPromisePending(secondInputRead!);
+    releaseRun.resolve();
     const events = await eventsPromise;
 
-    expect(prompts).toEqual(["first", "while running"]);
+    expect(prompts).toEqual(["first"]);
     expect(events.find((event) => event.type === "text")).toMatchObject({
       type: "text",
-      text: "while running",
+      text: "steady",
     });
+    await expect(secondInputRead).resolves.toMatchObject({ done: true });
     expect(client.steerActiveTurn({ prompt: "after run" })).toBe(false);
   });
 
@@ -2024,6 +2030,7 @@ describe("ClaudeSdkClient", () => {
     const readyDuringToolUse = deferred<void>();
     const releaseToolResult = deferred<void>();
     const readyAfterToolResult = deferred<void>();
+    const releaseAfterToolResult = deferred<void>();
     const client = new ClaudeSdkClient(
       {
         query: (params) =>
@@ -2070,11 +2077,10 @@ describe("ClaudeSdkClient", () => {
                 session_id: "claude-sess-tool",
               } as unknown as SDKMessage;
               readyAfterToolResult.resolve();
-              const injected = await iterator.next();
-              prompts.push(messageText(injected.value));
+              await releaseAfterToolResult.promise;
               yield {
                 type: "assistant",
-                message: { content: [{ type: "text", text: messageText(injected.value) }] },
+                message: { content: [{ type: "text", text: "after tool final" }] },
                 parent_tool_use_id: null,
                 uuid: "assistant-after-tool",
                 session_id: "claude-sess-tool",
@@ -2100,23 +2106,25 @@ describe("ClaudeSdkClient", () => {
     expect(client.steerActiveTurn({ prompt: "during tool use" })).toBe(false);
     releaseToolResult.resolve();
     await readyAfterToolResult.promise;
-    expect(client.steerActiveTurn({ prompt: "after tool result" })).toBe(true);
+    expect(client.steerActiveTurn({ prompt: "after tool result" })).toBe(false);
+    releaseAfterToolResult.resolve();
     const events = await eventsPromise;
 
-    expect(prompts).toEqual(["first", "after tool result"]);
+    expect(prompts).toEqual(["first"]);
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "tool_result", toolUseId: "toolu-mid" }),
-        expect.objectContaining({ type: "text", text: "after tool result" }),
+        expect.objectContaining({ type: "text", text: "after tool final" }),
       ]),
     );
   });
 
-  it("rejects live steering while Claude runtime work is pending and accepts after idle", async () => {
+  it("rejects live steering while Claude runtime work is pending and after it becomes idle", async () => {
     const prompts: string[] = [];
     const readyWhileRuntimePending = deferred<void>();
     const releaseRuntimeIdle = deferred<void>();
     const readyAfterRuntimeIdle = deferred<void>();
+    const releaseAfterRuntimeIdle = deferred<void>();
     const client = new ClaudeSdkClient(
       {
         query: (params) =>
@@ -2141,11 +2149,10 @@ describe("ClaudeSdkClient", () => {
                 session_id: "claude-sess-runtime",
               } as unknown as SDKMessage;
               readyAfterRuntimeIdle.resolve();
-              const injected = await iterator.next();
-              prompts.push(messageText(injected.value));
+              await releaseAfterRuntimeIdle.promise;
               yield {
                 type: "assistant",
-                message: { content: [{ type: "text", text: messageText(injected.value) }] },
+                message: { content: [{ type: "text", text: "runtime final" }] },
                 parent_tool_use_id: null,
                 uuid: "assistant-after-runtime",
                 session_id: "claude-sess-runtime",
@@ -2171,15 +2178,16 @@ describe("ClaudeSdkClient", () => {
     expect(client.steerActiveTurn({ prompt: "during runtime work" })).toBe(false);
     releaseRuntimeIdle.resolve();
     await readyAfterRuntimeIdle.promise;
-    expect(client.steerActiveTurn({ prompt: "after runtime idle" })).toBe(true);
+    expect(client.steerActiveTurn({ prompt: "after runtime idle" })).toBe(false);
+    releaseAfterRuntimeIdle.resolve();
     const events = await eventsPromise;
 
-    expect(prompts).toEqual(["first", "after runtime idle"]);
+    expect(prompts).toEqual(["first"]);
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "claude_runtime_session_state", state: "running" }),
         expect.objectContaining({ type: "claude_runtime_session_state", state: "idle" }),
-        expect.objectContaining({ type: "text", text: "after runtime idle" }),
+        expect.objectContaining({ type: "text", text: "runtime final" }),
       ]),
     );
   });
@@ -2188,6 +2196,7 @@ describe("ClaudeSdkClient", () => {
     const prompts: string[] = [];
     const permissions: PermissionResult[] = [];
     const readyAfterCanUseTool = deferred<void>();
+    const releaseAfterCanUseTool = deferred<void>();
     const client = new ClaudeSdkClient(
       {
         inputRequestTimeoutMs: 30_000,
@@ -2208,11 +2217,10 @@ describe("ClaudeSdkClient", () => {
               );
               if (permission) permissions.push(permission);
               readyAfterCanUseTool.resolve();
-              const injected = await iterator.next();
-              prompts.push(messageText(injected.value));
+              await releaseAfterCanUseTool.promise;
               yield {
                 type: "assistant",
-                message: { content: [{ type: "text", text: messageText(injected.value) }] },
+                message: { content: [{ type: "text", text: "ask final" }] },
                 parent_tool_use_id: null,
                 uuid: "assistant-after-ask",
                 session_id: "claude-sess-ask",
@@ -2246,7 +2254,8 @@ describe("ClaudeSdkClient", () => {
       ),
     ).toBe(true);
     await readyAfterCanUseTool.promise;
-    expect(client.steerActiveTurn({ prompt: "after canUseTool" })).toBe(true);
+    expect(client.steerActiveTurn({ prompt: "after canUseTool" })).toBe(false);
+    releaseAfterCanUseTool.resolve();
     const events = await collectIterator(iterator);
 
     expect(permissions).toEqual([
@@ -2259,15 +2268,15 @@ describe("ClaudeSdkClient", () => {
         toolUseID: "toolu-ask",
       },
     ]);
-    expect(prompts).toEqual(["first", "after canUseTool"]);
+    expect(prompts).toEqual(["first"]);
     expect(events).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: "text", text: "after canUseTool" }),
+        expect.objectContaining({ type: "text", text: "ask final" }),
       ]),
     );
   });
 
-  it("steers active turn image attachments as content blocks", async () => {
+  it("does not push active-turn image attachments into the Claude SDK stream", async () => {
     const dir = mkdtempSync(join(tmpdir(), "claude-intervention-image-"));
     try {
       const imagePath = join(dir, "sample.webp");
@@ -2275,6 +2284,7 @@ describe("ClaudeSdkClient", () => {
       writeFileSync(imagePath, bytes);
       const contents: Array<SDKUserMessage["message"]["content"]> = [];
       const readyForSteer = deferred<void>();
+      const releaseRun = deferred<void>();
       const client = new ClaudeSdkClient(
         {
           query: (params) =>
@@ -2285,8 +2295,7 @@ describe("ClaudeSdkClient", () => {
                 const initial = await iterator.next();
                 contents.push(initial.value.message.content);
                 readyForSteer.resolve();
-                const injected = await iterator.next();
-                contents.push(injected.value.message.content);
+                await releaseRun.promise;
                 yield sdkSuccessResult("claude-sess-img-in", "done");
               })(),
             ),
@@ -2310,21 +2319,11 @@ describe("ClaudeSdkClient", () => {
           prompt: "이미지 추가",
           imageAttachmentPaths: [imagePath],
         }),
-      ).toBe(true);
+      ).toBe(false);
+      releaseRun.resolve();
       await eventsPromise;
 
-      expect(contents[0]).toBe("first");
-      expect(contents[1]).toEqual([
-        { type: "text", text: "이미지 추가" },
-        {
-          type: "image",
-          source: {
-            type: "base64",
-            media_type: "image/webp",
-            data: bytes.toString("base64"),
-          },
-        },
-      ]);
+      expect(contents).toEqual(["first"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -3436,6 +3435,18 @@ function deferred<T>() {
     reject = promiseReject;
   });
   return { promise, resolve, reject };
+}
+
+async function expectPromisePending<T>(promise: Promise<T>, timeoutMs = 30): Promise<void> {
+  const pending = Symbol("pending");
+  const result = await Promise.race([
+    promise.then(
+      () => "resolved" as const,
+      () => "rejected" as const,
+    ),
+    new Promise<typeof pending>((resolve) => setTimeout(() => resolve(pending), timeoutMs)),
+  ]);
+  expect(result).toBe(pending);
 }
 
 async function* sdkMessages(messages: unknown[]): AsyncGenerator<SDKMessage> {

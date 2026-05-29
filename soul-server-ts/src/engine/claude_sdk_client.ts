@@ -289,11 +289,12 @@ export class ClaudeSdkClient implements ClaudeClient {
     return true;
   }
 
-  steerActiveTurn(input: EngineUserInput): boolean {
-    const activeInput = this.activeInput;
-    if (!activeInput) return false;
-    if (!this.canAcceptLiveUserInput()) return false;
-    return activeInput.push(makeUserMessage(input.prompt, input.imageAttachmentPaths));
+  steerActiveTurn(_input: EngineUserInput): boolean {
+    // Claude Agent SDK treats normal user messages pushed into an active query
+    // as a prompt-submission turn, which can terminate the in-flight drain with
+    // fatal EDE diagnostics. Running interventions must use the task-level
+    // interventionQueue and become the next turn instead.
+    return false;
   }
 
   async backgroundClaudeRuntimeTasks(
@@ -1718,22 +1719,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     if (this.runtimeSessionState && this.runtimeSessionState !== "idle") return true;
     for (const runtimeTask of this.runtimeTasksById.values()) {
       if (!TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES.has(runtimeTask.status)) return true;
-    }
-    return false;
-  }
-
-  private canAcceptLiveUserInput(): boolean {
-    return (
-      this.pendingCanUseToolCalls.size === 0 &&
-      !this.hasPendingRuntimeWork() &&
-      !this.hasPendingToolUseResults()
-    );
-  }
-
-  private hasPendingToolUseResults(): boolean {
-    for (const toolUseId of this.toolNamesById.keys()) {
-      if (this.interceptedScheduleToolUseIds.has(toolUseId)) continue;
-      if (!this.emittedToolResultIds.has(toolUseId)) return true;
     }
     return false;
   }
