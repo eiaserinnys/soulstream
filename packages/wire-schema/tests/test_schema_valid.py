@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 86개 $defs (wire 36 + SSE event 50)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 90개 $defs (wire 36 + SSE event 54)를 모두 포함하는지 확인한다.
 """
 
 import json
@@ -118,6 +118,10 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventClaudeRuntimeNotification",
         "SSEEventClaudeRuntimeRemoteTrigger",
         "SSEEventClaudeRuntimeTranscriptMirrorError",
+        "SSEEventClaudeRuntimeHookEvent",
+        "SSEEventClaudeRuntimeModeState",
+        "SSEEventClaudeRuntimeScheduleUpdated",
+        "SSEEventClaudeRuntimeScheduleDeleted",
         "SSEEventContextUsage",
         "SSEEventCompact",
         "SSEEventReconnect",
@@ -126,8 +130,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventAssistantError",
         "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 50, (
-        "SSE event $defs 50종 (orch-server/constants.py KNOWN_SSE_EVENT_TYPES + Agents SDK events)."
+    assert len(sse_types) == 54, (
+        "SSE event $defs 54종 (orch-server/constants.py KNOWN_SSE_EVENT_TYPES + Agents SDK events)."
     )
 
     expected = wire_types | sse_types
