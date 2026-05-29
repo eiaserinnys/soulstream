@@ -235,6 +235,48 @@ export type ClaudeClientEvent =
       parentEventId?: ParentEventId;
     }
   | {
+      type: "claude_runtime_notification";
+      notificationId: string;
+      source: "hook" | "system" | "tool_use";
+      message: string;
+      title?: string;
+      notificationType?: string;
+      key?: string;
+      priority?: string;
+      sessionId?: string;
+      toolUseId?: string;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
+      type: "claude_runtime_remote_trigger";
+      triggerId: string;
+      source: "message_origin" | "tool_use";
+      sessionId?: string;
+      toolUseId?: string;
+      originKind?: string;
+      originFrom?: string;
+      originName?: string;
+      originServer?: string;
+      priority?: string;
+      prompt?: string;
+      triggerType?: string;
+      payload?: Record<string, unknown>;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
+      type: "claude_runtime_transcript_mirror_error";
+      mirrorId: string;
+      sessionId?: string;
+      projectKey: string;
+      transcriptSessionId: string;
+      subpath?: string;
+      error: string;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
       type: "claude_runtime_mode_state";
       mode: "plan" | "worktree";
       active: boolean;
@@ -624,6 +666,62 @@ export function mapClaudeClientEvent(
           ...(event.toolName !== undefined ? { tool_name: event.toolName } : {}),
           ...(event.toolUseId !== undefined ? { tool_use_id: event.toolUseId } : {}),
           ...(event.hookInput !== undefined ? { hook_input: event.hookInput } : {}),
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "claude_runtime_notification":
+      return [
+        asSSE({
+          type: "claude_runtime_notification",
+          notification_id: event.notificationId,
+          source: event.source,
+          message: event.message,
+          ...(event.title !== undefined ? { title: event.title } : {}),
+          ...(event.notificationType !== undefined
+            ? { notification_type: event.notificationType }
+            : {}),
+          ...(event.key !== undefined ? { key: event.key } : {}),
+          ...(event.priority !== undefined ? { priority: event.priority } : {}),
+          ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
+          ...(event.toolUseId !== undefined ? { tool_use_id: event.toolUseId } : {}),
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "claude_runtime_remote_trigger":
+      return [
+        asSSE({
+          type: "claude_runtime_remote_trigger",
+          trigger_id: event.triggerId,
+          source: event.source,
+          ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
+          ...(event.toolUseId !== undefined ? { tool_use_id: event.toolUseId } : {}),
+          ...(event.originKind !== undefined ? { origin_kind: event.originKind } : {}),
+          ...(event.originFrom !== undefined ? { origin_from: event.originFrom } : {}),
+          ...(event.originName !== undefined ? { origin_name: event.originName } : {}),
+          ...(event.originServer !== undefined ? { origin_server: event.originServer } : {}),
+          ...(event.priority !== undefined ? { priority: event.priority } : {}),
+          ...(event.prompt !== undefined ? { prompt: event.prompt } : {}),
+          ...(event.triggerType !== undefined ? { trigger_type: event.triggerType } : {}),
+          ...(event.payload !== undefined ? { payload: event.payload } : {}),
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "claude_runtime_transcript_mirror_error":
+      return [
+        asSSE({
+          type: "claude_runtime_transcript_mirror_error",
+          mirror_id: event.mirrorId,
+          ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
+          project_key: event.projectKey,
+          transcript_session_id: event.transcriptSessionId,
+          ...(event.subpath !== undefined ? { subpath: event.subpath } : {}),
+          error: event.error,
           timestamp: event.timestamp ?? nowEpochSec(),
           ...parentField(event.parentEventId),
         }),

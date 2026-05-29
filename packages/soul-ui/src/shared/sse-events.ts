@@ -53,6 +53,9 @@ export type SSEEventType =
   | "claude_runtime_task_progress"
   | "claude_runtime_task_completed"
   | "claude_runtime_task_notification"
+  | "claude_runtime_notification"
+  | "claude_runtime_remote_trigger"
+  | "claude_runtime_transcript_mirror_error"
   | "claude_runtime_hook_event"
   | "claude_runtime_mode_state"
   | "claude_runtime_schedule_updated"
@@ -536,6 +539,48 @@ export interface ClaudeRuntimeTaskNotificationEvent {
   timestamp: number;
 }
 
+export interface ClaudeRuntimeNotificationEvent {
+  type: "claude_runtime_notification";
+  notification_id: string;
+  source: "hook" | "system" | "tool_use";
+  message: string;
+  title?: string;
+  notification_type?: string;
+  key?: string;
+  priority?: string;
+  session_id?: string;
+  tool_use_id?: string;
+  timestamp: number;
+}
+
+export interface ClaudeRuntimeRemoteTriggerEvent {
+  type: "claude_runtime_remote_trigger";
+  trigger_id: string;
+  source: "message_origin" | "tool_use";
+  session_id?: string;
+  tool_use_id?: string;
+  origin_kind?: string;
+  origin_from?: string;
+  origin_name?: string;
+  origin_server?: string;
+  priority?: string;
+  prompt?: string;
+  trigger_type?: string;
+  payload?: Record<string, unknown>;
+  timestamp: number;
+}
+
+export interface ClaudeRuntimeTranscriptMirrorErrorEvent {
+  type: "claude_runtime_transcript_mirror_error";
+  mirror_id: string;
+  session_id?: string;
+  project_key: string;
+  transcript_session_id: string;
+  subpath?: string;
+  error: string;
+  timestamp: number;
+}
+
 export interface ClaudeRuntimeHookEvent {
   type: "claude_runtime_hook_event";
   hook_event_name: string;
@@ -729,6 +774,9 @@ export type SoulSSEEvent =
   | ClaudeRuntimeTaskProgressEvent
   | ClaudeRuntimeTaskCompletedEvent
   | ClaudeRuntimeTaskNotificationEvent
+  | ClaudeRuntimeNotificationEvent
+  | ClaudeRuntimeRemoteTriggerEvent
+  | ClaudeRuntimeTranscriptMirrorErrorEvent
   | ClaudeRuntimeHookEvent
   | ClaudeRuntimeModeStateEvent
   | ClaudeRuntimeScheduleUpdatedEvent

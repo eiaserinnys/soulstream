@@ -395,6 +395,11 @@ export class ClaudeSdkClient implements ClaudeClient {
       ...(options.allowedTools !== undefined ? { allowedTools: options.allowedTools } : {}),
       ...(options.disallowedTools !== undefined ? { disallowedTools: options.disallowedTools } : {}),
       ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
+      ...(options.sessionStore !== undefined ? { sessionStore: options.sessionStore } : {}),
+      ...(options.sessionStoreFlush !== undefined
+        ? { sessionStoreFlush: options.sessionStoreFlush }
+        : {}),
+      ...(options.loadTimeoutMs !== undefined ? { loadTimeoutMs: options.loadTimeoutMs } : {}),
       ...buildMcpOptions(options, this.logger),
     };
   }
@@ -407,6 +412,28 @@ export class ClaudeSdkClient implements ClaudeClient {
       const pendingToolCall = Symbol(toolName);
       this.pendingCanUseToolCalls.add(pendingToolCall);
       try {
+        if (toolName === "PushNotification") {
+          output.push(this.makeNotificationEventFromToolUse(input, context.toolUseID));
+          this.interceptedScheduleToolUseIds.add(context.toolUseID);
+          return {
+            behavior: "deny",
+            message:
+              "Soulstream in-app notification captured. External APNs/Expo push is not configured for this runtime.",
+            toolUseID: context.toolUseID,
+          };
+        }
+
+        if (toolName === "RemoteTrigger") {
+          output.push(this.makeRemoteTriggerEventFromToolUse(input, context.toolUseID));
+          this.interceptedScheduleToolUseIds.add(context.toolUseID);
+          return {
+            behavior: "deny",
+            message:
+              "Soulstream intervention/capability routing is already the remote trigger path for this session.",
+            toolUseID: context.toolUseID,
+          };
+        }
+
         if (SOULSTREAM_SCHEDULE_TOOLS.has(toolName)) {
           if (!options.onScheduleToolUse || !options.agentSessionId) {
             return {
@@ -480,6 +507,51 @@ export class ClaudeSdkClient implements ClaudeClient {
       } finally {
         this.pendingCanUseToolCalls.delete(pendingToolCall);
       }
+    };
+  }
+
+  private makeNotificationEventFromToolUse(
+    input: Record<string, unknown>,
+    toolUseId: string,
+  ): ClaudeClientEvent {
+    const title = asString(input.title) ?? asString(input.subject);
+    const message =
+      asString(input.message) ??
+      asString(input.body) ??
+      asString(input.text) ??
+      title ??
+      "Claude requested a notification";
+    return {
+      type: "claude_runtime_notification",
+      notificationId: toolUseId,
+      source: "tool_use",
+      toolUseId,
+      message,
+      ...(title !== undefined ? { title } : {}),
+      ...(asString(input.notification_type) !== undefined
+        ? { notificationType: asString(input.notification_type) }
+        : {}),
+      ...(asString(input.key) !== undefined ? { key: asString(input.key) } : {}),
+      ...(asString(input.priority) !== undefined ? { priority: asString(input.priority) } : {}),
+    };
+  }
+
+  private makeRemoteTriggerEventFromToolUse(
+    input: Record<string, unknown>,
+    toolUseId: string,
+  ): ClaudeClientEvent {
+    const prompt = asString(input.prompt) ?? asString(input.message) ?? asString(input.text);
+    return {
+      type: "claude_runtime_remote_trigger",
+      triggerId: toolUseId,
+      source: "tool_use",
+      toolUseId,
+      ...(asString(input.trigger) !== undefined ? { triggerType: asString(input.trigger) } : {}),
+      ...(asString(input.type) !== undefined && asString(input.trigger) === undefined
+        ? { triggerType: asString(input.type) }
+        : {}),
+      ...(prompt !== undefined ? { prompt } : {}),
+      payload: { ...input },
     };
   }
 
@@ -623,6 +695,19 @@ export class ClaudeSdkClient implements ClaudeClient {
                 type: "debug",
                 message: `[${notificationType}] ${title}: ${message}`,
               });
+              if (message || title) {
+                output.push({
+                  type: "claude_runtime_notification",
+                  notificationId: asString(record?.uuid) ?? randomUUID(),
+                  source: "hook",
+                  message: message || title,
+                  ...(title ? { title } : {}),
+                  ...(notificationType ? { notificationType } : {}),
+                  ...(asString(record?.session_id) !== undefined
+                    ? { sessionId: asString(record?.session_id) }
+                    : {}),
+                });
+              }
               return {};
             },
           ],
@@ -1266,9 +1351,46 @@ export class ClaudeSdkClient implements ClaudeClient {
       const key = asString(message.key);
       const priority = asString(message.priority);
       const prefix = [priority, key].filter(Boolean).join(":");
+      const notificationId = asString(message.uuid) ?? key ?? randomUUID();
+      const runtimeEvent: ClaudeClientEvent | null = text
+        ? {
+            type: "claude_runtime_notification",
+            notificationId,
+            source: "system",
+            message: text,
+            ...(key !== undefined ? { key } : {}),
+            ...(priority !== undefined ? { priority } : {}),
+            ...(asString(message.session_id) !== undefined
+              ? { sessionId: asString(message.session_id) }
+              : {}),
+          }
+        : null;
       return text
-        ? [{ type: "debug", message: prefix ? `[${prefix}] ${text}` : text }]
+        ? [
+            { type: "debug", message: prefix ? `[${prefix}] ${text}` : text },
+            ...(runtimeEvent ? [runtimeEvent] : []),
+          ]
         : [];
+    }
+    if (subtype === "mirror_error") {
+      const key = asRecord(message.key);
+      const projectKey = asString(key?.projectKey);
+      const transcriptSessionId = asString(key?.sessionId);
+      const error = asString(message.error);
+      if (!projectKey || !transcriptSessionId || !error) return [];
+      return [
+        {
+          type: "claude_runtime_transcript_mirror_error",
+          mirrorId: asString(message.uuid) ?? randomUUID(),
+          ...(asString(message.session_id) !== undefined
+            ? { sessionId: asString(message.session_id) }
+            : {}),
+          projectKey,
+          transcriptSessionId,
+          ...(asString(key?.subpath) !== undefined ? { subpath: asString(key?.subpath) } : {}),
+          error,
+        },
+      ];
     }
     if (subtype === "permission_denied") {
       const toolName = asString(message.tool_name) ?? "tool";
@@ -1386,6 +1508,8 @@ export class ClaudeSdkClient implements ClaudeClient {
 
   private mapUserMessage(message: Record<string, unknown>): ClaudeClientEvent[] {
     const events: ClaudeClientEvent[] = [];
+    const remoteTrigger = this.mapRemoteOriginUserMessage(message);
+    if (remoteTrigger) events.push(remoteTrigger);
     const content = messageContent(message);
     for (const block of content) {
       const record = asRecord(block);
@@ -1412,6 +1536,27 @@ export class ClaudeSdkClient implements ClaudeClient {
       );
     }
     return events;
+  }
+
+  private mapRemoteOriginUserMessage(message: Record<string, unknown>): ClaudeClientEvent | null {
+    const origin = asRecord(message.origin);
+    const kind = asString(origin?.kind);
+    if (!origin || !kind || kind === "human") return null;
+    const prompt = userMessageText(message);
+    return {
+      type: "claude_runtime_remote_trigger",
+      triggerId: asString(message.uuid) ?? randomUUID(),
+      source: "message_origin",
+      ...(asString(message.session_id) !== undefined
+        ? { sessionId: asString(message.session_id) }
+        : {}),
+      originKind: kind,
+      ...(asString(origin.from) !== undefined ? { originFrom: asString(origin.from) } : {}),
+      ...(asString(origin.name) !== undefined ? { originName: asString(origin.name) } : {}),
+      ...(asString(origin.server) !== undefined ? { originServer: asString(origin.server) } : {}),
+      ...(asString(message.priority) !== undefined ? { priority: asString(message.priority) } : {}),
+      ...(prompt !== undefined ? { prompt } : {}),
+    };
   }
 
   private mapBackgroundBashTaskFromToolResult(params: {
@@ -1792,6 +1937,17 @@ function messageContent(message: Record<string, unknown>): unknown[] {
   return [];
 }
 
+function userMessageText(message: Record<string, unknown>): string | undefined {
+  const nested = asRecord(message.message);
+  const content = nested?.content ?? message.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return undefined;
+  const parts = content
+    .map((block) => asString(asRecord(block)?.text))
+    .filter((text): text is string => Boolean(text));
+  return parts.length > 0 ? parts.join("\n") : undefined;
+}
+
 function extractBackgroundBashOutput(value: unknown): {
   taskId?: string;
   outputFile?: string;
@@ -1897,7 +2053,9 @@ function isRuntimeSystemMessage(message: Record<string, unknown> | undefined): b
     message.subtype === "task_started" ||
     message.subtype === "task_updated" ||
     message.subtype === "task_progress" ||
-    message.subtype === "task_notification"
+    message.subtype === "task_notification" ||
+    message.subtype === "notification" ||
+    message.subtype === "mirror_error"
   );
 }
 

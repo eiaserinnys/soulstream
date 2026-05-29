@@ -5,6 +5,7 @@
  * 본 테스트는 *SessionDB의 책임* (인자 직렬화, 화이트리스트 가드, 반환 파싱)만 검증.
  */
 
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
@@ -267,6 +268,110 @@ describe("SessionDB.appendEvent", () => {
         createdAt: new Date(),
       }),
     ).rejects.toThrow(/event_append returned non-number/);
+  });
+});
+
+describe("SessionDB Claude transcript mirror", () => {
+  it("appendClaudeTranscriptEntries delegates JSON batch to stored proc", async () => {
+    const { sql, calls } = createMockSql(() => [{ claude_transcript_append: 2 }]);
+    const db = new SessionDB(sql);
+
+    const written = await db.appendClaudeTranscriptEntries(
+      { projectKey: "project-a", sessionId: "claude-sess-1" },
+      [
+        { type: "user", uuid: "u1", message: { content: "hi" } },
+        { type: "assistant", uuid: "a1", message: { content: "hello" } },
+      ],
+    );
+
+    expect(written).toBe(2);
+    expect(calls).toHaveLength(1);
+    const [call] = calls;
+    expect(call.fragments.join("?")).toContain("claude_transcript_append");
+    expect(call.values[0]).toBe("project-a");
+    expect(call.values[1]).toBe("claude-sess-1");
+    expect(call.values[2]).toBeNull();
+    expect(JSON.parse(call.values[3] as string)).toEqual([
+      { type: "user", uuid: "u1", message: { content: "hi" } },
+      { type: "assistant", uuid: "a1", message: { content: "hello" } },
+    ]);
+    expect(call.values[4]).toBeInstanceOf(Date);
+  });
+
+  it("appendClaudeTranscriptEntries no-ops for empty batches", async () => {
+    const { sql, calls } = createMockSql();
+    const db = new SessionDB(sql);
+
+    const written = await db.appendClaudeTranscriptEntries(
+      { projectKey: "project-a", sessionId: "claude-sess-1" },
+      [],
+    );
+
+    expect(written).toBe(0);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("loadClaudeTranscriptEntries returns null when the store has no rows", async () => {
+    const { sql, calls } = createMockSql(() => []);
+    const db = new SessionDB(sql);
+
+    const entries = await db.loadClaudeTranscriptEntries({
+      projectKey: "project-a",
+      sessionId: "missing",
+      subpath: "subagents/agent-a",
+    });
+
+    expect(entries).toBeNull();
+    expect(calls[0].fragments.join("?")).toContain("claude_transcript_load");
+    expect(calls[0].values).toEqual(["project-a", "missing", "subagents/agent-a"]);
+  });
+
+  it("loadClaudeTranscriptEntries parses entry JSON rows in storage order", async () => {
+    const { sql } = createMockSql(() => [
+      { entry: { type: "user", uuid: "u1" } },
+      { entry: { type: "assistant", uuid: "a1" } },
+    ]);
+    const db = new SessionDB(sql);
+
+    await expect(
+      db.loadClaudeTranscriptEntries({ projectKey: "project-a", sessionId: "claude-sess-1" }),
+    ).resolves.toEqual([
+      { type: "user", uuid: "u1" },
+      { type: "assistant", uuid: "a1" },
+    ]);
+  });
+
+  it("list/delete transcript helpers preserve project/session/subpath keys", async () => {
+    const { sql, calls } = createMockSql((call) => {
+      const query = call.fragments.join("?");
+      if (query.includes("claude_transcript_list_sessions")) {
+        return [{ session_id: "claude-sess-1", mtime: "1770000000000" }];
+      }
+      if (query.includes("claude_transcript_list_subkeys")) {
+        return [{ subpath: "subagents/agent-a" }];
+      }
+      return [];
+    });
+    const db = new SessionDB(sql);
+
+    await expect(db.listClaudeTranscriptSessions("project-a")).resolves.toEqual([
+      { sessionId: "claude-sess-1", mtime: 1770000000000 },
+    ]);
+    await expect(
+      db.listClaudeTranscriptSubkeys({ projectKey: "project-a", sessionId: "claude-sess-1" }),
+    ).resolves.toEqual(["subagents/agent-a"]);
+    await db.deleteClaudeTranscript({
+      projectKey: "project-a",
+      sessionId: "claude-sess-1",
+      subpath: "subagents/agent-a",
+    });
+
+    expect(calls[0].fragments.join("?")).toContain("claude_transcript_list_sessions");
+    expect(calls[0].values).toEqual(["project-a"]);
+    expect(calls[1].fragments.join("?")).toContain("claude_transcript_list_subkeys");
+    expect(calls[1].values).toEqual(["project-a", "claude-sess-1"]);
+    expect(calls[2].fragments.join("?")).toContain("claude_transcript_delete");
+    expect(calls[2].values).toEqual(["project-a", "claude-sess-1", "subagents/agent-a"]);
   });
 });
 
@@ -533,5 +638,31 @@ describe("SessionDB lifecycle", () => {
     const db = new SessionDB(sql);
     await db.close();
     expect(endSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("session_delete SQL", () => {
+  it("세션 삭제 전 transcript mirror row를 agent/Claude session id 기준으로 정리한다", () => {
+    const schema = readFileSync(
+      new URL("../../../soul-server/sql/schema.sql", import.meta.url),
+      "utf8",
+    );
+    const migration = readFileSync(
+      new URL("../../../soul-server/sql/migrations/015_claude_transcript_store.sql", import.meta.url),
+      "utf8",
+    );
+
+    for (const sql of [schema, migration]) {
+      const start = sql.indexOf("CREATE OR REPLACE FUNCTION session_delete");
+      const end = sql.indexOf("$$;", start);
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(end).toBeGreaterThan(start);
+      const body = sql.slice(start, end);
+      expect(body).toContain("DELETE FROM claude_transcript_entries");
+      expect(body).toContain("claude_session_id");
+      expect(body.indexOf("DELETE FROM claude_transcript_entries")).toBeLessThan(
+        body.indexOf("DELETE FROM sessions"),
+      );
+    }
   });
 });

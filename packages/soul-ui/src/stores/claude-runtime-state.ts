@@ -74,12 +74,55 @@ export interface ClaudeRuntimeModeView {
   worktreeAction?: string;
 }
 
+export interface ClaudeRuntimeNotificationView {
+  notificationId: string;
+  source: "hook" | "system" | "tool_use";
+  message: string;
+  updatedAt: number;
+  title?: string;
+  notificationType?: string;
+  key?: string;
+  priority?: string;
+  sessionId?: string;
+  toolUseId?: string;
+}
+
+export interface ClaudeRuntimeRemoteTriggerView {
+  triggerId: string;
+  source: "message_origin" | "tool_use";
+  updatedAt: number;
+  sessionId?: string;
+  toolUseId?: string;
+  originKind?: string;
+  originFrom?: string;
+  originName?: string;
+  originServer?: string;
+  priority?: string;
+  prompt?: string;
+  triggerType?: string;
+  payload?: Record<string, unknown>;
+}
+
+export interface ClaudeRuntimeTranscriptMirrorView {
+  updatedAt: number;
+  errorCount: number;
+  lastError?: string;
+  mirrorId?: string;
+  sessionId?: string;
+  projectKey?: string;
+  transcriptSessionId?: string;
+  subpath?: string;
+}
+
 export interface ClaudeRuntimeView {
   sessionState?: "idle" | "running" | "requires_action";
   runtimeSessionId?: string;
   updatedAt: number;
   tasks: Record<string, ClaudeRuntimeTaskView>;
   schedules: Record<string, ClaudeRuntimeScheduleView>;
+  notifications: Record<string, ClaudeRuntimeNotificationView>;
+  remoteTriggers: Record<string, ClaudeRuntimeRemoteTriggerView>;
+  transcriptMirror?: ClaudeRuntimeTranscriptMirrorView | null;
   planMode?: ClaudeRuntimeModeView | null;
   worktreeMode?: ClaudeRuntimeModeView | null;
   nextScheduleRunAt?: string | null;
@@ -94,9 +137,11 @@ export function applyClaudeRuntimeStoreEvent(
 
   const updatedAt = timestampToMs((event as { timestamp?: number }).timestamp);
   const next: ClaudeRuntimeView = {
-    ...(current ?? { tasks: {}, schedules: {}, updatedAt }),
+    ...(current ?? { tasks: {}, schedules: {}, notifications: {}, remoteTriggers: {}, updatedAt }),
     tasks: { ...(current?.tasks ?? {}) },
     schedules: { ...(current?.schedules ?? {}) },
+    notifications: { ...(current?.notifications ?? {}) },
+    remoteTriggers: { ...(current?.remoteTriggers ?? {}) },
     updatedAt,
   };
 
@@ -144,6 +189,67 @@ export function applyClaudeRuntimeStoreEvent(
     } else {
       next.worktreeMode = modeState;
     }
+    return next;
+  }
+
+  if (event.type === "claude_runtime_notification") {
+    const notificationId = event.notification_id;
+    const notification: ClaudeRuntimeNotificationView = {
+      ...(next.notifications[notificationId] ?? {}),
+      notificationId,
+      source: event.source,
+      message: event.message,
+      updatedAt,
+    };
+    copyString(event, "title", notification);
+    copyString(event, "notification_type", notification, "notificationType");
+    copyString(event, "key", notification);
+    copyString(event, "priority", notification);
+    copyString(event, "session_id", notification, "sessionId");
+    copyString(event, "tool_use_id", notification, "toolUseId");
+    if (event.session_id) next.runtimeSessionId = event.session_id;
+    next.notifications[notificationId] = notification;
+    return next;
+  }
+
+  if (event.type === "claude_runtime_remote_trigger") {
+    const triggerId = event.trigger_id;
+    const trigger: ClaudeRuntimeRemoteTriggerView = {
+      ...(next.remoteTriggers[triggerId] ?? {}),
+      triggerId,
+      source: event.source,
+      updatedAt,
+    };
+    copyString(event, "session_id", trigger, "sessionId");
+    copyString(event, "tool_use_id", trigger, "toolUseId");
+    copyString(event, "origin_kind", trigger, "originKind");
+    copyString(event, "origin_from", trigger, "originFrom");
+    copyString(event, "origin_name", trigger, "originName");
+    copyString(event, "origin_server", trigger, "originServer");
+    copyString(event, "priority", trigger);
+    copyString(event, "prompt", trigger);
+    copyString(event, "trigger_type", trigger, "triggerType");
+    if (event.payload && typeof event.payload === "object") {
+      trigger.payload = event.payload;
+    }
+    if (event.session_id) next.runtimeSessionId = event.session_id;
+    next.remoteTriggers[triggerId] = trigger;
+    return next;
+  }
+
+  if (event.type === "claude_runtime_transcript_mirror_error") {
+    next.transcriptMirror = {
+      ...(next.transcriptMirror ?? { errorCount: 0 }),
+      updatedAt,
+      errorCount: (next.transcriptMirror?.errorCount ?? 0) + 1,
+      mirrorId: event.mirror_id,
+      sessionId: event.session_id,
+      projectKey: event.project_key,
+      transcriptSessionId: event.transcript_session_id,
+      subpath: event.subpath,
+      lastError: event.error,
+    };
+    if (event.session_id) next.runtimeSessionId = event.session_id;
     return next;
   }
 

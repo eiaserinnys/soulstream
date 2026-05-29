@@ -165,4 +165,65 @@ describe("applyClaudeRuntimeStoreEvent", () => {
     expect(state?.nextScheduleRunAt).toBe("2026-01-01T01:00:00.000Z");
     expect(state?.schedules["sched-soon"]).toBeUndefined();
   });
+
+  it("tracks runtime notifications, remote triggers, and transcript mirror errors", () => {
+    let state = applyClaudeRuntimeStoreEvent(null, {
+      type: "claude_runtime_notification",
+      notification_id: "notif-1",
+      source: "tool_use",
+      title: "Approval",
+      message: "Confirm the handoff",
+      notification_type: "permission",
+      session_id: "claude-sess-1",
+      timestamp: 20,
+    } as unknown as SoulSSEEvent);
+
+    state = applyClaudeRuntimeStoreEvent(state, {
+      type: "claude_runtime_remote_trigger",
+      trigger_id: "remote-1",
+      source: "message_origin",
+      origin_kind: "peer",
+      origin_name: "orchestrator",
+      prompt: "Continue the session",
+      session_id: "claude-sess-1",
+      timestamp: 21,
+    } as unknown as SoulSSEEvent);
+
+    state = applyClaudeRuntimeStoreEvent(state, {
+      type: "claude_runtime_transcript_mirror_error",
+      mirror_id: "mirror-1",
+      session_id: "claude-sess-1",
+      project_key: "soulstream",
+      transcript_session_id: "claude-sess-1",
+      error: "write failed",
+      timestamp: 22,
+    } as unknown as SoulSSEEvent);
+
+    expect(state).toMatchObject({
+      runtimeSessionId: "claude-sess-1",
+      notifications: {
+        "notif-1": {
+          notificationId: "notif-1",
+          source: "tool_use",
+          title: "Approval",
+          message: "Confirm the handoff",
+          notificationType: "permission",
+        },
+      },
+      remoteTriggers: {
+        "remote-1": {
+          triggerId: "remote-1",
+          source: "message_origin",
+          originKind: "peer",
+          originName: "orchestrator",
+          prompt: "Continue the session",
+        },
+      },
+      transcriptMirror: {
+        mirrorId: "mirror-1",
+        errorCount: 1,
+        lastError: "write failed",
+      },
+    });
+  });
 });

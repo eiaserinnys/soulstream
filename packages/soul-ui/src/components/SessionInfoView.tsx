@@ -8,6 +8,7 @@
 import { useDashboardStore } from "../stores/dashboard-store";
 import { ClaudeRuntimeTasksPanel } from "./ClaudeRuntimeTasksPanel";
 import { ClaudeRuntimeSchedulesPanel } from "./ClaudeRuntimeSchedulesPanel";
+import { ClaudeRuntimeNotificationsPanel } from "./ClaudeRuntimeNotificationsPanel";
 import { SessionMetadata } from "./detail/SessionMetadata";
 import { ScrollArea } from "./ui/scroll-area";
 
@@ -30,6 +31,7 @@ export function SessionInfoView() {
       <SessionMetadata metadata={metadata ?? []} callerSessionId={callerSessionId} />
       <ClaudeRuntimeTasksPanel sessionId={activeSessionKey} runtime={claudeRuntime} />
       <ClaudeRuntimeSchedulesPanel sessionId={activeSessionKey} runtime={claudeRuntime} />
+      <ClaudeRuntimeNotificationsPanel sessionId={activeSessionKey} runtime={claudeRuntime} />
     </ScrollArea>
   );
 }

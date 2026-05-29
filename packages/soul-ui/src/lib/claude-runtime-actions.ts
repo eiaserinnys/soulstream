@@ -1,7 +1,10 @@
 import type {
   ClaudeRuntimeModeView,
+  ClaudeRuntimeNotificationView,
+  ClaudeRuntimeRemoteTriggerView,
   ClaudeRuntimeScheduleView,
   ClaudeRuntimeTaskView,
+  ClaudeRuntimeTranscriptMirrorView,
 } from "../stores/claude-runtime-state";
 
 export interface ClaudeRuntimeTasksResponse {
@@ -10,6 +13,9 @@ export interface ClaudeRuntimeTasksResponse {
   runtimeSessionId: string | null;
   updatedAt: number | null;
   tasks: ClaudeRuntimeTaskView[];
+  notifications?: ClaudeRuntimeNotificationView[];
+  remoteTriggers?: ClaudeRuntimeRemoteTriggerView[];
+  transcriptMirror?: ClaudeRuntimeTranscriptMirrorView | null;
   planMode?: ClaudeRuntimeModeView | null;
   worktreeMode?: ClaudeRuntimeModeView | null;
 }

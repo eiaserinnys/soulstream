@@ -56,6 +56,17 @@ describe("shouldNotify", () => {
       };
       expect(shouldNotify(event)).toBe(true);
     });
+
+    it("should return true for claude_runtime_notification", () => {
+      const event: SoulSSEEvent = {
+        type: "claude_runtime_notification",
+        notification_id: "notif-1",
+        source: "tool_use",
+        message: "Approval needed",
+        timestamp: 10,
+      };
+      expect(shouldNotify(event)).toBe(true);
+    });
   });
 
   describe("events that should NOT trigger notification", () => {

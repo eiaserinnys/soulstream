@@ -19,6 +19,9 @@ const CLAUDE_RUNTIME_EVENT_TYPES = [
   "claude_runtime_task_progress",
   "claude_runtime_task_completed",
   "claude_runtime_task_notification",
+  "claude_runtime_notification",
+  "claude_runtime_remote_trigger",
+  "claude_runtime_transcript_mirror_error",
   "claude_runtime_mode_state",
 ] as const;
 
@@ -37,6 +40,9 @@ export interface ClaudeRuntimeTaskListResult {
   runtimeSessionId: string | null;
   updatedAt: number | null;
   tasks: ClaudeRuntimeTaskState[];
+  notifications: NonNullable<ClaudeRuntimeState["notifications"]>[string][];
+  remoteTriggers: NonNullable<ClaudeRuntimeState["remoteTriggers"]>[string][];
+  transcriptMirror: ClaudeRuntimeState["transcriptMirror"] | null;
   planMode: ClaudeRuntimeState["planMode"] | null;
   worktreeMode: ClaudeRuntimeState["worktreeMode"] | null;
 }
@@ -77,12 +83,24 @@ export function serializeClaudeRuntimeState(
   const tasks = Object.values(runtime?.tasks ?? {})
     .map(cloneTask)
     .sort((a, b) => b.updatedAt - a.updatedAt);
+  const notifications = Object.values(runtime?.notifications ?? {})
+    .map((notification) => ({ ...notification }))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  const remoteTriggers = Object.values(runtime?.remoteTriggers ?? {})
+    .map((trigger) => ({
+      ...trigger,
+      ...(trigger.payload ? { payload: { ...trigger.payload } } : {}),
+    }))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
   return {
     sessionId,
     sessionState: runtime?.sessionState ?? null,
     runtimeSessionId: runtime?.sessionId ?? null,
     updatedAt: runtime?.updatedAt ?? null,
     tasks,
+    notifications,
+    remoteTriggers,
+    transcriptMirror: runtime?.transcriptMirror ? { ...runtime.transcriptMirror } : null,
     planMode: runtime?.planMode ?? null,
     worktreeMode: runtime?.worktreeMode ?? null,
   };
