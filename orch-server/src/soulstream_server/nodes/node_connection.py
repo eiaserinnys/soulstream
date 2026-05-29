@@ -277,6 +277,7 @@ class NodeConnection:
         allowed_tools: list[str] | None = None,
         disallowed_tools: list[str] | None = None,
         use_mcp: bool | None = None,
+        claude_permission_mode: str | None = None,
         folder_id: str | None = None,
         system_prompt: str | None = None,
         oauth_profile_name: str | None = None,
@@ -298,6 +299,8 @@ class NodeConnection:
             payload["disallowed_tools"] = disallowed_tools
         if use_mcp is not None:
             payload["use_mcp"] = use_mcp
+        if claude_permission_mode is not None:
+            payload["claude_permission_mode"] = claude_permission_mode
         if folder_id is not None:
             payload["folderId"] = folder_id
         if system_prompt is not None:

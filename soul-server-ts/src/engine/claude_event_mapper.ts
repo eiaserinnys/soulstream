@@ -223,6 +223,30 @@ export type ClaudeClientEvent =
       skipTranscript?: boolean;
       timestamp?: number;
       parentEventId?: ParentEventId;
+    }
+  | {
+      type: "claude_runtime_hook_event";
+      hookEventName: string;
+      sessionId?: string;
+      toolName?: string;
+      toolUseId?: string;
+      hookInput?: Record<string, unknown>;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
+      type: "claude_runtime_mode_state";
+      mode: "plan" | "worktree";
+      active: boolean;
+      source: "hook" | "tool_use";
+      sessionId?: string;
+      toolName?: string;
+      toolUseId?: string;
+      worktreeName?: string;
+      worktreePath?: string;
+      worktreeAction?: string;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
     };
 
 export interface ClaudeEventMapperOptions {
@@ -585,6 +609,40 @@ export function mapClaudeClientEvent(
           ...(event.usage !== undefined ? { usage: event.usage } : {}),
           ...(event.skipTranscript !== undefined
             ? { skip_transcript: event.skipTranscript }
+            : {}),
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "claude_runtime_hook_event":
+      return [
+        asSSE({
+          type: "claude_runtime_hook_event",
+          hook_event_name: event.hookEventName,
+          ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
+          ...(event.toolName !== undefined ? { tool_name: event.toolName } : {}),
+          ...(event.toolUseId !== undefined ? { tool_use_id: event.toolUseId } : {}),
+          ...(event.hookInput !== undefined ? { hook_input: event.hookInput } : {}),
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "claude_runtime_mode_state":
+      return [
+        asSSE({
+          type: "claude_runtime_mode_state",
+          mode: event.mode,
+          active: event.active,
+          source: event.source,
+          ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
+          ...(event.toolName !== undefined ? { tool_name: event.toolName } : {}),
+          ...(event.toolUseId !== undefined ? { tool_use_id: event.toolUseId } : {}),
+          ...(event.worktreeName !== undefined ? { worktree_name: event.worktreeName } : {}),
+          ...(event.worktreePath !== undefined ? { worktree_path: event.worktreePath } : {}),
+          ...(event.worktreeAction !== undefined
+            ? { worktree_action: event.worktreeAction }
             : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
           ...parentField(event.parentEventId),

@@ -6,6 +6,7 @@ import {
   extractAgentsRunStateFromMetadata,
   extractAgentsSessionItemsFromMetadata,
   extractCallerInfoFromMetadata,
+  extractClaudePermissionModeFromMetadata,
 } from "./task_metadata.js";
 
 const VALID_TASK_STATUSES: readonly TaskStatus[] = [
@@ -50,6 +51,7 @@ export function hydrateEvictedTaskFromSessionRow(
     : [];
   const agentsRunState = extractAgentsRunStateFromMetadata(metadata);
   const agentsSessionItems = extractAgentsSessionItemsFromMetadata(metadata);
+  const claudePermissionMode = extractClaudePermissionModeFromMetadata(metadata);
 
   return {
     agentSessionId: row.session_id,
@@ -69,6 +71,7 @@ export function hydrateEvictedTaskFromSessionRow(
     agentsPreviousResponseId: agentsRunState?.previousResponseId,
     agentsConversationId: agentsRunState?.conversationId,
     agentsSessionItems,
+    claudePermissionMode,
     createdAt: row.created_at,
     completedAt: completedAtFromRow(row, status),
     lastEventId: row.last_event_id ?? 0,

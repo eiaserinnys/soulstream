@@ -19,6 +19,7 @@ const CLAUDE_RUNTIME_EVENT_TYPES = [
   "claude_runtime_task_progress",
   "claude_runtime_task_completed",
   "claude_runtime_task_notification",
+  "claude_runtime_mode_state",
 ] as const;
 
 const TERMINAL_STATUSES = new Set<ClaudeRuntimeTaskStatus>([
@@ -36,6 +37,8 @@ export interface ClaudeRuntimeTaskListResult {
   runtimeSessionId: string | null;
   updatedAt: number | null;
   tasks: ClaudeRuntimeTaskState[];
+  planMode: ClaudeRuntimeState["planMode"] | null;
+  worktreeMode: ClaudeRuntimeState["worktreeMode"] | null;
 }
 
 export interface ClaudeRuntimeTaskOutputResult {
@@ -80,6 +83,8 @@ export function serializeClaudeRuntimeState(
     runtimeSessionId: runtime?.sessionId ?? null,
     updatedAt: runtime?.updatedAt ?? null,
     tasks,
+    planMode: runtime?.planMode ?? null,
+    worktreeMode: runtime?.worktreeMode ?? null,
   };
 }
 

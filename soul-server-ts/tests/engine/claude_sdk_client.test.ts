@@ -110,6 +110,13 @@ describe("ClaudeSdkClient", () => {
       TaskCompleted: [{ hooks: [expect.any(Function)] }],
       Notification: [{ hooks: [expect.any(Function)] }],
       Stop: [{ hooks: [expect.any(Function)] }],
+      PostToolUse: [{ hooks: [expect.any(Function)] }],
+      PostToolUseFailure: [{ hooks: [expect.any(Function)] }],
+      PostToolBatch: [{ hooks: [expect.any(Function)] }],
+      PermissionRequest: [{ hooks: [expect.any(Function)] }],
+      PermissionDenied: [{ hooks: [expect.any(Function)] }],
+      WorktreeCreate: [{ hooks: [expect.any(Function)] }],
+      WorktreeRemove: [{ hooks: [expect.any(Function)] }],
     });
     expect(events.map((event) => event.type)).toEqual([
       "session",
@@ -573,6 +580,228 @@ describe("ClaudeSdkClient", () => {
       disallowedTools: ["WebFetch"],
       maxTurns: 25,
     });
+  });
+
+  it("keeps bypassPermissions as the default and forwards opt-in permission mode", async () => {
+    const captured: ClaudeSdkQueryParams[] = [];
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) => {
+          captured.push(params);
+          return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-perm", "done")]));
+        },
+        postResultDrainMs: 10,
+      },
+      silentLogger,
+    );
+
+    await collect(client.run({ prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} }, new AbortController().signal));
+    await collect(
+      client.run(
+        {
+          prompt: "hi",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+          claudePermissionMode: "default",
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(captured[0]?.options).toMatchObject({
+      permissionMode: "bypassPermissions",
+      allowDangerouslySkipPermissions: true,
+    });
+    expect(captured[1]?.options).toMatchObject({ permissionMode: "default" });
+    expect(captured[1]?.options).not.toHaveProperty("allowDangerouslySkipPermissions");
+  });
+
+  it("preserves generic SDK hooks and updates worktree mode from worktree hooks", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const hooks = params.options.hooks!;
+              await hooks.PostToolUse?.[0]?.hooks[0]?.({
+                hook_event_name: "PostToolUse",
+                session_id: "claude-sess-hooks",
+                tool_name: "Read",
+                tool_use_id: "toolu-read",
+                tool_input: { file_path: "a.ts" },
+                tool_response: "large file contents",
+                tool_calls: [
+                  {
+                    tool_name: "Read",
+                    tool_response: "nested large file contents",
+                  },
+                ],
+              } as never, "toolu-read", { signal: new AbortController().signal });
+              await hooks.PermissionRequest?.[0]?.hooks[0]?.({
+                hook_event_name: "PermissionRequest",
+                tool_name: "Bash",
+                tool_input: { command: "date" },
+              } as never, undefined, { signal: new AbortController().signal });
+              await hooks.PermissionDenied?.[0]?.hooks[0]?.({
+                hook_event_name: "PermissionDenied",
+                tool_name: "Bash",
+                tool_use_id: "toolu-denied",
+                tool_input: { command: "rm -rf /tmp/x" },
+                reason: "policy",
+              } as never, "toolu-denied", { signal: new AbortController().signal });
+              await hooks.WorktreeCreate?.[0]?.hooks[0]?.({
+                hook_event_name: "WorktreeCreate",
+                session_id: "claude-sess-hooks",
+                name: "feature-x",
+              } as never, undefined, { signal: new AbortController().signal });
+              await hooks.WorktreeRemove?.[0]?.hooks[0]?.({
+                hook_event_name: "WorktreeRemove",
+                session_id: "claude-sess-hooks",
+                worktree_path: "/tmp/worktrees/feature-x",
+              } as never, undefined, { signal: new AbortController().signal });
+              yield sdkSuccessResult("claude-sess-hooks", "done");
+            })(),
+          ),
+        postResultDrainMs: 10,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "claude_runtime_hook_event",
+          hookEventName: "PostToolUse",
+          sessionId: "claude-sess-hooks",
+          toolName: "Read",
+          toolUseId: "toolu-read",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_hook_event",
+          hookEventName: "PermissionRequest",
+          toolName: "Bash",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_mode_state",
+          mode: "worktree",
+          active: true,
+          source: "hook",
+          worktreeName: "feature-x",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_mode_state",
+          mode: "worktree",
+          active: false,
+          source: "hook",
+          worktreePath: "/tmp/worktrees/feature-x",
+        }),
+      ]),
+    );
+    const postToolUseEvent = events.find(
+      (event) =>
+        event.type === "claude_runtime_hook_event" &&
+        event.hookEventName === "PostToolUse",
+    );
+    expect(postToolUseEvent).toMatchObject({
+      hookInput: {
+        tool_input: { file_path: "a.ts" },
+        tool_response: "[stripped: persisted in tool_result]",
+        tool_calls: [
+          {
+            tool_name: "Read",
+            tool_response: "[stripped: persisted in tool_result]",
+          },
+        ],
+      },
+    });
+  });
+
+  it("updates plan and worktree mode from assistant tool_use events", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            sdkMessages([
+              {
+                type: "assistant",
+                message: {
+                  content: [
+                    { type: "tool_use", id: "toolu-plan-enter", name: "EnterPlanMode", input: {} },
+                    {
+                      type: "tool_use",
+                      id: "toolu-wt-enter",
+                      name: "EnterWorktree",
+                      input: { name: "feature-x" },
+                    },
+                    {
+                      type: "tool_use",
+                      id: "toolu-wt-exit",
+                      name: "ExitWorktree",
+                      input: { action: "keep" },
+                    },
+                    { type: "tool_use", id: "toolu-plan-exit", name: "ExitPlanMode", input: {} },
+                  ],
+                },
+                parent_tool_use_id: null,
+                uuid: "assistant-mode",
+                session_id: "claude-sess-mode",
+              },
+              sdkSuccessResult("claude-sess-mode", "done"),
+            ]),
+          ),
+        postResultDrainMs: 10,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "claude_runtime_mode_state",
+          mode: "plan",
+          active: true,
+          source: "tool_use",
+          toolUseId: "toolu-plan-enter",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_mode_state",
+          mode: "worktree",
+          active: true,
+          source: "tool_use",
+          toolUseId: "toolu-wt-enter",
+          worktreeName: "feature-x",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_mode_state",
+          mode: "worktree",
+          active: false,
+          source: "tool_use",
+          toolUseId: "toolu-wt-exit",
+          worktreeAction: "keep",
+        }),
+        expect.objectContaining({
+          type: "claude_runtime_mode_state",
+          mode: "plan",
+          active: false,
+          source: "tool_use",
+          toolUseId: "toolu-plan-exit",
+        }),
+      ]),
+    );
   });
 
   it("loads workspace mcp_config.json unless useMcp is false", async () => {

@@ -53,6 +53,8 @@ export type SSEEventType =
   | "claude_runtime_task_progress"
   | "claude_runtime_task_completed"
   | "claude_runtime_task_notification"
+  | "claude_runtime_hook_event"
+  | "claude_runtime_mode_state"
   | "claude_runtime_schedule_updated"
   | "claude_runtime_schedule_deleted"
   // 대시보드 내부 이벤트
@@ -534,6 +536,30 @@ export interface ClaudeRuntimeTaskNotificationEvent {
   timestamp: number;
 }
 
+export interface ClaudeRuntimeHookEvent {
+  type: "claude_runtime_hook_event";
+  hook_event_name: string;
+  session_id?: string;
+  tool_name?: string;
+  tool_use_id?: string;
+  hook_input?: Record<string, unknown>;
+  timestamp: number;
+}
+
+export interface ClaudeRuntimeModeStateEvent {
+  type: "claude_runtime_mode_state";
+  mode: "plan" | "worktree";
+  active: boolean;
+  source: "hook" | "tool_use";
+  session_id?: string;
+  tool_name?: string;
+  tool_use_id?: string;
+  worktree_name?: string;
+  worktree_path?: string;
+  worktree_action?: string;
+  timestamp: number;
+}
+
 export type ClaudeRuntimeScheduleStatus =
   | "active"
   | "dispatching"
@@ -703,6 +729,8 @@ export type SoulSSEEvent =
   | ClaudeRuntimeTaskProgressEvent
   | ClaudeRuntimeTaskCompletedEvent
   | ClaudeRuntimeTaskNotificationEvent
+  | ClaudeRuntimeHookEvent
+  | ClaudeRuntimeModeStateEvent
   | ClaudeRuntimeScheduleUpdatedEvent
   | ClaudeRuntimeScheduleDeletedEvent
   | ReconnectEvent

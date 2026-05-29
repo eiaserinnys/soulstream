@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 
 import type { ContextItem } from "../context/prompt_assembler.js";
 import { DEFAULT_FOLDERS, type SessionDB } from "../db/session_db.js";
-import type { ReasoningEffort } from "../engine/protocol.js";
+import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type {
@@ -10,7 +10,10 @@ import type {
   SessionType,
   Task,
 } from "./task_models.js";
-import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
+import {
+  buildCallerInfoMetadataEntry,
+  buildClaudePermissionModeMetadataEntry,
+} from "./task_metadata.js";
 
 export interface CreateTaskParams {
   agentSessionId: string;
@@ -32,6 +35,8 @@ export interface CreateTaskParams {
   disallowedTools?: string[];
   /** 요청별 MCP 사용 여부. undefined면 true. */
   useMcp?: boolean;
+  /** 요청별 Claude Agent SDK permission mode override. */
+  claudePermissionMode?: ClaudePermissionMode;
   folderId?: string | null;
   /** B-6 context_builder: 사용자/위임자 system_prompt. folder_prompt와 합성됨. */
   systemPrompt?: string;
@@ -72,7 +77,11 @@ export class TaskCreation {
     }
 
     const now = new Date();
-    const metadata = buildCallerInfoMetadataEntry(params.callerInfo);
+    const callerMetadata = buildCallerInfoMetadataEntry(params.callerInfo);
+    const permissionModeMetadata = buildClaudePermissionModeMetadataEntry(params.claudePermissionMode);
+    const metadata = [callerMetadata, permissionModeMetadata].filter(
+      (entry): entry is Record<string, unknown> => entry !== undefined,
+    );
     const sessionType = params.sessionType ?? "claude";
     const task: Task = {
       agentSessionId: params.agentSessionId,
@@ -86,13 +95,14 @@ export class TaskCreation {
       llmUsage: params.llmUsage ?? null,
       callerSessionId: params.callerSessionId ?? undefined,
       callerInfo: params.callerInfo,
-      metadata: metadata ? [metadata] : [],
+      metadata,
       model: params.model,
       oauthToken: params.oauthToken,
       reasoningEffort: params.reasoningEffort,
       allowedTools: params.allowedTools,
       disallowedTools: params.disallowedTools,
       useMcp: params.useMcp,
+      claudePermissionMode: params.claudePermissionMode,
       systemPrompt: params.systemPrompt,
       contextItems: params.contextItems,
       attachmentPaths: params.attachmentPaths,
@@ -118,10 +128,10 @@ export class TaskCreation {
       callerSessionId: task.callerSessionId ?? null,
     });
 
-    // caller_info를 Task.metadata와 DB에 동시 저장. Python TaskFactory와 같은 타이밍:
+    // caller_info와 session-scoped SDK policy를 Task.metadata와 DB에 동시 저장. Python TaskFactory와 같은 타이밍:
     // session_created 전에 박아 feed/folder 초기 카드가 metadata fallback을 즉시 사용할 수 있게 한다.
-    if (metadata) {
-      await this.deps.db.appendMetadata(task.agentSessionId, metadata);
+    for (const entry of metadata) {
+      await this.deps.db.appendMetadata(task.agentSessionId, entry);
     }
 
     this.deps.rememberTask(task);

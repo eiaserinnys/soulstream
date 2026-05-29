@@ -31,6 +31,17 @@ export type BackendId = "claude" | "codex" | "openai-agents";
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
 
+export const CLAUDE_PERMISSION_MODES = [
+  "default",
+  "acceptEdits",
+  "bypassPermissions",
+  "plan",
+  "dontAsk",
+  "auto",
+] as const;
+
+export type ClaudePermissionMode = (typeof CLAUDE_PERMISSION_MODES)[number];
+
 // === 콜백 시그니처 ===
 
 /**
@@ -116,6 +127,8 @@ export interface EngineExecuteParams {
   maxTurns?: number;
   /** 요청별 MCP 사용 여부. Claude 어댑터는 false면 명시 mcpServers 로딩을 생략. Codex 무시. */
   useMcp?: boolean;
+  /** Claude Agent SDK permissionMode. 없으면 현행 bypassPermissions 동작을 유지한다. */
+  claudePermissionMode?: ClaudePermissionMode;
   extraEnv?: Record<string, string>;
   /** OpenAI Agents SDK serialized RunState. Backend-specific; other adapters ignore. */
   resumeRunState?: string;

@@ -177,6 +177,8 @@ export function createNodeFromEvent(
     case "claude_runtime_task_progress":
     case "claude_runtime_task_completed":
     case "claude_runtime_task_notification":
+    case "claude_runtime_hook_event":
+    case "claude_runtime_mode_state":
     case "claude_runtime_schedule_updated":
     case "claude_runtime_schedule_deleted":
       return null;
@@ -499,6 +501,8 @@ export function applyUpdate(
     case "claude_runtime_task_progress":
     case "claude_runtime_task_completed":
     case "claude_runtime_task_notification":
+    case "claude_runtime_hook_event":
+    case "claude_runtime_mode_state":
     case "claude_runtime_schedule_updated":
     case "claude_runtime_schedule_deleted":
       return false;

@@ -17,6 +17,7 @@ const agent: AgentProfile = {
   workspace_dir: "/tmp/agent",
   allowed_tools: ["Read"],
   disallowed_tools: ["WebFetch"],
+  claude_permission_mode: "acceptEdits",
   max_turns: 25,
 };
 
@@ -79,6 +80,7 @@ describe("TaskEngineTurnRunner", () => {
       allowedTools: ["Bash"],
       disallowedTools: ["Edit"],
       useMcp: false,
+      claudePermissionMode: "default",
     });
     let captured: EngineExecuteParams | undefined;
     const engine = makeEngine((params) => {
@@ -111,6 +113,7 @@ describe("TaskEngineTurnRunner", () => {
       allowedTools: ["Bash"],
       disallowedTools: ["Edit"],
       useMcp: false,
+      claudePermissionMode: "default",
       maxTurns: 25,
       extraEnv: { [CLAUDE_OAUTH_TOKEN_ENV]: "oauth-token" },
     });
@@ -134,6 +137,7 @@ describe("TaskEngineTurnRunner", () => {
 
     expect(captured?.allowedTools).toEqual(["Read"]);
     expect(captured?.disallowedTools).toEqual(["WebFetch"]);
+    expect(captured?.claudePermissionMode).toBe("acceptEdits");
     expect(captured?.maxTurns).toBe(25);
     expect(captured?.extraEnv).toBeUndefined();
   });

@@ -124,6 +124,8 @@
             { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskProgress" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskCompleted" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskNotification" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeHookEvent" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeModeState" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleUpdated" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleDeleted" },
             { "$ref": "#/$defs/SSEEventContextUsage" },
@@ -328,6 +330,11 @@
         "folderId": { "type": ["string", "null"] },
         "allowed_tools": { "type": "array", "items": { "type": "string" } },
         "disallowed_tools": { "type": "array", "items": { "type": "string" } },
+        "claude_permission_mode": {
+          "type": "string",
+          "enum": ["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk", "auto"],
+          "description": "Claude SDK permissionMode override. Missing preserves the node/profile default."
+        },
         "use_mcp": { "type": "boolean" },
         "context": { "type": "object", "additionalProperties": true },
         "context_items": {
@@ -1279,6 +1286,40 @@
         "summary": { "type": "string" },
         "usage": { "type": "object", "additionalProperties": true },
         "skip_transcript": { "type": "boolean" },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventClaudeRuntimeHookEvent": {
+      "type": "object",
+      "description": "SSE: Claude Agent SDK generic hook lifecycle payload preservation.",
+      "required": ["type", "hook_event_name"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_hook_event" },
+        "hook_event_name": { "type": "string" },
+        "session_id": { "type": "string" },
+        "tool_name": { "type": "string" },
+        "tool_use_id": { "type": "string" },
+        "hook_input": { "type": "object", "additionalProperties": true },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventClaudeRuntimeModeState": {
+      "type": "object",
+      "description": "SSE: Claude Agent SDK plan/worktree mode state.",
+      "required": ["type", "mode", "active", "source"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_mode_state" },
+        "mode": { "type": "string", "enum": ["plan", "worktree"] },
+        "active": { "type": "boolean" },
+        "source": { "type": "string", "enum": ["hook", "tool_use"] },
+        "session_id": { "type": "string" },
+        "tool_name": { "type": "string" },
+        "tool_use_id": { "type": "string" },
+        "worktree_name": { "type": "string" },
+        "worktree_path": { "type": "string" },
+        "worktree_action": { "type": "string" },
         "timestamp": { "type": "number" }
       }
     },

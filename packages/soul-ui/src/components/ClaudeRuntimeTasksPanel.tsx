@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Loader2, RefreshCw, Square, TerminalSquare } from "lucide-react";
+import type { ReactNode } from "react";
+import { Bot, GitBranch, ListChecks, Loader2, RefreshCw, Square, TerminalSquare } from "lucide-react";
 
 import {
   getClaudeBackgroundTaskOutput,
@@ -8,6 +9,7 @@ import {
   type ClaudeRuntimeTaskOutputResponse,
 } from "../lib/claude-runtime-actions";
 import type {
+  ClaudeRuntimeModeView,
   ClaudeRuntimeTaskStatus,
   ClaudeRuntimeTaskView,
   ClaudeRuntimeView,
@@ -31,6 +33,10 @@ export function ClaudeRuntimeTasksPanel({
   runtime,
 }: ClaudeRuntimeTasksPanelProps) {
   const [fetchedTasks, setFetchedTasks] = useState<ClaudeRuntimeTaskView[]>([]);
+  const [fetchedModes, setFetchedModes] = useState<{
+    planMode?: ClaudeRuntimeModeView | null;
+    worktreeMode?: ClaudeRuntimeModeView | null;
+  } | null>(null);
   const [outputs, setOutputs] = useState<Record<string, ClaudeRuntimeTaskOutputResponse>>({});
   const [loading, setLoading] = useState(false);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
@@ -41,6 +47,9 @@ export function ClaudeRuntimeTasksPanel({
     [runtime],
   );
   const tasks = liveTasks.length > 0 ? liveTasks : fetchedTasks;
+  const planMode = runtime?.planMode ?? fetchedModes?.planMode ?? null;
+  const worktreeMode = runtime?.worktreeMode ?? fetchedModes?.worktreeMode ?? null;
+  const hasModeState = Boolean(planMode || worktreeMode);
 
   const refresh = async () => {
     setLoading(true);
@@ -48,6 +57,10 @@ export function ClaudeRuntimeTasksPanel({
     try {
       const response = await listClaudeBackgroundTasks(sessionId);
       setFetchedTasks(response.tasks);
+      setFetchedModes({
+        planMode: response.planMode ?? null,
+        worktreeMode: response.worktreeMode ?? null,
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -57,6 +70,7 @@ export function ClaudeRuntimeTasksPanel({
 
   useEffect(() => {
     setFetchedTasks([]);
+    setFetchedModes(null);
     setOutputs({});
     void refresh();
   }, [sessionId]);
@@ -87,7 +101,7 @@ export function ClaudeRuntimeTasksPanel({
     }
   };
 
-  if (tasks.length === 0 && !loading && !error) return null;
+  if (tasks.length === 0 && !hasModeState && !loading && !error) return null;
 
   return (
     <section className="border-t border-border/70 p-3">
@@ -108,6 +122,25 @@ export function ClaudeRuntimeTasksPanel({
       </div>
 
       {error ? <div className="mb-2 text-xs text-destructive">{error}</div> : null}
+
+      {hasModeState ? (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {planMode ? (
+            <ModeBadge
+              icon={<ListChecks className="size-3" />}
+              label={planMode.active ? "Plan mode" : "Plan off"}
+              active={planMode.active}
+            />
+          ) : null}
+          {worktreeMode ? (
+            <ModeBadge
+              icon={<GitBranch className="size-3" />}
+              label={worktreeLabel(worktreeMode)}
+              active={worktreeMode.active}
+            />
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="space-y-2">
         {tasks.map((task) => {
@@ -166,6 +199,36 @@ export function ClaudeRuntimeTasksPanel({
       </div>
     </section>
   );
+}
+
+function ModeBadge({
+  icon,
+  label,
+  active,
+}: {
+  icon: ReactNode;
+  label: string;
+  active: boolean;
+}) {
+  return (
+    <span
+      className={`inline-flex min-w-0 max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${
+        active
+          ? "bg-amber-500/12 text-amber-700 dark:text-amber-300"
+          : "bg-muted text-muted-foreground"
+      }`}
+    >
+      {icon}
+      <span className="truncate">{label}</span>
+    </span>
+  );
+}
+
+function worktreeLabel(mode: ClaudeRuntimeModeView): string {
+  if (!mode.active) {
+    return mode.worktreeAction ? `Worktree off (${mode.worktreeAction})` : "Worktree off";
+  }
+  return mode.worktreeName ?? mode.worktreePath ?? "Worktree mode";
 }
 
 function taskKindLabel(task: ClaudeRuntimeTaskView): string {

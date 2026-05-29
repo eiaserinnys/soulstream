@@ -1,4 +1,5 @@
 import type { CallerInfo } from "./task_models.js";
+import { CLAUDE_PERMISSION_MODES, type ClaudePermissionMode } from "../engine/protocol.js";
 
 /**
  * Python `IDENTITY_BEARING_SOURCES` 정본(`packages/soul-common/.../auth/caller_info.py:362-370`).
@@ -110,9 +111,37 @@ export function extractAgentsSessionItemsFromMetadata(metadata: unknown): unknow
   return undefined;
 }
 
+export function extractClaudePermissionModeFromMetadata(
+  metadata: unknown,
+): ClaudePermissionMode | undefined {
+  if (!Array.isArray(metadata)) return undefined;
+  for (let i = metadata.length - 1; i >= 0; i--) {
+    const entry = metadata[i];
+    if (!entry || typeof entry !== "object") continue;
+    const recordEntry = entry as Record<string, unknown>;
+    if (recordEntry.type !== "claude_permission_mode") continue;
+    const value = recordEntry.value;
+    if (!value || typeof value !== "object") continue;
+    const mode = (value as Record<string, unknown>).mode;
+    return isClaudePermissionMode(mode) ? mode : undefined;
+  }
+  return undefined;
+}
+
 export function buildCallerInfoMetadataEntry(
   callerInfo: CallerInfo | undefined,
 ): Record<string, unknown> | undefined {
   if (!callerInfo || Object.keys(callerInfo).length === 0) return undefined;
   return { type: "caller_info", value: callerInfo };
+}
+
+export function buildClaudePermissionModeMetadataEntry(
+  mode: ClaudePermissionMode | undefined,
+): Record<string, unknown> | undefined {
+  if (!mode) return undefined;
+  return { type: "claude_permission_mode", value: { mode } };
+}
+
+function isClaudePermissionMode(value: unknown): value is ClaudePermissionMode {
+  return typeof value === "string" && CLAUDE_PERMISSION_MODES.includes(value as ClaudePermissionMode);
 }

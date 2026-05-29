@@ -78,6 +78,49 @@ describe("applyClaudeRuntimeStoreEvent", () => {
     });
   });
 
+  it("tracks plan and worktree mode state without creating task rows", () => {
+    let state = applyClaudeRuntimeStoreEvent(null, {
+      type: "claude_runtime_mode_state",
+      mode: "plan",
+      active: true,
+      source: "tool_use",
+      tool_use_id: "toolu-plan",
+      tool_name: "EnterPlanMode",
+      timestamp: 20,
+    } as unknown as SoulSSEEvent);
+
+    state = applyClaudeRuntimeStoreEvent(state, {
+      type: "claude_runtime_mode_state",
+      mode: "worktree",
+      active: true,
+      source: "hook",
+      worktree_name: "feature-x",
+      timestamp: 21,
+    } as unknown as SoulSSEEvent);
+
+    state = applyClaudeRuntimeStoreEvent(state, {
+      type: "claude_runtime_hook_event",
+      hook_event_name: "PermissionRequest",
+      tool_name: "Bash",
+      timestamp: 22,
+    } as unknown as SoulSSEEvent);
+
+    expect(state).toMatchObject({
+      planMode: {
+        active: true,
+        source: "tool_use",
+        toolUseId: "toolu-plan",
+        toolName: "EnterPlanMode",
+      },
+      worktreeMode: {
+        active: true,
+        source: "hook",
+        worktreeName: "feature-x",
+      },
+      tasks: {},
+    });
+  });
+
   it("tracks durable schedule update/delete wire and derives the next active run", () => {
     let state = applyClaudeRuntimeStoreEvent(null, {
       type: "claude_runtime_schedule_updated",

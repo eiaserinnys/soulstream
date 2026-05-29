@@ -33,6 +33,39 @@ export function applyClaudeRuntimeEvent(task: Task, event: SSEEventPayload): boo
     return true;
   }
 
+  if (eventType === "claude_runtime_mode_state") {
+    const mode = asString(payload.mode);
+    if (mode !== "plan" && mode !== "worktree") return true;
+    const state = {
+      active: payload.active === true,
+      updatedAt: now,
+      ...(parseModeSource(payload.source) !== undefined
+        ? { source: parseModeSource(payload.source) }
+        : {}),
+      ...(asString(payload.tool_use_id) !== undefined
+        ? { toolUseId: asString(payload.tool_use_id) }
+        : {}),
+      ...(asString(payload.tool_name) !== undefined ? { toolName: asString(payload.tool_name) } : {}),
+      ...(asString(payload.worktree_name) !== undefined
+        ? { worktreeName: asString(payload.worktree_name) }
+        : {}),
+      ...(asString(payload.worktree_path) !== undefined
+        ? { worktreePath: asString(payload.worktree_path) }
+        : {}),
+      ...(asString(payload.worktree_action) !== undefined
+        ? { worktreeAction: asString(payload.worktree_action) }
+        : {}),
+    };
+    if (mode === "plan") {
+      runtime.planMode = state;
+    } else {
+      runtime.worktreeMode = state;
+    }
+    const sessionId = asString(payload.session_id);
+    if (sessionId) runtime.sessionId = sessionId;
+    return true;
+  }
+
   const taskId = asString(payload.task_id);
   if (!taskId) return true;
   const runtimeTask = ensureRuntimeTask(runtime, taskId, now);
@@ -149,6 +182,10 @@ function parseSessionState(value: unknown): ClaudeRuntimeSessionState | undefine
   return value === "idle" || value === "running" || value === "requires_action"
     ? value
     : undefined;
+}
+
+function parseModeSource(value: unknown): "hook" | "tool_use" | undefined {
+  return value === "hook" || value === "tool_use" ? value : undefined;
 }
 
 function parseTaskStatus(value: unknown): ClaudeRuntimeTaskStatus | undefined {

@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
-import type { ReasoningEffort } from "../engine/protocol.js";
+import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import {
   buildAttachmentContextItems,
   splitAttachmentPaths,
@@ -34,6 +34,7 @@ export interface CreateSessionRuntimeParams {
   allowedTools?: string[];
   disallowedTools?: string[];
   useMcp?: boolean;
+  claudePermissionMode?: ClaudePermissionMode;
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
   systemPrompt?: string;
@@ -114,6 +115,7 @@ export class TaskRuntimeCommands {
       allowedTools: params.allowedTools,
       disallowedTools: params.disallowedTools,
       useMcp: params.useMcp,
+      claudePermissionMode: params.claudePermissionMode,
       folderId: params.folderId ?? null,
       systemPrompt: params.systemPrompt,
       contextItems: params.extraContextItems ?? buildAttachmentContextItems(nonImagePaths),

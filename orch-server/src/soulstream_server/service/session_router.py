@@ -113,6 +113,7 @@ class SessionRouter:
             allowed_tools=request.get("allowed_tools"),
             disallowed_tools=request.get("disallowed_tools"),
             use_mcp=request.get("use_mcp"),
+            claude_permission_mode=request.get("claude_permission_mode"),
             folder_id=request.get("folderId"),
             system_prompt=request.get("system_prompt"),
             oauth_profile_name=request.get("oauth_profile_name"),

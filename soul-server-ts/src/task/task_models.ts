@@ -16,6 +16,7 @@
 
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type {
+  ClaudePermissionMode,
   EnginePort,
   QueuedToolApprovalDecision,
   ReasoningEffort,
@@ -100,6 +101,17 @@ export interface ClaudeRuntimeTaskState {
   totalPausedMs?: number;
 }
 
+export interface ClaudeRuntimeModeState {
+  active: boolean;
+  updatedAt: number;
+  source?: "hook" | "tool_use";
+  toolUseId?: string;
+  toolName?: string;
+  worktreeName?: string;
+  worktreePath?: string;
+  worktreeAction?: string;
+}
+
 /**
  * Claude Agent SDK runtime state. This is intentionally separate from
  * Soulstream's Task Tree model; SDK task ids live only under claudeRuntime.
@@ -109,6 +121,8 @@ export interface ClaudeRuntimeState {
   sessionId?: string;
   updatedAt: number;
   tasks: Record<string, ClaudeRuntimeTaskState>;
+  planMode?: ClaudeRuntimeModeState;
+  worktreeMode?: ClaudeRuntimeModeState;
 }
 
 /**
@@ -174,6 +188,8 @@ export interface Task {
   disallowedTools?: string[];
   /** 요청별 MCP 사용 여부. 기본값 true. Claude는 SDK mcpServers 로딩 게이트로 사용. */
   useMcp?: boolean;
+  /** 요청별 Claude Agent SDK permission mode override. 없으면 AgentProfile 정책을 사용. */
+  claudePermissionMode?: ClaudePermissionMode;
 
   /** 첫 turn prompt와 user_message.context에 함께 박을 외부 context items. */
   contextItems?: ContextItem[];

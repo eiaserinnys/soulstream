@@ -63,12 +63,25 @@ export interface ClaudeRuntimeScheduleView {
   updatedAt?: string;
 }
 
+export interface ClaudeRuntimeModeView {
+  active: boolean;
+  updatedAt: number;
+  source?: "hook" | "tool_use";
+  toolUseId?: string;
+  toolName?: string;
+  worktreeName?: string;
+  worktreePath?: string;
+  worktreeAction?: string;
+}
+
 export interface ClaudeRuntimeView {
   sessionState?: "idle" | "running" | "requires_action";
   runtimeSessionId?: string;
   updatedAt: number;
   tasks: Record<string, ClaudeRuntimeTaskView>;
   schedules: Record<string, ClaudeRuntimeScheduleView>;
+  planMode?: ClaudeRuntimeModeView | null;
+  worktreeMode?: ClaudeRuntimeModeView | null;
   nextScheduleRunAt?: string | null;
 }
 
@@ -77,6 +90,7 @@ export function applyClaudeRuntimeStoreEvent(
   event: SoulSSEEvent,
 ): ClaudeRuntimeView | null {
   if (!event.type.startsWith("claude_runtime_")) return current;
+  if (event.type === "claude_runtime_hook_event") return current;
 
   const updatedAt = timestampToMs((event as { timestamp?: number }).timestamp);
   const next: ClaudeRuntimeView = {
@@ -106,6 +120,30 @@ export function applyClaudeRuntimeStoreEvent(
     if (!scheduleId) return next;
     delete next.schedules[scheduleId];
     next.nextScheduleRunAt = computeNextScheduleRunAt(next.schedules);
+    return next;
+  }
+
+  if (event.type === "claude_runtime_mode_state") {
+    const payload = event as unknown as Record<string, unknown>;
+    const mode = payload.mode;
+    if (mode !== "plan" && mode !== "worktree") return next;
+    const modeState: ClaudeRuntimeModeView = {
+      active: payload.active === true,
+      updatedAt,
+    };
+    if (payload.source === "hook" || payload.source === "tool_use") {
+      modeState.source = payload.source;
+    }
+    copyString(event, "tool_use_id", modeState, "toolUseId");
+    copyString(event, "tool_name", modeState, "toolName");
+    copyString(event, "worktree_name", modeState, "worktreeName");
+    copyString(event, "worktree_path", modeState, "worktreePath");
+    copyString(event, "worktree_action", modeState, "worktreeAction");
+    if (mode === "plan") {
+      next.planMode = modeState;
+    } else {
+      next.worktreeMode = modeState;
+    }
     return next;
   }
 
