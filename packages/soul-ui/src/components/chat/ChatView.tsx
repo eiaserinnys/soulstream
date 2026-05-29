@@ -32,6 +32,7 @@ import {
   resolveFollowOutput,
   shouldScrollToBottomOnTreeChange,
 } from "./ChatView.follow-helpers";
+import { ChatRuntimeCompactStrips } from "./ChatRuntimeCompactStrips";
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
@@ -351,6 +352,8 @@ export function ChatView({
           {"\u2193"} Follow
         </button>
       </div>
+
+      <ChatRuntimeCompactStrips sessionId={activeSessionKey} />
 
       {/* ChatInput */}
       <ChatInput

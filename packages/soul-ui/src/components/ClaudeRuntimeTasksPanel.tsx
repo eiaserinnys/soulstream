@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Bot, GitBranch, ListChecks, Loader2, RefreshCw, Square, TerminalSquare } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, GitBranch, ListChecks, Loader2, RefreshCw, Square, TerminalSquare } from "lucide-react";
 
 import {
   getClaudeBackgroundTaskOutput,
@@ -41,6 +41,7 @@ export function ClaudeRuntimeTasksPanel({
   const [loading, setLoading] = useState(false);
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const liveTasks = useMemo(
     () => Object.values(runtime?.tasks ?? {}).sort((a, b) => b.updatedAt - a.updatedAt),
@@ -50,6 +51,8 @@ export function ClaudeRuntimeTasksPanel({
   const planMode = runtime?.planMode ?? fetchedModes?.planMode ?? null;
   const worktreeMode = runtime?.worktreeMode ?? fetchedModes?.worktreeMode ?? null;
   const hasModeState = Boolean(planMode || worktreeMode);
+  const runningCount = tasks.filter((task) => task.status === "running" || task.status === "pending").length;
+  const errorCount = tasks.filter((task) => task.status === "failed" || task.status === "killed").length;
 
   const refresh = async () => {
     setLoading(true);
@@ -72,6 +75,7 @@ export function ClaudeRuntimeTasksPanel({
     setFetchedTasks([]);
     setFetchedModes(null);
     setOutputs({});
+    setExpanded(false);
     void refresh();
   }, [sessionId]);
 
@@ -104,12 +108,31 @@ export function ClaudeRuntimeTasksPanel({
   if (tasks.length === 0 && !hasModeState && !loading && !error) return null;
 
   return (
-    <section className="border-t border-border/70 p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-medium">
+    <section className="border-t border-border/70 px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
           <Bot className="size-4 text-muted-foreground" />
           <span>Claude Runtime Tasks</span>
-        </div>
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
+            {tasks.length}
+          </span>
+          {runningCount > 0 ? (
+            <span className="rounded bg-amber-500/12 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+              {runningCount} active
+            </span>
+          ) : null}
+          {errorCount > 0 ? (
+            <span className="ml-auto rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
+              {errorCount} error
+            </span>
+          ) : null}
+        </button>
         <Button
           variant="ghost"
           size="icon-xs"
@@ -121,10 +144,10 @@ export function ClaudeRuntimeTasksPanel({
         </Button>
       </div>
 
-      {error ? <div className="mb-2 text-xs text-destructive">{error}</div> : null}
+      {expanded && error ? <div className="mt-2 text-xs text-destructive">{error}</div> : null}
 
-      {hasModeState ? (
-        <div className="mb-2 flex flex-wrap gap-1.5">
+      {expanded && hasModeState ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
           {planMode ? (
             <ModeBadge
               icon={<ListChecks className="size-3" />}
@@ -142,7 +165,7 @@ export function ClaudeRuntimeTasksPanel({
         </div>
       ) : null}
 
-      <div className="space-y-2">
+      {expanded ? <div className="mt-2 space-y-2">
         {tasks.map((task) => {
           const output = outputs[task.taskId];
           const terminal = TERMINAL_STATUSES.has(task.status);
@@ -196,7 +219,7 @@ export function ClaudeRuntimeTasksPanel({
             </div>
           );
         })}
-      </div>
+      </div> : null}
     </section>
   );
 }
