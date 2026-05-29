@@ -150,6 +150,8 @@ export interface SessionEventEnvelope {
     | SSEEventClaudeRuntimeTaskUpdated
     | SSEEventClaudeRuntimeTaskProgress
     | SSEEventClaudeRuntimeTaskNotification
+    | SSEEventClaudeRuntimeScheduleUpdated
+    | SSEEventClaudeRuntimeScheduleDeleted
     | SSEEventContextUsage
     | SSEEventCompact
     | SSEEventReconnect
@@ -479,6 +481,43 @@ export interface SSEEventClaudeRuntimeTaskNotification {
     [k: string]: unknown;
   };
   skip_transcript?: boolean;
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: Soulstream durable schedule 상태 변경.
+ */
+export interface SSEEventClaudeRuntimeScheduleUpdated {
+  type: "claude_runtime_schedule_updated";
+  schedule_id: string;
+  session_id?: string;
+  schedule_kind: "wakeup" | "cron";
+  status: "active" | "dispatching" | "firing" | "completed" | "cancelled" | "failed" | "orphaned";
+  prompt?: string;
+  source_tool?: string;
+  tool_use_id?: string | null;
+  cron_expression?: string | null;
+  run_once_at?: string | null;
+  timezone?: string;
+  recurring?: boolean;
+  next_run_at?: string | null;
+  last_fired_at?: string | null;
+  fired_count?: number;
+  last_error?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  timestamp?: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: Soulstream durable schedule 삭제/취소.
+ */
+export interface SSEEventClaudeRuntimeScheduleDeleted {
+  type: "claude_runtime_schedule_deleted";
+  schedule_id: string;
+  session_id?: string;
+  status: "active" | "dispatching" | "firing" | "completed" | "cancelled" | "failed" | "orphaned";
+  updated_at?: string;
   timestamp?: number;
   [k: string]: unknown;
 }

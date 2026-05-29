@@ -32,6 +32,8 @@ import { ExecutionContextBuilder } from "./context/context_builder.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "./context/cogito_context.js";
 import { UpstreamAdapter } from "./upstream/adapter.js";
 import { SessionBroadcaster } from "./upstream/session_broadcaster.js";
+import { ScheduleDispatcher } from "./schedule/schedule_dispatcher.js";
+import { SoulstreamScheduleService } from "./schedule/schedule_service.js";
 
 // Haniel cwd는 ./services/soulstream — install.configs.soul-server-ts-env path와 정합.
 // `.env`(Python soul-server용)와 *분리* 유지 — SOULSTREAM_NODE_ID 충돌 회피
@@ -218,6 +220,12 @@ async function main(): Promise<void> {
     contextBuilder,
     agentRegistry,
   );
+  const scheduleService = new SoulstreamScheduleService(
+    db.schedules(),
+    broadcaster,
+    persistence,
+    logger,
+  );
 
   // EngineFactory — backend별 분기. Claude auth env는 ClaudeEngineAdapter가 SDK client로 전달한다.
   const engineFactory: EngineFactory = (agent) => {
@@ -317,7 +325,16 @@ async function main(): Promise<void> {
     logger,
     contextBuilder,
     completionNotifier,
+    scheduleService.makeToolHandler(),
   );
+  const scheduleDispatcher = new ScheduleDispatcher(
+    { nodeId: env.SOULSTREAM_NODE_ID },
+    scheduleService,
+    taskManager,
+    onResume,
+    logger,
+  );
+  scheduleDispatcher.start();
 
   // CatalogService — MCP catalog 도구·set_session_name이 경유.
   // 본 카드(soul-server-ts Streamable HTTP MCP) 신설. dashboard 진입점이 같은 service를
@@ -430,6 +447,7 @@ async function main(): Promise<void> {
       realtimeBroker,
       agentConfigService,
       reflectionRuntime: mcpRuntime,
+      scheduleCommands: scheduleService,
     },
   );
 
@@ -442,6 +460,7 @@ async function main(): Promise<void> {
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutdown signal received");
     try {
+      scheduleDispatcher.stop();
       await taskManager.shutdown();
     } catch (err) {
       logger.warn({ err }, "TaskManager shutdown failed");

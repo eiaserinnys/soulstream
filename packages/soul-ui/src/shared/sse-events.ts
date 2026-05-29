@@ -51,6 +51,8 @@ export type SSEEventType =
   | "claude_runtime_task_updated"
   | "claude_runtime_task_progress"
   | "claude_runtime_task_notification"
+  | "claude_runtime_schedule_updated"
+  | "claude_runtime_schedule_deleted"
   // 대시보드 내부 이벤트
   | "context_usage"
   | "compact"
@@ -508,6 +510,46 @@ export interface ClaudeRuntimeTaskNotificationEvent {
   timestamp: number;
 }
 
+export type ClaudeRuntimeScheduleStatus =
+  | "active"
+  | "dispatching"
+  | "firing"
+  | "completed"
+  | "cancelled"
+  | "failed"
+  | "orphaned";
+
+export interface ClaudeRuntimeScheduleUpdatedEvent {
+  type: "claude_runtime_schedule_updated";
+  schedule_id: string;
+  session_id?: string;
+  schedule_kind: "wakeup" | "cron";
+  status: ClaudeRuntimeScheduleStatus;
+  prompt?: string;
+  source_tool?: string;
+  tool_use_id?: string | null;
+  cron_expression?: string | null;
+  run_once_at?: string | null;
+  timezone?: string;
+  recurring?: boolean;
+  next_run_at?: string | null;
+  last_fired_at?: string | null;
+  fired_count?: number;
+  last_error?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  timestamp: number;
+}
+
+export interface ClaudeRuntimeScheduleDeletedEvent {
+  type: "claude_runtime_schedule_deleted";
+  schedule_id: string;
+  session_id?: string;
+  status: ClaudeRuntimeScheduleStatus;
+  updated_at?: string;
+  timestamp: number;
+}
+
 export interface ReconnectEvent {
   type: "reconnect";
   last_event_id?: number;
@@ -635,6 +677,8 @@ export type SoulSSEEvent =
   | ClaudeRuntimeTaskUpdatedEvent
   | ClaudeRuntimeTaskProgressEvent
   | ClaudeRuntimeTaskNotificationEvent
+  | ClaudeRuntimeScheduleUpdatedEvent
+  | ClaudeRuntimeScheduleDeletedEvent
   | ReconnectEvent
   | InputRequestEvent
   | InputRequestExpiredEvent

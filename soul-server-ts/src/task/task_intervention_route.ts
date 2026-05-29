@@ -25,6 +25,12 @@ export interface AddInterventionParams {
   user: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
+  /**
+   * Scheduler dispatch must not rely on the in-memory fallback queue. When false,
+   * a running task that cannot be live-steered returns `{deferred: true}` so the
+   * caller can keep its durable store active and retry later.
+   */
+  queueIfRunning?: boolean;
 }
 
 /**
@@ -68,7 +74,9 @@ export class TaskInterventionRoute {
     };
 
     if (this.deps.activeTaskRecovery.prepareForIntervention(task) === "running") {
-      return await this.deps.runningInterventionTransition.deliver(task, message);
+      return await this.deps.runningInterventionTransition.deliver(task, message, {
+        queueIfUndelivered: params.queueIfRunning ?? true,
+      });
     }
     return await this.deps.autoResumeTransition.resume(task, message, onResume);
   }

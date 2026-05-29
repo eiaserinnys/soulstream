@@ -36,7 +36,10 @@ import {
   ClaudeRuntimeCommandError,
   ClaudeRuntimeCommands,
   type ClaudeRuntimeBackgroundTasksCommand,
+  type ClaudeRuntimeDeleteScheduleCommand,
   type ClaudeRuntimeListTasksCommand,
+  type ClaudeRuntimeListSchedulesCommand,
+  type ClaudeRuntimeScheduleCommands,
   type ClaudeRuntimeStopTaskCommand,
   type ClaudeRuntimeTaskOutputCommand,
 } from "./claude_runtime_commands.js";
@@ -232,6 +235,7 @@ export class CommandDispatcher {
     providerUsage?: ProviderUsageCommandHandler,
     agentConfigService?: AgentConfigCommandHandler,
     reflectionRuntime?: McpRuntime,
+    scheduleCommands?: ClaudeRuntimeScheduleCommands,
   ) {
     this.taskRuntimeCommands = new TaskRuntimeCommands({
       agentRegistry,
@@ -251,7 +255,7 @@ export class CommandDispatcher {
       taskExecutor,
       logger,
     });
-    this.claudeRuntimeCommands = new ClaudeRuntimeCommands(taskManager);
+    this.claudeRuntimeCommands = new ClaudeRuntimeCommands(taskManager, scheduleCommands);
     this.realtimeCommands = new RealtimeCommands(realtimeBroker);
     this.agentConfigCommands = new AgentConfigCommands(
       agentConfigService,
@@ -276,6 +280,10 @@ export class CommandDispatcher {
         this.handleClaudeRuntimeStopTask(cmd as ClaudeRuntimeStopTaskCommand),
       claude_runtime_background_tasks: (cmd) =>
         this.handleClaudeRuntimeBackgroundTasks(cmd as ClaudeRuntimeBackgroundTasksCommand),
+      claude_runtime_list_schedules: (cmd) =>
+        this.handleClaudeRuntimeListSchedules(cmd as ClaudeRuntimeListSchedulesCommand),
+      claude_runtime_delete_schedule: (cmd) =>
+        this.handleClaudeRuntimeDeleteSchedule(cmd as ClaudeRuntimeDeleteScheduleCommand),
       realtime_create_call: (cmd) =>
         this.handleRealtimeCreateCall(cmd as RealtimeCreateCallCommand),
       realtime_event: (cmd) =>
@@ -399,6 +407,24 @@ export class CommandDispatcher {
   ): Promise<void> {
     await this.sendClaudeRuntimeCommand(
       () => this.claudeRuntimeCommands.backgroundTasks(cmd),
+      cmd,
+    );
+  }
+
+  private async handleClaudeRuntimeListSchedules(
+    cmd: ClaudeRuntimeListSchedulesCommand,
+  ): Promise<void> {
+    await this.sendClaudeRuntimeCommand(
+      () => this.claudeRuntimeCommands.listSchedules(cmd),
+      cmd,
+    );
+  }
+
+  private async handleClaudeRuntimeDeleteSchedule(
+    cmd: ClaudeRuntimeDeleteScheduleCommand,
+  ): Promise<void> {
+    await this.sendClaudeRuntimeCommand(
+      () => this.claudeRuntimeCommands.deleteSchedule(cmd),
       cmd,
     );
   }

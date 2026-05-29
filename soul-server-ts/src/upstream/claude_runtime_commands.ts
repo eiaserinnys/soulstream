@@ -1,4 +1,8 @@
 import type { TaskManager } from "../task/task_manager.js";
+import type {
+  ScheduleDeleteResponse,
+  ScheduleListResponse,
+} from "../schedule/schedule_models.js";
 
 interface CommandLike {
   type?: string;
@@ -36,11 +40,32 @@ export interface ClaudeRuntimeBackgroundTasksCommand extends CommandLike {
   tool_use_id?: string;
 }
 
+export interface ClaudeRuntimeListSchedulesCommand extends CommandLike {
+  type: "claude_runtime_list_schedules";
+  agentSessionId?: string;
+  session_id?: string;
+}
+
+export interface ClaudeRuntimeDeleteScheduleCommand extends CommandLike {
+  type: "claude_runtime_delete_schedule";
+  agentSessionId?: string;
+  session_id?: string;
+  scheduleId?: string;
+  schedule_id?: string;
+}
+
 type ClaudeRuntimeCommand =
   | ClaudeRuntimeListTasksCommand
   | ClaudeRuntimeTaskOutputCommand
   | ClaudeRuntimeStopTaskCommand
-  | ClaudeRuntimeBackgroundTasksCommand;
+  | ClaudeRuntimeBackgroundTasksCommand
+  | ClaudeRuntimeListSchedulesCommand
+  | ClaudeRuntimeDeleteScheduleCommand;
+
+export interface ClaudeRuntimeScheduleCommands {
+  listSchedules(sessionId: string): Promise<ScheduleListResponse>;
+  deleteSchedule(sessionId: string, scheduleId: string): Promise<ScheduleDeleteResponse>;
+}
 
 export class ClaudeRuntimeCommandError extends Error {
   constructor(message: string) {
@@ -58,12 +83,42 @@ export class ClaudeRuntimeCommands {
       | "stopClaudeRuntimeTask"
       | "backgroundClaudeRuntimeTasks"
     >,
+    private readonly schedules?: ClaudeRuntimeScheduleCommands,
   ) {}
 
   async listTasks(cmd: ClaudeRuntimeListTasksCommand): Promise<Record<string, unknown> | null> {
     const sessionId = sessionIdFromCommand(cmd);
     if (!sessionId) throw new ClaudeRuntimeCommandError(`${cmd.type} requires agentSessionId`);
     const result = await this.taskManager.listClaudeRuntimeTasks(sessionId);
+    return this.ack(cmd, result);
+  }
+
+  async listSchedules(
+    cmd: ClaudeRuntimeListSchedulesCommand,
+  ): Promise<Record<string, unknown> | null> {
+    if (!this.schedules) {
+      throw new ClaudeRuntimeCommandError("schedule service is not configured");
+    }
+    const sessionId = sessionIdFromCommand(cmd);
+    if (!sessionId) throw new ClaudeRuntimeCommandError(`${cmd.type} requires agentSessionId`);
+    const result = await this.schedules.listSchedules(sessionId);
+    return this.ack(cmd, result);
+  }
+
+  async deleteSchedule(
+    cmd: ClaudeRuntimeDeleteScheduleCommand,
+  ): Promise<Record<string, unknown> | null> {
+    if (!this.schedules) {
+      throw new ClaudeRuntimeCommandError("schedule service is not configured");
+    }
+    const sessionId = sessionIdFromCommand(cmd);
+    const scheduleId = cmd.scheduleId ?? cmd.schedule_id ?? "";
+    if (!sessionId || !scheduleId) {
+      throw new ClaudeRuntimeCommandError(
+        `${cmd.type} requires agentSessionId and scheduleId`,
+      );
+    }
+    const result = await this.schedules.deleteSchedule(sessionId, scheduleId);
     return this.ack(cmd, result);
   }
 

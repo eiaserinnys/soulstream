@@ -11,6 +11,8 @@ CMD_CLAUDE_RUNTIME_LIST_TASKS = "claude_runtime_list_tasks"
 CMD_CLAUDE_RUNTIME_TASK_OUTPUT = "claude_runtime_task_output"
 CMD_CLAUDE_RUNTIME_STOP_TASK = "claude_runtime_stop_task"
 CMD_CLAUDE_RUNTIME_BACKGROUND_TASKS = "claude_runtime_background_tasks"
+CMD_CLAUDE_RUNTIME_LIST_SCHEDULES = "claude_runtime_list_schedules"
+CMD_CLAUDE_RUNTIME_DELETE_SCHEDULE = "claude_runtime_delete_schedule"
 CMD_APPROVE_TOOL = "approve_tool"
 CMD_REJECT_TOOL = "reject_tool"
 CMD_REALTIME_CREATE_CALL = "realtime_create_call"
@@ -89,6 +91,8 @@ KNOWN_SSE_EVENT_TYPES = frozenset({
     "claude_runtime_task_updated",
     "claude_runtime_task_progress",
     "claude_runtime_task_notification",
+    "claude_runtime_schedule_updated",
+    "claude_runtime_schedule_deleted",
     "context_usage", "compact", "reconnect", "history_sync",
     "metadata_updated",
 })

@@ -75,6 +75,8 @@ describe("TaskInterventionRoute.addIntervention", () => {
       user: "alice",
       callerInfo: { source: "slack", display_name: "Alice" },
       attachmentPaths: ["/tmp/a.png"],
+    }, {
+      queueIfUndelivered: true,
     });
     expect(autoResumeTransition.resume).not.toHaveBeenCalled();
     expect(onResume).not.toHaveBeenCalled();

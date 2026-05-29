@@ -29,11 +29,44 @@ export interface ClaudeRuntimeTaskView {
   totalPausedMs?: number;
 }
 
+export type ClaudeRuntimeScheduleKind = "wakeup" | "cron";
+
+export type ClaudeRuntimeScheduleStatus =
+  | "active"
+  | "dispatching"
+  | "firing"
+  | "completed"
+  | "cancelled"
+  | "failed"
+  | "orphaned";
+
+export interface ClaudeRuntimeScheduleView {
+  scheduleId: string;
+  sessionId?: string;
+  kind: ClaudeRuntimeScheduleKind;
+  status: ClaudeRuntimeScheduleStatus;
+  prompt?: string;
+  sourceTool?: string;
+  toolUseId?: string | null;
+  cronExpression?: string | null;
+  runOnceAt?: string | null;
+  timezone?: string;
+  recurring?: boolean;
+  nextRunAt?: string | null;
+  lastFiredAt?: string | null;
+  firedCount?: number;
+  lastError?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ClaudeRuntimeView {
   sessionState?: "idle" | "running" | "requires_action";
   runtimeSessionId?: string;
   updatedAt: number;
   tasks: Record<string, ClaudeRuntimeTaskView>;
+  schedules: Record<string, ClaudeRuntimeScheduleView>;
+  nextScheduleRunAt?: string | null;
 }
 
 export function applyClaudeRuntimeStoreEvent(
@@ -44,14 +77,32 @@ export function applyClaudeRuntimeStoreEvent(
 
   const updatedAt = timestampToMs((event as { timestamp?: number }).timestamp);
   const next: ClaudeRuntimeView = {
-    ...(current ?? { tasks: {}, updatedAt }),
+    ...(current ?? { tasks: {}, schedules: {}, updatedAt }),
     tasks: { ...(current?.tasks ?? {}) },
+    schedules: { ...(current?.schedules ?? {}) },
     updatedAt,
   };
 
   if (event.type === "claude_runtime_session_state") {
     next.sessionState = event.state;
     if (event.session_id) next.runtimeSessionId = event.session_id;
+    return next;
+  }
+
+  if (event.type === "claude_runtime_schedule_updated") {
+    const scheduleId = (event as { schedule_id?: string }).schedule_id;
+    if (!scheduleId) return next;
+    const schedule = scheduleFromEvent(scheduleId, event);
+    next.schedules[scheduleId] = schedule;
+    next.nextScheduleRunAt = computeNextScheduleRunAt(next.schedules);
+    return next;
+  }
+
+  if (event.type === "claude_runtime_schedule_deleted") {
+    const scheduleId = (event as { schedule_id?: string }).schedule_id;
+    if (!scheduleId) return next;
+    delete next.schedules[scheduleId];
+    next.nextScheduleRunAt = computeNextScheduleRunAt(next.schedules);
     return next;
   }
 
@@ -125,6 +176,12 @@ export function applyClaudeRuntimeStoreEvent(
   return next;
 }
 
+export function schedulesFromList(
+  schedules: ClaudeRuntimeScheduleView[],
+): Record<string, ClaudeRuntimeScheduleView> {
+  return Object.fromEntries(schedules.map((schedule) => [schedule.scheduleId, schedule]));
+}
+
 function timestampToMs(value: number | undefined): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return Date.now();
   return value > 1_000_000_000_000 ? value : value * 1000;
@@ -141,6 +198,66 @@ function isTaskStatus(value: unknown): value is ClaudeRuntimeTaskStatus {
   );
 }
 
+function scheduleFromEvent(
+  scheduleId: string,
+  event: SoulSSEEvent,
+): ClaudeRuntimeScheduleView {
+  const payload = event as unknown as Record<string, unknown>;
+  const existing = {};
+  const schedule: ClaudeRuntimeScheduleView = {
+    ...existing,
+    scheduleId,
+    kind: isScheduleKind(payload.schedule_kind)
+      ? payload.schedule_kind
+      : "wakeup",
+    status: isScheduleStatus(payload.status)
+      ? payload.status
+      : "active",
+  };
+  copyString(event, "session_id", schedule, "sessionId");
+  copyString(event, "prompt", schedule);
+  copyString(event, "source_tool", schedule, "sourceTool");
+  copyNullableString(event, "tool_use_id", schedule, "toolUseId");
+  copyNullableString(event, "cron_expression", schedule, "cronExpression");
+  copyNullableString(event, "run_once_at", schedule, "runOnceAt");
+  copyString(event, "timezone", schedule);
+  if (typeof payload.recurring === "boolean") schedule.recurring = payload.recurring;
+  copyNullableString(event, "next_run_at", schedule, "nextRunAt");
+  copyNullableString(event, "last_fired_at", schedule, "lastFiredAt");
+  if (typeof payload.fired_count === "number") schedule.firedCount = payload.fired_count;
+  copyNullableString(event, "last_error", schedule, "lastError");
+  copyString(event, "created_at", schedule, "createdAt");
+  copyString(event, "updated_at", schedule, "updatedAt");
+  return schedule;
+}
+
+function computeNextScheduleRunAt(
+  schedules: Record<string, ClaudeRuntimeScheduleView>,
+): string | null {
+  const values = Object.values(schedules)
+    .filter((schedule) => schedule.status === "active")
+    .map((schedule) => schedule.nextRunAt)
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+    .sort();
+  return values[0] ?? null;
+}
+
+function isScheduleKind(value: unknown): value is ClaudeRuntimeScheduleKind {
+  return value === "wakeup" || value === "cron";
+}
+
+function isScheduleStatus(value: unknown): value is ClaudeRuntimeScheduleStatus {
+  return (
+    value === "active" ||
+    value === "dispatching" ||
+    value === "firing" ||
+    value === "completed" ||
+    value === "cancelled" ||
+    value === "failed" ||
+    value === "orphaned"
+  );
+}
+
 function copyString<T extends object>(
   source: object,
   from: string,
@@ -149,6 +266,18 @@ function copyString<T extends object>(
 ): void {
   const value = (source as Record<string, unknown>)[from];
   if (typeof value === "string") {
+    (target as Record<string, unknown>)[to] = value;
+  }
+}
+
+function copyNullableString<T extends object>(
+  source: object,
+  from: string,
+  target: T,
+  to: string = from,
+): void {
+  const value = (source as Record<string, unknown>)[from];
+  if (typeof value === "string" || value === null) {
     (target as Record<string, unknown>)[to] = value;
   }
 }

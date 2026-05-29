@@ -929,6 +929,61 @@ class SSEEventClaudeRuntimeTaskNotification(TypedDict):
     timestamp: NotRequired[float]
 
 
+class SSEEventClaudeRuntimeScheduleUpdated(TypedDict):
+    """
+    SSE: Soulstream durable schedule 상태 변경.
+    """
+
+    type: Literal['claude_runtime_schedule_updated']
+    schedule_id: str
+    session_id: NotRequired[str]
+    schedule_kind: Literal['wakeup', 'cron']
+    status: Literal[
+        'active',
+        'dispatching',
+        'firing',
+        'completed',
+        'cancelled',
+        'failed',
+        'orphaned',
+    ]
+    prompt: NotRequired[str]
+    source_tool: NotRequired[str]
+    tool_use_id: NotRequired[str | None]
+    cron_expression: NotRequired[str | None]
+    run_once_at: NotRequired[str | None]
+    timezone: NotRequired[str]
+    recurring: NotRequired[bool]
+    next_run_at: NotRequired[str | None]
+    last_fired_at: NotRequired[str | None]
+    fired_count: NotRequired[float]
+    last_error: NotRequired[str | None]
+    created_at: NotRequired[str]
+    updated_at: NotRequired[str]
+    timestamp: NotRequired[float]
+
+
+class SSEEventClaudeRuntimeScheduleDeleted(TypedDict):
+    """
+    SSE: Soulstream durable schedule 삭제/취소.
+    """
+
+    type: Literal['claude_runtime_schedule_deleted']
+    schedule_id: str
+    session_id: NotRequired[str]
+    status: Literal[
+        'active',
+        'dispatching',
+        'firing',
+        'completed',
+        'cancelled',
+        'failed',
+        'orphaned',
+    ]
+    updated_at: NotRequired[str]
+    timestamp: NotRequired[float]
+
+
 class SSEEventContextUsage(TypedDict):
     """
     SSE: 컨텍스트 사용량.
@@ -1036,6 +1091,8 @@ class SessionEventEnvelope(TypedDict):
         | SSEEventClaudeRuntimeTaskUpdated
         | SSEEventClaudeRuntimeTaskProgress
         | SSEEventClaudeRuntimeTaskNotification
+        | SSEEventClaudeRuntimeScheduleUpdated
+        | SSEEventClaudeRuntimeScheduleDeleted
         | SSEEventContextUsage
         | SSEEventCompact
         | SSEEventReconnect

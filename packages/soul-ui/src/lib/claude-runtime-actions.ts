@@ -1,4 +1,7 @@
-import type { ClaudeRuntimeTaskView } from "../stores/claude-runtime-state";
+import type {
+  ClaudeRuntimeScheduleView,
+  ClaudeRuntimeTaskView,
+} from "../stores/claude-runtime-state";
 
 export interface ClaudeRuntimeTasksResponse {
   sessionId: string;
@@ -27,6 +30,20 @@ export interface ClaudeRuntimeStopTaskResponse {
   status?: string;
   message?: string;
   task: ClaudeRuntimeTaskView | null;
+}
+
+export interface ClaudeRuntimeSchedulesResponse {
+  sessionId: string;
+  nextRunAt: string | null;
+  schedules: ClaudeRuntimeScheduleView[];
+}
+
+export interface ClaudeRuntimeDeleteScheduleResponse {
+  sessionId: string;
+  scheduleId: string;
+  status: string;
+  deleted: boolean;
+  schedule: ClaudeRuntimeScheduleView | null;
 }
 
 export async function listClaudeBackgroundTasks(
@@ -60,4 +77,26 @@ export async function stopClaudeBackgroundTask(
   );
   if (!response.ok) throw new Error(await response.text());
   return await response.json() as ClaudeRuntimeStopTaskResponse;
+}
+
+export async function listClaudeSchedules(
+  sessionId: string,
+): Promise<ClaudeRuntimeSchedulesResponse> {
+  const response = await fetch(
+    `/api/sessions/${encodeURIComponent(sessionId)}/schedules`,
+  );
+  if (!response.ok) throw new Error(await response.text());
+  return await response.json() as ClaudeRuntimeSchedulesResponse;
+}
+
+export async function deleteClaudeSchedule(
+  sessionId: string,
+  scheduleId: string,
+): Promise<ClaudeRuntimeDeleteScheduleResponse> {
+  const response = await fetch(
+    `/api/sessions/${encodeURIComponent(sessionId)}/schedules/${encodeURIComponent(scheduleId)}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok) throw new Error(await response.text());
+  return await response.json() as ClaudeRuntimeDeleteScheduleResponse;
 }
