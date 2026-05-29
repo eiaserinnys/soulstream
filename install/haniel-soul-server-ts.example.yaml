@@ -27,6 +27,7 @@ services:
     enabled: true
     hooks:
       post_pull: pnpm --dir src/soulstream install --frozen-lockfile && pnpm --dir src/soulstream/soul-server-ts run build
+      pre_start: node src/soulstream/soul-server-ts/scripts/apply-schema.mjs
     reflect: false  # B-1은 cogito reflection 미구현. B-2 또는 후속에서 활성화 검토.
 
 install:
@@ -45,6 +46,9 @@ install:
         - key: AUTH_BEARER_TOKEN
           prompt: "orch API 인증 토큰 (운영 .env에서 확인 — public repo에 default 박지 않음)"
           # default 키 *제거* — Haniel install 시 운영자가 직접 입력
+        - key: DATABASE_URL
+          prompt: "PostgreSQL 연결 URL (운영 .env에서 확인 — public repo에 default 박지 않음)"
+          # default 키 *제거* — soul-server-ts와 apply-schema.mjs가 같은 필수 DB 정본을 사용
         - key: HOST
           default: 127.0.0.1
         - key: PORT
