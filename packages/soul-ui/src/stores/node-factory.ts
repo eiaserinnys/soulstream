@@ -172,8 +172,10 @@ export function createNodeFromEvent(
     case "subagent_start":
     case "claude_runtime_session_state":
     case "claude_runtime_task_started":
+    case "claude_runtime_task_created":
     case "claude_runtime_task_updated":
     case "claude_runtime_task_progress":
+    case "claude_runtime_task_completed":
     case "claude_runtime_task_notification":
     case "claude_runtime_schedule_updated":
     case "claude_runtime_schedule_deleted":
@@ -492,8 +494,10 @@ export function applyUpdate(
     case "subagent_stop":
     case "claude_runtime_session_state":
     case "claude_runtime_task_started":
+    case "claude_runtime_task_created":
     case "claude_runtime_task_updated":
     case "claude_runtime_task_progress":
+    case "claude_runtime_task_completed":
     case "claude_runtime_task_notification":
     case "claude_runtime_schedule_updated":
     case "claude_runtime_schedule_deleted":

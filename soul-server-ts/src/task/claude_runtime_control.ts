@@ -14,8 +14,10 @@ import type {
 const CLAUDE_RUNTIME_EVENT_TYPES = [
   "claude_runtime_session_state",
   "claude_runtime_task_started",
+  "claude_runtime_task_created",
   "claude_runtime_task_updated",
   "claude_runtime_task_progress",
+  "claude_runtime_task_completed",
   "claude_runtime_task_notification",
 ] as const;
 

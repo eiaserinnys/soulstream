@@ -138,6 +138,8 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly toolNamesById = new Map<string, string>();
   private readonly emittedToolResultIds = new Set<string>();
   private readonly interceptedScheduleToolUseIds = new Set<string>();
+  private readonly backgroundAgentToolUseIds = new Set<string>();
+  private readonly backgroundAgentTaskIds = new Set<string>();
   private readonly emittedSubagentStartIds = new Set<string>();
   private readonly emittedSubagentStopIds = new Set<string>();
   private readonly pendingCompactHookTriggers: string[] = [];
@@ -454,17 +456,12 @@ export class ClaudeSdkClient implements ClaudeClient {
           matcher: "Agent",
           hooks: [
             async (input) => {
-              const toolInput = asRecord(asRecord(input)?.tool_input);
-              if (toolInput?.run_in_background !== true) return {};
-
-              const updatedInput = { ...toolInput };
-              delete updatedInput.run_in_background;
-              return {
-                hookSpecificOutput: {
-                  hookEventName: "PreToolUse",
-                  updatedInput,
-                },
-              };
+              const record = asRecord(input);
+              this.rememberBackgroundAgentToolUse(
+                asString(record?.tool_use_id),
+                asRecord(record?.tool_input),
+              );
+              return {};
             },
           ],
         },
@@ -509,6 +506,68 @@ export class ClaudeSdkClient implements ClaudeClient {
               for (const event of this.makeSubagentStopEvents(asString(record?.agent_id))) {
                 output.push(event);
               }
+              return {};
+            },
+          ],
+        },
+      ],
+      TaskCreated: [
+        {
+          hooks: [
+            async (input) => {
+              const record = asRecord(input);
+              const taskId = asString(record?.task_id);
+              const subject = asString(record?.task_subject);
+              if (!taskId || !subject) return {};
+              this.runtimeTasksById.set(taskId, { status: "pending" });
+              output.push({
+                type: "claude_runtime_task_created",
+                taskId,
+                subject,
+                ...(asString(record?.session_id) !== undefined
+                  ? { sessionId: asString(record?.session_id) }
+                  : {}),
+                ...(asString(record?.task_description) !== undefined
+                  ? { description: asString(record?.task_description) }
+                  : {}),
+                ...(asString(record?.teammate_name) !== undefined
+                  ? { teammateName: asString(record?.teammate_name) }
+                  : {}),
+                ...(asString(record?.team_name) !== undefined
+                  ? { teamName: asString(record?.team_name) }
+                  : {}),
+              });
+              return {};
+            },
+          ],
+        },
+      ],
+      TaskCompleted: [
+        {
+          hooks: [
+            async (input) => {
+              const record = asRecord(input);
+              const taskId = asString(record?.task_id);
+              const subject = asString(record?.task_subject);
+              if (!taskId || !subject) return {};
+              this.runtimeTasksById.set(taskId, { status: "completed" });
+              output.push({
+                type: "claude_runtime_task_completed",
+                taskId,
+                subject,
+                ...(asString(record?.session_id) !== undefined
+                  ? { sessionId: asString(record?.session_id) }
+                  : {}),
+                ...(asString(record?.task_description) !== undefined
+                  ? { description: asString(record?.task_description) }
+                  : {}),
+                ...(asString(record?.teammate_name) !== undefined
+                  ? { teammateName: asString(record?.teammate_name) }
+                  : {}),
+                ...(asString(record?.team_name) !== undefined
+                  ? { teamName: asString(record?.team_name) }
+                  : {}),
+              });
               return {};
             },
           ],
@@ -937,22 +996,27 @@ export class ClaudeSdkClient implements ClaudeClient {
       const taskId = asString(message.task_id);
       if (!taskId) return [];
       this.runtimeTasksById.set(taskId, { status: "running" });
-      return [
-        ...this.makeSubagentStartEvents(taskId, asString(message.task_type)),
+      const toolUseId = asString(message.tool_use_id);
+      const isBackgroundAgent = toolUseId
+        ? this.backgroundAgentToolUseIds.has(toolUseId)
+        : false;
+      if (isBackgroundAgent) this.backgroundAgentTaskIds.add(taskId);
+      const taskType = asString(message.task_type) ?? (isBackgroundAgent ? "agent" : undefined);
+      const runtimeEvents: ClaudeClientEvent[] = [
         {
           type: "claude_runtime_task_started",
           taskId,
           ...(asString(message.session_id) !== undefined
             ? { sessionId: asString(message.session_id) }
             : {}),
-          ...(asString(message.tool_use_id) !== undefined
-            ? { toolUseId: asString(message.tool_use_id) }
+          ...(toolUseId !== undefined
+            ? { toolUseId }
             : {}),
           ...(asString(message.description) !== undefined
             ? { description: asString(message.description) }
             : {}),
-          ...(asString(message.task_type) !== undefined
-            ? { taskType: asString(message.task_type) }
+          ...(taskType !== undefined
+            ? { taskType }
             : {}),
           ...(asString(message.workflow_name) !== undefined
             ? { workflowName: asString(message.workflow_name) }
@@ -963,14 +1027,34 @@ export class ClaudeSdkClient implements ClaudeClient {
             : {}),
         },
       ];
+      if (isBackgroundAgent) {
+        runtimeEvents.push({
+          type: "claude_runtime_task_updated",
+          taskId,
+          ...(asString(message.session_id) !== undefined
+            ? { sessionId: asString(message.session_id) }
+            : {}),
+          patch: {
+            status: "running",
+            is_backgrounded: true,
+            task_type: taskType,
+            ...(toolUseId !== undefined ? { tool_use_id: toolUseId } : {}),
+          },
+        });
+      }
+      return [
+        ...(isBackgroundAgent ? [] : this.makeSubagentStartEvents(taskId, taskType)),
+        ...runtimeEvents,
+      ];
     }
     if (subtype === "task_notification") {
       const taskId = asString(message.task_id);
       const status = parseRuntimeNotificationStatus(message.status);
       if (!taskId || !status) return [];
       this.runtimeTasksById.set(taskId, { status });
+      const isBackgroundAgent = this.backgroundAgentTaskIds.has(taskId);
       return [
-        ...this.makeSubagentStopEvents(taskId),
+        ...(isBackgroundAgent ? [] : this.makeSubagentStopEvents(taskId)),
         {
           type: "claude_runtime_task_notification",
           taskId,
@@ -1122,10 +1206,12 @@ export class ClaudeSdkClient implements ClaudeClient {
         const toolUseId = asString(record.id) ?? null;
         const toolName = asString(record.name) ?? "tool";
         if (toolUseId) this.toolNamesById.set(toolUseId, toolName);
+        const toolInput = asRecord(record.input) ?? {};
+        if (toolName === "Agent") this.rememberBackgroundAgentToolUse(toolUseId, toolInput);
         events.push({
           type: "tool_start",
           toolName,
-          toolInput: asRecord(record.input) ?? {},
+          toolInput,
           toolUseId,
         });
       }
@@ -1284,6 +1370,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     agentId: string | undefined,
     agentType: string | undefined,
   ): ClaudeClientEvent[] {
+    if (this.isBackgroundAgentIdentifier(agentId)) return [];
     if (!agentId || this.emittedSubagentStartIds.has(agentId)) return [];
     this.emittedSubagentStartIds.add(agentId);
     return [
@@ -1296,9 +1383,26 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   private makeSubagentStopEvents(agentId: string | undefined): ClaudeClientEvent[] {
+    if (this.isBackgroundAgentIdentifier(agentId)) return [];
     if (!agentId || this.emittedSubagentStopIds.has(agentId)) return [];
     this.emittedSubagentStopIds.add(agentId);
     return [{ type: "subagent_stop", agentId }];
+  }
+
+  private rememberBackgroundAgentToolUse(
+    toolUseId: string | undefined | null,
+    toolInput: Record<string, unknown> | undefined,
+  ): void {
+    if (toolUseId && toolInput?.run_in_background === true) {
+      this.backgroundAgentToolUseIds.add(toolUseId);
+    }
+  }
+
+  private isBackgroundAgentIdentifier(agentId: string | undefined): boolean {
+    return !!agentId && (
+      this.backgroundAgentTaskIds.has(agentId) ||
+      this.backgroundAgentToolUseIds.has(agentId)
+    );
   }
 
   private hasPendingRuntimeWork(): boolean {
@@ -1336,6 +1440,8 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.emittedSubagentStartIds.clear();
     this.emittedSubagentStopIds.clear();
     this.interceptedScheduleToolUseIds.clear();
+    this.backgroundAgentToolUseIds.clear();
+    this.backgroundAgentTaskIds.clear();
     this.pendingCompactHookTriggers.length = 0;
     this.runtimeTasksById.clear();
     this.runtimeSessionState = undefined;

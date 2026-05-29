@@ -873,6 +873,21 @@ class SSEEventClaudeRuntimeTaskStarted(TypedDict):
     timestamp: NotRequired[float]
 
 
+class SSEEventClaudeRuntimeTaskCreated(TypedDict):
+    """
+    SSE: Claude Agent SDK TaskCreated hook lifecycle. Soulstream Task Tree와 별도 개념.
+    """
+
+    type: Literal['claude_runtime_task_created']
+    task_id: str
+    session_id: NotRequired[str]
+    subject: str
+    description: NotRequired[str]
+    teammate_name: NotRequired[str]
+    team_name: NotRequired[str]
+    timestamp: NotRequired[float]
+
+
 class Patch(TypedDict):
     status: NotRequired[
         Literal['pending', 'running', 'completed', 'failed', 'stopped', 'killed']
@@ -909,6 +924,21 @@ class SSEEventClaudeRuntimeTaskProgress(TypedDict):
     usage: NotRequired[dict[str, Any]]
     last_tool_name: NotRequired[str]
     summary: NotRequired[str]
+    timestamp: NotRequired[float]
+
+
+class SSEEventClaudeRuntimeTaskCompleted(TypedDict):
+    """
+    SSE: Claude Agent SDK TaskCompleted hook lifecycle. Soulstream Task Tree와 별도 개념.
+    """
+
+    type: Literal['claude_runtime_task_completed']
+    task_id: str
+    session_id: NotRequired[str]
+    subject: str
+    description: NotRequired[str]
+    teammate_name: NotRequired[str]
+    team_name: NotRequired[str]
     timestamp: NotRequired[float]
 
 
@@ -1088,8 +1118,10 @@ class SessionEventEnvelope(TypedDict):
         | SSEEventSubagentStop
         | SSEEventClaudeRuntimeSessionState
         | SSEEventClaudeRuntimeTaskStarted
+        | SSEEventClaudeRuntimeTaskCreated
         | SSEEventClaudeRuntimeTaskUpdated
         | SSEEventClaudeRuntimeTaskProgress
+        | SSEEventClaudeRuntimeTaskCompleted
         | SSEEventClaudeRuntimeTaskNotification
         | SSEEventClaudeRuntimeScheduleUpdated
         | SSEEventClaudeRuntimeScheduleDeleted

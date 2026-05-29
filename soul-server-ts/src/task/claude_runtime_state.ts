@@ -55,6 +55,14 @@ export function applyClaudeRuntimeEvent(task: Task, event: SSEEventPayload): boo
       copyBoolean(payload, "skip_transcript", runtimeTask, "skipTranscript");
       break;
 
+    case "claude_runtime_task_created":
+      runtimeTask.status = "pending";
+      copyString(payload, "subject", runtimeTask);
+      copyString(payload, "description", runtimeTask);
+      copyString(payload, "teammate_name", runtimeTask, "teammateName");
+      copyString(payload, "team_name", runtimeTask, "teamName");
+      break;
+
     case "claude_runtime_task_updated": {
       const patch = asRecord(payload.patch) ?? {};
       const status = parseTaskStatus(patch.status);
@@ -78,6 +86,14 @@ export function applyClaudeRuntimeEvent(task: Task, event: SSEEventPayload): boo
       copyString(payload, "summary", runtimeTask);
       copyString(payload, "last_tool_name", runtimeTask, "lastToolName");
       if (asRecord(payload.usage)) runtimeTask.usage = asRecord(payload.usage);
+      break;
+
+    case "claude_runtime_task_completed":
+      runtimeTask.status = "completed";
+      copyString(payload, "subject", runtimeTask);
+      copyString(payload, "description", runtimeTask);
+      copyString(payload, "teammate_name", runtimeTask, "teammateName");
+      copyString(payload, "team_name", runtimeTask, "teamName");
       break;
 
     case "claude_runtime_task_notification": {

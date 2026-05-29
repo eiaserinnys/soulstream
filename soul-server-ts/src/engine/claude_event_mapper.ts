@@ -170,6 +170,17 @@ export type ClaudeClientEvent =
       parentEventId?: ParentEventId;
     }
   | {
+      type: "claude_runtime_task_created";
+      taskId: string;
+      sessionId?: string;
+      subject: string;
+      description?: string;
+      teammateName?: string;
+      teamName?: string;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
       type: "claude_runtime_task_updated";
       taskId: string;
       sessionId?: string;
@@ -186,6 +197,17 @@ export type ClaudeClientEvent =
       usage?: unknown;
       lastToolName?: string;
       summary?: string;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
+  | {
+      type: "claude_runtime_task_completed";
+      taskId: string;
+      sessionId?: string;
+      subject: string;
+      description?: string;
+      teammateName?: string;
+      teamName?: string;
       timestamp?: number;
       parentEventId?: ParentEventId;
     }
@@ -492,6 +514,21 @@ export function mapClaudeClientEvent(
         }),
       ];
 
+    case "claude_runtime_task_created":
+      return [
+        asSSE({
+          type: "claude_runtime_task_created",
+          task_id: event.taskId,
+          subject: event.subject,
+          ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
+          ...(event.description !== undefined ? { description: event.description } : {}),
+          ...(event.teammateName !== undefined ? { teammate_name: event.teammateName } : {}),
+          ...(event.teamName !== undefined ? { team_name: event.teamName } : {}),
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
     case "claude_runtime_task_updated":
       return [
         asSSE({
@@ -515,6 +552,21 @@ export function mapClaudeClientEvent(
           ...(event.usage !== undefined ? { usage: event.usage } : {}),
           ...(event.lastToolName !== undefined ? { last_tool_name: event.lastToolName } : {}),
           ...(event.summary !== undefined ? { summary: event.summary } : {}),
+          timestamp: event.timestamp ?? nowEpochSec(),
+          ...parentField(event.parentEventId),
+        }),
+      ];
+
+    case "claude_runtime_task_completed":
+      return [
+        asSSE({
+          type: "claude_runtime_task_completed",
+          task_id: event.taskId,
+          subject: event.subject,
+          ...(event.sessionId !== undefined ? { session_id: event.sessionId } : {}),
+          ...(event.description !== undefined ? { description: event.description } : {}),
+          ...(event.teammateName !== undefined ? { teammate_name: event.teammateName } : {}),
+          ...(event.teamName !== undefined ? { team_name: event.teamName } : {}),
           timestamp: event.timestamp ?? nowEpochSec(),
           ...parentField(event.parentEventId),
         }),
