@@ -3,6 +3,7 @@ import { Bell, ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-reac
 
 import { ClaudeRuntimeSignalRows } from "./ClaudeRuntimeSignalRows";
 import { useClaudeRuntimeSignals } from "./claude-runtime-signals";
+import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
 
 interface ClaudeRuntimeNotificationsPanelProps {
@@ -59,7 +60,11 @@ export function ClaudeRuntimeNotificationsPanel({
       </div>
 
       {expanded && error ? <div className="mt-2 text-xs text-destructive">{error}</div> : null}
-      {expanded ? <div className="mt-2"><ClaudeRuntimeSignalRows signals={signals} /></div> : null}
+      {expanded ? (
+        <div className={runtimePanelScrollClass()}>
+          <ClaudeRuntimeSignalRows signals={signals} />
+        </div>
+      ) : null}
     </section>
   );
 }
