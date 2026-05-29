@@ -31,7 +31,7 @@ export function SessionInfoView() {
       <SessionMetadata metadata={metadata ?? []} callerSessionId={callerSessionId} />
       <ClaudeRuntimeTasksPanel sessionId={activeSessionKey} runtime={claudeRuntime} />
       <ClaudeRuntimeSchedulesPanel sessionId={activeSessionKey} runtime={claudeRuntime} />
-      <ClaudeRuntimeNotificationsPanel sessionId={activeSessionKey} runtime={claudeRuntime} />
+      <ClaudeRuntimeNotificationsPanel sessionId={activeSessionKey} />
     </ScrollArea>
   );
 }

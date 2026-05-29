@@ -38,6 +38,7 @@ import type {
   InputRequestNodeDef,
   ToolApprovalRequestedEvent,
   ToolApprovalNodeDef,
+  SoulSSEEvent,
 } from "../shared/types";
 
 // === Helpers ===
@@ -373,15 +374,37 @@ describe("createNodeFromEvent", () => {
       expect(node).toBeNull();
     });
 
-    it("should return null for Claude runtime status events (P0-A: state-only)", () => {
-      const node = createNodeFromEvent({
-        type: "claude_runtime_task_started",
-        task_id: "task-bg-1",
-        description: "background task",
-        timestamp: 1700000000,
-      }, 21);
+    it("should return null for Claude runtime status and signal events (state-only)", () => {
+      const events = [
+        {
+          type: "claude_runtime_task_started",
+          task_id: "task-bg-1",
+          description: "background task",
+          timestamp: 1700000000,
+        },
+        {
+          type: "claude_runtime_notification",
+          notification_id: "notif-1",
+          source: "hook",
+          message: "runtime notification",
+          timestamp: 1700000001,
+        },
+        {
+          type: "claude_runtime_remote_trigger",
+          trigger_id: "trigger-1",
+          source: "message_origin",
+          timestamp: 1700000002,
+        },
+        {
+          type: "claude_runtime_transcript_mirror_error",
+          error: "cannot extract elements from a scalar",
+          timestamp: 1700000003,
+        },
+      ];
 
-      expect(node).toBeNull();
+      for (const [index, event] of events.entries()) {
+        expect(createNodeFromEvent(event as SoulSSEEvent, 21 + index)).toBeNull();
+      }
     });
 
     it("should create node for tool_start", () => {

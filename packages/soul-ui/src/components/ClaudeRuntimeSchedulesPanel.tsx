@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronRight, Loader2, RefreshCw, Trash2 } from "lucide-react";
 
 import {
   deleteClaudeSchedule,
@@ -36,6 +36,7 @@ export function ClaudeRuntimeSchedulesPanel({
   const [loading, setLoading] = useState(false);
   const [busyScheduleId, setBusyScheduleId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const liveSchedules = useMemo(
     () => Object.values(runtime?.schedules ?? {}).sort(compareSchedules),
@@ -46,6 +47,9 @@ export function ClaudeRuntimeSchedulesPanel({
   const nextRunAt = runtime?.nextScheduleRunAt
     ?? firstNextRunAt(schedules)
     ?? null;
+  const errorCount = schedules.filter(
+    (schedule) => schedule.status === "failed" || schedule.status === "orphaned",
+  ).length;
 
   const refresh = async () => {
     setLoading(true);
@@ -63,6 +67,7 @@ export function ClaudeRuntimeSchedulesPanel({
   useEffect(() => {
     setFetchedSchedules([]);
     setDeletedScheduleIds(new Set());
+    setExpanded(false);
     void refresh();
   }, [sessionId]);
 
@@ -87,17 +92,31 @@ export function ClaudeRuntimeSchedulesPanel({
   if (schedules.length === 0 && !loading && !error) return null;
 
   return (
-    <section className="border-t border-border/70 p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
+    <section className="border-t border-border/70 px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
           <CalendarClock className="size-4 text-muted-foreground" />
           <span>Schedules</span>
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
+            {schedules.length}
+          </span>
           {nextRunAt ? (
             <span className="truncate text-xs font-normal text-muted-foreground">
               next {formatDateTime(nextRunAt)}
             </span>
           ) : null}
-        </div>
+          {errorCount > 0 ? (
+            <span className="ml-auto rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
+              {errorCount} error
+            </span>
+          ) : null}
+        </button>
         <Button
           variant="ghost"
           size="icon-xs"
@@ -109,9 +128,9 @@ export function ClaudeRuntimeSchedulesPanel({
         </Button>
       </div>
 
-      {error ? <div className="mb-2 text-xs text-destructive">{error}</div> : null}
+      {expanded && error ? <div className="mt-2 text-xs text-destructive">{error}</div> : null}
 
-      <div className="space-y-2">
+      {expanded ? <div className="mt-2 space-y-2">
         {schedules.map((schedule) => {
           const canDelete = canDeleteClaudeRuntimeSchedule(schedule.status);
           const busy = busyScheduleId === schedule.scheduleId;
@@ -153,7 +172,7 @@ export function ClaudeRuntimeSchedulesPanel({
             </div>
           );
         })}
-      </div>
+      </div> : null}
     </section>
   );
 }
