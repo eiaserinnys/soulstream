@@ -8,6 +8,7 @@ import type {
   LiveTurnSteerResult,
   InputResponseDeliveryResult,
   ClaudeBackgroundTaskControlResult,
+  ScheduleToolUseHandler,
   SSEEventPayload,
   SupportsClaudeBackgroundTasks,
   SupportsCompact,
@@ -34,6 +35,7 @@ export { ClaudeSdkClient } from "./claude_sdk_client.js";
 export type { ClaudeClientEvent } from "./claude_event_mapper.js";
 
 export interface ClaudeRunOptions {
+  agentSessionId?: string;
   prompt: string;
   workspaceDir: string;
   imageAttachmentPaths?: string[];
@@ -49,6 +51,7 @@ export interface ClaudeRunOptions {
   /** Python `Task.use_mcp` → SDK mcpServers 로딩 게이트. undefined면 true. */
   useMcp?: boolean;
   env?: Record<string, string>;
+  onScheduleToolUse?: ScheduleToolUseHandler;
 }
 
 export interface ClaudeClient {
@@ -286,6 +289,7 @@ export class ClaudeEngineAdapter
     });
     return {
       prompt: params.prompt,
+      ...(params.agentSessionId ? { agentSessionId: params.agentSessionId } : {}),
       workspaceDir: this.workspaceDir,
       ...(params.imageAttachmentPaths !== undefined
         ? { imageAttachmentPaths: params.imageAttachmentPaths }
@@ -298,6 +302,9 @@ export class ClaudeEngineAdapter
       ...(params.maxTurns !== undefined ? { maxTurns: params.maxTurns } : {}),
       ...(params.useMcp !== undefined ? { useMcp: params.useMcp } : {}),
       ...(env !== undefined ? { env } : {}),
+      ...(params.onScheduleToolUse !== undefined
+        ? { onScheduleToolUse: params.onScheduleToolUse }
+        : {}),
     };
   }
 

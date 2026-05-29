@@ -521,6 +521,84 @@ class TestClaudeBackgroundTasks:
         assert payload["agentSessionId"] == "test-session"
         assert payload["toolUseId"] == "toolu-bash"
 
+    async def test_schedule_list_delete_routes_send_ws_commands(
+        self, client, node_manager
+    ):
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "schedule-node"})
+
+        async def resolve_on_send(data):
+            ws_command_id = data.get("requestId", "")
+            future = node._pending.get(ws_command_id)
+            if future is None or future.done():
+                return
+            if data["type"] == "claude_runtime_list_schedules":
+                future.set_result({
+                    "type": "claude_runtime_list_schedules_ack",
+                    "requestId": ws_command_id,
+                    "status": "ok",
+                    "sessionId": data["agentSessionId"],
+                    "schedules": [{"scheduleId": "sched-1"}],
+                    "nextRunAt": "2026-01-01T00:00:00.000Z",
+                })
+            elif data["type"] == "claude_runtime_delete_schedule":
+                future.set_result({
+                    "type": "claude_runtime_delete_schedule_ack",
+                    "requestId": ws_command_id,
+                    "status": "cancelled",
+                    "deleted": True,
+                    "sessionId": data["agentSessionId"],
+                    "scheduleId": data["scheduleId"],
+                })
+
+        ws.send_json.side_effect = resolve_on_send
+
+        list_resp = await client.get("/api/sessions/test-session/schedules")
+        delete_resp = await client.delete("/api/sessions/test-session/schedules/sched-1")
+
+        assert list_resp.status_code == 200
+        assert list_resp.json()["schedules"] == [{"scheduleId": "sched-1"}]
+        assert delete_resp.status_code == 200
+        assert delete_resp.json()["deleted"] is True
+        payloads = [call.args[0] for call in ws.send_json.await_args_list]
+        assert payloads[-2]["type"] == "claude_runtime_list_schedules"
+        assert payloads[-2]["agentSessionId"] == "test-session"
+        assert payloads[-1]["type"] == "claude_runtime_delete_schedule"
+        assert payloads[-1]["agentSessionId"] == "test-session"
+        assert payloads[-1]["scheduleId"] == "sched-1"
+
+    async def test_schedule_delete_already_firing_returns_conflict(
+        self, client, node_manager
+    ):
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(ws, {"node_id": "schedule-node"})
+
+        async def resolve_on_send(data):
+            ws_command_id = data.get("requestId", "")
+            future = node._pending.get(ws_command_id)
+            if future is None or future.done():
+                return
+            future.set_result({
+                "type": "claude_runtime_delete_schedule_ack",
+                "requestId": ws_command_id,
+                "status": "already_firing",
+                "deleted": False,
+                "sessionId": data["agentSessionId"],
+                "scheduleId": data["scheduleId"],
+            })
+
+        ws.send_json.side_effect = resolve_on_send
+
+        resp = await client.delete("/api/sessions/test-session/schedules/sched-1")
+
+        assert resp.status_code == 409
+        assert resp.json()["detail"]["status"] == "already_firing"
+        assert resp.json()["detail"]["deleted"] is False
+
 
 class TestToolApprovals:
     """POST /api/sessions/{session_id}/tool-approvals/{approval_id} tests."""

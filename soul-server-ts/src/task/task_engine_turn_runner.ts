@@ -3,6 +3,7 @@ import type {
   EnginePort,
   EngineRunStateSnapshot,
   EngineSessionItemsSnapshot,
+  ScheduleToolUseHandler,
   SSEEventPayload,
 } from "../engine/protocol.js";
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
@@ -17,6 +18,7 @@ export interface TaskEngineTurnInput {
 
 export interface TaskEngineTurnRunnerDeps {
   snapshotPersistence: TaskAgentsSnapshotPersistencePort;
+  scheduleToolHandler?: ScheduleToolUseHandler;
 }
 
 export interface TaskAgentsSnapshotPersistencePort {
@@ -56,6 +58,7 @@ export class TaskEngineTurnRunner {
       : undefined;
 
     return engine.execute({
+      agentSessionId: task.agentSessionId,
       prompt: input.prompt,
       imageAttachmentPaths: input.imageAttachmentPaths,
       model: task.model,
@@ -80,6 +83,9 @@ export class TaskEngineTurnRunner {
       ...(task.useMcp !== undefined ? { useMcp: task.useMcp } : {}),
       ...(agent.max_turns !== undefined ? { maxTurns: agent.max_turns } : {}),
       ...(extraEnv !== undefined ? { extraEnv } : {}),
+      ...(this.deps.scheduleToolHandler !== undefined
+        ? { onScheduleToolUse: this.deps.scheduleToolHandler }
+        : {}),
     });
   }
 }

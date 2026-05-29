@@ -10,6 +10,7 @@ import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { AttachmentStore } from "../attachments/file_manager.js";
+import type { ClaudeRuntimeScheduleCommands } from "./claude_runtime_commands.js";
 
 import { CommandDispatcher } from "./dispatcher.js";
 import { ReconnectPolicy } from "./reconnect.js";
@@ -37,6 +38,7 @@ export interface UpstreamDependencies {
   realtimeBroker?: RealtimeBroker;
   agentConfigService?: AgentConfigService;
   reflectionRuntime?: McpRuntime;
+  scheduleCommands?: ClaudeRuntimeScheduleCommands;
 }
 
 /**
@@ -76,6 +78,7 @@ export class UpstreamAdapter {
       undefined,
       deps.agentConfigService,
       deps.reflectionRuntime,
+      deps.scheduleCommands,
     );
   }
 

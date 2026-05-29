@@ -54,6 +54,12 @@ const DEFAULT_CLAUDE_RUNTIME_DRAIN_MAX_MS = 6 * 60 * 60 * 1_000;
 const INPUT_REQUEST_TIMEOUT = Symbol("input_request_timeout");
 const INPUT_REQUEST_ABORTED = Symbol("input_request_aborted");
 const DRAIN_TIMEOUT = Symbol("post_result_drain_timeout");
+const SOULSTREAM_SCHEDULE_TOOLS = new Set([
+  "ScheduleWakeup",
+  "CronCreate",
+  "CronList",
+  "CronDelete",
+]);
 
 type ClaudeResultEvent = Extract<ClaudeClientEvent, { type: "result" }>;
 type PostResultContinuationKind = "compact_boundary" | "tool_use";
@@ -131,6 +137,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly pendingInputRequests = new Map<string, PendingInputRequest>();
   private readonly toolNamesById = new Map<string, string>();
   private readonly emittedToolResultIds = new Set<string>();
+  private readonly interceptedScheduleToolUseIds = new Set<string>();
   private readonly emittedSubagentStartIds = new Set<string>();
   private readonly emittedSubagentStopIds = new Set<string>();
   private readonly pendingCompactHookTriggers: string[] = [];
@@ -345,7 +352,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       promptSuggestions: true,
       includePartialMessages: false,
       toolConfig: { askUserQuestion: { previewFormat: "markdown" } },
-      canUseTool: this.makeCanUseTool(output),
+      canUseTool: this.makeCanUseTool(output, options),
       hooks: this.buildHooks(output, systemPrompt),
       ...(options.model ? { model: options.model } : {}),
       ...(systemPrompt ? { systemPrompt } : {}),
@@ -358,8 +365,42 @@ export class ClaudeSdkClient implements ClaudeClient {
     };
   }
 
-  private makeCanUseTool(output: EventQueue<ClaudeClientEvent>): CanUseTool {
+  private makeCanUseTool(
+    output: EventQueue<ClaudeClientEvent>,
+    options: ClaudeRunOptions,
+  ): CanUseTool {
     return async (toolName, input, context) => {
+      if (SOULSTREAM_SCHEDULE_TOOLS.has(toolName)) {
+        if (!options.onScheduleToolUse || !options.agentSessionId) {
+          return {
+            behavior: "deny",
+            message: "Soulstream durable scheduler is not configured for this turn.",
+            toolUseID: context.toolUseID,
+          };
+        }
+        try {
+          const result = await options.onScheduleToolUse({
+            agentSessionId: options.agentSessionId,
+            toolUseId: context.toolUseID,
+            toolName,
+            input: asRecord(input) ?? {},
+            now: new Date(),
+          });
+          this.interceptedScheduleToolUseIds.add(context.toolUseID);
+          return {
+            behavior: "deny",
+            message: result.message,
+            toolUseID: context.toolUseID,
+          };
+        } catch (err) {
+          return {
+            behavior: "deny",
+            message: err instanceof Error ? err.message : String(err),
+            toolUseID: context.toolUseID,
+          };
+        }
+      }
+
       if (toolName !== "AskUserQuestion") {
         return { behavior: "allow", toolUseID: context.toolUseID };
       }
@@ -984,7 +1025,15 @@ export class ClaudeSdkClient implements ClaudeClient {
     }
     if (subtype === "permission_denied") {
       const toolName = asString(message.tool_name) ?? "tool";
+      const toolUseId = asString(message.tool_use_id);
       const detail = asString(message.message) ?? "permission denied";
+      if (
+        (toolUseId && this.interceptedScheduleToolUseIds.has(toolUseId))
+        || (SOULSTREAM_SCHEDULE_TOOLS.has(toolName)
+          && detail.includes("Soulstream durable scheduler"))
+      ) {
+        return [];
+      }
       return [
         {
           type: "error",
@@ -1093,6 +1142,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       if (!record || record.type !== "tool_result") continue;
 
       const toolUseId = asString(record.tool_use_id) ?? null;
+      if (toolUseId && this.interceptedScheduleToolUseIds.has(toolUseId)) continue;
       if (toolUseId && this.emittedToolResultIds.has(toolUseId)) continue;
       if (toolUseId) this.emittedToolResultIds.add(toolUseId);
       const toolName = toolUseId ? this.toolNamesById.get(toolUseId) : undefined;
@@ -1285,6 +1335,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.emittedToolResultIds.clear();
     this.emittedSubagentStartIds.clear();
     this.emittedSubagentStopIds.clear();
+    this.interceptedScheduleToolUseIds.clear();
     this.pendingCompactHookTriggers.length = 0;
     this.runtimeTasksById.clear();
     this.runtimeSessionState = undefined;

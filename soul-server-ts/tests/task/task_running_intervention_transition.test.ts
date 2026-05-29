@@ -208,6 +208,49 @@ describe("RunningInterventionTransition", () => {
     expect(task.interventionQueue).toEqual([{ text: "queue me", user: "alice" }]);
   });
 
+  it("can defer running fallback without persisting or using the in-memory queue", async () => {
+    const steerActiveTurn = vi.fn().mockResolvedValue({
+      status: "no_active_turn",
+      message: "active turn missing",
+    });
+    const task = makeRunningTask({
+      engine: {
+        backendId: "codex",
+        workspaceDir: "/tmp/codex",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        steerActiveTurn,
+      } as EnginePort & SupportsLiveTurnSteering,
+    });
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const persistEvent = vi.fn().mockResolvedValue(333);
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(emitEventEnvelope),
+      logger: silentLogger,
+      persistence: {
+        persistEvent,
+        handleSideEffects: vi.fn().mockResolvedValue(undefined),
+      } as unknown as EventPersistence,
+    });
+
+    await expect(
+      transition.deliver(
+        task,
+        { text: "scheduler prompt", user: "Soulstream Scheduler" },
+        { queueIfUndelivered: false },
+      ),
+    ).resolves.toEqual({
+      deferred: true,
+      liveSteerStatus: "no_active_turn",
+    });
+
+    expect(steerActiveTurn).toHaveBeenCalledWith({ prompt: "scheduler prompt" });
+    expect(task.interventionQueue).toEqual([]);
+    expect(persistEvent).not.toHaveBeenCalled();
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
+  });
+
   it("queues without liveSteerStatus when the engine has no live steering capability", async () => {
     const task = makeRunningTask({
       interventionQueue: [{ text: "already queued", user: "bob" }],

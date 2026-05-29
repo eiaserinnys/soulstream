@@ -261,6 +261,8 @@ def test_known_sse_event_types_completeness() -> None:
         "claude_runtime_task_updated",
         "claude_runtime_task_progress",
         "claude_runtime_task_notification",
+        "claude_runtime_schedule_updated",
+        "claude_runtime_schedule_deleted",
         "context_usage",
         "compact",
         "reconnect",

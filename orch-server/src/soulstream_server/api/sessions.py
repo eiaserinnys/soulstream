@@ -355,6 +355,40 @@ def create_sessions_router(
         except RuntimeError as e:
             raise _claude_runtime_http_exception(e)
 
+    @router.get("/{session_id}/schedules")
+    async def list_schedules(session_id: str) -> dict:
+        """Soulstream durable schedule 목록을 조회한다."""
+        node = await find_session_node(session_id, db, node_manager)
+        try:
+            return await node.send_claude_runtime_list_schedules(session_id)
+        except (WebSocketDisconnect, ConnectionError) as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Node disconnected, please retry: {e}",
+            )
+        except RuntimeError as e:
+            raise _claude_runtime_http_exception(e)
+
+    @router.delete("/{session_id}/schedules/{schedule_id}")
+    async def delete_schedule(session_id: str, schedule_id: str) -> dict:
+        """Soulstream durable schedule을 prompt 없이 직접 취소/삭제한다."""
+        node = await find_session_node(session_id, db, node_manager)
+        try:
+            result = await node.send_claude_runtime_delete_schedule(
+                session_id,
+                schedule_id,
+            )
+            if result.get("status") == "already_firing":
+                raise HTTPException(status_code=409, detail=result)
+            return result
+        except (WebSocketDisconnect, ConnectionError) as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Node disconnected, please retry: {e}",
+            )
+        except RuntimeError as e:
+            raise _claude_runtime_http_exception(e)
+
     @router.post("/{session_id}/respond")
     async def respond(session_id: str, body: RespondRequest) -> dict:
         """입력 요청 응답."""

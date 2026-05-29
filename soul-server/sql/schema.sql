@@ -56,6 +56,43 @@ CREATE TABLE IF NOT EXISTS events (
     PRIMARY KEY (session_id, id)
 );
 
+CREATE TABLE IF NOT EXISTS soulstream_schedules (
+    schedule_id     TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+    kind            TEXT NOT NULL CHECK (kind IN ('wakeup', 'cron')),
+    status          TEXT NOT NULL CHECK (
+        status IN (
+            'active',
+            'dispatching',
+            'firing',
+            'completed',
+            'cancelled',
+            'failed',
+            'orphaned'
+        )
+    ),
+    prompt          TEXT NOT NULL,
+    source_tool     TEXT NOT NULL,
+    tool_use_id     TEXT,
+    cron_expression TEXT,
+    run_once_at     TIMESTAMPTZ,
+    timezone        TEXT NOT NULL DEFAULT 'UTC',
+    recurring       BOOLEAN NOT NULL DEFAULT FALSE,
+    next_run_at     TIMESTAMPTZ,
+    last_fired_at   TIMESTAMPTZ,
+    fired_count     INTEGER NOT NULL DEFAULT 0,
+    last_error      TEXT,
+    claim_token     TEXT,
+    claimed_until   TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS soulstream_node_heartbeats (
+    node_id      TEXT PRIMARY KEY,
+    last_seen_at TIMESTAMPTZ NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS event_search_terms (
     session_id TEXT NOT NULL,
     event_id   INTEGER NOT NULL,
@@ -143,6 +180,13 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS subtree_height INTEGER NOT NULL DEFA
 CREATE INDEX IF NOT EXISTS idx_events_session_id_id ON events (session_id, id);
 CREATE INDEX IF NOT EXISTS idx_events_search_vector ON events USING GIN (search_vector);
 CREATE INDEX IF NOT EXISTS idx_event_search_terms_term ON event_search_terms (term);
+CREATE INDEX IF NOT EXISTS idx_soulstream_schedules_session
+    ON soulstream_schedules (session_id, status, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_soulstream_schedules_due
+    ON soulstream_schedules (next_run_at)
+    WHERE status = 'active';
+CREATE INDEX IF NOT EXISTS idx_soulstream_node_heartbeats_seen
+    ON soulstream_node_heartbeats (last_seen_at);
 
 CREATE INDEX IF NOT EXISTS idx_task_items_parent ON task_items (parent_id, position_key);
 CREATE INDEX IF NOT EXISTS idx_task_items_status ON task_items (status) WHERE archived = FALSE;

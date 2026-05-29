@@ -122,6 +122,8 @@
             { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskUpdated" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskProgress" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeTaskNotification" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleUpdated" },
+            { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleDeleted" },
             { "$ref": "#/$defs/SSEEventContextUsage" },
             { "$ref": "#/$defs/SSEEventCompact" },
             { "$ref": "#/$defs/SSEEventReconnect" },
@@ -1243,6 +1245,53 @@
         "summary": { "type": "string" },
         "usage": { "type": "object", "additionalProperties": true },
         "skip_transcript": { "type": "boolean" },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventClaudeRuntimeScheduleUpdated": {
+      "type": "object",
+      "description": "SSE: Soulstream durable schedule 상태 변경.",
+      "required": ["type", "schedule_id", "schedule_kind", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_schedule_updated" },
+        "schedule_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "schedule_kind": { "type": "string", "enum": ["wakeup", "cron"] },
+        "status": {
+          "type": "string",
+          "enum": ["active", "dispatching", "firing", "completed", "cancelled", "failed", "orphaned"]
+        },
+        "prompt": { "type": "string" },
+        "source_tool": { "type": "string" },
+        "tool_use_id": { "type": ["string", "null"] },
+        "cron_expression": { "type": ["string", "null"] },
+        "run_once_at": { "type": ["string", "null"] },
+        "timezone": { "type": "string" },
+        "recurring": { "type": "boolean" },
+        "next_run_at": { "type": ["string", "null"] },
+        "last_fired_at": { "type": ["string", "null"] },
+        "fired_count": { "type": "number" },
+        "last_error": { "type": ["string", "null"] },
+        "created_at": { "type": "string" },
+        "updated_at": { "type": "string" },
+        "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventClaudeRuntimeScheduleDeleted": {
+      "type": "object",
+      "description": "SSE: Soulstream durable schedule 삭제/취소.",
+      "required": ["type", "schedule_id", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "claude_runtime_schedule_deleted" },
+        "schedule_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "status": {
+          "type": "string",
+          "enum": ["active", "dispatching", "firing", "completed", "cancelled", "failed", "orphaned"]
+        },
+        "updated_at": { "type": "string" },
         "timestamp": { "type": "number" }
       }
     },

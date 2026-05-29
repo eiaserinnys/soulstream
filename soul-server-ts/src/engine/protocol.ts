@@ -69,8 +69,26 @@ export type InterventionCallback = () => Promise<InterventionInput | null>;
  */
 export type CompactCallback = (sessionId: string, summary: string) => Promise<void>;
 
+export interface ScheduleToolUseRequest {
+  agentSessionId: string;
+  toolUseId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+  now: Date;
+}
+
+export interface ScheduleToolUseResult {
+  message: string;
+  data?: unknown;
+}
+
+export type ScheduleToolUseHandler = (
+  request: ScheduleToolUseRequest,
+) => Promise<ScheduleToolUseResult>;
+
 /** EnginePort.execute 파라미터. 위임자 §R1 시그니처 그대로. */
 export interface EngineExecuteParams {
+  agentSessionId?: string;
   prompt: string;
   /** Codex SDK `UserInput[]`로 전달할 로컬 이미지 첨부 경로. */
   imageAttachmentPaths?: string[];
@@ -120,6 +138,7 @@ export interface EngineExecuteParams {
   onCompact?: CompactCallback;
   onRunStateSnapshot?: RunStateSnapshotCallback;
   onSessionItemsSnapshot?: SessionItemsSnapshotCallback;
+  onScheduleToolUse?: ScheduleToolUseHandler;
 }
 
 /**

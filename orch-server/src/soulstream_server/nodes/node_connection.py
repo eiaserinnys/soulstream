@@ -32,6 +32,8 @@ from soulstream_server.constants import (
     CMD_CLAUDE_AUTH_GET_USAGE,
     CMD_CLAUDE_AUTH_GET_PROFILE,
     CMD_CLAUDE_RUNTIME_BACKGROUND_TASKS,
+    CMD_CLAUDE_RUNTIME_DELETE_SCHEDULE,
+    CMD_CLAUDE_RUNTIME_LIST_SCHEDULES,
     CMD_CLAUDE_RUNTIME_LIST_TASKS,
     CMD_CLAUDE_RUNTIME_STOP_TASK,
     CMD_CLAUDE_RUNTIME_TASK_OUTPUT,
@@ -383,6 +385,22 @@ class NodeConnection:
         if tool_use_id is not None:
             payload["toolUseId"] = tool_use_id
         return await self._send_command(CMD_CLAUDE_RUNTIME_BACKGROUND_TASKS, payload)
+
+    async def send_claude_runtime_list_schedules(self, session_id: str) -> dict:
+        """Soulstream durable schedule 목록 조회."""
+        return await self._send_command(
+            CMD_CLAUDE_RUNTIME_LIST_SCHEDULES,
+            {"agentSessionId": session_id},
+        )
+
+    async def send_claude_runtime_delete_schedule(
+        self, session_id: str, schedule_id: str
+    ) -> dict:
+        """Soulstream durable schedule 직접 취소/삭제."""
+        return await self._send_command(
+            CMD_CLAUDE_RUNTIME_DELETE_SCHEDULE,
+            {"agentSessionId": session_id, "scheduleId": schedule_id},
+        )
 
     # ─── Attachment WS reverse-proxy ────────────────────
     # 노드 self-reported host:port HTTP 가정 폐기 (운영 로그: eias-shopping host=127.0.0.1)

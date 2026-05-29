@@ -175,6 +175,8 @@ export function createNodeFromEvent(
     case "claude_runtime_task_updated":
     case "claude_runtime_task_progress":
     case "claude_runtime_task_notification":
+    case "claude_runtime_schedule_updated":
+    case "claude_runtime_schedule_deleted":
       return null;
 
     case "tool_start": {
@@ -493,6 +495,8 @@ export function applyUpdate(
     case "claude_runtime_task_updated":
     case "claude_runtime_task_progress":
     case "claude_runtime_task_notification":
+    case "claude_runtime_schedule_updated":
+    case "claude_runtime_schedule_deleted":
       return false;
 
     default:

@@ -19,6 +19,7 @@
 import postgres from "postgres";
 
 import type { TaskStatus } from "../task/task_models.js";
+import { SoulstreamScheduleRepository } from "../schedule/schedule_repository.js";
 import { TaskTreeRepository } from "../task_tree/task_tree_repository.js";
 
 export type SessionType = "claude" | "llm";
@@ -132,6 +133,7 @@ export class SessionDB {
   private readonly sql: SqlClient;
   private readonly ownsSql: boolean;
   private taskTreeRepository?: TaskTreeRepository;
+  private scheduleRepository?: SoulstreamScheduleRepository;
 
   /**
    * @param sqlOrUrl `postgres()` 인스턴스 또는 DATABASE_URL 문자열.
@@ -164,6 +166,11 @@ export class SessionDB {
   taskTree(): TaskTreeRepository {
     this.taskTreeRepository ??= new TaskTreeRepository(this.sql);
     return this.taskTreeRepository;
+  }
+
+  schedules(): SoulstreamScheduleRepository {
+    this.scheduleRepository ??= new SoulstreamScheduleRepository(this.sql);
+    return this.scheduleRepository;
   }
 
   /** Python `session_register` stored procedure 호출 (schema.sql L196-218). */
@@ -830,6 +837,7 @@ export class SessionDB {
     }
     return id;
   }
+
 }
 
 /**

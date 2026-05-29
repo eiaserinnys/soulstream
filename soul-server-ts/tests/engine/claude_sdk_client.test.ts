@@ -177,6 +177,221 @@ describe("ClaudeSdkClient", () => {
     expect(captured[0]?.options).not.toHaveProperty("pathToClaudeCodeExecutable");
   });
 
+  it("intercepts Claude schedule tools into the Soulstream durable scheduler and suppresses native denial noise", async () => {
+    const permissionResults: PermissionResult[] = [];
+    const scheduleHandler = vi.fn(async () => ({
+      message: "Soulstream durable scheduler accepted ScheduleWakeup as sched-1.",
+      data: { scheduleId: "sched-1" },
+    }));
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const permission = await params.options?.canUseTool?.(
+                "ScheduleWakeup",
+                { delaySeconds: 60, prompt: "wake me" },
+                {
+                  signal: new AbortController().signal,
+                  toolUseID: "toolu-schedule",
+                },
+              );
+              if (permission) permissionResults.push(permission);
+              yield {
+                type: "system",
+                subtype: "permission_denied",
+                tool_name: "ScheduleWakeup",
+                tool_use_id: "toolu-schedule",
+                message: "Soulstream durable scheduler accepted ScheduleWakeup as sched-1.",
+                session_id: "claude-sess-schedule",
+              } as unknown as SDKMessage;
+              yield {
+                type: "user",
+                message: {
+                  role: "user",
+                  content: [{
+                    type: "tool_result",
+                    tool_use_id: "toolu-schedule",
+                    content: "permission denied",
+                    is_error: true,
+                  }],
+                },
+                uuid: "user-schedule-result",
+                session_id: "claude-sess-schedule",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-schedule", "done");
+            })(),
+          ),
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        {
+          prompt: "hi",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+          agentSessionId: "sess-1",
+          onScheduleToolUse: scheduleHandler,
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(scheduleHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentSessionId: "sess-1",
+        toolUseId: "toolu-schedule",
+        toolName: "ScheduleWakeup",
+        input: { delaySeconds: 60, prompt: "wake me" },
+        now: expect.any(Date),
+      }),
+    );
+    expect(permissionResults).toEqual([
+      {
+        behavior: "deny",
+        message: "Soulstream durable scheduler accepted ScheduleWakeup as sched-1.",
+        toolUseID: "toolu-schedule",
+      },
+    ]);
+    expect(events.map((event) => event.type)).toEqual([
+      "result",
+      "context_usage",
+      "complete",
+    ]);
+  });
+
+  it("passes CronList schedule details through the permission-deny message so the model can choose ids", async () => {
+    const permissionResults: PermissionResult[] = [];
+    const scheduleHandler = vi.fn(async () => ({
+      message:
+        "Soulstream durable scheduler has 1 schedule(s).\n"
+        + 'id=sched-visible kind=cron status=active nextRunAt=2026-01-01T01:00:00.000Z prompt="summarize open loops"',
+      data: {
+        schedules: [{
+          scheduleId: "sched-visible",
+          nextRunAt: "2026-01-01T01:00:00.000Z",
+        }],
+      },
+    }));
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const permission = await params.options?.canUseTool?.(
+                "CronList",
+                {},
+                {
+                  signal: new AbortController().signal,
+                  toolUseID: "toolu-cron-list",
+                },
+              );
+              if (permission) permissionResults.push(permission);
+              yield sdkSuccessResult("claude-sess-cron-list", "done");
+            })(),
+          ),
+      },
+      silentLogger,
+    );
+
+    await collect(
+      client.run(
+        {
+          prompt: "list schedules",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+          agentSessionId: "sess-1",
+          onScheduleToolUse: scheduleHandler,
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(permissionResults[0]).toMatchObject({
+      behavior: "deny",
+      toolUseID: "toolu-cron-list",
+    });
+    expect(permissionResults[0]?.message).toContain("id=sched-visible");
+    expect(permissionResults[0]?.message).toContain("nextRunAt=2026-01-01T01:00:00.000Z");
+    expect(permissionResults[0]?.message).toContain('prompt="summarize open loops"');
+  });
+
+  it("clears intercepted schedule tool ids between runs so reused ids do not hide unrelated denials", async () => {
+    let callCount = 0;
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) => {
+          callCount += 1;
+          if (callCount === 1) {
+            return makeQuery(
+              (async function* () {
+                await params.options?.canUseTool?.(
+                  "ScheduleWakeup",
+                  { delaySeconds: 60 },
+                  {
+                    signal: new AbortController().signal,
+                    toolUseID: "toolu-reused",
+                  },
+                );
+                yield sdkSuccessResult("claude-sess-schedule", "done");
+              })(),
+            );
+          }
+          return makeQuery(
+            sdkMessages([
+              {
+                type: "system",
+                subtype: "permission_denied",
+                tool_name: "Read",
+                tool_use_id: "toolu-reused",
+                message: "blocked by policy",
+                session_id: "claude-sess-read",
+              },
+              sdkSuccessResult("claude-sess-read", "done"),
+            ]),
+          );
+        },
+      },
+      silentLogger,
+    );
+
+    await collect(
+      client.run(
+        {
+          prompt: "schedule",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+          agentSessionId: "sess-1",
+          onScheduleToolUse: async () => ({
+            message: "Soulstream durable scheduler accepted ScheduleWakeup as sched-1.",
+            data: { scheduleId: "sched-1" },
+          }),
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    const events = await collect(
+      client.run(
+        {
+          prompt: "read",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events).toContainEqual({
+      type: "error",
+      fatal: false,
+      errorCode: "permission_denied",
+      message: "Read: blocked by policy",
+    });
+  });
+
   it("uses resolved Claude Code executable path without passing it through env", async () => {
     const captured: ClaudeSdkQueryParams[] = [];
     const client = new ClaudeSdkClient(

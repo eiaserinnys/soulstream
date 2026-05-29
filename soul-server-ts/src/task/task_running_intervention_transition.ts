@@ -12,7 +12,8 @@ import type { InterventionMessage, Task } from "./task_models.js";
 
 export type RunningInterventionResult =
   | { delivered: true }
-  | { queued: true; queuePosition: number; liveSteerStatus?: LiveTurnSteerStatus };
+  | { queued: true; queuePosition: number; liveSteerStatus?: LiveTurnSteerStatus }
+  | { deferred: true; liveSteerStatus?: LiveTurnSteerStatus };
 
 export interface RunningInterventionTransitionDeps {
   broadcaster: SessionBroadcaster;
@@ -34,7 +35,22 @@ export class RunningInterventionTransition {
   async deliver(
     task: Task,
     message: InterventionMessage,
+    options: { queueIfUndelivered?: boolean } = {},
   ): Promise<RunningInterventionResult> {
+    if (options.queueIfUndelivered === false) {
+      const liveSteerStatus = await this.tryLiveSteer(task, message);
+      if (liveSteerStatus === "delivered") {
+        const interventionEvent = buildInterventionSentEvent(message);
+        await this.persistIntervention(task, interventionEvent);
+        await this.broadcastIntervention(task, interventionEvent);
+        return { delivered: true };
+      }
+      return {
+        deferred: true,
+        ...(liveSteerStatus ? { liveSteerStatus } : {}),
+      };
+    }
+
     const interventionEvent = buildInterventionSentEvent(message);
     await this.persistIntervention(task, interventionEvent);
     await this.broadcastIntervention(task, interventionEvent);

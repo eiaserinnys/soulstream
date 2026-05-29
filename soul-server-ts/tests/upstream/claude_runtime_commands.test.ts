@@ -131,6 +131,61 @@ describe("ClaudeRuntimeCommands", () => {
     });
   });
 
+  it("routes schedule list/delete commands to the durable schedule service", async () => {
+    const schedules = {
+      listSchedules: vi.fn(async () => ({
+        sessionId: "sess-1",
+        nextRunAt: "2026-01-01T00:10:00.000Z",
+        schedules: [{ scheduleId: "sched-1", status: "active" }],
+      })),
+      deleteSchedule: vi.fn(async () => ({
+        sessionId: "sess-1",
+        scheduleId: "sched-1",
+        status: "cancelled",
+        deleted: true,
+        schedule: { scheduleId: "sched-1", status: "cancelled" },
+      })),
+    };
+    const commands = new ClaudeRuntimeCommands(
+      {
+        listClaudeRuntimeTasks: vi.fn(),
+        getClaudeRuntimeTaskOutput: vi.fn(),
+        stopClaudeRuntimeTask: vi.fn(),
+        backgroundClaudeRuntimeTasks: vi.fn(),
+      },
+      schedules as never,
+    );
+
+    await expect(
+      commands.listSchedules({
+        type: "claude_runtime_list_schedules",
+        requestId: "req-schedules",
+        agentSessionId: "sess-1",
+      }),
+    ).resolves.toMatchObject({
+      type: "claude_runtime_list_schedules_ack",
+      requestId: "req-schedules",
+      schedules: [{ scheduleId: "sched-1" }],
+      nextRunAt: "2026-01-01T00:10:00.000Z",
+    });
+    await expect(
+      commands.deleteSchedule({
+        type: "claude_runtime_delete_schedule",
+        requestId: "req-delete",
+        agentSessionId: "sess-1",
+        scheduleId: "sched-1",
+      }),
+    ).resolves.toMatchObject({
+      type: "claude_runtime_delete_schedule_ack",
+      requestId: "req-delete",
+      deleted: true,
+      scheduleId: "sched-1",
+    });
+
+    expect(schedules.listSchedules).toHaveBeenCalledWith("sess-1");
+    expect(schedules.deleteSchedule).toHaveBeenCalledWith("sess-1", "sched-1");
+  });
+
   it("returns null for fire-and-forget commands and validates required ids", async () => {
     const commands = new ClaudeRuntimeCommands({
       listClaudeRuntimeTasks: vi.fn(async () => ({

@@ -17,7 +17,7 @@
 import type { Logger } from "pino";
 
 import type { AgentProfile } from "../agent_registry.js";
-import type { EnginePort } from "../engine/protocol.js";
+import type { EnginePort, ScheduleToolUseHandler } from "../engine/protocol.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -71,6 +71,7 @@ export class TaskExecutor {
      * `roselin/.local/artifacts/analysis/20260518-2125-ts-delegation-return.md` §3-2).
      */
     completionNotifier?: CompletionNotifier,
+    scheduleToolHandler?: ScheduleToolUseHandler,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       db,
@@ -108,6 +109,7 @@ export class TaskExecutor {
     });
     this.engineTurnRunner = new TaskEngineTurnRunner({
       snapshotPersistence: this.agentsSnapshotPersistence,
+      scheduleToolHandler,
     });
   }
 
