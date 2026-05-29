@@ -196,7 +196,7 @@ export class ClaudeEngineAdapter
       const delivered = await this.client.steerActiveTurn(input);
       if (!delivered) {
         return {
-          status: "no_active_turn",
+          status: "not_accepting_input",
           message: "Claude active input is not accepting steering",
         };
       }

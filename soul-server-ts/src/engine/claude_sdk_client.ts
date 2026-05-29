@@ -143,6 +143,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly emittedSubagentStartIds = new Set<string>();
   private readonly emittedSubagentStopIds = new Set<string>();
   private readonly pendingCompactHookTriggers: string[] = [];
+  private readonly pendingCanUseToolCalls = new Set<symbol>();
   private readonly runtimeTasksById = new Map<string, ClaudeRuntimeTaskSnapshot>();
   private runtimeSessionState: ClaudeRuntimeSessionState | undefined;
 
@@ -262,6 +263,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   steerActiveTurn(input: EngineUserInput): boolean {
     const activeInput = this.activeInput;
     if (!activeInput) return false;
+    if (!this.canAcceptLiveUserInput()) return false;
     return activeInput.push(makeUserMessage(input.prompt, input.imageAttachmentPaths));
   }
 
@@ -372,76 +374,82 @@ export class ClaudeSdkClient implements ClaudeClient {
     options: ClaudeRunOptions,
   ): CanUseTool {
     return async (toolName, input, context) => {
-      if (SOULSTREAM_SCHEDULE_TOOLS.has(toolName)) {
-        if (!options.onScheduleToolUse || !options.agentSessionId) {
+      const pendingToolCall = Symbol(toolName);
+      this.pendingCanUseToolCalls.add(pendingToolCall);
+      try {
+        if (SOULSTREAM_SCHEDULE_TOOLS.has(toolName)) {
+          if (!options.onScheduleToolUse || !options.agentSessionId) {
+            return {
+              behavior: "deny",
+              message: "Soulstream durable scheduler is not configured for this turn.",
+              toolUseID: context.toolUseID,
+            };
+          }
+          try {
+            const result = await options.onScheduleToolUse({
+              agentSessionId: options.agentSessionId,
+              toolUseId: context.toolUseID,
+              toolName,
+              input: asRecord(input) ?? {},
+              now: new Date(),
+            });
+            this.interceptedScheduleToolUseIds.add(context.toolUseID);
+            return {
+              behavior: "deny",
+              message: result.message,
+              toolUseID: context.toolUseID,
+            };
+          } catch (err) {
+            return {
+              behavior: "deny",
+              message: err instanceof Error ? err.message : String(err),
+              toolUseID: context.toolUseID,
+            };
+          }
+        }
+
+        if (toolName !== "AskUserQuestion") {
+          return { behavior: "allow", toolUseID: context.toolUseID };
+        }
+
+        const requestId = randomUUID().replaceAll("-", "").slice(0, 12);
+        const startedAt = Date.now() / 1000;
+        const questions = Array.isArray(input.questions) ? input.questions : [];
+        output.push({
+          type: "input_request",
+          requestId,
+          toolUseId: context.toolUseID,
+          questions,
+          startedAt,
+          timeoutSec: this.inputRequestTimeoutMs / 1000,
+        });
+
+        const response = await this.waitForInputResponse(requestId, context.signal);
+        if (response === INPUT_REQUEST_TIMEOUT) {
+          output.push({ type: "input_request_expired", requestId });
           return {
             behavior: "deny",
-            message: "Soulstream durable scheduler is not configured for this turn.",
+            message: "사용자 응답 대기 시간이 초과되었습니다.",
             toolUseID: context.toolUseID,
           };
         }
-        try {
-          const result = await options.onScheduleToolUse({
-            agentSessionId: options.agentSessionId,
-            toolUseId: context.toolUseID,
-            toolName,
-            input: asRecord(input) ?? {},
-            now: new Date(),
-          });
-          this.interceptedScheduleToolUseIds.add(context.toolUseID);
+        if (response === INPUT_REQUEST_ABORTED) {
           return {
             behavior: "deny",
-            message: result.message,
-            toolUseID: context.toolUseID,
-          };
-        } catch (err) {
-          return {
-            behavior: "deny",
-            message: err instanceof Error ? err.message : String(err),
+            message: "사용자 응답 대기가 중단되었습니다.",
+            interrupt: true,
             toolUseID: context.toolUseID,
           };
         }
-      }
 
-      if (toolName !== "AskUserQuestion") {
-        return { behavior: "allow", toolUseID: context.toolUseID };
-      }
-
-      const requestId = randomUUID().replaceAll("-", "").slice(0, 12);
-      const startedAt = Date.now() / 1000;
-      const questions = Array.isArray(input.questions) ? input.questions : [];
-      output.push({
-        type: "input_request",
-        requestId,
-        toolUseId: context.toolUseID,
-        questions,
-        startedAt,
-        timeoutSec: this.inputRequestTimeoutMs / 1000,
-      });
-
-      const response = await this.waitForInputResponse(requestId, context.signal);
-      if (response === INPUT_REQUEST_TIMEOUT) {
-        output.push({ type: "input_request_expired", requestId });
         return {
-          behavior: "deny",
-          message: "사용자 응답 대기 시간이 초과되었습니다.",
+          behavior: "allow",
+          updatedInput: { ...input, answers: response },
           toolUseID: context.toolUseID,
         };
+      } finally {
+        this.pendingCanUseToolCalls.delete(pendingToolCall);
       }
-      if (response === INPUT_REQUEST_ABORTED) {
-        return {
-          behavior: "deny",
-          message: "사용자 응답 대기가 중단되었습니다.",
-          interrupt: true,
-          toolUseID: context.toolUseID,
-        };
-      }
-
-      return {
-        behavior: "allow",
-        updatedInput: { ...input, answers: response },
-        toolUseID: context.toolUseID,
-      };
     };
   }
 
@@ -1413,6 +1421,22 @@ export class ClaudeSdkClient implements ClaudeClient {
     return false;
   }
 
+  private canAcceptLiveUserInput(): boolean {
+    return (
+      this.pendingCanUseToolCalls.size === 0 &&
+      !this.hasPendingRuntimeWork() &&
+      !this.hasPendingToolUseResults()
+    );
+  }
+
+  private hasPendingToolUseResults(): boolean {
+    for (const toolUseId of this.toolNamesById.keys()) {
+      if (this.interceptedScheduleToolUseIds.has(toolUseId)) continue;
+      if (!this.emittedToolResultIds.has(toolUseId)) return true;
+    }
+    return false;
+  }
+
   private consumePendingCompactHookTrigger(trigger: string): boolean {
     const index = this.pendingCompactHookTriggers.indexOf(trigger);
     if (index === -1) return false;
@@ -1443,6 +1467,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.backgroundAgentToolUseIds.clear();
     this.backgroundAgentTaskIds.clear();
     this.pendingCompactHookTriggers.length = 0;
+    this.pendingCanUseToolCalls.clear();
     this.runtimeTasksById.clear();
     this.runtimeSessionState = undefined;
   }

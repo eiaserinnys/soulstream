@@ -215,6 +215,7 @@ export type LiveTurnSteerStatus =
   | "delivered"
   | "not_supported"
   | "no_active_turn"
+  | "not_accepting_input"
   | "turn_mismatch"
   | "failed";
 

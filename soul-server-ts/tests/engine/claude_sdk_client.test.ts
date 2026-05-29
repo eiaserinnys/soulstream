@@ -1528,6 +1528,254 @@ describe("ClaudeSdkClient", () => {
     expect(client.steerActiveTurn({ prompt: "after run" })).toBe(false);
   });
 
+  it("rejects live steering while an SDK tool_use is waiting for its tool_result", async () => {
+    const prompts: string[] = [];
+    const readyDuringToolUse = deferred<void>();
+    const releaseToolResult = deferred<void>();
+    const readyAfterToolResult = deferred<void>();
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const input = params.prompt as AsyncIterable<SDKUserMessage>;
+              const iterator = input[Symbol.asyncIterator]();
+              const initial = await iterator.next();
+              prompts.push(messageText(initial.value));
+              yield {
+                type: "assistant",
+                message: {
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "toolu-mid",
+                      name: "Bash",
+                      input: { command: "sleep 1" },
+                    },
+                  ],
+                },
+                parent_tool_use_id: null,
+                uuid: "assistant-tool",
+                session_id: "claude-sess-tool",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-tool", "", { stop_reason: "tool_use" });
+              readyDuringToolUse.resolve();
+              await releaseToolResult.promise;
+              yield {
+                type: "user",
+                message: {
+                  role: "user",
+                  content: [
+                    {
+                      type: "tool_result",
+                      tool_use_id: "toolu-mid",
+                      content: "done",
+                      is_error: false,
+                    },
+                  ],
+                },
+                parent_tool_use_id: null,
+                uuid: "user-tool-result",
+                session_id: "claude-sess-tool",
+              } as unknown as SDKMessage;
+              readyAfterToolResult.resolve();
+              const injected = await iterator.next();
+              prompts.push(messageText(injected.value));
+              yield {
+                type: "assistant",
+                message: { content: [{ type: "text", text: messageText(injected.value) }] },
+                parent_tool_use_id: null,
+                uuid: "assistant-after-tool",
+                session_id: "claude-sess-tool",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-tool", "done");
+            })(),
+          ),
+      },
+      silentLogger,
+    );
+
+    const eventsPromise = collect(
+      client.run(
+        {
+          prompt: "first",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+        },
+        new AbortController().signal,
+      ),
+    );
+    await readyDuringToolUse.promise;
+    expect(client.steerActiveTurn({ prompt: "during tool use" })).toBe(false);
+    releaseToolResult.resolve();
+    await readyAfterToolResult.promise;
+    expect(client.steerActiveTurn({ prompt: "after tool result" })).toBe(true);
+    const events = await eventsPromise;
+
+    expect(prompts).toEqual(["first", "after tool result"]);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool_result", toolUseId: "toolu-mid" }),
+        expect.objectContaining({ type: "text", text: "after tool result" }),
+      ]),
+    );
+  });
+
+  it("rejects live steering while Claude runtime work is pending and accepts after idle", async () => {
+    const prompts: string[] = [];
+    const readyWhileRuntimePending = deferred<void>();
+    const releaseRuntimeIdle = deferred<void>();
+    const readyAfterRuntimeIdle = deferred<void>();
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const input = params.prompt as AsyncIterable<SDKUserMessage>;
+              const iterator = input[Symbol.asyncIterator]();
+              const initial = await iterator.next();
+              prompts.push(messageText(initial.value));
+              yield {
+                type: "system",
+                subtype: "session_state_changed",
+                state: "running",
+                session_id: "claude-sess-runtime",
+              } as unknown as SDKMessage;
+              readyWhileRuntimePending.resolve();
+              await releaseRuntimeIdle.promise;
+              yield {
+                type: "system",
+                subtype: "session_state_changed",
+                state: "idle",
+                session_id: "claude-sess-runtime",
+              } as unknown as SDKMessage;
+              readyAfterRuntimeIdle.resolve();
+              const injected = await iterator.next();
+              prompts.push(messageText(injected.value));
+              yield {
+                type: "assistant",
+                message: { content: [{ type: "text", text: messageText(injected.value) }] },
+                parent_tool_use_id: null,
+                uuid: "assistant-after-runtime",
+                session_id: "claude-sess-runtime",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-runtime", "done");
+            })(),
+          ),
+      },
+      silentLogger,
+    );
+
+    const eventsPromise = collect(
+      client.run(
+        {
+          prompt: "first",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+        },
+        new AbortController().signal,
+      ),
+    );
+    await readyWhileRuntimePending.promise;
+    expect(client.steerActiveTurn({ prompt: "during runtime work" })).toBe(false);
+    releaseRuntimeIdle.resolve();
+    await readyAfterRuntimeIdle.promise;
+    expect(client.steerActiveTurn({ prompt: "after runtime idle" })).toBe(true);
+    const events = await eventsPromise;
+
+    expect(prompts).toEqual(["first", "after runtime idle"]);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "claude_runtime_session_state", state: "running" }),
+        expect.objectContaining({ type: "claude_runtime_session_state", state: "idle" }),
+        expect.objectContaining({ type: "text", text: "after runtime idle" }),
+      ]),
+    );
+  });
+
+  it("rejects live steering while canUseTool is waiting for AskUserQuestion response", async () => {
+    const prompts: string[] = [];
+    const permissions: PermissionResult[] = [];
+    const readyAfterCanUseTool = deferred<void>();
+    const client = new ClaudeSdkClient(
+      {
+        inputRequestTimeoutMs: 30_000,
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const input = params.prompt as AsyncIterable<SDKUserMessage>;
+              const iterator = input[Symbol.asyncIterator]();
+              const initial = await iterator.next();
+              prompts.push(messageText(initial.value));
+              const permission = await params.options?.canUseTool?.(
+                "AskUserQuestion",
+                { questions: [{ id: "q1", prompt: "Continue?" }] },
+                {
+                  signal: new AbortController().signal,
+                  toolUseID: "toolu-ask",
+                },
+              );
+              if (permission) permissions.push(permission);
+              readyAfterCanUseTool.resolve();
+              const injected = await iterator.next();
+              prompts.push(messageText(injected.value));
+              yield {
+                type: "assistant",
+                message: { content: [{ type: "text", text: messageText(injected.value) }] },
+                parent_tool_use_id: null,
+                uuid: "assistant-after-ask",
+                session_id: "claude-sess-ask",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-ask", "done");
+            })(),
+          ),
+      },
+      silentLogger,
+    );
+
+    const iterator = client.run(
+      {
+        prompt: "first",
+        workspaceDir: "/tmp/claude-work",
+        env: {},
+      },
+      new AbortController().signal,
+    )[Symbol.asyncIterator]();
+
+    const inputRequest = await iterator.next();
+    expect(inputRequest.value).toMatchObject({
+      type: "input_request",
+      toolUseId: "toolu-ask",
+    });
+    expect(client.steerActiveTurn({ prompt: "during canUseTool" })).toBe(false);
+    expect(
+      client.deliverInputResponse(
+        (inputRequest.value as Extract<ClaudeClientEvent, { type: "input_request" }>).requestId,
+        { q1: "yes" },
+      ),
+    ).toBe(true);
+    await readyAfterCanUseTool.promise;
+    expect(client.steerActiveTurn({ prompt: "after canUseTool" })).toBe(true);
+    const events = await collectIterator(iterator);
+
+    expect(permissions).toEqual([
+      {
+        behavior: "allow",
+        updatedInput: {
+          questions: [{ id: "q1", prompt: "Continue?" }],
+          answers: { q1: "yes" },
+        },
+        toolUseID: "toolu-ask",
+      },
+    ]);
+    expect(prompts).toEqual(["first", "after canUseTool"]);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "text", text: "after canUseTool" }),
+      ]),
+    );
+  });
+
   it("steers active turn image attachments as content blocks", async () => {
     const dir = mkdtempSync(join(tmpdir(), "claude-intervention-image-"));
     try {

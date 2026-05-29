@@ -405,6 +405,35 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     await expect(iterator.next()).resolves.toMatchObject({ done: true });
   });
 
+  it("maps active client input refusal to not_accepting_input so callers can queue", async () => {
+    const release = deferred<void>();
+    const client: ClaudeClient = {
+      async *run(): AsyncIterable<ClaudeClientEvent> {
+        yield { type: "session", sessionId: "claude-sess-not-accepting" };
+        await release.promise;
+        yield { type: "complete" };
+      },
+      steerActiveTurn: vi.fn().mockReturnValue(false),
+    };
+    const engine = new ClaudeEngineAdapter(
+      { workspaceDir: "/tmp/claude-work", client, processEnv: {} },
+      silentLogger,
+    );
+
+    const iterator = engine.execute({ prompt: "hi" })[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { type: "session", session_id: "claude-sess-not-accepting" },
+    });
+
+    await expect(engine.steerActiveTurn({ prompt: "queue this" })).resolves.toEqual({
+      status: "not_accepting_input",
+      message: "Claude active input is not accepting steering",
+    });
+
+    release.resolve();
+    await collectIterator(iterator);
+  });
+
   it("Claude live steering 미지원/비활성/실패 상태를 명시적으로 반환한다", async () => {
     const unsupportedRelease = deferred<void>();
     const unsupportedClient: ClaudeClient = {
