@@ -136,7 +136,50 @@ async def test_input_request_emits_push():
 
     assert provider.send.await_count == 1
     assert provider.send.await_args.args[1] == "입력 요청"
-    assert provider.send.await_args.args[2] == "Continue?"
+    assert provider.send.await_args.args[2] == "S1: Continue?"
+
+
+@pytest.mark.asyncio
+async def test_input_request_body_includes_session_name_and_50_char_excerpt():
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    await notifier._on_change(
+        "node_session_input_request",
+        "node-A",
+        _data(
+            agentSessionId="S1",
+            session_name="Investigate notification path",
+            prompt="가" * 80,
+        ),
+    )
+
+    body = provider.send.await_args.args[2]
+    assert body == f"Investigate notification path: {'가' * 50}…"
+    assert len(body.split(": ", 1)[1]) == 51
+
+
+@pytest.mark.asyncio
+async def test_input_request_foreground_observer_skips_push(caplog):
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+
+    caplog.set_level("INFO", logger="soulstream_server.push.notifier")
+    await notifier._on_change(
+        "node_session_input_request",
+        "node-A",
+        _data(
+            agentSessionId="S1",
+            session_name="Visible session",
+            prompt="Continue?",
+            foreground_observer_count=1,
+        ),
+    )
+
+    provider.send.assert_not_awaited()
+    repo.list_tokens.assert_not_awaited()
+    assert "foreground observer" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -518,6 +561,19 @@ _FILTER_MATRIX = [
 ]
 
 
+# input_request는 사용자의 직접 응답으로 세션이 막힌 상태라 delegated agent 세션도 알린다.
+_INPUT_REQUEST_FILTER_MATRIX = [
+    ("llm_browser_blocked",           "llm",    "browser",            0),
+    ("claude_channel_observer",       "claude", "channel_observer",   0),
+    ("claude_trello_watcher",         "claude", "trello_watcher",     0),
+    ("claude_agent_passes",           "claude", "agent",              1),
+    ("claude_caller_source_none",     "claude", None,                 0),
+    ("claude_slack_passes",           "claude", "slack",              1),
+    ("claude_browser_passes",         "claude", "browser",            1),
+    ("claude_soul_app_passes",        "claude", "soul-app",           1),
+]
+
+
 @pytest.mark.parametrize(
     "case_id,session_type,caller_source,expect_count",
     _FILTER_MATRIX,
@@ -564,8 +620,8 @@ async def test_session_updated_filter_matrix(
 
 @pytest.mark.parametrize(
     "case_id,session_type,caller_source,expect_count",
-    _FILTER_MATRIX,
-    ids=[c[0] for c in _FILTER_MATRIX],
+    _INPUT_REQUEST_FILTER_MATRIX,
+    ids=[c[0] for c in _INPUT_REQUEST_FILTER_MATRIX],
 )
 @pytest.mark.asyncio
 async def test_input_request_filter_matrix(
@@ -641,8 +697,8 @@ async def test_push_unaffected_by_v1_caller_info_extra_keys():
 
 
 @pytest.mark.asyncio
-async def test_whitelist_unchanged_after_v1_introduction():
-    """v1 도입 후에도 화이트리스트는 ('slack', 'browser', 'soul-app') 그대로.
+async def test_completed_whitelist_unchanged_after_v1_introduction():
+    """완료 알림 화이트리스트는 ('slack', 'browser', 'soul-app') 그대로.
     'agent'/'api'는 silent skip 유지 (atom a3d3c812 정본 보존)."""
     notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
     repo.list_tokens.return_value = [("dev-1", "tok-1")]
@@ -651,11 +707,22 @@ async def test_whitelist_unchanged_after_v1_introduction():
     for excluded_source in ("agent", "api"):
         provider.send.reset_mock()
         await notifier._on_change(
-            "node_session_input_request",
+            "node_session_session_updated",
             "node-A",
             {
-                "agent_session_id": "S2",
-                "prompt": "Continue?",
+                "agent_session_id": f"S-{excluded_source}",
+                "status": "running",
+                "session_type": "claude",
+                "caller_source": excluded_source,
+                "display_name": "Test",
+            },
+        )
+        await notifier._on_change(
+            "node_session_session_updated",
+            "node-A",
+            {
+                "agent_session_id": f"S-{excluded_source}",
+                "status": "completed",
                 "session_type": "claude",
                 "caller_source": excluded_source,
                 "display_name": "Test",  # v1 필드 무관
@@ -664,3 +731,26 @@ async def test_whitelist_unchanged_after_v1_introduction():
         assert provider.send.await_count == 0, (
             f"caller_source={excluded_source!r}는 silent skip이어야 함"
         )
+
+
+@pytest.mark.asyncio
+async def test_input_request_allows_agent_source_after_v1_introduction():
+    notifier, provider, repo = _make_notifier(user_info={"email": "a@b.com"})
+    repo.list_tokens.return_value = [("dev-1", "tok-1")]
+    provider.send.return_value = SendResult(ok=True, invalid_token=False)
+
+    await notifier._on_change(
+        "node_session_input_request",
+        "node-A",
+        {
+            "agent_session_id": "S-agent",
+            "prompt": "Continue?",
+            "session_type": "claude",
+            "caller_source": "agent",
+            "display_name": "Test",
+        },
+    )
+
+    assert provider.send.await_count == 1
+    data_arg = provider.send.await_args.args[3]
+    assert data_arg["callerSource"] == "agent"

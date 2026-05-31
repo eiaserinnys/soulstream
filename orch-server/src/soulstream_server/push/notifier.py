@@ -28,6 +28,9 @@ logger = logging.getLogger(__name__)
 # 푸시 알림 body 길이 — iOS는 약 178자에서 잘리므로 100자 안팎이 안전.
 # 잘릴 때 멀티바이트 깨짐 방지를 위해 단어 경계 우선 절단.
 _PUSH_BODY_MAX = 100
+_INPUT_REQUEST_EXCERPT_MAX = 50
+_COMPLETION_ALLOWED_SOURCES = ("slack", "browser", "soul-app")
+_INPUT_REQUEST_ALLOWED_SOURCES = (*_COMPLETION_ALLOWED_SOURCES, "agent")
 
 
 def _meaningful_preview(value: Any) -> str:
@@ -72,6 +75,77 @@ def _push_body_preview(
             truncated = truncated[:last_space]
         text = truncated + "…"
     return text
+
+
+def _truncate_text(text: str, max_len: int) -> str:
+    if len(text) <= max_len:
+        return text
+    truncated = text[:max_len].rstrip()
+    last_space = truncated.rfind(" ")
+    if last_space > max_len * 0.6:
+        truncated = truncated[:last_space]
+    return truncated + "…"
+
+
+def _wire_session_id(data: dict) -> str | None:
+    session_id = (
+        data.get("agent_session_id")
+        or data.get("agentSessionId")
+        or data.get("session_id")
+        or data.get("sessionId")
+    )
+    return session_id if isinstance(session_id, str) and session_id else None
+
+
+def _wire_session_type(data: dict) -> str:
+    value = data.get("session_type") or data.get("sessionType") or ""
+    return str(value).lower()
+
+
+def _wire_caller_source(data: dict) -> str:
+    value = data.get("caller_source") or data.get("callerSource") or ""
+    return str(value).lower()
+
+
+def _foreground_observer_count(data: dict) -> int:
+    raw = data.get("foreground_observer_count") or data.get("foregroundObserverCount")
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _input_request_title(data: dict) -> str:
+    kind = data.get("response_wait_kind") or data.get("responseWaitKind")
+    return {
+        "ask_user_question": "입력 요청",
+        "exit_plan_mode": "플랜 검토 요청",
+        "permission_prompt": "권한 요청",
+        "tool_approval": "도구 승인 요청",
+    }.get(kind, "입력 요청")
+
+
+def _input_request_body(data: dict, session_id: str) -> str:
+    session_name = next(
+        (
+            preview
+            for candidate in (
+                data.get("session_name"),
+                data.get("sessionName"),
+                data.get("display_name"),
+                data.get("displayName"),
+            )
+            if (preview := _meaningful_preview(candidate))
+        ),
+        session_id[:8],
+    )
+    excerpt = _meaningful_preview(data.get("prompt"))
+    if not excerpt:
+        excerpt = "에이전트가 입력을 기다리고 있습니다"
+    return (
+        f"{_truncate_text(session_name, 40)}: "
+        f"{_truncate_text(excerpt, _INPUT_REQUEST_EXCERPT_MAX)}"
+    )
 
 
 class PushNotifier:
@@ -122,19 +196,15 @@ class PushNotifier:
         # 화이트리스트 게이트: LLM 세션과 비-사용자 시작 세션 차단.
         # 메타 소스: session_broadcaster가 wire에 싣는 session_type / caller_source.
         # session_type == "llm" 또는 caller_source ∉ {slack, browser, soul-app} 이면 silent skip.
-        if data.get("session_type") == "llm":
+        if _wire_session_type(data) == "llm":
             return
-        src = (data.get("caller_source") or "").lower()
-        if src not in ("slack", "browser", "soul-app"):
+        src = _wire_caller_source(data)
+        if src not in _COMPLETION_ALLOWED_SOURCES:
             return
         # wire format: soul-server `emit_session_updated` / `emit_session_phase`는
         # snake_case `agent_session_id`를 사용한다 (session_broadcaster.py:72,94).
         # 옛 wire(camelCase agentSessionId)도 호환성 유지를 위해 fallback에 둔다.
-        session_id = (
-            data.get("agent_session_id")
-            or data.get("agentSessionId")
-            or data.get("session_id")
-        )
+        session_id = _wire_session_id(data)
         new_status = (data.get("status") or "").lower()
         if not session_id or not new_status:
             logger.info(
@@ -173,39 +243,38 @@ class PushNotifier:
             )
 
     async def _handle_input_request(self, node_id: str, data: dict) -> None:
-        # 화이트리스트 게이트 (대칭): _handle_session_updated와 동일.
-        if data.get("session_type") == "llm":
+        if _wire_session_type(data) == "llm":
             return
-        src = (data.get("caller_source") or "").lower()
-        if src not in ("slack", "browser", "soul-app"):
+        src = _wire_caller_source(data)
+        if src not in _INPUT_REQUEST_ALLOWED_SOURCES:
             return
-        # wire format은 _handle_session_updated와 동일하게 snake_case 정본 + camel/legacy fallback.
-        session_id = (
-            data.get("agent_session_id")
-            or data.get("agentSessionId")
-            or data.get("session_id")
-        )
+        session_id = _wire_session_id(data)
         if not session_id:
             logger.info("[push] input_request skipped — no session_id (data_keys=%s)", sorted((data or {}).keys()))
             return
-        prompt = (data.get("prompt") or "").strip()
-        if prompt:
-            body = prompt if len(prompt) <= _PUSH_BODY_MAX else prompt[:_PUSH_BODY_MAX].rstrip() + "…"
-        else:
-            body = "에이전트가 입력을 기다리고 있습니다"
+        foreground_count = _foreground_observer_count(data)
+        if foreground_count > 0:
+            logger.info(
+                "[push] input_request skipped — foreground observer(s) sid=%s count=%d",
+                session_id[:8], foreground_count,
+            )
+            return
+        title = _input_request_title(data)
+        body = _input_request_body(data, session_id)
         logger.info(
             "[push] input_request fire sid=%s body=%r",
             session_id[:8], body[:60],
         )
         await self._send_to_user(
             node_id,
-            title="입력 요청",
+            title=title,
             body=body,
             data={
                 "sessionId": session_id,
                 "kind": "input_request",
-                "sessionType": data.get("session_type"),
-                "callerSource": data.get("caller_source"),
+                "responseWaitKind": data.get("response_wait_kind") or data.get("responseWaitKind"),
+                "sessionType": data.get("session_type") or data.get("sessionType"),
+                "callerSource": data.get("caller_source") or data.get("callerSource"),
             },
         )
 
