@@ -17,7 +17,7 @@
 import type { Logger } from "pino";
 
 import type { AgentProfile } from "../agent_registry.js";
-import type { EnginePort, ScheduleToolUseHandler } from "../engine/protocol.js";
+import type { EnginePort, ScheduleToolUseHandler, SSEEventPayload } from "../engine/protocol.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -37,6 +37,10 @@ import {
   resolveTurnLoopTransition,
 } from "./task_turn_loop_transition.js";
 import { TaskTurnInputBuilder } from "./task_turn_input_builder.js";
+import { failBlockingClaudeRuntimeWork } from "./claude_runtime_state.js";
+
+const CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE =
+  "Claude runtime work remained pending after the engine turn ended; ending the session so follow-up messages can resume.";
 
 /** AgentProfile → EnginePort 생성. backend별 분기는 factory 구현체 담당. */
 export type EngineFactory = (agent: AgentProfile) => EnginePort;
@@ -148,6 +152,7 @@ export class TaskExecutor {
    * resumeThread(task.codexThreadId).
    *
    * 게이트:
+   *   - generator 정상 종료 + foreground runtime pending → status="error" → loop 종료.
    *   - generator 정상 종료 + status="running" + queue empty → status="completed" → loop 종료.
    *   - generator 정상 종료 + status="running" + queue 비어있지 않음 → dequeue → 다음 turn.
    *   - generator throw → status="error" → loop 종료.
@@ -166,7 +171,6 @@ export class TaskExecutor {
     let turnImageAttachmentPaths = initialTurnInput.imageAttachmentPaths;
     const stableSystemPrompt = initialTurnInput.systemPrompt;
     let turnSystemPrompt = initialTurnInput.systemPrompt;
-    let awaitingClaudeRuntime = false;
     try {
       while (true) {
         try {
@@ -189,7 +193,7 @@ export class TaskExecutor {
         // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정
         const transition = resolveTurnLoopTransition(task, agent);
         if (transition.kind === "awaiting_runtime") {
-          awaitingClaudeRuntime = true;
+          await this.publishPendingClaudeRuntimeAfterTurnError(task);
           break;
         }
         if (transition.kind !== "continue") {
@@ -201,14 +205,26 @@ export class TaskExecutor {
         // (intervention_sent는 addIntervention에서 이미 broadcast됨 — 여기서 재발행 안 함.)
       }
     } finally {
-      if (awaitingClaudeRuntime) {
-        return;
-      }
       if (!isOpenAiAgentsApprovalPending(task)) {
         task.completedAt = new Date();
       }
       await this._finalize(task);
     }
+  }
+
+  private async publishPendingClaudeRuntimeAfterTurnError(task: Task): Promise<void> {
+    const failedTasks = failBlockingClaudeRuntimeWork(
+      task,
+      CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE,
+    );
+    await this.engineEventPublisher.publishEngineEvent(task, {
+      type: "error",
+      message: `${CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE} Pending task(s): ${failedTasks
+        .map((runtimeTask) => runtimeTask.taskId)
+        .join(", ") || "unknown"}.`,
+      error_code: "claude_runtime_pending_after_turn",
+      fatal: true,
+    } as SSEEventPayload);
   }
 
   /**
