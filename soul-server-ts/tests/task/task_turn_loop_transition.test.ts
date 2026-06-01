@@ -64,17 +64,16 @@ describe("Task turn loop transition", () => {
     expect(isOpenAiAgentsApprovalPending(task)).toBe(true);
   });
 
-  it("pending Claude runtime work pauses completion before consuming queued interventions", () => {
+  it("foreground pending Claude runtime work pauses completion before consuming queued interventions", () => {
     const task = makeTask({
       claudeRuntime: {
         sessionState: "running",
         updatedAt: Date.now(),
         tasks: {
-          "task-bg-1": {
-            taskId: "task-bg-1",
+          "task-fg-1": {
+            taskId: "task-fg-1",
             status: "running",
             updatedAt: Date.now(),
-            isBackgrounded: true,
           },
         },
       },
@@ -86,6 +85,54 @@ describe("Task turn loop transition", () => {
     expect(decision).toEqual({ kind: "awaiting_runtime" });
     expect(task.interventionQueue).toHaveLength(1);
     expect(task.status).toBe("running");
+  });
+
+  it("background-only Claude runtime work allows queued intervention continuation", () => {
+    const task = makeTask({
+      claudeRuntime: {
+        sessionState: "idle",
+        updatedAt: Date.now(),
+        tasks: {
+          "task-bg-1": {
+            taskId: "task-bg-1",
+            status: "running",
+            updatedAt: Date.now(),
+            isBackgrounded: true,
+          },
+        },
+      },
+      interventionQueue: [{ text: "continue while background runs", user: "u" }],
+    });
+
+    const decision = resolveTurnLoopTransition(task, codexAgent);
+
+    expect(decision.kind).toBe("continue");
+    if (decision.kind !== "continue") throw new Error("expected continue decision");
+    expect(decision.prompt).toContain("continue while background runs");
+    expect(task.interventionQueue).toHaveLength(0);
+    expect(task.status).toBe("running");
+  });
+
+  it("background-only Claude runtime work does not block normal completion", () => {
+    const task = makeTask({
+      claudeRuntime: {
+        sessionState: "idle",
+        updatedAt: Date.now(),
+        tasks: {
+          "task-bg-1": {
+            taskId: "task-bg-1",
+            status: "running",
+            updatedAt: Date.now(),
+            isBackgrounded: true,
+          },
+        },
+      },
+    });
+
+    const decision = resolveTurnLoopTransition(task, codexAgent);
+
+    expect(decision).toEqual({ kind: "stop" });
+    expect(task.status).toBe("completed");
   });
 
   it("idle Claude runtime with terminal tasks allows normal completion", () => {

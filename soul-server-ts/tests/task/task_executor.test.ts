@@ -647,6 +647,79 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
   });
 
+  it("stale foreground Claude runtime task after turn emits fatal error and finalizes", async () => {
+    const mocks = makeMocks();
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.claudeRuntime = {
+      sessionState: "idle",
+      updatedAt: Date.now(),
+      tasks: {
+        "stale-foreground": {
+          taskId: "stale-foreground",
+          status: "running",
+          updatedAt: Date.now(),
+          description: "left behind by a previous turn",
+        },
+      },
+    };
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("error");
+    expect(task.error).toContain("Claude runtime work remained pending after the engine turn ended");
+    expect(task.completedAt).toBeInstanceOf(Date);
+    expect(task.engine).toBeUndefined();
+    expect(task.claudeRuntime).toMatchObject({
+      sessionState: "idle",
+      tasks: {
+        "stale-foreground": {
+          status: "failed",
+          error: expect.stringContaining("engine turn ended"),
+        },
+      },
+    });
+    const errorPersist = mocks.persistEvent.mock.calls.find(
+      (call) => (call[1] as { type: string }).type === "error",
+    );
+    expect(errorPersist?.[1]).toMatchObject({
+      type: "error",
+      fatal: true,
+      error_code: "claude_runtime_pending_after_turn",
+    });
+    const errorBroadcast = mocks.emitEventEnvelope.mock.calls.find(
+      (call) => (call[1] as { type: string }).type === "error",
+    );
+    expect(errorBroadcast?.[1]).toMatchObject({
+      type: "error",
+      fatal: true,
+      error_code: "claude_runtime_pending_after_turn",
+      _event_id: expect.any(Number),
+    });
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+      status: "error",
+      last_event_id: expect.any(Number),
+    });
+    expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
+  });
+
   it("persistEvent 실패는 격리 (계속 진행)", async () => {
     const mocks = makeMocks();
     mocks.persistEvent.mockImplementationOnce(async () => {

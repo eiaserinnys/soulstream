@@ -228,12 +228,46 @@ export function applyClaudeRuntimeEvent(task: Task, event: SSEEventPayload): boo
 }
 
 export function hasPendingClaudeRuntimeWork(task: Task): boolean {
+  return getBlockingClaudeRuntimeWork(task) !== null;
+}
+
+export function failBlockingClaudeRuntimeWork(
+  task: Task,
+  message: string,
+): ClaudeRuntimeTaskState[] {
   const runtime = task.claudeRuntime;
-  if (!runtime) return false;
-  if (runtime.sessionState && runtime.sessionState !== "idle") return true;
-  return Object.values(runtime.tasks).some(
-    (runtimeTask) => !TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES.has(runtimeTask.status),
+  const blocking = getBlockingClaudeRuntimeWork(task);
+  if (!runtime || !blocking) return [];
+
+  const now = Date.now();
+  runtime.updatedAt = now;
+  if (runtime.sessionState && runtime.sessionState !== "idle") {
+    runtime.sessionState = "idle";
+  }
+  for (const runtimeTask of blocking.foregroundTasks) {
+    runtimeTask.status = "failed";
+    runtimeTask.error = message;
+    runtimeTask.updatedAt = now;
+  }
+  return blocking.foregroundTasks;
+}
+
+function getBlockingClaudeRuntimeWork(task: Task): {
+  sessionState?: ClaudeRuntimeSessionState;
+  foregroundTasks: ClaudeRuntimeTaskState[];
+} | null {
+  const runtime = task.claudeRuntime;
+  if (!runtime) return null;
+  const foregroundTasks = Object.values(runtime.tasks).filter(
+    (runtimeTask) =>
+      runtimeTask.isBackgrounded !== true &&
+      !TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES.has(runtimeTask.status),
   );
+  const sessionState = runtime.sessionState && runtime.sessionState !== "idle"
+    ? runtime.sessionState
+    : undefined;
+  if (!sessionState && foregroundTasks.length === 0) return null;
+  return { sessionState, foregroundTasks };
 }
 
 function ensureClaudeRuntimeState(task: Task): ClaudeRuntimeState {
