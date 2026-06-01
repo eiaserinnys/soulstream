@@ -198,19 +198,30 @@ export function LinkedSessionRuntimeIndicator({ status }: { status?: SessionSumm
   );
 }
 
-export function AgentAvatar({ portraitUrl }: { portraitUrl: string | null }) {
+export function AgentAvatar({
+  portraitUrl,
+  agentName,
+}: {
+  portraitUrl: string | null;
+  agentName?: string | null;
+}) {
+  const label = agentName?.trim() || "Agent";
   if (portraitUrl) {
     return (
       <img
         src={portraitUrl}
-        alt=""
+        alt={label}
+        title={label}
         className="h-8 w-8 rounded-lg object-cover shrink-0"
       />
     );
   }
   return (
-    <span className="h-8 w-8 rounded-lg border border-border bg-muted flex items-center justify-center text-xs text-muted-foreground shrink-0">
-      A
+    <span
+      className="h-8 w-8 rounded-lg border border-border bg-muted flex items-center justify-center text-xs text-muted-foreground shrink-0"
+      title={label}
+    >
+      {Array.from(label)[0]?.toUpperCase() ?? "A"}
     </span>
   );
 }

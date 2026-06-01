@@ -3,7 +3,7 @@ import { Loader2, MoreVertical, Pin } from "lucide-react";
 import type { SessionSummary, TaskItem, TaskStatus } from "../shared";
 import { cn } from "../lib/cn";
 import { Button } from "./ui/button";
-import type { TaskTreeRow } from "./task-tree-layout";
+import { resolveLinkedTaskSession, type TaskTreeRow } from "./task-tree-layout";
 import {
   AgentAvatar,
   LinkedSessionRuntimeIndicator,
@@ -101,10 +101,9 @@ function TaskRowItem({
   const { task } = row;
   const StatusIcon = STATUS_META[task.status].icon;
   const navigationDisabled = !(task.navigationSessionId ?? task.linkedSessionId);
-  const linkedSession = task.linkedSessionId
-    ? sessionById.get(task.linkedSessionId)
-    : undefined;
+  const linkedSession = resolveLinkedTaskSession(task, sessionById);
   const portraitUrl = linkedSession?.agentPortraitUrl ?? null;
+  const agentLabel = linkedSession?.agentName ?? linkedSession?.agentId ?? null;
   const verifiedDone = task.status === "verified_done";
 
   return (
@@ -180,7 +179,15 @@ function TaskRowItem({
       </button>
 
       <LinkedSessionRuntimeIndicator status={linkedSession?.status} />
-      <AgentAvatar portraitUrl={portraitUrl} />
+      {agentLabel && (
+        <span
+          className="hidden max-w-28 shrink truncate text-xs text-muted-foreground sm:inline"
+          title={agentLabel}
+        >
+          {agentLabel}
+        </span>
+      )}
+      <AgentAvatar portraitUrl={portraitUrl} agentName={agentLabel} />
       <Button
         variant="ghost"
         size="icon"

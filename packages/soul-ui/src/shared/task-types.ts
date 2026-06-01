@@ -1,3 +1,5 @@
+import type { SessionSummary } from "./session-types";
+
 export type TaskStatus =
   | "open"
   | "in_progress"
@@ -26,6 +28,7 @@ export interface TaskItem {
   navigationSessionId: string | null;
   navigationNodeId: string | null;
   navigationEventId: number | null;
+  linkedSession?: SessionSummary | null;
   archived: boolean;
   pinned: boolean;
   version: number;

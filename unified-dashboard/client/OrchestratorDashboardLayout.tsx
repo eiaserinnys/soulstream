@@ -65,7 +65,7 @@ export function OrchestratorDashboardLayout() {
   const nodes = useOrchestratorStore((s) => s.nodes);
   const connectionStatus = useOrchestratorStore((s) => s.connectionStatus);
 
-  const { features, nodeId: localNodeId } = useAppConfig();
+  const { features } = useAppConfig();
 
   // 테마 초기화
   useEffect(() => { initTheme(); }, []);
@@ -113,18 +113,12 @@ export function OrchestratorDashboardLayout() {
     return !node || node.status === "disconnected";
   }, [activeSessionKey, activeSession, nodes]);
 
-  // 활성 세션이 다른 노드 소속이면 true (localNodeId가 없으면 판별 불가 → false)
-  const isOtherNodeSession = useMemo(() => {
-    if (!activeSessionKey || !localNodeId) return false;
-    return !!activeSession?.nodeId && activeSession.nodeId !== localNodeId;
-  }, [activeSessionKey, activeSession, localNodeId]);
-
   const chatFileUploadUrl = useMemo(() => {
-    if (!activeSession?.nodeId || isChatInputDisabled || isOtherNodeSession) {
+    if (!activeSession?.nodeId || isChatInputDisabled) {
       return undefined;
     }
     return `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSession.nodeId)}`;
-  }, [activeSession, isChatInputDisabled, isOtherNodeSession]);
+  }, [activeSession, isChatInputDisabled]);
 
   const isMobile = useIsMobile();
 
@@ -188,7 +182,6 @@ export function OrchestratorDashboardLayout() {
       rightPanel={
         <RightPanel
           chatInputDisabled={isChatInputDisabled}
-          isOtherNodeSession={isOtherNodeSession}
           fileUploadUrl={chatFileUploadUrl}
         />
       }
@@ -226,7 +219,6 @@ export function OrchestratorDashboardLayout() {
       mobileChatView={
         <ChatView
           chatInputDisabled={isChatInputDisabled}
-          isOtherNodeSession={isOtherNodeSession}
           fileUploadUrl={chatFileUploadUrl}
         />
       }
