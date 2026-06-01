@@ -179,14 +179,6 @@ function TaskRowItem({
       </button>
 
       <LinkedSessionRuntimeIndicator status={linkedSession?.status} />
-      {agentLabel && (
-        <span
-          className="hidden max-w-28 shrink truncate text-xs text-muted-foreground sm:inline"
-          title={agentLabel}
-        >
-          {agentLabel}
-        </span>
-      )}
       <AgentAvatar portraitUrl={portraitUrl} agentName={agentLabel} />
       <Button
         variant="ghost"
