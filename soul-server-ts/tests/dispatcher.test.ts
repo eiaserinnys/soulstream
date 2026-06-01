@@ -420,7 +420,7 @@ describe("CommandDispatcher.create_session", () => {
     expect(createdTasks[0].oauthToken).toBe("task-oauth-token");
   });
 
-  it("attachment_paths만 오면 비이미지만 attached_files contextItems로 변환하고 전체 경로는 task에 보존", async () => {
+  it("attachment_paths가 오면 prompt 본문에 path note를 추가하고 전체 경로는 task에 보존", async () => {
     const { dispatcher, createdTasks } = createDispatcher();
     await dispatcher.dispatch({
       type: "create_session",
@@ -429,15 +429,12 @@ describe("CommandDispatcher.create_session", () => {
       profile: "codex-default",
       attachment_paths: ["/tmp/a.png", "/tmp/b.txt"],
     });
-    expect(createdTasks[0].contextItems).toEqual([
-      {
-        key: "attached_files",
-        label: "첨부 파일",
-        content:
-          "다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n" +
-          "- /tmp/b.txt",
-      },
-    ]);
+    expect(createdTasks[0].prompt).toBe(
+      "see file\n\n" +
+        "[첨부 파일 로컬 경로: /tmp/a.png]\n" +
+        "[첨부 파일 로컬 경로: /tmp/b.txt]",
+    );
+    expect(createdTasks[0].contextItems).toBeUndefined();
     expect(createdTasks[0].attachmentPaths).toEqual(["/tmp/a.png", "/tmp/b.txt"]);
   });
 

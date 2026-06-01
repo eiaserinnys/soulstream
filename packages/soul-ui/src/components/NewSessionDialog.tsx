@@ -18,6 +18,7 @@ import {
 import { Button } from "./ui/button";
 import { FileAttachmentPreview } from "./FileAttachmentPreview";
 import { useFileUpload } from "../hooks/useFileUpload";
+import { appendAttachmentPathNotes } from "../lib/attachment-path-notes";
 
 /** Soul 서버의 MAX_PROMPT_LENGTH 기본값 */
 const DEFAULT_MAX_LENGTH = 100_000;
@@ -143,7 +144,7 @@ export function NewSessionDialog({
 
     try {
       const paths = fileUploadUrl && uploadedPaths.length > 0 ? uploadedPaths : undefined;
-      await onSubmit(trimmed, paths);
+      await onSubmit(appendAttachmentPathNotes(trimmed, paths), paths);
       submitSucceededRef.current = true;
       // 성공 시 텍스트 초기화. 서버 파일은 유지 (Claude가 읽어야 함)
       setText("");

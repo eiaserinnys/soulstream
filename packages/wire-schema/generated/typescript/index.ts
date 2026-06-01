@@ -879,6 +879,7 @@ export interface CreateSession {
   caller_info?: {
     [k: string]: unknown;
   };
+  attachment_paths?: string[];
   /**
    * Codex-only reasoning effort. Missing means codex adapter default xhigh.
    */

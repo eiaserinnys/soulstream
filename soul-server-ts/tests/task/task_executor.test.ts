@@ -1056,9 +1056,13 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       resumeSessionId: "claude-sess-1",
       hasOnIntervention: false,
     });
-    expect(captured[1].prompt).toContain("<attached_files>");
     expect(captured[1].prompt).toContain("/tmp/incoming/sess/readme.txt");
-    expect(captured[1].prompt.endsWith("지금 반영")).toBe(true);
+    expect(captured[1].prompt).toContain(
+      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
+    );
+    expect(captured[1].prompt.endsWith(
+      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
+    )).toBe(true);
     expect(task.interventionQueue).toHaveLength(0);
     expect(task.status).toBe("completed");
   });
@@ -1125,10 +1129,16 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       imageAttachmentPaths: ["/tmp/incoming/sess/a.png"],
       hasOnIntervention: false,
     });
-    expect(captured[1].prompt).toContain("<attached_files>");
+    expect(captured[1].prompt).toContain(
+      "[첨부 파일 로컬 경로: /tmp/incoming/sess/a.png]",
+    );
+    expect(captured[1].prompt).toContain(
+      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
+    );
     expect(captured[1].prompt).toContain("/tmp/incoming/sess/readme.txt");
-    expect(captured[1].prompt).not.toContain("/tmp/incoming/sess/a.png");
-    expect(captured[1].prompt.endsWith("이 이미지 봐줘")).toBe(true);
+    expect(captured[1].prompt.endsWith(
+      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
+    )).toBe(true);
   });
 
   it("Claude intervention turn에도 첫 turn systemPrompt를 SDK 옵션으로 다시 전달한다", async () => {
@@ -1678,11 +1688,13 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(capturedPrompt).toBe("이 파일 보여?");
+    expect(capturedPrompt).toBe(
+      "이 파일 보여?\n\n[첨부 파일 로컬 경로: /tmp/incoming/sess/a.png]",
+    );
     expect(capturedImageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.png"]);
   });
 
-  it("auto-resume attachmentPaths → 비이미지는 attached_files context에 남고 이미지만 분리된다", async () => {
+  it("auto-resume attachmentPaths → 본문 note에 남고 이미지는 imageAttachmentPaths로도 분리된다", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
@@ -1711,10 +1723,16 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     await task.executionPromise;
 
     expect(capturedImageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.png"]);
-    expect(capturedPrompt).toContain("<attached_files>");
-    expect(capturedPrompt).not.toContain("/tmp/incoming/sess/a.png");
+    expect(capturedPrompt).toContain(
+      "[첨부 파일 로컬 경로: /tmp/incoming/sess/a.png]",
+    );
+    expect(capturedPrompt).toContain(
+      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
+    );
     expect(capturedPrompt).toContain("/tmp/incoming/sess/readme.txt");
-    expect(capturedPrompt.endsWith("첨부 확인")).toBe(true);
+    expect(capturedPrompt.endsWith(
+      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
+    )).toBe(true);
   });
 });
 

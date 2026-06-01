@@ -8,6 +8,7 @@ import type {
 } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
+import { splitAttachmentPaths } from "./attachment_context.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 
 export type RunningInterventionResult =
@@ -121,10 +122,11 @@ export class RunningInterventionTransition {
     if (!supportsLiveTurnSteering(task.engine)) return undefined;
 
     try {
+      const { imagePaths } = splitAttachmentPaths(message.attachmentPaths);
       const steerResult = await task.engine.steerActiveTurn({
         prompt: message.text,
-        ...(message.attachmentPaths && message.attachmentPaths.length > 0
-          ? { imageAttachmentPaths: message.attachmentPaths }
+        ...(imagePaths.length > 0
+          ? { imageAttachmentPaths: imagePaths }
           : {}),
       });
       if (steerResult.status === "delivered") {

@@ -963,8 +963,8 @@ class TestUserInfo:
 class TestAttachmentPaths:
     """attachment_paths 관련 send_create_session / send_intervene 테스트."""
 
-    async def test_send_create_session_includes_extra_context_items_when_attachment_paths(self, node, ws):
-        """attachment_paths가 있으면 extra_context_items를 payload에 포함한다."""
+    async def test_send_create_session_includes_attachment_paths_without_extra_context(self, node, ws):
+        """attachment_paths가 있으면 해당 wire 키만 payload에 포함한다."""
         async def resolve_future(*args, **kwargs):
             data = args[0] if args else kwargs.get("data")
             req_id = data["requestId"]
@@ -980,16 +980,14 @@ class TestAttachmentPaths:
         )
 
         sent = ws.send_json.call_args[0][0]
-        assert "extra_context_items" in sent
-        items = sent["extra_context_items"]
-        assert isinstance(items, list)
-        assert len(items) == 1
-        assert items[0]["key"] == "attached_files"
-        assert "/incoming/abc/file.txt" in items[0]["content"]
-        assert "/incoming/abc/img.png" in items[0]["content"]
+        assert sent["attachment_paths"] == [
+            "/incoming/abc/file.txt",
+            "/incoming/abc/img.png",
+        ]
+        assert "extra_context_items" not in sent
 
-    async def test_send_create_session_merges_explicit_context_and_attachment_paths(self, node, ws):
-        """parent task context와 첨부 파일 context가 함께 전달된다."""
+    async def test_send_create_session_preserves_explicit_context_with_attachment_paths(self, node, ws):
+        """parent task context와 attachment_paths가 서로 다른 wire 키로 전달된다."""
         async def resolve_future(*args, **kwargs):
             data = args[0] if args else kwargs.get("data")
             req_id = data["requestId"]
@@ -1006,10 +1004,8 @@ class TestAttachmentPaths:
         )
 
         sent = ws.send_json.call_args[0][0]
-        assert [item["key"] for item in sent["extra_context_items"]] == [
-            "task_tree_parent",
-            "attached_files",
-        ]
+        assert sent["extra_context_items"] == [{"key": "task_tree_parent", "content": "parent"}]
+        assert sent["attachment_paths"] == ["/incoming/abc/file.txt"]
 
     async def test_send_create_session_no_extra_context_items_when_no_attachment_paths(self, node, ws):
         """attachment_paths가 None이면 extra_context_items를 payload에 포함하지 않는다."""

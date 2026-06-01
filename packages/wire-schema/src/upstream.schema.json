@@ -349,6 +349,10 @@
           "items": { "type": "object", "additionalProperties": true }
         },
         "caller_info": { "type": "object", "additionalProperties": true },
+        "attachment_paths": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
         "reasoningEffort": {
           "type": "string",
           "enum": ["minimal", "low", "medium", "high", "xhigh"],

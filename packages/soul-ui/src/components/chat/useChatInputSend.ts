@@ -13,6 +13,7 @@ import { useCallback, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { EventTreeNode } from "@shared/types";
 import { useAuth } from "../../providers/AuthProvider";
+import { appendAttachmentPathNotes } from "../../lib/attachment-path-notes";
 import { submitIntervention } from "./submitIntervention";
 import { submitResume } from "./submitResume";
 import { submitLlmContinuation } from "./submitLlmContinuation";
@@ -73,10 +74,13 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
+      const attachmentPaths =
+        args.fileUploadUrl && args.uploadedPaths.length > 0 ? args.uploadedPaths : undefined;
+      const messageText = appendAttachmentPathNotes(trimmed, attachmentPaths);
 
       setSending(true);
       setError(null);
-      args.onBeforeSend?.(trimmed);
+      args.onBeforeSend?.(messageText);
 
       try {
         let nextSessionId: string | undefined;
@@ -98,11 +102,9 @@ export function useChatInputSend(args: UseChatInputSendArgs): UseChatInputSendRe
           });
           nextSessionId = result.sessionId;
         } else {
-          const attachmentPaths =
-            args.fileUploadUrl && args.uploadedPaths.length > 0 ? args.uploadedPaths : undefined;
           const ctx = {
             sessionKey: activeSessionKey,
-            text: trimmed,
+            text: messageText,
             attachmentPaths,
             queryClient,
             signal: controller.signal,
