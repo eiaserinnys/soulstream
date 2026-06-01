@@ -15,6 +15,7 @@ export type UISlice = Pick<
   | "isNewSessionModalOpen"
   | "newSessionSource"
   | "newSessionParentTask"
+  | "newSessionDefaults"
   | "activeRightTab"
   | "dashboardConfig"
   | "activeTab"
@@ -44,15 +45,22 @@ export const createUISlice: StateCreator<
   isNewSessionModalOpen: false,
   newSessionSource: "folder",
   newSessionParentTask: null,
+  newSessionDefaults: null,
   activeRightTab: "chat",
   dashboardConfig: null,
   activeTab: "feed",
 
   setSessionTypeFilter: (sessionTypeFilter) => set({ sessionTypeFilter }),
 
-  openNewSessionModal: (source = "folder", parentTask = null) =>
-    set({ isNewSessionModalOpen: true, newSessionSource: source, newSessionParentTask: parentTask }),
-  closeNewSessionModal: () => set({ isNewSessionModalOpen: false, newSessionParentTask: null }),
+  openNewSessionModal: (source = "folder", parentTask = null, defaults = null) =>
+    set({
+      isNewSessionModalOpen: true,
+      newSessionSource: source,
+      newSessionParentTask: parentTask,
+      newSessionDefaults: defaults,
+    }),
+  closeNewSessionModal: () =>
+    set({ isNewSessionModalOpen: false, newSessionParentTask: null, newSessionDefaults: null }),
 
   setActiveRightTab: (activeRightTab) => set({ activeRightTab }),
 

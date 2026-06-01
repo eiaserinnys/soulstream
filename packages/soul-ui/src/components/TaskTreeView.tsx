@@ -7,6 +7,7 @@ import {
 
 import type { SessionSummary, TaskItem, TaskListResponse, TaskStatus } from "../shared";
 import { useDashboardStore } from "../stores/dashboard-store";
+import type { NewSessionDefaults } from "../stores/dashboard-store-types";
 import { Button } from "./ui/button";
 import { VerticalSplitPane } from "./VerticalSplitPane";
 import {
@@ -23,6 +24,7 @@ import {
   TASK_DETAIL_SPLIT_MIN_TOP_PX,
 } from "./task-tree-layout";
 import { createTaskStreamSubscribe } from "./task-stream-subscribe";
+import { resolveTaskChildSessionDefaults } from "./task-child-session-defaults";
 import { TaskContextMenu } from "./TaskTreeParts";
 import { TaskTreeListPanel } from "./TaskTreeListPanel";
 
@@ -41,7 +43,7 @@ const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
 
 export interface TaskTreeViewProps {
   sessions?: SessionSummary[];
-  onNewSession?: (parentTask?: TaskItem) => void;
+  onNewSession?: (parentTask?: TaskItem, defaults?: NewSessionDefaults | null) => void;
 }
 
 interface ContextMenuState {
@@ -72,6 +74,7 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
+  const catalog = useDashboardStore((s) => s.catalog);
 
   const sessionById = useMemo(() => {
     const map = new Map<string, SessionSummary>();
@@ -304,9 +307,9 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
     (task: TaskItem) => {
       setSelectedTaskId(task.id);
       setContextMenu(null);
-      onNewSession?.(task);
+      onNewSession?.(task, resolveTaskChildSessionDefaults(task, sessionById, catalog));
     },
-    [onNewSession],
+    [catalog, onNewSession, sessionById],
   );
 
   const listContent = (

@@ -39,6 +39,7 @@ export function NewSessionModal() {
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const newSessionSource = useDashboardStore((s) => s.newSessionSource);
   const newSessionParentTask = useDashboardStore((s) => s.newSessionParentTask);
+  const newSessionDefaults = useDashboardStore((s) => s.newSessionDefaults);
   const catalog = useDashboardStore((s) => s.catalog);
   const dashboardConfig = useDashboardStore((s) => s.dashboardConfig);
   const setDraft = useDashboardStore((s) => s.setDraft);
@@ -71,13 +72,27 @@ export function NewSessionModal() {
     if (folderInitialized.current || !catalog) return;
 
     folderInitialized.current = true;
-    if (newSessionSource === 'feed') {
+    const defaultFolderId =
+      newSessionDefaults?.folderId &&
+      catalog.folders.some((folder) => folder.id === newSessionDefaults.folderId)
+        ? newSessionDefaults.folderId
+        : null;
+    const defaultAgentId =
+      newSessionDefaults?.agentId &&
+      agents.some((agent) => agent.id === newSessionDefaults.agentId)
+        ? newSessionDefaults.agentId
+        : null;
+
+    if (defaultFolderId) {
+      setSelectedModalFolderId(defaultFolderId);
+    } else if (newSessionSource === 'feed') {
       setSelectedModalFolderId(claudeFolder?.id ?? null);
     } else {
       setSelectedModalFolderId(selectedFolderId);
     }
-    // 에이전트가 하나뿐이면 자동 선택
-    if (agents.length === 1) {
+    if (defaultAgentId) {
+      setSelectedAgentId(defaultAgentId);
+    } else if (agents.length === 1) {
       setSelectedAgentId(agents[0].id);
     }
   }, [isOpen, catalog]); // eslint-disable-line react-hooks/exhaustive-deps

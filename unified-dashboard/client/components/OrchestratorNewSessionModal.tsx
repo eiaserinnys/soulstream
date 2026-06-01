@@ -43,6 +43,7 @@ export function OrchestratorNewSessionModal() {
   const closeNewSessionModal = useDashboardStore((s) => s.closeNewSessionModal);
   const newSessionSource = useDashboardStore((s) => s.newSessionSource);
   const newSessionParentTask = useDashboardStore((s) => s.newSessionParentTask);
+  const newSessionDefaults = useDashboardStore((s) => s.newSessionDefaults);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
   const setDraft = useDashboardStore((s) => s.setDraft);
@@ -98,7 +99,15 @@ export function OrchestratorNewSessionModal() {
     if (folderInitialized.current || !catalog) return;
 
     folderInitialized.current = true;
-    if (newSessionSource === 'feed') {
+    const defaultFolderId =
+      newSessionDefaults?.folderId &&
+      catalog.folders.some((folder) => folder.id === newSessionDefaults.folderId)
+        ? newSessionDefaults.folderId
+        : null;
+
+    if (defaultFolderId) {
+      setSelectedModalFolderId(defaultFolderId);
+    } else if (newSessionSource === 'feed') {
       setSelectedModalFolderId(claudeFolder?.id ?? null);
     } else {
       setSelectedModalFolderId(selectedFolderId);
@@ -117,6 +126,10 @@ export function OrchestratorNewSessionModal() {
   // NewSessionDialog가 즉시 fileUploadUrl을 받아 세션 생성 전 첨부 UI를 표시한다.
   useEffect(() => {
     if (!isModalOpen || selectedNodeId) return;
+    if (newSessionDefaults?.nodeId) {
+      setSelectedNodeId(newSessionDefaults.nodeId);
+      return;
+    }
     if (localNodeId && aliveNodes.some((n) => n.nodeId === localNodeId)) {
       setSelectedNodeId(localNodeId);
       return;
@@ -124,7 +137,7 @@ export function OrchestratorNewSessionModal() {
     if (aliveNodes.length === 1) {
       setSelectedNodeId(aliveNodes[0].nodeId);
     }
-  }, [isModalOpen, selectedNodeId, localNodeId, aliveNodes]);
+  }, [isModalOpen, selectedNodeId, newSessionDefaults?.nodeId, localNodeId, aliveNodes]);
 
   // nodeId 변경 시 에이전트 목록 및 OAuth 프로필 조회
   useEffect(() => {
@@ -134,10 +147,20 @@ export function OrchestratorNewSessionModal() {
     setOauthProfiles([]);
     if (!selectedNodeId) return;
 
+    const defaultAgentId =
+      newSessionDefaults?.agentId &&
+      (!newSessionDefaults.nodeId || newSessionDefaults.nodeId === selectedNodeId)
+        ? newSessionDefaults.agentId
+        : null;
+
     fetch(`/api/nodes/${encodeURIComponent(selectedNodeId)}/agents`)
       .then((res) => res.json())
       .then((data: { agents: AgentInfo[] }) => {
-        setAgents(data.agents ?? []);
+        const nextAgents = data.agents ?? [];
+        setAgents(nextAgents);
+        if (defaultAgentId && nextAgents.some((agent) => agent.id === defaultAgentId)) {
+          setSelectedAgentId(defaultAgentId);
+        }
       })
       .catch(() => {
         // 에이전트 목록 조회 실패 시 graceful degradation
@@ -153,7 +176,7 @@ export function OrchestratorNewSessionModal() {
         // OAuth 프로필 조회 실패 시 graceful degradation
         setOauthProfiles([]);
       });
-  }, [selectedNodeId]);
+  }, [selectedNodeId, newSessionDefaults?.agentId, newSessionDefaults?.nodeId]);
 
   const handleSubmit = useCallback(
     async (prompt: string, attachmentPaths?: string[]) => {
