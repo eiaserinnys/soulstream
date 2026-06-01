@@ -20,7 +20,9 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from soul_common.db.session_db import PostgresSessionDB
+from soulstream_server.api.session_serializer import _session_to_response
 from soulstream_server.api.task_stream import create_task_stream_response
+from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.task_broadcaster import TaskBroadcaster
 
 TaskStatus = Literal[
@@ -129,6 +131,7 @@ class HoldRequest(BaseModel):
 def create_tasks_router(
     db: PostgresSessionDB,
     *,
+    node_manager: NodeManager | None = None,
     broadcaster: TaskBroadcaster | None = None,
     dependencies: list | None = None,
 ) -> APIRouter:
@@ -156,13 +159,13 @@ def create_tasks_router(
             include_archived=includeArchived,
             limit=limit,
         )
-        return {"tasks": [_serialize_task(row) for row in rows]}
+        return {"tasks": await _serialize_tasks(db, rows, node_manager=node_manager)}
 
     @router.get("/stream")
     async def task_stream(request: Request):
         async def load_snapshot() -> list[dict[str, Any]]:
             rows = await _list_tasks(db, include_archived=False, limit=1000)
-            return [_serialize_task(row) for row in rows]
+            return await _serialize_tasks(db, rows, node_manager=node_manager)
 
         return await create_task_stream_response(
             request,
@@ -189,15 +192,19 @@ def create_tasks_router(
             include_archived=False,
             limit=100,
         )
+        path_payload = await _serialize_tasks(db, path, node_manager=node_manager)
+        linked_payload = await _serialize_tasks(db, linked, node_manager=node_manager)
         return {
-            "activeTask": _serialize_task(active) if active else None,
-            "activeTaskPath": [_serialize_task(row) for row in path],
-            "linkedTasks": [_serialize_task(row) for row in linked],
+            "activeTask": await _serialize_task_with_linked(db, active, node_manager=node_manager)
+            if active
+            else None,
+            "activeTaskPath": path_payload,
+            "linkedTasks": linked_payload,
         }
 
     @router.post("", status_code=201)
     async def create_task(body: CreateTaskRequest) -> dict[str, Any]:
-        existing = await _idempotent_result(db, body.idempotency_key)
+        existing = await _idempotent_result(db, body.idempotency_key, node_manager=node_manager)
         if existing:
             return existing
 
@@ -282,11 +289,11 @@ def create_tasks_router(
                 else body.navigation_event_id,
             },
         )
-        return _mutation_response(task, operation, event_id)
+        return await _mutation_response(db, task, operation, event_id, node_manager=node_manager)
 
     @router.post("/{task_id}/status")
     async def set_status(task_id: str, body: StatusRequest) -> dict[str, Any]:
-        existing = await _idempotent_result(db, body.idempotency_key)
+        existing = await _idempotent_result(db, body.idempotency_key, node_manager=node_manager)
         if existing:
             return existing
         task = await _patch_task(
@@ -304,11 +311,11 @@ def create_tasks_router(
             reason=body.reason,
             idempotency_key=body.idempotency_key,
         )
-        return _mutation_response(task, operation, event_id)
+        return await _mutation_response(db, task, operation, event_id, node_manager=node_manager)
 
     @router.patch("/{task_id}")
     async def update_task(task_id: str, body: UpdateTaskRequest) -> dict[str, Any]:
-        existing = await _idempotent_result(db, body.idempotency_key)
+        existing = await _idempotent_result(db, body.idempotency_key, node_manager=node_manager)
         if existing:
             return existing
         fields: dict[str, Any] = {}
@@ -342,11 +349,11 @@ def create_tasks_router(
             reason=body.reason,
             idempotency_key=body.idempotency_key,
         )
-        return _mutation_response(task, operation, event_id)
+        return await _mutation_response(db, task, operation, event_id, node_manager=node_manager)
 
     @router.post("/{task_id}/move")
     async def move_task(task_id: str, body: MoveRequest) -> dict[str, Any]:
-        existing = await _idempotent_result(db, body.idempotency_key)
+        existing = await _idempotent_result(db, body.idempotency_key, node_manager=node_manager)
         if existing:
             return existing
         if await _would_create_cycle(db, task_id, body.new_parent_task_id):
@@ -375,7 +382,7 @@ def create_tasks_router(
             reason=body.reason,
             idempotency_key=body.idempotency_key,
         )
-        return _mutation_response(task, operation, event_id)
+        return await _mutation_response(db, task, operation, event_id, node_manager=node_manager)
 
     @router.post("/{task_id}/link")
     async def link_task(task_id: str, body: LinkRequest) -> dict[str, Any]:
@@ -415,11 +422,11 @@ def create_tasks_router(
                     "navigation_event_id": event_id,
                 },
             )
-        return _mutation_response(task, operation, event_id)
+        return await _mutation_response(db, task, operation, event_id, node_manager=node_manager)
 
     @router.post("/{task_id}/hold")
     async def hold_task(task_id: str, body: HoldRequest) -> dict[str, Any]:
-        existing = await _idempotent_result(db, body.idempotency_key)
+        existing = await _idempotent_result(db, body.idempotency_key, node_manager=node_manager)
         if existing:
             return existing
         task = await _patch_task(
@@ -437,7 +444,7 @@ def create_tasks_router(
             reason=body.reason,
             idempotency_key=body.idempotency_key,
         )
-        return _mutation_response(task, operation, event_id)
+        return await _mutation_response(db, task, operation, event_id, node_manager=node_manager)
 
     @router.post("/{task_id}/archive")
     async def archive_task(task_id: str, body: ArchiveRequest) -> dict[str, Any]:
@@ -458,11 +465,11 @@ def create_tasks_router(
             payload={"archived": True},
             reason=body.reason,
         )
-        return _mutation_response(task, operation, event_id)
+        return await _mutation_response(db, task, operation, event_id, node_manager=node_manager)
 
     @router.post("/{task_id}/pin")
     async def pin_task(task_id: str, body: PinRequest) -> dict[str, Any]:
-        existing = await _idempotent_result(db, body.idempotency_key)
+        existing = await _idempotent_result(db, body.idempotency_key, node_manager=node_manager)
         if existing:
             return existing
         task = await _patch_task(
@@ -480,7 +487,7 @@ def create_tasks_router(
             reason=body.reason,
             idempotency_key=body.idempotency_key,
         )
-        return _mutation_response(task, operation, event_id)
+        return await _mutation_response(db, task, operation, event_id, node_manager=node_manager)
 
     @router.get("/{task_id}/operations")
     async def list_operations(
@@ -629,6 +636,8 @@ async def _would_create_cycle(
 async def _idempotent_result(
     db: PostgresSessionDB,
     idempotency_key: str | None,
+    *,
+    node_manager: NodeManager | None = None,
 ) -> dict[str, Any] | None:
     if not idempotency_key:
         return None
@@ -645,7 +654,9 @@ async def _idempotent_result(
             operation["task_id"],
         )
     return {
-        "task": _serialize_task(task) if task else None,
+        "task": await _serialize_task_with_linked(db, task, node_manager=node_manager)
+        if task
+        else None,
         "operation": _serialize_operation(operation),
         "eventId": operation["actor_event_id"],
         "idempotent": True,
@@ -740,15 +751,76 @@ async def _patch_task(
     return row
 
 
-def _mutation_response(task, operation, event_id: int) -> dict[str, Any]:
+async def _mutation_response(
+    db: PostgresSessionDB,
+    task,
+    operation,
+    event_id: int,
+    *,
+    node_manager: NodeManager | None = None,
+) -> dict[str, Any]:
     return {
-        "task": _serialize_task(task),
+        "task": await _serialize_task_with_linked(db, task, node_manager=node_manager),
         "operation": _serialize_operation(operation),
         "eventId": event_id,
     }
 
 
-def _serialize_task(row) -> dict[str, Any]:
+async def _serialize_task_with_linked(
+    db: PostgresSessionDB,
+    row,
+    *,
+    node_manager: NodeManager | None = None,
+) -> dict[str, Any]:
+    linked_sessions = await _linked_sessions_by_id(db, [row])
+    return _serialize_task(
+        row,
+        linked_session=linked_sessions.get(row["linked_session_id"]),
+        node_manager=node_manager,
+    )
+
+
+async def _serialize_tasks(
+    db: PostgresSessionDB,
+    rows,
+    *,
+    node_manager: NodeManager | None = None,
+) -> list[dict[str, Any]]:
+    row_list = list(rows)
+    linked_sessions = await _linked_sessions_by_id(db, row_list)
+    return [
+        _serialize_task(
+            row,
+            linked_session=linked_sessions.get(row["linked_session_id"]),
+            node_manager=node_manager,
+        )
+        for row in row_list
+    ]
+
+
+async def _linked_sessions_by_id(db: PostgresSessionDB, rows) -> dict[str, Any]:
+    linked_session_ids = sorted(
+        {
+            row["linked_session_id"]
+            for row in rows
+            if row["linked_session_id"]
+        }
+    )
+    if not linked_session_ids:
+        return {}
+    session_rows = await db.pool.fetch(
+        "SELECT * FROM sessions WHERE session_id = ANY($1::text[])",
+        linked_session_ids,
+    )
+    return {row["session_id"]: row for row in session_rows}
+
+
+def _serialize_task(
+    row,
+    *,
+    linked_session=None,
+    node_manager: NodeManager | None = None,
+) -> dict[str, Any]:
     return {
         "id": row["id"],
         "parentId": row["parent_id"],
@@ -771,6 +843,9 @@ def _serialize_task(row) -> dict[str, Any]:
         "version": row["version"],
         "createdAt": _iso(row["created_at"]),
         "updatedAt": _iso(row["updated_at"]),
+        "linkedSession": _session_to_response(linked_session, node_manager)
+        if linked_session
+        else None,
     }
 
 

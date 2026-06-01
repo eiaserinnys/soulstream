@@ -46,9 +46,50 @@ def _task_row(**overrides):
     return base
 
 
+def _session_row(**overrides):
+    base = {
+        "session_id": "child-session",
+        "status": "running",
+        "prompt": "Work on child task",
+        "created_at": datetime(2026, 5, 26, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 5, 26, tzinfo=timezone.utc),
+        "session_type": "codex",
+        "last_message": None,
+        "client_id": None,
+        "metadata": None,
+        "display_name": "Child task session",
+        "node_id": "node-child",
+        "folder_id": None,
+        "last_event_id": 10,
+        "last_read_event_id": 0,
+        "caller_session_id": "parent-session",
+        "agent_id": "agent-child",
+    }
+    base.update(overrides)
+    return base
+
+
+class FakeNodeManager:
+    def find_agent_profile(self, agent_id, node_id):
+        if agent_id == "agent-child":
+            return (
+                {
+                    "name": "Child Agent",
+                    "backend": "codex",
+                    "portrait_url": "/portrait.png",
+                },
+                node_id,
+            )
+        return None
+
+    def get_user_info(self, node_id):
+        return {}
+
+
 class FakeTaskPool:
     def __init__(self):
         self.task = _task_row()
+        self.session = _session_row()
         self.operation = {
             "id": "operation-1",
             "task_id": "task-1",
@@ -111,6 +152,14 @@ class FakeTaskPool:
             return self.task
         raise AssertionError(f"unhandled fetchrow query: {normalized}")
 
+    async def fetch(self, query, *args):
+        normalized = " ".join(str(query).split())
+        if "FROM task_items" in normalized:
+            return [self.task]
+        if "FROM sessions WHERE session_id = ANY" in normalized:
+            return [self.session] if self.session["session_id"] in set(args[0]) else []
+        raise AssertionError(f"unhandled fetch query: {normalized}")
+
     async def fetchval(self, query, *args):
         normalized = " ".join(str(query).split())
         if "SELECT EXISTS" in normalized:
@@ -126,8 +175,8 @@ class FakeTaskDB:
         return 101
 
 
-def _endpoint(path: str, method: str = "POST"):
-    router = create_tasks_router(FakeTaskDB())
+def _endpoint(path: str, method: str = "POST", db=None, node_manager=None):
+    router = create_tasks_router(db or FakeTaskDB(), node_manager=node_manager)
     return next(
         route.endpoint
         for route in router.routes
@@ -246,3 +295,26 @@ async def test_create_with_linked_session_defaults_navigation_to_linked_session_
     assert result["task"]["navigationNodeId"] == "node-linked"
     assert result["task"]["navigationEventId"] is None
     assert result["task"]["createdFromEventId"] == 101
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_embeds_linked_session_summary_for_unloaded_client_page():
+    db = FakeTaskDB()
+    endpoint = _endpoint("/api/tasks", method="GET", db=db, node_manager=FakeNodeManager())
+
+    result = await endpoint(
+        query=None,
+        status=None,
+        rootTaskId=None,
+        linkedSessionId=None,
+        includeArchived=False,
+        limit=500,
+    )
+
+    task = result["tasks"][0]
+    assert task["linkedSessionId"] == "child-session"
+    assert task["linkedSession"]["agentSessionId"] == "child-session"
+    assert task["linkedSession"]["nodeId"] == "node-child"
+    assert task["linkedSession"]["agentId"] == "agent-child"
+    assert task["linkedSession"]["agentName"] == "Child Agent"
+    assert task["linkedSession"]["agentPortraitUrl"] == "/api/nodes/node-child/agents/agent-child/portrait"

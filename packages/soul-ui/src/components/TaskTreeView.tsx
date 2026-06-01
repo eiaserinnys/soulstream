@@ -201,7 +201,7 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
       const sessionId = task.navigationSessionId ?? task.linkedSessionId;
       if (!sessionId) return;
       setActiveSession(sessionId);
-      setActiveSessionSummary(resolveTaskNavigationSummary(sessionById, sessionId));
+      setActiveSessionSummary(resolveTaskNavigationSummary(sessionById, sessionId, task));
       setFocusEventId(task.navigationEventId ?? null);
       setActiveTab("chat");
     },

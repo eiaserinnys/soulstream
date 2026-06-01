@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { TaskItem } from "../shared";
+import type { SessionSummary, TaskItem } from "../shared";
 import {
   buildTaskStreamUrl,
   buildTaskTreeRows,
   clampTaskDetailSplitTopPercent,
+  resolveLinkedTaskSession,
+  resolveTaskNavigationSummary,
   resolveTaskTreeHeaderAction,
 } from "./task-tree-layout";
 import { STATUS_META, STATUS_OPTIONS } from "./TaskTreeParts";
@@ -31,6 +33,18 @@ function task(id: string, parentId: string | null, positionKey: number): TaskIte
     version: 1,
     createdAt: `2026-05-26T00:00:0${positionKey}.000Z`,
     updatedAt: "2026-05-26T00:00:00.000Z",
+  };
+}
+
+function session(agentSessionId: string, nodeId: string): SessionSummary {
+  return {
+    agentSessionId,
+    status: "running",
+    eventCount: 12,
+    nodeId,
+    agentId: "agent-child",
+    agentName: "Child Agent",
+    agentPortraitUrl: "/api/nodes/node-child/agents/agent-child/portrait",
   };
 }
 
@@ -150,6 +164,39 @@ describe("buildTaskStreamUrl", () => {
     expect(buildTaskStreamUrl("42", "orch-A")).toBe(
       "/api/tasks/stream?lastEventId=42&instanceId=orch-A",
     );
+  });
+});
+
+describe("resolveLinkedTaskSession", () => {
+  it("uses the task embedded linked session when the session is outside the visible page", () => {
+    const embedded = session("child-session", "node-child");
+    const item = {
+      ...task("task-1", null, 1),
+      linkedSessionId: "child-session",
+      linkedNodeId: "node-child",
+      navigationSessionId: "child-session",
+      navigationNodeId: "node-child",
+      linkedSession: embedded,
+    };
+
+    expect(resolveLinkedTaskSession(item, new Map())).toBe(embedded);
+    expect(resolveTaskNavigationSummary(new Map(), "child-session", item)).toBe(embedded);
+  });
+
+  it("keeps the navigation node on fallback summaries when no session metadata is available", () => {
+    const item = {
+      ...task("task-1", null, 1),
+      linkedSessionId: "child-session",
+      linkedNodeId: "node-child",
+      navigationSessionId: "child-session",
+      navigationNodeId: "node-child",
+    };
+
+    expect(resolveTaskNavigationSummary(new Map(), "child-session", item)).toMatchObject({
+      agentSessionId: "child-session",
+      nodeId: "node-child",
+      status: "unknown",
+    });
   });
 });
 

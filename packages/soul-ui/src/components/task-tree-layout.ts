@@ -88,13 +88,37 @@ export function resolveTaskTreeHeaderAction(onNewSession?: () => void):
 export function resolveTaskNavigationSummary(
   sessionById: ReadonlyMap<string, SessionSummary>,
   sessionId: string,
+  task?: TaskItem,
 ): SessionSummary {
-  return sessionById.get(sessionId) ?? {
+  const visibleSession = sessionById.get(sessionId);
+  if (visibleSession) return visibleSession;
+  if (task?.linkedSession?.agentSessionId === sessionId) {
+    return task.linkedSession;
+  }
+  const fallbackNodeId =
+    task?.navigationSessionId === sessionId
+      ? task.navigationNodeId ?? task.linkedNodeId ?? undefined
+      : task?.linkedSessionId === sessionId
+        ? task.linkedNodeId ?? undefined
+        : undefined;
+  return {
     agentSessionId: sessionId,
     status: "unknown",
     eventCount: 0,
     displayName: sessionId,
+    nodeId: fallbackNodeId,
   };
+}
+
+export function resolveLinkedTaskSession(
+  task: TaskItem,
+  sessionById: ReadonlyMap<string, SessionSummary>,
+): SessionSummary | undefined {
+  if (!task.linkedSessionId) return undefined;
+  return sessionById.get(task.linkedSessionId) ??
+    (task.linkedSession?.agentSessionId === task.linkedSessionId
+      ? task.linkedSession
+      : undefined);
 }
 
 function buildSubtreeUpdatedAt(tasks: readonly TaskItem[]): ReadonlyMap<string, number> {
