@@ -13,6 +13,7 @@ import {
   applySessionUpdated,
   type SessionPage,
 } from "../../hooks/session-stream-helpers";
+import { appendAttachmentPathNotes } from "../../lib/attachment-path-notes";
 import { extractErrorMessage } from "./submitErrors";
 
 export interface SubmitInterventionContext {
@@ -36,6 +37,7 @@ export async function submitIntervention(
   ctx: SubmitInterventionContext,
 ): Promise<SubmitInterventionResult> {
   const { sessionKey, text, attachmentPaths, queryClient, signal } = ctx;
+  const messageText = appendAttachmentPathNotes(text, attachmentPaths);
 
   // R-2 fix(2026-05-10): `credentials: "include"`를 명시한다. 동 리포의 다른
   // dashboard fetch(예: useMessageHistoryBuffer.ts:129,187)는 모두 명시하고 있으며,
@@ -48,7 +50,7 @@ export async function submitIntervention(
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({
-        text,
+        text: messageText,
         user: "dashboard",
         ...(attachmentPaths && attachmentPaths.length > 0
           ? { attachmentPaths }

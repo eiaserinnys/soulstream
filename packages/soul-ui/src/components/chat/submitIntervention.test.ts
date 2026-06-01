@@ -54,6 +54,9 @@ describe("submitIntervention — credentials: 'include' (R-2 fix G-1)", () => {
     const [, options] = fetchMock.mock.calls[0];
     expect(options.credentials).toBe("include");
     const body = JSON.parse(options.body as string);
+    expect(body.text).toBe(
+      "with attachment\n\n[첨부 파일 로컬 경로: /tmp/a.png]",
+    );
     expect(body.attachmentPaths).toEqual(["/tmp/a.png"]);
   });
 

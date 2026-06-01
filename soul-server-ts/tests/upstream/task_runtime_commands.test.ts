@@ -99,7 +99,10 @@ describe("TaskRuntimeCommands.createSession", () => {
 
     expect(taskManager.createTask).toHaveBeenCalledWith({
       agentSessionId: "sess-create",
-      prompt: "inspect",
+      prompt:
+        "inspect\n\n" +
+        "[첨부 파일 로컬 경로: /tmp/a.png]\n" +
+        "[첨부 파일 로컬 경로: /tmp/b.txt]",
       profileId: codexAgent.id,
       callerSessionId: "caller-1",
       callerInfo: { source: "agent", agent_id: "delegator" },
@@ -118,7 +121,7 @@ describe("TaskRuntimeCommands.createSession", () => {
     expect(taskExecutor.startExecution).toHaveBeenCalledWith(task, codexAgent);
   });
 
-  it("builds attached-files context from non-image attachments when explicit context is absent", async () => {
+  it("appends attachment path notes without duplicating attached-files context", async () => {
     const { runtime, taskManager } = createRuntime();
 
     await runtime.createSession({
@@ -130,15 +133,11 @@ describe("TaskRuntimeCommands.createSession", () => {
 
     expect(taskManager.createTask).toHaveBeenCalledWith(
       expect.objectContaining({
-        contextItems: [
-          {
-            key: "attached_files",
-            label: "첨부 파일",
-            content:
-              "다음 파일들이 첨부되었습니다. Read 도구로 내용을 확인하세요:\n" +
-              "- /tmp/notes.md",
-          },
-        ],
+        prompt:
+          "read files\n\n" +
+          "[첨부 파일 로컬 경로: /tmp/image.png]\n" +
+          "[첨부 파일 로컬 경로: /tmp/notes.md]",
+        contextItems: undefined,
         attachmentPaths: ["/tmp/image.png", "/tmp/notes.md"],
       }),
     );
@@ -206,7 +205,7 @@ describe("TaskRuntimeCommands.intervene", () => {
     expect(taskManager.addIntervention).toHaveBeenCalledWith(
       {
         agentSessionId: "sess-resume",
-        text: "continue",
+        text: "continue\n\n[첨부 파일 로컬 경로: /tmp/context.txt]",
         user: "upstream",
         callerInfo: { source: "agent" },
         attachmentPaths: ["/tmp/context.txt"],

@@ -3,10 +3,7 @@ import type { Logger } from "pino";
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
-import {
-  buildAttachmentContextItems,
-  splitAttachmentPaths,
-} from "../task/attachment_context.js";
+import { appendAttachmentPathNotes } from "../task/attachment_path_note.js";
 import type {
   AddInterventionResult,
   TaskManager,
@@ -99,10 +96,10 @@ export class TaskRuntimeCommands {
 
   async createSession(params: CreateSessionRuntimeParams): Promise<Task> {
     const agent = this.requireAgent(params.profileId);
-    const { nonImagePaths } = splitAttachmentPaths(params.attachmentPaths);
+    const prompt = appendAttachmentPathNotes(params.prompt, params.attachmentPaths);
     const task = await this.deps.taskManager.createTask({
       agentSessionId: params.agentSessionId,
-      prompt: params.prompt,
+      prompt,
       profileId: params.profileId,
       callerSessionId: params.callerSessionId ?? null,
       callerInfo: params.callerInfo,
@@ -118,7 +115,7 @@ export class TaskRuntimeCommands {
       claudePermissionMode: params.claudePermissionMode,
       folderId: params.folderId ?? null,
       systemPrompt: params.systemPrompt,
-      contextItems: params.extraContextItems ?? buildAttachmentContextItems(nonImagePaths),
+      contextItems: params.extraContextItems,
       attachmentPaths: params.attachmentPaths,
     });
 
@@ -130,7 +127,7 @@ export class TaskRuntimeCommands {
     return await this.deps.taskManager.addIntervention(
       {
         agentSessionId: params.agentSessionId,
-        text: params.text,
+        text: appendAttachmentPathNotes(params.text, params.attachmentPaths),
         user: params.user ?? "upstream",
         callerInfo: params.callerInfo,
         attachmentPaths: params.attachmentPaths,

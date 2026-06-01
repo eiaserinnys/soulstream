@@ -66,15 +66,19 @@ export class FileAttachmentStore implements AttachmentStore {
   }
 
   async saveFileForSession(params: SaveSessionFileParams): Promise<SavedAttachment> {
-    this.validateFile(params.filename, params.content.length);
+    const safeOriginalName = sanitizeOriginalFilename(params.filename);
+    this.validateFile(safeOriginalName, params.content.length);
 
     const sessionDir = this.sessionDir(params.sessionId);
     await mkdir(sessionDir, { recursive: true });
 
-    const safeOriginalName = basename(params.filename || "unnamed") || "unnamed";
-    const filename = `${Date.now()}_${safeOriginalName}`;
-    const filePath = join(sessionDir, filename);
-    await writeFile(filePath, params.content);
+    const timestamp = new Date().toISOString();
+    const { filePath, filename } = await writeUniqueAttachmentFile(
+      sessionDir,
+      timestamp,
+      safeOriginalName,
+      params.content,
+    );
 
     return {
       path: resolve(filePath),
@@ -162,4 +166,43 @@ export class FileNotFoundError extends Error {
 
 function inferContentType(path: string): string {
   return CONTENT_TYPES[extname(path).toLowerCase()] ?? "application/octet-stream";
+}
+
+function sanitizeOriginalFilename(filename: string): string {
+  const base = basename((filename || "unnamed").replace(/\\/g, "/"));
+  const sanitized = base.replace(/[\x00-\x1F\x7F]/g, "_");
+  if (sanitized.length === 0 || sanitized === "." || sanitized === "..") {
+    return "unnamed";
+  }
+  return sanitized;
+}
+
+async function writeUniqueAttachmentFile(
+  sessionDir: string,
+  timestamp: string,
+  originalName: string,
+  content: Buffer,
+): Promise<{ filePath: string; filename: string }> {
+  for (let attempt = 0; attempt < 1000; attempt += 1) {
+    const filename = buildAttachmentFilename(timestamp, originalName, attempt);
+    const filePath = join(sessionDir, filename);
+    try {
+      await writeFile(filePath, content, { flag: "wx" });
+      return { filePath, filename };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    }
+  }
+  throw new AttachmentError("첨부 파일명 충돌을 해결하지 못했습니다");
+}
+
+function buildAttachmentFilename(
+  timestamp: string,
+  originalName: string,
+  attempt: number,
+): string {
+  if (attempt === 0) return `${timestamp}-${originalName}`;
+  const suffix = extname(originalName);
+  const stem = suffix ? originalName.slice(0, -suffix.length) : originalName;
+  return `${timestamp}-${stem}-${attempt}${suffix}`;
 }

@@ -1,7 +1,8 @@
 import type { AgentProfile } from "../agent_registry.js";
 import { formatContextItems } from "../context/prompt_assembler.js";
 
-import { buildAttachmentContextItems, splitAttachmentPaths } from "./attachment_context.js";
+import { appendAttachmentPathNotes } from "./attachment_path_note.js";
+import { splitAttachmentPaths } from "./attachment_context.js";
 import { hasPendingClaudeRuntimeWork } from "./claude_runtime_state.js";
 import type { Task, InterventionMessage } from "./task_models.js";
 
@@ -55,14 +56,12 @@ export function composeInterventionTurnPrompt(message: InterventionMessage): {
   prompt: string;
   imageAttachmentPaths: string[];
 } {
-  const { imagePaths, nonImagePaths } = splitAttachmentPaths(message.attachmentPaths);
-  const contextItems = [
-    ...(message.context ?? []),
-    ...buildAttachmentContextItems(nonImagePaths),
-  ];
+  const { imagePaths } = splitAttachmentPaths(message.attachmentPaths);
+  const contextItems = message.context ?? [];
   const contextBlock = formatContextItems(contextItems);
+  const text = appendAttachmentPathNotes(message.text, message.attachmentPaths);
   return {
-    prompt: contextBlock ? `${contextBlock}\n\n${message.text}` : message.text,
+    prompt: contextBlock ? `${contextBlock}\n\n${text}` : text,
     imageAttachmentPaths: imagePaths,
   };
 }

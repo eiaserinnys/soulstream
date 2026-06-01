@@ -174,6 +174,43 @@ describe("RunningInterventionTransition", () => {
     expect(task.interventionQueue).toEqual([]);
   });
 
+  it("passes only image attachments to live steering", async () => {
+    const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
+    const task = makeRunningTask({
+      engine: {
+        backendId: "codex",
+        workspaceDir: "/tmp/codex",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        steerActiveTurn,
+      } as EnginePort & SupportsLiveTurnSteering,
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+    });
+
+    await expect(
+      transition.deliver(task, {
+        text:
+          "첨부 확인\n\n" +
+          "[첨부 파일 로컬 경로: /tmp/a.png]\n" +
+          "[첨부 파일 로컬 경로: /tmp/b.pdf]",
+        user: "alice",
+        attachmentPaths: ["/tmp/a.png", "/tmp/b.pdf"],
+      }),
+    ).resolves.toEqual({ delivered: true });
+
+    expect(steerActiveTurn).toHaveBeenCalledWith({
+      prompt:
+        "첨부 확인\n\n" +
+        "[첨부 파일 로컬 경로: /tmp/a.png]\n" +
+        "[첨부 파일 로컬 경로: /tmp/b.pdf]",
+      imageAttachmentPaths: ["/tmp/a.png"],
+    });
+  });
+
   it("returns queued fallback with liveSteerStatus when live steering is not delivered", async () => {
     const steerActiveTurn = vi.fn().mockResolvedValue({
       status: "no_active_turn",

@@ -149,10 +149,16 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.imageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.png"]);
     expect(input.prompt).toContain("<prior>");
     expect(input.prompt).toContain("remember this");
-    expect(input.prompt).toContain("<attached_files>");
+    expect(input.prompt).toContain(
+      "[첨부 파일 로컬 경로: /tmp/incoming/sess/a.png]",
+    );
+    expect(input.prompt).toContain(
+      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
+    );
     expect(input.prompt).toContain("/tmp/incoming/sess/readme.txt");
-    expect(input.prompt).not.toContain("/tmp/incoming/sess/a.png");
-    expect(input.prompt.endsWith("첨부 확인")).toBe(true);
+    expect(input.prompt.endsWith(
+      "[첨부 파일 로컬 경로: /tmp/incoming/sess/readme.txt]",
+    )).toBe(true);
     expect(task.interventionQueue.map((item) => item.text)).toEqual(["later"]);
   });
 
