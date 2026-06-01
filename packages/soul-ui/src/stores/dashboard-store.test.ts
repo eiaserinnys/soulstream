@@ -651,6 +651,23 @@ describe("dashboard-store", () => {
       useDashboardStore.getState().closeNewSessionModal();
       expect(useDashboardStore.getState().newSessionParentTask).toBeNull();
     });
+
+    it("should keep and clear new session defaults", () => {
+      useDashboardStore.getState().openNewSessionModal("feed", null, {
+        folderId: "folder-parent",
+        nodeId: "node-parent",
+        agentId: "agent-parent",
+      });
+
+      expect(useDashboardStore.getState().newSessionDefaults).toEqual({
+        folderId: "folder-parent",
+        nodeId: "node-parent",
+        agentId: "agent-parent",
+      });
+
+      useDashboardStore.getState().closeNewSessionModal();
+      expect(useDashboardStore.getState().newSessionDefaults).toBeNull();
+    });
   });
 
   // === addOptimisticSession ===

@@ -43,6 +43,12 @@ export interface DashboardConfig {
   agents: DashboardAgentConfig[];
 }
 
+export interface NewSessionDefaults {
+  folderId?: string | null;
+  nodeId?: string;
+  agentId?: string | null;
+}
+
 // === Selected Event Node Data ===
 
 /** selectEventNode로 선택된 이벤트 노드의 데이터 (user, intervention, system, result) */
@@ -154,6 +160,9 @@ export interface DashboardState {
   /** Task Tree에서 특정 parent task 아래 새 일반 세션을 시작할 때의 parent task */
   newSessionParentTask: TaskItem | null;
 
+  /** 특정 진입점에서 New Session 모달에 주입하는 초기 선택값 */
+  newSessionDefaults: NewSessionDefaults | null;
+
   /** 오른쪽 패널 활성 탭 */
   activeRightTab: "detail" | "chat" | "info";
 
@@ -261,7 +270,11 @@ export interface DashboardActions {
   ) => void;
 
   // New Session 모달
-  openNewSessionModal: (source?: "folder" | "feed", parentTask?: TaskItem | null) => void;
+  openNewSessionModal: (
+    source?: "folder" | "feed",
+    parentTask?: TaskItem | null,
+    defaults?: NewSessionDefaults | null,
+  ) => void;
   closeNewSessionModal: () => void;
 
   // 상태 초기화
