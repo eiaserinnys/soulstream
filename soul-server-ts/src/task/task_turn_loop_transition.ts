@@ -14,6 +14,7 @@ export type TurnLoopTransitionDecision =
       kind: "continue";
       prompt: string;
       imageAttachmentPaths: string[];
+      intervention: InterventionMessage;
     };
 
 export function resolveTurnLoopTransition(
@@ -41,6 +42,7 @@ export function resolveTurnLoopTransition(
     kind: "continue",
     prompt: composed.prompt,
     imageAttachmentPaths: composed.imageAttachmentPaths,
+    intervention: next,
   };
 }
 

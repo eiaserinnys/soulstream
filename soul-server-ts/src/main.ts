@@ -24,6 +24,7 @@ import type { McpRuntime } from "./mcp/runtime.js";
 import { buildServer, startServer } from "./server.js";
 import { RealtimeBroker } from "./realtime/realtime_broker.js";
 import { TaskCompletionNotifier } from "./task/completion_notifier.js";
+import { ClaudeRuntimeTaskFollowupController } from "./task/claude_runtime_task_followup.js";
 import { TaskExecutor, type EngineFactory } from "./task/task_executor.js";
 import {
   TaskManager,
@@ -321,6 +322,11 @@ async function main(): Promise<void> {
     logger,
     orchProxyConfig,
   );
+  const claudeRuntimeTaskFollowup = new ClaudeRuntimeTaskFollowupController({
+    taskManager,
+    onResume,
+    logger,
+  });
 
   taskExecutor = new TaskExecutor(
     engineFactory,
@@ -331,6 +337,7 @@ async function main(): Promise<void> {
     contextBuilder,
     completionNotifier,
     scheduleService.makeToolHandler(),
+    claudeRuntimeTaskFollowup,
   );
   const scheduleDispatcher = new ScheduleDispatcher(
     { nodeId: env.SOULSTREAM_NODE_ID },
