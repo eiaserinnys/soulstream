@@ -2923,6 +2923,64 @@ describe("ClaudeSdkClient", () => {
     expect(events[2]).toMatchObject({ type: "result", output: "final" });
   });
 
+  it("re-enters the receive loop when PreCompact fires but the SDK pass ends without a result", async () => {
+    let receiveLoopEntries = 0;
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeReenterableQuery([
+            () =>
+              (async function* () {
+                receiveLoopEntries += 1;
+                const hook = params.options?.hooks?.PreCompact?.[0]?.hooks[0];
+                await hook?.(
+                  {
+                    hook_event_name: "PreCompact",
+                    trigger: "auto",
+                    custom_instructions: null,
+                  } as any,
+                  undefined,
+                  { signal: new AbortController().signal },
+                );
+              })(),
+            () =>
+              (async function* () {
+                receiveLoopEntries += 1;
+                yield {
+                  type: "assistant",
+                  message: { content: [{ type: "text", text: "after compact retry" }] },
+                  parent_tool_use_id: null,
+                  uuid: "assistant-after-no-result-compact",
+                  session_id: "claude-sess-no-result-compact",
+                } as unknown as SDKMessage;
+                yield sdkSuccessResult("claude-sess-no-result-compact", "final");
+              })(),
+          ]),
+        postResultDrainMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(receiveLoopEntries).toBe(2);
+    expect(events.map((event) => event.type)).toEqual([
+      "compact",
+      "text",
+      "result",
+      "context_usage",
+      "complete",
+    ]);
+    expect(events[0]).toMatchObject({ type: "compact", trigger: "auto" });
+    expect(events[1]).toMatchObject({ type: "text", text: "after compact retry" });
+    expect(events[2]).toMatchObject({ type: "result", output: "final" });
+  });
+
   it("continues after an empty tool_use result when the SDK emits another message", async () => {
     const client = new ClaudeSdkClient(
       {
@@ -3115,6 +3173,77 @@ describe("ClaudeSdkClient", () => {
 
     expect(events.map((event) => event.type)).toEqual(["result", "context_usage", "complete"]);
     expect(events[0]).toMatchObject({ type: "result", output: "", stopReason: "end_turn" });
+  });
+
+  it("does not use subtype=success as the fatal error code when the result is marked is_error", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            sdkMessages([
+              sdkSuccessResult("claude-sess-result-error", "API Error: 400 invalid JSON", {
+                is_error: true,
+                stop_reason: "stop_sequence",
+              }),
+            ]),
+          ),
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    const result = events.find((event) => event.type === "result");
+    const error = events.find((event) => event.type === "error");
+    expect(result).toMatchObject({
+      type: "result",
+      success: false,
+      error: "API Error: 400 invalid JSON",
+      stopReason: "stop_sequence",
+    });
+    expect(error).toMatchObject({
+      type: "error",
+      fatal: true,
+      errorCode: "claude_sdk_result_error",
+      message: "API Error: 400 invalid JSON",
+    });
+  });
+
+  it("marks post-result drain iterator errors as fatal instead of completing the turn", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            (async function* () {
+              yield sdkSuccessResult("claude-sess-drain-error", "done");
+              throw new Error("drain exploded");
+            })(),
+          ),
+        postResultDrainMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "error",
+        fatal: true,
+        errorCode: "claude_sdk_drain_error",
+        message: "Claude SDK post-result drain failed: drain exploded",
+      }),
+    ]);
   });
 
   it("SystemMessage subtype=notification emits debug event even without hook callback execution", async () => {
@@ -3464,6 +3593,28 @@ function makeQuery(
     close: vi.fn(),
     ...overrides,
   }) as unknown as ClaudeSdkQuery;
+}
+
+function makeReenterableQuery(
+  factories: Array<() => AsyncGenerator<SDKMessage>>,
+  overrides: Partial<ClaudeSdkQuery> = {},
+): ClaudeSdkQuery {
+  let iteratorIndex = 0;
+  return {
+    interrupt: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn(),
+    next: vi.fn(async () => ({ done: true as const, value: undefined as unknown as SDKMessage })),
+    return: vi.fn(async () => ({ done: true as const, value: undefined })),
+    throw: vi.fn(async (err?: unknown) => {
+      throw err;
+    }),
+    [Symbol.asyncIterator]() {
+      const factory = factories[Math.min(iteratorIndex, factories.length - 1)];
+      iteratorIndex += 1;
+      return factory();
+    },
+    ...overrides,
+  } as unknown as ClaudeSdkQuery;
 }
 
 function sdkSystemInit(sessionId: string): SDKMessage {
