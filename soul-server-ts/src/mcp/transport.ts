@@ -20,6 +20,10 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 
 import { checkMcpAuth, type McpAuthConfig } from "./auth.js";
+import {
+  SOULSTREAM_AGENT_SESSION_HEADER,
+  withMcpRequestContext,
+} from "./request_context.js";
 import type { McpRuntime } from "./runtime.js";
 import { buildMcpServer } from "./server.js";
 
@@ -120,6 +124,20 @@ export function registerMcpRoutes(
 }
 
 async function dispatchPost(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  sessions: Map<string, SessionEntry>,
+  runtime: McpRuntime,
+): Promise<void> {
+  return withMcpRequestContext(
+    {
+      callerSessionId: headerValue(req.headers[SOULSTREAM_AGENT_SESSION_HEADER]),
+    },
+    async () => dispatchPostWithContext(req, reply, sessions, runtime),
+  );
+}
+
+async function dispatchPostWithContext(
   req: FastifyRequest,
   reply: FastifyReply,
   sessions: Map<string, SessionEntry>,

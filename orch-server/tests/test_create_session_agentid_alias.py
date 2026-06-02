@@ -107,3 +107,59 @@ class TestCreateSessionProfileAlias:
 
         payload = _extract_ws_payload(ws)
         assert "profile" not in payload
+
+
+class TestCreateSessionCallerSessionAlias:
+    """CreateSessionRequest가 caller_session_id와 callerSessionId 두 키를 모두 수용하는지 검증."""
+
+    async def test_caller_session_id_primary_field_accepted(self, client, node_manager):
+        """기존 snake_case: {'caller_session_id': 'parent'} → WS payload snake_case 유지."""
+        _, ws = await _register_node(node_manager)()
+
+        resp = await client.post(
+            "/api/sessions",
+            json={
+                "prompt": "test",
+                "profile": "seosoyoung",
+                "caller_session_id": "parent-sess-1",
+            },
+        )
+        assert resp.status_code == 201
+
+        payload = _extract_ws_payload(ws)
+        assert payload["caller_session_id"] == "parent-sess-1"
+
+    async def test_callerSessionId_alias_accepted(self, client, node_manager):
+        """신규 camelCase: {'callerSessionId': 'parent'} → WS payload snake_case로 전달."""
+        _, ws = await _register_node(node_manager)()
+
+        resp = await client.post(
+            "/api/sessions",
+            json={
+                "prompt": "test",
+                "profile": "seosoyoung",
+                "callerSessionId": "parent-sess-1",
+            },
+        )
+        assert resp.status_code == 201
+
+        payload = _extract_ws_payload(ws)
+        assert payload["caller_session_id"] == "parent-sess-1"
+
+    async def test_both_caller_keys_snake_case_wins(self, client, node_manager):
+        """두 키 동시 전달 시 AliasChoices 순서대로 snake_case가 우선 사용된다."""
+        _, ws = await _register_node(node_manager)()
+
+        resp = await client.post(
+            "/api/sessions",
+            json={
+                "prompt": "test",
+                "profile": "seosoyoung",
+                "caller_session_id": "parent-snake",
+                "callerSessionId": "parent-camel",
+            },
+        )
+        assert resp.status_code == 201
+
+        payload = _extract_ws_payload(ws)
+        assert payload["caller_session_id"] == "parent-snake"

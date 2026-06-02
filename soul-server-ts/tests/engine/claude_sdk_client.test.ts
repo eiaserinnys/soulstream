@@ -1107,6 +1107,74 @@ describe("ClaudeSdkClient", () => {
     }
   });
 
+  it("adds current agent session id header to HTTP MCP servers", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "claude-mcp-session-"));
+    try {
+      writeFileSync(
+        join(workspaceDir, "mcp_config.json"),
+        JSON.stringify({
+          mcpServers: {
+            soulstreamSse: {
+              type: "sse",
+              url: "http://localhost:3105/cogito-mcp/sse",
+              headers: {
+                authorization: "Bearer secret",
+                "x-soulstream-agent-session-id": "stale-session",
+              },
+            },
+            soulstreamHttp: {
+              type: "streamable_http",
+              url: "http://localhost:3105/mcp",
+              headers: {
+                "x-other": "kept",
+              },
+            },
+            localStdio: {
+              type: "stdio",
+              command: "node",
+              args: ["server.js"],
+            },
+          },
+        }),
+      );
+
+      const captured: ClaudeSdkQueryParams[] = [];
+      const client = new ClaudeSdkClient(
+        {
+          query: (params) => {
+            captured.push(params);
+            return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-mcp", "done")]));
+          },
+          postResultDrainMs: 10,
+        },
+        silentLogger,
+      );
+
+      await collect(client.run({
+        prompt: "hi",
+        workspaceDir,
+        env: {},
+        agentSessionId: "parent-sess-1",
+      }, new AbortController().signal));
+
+      const mcpServers = captured[0]?.options?.mcpServers as Record<string, {
+        type: string;
+        headers?: Record<string, string>;
+      }>;
+      expect(mcpServers.soulstreamSse?.headers).toEqual({
+        authorization: "Bearer secret",
+        "x-soulstream-agent-session-id": "parent-sess-1",
+      });
+      expect(mcpServers.soulstreamHttp?.headers).toEqual({
+        "x-other": "kept",
+        "x-soulstream-agent-session-id": "parent-sess-1",
+      });
+      expect(mcpServers.localStdio?.headers).toBeUndefined();
+    } finally {
+      rmSync(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
   it("maps SDK task_progress and hook_progress system messages to progress events", async () => {
     const client = new ClaudeSdkClient(
       {

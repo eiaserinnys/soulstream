@@ -9,6 +9,7 @@ import { z } from "zod";
 import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
+import { resolveEffectiveCallerSessionId } from "./caller_session.js";
 
 export function registerSessionMgmtTools(
   server: McpServer,
@@ -61,9 +62,10 @@ export function registerSessionMgmtTools(
         return errorResult(`agent_id를 찾을 수 없습니다: ${resolvedAgentId}`);
       }
 
-      // caller_info 조립 — caller_session_id 미지정 시 미전달 (graceful).
-      const callerInfo = caller_session_id
-        ? buildCallerInfoFromCallerSession(runtime, caller_session_id)
+      // caller_info 조립 — 명시 caller_session_id 우선, 없으면 MCP request context 사용.
+      const effectiveCallerSessionId = resolveEffectiveCallerSessionId(caller_session_id);
+      const callerInfo = effectiveCallerSessionId
+        ? buildCallerInfoFromCallerSession(runtime, effectiveCallerSessionId)
         : undefined;
 
       const sessionId = randomUUID();
@@ -72,7 +74,7 @@ export function registerSessionMgmtTools(
           agentSessionId: sessionId,
           prompt,
           profileId: resolvedAgentId,
-          callerSessionId: caller_session_id ?? null,
+          callerSessionId: effectiveCallerSessionId ?? null,
           callerInfo,
           folderId: folder_id ?? null,
         });
@@ -101,8 +103,9 @@ export function registerSessionMgmtTools(
       },
     },
     async ({ target_session_id, message, caller_session_id }) => {
-      const callerInfo = caller_session_id
-        ? buildCallerInfoFromCallerSession(runtime, caller_session_id)
+      const effectiveCallerSessionId = resolveEffectiveCallerSessionId(caller_session_id);
+      const callerInfo = effectiveCallerSessionId
+        ? buildCallerInfoFromCallerSession(runtime, effectiveCallerSessionId)
         : undefined;
 
       let localError: string | null = null;
