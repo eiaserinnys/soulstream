@@ -198,4 +198,28 @@ describe("Task turn loop transition", () => {
     expect(task.interventionQueue.map((item) => item.text)).toEqual(["later"]);
     expect(task.status).toBe("running");
   });
+
+  it("continue decision preserves the consumed intervention metadata", () => {
+    const task = makeTask({
+      interventionQueue: [
+        {
+          text: "runtime follow-up",
+          user: "system",
+          source: "claude_runtime_task_followup",
+          followupAttempt: 1,
+          followupKey: "sess-1:task-1",
+        },
+      ],
+    });
+
+    const decision = resolveTurnLoopTransition(task, codexAgent);
+
+    expect(decision.kind).toBe("continue");
+    if (decision.kind !== "continue") throw new Error("expected continue decision");
+    expect(decision.intervention).toMatchObject({
+      source: "claude_runtime_task_followup",
+      followupAttempt: 1,
+      followupKey: "sess-1:task-1",
+    });
+  });
 });

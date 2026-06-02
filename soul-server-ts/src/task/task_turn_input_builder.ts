@@ -8,13 +8,14 @@ import {
 } from "../context/context_builder.js";
 
 import { splitAttachmentPaths } from "./attachment_context.js";
-import type { Task } from "./task_models.js";
+import type { InterventionMessage, Task } from "./task_models.js";
 import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 
 export interface TaskTurnInput {
   prompt: string;
   imageAttachmentPaths: string[];
   systemPrompt?: string;
+  intervention?: InterventionMessage;
 }
 
 export interface TaskTurnInputBuilderDeps {
@@ -99,12 +100,14 @@ export class TaskTurnInputBuilder {
     task: Task,
     agent: AgentProfile,
   ): Promise<TaskTurnInput> {
-    const composed = composeInterventionTurnPrompt(task.interventionQueue.shift()!);
+    const intervention = task.interventionQueue.shift()!;
+    const composed = composeInterventionTurnPrompt(intervention);
     const systemPrompt = await this.buildQueuedClaudeSystemPrompt(task, agent);
     return {
       prompt: composed.prompt,
       imageAttachmentPaths: composed.imageAttachmentPaths,
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+      intervention,
     };
   }
 

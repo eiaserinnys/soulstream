@@ -25,6 +25,9 @@ export interface AddInterventionParams {
   user: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
+  source?: string;
+  followupAttempt?: number;
+  followupKey?: string;
   /**
    * Scheduler dispatch must not rely on the in-memory fallback queue. When false,
    * a running task that cannot be live-steered returns `{deferred: true}` so the
@@ -71,6 +74,9 @@ export class TaskInterventionRoute {
       user: params.user,
       callerInfo: params.callerInfo,
       attachmentPaths: params.attachmentPaths,
+      source: params.source,
+      followupAttempt: params.followupAttempt,
+      followupKey: params.followupKey,
     };
 
     if (this.deps.activeTaskRecovery.prepareForIntervention(task) === "running") {

@@ -38,6 +38,12 @@ import {
 } from "./task_turn_loop_transition.js";
 import { TaskTurnInputBuilder } from "./task_turn_input_builder.js";
 import { failBlockingClaudeRuntimeWork } from "./claude_runtime_state.js";
+import {
+  CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+  type ClaudeRuntimeFollowupStallReason,
+  type ClaudeRuntimeTaskFollowupPort,
+} from "./claude_runtime_task_followup.js";
+import type { InterventionMessage } from "./task_models.js";
 
 const CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE =
   "Claude runtime work remained pending after the engine turn ended; ending the session so follow-up messages can resume.";
@@ -60,7 +66,7 @@ export class TaskExecutor {
     db: SessionDB,
     persistence: EventPersistence,
     broadcaster: SessionBroadcaster,
-    logger: Logger,
+    private readonly logger: Logger,
     /**
      * B-6 context_builder DI. undefined일 때 본 PR 이전 동작(task.prompt 직접 사용) 유지 —
      * legacy 호출자·테스트 환경 호환. 운영 흐름(main.ts)에서는 항상 주입.
@@ -76,40 +82,41 @@ export class TaskExecutor {
      */
     completionNotifier?: CompletionNotifier,
     scheduleToolHandler?: ScheduleToolUseHandler,
+    private readonly claudeRuntimeTaskFollowup?: ClaudeRuntimeTaskFollowupPort,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       db,
       broadcaster,
-      logger,
+      logger: this.logger,
     });
     this.executorFinalizer = new TaskExecutorFinalizer({
       lifecycleTransition: this.lifecycleTransition,
-      logger,
+      logger: this.logger,
       completionNotifier,
     });
     this.engineEventPublisher = new TaskEngineEventPublisher({
       broadcaster,
       db,
-      logger,
+      logger: this.logger,
       persistence,
     });
     this.engineFailureRecovery = new TaskEngineFailureRecovery({
       broadcaster,
-      logger,
+      logger: this.logger,
     });
     this.initialMessagePublisher = new TaskInitialMessagePublisher({
       broadcaster,
-      logger,
+      logger: this.logger,
       persistence,
     });
     this.turnInputBuilder = new TaskTurnInputBuilder({
       contextBuilder,
       initialMessagePublisher: this.initialMessagePublisher,
-      logger,
+      logger: this.logger,
     });
     this.agentsSnapshotPersistence = new TaskAgentsSnapshotPersistence({
       db,
-      logger,
+      logger: this.logger,
     });
     this.engineTurnRunner = new TaskEngineTurnRunner({
       snapshotPersistence: this.agentsSnapshotPersistence,
@@ -171,8 +178,10 @@ export class TaskExecutor {
     let turnImageAttachmentPaths = initialTurnInput.imageAttachmentPaths;
     const stableSystemPrompt = initialTurnInput.systemPrompt;
     let turnSystemPrompt = initialTurnInput.systemPrompt;
+    let currentTurnIntervention = initialTurnInput.intervention;
     try {
       while (true) {
+        const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
         try {
           for await (const event of this.engineTurnRunner.executeTurn({
             task,
@@ -185,11 +194,18 @@ export class TaskExecutor {
             },
           })) {
             await this.engineEventPublisher.publishEngineEvent(task, event);
+            this.collectClaudeRuntimeTaskFollowup(task, event);
           }
         } catch (err) {
           await this.engineFailureRecovery.recoverFromExecuteFailure(task, err);
           break;
         }
+        await this.flushClaudeRuntimeTaskFollowups(task);
+        await this.handleClaudeRuntimeFollowupStall(
+          task,
+          currentTurnIntervention,
+          previousAssistantText,
+        );
         // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정
         const transition = resolveTurnLoopTransition(task, agent);
         if (transition.kind === "awaiting_runtime") {
@@ -202,6 +218,7 @@ export class TaskExecutor {
         turnPrompt = transition.prompt;
         turnImageAttachmentPaths = transition.imageAttachmentPaths;
         turnSystemPrompt = stableSystemPrompt;
+        currentTurnIntervention = transition.intervention;
         // (intervention_sent는 addIntervention에서 이미 broadcast됨 — 여기서 재발행 안 함.)
       }
     } finally {
@@ -227,6 +244,55 @@ export class TaskExecutor {
     } as SSEEventPayload);
   }
 
+  private collectClaudeRuntimeTaskFollowup(task: Task, event: SSEEventPayload): void {
+    if (!this.claudeRuntimeTaskFollowup) return;
+    try {
+      this.claudeRuntimeTaskFollowup.collect(task, event);
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "Claude runtime task follow-up collection failed",
+      );
+    }
+  }
+
+  private async flushClaudeRuntimeTaskFollowups(task: Task): Promise<void> {
+    if (!this.claudeRuntimeTaskFollowup) return;
+    try {
+      await this.claudeRuntimeTaskFollowup.flush(task);
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "Claude runtime task follow-up flush failed",
+      );
+    }
+  }
+
+  private async handleClaudeRuntimeFollowupStall(
+    task: Task,
+    intervention: InterventionMessage | undefined,
+    previousAssistantText: string,
+  ): Promise<void> {
+    if (intervention?.source !== CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE) return;
+    const nextAssistantText = normalizeAssistantText(task.lastAssistantText);
+    const reason = resolveFollowupStallReason(previousAssistantText, nextAssistantText);
+    if (!reason) return;
+
+    const attempt = intervention.followupAttempt ?? 1;
+    if (attempt < 2) {
+      await this.claudeRuntimeTaskFollowup?.queueFallback(task, intervention, reason);
+      return;
+    }
+
+    await this.engineEventPublisher.publishEngineEvent(task, {
+      type: "error",
+      message:
+        "Background task follow-up did not produce a new response after retry. Please send a follow-up message manually.",
+      error_code: "claude_runtime_followup_stalled",
+      fatal: false,
+    } as SSEEventPayload);
+  }
+
   /**
    * 종료 처리: final-state persistence + engine cleanup + delegated completion notification.
    */
@@ -238,4 +304,19 @@ export class TaskExecutor {
 /** 외부 검증용 — task가 종료 상태인지. */
 export function isTerminalStatus(status: TaskStatus): boolean {
   return status === "completed" || status === "error" || status === "interrupted";
+}
+
+function normalizeAssistantText(text: string | undefined): string {
+  return (text ?? "").replace(/\s+/g, " ").trim();
+}
+
+function resolveFollowupStallReason(
+  previousAssistantText: string,
+  nextAssistantText: string,
+): ClaudeRuntimeFollowupStallReason | null {
+  if (!nextAssistantText) return "empty_response";
+  if (previousAssistantText && nextAssistantText === previousAssistantText) {
+    return "repeated_response";
+  }
+  return null;
 }
