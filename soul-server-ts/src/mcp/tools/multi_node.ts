@@ -11,6 +11,7 @@ import { AgentProfileSchema } from "../../agent_registry.js";
 import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
+import { requireRemoteCallerSessionId } from "./caller_session.js";
 
 const NOT_CONFIGURED_MSG = "multi-node not configured";
 
@@ -240,9 +241,13 @@ export function registerMultiNodeTools(
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
 
-      const callerInfo = caller_session_id
-        ? buildCallerInfoFromCallerSession(runtime, caller_session_id)
-        : undefined;
+      const callerSession = requireRemoteCallerSessionId(caller_session_id);
+      if (!callerSession.ok) return errorResult(callerSession.error);
+
+      const callerInfo = buildCallerInfoFromCallerSession(
+        runtime,
+        callerSession.callerSessionId,
+      );
 
       if (agent_id !== undefined) {
         const validation = await validateRemoteAgentId(orch, node_id, agent_id);
@@ -255,9 +260,8 @@ export function registerMultiNodeTools(
       };
       if (agent_id !== undefined) body.profile = agent_id;
       if (folder_id !== undefined) body.folderId = folder_id;
-      if (caller_session_id !== undefined)
-        body.caller_session_id = caller_session_id;
-      if (callerInfo) body.caller_info = callerInfo;
+      body.caller_session_id = callerSession.callerSessionId;
+      body.caller_info = callerInfo;
 
       try {
         const data = await fetchOrch(orch, "POST", "/api/sessions", body);

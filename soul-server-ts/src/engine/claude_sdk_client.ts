@@ -23,6 +23,7 @@ import type {
   EngineUserInput,
 } from "./protocol.js";
 import { getImageAttachmentMediaType } from "../attachments/image_media.js";
+import { SOULSTREAM_AGENT_SESSION_HEADER } from "../mcp/request_context.js";
 
 const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
 const DEFAULT_INPUT_REQUEST_TIMEOUT_MS = 300_000;
@@ -2102,7 +2103,13 @@ function buildMcpOptions(
 ): Partial<ClaudeSdkOptions> {
   if (options.useMcp === false) return {};
   const mcpServers = loadMcpServers(options.workspaceDir, logger);
-  return mcpServers === undefined ? {} : { mcpServers };
+  if (mcpServers === undefined) return {};
+  return {
+    mcpServers: injectAgentSessionHeaderIntoMcpServers(
+      mcpServers,
+      options.agentSessionId,
+    ),
+  };
 }
 
 function loadMcpServers(
@@ -2134,6 +2141,57 @@ function loadMcpServers(
     "Loaded Claude MCP config",
   );
   return servers as Record<string, McpServerConfig>;
+}
+
+function injectAgentSessionHeaderIntoMcpServers(
+  servers: Record<string, McpServerConfig>,
+  agentSessionId: string | undefined,
+): Record<string, McpServerConfig> {
+  const callerSessionId = agentSessionId?.trim();
+  if (!callerSessionId) return servers;
+
+  const patched: Record<string, McpServerConfig> = {};
+  for (const [name, config] of Object.entries(servers)) {
+    patched[name] = injectAgentSessionHeaderIntoMcpServer(
+      config,
+      callerSessionId,
+    );
+  }
+  return patched;
+}
+
+function injectAgentSessionHeaderIntoMcpServer(
+  config: McpServerConfig,
+  agentSessionId: string,
+): McpServerConfig {
+  const record = asRecord(config);
+  const type = asString(record?.type);
+  if (type !== "sse" && type !== "streamable_http" && type !== "http") {
+    return config;
+  }
+
+  return {
+    ...record,
+    headers: mergeAgentSessionHeader(record?.headers, agentSessionId),
+  } as McpServerConfig;
+}
+
+function mergeAgentSessionHeader(
+  headers: unknown,
+  agentSessionId: string,
+): Record<string, string> {
+  const merged: Record<string, string> = {};
+  const record = asRecord(headers);
+  if (record) {
+    for (const [key, value] of Object.entries(record)) {
+      if (key.toLowerCase() === SOULSTREAM_AGENT_SESSION_HEADER) continue;
+      if (typeof value === "string") {
+        merged[key] = value;
+      }
+    }
+  }
+  merged[SOULSTREAM_AGENT_SESSION_HEADER] = agentSessionId;
+  return merged;
 }
 
 function compactMessage(trigger: string): string {

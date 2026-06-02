@@ -89,7 +89,10 @@ function makeRuntime(
   };
 }
 
-async function createClient(runtime: McpRuntime): Promise<Client> {
+async function createClient(
+  runtime: McpRuntime,
+  headers?: Record<string, string>,
+): Promise<Client> {
   const server = await buildServer({
     host: "127.0.0.1",
     port: 0,
@@ -108,7 +111,10 @@ async function createClient(runtime: McpRuntime): Promise<Client> {
   openServers.push(server);
   const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
   const client = new Client({ name: "session-mgmt-test", version: "0.0.0" });
-  await client.connect(new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`)));
+  await client.connect(new StreamableHTTPClientTransport(
+    new URL(`${baseUrl}/mcp`),
+    headers ? { requestInit: { headers } } : undefined,
+  ));
   openClients.push(client);
   return client;
 }
@@ -299,6 +305,37 @@ describe("agent profile backend boundary", () => {
     );
   });
 
+  it("create_agent_session은 MCP 요청 header의 caller id를 로컬 task에 보존한다", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+    );
+    const client = await createClient(runtime, {
+      "x-soulstream-agent-session-id": "caller-sess-1",
+    });
+
+    const result = await client.callTool({
+      name: "create_agent_session",
+      arguments: {
+        agent_id: "codex-default",
+        prompt: "child work",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(runtime.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callerSessionId: "caller-sess-1",
+        callerInfo: expect.objectContaining({
+          source: "agent",
+          agent_node: "node-test",
+          agent_id: "codex-default",
+        }),
+      }),
+    );
+  });
+
   it("reflect_service level=3은 typed runtime snapshot 안에 registry agent 수를 보고", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
@@ -358,6 +395,7 @@ describe("create_remote_agent_session", () => {
           node_id: "node-remote",
           agent_id: "roselin",
           prompt: "delegate",
+          caller_session_id: "caller-sess-1",
         },
       });
 
@@ -424,6 +462,127 @@ describe("create_remote_agent_session", () => {
       expect(body.caller_session_id).toBe("caller-sess-1");
       expect(body.caller_info.agent_id).toBe("codex-default");
       expect(body.caller_info.agent_node).toBe("node-test");
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("MCP 요청 header의 caller id로 remote caller_session_id와 caller_info를 전달한다", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
+        return {
+          body: {
+            agents: [
+              {
+                id: "roselin_codex",
+                name: "로젤린 (codex)",
+                backend: "codex",
+              },
+            ],
+          },
+        };
+      }
+      if (req.method === "POST" && req.url === "/api/sessions") {
+        return { body: { agentSessionId: "sess-child", nodeId: "node-remote" } };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime, {
+        "x-soulstream-agent-session-id": "caller-sess-1",
+      });
+
+      const result = await client.callTool({
+        name: "create_remote_agent_session",
+        arguments: {
+          node_id: "node-remote",
+          agent_id: "roselin_codex",
+          prompt: "delegate",
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(capture.requests.map((r) => `${r.method} ${r.url}`)).toEqual([
+        "GET /api/nodes/node-remote/agents",
+        "POST /api/sessions",
+      ]);
+      const body = JSON.parse(capture.requests[1]!.body);
+      expect(body.caller_session_id).toBe("caller-sess-1");
+      expect(body.caller_info).toEqual(expect.objectContaining({
+        source: "agent",
+        agent_node: "node-test",
+        agent_id: "codex-default",
+      }));
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("명시 caller_session_id가 MCP 요청 header보다 우선한다", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
+        return {
+          body: {
+            agents: [
+              {
+                id: "roselin_codex",
+                name: "로젤린 (codex)",
+                backend: "codex",
+              },
+            ],
+          },
+        };
+      }
+      if (req.method === "POST" && req.url === "/api/sessions") {
+        return { body: { agentSessionId: "sess-child", nodeId: "node-remote" } };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime, {
+        "x-soulstream-agent-session-id": "stale-header-sess",
+      });
+
+      const result = await client.callTool({
+        name: "create_remote_agent_session",
+        arguments: {
+          node_id: "node-remote",
+          agent_id: "roselin_codex",
+          prompt: "delegate",
+          caller_session_id: "caller-sess-1",
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      const body = JSON.parse(capture.requests[1]!.body);
+      expect(body.caller_session_id).toBe("caller-sess-1");
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("caller id를 알 수 없으면 remote orphan 세션을 만들지 않는다", async () => {
+    const capture = await createOrchCapture(200);
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_remote_agent_session",
+        arguments: {
+          node_id: "node-remote",
+          agent_id: "roselin_codex",
+          prompt: "delegate",
+        },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toEqual({
+        error: expect.stringContaining("caller_session_id"),
+      });
+      expect(capture.requests).toEqual([]);
     } finally {
       await capture.close();
     }
