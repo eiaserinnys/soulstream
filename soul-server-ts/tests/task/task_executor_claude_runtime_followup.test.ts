@@ -217,19 +217,11 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     expect(prompts[1].indexOf("task-a")).toBeLessThan(prompts[1].indexOf("task-b"));
   });
 
-  it("runtime follow-up turn이 직전 응답을 반복하면 fallback intervention을 1회 queue한다", async () => {
+  it("runtime follow-up turn이 직전 응답을 반복해도 같은 task follow-up을 재주입하지 않는다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     let flushCalls = 0;
-    const queueFallback = vi.fn(async (target: Task, message) => {
-      target.interventionQueue.push({
-        text: "runtime follow-up retry",
-        user: "system",
-        source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
-        followupAttempt: (message.followupAttempt ?? 1) + 1,
-        followupKey: message.followupKey,
-      });
-    });
+    const queueFallback = vi.fn();
     const followup: ClaudeRuntimeTaskFollowupPort = {
       collect: vi.fn(),
       flush: vi.fn(async (target) => {
@@ -264,9 +256,6 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
           yield { type: "complete", result: "repeated", timestamp: 2 } as SSEEventPayload;
           return;
         }
-        turnCount += 1;
-        yield { type: "assistant_message", content: "actual continuation", timestamp: 3 } as SSEEventPayload;
-        yield { type: "complete", result: "third", timestamp: 3 } as SSEEventPayload;
       },
       async interrupt() { return true; },
       async close() {},
@@ -286,17 +275,21 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
-    expect(turnCount).toBe(3);
-    expect(prompts).toEqual(["hi", "runtime follow-up prompt", "runtime follow-up retry"]);
-    expect(queueFallback).toHaveBeenCalledWith(
-      task,
-      expect.objectContaining({
-        source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
-        followupAttempt: 1,
-      }),
-      "repeated_response",
+    expect(turnCount).toBe(2);
+    expect(prompts).toEqual(["hi", "runtime follow-up prompt"]);
+    expect(queueFallback).not.toHaveBeenCalled();
+    const errorBroadcast = mocks.broadcaster.emitEventEnvelope.mock.calls.find(
+      (call) =>
+        (call[1] as { type: string }).type === "error" &&
+        (call[1] as { error_code?: string }).error_code ===
+          "claude_runtime_followup_stalled",
     );
-    expect(task.lastAssistantText).toBe("actual continuation");
+    expect(errorBroadcast?.[1]).toMatchObject({
+      type: "error",
+      fatal: false,
+      error_code: "claude_runtime_followup_stalled",
+    });
+    expect(task.lastAssistantText).toBe("previous response");
   });
 
   it("runtime follow-up fallback attempt도 반복되면 nonfatal error event로 사용자에게 알린다", async () => {

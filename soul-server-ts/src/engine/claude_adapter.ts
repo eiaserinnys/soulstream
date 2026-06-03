@@ -59,6 +59,7 @@ export interface ClaudeRunOptions {
   claudePermissionMode?: ClaudePermissionMode;
   env?: Record<string, string>;
   onScheduleToolUse?: ScheduleToolUseHandler;
+  onSafeInterventionDrain?: EngineExecuteParams["onSafeInterventionDrain"];
   sessionStore?: SessionStore;
   sessionStoreFlush?: SessionStoreFlush;
   loadTimeoutMs?: number;
@@ -326,6 +327,9 @@ export class ClaudeEngineAdapter
       ...(env !== undefined ? { env } : {}),
       ...(params.onScheduleToolUse !== undefined
         ? { onScheduleToolUse: params.onScheduleToolUse }
+        : {}),
+      ...(params.onSafeInterventionDrain !== undefined
+        ? { onSafeInterventionDrain: params.onSafeInterventionDrain }
         : {}),
       ...(this.sessionStore !== undefined ? { sessionStore: this.sessionStore } : {}),
       ...(this.sessionStoreFlush !== undefined ? { sessionStoreFlush: this.sessionStoreFlush } : {}),

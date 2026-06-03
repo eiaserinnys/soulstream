@@ -180,6 +180,7 @@ export class ClaudeSdkClient implements ClaudeClient {
 
   private activeQuery: ClaudeSdkQuery | null = null;
   private activeInput: PushAsyncIterable<SDKUserMessage> | null = null;
+  private activeSafeInterventionDrain: ClaudeRunOptions["onSafeInterventionDrain"];
   private lastWorkspaceDir: string | null = null;
   private lastEnv: Record<string, string> | undefined;
 
@@ -205,6 +206,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     const input = new PushAsyncIterable<SDKUserMessage>();
     input.push(makeUserMessage(options.prompt, options.imageAttachmentPaths));
     this.activeInput = input;
+    this.activeSafeInterventionDrain = options.onSafeInterventionDrain;
 
     const abortController = new AbortController();
     const abortSdk = () => abortController.abort(signal.reason);
@@ -221,6 +223,8 @@ export class ClaudeSdkClient implements ClaudeClient {
     } catch (err) {
       signal.removeEventListener("abort", abortSdk);
       input.close();
+      if (this.activeInput === input) this.activeInput = null;
+      this.activeSafeInterventionDrain = undefined;
       throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
     }
     this.activeQuery = query;
@@ -238,6 +242,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       input.close();
       if (this.activeInput === input) this.activeInput = null;
       if (this.activeQuery === query) this.activeQuery = null;
+      this.activeSafeInterventionDrain = undefined;
       this.abortPendingInputRequests();
       await pump.catch(() => undefined);
     }
@@ -291,12 +296,11 @@ export class ClaudeSdkClient implements ClaudeClient {
     return true;
   }
 
-  steerActiveTurn(_input: EngineUserInput): boolean {
-    // Claude Agent SDK treats normal user messages pushed into an active query
-    // as a prompt-submission turn, which can terminate the in-flight drain with
-    // fatal EDE diagnostics. Running interventions must use the task-level
-    // interventionQueue and become the next turn instead.
-    return false;
+  steerActiveTurn(input: EngineUserInput): boolean {
+    const activeInput = this.activeInput;
+    if (!activeInput) return false;
+    if (!this.canAcceptLiveUserInput()) return false;
+    return activeInput.push(makeUserMessage(input.prompt, input.imageAttachmentPaths));
   }
 
   async backgroundClaudeRuntimeTasks(
@@ -509,6 +513,7 @@ export class ClaudeSdkClient implements ClaudeClient {
         };
       } finally {
         this.pendingCanUseToolCalls.delete(pendingToolCall);
+        await this.drainSafeInterventions();
       }
     };
   }
@@ -1115,6 +1120,9 @@ export class ClaudeSdkClient implements ClaudeClient {
         }
         const mapped = this.mapSdkMessage(settled.value);
         events.push(...mapped);
+        if (mapped.some((event) => event.type === "tool_result")) {
+          await this.drainSafeInterventions();
+        }
         return { action: "continue", reason: "tool_use", events };
       }
       // Runtime이 이미 pending이면 stray 메시지 하나 때문에 query를 닫지 않는다.
@@ -1756,6 +1764,33 @@ export class ClaudeSdkClient implements ClaudeClient {
       if (!TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES.has(runtimeTask.status)) return true;
     }
     return false;
+  }
+
+  private canAcceptLiveUserInput(): boolean {
+    return (
+      this.pendingCanUseToolCalls.size === 0 &&
+      !this.hasPendingRuntimeWork() &&
+      !this.hasPendingToolUseResults()
+    );
+  }
+
+  private hasPendingToolUseResults(): boolean {
+    for (const toolUseId of this.toolNamesById.keys()) {
+      if (this.interceptedScheduleToolUseIds.has(toolUseId)) continue;
+      if (!this.emittedToolResultIds.has(toolUseId)) return true;
+    }
+    return false;
+  }
+
+  private async drainSafeInterventions(): Promise<void> {
+    const drain = this.activeSafeInterventionDrain;
+    if (!drain) return;
+    if (!this.canAcceptLiveUserInput()) return;
+    try {
+      await drain();
+    } catch (err) {
+      this.logger.warn({ err }, "safe live intervention drain failed");
+    }
   }
 
   private consumePendingCompactHookTrigger(trigger: string): boolean {
