@@ -202,6 +202,78 @@ class RealtimeToolApprovalAck(TypedDict):
     message: NotRequired[str]
 
 
+class UploadAttachmentResult(TypedDict):
+    """
+    노드→orch: legacy upload_attachment 또는 chunked upload_attachment_finish 결과 ACK.
+    """
+
+    type: Literal['upload_attachment_result']
+    requestId: str
+    path: str
+    filename: str
+    size: int
+    content_type: str
+
+
+class UploadAttachmentStartAck(TypedDict):
+    """
+    노드→orch: upload_attachment_start ACK. 이후 chunk_index 0부터 전송한다.
+    """
+
+    type: Literal['upload_attachment_start_ack']
+    requestId: str
+    upload_id: str
+    next_chunk_index: int
+
+
+class UploadAttachmentChunkAck(TypedDict):
+    """
+    노드→orch: upload_attachment_chunk ACK. 누적 size와 다음 chunk index를 반환한다.
+    """
+
+    type: Literal['upload_attachment_chunk_ack']
+    requestId: str
+    upload_id: str
+    chunk_index: int
+    next_chunk_index: int
+    size: int
+
+
+class UploadAttachmentAbortAck(TypedDict):
+    """
+    노드→orch: upload_attachment_abort ACK. temp upload cleanup 결과.
+    """
+
+    type: Literal['upload_attachment_abort_ack']
+    requestId: str
+    upload_id: str
+    aborted: bool
+
+
+class DeleteSessionAttachmentsResult(TypedDict):
+    """
+    노드→orch: delete_session_attachments 결과 ACK.
+    """
+
+    type: Literal['delete_session_attachments_result']
+    requestId: str
+    cleaned: bool
+    files_removed: int
+
+
+class DownloadAttachmentResult(TypedDict):
+    """
+    노드→orch: download_attachment 결과 ACK. 다운로드는 기존 single base64 payload 유지.
+    """
+
+    type: Literal['download_attachment_result']
+    requestId: str
+    content_b64: str
+    content_type: str
+    filename: str
+    size: int
+
+
 class CreateSession(TypedDict):
     """
     orch→노드: 세션 생성. protocol.py:CreateSessionCmd L15-27 + 실측 caller_info 키.
@@ -360,6 +432,85 @@ class ListSessions(TypedDict):
     type: Literal['list_sessions']
     request_id: NotRequired[str]
     requestId: NotRequired[str]
+
+
+class UploadAttachment(TypedDict):
+    """
+    orch→노드: legacy single-frame attachment upload. 8MB 이하 backward compatibility path.
+    """
+
+    type: Literal['upload_attachment']
+    requestId: NotRequired[str]
+    session_id: str
+    filename: NotRequired[str]
+    content_type: NotRequired[str]
+    content_b64: str
+
+
+class UploadAttachmentStart(TypedDict):
+    """
+    orch→노드: chunked attachment upload 시작. temp file을 만든다.
+    """
+
+    type: Literal['upload_attachment_start']
+    requestId: NotRequired[str]
+    upload_id: str
+    session_id: str
+    filename: str
+    content_type: NotRequired[str]
+    expected_size: NotRequired[int]
+
+
+class UploadAttachmentChunk(TypedDict):
+    """
+    orch→노드: chunked attachment upload 청크 append.
+    """
+
+    type: Literal['upload_attachment_chunk']
+    requestId: NotRequired[str]
+    upload_id: str
+    chunk_index: int
+    content_b64: str
+
+
+class UploadAttachmentFinish(TypedDict):
+    """
+    orch→노드: chunked attachment upload 완료. temp file을 최종 파일로 rename한다.
+    """
+
+    type: Literal['upload_attachment_finish']
+    requestId: NotRequired[str]
+    upload_id: str
+
+
+class UploadAttachmentAbort(TypedDict):
+    """
+    orch→노드: chunked attachment upload 중단. temp file을 삭제한다.
+    """
+
+    type: Literal['upload_attachment_abort']
+    requestId: NotRequired[str]
+    upload_id: str
+
+
+class DeleteSessionAttachments(TypedDict):
+    """
+    orch→노드: 세션 첨부 디렉토리 cleanup.
+    """
+
+    type: Literal['delete_session_attachments']
+    requestId: NotRequired[str]
+    session_id: str
+
+
+class DownloadAttachment(TypedDict):
+    """
+    orch→노드: 노드 로컬 첨부 파일 다운로드.
+    """
+
+    type: Literal['download_attachment']
+    requestId: NotRequired[str]
+    path: str
 
 
 class SemanticChange(TypedDict):
@@ -1248,6 +1399,12 @@ SoulstreamUpstreamProtocol: TypeAlias = (
     | RealtimeCallCreated
     | RealtimeEventAck
     | RealtimeToolApprovalAck
+    | UploadAttachmentResult
+    | UploadAttachmentStartAck
+    | UploadAttachmentChunkAck
+    | UploadAttachmentAbortAck
+    | DeleteSessionAttachmentsResult
+    | DownloadAttachmentResult
     | CreateSession
     | Intervene
     | InterruptSession
@@ -1258,6 +1415,13 @@ SoulstreamUpstreamProtocol: TypeAlias = (
     | RealtimeEvent
     | RealtimeResolveToolApproval
     | ListSessions
+    | UploadAttachment
+    | UploadAttachmentStart
+    | UploadAttachmentChunk
+    | UploadAttachmentFinish
+    | UploadAttachmentAbort
+    | DeleteSessionAttachments
+    | DownloadAttachment
     | PlanAgentProfileUpdate
     | ApplyAgentProfileUpdate
     | ListAgentsConfigSnapshots

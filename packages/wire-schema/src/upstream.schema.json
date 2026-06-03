@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 90개 $defs (wire 36 + SSE event 54). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 103개 $defs (wire 49 + SSE event 54). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -319,6 +319,84 @@
         "message": { "type": "string" }
       }
     },
+    "UploadAttachmentResult": {
+      "type": "object",
+      "description": "노드→orch: legacy upload_attachment 또는 chunked upload_attachment_finish 결과 ACK.",
+      "required": ["type", "requestId", "path", "filename", "size", "content_type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "upload_attachment_result" },
+        "requestId": { "type": "string" },
+        "path": { "type": "string" },
+        "filename": { "type": "string" },
+        "size": { "type": "integer" },
+        "content_type": { "type": "string" }
+      }
+    },
+    "UploadAttachmentStartAck": {
+      "type": "object",
+      "description": "노드→orch: upload_attachment_start ACK. 이후 chunk_index 0부터 전송한다.",
+      "required": ["type", "requestId", "upload_id", "next_chunk_index"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "upload_attachment_start_ack" },
+        "requestId": { "type": "string" },
+        "upload_id": { "type": "string" },
+        "next_chunk_index": { "type": "integer" }
+      }
+    },
+    "UploadAttachmentChunkAck": {
+      "type": "object",
+      "description": "노드→orch: upload_attachment_chunk ACK. 누적 size와 다음 chunk index를 반환한다.",
+      "required": ["type", "requestId", "upload_id", "chunk_index", "next_chunk_index", "size"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "upload_attachment_chunk_ack" },
+        "requestId": { "type": "string" },
+        "upload_id": { "type": "string" },
+        "chunk_index": { "type": "integer" },
+        "next_chunk_index": { "type": "integer" },
+        "size": { "type": "integer" }
+      }
+    },
+    "UploadAttachmentAbortAck": {
+      "type": "object",
+      "description": "노드→orch: upload_attachment_abort ACK. temp upload cleanup 결과.",
+      "required": ["type", "requestId", "upload_id", "aborted"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "upload_attachment_abort_ack" },
+        "requestId": { "type": "string" },
+        "upload_id": { "type": "string" },
+        "aborted": { "type": "boolean" }
+      }
+    },
+    "DeleteSessionAttachmentsResult": {
+      "type": "object",
+      "description": "노드→orch: delete_session_attachments 결과 ACK.",
+      "required": ["type", "requestId", "cleaned", "files_removed"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "delete_session_attachments_result" },
+        "requestId": { "type": "string" },
+        "cleaned": { "type": "boolean" },
+        "files_removed": { "type": "integer" }
+      }
+    },
+    "DownloadAttachmentResult": {
+      "type": "object",
+      "description": "노드→orch: download_attachment 결과 ACK. 다운로드는 기존 single base64 payload 유지.",
+      "required": ["type", "requestId", "content_b64", "content_type", "filename", "size"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "download_attachment_result" },
+        "requestId": { "type": "string" },
+        "content_b64": { "type": "string" },
+        "content_type": { "type": "string" },
+        "filename": { "type": "string" },
+        "size": { "type": "integer" }
+      }
+    },
     "CreateSession": {
       "type": "object",
       "description": "orch→노드: 세션 생성. protocol.py:CreateSessionCmd L15-27 + 실측 caller_info 키.",
@@ -509,6 +587,92 @@
         "type": { "const": "list_sessions" },
         "request_id": { "type": "string" },
         "requestId": { "type": "string" }
+      }
+    },
+    "UploadAttachment": {
+      "type": "object",
+      "description": "orch→노드: legacy single-frame attachment upload. 8MB 이하 backward compatibility path.",
+      "required": ["type", "session_id", "content_b64"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "upload_attachment" },
+        "requestId": { "type": "string" },
+        "session_id": { "type": "string" },
+        "filename": { "type": "string" },
+        "content_type": { "type": "string" },
+        "content_b64": { "type": "string" }
+      }
+    },
+    "UploadAttachmentStart": {
+      "type": "object",
+      "description": "orch→노드: chunked attachment upload 시작. temp file을 만든다.",
+      "required": ["type", "upload_id", "session_id", "filename"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "upload_attachment_start" },
+        "requestId": { "type": "string" },
+        "upload_id": { "type": "string" },
+        "session_id": { "type": "string" },
+        "filename": { "type": "string" },
+        "content_type": { "type": "string" },
+        "expected_size": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "UploadAttachmentChunk": {
+      "type": "object",
+      "description": "orch→노드: chunked attachment upload 청크 append.",
+      "required": ["type", "upload_id", "chunk_index", "content_b64"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "upload_attachment_chunk" },
+        "requestId": { "type": "string" },
+        "upload_id": { "type": "string" },
+        "chunk_index": { "type": "integer", "minimum": 0 },
+        "content_b64": { "type": "string" }
+      }
+    },
+    "UploadAttachmentFinish": {
+      "type": "object",
+      "description": "orch→노드: chunked attachment upload 완료. temp file을 최종 파일로 rename한다.",
+      "required": ["type", "upload_id"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "upload_attachment_finish" },
+        "requestId": { "type": "string" },
+        "upload_id": { "type": "string" }
+      }
+    },
+    "UploadAttachmentAbort": {
+      "type": "object",
+      "description": "orch→노드: chunked attachment upload 중단. temp file을 삭제한다.",
+      "required": ["type", "upload_id"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "upload_attachment_abort" },
+        "requestId": { "type": "string" },
+        "upload_id": { "type": "string" }
+      }
+    },
+    "DeleteSessionAttachments": {
+      "type": "object",
+      "description": "orch→노드: 세션 첨부 디렉토리 cleanup.",
+      "required": ["type", "session_id"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "delete_session_attachments" },
+        "requestId": { "type": "string" },
+        "session_id": { "type": "string" }
+      }
+    },
+    "DownloadAttachment": {
+      "type": "object",
+      "description": "orch→노드: 노드 로컬 첨부 파일 다운로드.",
+      "required": ["type", "path"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "download_attachment" },
+        "requestId": { "type": "string" },
+        "path": { "type": "string" }
       }
     },
     "PlanAgentProfileUpdate": {
@@ -1508,6 +1672,12 @@
     { "$ref": "#/$defs/RealtimeCallCreated" },
     { "$ref": "#/$defs/RealtimeEventAck" },
     { "$ref": "#/$defs/RealtimeToolApprovalAck" },
+    { "$ref": "#/$defs/UploadAttachmentResult" },
+    { "$ref": "#/$defs/UploadAttachmentStartAck" },
+    { "$ref": "#/$defs/UploadAttachmentChunkAck" },
+    { "$ref": "#/$defs/UploadAttachmentAbortAck" },
+    { "$ref": "#/$defs/DeleteSessionAttachmentsResult" },
+    { "$ref": "#/$defs/DownloadAttachmentResult" },
     { "$ref": "#/$defs/CreateSession" },
     { "$ref": "#/$defs/Intervene" },
     { "$ref": "#/$defs/InterruptSession" },
@@ -1518,6 +1688,13 @@
     { "$ref": "#/$defs/RealtimeEvent" },
     { "$ref": "#/$defs/RealtimeResolveToolApproval" },
     { "$ref": "#/$defs/ListSessions" },
+    { "$ref": "#/$defs/UploadAttachment" },
+    { "$ref": "#/$defs/UploadAttachmentStart" },
+    { "$ref": "#/$defs/UploadAttachmentChunk" },
+    { "$ref": "#/$defs/UploadAttachmentFinish" },
+    { "$ref": "#/$defs/UploadAttachmentAbort" },
+    { "$ref": "#/$defs/DeleteSessionAttachments" },
+    { "$ref": "#/$defs/DownloadAttachment" },
     { "$ref": "#/$defs/PlanAgentProfileUpdate" },
     { "$ref": "#/$defs/ApplyAgentProfileUpdate" },
     { "$ref": "#/$defs/ListAgentsConfigSnapshots" },

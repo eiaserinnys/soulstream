@@ -148,6 +148,32 @@ interface UploadAttachmentCmd extends CommandLike {
   content_b64?: string;
 }
 
+interface UploadAttachmentStartCmd extends CommandLike {
+  type: "upload_attachment_start";
+  upload_id?: string;
+  session_id?: string;
+  filename?: string;
+  content_type?: string;
+  expected_size?: number;
+}
+
+interface UploadAttachmentChunkCmd extends CommandLike {
+  type: "upload_attachment_chunk";
+  upload_id?: string;
+  chunk_index?: number;
+  content_b64?: string;
+}
+
+interface UploadAttachmentFinishCmd extends CommandLike {
+  type: "upload_attachment_finish";
+  upload_id?: string;
+}
+
+interface UploadAttachmentAbortCmd extends CommandLike {
+  type: "upload_attachment_abort";
+  upload_id?: string;
+}
+
 interface DeleteSessionAttachmentsCmd extends CommandLike {
   type: "delete_session_attachments";
   session_id?: string;
@@ -295,6 +321,14 @@ export class CommandDispatcher {
       subscribe_events: (cmd) => this.handleSubscribeEvents(cmd as SubscribeEventsCmd),
       list_sessions: (cmd) => this.handleListSessions(cmd as ListSessionsCmd),
       upload_attachment: (cmd) => this.handleUploadAttachment(cmd as UploadAttachmentCmd),
+      upload_attachment_start: (cmd) =>
+        this.handleUploadAttachmentStart(cmd as UploadAttachmentStartCmd),
+      upload_attachment_chunk: (cmd) =>
+        this.handleUploadAttachmentChunk(cmd as UploadAttachmentChunkCmd),
+      upload_attachment_finish: (cmd) =>
+        this.handleUploadAttachmentFinish(cmd as UploadAttachmentFinishCmd),
+      upload_attachment_abort: (cmd) =>
+        this.handleUploadAttachmentAbort(cmd as UploadAttachmentAbortCmd),
       delete_session_attachments: (cmd) =>
         this.handleDeleteSessionAttachments(cmd as DeleteSessionAttachmentsCmd),
       download_attachment: (cmd) =>
@@ -810,6 +844,96 @@ export class CommandDispatcher {
         filename: cmd.filename,
         contentType: cmd.content_type,
         contentB64: cmd.content_b64,
+      });
+      if (requestId) {
+        await this.send(ack);
+      }
+    } catch (err) {
+      if (err instanceof AttachmentCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async handleUploadAttachmentStart(
+    cmd: UploadAttachmentStartCmd,
+  ): Promise<void> {
+    const requestId = commandRequestId(cmd);
+    try {
+      const ack = await this.attachmentCommands.startUpload({
+        requestId,
+        uploadId: cmd.upload_id,
+        sessionId: cmd.session_id,
+        filename: cmd.filename,
+        contentType: cmd.content_type,
+        expectedSize: cmd.expected_size,
+      });
+      if (requestId) {
+        await this.send(ack);
+      }
+    } catch (err) {
+      if (err instanceof AttachmentCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async handleUploadAttachmentChunk(
+    cmd: UploadAttachmentChunkCmd,
+  ): Promise<void> {
+    const requestId = commandRequestId(cmd);
+    try {
+      const ack = await this.attachmentCommands.appendUploadChunk({
+        requestId,
+        uploadId: cmd.upload_id,
+        chunkIndex: cmd.chunk_index,
+        contentB64: cmd.content_b64,
+      });
+      if (requestId) {
+        await this.send(ack);
+      }
+    } catch (err) {
+      if (err instanceof AttachmentCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async handleUploadAttachmentFinish(
+    cmd: UploadAttachmentFinishCmd,
+  ): Promise<void> {
+    const requestId = commandRequestId(cmd);
+    try {
+      const ack = await this.attachmentCommands.finishUpload({
+        requestId,
+        uploadId: cmd.upload_id,
+      });
+      if (requestId) {
+        await this.send(ack);
+      }
+    } catch (err) {
+      if (err instanceof AttachmentCommandError) {
+        await this.sendError(cmd, err.message);
+        return;
+      }
+      throw err;
+    }
+  }
+
+  private async handleUploadAttachmentAbort(
+    cmd: UploadAttachmentAbortCmd,
+  ): Promise<void> {
+    const requestId = commandRequestId(cmd);
+    try {
+      const ack = await this.attachmentCommands.abortUpload({
+        requestId,
+        uploadId: cmd.upload_id,
       });
       if (requestId) {
         await this.send(ack);

@@ -7,7 +7,8 @@ orch가 그 주소로 접근 불가했던 결함(2026-05-13 운영 로그: eias-
 host=127.0.0.1) 회로 차단. 노드 등록 시 신뢰 가능하게 outbound로 연결된
 단일 WS wire가 정본이다 (design-principles §3·§5·§9). atom 작업 이력 260513.01.
 
-본 라우트는 multipart binary를 받아 base64-in-JSON으로 노드 WS에 forward하고,
+본 라우트는 multipart binary를 받아 노드 WS에 청크 명령 시퀀스로 forward하고,
+구버전 노드에 대해서만 8MB 이하 legacy single-frame base64 wire로 fallback한다.
 응답(JSON path)을 그대로 클라이언트에 반환한다. 노드 측 검증 실패(파일 크기/
 확장자)는 `INVALID_REQUEST:` prefix wire 약속으로 400 분류된다.
 """
@@ -18,6 +19,11 @@ import io
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
+from soulstream_server.constants import (
+    ATTACHMENT_UPLOAD_CHUNK_SIZE,
+    LEGACY_ATTACHMENT_MAX_SIZE,
+    MAX_ATTACHMENT_SIZE,
+)
 from soulstream_server.nodes.node_manager import NodeManager
 
 
@@ -43,7 +49,7 @@ def create_attachments_router(
         session_id: str = Form(...),
         node_id: str = Query(..., alias="nodeId"),
     ):
-        """WS reverse-proxy: 노드에 base64 binary로 attachment 업로드를 위임.
+        """WS reverse-proxy: 노드에 chunked attachment 업로드를 위임.
 
         - 미등록 노드 → 404
         - 노드가 INVALID_REQUEST: prefix EVT_ERROR → 400 (file 검증 실패)
@@ -54,15 +60,21 @@ def create_attachments_router(
         if node is None:
             raise HTTPException(404, f"Node '{node_id}' not found")
 
-        content = await file.read()
-        content_b64 = base64.b64encode(content).decode("ascii")
+        expected_size = getattr(file, "size", None)
+        if expected_size is not None and expected_size > MAX_ATTACHMENT_SIZE:
+            raise HTTPException(
+                400,
+                f"파일이 너무 큽니다 ({expected_size // 1024 // 1024}MB > "
+                f"{MAX_ATTACHMENT_SIZE // 1024 // 1024}MB)",
+            )
 
         try:
-            result = await node.send_upload_attachment(
+            result = await node.send_streamed_upload_attachment(
                 session_id=session_id,
                 filename=file.filename or "unnamed",
                 content_type=file.content_type or "application/octet-stream",
-                content_b64=content_b64,
+                chunks=_iter_upload_chunks(file),
+                expected_size=expected_size,
             )
         except ConnectionError as e:
             # 노드 disconnect/close 중에 outstanding 요청이 cancel된 케이스.
@@ -76,7 +88,34 @@ def create_attachments_router(
             msg = str(e)
             if msg.startswith("INVALID_REQUEST:"):
                 raise HTTPException(400, msg.removeprefix("INVALID_REQUEST:").strip())
-            raise HTTPException(502, f"Node attachment upload failed: {msg}")
+            if _is_chunked_upload_unsupported(msg):
+                try:
+                    result = await _legacy_upload_if_allowed(
+                        node=node,
+                        file=file,
+                        session_id=session_id,
+                        expected_size=expected_size,
+                    )
+                except ConnectionError as legacy_error:
+                    raise HTTPException(
+                        503, f"Node temporarily unavailable: {legacy_error}"
+                    )
+                except TimeoutError as legacy_error:
+                    raise HTTPException(
+                        504, f"Node attachment upload timed out: {legacy_error}"
+                    )
+                except RuntimeError as legacy_error:
+                    legacy_msg = str(legacy_error)
+                    if legacy_msg.startswith("INVALID_REQUEST:"):
+                        raise HTTPException(
+                            400,
+                            legacy_msg.removeprefix("INVALID_REQUEST:").strip(),
+                        )
+                    raise HTTPException(
+                        502, f"Node attachment upload failed: {legacy_msg}"
+                    )
+            else:
+                raise HTTPException(502, f"Node attachment upload failed: {msg}")
 
         # 노드 응답 키 검증 — code-review P1-1 (Phase 2). KeyError 누수 차단.
         if not isinstance(result, dict) or not all(
@@ -188,3 +227,61 @@ def create_attachments_router(
         )
 
     return router
+
+
+async def _iter_upload_chunks(file: UploadFile):
+    while True:
+        chunk = await file.read(ATTACHMENT_UPLOAD_CHUNK_SIZE)
+        if not chunk:
+            break
+        yield chunk
+
+
+def _is_chunked_upload_unsupported(message: str) -> bool:
+    return (
+        "upload_attachment_start" in message
+        and ("Not implemented" in message or "Unknown command" in message)
+    )
+
+
+async def _legacy_upload_if_allowed(
+    *,
+    node,
+    file: UploadFile,
+    session_id: str,
+    expected_size: int | None,
+) -> dict:
+    if expected_size is not None and expected_size > LEGACY_ATTACHMENT_MAX_SIZE:
+        raise HTTPException(
+            502,
+            "Node does not support chunked attachment upload and file exceeds "
+            f"legacy {LEGACY_ATTACHMENT_MAX_SIZE // 1024 // 1024}MB limit",
+        )
+
+    await file.seek(0)
+    content = await _read_legacy_payload(file)
+    content_b64 = base64.b64encode(content).decode("ascii")
+    return await node.send_upload_attachment(
+        session_id=session_id,
+        filename=file.filename or "unnamed",
+        content_type=file.content_type or "application/octet-stream",
+        content_b64=content_b64,
+    )
+
+
+async def _read_legacy_payload(file: UploadFile) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(ATTACHMENT_UPLOAD_CHUNK_SIZE)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > LEGACY_ATTACHMENT_MAX_SIZE:
+            raise HTTPException(
+                502,
+                "Node does not support chunked attachment upload and file exceeds "
+                f"legacy {LEGACY_ATTACHMENT_MAX_SIZE // 1024 // 1024}MB limit",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)

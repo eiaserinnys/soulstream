@@ -2,13 +2,15 @@
 
 WS reverse-proxy 전환 (2026-05-13, atom 260513.01) — orch는 노드 self-reported
 host:port HTTP 호출을 *하지 않는다*. 대신 노드와 이미 신뢰 가능하게 연결된
-WebSocket을 통해 attachment binary를 base64-in-JSON으로 forward한다.
+WebSocket을 통해 attachment binary를 chunked command sequence로 forward한다.
 
-본 테스트는 `NodeConnection.send_upload_attachment` / `send_delete_session_attachments`
+본 테스트는 `NodeConnection.send_streamed_upload_attachment` / `send_delete_session_attachments`
 호출 결과를 mock하여 라우트 분기(404 미등록 / 400 INVALID_REQUEST / 502 일반 에러 /
 504 timeout)를 검증한다. 직접 노드 vs cross-node는 *노드 객체 자체*가 다를 뿐
 같은 코드 경로이므로 두 케이스를 별도로 검증한다.
 """
+
+import base64
 
 import pytest
 from unittest.mock import AsyncMock
@@ -115,14 +117,23 @@ class TestProxyUpload:
     async def test_routes_upload_via_ws_and_returns_node_path(
         self, attachments_client, populated_node_manager
     ):
-        """노드의 send_upload_attachment 응답을 그대로 forward한다."""
+        """노드의 send_streamed_upload_attachment 응답을 그대로 forward한다."""
         node = populated_node_manager.get_node("node-1")
-        node.send_upload_attachment = AsyncMock(return_value={
-            "path": "/incoming/session-abc/123_test.txt",
-            "filename": "test.txt",
-            "size": 11,
-            "content_type": "text/plain",
-        })
+
+        async def upload_side_effect(**kwargs):
+            content = b""
+            async for chunk in kwargs["chunks"]:
+                content += chunk
+            assert content == b"hello world"
+            return {
+                "path": "/incoming/session-abc/123_test.txt",
+                "filename": "test.txt",
+                "size": len(content),
+                "content_type": "text/plain",
+            }
+
+        node.send_streamed_upload_attachment = AsyncMock(side_effect=upload_side_effect)
+        node.send_upload_attachment = AsyncMock()
 
         resp = await attachments_client.post(
             "/api/attachments/sessions?nodeId=node-1",
@@ -137,14 +148,49 @@ class TestProxyUpload:
         assert body["size"] == 11
         assert body["content_type"] == "text/plain"
 
-        # WS 호출 검증 — content_b64 인코딩, session_id/filename forward
-        node.send_upload_attachment.assert_awaited_once()
-        kwargs = node.send_upload_attachment.await_args.kwargs
+        # WS 호출 검증 — file 전체를 읽지 않고 chunk iterator를 forward
+        node.send_streamed_upload_attachment.assert_awaited_once()
+        node.send_upload_attachment.assert_not_called()
+        kwargs = node.send_streamed_upload_attachment.await_args.kwargs
         assert kwargs["session_id"] == "session-abc"
         assert kwargs["filename"] == "test.txt"
         assert kwargs["content_type"] == "text/plain"
-        import base64
-        assert base64.b64decode(kwargs["content_b64"]) == b"hello world"
+        assert kwargs["expected_size"] == 11
+
+    async def test_large_upload_uses_chunked_wire_not_legacy_single_frame(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        seen_chunks = 0
+        seen_size = 0
+
+        async def upload_side_effect(**kwargs):
+            nonlocal seen_chunks, seen_size
+            async for chunk in kwargs["chunks"]:
+                seen_chunks += 1
+                seen_size += len(chunk)
+            return {
+                "path": "/incoming/session-large/big.bin",
+                "filename": "big.bin",
+                "size": seen_size,
+                "content_type": "application/octet-stream",
+            }
+
+        node.send_streamed_upload_attachment = AsyncMock(side_effect=upload_side_effect)
+        node.send_upload_attachment = AsyncMock()
+        payload = b"x" * (50 * 1024 * 1024)
+
+        resp = await attachments_client.post(
+            "/api/attachments/sessions?nodeId=node-1",
+            data={"session_id": "session-large"},
+            files={"file": ("big.bin", payload, "application/octet-stream")},
+        )
+
+        assert resp.status_code == 201
+        assert resp.json()["size"] == len(payload)
+        assert seen_size == len(payload)
+        assert seen_chunks > 1
+        node.send_upload_attachment.assert_not_called()
 
     async def test_returns_404_for_unknown_node(self, attachments_client):
         resp = await attachments_client.post(
@@ -167,7 +213,7 @@ class TestProxyUpload:
     ):
         """노드가 INVALID_REQUEST: prefix EVT_ERROR로 응답 → 400 + 메시지 forward."""
         node = populated_node_manager.get_node("node-1")
-        node.send_upload_attachment = AsyncMock(
+        node.send_streamed_upload_attachment = AsyncMock(
             side_effect=RuntimeError("INVALID_REQUEST: 보안상 허용되지 않는 파일 형식입니다: .exe")
         )
 
@@ -188,7 +234,7 @@ class TestProxyUpload:
     ):
         """노드가 일반 EVT_ERROR로 응답 → 502."""
         node = populated_node_manager.get_node("node-1")
-        node.send_upload_attachment = AsyncMock(
+        node.send_streamed_upload_attachment = AsyncMock(
             side_effect=RuntimeError("Internal disk write failed")
         )
 
@@ -205,7 +251,7 @@ class TestProxyUpload:
     ):
         """노드 응답 timeout → 504."""
         node = populated_node_manager.get_node("node-1")
-        node.send_upload_attachment = AsyncMock(
+        node.send_streamed_upload_attachment = AsyncMock(
             side_effect=TimeoutError("Command upload_attachment timed out after 30s")
         )
 
@@ -222,7 +268,7 @@ class TestProxyUpload:
     ):
         """노드 disconnect 중 outstanding 요청 → ConnectionError → 503."""
         node = populated_node_manager.get_node("node-1")
-        node.send_upload_attachment = AsyncMock(
+        node.send_streamed_upload_attachment = AsyncMock(
             side_effect=ConnectionError("Node disconnected during command")
         )
 
@@ -239,7 +285,7 @@ class TestProxyUpload:
     ):
         """노드 upload 응답이 malformed → 502 (P1-1)."""
         node = populated_node_manager.get_node("node-1")
-        node.send_upload_attachment = AsyncMock(return_value={
+        node.send_streamed_upload_attachment = AsyncMock(return_value={
             "path": "/x",
             # filename/size/content_type 누락
         })
@@ -250,6 +296,33 @@ class TestProxyUpload:
         )
         assert resp.status_code == 502
 
+    async def test_legacy_fallback_only_when_chunked_command_is_unsupported(
+        self, attachments_client, populated_node_manager
+    ):
+        node = populated_node_manager.get_node("node-1")
+        node.send_streamed_upload_attachment = AsyncMock(
+            side_effect=RuntimeError(
+                "Not implemented in soul-server-ts: upload_attachment_start"
+            )
+        )
+        node.send_upload_attachment = AsyncMock(return_value={
+            "path": "/legacy/sess/x.txt",
+            "filename": "x.txt",
+            "size": 3,
+            "content_type": "text/plain",
+        })
+
+        resp = await attachments_client.post(
+            "/api/attachments/sessions?nodeId=node-1",
+            data={"session_id": "sess-legacy"},
+            files={"file": ("x.txt", b"abc", "text/plain")},
+        )
+
+        assert resp.status_code == 201
+        node.send_upload_attachment.assert_awaited_once()
+        kwargs = node.send_upload_attachment.await_args.kwargs
+        assert base64.b64decode(kwargs["content_b64"]) == b"abc"
+
     async def test_cross_node_routing_selects_correct_node_instance(
         self, two_node_client
     ):
@@ -258,10 +331,10 @@ class TestProxyUpload:
 
         direct = manager.get_node("node-direct")
         remote = manager.get_node("node-remote")
-        direct.send_upload_attachment = AsyncMock(return_value={
+        direct.send_streamed_upload_attachment = AsyncMock(return_value={
             "path": "/d/sess/x", "filename": "x", "size": 1, "content_type": "text/plain",
         })
-        remote.send_upload_attachment = AsyncMock(return_value={
+        remote.send_streamed_upload_attachment = AsyncMock(return_value={
             "path": "/r/sess/x", "filename": "x", "size": 1, "content_type": "text/plain",
         })
 
@@ -278,8 +351,8 @@ class TestProxyUpload:
 
         assert resp1.status_code == 201 and resp1.json()["path"] == "/d/sess/x"
         assert resp2.status_code == 201 and resp2.json()["path"] == "/r/sess/x"
-        direct.send_upload_attachment.assert_awaited_once()
-        remote.send_upload_attachment.assert_awaited_once()
+        direct.send_streamed_upload_attachment.assert_awaited_once()
+        remote.send_streamed_upload_attachment.assert_awaited_once()
 
 
 # ─── proxy_delete ────────────────────────────────────

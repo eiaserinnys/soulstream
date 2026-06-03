@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 90개 $defs (wire 36 + SSE event 54). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 103개 $defs (wire 49 + SSE event 54). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -19,6 +19,12 @@ export type SoulstreamUpstreamProtocol =
   | RealtimeCallCreated
   | RealtimeEventAck
   | RealtimeToolApprovalAck
+  | UploadAttachmentResult
+  | UploadAttachmentStartAck
+  | UploadAttachmentChunkAck
+  | UploadAttachmentAbortAck
+  | DeleteSessionAttachmentsResult
+  | DownloadAttachmentResult
   | CreateSession
   | Intervene
   | InterruptSession
@@ -29,6 +35,13 @@ export type SoulstreamUpstreamProtocol =
   | RealtimeEvent
   | RealtimeResolveToolApproval
   | ListSessions
+  | UploadAttachment
+  | UploadAttachmentStart
+  | UploadAttachmentChunk
+  | UploadAttachmentFinish
+  | UploadAttachmentAbort
+  | DeleteSessionAttachments
+  | DownloadAttachment
   | PlanAgentProfileUpdate
   | ApplyAgentProfileUpdate
   | ListAgentsConfigSnapshots
@@ -851,6 +864,72 @@ export interface RealtimeToolApprovalAck {
   [k: string]: unknown;
 }
 /**
+ * 노드→orch: legacy upload_attachment 또는 chunked upload_attachment_finish 결과 ACK.
+ */
+export interface UploadAttachmentResult {
+  type: "upload_attachment_result";
+  requestId: string;
+  path: string;
+  filename: string;
+  size: number;
+  content_type: string;
+  [k: string]: unknown;
+}
+/**
+ * 노드→orch: upload_attachment_start ACK. 이후 chunk_index 0부터 전송한다.
+ */
+export interface UploadAttachmentStartAck {
+  type: "upload_attachment_start_ack";
+  requestId: string;
+  upload_id: string;
+  next_chunk_index: number;
+  [k: string]: unknown;
+}
+/**
+ * 노드→orch: upload_attachment_chunk ACK. 누적 size와 다음 chunk index를 반환한다.
+ */
+export interface UploadAttachmentChunkAck {
+  type: "upload_attachment_chunk_ack";
+  requestId: string;
+  upload_id: string;
+  chunk_index: number;
+  next_chunk_index: number;
+  size: number;
+  [k: string]: unknown;
+}
+/**
+ * 노드→orch: upload_attachment_abort ACK. temp upload cleanup 결과.
+ */
+export interface UploadAttachmentAbortAck {
+  type: "upload_attachment_abort_ack";
+  requestId: string;
+  upload_id: string;
+  aborted: boolean;
+  [k: string]: unknown;
+}
+/**
+ * 노드→orch: delete_session_attachments 결과 ACK.
+ */
+export interface DeleteSessionAttachmentsResult {
+  type: "delete_session_attachments_result";
+  requestId: string;
+  cleaned: boolean;
+  files_removed: number;
+  [k: string]: unknown;
+}
+/**
+ * 노드→orch: download_attachment 결과 ACK. 다운로드는 기존 single base64 payload 유지.
+ */
+export interface DownloadAttachmentResult {
+  type: "download_attachment_result";
+  requestId: string;
+  content_b64: string;
+  content_type: string;
+  filename: string;
+  size: number;
+  [k: string]: unknown;
+}
+/**
  * orch→노드: 세션 생성. protocol.py:CreateSessionCmd L15-27 + 실측 caller_info 키.
  */
 export interface CreateSession {
@@ -1038,6 +1117,78 @@ export interface ListSessions {
   type: "list_sessions";
   request_id?: string;
   requestId?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: legacy single-frame attachment upload. 8MB 이하 backward compatibility path.
+ */
+export interface UploadAttachment {
+  type: "upload_attachment";
+  requestId?: string;
+  session_id: string;
+  filename?: string;
+  content_type?: string;
+  content_b64: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: chunked attachment upload 시작. temp file을 만든다.
+ */
+export interface UploadAttachmentStart {
+  type: "upload_attachment_start";
+  requestId?: string;
+  upload_id: string;
+  session_id: string;
+  filename: string;
+  content_type?: string;
+  expected_size?: number;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: chunked attachment upload 청크 append.
+ */
+export interface UploadAttachmentChunk {
+  type: "upload_attachment_chunk";
+  requestId?: string;
+  upload_id: string;
+  chunk_index: number;
+  content_b64: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: chunked attachment upload 완료. temp file을 최종 파일로 rename한다.
+ */
+export interface UploadAttachmentFinish {
+  type: "upload_attachment_finish";
+  requestId?: string;
+  upload_id: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: chunked attachment upload 중단. temp file을 삭제한다.
+ */
+export interface UploadAttachmentAbort {
+  type: "upload_attachment_abort";
+  requestId?: string;
+  upload_id: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: 세션 첨부 디렉토리 cleanup.
+ */
+export interface DeleteSessionAttachments {
+  type: "delete_session_attachments";
+  requestId?: string;
+  session_id: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: 노드 로컬 첨부 파일 다운로드.
+ */
+export interface DownloadAttachment {
+  type: "download_attachment";
+  requestId?: string;
+  path: string;
   [k: string]: unknown;
 }
 /**

@@ -4,7 +4,7 @@ import asyncio
 import base64
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable, Coroutine
+from typing import Any, AsyncIterable, Callable, Coroutine
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect
@@ -26,6 +26,10 @@ from soulstream_server.constants import (
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
     CMD_UPLOAD_ATTACHMENT,
+    CMD_UPLOAD_ATTACHMENT_ABORT,
+    CMD_UPLOAD_ATTACHMENT_CHUNK,
+    CMD_UPLOAD_ATTACHMENT_FINISH,
+    CMD_UPLOAD_ATTACHMENT_START,
     CMD_CLAUDE_AUTH_STATUS,
     CMD_CLAUDE_AUTH_SET_TOKEN,
     CMD_CLAUDE_AUTH_DELETE_TOKEN,
@@ -42,6 +46,7 @@ from soulstream_server.constants import (
     CMD_REFLECT_BRIEF,
     COMMAND_TIMEOUT,
     EVT_ERROR,
+    MAX_ATTACHMENT_SIZE,
 )
 from soulstream_server.nodes.inbound_events import (
     NodeInboundEvents,
@@ -406,14 +411,11 @@ class NodeConnection:
         content_type: str,
         content_b64: str,
     ) -> dict:
-        """노드에 attachment 업로드를 WS로 위임.
+        """노드에 legacy single-frame attachment 업로드를 WS로 위임.
 
-        binary는 base64로 인코딩하여 텍스트 WS 프레임으로 전송한다(기존 `send_json`
-        wire 재사용). 노드 측 수신 한도는 *aiohttp 클라이언트의 `max_msg_size`*
-        (soul-server adapter.py에서 `WS_INCOMING_MAX_MSG_SIZE=16MB` 명시 설정)에
-        의해 정해지며, MAX_ATTACHMENT_SIZE=8MB → base64 ~10.7MB로 안전. orch
-        서버 측 수신 한도는 uvicorn의 `ws_max_size` 기본 16MB이나 본 wire는
-        orch → 노드 방향만 큰 페이로드를 가지므로 노드 측 한도가 정본.
+        binary는 base64로 인코딩하여 텍스트 WS 프레임 하나로 전송한다. 100MB
+        업로드 경로는 `send_streamed_upload_attachment`가 정본이며, 본 메서드는
+        구버전 노드 fallback에서만 8MB 이하 payload로 호출된다.
 
         응답: {path, filename, size, content_type} — 노드 디스크의 절대경로.
         """
@@ -424,6 +426,90 @@ class NodeConnection:
             "content_b64": content_b64,
         }
         return await self._send_command(CMD_UPLOAD_ATTACHMENT, payload)
+
+    async def send_streamed_upload_attachment(
+        self,
+        session_id: str,
+        filename: str,
+        content_type: str,
+        chunks: AsyncIterable[bytes],
+        expected_size: int | None = None,
+    ) -> dict:
+        """노드에 attachment 업로드를 청크 WS 명령 시퀀스로 위임.
+
+        기존 outbound WS 정본은 유지하되, binary를 한 base64 JSON 프레임에 싣지
+        않는다. 각 chunk는 작게 base64 인코딩되어 별도 command로 전송된다.
+        실패·HTTP client cancellation 시 start 이후라면 abort command를 best-effort로
+        보내 노드 temp 파일을 정리한다.
+        """
+        if expected_size is not None:
+            if expected_size < 0:
+                raise RuntimeError("INVALID_REQUEST: 파일 크기가 잘못되었습니다")
+            if expected_size > MAX_ATTACHMENT_SIZE:
+                raise RuntimeError(
+                    "INVALID_REQUEST: "
+                    f"파일이 너무 큽니다 ({expected_size // 1024 // 1024}MB > "
+                    f"{MAX_ATTACHMENT_SIZE // 1024 // 1024}MB)"
+                )
+
+        upload_id = uuid.uuid4().hex
+        started = False
+        total_size = 0
+        try:
+            start_payload: dict[str, Any] = {
+                "upload_id": upload_id,
+                "session_id": session_id,
+                "filename": filename,
+                "content_type": content_type,
+            }
+            if expected_size is not None:
+                start_payload["expected_size"] = expected_size
+            await self._send_command(CMD_UPLOAD_ATTACHMENT_START, start_payload)
+            started = True
+
+            chunk_index = 0
+            async for chunk in chunks:
+                if not chunk:
+                    continue
+                total_size += len(chunk)
+                if total_size > MAX_ATTACHMENT_SIZE:
+                    raise RuntimeError(
+                        "INVALID_REQUEST: "
+                        f"파일이 너무 큽니다 ({total_size // 1024 // 1024}MB > "
+                        f"{MAX_ATTACHMENT_SIZE // 1024 // 1024}MB)"
+                    )
+                await self._send_command(
+                    CMD_UPLOAD_ATTACHMENT_CHUNK,
+                    {
+                        "upload_id": upload_id,
+                        "chunk_index": chunk_index,
+                        "content_b64": base64.b64encode(chunk).decode("ascii"),
+                    },
+                )
+                chunk_index += 1
+
+            return await self._send_command(
+                CMD_UPLOAD_ATTACHMENT_FINISH,
+                {"upload_id": upload_id},
+            )
+        except asyncio.CancelledError:
+            if started:
+                await self._abort_upload_best_effort(upload_id)
+            raise
+        except Exception:
+            if started:
+                await self._abort_upload_best_effort(upload_id)
+            raise
+
+    async def _abort_upload_best_effort(self, upload_id: str) -> None:
+        try:
+            await self._send_command(
+                CMD_UPLOAD_ATTACHMENT_ABORT,
+                {"upload_id": upload_id},
+                timeout=5,
+            )
+        except Exception:
+            pass
 
     async def send_delete_session_attachments(self, session_id: str) -> dict:
         """세션 첨부 정리를 WS로 위임.
