@@ -105,6 +105,7 @@ interface PathOps {
 export class FileAttachmentStore implements AttachmentStore {
   private readonly baseDir: string;
   private readonly pendingUploads = new Map<string, PendingUpload>();
+  private readonly uploadOperations = new Map<string, Promise<void>>();
 
   constructor(baseDir: string) {
     this.baseDir = path.resolve(baseDir);
@@ -136,104 +137,112 @@ export class FileAttachmentStore implements AttachmentStore {
   async beginFileUpload(
     params: BeginSessionFileUploadParams,
   ): Promise<{ uploadId: string; next_chunk_index: number }> {
-    const safeUploadId = sanitizeUploadId(params.uploadId);
-    const safeOriginalName = sanitizeOriginalFilename(params.filename);
-    if (params.expectedSize !== undefined) {
-      this.validateFile(safeOriginalName, params.expectedSize);
-    } else {
-      this.validateFile(safeOriginalName, 0);
-    }
+    return this.withUploadOperation(params.uploadId, async (safeUploadId) => {
+      const safeOriginalName = sanitizeOriginalFilename(params.filename);
+      if (params.expectedSize !== undefined) {
+        this.validateFile(safeOriginalName, params.expectedSize);
+      } else {
+        this.validateFile(safeOriginalName, 0);
+      }
 
-    if (this.pendingUploads.has(safeUploadId)) {
-      throw new AttachmentError("upload_id가 이미 사용 중입니다");
-    }
+      if (this.pendingUploads.has(safeUploadId)) {
+        throw new AttachmentError("upload_id가 이미 사용 중입니다");
+      }
 
-    const sessionDir = this.sessionDir(params.sessionId);
-    await mkdir(sessionDir, { recursive: true });
+      const sessionDir = this.sessionDir(params.sessionId);
+      await mkdir(sessionDir, { recursive: true });
 
-    const timestamp = new Date().toISOString();
-    const filename = buildStreamingAttachmentFilename(
-      timestamp,
-      safeUploadId,
-      safeOriginalName,
-    );
-    const finalPath = path.join(sessionDir, filename);
-    const tempPath = path.join(sessionDir, `.upload-${safeUploadId}.tmp`);
-    await writeFile(tempPath, Buffer.alloc(0), { flag: "wx" });
+      const timestamp = new Date().toISOString();
+      const filename = buildStreamingAttachmentFilename(
+        timestamp,
+        safeUploadId,
+        safeOriginalName,
+      );
+      const finalPath = path.join(sessionDir, filename);
+      const tempPath = path.join(sessionDir, `.upload-${safeUploadId}.tmp`);
+      await writeFile(tempPath, Buffer.alloc(0), { flag: "wx" });
 
-    this.pendingUploads.set(safeUploadId, {
-      uploadId: safeUploadId,
-      sessionDir,
-      tempPath,
-      finalPath,
-      filename,
-      contentType: params.contentType || inferContentType(filename),
-      expectedSize: params.expectedSize,
-      size: 0,
-      nextChunkIndex: 0,
+      this.pendingUploads.set(safeUploadId, {
+        uploadId: safeUploadId,
+        sessionDir,
+        tempPath,
+        finalPath,
+        filename,
+        contentType: params.contentType || inferContentType(filename),
+        expectedSize: params.expectedSize,
+        size: 0,
+        nextChunkIndex: 0,
+      });
+
+      return { uploadId: safeUploadId, next_chunk_index: 0 };
     });
-
-    return { uploadId: safeUploadId, next_chunk_index: 0 };
   }
 
   async appendFileUploadChunk(
     params: AppendSessionFileUploadParams,
   ): Promise<{ uploadId: string; chunk_index: number; next_chunk_index: number; size: number }> {
-    const state = this.getPendingUpload(params.uploadId);
-    if (params.chunkIndex !== state.nextChunkIndex) {
-      throw new AttachmentError(
-        `chunk_index 순서가 맞지 않습니다 (${params.chunkIndex} != ${state.nextChunkIndex})`,
-      );
-    }
-    const nextSize = state.size + params.chunk.length;
-    try {
-      this.validateFile(state.filename, nextSize);
-      await appendFile(state.tempPath, params.chunk);
-    } catch (err) {
-      await this.abortFileUpload({ uploadId: state.uploadId });
-      throw err;
-    }
+    return this.withUploadOperation(params.uploadId, async () => {
+      const state = this.getPendingUpload(params.uploadId);
+      if (params.chunkIndex !== state.nextChunkIndex) {
+        throw new AttachmentError(
+          `chunk_index 순서가 맞지 않습니다 (${params.chunkIndex} != ${state.nextChunkIndex})`,
+        );
+      }
+      const nextSize = state.size + params.chunk.length;
+      try {
+        this.validateFile(state.filename, nextSize);
+        await appendFile(state.tempPath, params.chunk);
+      } catch (err) {
+        await this.removePendingUpload(state);
+        throw err;
+      }
 
-    state.size = nextSize;
-    state.nextChunkIndex += 1;
-    return {
-      uploadId: state.uploadId,
-      chunk_index: params.chunkIndex,
-      next_chunk_index: state.nextChunkIndex,
-      size: state.size,
-    };
+      state.size = nextSize;
+      state.nextChunkIndex += 1;
+      return {
+        uploadId: state.uploadId,
+        chunk_index: params.chunkIndex,
+        next_chunk_index: state.nextChunkIndex,
+        size: state.size,
+      };
+    });
   }
 
   async finishFileUpload(params: FinishSessionFileUploadParams): Promise<SavedAttachment> {
-    const state = this.getPendingUpload(params.uploadId);
-    try {
-      if (state.expectedSize !== undefined && state.size !== state.expectedSize) {
-        throw new AttachmentError(
-          `업로드 크기가 예상과 다릅니다 (${state.size} != ${state.expectedSize})`,
-        );
+    return this.withUploadOperation(params.uploadId, async () => {
+      const state = this.getPendingUpload(params.uploadId);
+      try {
+        if (state.expectedSize !== undefined && state.size !== state.expectedSize) {
+          throw new AttachmentError(
+            `업로드 크기가 예상과 다릅니다 (${state.size} != ${state.expectedSize})`,
+          );
+        }
+        await rename(state.tempPath, state.finalPath);
+        return {
+          path: path.resolve(state.finalPath),
+          filename: state.filename,
+          size: state.size,
+          content_type: state.contentType,
+        };
+      } catch (err) {
+        await this.removePendingUpload(state);
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+          throw new AttachmentError("업로드 임시 파일이 존재하지 않습니다");
+        }
+        throw err;
+      } finally {
+        this.pendingUploads.delete(state.uploadId);
       }
-      await rename(state.tempPath, state.finalPath);
-      return {
-        path: path.resolve(state.finalPath),
-        filename: state.filename,
-        size: state.size,
-        content_type: state.contentType,
-      };
-    } catch (err) {
-      await rm(state.tempPath, { force: true });
-      throw err;
-    } finally {
-      this.pendingUploads.delete(state.uploadId);
-    }
+    });
   }
 
   async abortFileUpload(params: AbortSessionFileUploadParams): Promise<boolean> {
-    const safeUploadId = sanitizeUploadId(params.uploadId);
-    const state = this.pendingUploads.get(safeUploadId);
-    if (!state) return false;
-    this.pendingUploads.delete(safeUploadId);
-    await rm(state.tempPath, { force: true });
-    return true;
+    return this.withUploadOperation(params.uploadId, async (safeUploadId) => {
+      const state = this.pendingUploads.get(safeUploadId);
+      if (!state) return false;
+      await this.removePendingUpload(state);
+      return true;
+    });
   }
 
   async cleanupSession(sessionId: string): Promise<number> {
@@ -313,6 +322,29 @@ export class FileAttachmentStore implements AttachmentStore {
       throw new AttachmentError("upload_id를 찾을 수 없습니다");
     }
     return state;
+  }
+
+  private async removePendingUpload(state: PendingUpload): Promise<void> {
+    this.pendingUploads.delete(state.uploadId);
+    await rm(state.tempPath, { force: true });
+  }
+
+  private async withUploadOperation<T>(
+    uploadId: string,
+    operation: (safeUploadId: string) => Promise<T>,
+  ): Promise<T> {
+    const safeUploadId = sanitizeUploadId(uploadId);
+    const previous = this.uploadOperations.get(safeUploadId) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(() => operation(safeUploadId));
+    const tracked = run.then(() => undefined, () => undefined);
+    this.uploadOperations.set(safeUploadId, tracked);
+    try {
+      return await run;
+    } finally {
+      if (this.uploadOperations.get(safeUploadId) === tracked) {
+        this.uploadOperations.delete(safeUploadId);
+      }
+    }
   }
 }
 

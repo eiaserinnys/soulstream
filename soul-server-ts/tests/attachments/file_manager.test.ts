@@ -165,6 +165,47 @@ describe("FileAttachmentStore", () => {
     await expect(readdir(join(dir, "sess-stream"))).resolves.toEqual([saved.filename]);
   });
 
+  it("serializes chunk and finish behind a started upload", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T00:45:30.123Z"));
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+
+    const started = store.beginFileUpload({
+      uploadId: "race-upload",
+      sessionId: "sess-race",
+      filename: "photo.png",
+      expectedSize: 11,
+      contentType: "image/png",
+    });
+    const chunked = store.appendFileUploadChunk({
+      uploadId: "race-upload",
+      chunkIndex: 0,
+      chunk: Buffer.from("hello world"),
+    });
+    const finished = store.finishFileUpload({ uploadId: "race-upload" });
+
+    await expect(started).resolves.toEqual({
+      uploadId: "race-upload",
+      next_chunk_index: 0,
+    });
+    await expect(chunked).resolves.toMatchObject({
+      uploadId: "race-upload",
+      chunk_index: 0,
+      next_chunk_index: 1,
+      size: 11,
+    });
+    const saved = await finished;
+
+    expect(saved).toMatchObject({
+      filename: "2026-06-01T00:45:30.123Z-photo-race-upload.png",
+      size: 11,
+      content_type: "image/png",
+    });
+    await expect(readFile(saved.path, "utf8")).resolves.toBe("hello world");
+    await expect(readdir(join(dir, "sess-race"))).resolves.toEqual([saved.filename]);
+  });
+
   it("removes temp chunks when an upload is aborted", async () => {
     const dir = await makeTempDir();
     const store = new FileAttachmentStore(dir);
@@ -182,6 +223,33 @@ describe("FileAttachmentStore", () => {
 
     await expect(store.abortFileUpload({ uploadId: "abort-me" })).resolves.toBe(true);
     await expect(readdir(join(dir, "sess-abort"))).resolves.toEqual([]);
+  });
+
+  it("keeps finish and abort for the same upload ordered", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T00:45:30.123Z"));
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+
+    await store.beginFileUpload({
+      uploadId: "finish-first",
+      sessionId: "sess-finish-first",
+      filename: "photo.png",
+      expectedSize: 4,
+    });
+    await store.appendFileUploadChunk({
+      uploadId: "finish-first",
+      chunkIndex: 0,
+      chunk: Buffer.from("done"),
+    });
+
+    const finished = store.finishFileUpload({ uploadId: "finish-first" });
+    const aborted = store.abortFileUpload({ uploadId: "finish-first" });
+
+    const saved = await finished;
+    await expect(aborted).resolves.toBe(false);
+    await expect(readFile(saved.path, "utf8")).resolves.toBe("done");
+    await expect(readdir(join(dir, "sess-finish-first"))).resolves.toEqual([saved.filename]);
   });
 
   it("keeps concurrent same-name streaming uploads distinct", async () => {
@@ -223,5 +291,27 @@ describe("FileAttachmentStore", () => {
     expect(a.filename).not.toBe(b.filename);
     await expect(readFile(a.path, "utf8")).resolves.toBe("A");
     await expect(readFile(b.path, "utf8")).resolves.toBe("B");
+  });
+
+  it("streams attachments over 50MB through the temp upload lifecycle", async () => {
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+    const chunk = Buffer.alloc(17 * 1024 * 1024, 7);
+
+    await store.beginFileUpload({
+      uploadId: "large-stream",
+      sessionId: "sess-large-stream",
+      filename: "large.bin",
+      expectedSize: chunk.length * 3,
+    });
+    await store.appendFileUploadChunk({ uploadId: "large-stream", chunkIndex: 0, chunk });
+    await store.appendFileUploadChunk({ uploadId: "large-stream", chunkIndex: 1, chunk });
+    await store.appendFileUploadChunk({ uploadId: "large-stream", chunkIndex: 2, chunk });
+
+    const saved = await store.finishFileUpload({ uploadId: "large-stream" });
+
+    expect(saved.size).toBe(51 * 1024 * 1024);
+    await expect(readFile(saved.path)).resolves.toHaveLength(51 * 1024 * 1024);
+    await expect(readdir(join(dir, "sess-large-stream"))).resolves.toEqual([saved.filename]);
   });
 });
