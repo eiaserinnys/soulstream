@@ -1086,7 +1086,6 @@ export class ClaudeSdkClient implements ClaudeClient {
       }
       if (msg && isRuntimeSystemMessage(msg)) {
         events.push(...this.mapSystemMessage(msg));
-        await this.drainSafeInterventions();
         if (this.hasPendingRuntimeWork()) continue;
         return { action: "finish", events };
       }

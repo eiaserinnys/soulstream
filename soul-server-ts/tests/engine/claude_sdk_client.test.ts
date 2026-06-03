@@ -2195,6 +2195,150 @@ describe("ClaudeSdkClient", () => {
     );
   });
 
+  it("runs safe intervention drain after a tool_result continuation before the next assistant event", async () => {
+    const drainResults: boolean[] = [];
+    let secondInputRead: Promise<IteratorResult<SDKUserMessage>> | undefined;
+    let client: ClaudeSdkClient;
+    client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const input = params.prompt as AsyncIterable<SDKUserMessage>;
+              const iterator = input[Symbol.asyncIterator]();
+              await iterator.next();
+              secondInputRead = iterator.next();
+              yield {
+                type: "assistant",
+                message: {
+                  content: [
+                    {
+                      type: "tool_use",
+                      id: "toolu-safe-drain",
+                      name: "Bash",
+                      input: { command: "true" },
+                    },
+                  ],
+                },
+                parent_tool_use_id: null,
+                uuid: "assistant-tool-safe-drain",
+                session_id: "claude-sess-safe-drain",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-safe-drain", "", { stop_reason: "tool_use" });
+              yield {
+                type: "user",
+                message: {
+                  role: "user",
+                  content: [
+                    {
+                      type: "tool_result",
+                      tool_use_id: "toolu-safe-drain",
+                      content: "done",
+                      is_error: false,
+                    },
+                  ],
+                },
+                parent_tool_use_id: null,
+                uuid: "user-tool-safe-drain",
+                session_id: "claude-sess-safe-drain",
+              } as unknown as SDKMessage;
+              yield {
+                type: "assistant",
+                message: { content: [{ type: "text", text: "continued" }] },
+                parent_tool_use_id: null,
+                uuid: "assistant-after-safe-drain",
+                session_id: "claude-sess-safe-drain",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-safe-drain", "done");
+            })(),
+          ),
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        {
+          prompt: "first",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+          onSafeInterventionDrain: () => {
+            drainResults.push(
+              client.steerActiveTurn({ prompt: "queued after tool_result" }),
+            );
+          },
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(drainResults).toEqual([true]);
+    expect(secondInputRead).toBeDefined();
+    const steeredInput = await secondInputRead!;
+    expect(steeredInput.done).toBe(false);
+    expect(messageText(steeredInput.value)).toBe("queued after tool_result");
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "tool_result", toolUseId: "toolu-safe-drain" }),
+        expect.objectContaining({ type: "text", text: "continued" }),
+      ]),
+    );
+  });
+
+  it("does not drain queued interventions from runtime system messages that finish the query", async () => {
+    const drainResults: boolean[] = [];
+    let client: ClaudeSdkClient;
+    client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const input = params.prompt as AsyncIterable<SDKUserMessage>;
+              const iterator = input[Symbol.asyncIterator]();
+              await iterator.next();
+              yield sdkSuccessResult("claude-sess-runtime-finish", "done");
+              yield {
+                type: "system",
+                subtype: "session_state_changed",
+                state: "idle",
+                uuid: "runtime-finish-idle",
+                session_id: "claude-sess-runtime-finish",
+              } as unknown as SDKMessage;
+            })(),
+          ),
+        postResultDrainMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        {
+          prompt: "first",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+          onSafeInterventionDrain: () => {
+            drainResults.push(
+              client.steerActiveTurn({ prompt: "would be swallowed" }),
+            );
+          },
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(drainResults).toEqual([]);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "claude_runtime_session_state",
+          state: "idle",
+        }),
+        expect.objectContaining({ type: "complete", result: "done" }),
+      ]),
+    );
+  });
+
   it("rejects live steering while Claude runtime work is pending and accepts after idle", async () => {
     const prompts: string[] = [];
     const readyWhileRuntimePending = deferred<void>();
