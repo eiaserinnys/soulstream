@@ -131,6 +131,10 @@ CMD_SUBSCRIBE_EVENTS = "subscribe_events"
 # 운영 로그: eias-shopping/eias-linegames가 host=127.0.0.1로 보고하여 orch에서 도달 불가
 # 였던 결함 회로(2026-05-13) 차단. atom 작업 이력 260513.01 (orch-relay-attachment).
 CMD_UPLOAD_ATTACHMENT = "upload_attachment"
+CMD_UPLOAD_ATTACHMENT_START = "upload_attachment_start"
+CMD_UPLOAD_ATTACHMENT_CHUNK = "upload_attachment_chunk"
+CMD_UPLOAD_ATTACHMENT_FINISH = "upload_attachment_finish"
+CMD_UPLOAD_ATTACHMENT_ABORT = "upload_attachment_abort"
 CMD_DELETE_SESSION_ATTACHMENTS = "delete_session_attachments"
 # Phase 2 (atom 260513.02 — chat-inline-attachment): 채팅 영역 사용자 발화
 # 말풍선에 첨부 이미지 인라인 표시. orch가 GET /api/attachments/files에서

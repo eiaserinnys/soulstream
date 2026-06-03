@@ -26,6 +26,10 @@ CMD_SUBSCRIBE_EVENTS = "subscribe_events"
 # 노드 self-reported host:port HTTP 가정 폐기 — 신뢰 가능한 WS wire로 통합.
 # atom 작업 이력 260513.01.
 CMD_UPLOAD_ATTACHMENT = "upload_attachment"
+CMD_UPLOAD_ATTACHMENT_START = "upload_attachment_start"
+CMD_UPLOAD_ATTACHMENT_CHUNK = "upload_attachment_chunk"
+CMD_UPLOAD_ATTACHMENT_FINISH = "upload_attachment_finish"
+CMD_UPLOAD_ATTACHMENT_ABORT = "upload_attachment_abort"
 CMD_DELETE_SESSION_ATTACHMENTS = "delete_session_attachments"
 # atom 작업 이력 260513.02 (chat-inline-attachment) — 채팅 인라인 표시.
 CMD_DOWNLOAD_ATTACHMENT = "download_attachment"
@@ -72,6 +76,14 @@ REGISTRATION_TIMEOUT = 10
 
 # Command timeout (seconds)
 COMMAND_TIMEOUT = 30
+
+# Attachment limits.
+# 100MB is the user-facing single attachment limit. Upload transport uses
+# bounded chunks over the existing outbound node WebSocket, so this limit no
+# longer needs to fit inside one WS text frame.
+MAX_ATTACHMENT_SIZE = 100 * 1024 * 1024
+LEGACY_ATTACHMENT_MAX_SIZE = 8 * 1024 * 1024
+ATTACHMENT_UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 # Known SSE event types
 KNOWN_SSE_EVENT_TYPES = frozenset({

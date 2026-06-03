@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 
-import { FileAttachmentStore } from "../../src/attachments/file_manager.js";
+import {
+  FileAttachmentStore,
+  isPathUnderBase,
+} from "../../src/attachments/file_manager.js";
 
 const createdDirs: string[] = [];
 
@@ -65,5 +68,160 @@ describe("FileAttachmentStore", () => {
     expect(second.filename).toBe("2026-06-01T00:45:30.123Z-report-1.txt");
     await expect(readFile(first.path, "utf8")).resolves.toBe("first");
     await expect(readFile(second.path, "utf8")).resolves.toBe("second");
+  });
+
+  it("treats Windows backslash child paths as under the attachment base", () => {
+    const base = "D:\\soulstream\\.local\\incoming";
+
+    expect(
+      isPathUnderBase(base, "D:\\soulstream\\.local\\incoming\\sess-1", win32),
+    ).toBe(true);
+    expect(
+      isPathUnderBase(base, "D:\\soulstream\\.local\\incoming", win32),
+    ).toBe(true);
+    expect(
+      isPathUnderBase(base, "D:\\soulstream\\.local\\incoming-other\\sess-1", win32),
+    ).toBe(false);
+    expect(
+      isPathUnderBase(base, "D:\\soulstream\\.local\\incoming\\..\\outside", win32),
+    ).toBe(false);
+    expect(isPathUnderBase(base, "D:\\evil", win32)).toBe(false);
+  });
+
+  it("allows attachments larger than the legacy 8MB limit and reports 100MB errors", async () => {
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+
+    const saved = await store.saveFileForSession({
+      sessionId: "sess-large",
+      filename: "large.bin",
+      content: Buffer.alloc(9 * 1024 * 1024, 1),
+    });
+
+    expect(saved.size).toBe(9 * 1024 * 1024);
+    await expect(readFile(saved.path)).resolves.toHaveLength(9 * 1024 * 1024);
+
+    await expect(
+      store.beginFileUpload({
+        uploadId: "too-large",
+        sessionId: "sess-large",
+        filename: "huge.bin",
+        expectedSize: 101 * 1024 * 1024,
+      }),
+    ).rejects.toThrow("100MB");
+  });
+
+  it("sanitizes Windows reserved filename characters while preserving CJK text", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T00:45:30.123Z"));
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+
+    const saved = await store.saveFileForSession({
+      sessionId: "sess-cjk",
+      filename: "深入浅出:即梦?知乎.zip ",
+      content: Buffer.from("zip"),
+    });
+
+    expect(saved.filename).toBe("2026-06-01T00:45:30.123Z-深入浅出_即梦_知乎.zip_");
+    await expect(readFile(saved.path, "utf8")).resolves.toBe("zip");
+  });
+
+  it("streams chunks to a temp file and renames only on finish", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T00:45:30.123Z"));
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+
+    await store.beginFileUpload({
+      uploadId: "upload-a",
+      sessionId: "sess-stream",
+      filename: "report.txt",
+      expectedSize: 11,
+      contentType: "text/plain",
+    });
+    await store.appendFileUploadChunk({
+      uploadId: "upload-a",
+      chunkIndex: 0,
+      chunk: Buffer.from("hello "),
+    });
+    await store.appendFileUploadChunk({
+      uploadId: "upload-a",
+      chunkIndex: 1,
+      chunk: Buffer.from("world"),
+    });
+
+    const beforeFinish = await readdir(join(dir, "sess-stream"));
+    expect(beforeFinish).toEqual([".upload-upload-a.tmp"]);
+
+    const saved = await store.finishFileUpload({ uploadId: "upload-a" });
+
+    expect(saved).toMatchObject({
+      filename: "2026-06-01T00:45:30.123Z-report-upload-a.txt",
+      size: 11,
+      content_type: "text/plain",
+    });
+    await expect(readFile(saved.path, "utf8")).resolves.toBe("hello world");
+    await expect(readdir(join(dir, "sess-stream"))).resolves.toEqual([saved.filename]);
+  });
+
+  it("removes temp chunks when an upload is aborted", async () => {
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+
+    await store.beginFileUpload({
+      uploadId: "abort-me",
+      sessionId: "sess-abort",
+      filename: "partial.txt",
+    });
+    await store.appendFileUploadChunk({
+      uploadId: "abort-me",
+      chunkIndex: 0,
+      chunk: Buffer.from("partial"),
+    });
+
+    await expect(store.abortFileUpload({ uploadId: "abort-me" })).resolves.toBe(true);
+    await expect(readdir(join(dir, "sess-abort"))).resolves.toEqual([]);
+  });
+
+  it("keeps concurrent same-name streaming uploads distinct", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T00:45:30.123Z"));
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+
+    await Promise.all([
+      store.beginFileUpload({
+        uploadId: "up-a",
+        sessionId: "sess-concurrent",
+        filename: "same.txt",
+      }),
+      store.beginFileUpload({
+        uploadId: "up-b",
+        sessionId: "sess-concurrent",
+        filename: "same.txt",
+      }),
+    ]);
+    await Promise.all([
+      store.appendFileUploadChunk({
+        uploadId: "up-a",
+        chunkIndex: 0,
+        chunk: Buffer.from("A"),
+      }),
+      store.appendFileUploadChunk({
+        uploadId: "up-b",
+        chunkIndex: 0,
+        chunk: Buffer.from("B"),
+      }),
+    ]);
+
+    const [a, b] = await Promise.all([
+      store.finishFileUpload({ uploadId: "up-a" }),
+      store.finishFileUpload({ uploadId: "up-b" }),
+    ]);
+
+    expect(a.filename).not.toBe(b.filename);
+    await expect(readFile(a.path, "utf8")).resolves.toBe("A");
+    await expect(readFile(b.path, "utf8")).resolves.toBe("B");
   });
 });

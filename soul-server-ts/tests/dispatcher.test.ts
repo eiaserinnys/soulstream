@@ -128,6 +128,42 @@ function createDispatcher(opts: {
   return { dispatcher, sent, send, registry, tm, te, createdTasks, sessionDb };
 }
 
+function createAttachmentStore(overrides: Partial<AttachmentStore> = {}): AttachmentStore {
+  return {
+    saveFileForSession: vi.fn(async (params) => ({
+      path: `/tmp/${params.sessionId}/${params.filename}`,
+      filename: params.filename,
+      size: params.content.length,
+      content_type: params.contentType ?? "application/octet-stream",
+    })),
+    beginFileUpload: vi.fn(async (params) => ({
+      uploadId: params.uploadId,
+      next_chunk_index: 0,
+    })),
+    appendFileUploadChunk: vi.fn(async (params) => ({
+      uploadId: params.uploadId,
+      chunk_index: params.chunkIndex,
+      next_chunk_index: params.chunkIndex + 1,
+      size: params.chunk.length,
+    })),
+    finishFileUpload: vi.fn(async (params) => ({
+      path: `/tmp/sess/${params.uploadId}.txt`,
+      filename: `${params.uploadId}.txt`,
+      size: 5,
+      content_type: "text/plain",
+    })),
+    abortFileUpload: vi.fn(async () => true),
+    cleanupSession: vi.fn(async () => 0),
+    downloadAttachment: vi.fn(async () => ({
+      content_b64: "",
+      content_type: "application/octet-stream",
+      filename: "empty",
+      size: 0,
+    })),
+    ...overrides,
+  };
+}
+
 describe("CommandDispatcher.health_check", () => {
   it("registered agent count를 max_concurrent로, running task 개수를 active로 박음", async () => {
     const { dispatcher, sent } = createDispatcher({ runningTasks: 1 });
@@ -1096,21 +1132,7 @@ describe("CommandDispatcher attachment reverse-proxy", () => {
   });
 
   it("upload_attachment requestId 없으면 파일 저장 후 ACK 미발행", async () => {
-    const store: AttachmentStore = {
-      saveFileForSession: vi.fn(async (params) => ({
-        path: `/tmp/${params.sessionId}/${params.filename}`,
-        filename: params.filename,
-        size: params.content.length,
-        content_type: params.contentType ?? "application/octet-stream",
-      })),
-      cleanupSession: vi.fn(async () => 0),
-      downloadAttachment: vi.fn(async () => ({
-        content_b64: "",
-        content_type: "application/octet-stream",
-        filename: "empty",
-        size: 0,
-      })),
-    };
+    const store = createAttachmentStore();
     const { dispatcher, sent } = createDispatcher({ attachmentStore: store });
 
     await dispatcher.dispatch({
@@ -1122,6 +1144,90 @@ describe("CommandDispatcher attachment reverse-proxy", () => {
 
     expect(store.saveFileForSession).toHaveBeenCalledTimes(1);
     expect(sent).toHaveLength(0);
+  });
+
+  it("chunked upload start/chunk/finish → temp upload flow ACKs", async () => {
+    const store = createAttachmentStore();
+    const { dispatcher, sent } = createDispatcher({ attachmentStore: store });
+
+    await dispatcher.dispatch({
+      type: "upload_attachment_start",
+      requestId: "start-1",
+      upload_id: "up-1",
+      session_id: "sess-1",
+      filename: "hello.txt",
+      content_type: "text/plain",
+      expected_size: 5,
+    });
+    await dispatcher.dispatch({
+      type: "upload_attachment_chunk",
+      requestId: "chunk-1",
+      upload_id: "up-1",
+      chunk_index: 0,
+      content_b64: Buffer.from("hello").toString("base64"),
+    });
+    await dispatcher.dispatch({
+      type: "upload_attachment_finish",
+      requestId: "finish-1",
+      upload_id: "up-1",
+    });
+
+    expect(store.beginFileUpload).toHaveBeenCalledWith({
+      uploadId: "up-1",
+      sessionId: "sess-1",
+      filename: "hello.txt",
+      contentType: "text/plain",
+      expectedSize: 5,
+    });
+    expect(store.appendFileUploadChunk).toHaveBeenCalledWith({
+      uploadId: "up-1",
+      chunkIndex: 0,
+      chunk: Buffer.from("hello"),
+    });
+    expect(store.finishFileUpload).toHaveBeenCalledWith({ uploadId: "up-1" });
+    expect(sent).toEqual([
+      {
+        type: "upload_attachment_start_ack",
+        requestId: "start-1",
+        upload_id: "up-1",
+        next_chunk_index: 0,
+      },
+      {
+        type: "upload_attachment_chunk_ack",
+        requestId: "chunk-1",
+        upload_id: "up-1",
+        chunk_index: 0,
+        next_chunk_index: 1,
+        size: 5,
+      },
+      {
+        type: "upload_attachment_result",
+        requestId: "finish-1",
+        path: "/tmp/sess/up-1.txt",
+        filename: "up-1.txt",
+        size: 5,
+        content_type: "text/plain",
+      },
+    ]);
+  });
+
+  it("chunked upload abort → temp cleanup ACK", async () => {
+    const store = createAttachmentStore();
+    const { dispatcher, sent } = createDispatcher({ attachmentStore: store });
+
+    await dispatcher.dispatch({
+      type: "upload_attachment_abort",
+      requestId: "abort-1",
+      upload_id: "up-1",
+    });
+
+    expect(store.abortFileUpload).toHaveBeenCalledWith({ uploadId: "up-1" });
+    expect(sent[0]).toEqual({
+      type: "upload_attachment_abort_ack",
+      requestId: "abort-1",
+      upload_id: "up-1",
+      aborted: true,
+    });
   });
 
   it("upload_attachment invalid base64 → INVALID_REQUEST error", async () => {

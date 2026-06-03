@@ -441,8 +441,9 @@ class CommandDispatcher:
         ))
 
     # ─── Attachment WS reverse-proxy handlers ────────────
-    # 노드 self-reported host:port HTTP 가정 폐기 — orch가 WS로 attachment binary를
-    # base64-in-JSON으로 전달한다. 운영 로그(eias-shopping host=127.0.0.1)에서 cross-node
+    # 노드 self-reported host:port HTTP 가정 폐기 — legacy 경로에서는 orch가 WS로
+    # attachment binary를 base64-in-JSON으로 전달한다. 운영 로그(eias-shopping
+    # host=127.0.0.1)에서 cross-node
     # HTTP가 도달 불가했던 결함 회로 차단. orch 측 4xx 분류용 wire 약속:
     #   - INVALID_REQUEST: prefix → 400 (file_manager 검증 실패 / base64 디코딩 실패)
     #   - 그 외 RuntimeError → 502 (노드 내부 에러)

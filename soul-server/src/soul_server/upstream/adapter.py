@@ -276,9 +276,9 @@ class UpstreamAdapter:
             headers["Authorization"] = f"Bearer {self._auth_bearer_token}"
 
         # max_msg_size — aiohttp 클라이언트 기본값 4MB는 cross-node attachment
-        # 업로드(base64 인코딩된 8MB → ~10.7MB)를 거부한다. soul_server.constants
-        # WS_INCOMING_MAX_MSG_SIZE(16MB)로 명시 — MAX_ATTACHMENT_SIZE 변경 시 함께
-        # 갱신해야 한다 (정본은 constants 모듈).
+        # chunk command를 거부할 수 있다. 100MB 업로드는 1MiB raw chunk를 여러
+        # WS command로 보내므로, frame 한도는 chunk base64 payload 기준이다.
+        # 정본은 soul_server.constants.WS_INCOMING_MAX_MSG_SIZE.
         from soul_server.constants import WS_INCOMING_MAX_MSG_SIZE
         self._ws = await self._session.ws_connect(
             self._url,

@@ -31,6 +31,10 @@ from soulstream_server.constants import (
     CMD_RESPOND,
     CMD_SUBSCRIBE_EVENTS,
     CMD_UPLOAD_ATTACHMENT,
+    CMD_UPLOAD_ATTACHMENT_ABORT,
+    CMD_UPLOAD_ATTACHMENT_CHUNK,
+    CMD_UPLOAD_ATTACHMENT_FINISH,
+    CMD_UPLOAD_ATTACHMENT_START,
     EVT_ERROR,
     EVT_EVENT,
     EVT_SESSION_CREATED,
@@ -1150,6 +1154,126 @@ class TestSendUploadAttachment:
                 ),
                 timeout=0.2,
             )
+
+    async def test_send_streamed_upload_attachment_sends_chunk_sequence(self, node, ws):
+        """chunked upload는 start → chunk* → finish command 순서로 전송한다."""
+        sent_messages = []
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            sent_messages.append(data)
+            req_id = data["requestId"]
+            if data["type"] == CMD_UPLOAD_ATTACHMENT_START:
+                node._pending[req_id].set_result({
+                    "type": "upload_attachment_start_ack",
+                    "upload_id": data["upload_id"],
+                    "next_chunk_index": 0,
+                })
+            elif data["type"] == CMD_UPLOAD_ATTACHMENT_CHUNK:
+                node._pending[req_id].set_result({
+                    "type": "upload_attachment_chunk_ack",
+                    "upload_id": data["upload_id"],
+                    "chunk_index": data["chunk_index"],
+                    "next_chunk_index": data["chunk_index"] + 1,
+                    "size": 2,
+                })
+            elif data["type"] == CMD_UPLOAD_ATTACHMENT_FINISH:
+                node._pending[req_id].set_result({
+                    "type": "upload_attachment_result",
+                    "path": "/incoming/s/x.txt",
+                    "filename": "x.txt",
+                    "size": 4,
+                    "content_type": "text/plain",
+                })
+
+        async def chunks():
+            yield b"ab"
+            yield b"cd"
+
+        ws.send_json.side_effect = resolve_future
+
+        result = await node.send_streamed_upload_attachment(
+            session_id="sess-1",
+            filename="x.txt",
+            content_type="text/plain",
+            chunks=chunks(),
+            expected_size=4,
+        )
+
+        assert [msg["type"] for msg in sent_messages] == [
+            CMD_UPLOAD_ATTACHMENT_START,
+            CMD_UPLOAD_ATTACHMENT_CHUNK,
+            CMD_UPLOAD_ATTACHMENT_CHUNK,
+            CMD_UPLOAD_ATTACHMENT_FINISH,
+        ]
+        assert sent_messages[0]["expected_size"] == 4
+        assert sent_messages[1]["chunk_index"] == 0
+        assert sent_messages[2]["chunk_index"] == 1
+        assert result["path"] == "/incoming/s/x.txt"
+
+    async def test_streamed_upload_rejects_known_oversize_before_start(self, node, ws):
+        async def chunks():
+            yield b"unused"
+
+        with pytest.raises(RuntimeError, match="100MB"):
+            await node.send_streamed_upload_attachment(
+                session_id="sess-1",
+                filename="x.txt",
+                content_type="text/plain",
+                chunks=chunks(),
+                expected_size=101 * 1024 * 1024,
+            )
+
+        ws.send_json.assert_not_awaited()
+
+    async def test_stream_error_aborts_started_upload(self, node, ws):
+        """stream 중 예외가 나면 node temp 파일 정리를 위해 abort command를 보낸다."""
+        sent_messages = []
+
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            sent_messages.append(data)
+            req_id = data["requestId"]
+            if data["type"] == CMD_UPLOAD_ATTACHMENT_START:
+                node._pending[req_id].set_result({
+                    "type": "upload_attachment_start_ack",
+                    "upload_id": data["upload_id"],
+                    "next_chunk_index": 0,
+                })
+            elif data["type"] == CMD_UPLOAD_ATTACHMENT_CHUNK:
+                node._pending[req_id].set_result({
+                    "type": "upload_attachment_chunk_ack",
+                    "upload_id": data["upload_id"],
+                    "chunk_index": data["chunk_index"],
+                    "next_chunk_index": data["chunk_index"] + 1,
+                    "size": 2,
+                })
+            elif data["type"] == CMD_UPLOAD_ATTACHMENT_ABORT:
+                node._pending[req_id].set_result({
+                    "type": "upload_attachment_abort_ack",
+                    "upload_id": data["upload_id"],
+                    "aborted": True,
+                })
+
+        async def failing_chunks():
+            yield b"ab"
+            raise RuntimeError("client disconnected")
+
+        ws.send_json.side_effect = resolve_future
+
+        with pytest.raises(RuntimeError, match="client disconnected"):
+            await node.send_streamed_upload_attachment(
+                session_id="sess-1",
+                filename="x.txt",
+                content_type="text/plain",
+                chunks=failing_chunks(),
+            )
+
+        assert [msg["type"] for msg in sent_messages] == [
+            CMD_UPLOAD_ATTACHMENT_START,
+            CMD_UPLOAD_ATTACHMENT_CHUNK,
+            CMD_UPLOAD_ATTACHMENT_ABORT,
+        ]
 
 
 class TestSendCommandDisconnect:
