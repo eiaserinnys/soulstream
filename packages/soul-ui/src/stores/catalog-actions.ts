@@ -82,7 +82,9 @@ export function removeFolderFromCatalog(
   }
   return {
     ...catalog,
-    folders: catalog.folders.filter((f) => f.id !== folderId),
+    folders: catalog.folders
+      .filter((f) => f.id !== folderId)
+      .map((f) => (f.parentFolderId === folderId ? { ...f, parentFolderId: null } : f)),
     sessions: updatedSessions,
   };
 }

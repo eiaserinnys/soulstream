@@ -62,7 +62,21 @@ class TestCreateFolder:
 
         assert resp.status_code == 201
         assert resp.json() == {"id": "f1", "name": "New", "sort_order": 0}
-        mock_catalog_service.create_folder.assert_called_once_with("Work", 3)
+        mock_catalog_service.create_folder.assert_called_once_with(
+            "Work", 3, parent_folder_id=None,
+        )
+
+    def test_create_child_folder(self, client, mock_catalog_service):
+        """POST /catalog/folders parentFolderId → create_folder에 parent_folder_id 전달"""
+        resp = client.post(
+            "/catalog/folders",
+            json={"name": "Child", "sort_order": 1, "parentFolderId": "parent"},
+        )
+
+        assert resp.status_code == 201
+        mock_catalog_service.create_folder.assert_called_once_with(
+            "Child", 1, parent_folder_id="parent",
+        )
 
 
 class TestUpdateFolder:
@@ -77,6 +91,18 @@ class TestUpdateFolder:
         assert resp.json() == {"ok": True}
         mock_catalog_service.update_folder.assert_called_once_with(
             "f1", name="Renamed", sort_order=None, settings=None,
+        )
+
+    def test_update_parent_folder_to_null(self, client, mock_catalog_service):
+        """PUT /catalog/folders/f1 {parentFolderId: null} → 루트 승격을 명시 전달"""
+        resp = client.put(
+            "/catalog/folders/f1",
+            json={"parentFolderId": None},
+        )
+
+        assert resp.status_code == 200
+        mock_catalog_service.update_folder.assert_called_once_with(
+            "f1", name=None, sort_order=None, settings=None, parent_folder_id=None,
         )
 
     def test_update_folder_all_none_returns_400(self, client, mock_catalog_service):

@@ -51,7 +51,28 @@ class TestCreateFolder:
         body = resp.json()
         assert body["id"] == "new-f"
         assert body["name"] == "New Folder"
-        mock_catalog_service.create_folder.assert_called_once_with("New Folder", 0)
+        mock_catalog_service.create_folder.assert_called_once_with(
+            "New Folder", 0, parent_folder_id=None,
+        )
+
+    async def test_creates_child_folder(self, client, mock_catalog_service):
+        """Creates a folder below another folder."""
+        mock_catalog_service.create_folder.return_value = {
+            "id": "child",
+            "name": "Child",
+            "sortOrder": 1,
+            "parentFolderId": "parent",
+        }
+
+        resp = await client.post(
+            "/api/catalog/folders",
+            json={"name": "Child", "sortOrder": 1, "parentFolderId": "parent"},
+        )
+
+        assert resp.status_code == 201
+        mock_catalog_service.create_folder.assert_called_once_with(
+            "Child", 1, parent_folder_id="parent",
+        )
 
     async def test_creates_folder_default_sort_order(self, client, mock_catalog_service):
         """Creates a folder with default sortOrder=0."""
@@ -67,7 +88,9 @@ class TestCreateFolder:
         )
 
         assert resp.status_code == 201
-        mock_catalog_service.create_folder.assert_called_once_with("Default", 0)
+        mock_catalog_service.create_folder.assert_called_once_with(
+            "Default", 0, parent_folder_id=None,
+        )
 
 
 class TestDeleteFolder:
@@ -98,6 +121,22 @@ class TestUpdateFolder:
         assert body["success"] is True
         mock_catalog_service.update_folder.assert_called_once_with(
             "f-rename", name="Renamed", sort_order=None, settings=None
+        )
+
+    async def test_updates_parent_folder_to_null(self, client, mock_catalog_service):
+        """parentFolderId null promotes a folder to root."""
+        resp = await client.put(
+            "/api/catalog/folders/f-child",
+            json={"parentFolderId": None},
+        )
+
+        assert resp.status_code == 200
+        mock_catalog_service.update_folder.assert_called_once_with(
+            "f-child",
+            name=None,
+            sort_order=None,
+            settings=None,
+            parent_folder_id=None,
         )
 
     async def test_updates_settings(self, client, mock_catalog_service):

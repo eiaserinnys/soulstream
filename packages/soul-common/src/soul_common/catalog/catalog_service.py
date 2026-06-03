@@ -6,9 +6,11 @@ DB 호출 + 브로드캐스트를 캡슐화하여 구현 중복을 제거한다.
 """
 
 import uuid
-from typing import Optional, Protocol, runtime_checkable
+from typing import Any, Optional, Protocol, runtime_checkable
 
 from soul_common.db.session_db import PostgresSessionDB
+
+_UNSET = object()
 
 
 @runtime_checkable
@@ -54,18 +56,36 @@ class CatalogService:
                 "id": f["id"],
                 "name": f["name"],
                 "sortOrder": f["sort_order"],
+                "parentFolderId": f.get("parent_folder_id"),
                 "settings": f.get("settings") or {},
                 "createdAt": f.get("created_at"),
             }
             for f in folders
         ]
 
-    async def create_folder(self, name: str, sort_order: int = 0) -> dict:
+    async def create_folder(
+        self,
+        name: str,
+        sort_order: int = 0,
+        parent_folder_id: Optional[str] = None,
+    ) -> dict:
         """폴더를 생성하고 결과를 반환한다."""
         folder_id = str(uuid.uuid4())
-        await self._db.create_folder(folder_id, name, sort_order)
+        await self._validate_parent_folder(folder_id, parent_folder_id)
+        await self._db.create_folder(
+            folder_id,
+            name,
+            sort_order,
+            parent_folder_id=parent_folder_id,
+        )
         await self._broadcast_catalog()
-        return {"id": folder_id, "name": name, "sortOrder": sort_order}
+        return {
+            "id": folder_id,
+            "name": name,
+            "sortOrder": sort_order,
+            "parentFolderId": parent_folder_id,
+            "settings": {},
+        }
 
     async def rename_folder(self, folder_id: str, name: str) -> None:
         """폴더 이름을 변경한다."""
@@ -78,6 +98,7 @@ class CatalogService:
         name: Optional[str] = None,
         sort_order: Optional[int] = None,
         settings: Optional[dict] = None,
+        parent_folder_id: Any = _UNSET,
     ) -> None:
         """폴더의 이름, 정렬 순서, 설정을 변경한다."""
         fields: dict = {}
@@ -87,10 +108,17 @@ class CatalogService:
             fields["sort_order"] = sort_order
         if settings is not None:
             fields["settings"] = settings
+        if parent_folder_id is not _UNSET:
+            await self._validate_parent_folder(folder_id, parent_folder_id)
+            fields["parent_folder_id"] = parent_folder_id
         if not fields:
             return
         await self._db.update_folder(folder_id, **fields)
         await self._broadcast_catalog()
+
+    async def list_child_folders(self, folder_id: Optional[str]) -> list[dict]:
+        folders = await self.list_folders()
+        return [f for f in folders if f.get("parentFolderId") == folder_id]
 
     async def delete_folder(self, folder_id: str) -> None:
         """폴더를 삭제한다."""
@@ -143,6 +171,27 @@ class CatalogService:
     async def get_catalog(self) -> dict:
         """전체 카탈로그(폴더 + 세션 배정)를 반환한다."""
         return await self._db.get_catalog()
+
+    async def _validate_parent_folder(
+        self,
+        folder_id: str,
+        parent_folder_id: Optional[str],
+    ) -> None:
+        if parent_folder_id is None:
+            return
+        if folder_id == parent_folder_id:
+            raise ValueError("folder parent cycle")
+        folders = await self._db.get_all_folders()
+        parent_by_id = {f["id"]: f.get("parent_folder_id") for f in folders}
+        current = parent_folder_id
+        seen: set[str] = set()
+        while current is not None:
+            if current == folder_id:
+                raise ValueError("folder parent cycle")
+            if current in seen:
+                raise ValueError("folder parent cycle")
+            seen.add(current)
+            current = parent_by_id.get(current)
 
     # --- 폴더 시스템 프롬프트 ---
 

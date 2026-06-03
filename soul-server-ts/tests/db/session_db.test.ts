@@ -413,8 +413,8 @@ describe("SessionDB folder ops (B-5)", () => {
   it("getCatalog → folder_get_all + catalog_get_sessions 합성하여 {folders, sessions} 반환", async () => {
     let callIndex = 0;
     const folderRows = [
-      { id: "f1", name: "F1", sort_order: 1, settings: { excludeFromFeed: true } },
-      { id: "f2", name: "F2", sort_order: 2, settings: null },
+      { id: "f1", name: "F1", sort_order: 1, settings: { excludeFromFeed: true }, parent_folder_id: null },
+      { id: "f2", name: "F2", sort_order: 2, settings: null, parent_folder_id: "f1" },
     ];
     const sessionRows = [
       { session_id: "s1", folder_id: "f1", display_name: "Hello" },
@@ -429,8 +429,8 @@ describe("SessionDB folder ops (B-5)", () => {
     });
     const catalog = await new SessionDB(sql).getCatalog();
     expect(catalog.folders).toEqual([
-      { id: "f1", name: "F1", sortOrder: 1, settings: { excludeFromFeed: true } },
-      { id: "f2", name: "F2", sortOrder: 2, settings: {} },  // null settings → 빈 객체로 정규화
+      { id: "f1", name: "F1", sortOrder: 1, settings: { excludeFromFeed: true }, parentFolderId: null },
+      { id: "f2", name: "F2", sortOrder: 2, settings: {}, parentFolderId: "f1" },  // null settings → 빈 객체로 정규화
     ]);
     expect(catalog.sessions).toEqual({
       s1: { folderId: "f1", displayName: "Hello" },
@@ -499,14 +499,35 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
 
   it("getAllFolders → folder_get_all 행 그대로 + settings null 정규화", async () => {
     const { sql } = createMockSql(() => [
-      { id: "f1", name: "F1", sort_order: 0, settings: { x: 1 } },
-      { id: "f2", name: "F2", sort_order: 1, settings: null },
+      { id: "f1", name: "F1", sort_order: 0, settings: { x: 1 }, parent_folder_id: null },
+      { id: "f2", name: "F2", sort_order: 1, settings: null, parent_folder_id: "f1" },
     ]);
     const folders = await new SessionDB(sql).getAllFolders();
     expect(folders).toEqual([
-      { id: "f1", name: "F1", sort_order: 0, settings: { x: 1 } },
-      { id: "f2", name: "F2", sort_order: 1, settings: {} },
+      { id: "f1", name: "F1", sort_order: 0, settings: { x: 1 }, parent_folder_id: null },
+      { id: "f2", name: "F2", sort_order: 1, settings: {}, parent_folder_id: "f1" },
     ]);
+  });
+
+  it("createFolder(parentFolderId) → folder_create 네 번째 인자로 부모 폴더 전달", async () => {
+    const { sql, calls } = createMockSql();
+    const db = new SessionDB(sql);
+
+    await db.createFolder("child", "Child", 7, "parent");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].fragments.join("?")).toContain("folder_create");
+    expect(calls[0].values).toEqual(["child", "Child", 7, "parent"]);
+  });
+
+  it("updateFolder parent_folder_id=null → 루트 승격을 stored proc에 null로 전달", async () => {
+    const { sql, calls } = createMockSql();
+    const db = new SessionDB(sql);
+
+    await db.updateFolder("child", ["parent_folder_id"], [null]);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].values).toEqual(["child", ["parent_folder_id"], [null]]);
   });
 
   it("countEvents → event_count(sessionId) 반환 Number 변환", async () => {

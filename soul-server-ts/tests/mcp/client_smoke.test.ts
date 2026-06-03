@@ -44,6 +44,7 @@ const EXPECTED_TOOLS = [
   "set_session_name",
   // catalog
   "list_folders",
+  "list_child_folders",
   "create_folder",
   "rename_folder",
   "delete_folder",

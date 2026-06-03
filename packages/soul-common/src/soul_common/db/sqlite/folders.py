@@ -27,10 +27,17 @@ class SqliteFolderMixin:
 
     _conn: aiosqlite.Connection
 
-    async def create_folder(self, folder_id: str, name: str, sort_order: int = 0) -> None:
+    async def create_folder(
+        self,
+        folder_id: str,
+        name: str,
+        sort_order: int = 0,
+        parent_folder_id: Optional[str] = None,
+    ) -> None:
+        await self._validate_parent_folder(folder_id, parent_folder_id)
         await self._conn.execute(
-            "INSERT OR IGNORE INTO folders (id, name, sort_order) VALUES (?, ?, ?)",
-            (folder_id, name, sort_order),
+            "INSERT OR IGNORE INTO folders (id, name, sort_order, parent_folder_id) VALUES (?, ?, ?, ?)",
+            (folder_id, name, sort_order, parent_folder_id),
         )
         await self._conn.commit()
 
@@ -40,6 +47,8 @@ class SqliteFolderMixin:
         invalid = set(fields) - _FOLDER_COLUMNS
         if invalid:
             raise ValueError(f"Invalid folder columns: {invalid}")
+        if "parent_folder_id" in fields:
+            await self._validate_parent_folder(folder_id, fields["parent_folder_id"])
         set_clauses = ", ".join(f"{c} = ?" for c in fields)
         vals = [
             json.dumps(v, ensure_ascii=False) if k in _FOLDER_JSONB_COLUMNS else v
@@ -133,6 +142,7 @@ class SqliteFolderMixin:
                 "id": f["id"],
                 "name": f["name"],
                 "sortOrder": f["sort_order"],
+                "parentFolderId": f.get("parent_folder_id"),
                 "settings": f.get("settings") or {},
             }
             for f in folders
@@ -150,3 +160,28 @@ class SqliteFolderMixin:
             for r in rows
         }
         return {"folders": folder_list, "sessions": sessions}
+
+    async def _validate_parent_folder(
+        self,
+        folder_id: str,
+        parent_folder_id: Optional[str],
+    ) -> None:
+        if parent_folder_id is None:
+            return
+        if folder_id == parent_folder_id:
+            raise ValueError("folder parent cycle")
+
+        cursor = await self._conn.execute(
+            "SELECT id, parent_folder_id FROM folders"
+        )
+        rows = await cursor.fetchall()
+        parent_by_id = {r["id"]: r["parent_folder_id"] for r in rows}
+        current = parent_folder_id
+        seen: set[str] = set()
+        while current is not None:
+            if current == folder_id:
+                raise ValueError("folder parent cycle")
+            if current in seen:
+                raise ValueError("folder parent cycle")
+            seen.add(current)
+            current = parent_by_id.get(current)

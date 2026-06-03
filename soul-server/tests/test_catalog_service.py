@@ -16,8 +16,8 @@ from soul_server.service.catalog_service import (
 def mock_db():
     db = AsyncMock()
     db.get_all_folders = AsyncMock(return_value=[
-        {"id": "f1", "name": "Folder 1", "sort_order": 0, "settings": {}},
-        {"id": "f2", "name": "Folder 2", "sort_order": 1, "settings": {}},
+        {"id": "f1", "name": "Folder 1", "sort_order": 0, "settings": {}, "parent_folder_id": None},
+        {"id": "f2", "name": "Folder 2", "sort_order": 1, "settings": {}, "parent_folder_id": "f1"},
     ])
     db.create_folder = AsyncMock()
     db.update_folder = AsyncMock()
@@ -46,8 +46,8 @@ class TestListFolders:
     async def test_returns_formatted_folders(self, catalog_service, mock_db):
         result = await catalog_service.list_folders()
         assert len(result) == 2
-        assert result[0] == {"id": "f1", "name": "Folder 1", "sortOrder": 0, "settings": {}, "createdAt": None}
-        assert result[1] == {"id": "f2", "name": "Folder 2", "sortOrder": 1, "settings": {}, "createdAt": None}
+        assert result[0] == {"id": "f1", "name": "Folder 1", "sortOrder": 0, "settings": {}, "createdAt": None, "parentFolderId": None}
+        assert result[1] == {"id": "f2", "name": "Folder 2", "sortOrder": 1, "settings": {}, "createdAt": None, "parentFolderId": "f1"}
         mock_db.get_all_folders.assert_awaited_once()
 
     async def test_update_folder_settings(self, catalog_service, mock_db):
@@ -58,11 +58,12 @@ class TestListFolders:
 
 class TestCreateFolder:
     async def test_creates_and_broadcasts(self, catalog_service, mock_db, mock_broadcaster):
-        result = await catalog_service.create_folder("Test", 5)
+        result = await catalog_service.create_folder("Test", 5, parent_folder_id="f1")
         assert result["name"] == "Test"
         assert result["sortOrder"] == 5
+        assert result["parentFolderId"] == "f1"
         assert "id" in result
-        mock_db.create_folder.assert_awaited_once()
+        mock_db.create_folder.assert_awaited_once_with(result["id"], "Test", 5, parent_folder_id="f1")
         mock_broadcaster.broadcast.assert_awaited()
 
 
@@ -85,6 +86,24 @@ class TestUpdateFolder:
     async def test_updates_both(self, catalog_service, mock_db):
         await catalog_service.update_folder("f1", name="Y", sort_order=2)
         mock_db.update_folder.assert_awaited_once_with("f1", name="Y", sort_order=2)
+
+    async def test_updates_parent_folder_id_to_none(self, catalog_service, mock_db):
+        await catalog_service.update_folder("f2", parent_folder_id=None)
+        mock_db.update_folder.assert_awaited_once_with("f2", parent_folder_id=None)
+
+    async def test_rejects_parent_cycle_before_db_update(self, catalog_service, mock_db):
+        mock_db.get_all_folders.return_value = [
+            {"id": "a", "name": "A", "sort_order": 0, "settings": {}, "parent_folder_id": None},
+            {"id": "b", "name": "B", "sort_order": 1, "settings": {}, "parent_folder_id": "a"},
+        ]
+        with pytest.raises(ValueError, match="cycle"):
+            await catalog_service.update_folder("a", parent_folder_id="b")
+        mock_db.update_folder.assert_not_awaited()
+
+    async def test_rejects_self_parent_before_db_update(self, catalog_service, mock_db):
+        with pytest.raises(ValueError, match="cycle"):
+            await catalog_service.update_folder("a", parent_folder_id="a")
+        mock_db.update_folder.assert_not_awaited()
 
     async def test_noop_when_no_fields(self, catalog_service, mock_db):
         await catalog_service.update_folder("f1")
@@ -111,6 +130,14 @@ class TestDeleteFolder:
         await catalog_service.delete_folder("f1")
         mock_db.delete_folder.assert_awaited_once_with("f1")
         mock_broadcaster.broadcast.assert_awaited()
+
+
+class TestListChildFolders:
+    async def test_returns_direct_children_only(self, catalog_service, mock_db):
+        result = await catalog_service.list_child_folders("f1")
+        assert result == [
+            {"id": "f2", "name": "Folder 2", "sortOrder": 1, "settings": {}, "createdAt": None, "parentFolderId": "f1"}
+        ]
 
 
 class TestMoveSessionsToFolder:

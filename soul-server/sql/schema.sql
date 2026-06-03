@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS folders (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
     sort_order  INTEGER NOT NULL DEFAULT 0,
+    parent_folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -17,6 +18,47 @@ CREATE TABLE IF NOT EXISTS folders (
 ALTER TABLE folders ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}';
 -- 기존 테이블에 created_at 컬럼 추가 (멱등)
 ALTER TABLE folders ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+-- 기존 테이블에 parent_folder_id 컬럼 추가 (멱등)
+ALTER TABLE folders ADD COLUMN IF NOT EXISTS parent_folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_folders_parent_folder_id ON folders(parent_folder_id);
+
+CREATE OR REPLACE FUNCTION folders_prevent_cycle()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+    has_cycle BOOLEAN;
+BEGIN
+    IF NEW.parent_folder_id IS NULL THEN
+        RETURN NEW;
+    END IF;
+
+    IF NEW.parent_folder_id = NEW.id THEN
+        RAISE EXCEPTION 'folder parent cycle';
+    END IF;
+
+    WITH RECURSIVE ancestors(id, parent_folder_id) AS (
+        SELECT f.id, f.parent_folder_id
+        FROM folders f
+        WHERE f.id = NEW.parent_folder_id
+        UNION ALL
+        SELECT f.id, f.parent_folder_id
+        FROM folders f
+        JOIN ancestors a ON f.id = a.parent_folder_id
+    )
+    SELECT EXISTS(SELECT 1 FROM ancestors WHERE id = NEW.id) INTO has_cycle;
+
+    IF has_cycle THEN
+        RAISE EXCEPTION 'folder parent cycle';
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS folders_prevent_cycle_trigger ON folders;
+CREATE TRIGGER folders_prevent_cycle_trigger
+BEFORE INSERT OR UPDATE OF parent_folder_id ON folders
+FOR EACH ROW EXECUTE FUNCTION folders_prevent_cycle();
 
 CREATE TABLE IF NOT EXISTS sessions (
     session_id              TEXT PRIMARY KEY,
@@ -1042,9 +1084,11 @@ $$;
 CREATE OR REPLACE FUNCTION folder_create(
     p_id         TEXT,
     p_name       TEXT,
-    p_sort_order INTEGER DEFAULT 0
+    p_sort_order INTEGER DEFAULT 0,
+    p_parent_folder_id TEXT DEFAULT NULL
 ) RETURNS void LANGUAGE sql AS $$
-    INSERT INTO folders (id, name, sort_order) VALUES (p_id, p_name, p_sort_order);
+    INSERT INTO folders (id, name, sort_order, parent_folder_id)
+    VALUES (p_id, p_name, p_sort_order, p_parent_folder_id);
 $$;
 
 -- 23. folder_update
@@ -1054,7 +1098,7 @@ CREATE OR REPLACE FUNCTION folder_update(
     p_values  TEXT[]
 ) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
-    allowed TEXT[] := ARRAY['name', 'sort_order', 'settings'];
+    allowed TEXT[] := ARRAY['name', 'sort_order', 'settings', 'parent_folder_id'];
     set_list TEXT := '';
     i INTEGER;
     col TEXT;
@@ -1071,6 +1115,12 @@ BEGIN
             set_list := set_list || col || ' = ' || p_values[i] || '::integer';
         ELSIF col = 'settings' THEN
             set_list := set_list || col || ' = ' || quote_literal(p_values[i]) || '::jsonb';
+        ELSIF col = 'parent_folder_id' THEN
+            IF p_values[i] IS NULL THEN
+                set_list := set_list || col || ' = NULL';
+            ELSE
+                set_list := set_list || col || ' = ' || quote_literal(p_values[i]);
+            END IF;
         ELSE
             set_list := set_list || col || ' = ' || quote_literal(p_values[i]);
         END IF;

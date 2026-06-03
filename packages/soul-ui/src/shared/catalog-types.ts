@@ -25,6 +25,7 @@ export interface CatalogFolder {
   id: string;
   name: string;
   sortOrder: number;
+  parentFolderId?: string | null;
   settings?: FolderSettings;
   createdAt?: string;
 }

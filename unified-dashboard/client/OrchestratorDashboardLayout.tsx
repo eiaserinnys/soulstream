@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { FolderContents } from "./components/FolderContents";
+import { BoardWorkspaceView } from "./components/BoardWorkspaceView";
 import {
   createFolder,
   renameFolderOptimistic,
@@ -30,7 +30,6 @@ import { orchestratorSessionProvider } from "./providers";
 import { resolveActiveSessionSummary } from "./lib/active-session-summary";
 import {
   AskQuestionBanner,
-  SessionsTopBar,
   MobileChatHeader,
   ThemeToggle,
   useSessionProvider,
@@ -176,10 +175,7 @@ export function OrchestratorDashboardLayout() {
             onNewSession={(task, defaults) => openNewSessionModal("feed", task ?? null, defaults ?? null)}
           />
         ) : (
-          <>
-            <SessionsTopBar />
-            <FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
-          </>
+          <BoardWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
         )
       }
       rightPanel={
@@ -214,7 +210,7 @@ export function OrchestratorDashboardLayout() {
         />
       }
       mobileFolderContents={
-        <FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
+        <BoardWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
       }
       mobileTasksView={
         <TaskTreeView

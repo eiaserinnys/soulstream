@@ -138,12 +138,7 @@ class TestAttachmentPathsRelay:
 
         # send_create_session이 attachment_paths를 받았는지 WS 페이로드로 확인
         sent = ws.send_json.call_args[0][0]
-        # node_connection.py가 extra_context_items로 변환하므로 payload에 존재해야 함
-        assert "extra_context_items" in sent
-        assert any(
-            "/incoming/s1/file.txt" in item.get("content", "")
-            for item in sent["extra_context_items"]
-        )
+        assert sent["attachment_paths"] == ["/incoming/s1/file.txt"]
 
     async def test_no_attachment_paths_does_not_include_extra_context_items(self, manager, router):
         """attachmentPaths가 없으면 extra_context_items가 payload에 포함되지 않는다."""

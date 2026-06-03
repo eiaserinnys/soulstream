@@ -34,7 +34,7 @@ export interface FolderApiConfig {
 }
 
 export interface FolderOperations {
-  createFolder: (name: string) => Promise<void>;
+  createFolder: (name: string, parentFolderId?: string | null) => Promise<void>;
   renameFolderOptimistic: (folderId: string, name: string) => Promise<void>;
   deleteFolderOptimistic: (folderId: string) => Promise<void>;
   updateFolderSettingsOptimistic: (folderId: string, settings: FolderSettings) => Promise<void>;
@@ -49,14 +49,21 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
    * 임시 ID를 먼저 추가하면 SSE 도착 전에 사용자가 임시 ID 폴더를 조작할 위험이 있으므로,
    * API 성공 후 서버가 부여한 실제 ID로 store에 추가한다.
    */
-  async function createFolder(name: string): Promise<void> {
+  async function createFolder(
+    name: string,
+    parentFolderId?: string | null,
+  ): Promise<void> {
     const { addFolder } = useDashboardStore.getState();
 
     try {
+      const body: { name: string; parentFolderId?: string | null } = { name };
+      if (parentFolderId !== undefined) {
+        body.parentFolderId = parentFolderId;
+      }
       const res = await fetch(config.createUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`Create folder failed: ${res.status}`);
 

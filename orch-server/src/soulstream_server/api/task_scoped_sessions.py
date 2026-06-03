@@ -222,7 +222,7 @@ async def create_task_scoped_child(
         task_id,
         {"created_from_event_id": event_id},
     )
-    return _mutation_response(task, operation, event_id)
+    return await _mutation_response(db, task, operation, event_id)
 
 
 def task_link_error_payload(err: Exception) -> dict[str, Any]:

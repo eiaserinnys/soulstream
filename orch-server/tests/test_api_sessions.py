@@ -92,6 +92,12 @@ class FakeTaskScopedPool:
             return self.child
         raise AssertionError(f"unhandled fetchrow query: {normalized}")
 
+    async def fetch(self, query, *args):
+        normalized = " ".join(str(query).split())
+        if "SELECT * FROM sessions WHERE session_id = ANY" in normalized:
+            return []
+        raise AssertionError(f"unhandled fetch query: {normalized}")
+
     async def fetchval(self, query, *args):
         return 2.0
 

@@ -16,12 +16,14 @@ from soul_server.service.catalog_service import CatalogService
 class FolderCreate(BaseModel):
     name: str
     sort_order: int = 0
+    parentFolderId: Optional[str] = None
 
 
 class FolderUpdate(BaseModel):
     name: Optional[str] = None
     sort_order: Optional[int] = None
     settings: Optional[dict] = None
+    parentFolderId: Optional[str] = None
 
 
 class SessionCatalogUpdate(BaseModel):
@@ -39,6 +41,13 @@ class BatchMoveRequest(BaseModel):
     folderId: Optional[str]
 
 
+def _field_supplied(model: BaseModel, field_name: str) -> bool:
+    fields = getattr(model, "model_fields_set", None)
+    if fields is None:
+        fields = getattr(model, "__fields_set__", set())
+    return field_name in fields
+
+
 def create_catalog_router(catalog_service: CatalogService) -> APIRouter:
     router = APIRouter()
 
@@ -48,15 +57,25 @@ def create_catalog_router(catalog_service: CatalogService) -> APIRouter:
 
     @router.post("/folders", status_code=201)
     async def create_folder(body: FolderCreate):
-        return await catalog_service.create_folder(body.name, body.sort_order)
+        return await catalog_service.create_folder(
+            body.name,
+            body.sort_order,
+            parent_folder_id=body.parentFolderId,
+        )
 
     @router.put("/folders/{folder_id}")
     async def update_folder(folder_id: str, body: FolderUpdate):
-        if body.name is None and body.sort_order is None and body.settings is None:
+        parent_supplied = _field_supplied(body, "parentFolderId")
+        if body.name is None and body.sort_order is None and body.settings is None and not parent_supplied:
             raise HTTPException(status_code=400, detail="No fields to update")
-        await catalog_service.update_folder(
-            folder_id, name=body.name, sort_order=body.sort_order, settings=body.settings,
-        )
+        kwargs = {
+            "name": body.name,
+            "sort_order": body.sort_order,
+            "settings": body.settings,
+        }
+        if parent_supplied:
+            kwargs["parent_folder_id"] = body.parentFolderId
+        await catalog_service.update_folder(folder_id, **kwargs)
         return {"ok": True}
 
     @router.patch("/folders/reorder")

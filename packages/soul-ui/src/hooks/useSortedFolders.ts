@@ -8,6 +8,7 @@
 import { useMemo } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { SYSTEM_FOLDERS } from "../shared/constants";
+import { getRootFolders } from "../board-workspace/board-workspace-helpers";
 
 const SYSTEM_FOLDER_NAMES: Set<string> = new Set(Object.values(SYSTEM_FOLDERS));
 
@@ -20,6 +21,7 @@ export interface SortedFolder {
   id: string;
   name: string;
   sortOrder: number;
+  parentFolderId?: string | null;
   createdAt?: string;
 }
 
@@ -41,7 +43,7 @@ export function useSortedFolders(folders: readonly SortedFolder[]): UseSortedFol
   const catalogVersion = useDashboardStore((s) => s.catalogVersion);
 
   const sortedNormalFolders = useMemo(() => {
-    const normal = folders.filter((f) => !SYSTEM_FOLDER_NAMES.has(f.name));
+    const normal = getRootFolders(folders).filter((f) => !SYSTEM_FOLDER_NAMES.has(f.name));
     switch (folderSortMode) {
       case "name-asc":
         return [...normal].sort((a, b) => sortKey(a.name).localeCompare(sortKey(b.name)));
@@ -69,7 +71,7 @@ export function useSortedFolders(folders: readonly SortedFolder[]): UseSortedFol
   );
 
   const systemFolders = useMemo(
-    () => folders.filter((f) => SYSTEM_FOLDER_NAMES.has(f.name)),
+    () => getRootFolders(folders).filter((f) => SYSTEM_FOLDER_NAMES.has(f.name)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [folders, catalogVersion],
   );

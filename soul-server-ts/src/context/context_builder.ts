@@ -26,6 +26,7 @@ import type { SessionDB } from "../db/session_db.js";
 import type { Task } from "../task/task_models.js";
 
 import { fetchAtomContext, fetchAtomContexts } from "./atom_context.js";
+import { buildBoardWorkspaceContextItem } from "./board_workspace_item.js";
 import {
   fetchCogitoContextItem,
   type CogitoContextConfig,
@@ -130,9 +131,10 @@ export class ExecutionContextBuilder {
    * (`task.resume_session_id is None`) 정합.
    */
   async build(task: Task, agent: AgentProfile): Promise<PreparedContext> {
-    const { folderName, folderPrompt, folderSettings } = await this._resolveFolder(task);
+    const { folderId, folderName, folderPrompt, folderSettings } = await this._resolveFolder(task);
     const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
     const atomMarkdown = await this._fetchAtomContext(folderSettings);
+    const boardWorkspaceItem = await this._fetchBoardWorkspaceContext(folderId);
     const cogitoContextItem = await this._fetchCogitoContext();
     const { workingDir, maxTurns } = this._resolveProfile(task);
     return this._assembleContext({
@@ -142,6 +144,7 @@ export class ExecutionContextBuilder {
       folderPrompt,
       agentAtomMarkdown,
       atomMarkdown,
+      boardWorkspaceItem,
       cogitoContextItem,
       workingDir,
       maxTurns,
@@ -156,6 +159,7 @@ export class ExecutionContextBuilder {
    * resume 가드는 생략 (Python L100은 호출자 분기와 중복이지만 안전망).
    */
   private async _resolveFolder(task: Task): Promise<{
+    folderId?: string;
     folderName?: string;
     folderPrompt?: string;
     folderSettings?: Record<string, unknown>;
@@ -189,7 +193,7 @@ export class ExecutionContextBuilder {
     const folderPromptValue = settings.folderPrompt;
     const folderPrompt =
       typeof folderPromptValue === "string" && folderPromptValue ? folderPromptValue : undefined;
-    return { folderName, folderPrompt, folderSettings: settings };
+    return { folderId: folderRow.id, folderName, folderPrompt, folderSettings: settings };
   }
 
   /**
@@ -245,6 +249,17 @@ export class ExecutionContextBuilder {
     }
   }
 
+  private async _fetchBoardWorkspaceContext(folderId?: string): Promise<ContextItem | null> {
+    if (!folderId) return null;
+    try {
+      const catalog = await this.db.getCatalog();
+      return buildBoardWorkspaceContextItem(folderId, catalog);
+    } catch (err) {
+      this.logger.warn({ err, folderId }, "_fetchBoardWorkspaceContext: getCatalog failed");
+      return null;
+    }
+  }
+
   /**
    * profile_id → agent registry 조회 (Python L122-135).
    *
@@ -281,6 +296,7 @@ export class ExecutionContextBuilder {
     folderPrompt?: string;
     agentAtomMarkdown: string | null;
     atomMarkdown: string | null;
+    boardWorkspaceItem: ContextItem | null;
     cogitoContextItem: ContextItem | null;
     workingDir?: string;
     maxTurns?: number;
@@ -304,6 +320,9 @@ export class ExecutionContextBuilder {
     });
 
     const combinedContextItems: ContextItem[] = [soulstreamItem];
+    if (args.boardWorkspaceItem) {
+      combinedContextItems.push(args.boardWorkspaceItem);
+    }
     if (args.cogitoContextItem) {
       combinedContextItems.push(args.cogitoContextItem);
     }

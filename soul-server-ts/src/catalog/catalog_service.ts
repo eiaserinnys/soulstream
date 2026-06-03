@@ -22,6 +22,7 @@ export interface CatalogFolderDto {
   name: string;
   sortOrder: number;
   settings: Record<string, unknown>;
+  parentFolderId: string | null;
 }
 
 /**
@@ -47,19 +48,30 @@ export class CatalogService {
       id: f.id,
       name: f.name,
       sortOrder: f.sort_order,
-      settings: f.settings,
+      settings: f.settings ?? {},
+      parentFolderId: f.parent_folder_id,
     }));
+  }
+
+  async listChildFolders(folderId: string | null): Promise<CatalogFolderDto[]> {
+    const folders = await this.listFolders();
+    return folders.filter((folder) => folder.parentFolderId === folderId);
   }
 
   /**
    * 새 폴더 생성. id는 randomUUID로 발급 (Python `folder_create`는 외부에서 id를 받음
    * — Python catalog_service.create_folder L63-68 정합).
    */
-  async createFolder(name: string, sortOrder = 0): Promise<CatalogFolderDto> {
+  async createFolder(
+    name: string,
+    sortOrder = 0,
+    parentFolderId: string | null = null,
+  ): Promise<CatalogFolderDto> {
     const id = randomUUID();
-    await this.db.createFolder(id, name, sortOrder);
+    await this.assertParentAllowed(id, parentFolderId);
+    await this.db.createFolder(id, name, sortOrder, parentFolderId);
     await this.broadcastCatalog();
-    return { id, name, sortOrder, settings: {} };
+    return { id, name, sortOrder, settings: {}, parentFolderId };
   }
 
   async renameFolder(folderId: string, name: string): Promise<void> {
@@ -162,6 +174,19 @@ export class CatalogService {
     await this.broadcastCatalog();
   }
 
+  async setFolderParent(
+    folderId: string,
+    parentFolderId: string | null,
+  ): Promise<void> {
+    await this.assertParentAllowed(folderId, parentFolderId);
+    await this.db.updateFolder(
+      folderId,
+      ["parent_folder_id"],
+      [parentFolderId],
+    );
+    await this.broadcastCatalog();
+  }
+
   /**
    * 카탈로그 wire 발사 — Python `catalog_service._broadcast_catalog` L39-47 정합.
    * 폴더 트리·세션 매핑을 한 번에 broadcast하여 대시보드가 일관된 스냅샷으로 갱신.
@@ -169,5 +194,29 @@ export class CatalogService {
   async broadcastCatalog(): Promise<void> {
     const catalog = await this.db.getCatalog();
     await this.broadcaster.emitCatalogUpdated(catalog);
+  }
+
+  private async assertParentAllowed(
+    folderId: string,
+    parentFolderId: string | null,
+  ): Promise<void> {
+    if (parentFolderId === null) return;
+    if (folderId === parentFolderId) {
+      throw new Error("folder parent cycle");
+    }
+    const folders = await this.db.getAllFolders();
+    const parentById = new Map(folders.map((folder) => [folder.id, folder.parent_folder_id]));
+    let current: string | null | undefined = parentFolderId;
+    const seen = new Set<string>();
+    while (current) {
+      if (current === folderId) {
+        throw new Error("folder parent cycle");
+      }
+      if (seen.has(current)) {
+        throw new Error("folder parent cycle");
+      }
+      seen.add(current);
+      current = parentById.get(current);
+    }
   }
 }

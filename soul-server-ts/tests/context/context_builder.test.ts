@@ -295,6 +295,49 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     ]);
     expect(ctx.combinedContextItems[1]).toEqual(attachmentContext);
   });
+
+  it("현재 폴더의 직접 자식만 board_workspace context item에 주입", async () => {
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "root" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "root",
+      name: "Root",
+      sort_order: 0,
+      settings: {},
+    });
+    const getCatalog = vi.fn().mockResolvedValue({
+      folders: [
+        { id: "root", name: "Root", sortOrder: 0, settings: {}, parentFolderId: null },
+        { id: "child", name: "Child", sortOrder: 1, settings: {}, parentFolderId: "root" },
+        { id: "grandchild", name: "Grandchild", sortOrder: 2, settings: {}, parentFolderId: "child" },
+      ],
+      sessions: {
+        "sess-direct": { folderId: "root", displayName: "Direct Session" },
+        "sess-nested": { folderId: "child", displayName: "Nested Session" },
+      },
+    });
+    const cb = makeBuilder({ getSession, getFolderById, getCatalog } as Partial<SessionDB>);
+
+    const ctx = await cb.build(makeTask(), codexAgent);
+    const boardItem = ctx.combinedContextItems.find((item) => item.key === "board_workspace");
+
+    expect(boardItem).toBeDefined();
+    expect(boardItem?.content).toEqual({
+      folder_id: "root",
+      folders: [
+        {
+          id: "child",
+          name: "Child",
+          direct_child_count: 2,
+        },
+      ],
+      sessions: [
+        {
+          agent_session_id: "sess-direct",
+          title: "Direct Session",
+        },
+      ],
+    });
+  });
 });
 
 describe("ExecutionContextBuilder.build — cogito_context fetch", () => {
