@@ -257,6 +257,7 @@ def create_sessions_router(
                 session_id, body.text, body.user,
                 attachment_paths=body.attachmentPaths,
                 caller_info=caller_info,
+                extra_context_items=body.context_items,
             )
             return result
         except (WebSocketDisconnect, ConnectionError) as e:

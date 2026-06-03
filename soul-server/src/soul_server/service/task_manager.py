@@ -636,6 +636,8 @@ class TaskManager:
         attachment_paths: Optional[List[str]] = None,
         skip_resume: bool = False,
         caller_info: Optional[dict] = None,
+        context_items: Optional[List[dict]] = None,
+        extra_context_items: Optional[List[dict]] = None,
     ) -> dict:
         """
         세션에 개입 메시지 추가 (자동 resume 포함) — submit_message 위임 wrapper.
@@ -657,6 +659,8 @@ class TaskManager:
             skip_resume: True이면 완료/퇴거 세션에 대한 auto-resume을 건너뜀 (graceful_shutdown용).
                 running 세션이면 본 플래그와 무관하게 큐잉된다 (기존 동작 보존).
             caller_info: 발신자 신원(통합 v1). F-9 fix(2026-05-08).
+            context_items: 개입 turn에만 추가할 컨텍스트.
+            extra_context_items: 개입 turn에만 추가할 확장 컨텍스트.
 
         Returns:
             결과 딕셔너리:
@@ -690,6 +694,8 @@ class TaskManager:
                 user=user,
                 attachment_paths=attachment_paths,
                 caller_info=caller_info,
+                context_items=context_items,
+                extra_context_items=extra_context_items,
             ),
             task_manager=self,
         )

@@ -117,6 +117,24 @@ class TestIntervene:
         kwargs = tm.add_intervention.await_args.kwargs
         assert kwargs["attachment_paths"] == paths
 
+    async def test_context_items_passthrough(self):
+        tm = MagicMock()
+        tm.add_intervention = AsyncMock(return_value={"queue_position": 0})
+        engine = MagicMock()
+        rm = MagicMock()
+        context_items = [
+            {"key": "attachments", "label": "첨부 파일", "content": "파일: map.png"},
+        ]
+
+        await intervene(
+            "sess-7", "x", "u", attachment_paths=None,
+            context_items=context_items,
+            task_manager=tm, soul_engine=engine, resource_manager=rm,
+        )
+
+        kwargs = tm.add_intervention.await_args.kwargs
+        assert kwargs["extra_context_items"] == context_items
+
 
 # ============================================================================
 # respond_to_input

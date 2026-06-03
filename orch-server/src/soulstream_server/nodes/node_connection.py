@@ -334,6 +334,7 @@ class NodeConnection:
         user: str = "",
         attachment_paths: list[str] | None = None,
         caller_info: dict | None = None,
+        extra_context_items: list[dict] | None = None,
     ) -> dict:
         payload: dict[str, Any] = {"agentSessionId": session_id, "text": text, "user": user}
         if attachment_paths:
@@ -345,6 +346,8 @@ class NodeConnection:
             # soul-server _handle_intervene이 cmd.get("caller_info")로 추출하여
             # add_intervention → 큐 → InterventionSentEvent.caller_info로 전파한다.
             payload["caller_info"] = caller_info
+        if extra_context_items:
+            payload["extra_context_items"] = extra_context_items
         return await self._send_command(CMD_INTERVENE, payload)
 
     async def send_interrupt_session(self, session_id: str) -> dict:

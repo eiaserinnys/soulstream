@@ -294,6 +294,39 @@ class TestResumeMode:
         assert call_args[0][0] == "existing-sess"
         assert call_args[0][1] == "continue please"
 
+    async def test_resume_forwards_caller_info_and_context_items(
+        self, exec_client, mock_node_manager, mock_node, mock_db
+    ):
+        """Resume mode: Slack caller_info와 첨부 context_items를 intervene wire에 보존한다."""
+        async def fake_subscribe(session_id, callback):
+            async def emit():
+                await asyncio.sleep(0.01)
+                await callback({"event": {"type": "complete", "_event_id": 2}})
+            asyncio.create_task(emit())
+            return "sub-2"
+
+        mock_node.send_subscribe_events = AsyncMock(side_effect=fake_subscribe)
+        caller_info = {
+            "source": "slack",
+            "display_name": "スバル",
+            "slack": {"channel_id": "C123", "thread_ts": "1000.0001"},
+        }
+        context_items = [
+            {"key": "attachments", "label": "첨부 파일", "content": "파일: map.png"},
+        ]
+
+        await exec_client.post("/api/execute", json={
+            "prompt": "첨부 확인",
+            "agent_session_id": "existing-sess",
+            "caller_info": caller_info,
+            "context_items": context_items,
+        })
+
+        mock_node.send_intervene.assert_called_once()
+        call_kwargs = mock_node.send_intervene.call_args.kwargs
+        assert call_kwargs["caller_info"] == caller_info
+        assert call_kwargs["extra_context_items"] == context_items
+
     async def test_resume_subscribes_before_intervene(
         self, exec_client, mock_node_manager, mock_node, mock_db
     ):

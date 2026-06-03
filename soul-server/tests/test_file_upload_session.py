@@ -398,6 +398,29 @@ class TestAdapterHandleInterveneAttachmentPaths:
         assert call_kwargs["attachment_paths"] == ["/path/file.txt"]
 
     @pytest.mark.asyncio
+    async def test_handle_intervene_passes_extra_context_items(self):
+        """cmd에 extra_context_items가 있으면 add_intervention에 전달된다."""
+        mock_tm = MagicMock()
+        mock_tm.add_intervention = AsyncMock(return_value={})
+        dispatcher = self._make_dispatcher(mock_tm)
+        context_items = [
+            {"key": "attachments", "label": "첨부 파일", "content": "파일: map.png"},
+        ]
+
+        cmd = {
+            "agentSessionId": "sess-intervene",
+            "text": "hello",
+            "user": "test-user",
+            "extra_context_items": context_items,
+        }
+
+        await dispatcher._handle_intervene(cmd)
+
+        mock_tm.add_intervention.assert_called_once()
+        call_kwargs = mock_tm.add_intervention.call_args.kwargs
+        assert call_kwargs["extra_context_items"] == context_items
+
+    @pytest.mark.asyncio
     async def test_handle_intervene_no_attachment_paths(self):
         """cmd에 attachment_paths가 없으면 None 전달"""
         mock_tm = MagicMock()

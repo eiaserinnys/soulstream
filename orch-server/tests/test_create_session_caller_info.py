@@ -405,12 +405,20 @@ class TestInterveneCallerInfoSystemRouting:
         token = generate_token({"email": "cron@example.com"}, jwt_secret)
         resp = await client.post(
             f"/api/sessions/sess-routed/intervene",
-            json={"text": "follow-up message"},
+            json={
+                "text": "follow-up message",
+                "context_items": [
+                    {"key": "attachments", "label": "첨부 파일", "content": "파일: map.png"},
+                ],
+            },
             headers={"Authorization": f"Bearer {token}", "user-agent": "curl/8.5.0"},
         )
         assert resp.status_code == 200, resp.text
 
         payload = _extract_ws_payload(ws)
+        assert payload["extra_context_items"] == [
+            {"key": "attachments", "label": "첨부 파일", "content": "파일: map.png"},
+        ]
         # send_intervene WS payload에 caller_info 박힘
         ci = payload["caller_info"]
         assert ci["source"] == "system"

@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 
 # ─────────────────────────────────────────────────────
@@ -31,7 +31,10 @@ class InterveneCmd(TypedDict):
     type: str            # "intervene"
     agentSessionId: str  # 실제 전송 키와 일치 (구: session_id)
     text: str
-    user: str
+    user: NotRequired[str]
+    attachment_paths: NotRequired[list[str]]
+    caller_info: NotRequired[dict[str, Any]]
+    extra_context_items: NotRequired[list[dict[str, Any]]]
 
 
 class InterruptSessionCmd(TypedDict, total=False):

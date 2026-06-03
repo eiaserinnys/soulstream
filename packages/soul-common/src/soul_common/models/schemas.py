@@ -69,6 +69,7 @@ class InterveneRequest(BaseModel):
     text: str = Field(..., description="메시지 텍스트")
     user: str = Field(..., description="요청한 사용자")
     attachment_paths: Optional[List[str]] = Field(None, description="첨부 파일 경로 목록")
+    context_items: Optional[List[dict]] = Field(None, description="개입 turn에 추가할 context items")
     caller_info: Optional[dict] = Field(
         None,
         description=(

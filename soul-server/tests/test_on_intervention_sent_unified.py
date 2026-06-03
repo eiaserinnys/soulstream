@@ -124,7 +124,8 @@ def _make_executor(*, session_db, listener):
 
 
 def _runner_calling_intervention(*, user="alice", text="stop",
-                                 attachment_paths=None, caller_info=None):
+                                 attachment_paths=None, caller_info=None,
+                                 context_items=None):
     """execute()가 on_intervention_sent 콜백을 *직접* 호출하여 broadcast/persist 트리거.
 
     intervention_sent type 이벤트는 _run_execution 메인 루프에서 continue되므로
@@ -141,6 +142,8 @@ def _runner_calling_intervention(*, user="alice", text="stop",
             kwargs_cb["attachment_paths"] = attachment_paths
         if caller_info is not None:
             kwargs_cb["caller_info"] = caller_info
+        if context_items is not None:
+            kwargs_cb["context_items"] = context_items
         await cb(**kwargs_cb)
         yield _MockEvent(type="complete", result="ok")
 
@@ -319,6 +322,9 @@ class TestOnInterventionSentPayloadIntegration:
             claude_runner=_runner_calling_intervention(
                 attachment_paths=["/tmp/a.png"],
                 caller_info={"source": "slack", "display_name": "서소영"},
+                context_items=[
+                    {"key": "attachments", "label": "첨부 파일", "content": "파일: map.png"},
+                ],
             ),
             resource_manager=_make_rm(),
         )
@@ -326,6 +332,9 @@ class TestOnInterventionSentPayloadIntegration:
         broadcasts = _filter_calls(listener.broadcast.call_args_list, "intervention_sent")
         assert len(broadcasts) == 1
         ev = broadcasts[0].args[1]
-        assert ev["context"] == [{"key": "soulstream_session", "content": {"mock": True}}]
+        assert ev["context"] == [
+            {"key": "attachments", "label": "첨부 파일", "content": "파일: map.png"},
+            {"key": "soulstream_session", "content": {"mock": True}},
+        ]
         assert ev["attachments"] == ["/tmp/a.png"]
         assert ev["caller_info"]["display_name"] == "서소영"

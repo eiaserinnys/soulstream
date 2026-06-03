@@ -29,6 +29,7 @@ class InterveneBody(BaseModel):
     text: str
     user: str
     attachmentPaths: Optional[list] = None
+    context_items: Optional[list[dict]] = None
     caller_info: Optional[dict] = None  # 발신자 정보(통합 v1). 비어있으면 라우트가 build_browser_caller_info로 자동 조립.
 
 

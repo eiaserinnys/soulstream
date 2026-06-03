@@ -295,6 +295,7 @@ class CommandDispatcher:
             user=cmd.get("user", "upstream"),
             attachment_paths=cmd.get("attachment_paths") or None,
             caller_info=cmd.get("caller_info") or None,
+            extra_context_items=cmd.get("extra_context_items") or None,
         )
 
         # 오케스트레이터에 ACK 전송 — requestId가 있어야 Future.set_result()가 실행된다.

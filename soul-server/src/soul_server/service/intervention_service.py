@@ -30,6 +30,7 @@ async def intervene(
     text: str,
     user: str,
     attachment_paths: Optional[list[str]],
+    context_items: Optional[list[dict]] = None,
     *,
     task_manager,
     soul_engine,
@@ -46,6 +47,7 @@ async def intervene(
         text: 개입 메시지 본문.
         user: 발신자 식별 (사용자 닉네임 등).
         attachment_paths: 첨부 파일 경로 리스트 (None이면 빈 리스트로 정규화).
+        context_items: 개입 turn에만 추가할 context items.
         task_manager: TaskManager 인스턴스.
         soul_engine: ClaudeRunner (start_execution용).
         resource_manager: 동시 실행 제한 매니저.
@@ -71,6 +73,7 @@ async def intervene(
         text=text,
         user=user,
         attachment_paths=attachment_paths or [],
+        extra_context_items=context_items,
         caller_info=caller_info,
     )
     if result.get("auto_resumed"):

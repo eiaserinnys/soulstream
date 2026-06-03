@@ -359,6 +359,7 @@ class TaskExecutor:
                     text: str,
                     attachment_paths: list | None = None,
                     caller_info: dict | None = None,
+                    context_items: list | None = None,
                 ):
                     # P2-3 wire 마무리 (260518.06): context 키를 _db 가드 *밖*에서 박아
                     # broadcast가 모든 path(정상 · _db None · persist 실패)에서 context 운반.
@@ -385,7 +386,7 @@ class TaskExecutor:
                         folder_name=ctx.folder_name,
                         agent_id=task.profile_id,
                     )
-                    event["context"] = [intervention_soulstream]
+                    event["context"] = [*(context_items or []), intervention_soulstream]
                     if self._db is not None:
                         try:
                             ev_id = await self._persistence.persist_event(session_id, event)

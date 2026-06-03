@@ -1065,6 +1065,30 @@ class TestAttachmentPaths:
         assert "attachment_paths" in sent
         assert sent["attachment_paths"] == ["/incoming/sess-1/doc.pdf"]
 
+    async def test_send_intervene_includes_extra_context_items_when_provided(self, node, ws):
+        """extra_context_items가 있으면 send_intervene payload에 포함한다."""
+        async def resolve_future(*args, **kwargs):
+            data = args[0] if args else kwargs.get("data")
+            req_id = data["requestId"]
+            if req_id in node._pending:
+                node._pending[req_id].set_result({"ok": True})
+
+        ws.send_json.side_effect = resolve_future
+        context_items = [
+            {"key": "attachments", "label": "첨부 파일", "content": "파일: map.png"},
+        ]
+
+        await node.send_intervene(
+            "sess-1",
+            "use context",
+            user="admin",
+            extra_context_items=context_items,
+        )
+
+        sent = ws.send_json.call_args[0][0]
+        assert sent["type"] == CMD_INTERVENE
+        assert sent["extra_context_items"] == context_items
+
     async def test_send_intervene_no_attachment_paths_key_when_none(self, node, ws):
         """attachment_paths가 None이면 payload에 해당 키가 없다."""
         async def resolve_future(*args, **kwargs):

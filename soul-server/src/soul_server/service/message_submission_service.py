@@ -148,11 +148,16 @@ async def submit_message(
 
     # running 분기 — intervention queue 큐잉
     if existing and existing.status == TaskStatus.RUNNING:
+        intervention_context_items = (
+            (params.context_items or [])
+            + (params.extra_context_items or [])
+        )
         message = {
             "text": params.prompt,
             "user": params.user,
             "attachment_paths": params.attachment_paths or [],
             "caller_info": params.caller_info,
+            "context_items": intervention_context_items,
         }
         await existing.intervention_queue.put(message)
         return SubmitMessageResult(
