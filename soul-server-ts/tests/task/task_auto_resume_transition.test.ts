@@ -30,7 +30,7 @@ function makeTerminalTask(overrides: Partial<Task> = {}): Task {
 }
 
 describe("AutoResumeTransition", () => {
-  it("persists user_message, queues the running task, updates DB, broadcasts session_updated, and resumes", async () => {
+  it("promotes resume message into task state, queues it, updates DB, broadcasts session_updated, and resumes", async () => {
     const order: string[] = [];
     const task = makeTerminalTask();
     const callerInfo = { source: "slack", display_name: "Alice" };
@@ -43,7 +43,7 @@ describe("AutoResumeTransition", () => {
       order.push("updateSession");
       expect(task.status).toBe("running");
       expect(task.interventionQueue).toHaveLength(1);
-      expect(fields).toEqual({ status: "running", last_event_id: 101 });
+      expect(fields).toEqual({ status: "running", last_event_id: 7 });
     });
     const db = { appendMetadata, updateSession } as unknown as SessionDB;
 
@@ -67,14 +67,7 @@ describe("AutoResumeTransition", () => {
     });
     const persistence = { persistEvent, handleSideEffects } as unknown as EventPersistence;
 
-    const emitEventEnvelope = vi.fn(async (_sessionId, event) => {
-      order.push("emitEventEnvelope");
-      expect(event).toMatchObject({
-        type: "user_message",
-        text: "resume text",
-        _event_id: 101,
-      });
-    });
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
     const emitSessionUpdated = vi.fn(async (updatedTask) => {
       order.push("emitSessionUpdated");
       expect(updatedTask).toBe(task);
@@ -110,13 +103,17 @@ describe("AutoResumeTransition", () => {
 
     expect(order).toEqual([
       "appendMetadata",
-      "persistEvent",
-      "handleSideEffects",
-      "emitEventEnvelope",
       "updateSession",
       "emitSessionUpdated",
       "onResume",
     ]);
+    expect(task.prompt).toBe("resume text");
+    expect(task.clientId).toBe("alice");
+    expect(task.callerInfo).toBe(callerInfo);
+    expect(task.attachmentPaths).toEqual(["/tmp/a.png"]);
+    expect(persistEvent).not.toHaveBeenCalled();
+    expect(handleSideEffects).not.toHaveBeenCalled();
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.metadata).toContainEqual({ type: "caller_info", value: callerInfo });
     expect(appendMetadata).toHaveBeenCalledWith("s1", {
       type: "caller_info",
@@ -124,7 +121,7 @@ describe("AutoResumeTransition", () => {
     });
   });
 
-  it("includes resume context in the user_message event when context dependencies are available", async () => {
+  it("stores resume message context for the executor initial-message path", async () => {
     const task = makeTerminalTask();
     const contextItem = {
       key: "soulstream_session",
@@ -154,12 +151,18 @@ describe("AutoResumeTransition", () => {
       agentRegistry,
     });
 
-    await transition.resume(task, { text: "resume", user: "u" }, vi.fn());
+    await transition.resume(
+      task,
+      {
+        text: "resume",
+        user: "u",
+        context: [contextItem],
+      },
+      vi.fn(),
+    );
 
-    expect(buildResumeContextItems).toHaveBeenCalledWith(task, agent);
-    expect(emitEventEnvelope.mock.calls[0][1]).toMatchObject({
-      type: "user_message",
-      context: [contextItem],
-    });
+    expect(buildResumeContextItems).not.toHaveBeenCalled();
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    expect(task.contextItems).toEqual([contextItem]);
   });
 });

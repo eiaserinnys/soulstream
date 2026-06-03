@@ -1467,6 +1467,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     };
     const fakeBuilder = {
       build: vi.fn(async () => ({
+        effectiveSystemPrompt: "resume system prompt",
         combinedContextItems: [],
         assembledPrompt: "unused",
       })),
@@ -1484,8 +1485,8 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
-    expect(fakeBuilder.build).not.toHaveBeenCalled();
-    expect(fakeBuilder.buildSystemPrompt).toHaveBeenCalledWith(task, claudeAgent);
+    expect(fakeBuilder.build).toHaveBeenCalledWith(task, claudeAgent);
+    expect(fakeBuilder.buildSystemPrompt).not.toHaveBeenCalled();
     expect(capturedSystemPrompts).toEqual(["resume system prompt"]);
   });
 
@@ -1686,25 +1687,28 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     expect(task.status).toBe("completed");  // user_message 실패에도 task 정상 진행
   });
 
-  it("auto-resume task (queue에 메시지 push된 상태로 startExecution) → user_message 영속화 *건너뜀* (B-5 P0 fix)", async () => {
-    // queue 있는 task는 *auto-resume 흐름* — intervention_sent는 addIntervention에서 이미
-    // 영속화됐고 task.prompt는 prior turn에서 처리된 원래 발화. user_message 추가 영속화 시
-    // events 타임라인 어그러짐 (intervention_sent → 원래 prompt user_message 중복).
+  it("auto-resume task (queue에 메시지 push된 상태로 startExecution) → initial user_message를 발행", async () => {
+    // Python parity: terminal auto-resume은 재개 메시지를 새 task prompt로 승격하고
+    // executor의 initial-message 단일 경로에서 user_message를 발행한다.
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
     ];
     const executor = new TaskExecutor(() => makeFakeEngine(events), mocks.db, mocks.persistence, mocks.broadcaster, silentLogger);
     const task = makeTask();
+    task.prompt = "second turn";
     task.interventionQueue.push({ text: "second turn", user: "u" });
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    // user_message는 *0회* (auto-resume 흐름이므로 intervention_sent로만 처리)
     const userMessages = mocks.persistEvent.mock.calls.filter(
       (c) => (c[1] as { type: string }).type === "user_message",
     );
-    expect(userMessages.length).toBe(0);
+    expect(userMessages.length).toBe(1);
+    expect(userMessages[0][1]).toMatchObject({
+      type: "user_message",
+      text: "second turn",
+    });
   });
 
   it("auto-resume task: 첫 turn prompt = queue dequeue.text (task.prompt 재실행 안 함)", async () => {
@@ -2076,7 +2080,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
     expect(task.status).toBe("completed");  // 본 task 진행에 영향 0
   });
 
-  it("auto-resume (queue 비어있지 않음) → contextBuilder.build 자체 호출 안 함", async () => {
+  it("auto-resume (queue 비어있지 않음) → contextBuilder.build 후 initial messages 발행", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
@@ -2099,12 +2103,17 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(fakeBuilder.build).not.toHaveBeenCalled();
-    // system_message·user_message 영속화도 0회 (auto-resume 흐름)
+    expect(fakeBuilder.build).toHaveBeenCalledWith(task, agent);
     const sysCalls = mocks.persistEvent.mock.calls.filter(
       (c) => (c[1] as { type: string }).type === "system_message",
     );
-    expect(sysCalls.length).toBe(0);
+    expect(sysCalls.length).toBe(1);
+    const userCall = mocks.persistEvent.mock.calls.find(
+      (c) => (c[1] as { type: string }).type === "user_message",
+    );
+    expect((userCall![1] as Record<string, unknown>).context).toEqual([
+      { key: "k", label: "L", content: "c" },
+    ]);
   });
 });
 

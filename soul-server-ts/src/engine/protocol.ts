@@ -79,7 +79,7 @@ export type InterventionCallback = () => Promise<InterventionInput | null>;
  * consumed a tool_result or otherwise returned to a state where normal user input
  * can be appended without violating the SDK tool_use ordering.
  */
-export type SafeInterventionDrainCallback = () => Promise<void> | void;
+export type SafeInterventionDrainCallback = () => Promise<boolean | void> | boolean | void;
 
 /**
  * compact 이벤트 콜백 (Claude 고유 `/compact`). Codex는 발행 안 함 — Codex 어댑터에서

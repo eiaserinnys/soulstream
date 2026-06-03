@@ -59,7 +59,7 @@ function makeMocks() {
 }
 
 describe("TaskExecutor live intervention drain", () => {
-  it("drains queued intervention after tool_result before the next assistant event", async () => {
+  it("publishes intervention_sent only after safe callback successfully pushes queued intervention", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     const order: string[] = [];
@@ -80,9 +80,9 @@ describe("TaskExecutor live intervention drain", () => {
             result: "done",
             timestamp: 1,
           } as SSEEventPayload;
-          order.push("tool_result_yielded");
+          order.push("safe_point_reached");
           await (params as unknown as {
-            onSafeInterventionDrain?: () => Promise<void>;
+            onSafeInterventionDrain?: () => Promise<boolean>;
           }).onSafeInterventionDrain?.();
           order.push("safe_drain_returned");
           yield {
@@ -126,11 +126,26 @@ describe("TaskExecutor live intervention drain", () => {
     expect(steeredInputs).toEqual([{ prompt: "same turn intervention" }]);
     expect(task.interventionQueue).toEqual([]);
     expect(order).toEqual([
-      "tool_result_yielded",
+      "safe_point_reached",
       "steer:same turn intervention",
       "safe_drain_returned",
       "assistant_yielded",
     ]);
+    const persistedIntervention = (mocks.persistence as unknown as {
+      persistEvent: ReturnType<typeof vi.fn>;
+    }).persistEvent.mock.calls.find(([, event]) => event.type === "intervention_sent");
+    expect(persistedIntervention?.[1]).toMatchObject({
+      type: "intervention_sent",
+      text: "same turn intervention",
+      user: "alice",
+    });
+    expect(mocks.broadcaster.emitEventEnvelope).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({
+        type: "intervention_sent",
+        text: "same turn intervention",
+      }),
+    );
     expect(task.lastAssistantText).toBe("assistant continued after live drain");
   });
 });

@@ -95,7 +95,7 @@ describe("RunningInterventionTransition", () => {
     await collectIterator(iterator);
   });
 
-  it("persists and broadcasts intervention_sent before live steering; delivered skips fallback queue", async () => {
+  it("live steering delivered → persists and broadcasts intervention_sent after SDK push", async () => {
     const order: string[] = [];
     const callerInfo = { source: "slack", display_name: "Alice" };
     const steerActiveTurn = vi.fn(async (input) => {
@@ -166,10 +166,10 @@ describe("RunningInterventionTransition", () => {
     ).resolves.toEqual({ delivered: true });
 
     expect(order).toEqual([
+      "steerActiveTurn",
       "persistEvent",
       "handleSideEffects",
       "emitEventEnvelope",
-      "steerActiveTurn",
     ]);
     expect(task.interventionQueue).toEqual([]);
   });
@@ -211,7 +211,7 @@ describe("RunningInterventionTransition", () => {
     });
   });
 
-  it("returns queued fallback with liveSteerStatus when live steering is not delivered", async () => {
+  it("queues fallback without intervention_sent until live steering eventually succeeds", async () => {
     const steerActiveTurn = vi.fn().mockResolvedValue({
       status: "no_active_turn",
       message: "active turn missing",
@@ -240,12 +240,12 @@ describe("RunningInterventionTransition", () => {
       liveSteerStatus: "no_active_turn",
     });
 
-    expect(emitEventEnvelope).toHaveBeenCalledTimes(1);
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(steerActiveTurn).toHaveBeenCalledWith({ prompt: "queue me" });
     expect(task.interventionQueue).toEqual([{ text: "queue me", user: "alice" }]);
   });
 
-  it("keeps intervention_sent visible and queues when Claude is not accepting live input", async () => {
+  it("queues when Claude is not accepting live input without claiming intervention_sent", async () => {
     const steerActiveTurn = vi.fn().mockResolvedValue({
       status: "not_accepting_input",
       message: "Claude active input is not accepting steering",
@@ -280,15 +280,8 @@ describe("RunningInterventionTransition", () => {
       liveSteerStatus: "not_accepting_input",
     });
 
-    expect(persistEvent).toHaveBeenCalledTimes(1);
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
-      "s1",
-      expect.objectContaining({
-        type: "intervention_sent",
-        text: "wait until tool result",
-        _event_id: 444,
-      }),
-    );
+    expect(persistEvent).not.toHaveBeenCalled();
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([
       { text: "wait until tool result", user: "alice" },
     ]);
@@ -398,17 +391,15 @@ describe("RunningInterventionTransition", () => {
       { text: "older user message", user: "alice" },
       { text: "background task notification", user: "system" },
     ]);
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
-      "s1",
-      expect.objectContaining({
-        type: "intervention_sent",
-        text: "background task notification",
-      }),
-    );
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
 
-  it("isolates persistence failure and still broadcasts, steers, and queues failed live steering", async () => {
-    const steerActiveTurn = vi.fn().mockRejectedValue(new Error("steer down"));
+  it("isolates persistence failure after delivered live steering and still broadcasts", async () => {
+    const order: string[] = [];
+    const steerActiveTurn = vi.fn(async () => {
+      order.push("steerActiveTurn");
+      return { status: "delivered" as const };
+    });
     const task = makeRunningTask({
       engine: {
         backendId: "codex",
@@ -419,10 +410,15 @@ describe("RunningInterventionTransition", () => {
         steerActiveTurn,
       } as EnginePort & SupportsLiveTurnSteering,
     });
-    const persistEvent = vi.fn().mockRejectedValue(new Error("events db down"));
+    const persistEvent = vi.fn(async () => {
+      order.push("persistEvent");
+      throw new Error("events db down");
+    });
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
     const persistence = { persistEvent, handleSideEffects } as unknown as EventPersistence;
-    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const emitEventEnvelope = vi.fn(async () => {
+      order.push("emitEventEnvelope");
+    });
     const transition = new RunningInterventionTransition({
       broadcaster: makeBroadcaster(emitEventEnvelope),
       logger: silentLogger,
@@ -431,19 +427,16 @@ describe("RunningInterventionTransition", () => {
 
     await expect(
       transition.deliver(task, { text: "fallback", user: "alice" }),
-    ).resolves.toEqual({
-      queued: true,
-      queuePosition: 1,
-      liveSteerStatus: "failed",
-    });
+    ).resolves.toEqual({ delivered: true });
 
+    expect(order).toEqual(["steerActiveTurn", "persistEvent", "emitEventEnvelope"]);
     expect(handleSideEffects).not.toHaveBeenCalled();
     expect(emitEventEnvelope).toHaveBeenCalledWith(
       "s1",
       expect.not.objectContaining({ _event_id: expect.anything() }),
     );
     expect(steerActiveTurn).toHaveBeenCalledTimes(1);
-    expect(task.interventionQueue).toEqual([{ text: "fallback", user: "alice" }]);
+    expect(task.interventionQueue).toEqual([]);
   });
 
   it("isolates broadcast failure and still queues the intervention", async () => {

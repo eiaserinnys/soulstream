@@ -32,12 +32,13 @@ export class TaskTurnInputBuilder {
   constructor(private readonly deps: TaskTurnInputBuilderDeps) {}
 
   async prepareInitialTurnInput(task: Task, agent: AgentProfile): Promise<TaskTurnInput> {
-    if (task.interventionQueue.length > 0) {
-      return await this.prepareQueuedInterventionTurnInput(task, agent);
-    }
-
     const ctx = await this.buildContext(task, agent);
     await this.deps.initialMessagePublisher.publishInitialMessages(task, ctx);
+
+    if (task.interventionQueue.length > 0) {
+      return this.prepareQueuedInterventionTurnInput(task, agent, ctx);
+    }
+
     return this.prepareNewTaskTurnInput(task, agent, ctx);
   }
 
@@ -99,37 +100,17 @@ export class TaskTurnInputBuilder {
   private async prepareQueuedInterventionTurnInput(
     task: Task,
     agent: AgentProfile,
+    ctx: PreparedContext | undefined,
   ): Promise<TaskTurnInput> {
     const intervention = task.interventionQueue.shift()!;
     const composed = composeInterventionTurnPrompt(intervention);
-    const systemPrompt = await this.buildQueuedClaudeSystemPrompt(task, agent);
+    const systemPrompt =
+      agent.backend === "claude" ? ctx?.effectiveSystemPrompt : undefined;
     return {
       prompt: composed.prompt,
       imageAttachmentPaths: composed.imageAttachmentPaths,
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
       intervention,
     };
-  }
-
-  private async buildQueuedClaudeSystemPrompt(
-    task: Task,
-    agent: AgentProfile,
-  ): Promise<string | undefined> {
-    if (agent.backend !== "claude" || !this.deps.contextBuilder) {
-      return undefined;
-    }
-    if (typeof this.deps.contextBuilder.buildSystemPrompt !== "function") {
-      return undefined;
-    }
-
-    try {
-      return await this.deps.contextBuilder.buildSystemPrompt(task, agent);
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "context_builder system_prompt failed — continuing queued Claude turn without system prompt",
-      );
-      return undefined;
-    }
   }
 }

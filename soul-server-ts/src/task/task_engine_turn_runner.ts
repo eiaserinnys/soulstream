@@ -14,7 +14,7 @@ export interface TaskEngineTurnInput {
   prompt: string;
   imageAttachmentPaths?: string[];
   systemPrompt?: string;
-  onSafeInterventionDrain?: () => Promise<void>;
+  onSafeInterventionDrain?: () => Promise<boolean>;
 }
 
 export interface TaskEngineTurnRunnerDeps {
