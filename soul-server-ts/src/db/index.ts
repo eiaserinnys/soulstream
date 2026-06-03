@@ -1,6 +1,8 @@
 export {
   SessionDB,
   type AppendEventParams,
+  type CatalogFolderRow,
+  type FolderRow,
   type LastMessageRow,
   type RegisterSessionParams,
   type SessionRow,

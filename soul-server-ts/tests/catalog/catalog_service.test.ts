@@ -43,7 +43,7 @@ function setupSqlWithCatalog() {
   return createMockSql((call) => {
     const text = call.fragments.join("|");
     if (text.includes("folder_get_all"))
-      return [{ id: "f1", name: "F1", sort_order: 0, settings: {} }];
+      return [{ id: "f1", name: "F1", sort_order: 0, settings: {}, parent_folder_id: null }];
     if (text.includes("catalog_get_sessions"))
       return [{ session_id: "s1", folder_id: "f1", display_name: "Hi" }];
     return [];
@@ -53,16 +53,16 @@ function setupSqlWithCatalog() {
 describe("CatalogService.listFolders", () => {
   it("getAllFolders 결과를 sortOrder/settings 키로 정규화", async () => {
     const { sql } = createMockSql(() => [
-      { id: "f1", name: "F1", sort_order: 1, settings: { x: 1 } },
-      { id: "f2", name: "F2", sort_order: 2, settings: null },
+      { id: "f1", name: "F1", sort_order: 1, settings: { x: 1 }, parent_folder_id: null },
+      { id: "f2", name: "F2", sort_order: 2, settings: null, parent_folder_id: "f1" },
     ]);
     const db = new SessionDB(sql);
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
     const folders = await svc.listFolders();
     expect(folders).toEqual([
-      { id: "f1", name: "F1", sortOrder: 1, settings: { x: 1 } },
-      { id: "f2", name: "F2", sortOrder: 2, settings: {} },
+      { id: "f1", name: "F1", sortOrder: 1, settings: { x: 1 }, parentFolderId: null },
+      { id: "f2", name: "F2", sortOrder: 2, settings: {}, parentFolderId: "f1" },
     ]);
   });
 });
@@ -74,9 +74,10 @@ describe("CatalogService.createFolder", () => {
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
-    const folder = await svc.createFolder("새 폴더", 5);
+    const folder = await svc.createFolder("새 폴더", 5, "parent");
     expect(folder.name).toBe("새 폴더");
     expect(folder.sortOrder).toBe(5);
+    expect(folder.parentFolderId).toBe("parent");
     expect(folder.id).toMatch(/^[0-9a-f-]{36}$/i);
     expect(folder.settings).toEqual({});
 
@@ -84,9 +85,40 @@ describe("CatalogService.createFolder", () => {
       c.fragments.join("|").includes("folder_create"),
     );
     expect(folderCreateCall).toBeDefined();
-    expect(folderCreateCall!.values).toEqual([folder.id, "새 폴더", 5]);
+    expect(folderCreateCall!.values).toEqual([folder.id, "새 폴더", 5, "parent"]);
 
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("CatalogService.listChildFolders", () => {
+  it("현재 폴더의 직접 자식 폴더만 반환하고 손자 폴더는 제외", async () => {
+    const { sql } = createMockSql(() => [
+      { id: "root", name: "Root", sort_order: 0, settings: {}, parent_folder_id: null },
+      { id: "child-a", name: "Child A", sort_order: 1, settings: {}, parent_folder_id: "root" },
+      { id: "child-b", name: "Child B", sort_order: 2, settings: {}, parent_folder_id: "root" },
+      { id: "grand", name: "Grand", sort_order: 3, settings: {}, parent_folder_id: "child-a" },
+    ]);
+    const db = new SessionDB(sql);
+    const { broadcaster } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await expect(svc.listChildFolders("root")).resolves.toEqual([
+      { id: "child-a", name: "Child A", sortOrder: 1, settings: {}, parentFolderId: "root" },
+      { id: "child-b", name: "Child B", sortOrder: 2, settings: {}, parentFolderId: "root" },
+    ]);
+  });
+});
+
+describe("CatalogService.setFolderParent", () => {
+  it("자기 자신을 parent로 지정하면 DB update 전에 거부", async () => {
+    const { sql, calls } = setupSqlWithCatalog();
+    const db = new SessionDB(sql);
+    const { broadcaster } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await expect(svc.setFolderParent("f1", "f1")).rejects.toThrow(/cycle/);
+    expect(calls.some((c) => c.fragments.join("|").includes("folder_update"))).toBe(false);
   });
 });
 

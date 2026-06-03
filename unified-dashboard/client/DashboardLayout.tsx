@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { FolderContents } from "./components/FolderContents";
+import { BoardWorkspaceView } from "./components/BoardWorkspaceView";
 import {
   createFolder,
   renameFolderOptimistic,
@@ -27,7 +27,6 @@ import { SearchModal } from "./components/SearchModal";
 import { useAppConfig } from "./config/AppConfigContext";
 import {
   AskQuestionBanner,
-  SessionsTopBar,
   MobileChatHeader,
   ThemeToggle,
   useSessionProvider,
@@ -166,10 +165,7 @@ export function DashboardLayout() {
             onNewSession={(task, defaults) => openNewSessionModal("feed", task ?? null, defaults ?? null)}
           />
         ) : (
-          <>
-            <SessionsTopBar />
-            <FolderContents sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
-          </>
+          <BoardWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
         )
       }
       rightPanel={
@@ -206,7 +202,7 @@ export function DashboardLayout() {
       mobileFolderContents={
         // DashboardShell의 isMobile && selectedFolderId 조건이 표시 여부를 제어하므로
         // 항상 FolderContents를 전달한다. 조건부로 undefined를 전달하면 타이밍 이슈로 빈 화면이 보인다.
-        <FolderContents
+        <BoardWorkspaceView
           sessions={sessions}
           onLoadMore={loadMore}
           hasMore={hasMore}

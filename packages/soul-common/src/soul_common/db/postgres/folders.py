@@ -27,10 +27,17 @@ class PostgresFolderMixin:
 
     _pool: asyncpg.Pool
 
-    async def create_folder(self, folder_id: str, name: str, sort_order: int = 0) -> None:
+    async def create_folder(
+        self,
+        folder_id: str,
+        name: str,
+        sort_order: int = 0,
+        parent_folder_id: Optional[str] = None,
+    ) -> None:
+        await self._validate_parent_folder(folder_id, parent_folder_id)
         await self._pool.execute(
-            "SELECT folder_create($1, $2, $3)",
-            folder_id, name, sort_order,
+            "SELECT folder_create($1, $2, $3, $4)",
+            folder_id, name, sort_order, parent_folder_id,
         )
 
     async def update_folder(self, folder_id: str, **fields) -> None:
@@ -39,10 +46,12 @@ class PostgresFolderMixin:
         invalid = set(fields) - _FOLDER_COLUMNS
         if invalid:
             raise ValueError(f"Invalid folder columns: {invalid}")
+        if "parent_folder_id" in fields:
+            await self._validate_parent_folder(folder_id, fields["parent_folder_id"])
 
         columns = list(fields.keys())
         values = [
-            json.dumps(v, ensure_ascii=False) if k in _FOLDER_JSONB_COLUMNS else str(v)
+            json.dumps(v, ensure_ascii=False) if k in _FOLDER_JSONB_COLUMNS else (None if v is None else str(v))
             for k, v in fields.items()
         ]
 
@@ -132,6 +141,7 @@ class PostgresFolderMixin:
                 "id": f["id"],
                 "name": f["name"],
                 "sortOrder": f["sort_order"],
+                "parentFolderId": f.get("parent_folder_id"),
                 "settings": f.get("settings") or {},
             }
             for f in folders
@@ -148,3 +158,27 @@ class PostgresFolderMixin:
             }
 
         return {"folders": folder_list, "sessions": sessions}
+
+    async def _validate_parent_folder(
+        self,
+        folder_id: str,
+        parent_folder_id: Optional[str],
+    ) -> None:
+        if parent_folder_id is None:
+            return
+        if folder_id == parent_folder_id:
+            raise ValueError("folder parent cycle")
+
+        rows = await self._pool.fetch(
+            "SELECT id, parent_folder_id FROM folders"
+        )
+        parent_by_id = {r["id"]: r["parent_folder_id"] for r in rows}
+        current = parent_folder_id
+        seen: set[str] = set()
+        while current is not None:
+            if current == folder_id:
+                raise ValueError("folder parent cycle")
+            if current in seen:
+                raise ValueError("folder parent cycle")
+            seen.add(current)
+            current = parent_by_id.get(current)

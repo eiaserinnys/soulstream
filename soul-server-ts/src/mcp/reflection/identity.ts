@@ -39,6 +39,7 @@ export const SELF_IDENTITY = {
       description: "폴더·세션 카탈로그 mutation",
       tools: [
         "list_folders",
+        "list_child_folders",
         "create_folder",
         "rename_folder",
         "delete_folder",

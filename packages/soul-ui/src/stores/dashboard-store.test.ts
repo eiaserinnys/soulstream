@@ -2185,6 +2185,25 @@ describe("dashboard-store", () => {
     });
   });
 
+  describe("removeFolder", () => {
+    it("부모 폴더 삭제 시 직접 자식 폴더를 루트로 승격한다", () => {
+      const store = useDashboardStore.getState();
+
+      store.setCatalog({
+        folders: [
+          { id: "parent", name: "Parent", sortOrder: 0, parentFolderId: null },
+          { id: "child", name: "Child", sortOrder: 1, parentFolderId: "parent" },
+        ],
+        sessions: {},
+      });
+
+      store.removeFolder("parent");
+
+      const child = useDashboardStore.getState().catalog?.folders.find((f) => f.id === "child");
+      expect(child?.parentFolderId).toBeNull();
+    });
+  });
+
   // === catalog 자동 폴더 선택 가드 — store 사전 조건 회귀 테스트 ===
   // useSessionListProvider.ts L339의 guard 조건:
   //   store.selectedFolderId === null && !store.activeSessionKey && store.viewMode !== "feed"

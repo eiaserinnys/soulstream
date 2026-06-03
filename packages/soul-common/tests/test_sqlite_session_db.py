@@ -300,6 +300,19 @@ class TestFolderCRUD:
         assert folder is not None
         assert folder["name"] == "My Folder"
         assert folder["sort_order"] == 1
+        assert folder["parent_folder_id"] is None
+
+    async def test_create_child_folder_and_catalog_parent_wire(self, db: SqliteSessionDB):
+        await db.create_folder("parent", "Parent")
+        await db.create_folder("child", "Child", parent_folder_id="parent")
+
+        folder = await db.get_folder("child")
+        assert folder is not None
+        assert folder["parent_folder_id"] == "parent"
+
+        catalog = await db.get_catalog()
+        child = next(f for f in catalog["folders"] if f["id"] == "child")
+        assert child["parentFolderId"] == "parent"
 
     async def test_update_folder(self, db: SqliteSessionDB):
         await db.create_folder("f2", "Old Name")
@@ -311,6 +324,26 @@ class TestFolderCRUD:
         await db.create_folder("f3", "To Delete")
         await db.delete_folder("f3")
         assert await db.get_folder("f3") is None
+
+    async def test_delete_parent_promotes_child_folder_to_root(self, db: SqliteSessionDB):
+        await db.create_folder("parent", "Parent")
+        await db.create_folder("child", "Child", parent_folder_id="parent")
+
+        await db.delete_folder("parent")
+
+        child = await db.get_folder("child")
+        assert child is not None
+        assert child["parent_folder_id"] is None
+
+    async def test_folder_cycle_rejected_by_application_validation(self, db: SqliteSessionDB):
+        await db.create_folder("a", "A")
+        await db.create_folder("b", "B", parent_folder_id="a")
+
+        with pytest.raises(ValueError, match="cycle"):
+            await db.update_folder("a", parent_folder_id="b")
+
+        with pytest.raises(ValueError, match="cycle"):
+            await db.update_folder("a", parent_folder_id="a")
 
     async def test_get_all_folders(self, db: SqliteSessionDB):
         await db.create_folder("fa", "A", sort_order=2)

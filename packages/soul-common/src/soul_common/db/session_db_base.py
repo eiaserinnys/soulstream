@@ -23,7 +23,7 @@ SESSION_COLUMNS = frozenset({
     "caller_session_id",
 })
 
-FOLDER_COLUMNS = frozenset({"name", "sort_order", "settings"})
+FOLDER_COLUMNS = frozenset({"name", "sort_order", "settings", "parent_folder_id"})
 
 FOLDER_JSONB_COLUMNS = frozenset({"settings"})
 

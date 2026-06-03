@@ -21,18 +21,36 @@ export function registerCatalogTools(
   );
 
   server.registerTool(
+    "list_child_folders",
+    {
+      description: "특정 폴더의 직접 자식 폴더만 조회.",
+      inputSchema: {
+        folder_id: z.string().nullable().optional(),
+      },
+    },
+    async ({ folder_id }) => {
+      const folders = await runtime.catalogService.listChildFolders(
+        folder_id ?? null,
+      );
+      return jsonResult({ folder_id: folder_id ?? null, folders });
+    },
+  );
+
+  server.registerTool(
     "create_folder",
     {
       description: "새 폴더 생성.",
       inputSchema: {
         name: z.string().min(1),
         sort_order: z.number().int().default(0),
+        parent_folder_id: z.string().nullable().optional(),
       },
     },
-    async ({ name, sort_order }) => {
+    async ({ name, sort_order, parent_folder_id }) => {
       const folder = await runtime.catalogService.createFolder(
         name,
         sort_order ?? 0,
+        parent_folder_id ?? null,
       );
       return jsonResult(folder);
     },

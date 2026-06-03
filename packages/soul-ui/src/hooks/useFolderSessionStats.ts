@@ -16,6 +16,7 @@ import type { SessionSummary } from "../shared/types";
 
 export interface UseFolderSessionStatsResult {
   getSessionCount: (folderId: string | null) => number;
+  getDirectChildCount: (folderId: string) => number;
   getUnreadCount: (folderId: string | null) => number;
   runningFolderIds: Set<string>;
 }
@@ -83,6 +84,16 @@ export function useFolderSessionStats(
     [catalog, sessions, catalogVersion],
   );
 
+  const getDirectChildCount = useCallback(
+    (folderId: string) => {
+      const sessionCount = getSessionCount(folderId);
+      const folderCount = catalog?.folders.filter((f) => f.parentFolderId === folderId).length ?? 0;
+      return sessionCount + folderCount;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    },
+    [catalog, catalogVersion, getSessionCount],
+  );
+
   const runningFolderIds = useMemo(() => {
     if (!catalog) return new Set<string>();
     const set = new Set<string>();
@@ -96,5 +107,5 @@ export function useFolderSessionStats(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalog, sessions, catalogVersion]);
 
-  return { getSessionCount, getUnreadCount, runningFolderIds };
+  return { getSessionCount, getDirectChildCount, getUnreadCount, runningFolderIds };
 }

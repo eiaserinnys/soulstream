@@ -30,7 +30,22 @@ async def list_folders() -> dict:
 
 
 @cogito_mcp.tool()
-async def create_folder(name: str, sort_order: int = 0) -> dict:
+async def list_child_folders(folder_id: str | None = None) -> dict:
+    """특정 폴더의 직접 자식 폴더만 조회한다."""
+    try:
+        catalog_svc = get_catalog_service()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    folders = await catalog_svc.list_child_folders(folder_id)
+    return {"folder_id": folder_id, "folders": folders}
+
+
+@cogito_mcp.tool()
+async def create_folder(
+    name: str,
+    sort_order: int = 0,
+    parent_folder_id: str | None = None,
+) -> dict:
     """폴더를 생성한다.
 
     Args:
@@ -44,7 +59,11 @@ async def create_folder(name: str, sort_order: int = 0) -> dict:
         catalog_svc = get_catalog_service()
     except RuntimeError as e:
         return {"error": str(e)}
-    return await catalog_svc.create_folder(name, sort_order)
+    return await catalog_svc.create_folder(
+        name,
+        sort_order,
+        parent_folder_id=parent_folder_id,
+    )
 
 
 @cogito_mcp.tool()

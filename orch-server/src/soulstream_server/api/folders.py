@@ -18,17 +18,26 @@ logger = logging.getLogger(__name__)
 class CreateFolderRequest(BaseModel):
     name: str
     sortOrder: int = 0
+    parentFolderId: Optional[str] = None
 
 
 class UpdateFolderRequest(BaseModel):
     name: Optional[str] = None
     sortOrder: Optional[int] = None
     settings: Optional[dict] = None
+    parentFolderId: Optional[str] = None
 
 
 class FolderReorderItem(BaseModel):
     id: str
     sortOrder: int
+
+
+def _field_supplied(model: BaseModel, field_name: str) -> bool:
+    fields = getattr(model, "model_fields_set", None)
+    if fields is None:
+        fields = getattr(model, "__fields_set__", set())
+    return field_name in fields
 
 
 def create_folders_router(
@@ -50,18 +59,25 @@ def create_folders_router(
     @router.post("", status_code=201)
     async def create_folder(body: CreateFolderRequest) -> dict:
         """폴더 생성."""
-        folder = await catalog_service.create_folder(body.name, body.sortOrder)
+        folder = await catalog_service.create_folder(
+            body.name,
+            body.sortOrder,
+            parent_folder_id=body.parentFolderId,
+        )
         return folder
 
     @router.put("/{folder_id}")
     async def update_folder(folder_id: str, body: UpdateFolderRequest) -> dict:
         """폴더 업데이트 (이름/설정 변경)."""
-        await catalog_service.update_folder(
-            folder_id,
-            name=body.name,
-            sort_order=body.sortOrder,
-            settings=body.settings,
-        )
+        parent_supplied = _field_supplied(body, "parentFolderId")
+        kwargs = {
+            "name": body.name,
+            "sort_order": body.sortOrder,
+            "settings": body.settings,
+        }
+        if parent_supplied:
+            kwargs["parent_folder_id"] = body.parentFolderId
+        await catalog_service.update_folder(folder_id, **kwargs)
         return {"success": True}
 
     @router.delete("/{folder_id}")

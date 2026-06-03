@@ -73,7 +73,7 @@ export function FolderTree({
   const allFolders = catalog?.folders ?? [];
 
   const { sortedNormalFolders, sortedNormalFolderIds, systemFolders } = useSortedFolders(allFolders);
-  const { getSessionCount, getUnreadCount, runningFolderIds } = useFolderSessionStats(folderCounts);
+  const { getDirectChildCount, getUnreadCount, runningFolderIds } = useFolderSessionStats(folderCounts);
 
   const handleCreateFolder = async (name: string) => {
     try {
@@ -126,7 +126,7 @@ export function FolderTree({
         editName={editName}
         dragOverId={dragOverId}
         unreadCount={getUnreadCount(folder.id)}
-        sessionCount={getSessionCount(folder.id)}
+        sessionCount={getDirectChildCount(folder.id)}
         isRunning={runningFolderIds.has(folder.id)}
         onSelect={() => handleSelectFolder(folder.id)}
         onDoubleClick={() => handleDoubleClick(folder.id, folder.name)}

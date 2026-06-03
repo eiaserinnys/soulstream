@@ -111,6 +111,14 @@ class SqliteSessionDB(
 
         try:
             await self._conn.execute(
+                "ALTER TABLE folders ADD COLUMN parent_folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL"
+            )
+            await self._conn.commit()
+        except Exception:
+            pass
+
+        try:
+            await self._conn.execute(
                 "ALTER TABLE sessions ADD COLUMN caller_session_id TEXT"
             )
             await self._conn.commit()

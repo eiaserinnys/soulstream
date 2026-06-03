@@ -73,6 +73,22 @@ export interface LastMessageRow {
   timestamp: string;
 }
 
+export interface FolderRow {
+  id: string;
+  name: string;
+  sort_order: number;
+  settings: Record<string, unknown>;
+  parent_folder_id: string | null;
+}
+
+export interface CatalogFolderRow {
+  id: string;
+  name: string;
+  sortOrder: number;
+  settings: Record<string, unknown>;
+  parentFolderId: string | null;
+}
+
 /** `session_get` 반환 행 (sessions 테이블 컬럼 매핑). */
 export interface SessionRow {
   session_id: string;
@@ -393,16 +409,17 @@ export class SessionDB {
    */
   async getFolderById(
     folderId: string,
-  ): Promise<{ id: string; name: string; sort_order: number; settings: Record<string, unknown> } | null> {
+  ): Promise<FolderRow | null> {
     const rows = await this.sql<
-      { id: string; name: string; sort_order: number; settings: unknown }[]
-    >`SELECT id, name, sort_order, settings FROM folders WHERE id = ${folderId}`;
+      { id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null }[]
+    >`SELECT id, name, sort_order, settings, parent_folder_id FROM folders WHERE id = ${folderId}`;
     const row = rows[0];
     if (!row) return null;
     return {
       id: row.id,
       name: row.name,
       sort_order: row.sort_order,
+      parent_folder_id: row.parent_folder_id,
       settings:
         row.settings && typeof row.settings === "object"
           ? (row.settings as Record<string, unknown>)
@@ -418,16 +435,17 @@ export class SessionDB {
    * `catalog` 필드 형상으로 반환.
    */
   async getCatalog(): Promise<{
-    folders: Array<{ id: string; name: string; sortOrder: number; settings: Record<string, unknown> }>;
+    folders: CatalogFolderRow[];
     sessions: Record<string, { folderId: string | null; displayName: string | null }>;
   }> {
     const folderRows = await this.sql<
-      { id: string; name: string; sort_order: number; settings: unknown }[]
+      { id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null }[]
     >`SELECT * FROM folder_get_all()`;
     const folders = folderRows.map((f) => ({
       id: f.id,
       name: f.name,
       sortOrder: f.sort_order,
+      parentFolderId: f.parent_folder_id,
       settings: (typeof f.settings === "object" && f.settings !== null
         ? (f.settings as Record<string, unknown>)
         : {}),
@@ -541,20 +559,16 @@ export class SessionDB {
    * 본 메서드는 raw row를 그대로 반환하여 도구 핸들러가 wire 모양 결정.
    */
   async getAllFolders(): Promise<
-    Array<{
-      id: string;
-      name: string;
-      sort_order: number;
-      settings: Record<string, unknown>;
-    }>
+    FolderRow[]
   > {
     const rows = await this.sql<
-      Array<{ id: string; name: string; sort_order: number; settings: unknown }>
+      Array<{ id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null }>
     >`SELECT * FROM folder_get_all()`;
     return rows.map((r) => ({
       id: r.id,
       name: r.name,
       sort_order: r.sort_order,
+      parent_folder_id: r.parent_folder_id,
       settings:
         r.settings && typeof r.settings === "object"
           ? (r.settings as Record<string, unknown>)
@@ -697,8 +711,13 @@ export class SessionDB {
    *
    * Python `catalog_service.create_folder`에서 uuid 발급 후 호출하는 패턴 정합.
    */
-  async createFolder(id: string, name: string, sortOrder: number): Promise<void> {
-    await this.sql`SELECT folder_create(${id}, ${name}, ${sortOrder})`;
+  async createFolder(
+    id: string,
+    name: string,
+    sortOrder: number,
+    parentFolderId: string | null = null,
+  ): Promise<void> {
+    await this.sql`SELECT folder_create(${id}, ${name}, ${sortOrder}, ${parentFolderId})`;
   }
 
   /**
@@ -707,14 +726,14 @@ export class SessionDB {
    */
   async updateFolder(
     folderId: string,
-    columns: ReadonlyArray<"name" | "sort_order" | "settings">,
-    values: ReadonlyArray<string>,
+    columns: ReadonlyArray<"name" | "sort_order" | "settings" | "parent_folder_id">,
+    values: ReadonlyArray<string | null>,
   ): Promise<void> {
     await this.sql`
       SELECT folder_update(
         ${folderId},
         ${this.sql.array(columns as unknown as string[])},
-        ${this.sql.array(values as unknown as string[])}
+        ${this.sql.array(values as unknown as (string | null)[])}
       )
     `;
   }
