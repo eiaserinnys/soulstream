@@ -402,6 +402,7 @@ async def intervene_session(
             text=request.text,
             user=request.user,
             attachment_paths=request.attachment_paths,
+            context_items=request.context_items,
             task_manager=get_task_manager(),
             soul_engine=get_soul_engine(),
             resource_manager=resource_manager,

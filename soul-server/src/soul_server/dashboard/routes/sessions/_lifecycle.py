@@ -129,6 +129,7 @@ async def api_intervene(session_id: str, body: InterveneBody, request: Request):
             text=body.text,
             user=body.user,
             attachment_paths=body.attachmentPaths,
+            context_items=body.context_items,
             task_manager=get_task_manager(),
             soul_engine=get_soul_engine(),
             resource_manager=resource_manager,

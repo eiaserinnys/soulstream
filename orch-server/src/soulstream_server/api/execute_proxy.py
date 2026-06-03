@@ -39,6 +39,10 @@ class ExecuteProxyRequest(BaseModel):
         validation_alias=AliasChoices("claudePermissionMode", "claude_permission_mode"),
     )
     context_items: Optional[list[dict]] = None
+    attachment_paths: Optional[list[str]] = Field(
+        default=None,
+        validation_alias=AliasChoices("attachmentPaths", "attachment_paths"),
+    )
     model: Optional[str] = None
     reasoningEffort: Optional[ReasoningEffort] = None
     folder_id: Optional[str] = None
@@ -168,6 +172,9 @@ def create_execute_proxy_router(
             node, session_id, node.node_id,
             intervene_prompt=body.prompt,
             intervene_user="",
+            intervene_caller_info=body.caller_info,
+            intervene_attachment_paths=body.attachment_paths,
+            intervene_context_items=body.context_items,
         )
 
     def _create_sse_response(
@@ -176,6 +183,9 @@ def create_execute_proxy_router(
         node_id: str,
         intervene_prompt: str | None = None,
         intervene_user: str = "",
+        intervene_caller_info: dict | None = None,
+        intervene_attachment_paths: list[str] | None = None,
+        intervene_context_items: list[dict] | None = None,
     ) -> EventSourceResponse:
         """SSE 이벤트 스트림을 생성한다.
 
@@ -206,7 +216,12 @@ def create_execute_proxy_router(
                 # Resume 모드: 구독 후 intervention 전송
                 if intervene_prompt is not None:
                     await node.send_intervene(
-                        session_id, intervene_prompt, intervene_user
+                        session_id,
+                        intervene_prompt,
+                        intervene_user,
+                        attachment_paths=intervene_attachment_paths,
+                        caller_info=intervene_caller_info,
+                        extra_context_items=intervene_context_items,
                     )
 
                 # init 이벤트

@@ -59,9 +59,18 @@ class CreateSessionRequest(BaseModel):
 
 
 class InterveneRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     text: str
     user: str = ""
-    attachmentPaths: Optional[list[str]] = None
+    attachmentPaths: Optional[list[str]] = Field(
+        default=None,
+        validation_alias=AliasChoices("attachmentPaths", "attachment_paths"),
+    )
+    context_items: Optional[list[dict]] = Field(
+        default=None,
+        validation_alias=AliasChoices("context_items", "contextItems"),
+    )
     caller_info: Optional[dict] = None  # 발신자 정보. 비어있으면 라우트가 HTTP Request에서 조립.
 
 

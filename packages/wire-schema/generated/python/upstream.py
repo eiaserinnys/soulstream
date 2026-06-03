@@ -242,6 +242,7 @@ class Intervene(TypedDict):
     requestId: NotRequired[str]
     attachment_paths: NotRequired[list[str]]
     caller_info: NotRequired[dict[str, Any]]
+    extra_context_items: NotRequired[list[dict[str, Any]]]
 
 
 class InterruptSession(TypedDict):

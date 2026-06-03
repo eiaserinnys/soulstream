@@ -324,7 +324,7 @@ class TestF10BEngineAdapterCallbackForward:
 
         # F-10B 단언: 콜백이 caller_info와 함께 호출됨
         on_intervention_sent.assert_awaited_once_with(
-            "동료A", "추가 메시지", [], ci,
+            "동료A", "추가 메시지", [], ci, [],
         )
 
     @pytest.mark.asyncio
@@ -352,5 +352,5 @@ class TestF10BEngineAdapterCallbackForward:
         )
         await handlers.on_intervention_callback()
         on_intervention_sent.assert_awaited_once_with(
-            "user", "메시지", [], None,
+            "user", "메시지", [], None, [],
         )

@@ -8,7 +8,7 @@ asyncio.Queue를 통해 SSE 이벤트 스트림으로 변환하여
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, List, Optional, Union
 
@@ -72,6 +72,7 @@ class InterventionMessage:
     text: str
     user: str
     attachment_paths: List[str]
+    context_items: List[dict] = field(default_factory=list)
     caller_info: Optional[dict] = None
 
 
@@ -121,15 +122,14 @@ def _extract_context_usage(usage: Optional[dict]) -> Optional[ContextUsageEvent]
 
 def _build_intervention_prompt(msg: InterventionMessage) -> str:
     """개입 메시지를 Claude 프롬프트로 변환"""
+    parts = [f"[사용자 개입 메시지 from {msg.user}]"]
+    if msg.context_items:
+        parts.append(format_context_items(msg.context_items))
+    parts.append(msg.text)
     if msg.attachment_paths:
         attachment_info = "\n".join([f"- {p}" for p in msg.attachment_paths])
-        return (
-            f"[사용자 개입 메시지 from {msg.user}]\n"
-            f"{msg.text}\n\n"
-            f"첨부 파일 (Read 도구로 확인):\n"
-            f"{attachment_info}"
-        )
-    return f"[사용자 개입 메시지 from {msg.user}]\n{msg.text}"
+        parts.append(f"첨부 파일 (Read 도구로 확인):\n{attachment_info}")
+    return "\n".join(parts)
 
 
 def _build_credential_alert_event(alert: dict) -> CredentialAlertEvent:
@@ -234,7 +234,7 @@ class SoulEngineAdapter:
         loop: asyncio.AbstractEventLoop,
         runner_ref: List[Optional[ClaudeRunner]],
         get_intervention: Optional[Callable[[], Awaitable[Optional[dict]]]],
-        on_intervention_sent: Optional[Callable[[str, str, List[str], Optional[dict]], Awaitable[None]]],
+        on_intervention_sent: Optional[Callable[[str, str, List[str], Optional[dict], List[dict]], Awaitable[None]]],
     ) -> _ExecutionHandlers:
         """ClaudeRunner와 SSE 큐 사이의 콜백 어댑터들을 생성한다.
 
@@ -286,6 +286,7 @@ class SoulEngineAdapter:
                 text=intervention.get("text", ""),
                 user=intervention.get("user", ""),
                 attachment_paths=intervention.get("attachment_paths", []),
+                context_items=intervention.get("context_items", []),
                 caller_info=intervention.get("caller_info"),
             )
 
@@ -301,7 +302,7 @@ class SoulEngineAdapter:
                 # 영속·broadcast dict에는 누락되어 unified-dashboard InterventionMessage가
                 # 세션 첫 발신자(F-10E fallback)로 떨어지는 결함이 잔존했었다.
                 await on_intervention_sent(
-                    msg.user, msg.text, msg.attachment_paths, msg.caller_info,
+                    msg.user, msg.text, msg.attachment_paths, msg.caller_info, msg.context_items,
                 )
 
             return _build_intervention_prompt(msg)
@@ -416,7 +417,7 @@ class SoulEngineAdapter:
         prompt: str,
         resume_session_id: Optional[str] = None,
         get_intervention: Optional[Callable[[], Awaitable[Optional[dict]]]] = None,
-        on_intervention_sent: Optional[Callable[[str, str, List[str], Optional[dict]], Awaitable[None]]] = None,
+        on_intervention_sent: Optional[Callable[[str, str, List[str], Optional[dict], List[dict]], Awaitable[None]]] = None,
         *,
         allowed_tools: Optional[List[str]] = None,
         disallowed_tools: Optional[List[str]] = None,

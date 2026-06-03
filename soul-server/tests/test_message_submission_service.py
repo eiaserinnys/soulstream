@@ -97,6 +97,28 @@ class TestSubmitMessageBranches:
         assert msg["text"] == "개입 메시지"
         assert msg["user"] == "user1"
 
+    async def test_intervened_when_running_preserves_context_items(self, manager):
+        """RUNNING 세션 개입도 context_items를 intervention queue에 보존한다."""
+        await manager.create_task(CreateTaskParams(prompt="first", agent_session_id="sess-C"))
+        context_items = [
+            {"key": "attachments", "label": "첨부 파일", "content": "파일: map.png"},
+        ]
+
+        result = await submit_message(
+            SubmitMessageParams(
+                prompt="파일 봐줘",
+                agent_session_id="sess-C",
+                user="user1",
+                context_items=context_items,
+            ),
+            task_manager=manager,
+        )
+
+        assert result.kind == "intervened"
+        task = await manager.get_task("sess-C")
+        msg = task.intervention_queue.get_nowait()
+        assert msg["context_items"] == context_items
+
     async def test_auto_resumed_terminal_keeps_claude_resume(self, manager):
         """terminal(INTERRUPTED) 세션 + agent_session_id → kind='auto_resumed',
         task.resume_session_id에 기존 claude_session_id를 박는다.
