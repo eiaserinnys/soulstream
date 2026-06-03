@@ -177,6 +177,8 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly pendingCanUseToolCalls = new Set<symbol>();
   private readonly runtimeTasksById = new Map<string, ClaudeRuntimeTaskSnapshot>();
   private runtimeSessionState: ClaudeRuntimeSessionState | undefined;
+  private toolUseTurnOpen = false;
+  private toolUseTurnNeedsSafeDrain = false;
 
   private activeQuery: ClaudeSdkQuery | null = null;
   private activeInput: PushAsyncIterable<SDKUserMessage> | null = null;
@@ -966,6 +968,7 @@ export class ClaudeSdkClient implements ClaudeClient {
             sawResult = true;
             const terminalEvents = this.mapResultMessage(msg);
             const resultEvent = terminalEvents.find((event) => event.type === "result");
+            this.noteResultBoundary(resultEvent);
             const continuations =
               resultEvent?.type === "result"
                 ? this.postResultContinuations(resultEvent, compactRetryCount)
@@ -979,7 +982,12 @@ export class ClaudeSdkClient implements ClaudeClient {
               continue;
             }
 
+            const drainedLiveIntervention =
+              await this.drainSafeInterventionsAfterResultBoundary();
             this.pushTerminalEvents(output, terminalEvents, drain.events);
+            if (drainedLiveIntervention) {
+              continue;
+            }
             query.close();
             output.close();
             return;
@@ -1106,6 +1114,7 @@ export class ClaudeSdkClient implements ClaudeClient {
         if (msg?.type === "result") {
           const terminalEvents = this.mapResultMessage(msg);
           const resultEvent = terminalEvents.find((event) => event.type === "result");
+          this.noteResultBoundary(resultEvent);
           const nextContinuations =
             resultEvent?.type === "result"
               ? this.postResultContinuations(resultEvent, 0)
@@ -1115,14 +1124,12 @@ export class ClaudeSdkClient implements ClaudeClient {
             events.push(...drain.events);
             return { action: "continue", reason: drain.reason, events };
           }
+          await this.drainSafeInterventionsAfterResultBoundary();
           events.push(...this.orderTerminalEvents(terminalEvents, drain.events));
           return { action: "continue", reason: "tool_use", events };
         }
         const mapped = this.mapSdkMessage(settled.value);
         events.push(...mapped);
-        if (mapped.some((event) => event.type === "tool_result")) {
-          await this.drainSafeInterventions();
-        }
         return { action: "continue", reason: "tool_use", events };
       }
       // Runtime이 이미 pending이면 stray 메시지 하나 때문에 query를 닫지 않는다.
@@ -1535,6 +1542,8 @@ export class ClaudeSdkClient implements ClaudeClient {
         const toolUseId = asString(record.id) ?? null;
         const toolName = asString(record.name) ?? "tool";
         if (toolUseId) this.toolNamesById.set(toolUseId, toolName);
+        this.toolUseTurnOpen = true;
+        this.toolUseTurnNeedsSafeDrain = true;
         const toolInput = asRecord(record.input) ?? {};
         if (toolName === "Agent") this.rememberBackgroundAgentToolUse(toolUseId, toolInput);
         events.push({
@@ -1769,6 +1778,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private canAcceptLiveUserInput(): boolean {
     return (
       this.pendingCanUseToolCalls.size === 0 &&
+      !this.toolUseTurnOpen &&
       !this.hasPendingRuntimeWork() &&
       !this.hasPendingToolUseResults()
     );
@@ -1782,14 +1792,40 @@ export class ClaudeSdkClient implements ClaudeClient {
     return false;
   }
 
-  private async drainSafeInterventions(): Promise<void> {
+  private async drainSafeInterventions(): Promise<boolean> {
     const drain = this.activeSafeInterventionDrain;
-    if (!drain) return;
-    if (!this.canAcceptLiveUserInput()) return;
+    if (!drain) return false;
+    if (!this.canAcceptLiveUserInput()) return false;
     try {
-      await drain();
+      const result = await drain();
+      return result !== false;
     } catch (err) {
       this.logger.warn({ err }, "safe live intervention drain failed");
+      return false;
+    }
+  }
+
+  private async drainSafeInterventionsAfterResultBoundary(): Promise<boolean> {
+    if (!this.toolUseTurnNeedsSafeDrain) return false;
+    if (!this.canAcceptLiveUserInput()) return false;
+    this.toolUseTurnNeedsSafeDrain = false;
+    return await this.drainSafeInterventions();
+  }
+
+  private noteResultBoundary(resultEvent: ClaudeClientEvent | undefined): void {
+    if (!resultEvent || resultEvent.type !== "result") return;
+    if (!resultEvent.success) {
+      this.toolUseTurnOpen = false;
+      this.toolUseTurnNeedsSafeDrain = false;
+      return;
+    }
+    if (resultEvent.stopReason === "tool_use") {
+      this.toolUseTurnOpen = true;
+      this.toolUseTurnNeedsSafeDrain = true;
+      return;
+    }
+    if (this.toolUseTurnOpen) {
+      this.toolUseTurnOpen = false;
     }
   }
 
@@ -1857,6 +1893,8 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.pendingCanUseToolCalls.clear();
     this.runtimeTasksById.clear();
     this.runtimeSessionState = undefined;
+    this.toolUseTurnOpen = false;
+    this.toolUseTurnNeedsSafeDrain = false;
   }
 
   private abortPendingInputRequests(): void {

@@ -35,6 +35,7 @@ import { TaskAgentsSnapshotPersistence } from "./task_agents_snapshot_persistenc
 import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
 import { TaskEngineTurnRunner } from "./task_engine_turn_runner.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
+import { publishInterventionSent } from "./task_intervention_events.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { Task, TaskStatus } from "./task_models.js";
 import {
@@ -66,6 +67,11 @@ export class TaskExecutor {
   private readonly agentsSnapshotPersistence: TaskAgentsSnapshotPersistence;
   private readonly engineTurnRunner: TaskEngineTurnRunner;
   private readonly turnInputBuilder: TaskTurnInputBuilder;
+  private readonly interventionEventDeps: {
+    broadcaster: SessionBroadcaster;
+    logger: Logger;
+    persistence: EventPersistence;
+  };
 
   constructor(
     private readonly engineFactory: EngineFactory,
@@ -115,6 +121,11 @@ export class TaskExecutor {
       logger: this.logger,
       persistence,
     });
+    this.interventionEventDeps = {
+      broadcaster,
+      logger: this.logger,
+      persistence,
+    };
     this.turnInputBuilder = new TaskTurnInputBuilder({
       contextBuilder,
       initialMessagePublisher: this.initialMessagePublisher,
@@ -279,10 +290,11 @@ export class TaskExecutor {
   private async drainQueuedLiveInterventions(
     task: Task,
     engine: EnginePort,
-  ): Promise<void> {
-    if (task.status !== "running") return;
-    if (!supportsLiveTurnSteering(engine)) return;
+  ): Promise<boolean> {
+    if (task.status !== "running") return false;
+    if (!supportsLiveTurnSteering(engine)) return false;
 
+    let deliveredAny = false;
     while (task.interventionQueue.length > 0) {
       const next = task.interventionQueue[0]!;
       const composed = composeInterventionTurnPrompt(next);
@@ -301,10 +313,13 @@ export class TaskExecutor {
           },
           "safe live intervention drain stopped — keeping queued fallback",
         );
-        return;
+        return deliveredAny;
       }
+      await publishInterventionSent(task, next, this.interventionEventDeps);
       task.interventionQueue.shift();
+      deliveredAny = true;
     }
+    return deliveredAny;
   }
 
   private async handleClaudeRuntimeFollowupStall(

@@ -126,7 +126,7 @@ describe("TaskTurnInputBuilder", () => {
     );
   });
 
-  it("prepares an auto-resume Claude turn by dequeuing one intervention and rebuilding only systemPrompt", async () => {
+  it("prepares an auto-resume Claude turn by publishing initial messages before dequeuing intervention", async () => {
     const task = makeTask({
       interventionQueue: [
         {
@@ -142,10 +142,13 @@ describe("TaskTurnInputBuilder", () => {
 
     const input = await builder.prepareInitialTurnInput(task, claudeAgent);
 
-    expect(contextBuilder.build).not.toHaveBeenCalled();
-    expect(contextBuilder.buildSystemPrompt).toHaveBeenCalledWith(task, claudeAgent);
-    expect(initialMessagePublisher.publishInitialMessages).not.toHaveBeenCalled();
-    expect(input.systemPrompt).toBe("resume system instructions");
+    expect(contextBuilder.build).toHaveBeenCalledWith(task, claudeAgent);
+    expect(contextBuilder.buildSystemPrompt).not.toHaveBeenCalled();
+    expect(initialMessagePublisher.publishInitialMessages).toHaveBeenCalledWith(
+      task,
+      makeContext(),
+    );
+    expect(input.systemPrompt).toBe("system instructions");
     expect(input.imageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.png"]);
     expect(input.prompt).toContain("<prior>");
     expect(input.prompt).toContain("remember this");
@@ -170,7 +173,7 @@ describe("TaskTurnInputBuilder", () => {
 
     const input = await builder.prepareInitialTurnInput(task, codexAgent);
 
-    expect(contextBuilder.build).not.toHaveBeenCalled();
+    expect(contextBuilder.build).toHaveBeenCalledWith(task, codexAgent);
     expect(contextBuilder.buildSystemPrompt).not.toHaveBeenCalled();
     expect(input.systemPrompt).toBeUndefined();
     expect(input.prompt).toBe("codex follow-up");

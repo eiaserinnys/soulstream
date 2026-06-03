@@ -3,12 +3,12 @@ import type { Logger } from "pino";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type {
   LiveTurnSteerStatus,
-  SSEEventPayload,
   SupportsLiveTurnSteering,
 } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import { splitAttachmentPaths } from "./attachment_context.js";
+import { publishInterventionSent } from "./task_intervention_events.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 
 export type RunningInterventionResult =
@@ -38,14 +38,16 @@ export class RunningInterventionTransition {
     message: InterventionMessage,
     options: { queueIfUndelivered?: boolean } = {},
   ): Promise<RunningInterventionResult> {
+    const liveCapable = supportsLiveTurnSteering(task.engine);
+
     if (task.interventionQueue.length > 0) {
       if (options.queueIfUndelivered === false) {
         return { deferred: true, liveSteerStatus: "not_accepting_input" };
       }
-      const interventionEvent = buildInterventionSentEvent(message);
-      await this.persistIntervention(task, interventionEvent);
-      await this.broadcastIntervention(task, interventionEvent);
       task.interventionQueue.push(message);
+      if (!liveCapable) {
+        await this.publishIntervention(task, message);
+      }
       return {
         queued: true,
         queuePosition: task.interventionQueue.length,
@@ -55,9 +57,7 @@ export class RunningInterventionTransition {
     if (options.queueIfUndelivered === false) {
       const liveSteerStatus = await this.tryLiveSteer(task, message);
       if (liveSteerStatus === "delivered") {
-        const interventionEvent = buildInterventionSentEvent(message);
-        await this.persistIntervention(task, interventionEvent);
-        await this.broadcastIntervention(task, interventionEvent);
+        await this.publishIntervention(task, message);
         return { delivered: true };
       }
       return {
@@ -66,16 +66,16 @@ export class RunningInterventionTransition {
       };
     }
 
-    const interventionEvent = buildInterventionSentEvent(message);
-    await this.persistIntervention(task, interventionEvent);
-    await this.broadcastIntervention(task, interventionEvent);
-
     const liveSteerStatus = await this.tryLiveSteer(task, message);
     if (liveSteerStatus === "delivered") {
+      await this.publishIntervention(task, message);
       return { delivered: true };
     }
 
     task.interventionQueue.push(message);
+    if (!liveCapable) {
+      await this.publishIntervention(task, message);
+    }
     return {
       queued: true,
       queuePosition: task.interventionQueue.length,
@@ -83,50 +83,11 @@ export class RunningInterventionTransition {
     };
   }
 
-  private async persistIntervention(
+  private async publishIntervention(
     task: Task,
-    interventionEvent: Record<string, unknown>,
+    message: InterventionMessage,
   ): Promise<void> {
-    if (!this.deps.persistence) return;
-    try {
-      const eventId = await this.deps.persistence.persistEvent(
-        task.agentSessionId,
-        interventionEvent as SSEEventPayload,
-      );
-      task.lastEventId = eventId;
-      // ride-along 5자리 — Python `task_executor.py` `_event_id` 정합. orch session_events.py가
-      // SSE id로 추출하여 대시보드 tree-placer dedup·순서 보장.
-      interventionEvent._event_id = eventId;
-      await this.deps.persistence.handleSideEffects(
-        task.agentSessionId,
-        interventionEvent as SSEEventPayload,
-        task,
-      );
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "intervention_sent persistence failed",
-      );
-    }
-  }
-
-  private async broadcastIntervention(
-    task: Task,
-    interventionEvent: Record<string, unknown>,
-  ): Promise<void> {
-    try {
-      // intervention_sent event dict의 정본은 이 transition이다. broadcaster는
-      // persistence 후 _event_id가 박힌 dict를 envelope으로만 운반한다.
-      await this.deps.broadcaster.emitEventEnvelope(
-        task.agentSessionId,
-        interventionEvent as SSEEventPayload,
-      );
-    } catch (err) {
-      this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId },
-        "intervention_sent broadcast failed",
-      );
-    }
+    await publishInterventionSent(task, message, this.deps);
   }
 
   private async tryLiveSteer(
@@ -163,22 +124,6 @@ export class RunningInterventionTransition {
       return "failed";
     }
   }
-}
-
-function buildInterventionSentEvent(message: InterventionMessage): Record<string, unknown> {
-  const interventionEvent: Record<string, unknown> = {
-    type: "intervention_sent",
-    user: message.user,
-    text: message.text,
-    timestamp: Date.now() / 1000,
-  };
-  if (message.callerInfo) {
-    interventionEvent.caller_info = message.callerInfo;
-  }
-  if (message.attachmentPaths && message.attachmentPaths.length > 0) {
-    interventionEvent.attachments = message.attachmentPaths;
-  }
-  return interventionEvent;
 }
 
 function supportsLiveTurnSteering(

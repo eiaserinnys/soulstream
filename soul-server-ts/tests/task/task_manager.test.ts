@@ -999,11 +999,8 @@ describe("TaskManager.addIntervention (B-4)", () => {
     });
   });
 
-  it("T-1 (Phase A context 정본): completed task auto-resume이 buildResumeContextItems 호출하여 user_message.context 박음", async () => {
-    // Phase A context 정본 진입점 (atom d7a1ad86 차단): contextBuilder + agentRegistry
-    // 주입 시 _addInterventionAutoResume이 buildResumeContextItems를 호출하여 wire의
-    // user_message에 context_items 박는다. 첫 턴 initial-message publisher와 같은
-    // `buildSoulstreamContextItem` helper 의존 → design-principles §3 정본 하나.
+  it("T-1 (Phase A context 정본): completed task auto-resume은 user_message를 executor initial path로 넘김", async () => {
+    // contextBuilder는 addIntervention 단계가 아니라 executor initial-message path에서 호출된다.
     const broadcasterMocks = makeMocks();
     const soulstreamItem = {
       key: "soulstream_session",
@@ -1047,18 +1044,14 @@ describe("TaskManager.addIntervention (B-4)", () => {
     );
 
     expect(result).toEqual({ autoResumed: true });
-    expect(buildResumeContextItems).toHaveBeenCalledTimes(1);
-    expect(buildResumeContextItems.mock.calls[0][0]).toBe(task);
-    // emitEventEnvelope의 두 번째 인자가 user_message 이벤트
-    const envelope = broadcasterMocks.emitEventEnvelope.mock.calls[0];
-    expect(envelope[0]).toBe("s1");
-    const evt = envelope[1] as Record<string, unknown>;
-    expect(evt.type).toBe("user_message");
-    expect(evt.context).toEqual([soulstreamItem]);
+    expect(buildResumeContextItems).not.toHaveBeenCalled();
+    expect(broadcasterMocks.emitEventEnvelope).not.toHaveBeenCalled();
+    expect(broadcasterMocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
+    expect(task.prompt).toBe("resume");
+    expect(task.interventionQueue).toHaveLength(1);
   });
 
-  it("T-1b (Phase A 실패 격리): buildResumeContextItems throw 시 user_message는 context 없이 박힘 (§8)", async () => {
-    // design-principles §8 실패 격리: context 빌더 실패가 핵심 user_message persist/broadcast 막지 않음.
+  it("T-1b (Phase A 실패 격리): buildResumeContextItems throw 경로를 addIntervention에서 밟지 않음", async () => {
     const broadcasterMocks = makeMocks();
     const buildResumeContextItems = vi.fn().mockRejectedValue(new Error("DB down"));
     const contextBuilder = { buildResumeContextItems } as unknown as import(
@@ -1093,15 +1086,12 @@ describe("TaskManager.addIntervention (B-4)", () => {
     );
 
     expect(result).toEqual({ autoResumed: true });
-    // builder 실패에도 user_message는 정상 broadcast — context 키 부재만
-    const evt = broadcasterMocks.emitEventEnvelope.mock.calls[0][1] as Record<string, unknown>;
-    expect(evt.type).toBe("user_message");
-    expect(evt.context).toBeUndefined();
+    expect(buildResumeContextItems).not.toHaveBeenCalled();
+    expect(broadcasterMocks.emitEventEnvelope).not.toHaveBeenCalled();
+    expect(broadcasterMocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
   });
 
-  it("T-1c (legacy 호환): contextBuilder 미주입 시 user_message에 context 키 부재 (호환 보존)", async () => {
-    // contextBuilder/agentRegistry가 undefined인 legacy 호출자/단위 테스트 환경 호환.
-    // 기존 동작과 동일 — context 키 자체 박지 않음.
+  it("T-1c (legacy 호환): contextBuilder 미주입 시에도 auto-resume 상태 전환은 유지", async () => {
     const broadcasterMocks = makeMocks();
     const tm = new TaskManager(
       "n",
@@ -1122,9 +1112,9 @@ describe("TaskManager.addIntervention (B-4)", () => {
       vi.fn(),
     );
 
-    const evt = broadcasterMocks.emitEventEnvelope.mock.calls[0][1] as Record<string, unknown>;
-    expect(evt.type).toBe("user_message");
-    expect(evt.context).toBeUndefined();
+    expect(broadcasterMocks.emitEventEnvelope).not.toHaveBeenCalled();
+    expect(broadcasterMocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
+    expect(task.prompt).toBe("resume");
   });
 
   it.each(["error", "interrupted"] as const)("%s task → 같은 auto-resume 경로", async (status) => {
@@ -1399,7 +1389,7 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
     expect((persistEvent.mock.calls[0][1] as { type: string }).type).toBe("intervention_sent");
   });
 
-  it("completed task → user_message envelope + session_updated + onResume, intervention_sent 발행 안 함", async () => {
+  it("completed task → session_updated + onResume, user_message는 executor initial path가 담당", async () => {
     const mocks = makeMocks();
     const persistEvent = vi.fn().mockResolvedValue(2);
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
@@ -1414,21 +1404,18 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
       vi.fn(),
     );
 
-    // user_message envelope 발행
     const envelopeCalls = mocks.emitEventEnvelope.mock.calls.filter(
       (c) => (c[1] as { type: string }).type === "user_message",
     );
-    expect(envelopeCalls.length).toBe(1);
-    expect((envelopeCalls[0][1] as Record<string, unknown>).text).toBe("이어서");
-    expect((envelopeCalls[0][1] as Record<string, unknown>).caller_info).toEqual({ source: "slack", display_name: "Alice" });
-
-    // persistEvent에 박힌 type은 user_message
-    expect((persistEvent.mock.calls[0][1] as { type: string }).type).toBe("user_message");
+    expect(envelopeCalls.length).toBe(0);
+    expect(persistEvent).not.toHaveBeenCalled();
 
     // session_updated가 status="running" 박힌 task로 broadcast (결함 B fix)
     expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
     const updatedTask = mocks.emitSessionUpdated.mock.calls[0][0] as Task;
     expect(updatedTask.status).toBe("running");
+    expect(updatedTask.prompt).toBe("이어서");
+    expect(updatedTask.clientId).toBe("alice");
     expect(updatedTask.callerInfo).toEqual({ source: "slack", display_name: "Alice" });
     expect(updatedTask.metadata).toContainEqual({
       type: "caller_info",
@@ -1447,7 +1434,7 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
     ).toHaveLength(0);
   });
 
-  it.each(["error", "interrupted"] as const)("%s task → user_message 분기 (completed와 동일)", async (status) => {
+  it.each(["error", "interrupted"] as const)("%s task → auto-resume 상태 전환 (completed와 동일)", async (status) => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
@@ -1459,7 +1446,7 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
     const envelopeCalls = mocks.emitEventEnvelope.mock.calls.filter(
       (c) => (c[1] as { type: string }).type === "user_message",
     );
-    expect(envelopeCalls.length).toBe(1);
+    expect(envelopeCalls.length).toBe(0);
     expect(
       mocks.emitEventEnvelope.mock.calls.filter(
         (c) => (c[1] as { type: string }).type === "intervention_sent",
@@ -1468,9 +1455,7 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
     expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
   });
 
-  it("session_updated가 user_message broadcast *이후*에 발행됨 (클라이언트 store 정합)", async () => {
-    // status="running" wire가 클라이언트에 도달하기 *전에* user_message가 박혀야
-    // typing indicator가 새 메시지 *뒤*에 표시 (UX 자연스러움).
+  it("auto-resume addIntervention은 user_message 없이 session_updated만 발행", async () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
@@ -1479,9 +1464,8 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
       { agentSessionId: "s1", text: "x", user: "u" },
       vi.fn(),
     );
-    const userMsgOrder = mocks.emitEventEnvelope.mock.invocationCallOrder[0];
-    const sessionUpdatedOrder = mocks.emitSessionUpdated.mock.invocationCallOrder[0];
-    expect(userMsgOrder).toBeLessThan(sessionUpdatedOrder);
+    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
+    expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -1584,13 +1568,12 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(memTask!.status).toBe("running");  // auto-resume에서 전환
     expect(memTask!.codexThreadId).toBe("thr-codex-abc");  // resumeThread를 위해 복원
     expect(memTask!.profileId).toBe("codex-default");
-    expect(memTask!.prompt).toBe("원래 prompt");
-    expect(memTask!.lastEventId).toBeGreaterThanOrEqual(42);  // hydrate 후 user_message 영속 가능
-    // user_message 영속·broadcast + session_updated (PR #55 분기)
+    expect(memTask!.prompt).toBe("이어서");
+    expect(memTask!.lastEventId).toBe(42);
     const userMsgCalls = mocks.emitEventEnvelope.mock.calls.filter(
       (c) => (c[1] as { type: string }).type === "user_message",
     );
-    expect(userMsgCalls.length).toBe(1);
+    expect(userMsgCalls.length).toBe(0);
     expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(1);
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-evicted", {
       status: "running",
@@ -1635,10 +1618,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(memTask).toBeDefined();
     expect(memTask!.status).toBe("running");
     expect(memTask!.codexThreadId).toBe("thr-stale");
-    expect(mocks.emitEventEnvelope).toHaveBeenCalledWith(
-      "sess-stale-running",
-      expect.objectContaining({ type: "user_message", text: "resume" }),
-    );
+    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
     expect(mocks.emitEventEnvelope).not.toHaveBeenCalledWith(
       "sess-stale-running",
       expect.objectContaining({ type: "intervention_sent" }),
@@ -1867,9 +1847,9 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       vi.fn(),
     );
     const task = tm.getTask("sess-h")!;
-    // PR #55 auto-resume: queue에 메시지 push됨, task.prompt는 원래 그대로
+    // Python parity: auto-resume 메시지가 새 task prompt로 승격되고 queue 첫 turn으로 실행됨.
     expect(task.interventionQueue).toHaveLength(1);
     expect(task.interventionQueue[0].text).toBe("새 메시지");
-    expect(task.prompt).toBe("원래");  // 원래 prompt 보존
+    expect(task.prompt).toBe("새 메시지");
   });
 });
