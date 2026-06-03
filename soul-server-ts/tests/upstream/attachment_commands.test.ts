@@ -226,6 +226,136 @@ describe("attachment command boundary", () => {
     expect(store.abortFileUpload).toHaveBeenCalledWith({ uploadId: "up-1" });
   });
 
+  it("supports a zero-byte upload with no chunk commands", async () => {
+    const store = createStore({
+      finishFileUpload: vi.fn(async (params) => ({
+        path: `/tmp/incoming/sess/${params.uploadId}.txt`,
+        filename: `${params.uploadId}.txt`,
+        size: 0,
+        content_type: "text/plain",
+      })),
+    });
+    const commands = new AttachmentCommands(store);
+
+    await expect(
+      commands.startUpload({
+        requestId: "start-empty",
+        uploadId: "empty-upload",
+        sessionId: "sess-empty",
+        filename: "빈 파일.txt",
+        contentType: "text/plain",
+        expectedSize: 0,
+      }),
+    ).resolves.toEqual({
+      type: "upload_attachment_start_ack",
+      requestId: "start-empty",
+      upload_id: "empty-upload",
+      next_chunk_index: 0,
+    });
+    await expect(
+      commands.finishUpload({ requestId: "finish-empty", uploadId: "empty-upload" }),
+    ).resolves.toEqual({
+      type: "upload_attachment_result",
+      requestId: "finish-empty",
+      path: "/tmp/incoming/sess/empty-upload.txt",
+      filename: "empty-upload.txt",
+      size: 0,
+      content_type: "text/plain",
+    });
+    expect(store.appendFileUploadChunk).not.toHaveBeenCalled();
+    expect(store.beginFileUpload).toHaveBeenCalledWith({
+      uploadId: "empty-upload",
+      sessionId: "sess-empty",
+      filename: "빈 파일.txt",
+      contentType: "text/plain",
+      expectedSize: 0,
+    });
+  });
+
+  it("normalizes finish after abort as an invalid upload state", async () => {
+    const store = createStore({
+      abortFileUpload: vi.fn(async () => true),
+      finishFileUpload: vi.fn(async () => {
+        throw new AttachmentError("upload_id를 찾을 수 없습니다");
+      }),
+    });
+    const commands = new AttachmentCommands(store);
+
+    await expect(
+      commands.abortUpload({ requestId: "abort-first", uploadId: "aborted-upload" }),
+    ).resolves.toMatchObject({
+      type: "upload_attachment_abort_ack",
+      upload_id: "aborted-upload",
+      aborted: true,
+    });
+    await expect(
+      commands.finishUpload({ requestId: "finish-after-abort", uploadId: "aborted-upload" }),
+    ).rejects.toEqual(
+      new AttachmentCommandError("INVALID_REQUEST: upload_id를 찾을 수 없습니다"),
+    );
+  });
+
+  it("keeps concurrent upload ids distinct at the command boundary", async () => {
+    const store = createStore();
+    const commands = new AttachmentCommands(store);
+
+    await Promise.all([
+      commands.startUpload({
+        requestId: "start-a",
+        uploadId: "up-a",
+        sessionId: "sess-concurrent",
+        filename: "사진 A.png",
+        expectedSize: 1,
+      }),
+      commands.startUpload({
+        requestId: "start-b",
+        uploadId: "up-b",
+        sessionId: "sess-concurrent",
+        filename: "사진 B.png",
+        expectedSize: 1,
+      }),
+    ]);
+    await Promise.all([
+      commands.appendUploadChunk({
+        requestId: "chunk-a",
+        uploadId: "up-a",
+        chunkIndex: 0,
+        contentB64: Buffer.from("A").toString("base64"),
+      }),
+      commands.appendUploadChunk({
+        requestId: "chunk-b",
+        uploadId: "up-b",
+        chunkIndex: 0,
+        contentB64: Buffer.from("B").toString("base64"),
+      }),
+    ]);
+
+    expect(store.beginFileUpload).toHaveBeenCalledWith({
+      uploadId: "up-a",
+      sessionId: "sess-concurrent",
+      filename: "사진 A.png",
+      contentType: "application/octet-stream",
+      expectedSize: 1,
+    });
+    expect(store.beginFileUpload).toHaveBeenCalledWith({
+      uploadId: "up-b",
+      sessionId: "sess-concurrent",
+      filename: "사진 B.png",
+      contentType: "application/octet-stream",
+      expectedSize: 1,
+    });
+    expect(store.appendFileUploadChunk).toHaveBeenCalledWith({
+      uploadId: "up-a",
+      chunkIndex: 0,
+      chunk: Buffer.from("A"),
+    });
+    expect(store.appendFileUploadChunk).toHaveBeenCalledWith({
+      uploadId: "up-b",
+      chunkIndex: 0,
+      chunk: Buffer.from("B"),
+    });
+  });
+
   it("cleans session attachments and builds delete result ACK", async () => {
     const store = createStore({
       cleanupSession: vi.fn(async () => 3),
