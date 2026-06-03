@@ -2035,7 +2035,7 @@ describe("ClaudeSdkClient", () => {
     expect(captured[0]?.options?.hooks).not.toHaveProperty("SessionStart");
   });
 
-  it("rejects active-turn live steering without resolving a second SDK input read", async () => {
+  it("accepts idle active-turn live steering through the SDK input stream", async () => {
     const prompts: string[] = [];
     const readyForSteer = deferred<void>();
     const releaseRun = deferred<void>();
@@ -2078,9 +2078,11 @@ describe("ClaudeSdkClient", () => {
       ),
     );
     await readyForSteer.promise;
-    expect(client.steerActiveTurn({ prompt: "while running" })).toBe(false);
+    expect(client.steerActiveTurn({ prompt: "while running" })).toBe(true);
     expect(secondInputRead).toBeDefined();
-    await expectPromisePending(secondInputRead!);
+    const steeredInput = await secondInputRead!;
+    expect(steeredInput.done).toBe(false);
+    expect(messageText(steeredInput.value)).toBe("while running");
     releaseRun.resolve();
     const events = await eventsPromise;
 
@@ -2089,16 +2091,16 @@ describe("ClaudeSdkClient", () => {
       type: "text",
       text: "steady",
     });
-    await expect(secondInputRead).resolves.toMatchObject({ done: true });
     expect(client.steerActiveTurn({ prompt: "after run" })).toBe(false);
   });
 
-  it("rejects live steering while an SDK tool_use is waiting for its tool_result", async () => {
+  it("rejects live steering during pending tool_use and accepts after tool_result", async () => {
     const prompts: string[] = [];
     const readyDuringToolUse = deferred<void>();
     const releaseToolResult = deferred<void>();
     const readyAfterToolResult = deferred<void>();
     const releaseAfterToolResult = deferred<void>();
+    let secondInputRead: Promise<IteratorResult<SDKUserMessage>> | undefined;
     const client = new ClaudeSdkClient(
       {
         query: (params) =>
@@ -2108,6 +2110,7 @@ describe("ClaudeSdkClient", () => {
               const iterator = input[Symbol.asyncIterator]();
               const initial = await iterator.next();
               prompts.push(messageText(initial.value));
+              secondInputRead = iterator.next();
               yield {
                 type: "assistant",
                 message: {
@@ -2172,9 +2175,14 @@ describe("ClaudeSdkClient", () => {
     );
     await readyDuringToolUse.promise;
     expect(client.steerActiveTurn({ prompt: "during tool use" })).toBe(false);
+    expect(secondInputRead).toBeDefined();
+    await expectPromisePending(secondInputRead!);
     releaseToolResult.resolve();
     await readyAfterToolResult.promise;
-    expect(client.steerActiveTurn({ prompt: "after tool result" })).toBe(false);
+    expect(client.steerActiveTurn({ prompt: "after tool result" })).toBe(true);
+    const steeredInput = await secondInputRead!;
+    expect(steeredInput.done).toBe(false);
+    expect(messageText(steeredInput.value)).toBe("after tool result");
     releaseAfterToolResult.resolve();
     const events = await eventsPromise;
 
@@ -2187,12 +2195,13 @@ describe("ClaudeSdkClient", () => {
     );
   });
 
-  it("rejects live steering while Claude runtime work is pending and after it becomes idle", async () => {
+  it("rejects live steering while Claude runtime work is pending and accepts after idle", async () => {
     const prompts: string[] = [];
     const readyWhileRuntimePending = deferred<void>();
     const releaseRuntimeIdle = deferred<void>();
     const readyAfterRuntimeIdle = deferred<void>();
     const releaseAfterRuntimeIdle = deferred<void>();
+    let secondInputRead: Promise<IteratorResult<SDKUserMessage>> | undefined;
     const client = new ClaudeSdkClient(
       {
         query: (params) =>
@@ -2202,6 +2211,7 @@ describe("ClaudeSdkClient", () => {
               const iterator = input[Symbol.asyncIterator]();
               const initial = await iterator.next();
               prompts.push(messageText(initial.value));
+              secondInputRead = iterator.next();
               yield {
                 type: "system",
                 subtype: "session_state_changed",
@@ -2244,9 +2254,14 @@ describe("ClaudeSdkClient", () => {
     );
     await readyWhileRuntimePending.promise;
     expect(client.steerActiveTurn({ prompt: "during runtime work" })).toBe(false);
+    expect(secondInputRead).toBeDefined();
+    await expectPromisePending(secondInputRead!);
     releaseRuntimeIdle.resolve();
     await readyAfterRuntimeIdle.promise;
-    expect(client.steerActiveTurn({ prompt: "after runtime idle" })).toBe(false);
+    expect(client.steerActiveTurn({ prompt: "after runtime idle" })).toBe(true);
+    const steeredInput = await secondInputRead!;
+    expect(steeredInput.done).toBe(false);
+    expect(messageText(steeredInput.value)).toBe("after runtime idle");
     releaseAfterRuntimeIdle.resolve();
     const events = await eventsPromise;
 
@@ -2260,11 +2275,12 @@ describe("ClaudeSdkClient", () => {
     );
   });
 
-  it("rejects live steering while canUseTool is waiting for AskUserQuestion response", async () => {
+  it("rejects live steering while canUseTool is waiting and accepts after it settles", async () => {
     const prompts: string[] = [];
     const permissions: PermissionResult[] = [];
     const readyAfterCanUseTool = deferred<void>();
     const releaseAfterCanUseTool = deferred<void>();
+    let secondInputRead: Promise<IteratorResult<SDKUserMessage>> | undefined;
     const client = new ClaudeSdkClient(
       {
         inputRequestTimeoutMs: 30_000,
@@ -2275,6 +2291,7 @@ describe("ClaudeSdkClient", () => {
               const iterator = input[Symbol.asyncIterator]();
               const initial = await iterator.next();
               prompts.push(messageText(initial.value));
+              secondInputRead = iterator.next();
               const permission = await params.options?.canUseTool?.(
                 "AskUserQuestion",
                 { questions: [{ id: "q1", prompt: "Continue?" }] },
@@ -2315,6 +2332,8 @@ describe("ClaudeSdkClient", () => {
       toolUseId: "toolu-ask",
     });
     expect(client.steerActiveTurn({ prompt: "during canUseTool" })).toBe(false);
+    expect(secondInputRead).toBeDefined();
+    await expectPromisePending(secondInputRead!);
     expect(
       client.deliverInputResponse(
         (inputRequest.value as Extract<ClaudeClientEvent, { type: "input_request" }>).requestId,
@@ -2322,7 +2341,10 @@ describe("ClaudeSdkClient", () => {
       ),
     ).toBe(true);
     await readyAfterCanUseTool.promise;
-    expect(client.steerActiveTurn({ prompt: "after canUseTool" })).toBe(false);
+    expect(client.steerActiveTurn({ prompt: "after canUseTool" })).toBe(true);
+    const steeredInput = await secondInputRead!;
+    expect(steeredInput.done).toBe(false);
+    expect(messageText(steeredInput.value)).toBe("after canUseTool");
     releaseAfterCanUseTool.resolve();
     const events = await collectIterator(iterator);
 
@@ -2344,7 +2366,7 @@ describe("ClaudeSdkClient", () => {
     );
   });
 
-  it("does not push active-turn image attachments into the Claude SDK stream", async () => {
+  it("pushes accepted active-turn image attachments into the Claude SDK stream", async () => {
     const dir = mkdtempSync(join(tmpdir(), "claude-intervention-image-"));
     try {
       const imagePath = join(dir, "sample.webp");
@@ -2353,6 +2375,7 @@ describe("ClaudeSdkClient", () => {
       const contents: Array<SDKUserMessage["message"]["content"]> = [];
       const readyForSteer = deferred<void>();
       const releaseRun = deferred<void>();
+      let secondInputRead: Promise<IteratorResult<SDKUserMessage>> | undefined;
       const client = new ClaudeSdkClient(
         {
           query: (params) =>
@@ -2362,6 +2385,7 @@ describe("ClaudeSdkClient", () => {
                 const iterator = input[Symbol.asyncIterator]();
                 const initial = await iterator.next();
                 contents.push(initial.value.message.content);
+                secondInputRead = iterator.next();
                 readyForSteer.resolve();
                 await releaseRun.promise;
                 yield sdkSuccessResult("claude-sess-img-in", "done");
@@ -2387,11 +2411,20 @@ describe("ClaudeSdkClient", () => {
           prompt: "이미지 추가",
           imageAttachmentPaths: [imagePath],
         }),
-      ).toBe(false);
+      ).toBe(true);
+      const steeredInput = await secondInputRead!;
+      expect(steeredInput.done).toBe(false);
+      contents.push(steeredInput.value.message.content);
       releaseRun.resolve();
       await eventsPromise;
 
-      expect(contents).toEqual(["first"]);
+      expect(contents[0]).toEqual("first");
+      expect(contents[1]).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "text", text: "이미지 추가" }),
+          expect.objectContaining({ type: "image" }),
+        ]),
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

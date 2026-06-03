@@ -75,6 +75,13 @@ export type InterventionInput = string | EngineUserInput;
 export type InterventionCallback = () => Promise<InterventionInput | null>;
 
 /**
+ * Backend-specific safe point callback. Claude SDK invokes this only after it has
+ * consumed a tool_result or otherwise returned to a state where normal user input
+ * can be appended without violating the SDK tool_use ordering.
+ */
+export type SafeInterventionDrainCallback = () => Promise<void> | void;
+
+/**
  * compact 이벤트 콜백 (Claude 고유 `/compact`). Codex는 발행 안 함 — Codex 어댑터에서
  * 호출되지 않음(no-op). interface에는 *미래 백엔드*를 위해 자리 둠.
  */
@@ -148,6 +155,7 @@ export interface EngineExecuteParams {
    * Active-turn delivery uses SupportsLiveTurnSteering.steerActiveTurn instead.
    */
   onIntervention?: InterventionCallback;
+  onSafeInterventionDrain?: SafeInterventionDrainCallback;
   onCompact?: CompactCallback;
   onRunStateSnapshot?: RunStateSnapshotCallback;
   onSessionItemsSnapshot?: SessionItemsSnapshotCallback;

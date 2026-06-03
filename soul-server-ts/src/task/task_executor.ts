@@ -17,7 +17,12 @@
 import type { Logger } from "pino";
 
 import type { AgentProfile } from "../agent_registry.js";
-import type { EnginePort, ScheduleToolUseHandler, SSEEventPayload } from "../engine/protocol.js";
+import type {
+  EnginePort,
+  ScheduleToolUseHandler,
+  SSEEventPayload,
+  SupportsLiveTurnSteering,
+} from "../engine/protocol.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -33,6 +38,7 @@ import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { Task, TaskStatus } from "./task_models.js";
 import {
+  composeInterventionTurnPrompt,
   isOpenAiAgentsApprovalPending,
   resolveTurnLoopTransition,
 } from "./task_turn_loop_transition.js";
@@ -191,6 +197,8 @@ export class TaskExecutor {
               prompt: turnPrompt,
               imageAttachmentPaths: turnImageAttachmentPaths,
               ...(turnSystemPrompt !== undefined ? { systemPrompt: turnSystemPrompt } : {}),
+              onSafeInterventionDrain: () =>
+                this.drainQueuedLiveInterventions(task, engine),
             },
           })) {
             await this.engineEventPublisher.publishEngineEvent(task, event);
@@ -268,6 +276,37 @@ export class TaskExecutor {
     }
   }
 
+  private async drainQueuedLiveInterventions(
+    task: Task,
+    engine: EnginePort,
+  ): Promise<void> {
+    if (task.status !== "running") return;
+    if (!supportsLiveTurnSteering(engine)) return;
+
+    while (task.interventionQueue.length > 0) {
+      const next = task.interventionQueue[0]!;
+      const composed = composeInterventionTurnPrompt(next);
+      const result = await engine.steerActiveTurn({
+        prompt: composed.prompt,
+        ...(composed.imageAttachmentPaths.length > 0
+          ? { imageAttachmentPaths: composed.imageAttachmentPaths }
+          : {}),
+      });
+      if (result.status !== "delivered") {
+        this.logger.warn(
+          {
+            sessionId: task.agentSessionId,
+            status: result.status,
+            message: result.message,
+          },
+          "safe live intervention drain stopped — keeping queued fallback",
+        );
+        return;
+      }
+      task.interventionQueue.shift();
+    }
+  }
+
   private async handleClaudeRuntimeFollowupStall(
     task: Task,
     intervention: InterventionMessage | undefined,
@@ -278,16 +317,10 @@ export class TaskExecutor {
     const reason = resolveFollowupStallReason(previousAssistantText, nextAssistantText);
     if (!reason) return;
 
-    const attempt = intervention.followupAttempt ?? 1;
-    if (attempt < 2) {
-      await this.claudeRuntimeTaskFollowup?.queueFallback(task, intervention, reason);
-      return;
-    }
-
     await this.engineEventPublisher.publishEngineEvent(task, {
       type: "error",
       message:
-        "Background task follow-up did not produce a new response after retry. Please send a follow-up message manually.",
+        "Background task follow-up did not produce a new response. Please send a follow-up message manually.",
       error_code: "claude_runtime_followup_stalled",
       fatal: false,
     } as SSEEventPayload);
@@ -319,4 +352,11 @@ function resolveFollowupStallReason(
     return "repeated_response";
   }
   return null;
+}
+
+function supportsLiveTurnSteering(
+  engine: EnginePort,
+): engine is EnginePort & SupportsLiveTurnSteering {
+  return typeof (engine as unknown as Partial<SupportsLiveTurnSteering>).steerActiveTurn ===
+    "function";
 }

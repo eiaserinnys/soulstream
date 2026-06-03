@@ -38,6 +38,20 @@ export class RunningInterventionTransition {
     message: InterventionMessage,
     options: { queueIfUndelivered?: boolean } = {},
   ): Promise<RunningInterventionResult> {
+    if (task.interventionQueue.length > 0) {
+      if (options.queueIfUndelivered === false) {
+        return { deferred: true, liveSteerStatus: "not_accepting_input" };
+      }
+      const interventionEvent = buildInterventionSentEvent(message);
+      await this.persistIntervention(task, interventionEvent);
+      await this.broadcastIntervention(task, interventionEvent);
+      task.interventionQueue.push(message);
+      return {
+        queued: true,
+        queuePosition: task.interventionQueue.length,
+      };
+    }
+
     if (options.queueIfUndelivered === false) {
       const liveSteerStatus = await this.tryLiveSteer(task, message);
       if (liveSteerStatus === "delivered") {

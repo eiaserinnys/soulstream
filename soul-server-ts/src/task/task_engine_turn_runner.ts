@@ -14,6 +14,7 @@ export interface TaskEngineTurnInput {
   prompt: string;
   imageAttachmentPaths?: string[];
   systemPrompt?: string;
+  onSafeInterventionDrain?: () => Promise<void>;
 }
 
 export interface TaskEngineTurnRunnerDeps {
@@ -89,6 +90,9 @@ export class TaskEngineTurnRunner {
       ...(extraEnv !== undefined ? { extraEnv } : {}),
       ...(this.deps.scheduleToolHandler !== undefined
         ? { onScheduleToolUse: this.deps.scheduleToolHandler }
+        : {}),
+      ...(input.onSafeInterventionDrain !== undefined
+        ? { onSafeInterventionDrain: input.onSafeInterventionDrain }
         : {}),
     });
   }

@@ -367,6 +367,46 @@ describe("RunningInterventionTransition", () => {
     expect(event.attachments).toBeUndefined();
   });
 
+  it("preserves queued FIFO order instead of live-steering behind an older message", async () => {
+    const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
+    const task = makeRunningTask({
+      interventionQueue: [{ text: "older user message", user: "alice" }],
+      engine: {
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        steerActiveTurn,
+      } as EnginePort & SupportsLiveTurnSteering,
+    });
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(emitEventEnvelope),
+      logger: silentLogger,
+    });
+
+    await expect(
+      transition.deliver(task, {
+        text: "background task notification",
+        user: "system",
+      }),
+    ).resolves.toEqual({ queued: true, queuePosition: 2 });
+
+    expect(steerActiveTurn).not.toHaveBeenCalled();
+    expect(task.interventionQueue).toEqual([
+      { text: "older user message", user: "alice" },
+      { text: "background task notification", user: "system" },
+    ]);
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        type: "intervention_sent",
+        text: "background task notification",
+      }),
+    );
+  });
+
   it("isolates persistence failure and still broadcasts, steers, and queues failed live steering", async () => {
     const steerActiveTurn = vi.fn().mockRejectedValue(new Error("steer down"));
     const task = makeRunningTask({
