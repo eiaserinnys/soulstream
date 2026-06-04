@@ -1,9 +1,9 @@
-import { appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { appendFile, copyFile, mkdir, readFile, readdir, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import { AttachmentDiagnostics, type AttachmentDiagnosticsLogger } from "./diagnostic_logger.js";
 
-// Temporarily exceeds 500 lines for attachment diagnostic logging.
-// Refactoring existing logic here would make this evidence-gathering patch unsafe.
+// Temporarily exceeds 500 lines while attachment diagnostics and rename-race
+// mitigation remain localized. Refactoring here would make this hotfix unsafe.
 export class AttachmentError extends Error {
   constructor(message: string) {
     super(message);
@@ -235,14 +235,25 @@ export class FileAttachmentStore implements AttachmentStore {
             );
           }
           this.diagnostics.info("finishFileUpload.rename.before", { uploadId: state.uploadId, tempPath: state.tempPath, finalPath: state.finalPath, tempStat: await this.diagnostics.statPath(state.tempPath) });
-          await rename(state.tempPath, state.finalPath);
+          let moveStrategy = "rename";
+          try {
+            await rename(state.tempPath, state.finalPath);
+          } catch (moveErr) {
+            if ((moveErr as NodeJS.ErrnoException).code !== "ENOENT") {
+              throw moveErr;
+            }
+            moveStrategy = "copyFileUnlinkFallback";
+            this.diagnostics.info("finishFileUpload.rename.enoentFallback", { uploadId: state.uploadId, tempPath: state.tempPath, finalPath: state.finalPath, tempStat: await this.diagnostics.statPath(state.tempPath) });
+            await copyFile(state.tempPath, state.finalPath);
+            await unlink(state.tempPath).catch(() => undefined);
+          }
           const saved = {
             path: path.resolve(state.finalPath),
             filename: state.filename,
             size: state.size,
             content_type: state.contentType,
           };
-          this.diagnostics.info("finishFileUpload.rename.after", { uploadId: state.uploadId, tempPath: state.tempPath, finalPath: state.finalPath, finalStat: await this.diagnostics.statPath(state.finalPath) });
+          this.diagnostics.info("finishFileUpload.rename.after", { uploadId: state.uploadId, tempPath: state.tempPath, finalPath: state.finalPath, moveStrategy, finalStat: await this.diagnostics.statPath(state.finalPath) });
           return saved;
         } catch (err) {
           await this.removePendingUpload(state);
@@ -400,6 +411,7 @@ export class FileAttachmentStore implements AttachmentStore {
   }
 
   private async removePendingUpload(state: PendingUpload): Promise<void> {
+    this.diagnostics.info("removePendingUpload.enter", { uploadId: state.uploadId, tempPath: state.tempPath, pendingUploadsSize: this.pendingUploads.size, callerStack: this.diagnostics.callerStack() });
     this.pendingUploads.delete(state.uploadId);
     await rm(state.tempPath, { force: true });
   }
