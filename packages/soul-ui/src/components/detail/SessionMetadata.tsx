@@ -37,15 +37,20 @@ function getTypeConfig(type: string) {
   return TYPE_CONFIG[type] ?? { icon: "🔹", label: type };
 }
 
+function getEntryType(entry: MetadataEntry): string {
+  return typeof entry.type === "string" && entry.type.length > 0 ? entry.type : "unknown";
+}
+
 /** 타입별 그룹화 */
 function groupByType(entries: MetadataEntry[]): Map<string, MetadataEntry[]> {
   const groups = new Map<string, MetadataEntry[]>();
   for (const entry of entries) {
-    const existing = groups.get(entry.type);
+    const type = getEntryType(entry);
+    const existing = groups.get(type);
     if (existing) {
       existing.push(entry);
     } else {
-      groups.set(entry.type, [entry]);
+      groups.set(type, [entry]);
     }
   }
   return groups;
@@ -114,8 +119,9 @@ function ObjectMetadataItem({ entry }: { entry: MetadataEntry }) {
 
 /** 개별 메타데이터 엔트리 — value 타입에 따라 분기 */
 function MetadataItem({ entry, callerSessionId }: { entry: MetadataEntry; callerSessionId?: string | null }) {
+  const type = getEntryType(entry);
   // caller_info 전용 렌더러 (value가 객체)
-  if (entry.type === "caller_info" && typeof entry.value === "object" && entry.value !== null) {
+  if (type === "caller_info" && typeof entry.value === "object" && entry.value !== null) {
     return <CallerInfoItem value={entry.value as Record<string, unknown>} callerSessionId={callerSessionId} />;
   }
   // 기타 객체 value → 일반 key-value fallback
@@ -125,7 +131,7 @@ function MetadataItem({ entry, callerSessionId }: { entry: MetadataEntry; caller
   // string 경로 (기존)
   const valueStr = entry.value as string;
   const value = entry.label || valueStr;
-  const shortValue = entry.type.startsWith("git_commit") && typeof entry.value === "string"
+  const shortValue = type.startsWith("git_commit") && typeof entry.value === "string"
     ? valueStr.slice(0, 7)
     : null;
 
