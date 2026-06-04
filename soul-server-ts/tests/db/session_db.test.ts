@@ -412,8 +412,9 @@ describe("SessionDB folder ops (B-5)", () => {
 
   it("getCatalog → folder_get_all + catalog_get_sessions 합성하여 {folders, sessions} 반환", async () => {
     let callIndex = 0;
+    const createdAt = new Date("2026-06-03T00:00:00.000Z");
     const folderRows = [
-      { id: "f1", name: "F1", sort_order: 1, settings: { excludeFromFeed: true }, parent_folder_id: null },
+      { id: "f1", name: "F1", sort_order: 1, settings: { excludeFromFeed: true }, parent_folder_id: null, created_at: createdAt },
       { id: "f2", name: "F2", sort_order: 2, settings: null, parent_folder_id: "f1" },
     ];
     const sessionRows = [
@@ -429,7 +430,14 @@ describe("SessionDB folder ops (B-5)", () => {
     });
     const catalog = await new SessionDB(sql).getCatalog();
     expect(catalog.folders).toEqual([
-      { id: "f1", name: "F1", sortOrder: 1, settings: { excludeFromFeed: true }, parentFolderId: null },
+      {
+        id: "f1",
+        name: "F1",
+        sortOrder: 1,
+        settings: { excludeFromFeed: true },
+        parentFolderId: null,
+        createdAt: "2026-06-03T00:00:00.000Z",
+      },
       { id: "f2", name: "F2", sortOrder: 2, settings: {}, parentFolderId: "f1" },  // null settings → 빈 객체로 정규화
     ]);
     expect(catalog.sessions).toEqual({

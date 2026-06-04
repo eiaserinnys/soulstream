@@ -23,6 +23,7 @@ export interface CatalogFolderDto {
   sortOrder: number;
   settings: Record<string, unknown>;
   parentFolderId: string | null;
+  createdAt?: string;
 }
 
 /**
@@ -44,13 +45,17 @@ export class CatalogService {
 
   async listFolders(): Promise<CatalogFolderDto[]> {
     const folders = await this.db.getAllFolders();
-    return folders.map((f) => ({
-      id: f.id,
-      name: f.name,
-      sortOrder: f.sort_order,
-      settings: f.settings ?? {},
-      parentFolderId: f.parent_folder_id,
-    }));
+    return folders.map((f) => {
+      const createdAt = f.created_at instanceof Date ? f.created_at.toISOString() : f.created_at;
+      return {
+        id: f.id,
+        name: f.name,
+        sortOrder: f.sort_order,
+        settings: f.settings ?? {},
+        parentFolderId: f.parent_folder_id,
+        ...(createdAt ? { createdAt } : {}),
+      };
+    });
   }
 
   async listChildFolders(folderId: string | null): Promise<CatalogFolderDto[]> {

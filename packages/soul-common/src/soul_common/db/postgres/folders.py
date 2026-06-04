@@ -136,16 +136,19 @@ class PostgresFolderMixin:
 
     async def get_catalog(self) -> dict:
         folders = await self.get_all_folders()
-        folder_list = [
-            {
+        folder_list = []
+        for f in folders:
+            created_at = f.get("created_at")
+            if hasattr(created_at, "isoformat"):
+                created_at = created_at.isoformat()
+            folder_list.append({
                 "id": f["id"],
                 "name": f["name"],
                 "sortOrder": f["sort_order"],
                 "parentFolderId": f.get("parent_folder_id"),
                 "settings": f.get("settings") or {},
-            }
-            for f in folders
-        ]
+                "createdAt": created_at,
+            })
 
         rows = await self._pool.fetch(
             "SELECT * FROM catalog_get_sessions()"

@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
-import { BoardWorkspaceView } from "./components/BoardWorkspaceView";
+import { FolderWorkspaceView } from "./components/FolderWorkspaceView";
 import {
   createFolder,
   renameFolderOptimistic,
@@ -165,7 +165,7 @@ export function DashboardLayout() {
             onNewSession={(task, defaults) => openNewSessionModal("feed", task ?? null, defaults ?? null)}
           />
         ) : (
-          <BoardWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
+          <FolderWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
         )
       }
       rightPanel={
@@ -202,7 +202,7 @@ export function DashboardLayout() {
       mobileFolderContents={
         // DashboardShell의 isMobile && selectedFolderId 조건이 표시 여부를 제어하므로
         // 항상 FolderContents를 전달한다. 조건부로 undefined를 전달하면 타이밍 이슈로 빈 화면이 보인다.
-        <BoardWorkspaceView
+        <FolderWorkspaceView
           sessions={sessions}
           onLoadMore={loadMore}
           hasMore={hasMore}

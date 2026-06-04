@@ -144,6 +144,7 @@ class SqliteFolderMixin:
                 "sortOrder": f["sort_order"],
                 "parentFolderId": f.get("parent_folder_id"),
                 "settings": f.get("settings") or {},
+                "createdAt": f.get("created_at"),
             }
             for f in folders
         ]

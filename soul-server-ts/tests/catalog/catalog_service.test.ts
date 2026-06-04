@@ -52,8 +52,9 @@ function setupSqlWithCatalog() {
 
 describe("CatalogService.listFolders", () => {
   it("getAllFolders 결과를 sortOrder/settings 키로 정규화", async () => {
+    const createdAt = new Date("2026-06-03T00:00:00.000Z");
     const { sql } = createMockSql(() => [
-      { id: "f1", name: "F1", sort_order: 1, settings: { x: 1 }, parent_folder_id: null },
+      { id: "f1", name: "F1", sort_order: 1, settings: { x: 1 }, parent_folder_id: null, created_at: createdAt },
       { id: "f2", name: "F2", sort_order: 2, settings: null, parent_folder_id: "f1" },
     ]);
     const db = new SessionDB(sql);
@@ -61,7 +62,14 @@ describe("CatalogService.listFolders", () => {
     const svc = new CatalogService(db, broadcaster);
     const folders = await svc.listFolders();
     expect(folders).toEqual([
-      { id: "f1", name: "F1", sortOrder: 1, settings: { x: 1 }, parentFolderId: null },
+      {
+        id: "f1",
+        name: "F1",
+        sortOrder: 1,
+        settings: { x: 1 },
+        parentFolderId: null,
+        createdAt: "2026-06-03T00:00:00.000Z",
+      },
       { id: "f2", name: "F2", sortOrder: 2, settings: {}, parentFolderId: "f1" },
     ]);
   });
