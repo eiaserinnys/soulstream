@@ -17,16 +17,26 @@
 import pino from "pino";
 import type { Logger } from "pino";
 import { describe, expect, it, vi } from "vitest";
+import {
+  type Query as ClaudeSdkQuery,
+  type SDKMessage,
+  type SDKUserMessage,
+} from "@anthropic-ai/claude-agent-sdk";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import { ClaudeEngineAdapter } from "../../src/engine/claude_adapter.js";
 import type { ClaudeClient, ClaudeRunOptions } from "../../src/engine/claude_adapter.js";
+import {
+  ClaudeSdkClient,
+  type ClaudeSdkQueryFn,
+} from "../../src/engine/claude_sdk_client.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
+import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 const silentLogger: Logger = pino({ level: "silent" });
@@ -80,6 +90,54 @@ function makeFakeClaudeClient(turnEvents: ClaudeClientEvent[][]): ClaudeClient {
     },
     async close() {},
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
+function makeQuery(
+  generator: AsyncGenerator<SDKMessage>,
+  overrides: Partial<ClaudeSdkQuery> = {},
+): ClaudeSdkQuery {
+  return Object.assign(generator, {
+    interrupt: vi.fn().mockResolvedValue(undefined),
+    close: vi.fn(),
+    ...overrides,
+  }) as unknown as ClaudeSdkQuery;
+}
+
+function sdkSystemInit(sessionId: string): SDKMessage {
+  return {
+    type: "system",
+    subtype: "init",
+    session_id: sessionId,
+  } as unknown as SDKMessage;
+}
+
+function sdkSuccessResult(sessionId: string, result: string): SDKMessage {
+  return {
+    type: "result",
+    subtype: "success",
+    is_error: false,
+    result,
+    session_id: sessionId,
+    usage: { input_tokens: 1, output_tokens: 1 },
+    total_cost_usd: 0.01,
+    stop_reason: "end_turn",
+    modelUsage: {},
+    permission_denials: [],
+  } as unknown as SDKMessage;
+}
+
+function sdkUserMessageText(message: SDKUserMessage): string {
+  return typeof message.message.content === "string" ? message.message.content : "";
 }
 
 describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
@@ -184,6 +242,85 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       (c) => (c[1] as { type: string }).type === "complete",
     );
     expect(completeCalls).toHaveLength(2);
+  });
+
+  it("post-result drain 중 거부된 Claude live intervention은 큐에 남아 다음 SDK query로 전달된다", async () => {
+    const mocks = makeMocks();
+    const readyDuringPostResultDrain = deferred<void>();
+    const releaseDrain = deferred<void>();
+    const capturedPrompts: string[] = [];
+    const capturedResumeSessionIds: Array<string | undefined> = [];
+    let queryCalls = 0;
+
+    const query: ClaudeSdkQueryFn = (params) =>
+      makeQuery(
+        (async function* () {
+          queryCalls += 1;
+          capturedResumeSessionIds.push(params.options?.resume);
+          const input = params.prompt as AsyncIterable<SDKUserMessage>;
+          const iterator = input[Symbol.asyncIterator]();
+          const initial = await iterator.next();
+          expect(initial.done).toBe(false);
+          capturedPrompts.push(sdkUserMessageText(initial.value));
+
+          if (queryCalls === 1) {
+            yield sdkSystemInit("claude-sess-drain-queue");
+            yield sdkSuccessResult("claude-sess-drain-queue", "first done");
+            readyDuringPostResultDrain.resolve();
+            await releaseDrain.promise;
+            return;
+          }
+
+          yield sdkSystemInit("claude-sess-drain-queue");
+          yield sdkSuccessResult("claude-sess-drain-queue", "second done");
+        })(),
+      );
+    const client = new ClaudeSdkClient(
+      { query, postResultDrainMs: 500 },
+      silentLogger,
+    );
+    const adapter = new ClaudeEngineAdapter(
+      { workspaceDir: "/tmp/claude-roselin", client, processEnv: {} },
+      silentLogger,
+    );
+    const executor = new TaskExecutor(
+      () => adapter,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    executor.startExecution(task, claudeAgent);
+
+    await readyDuringPostResultDrain.promise;
+    const transition = new RunningInterventionTransition({
+      broadcaster: mocks.broadcaster,
+      logger: silentLogger,
+      persistence: mocks.persistence,
+    });
+    await expect(
+      transition.deliver(task, { text: "second at 80ms", user: "alice" }),
+    ).resolves.toMatchObject({
+      queued: true,
+      liveSteerStatus: "not_accepting_input",
+    });
+    expect(task.interventionQueue.map((item) => item.text)).toEqual([
+      "second at 80ms",
+    ]);
+
+    releaseDrain.resolve();
+    await task.executionPromise;
+
+    expect(queryCalls).toBe(2);
+    expect(capturedPrompts[0]).toBe("첫 발화");
+    expect(capturedResumeSessionIds).toEqual([
+      undefined,
+      "claude-sess-drain-queue",
+    ]);
+    expect(capturedPrompts[1]).toContain("second at 80ms");
+    expect(task.interventionQueue).toEqual([]);
+    expect(task.status).toBe("completed");
   });
 
   it("post-result drain phase — prompt_suggestion 수신 후 종료", async () => {
