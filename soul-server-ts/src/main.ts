@@ -397,7 +397,7 @@ async function main(): Promise<void> {
     orch: orchProxyConfig,
   };
 
-  const attachmentStore = new FileAttachmentStore(env.INCOMING_FILE_DIR);
+  const attachmentStore = new FileAttachmentStore(env.INCOMING_FILE_DIR, logger);
 
   // HTTP 서버 시작 (health + 선택적 MCP)
   const server = await buildServer({

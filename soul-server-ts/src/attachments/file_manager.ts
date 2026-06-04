@@ -1,6 +1,9 @@
 import { appendFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import * as path from "node:path";
+import { AttachmentDiagnostics, type AttachmentDiagnosticsLogger } from "./diagnostic_logger.js";
 
+// Temporarily exceeds 500 lines for attachment diagnostic logging.
+// Refactoring existing logic here would make this evidence-gathering patch unsafe.
 export class AttachmentError extends Error {
   constructor(message: string) {
     super(message);
@@ -104,14 +107,16 @@ interface PathOps {
 
 export class FileAttachmentStore implements AttachmentStore {
   private readonly baseDir: string;
+  private readonly diagnostics: AttachmentDiagnostics;
   private readonly pendingUploads = new Map<string, PendingUpload>();
   private readonly uploadOperations = new Map<string, Promise<void>>();
   // cleanupSession has no upload_id, so upload-level ordering alone cannot
   // protect temp files from same-session delete_session_attachments races.
   private readonly sessionOperations = new Map<string, Promise<void>>();
 
-  constructor(baseDir: string) {
+  constructor(baseDir: string, logger?: AttachmentDiagnosticsLogger) {
     this.baseDir = path.resolve(baseDir);
+    this.diagnostics = new AttachmentDiagnostics(logger);
   }
 
   async saveFileForSession(params: SaveSessionFileParams): Promise<SavedAttachment> {
@@ -119,6 +124,7 @@ export class FileAttachmentStore implements AttachmentStore {
     this.validateFile(safeOriginalName, params.content.length);
 
     const sessionDir = this.sessionDir(params.sessionId);
+    this.diagnostics.info("saveFileForSession.enter", { sessionId: params.sessionId, filename: safeOriginalName, size: params.content.length, sessionDir });
     await mkdir(sessionDir, { recursive: true });
 
     const timestamp = new Date().toISOString();
@@ -129,16 +135,19 @@ export class FileAttachmentStore implements AttachmentStore {
       params.content,
     );
 
-    return {
+    const saved = {
       path: path.resolve(filePath),
       filename,
       size: params.content.length,
       content_type: params.contentType || inferContentType(filename),
     };
+    this.diagnostics.info("saveFileForSession.exit", { sessionId: params.sessionId, filename, size: saved.size, sessionDir, path: saved.path });
+    return saved;
   }
 
   async beginFileUpload(params: BeginSessionFileUploadParams): Promise<{ uploadId: string; next_chunk_index: number }> {
     return this.withUploadOperation(params.uploadId, async (safeUploadId) => {
+      this.diagnostics.info("beginFileUpload.uploadOperation.enter", { uploadId: safeUploadId, sessionId: params.sessionId, pendingUploadsSize: this.pendingUploads.size });
       const safeOriginalName = sanitizeOriginalFilename(params.filename);
       if (params.expectedSize !== undefined) {
         this.validateFile(safeOriginalName, params.expectedSize);
@@ -152,6 +161,7 @@ export class FileAttachmentStore implements AttachmentStore {
 
       const sessionDir = this.sessionDir(params.sessionId);
       return this.withSessionOperation(sessionDir, async () => {
+        this.diagnostics.info("beginFileUpload.sessionOperation.enter", { uploadId: safeUploadId, sessionId: params.sessionId, sessionDir, pendingUploadsSize: this.pendingUploads.size });
         await mkdir(sessionDir, { recursive: true });
 
         const timestamp = new Date().toISOString();
@@ -159,6 +169,7 @@ export class FileAttachmentStore implements AttachmentStore {
         const finalPath = path.join(sessionDir, filename);
         const tempPath = path.join(sessionDir, `.upload-${safeUploadId}.tmp`);
         await writeFile(tempPath, Buffer.alloc(0), { flag: "wx" });
+        this.diagnostics.info("beginFileUpload.tempWritten", { uploadId: safeUploadId, sessionId: params.sessionId, sessionDir, tempPath, tempStat: await this.diagnostics.statPath(tempPath), pendingUploadsSize: this.pendingUploads.size });
 
         this.pendingUploads.set(safeUploadId, {
           uploadId: safeUploadId,
@@ -171,6 +182,7 @@ export class FileAttachmentStore implements AttachmentStore {
           size: 0,
           nextChunkIndex: 0,
         });
+        this.diagnostics.info("beginFileUpload.stateRegistered", { uploadId: safeUploadId, sessionId: params.sessionId, sessionDir, tempPath, finalPath, pendingUploadsSize: this.pendingUploads.size });
 
         return { uploadId: safeUploadId, next_chunk_index: 0 };
       });
@@ -182,6 +194,7 @@ export class FileAttachmentStore implements AttachmentStore {
   ): Promise<{ uploadId: string; chunk_index: number; next_chunk_index: number; size: number }> {
     return this.withUploadOperation(params.uploadId, async () => {
       const state = this.getPendingUpload(params.uploadId);
+      this.diagnostics.info("appendFileUploadChunk.enter", { uploadId: state.uploadId, chunkIndex: params.chunkIndex, bytesAppended: params.chunk.length, tempPath: state.tempPath, sizeBefore: state.size, pendingUploadsSize: this.pendingUploads.size });
       return this.withSessionOperation(state.sessionDir, async () => {
         if (params.chunkIndex !== state.nextChunkIndex) {
           throw new AttachmentError(
@@ -192,6 +205,7 @@ export class FileAttachmentStore implements AttachmentStore {
         try {
           this.validateFile(state.filename, nextSize);
           await appendFile(state.tempPath, params.chunk);
+          this.diagnostics.info("appendFileUploadChunk.appended", { uploadId: state.uploadId, chunkIndex: params.chunkIndex, bytesAppended: params.chunk.length, tempPath: state.tempPath, tempStat: await this.diagnostics.statPath(state.tempPath) });
         } catch (err) {
           await this.removePendingUpload(state);
           throw err;
@@ -212,6 +226,7 @@ export class FileAttachmentStore implements AttachmentStore {
   async finishFileUpload(params: FinishSessionFileUploadParams): Promise<SavedAttachment> {
     return this.withUploadOperation(params.uploadId, async () => {
       const state = this.getPendingUpload(params.uploadId);
+      this.diagnostics.info("finishFileUpload.enter", { uploadId: state.uploadId, tempPath: state.tempPath, finalPath: state.finalPath, size: state.size, expectedSize: state.expectedSize });
       return this.withSessionOperation(state.sessionDir, async () => {
         try {
           if (state.expectedSize !== undefined && state.size !== state.expectedSize) {
@@ -219,16 +234,20 @@ export class FileAttachmentStore implements AttachmentStore {
               `업로드 크기가 예상과 다릅니다 (${state.size} != ${state.expectedSize})`,
             );
           }
+          this.diagnostics.info("finishFileUpload.rename.before", { uploadId: state.uploadId, tempPath: state.tempPath, finalPath: state.finalPath, tempStat: await this.diagnostics.statPath(state.tempPath) });
           await rename(state.tempPath, state.finalPath);
-          return {
+          const saved = {
             path: path.resolve(state.finalPath),
             filename: state.filename,
             size: state.size,
             content_type: state.contentType,
           };
+          this.diagnostics.info("finishFileUpload.rename.after", { uploadId: state.uploadId, tempPath: state.tempPath, finalPath: state.finalPath, finalStat: await this.diagnostics.statPath(state.finalPath) });
+          return saved;
         } catch (err) {
           await this.removePendingUpload(state);
           if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+            this.diagnostics.info("finishFileUpload.enoent", { uploadId: state.uploadId, tempPath: state.tempPath, finalPath: state.finalPath, sessionDir: state.sessionDir, sessionDirEntries: await this.diagnostics.listDirectory(state.sessionDir) });
             throw new AttachmentError("업로드 임시 파일이 존재하지 않습니다");
           }
           throw err;
@@ -242,9 +261,11 @@ export class FileAttachmentStore implements AttachmentStore {
   async abortFileUpload(params: AbortSessionFileUploadParams): Promise<boolean> {
     return this.withUploadOperation(params.uploadId, async (safeUploadId) => {
       const state = this.pendingUploads.get(safeUploadId);
+      this.diagnostics.info("abortFileUpload.enter", { uploadId: safeUploadId, stateExists: Boolean(state), tempPath: state?.tempPath, pendingUploadsSize: this.pendingUploads.size });
       if (!state) return false;
       return this.withSessionOperation(state.sessionDir, async () => {
         await this.removePendingUpload(state);
+        this.diagnostics.info("abortFileUpload.removed", { uploadId: safeUploadId, tempPath: state.tempPath, pendingUploadsSize: this.pendingUploads.size });
         return true;
       });
     });
@@ -252,8 +273,10 @@ export class FileAttachmentStore implements AttachmentStore {
 
   async cleanupSession(sessionId: string): Promise<number> {
     const sessionDir = this.sessionDir(sessionId);
+    this.diagnostics.info("cleanupSession.enter", { sessionId, sessionDir, pendingUploadsSize: this.pendingUploads.size, callerStack: this.diagnostics.callerStack() });
     return this.withSessionOperation(sessionDir, async () => {
       const activeUploadPaths = this.getActiveUploadPathsForSession(sessionDir);
+      this.diagnostics.info("cleanupSession.activeUploads", { sessionId, sessionDir, activeUploadPathsSize: activeUploadPaths.size, activeUploadPaths: Array.from(activeUploadPaths), pendingUploadsSize: this.pendingUploads.size });
       if (activeUploadPaths.size > 0) {
         return this.cleanupSessionFilesExcept(sessionDir, activeUploadPaths);
       }
@@ -262,7 +285,9 @@ export class FileAttachmentStore implements AttachmentStore {
       try {
         const entries = await readdir(sessionDir, { withFileTypes: true });
         filesRemoved = entries.filter((entry) => entry.isFile()).length;
+        this.diagnostics.info("cleanupSession.fallthroughBeforeRm", { sessionId, sessionDir, filesRemoved, pendingUploadsSize: this.pendingUploads.size });
         await rm(sessionDir, { recursive: true, force: true });
+        this.diagnostics.info("cleanupSession.rm.after", { sessionId, sessionDir, filesRemoved, pendingUploadsSize: this.pendingUploads.size });
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === "ENOENT") {
           return 0;

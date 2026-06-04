@@ -251,7 +251,7 @@ export class CommandDispatcher {
     private readonly agentRegistry: AgentRegistry,
     private readonly taskManager: TaskManager,
     private readonly taskExecutor: TaskExecutor,
-    private readonly attachmentStore: AttachmentStore = new FileAttachmentStore(".local/incoming"),
+    private readonly attachmentStore: AttachmentStore = new FileAttachmentStore(".local/incoming", logger),
     claudeAuth?: ClaudeAuthCommandHandler,
     /**
      * `list_sessions` needs SessionDB. Keep it optional at construction so
