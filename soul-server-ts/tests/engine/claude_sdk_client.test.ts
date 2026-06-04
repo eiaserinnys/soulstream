@@ -2094,6 +2094,106 @@ describe("ClaudeSdkClient", () => {
     expect(client.steerActiveTurn({ prompt: "after run" })).toBe(false);
   });
 
+  it("rejects live steering in the 80ms post-end_turn drain window", async () => {
+    const readyDuringPostResultDrain = deferred<void>();
+    const releaseDrain = deferred<void>();
+    let secondInputRead: Promise<IteratorResult<SDKUserMessage>> | undefined;
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const input = params.prompt as AsyncIterable<SDKUserMessage>;
+              const iterator = input[Symbol.asyncIterator]();
+              await iterator.next();
+              secondInputRead = iterator.next();
+              yield sdkSuccessResult("claude-sess-turn-edge-80ms", "done");
+              readyDuringPostResultDrain.resolve();
+              await releaseDrain.promise;
+            })(),
+          ),
+        postResultDrainMs: 500,
+      },
+      silentLogger,
+    );
+
+    const eventsPromise = collect(
+      client.run(
+        {
+          prompt: "first",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    await readyDuringPostResultDrain.promise;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(client.steerActiveTurn({ prompt: "second at 80ms" })).toBe(false);
+    expect(secondInputRead).toBeDefined();
+    await expectPromisePending(secondInputRead!);
+    releaseDrain.resolve();
+    const events = await eventsPromise;
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "complete", result: "done" }),
+      ]),
+    );
+  });
+
+  it("rejects agent-driven live steering in the 1.7s post-end_turn drain window", async () => {
+    const readyDuringPostResultDrain = deferred<void>();
+    const releaseDrain = deferred<void>();
+    let secondInputRead: Promise<IteratorResult<SDKUserMessage>> | undefined;
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const input = params.prompt as AsyncIterable<SDKUserMessage>;
+              const iterator = input[Symbol.asyncIterator]();
+              await iterator.next();
+              secondInputRead = iterator.next();
+              yield sdkSuccessResult("claude-sess-turn-edge-agent", "done");
+              readyDuringPostResultDrain.resolve();
+              await releaseDrain.promise;
+            })(),
+          ),
+        postResultDrainMs: 2_200,
+      },
+      silentLogger,
+    );
+
+    const eventsPromise = collect(
+      client.run(
+        {
+          prompt: "first",
+          workspaceDir: "/tmp/claude-work",
+          env: {},
+        },
+        new AbortController().signal,
+      ),
+    );
+
+    await readyDuringPostResultDrain.promise;
+    await new Promise((resolve) => setTimeout(resolve, 1_700));
+    expect(
+      client.steerActiveTurn({ prompt: "cross-node delegation result #2" }),
+    ).toBe(false);
+    expect(secondInputRead).toBeDefined();
+    await expectPromisePending(secondInputRead!);
+    releaseDrain.resolve();
+    const events = await eventsPromise;
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "complete", result: "done" }),
+      ]),
+    );
+  });
+
   it("rejects live steering during pending tool_use and after raw tool_result continuation", async () => {
     const prompts: string[] = [];
     const readyDuringToolUse = deferred<void>();

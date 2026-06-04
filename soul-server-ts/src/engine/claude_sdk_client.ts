@@ -179,6 +179,8 @@ export class ClaudeSdkClient implements ClaudeClient {
   private runtimeSessionState: ClaudeRuntimeSessionState | undefined;
   private toolUseTurnOpen = false;
   private toolUseTurnNeedsSafeDrain = false;
+  private postResultDrainDepth = 0;
+  private safeInterventionDrainInProgress = false;
 
   private activeQuery: ClaudeSdkQuery | null = null;
   private activeInput: PushAsyncIterable<SDKUserMessage> | null = null;
@@ -370,6 +372,11 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.activeInput?.close();
     this.activeQuery?.close();
     this.abortPendingInputRequests();
+  }
+
+  private deactivateActiveInput(): void {
+    this.activeInput?.close();
+    this.activeInput = null;
   }
 
   private buildSdkOptions(
@@ -984,6 +991,9 @@ export class ClaudeSdkClient implements ClaudeClient {
 
             const drainedLiveIntervention =
               await this.drainSafeInterventionsAfterResultBoundary();
+            if (!drainedLiveIntervention) {
+              this.deactivateActiveInput();
+            }
             this.pushTerminalEvents(output, terminalEvents, drain.events);
             if (drainedLiveIntervention) {
               continue;
@@ -1001,15 +1011,16 @@ export class ClaudeSdkClient implements ClaudeClient {
             }
           }
           if (shouldStop) {
-          // Result/complete (또는 fatal error) 도착 — post-result drain phase로 진입.
-          // Python `receive_loop._drain_after_result` (L126-188) 정합:
-          //   - prompt_suggestion 1메시지를 best-effort로 기다림 (default 2초)
-          //   - 그 외 메시지(StreamEvent · stray assistant 등)는 narrowing → logger.warn 후 무시
-          //   - timeout / EOS / 에러 모두 조용히 종료 (drain은 부가 기능, §8 실패 격리)
+            // Result/complete (또는 fatal error) 도착 — post-result drain phase로 진입.
+            // Python `receive_loop._drain_after_result` (L126-188) 정합:
+            //   - prompt_suggestion 1메시지를 best-effort로 기다림 (default 2초)
+            //   - 그 외 메시지(StreamEvent · stray assistant 등)는 narrowing → logger.warn 후 무시
+            //   - timeout / EOS / 에러 모두 조용히 종료 (drain은 부가 기능, §8 실패 격리)
             const drain = await this.drainAfterResult(
               queryIter,
               new Set<PostResultContinuationKind>(),
             );
+            this.deactivateActiveInput();
             for (const event of drain.events) output.push(event);
             query.close();
             output.close();
@@ -1056,89 +1067,94 @@ export class ClaudeSdkClient implements ClaudeClient {
     const startedAt = Date.now();
     const events: ClaudeClientEvent[] = [];
 
-    for (;;) {
-      const pendingRuntime = this.hasPendingRuntimeWork();
-      const waitMs = pendingRuntime
-        ? Math.max(0, this.runtimeDrainMaxMs - (Date.now() - startedAt))
-        : this.postResultDrainMs;
+    this.postResultDrainDepth += 1;
+    try {
+      for (;;) {
+        const pendingRuntime = this.hasPendingRuntimeWork();
+        const waitMs = pendingRuntime
+          ? Math.max(0, this.runtimeDrainMaxMs - (Date.now() - startedAt))
+          : this.postResultDrainMs;
 
-      if (waitMs <= 0) {
-        events.push(...this.makeRuntimeTimeoutEvents());
-        return { action: "finish", events };
-      }
-
-      let settled: IteratorResult<SDKMessage> | typeof DRAIN_TIMEOUT;
-      try {
-        settled = await this.nextWithDrainTimeout(queryIter, waitMs);
-      } catch (err) {
-        events.push(this.makeDrainErrorEvent(err));
-        return { action: "finish", events };
-      }
-      if (settled === DRAIN_TIMEOUT) {
-        if (pendingRuntime) {
+        if (waitMs <= 0) {
           events.push(...this.makeRuntimeTimeoutEvents());
-        } else {
-          this.logger.debug?.({ ms: this.postResultDrainMs }, "post-result drain timed out");
+          return { action: "finish", events };
         }
-        return { action: "finish", events };
-      }
-      if (settled.done) {
-        return { action: "finish", events };
-      }
 
-      const msg = asRecord(settled.value);
-      if (msg && msg.type === "prompt_suggestion") {
-        events.push(...this.mapPromptSuggestion(msg));
-        if (this.hasPendingRuntimeWork()) continue;
-        return { action: "finish", events };
-      }
-      if (msg && isRuntimeSystemMessage(msg)) {
-        events.push(...this.mapSystemMessage(msg));
-        if (this.hasPendingRuntimeWork()) continue;
-        return { action: "finish", events };
-      }
-      if (msg?.type === "system" && msg.subtype === "compact_boundary") {
-        const mapped = this.mapSystemMessage(msg);
-        events.push(...mapped);
-        if (continuations.has("compact_boundary")) {
-          return { action: "continue", reason: "compact_boundary", events };
+        let settled: IteratorResult<SDKMessage> | typeof DRAIN_TIMEOUT;
+        try {
+          settled = await this.nextWithDrainTimeout(queryIter, waitMs);
+        } catch (err) {
+          events.push(this.makeDrainErrorEvent(err));
+          return { action: "finish", events };
         }
-        if (this.hasPendingRuntimeWork()) continue;
-        return { action: "finish", events };
-      }
-      if (continuations.has("tool_use")) {
-        this.logger.debug?.(
-          { messageType: msg?.type ?? "unknown" },
-          "post-tool-use-result drain received continuation message",
-        );
-        if (msg?.type === "result") {
-          const terminalEvents = this.mapResultMessage(msg);
-          const resultEvent = terminalEvents.find((event) => event.type === "result");
-          this.noteResultBoundary(resultEvent);
-          const nextContinuations =
-            resultEvent?.type === "result"
-              ? this.postResultContinuations(resultEvent, 0)
-              : new Set<PostResultContinuationKind>();
-          const drain = await this.drainAfterResult(queryIter, nextContinuations);
-          if (drain.action === "continue") {
-            events.push(...drain.events);
-            return { action: "continue", reason: drain.reason, events };
+        if (settled === DRAIN_TIMEOUT) {
+          if (pendingRuntime) {
+            events.push(...this.makeRuntimeTimeoutEvents());
+          } else {
+            this.logger.debug?.({ ms: this.postResultDrainMs }, "post-result drain timed out");
           }
-          await this.drainSafeInterventionsAfterResultBoundary();
-          events.push(...this.orderTerminalEvents(terminalEvents, drain.events));
+          return { action: "finish", events };
+        }
+        if (settled.done) {
+          return { action: "finish", events };
+        }
+
+        const msg = asRecord(settled.value);
+        if (msg && msg.type === "prompt_suggestion") {
+          events.push(...this.mapPromptSuggestion(msg));
+          if (this.hasPendingRuntimeWork()) continue;
+          return { action: "finish", events };
+        }
+        if (msg && isRuntimeSystemMessage(msg)) {
+          events.push(...this.mapSystemMessage(msg));
+          if (this.hasPendingRuntimeWork()) continue;
+          return { action: "finish", events };
+        }
+        if (msg?.type === "system" && msg.subtype === "compact_boundary") {
+          const mapped = this.mapSystemMessage(msg);
+          events.push(...mapped);
+          if (continuations.has("compact_boundary")) {
+            return { action: "continue", reason: "compact_boundary", events };
+          }
+          if (this.hasPendingRuntimeWork()) continue;
+          return { action: "finish", events };
+        }
+        if (continuations.has("tool_use")) {
+          this.logger.debug?.(
+            { messageType: msg?.type ?? "unknown" },
+            "post-tool-use-result drain received continuation message",
+          );
+          if (msg?.type === "result") {
+            const terminalEvents = this.mapResultMessage(msg);
+            const resultEvent = terminalEvents.find((event) => event.type === "result");
+            this.noteResultBoundary(resultEvent);
+            const nextContinuations =
+              resultEvent?.type === "result"
+                ? this.postResultContinuations(resultEvent, 0)
+                : new Set<PostResultContinuationKind>();
+            const drain = await this.drainAfterResult(queryIter, nextContinuations);
+            if (drain.action === "continue") {
+              events.push(...drain.events);
+              return { action: "continue", reason: drain.reason, events };
+            }
+            await this.drainSafeInterventionsAfterResultBoundary();
+            events.push(...this.orderTerminalEvents(terminalEvents, drain.events));
+            return { action: "continue", reason: "tool_use", events };
+          }
+          const mapped = this.mapSdkMessage(settled.value);
+          events.push(...mapped);
           return { action: "continue", reason: "tool_use", events };
         }
-        const mapped = this.mapSdkMessage(settled.value);
-        events.push(...mapped);
-        return { action: "continue", reason: "tool_use", events };
+        // Runtime이 이미 pending이면 stray 메시지 하나 때문에 query를 닫지 않는다.
+        this.logger.warn?.(
+          { messageType: msg?.type ?? "unknown" },
+          "post-result drain received unexpected message type — ignoring",
+        );
+        if (this.hasPendingRuntimeWork()) continue;
+        return { action: "finish", events };
       }
-      // Runtime이 이미 pending이면 stray 메시지 하나 때문에 query를 닫지 않는다.
-      this.logger.warn?.(
-        { messageType: msg?.type ?? "unknown" },
-        "post-result drain received unexpected message type — ignoring",
-      );
-      if (this.hasPendingRuntimeWork()) continue;
-      return { action: "finish", events };
+    } finally {
+      this.postResultDrainDepth = Math.max(0, this.postResultDrainDepth - 1);
     }
   }
 
@@ -1779,6 +1795,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     return (
       this.pendingCanUseToolCalls.size === 0 &&
       !this.toolUseTurnOpen &&
+      (this.postResultDrainDepth === 0 || this.safeInterventionDrainInProgress) &&
       !this.hasPendingRuntimeWork() &&
       !this.hasPendingToolUseResults()
     );
@@ -1795,7 +1812,6 @@ export class ClaudeSdkClient implements ClaudeClient {
   private async drainSafeInterventions(): Promise<boolean> {
     const drain = this.activeSafeInterventionDrain;
     if (!drain) return false;
-    if (!this.canAcceptLiveUserInput()) return false;
     try {
       const result = await drain();
       return result !== false;
@@ -1807,9 +1823,14 @@ export class ClaudeSdkClient implements ClaudeClient {
 
   private async drainSafeInterventionsAfterResultBoundary(): Promise<boolean> {
     if (!this.toolUseTurnNeedsSafeDrain) return false;
-    if (!this.canAcceptLiveUserInput()) return false;
-    this.toolUseTurnNeedsSafeDrain = false;
-    return await this.drainSafeInterventions();
+    this.safeInterventionDrainInProgress = true;
+    try {
+      if (!this.canAcceptLiveUserInput()) return false;
+      this.toolUseTurnNeedsSafeDrain = false;
+      return await this.drainSafeInterventions();
+    } finally {
+      this.safeInterventionDrainInProgress = false;
+    }
   }
 
   private noteResultBoundary(resultEvent: ClaudeClientEvent | undefined): void {
@@ -1895,6 +1916,8 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.runtimeSessionState = undefined;
     this.toolUseTurnOpen = false;
     this.toolUseTurnNeedsSafeDrain = false;
+    this.postResultDrainDepth = 0;
+    this.safeInterventionDrainInProgress = false;
   }
 
   private abortPendingInputRequests(): void {
