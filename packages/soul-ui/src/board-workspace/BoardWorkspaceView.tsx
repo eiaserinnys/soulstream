@@ -1,12 +1,12 @@
-import { useMemo, useState } from "react";
-import { ChevronRight, Folder, FolderPlus, List, Plus } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronRight, Folder, FolderPlus, List, Loader2, Plus } from "lucide-react";
 
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { SessionSummary } from "../shared/types";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { FolderDialog } from "../components/FolderDialog";
-import type { LoadMoreCallback } from "../components/load-more-guard";
+import { runGuardedLoadMore, type LoadMoreCallback } from "../components/load-more-guard";
 import { useIsMobile } from "../hooks/use-mobile";
 import { cn } from "../lib/cn";
 import { applyCatalogDisplayNames } from "../hooks/session-stream-helpers";
@@ -24,6 +24,8 @@ import {
 } from "./board-workspace-helpers";
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
+const BOARD_TILE_CLASS =
+  "flex h-40 w-40 flex-col overflow-hidden rounded-xl border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 export interface BoardWorkspaceViewProps {
   sessions?: SessionSummary[];
@@ -54,6 +56,8 @@ export function BoardWorkspaceView({
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const isMobile = useIsMobile();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const loadMoreGateRef = useRef(false);
 
   const folders = catalog?.folders ?? [];
   const selectedFolder = folders.find((folder) => folder.id === selectedFolderId) ?? null;
@@ -79,6 +83,20 @@ export function BoardWorkspaceView({
     await onCreateFolder?.(name.trim(), selectedFolderId);
     setCreateDialogOpen(false);
   };
+
+  useEffect(() => {
+    if (!onLoadMore || !hasMore) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) runGuardedLoadMore(loadMoreGateRef, onLoadMore);
+      },
+      { threshold: 0.1 },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [onLoadMore, hasMore]);
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -146,7 +164,7 @@ export function BoardWorkspaceView({
         ) : (
           <div
             data-testid="board-workspace-grid"
-            className="grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-2"
+            className="grid auto-rows-[160px] grid-cols-[repeat(auto-fill,160px)] justify-start gap-3"
           >
             {boardItems.map((item) => {
               if (item.type === "folder") {
@@ -155,19 +173,18 @@ export function BoardWorkspaceView({
                     key={item.id}
                     type="button"
                     data-testid="board-folder-tile"
-                    className="flex min-h-28 flex-col justify-between rounded-md border border-border px-3 py-2 text-left hover:bg-accent/50"
+                    className={BOARD_TILE_CLASS}
                     onClick={() => selectFolder(item.folder.id)}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <Folder className="h-5 w-5 shrink-0 text-primary" />
-                      <Badge variant="secondary" className="shrink-0 text-xs">
+                    <div className="relative flex h-[60%] items-center justify-center">
+                      <Folder className="h-12 w-12 shrink-0 text-primary" />
+                      <Badge variant="secondary" className="absolute right-0 top-0 min-w-5 justify-center px-1 text-[10px]">
                         {item.childCount}
                       </Badge>
                     </div>
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium">{item.folder.name}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {formatBoardWorkspaceTime(item.folder.createdAt)}
+                    <div className="flex h-[40%] min-w-0 flex-col justify-end border-t border-border/60 pt-2">
+                      <div data-testid="board-folder-title" className="truncate text-sm font-medium">
+                        {item.folder.name}
                       </div>
                     </div>
                   </button>
@@ -184,7 +201,7 @@ export function BoardWorkspaceView({
                   data-testid="board-session-tile"
                   data-session-id={item.session.agentSessionId}
                   className={cn(
-                    "flex min-h-28 flex-col justify-between rounded-md border border-border px-3 py-2 text-left hover:bg-accent/50",
+                    BOARD_TILE_CLASS,
                     activeSessionKey === item.session.agentSessionId && "bg-accent text-accent-foreground",
                   )}
                   onClick={() => {
@@ -193,23 +210,27 @@ export function BoardWorkspaceView({
                     if (isMobile) setActiveTab("chat");
                   }}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex h-[60%] min-w-0 gap-2 overflow-hidden">
                     <span
                       className={cn(
-                        "h-2 w-2 shrink-0 rounded-full",
+                        "mt-1 h-2.5 w-2.5 shrink-0 rounded-full",
                         config.dotClass,
                         config.animate && "animate-[pulse_2s_infinite]",
                       )}
+                      aria-hidden="true"
                     />
-                    <span className="min-w-0 truncate text-sm font-medium">
-                      {getSessionBoardTitle(item.session)}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <div className="truncate text-xs text-muted-foreground">
+                    <div
+                      data-testid="board-session-preview"
+                      className="line-clamp-2 min-w-0 text-xs leading-snug text-muted-foreground"
+                    >
                       {getSessionBoardPreview(item.session)}
                     </div>
-                    <div className="mt-1 text-xs text-muted-foreground">
+                  </div>
+                  <div className="flex h-[40%] min-w-0 flex-col justify-end border-t border-border/60 pt-2">
+                    <div data-testid="board-session-title" className="truncate text-sm font-medium">
+                      {getSessionBoardTitle(item.session)}
+                    </div>
+                    <div className="mt-1 truncate text-[11px] text-muted-foreground">
                       {formatBoardWorkspaceTime(activityTime)}
                     </div>
                   </div>
@@ -220,10 +241,17 @@ export function BoardWorkspaceView({
         )}
 
         {hasMore && onLoadMore && (
-          <div className="flex justify-center py-3">
-            <Button variant="ghost" size="sm" onClick={() => onLoadMore()}>
-              Load more
-            </Button>
+          <div
+            ref={sentinelRef}
+            data-testid="board-load-more-sentinel"
+            className="flex items-center justify-center py-3 text-xs text-muted-foreground"
+          >
+            <Loader2
+              data-testid="board-load-more-spinner"
+              className="h-4 w-4 animate-spin"
+              aria-hidden="true"
+            />
+            <span className="sr-only">Loading more board items</span>
           </div>
         )}
       </div>
