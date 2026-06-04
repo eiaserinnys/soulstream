@@ -110,7 +110,7 @@ describe("FileAttachmentStore cleanup/upload session race", () => {
     const saved = await store.finishFileUpload({ uploadId: "race-photo" });
 
     expect(saved).toMatchObject({
-      filename: "2026-06-04T01:15:00.000Z-사진-race-photo.png",
+      filename: "2026-06-04T01-15-00.000Z-사진-race-photo.png",
       size: 7,
       content_type: "image/png",
     });

@@ -127,7 +127,7 @@ export class FileAttachmentStore implements AttachmentStore {
     this.diagnostics.info("saveFileForSession.enter", { sessionId: params.sessionId, filename: safeOriginalName, size: params.content.length, sessionDir });
     await mkdir(sessionDir, { recursive: true });
 
-    const timestamp = new Date().toISOString();
+    const timestamp = buildFsSafeTimestamp();
     const { filePath, filename } = await writeUniqueAttachmentFile(
       sessionDir,
       timestamp,
@@ -164,7 +164,7 @@ export class FileAttachmentStore implements AttachmentStore {
         this.diagnostics.info("beginFileUpload.sessionOperation.enter", { uploadId: safeUploadId, sessionId: params.sessionId, sessionDir, pendingUploadsSize: this.pendingUploads.size });
         await mkdir(sessionDir, { recursive: true });
 
-        const timestamp = new Date().toISOString();
+        const timestamp = buildFsSafeTimestamp();
         const filename = buildStreamingAttachmentFilename(timestamp, safeUploadId, safeOriginalName);
         const finalPath = path.join(sessionDir, filename);
         const tempPath = path.join(sessionDir, `.upload-${safeUploadId}.tmp`);
@@ -459,6 +459,10 @@ export class FileNotFoundError extends Error {
 
 function inferContentType(targetPath: string): string {
   return CONTENT_TYPES[path.extname(targetPath).toLowerCase()] ?? "application/octet-stream";
+}
+
+function buildFsSafeTimestamp(): string {
+  return new Date().toISOString().replace(/:/g, "-");
 }
 
 function sanitizeOriginalFilename(filename: string): string {
