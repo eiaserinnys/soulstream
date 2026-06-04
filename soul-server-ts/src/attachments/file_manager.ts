@@ -247,15 +247,47 @@ export class FileAttachmentStore implements AttachmentStore {
 
   async cleanupSession(sessionId: string): Promise<number> {
     const sessionDir = this.sessionDir(sessionId);
+    const activeUploadPaths = this.getActiveUploadPathsForSession(sessionDir);
+    if (activeUploadPaths.size > 0) {
+      return this.cleanupSessionFilesExcept(sessionDir, activeUploadPaths);
+    }
+
     let filesRemoved = 0;
     try {
       const entries = await readdir(sessionDir, { withFileTypes: true });
       filesRemoved = entries.filter((entry) => entry.isFile()).length;
       await rm(sessionDir, { recursive: true, force: true });
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
         return 0;
       }
+      throw err;
+    }
+    return filesRemoved;
+  }
+
+  private async cleanupSessionFilesExcept(
+    sessionDir: string,
+    excludedPaths: Set<string>,
+  ): Promise<number> {
+    let filesRemoved = 0;
+    try {
+      const entries = await readdir(sessionDir, { withFileTypes: true });
+      for (const entry of entries) {
+        const target = path.join(sessionDir, entry.name);
+        if (entry.isFile() && excludedPaths.has(path.resolve(target))) {
+          continue;
+        }
+        await rm(target, { recursive: true, force: true });
+        if (entry.isFile()) {
+          filesRemoved += 1;
+        }
+      }
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return 0;
+      }
+      throw err;
     }
     return filesRemoved;
   }
@@ -322,6 +354,17 @@ export class FileAttachmentStore implements AttachmentStore {
       throw new AttachmentError("upload_id를 찾을 수 없습니다");
     }
     return state;
+  }
+
+  private getActiveUploadPathsForSession(sessionDir: string): Set<string> {
+    const activeUploadPaths = new Set<string>();
+    for (const state of this.pendingUploads.values()) {
+      if (state.sessionDir === sessionDir) {
+        activeUploadPaths.add(path.resolve(state.tempPath));
+        activeUploadPaths.add(path.resolve(state.finalPath));
+      }
+    }
+    return activeUploadPaths;
   }
 
   private async removePendingUpload(state: PendingUpload): Promise<void> {

@@ -165,6 +165,44 @@ describe("FileAttachmentStore", () => {
     await expect(readdir(join(dir, "sess-stream"))).resolves.toEqual([saved.filename]);
   });
 
+  it("does not remove active streaming temp files during session cleanup", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T00:45:30.123Z"));
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+
+    const previous = await store.saveFileForSession({
+      sessionId: "sess-clean-active",
+      filename: "old.txt",
+      content: Buffer.from("old"),
+    });
+    await store.beginFileUpload({
+      uploadId: "active-upload",
+      sessionId: "sess-clean-active",
+      filename: "photo.png",
+      expectedSize: 7,
+      contentType: "image/png",
+    });
+    await store.appendFileUploadChunk({
+      uploadId: "active-upload",
+      chunkIndex: 0,
+      chunk: Buffer.from("payload"),
+    });
+
+    await expect(store.cleanupSession("sess-clean-active")).resolves.toBe(1);
+    await expect(readFile(previous.path)).rejects.toMatchObject({ code: "ENOENT" });
+
+    const saved = await store.finishFileUpload({ uploadId: "active-upload" });
+
+    expect(saved).toMatchObject({
+      filename: "2026-06-01T00:45:30.123Z-photo-active-upload.png",
+      size: 7,
+      content_type: "image/png",
+    });
+    await expect(readFile(saved.path, "utf8")).resolves.toBe("payload");
+    await expect(readdir(join(dir, "sess-clean-active"))).resolves.toEqual([saved.filename]);
+  });
+
   it("serializes chunk and finish behind a started upload", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-01T00:45:30.123Z"));
