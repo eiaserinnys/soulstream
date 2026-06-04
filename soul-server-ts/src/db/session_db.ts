@@ -79,6 +79,7 @@ export interface FolderRow {
   sort_order: number;
   settings: Record<string, unknown>;
   parent_folder_id: string | null;
+  created_at?: Date | string;
 }
 
 export interface CatalogFolderRow {
@@ -87,6 +88,7 @@ export interface CatalogFolderRow {
   sortOrder: number;
   settings: Record<string, unknown>;
   parentFolderId: string | null;
+  createdAt?: string;
 }
 
 /** `session_get` 반환 행 (sessions 테이블 컬럼 매핑). */
@@ -411,15 +413,17 @@ export class SessionDB {
     folderId: string,
   ): Promise<FolderRow | null> {
     const rows = await this.sql<
-      { id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null }[]
-    >`SELECT id, name, sort_order, settings, parent_folder_id FROM folders WHERE id = ${folderId}`;
+      { id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null; created_at: Date | string }[]
+    >`SELECT id, name, sort_order, settings, parent_folder_id, created_at FROM folders WHERE id = ${folderId}`;
     const row = rows[0];
     if (!row) return null;
+    const createdAt = row.created_at ? { created_at: row.created_at } : {};
     return {
       id: row.id,
       name: row.name,
       sort_order: row.sort_order,
       parent_folder_id: row.parent_folder_id,
+      ...createdAt,
       settings:
         row.settings && typeof row.settings === "object"
           ? (row.settings as Record<string, unknown>)
@@ -439,17 +443,21 @@ export class SessionDB {
     sessions: Record<string, { folderId: string | null; displayName: string | null }>;
   }> {
     const folderRows = await this.sql<
-      { id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null }[]
+      { id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null; created_at: Date | string | null }[]
     >`SELECT * FROM folder_get_all()`;
-    const folders = folderRows.map((f) => ({
-      id: f.id,
-      name: f.name,
-      sortOrder: f.sort_order,
-      parentFolderId: f.parent_folder_id,
-      settings: (typeof f.settings === "object" && f.settings !== null
-        ? (f.settings as Record<string, unknown>)
-        : {}),
-    }));
+    const folders = folderRows.map((f) => {
+      const createdAt = toIsoString(f.created_at);
+      return {
+        id: f.id,
+        name: f.name,
+        sortOrder: f.sort_order,
+        parentFolderId: f.parent_folder_id,
+        ...(createdAt ? { createdAt } : {}),
+        settings: (typeof f.settings === "object" && f.settings !== null
+          ? (f.settings as Record<string, unknown>)
+          : {}),
+      };
+    });
 
     const sessionRows = await this.sql<
       { session_id: string; folder_id: string | null; display_name: string | null }[]
@@ -562,18 +570,22 @@ export class SessionDB {
     FolderRow[]
   > {
     const rows = await this.sql<
-      Array<{ id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null }>
+      Array<{ id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null; created_at: Date | string | null }>
     >`SELECT * FROM folder_get_all()`;
-    return rows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      sort_order: r.sort_order,
-      parent_folder_id: r.parent_folder_id,
-      settings:
-        r.settings && typeof r.settings === "object"
-          ? (r.settings as Record<string, unknown>)
-          : {},
-    }));
+    return rows.map((r) => {
+      const createdAt = r.created_at ? { created_at: r.created_at } : {};
+      return {
+        id: r.id,
+        name: r.name,
+        sort_order: r.sort_order,
+        parent_folder_id: r.parent_folder_id,
+        ...createdAt,
+        settings:
+          r.settings && typeof r.settings === "object"
+            ? (r.settings as Record<string, unknown>)
+            : {},
+      };
+    });
   }
 
   /**
@@ -957,6 +969,13 @@ function stringifyForStoredProc(col: string, val: unknown): string | null {
   if (typeof val === "boolean") return val ? "true" : "false";
   if (typeof val === "number") return String(val);
   return String(val);
+}
+
+function toIsoString(value: Date | string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  if (value instanceof Date) return value.toISOString();
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : undefined;
 }
 
 function normalizeTranscriptSubpath(value: string | null | undefined): string | null {

@@ -10,7 +10,7 @@
  */
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { BoardWorkspaceView } from "./components/BoardWorkspaceView";
+import { FolderWorkspaceView } from "./components/FolderWorkspaceView";
 import {
   createFolder,
   renameFolderOptimistic,
@@ -175,7 +175,7 @@ export function OrchestratorDashboardLayout() {
             onNewSession={(task, defaults) => openNewSessionModal("feed", task ?? null, defaults ?? null)}
           />
         ) : (
-          <BoardWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
+          <FolderWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
         )
       }
       rightPanel={
@@ -210,7 +210,7 @@ export function OrchestratorDashboardLayout() {
         />
       }
       mobileFolderContents={
-        <BoardWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
+        <FolderWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
       }
       mobileTasksView={
         <TaskTreeView

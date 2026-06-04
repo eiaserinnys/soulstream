@@ -1,4 +1,5 @@
-import type { CatalogFolder, CatalogState } from "../shared/types";
+import type { CatalogFolder } from "../shared/types";
+export { getFolderDirectChildCount } from "./board-workspace-items";
 
 export function getChildFolders(
   folders: readonly CatalogFolder[],
@@ -30,17 +31,4 @@ export function getFolderBreadcrumbs(
   }
 
   return path.reverse();
-}
-
-export function getFolderDirectChildCount(
-  catalog: CatalogState,
-  folderId: string,
-): number {
-  const childFolderCount = catalog.folders.filter(
-    (folder) => (folder.parentFolderId ?? null) === folderId,
-  ).length;
-  const sessionCount = Object.values(catalog.sessions).filter(
-    (assignment) => assignment.folderId === folderId,
-  ).length;
-  return childFolderCount + sessionCount;
 }
