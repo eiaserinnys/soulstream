@@ -106,6 +106,9 @@ export class FileAttachmentStore implements AttachmentStore {
   private readonly baseDir: string;
   private readonly pendingUploads = new Map<string, PendingUpload>();
   private readonly uploadOperations = new Map<string, Promise<void>>();
+  // cleanupSession has no upload_id, so upload-level ordering alone cannot
+  // protect temp files from same-session delete_session_attachments races.
+  private readonly sessionOperations = new Map<string, Promise<void>>();
 
   constructor(baseDir: string) {
     this.baseDir = path.resolve(baseDir);
@@ -134,9 +137,7 @@ export class FileAttachmentStore implements AttachmentStore {
     };
   }
 
-  async beginFileUpload(
-    params: BeginSessionFileUploadParams,
-  ): Promise<{ uploadId: string; next_chunk_index: number }> {
+  async beginFileUpload(params: BeginSessionFileUploadParams): Promise<{ uploadId: string; next_chunk_index: number }> {
     return this.withUploadOperation(params.uploadId, async (safeUploadId) => {
       const safeOriginalName = sanitizeOriginalFilename(params.filename);
       if (params.expectedSize !== undefined) {
@@ -150,31 +151,29 @@ export class FileAttachmentStore implements AttachmentStore {
       }
 
       const sessionDir = this.sessionDir(params.sessionId);
-      await mkdir(sessionDir, { recursive: true });
+      return this.withSessionOperation(sessionDir, async () => {
+        await mkdir(sessionDir, { recursive: true });
 
-      const timestamp = new Date().toISOString();
-      const filename = buildStreamingAttachmentFilename(
-        timestamp,
-        safeUploadId,
-        safeOriginalName,
-      );
-      const finalPath = path.join(sessionDir, filename);
-      const tempPath = path.join(sessionDir, `.upload-${safeUploadId}.tmp`);
-      await writeFile(tempPath, Buffer.alloc(0), { flag: "wx" });
+        const timestamp = new Date().toISOString();
+        const filename = buildStreamingAttachmentFilename(timestamp, safeUploadId, safeOriginalName);
+        const finalPath = path.join(sessionDir, filename);
+        const tempPath = path.join(sessionDir, `.upload-${safeUploadId}.tmp`);
+        await writeFile(tempPath, Buffer.alloc(0), { flag: "wx" });
 
-      this.pendingUploads.set(safeUploadId, {
-        uploadId: safeUploadId,
-        sessionDir,
-        tempPath,
-        finalPath,
-        filename,
-        contentType: params.contentType || inferContentType(filename),
-        expectedSize: params.expectedSize,
-        size: 0,
-        nextChunkIndex: 0,
+        this.pendingUploads.set(safeUploadId, {
+          uploadId: safeUploadId,
+          sessionDir,
+          tempPath,
+          finalPath,
+          filename,
+          contentType: params.contentType || inferContentType(filename),
+          expectedSize: params.expectedSize,
+          size: 0,
+          nextChunkIndex: 0,
+        });
+
+        return { uploadId: safeUploadId, next_chunk_index: 0 };
       });
-
-      return { uploadId: safeUploadId, next_chunk_index: 0 };
     });
   }
 
@@ -183,56 +182,60 @@ export class FileAttachmentStore implements AttachmentStore {
   ): Promise<{ uploadId: string; chunk_index: number; next_chunk_index: number; size: number }> {
     return this.withUploadOperation(params.uploadId, async () => {
       const state = this.getPendingUpload(params.uploadId);
-      if (params.chunkIndex !== state.nextChunkIndex) {
-        throw new AttachmentError(
-          `chunk_index 순서가 맞지 않습니다 (${params.chunkIndex} != ${state.nextChunkIndex})`,
-        );
-      }
-      const nextSize = state.size + params.chunk.length;
-      try {
-        this.validateFile(state.filename, nextSize);
-        await appendFile(state.tempPath, params.chunk);
-      } catch (err) {
-        await this.removePendingUpload(state);
-        throw err;
-      }
+      return this.withSessionOperation(state.sessionDir, async () => {
+        if (params.chunkIndex !== state.nextChunkIndex) {
+          throw new AttachmentError(
+            `chunk_index 순서가 맞지 않습니다 (${params.chunkIndex} != ${state.nextChunkIndex})`,
+          );
+        }
+        const nextSize = state.size + params.chunk.length;
+        try {
+          this.validateFile(state.filename, nextSize);
+          await appendFile(state.tempPath, params.chunk);
+        } catch (err) {
+          await this.removePendingUpload(state);
+          throw err;
+        }
 
-      state.size = nextSize;
-      state.nextChunkIndex += 1;
-      return {
-        uploadId: state.uploadId,
-        chunk_index: params.chunkIndex,
-        next_chunk_index: state.nextChunkIndex,
-        size: state.size,
-      };
+        state.size = nextSize;
+        state.nextChunkIndex += 1;
+        return {
+          uploadId: state.uploadId,
+          chunk_index: params.chunkIndex,
+          next_chunk_index: state.nextChunkIndex,
+          size: state.size,
+        };
+      });
     });
   }
 
   async finishFileUpload(params: FinishSessionFileUploadParams): Promise<SavedAttachment> {
     return this.withUploadOperation(params.uploadId, async () => {
       const state = this.getPendingUpload(params.uploadId);
-      try {
-        if (state.expectedSize !== undefined && state.size !== state.expectedSize) {
-          throw new AttachmentError(
-            `업로드 크기가 예상과 다릅니다 (${state.size} != ${state.expectedSize})`,
-          );
+      return this.withSessionOperation(state.sessionDir, async () => {
+        try {
+          if (state.expectedSize !== undefined && state.size !== state.expectedSize) {
+            throw new AttachmentError(
+              `업로드 크기가 예상과 다릅니다 (${state.size} != ${state.expectedSize})`,
+            );
+          }
+          await rename(state.tempPath, state.finalPath);
+          return {
+            path: path.resolve(state.finalPath),
+            filename: state.filename,
+            size: state.size,
+            content_type: state.contentType,
+          };
+        } catch (err) {
+          await this.removePendingUpload(state);
+          if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+            throw new AttachmentError("업로드 임시 파일이 존재하지 않습니다");
+          }
+          throw err;
+        } finally {
+          this.pendingUploads.delete(state.uploadId);
         }
-        await rename(state.tempPath, state.finalPath);
-        return {
-          path: path.resolve(state.finalPath),
-          filename: state.filename,
-          size: state.size,
-          content_type: state.contentType,
-        };
-      } catch (err) {
-        await this.removePendingUpload(state);
-        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-          throw new AttachmentError("업로드 임시 파일이 존재하지 않습니다");
-        }
-        throw err;
-      } finally {
-        this.pendingUploads.delete(state.uploadId);
-      }
+      });
     });
   }
 
@@ -240,30 +243,34 @@ export class FileAttachmentStore implements AttachmentStore {
     return this.withUploadOperation(params.uploadId, async (safeUploadId) => {
       const state = this.pendingUploads.get(safeUploadId);
       if (!state) return false;
-      await this.removePendingUpload(state);
-      return true;
+      return this.withSessionOperation(state.sessionDir, async () => {
+        await this.removePendingUpload(state);
+        return true;
+      });
     });
   }
 
   async cleanupSession(sessionId: string): Promise<number> {
     const sessionDir = this.sessionDir(sessionId);
-    const activeUploadPaths = this.getActiveUploadPathsForSession(sessionDir);
-    if (activeUploadPaths.size > 0) {
-      return this.cleanupSessionFilesExcept(sessionDir, activeUploadPaths);
-    }
-
-    let filesRemoved = 0;
-    try {
-      const entries = await readdir(sessionDir, { withFileTypes: true });
-      filesRemoved = entries.filter((entry) => entry.isFile()).length;
-      await rm(sessionDir, { recursive: true, force: true });
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-        return 0;
+    return this.withSessionOperation(sessionDir, async () => {
+      const activeUploadPaths = this.getActiveUploadPathsForSession(sessionDir);
+      if (activeUploadPaths.size > 0) {
+        return this.cleanupSessionFilesExcept(sessionDir, activeUploadPaths);
       }
-      throw err;
-    }
-    return filesRemoved;
+
+      let filesRemoved = 0;
+      try {
+        const entries = await readdir(sessionDir, { withFileTypes: true });
+        filesRemoved = entries.filter((entry) => entry.isFile()).length;
+        await rm(sessionDir, { recursive: true, force: true });
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+          return 0;
+        }
+        throw err;
+      }
+      return filesRemoved;
+    });
   }
 
   private async cleanupSessionFilesExcept(
@@ -386,6 +393,21 @@ export class FileAttachmentStore implements AttachmentStore {
     } finally {
       if (this.uploadOperations.get(safeUploadId) === tracked) {
         this.uploadOperations.delete(safeUploadId);
+      }
+    }
+  }
+
+  private async withSessionOperation<T>(sessionDir: string, operation: () => Promise<T>): Promise<T> {
+    const sessionKey = path.resolve(sessionDir);
+    const previous = this.sessionOperations.get(sessionKey) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(() => operation());
+    const tracked = run.then(() => undefined, () => undefined);
+    this.sessionOperations.set(sessionKey, tracked);
+    try {
+      return await run;
+    } finally {
+      if (this.sessionOperations.get(sessionKey) === tracked) {
+        this.sessionOperations.delete(sessionKey);
       }
     }
   }
