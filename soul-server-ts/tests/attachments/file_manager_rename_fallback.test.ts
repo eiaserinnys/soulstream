@@ -77,7 +77,7 @@ describe("FileAttachmentStore finish rename fallback", () => {
 
     expect(renameGate.calls).toHaveLength(1);
     expect(saved).toMatchObject({
-      filename: "2026-06-04T07:00:00.000Z-사진-rename-race.png",
+      filename: "2026-06-04T07-00-00.000Z-사진-rename-race.png",
       size: 7,
       content_type: "image/png",
     });

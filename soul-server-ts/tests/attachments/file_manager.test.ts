@@ -9,6 +9,7 @@ import {
 } from "../../src/attachments/file_manager.js";
 
 const createdDirs: string[] = [];
+const WINDOWS_FORBIDDEN_FILENAME_CHARS = /[<>:"/\\|?*]/;
 
 async function makeTempDir(): Promise<string> {
   const dir = join(
@@ -18,6 +19,11 @@ async function makeTempDir(): Promise<string> {
   await mkdir(dir, { recursive: true });
   createdDirs.push(dir);
   return dir;
+}
+
+function expectWindowsSafeFilename(filename: string): void {
+  expect(filename).not.toContain(":");
+  expect(filename).not.toMatch(WINDOWS_FORBIDDEN_FILENAME_CHARS);
 }
 
 afterEach(async () => {
@@ -41,7 +47,7 @@ describe("FileAttachmentStore", () => {
       contentType: "image/png",
     });
 
-    expect(saved.filename).toBe("2026-06-01T00:45:30.123Z-이미지 __ 이름.png");
+    expect(saved.filename).toBe("2026-06-01T00-45-30.123Z-이미지 __ 이름.png");
     expect(saved.path).toBe(join(dir, "sess-1", saved.filename));
     await expect(readFile(saved.path, "utf8")).resolves.toBe("bytes");
     expect(saved.content_type).toBe("image/png");
@@ -64,8 +70,8 @@ describe("FileAttachmentStore", () => {
       content: Buffer.from("second"),
     });
 
-    expect(first.filename).toBe("2026-06-01T00:45:30.123Z-report.txt");
-    expect(second.filename).toBe("2026-06-01T00:45:30.123Z-report-1.txt");
+    expect(first.filename).toBe("2026-06-01T00-45-30.123Z-report.txt");
+    expect(second.filename).toBe("2026-06-01T00-45-30.123Z-report-1.txt");
     await expect(readFile(first.path, "utf8")).resolves.toBe("first");
     await expect(readFile(second.path, "utf8")).resolves.toBe("second");
   });
@@ -86,6 +92,38 @@ describe("FileAttachmentStore", () => {
       isPathUnderBase(base, "D:\\soulstream\\.local\\incoming\\..\\outside", win32),
     ).toBe(false);
     expect(isPathUnderBase(base, "D:\\evil", win32)).toBe(false);
+  });
+
+  it("builds Windows-safe final filenames for legacy and streaming attachment flows", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-04T09:03:18.693Z"));
+    const dir = await makeTempDir();
+    const store = new FileAttachmentStore(dir);
+
+    const legacy = await store.saveFileForSession({
+      sessionId: "sess-windows-safe",
+      filename: "legacy photo.png",
+      content: Buffer.from("legacy"),
+    });
+    expectWindowsSafeFilename(legacy.filename);
+
+    await store.beginFileUpload({
+      uploadId: "stream-a",
+      sessionId: "sess-windows-safe",
+      filename: "stream photo.png",
+      expectedSize: 7,
+    });
+    await store.appendFileUploadChunk({
+      uploadId: "stream-a",
+      chunkIndex: 0,
+      chunk: Buffer.from("payload"),
+    });
+    const beforeFinish = await readdir(join(dir, "sess-windows-safe"));
+    expect(beforeFinish.find((entry) => entry.startsWith(".upload-"))).toBe(".upload-stream-a.tmp");
+    expectWindowsSafeFilename(".upload-stream-a.tmp");
+
+    const streamed = await store.finishFileUpload({ uploadId: "stream-a" });
+    expectWindowsSafeFilename(streamed.filename);
   });
 
   it("allows attachments larger than the legacy 8MB limit and reports 100MB errors", async () => {
@@ -123,7 +161,7 @@ describe("FileAttachmentStore", () => {
       content: Buffer.from("zip"),
     });
 
-    expect(saved.filename).toBe("2026-06-01T00:45:30.123Z-深入浅出_即梦_知乎.zip_");
+    expect(saved.filename).toBe("2026-06-01T00-45-30.123Z-深入浅出_即梦_知乎.zip_");
     await expect(readFile(saved.path, "utf8")).resolves.toBe("zip");
   });
 
@@ -157,7 +195,7 @@ describe("FileAttachmentStore", () => {
     const saved = await store.finishFileUpload({ uploadId: "upload-a" });
 
     expect(saved).toMatchObject({
-      filename: "2026-06-01T00:45:30.123Z-report-upload-a.txt",
+      filename: "2026-06-01T00-45-30.123Z-report-upload-a.txt",
       size: 11,
       content_type: "text/plain",
     });
@@ -195,7 +233,7 @@ describe("FileAttachmentStore", () => {
     const saved = await store.finishFileUpload({ uploadId: "active-upload" });
 
     expect(saved).toMatchObject({
-      filename: "2026-06-01T00:45:30.123Z-photo-active-upload.png",
+      filename: "2026-06-01T00-45-30.123Z-photo-active-upload.png",
       size: 7,
       content_type: "image/png",
     });
@@ -236,7 +274,7 @@ describe("FileAttachmentStore", () => {
     const saved = await finished;
 
     expect(saved).toMatchObject({
-      filename: "2026-06-01T00:45:30.123Z-photo-race-upload.png",
+      filename: "2026-06-01T00-45-30.123Z-photo-race-upload.png",
       size: 11,
       content_type: "image/png",
     });
