@@ -102,6 +102,25 @@ describe("FolderTree", () => {
     expect(container.textContent).toContain("Grand A");
   });
 
+  it("enables drag handles and indentation guides for every expanded folder depth", () => {
+    localStorage.setItem("soulstream:folder-tree:expanded:v1:root-a", "true");
+    localStorage.setItem("soulstream:folder-tree:expanded:v1:child-a", "true");
+
+    ({ container, root } = renderFolderTree());
+
+    const draggableFolders = container.querySelectorAll('[data-testid="draggable-folder"]');
+    expect(draggableFolders).toHaveLength(4);
+
+    const guideLines = container.querySelectorAll('[data-testid="folder-tree-guide-line"]');
+    expect(guideLines).toHaveLength(2);
+    expect(guideLines[0].className).toContain("border-border/50");
+
+    const childRow = draggableFolders[1] as HTMLElement;
+    const grandchildRow = draggableFolders[2] as HTMLElement;
+    expect(childRow.style.paddingLeft).toBe("30px");
+    expect(grandchildRow.style.paddingLeft).toBe("48px");
+  });
+
   it("restores expanded folders from localStorage", () => {
     localStorage.setItem("soulstream:folder-tree:expanded:v1:root-a", "true");
 

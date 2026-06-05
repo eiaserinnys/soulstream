@@ -126,13 +126,21 @@ class CatalogService:
         await self._broadcast_catalog()
 
     async def reorder_folders(self, items: list[dict]) -> None:
-        """여러 폴더의 sort_order를 한 번에 업데이트한다.
+        """여러 폴더의 sort_order와 parent_folder_id를 한 번에 업데이트한다.
 
         Args:
-            items: [{"id": str, "sortOrder": int}, ...] 형태의 목록
+            items: [{"id": str, "sortOrder": int, "parentFolderId"?: str | None}, ...] 형태의 목록
         """
+        await self._validate_folder_parent_updates({
+            item["id"]: item["parentFolderId"]
+            for item in items
+            if "parentFolderId" in item
+        })
         for item in items:
-            await self._db.update_folder(item["id"], sort_order=item["sortOrder"])
+            fields: dict[str, Any] = {"sort_order": item["sortOrder"]}
+            if "parentFolderId" in item:
+                fields["parent_folder_id"] = item["parentFolderId"]
+            await self._db.update_folder(item["id"], **fields)
         await self._broadcast_catalog()
 
     # --- 세션 관리 ---
@@ -192,6 +200,31 @@ class CatalogService:
                 raise ValueError("folder parent cycle")
             seen.add(current)
             current = parent_by_id.get(current)
+
+    async def _validate_folder_parent_updates(
+        self,
+        parent_updates: dict[str, Optional[str]],
+    ) -> None:
+        if not parent_updates:
+            return
+        folders = await self._db.get_all_folders()
+        parent_by_id = {f["id"]: f.get("parent_folder_id") for f in folders}
+        parent_by_id.update(parent_updates)
+
+        for folder_id, parent_folder_id in parent_updates.items():
+            if parent_folder_id is None:
+                continue
+            if folder_id == parent_folder_id:
+                raise ValueError("folder parent cycle")
+            current = parent_folder_id
+            seen: set[str] = set()
+            while current is not None:
+                if current == folder_id:
+                    raise ValueError("folder parent cycle")
+                if current in seen:
+                    raise ValueError("folder parent cycle")
+                seen.add(current)
+                current = parent_by_id.get(current)
 
     # --- 폴더 시스템 프롬프트 ---
 

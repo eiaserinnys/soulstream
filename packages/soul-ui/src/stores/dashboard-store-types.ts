@@ -15,6 +15,7 @@ import type {
   EventTreeNode,
   CatalogState,
   CatalogFolder,
+  CatalogFolderReorderItem,
   TokenUsage,
   TaskItem,
 } from "@shared/types";
@@ -319,8 +320,8 @@ export interface DashboardActions {
     settings: CatalogFolder["settings"],
   ) => void;
   removeFolder: (folderId: string) => void;
-  /** 폴더 순서 낙관적 갱신: orderedFolderIds 순서대로 sortOrder를 재계산하여 store에 반영 */
-  reorderFolders: (orderedFolderIds: string[]) => void;
+  /** 폴더 부모/순서 낙관적 갱신 */
+  reorderFolders: (items: CatalogFolderReorderItem[]) => void;
 
   // 폴더 정렬 모드
   setFolderSortMode: (mode: FolderSortMode) => void;

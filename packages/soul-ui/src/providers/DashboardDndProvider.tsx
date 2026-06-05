@@ -19,13 +19,18 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { arrayMove } from "@dnd-kit/sortable";
+
+import type { CatalogFolderReorderItem } from "../shared/types";
+import {
+  buildFolderReorderItems,
+  type FolderDragData,
+} from "./folder-dnd";
 
 export interface DashboardDndProviderProps {
   /** 세션을 다른 폴더로 이동하는 콜백 */
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => void;
-  /** 폴더 순서 변경 콜백. orderedFolderIds는 재정렬된 일반 폴더 ID 배열 */
-  onReorderFolders?: (orderedFolderIds: string[]) => Promise<void>;
+  /** 폴더 부모/순서 변경 콜백 */
+  onReorderFolders?: (items: CatalogFolderReorderItem[]) => Promise<void>;
   children: ReactNode;
 }
 
@@ -43,7 +48,7 @@ export function DashboardDndProvider({
 
       const activeData = active.data.current as
         | { type: "session"; sessionIds: string[] }
-        | { type: "folder"; currentOrder: string[] }
+        | FolderDragData
         | undefined;
 
       if (!activeData) return;
@@ -55,18 +60,23 @@ export function DashboardDndProvider({
           over.id === "null-folder" ? null : (over.id as string);
         onMoveSessions?.(activeData.sessionIds, targetFolderId);
       } else if (activeData.type === "folder") {
-        // 폴더 → 폴더 드롭: 재정렬
+        // 폴더 → 폴더 드롭: 같은 부모면 재정렬, 다른 부모면 target folder의 자식으로 이동
         const activeId = active.id as string;
         const overId = over.id as string;
-        if (activeId === overId) return;
+        const overData = over.data.current as FolderDragData | undefined;
+        if (!overData || overData.type !== "folder") return;
 
-        const currentOrder = activeData.currentOrder;
-        const oldIdx = currentOrder.indexOf(activeId);
-        const newIdx = currentOrder.indexOf(overId);
-        if (oldIdx === -1 || newIdx === -1) return;
-
-        const newOrder = arrayMove(currentOrder, oldIdx, newIdx);
-        onReorderFolders?.(newOrder);
+        const items = buildFolderReorderItems({
+          activeId,
+          overId,
+          activeParentFolderId: activeData.parentFolderId,
+          overParentFolderId: overData.parentFolderId,
+          activeSiblingIds: activeData.siblingIds,
+          overSiblingIds: overData.siblingIds,
+          overChildIds: overData.childIds,
+        });
+        if (!items) return;
+        onReorderFolders?.(items);
       }
     },
     [onMoveSessions, onReorderFolders],

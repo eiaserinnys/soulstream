@@ -119,6 +119,48 @@ class TestReorderFolders:
         mock_db.update_folder.assert_any_await("f2", sort_order=0)
         mock_broadcaster.broadcast.assert_awaited()
 
+    async def test_updates_parent_and_sort_order_together(self, catalog_service, mock_db):
+        mock_db.get_all_folders.return_value = [
+            {"id": "f1", "name": "Folder 1", "sort_order": 0, "settings": {}, "parent_folder_id": None},
+            {"id": "f2", "name": "Folder 2", "sort_order": 1, "settings": {}, "parent_folder_id": None},
+        ]
+        items = [
+            {"id": "f2", "sortOrder": 0, "parentFolderId": None},
+            {"id": "f1", "sortOrder": 0, "parentFolderId": "f2"},
+        ]
+        await catalog_service.reorder_folders(items)
+
+        mock_db.update_folder.assert_any_await("f2", sort_order=0, parent_folder_id=None)
+        mock_db.update_folder.assert_any_await("f1", sort_order=0, parent_folder_id="f2")
+
+    async def test_rejects_cycle_before_reorder_update(self, catalog_service, mock_db):
+        mock_db.get_all_folders.return_value = [
+            {"id": "f1", "name": "Folder 1", "sort_order": 0, "settings": {}, "parent_folder_id": None},
+            {"id": "f2", "name": "Folder 2", "sort_order": 1, "settings": {}, "parent_folder_id": "f1"},
+        ]
+
+        with pytest.raises(ValueError, match="cycle"):
+            await catalog_service.reorder_folders([
+                {"id": "f1", "sortOrder": 0, "parentFolderId": "f2"},
+            ])
+
+        mock_db.update_folder.assert_not_awaited()
+
+    async def test_rejects_cycle_batch_before_partial_reorder_update(self, catalog_service, mock_db):
+        mock_db.get_all_folders.return_value = [
+            {"id": "f1", "name": "Folder 1", "sort_order": 0, "settings": {}, "parent_folder_id": None},
+            {"id": "f2", "name": "Folder 2", "sort_order": 1, "settings": {}, "parent_folder_id": "f1"},
+            {"id": "f3", "name": "Folder 3", "sort_order": 2, "settings": {}, "parent_folder_id": None},
+        ]
+
+        with pytest.raises(ValueError, match="cycle"):
+            await catalog_service.reorder_folders([
+                {"id": "f3", "sortOrder": 0, "parentFolderId": None},
+                {"id": "f1", "sortOrder": 0, "parentFolderId": "f2"},
+            ])
+
+        mock_db.update_folder.assert_not_awaited()
+
     async def test_empty_list_noop(self, catalog_service, mock_db, mock_broadcaster):
         await catalog_service.reorder_folders([])
         mock_db.update_folder.assert_not_awaited()

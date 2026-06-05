@@ -123,16 +123,16 @@ class TestReorderFolders:
         resp = client.patch(
             "/catalog/folders/reorder",
             json=[
-                {"id": "f1", "sortOrder": 0},
-                {"id": "f2", "sortOrder": 1},
+                {"id": "f1", "sortOrder": 0, "parentFolderId": None},
+                {"id": "f2", "sortOrder": 1, "parentFolderId": "f1"},
             ],
         )
 
         assert resp.status_code == 200
         assert resp.json() == {"ok": True}
         mock_catalog_service.reorder_folders.assert_called_once_with([
-            {"id": "f1", "sortOrder": 0},
-            {"id": "f2", "sortOrder": 1},
+            {"id": "f1", "sortOrder": 0, "parentFolderId": None},
+            {"id": "f2", "sortOrder": 1, "parentFolderId": "f1"},
         ])
 
 

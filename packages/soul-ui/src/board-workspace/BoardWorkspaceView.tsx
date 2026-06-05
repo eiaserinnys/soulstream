@@ -27,6 +27,15 @@ const EMPTY_SESSIONS: SessionSummary[] = [];
 const BOARD_TILE_CLASS =
   "flex h-40 w-40 flex-col overflow-hidden rounded-xl border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
+function getSessionAgentLabel(session: SessionSummary): string {
+  return session.agentName?.trim() || session.agentId?.trim() || "—";
+}
+
+function getAgentInitial(label: string): string {
+  if (label === "—") return "—";
+  return Array.from(label)[0]?.toUpperCase() ?? "A";
+}
+
 export interface BoardWorkspaceViewProps {
   sessions?: SessionSummary[];
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
@@ -210,28 +219,51 @@ export function BoardWorkspaceView({
                     if (isMobile) setActiveTab("chat");
                   }}
                 >
-                  <div className="flex h-[60%] min-w-0 gap-2 overflow-hidden">
+                  <div className="relative flex min-h-0 flex-1 flex-col">
                     <span
                       className={cn(
-                        "mt-1 h-2.5 w-2.5 shrink-0 rounded-full",
+                        "absolute right-0 top-0 h-2.5 w-2.5 rounded-full",
                         config.dotClass,
                         config.animate && "animate-[pulse_2s_infinite]",
                       )}
                       aria-hidden="true"
                     />
                     <div
-                      data-testid="board-session-preview"
-                      className="line-clamp-2 min-w-0 text-xs leading-snug text-muted-foreground"
+                      data-testid="board-session-title"
+                      className="line-clamp-3 pr-4 text-sm font-medium leading-snug"
                     >
-                      {getSessionBoardPreview(item.session)}
-                    </div>
-                  </div>
-                  <div className="flex h-[40%] min-w-0 flex-col justify-end border-t border-border/60 pt-2">
-                    <div data-testid="board-session-title" className="truncate text-sm font-medium">
                       {getSessionBoardTitle(item.session)}
                     </div>
-                    <div className="mt-1 truncate text-[11px] text-muted-foreground">
-                      {formatBoardWorkspaceTime(activityTime)}
+                    <div className="mt-auto min-w-0 border-t border-border/60 pt-2">
+                      <div
+                        data-testid="board-session-agent"
+                        className="mb-1 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground"
+                      >
+                        {item.session.agentPortraitUrl ? (
+                          <img
+                            data-testid="board-session-agent-avatar"
+                            src={item.session.agentPortraitUrl}
+                            alt={getSessionAgentLabel(item.session)}
+                            className="h-4 w-4 shrink-0 rounded-sm object-cover"
+                          />
+                        ) : (
+                          <span
+                            data-testid="board-session-agent-avatar"
+                            className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-border bg-muted text-[9px]"
+                          >
+                            {getAgentInitial(getSessionAgentLabel(item.session))}
+                          </span>
+                        )}
+                        <span className="truncate">{getSessionAgentLabel(item.session)}</span>
+                        <span className="shrink-0 text-muted-foreground/60">·</span>
+                        <span className="shrink-0">{formatBoardWorkspaceTime(activityTime)}</span>
+                      </div>
+                      <div
+                        data-testid="board-session-preview"
+                        className="line-clamp-2 min-w-0 text-xs leading-snug text-muted-foreground"
+                      >
+                        {getSessionBoardPreview(item.session)}
+                      </div>
                     </div>
                   </div>
                 </button>
