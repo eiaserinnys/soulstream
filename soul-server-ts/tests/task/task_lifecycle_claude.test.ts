@@ -121,7 +121,11 @@ function sdkSystemInit(sessionId: string): SDKMessage {
   } as unknown as SDKMessage;
 }
 
-function sdkSuccessResult(sessionId: string, result: string): SDKMessage {
+function sdkSuccessResult(
+  sessionId: string,
+  result: string,
+  overrides: Record<string, unknown> = {},
+): SDKMessage {
   return {
     type: "result",
     subtype: "success",
@@ -133,6 +137,7 @@ function sdkSuccessResult(sessionId: string, result: string): SDKMessage {
     stop_reason: "end_turn",
     modelUsage: {},
     permission_denials: [],
+    ...overrides,
   } as unknown as SDKMessage;
 }
 
@@ -320,6 +325,95 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     ]);
     expect(capturedPrompts[1]).toContain("second at 80ms");
     expect(task.interventionQueue).toEqual([]);
+    expect(task.status).toBe("completed");
+  });
+
+  it("live delivered intervention 뒤 SDK가 빈 result로 닫히면 intervention을 다음 query로 복구한다", async () => {
+    const mocks = makeMocks();
+    const readyForIntervention = deferred<void>();
+    const capturedPrompts: string[] = [];
+    const capturedResumeSessionIds: Array<string | undefined> = [];
+    let queryCalls = 0;
+
+    const query: ClaudeSdkQueryFn = (params) =>
+      makeQuery(
+        (async function* () {
+          queryCalls += 1;
+          capturedResumeSessionIds.push(params.options?.resume);
+          const input = params.prompt as AsyncIterable<SDKUserMessage>;
+          const iterator = input[Symbol.asyncIterator]();
+          const initial = await iterator.next();
+          expect(initial.done).toBe(false);
+          capturedPrompts.push(sdkUserMessageText(initial.value));
+
+          if (queryCalls === 1) {
+            yield sdkSystemInit("claude-sess-empty-live");
+            readyForIntervention.resolve();
+            const liveInput = await iterator.next();
+            expect(liveInput.done).toBe(false);
+            expect(sdkUserMessageText(liveInput.value)).toBe("dashboard intervention");
+            yield sdkSuccessResult("claude-sess-empty-live", "", {
+              stop_reason: null,
+              usage: {},
+              modelUsage: {},
+            });
+            return;
+          }
+
+          yield sdkSystemInit("claude-sess-empty-live");
+          yield {
+            type: "assistant",
+            message: { content: [{ type: "text", text: "handled on retry" }] },
+            parent_tool_use_id: null,
+            uuid: "assistant-retry",
+            session_id: "claude-sess-empty-live",
+          } as unknown as SDKMessage;
+          yield sdkSuccessResult("claude-sess-empty-live", "handled on retry");
+        })(),
+      );
+    const client = new ClaudeSdkClient(
+      { query, postResultDrainMs: 10 },
+      silentLogger,
+    );
+    const adapter = new ClaudeEngineAdapter(
+      { workspaceDir: "/tmp/claude-roselin", client, processEnv: {} },
+      silentLogger,
+    );
+    const executor = new TaskExecutor(
+      () => adapter,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    executor.startExecution(task, claudeAgent);
+
+    await readyForIntervention.promise;
+    const transition = new RunningInterventionTransition({
+      broadcaster: mocks.broadcaster,
+      logger: silentLogger,
+      persistence: mocks.persistence,
+    });
+    await expect(
+      transition.deliver(task, { text: "dashboard intervention", user: "dashboard" }),
+    ).resolves.toEqual({ delivered: true });
+    await task.executionPromise;
+
+    expect(queryCalls).toBe(2);
+    expect(capturedResumeSessionIds).toEqual([
+      undefined,
+      "claude-sess-empty-live",
+    ]);
+    expect(capturedPrompts[1]).toContain("dashboard intervention");
+    expect(task.interventionQueue).toEqual([]);
+    expect(mocks.emitEventEnvelope).toHaveBeenCalledWith(
+      "sess-lc",
+      expect.objectContaining({
+        type: "assistant_message",
+        content: "handled on retry",
+      }),
+    );
     expect(task.status).toBe("completed");
   });
 

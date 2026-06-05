@@ -294,4 +294,12 @@ export interface Task {
    * 단일 process·단일 task_manager Map이라 별도 mutex 불요 — async await 경계만 정합.
    */
   interventionQueue: InterventionMessage[];
+
+  /**
+   * Live-steered interventions that were publicly announced as delivered but
+   * have not yet produced a meaningful assistant/tool/result event. If the SDK
+   * closes the turn with an empty terminal result, TaskExecutor restores these
+   * messages to interventionQueue so they are retried by the next query.
+   */
+  liveInterventionsInFlight?: InterventionMessage[];
 }

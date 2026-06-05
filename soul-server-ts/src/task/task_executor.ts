@@ -36,6 +36,11 @@ import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
 import { TaskEngineTurnRunner } from "./task_engine_turn_runner.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
 import { publishInterventionSent } from "./task_intervention_events.js";
+import {
+  markLiveInterventionInFlight,
+  noteLiveInterventionEngineEvent,
+  restoreUnconsumedLiveInterventions,
+} from "./task_live_intervention_invariant.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { Task, TaskStatus } from "./task_models.js";
 import {
@@ -213,6 +218,7 @@ export class TaskExecutor {
             },
           })) {
             await this.engineEventPublisher.publishEngineEvent(task, event);
+            noteLiveInterventionEngineEvent(task, event);
             this.collectClaudeRuntimeTaskFollowup(task, event);
           }
         } catch (err) {
@@ -225,6 +231,16 @@ export class TaskExecutor {
           currentTurnIntervention,
           previousAssistantText,
         );
+        const restoredLiveInterventions = restoreUnconsumedLiveInterventions(task);
+        if (restoredLiveInterventions > 0) {
+          this.logger.warn(
+            {
+              sessionId: task.agentSessionId,
+              restoredLiveInterventions,
+            },
+            "live intervention closed with empty turn result — restoring queued fallback",
+          );
+        }
         // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정
         const transition = resolveTurnLoopTransition(task, agent);
         if (transition.kind === "awaiting_runtime") {
@@ -316,6 +332,7 @@ export class TaskExecutor {
         return deliveredAny;
       }
       await publishInterventionSent(task, next, this.interventionEventDeps);
+      markLiveInterventionInFlight(task, next);
       task.interventionQueue.shift();
       deliveredAny = true;
     }
