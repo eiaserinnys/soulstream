@@ -36,11 +36,40 @@ class MarkdownDocumentUpdate(BaseModel):
     body: Optional[str] = None
 
 
+class BoardAssetInit(BaseModel):
+    name: str
+    mime: str
+    size: int
+
+
+class BoardAssetCommitPart(BaseModel):
+    partNumber: int
+    etag: str
+
+
+class BoardAssetCommit(BaseModel):
+    x: float
+    y: float
+    width: Optional[int] = None
+    height: Optional[int] = None
+    durationSeconds: Optional[float] = None
+    parts: list[BoardAssetCommitPart] = []
+
+
 def _field_supplied(model: BaseModel, field_name: str) -> bool:
     fields = getattr(model, "model_fields_set", None)
     if fields is None:
         fields = getattr(model, "__fields_set__", set())
     return field_name in fields
+
+
+def _board_asset_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, RuntimeError):
+        return HTTPException(status_code=503, detail=str(exc))
+    detail = str(exc)
+    if "size" in detail or "quota" in detail:
+        return HTTPException(status_code=413, detail=detail)
+    return HTTPException(status_code=400, detail=detail)
 
 
 def create_catalog_router(
@@ -97,5 +126,33 @@ def create_catalog_router(
     @router.delete("/markdown-documents/{document_id}", status_code=204)
     async def delete_markdown_document(document_id: str):
         await catalog_service.delete_markdown_document(document_id)
+
+    @router.post("/board/{folder_id}/assets/init", status_code=201)
+    async def init_board_asset(folder_id: str, body: BoardAssetInit) -> dict:
+        try:
+            return await catalog_service.init_file_asset(
+                folder_id=folder_id,
+                name=body.name,
+                mime_type=body.mime,
+                byte_size=body.size,
+            )
+        except (RuntimeError, ValueError) as exc:
+            raise _board_asset_error(exc) from exc
+
+    @router.post("/board/{folder_id}/assets/{asset_id}/commit")
+    async def commit_board_asset(folder_id: str, asset_id: str, body: BoardAssetCommit) -> dict:
+        try:
+            return await catalog_service.commit_file_asset(
+                folder_id=folder_id,
+                asset_id=asset_id,
+                x=body.x,
+                y=body.y,
+                width=body.width,
+                height=body.height,
+                duration_seconds=body.durationSeconds,
+                parts=[part.model_dump() for part in body.parts],
+            )
+        except (RuntimeError, ValueError) as exc:
+            raise _board_asset_error(exc) from exc
 
     return router

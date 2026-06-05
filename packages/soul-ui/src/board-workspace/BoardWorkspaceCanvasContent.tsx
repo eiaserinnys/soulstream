@@ -25,8 +25,8 @@ interface BoardWorkspaceCanvasContentProps {
   expandedChildren: DirectChildPortalItem[];
   itemPosition: (item: BoardWorkspaceItem) => CSSProperties;
   boardToCanvasStyle: (position: { x: number; y: number }) => { left: number; top: number };
-  onTilePointerDown: (event: ReactPointerEvent<HTMLButtonElement>, item: BoardWorkspaceItem) => void;
-  onTileContextMenu: (event: ReactMouseEvent<HTMLButtonElement>, item: BoardWorkspaceItem) => void;
+  onTilePointerDown: (event: ReactPointerEvent<HTMLElement>, item: BoardWorkspaceItem) => void;
+  onTileContextMenu: (event: ReactMouseEvent<HTMLElement>, item: BoardWorkspaceItem) => void;
   shouldSuppressTileClick: () => boolean;
   onOpenFolder: (item: BoardWorkspaceItem, folderId: string) => void;
   onOpenMarkdown: (item: BoardWorkspaceItem, documentId: string) => void;

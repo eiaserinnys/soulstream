@@ -463,6 +463,65 @@ describe("BoardWorkspaceView", () => {
     )).toBe(true);
   });
 
+  it("uploads dropped files and replaces the placeholder with an asset card", async () => {
+    const onUploadBoardAsset = vi.fn(async (input) => {
+      input.onProgress?.(50);
+      return {
+        asset: { id: "asset-1" },
+        boardItem: {
+          id: "asset:asset-1",
+          folderId: input.folderId,
+          itemType: "asset" as const,
+          itemId: "asset-1",
+          x: input.x,
+          y: input.y,
+          metadata: {
+            assetId: "asset-1",
+            storageKey: "folders/root/assets/asset-1/report.pdf",
+            originalName: input.file.name,
+            mimeType: input.file.type,
+            byteSize: input.file.size,
+            signedUrl: "https://r2.example/report.pdf",
+          },
+        },
+      };
+    });
+    ({ container, root } = renderBoard({ onUploadBoardAsset }));
+
+    const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
+    expect(scroller).not.toBeNull();
+    const file = new File(["hello"], "report.pdf", { type: "application/pdf" });
+    const drop = new MouseEvent("drop", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 12000,
+      clientY: 8000,
+    });
+    Object.defineProperty(drop, "dataTransfer", {
+      value: { files: [file], types: ["Files"] },
+    });
+
+    flushSync(() => {
+      scroller!.dispatchEvent(drop);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onUploadBoardAsset).toHaveBeenCalledTimes(1);
+    expect(onUploadBoardAsset.mock.calls[0]?.[0]).toMatchObject({
+      folderId: "root",
+      file,
+      x: 2000,
+      y: 2000,
+    });
+    expect(container.querySelector('[data-testid="board-asset-title"]')?.textContent).toBe("report.pdf");
+    expect(useDashboardStore.getState().catalog?.boardItems?.some((item) =>
+      item.id === "asset:asset-1" &&
+      item.itemType === "asset" &&
+      item.metadata?.signedUrl === "https://r2.example/report.pdf"
+    )).toBe(true);
+  });
+
   it("opens the desktop context menu with folder, session, and markdown actions at a snapped board point", async () => {
     ({ container, root } = renderBoard());
 

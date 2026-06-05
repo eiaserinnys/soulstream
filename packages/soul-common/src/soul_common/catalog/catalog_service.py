@@ -6,8 +6,14 @@ DB 호출 + 브로드캐스트를 캡슐화하여 구현 중복을 제거한다.
 """
 
 import uuid
+import re
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Protocol, runtime_checkable
 
+from soul_common.catalog.board_asset_storage import (
+    BoardAssetStorage,
+    CompletedUploadPart,
+)
 from soul_common.db.session_db import PostgresSessionDB
 
 _UNSET = object()
@@ -15,6 +21,19 @@ BOARD_GRID_SIZE = 20
 BOARD_TILE_WIDTH = 160
 BOARD_TILE_HEIGHT = 120
 BOARD_DEFAULT_COLUMNS = 4
+BOARD_ASSET_SINGLE_FILE_LIMIT_BYTES = 200 * 1024 * 1024
+BOARD_ASSET_DAILY_LIMIT_BYTES = 5 * 1024 * 1024 * 1024
+BOARD_ASSET_MULTIPART_THRESHOLD_BYTES = 5 * 1024 * 1024
+BOARD_ASSET_MULTIPART_PART_SIZE_BYTES = 5 * 1024 * 1024
+BOARD_ASSET_PUT_URL_TTL_SECONDS = 15 * 60
+BOARD_ASSET_GET_URL_TTL_SECONDS = 10 * 60
+BOARD_ASSET_PENDING_TTL_HOURS = 24
+
+
+def _safe_storage_name(name: str) -> str:
+    base = re.sub(r"[\x00-\x1f<>:\"/\\|?*]+", "_", name.strip())
+    base = base.strip(" .")
+    return base or "file"
 
 
 @runtime_checkable
@@ -38,9 +57,11 @@ class CatalogService:
         self,
         session_db: PostgresSessionDB,
         broadcaster: SessionBroadcasterProtocol,
+        asset_storage: BoardAssetStorage | None = None,
     ):
         self._db = session_db
         self._broadcaster = broadcaster
+        self._asset_storage = asset_storage
 
     async def _broadcast_catalog(self) -> None:
         """카탈로그 변경을 모든 리스너에게 브로드캐스트한다."""
@@ -222,12 +243,12 @@ class CatalogService:
         """현재 폴더의 보드 항목만 반환한다."""
         getter = getattr(self._db, "get_board_yjs_catalog_items", None)
         if getter is not None:
-            return await getter(folder_id=folder_id)
+            return self._with_asset_urls(await getter(folder_id=folder_id))
         await self._db.ensure_board_items()
-        return [
+        return self._with_asset_urls([
             item for item in await self._db.get_board_items()
             if item.get("folderId") == folder_id
-        ]
+        ])
 
     async def update_board_item_position(
         self,
@@ -270,6 +291,125 @@ class CatalogService:
         await self._broadcast_catalog()
         return result
 
+    async def init_file_asset(
+        self,
+        *,
+        folder_id: str,
+        name: str,
+        mime_type: str,
+        byte_size: int,
+    ) -> dict:
+        if self._asset_storage is None:
+            raise RuntimeError("board asset storage is not configured")
+        if byte_size > BOARD_ASSET_SINGLE_FILE_LIMIT_BYTES:
+            raise ValueError("file size exceeds board asset limit")
+        stale_cutoff = datetime.now(timezone.utc) - timedelta(hours=BOARD_ASSET_PENDING_TTL_HOURS)
+        await self._db.mark_stale_pending_file_assets_garbage_collected(stale_cutoff)
+        daily_bytes = await self._db.get_file_asset_daily_bytes()
+        if daily_bytes + byte_size > BOARD_ASSET_DAILY_LIMIT_BYTES:
+            raise ValueError("daily board asset quota exceeded")
+
+        asset_id = str(uuid.uuid4())
+        safe_name = _safe_storage_name(name)
+        storage_key = f"folders/{folder_id}/assets/{asset_id}/{safe_name}"
+        upload_mode = (
+            "multipart"
+            if byte_size > BOARD_ASSET_MULTIPART_THRESHOLD_BYTES
+            else "single"
+        )
+        multipart = None
+        if upload_mode == "multipart":
+            multipart = self._asset_storage.create_multipart_upload(
+                storage_key=storage_key,
+                mime_type=mime_type,
+                byte_size=byte_size,
+                part_size=BOARD_ASSET_MULTIPART_PART_SIZE_BYTES,
+                expires_seconds=BOARD_ASSET_PUT_URL_TTL_SECONDS,
+            )
+
+        asset = await self._db.create_pending_file_asset(
+            asset_id,
+            storage_key,
+            name,
+            mime_type,
+            byte_size,
+            multipart.upload_id if multipart else None,
+        )
+        if multipart:
+            return {
+                "assetId": asset_id,
+                "asset": asset,
+                "storageKey": storage_key,
+                "uploadMode": "multipart",
+                "uploadId": multipart.upload_id,
+                "partSize": multipart.part_size,
+                "parts": [
+                    {"partNumber": part.part_number, "uploadUrl": part.upload_url}
+                    for part in multipart.parts
+                ],
+            }
+        return {
+            "assetId": asset_id,
+            "asset": asset,
+            "storageKey": storage_key,
+            "uploadMode": "single",
+            "uploadUrl": self._asset_storage.create_presigned_put_url(
+                storage_key=storage_key,
+                mime_type=mime_type,
+                expires_seconds=BOARD_ASSET_PUT_URL_TTL_SECONDS,
+            ),
+            "headers": {"Content-Type": mime_type},
+        }
+
+    async def commit_file_asset(
+        self,
+        *,
+        folder_id: str,
+        asset_id: str,
+        x: float,
+        y: float,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        duration_seconds: Optional[float] = None,
+        parts: list[dict] | None = None,
+    ) -> dict:
+        if self._asset_storage is None:
+            raise RuntimeError("board asset storage is not configured")
+        asset = await self._db.get_file_asset(asset_id)
+        if asset is None:
+            raise ValueError(f"file asset not found: {asset_id}")
+        storage_key = asset["storageKey"]
+        if asset.get("multipartUploadId"):
+            self._asset_storage.complete_multipart_upload(
+                storage_key=storage_key,
+                upload_id=asset["multipartUploadId"],
+                parts=[
+                    CompletedUploadPart(
+                        part_number=int(part["partNumber"]),
+                        etag=str(part["etag"]),
+                    )
+                    for part in (parts or [])
+                ],
+            )
+        head = self._asset_storage.head_object(storage_key=storage_key)
+        if head.byte_size != asset["byteSize"]:
+            raise ValueError("uploaded object size mismatch")
+        if head.mime_type and head.mime_type.split(";")[0] != asset["mimeType"].split(";")[0]:
+            raise ValueError("uploaded object content type mismatch")
+
+        result = await self._db.commit_file_asset(
+            asset_id,
+            folder_id,
+            self._snap_position(x),
+            self._snap_position(y),
+            width=width,
+            height=height,
+            duration_seconds=duration_seconds,
+        )
+        result["boardItem"] = self._with_asset_urls([result["boardItem"]])[0]
+        await self._broadcast_catalog()
+        return result
+
     async def get_markdown_document(self, document_id: str) -> Optional[dict]:
         return await self._db.get_markdown_document(document_id)
 
@@ -290,6 +430,24 @@ class CatalogService:
     async def delete_markdown_document(self, document_id: str) -> None:
         await self._db.delete_markdown_document(document_id)
         await self._broadcast_catalog()
+
+    def _with_asset_urls(self, board_items: list[dict]) -> list[dict]:
+        if self._asset_storage is None:
+            return board_items
+        enriched = []
+        for item in board_items:
+            if item.get("itemType") != "asset":
+                enriched.append(item)
+                continue
+            metadata = dict(item.get("metadata") or {})
+            storage_key = metadata.get("storageKey")
+            if isinstance(storage_key, str) and storage_key:
+                metadata["signedUrl"] = self._asset_storage.create_presigned_get_url(
+                    storage_key=storage_key,
+                    expires_seconds=BOARD_ASSET_GET_URL_TTL_SECONDS,
+                )
+            enriched.append({**item, "metadata": metadata})
+        return enriched
 
     async def _validate_parent_folder(
         self,

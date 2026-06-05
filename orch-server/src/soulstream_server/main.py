@@ -12,6 +12,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
+from soul_common.catalog.board_asset_storage import R2BoardAssetStorage
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
@@ -63,6 +64,26 @@ def _check_production_cors(settings: Settings) -> None:
             "CORS_ALLOWED_ORIGINS must be set in production "
             "(set env var as CSV: https://a,https://b)"
         )
+
+
+def _create_board_asset_storage(settings: Settings) -> R2BoardAssetStorage | None:
+    values = [
+        settings.r2_board_assets_access_key_id,
+        settings.r2_board_assets_secret_access_key,
+        settings.r2_board_assets_bucket,
+        settings.r2_board_assets_endpoint,
+    ]
+    if not any(values):
+        return None
+    if not all(values):
+        logger.warning("Board asset R2 storage is partially configured; asset uploads disabled.")
+        return None
+    return R2BoardAssetStorage(
+        access_key_id=settings.r2_board_assets_access_key_id,
+        secret_access_key=settings.r2_board_assets_secret_access_key,
+        bucket=settings.r2_board_assets_bucket,
+        endpoint_url=settings.r2_board_assets_endpoint,
+    )
 
 
 async def _on_node_change(
@@ -335,7 +356,11 @@ async def lifespan(app: FastAPI):
     task_change_listener = TaskChangeListener(db=db, broadcaster=task_broadcaster)
     await task_change_listener.start()
     session_router = SessionRouter(node_manager)
-    catalog_service = CatalogService(session_db=db, broadcaster=broadcaster)
+    catalog_service = CatalogService(
+        session_db=db,
+        broadcaster=broadcaster,
+        asset_storage=_create_board_asset_storage(settings),
+    )
 
     # 노드 변경 시 브로드캐스트
     async def on_node_change(

@@ -17,8 +17,10 @@ export { createBoardWorkspaceOperations } from "./board-workspace-operations";
 export type {
   BoardWorkspaceApiConfig,
   BoardWorkspaceOperations,
+  BoardAssetCommitResponse,
   CreateMarkdownDocumentRequest,
   CreateMarkdownDocumentResponse,
+  UploadBoardAssetInput,
 } from "./board-workspace-operations";
 export { createMoveSessionsOperations } from "./move-sessions";
 export type { MoveSessionsApiConfig, MoveSessionsOperations } from "./move-sessions";

@@ -5,8 +5,8 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/cn";
 import {
-  BOARD_TILE_HEIGHT,
-  BOARD_TILE_WIDTH,
+  getBoardItemHeight,
+  getBoardItemWidth,
   type BoardWorkspaceItem,
 } from "./board-workspace-items";
 import { formatBoardZoom, getViewportBoardRect, type BoardViewport } from "./board-viewport";
@@ -37,8 +37,8 @@ function buildProjection(boardItems: BoardWorkspaceItem[], viewport: BoardViewpo
   const xs = [viewportRect.x, viewportRect.x + viewportRect.width];
   const ys = [viewportRect.y, viewportRect.y + viewportRect.height];
   for (const item of boardItems) {
-    xs.push(item.x, item.x + BOARD_TILE_WIDTH);
-    ys.push(item.y, item.y + BOARD_TILE_HEIGHT);
+    xs.push(item.x, item.x + getBoardItemWidth(item));
+    ys.push(item.y, item.y + getBoardItemHeight(item));
   }
   const minX = Math.min(...xs) - MINIMAP_BOUNDS_PADDING;
   const minY = Math.min(...ys) - MINIMAP_BOUNDS_PADDING;
@@ -151,7 +151,12 @@ export function BoardWorkspaceMinimap({
         onPointerCancel={() => setDragging(false)}
       >
         {boardItems.map((item) => {
-          const rect = projectRect({ x: item.x, y: item.y, width: BOARD_TILE_WIDTH, height: BOARD_TILE_HEIGHT }, projection);
+          const rect = projectRect({
+            x: item.x,
+            y: item.y,
+            width: getBoardItemWidth(item),
+            height: getBoardItemHeight(item),
+          }, projection);
           return (
             <div
               key={item.boardItemId}

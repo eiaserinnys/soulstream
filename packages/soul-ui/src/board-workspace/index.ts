@@ -17,12 +17,21 @@ export {
   computeBoardCanvasSize,
   findFirstOpenBoardPosition,
   formatBoardWorkspaceTime,
+  getBoardItemHeight,
+  getBoardItemWidth,
   getSessionBoardPreview,
   getSessionBoardTitle,
   snapBoardCoordinate,
   snapBoardPosition,
 } from "./board-workspace-items";
 export type { BoardWorkspaceItem } from "./board-workspace-items";
+export { findEmptyPlacement } from "./findEmptyPlacement";
+export type {
+  BoardPlacementItem,
+  BoardPlacementPoint,
+  BoardPlacementSize,
+  FindEmptyPlacementParams,
+} from "./findEmptyPlacement";
 export {
   buildBoardYjsUrl,
   catalogBoardItemsFromYDoc,

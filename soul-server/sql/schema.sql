@@ -121,10 +121,27 @@ CREATE TABLE IF NOT EXISTS markdown_documents (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS file_assets (
+    id                   TEXT PRIMARY KEY,
+    storage_key          TEXT NOT NULL UNIQUE,
+    original_name        TEXT NOT NULL,
+    mime_type            TEXT NOT NULL,
+    byte_size            BIGINT NOT NULL CHECK (byte_size >= 0),
+    width                INTEGER,
+    height               INTEGER,
+    duration_seconds     DOUBLE PRECISION,
+    checksum_sha256      TEXT,
+    upload_status        TEXT NOT NULL DEFAULT 'pending' CHECK (upload_status IN ('pending', 'committed')),
+    multipart_upload_id  TEXT,
+    garbage_collected_at TIMESTAMPTZ,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS board_items (
     id          TEXT PRIMARY KEY,
     folder_id   TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
-    item_type   TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder')),
+    item_type   TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset')),
     item_id     TEXT NOT NULL,
     x           DOUBLE PRECISION NOT NULL DEFAULT 0,
     y           DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -136,6 +153,9 @@ CREATE TABLE IF NOT EXISTS board_items (
 
 ALTER TABLE board_items ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE board_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_item_type_check;
+ALTER TABLE board_items ADD CONSTRAINT board_items_item_type_check
+    CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset'));
 
 CREATE TABLE IF NOT EXISTS board_yjs_documents (
     name        TEXT PRIMARY KEY,
@@ -170,6 +190,19 @@ DROP TRIGGER IF EXISTS board_delete_markdown_refs_trigger ON markdown_documents;
 CREATE TRIGGER board_delete_markdown_refs_trigger
 AFTER DELETE ON markdown_documents
 FOR EACH ROW EXECUTE FUNCTION board_delete_markdown_refs();
+
+CREATE OR REPLACE FUNCTION board_delete_asset_refs()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM board_items WHERE item_type = 'asset' AND item_id = OLD.id;
+    RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS board_delete_asset_refs_trigger ON file_assets;
+CREATE TRIGGER board_delete_asset_refs_trigger
+AFTER DELETE ON file_assets
+FOR EACH ROW EXECUTE FUNCTION board_delete_asset_refs();
 
 CREATE TABLE IF NOT EXISTS events (
     session_id      TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
@@ -1296,6 +1329,13 @@ BEGIN
           WHERE d.id = bi.item_id
       );
 
+    DELETE FROM board_items bi
+    WHERE bi.item_type = 'asset'
+      AND NOT EXISTS (
+          SELECT 1 FROM file_assets fa
+          WHERE fa.id = bi.item_id
+      );
+
     WITH candidates AS (
         SELECT
             s.folder_id AS folder_id,
@@ -1375,6 +1415,17 @@ RETURNS TABLE(
                     'title', md.title,
                     'preview', LEFT(regexp_replace(md.body, '[[:space:]]+', ' ', 'g'), 180)
                 )
+            WHEN bi.item_type = 'asset' THEN
+                bi.metadata || jsonb_build_object(
+                    'assetId', fa.id,
+                    'storageKey', fa.storage_key,
+                    'originalName', fa.original_name,
+                    'mimeType', fa.mime_type,
+                    'byteSize', fa.byte_size,
+                    'width', fa.width,
+                    'height', fa.height,
+                    'durationSeconds', fa.duration_seconds
+                )
             ELSE bi.metadata
         END AS metadata,
         bi.created_at,
@@ -1383,6 +1434,9 @@ RETURNS TABLE(
     LEFT JOIN markdown_documents md
       ON bi.item_type = 'markdown'
      AND bi.item_id = md.id
+    LEFT JOIN file_assets fa
+      ON bi.item_type = 'asset'
+     AND bi.item_id = fa.id
     ORDER BY bi.folder_id, bi.y, bi.x, bi.created_at;
 $$;
 

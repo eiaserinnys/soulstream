@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -50,6 +51,25 @@ def _normalize_markdown_document(row: dict) -> dict:
         "id": row["id"],
         "title": row["title"],
         "body": row["body"],
+        "createdAt": row.get("created_at"),
+        "updatedAt": row.get("updated_at"),
+    }
+
+
+def _normalize_file_asset(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "storageKey": row["storage_key"],
+        "originalName": row["original_name"],
+        "mimeType": row["mime_type"],
+        "byteSize": int(row["byte_size"]),
+        "width": row.get("width"),
+        "height": row.get("height"),
+        "durationSeconds": row.get("duration_seconds"),
+        "checksumSha256": row.get("checksum_sha256"),
+        "uploadStatus": row.get("upload_status"),
+        "multipartUploadId": row.get("multipart_upload_id"),
+        "garbageCollectedAt": row.get("garbage_collected_at"),
         "createdAt": row.get("created_at"),
         "updatedAt": row.get("updated_at"),
     }
@@ -246,6 +266,16 @@ class SqliteFolderMixin:
               )
             """
         )
+        await self._conn.execute(
+            """
+            DELETE FROM board_items
+            WHERE item_type = 'asset'
+              AND NOT EXISTS (
+                  SELECT 1 FROM file_assets
+                  WHERE file_assets.id = board_items.item_id
+              )
+            """
+        )
 
         cursor = await self._conn.execute(
             """
@@ -293,11 +323,24 @@ class SqliteFolderMixin:
     async def get_board_items(self) -> list[dict]:
         cursor = await self._conn.execute(
             """
-            SELECT bi.*, md.title AS markdown_title, md.body AS markdown_body
+            SELECT
+                bi.*,
+                md.title AS markdown_title,
+                md.body AS markdown_body,
+                fa.storage_key AS asset_storage_key,
+                fa.original_name AS asset_original_name,
+                fa.mime_type AS asset_mime_type,
+                fa.byte_size AS asset_byte_size,
+                fa.width AS asset_width,
+                fa.height AS asset_height,
+                fa.duration_seconds AS asset_duration_seconds
             FROM board_items bi
             LEFT JOIN markdown_documents md
               ON bi.item_type = 'markdown'
              AND bi.item_id = md.id
+            LEFT JOIN file_assets fa
+              ON bi.item_type = 'asset'
+             AND bi.item_id = fa.id
             ORDER BY bi.folder_id, bi.y, bi.x, bi.created_at
             """
         )
@@ -311,6 +354,18 @@ class SqliteFolderMixin:
                     **item["metadata"],
                     "title": data.get("markdown_title") or "",
                     "preview": " ".join((data.get("markdown_body") or "").split())[:180],
+                }
+            if item["itemType"] == "asset":
+                item["metadata"] = {
+                    **item["metadata"],
+                    "assetId": item["itemId"],
+                    "storageKey": data.get("asset_storage_key"),
+                    "originalName": data.get("asset_original_name"),
+                    "mimeType": data.get("asset_mime_type"),
+                    "byteSize": data.get("asset_byte_size"),
+                    "width": data.get("asset_width"),
+                    "height": data.get("asset_height"),
+                    "durationSeconds": data.get("asset_duration_seconds"),
                 }
             items.append(item)
         return items
@@ -402,6 +457,141 @@ class SqliteFolderMixin:
             (document_id,),
         )
         await self._conn.commit()
+
+    async def create_pending_file_asset(
+        self,
+        asset_id: str,
+        storage_key: str,
+        original_name: str,
+        mime_type: str,
+        byte_size: int,
+        multipart_upload_id: Optional[str] = None,
+    ) -> dict:
+        now = _utc_now()
+        await self._conn.execute(
+            """
+            INSERT INTO file_assets (
+                id, storage_key, original_name, mime_type, byte_size,
+                multipart_upload_id, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (asset_id, storage_key, original_name, mime_type, byte_size, multipart_upload_id, now, now),
+        )
+        await self._conn.commit()
+        asset = await self.get_file_asset(asset_id)
+        assert asset is not None
+        return asset
+
+    async def get_file_asset(self, asset_id: str) -> Optional[dict]:
+        cursor = await self._conn.execute(
+            "SELECT * FROM file_assets WHERE id = ?",
+            (asset_id,),
+        )
+        row = await cursor.fetchone()
+        return _normalize_file_asset(dict(row)) if row else None
+
+    async def mark_stale_pending_file_assets_garbage_collected(
+        self,
+        stale_before: datetime,
+    ) -> int:
+        now = _utc_now()
+        cursor = await self._conn.execute(
+            """
+            UPDATE file_assets
+            SET garbage_collected_at = ?,
+                updated_at = ?
+            WHERE upload_status = 'pending'
+              AND garbage_collected_at IS NULL
+              AND created_at < ?
+            """,
+            (now, now, stale_before.isoformat()),
+        )
+        await self._conn.commit()
+        return cursor.rowcount
+
+    async def get_file_asset_daily_bytes(self) -> int:
+        today = _utc_now()[:10]
+        cursor = await self._conn.execute(
+            """
+            SELECT COALESCE(SUM(byte_size), 0) AS total
+            FROM file_assets
+            WHERE substr(created_at, 1, 10) = ?
+              AND garbage_collected_at IS NULL
+            """,
+            (today,),
+        )
+        row = await cursor.fetchone()
+        return int(row["total"]) if row else 0
+
+    async def commit_file_asset(
+        self,
+        asset_id: str,
+        folder_id: str,
+        x: float,
+        y: float,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        duration_seconds: Optional[float] = None,
+    ) -> dict:
+        now = _utc_now()
+        cursor = await self._conn.execute(
+            """
+            UPDATE file_assets
+            SET upload_status = 'committed',
+                width = COALESCE(?, width),
+                height = COALESCE(?, height),
+                duration_seconds = COALESCE(?, duration_seconds),
+                updated_at = ?
+            WHERE id = ?
+              AND garbage_collected_at IS NULL
+            """,
+            (width, height, duration_seconds, now, asset_id),
+        )
+        if cursor.rowcount == 0:
+            await self._conn.commit()
+            raise ValueError(f"file asset not found: {asset_id}")
+        asset = await self.get_file_asset(asset_id)
+        if asset is None:
+            raise ValueError(f"file asset not found: {asset_id}")
+        metadata = {
+            "assetId": asset["id"],
+            "storageKey": asset["storageKey"],
+            "originalName": asset["originalName"],
+            "mimeType": asset["mimeType"],
+            "byteSize": asset["byteSize"],
+            "width": asset["width"],
+            "height": asset["height"],
+            "durationSeconds": asset["durationSeconds"],
+        }
+        await self._conn.execute(
+            """
+            INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata, created_at, updated_at)
+            VALUES (?, ?, 'asset', ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                folder_id = excluded.folder_id,
+                x = excluded.x,
+                y = excluded.y,
+                metadata = excluded.metadata,
+                updated_at = excluded.updated_at
+            """,
+            (
+                f"asset:{asset_id}",
+                folder_id,
+                asset_id,
+                x,
+                y,
+                json.dumps(metadata, ensure_ascii=False),
+                now,
+                now,
+            ),
+        )
+        await self._conn.commit()
+        items = [
+            item for item in await self.get_board_items()
+            if item["id"] == f"asset:{asset_id}"
+        ]
+        return {"asset": asset, "boardItem": items[0]}
 
     async def _validate_parent_folder(
         self,
