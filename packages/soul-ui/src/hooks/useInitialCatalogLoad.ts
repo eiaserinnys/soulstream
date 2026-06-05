@@ -13,6 +13,7 @@
 import { useEffect } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { SYSTEM_FOLDERS } from "../shared/constants";
+import { toSessionSummary } from "../shared/mappers";
 
 export function useInitialCatalogLoad(enabled: boolean): void {
   useEffect(() => {
@@ -20,26 +21,33 @@ export function useInitialCatalogLoad(enabled: boolean): void {
 
     const controller = new AbortController();
 
-    fetch("/api/catalog", { signal: controller.signal })
+    fetch("/api/catalog?limit=0", { signal: controller.signal })
       .then((r) => {
         if (r.ok) return r.json();
         throw new Error("catalog fetch failed");
       })
       .then((data) => {
         if (!data?.folders || !data?.sessions) return;
+        const sessionList = Array.isArray(data.sessionList)
+          ? data.sessionList.map((item: Record<string, unknown>) => toSessionSummary(item))
+          : undefined;
+        const catalog = {
+          ...data,
+          ...(sessionList ? { sessionList } : {}),
+        };
         const store = useDashboardStore.getState();
-        store.setCatalog(data);
+        store.setCatalog(catalog);
 
         if (
           store.selectedFolderId === null &&
           !store.activeSessionKey &&
           store.viewMode === "folder"
         ) {
-          const claudeFolder = data.folders.find(
+          const claudeFolder = catalog.folders.find(
             (f: { name: string }) => f.name === SYSTEM_FOLDERS.claude,
           );
           const defaultFolderId =
-            claudeFolder?.id ?? data.folders[0]?.id ?? null;
+            claudeFolder?.id ?? catalog.folders[0]?.id ?? null;
           if (defaultFolderId) {
             useDashboardStore.getState().selectFolder(defaultFolderId);
           }

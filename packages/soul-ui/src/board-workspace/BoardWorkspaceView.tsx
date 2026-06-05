@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { Loader2 } from "lucide-react";
-
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { CatalogBoardItem, CatalogFolder, FolderSettings, MarkdownDocument, SessionSummary } from "../shared/types";
 import { FolderDialog } from "../components/FolderDialog";
@@ -11,17 +9,14 @@ import { useIsMobile } from "../hooks/use-mobile";
 import { cn } from "../lib/cn";
 import { applyCatalogDisplayNames } from "../hooks/session-stream-helpers";
 import type { FolderWorkspaceViewMode } from "./folder-workspace-view-mode";
-import { BoardWorkspaceTile } from "./BoardWorkspaceTile";
+import { BoardWorkspaceCanvasContent } from "./BoardWorkspaceCanvasContent";
 import {
-  BOARD_CANVAS_WIDTH,
   BOARD_CANVAS_ORIGIN_X,
   BOARD_CANVAS_ORIGIN_Y,
   buildBoardWorkspaceItems,
-  findFirstOpenBoardPosition,
   snapBoardPosition,
   type BoardWorkspaceItem,
 } from "./board-workspace-items";
-
 import { getFolderBreadcrumbs } from "./board-workspace-helpers";
 import { BoardWorkspaceHeader } from "./BoardWorkspaceHeader";
 import {
@@ -34,9 +29,13 @@ import { BoardWorkspaceMinimap } from "./BoardWorkspaceMinimap";
 import type { BoardItemPositionUpdate } from "./board-selection";
 import { useBoardSelectionState } from "./useBoardSelectionState";
 import { useBoardCanvasViewport } from "./useBoardCanvasViewport";
-
+import {
+  buildBoardSessionRelations,
+  getSameFolderChildBoardItemIdsToRemove,
+} from "./board-session-relations";
+import { findOpenBoardPositionInViewport } from "./board-spawn";
+import { useBoardChildStackState } from "./useBoardChildStackState";
 const EMPTY_SESSIONS: SessionSummary[] = [];
-
 export interface CreateMarkdownDocumentInput {
   folderId: string;
   title: string;
@@ -44,12 +43,10 @@ export interface CreateMarkdownDocumentInput {
   x: number;
   y: number;
 }
-
 export interface CreateMarkdownDocumentResult {
   document: MarkdownDocument;
   boardItem: CatalogBoardItem;
 }
-
 export interface BoardWorkspaceViewProps {
   sessions?: SessionSummary[];
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
@@ -70,7 +67,6 @@ export interface BoardWorkspaceViewProps {
 function isBoardTileTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && Boolean(target.closest("[data-board-tile='true']"));
 }
-
 export function BoardWorkspaceView({
   sessions = EMPTY_SESSIONS,
   onMoveSessions,
@@ -99,6 +95,7 @@ export function BoardWorkspaceView({
   const activeBoardDocumentId = useDashboardStore((s) => s.activeBoardDocumentId);
   const addBoardItem = useDashboardStore((s) => s.addBoardItem);
   const updateBoardItemPosition = useDashboardStore((s) => s.updateBoardItemPosition);
+  const removeBoardItem = useDashboardStore((s) => s.removeBoardItem);
   const isMobile = useIsMobile();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createFolderPosition, setCreateFolderPosition] = useState<{ x: number; y: number } | null>(null);
@@ -130,6 +127,13 @@ export function BoardWorkspaceView({
     if (!catalog || !boardSync.boardItems || boardSync.isLoading) return catalog;
     return { ...catalog, boardItems: boardSync.boardItems };
   }, [boardSync.boardItems, boardSync.isLoading, catalog]);
+  const relationIndex = useMemo(() => {
+    if (!effectiveCatalog) return null;
+    return buildBoardSessionRelations({
+      catalog: effectiveCatalog,
+      sessions: displaySessions,
+    });
+  }, [displaySessions, effectiveCatalog]);
   const remoteSelectionByItemId = useMemo(() => {
     const selections = new Map<string, string>();
     for (const selection of boardSync.remoteSelections) {
@@ -141,7 +145,6 @@ export function BoardWorkspaceView({
     boardSync.runtime?.updateBoardItemPosition(boardItemId, x, y);
     updateBoardItemPosition(boardItemId, x, y);
   }, [boardSync.runtime, updateBoardItemPosition]);
-
   const breadcrumbs = useMemo(
     () => getFolderBreadcrumbs(folders, selectedFolderId),
     [folders, selectedFolderId],
@@ -153,15 +156,20 @@ export function BoardWorkspaceView({
       catalog: effectiveCatalog,
       selectedFolderId,
       sessions: displaySessions,
+      ...(relationIndex ? { relationIndex } : {}),
     });
-  }, [effectiveCatalog, selectedFolderId, displaySessions]);
-
+  }, [effectiveCatalog, selectedFolderId, displaySessions, relationIndex]);
+  const childStack = useBoardChildStackState({
+    boardItems,
+    relationIndex,
+    selectedFolderId,
+    selectFolder,
+  });
   const yjsUpdateBoardItemPositions = useCallback((updates: BoardItemPositionUpdate[]) => {
     for (const update of updates) {
       yjsUpdateBoardItemPosition(update.boardItemId, update.x, update.y);
     }
   }, [yjsUpdateBoardItemPosition]);
-
   const {
     scrollRef,
     zoom,
@@ -191,6 +199,31 @@ export function BoardWorkspaceView({
     updateBoardItemPositions: yjsUpdateBoardItemPositions,
   });
 
+  const resolveSpawnPosition = useCallback(() => {
+    const spawnViewport = viewport.width > 0 && viewport.height > 0
+      ? viewport
+      : {
+          scrollLeft: (BOARD_CANVAS_ORIGIN_X - 80) * zoom,
+          scrollTop: (BOARD_CANVAS_ORIGIN_Y - 60) * zoom,
+          width: typeof window === "undefined" ? 1024 : window.innerWidth,
+          height: typeof window === "undefined" ? 768 : window.innerHeight,
+        };
+    return findOpenBoardPositionInViewport(boardItems, {
+      viewport: spawnViewport,
+      zoom,
+    });
+  }, [boardItems, viewport, zoom]);
+
+  useEffect(() => {
+    if (!effectiveCatalog || !relationIndex || !boardSync.runtime) return;
+    const ids = getSameFolderChildBoardItemIdsToRemove(effectiveCatalog, relationIndex, selectedFolderId);
+    if (ids.length === 0) return;
+    for (const id of ids) {
+      boardSync.runtime.deleteBoardItem(id);
+      removeBoardItem(id);
+    }
+  }, [boardSync.runtime, effectiveCatalog, relationIndex, removeBoardItem, selectedFolderId]);
+
   const handleCreateFolder = async (name: string) => {
     const position = createFolderPosition ? snapBoardPosition(createFolderPosition.x, createFolderPosition.y) : null;
     const created = await onCreateFolder?.(name.trim(), selectedFolderId);
@@ -211,7 +244,8 @@ export function BoardWorkspaceView({
   };
 
   const openCreateFolderDialog = (position?: { x: number; y: number }) => {
-    setCreateFolderPosition(position ? snapBoardPosition(position.x, position.y) : null);
+    const resolved = position ?? resolveSpawnPosition();
+    setCreateFolderPosition(snapBoardPosition(resolved.x, resolved.y));
     setCreateDialogOpen(true);
     setContextMenu(null);
     setNewMenuOpen(false);
@@ -219,7 +253,7 @@ export function BoardWorkspaceView({
 
   const createMarkdownAt = useCallback(async (position?: { x: number; y: number }) => {
     if (!selectedFolderId || !boardSync.runtime) return;
-    const resolved = position ?? findFirstOpenBoardPosition(boardItems);
+    const resolved = position ?? resolveSpawnPosition();
     const snapped = snapBoardPosition(resolved.x, resolved.y);
     try {
       const result = boardSync.runtime.createMarkdownDocument({
@@ -236,7 +270,7 @@ export function BoardWorkspaceView({
     } catch (err) {
       console.error("Markdown document creation failed:", err);
     }
-  }, [addBoardItem, boardItems, boardSync.runtime, isMobile, selectedFolderId, setActiveBoardDocument, setActiveTab]);
+  }, [addBoardItem, boardSync.runtime, isMobile, resolveSpawnPosition, selectedFolderId, setActiveBoardDocument, setActiveTab]);
 
   useEffect(() => {
     if (!boardSync.connectionError) return;
@@ -263,7 +297,8 @@ export function BoardWorkspaceView({
   }, [boardSync.connectionStatus]);
 
   const openNewSessionAt = useCallback((position?: { x: number; y: number }) => {
-    const boardPosition = position ? snapBoardPosition(position.x, position.y) : undefined;
+    const resolved = position ?? resolveSpawnPosition();
+    const boardPosition = snapBoardPosition(resolved.x, resolved.y);
     openNewSessionModal(
       "folder",
       null,
@@ -274,7 +309,7 @@ export function BoardWorkspaceView({
     );
     setContextMenu(null);
     setNewMenuOpen(false);
-  }, [openNewSessionModal, selectedFolderId]);
+  }, [openNewSessionModal, resolveSpawnPosition, selectedFolderId]);
 
   const boardToCanvasStyle = useCallback((position: { x: number; y: number }) => ({
     left: BOARD_CANVAS_ORIGIN_X + position.x,
@@ -335,6 +370,15 @@ export function BoardWorkspaceView({
   };
 
   const closeCardContextMenu = () => setCardContextMenu(null);
+  const openSession = useCallback((session: SessionSummary, item?: BoardWorkspaceItem) => {
+    if (item) {
+      selectSingleBoardItem(item.boardItemId);
+      raiseBoardItems([item.boardItemId]);
+    }
+    setActiveSession(session.agentSessionId);
+    setActiveSessionSummary(session);
+    if (isMobile) setActiveTab("chat");
+  }, [isMobile, raiseBoardItems, selectSingleBoardItem, setActiveSession, setActiveSessionSummary, setActiveTab]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -368,6 +412,7 @@ export function BoardWorkspaceView({
           onClick={() => {
             setContextMenu(null);
             setCardContextMenu(null);
+            childStack.closeChildStack();
           }}
         >
           <div data-testid="board-workspace-plane" style={planeStyle}>
@@ -376,87 +421,42 @@ export function BoardWorkspaceView({
               className="relative"
               style={canvasStyle}
             >
-              {boardSync.isLoading && (
-                <div className="absolute left-3 top-3 z-30 rounded-md border border-border bg-background/90 p-2 shadow-sm">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
-                  <span className="sr-only">Loading board sync</span>
-                </div>
-              )}
-
-              {boardItems.length === 0 && !boardSync.isLoading && (
-                <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-                  No folders or sessions on this board
-                </div>
-              )}
-
-              {boardItems.map((item) => (
-                <BoardWorkspaceTile
-                  key={item.id}
-                  item={item}
-                  style={itemPosition(item)}
-                  activeSessionKey={activeSessionKey}
-                  isSelected={selectedBoardItemIds.has(item.boardItemId)}
-                  remoteSelectionColor={remoteSelectionByItemId.get(item.boardItemId)}
-                  onTilePointerDown={handleTilePointerDown}
-                  onTileContextMenu={handleTileContextMenu}
-                  shouldSuppressClick={shouldSuppressTileClick}
-                  onOpenFolder={(folderId) => {
-                    selectSingleBoardItem(item.boardItemId);
-                    raiseBoardItems([item.boardItemId]);
-                    selectFolder(folderId);
-                  }}
-                  onOpenMarkdown={(documentId) => {
-                    selectSingleBoardItem(item.boardItemId);
-                    raiseBoardItems([item.boardItemId]);
-                    setActiveBoardDocument(documentId);
-                    if (isMobile) setActiveTab("chat");
-                  }}
-                  onOpenSession={(session) => {
-                    selectSingleBoardItem(item.boardItemId);
-                    raiseBoardItems([item.boardItemId]);
-                    setActiveSession(session.agentSessionId);
-                    setActiveSessionSummary(session);
-                    if (isMobile) setActiveTab("chat");
-                  }}
-                />
-              ))}
-
-              {dragPreviews[0] && (
-                <div
-                  data-testid="board-drag-ghost"
-                  className="pointer-events-none absolute z-20 h-[160px] w-[280px] rounded-md border-2 border-dashed border-primary/70 bg-primary/10 opacity-50"
-                  style={boardToCanvasStyle(snapBoardPosition(dragPreviews[0].x, dragPreviews[0].y))}
-                />
-              )}
-
-              {marqueeRect && (
-                <div
-                  data-testid="board-marquee"
-                  className="pointer-events-none absolute z-30 rounded-sm border border-primary bg-primary/10"
-                  style={{
-                    left: BOARD_CANVAS_ORIGIN_X + marqueeRect.x,
-                    top: BOARD_CANVAS_ORIGIN_Y + marqueeRect.y,
-                    width: marqueeRect.width,
-                    height: marqueeRect.height,
-                  }}
-                />
-              )}
-
-              {hasMore && onLoadMore && (
-                <div
-                  ref={sentinelRef}
-                  data-testid="board-load-more-sentinel"
-                  className="absolute bottom-0 left-0 flex items-center justify-center py-3 text-xs text-muted-foreground"
-                  style={{ width: BOARD_CANVAS_WIDTH }}
-                >
-                  <Loader2
-                    data-testid="board-load-more-spinner"
-                    className="h-4 w-4 animate-spin"
-                    aria-hidden="true"
-                  />
-                  <span className="sr-only">Loading more board items</span>
-                </div>
-              )}
+              <BoardWorkspaceCanvasContent
+                isLoading={boardSync.isLoading}
+                boardItems={boardItems}
+                activeSessionKey={activeSessionKey}
+                selectedBoardItemIds={selectedBoardItemIds}
+                pulseBoardItemId={childStack.pulseBoardItemId}
+                expandedStackParentId={childStack.expandedStackParentId}
+                remoteSelectionByItemId={remoteSelectionByItemId}
+                dragPreviews={dragPreviews}
+                marqueeRect={marqueeRect}
+                hasMore={hasMore}
+                onLoadMore={onLoadMore}
+                sentinelRef={sentinelRef}
+                expandedParentItem={childStack.expandedParentItem}
+                expandedChildren={childStack.expandedChildren}
+                itemPosition={itemPosition}
+                boardToCanvasStyle={boardToCanvasStyle}
+                onTilePointerDown={handleTilePointerDown}
+                onTileContextMenu={handleTileContextMenu}
+                shouldSuppressTileClick={shouldSuppressTileClick}
+                onToggleChildStack={childStack.toggleChildStack}
+                onNavigateToParent={childStack.navigateToParent}
+                onOpenChildRef={childStack.openChildRef}
+                onOpenSession={openSession}
+                onOpenFolder={(item, folderId) => {
+                  selectSingleBoardItem(item.boardItemId);
+                  raiseBoardItems([item.boardItemId]);
+                  selectFolder(folderId);
+                }}
+                onOpenMarkdown={(item, documentId) => {
+                  selectSingleBoardItem(item.boardItemId);
+                  raiseBoardItems([item.boardItemId]);
+                  setActiveBoardDocument(documentId);
+                  if (isMobile) setActiveTab("chat");
+                }}
+              />
             </div>
           </div>
 

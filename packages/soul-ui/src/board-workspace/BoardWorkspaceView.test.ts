@@ -81,6 +81,89 @@ const sessions: SessionSummary[] = [
   },
 ];
 
+const relationSessions: SessionSummary[] = [
+  {
+    agentSessionId: "parent",
+    status: "running",
+    eventCount: 1,
+    agentId: "roselin_codex",
+    agentName: "Roselin",
+    prompt: "Parent",
+    updatedAt: "2026-06-04T00:00:00.000Z",
+  },
+  {
+    agentSessionId: "same-child",
+    status: "completed",
+    eventCount: 2,
+    agentId: "shay",
+    agentName: "Shay",
+    callerSessionId: "parent",
+    prompt: "Same child",
+    updatedAt: "2026-06-04T01:00:00.000Z",
+  },
+  {
+    agentSessionId: "cross-child",
+    status: "completed",
+    eventCount: 3,
+    agentId: "kiki",
+    agentName: "Kiki",
+    callerSessionId: "parent",
+    prompt: "Cross child",
+    updatedAt: "2026-06-04T02:00:00.000Z",
+  },
+];
+
+const relationCatalog: CatalogState = {
+  folders: [
+    {
+      id: "root",
+      name: "Root",
+      sortOrder: 0,
+      parentFolderId: null,
+      createdAt: "2026-06-01T00:00:00.000Z",
+    },
+    {
+      id: "other",
+      name: "Other",
+      sortOrder: 1,
+      parentFolderId: null,
+      createdAt: "2026-06-01T00:00:00.000Z",
+    },
+  ],
+  sessions: {
+    parent: { folderId: "root", displayName: null },
+    "same-child": { folderId: "root", displayName: null },
+    "cross-child": { folderId: "other", displayName: null },
+  },
+  sessionList: relationSessions,
+  boardItems: [
+    {
+      id: "session:parent",
+      folderId: "root",
+      itemType: "session",
+      itemId: "parent",
+      x: 120,
+      y: 80,
+    },
+    {
+      id: "session:same-child",
+      folderId: "root",
+      itemType: "session",
+      itemId: "same-child",
+      x: 440,
+      y: 80,
+    },
+    {
+      id: "session:cross-child",
+      folderId: "other",
+      itemType: "session",
+      itemId: "cross-child",
+      x: 160,
+      y: 120,
+    },
+  ],
+};
+
 class MockIntersectionObserver {
   static instances: MockIntersectionObserver[] = [];
 
@@ -99,17 +182,20 @@ class MockIntersectionObserver {
   }
 }
 
-function renderBoard(props: Partial<React.ComponentProps<typeof BoardWorkspaceView>> = {}) {
+function renderBoard(
+  props: Partial<React.ComponentProps<typeof BoardWorkspaceView>> = {},
+  options: { catalog?: CatalogState; sessions?: SessionSummary[] } = {},
+) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
 
   useDashboardStore.getState().reset();
-  useDashboardStore.getState().setCatalog(catalog);
+  useDashboardStore.getState().setCatalog(options.catalog ?? catalog);
   useDashboardStore.getState().selectFolder("root");
 
   flushSync(() => {
-    root.render(createElement(BoardWorkspaceView, { sessions, ...props }));
+    root.render(createElement(BoardWorkspaceView, { sessions: options.sessions ?? sessions, ...props }));
   });
 
   return { container, root };
@@ -319,7 +405,7 @@ describe("BoardWorkspaceView", () => {
     expect(scroller!.scrollLeft).toBe(startScrollLeft + 24);
   });
 
-  it("creates a markdown document from the New menu at the first open grid slot", async () => {
+  it("creates a markdown document from the New menu at an open viewport slot", async () => {
     const onCreateMarkdownDocument = vi.fn();
     ({ container, root } = renderBoard({ onCreateMarkdownDocument }));
 
@@ -345,8 +431,8 @@ describe("BoardWorkspaceView", () => {
     expect(useDashboardStore.getState().catalog?.boardItems?.some((item) =>
       item.id === `markdown:${activeDocumentId}` &&
       item.folderId === "root" &&
-      item.x === 0 &&
-      item.y === 0
+      item.x === 300 &&
+      item.y === 240
     )).toBe(true);
   });
 
@@ -399,6 +485,78 @@ describe("BoardWorkspaceView", () => {
 
     expect(sessionTile?.className).toContain("ring-2");
     expect(sessionTile?.className).toContain("ring-primary");
+    expect(sessionTile?.className).toContain("bg-card");
+    expect(sessionTile?.className).not.toContain("hover:bg-accent/50");
+    expect(sessionTile?.className.split(/\s+/)).not.toContain("bg-accent");
+  });
+
+  it("renders direct child sessions as a parent stack portal and cross-folder refs", async () => {
+    ({ container, root } = renderBoard({}, {
+      catalog: relationCatalog,
+      sessions: relationSessions,
+    }));
+
+    const sessionTiles = container.querySelectorAll<HTMLElement>('[data-testid="board-session-tile"]');
+    expect(Array.from(sessionTiles).map((tile) => tile.dataset.sessionId)).toEqual(["parent"]);
+
+    const stackBadge = container.querySelector<HTMLElement>('[data-testid="board-session-child-stack-badge"]');
+    expect(stackBadge?.textContent).toContain("2");
+    flushSync(() => {
+      stackBadge!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.querySelector('[data-testid="board-child-portal"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-testid="board-child-portal-card"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-testid="board-child-ref-card"]')).toHaveLength(1);
+
+    const refCard = container.querySelector<HTMLElement>('[data-testid="board-child-ref-card"]');
+    flushSync(() => {
+      refCard!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(useDashboardStore.getState().selectedFolderId).toBe("other");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const crossChildTile = container.querySelector<HTMLElement>('[data-session-id="cross-child"]');
+    expect(crossChildTile?.className).toContain("animate-pulse");
+    expect(container.querySelector('[data-testid="board-session-parent-ref-badge"]')?.textContent).toContain("Root");
+
+    const backRef = container.querySelector<HTMLElement>('[data-testid="board-session-parent-ref-badge"]');
+    flushSync(() => {
+      backRef!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(useDashboardStore.getState().selectedFolderId).toBe("root");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(container.querySelector<HTMLElement>('[data-session-id="parent"]')?.className).toContain("animate-pulse");
+  });
+
+  it("folds the child portal with Escape and empty canvas clicks", () => {
+    ({ container, root } = renderBoard({}, {
+      catalog: relationCatalog,
+      sessions: relationSessions,
+    }));
+
+    const stackBadge = container.querySelector<HTMLElement>('[data-testid="board-session-child-stack-badge"]');
+    flushSync(() => {
+      stackBadge!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector('[data-testid="board-child-portal"]')).not.toBeNull();
+
+    flushSync(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    expect(container.querySelector('[data-testid="board-child-portal"]')).toBeNull();
+
+    flushSync(() => {
+      stackBadge!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector('[data-testid="board-child-portal"]')).not.toBeNull();
+
+    const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
+    flushSync(() => {
+      scroller!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(container.querySelector('[data-testid="board-child-portal"]')).toBeNull();
   });
 
   it("opens a session card context menu with delete action", async () => {

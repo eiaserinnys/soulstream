@@ -9,6 +9,7 @@ import type { SessionSummary } from "../shared/types";
 import { Badge } from "../components/ui/badge";
 import { STATUS_CONFIG } from "../components/SessionItem";
 import { cn } from "../lib/cn";
+import type { SessionParentRef } from "./board-session-relations";
 import {
   formatBoardWorkspaceTime,
   getSessionBoardPreview,
@@ -17,7 +18,7 @@ import {
 } from "./board-workspace-items";
 
 const BOARD_TILE_CLASS =
-  "absolute z-10 flex h-[160px] w-[280px] touch-none select-none flex-col overflow-hidden rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "absolute z-10 flex h-[160px] w-[280px] touch-none select-none flex-col overflow-hidden rounded-md border border-border bg-card px-3 py-2 text-left shadow-sm transition-shadow hover:ring-1 hover:ring-ring/50 hover:ring-offset-1 hover:ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 function getSessionAgentLabel(session: SessionSummary): string {
   return session.agentName?.trim() || session.agentId?.trim() || "—";
@@ -46,6 +47,10 @@ interface BoardWorkspaceTileProps {
     event: ReactMouseEvent<HTMLButtonElement>,
     item: BoardWorkspaceItem,
   ) => void;
+  isStackExpanded?: boolean;
+  isPulsing?: boolean;
+  onToggleChildStack?: (item: Extract<BoardWorkspaceItem, { type: "session" }>) => void;
+  onNavigateToParent?: (parentRef: SessionParentRef) => void;
 }
 
 export function BoardWorkspaceTile({
@@ -60,11 +65,16 @@ export function BoardWorkspaceTile({
   isSelected,
   remoteSelectionColor,
   onTileContextMenu,
+  isStackExpanded,
+  isPulsing,
+  onToggleChildStack,
+  onNavigateToParent,
 }: BoardWorkspaceTileProps) {
   const tileClassName = cn(
     BOARD_TILE_CLASS,
     isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
     remoteSelectionColor && !isSelected && "ring-2 ring-[var(--board-remote-ring)] ring-offset-2 ring-offset-background",
+    isPulsing && "animate-pulse ring-2 ring-primary ring-offset-2 ring-offset-background",
   );
   const tileStyle = {
     ...style,
@@ -143,7 +153,10 @@ export function BoardWorkspaceTile({
       data-session-id={item.session.agentSessionId}
       className={cn(
         tileClassName,
-        activeSessionKey === item.session.agentSessionId && "bg-accent text-accent-foreground",
+        activeSessionKey === item.session.agentSessionId &&
+          !isSelected &&
+          !remoteSelectionColor &&
+          "ring-1 ring-ring ring-offset-2 ring-offset-background",
       )}
       style={tileStyle}
       onPointerDown={(event) => onTilePointerDown(event, item)}
@@ -154,9 +167,71 @@ export function BoardWorkspaceTile({
       }}
     >
       <div className="relative flex min-h-0 flex-1 flex-col">
+        {item.childStack && (
+          <>
+            <span
+              data-testid="board-session-stack-shadow"
+              className="pointer-events-none absolute bottom-1 right-1 h-14 w-24 rounded-md border border-border/80 bg-transparent shadow-sm"
+              aria-hidden="true"
+            />
+            <span
+              role="button"
+              tabIndex={0}
+              data-testid="board-session-child-stack-badge"
+              className={cn(
+                "absolute right-0 top-0 z-10 inline-flex h-5 min-w-8 items-center justify-center gap-0.5 rounded border border-border bg-card px-1 text-[10px] font-semibold text-muted-foreground shadow-sm",
+                isStackExpanded && "border-primary text-primary ring-1 ring-primary",
+              )}
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                onToggleChildStack?.(item);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                event.stopPropagation();
+                onToggleChildStack?.(item);
+              }}
+            >
+              <span aria-hidden="true">⤷</span>
+              {item.childStack.count}
+            </span>
+          </>
+        )}
+        {item.parentRef && (
+          <span
+            role={item.parentRef.parentAvailable ? "button" : undefined}
+            tabIndex={item.parentRef.parentAvailable ? 0 : undefined}
+            data-testid="board-session-parent-ref-badge"
+            className={cn(
+              "absolute left-0 top-0 z-10 inline-flex h-5 max-w-32 items-center gap-0.5 rounded border border-border bg-card px-1 text-[10px] font-medium shadow-sm",
+              item.parentRef.parentAvailable
+                ? "text-muted-foreground hover:border-primary hover:text-primary"
+                : "cursor-not-allowed text-muted-foreground/50",
+            )}
+            onClick={(event) => {
+              if (!item.parentRef?.parentAvailable) return;
+              event.preventDefault();
+              event.stopPropagation();
+              onNavigateToParent?.(item.parentRef);
+            }}
+            onKeyDown={(event) => {
+              if (!item.parentRef?.parentAvailable) return;
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              event.stopPropagation();
+              onNavigateToParent?.(item.parentRef);
+            }}
+          >
+            <span className="shrink-0" aria-hidden="true">↩</span>
+            <span className="truncate">{item.parentRef.parentFolderName}</span>
+          </span>
+        )}
         <span
           className={cn(
-            "absolute right-0 top-0 h-2.5 w-2.5 rounded-full",
+            "absolute h-2.5 w-2.5 rounded-full",
+            item.childStack ? "right-0 top-7" : "right-0 top-0",
             config.dotClass,
             config.animate && "animate-[pulse_2s_infinite]",
           )}
@@ -164,7 +239,11 @@ export function BoardWorkspaceTile({
         />
         <div
           data-testid="board-session-title"
-          className="line-clamp-3 pr-4 text-sm font-medium leading-snug"
+          className={cn(
+            "line-clamp-3 pr-4 text-sm font-medium leading-snug",
+            item.parentRef && "pt-6",
+            item.childStack && "pr-10",
+          )}
         >
           {getSessionBoardTitle(item.session)}
         </div>

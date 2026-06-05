@@ -37,9 +37,13 @@ import {
   applySessionUpdated,
   buildSessionUpdates,
   findSessionInPages,
+  preserveCatalogSessionList,
   reconcileSessionPagesForCatalog,
+  removeSessionFromCatalogSessionList,
   shouldApplySessionCreatedToCache,
+  updateSessionInCatalogSessionList,
   upsertSessionAssignmentInCatalog,
+  upsertSessionInCatalogSessionList,
 } from "./session-stream-helpers";
 import { useSessionStreamSSE } from "./useSessionStreamSSE";
 
@@ -100,12 +104,15 @@ export function useSessionStreamCacheSync(
 
       const state = useDashboardStore.getState();
       let catalogForCache = state.catalog;
-      if (folderId !== undefined && state.catalog) {
-        catalogForCache = upsertSessionAssignmentInCatalog(
-          state.catalog,
-          newSession.agentSessionId,
-          folderId,
-        );
+      if (state.catalog) {
+        catalogForCache = folderId !== undefined
+          ? upsertSessionAssignmentInCatalog(
+              state.catalog,
+              newSession.agentSessionId,
+              folderId,
+              newSession,
+            )
+          : upsertSessionInCatalogSessionList(state.catalog, newSession);
         state.setCatalog(catalogForCache);
       }
 
@@ -164,6 +171,14 @@ export function useSessionStreamCacheSync(
     (event: SessionUpdatedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
       const updates = buildSessionUpdates(event);
+      const state = useDashboardStore.getState();
+      if (state.catalog?.sessionList) {
+        state.setCatalog(updateSessionInCatalogSessionList(
+          state.catalog,
+          event.agent_session_id,
+          updates,
+        ));
+      }
 
       queryClient.setQueriesData<InfiniteData<SessionPage>>(
         { queryKey: ["sessions"], exact: false },
@@ -197,6 +212,13 @@ export function useSessionStreamCacheSync(
   const onSessionDeleted = useCallback(
     (event: SessionDeletedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
+      const state = useDashboardStore.getState();
+      if (state.catalog?.sessionList) {
+        state.setCatalog(removeSessionFromCatalogSessionList(
+          state.catalog,
+          event.agent_session_id,
+        ));
+      }
       queryClient.setQueriesData<InfiniteData<SessionPage>>(
         { queryKey: ["sessions"], exact: false },
         (old) => {
@@ -211,8 +233,9 @@ export function useSessionStreamCacheSync(
   const onCatalogUpdated = useCallback(
     (event: CatalogUpdatedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
-      const catalog = event.catalog as CatalogState;
-      useDashboardStore.getState().setCatalog(catalog);
+      const store = useDashboardStore.getState();
+      const catalog = preserveCatalogSessionList(event.catalog as CatalogState, store.catalog);
+      store.setCatalog(catalog);
       for (const [cacheQueryKey, data] of queryClient.getQueriesData<
         InfiniteData<SessionPage>
       >({ queryKey: ["sessions"], exact: false })) {

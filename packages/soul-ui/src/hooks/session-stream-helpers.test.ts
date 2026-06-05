@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from "vitest";
 import type { InfiniteData } from "@tanstack/react-query";
-import type { SessionSummary } from "../shared/types";
+import type { CatalogState, SessionSummary } from "../shared/types";
 import {
   applyCatalogDisplayNames,
   applySessionCreated,
@@ -18,8 +18,13 @@ import {
   filterFeedSessions,
   mergeSessionCreatedSummary,
   normalizeSessionStatus,
+  preserveCatalogSessionList,
   reconcileSessionPagesForCatalog,
+  removeSessionFromCatalogSessionList,
   shouldApplySessionCreatedToCache,
+  updateSessionInCatalogSessionList,
+  upsertSessionAssignmentInCatalog,
+  upsertSessionInCatalogSessionList,
 } from "./session-stream-helpers";
 import { normalizeSessionStatus as normalizeSharedSessionStatus } from "../shared/session-status";
 import type { SessionPage } from "./session-stream-helpers";
@@ -50,6 +55,60 @@ function makeData(
     pageParams: pages.map((_, i) => i),
   };
 }
+
+function makeCatalog(sessionList: SessionSummary[] = []): CatalogState {
+  return {
+    folders: [],
+    sessions: {},
+    boardItems: [],
+    sessionList,
+  };
+}
+
+describe("catalog sessionList helpers", () => {
+  it("upserts session_created into catalog.sessionList while preserving assignment", () => {
+    const created = makeSession("child", { callerSessionId: "parent", prompt: "created" });
+    const result = upsertSessionAssignmentInCatalog(makeCatalog(), "child", "folder-a", created);
+
+    expect(result.sessions.child).toEqual({ folderId: "folder-a", displayName: null });
+    expect(result.sessionList?.map((session) => session.agentSessionId)).toEqual(["child"]);
+    expect(result.sessionList?.[0].callerSessionId).toBe("parent");
+  });
+
+  it("updates and removes entries from catalog.sessionList", () => {
+    const catalog = makeCatalog([makeSession("s1", { status: "running" })]);
+    const updated = updateSessionInCatalogSessionList(catalog, "s1", { status: "completed" });
+    expect(updated.sessionList?.[0].status).toBe("completed");
+
+    const removed = removeSessionFromCatalogSessionList(updated, "s1");
+    expect(removed.sessionList).toEqual([]);
+  });
+
+  it("upserts sessionList even when session_created carries no folder assignment", () => {
+    const result = upsertSessionInCatalogSessionList(
+      makeCatalog(),
+      makeSession("floating-child", { callerSessionId: "parent" }),
+    );
+
+    expect(result.sessions).toEqual({});
+    expect(result.sessionList?.[0].agentSessionId).toBe("floating-child");
+    expect(result.sessionList?.[0].callerSessionId).toBe("parent");
+  });
+
+  it("preserves sessionList when catalog_updated carries catalog-only data", () => {
+    const current = makeCatalog([makeSession("s1", { callerSessionId: "parent" })]);
+    const incoming: CatalogState = {
+      folders: [],
+      sessions: { s1: { folderId: "root", displayName: null } },
+      boardItems: [],
+    };
+
+    const result = preserveCatalogSessionList(incoming, current);
+
+    expect(result.sessionList?.[0].agentSessionId).toBe("s1");
+    expect(result.sessions.s1.folderId).toBe("root");
+  });
+});
 
 // ============================================================
 // F-A(2026-05-17) 이후: applySessionCreated는 cache 차원 적합성을 검사하지 않고
