@@ -270,7 +270,7 @@ class SqliteFolderMixin:
                     row["item_type"],
                     row["item_id"],
                     float((item_index % 4) * 160),
-                    float((item_index // 4) * 160),
+                    float((item_index // 4) * 120),
                     _utc_now(),
                     _utc_now(),
                 ),

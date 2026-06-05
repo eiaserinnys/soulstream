@@ -49,6 +49,7 @@ export interface NewSessionDefaults {
   folderId?: string | null;
   nodeId?: string;
   agentId?: string | null;
+  boardPosition?: { x: number; y: number };
 }
 
 // === Selected Event Node Data ===
@@ -272,6 +273,7 @@ export interface DashboardActions {
     agentName?: string | null,
     agentPortraitUrl?: string | null,
     backend?: string | null,
+    boardPosition?: { x: number; y: number } | null,
   ) => void;
 
   // New Session 모달

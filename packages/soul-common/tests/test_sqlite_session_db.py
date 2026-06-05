@@ -515,7 +515,7 @@ class TestCatalog:
             ("session:seed-s-second", 160.0, 0.0),
             ("session:seed-s-third", 320.0, 0.0),
             ("session:seed-s-fourth", 480.0, 0.0),
-            ("session:seed-s-oldest", 0.0, 160.0),
+            ("session:seed-s-oldest", 0.0, 120.0),
         ]
 
     async def test_markdown_document_crud_and_catalog_preview(self, db: SqliteSessionDB):

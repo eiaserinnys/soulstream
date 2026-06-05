@@ -113,7 +113,7 @@ export function registerCatalogTools(
   server.registerTool(
     "update_board_item_position",
     {
-      description: "보드 항목 좌표 갱신. 좌표는 서버에서 40px 격자에 스냅된다.",
+      description: "보드 항목 좌표 갱신. 좌표는 서버에서 20px 격자에 스냅된다.",
       inputSchema: {
         board_item_id: z.string().min(1),
         x: z.number(),

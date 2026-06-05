@@ -18,6 +18,7 @@ import {
   cn,
   DEFAULT_REASONING_EFFORT,
   REASONING_EFFORT_OPTIONS,
+  toastManager,
   type ReasoningEffort,
 } from "@seosoyoung/soul-ui";
 import type { AgentInfo } from "@seosoyoung/soul-ui";
@@ -27,6 +28,7 @@ import {
   reasoningEffortForSubmit,
   selectedAgentBackend,
 } from "../utils/reasoningEffort";
+import { updateBoardItemPosition } from "../lib/board-workspace-operations";
 
 interface OAuthProfile {
   name: string;
@@ -225,6 +227,7 @@ export function OrchestratorNewSessionModal() {
       const { agentSessionId } = sessionData;
       const { addOptimisticSession } = useDashboardStore.getState();
       const selectedAgent = agents.find((a) => a.id === selectedAgentId);
+      const boardPosition = newSessionDefaults?.boardPosition ?? null;
       addOptimisticSession(
         queryClientRef.current!,
         agentSessionId,
@@ -235,7 +238,20 @@ export function OrchestratorNewSessionModal() {
         selectedAgent?.name ?? null,
         selectedAgent?.portraitUrl ?? null,
         selectedAgent?.backend ?? null,
+        boardPosition,
       );
+      if (boardPosition && selectedModalFolderId) {
+        try {
+          await updateBoardItemPosition(`session:${agentSessionId}`, boardPosition.x, boardPosition.y);
+        } catch (err) {
+          toastManager.add({
+            title: "Session placement failed",
+            description: "The session was created, but the board position was restored by the server.",
+            type: "warning",
+          });
+          console.error("Session board item placement failed:", err);
+        }
+      }
       clearDraft(draftKey);
       closeNewSessionModal();
       setSelectedNodeId("");
@@ -244,7 +260,7 @@ export function OrchestratorNewSessionModal() {
       setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
       setSelectedOAuthProfile(null);
     },
-    [selectedNodeId, selectedModalFolderId, selectedAgentId, submitReasoningEffort, selectedOAuthProfile, newSessionParentTask, agents, clearDraft, draftKey, closeNewSessionModal],
+    [selectedNodeId, selectedModalFolderId, selectedAgentId, submitReasoningEffort, selectedOAuthProfile, newSessionParentTask, agents, clearDraft, draftKey, closeNewSessionModal, newSessionDefaults?.boardPosition],
   );
 
   const folderSelector = (

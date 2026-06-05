@@ -1,4 +1,4 @@
-import type { SessionSummary } from "../shared/types";
+import type { CatalogFolder, FolderSettings, SessionSummary } from "../shared/types";
 import { FolderContents } from "../components/FolderContents";
 import { SessionsTopBar } from "../components/SessionsTopBar";
 import type { LoadMoreCallback } from "../components/load-more-guard";
@@ -14,7 +14,11 @@ export interface FolderWorkspaceViewProps {
   sessions?: SessionSummary[];
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
-  onCreateFolder?: (name: string, parentFolderId: string | null) => Promise<void> | void;
+  onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
+  onCreateFolder?: (name: string, parentFolderId: string | null) => Promise<CatalogFolder | void> | CatalogFolder | void;
+  onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
+  onDeleteFolder?: (folderId: string) => Promise<void> | void;
+  onUpdateFolderSettings?: (folderId: string, settings: FolderSettings) => Promise<void> | void;
   onUpdateBoardItemPosition?: (boardItemId: string, x: number, y: number) => Promise<void> | void;
   onCreateMarkdownDocument?: (
     input: CreateMarkdownDocumentInput,
@@ -27,7 +31,11 @@ export function FolderWorkspaceView({
   sessions,
   onMoveSessions,
   onRenameSession,
+  onDeleteSessions,
   onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onUpdateFolderSettings,
   onUpdateBoardItemPosition,
   onCreateMarkdownDocument,
   onLoadMore,
@@ -43,7 +51,11 @@ export function FolderWorkspaceView({
         sessions={sessions}
         onMoveSessions={onMoveSessions}
         onRenameSession={onRenameSession}
+        onDeleteSessions={onDeleteSessions}
         onCreateFolder={onCreateFolder}
+        onRenameFolder={onRenameFolder}
+        onDeleteFolder={onDeleteFolder}
+        onUpdateFolderSettings={onUpdateFolderSettings}
         onUpdateBoardItemPosition={onUpdateBoardItemPosition}
         onCreateMarkdownDocument={onCreateMarkdownDocument}
         onLoadMore={onLoadMore}

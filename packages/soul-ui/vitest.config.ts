@@ -11,7 +11,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    include: [`${PROJECT_ROOT}/packages/soul-ui/src/**/*.test.ts`],
+    include: [
+      `${PROJECT_ROOT}/packages/soul-ui/src/**/*.test.ts`,
+      `${PROJECT_ROOT}/packages/soul-ui/src/**/*.test.tsx`,
+    ],
     alias: {
       "@shared": `${PROJECT_ROOT}/packages/soul-ui/src/shared`,
       "@seosoyoung/soul-ui": `${PROJECT_ROOT}/packages/soul-ui/src`,

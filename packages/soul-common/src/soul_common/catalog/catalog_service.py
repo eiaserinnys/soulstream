@@ -11,8 +11,9 @@ from typing import Any, Optional, Protocol, runtime_checkable
 from soul_common.db.session_db import PostgresSessionDB
 
 _UNSET = object()
-BOARD_GRID_SIZE = 40
-BOARD_TILE_SIZE = 160
+BOARD_GRID_SIZE = 20
+BOARD_TILE_WIDTH = 160
+BOARD_TILE_HEIGHT = 120
 BOARD_DEFAULT_COLUMNS = 4
 
 
@@ -50,7 +51,7 @@ class CatalogService:
         })
 
     def _snap_position(self, value: float) -> float:
-        return float(max(0, round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE))
+        return float(round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE)
 
     async def _next_board_position(self, folder_id: str) -> tuple[float, float]:
         await self._db.ensure_board_items()
@@ -64,8 +65,8 @@ class CatalogService:
         }
         index = 0
         while True:
-            x = (index % BOARD_DEFAULT_COLUMNS) * BOARD_TILE_SIZE
-            y = (index // BOARD_DEFAULT_COLUMNS) * BOARD_TILE_SIZE
+            x = (index % BOARD_DEFAULT_COLUMNS) * BOARD_TILE_WIDTH
+            y = (index // BOARD_DEFAULT_COLUMNS) * BOARD_TILE_HEIGHT
             if (x, y) not in occupied:
                 return float(x), float(y)
             index += 1
@@ -211,7 +212,8 @@ class CatalogService:
         x: float,
         y: float,
     ) -> None:
-        """보드 항목 좌표를 40px 격자에 스냅하여 저장한다."""
+        """보드 항목 좌표를 20px 격자에 스냅하여 저장한다."""
+        await self._db.ensure_board_items()
         await self._db.update_board_item_position(
             board_item_id,
             self._snap_position(x),

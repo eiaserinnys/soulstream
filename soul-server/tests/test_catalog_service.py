@@ -213,7 +213,7 @@ class TestMoveSessionsToFolder:
 
 
 class TestBoardItems:
-    async def test_update_board_item_position_snaps_to_40px_grid(
+    async def test_update_board_item_position_snaps_to_20px_grid(
         self,
         catalog_service,
         mock_db,
@@ -221,7 +221,8 @@ class TestBoardItems:
     ):
         await catalog_service.update_board_item_position("session:s1", 59, 101)
 
-        mock_db.update_board_item_position.assert_awaited_once_with("session:s1", 40.0, 120.0)
+        mock_db.ensure_board_items.assert_awaited()
+        mock_db.update_board_item_position.assert_awaited_once_with("session:s1", 60.0, 100.0)
         mock_broadcaster.broadcast.assert_awaited()
 
 
@@ -242,7 +243,7 @@ class TestMarkdownDocuments:
 
         assert result["document"]["title"] == "Note"
         args = mock_db.create_markdown_document.await_args.args
-        assert args[1:] == ("f1", "Note", "Body", 40.0, 120.0)
+        assert args[1:] == ("f1", "Note", "Body", 60.0, 120.0)
         assert args[0]
         mock_broadcaster.broadcast.assert_awaited()
 

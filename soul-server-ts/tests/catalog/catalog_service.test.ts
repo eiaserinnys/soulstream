@@ -199,8 +199,9 @@ describe("CatalogService.moveSessionsToFolder", () => {
 });
 
 describe("CatalogService board items", () => {
-  it("updateBoardItemPosition은 40px 격자에 스냅한 뒤 broadcast", async () => {
+  it("updateBoardItemPosition은 20px 격자에 스냅한 뒤 broadcast", async () => {
     const db = {
+      ensureBoardItems: vi.fn().mockResolvedValue(undefined),
       updateBoardItemPosition: vi.fn().mockResolvedValue(undefined),
       getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
     } as unknown as SessionDB;
@@ -209,7 +210,8 @@ describe("CatalogService board items", () => {
 
     await svc.updateBoardItemPosition("session:s1", 59, 101);
 
-    expect(db.updateBoardItemPosition).toHaveBeenCalledWith("session:s1", 40, 120);
+    expect(db.ensureBoardItems).toHaveBeenCalledTimes(1);
+    expect(db.updateBoardItemPosition).toHaveBeenCalledWith("session:s1", 60, 100);
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
 
@@ -217,7 +219,7 @@ describe("CatalogService board items", () => {
     const db = {
       createMarkdownDocument: vi.fn().mockResolvedValue({
         document: { id: "doc-1", title: "Note", body: "Body" },
-        boardItem: { id: "markdown:doc-1", folderId: "f1", itemType: "markdown", itemId: "doc-1", x: 40, y: 120 },
+        boardItem: { id: "markdown:doc-1", folderId: "f1", itemType: "markdown", itemId: "doc-1", x: 60, y: 100 },
       }),
       getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
     } as unknown as SessionDB;
@@ -238,8 +240,8 @@ describe("CatalogService board items", () => {
       folderId: "f1",
       title: "Note",
       body: "Body",
-      x: 40,
-      y: 120,
+      x: 60,
+      y: 100,
     });
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });

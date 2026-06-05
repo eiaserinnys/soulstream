@@ -1319,7 +1319,7 @@ BEGIN
         item_type,
         item_id,
         ((item_index % 4) * 160)::DOUBLE PRECISION,
-        (FLOOR(item_index / 4) * 160)::DOUBLE PRECISION,
+        (FLOOR(item_index / 4) * 120)::DOUBLE PRECISION,
         '{}'::jsonb
     FROM numbered
     ON CONFLICT (id) DO NOTHING;

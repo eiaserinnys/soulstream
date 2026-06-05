@@ -1,8 +1,13 @@
 import type { CatalogBoardItem, CatalogFolder, CatalogState, SessionSummary } from "../shared/types";
 
-export const BOARD_GRID_SIZE = 40;
-export const BOARD_TILE_SIZE = 160;
+export const BOARD_GRID_SIZE = 20;
+export const BOARD_TILE_WIDTH = 160;
+export const BOARD_TILE_HEIGHT = 120;
 export const BOARD_CANVAS_BUFFER = 200;
+export const BOARD_CANVAS_WIDTH = 20000;
+export const BOARD_CANVAS_HEIGHT = 12000;
+export const BOARD_CANVAS_ORIGIN_X = BOARD_CANVAS_WIDTH / 2;
+export const BOARD_CANVAS_ORIGIN_Y = BOARD_CANVAS_HEIGHT / 2;
 
 export interface FolderBoardWorkspaceItem {
   type: "folder";
@@ -165,8 +170,8 @@ export function buildBoardWorkspaceItems({
       boardItemId: `subfolder:${folder.id}`,
       folder,
       childCount: getFolderDirectChildCount(catalog, folder.id),
-      x: (index % 4) * BOARD_TILE_SIZE,
-      y: Math.floor(index / 4) * BOARD_TILE_SIZE,
+      x: (index % 4) * BOARD_TILE_WIDTH,
+      y: Math.floor(index / 4) * BOARD_TILE_HEIGHT,
     }));
 
   const sessionItems: SessionBoardWorkspaceItem[] = sessions.map((session, index) => ({
@@ -174,15 +179,15 @@ export function buildBoardWorkspaceItems({
     id: session.agentSessionId,
     boardItemId: `session:${session.agentSessionId}`,
     session,
-    x: ((folderItems.length + index) % 4) * BOARD_TILE_SIZE,
-    y: Math.floor((folderItems.length + index) / 4) * BOARD_TILE_SIZE,
+    x: ((folderItems.length + index) % 4) * BOARD_TILE_WIDTH,
+    y: Math.floor((folderItems.length + index) / 4) * BOARD_TILE_HEIGHT,
   }));
 
   return [...folderItems, ...sessionItems];
 }
 
 export function snapBoardCoordinate(value: number): number {
-  return Math.max(0, Math.round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE);
+  return Math.round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE;
 }
 
 export function snapBoardPosition(x: number, y: number): { x: number; y: number } {
@@ -193,8 +198,8 @@ export function findFirstOpenBoardPosition(items: readonly BoardWorkspaceItem[])
   const occupied = new Set(items.map((item) => `${item.x}:${item.y}`));
   let index = 0;
   while (true) {
-    const x = (index % 4) * BOARD_TILE_SIZE;
-    const y = Math.floor(index / 4) * BOARD_TILE_SIZE;
+    const x = (index % 4) * BOARD_TILE_WIDTH;
+    const y = Math.floor(index / 4) * BOARD_TILE_HEIGHT;
     if (!occupied.has(`${x}:${y}`)) return { x, y };
     index += 1;
   }
@@ -204,7 +209,7 @@ export function computeBoardCanvasSize(items: readonly BoardWorkspaceItem[]): { 
   const maxX = items.reduce((max, item) => Math.max(max, item.x), 0);
   const maxY = items.reduce((max, item) => Math.max(max, item.y), 0);
   return {
-    width: maxX + BOARD_TILE_SIZE + BOARD_CANVAS_BUFFER,
-    height: maxY + BOARD_TILE_SIZE + BOARD_CANVAS_BUFFER,
+    width: maxX + BOARD_TILE_WIDTH + BOARD_CANVAS_BUFFER,
+    height: maxY + BOARD_TILE_HEIGHT + BOARD_CANVAS_BUFFER,
   };
 }
