@@ -82,7 +82,10 @@ describe("ClaudeSdkClient", () => {
       ),
     );
 
-    expect(captured[0]?.prompt).toBe("hi");
+    const initialPrompt = captured[0]?.prompt as AsyncIterable<SDKUserMessage>;
+    await expect(initialPrompt[Symbol.asyncIterator]().next()).resolves.toMatchObject({
+      value: { type: "user", message: { role: "user", content: "hi" } },
+    });
     expect(captured[0]?.options).toMatchObject({
       cwd: "/tmp/claude-work",
       env: {
@@ -2036,36 +2039,67 @@ describe("ClaudeSdkClient", () => {
     expect(captured[0]?.options?.hooks).not.toHaveProperty("SessionStart");
   });
 
-  it("does not expose active-turn steering and sends text prompts as a query turn", async () => {
-    const captured: ClaudeSdkQueryParams[] = [];
+  it("streams initial prompt and mid-turn interventions through the open SDK input", async () => {
+    const streamedMessages: SDKUserMessage[] = [];
     const client = new ClaudeSdkClient(
       {
         query: (params) => {
-          captured.push(params);
-          return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-query", "done")]));
+          return makeQuery(
+            (async function* () {
+              const input = params.prompt as AsyncIterable<SDKUserMessage>;
+              const iterator = input[Symbol.asyncIterator]();
+              const first = await iterator.next();
+              if (!first.done) streamedMessages.push(first.value);
+              yield sdkSystemInit("claude-sess-stream");
+
+              const intervention = await iterator.next();
+              if (!intervention.done) streamedMessages.push(intervention.value);
+              yield {
+                type: "assistant",
+                message: { content: [{ type: "text", text: "saw intervention" }] },
+                parent_tool_use_id: null,
+                uuid: "assistant-stream",
+                session_id: "claude-sess-stream",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-stream", "done");
+            })(),
+          );
         },
+        postResultDrainMs: 10,
       },
       silentLogger,
     );
 
-    expect((client as unknown as Record<string, unknown>).steerActiveTurn).toBeUndefined();
-    const events = await collect(
-      client.run(
-        {
-          prompt: "first",
-          workspaceDir: "/tmp/claude-work",
-          env: {},
-        },
-        new AbortController().signal,
-      ),
-    );
+    const iterator = client.run(
+      {
+        prompt: "first",
+        workspaceDir: "/tmp/claude-work",
+        env: {},
+      },
+      new AbortController().signal,
+    )[Symbol.asyncIterator]();
 
-    expect(captured[0]?.prompt).toBe("first");
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { type: "session", sessionId: "claude-sess-stream" },
+    });
+    await expect(client.steerActiveTurn({ prompt: "mid-turn intervention" })).resolves.toEqual({
+      status: "delivered",
+    });
+    const events = await collectIterator(iterator);
+
+    expect(streamedMessages.map((message) => message.message.content)).toEqual([
+      "first",
+      "mid-turn intervention",
+    ]);
     expect(events).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ type: "text", text: "saw intervention" }),
         expect.objectContaining({ type: "complete", result: "done" }),
       ]),
     );
+    await expect(client.steerActiveTurn({ prompt: "late" })).resolves.toMatchObject({
+      status: "no_active_turn",
+    });
   });
 
   it("keeps tool_result continuation output-only with no live input stream", async () => {
@@ -2132,7 +2166,7 @@ describe("ClaudeSdkClient", () => {
       ),
     );
 
-    expect(promptKinds).toEqual(["string"]);
+    expect(promptKinds).toEqual(["object"]);
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ type: "tool_result", toolUseId: "toolu-query-only" }),
@@ -2147,24 +2181,23 @@ describe("ClaudeSdkClient", () => {
     );
   });
 
-  it("uses a closed single-message iterable only for image attachment turns", async () => {
+  it("keeps image attachment input open during the turn and closes it after result", async () => {
     const dir = mkdtempSync(join(tmpdir(), "claude-query-image-"));
     try {
       const imagePath = join(dir, "sample.webp");
       const bytes = Buffer.from([0x52, 0x49, 0x46, 0x46]);
       writeFileSync(imagePath, bytes);
       let firstInput: SDKUserMessage | undefined;
-      let secondInputDone: boolean | undefined;
+      let inputIterator: AsyncIterator<SDKUserMessage> | undefined;
       const client = new ClaudeSdkClient(
         {
           query: (params) =>
             makeQuery(
               (async function* () {
                 const input = params.prompt as AsyncIterable<SDKUserMessage>;
-                const iterator = input[Symbol.asyncIterator]();
-                const first = await iterator.next();
+                inputIterator = input[Symbol.asyncIterator]();
+                const first = await inputIterator.next();
                 firstInput = first.value;
-                secondInputDone = (await iterator.next()).done;
                 yield sdkSuccessResult("claude-sess-img-query", "done");
               })(),
             ),
@@ -2190,7 +2223,7 @@ describe("ClaudeSdkClient", () => {
           expect.objectContaining({ type: "image" }),
         ]),
       );
-      expect(secondInputDone).toBe(true);
+      await expect(inputIterator?.next()).resolves.toMatchObject({ done: true });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -145,7 +145,7 @@ export interface EngineExecuteParams {
   onSession?: SessionCallback;
   /**
    * Legacy polling hook. TaskEngineTurnRunner must not pass this for Claude resumed turns.
-   * Running interventions are delivered by the task queue on the next turn.
+   * Running live delivery uses SupportsLiveTurnSteering; unsupported/idle-race cases fall back to queue.
    */
   onIntervention?: InterventionCallback;
   onCompact?: CompactCallback;
@@ -220,9 +220,9 @@ export interface SupportsThreadFork {
 /**
  * 백엔드가 실행 중 turn에 live user input steering을 지원하면 구현.
  *
- * Codex app-server generated schema 기준 `turn/steer`는 threadId + expectedTurnId로
- * 현재 active turn에 UserInput[]을 전달한다. 기존 exec adapter는 해당 표면이 없어
- * 구현하지 않으며, 호출자는 capability presence로만 판단한다.
+ * Claude Agent SDK는 열린 `AsyncIterable<SDKUserMessage>` input stream에 user message를
+ * yield하여 현재 query stdin에 전달한다. Codex app-server는 `turn/steer`로 현재 active
+ * turn에 UserInput[]을 전달한다. 호출자는 capability presence로만 판단한다.
  */
 export type LiveTurnSteerStatus =
   | "delivered"

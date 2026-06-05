@@ -18,7 +18,11 @@ import type { Logger } from "pino";
 
 import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
-import type { ClaudeBackgroundTaskControlResult } from "./protocol.js";
+import type {
+  ClaudeBackgroundTaskControlResult,
+  EngineUserInput,
+  LiveTurnSteerResult,
+} from "./protocol.js";
 import { getImageAttachmentMediaType } from "../attachments/image_media.js";
 import { SOULSTREAM_AGENT_SESSION_HEADER } from "../mcp/request_context.js";
 
@@ -176,6 +180,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private runtimeSessionState: ClaudeRuntimeSessionState | undefined;
 
   private activeQuery: ClaudeSdkQuery | null = null;
+  private activeInput: EventQueue<SDKUserMessage> | null = null;
   private lastWorkspaceDir: string | null = null;
   private lastEnv: Record<string, string> | undefined;
 
@@ -198,7 +203,8 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.clearPerRunState();
 
     const output = createEventQueue<ClaudeClientEvent>();
-    const prompt = makeQueryPrompt(options.prompt, options.imageAttachmentPaths);
+    const input = createEventQueue<SDKUserMessage>();
+    input.push(makeUserMessage(options.prompt, options.imageAttachmentPaths));
 
     const abortController = new AbortController();
     const abortSdk = () => abortController.abort(signal.reason);
@@ -210,14 +216,16 @@ export class ClaudeSdkClient implements ClaudeClient {
 
     const queryOptions = this.buildSdkOptions(options, abortController, output);
     let query: ClaudeSdkQuery;
+    this.activeInput = input;
     try {
-      query = this.queryFn({ prompt, options: queryOptions });
+      query = this.queryFn({ prompt: input, options: queryOptions });
     } catch (err) {
+      this.closeActiveInput(input);
       signal.removeEventListener("abort", abortSdk);
       throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
     }
     this.activeQuery = query;
-    const pump = this.pumpQuery(query, output, abortController.signal);
+    const pump = this.pumpQuery(query, output, abortController.signal, input);
 
     try {
       for await (const event of output) {
@@ -229,6 +237,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     } finally {
       signal.removeEventListener("abort", abortSdk);
       if (this.activeQuery === query) this.activeQuery = null;
+      this.closeActiveInput(input);
       this.abortPendingInputRequests();
       await pump.catch(() => undefined);
     }
@@ -338,7 +347,35 @@ export class ClaudeSdkClient implements ClaudeClient {
     return true;
   }
 
+  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
+    const activeInput = this.activeInput;
+    if (!activeInput) {
+      return {
+        status: "no_active_turn",
+        message: "No active Claude SDK input stream",
+      };
+    }
+
+    try {
+      const accepted = activeInput.push(
+        makeUserMessage(input.prompt, input.imageAttachmentPaths),
+      );
+      return accepted
+        ? { status: "delivered" }
+        : {
+            status: "not_accepting_input",
+            message: "Claude SDK input stream is closed",
+          };
+    } catch (err) {
+      return {
+        status: "failed",
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+
   async close(): Promise<void> {
+    this.closeActiveInput();
     this.activeQuery?.close();
     this.abortPendingInputRequests();
   }
@@ -898,6 +935,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     query: ClaudeSdkQuery,
     output: EventQueue<ClaudeClientEvent>,
     signal: AbortSignal,
+    input: EventQueue<SDKUserMessage>,
   ): Promise<void> {
     try {
       let compactRetryCount = 0;
@@ -928,6 +966,7 @@ export class ClaudeSdkClient implements ClaudeClient {
                 message: "Claude SDK stream ended while runtime work was still pending.",
               });
             }
+            this.closeActiveInput(input);
             output.close();
             return;
           }
@@ -936,6 +975,7 @@ export class ClaudeSdkClient implements ClaudeClient {
           const msg = asRecord(message);
           if (msg?.type === "result") {
             sawResult = true;
+            this.closeActiveInput(input);
             const terminalEvents = this.mapResultMessage(msg);
             const resultEvent = terminalEvents.find((event) => event.type === "result");
             const continuations =
@@ -965,6 +1005,7 @@ export class ClaudeSdkClient implements ClaudeClient {
             }
           }
           if (shouldStop) {
+            this.closeActiveInput(input);
             // Result/complete (또는 fatal error) 도착 — post-result drain phase로 진입.
             // Python `receive_loop._drain_after_result` (L126-188) 정합:
             //   - prompt_suggestion 1메시지를 best-effort로 기다림 (default 2초)
@@ -1808,6 +1849,12 @@ export class ClaudeSdkClient implements ClaudeClient {
       pending.resolve(INPUT_REQUEST_ABORTED);
     }
   }
+
+  private closeActiveInput(input: EventQueue<SDKUserMessage> | null = this.activeInput): void {
+    if (!input) return;
+    input.close();
+    if (this.activeInput === input) this.activeInput = null;
+  }
 }
 
 function createEventQueue<T>(): EventQueue<T> {
@@ -1862,22 +1909,6 @@ function createEventQueue<T>(): EventQueue<T> {
     },
   };
   return iterator;
-}
-
-function makeQueryPrompt(
-  content: string,
-  imageAttachmentPaths?: string[],
-): string | AsyncIterable<SDKUserMessage> {
-  if (!imageAttachmentPaths || imageAttachmentPaths.length === 0) {
-    return content;
-  }
-  return singleUserMessage(makeUserMessage(content, imageAttachmentPaths));
-}
-
-async function* singleUserMessage(
-  message: SDKUserMessage,
-): AsyncIterable<SDKUserMessage> {
-  yield message;
 }
 
 function makeUserMessage(content: string, imageAttachmentPaths?: string[]): SDKUserMessage {

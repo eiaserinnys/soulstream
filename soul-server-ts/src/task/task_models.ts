@@ -9,9 +9,9 @@
  *   - pending_folder_id (folder 배정은 B-4 후속 PR-B 범위)
  *
  * B-4 추가 필드 (분석 캐시 `20260517-1410-codex-ts-folder-resume-intervene.md` §D):
- *   - interventionQueue: turn 사이 큐잉되는 사용자 메시지. claude
- *     `task_models.py` intervention_queue(asyncio.Queue) 정본과 의미 동등.
- *     codex SDK는 turn-level steer 미지원이라 turn 종료 후 dequeue → 다음 turn으로 처리.
+ *   - interventionQueue: live delivery 미지원/idle-race/terminal auto-resume에서 turn 사이
+ *     큐잉되는 사용자 메시지. claude `task_models.py` intervention_queue(asyncio.Queue)
+ *     정본의 fallback queue 의미와 동등.
  */
 
 import type { ContextItem } from "../context/prompt_assembler.js";
@@ -287,9 +287,8 @@ export interface Task {
 
   /**
    * Turn 사이 큐잉되는 개입 메시지 (B-4, claude `task_manager.py:603-609`의 asyncio.Queue
-   * 정본과 의미 동등). codex SDK는 turn-level steer 미지원이라 turn 종료 후 dequeue → 다음
-   * turn으로 자동 진입. Running 중 push되면 즉시 intervention_sent 발행(다른 클라이언트
-   * 진행 인지) + 현재 turn 자연 종료 후 다음 turn에 prompt로 주입.
+   * 정본 fallback과 의미 동등). live delivery 미지원/idle-race/terminal auto-resume이면
+   * turn 종료 후 dequeue → 다음 turn으로 자동 진입.
    *
    * 단일 process·단일 task_manager Map이라 별도 mutex 불요 — async await 경계만 정합.
    */

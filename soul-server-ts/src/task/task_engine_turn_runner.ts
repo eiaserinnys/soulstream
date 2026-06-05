@@ -74,8 +74,8 @@ export class TaskEngineTurnRunner {
         this.deps.snapshotPersistence.persistRunStateSnapshot(task, snapshot),
       onSessionItemsSnapshot: (snapshot) =>
         this.deps.snapshotPersistence.persistSessionItemsSnapshot(task, snapshot),
-      // Do not pass the legacy polling hook. Running interventions remain in the
-      // task queue and become the next turn input.
+      // Do not pass the legacy polling hook. Running interventions use the engine
+      // live-steering capability; unsupported/idle-race cases remain queued.
       ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
       ...(effectiveAllowedTools !== undefined ? { allowedTools: effectiveAllowedTools } : {}),
       ...(effectiveDisallowedTools !== undefined

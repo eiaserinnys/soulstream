@@ -20,6 +20,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type Query as ClaudeSdkQuery,
   type SDKMessage,
+  type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
@@ -140,6 +141,21 @@ function sdkSuccessResult(
   } as unknown as SDKMessage;
 }
 
+async function readUserPrompt(prompt: string | AsyncIterable<SDKUserMessage>): Promise<string> {
+  if (typeof prompt === "string") return prompt;
+  return readUserPromptFromIterator(prompt[Symbol.asyncIterator]());
+}
+
+async function readUserPromptFromIterator(iterator: AsyncIterator<SDKUserMessage>): Promise<string> {
+  const next = await iterator.next();
+  expect(next.done).toBe(false);
+  const content = next.value.message.content;
+  if (typeof content === "string") return content;
+  const textBlock = content.find((block) => block.type === "text");
+  expect(textBlock).toBeDefined();
+  return textBlock!.text;
+}
+
 describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
   it("첫 turn 정상 종료 → complete 1회 + status completed", async () => {
     const mocks = makeMocks();
@@ -257,8 +273,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
         (async function* () {
           queryCalls += 1;
           capturedResumeSessionIds.push(params.options?.resume);
-          expect(typeof params.prompt).toBe("string");
-          capturedPrompts.push(params.prompt as string);
+          capturedPrompts.push(await readUserPrompt(params.prompt));
 
           if (queryCalls === 1) {
             yield sdkSystemInit("claude-sess-drain-queue");
@@ -317,7 +332,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     expect(task.status).toBe("completed");
   });
 
-  it("빈 result로 첫 query가 닫혀도 Continue trailer intervention은 다음 query로 처리된다", async () => {
+  it("처리 중 Continue trailer intervention은 열린 SDK input으로 전달되어 같은 query에서 처리된다", async () => {
     const mocks = makeMocks();
     const readyForIntervention = deferred<void>();
     const capturedPrompts: string[] = [];
@@ -329,29 +344,26 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
         (async function* () {
           queryCalls += 1;
           capturedResumeSessionIds.push(params.options?.resume);
-          expect(typeof params.prompt).toBe("string");
-          capturedPrompts.push(params.prompt as string);
+          expect(typeof params.prompt).not.toBe("string");
+          const promptIterator = (params.prompt as AsyncIterable<SDKUserMessage>)[Symbol.asyncIterator]();
+          capturedPrompts.push(await readUserPromptFromIterator(promptIterator));
 
           if (queryCalls === 1) {
             yield sdkSystemInit("claude-sess-empty-live");
             readyForIntervention.resolve();
-            yield sdkSuccessResult("claude-sess-empty-live", "", {
-              stop_reason: null,
-              usage: {},
-              modelUsage: {},
-            });
+            capturedPrompts.push(await readUserPromptFromIterator(promptIterator));
+            yield {
+              type: "assistant",
+              message: { content: [{ type: "text", text: "handled on retry" }] },
+              parent_tool_use_id: null,
+              uuid: "assistant-retry",
+              session_id: "claude-sess-empty-live",
+            } as unknown as SDKMessage;
+            yield sdkSuccessResult("claude-sess-empty-live", "handled on retry");
             return;
           }
 
-          yield sdkSystemInit("claude-sess-empty-live");
-          yield {
-            type: "assistant",
-            message: { content: [{ type: "text", text: "handled on retry" }] },
-            parent_tool_use_id: null,
-            uuid: "assistant-retry",
-            session_id: "claude-sess-empty-live",
-          } as unknown as SDKMessage;
-          yield sdkSuccessResult("claude-sess-empty-live", "handled on retry");
+          throw new Error("Continue trailer should be handled by the open SDK input stream");
         })(),
       );
     const client = new ClaudeSdkClient(
@@ -383,15 +395,15 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
         text: "Continue from where you left off.",
         user: "dashboard",
       }),
-    ).resolves.toEqual({ queued: true, queuePosition: 1 });
+    ).resolves.toEqual({ delivered: true });
     await task.executionPromise;
 
-    expect(queryCalls).toBe(2);
-    expect(capturedResumeSessionIds).toEqual([
-      undefined,
-      "claude-sess-empty-live",
+    expect(queryCalls).toBe(1);
+    expect(capturedResumeSessionIds).toEqual([undefined]);
+    expect(capturedPrompts).toEqual([
+      "첫 발화",
+      "Continue from where you left off.",
     ]);
-    expect(capturedPrompts[1]).toContain("Continue from where you left off.");
     expect(task.interventionQueue).toEqual([]);
     expect(mocks.emitEventEnvelope).toHaveBeenCalledWith(
       "sess-lc",

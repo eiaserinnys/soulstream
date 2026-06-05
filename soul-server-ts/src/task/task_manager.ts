@@ -366,8 +366,8 @@ export class TaskManager {
  * Python `service/task_manager.py:563-642 add_intervention` 정본의 codex 적응판.
  *
  * 분기:
- *   - Running: interventionQueue에 push → `{queued, queuePosition}`.
- *     현 turn 종료 후 task_executor가 dequeue하여 intervention_sent를 발행하고 다음 turn으로 자동 진입.
+ *   - Running: live steering 지원 엔진이면 현 turn input stream에 즉시 전달 → `{delivered}`.
+ *     지원 없음/idle race면 interventionQueue에 push → `{queued, queuePosition}`.
    *   - Completed/Error/Interrupted: user_message를 박고 status를 "running"으로 돌린 뒤
    *     queue push + session_updated + onResume 콜백 호출 → `{autoResumed}`. 콜백은 호출자가
    *     task_executor.startExecution을 호출하도록 제공. design-principles §1(지식 경계) —

@@ -366,9 +366,10 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     ).resolves.toEqual({ status: "expired" });
   });
 
-  it("keeps running interventions queue-only by not exposing Claude live steering", async () => {
+  it("forwards active-turn steering to the Claude client while the turn is running", async () => {
     const release = deferred<void>();
     const captured: ClaudeRunOptions[] = [];
+    const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" as const });
     const client: ClaudeClient = {
       async *run(options: ClaudeRunOptions): AsyncIterable<ClaudeClientEvent> {
         captured.push(options);
@@ -376,6 +377,7 @@ describe("ClaudeEngineAdapter fake client flow", () => {
         await release.promise;
         yield { type: "complete" };
       },
+      steerActiveTurn,
     };
     const engine = new ClaudeEngineAdapter(
       { workspaceDir: "/tmp/claude-work", client, processEnv: {} },
@@ -388,7 +390,10 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       value: { type: "session", session_id: "claude-sess-1" },
     });
 
-    expect((engine as unknown as Record<string, unknown>).steerActiveTurn).toBeUndefined();
+    await expect(engine.steerActiveTurn({ prompt: "mid-turn intervention" })).resolves.toEqual({
+      status: "delivered",
+    });
+    expect(steerActiveTurn).toHaveBeenCalledWith({ prompt: "mid-turn intervention" });
     expect(captured[0]).not.toHaveProperty("onIntervention");
     expect(onIntervention).not.toHaveBeenCalled();
 
