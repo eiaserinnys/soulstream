@@ -40,6 +40,7 @@ function makeRuntime(
   addInterventionResult: AddInterventionResult | Error,
   orch?: OrchProxyConfig,
   agents?: AgentProfile[],
+  callerFolderId: string | null = "caller-folder",
 ): McpRuntime & {
   addIntervention: ReturnType<typeof vi.fn>;
   createTask: ReturnType<typeof vi.fn>;
@@ -76,7 +77,11 @@ function makeRuntime(
   return {
     nodeId: "node-test",
     agentsConfigPath: "/tmp/agents.yaml",
-    db: {} as SessionDB,
+    db: {
+      getSession: vi.fn(async (sessionId: string) =>
+        sessionId === "caller-sess-1" ? { folder_id: callerFolderId } : null,
+      ),
+    } as unknown as SessionDB,
     taskManager,
     taskExecutor: { startExecution } as unknown as TaskExecutor,
     agentRegistry,
@@ -509,6 +514,7 @@ describe("create_remote_agent_session", () => {
       ]);
       const body = JSON.parse(capture.requests[1]!.body);
       expect(body.caller_session_id).toBe("caller-sess-1");
+      expect(body.folderId).toBe("caller-folder");
       expect(body.caller_info).toEqual(expect.objectContaining({
         source: "agent",
         agent_node: "node-test",
@@ -558,6 +564,72 @@ describe("create_remote_agent_session", () => {
       expect(result.isError).not.toBe(true);
       const body = JSON.parse(capture.requests[1]!.body);
       expect(body.caller_session_id).toBe("caller-sess-1");
+      expect(body.folderId).toBe("caller-folder");
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("folder_id를 명시하지 않으면 caller session 폴더를 remote body에 상속한다", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
+        return { body: { agents: [{ id: "roselin_codex", name: "로젤린", backend: "codex" }] } };
+      }
+      if (req.method === "POST" && req.url === "/api/sessions") {
+        return { body: { agentSessionId: "sess-child", nodeId: "node-remote" } };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_remote_agent_session",
+        arguments: {
+          node_id: "node-remote",
+          agent_id: "roselin_codex",
+          prompt: "delegate",
+          caller_session_id: "caller-sess-1",
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      const body = JSON.parse(capture.requests[1]!.body);
+      expect(body.folderId).toBe("caller-folder");
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("folder_id=null은 caller folder 상속 없이 root 의도로 전달한다", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
+        return { body: { agents: [{ id: "roselin_codex", name: "로젤린", backend: "codex" }] } };
+      }
+      if (req.method === "POST" && req.url === "/api/sessions") {
+        return { body: { agentSessionId: "sess-child", nodeId: "node-remote" } };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime({ queued: true, queuePosition: 1 }, capture.orch);
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_remote_agent_session",
+        arguments: {
+          node_id: "node-remote",
+          agent_id: "roselin_codex",
+          prompt: "delegate",
+          caller_session_id: "caller-sess-1",
+          folder_id: null,
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      const body = JSON.parse(capture.requests[1]!.body);
+      expect(body.folderId).toBeNull();
     } finally {
       await capture.close();
     }

@@ -14,7 +14,7 @@
  *  - FeedItem / FolderItem 자식 렌더링
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, type ReactNode } from "react";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useSortedFolders } from "../hooks/useSortedFolders";
@@ -22,6 +22,7 @@ import { useFolderSessionStats } from "../hooks/useFolderSessionStats";
 import { Button } from "./ui/button";
 import { SYSTEM_FOLDERS } from "../shared/constants";
 import { Plus } from "lucide-react";
+import { getChildFolders } from "../board-workspace/board-workspace-helpers";
 import { FolderDialog } from "./FolderDialog";
 import { FolderSettingsDialog } from "./FolderSettingsDialog";
 import { FolderSortButton } from "./FolderSortButton";
@@ -30,8 +31,19 @@ import { TasksItem } from "./TasksItem";
 import { FolderItem } from "./FolderItem";
 import { FolderContextMenu, type FolderContextMenuTarget } from "./FolderContextMenu";
 import type { FolderSettings } from "../shared/types";
+import {
+  readFolderTreeExpandedState,
+  writeFolderTreeExpandedState,
+} from "./folder-tree-expansion";
 
 const SYSTEM_FOLDER_NAMES: Set<string> = new Set(Object.values(SYSTEM_FOLDERS));
+
+function folderSortKey(name: string): string {
+  return (
+    name.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+/u, "").trim()
+    || name
+  );
+}
 
 export interface FolderTreeProps {
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => void;
@@ -69,6 +81,7 @@ export function FolderTree({
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [contextMenu, setContextMenu] = useState<FolderContextMenuTarget | null>(null);
   const [settingsTarget, setSettingsTarget] = useState<{ id: string; name: string } | null>(null);
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
 
   const allFolders = catalog?.folders ?? [];
 
@@ -111,33 +124,76 @@ export function FolderTree({
     selectFolder(folderId);
   }, [selectFolder]);
 
-  const renderFolderItem = (folder: typeof allFolders[number]) => {
+  const storage = typeof window === "undefined" ? undefined : window.localStorage;
+
+  const isFolderExpanded = useCallback((folderId: string) => {
+    return expandedFolders[folderId]
+      ?? readFolderTreeExpandedState(storage, folderId);
+  }, [expandedFolders, storage]);
+
+  const toggleFolderExpanded = useCallback((folderId: string) => {
+    const next = !isFolderExpanded(folderId);
+    writeFolderTreeExpandedState(storage, folderId, next);
+    setExpandedFolders((prev) => ({ ...prev, [folderId]: next }));
+  }, [isFolderExpanded, storage]);
+
+  const sortTreeFolders = useCallback((folders: typeof allFolders) => {
+    const normal = folders.filter((f) => !SYSTEM_FOLDER_NAMES.has(f.name));
+    switch (folderSortMode) {
+      case "name-asc":
+        return [...normal].sort((a, b) => folderSortKey(a.name).localeCompare(folderSortKey(b.name)));
+      case "name-desc":
+        return [...normal].sort((a, b) => folderSortKey(b.name).localeCompare(folderSortKey(a.name)));
+      case "created-desc":
+        return [...normal].sort((a, b) =>
+          new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
+        );
+      case "created-asc":
+        return [...normal].sort((a, b) =>
+          new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime()
+        );
+      case "custom":
+      default:
+        return [...normal].sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+    }
+  }, [folderSortMode]);
+
+  const renderFolderItem = (folder: typeof allFolders[number], depth = 0): ReactNode => {
     const isSystem = SYSTEM_FOLDER_NAMES.has(folder.name);
-    const isDraggableFolder = folderSortMode === "custom" && !isSystem;
+    const isDraggableFolder = depth === 0 && folderSortMode === "custom" && !isSystem;
+    const childFolders = sortTreeFolders(getChildFolders(allFolders, folder.id));
+    const hasChildren = childFolders.length > 0;
+    const isExpanded = hasChildren && isFolderExpanded(folder.id);
     return (
-      <FolderItem
-        key={folder.id}
-        folder={folder}
-        isSystem={isSystem}
-        isDraggableFolder={isDraggableFolder}
-        sortedNormalFolderIds={sortedNormalFolderIds}
-        isSelected={viewMode === "folder" && selectedFolderId === folder.id}
-        isEditingThis={editingId === folder.id}
-        editName={editName}
-        dragOverId={dragOverId}
-        unreadCount={getUnreadCount(folder.id)}
-        sessionCount={getDirectChildCount(folder.id)}
-        isRunning={runningFolderIds.has(folder.id)}
-        onSelect={() => handleSelectFolder(folder.id)}
-        onDoubleClick={() => handleDoubleClick(folder.id, folder.name)}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          setContextMenu({ x: e.clientX, y: e.clientY, folder: { id: folder.id, name: folder.name } });
-        }}
-        onEditChange={setEditName}
-        onEditSubmit={() => handleRenameSubmit(folder.id)}
-        onEditCancel={() => setEditingId(null)}
-      />
+      <div key={folder.id}>
+        <FolderItem
+          folder={folder}
+          isSystem={isSystem}
+          isDraggableFolder={isDraggableFolder}
+          sortedNormalFolderIds={sortedNormalFolderIds}
+          isSelected={viewMode === "folder" && selectedFolderId === folder.id}
+          isEditingThis={editingId === folder.id}
+          editName={editName}
+          dragOverId={dragOverId}
+          unreadCount={getUnreadCount(folder.id)}
+          sessionCount={getDirectChildCount(folder.id)}
+          isRunning={runningFolderIds.has(folder.id)}
+          depth={depth}
+          hasChildren={hasChildren}
+          isExpanded={isExpanded}
+          onToggleExpanded={() => toggleFolderExpanded(folder.id)}
+          onSelect={() => handleSelectFolder(folder.id)}
+          onDoubleClick={() => handleDoubleClick(folder.id, folder.name)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setContextMenu({ x: e.clientX, y: e.clientY, folder: { id: folder.id, name: folder.name } });
+          }}
+          onEditChange={setEditName}
+          onEditSubmit={() => handleRenameSubmit(folder.id)}
+          onEditCancel={() => setEditingId(null)}
+        />
+        {isExpanded && childFolders.map((child) => renderFolderItem(child, depth + 1))}
+      </div>
     );
   };
 
@@ -161,7 +217,7 @@ export function FolderTree({
 
         {/* 일반 폴더 — SortableContext로 재정렬 가능 */}
         <SortableContext items={sortedNormalFolderIds} strategy={verticalListSortingStrategy}>
-          {sortedNormalFolders.map(renderFolderItem)}
+          {sortedNormalFolders.map((folder) => renderFolderItem(folder, 0))}
         </SortableContext>
 
         {/* 구분선 (일반 폴더가 1개 이상일 때만) */}
@@ -170,7 +226,7 @@ export function FolderTree({
         )}
 
         {/* 시스템 폴더 */}
-        {systemFolders.map(renderFolderItem)}
+        {systemFolders.map((folder) => renderFolderItem(folder, 0))}
       </div>
 
       <FolderDialog
@@ -188,6 +244,7 @@ export function FolderTree({
       />
       <FolderSettingsDialog
         folder={catalog?.folders.find((f) => f.id === settingsTarget?.id) ?? null}
+        folders={catalog?.folders ?? []}
         open={!!settingsTarget}
         onOpenChange={(open) => { if (!open) setSettingsTarget(null); }}
         onConfirm={(settings) => {

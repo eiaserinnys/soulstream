@@ -21,6 +21,7 @@ import {
 import { Button } from "./ui/button";
 import { useServerStatus } from "../hooks/useServerStatus";
 import { AtomNodeSelector } from "./AtomNodeSelector";
+import { getInheritedFolderPrompts } from "../board-workspace/folder-prompt-inheritance";
 import type { AtomContextNodeSettings, CatalogFolder, FolderSettings } from "../shared/types";
 
 const settingsSchema = z.object({
@@ -35,6 +36,7 @@ type SettingsFormValues = z.infer<typeof settingsSchema>;
 
 export interface FolderSettingsDialogProps {
   folder: CatalogFolder | null;
+  folders?: readonly CatalogFolder[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: (settings: FolderSettings) => void;
@@ -42,11 +44,15 @@ export interface FolderSettingsDialogProps {
 
 export function FolderSettingsDialog({
   folder,
+  folders = [],
   open,
   onOpenChange,
   onConfirm,
 }: FolderSettingsDialogProps) {
   const { atomEnabled } = useServerStatus();
+  const inheritedPrompts = folder
+    ? getInheritedFolderPrompts(folders, folder.id)
+    : [];
 
   const { register, handleSubmit, reset, watch, setValue } =
     useForm<SettingsFormValues>({
@@ -110,11 +116,34 @@ export function FolderSettingsDialog({
             </label>
             <div className="mt-3 flex flex-col gap-1">
               <label className="text-sm text-[--color-text-secondary]">
-                폴더 프롬프트
+                상속(읽기 전용 미리보기)
+              </label>
+              <div className="max-h-36 overflow-y-auto rounded border border-[--color-border] bg-[--color-surface-1] px-2 py-2 text-xs">
+                {inheritedPrompts.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    {inheritedPrompts.map((item) => (
+                      <div key={item.folderId} className="flex flex-col gap-1">
+                        <span className="font-medium text-[--color-text-primary]">
+                          {item.folderName}
+                        </span>
+                        <p className="whitespace-pre-wrap text-[--color-text-secondary]">
+                          {item.prompt}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-[--color-text-secondary]">상속된 프롬프트 없음</span>
+                )}
+              </div>
+            </div>
+            <div className="mt-3 flex flex-col gap-1">
+              <label className="text-sm text-[--color-text-secondary]">
+                이 폴더의 추가(편집)
               </label>
               <textarea
                 {...register("folderPrompt")}
-                placeholder="새 세션 시작 시 Claude에게 전달할 지시사항을 입력하세요"
+                placeholder="이 폴더에서만 추가할 지시사항을 입력하세요"
                 rows={4}
                 className="w-full rounded border border-[--color-border] bg-[--color-surface-1] px-2 py-1 text-sm resize-none"
               />

@@ -53,7 +53,7 @@ function makeOperation(overrides: Partial<TaskOperationRow> = {}): TaskOperation
   };
 }
 
-function makeHarness() {
+function makeHarness(options: { callerFolderId?: string | null } = {}) {
   let currentTask = makeTask({
     linked_session_id: "child-session",
     linked_node_id: "node-child",
@@ -118,6 +118,11 @@ function makeHarness() {
     db: {
       taskTree: () => repo,
       appendEvent,
+      getSession: vi.fn(async (sessionId: string) =>
+        sessionId === "parent-session"
+          ? { folder_id: options.callerFolderId ?? null }
+          : null,
+      ),
     },
     agentRegistry: {
       list: () => [{ id: "child-agent", name: "Child Agent" }],
@@ -218,6 +223,39 @@ describe("TaskTreeService", () => {
     );
     expect(result.task?.active_for_session_id).toBe(result.delegated_session_id);
     expect(h.runtime.taskExecutor.startExecution).toHaveBeenCalledTimes(1);
+  });
+
+  it("inherits caller session folder when delegate folderId is omitted", async () => {
+    const h = makeHarness({ callerFolderId: "caller-folder" });
+
+    await h.service.delegateTaskItem({
+      sessionId: "parent-session",
+      parentTaskId: "task-parent",
+      title: "Child task",
+      prompt: "Do the work",
+      agentId: "child-agent",
+    });
+
+    expect(h.createdSessions[0]).toEqual(
+      expect.objectContaining({ folderId: "caller-folder" }),
+    );
+  });
+
+  it("preserves explicit null delegate folderId as root", async () => {
+    const h = makeHarness({ callerFolderId: "caller-folder" });
+
+    await h.service.delegateTaskItem({
+      sessionId: "parent-session",
+      parentTaskId: "task-parent",
+      title: "Child task",
+      prompt: "Do the work",
+      agentId: "child-agent",
+      folderId: null,
+    });
+
+    expect(h.createdSessions[0]).toEqual(
+      expect.objectContaining({ folderId: null }),
+    );
   });
 
   it.each([

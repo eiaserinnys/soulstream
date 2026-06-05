@@ -114,6 +114,51 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     expect(ctx.effectiveSystemPrompt).toBe("폴더\n\ntask system");
   });
 
+  it("folderPrompt는 root부터 leaf까지 상속 합성하고 빈 prompt는 건너뛴다", async () => {
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "leaf" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "leaf",
+      name: "Leaf",
+      sort_order: 2,
+      parent_folder_id: "middle",
+      settings: { folderPrompt: "leaf prompt" },
+    });
+    const getCatalog = vi.fn().mockResolvedValue({
+      folders: [
+        {
+          id: "root",
+          name: "Root",
+          sortOrder: 0,
+          parentFolderId: null,
+          settings: { folderPrompt: "root prompt" },
+        },
+        {
+          id: "middle",
+          name: "Middle",
+          sortOrder: 1,
+          parentFolderId: "root",
+          settings: { folderPrompt: "" },
+        },
+        {
+          id: "leaf",
+          name: "Leaf",
+          sortOrder: 2,
+          parentFolderId: "middle",
+          settings: { folderPrompt: "leaf prompt" },
+        },
+      ],
+      sessions: {},
+    });
+    const cb = makeBuilder({ getSession, getFolderById, getCatalog } as Partial<SessionDB>);
+
+    const ctx = await cb.build(
+      makeTask({ systemPrompt: "task system" }),
+      codexAgent,
+    );
+
+    expect(ctx.effectiveSystemPrompt).toBe("root prompt\n\nleaf prompt\n\ntask system");
+  });
+
   it("folderPrompt 없고 task.systemPrompt만 있음 → 그대로 반환", async () => {
     const cb = makeBuilder();
     const ctx = await cb.build(
@@ -606,6 +651,62 @@ describe("ExecutionContextBuilder.buildSystemPrompt — Claude resume system pro
 
     expect(prompt).toContain("# agent rules");
     expect(prompt).toContain("\n\nfolder prompt\n\ntask prompt");
+    expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(1);
+  });
+
+  it("resume system prompt도 folderPrompt 상속 chain을 사용한다", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ markdown: "# agent rules\nbody" }), { status: 200 }),
+    );
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "leaf" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "leaf",
+      name: "Leaf",
+      sort_order: 2,
+      parent_folder_id: "root",
+      settings: { folderPrompt: "leaf prompt" },
+    });
+    const getCatalog = vi.fn().mockResolvedValue({
+      folders: [
+        {
+          id: "root",
+          name: "Root",
+          sortOrder: 0,
+          parentFolderId: null,
+          settings: { folderPrompt: "root prompt" },
+        },
+        {
+          id: "leaf",
+          name: "Leaf",
+          sortOrder: 2,
+          parentFolderId: "root",
+          settings: { folderPrompt: "leaf prompt" },
+        },
+      ],
+      sessions: {},
+    });
+    const agent: AgentProfile = {
+      ...codexAgent,
+      atom_contexts: [
+        {
+          node_id: "22222222-3333-4444-5555-666666666666",
+          depth: 3,
+          titles_only: false,
+        },
+      ],
+    };
+    const cb = makeBuilder(
+      { getSession, getFolderById, getCatalog } as Partial<SessionDB>,
+      new AgentRegistry([agent]),
+      true,
+    );
+
+    const prompt = await cb.buildSystemPrompt(
+      makeTask({ systemPrompt: "task prompt" }),
+      agent,
+    );
+
+    expect(prompt).toContain("\n\nroot prompt\n\nleaf prompt\n\ntask prompt");
     expect(vi.mocked(globalThis.fetch)).toHaveBeenCalledTimes(1);
   });
 });

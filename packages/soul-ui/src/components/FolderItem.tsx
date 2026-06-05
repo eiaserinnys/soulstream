@@ -15,7 +15,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { cn } from "../lib/cn";
 import { Badge } from "./ui/badge";
 import { Spinner } from "./ui/spinner";
-import { GripVertical } from "lucide-react";
+import { ChevronDown, ChevronRight, GripVertical } from "lucide-react";
 
 export interface FolderItemProps {
   folder: { id: string; name: string; sortOrder: number; createdAt?: string };
@@ -29,6 +29,10 @@ export interface FolderItemProps {
   unreadCount: number;
   sessionCount: number;
   isRunning: boolean;
+  depth?: number;
+  hasChildren?: boolean;
+  isExpanded?: boolean;
+  onToggleExpanded?: () => void;
   onSelect: () => void;
   onDoubleClick: () => void;
   onContextMenu: (e: React.MouseEvent) => void;
@@ -51,6 +55,10 @@ export const FolderItem = memo(function FolderItem({
   unreadCount,
   sessionCount,
   isRunning,
+  depth = 0,
+  hasChildren = false,
+  isExpanded = false,
+  onToggleExpanded,
   onSelect,
   onDoubleClick,
   onContextMenu,
@@ -90,12 +98,15 @@ export const FolderItem = memo(function FolderItem({
     [setSortableRef, setDroppableRef],
   );
 
-  const style = isDraggableFolder
-    ? {
-        transform: CSS.Transform.toString(transform),
-        transition,
-      }
-    : undefined;
+  const style = {
+    ...(isDraggableFolder
+      ? {
+          transform: CSS.Transform.toString(transform),
+          transition,
+        }
+      : {}),
+    paddingLeft: `${12 + depth * 14}px`,
+  };
 
   return (
     <div
@@ -126,6 +137,26 @@ export const FolderItem = memo(function FolderItem({
         />
       ) : (
         <div className="flex items-center gap-1.5 min-w-0">
+          {hasChildren ? (
+            <button
+              type="button"
+              data-testid={`folder-tree-toggle-${folder.id}`}
+              aria-label={isExpanded ? `${folder.name} 접기` : `${folder.name} 펼치기`}
+              className="-ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent"
+              onClick={(event) => {
+                event.stopPropagation();
+                onToggleExpanded?.();
+              }}
+            >
+              {isExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+            </button>
+          ) : (
+            <span className="-ml-1 h-4 w-4 shrink-0" />
+          )}
           {isDraggableFolder && (
             <GripVertical
               {...attributes}

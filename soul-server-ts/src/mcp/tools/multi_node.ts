@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { AgentProfileSchema } from "../../agent_registry.js";
 import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
+import { getCallerSessionFolderId } from "../../session_folder_fallback.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { requireRemoteCallerSessionId } from "./caller_session.js";
@@ -234,10 +235,11 @@ export function registerMultiNodeTools(
         agent_id: z.string().optional(),
         prompt: z.string(),
         caller_session_id: z.string().optional(),
-        folder_id: z.string().optional(),
+        folder_id: z.string().nullable().optional(),
       },
     },
-    async ({ node_id, agent_id, prompt, caller_session_id, folder_id }) => {
+    async (input) => {
+      const { node_id, agent_id, prompt, caller_session_id, folder_id } = input;
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
 
@@ -259,7 +261,14 @@ export function registerMultiNodeTools(
         nodeId: node_id,
       };
       if (agent_id !== undefined) body.profile = agent_id;
-      if (folder_id !== undefined) body.folderId = folder_id;
+      if (Object.prototype.hasOwnProperty.call(input, "folder_id") && folder_id !== undefined) {
+        body.folderId = folder_id;
+      } else {
+        body.folderId = await getCallerSessionFolderId(
+          runtime,
+          callerSession.callerSessionId,
+        );
+      }
       body.caller_session_id = callerSession.callerSessionId;
       body.caller_info = callerInfo;
 

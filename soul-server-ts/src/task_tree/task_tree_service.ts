@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { buildCallerInfoFromCallerSession } from "../caller_info.js";
 import type { McpRuntime } from "../mcp/runtime.js";
+import { resolveDelegatedFolderId } from "../session_folder_fallback.js";
 
 import type {
   TaskItemRow,
@@ -166,7 +167,12 @@ export class TaskTreeService {
         profileId: resolvedAgentId,
         callerSessionId: params.sessionId,
         callerInfo,
-        folderId: params.folderId ?? null,
+        folderId: await resolveDelegatedFolderId(this.runtime, {
+          callerSessionId: params.sessionId,
+          ...(Object.prototype.hasOwnProperty.call(params, "folderId")
+            ? { folderId: params.folderId }
+            : {}),
+        }),
       });
       this.runtime.taskExecutor.startExecution(childSession, agent);
     } catch (err) {
