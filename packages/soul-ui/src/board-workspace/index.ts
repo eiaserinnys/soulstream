@@ -30,6 +30,7 @@ export {
   deleteBoardYjsItem,
   getBoardYjsDocumentName,
   getBoardYjsRuntime,
+  getMarkdownPreview,
   getOrCreateMarkdownText,
   isBoardYjsBrowserConnectionAvailable,
   placeBoardSessionInYjs,

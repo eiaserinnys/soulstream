@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
-import * as Y from "yjs";
 
 import type { MarkdownDocument } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
 import {
+  getMarkdownPreview,
   getBoardYjsRuntime,
   subscribeBoardYjsRuntime,
   type BoardYjsRuntime,
@@ -13,6 +13,11 @@ import { Button } from "./ui/button";
 import { MarkdownContent } from "./MarkdownContent";
 
 type SaveStatus = "idle" | "dirty" | "saving" | "saved";
+
+const MarkdownCodeMirrorEditor = lazy(async () => {
+  const module = await import("./MarkdownCodeMirrorEditor");
+  return { default: module.MarkdownCodeMirrorEditor };
+});
 
 async function fetchMarkdownDocument(documentId: string): Promise<MarkdownDocument> {
   const res = await fetch(`/api/catalog/markdown-documents/${encodeURIComponent(documentId)}`);
@@ -52,7 +57,8 @@ export function MarkdownDocumentPanel() {
   const [savedBody, setSavedBody] = useState("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const undoManagerRef = useRef<Y.UndoManager | null>(null);
+  const editBodySnapshotRef = useRef("");
+  const skipNextBlurSaveRef = useRef(false);
 
   const clearSaveTimer = useCallback(() => {
     if (!saveTimerRef.current) return;
@@ -80,7 +86,9 @@ export function MarkdownDocumentPanel() {
     const currentTitle = title.trim() || "Untitled document";
     if (runtime) {
       runtime.updateMarkdownTitle(documentId, currentTitle);
-      runtime.updateMarkdownBody(documentId, body);
+      if (!yText || yText.toString() !== body) {
+        runtime.updateMarkdownBody(documentId, body);
+      }
       setSavedTitle(currentTitle);
       setSavedBody(body);
       setSaveStatus("saved");
@@ -103,12 +111,11 @@ export function MarkdownDocumentPanel() {
       setSaveStatus("dirty");
       console.error("Markdown document save failed:", err);
     }
-  }, [body, clearSaveTimer, documentId, runtime, savedBody, savedTitle, title]);
+  }, [body, clearSaveTimer, documentId, runtime, savedBody, savedTitle, title, yText]);
 
   useEffect(() => {
     clearSaveTimer();
-    undoManagerRef.current?.destroy();
-    undoManagerRef.current = null;
+    skipNextBlurSaveRef.current = false;
     if (!documentId) return;
     setDocument(null);
     setIsEditingBody(false);
@@ -165,7 +172,6 @@ export function MarkdownDocumentPanel() {
 
   useEffect(() => () => {
     clearSaveTimer();
-    undoManagerRef.current?.destroy();
   }, [clearSaveTimer]);
 
   if (!documentId) return null;
@@ -188,11 +194,8 @@ export function MarkdownDocumentPanel() {
   };
 
   const enterEditMode = () => {
-    if (yText) {
-      undoManagerRef.current?.destroy();
-      undoManagerRef.current = new Y.UndoManager(yText);
-      undoManagerRef.current.stopCapturing();
-    }
+    skipNextBlurSaveRef.current = false;
+    editBodySnapshotRef.current = yText ? yText.toString() : body;
     setIsEditingBody(true);
   };
 
@@ -200,8 +203,8 @@ export function MarkdownDocumentPanel() {
     setBody(value);
     setSaveStatus(runtime ? "saved" : "dirty");
     if (runtime && documentId) {
-      runtime.updateMarkdownBody(documentId, value);
       setSavedBody(value);
+      refreshRuntimeMarkdownPreview(runtime, documentId, value);
     }
   };
 
@@ -214,6 +217,31 @@ export function MarkdownDocumentPanel() {
       setSavedTitle(normalized);
     }
   };
+
+  const handleEditorBlur = useCallback(() => {
+    if (skipNextBlurSaveRef.current) {
+      skipNextBlurSaveRef.current = false;
+      return;
+    }
+    void saveNow();
+    setIsEditingBody(false);
+  }, [saveNow]);
+
+  const handleEditorEscape = useCallback(() => {
+    skipNextBlurSaveRef.current = true;
+    clearSaveTimer();
+    const reverted = editBodySnapshotRef.current;
+    if (runtime && documentId) {
+      runtime.updateMarkdownBody(documentId, reverted);
+      setBody(reverted);
+      setSavedBody(reverted);
+    } else {
+      setTitle(savedTitle);
+      setBody(savedBody);
+    }
+    setSaveStatus("saved");
+    setIsEditingBody(false);
+  }, [clearSaveTimer, documentId, runtime, savedBody, savedTitle]);
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-background">
@@ -237,37 +265,17 @@ export function MarkdownDocumentPanel() {
         {!document ? (
           <div className="text-sm text-muted-foreground">Loading...</div>
         ) : isEditingBody ? (
-          <textarea
-            value={body}
-            onChange={(event) => updateBody(event.target.value)}
-            onBlur={() => {
-              void saveNow();
-              setIsEditingBody(false);
-              undoManagerRef.current?.destroy();
-              undoManagerRef.current = null;
-            }}
-            onKeyDown={(event) => {
-              if (event.key !== "Escape") return;
-              event.preventDefault();
-              clearSaveTimer();
-              if (runtime && yText) {
-                undoManagerRef.current?.undo();
-                const reverted = yText.toString();
-                setBody(reverted);
-                setSavedBody(reverted);
-              } else {
-                setTitle(savedTitle);
-                setBody(savedBody);
-              }
-              setSaveStatus("saved");
-              setIsEditingBody(false);
-              undoManagerRef.current?.destroy();
-              undoManagerRef.current = null;
-            }}
-            className="h-full min-h-[360px] w-full resize-none rounded-md border border-border bg-background p-3 font-mono text-sm leading-relaxed outline-none focus:ring-2 focus:ring-ring"
-            aria-label="Document body"
-            autoFocus
-          />
+          <Suspense fallback={<div className="text-sm text-muted-foreground">Loading editor...</div>}>
+            <MarkdownCodeMirrorEditor
+              value={body}
+              yText={yText}
+              awareness={runtime?.awareness ?? null}
+              onChange={updateBody}
+              onBlur={handleEditorBlur}
+              onEscape={handleEditorEscape}
+              ariaLabel="Document body"
+            />
+          </Suspense>
         ) : (
           <div
             className="prose prose-sm min-h-full max-w-none cursor-text dark:prose-invert"
@@ -296,4 +304,18 @@ function useBoardRuntime(folderId: string | null): BoardYjsRuntime | null {
 function getMetadataText(metadata: Record<string, unknown> | undefined, key: string): string {
   const value = metadata?.[key];
   return typeof value === "string" ? value : "";
+}
+
+function refreshRuntimeMarkdownPreview(runtime: BoardYjsRuntime, documentId: string, body: string) {
+  const boardItemId = `markdown:${documentId}`;
+  const item = runtime.getBoardItems().find((candidate) => candidate.id === boardItemId);
+  if (!item) return;
+  runtime.upsertBoardItem({
+    ...item,
+    metadata: {
+      ...(item.metadata ?? {}),
+      preview: getMarkdownPreview(body),
+    },
+    updatedAt: new Date().toISOString(),
+  });
 }
