@@ -112,3 +112,77 @@ class TestDeleteSession:
 
         assert resp.status_code == 204
         mock_catalog_service.delete_session.assert_called_once_with("sess-del")
+
+
+class TestBoardItems:
+    """PATCH /api/catalog/board-items/{id}/position tests."""
+
+    async def test_update_board_item_position(self, client, mock_catalog_service):
+        resp = await client.patch(
+            "/api/catalog/board-items/session:s1/position",
+            json={"x": 59, "y": 101},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        mock_catalog_service.update_board_item_position.assert_called_once_with("session:s1", 59, 101)
+
+
+class TestMarkdownDocuments:
+    """Markdown document CRUD routes."""
+
+    async def test_create_markdown_document(self, client, mock_catalog_service):
+        resp = await client.post(
+            "/api/catalog/markdown-documents",
+            json={"folderId": "f1", "title": "Note", "body": "Body", "x": 40, "y": 80},
+        )
+
+        assert resp.status_code == 201
+        assert resp.json()["document"]["id"] == "doc-1"
+        mock_catalog_service.create_markdown_document.assert_called_once_with(
+            folder_id="f1",
+            title="Note",
+            body="Body",
+            x=40,
+            y=80,
+        )
+
+    async def test_get_markdown_document(self, client, mock_catalog_service):
+        resp = await client.get("/api/catalog/markdown-documents/doc-1")
+
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "Note"
+        mock_catalog_service.get_markdown_document.assert_called_once_with("doc-1")
+
+    async def test_get_markdown_document_404(self, client, mock_catalog_service):
+        mock_catalog_service.get_markdown_document.return_value = None
+
+        resp = await client.get("/api/catalog/markdown-documents/missing")
+
+        assert resp.status_code == 404
+
+    async def test_update_markdown_document(self, client, mock_catalog_service):
+        resp = await client.put(
+            "/api/catalog/markdown-documents/doc-1",
+            json={"title": "New"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "New"
+        mock_catalog_service.update_markdown_document.assert_called_once_with(
+            "doc-1",
+            title="New",
+            body=None,
+        )
+
+    async def test_update_markdown_document_empty_body_returns_400(self, client, mock_catalog_service):
+        resp = await client.put("/api/catalog/markdown-documents/doc-1", json={})
+
+        assert resp.status_code == 400
+        mock_catalog_service.update_markdown_document.assert_not_called()
+
+    async def test_delete_markdown_document(self, client, mock_catalog_service):
+        resp = await client.delete("/api/catalog/markdown-documents/doc-1")
+
+        assert resp.status_code == 204
+        mock_catalog_service.delete_markdown_document.assert_called_once_with("doc-1")

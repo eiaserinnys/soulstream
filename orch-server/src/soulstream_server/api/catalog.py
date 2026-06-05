@@ -25,7 +25,7 @@ soul-common의 CatalogService.get_catalog()은 sessions를 dict(세션ID → 폴
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from soul_common.catalog.catalog_service import CatalogService
@@ -40,6 +40,31 @@ logger = logging.getLogger(__name__)
 class SessionCatalogUpdate(BaseModel):
     folderId: Optional[str] = None
     displayName: Optional[str] = None
+
+
+class BoardItemPositionUpdate(BaseModel):
+    x: float
+    y: float
+
+
+class MarkdownDocumentCreate(BaseModel):
+    folderId: str
+    title: str
+    body: str = ""
+    x: Optional[float] = None
+    y: Optional[float] = None
+
+
+class MarkdownDocumentUpdate(BaseModel):
+    title: Optional[str] = None
+    body: Optional[str] = None
+
+
+def _field_supplied(model: BaseModel, field_name: str) -> bool:
+    fields = getattr(model, "model_fields_set", None)
+    if fields is None:
+        fields = getattr(model, "__fields_set__", set())
+    return field_name in fields
 
 
 def create_catalog_router(
@@ -102,6 +127,7 @@ def create_catalog_router(
         return {
             "folders": catalog.get("folders", []),
             "sessions": sessions_dict,
+            "boardItems": catalog.get("boardItems", []),
             "sessionList": session_list,
             "total": total,
         }
@@ -115,6 +141,45 @@ def create_catalog_router(
         counts = await db.get_folder_counts(node_id=None)
         # None 키(폴더 미지정)는 JSON 직렬화 시 "null" 문자열로 변환
         return {"counts": {str(k) if k is not None else "null": v for k, v in counts.items()}}
+
+    @router.patch("/board-items/{board_item_id}/position")
+    async def update_board_item_position(board_item_id: str, body: BoardItemPositionUpdate) -> dict:
+        await catalog_service.update_board_item_position(board_item_id, body.x, body.y)
+        return {"ok": True}
+
+    @router.post("/markdown-documents", status_code=201)
+    async def create_markdown_document(body: MarkdownDocumentCreate) -> dict:
+        return await catalog_service.create_markdown_document(
+            folder_id=body.folderId,
+            title=body.title,
+            body=body.body,
+            x=body.x,
+            y=body.y,
+        )
+
+    @router.get("/markdown-documents/{document_id}")
+    async def get_markdown_document(document_id: str) -> dict:
+        document = await catalog_service.get_markdown_document(document_id)
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return document
+
+    @router.put("/markdown-documents/{document_id}")
+    async def update_markdown_document(document_id: str, body: MarkdownDocumentUpdate) -> dict:
+        if not _field_supplied(body, "title") and not _field_supplied(body, "body"):
+            raise HTTPException(status_code=400, detail="No fields to update")
+        document = await catalog_service.update_markdown_document(
+            document_id,
+            title=body.title if _field_supplied(body, "title") else None,
+            body=body.body if _field_supplied(body, "body") else None,
+        )
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return document
+
+    @router.delete("/markdown-documents/{document_id}", status_code=204)
+    async def delete_markdown_document(document_id: str):
+        await catalog_service.delete_markdown_document(document_id)
 
     # 고정 경로 "/sessions/batch"를 파라미터화 경로 "/{session_id}" 보다 먼저 등록
     @router.put("/sessions/batch")

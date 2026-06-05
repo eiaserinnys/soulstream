@@ -60,6 +60,19 @@ CREATE TRIGGER folders_prevent_cycle_trigger
 BEFORE INSERT OR UPDATE OF parent_folder_id ON folders
 FOR EACH ROW EXECUTE FUNCTION folders_prevent_cycle();
 
+CREATE OR REPLACE FUNCTION board_delete_folder_refs()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM board_items WHERE item_type = 'subfolder' AND item_id = OLD.id;
+    RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS board_delete_folder_refs_trigger ON folders;
+CREATE TRIGGER board_delete_folder_refs_trigger
+AFTER DELETE ON folders
+FOR EACH ROW EXECUTE FUNCTION board_delete_folder_refs();
+
 CREATE TABLE IF NOT EXISTS sessions (
     session_id              TEXT PRIMARY KEY,
     folder_id               TEXT REFERENCES folders(id),
@@ -86,6 +99,56 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS caller_session_id TEXT;
 
 -- away_summary 컬럼 추가 (멱등)
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS away_summary TEXT;
+
+CREATE OR REPLACE FUNCTION board_delete_session_refs()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM board_items WHERE item_type = 'session' AND item_id = OLD.session_id;
+    RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS board_delete_session_refs_trigger ON sessions;
+CREATE TRIGGER board_delete_session_refs_trigger
+AFTER DELETE ON sessions
+FOR EACH ROW EXECUTE FUNCTION board_delete_session_refs();
+
+CREATE TABLE IF NOT EXISTS markdown_documents (
+    id          TEXT PRIMARY KEY,
+    title       TEXT NOT NULL,
+    body        TEXT NOT NULL DEFAULT '',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS board_items (
+    id          TEXT PRIMARY KEY,
+    folder_id   TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+    item_type   TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder')),
+    item_id     TEXT NOT NULL,
+    x           DOUBLE PRECISION NOT NULL DEFAULT 0,
+    y           DOUBLE PRECISION NOT NULL DEFAULT 0,
+    metadata    JSONB NOT NULL DEFAULT '{}',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (folder_id, item_id)
+);
+
+ALTER TABLE board_items ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}';
+ALTER TABLE board_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE OR REPLACE FUNCTION board_delete_markdown_refs()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM board_items WHERE item_type = 'markdown' AND item_id = OLD.id;
+    RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS board_delete_markdown_refs_trigger ON markdown_documents;
+CREATE TRIGGER board_delete_markdown_refs_trigger
+AFTER DELETE ON markdown_documents
+FOR EACH ROW EXECUTE FUNCTION board_delete_markdown_refs();
 
 CREATE TABLE IF NOT EXISTS events (
     session_id      TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
@@ -240,6 +303,8 @@ CREATE INDEX IF NOT EXISTS idx_soulstream_schedules_due
     WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS idx_soulstream_node_heartbeats_seen
     ON soulstream_node_heartbeats (last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_board_items_folder ON board_items (folder_id, y, x);
+CREATE INDEX IF NOT EXISTS idx_board_items_ref ON board_items (item_type, item_id);
 
 CREATE INDEX IF NOT EXISTS idx_task_items_parent ON task_items (parent_id, position_key);
 CREATE INDEX IF NOT EXISTS idx_task_items_status ON task_items (status) WHERE archived = FALSE;
@@ -1179,6 +1244,123 @@ CREATE OR REPLACE FUNCTION catalog_get_sessions()
 RETURNS TABLE(session_id TEXT, folder_id TEXT, display_name TEXT)
 LANGUAGE sql STABLE AS $$
     SELECT session_id, folder_id, display_name FROM sessions;
+$$;
+
+-- 29b. board_seed_items
+CREATE OR REPLACE FUNCTION board_seed_items()
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM board_items bi
+    WHERE bi.item_type = 'session'
+      AND NOT EXISTS (
+          SELECT 1 FROM sessions s
+          WHERE s.session_id = bi.item_id
+            AND s.folder_id = bi.folder_id
+      );
+
+    DELETE FROM board_items bi
+    WHERE bi.item_type = 'subfolder'
+      AND NOT EXISTS (
+          SELECT 1 FROM folders f
+          WHERE f.id = bi.item_id
+            AND f.parent_folder_id = bi.folder_id
+      );
+
+    DELETE FROM board_items bi
+    WHERE bi.item_type = 'markdown'
+      AND NOT EXISTS (
+          SELECT 1 FROM markdown_documents d
+          WHERE d.id = bi.item_id
+      );
+
+    WITH candidates AS (
+        SELECT
+            s.folder_id AS folder_id,
+            'session'::TEXT AS item_type,
+            s.session_id AS item_id,
+            ('session:' || s.session_id)::TEXT AS board_item_id,
+            COALESCE(
+                CASE
+                    WHEN s.last_message ? 'timestamp' AND s.last_message->>'timestamp' <> ''
+                    THEN (s.last_message->>'timestamp')::TIMESTAMPTZ
+                    ELSE NULL
+                END,
+                s.updated_at,
+                s.created_at,
+                NOW()
+            ) AS activity_at,
+            s.session_id AS tie_breaker
+        FROM sessions s
+        WHERE s.folder_id IS NOT NULL
+        UNION ALL
+        SELECT
+            f.parent_folder_id AS folder_id,
+            'subfolder'::TEXT AS item_type,
+            f.id AS item_id,
+            ('subfolder:' || f.id)::TEXT AS board_item_id,
+            COALESCE(f.created_at, NOW()) AS activity_at,
+            f.name AS tie_breaker
+        FROM folders f
+        WHERE f.parent_folder_id IS NOT NULL
+    ),
+    numbered AS (
+        SELECT
+            *,
+            ROW_NUMBER() OVER (
+                PARTITION BY folder_id
+                ORDER BY activity_at DESC, item_type ASC, tie_breaker ASC
+            ) - 1 AS item_index
+        FROM candidates
+    )
+    INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata)
+    SELECT
+        board_item_id,
+        folder_id,
+        item_type,
+        item_id,
+        ((item_index % 4) * 160)::DOUBLE PRECISION,
+        (FLOOR(item_index / 4) * 160)::DOUBLE PRECISION,
+        '{}'::jsonb
+    FROM numbered
+    ON CONFLICT (id) DO NOTHING;
+END;
+$$;
+
+-- 29c. board_item_get_all
+CREATE OR REPLACE FUNCTION board_item_get_all()
+RETURNS TABLE(
+    id TEXT,
+    folder_id TEXT,
+    item_type TEXT,
+    item_id TEXT,
+    x DOUBLE PRECISION,
+    y DOUBLE PRECISION,
+    metadata JSONB,
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ
+) LANGUAGE sql STABLE AS $$
+    SELECT
+        bi.id,
+        bi.folder_id,
+        bi.item_type,
+        bi.item_id,
+        bi.x,
+        bi.y,
+        CASE
+            WHEN bi.item_type = 'markdown' THEN
+                bi.metadata || jsonb_build_object(
+                    'title', md.title,
+                    'preview', LEFT(regexp_replace(md.body, '[[:space:]]+', ' ', 'g'), 180)
+                )
+            ELSE bi.metadata
+        END AS metadata,
+        bi.created_at,
+        bi.updated_at
+    FROM board_items bi
+    LEFT JOIN markdown_documents md
+      ON bi.item_type = 'markdown'
+     AND bi.item_id = md.id
+    ORDER BY bi.folder_id, bi.y, bi.x, bi.created_at;
 $$;
 
 -- 마이그레이션 ----------------------------------------------------

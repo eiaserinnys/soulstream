@@ -19,6 +19,54 @@ from soul_common.db.session_db_base import (
 logger = logging.getLogger(__name__)
 
 
+def _board_metadata(value: object) -> dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except (json.JSONDecodeError, ValueError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _normalize_board_item(row: dict) -> dict:
+    created_at = row.get("created_at")
+    updated_at = row.get("updated_at")
+    if hasattr(created_at, "isoformat"):
+        created_at = created_at.isoformat()
+    if hasattr(updated_at, "isoformat"):
+        updated_at = updated_at.isoformat()
+    return {
+        "id": row["id"],
+        "folderId": row["folder_id"],
+        "itemType": row["item_type"],
+        "itemId": row["item_id"],
+        "x": float(row["x"]),
+        "y": float(row["y"]),
+        "metadata": _board_metadata(row.get("metadata")),
+        "createdAt": created_at,
+        "updatedAt": updated_at,
+    }
+
+
+def _normalize_markdown_document(row: dict) -> dict:
+    created_at = row.get("created_at")
+    updated_at = row.get("updated_at")
+    if hasattr(created_at, "isoformat"):
+        created_at = created_at.isoformat()
+    if hasattr(updated_at, "isoformat"):
+        updated_at = updated_at.isoformat()
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "body": row["body"],
+        "createdAt": created_at,
+        "updatedAt": updated_at,
+    }
+
+
 class PostgresFolderMixin:
     """폴더 CRUD + 카탈로그 (PostgreSQL 구현)
 
@@ -135,6 +183,7 @@ class PostgresFolderMixin:
         )
 
     async def get_catalog(self) -> dict:
+        await self.ensure_board_items()
         folders = await self.get_all_folders()
         folder_list = []
         for f in folders:
@@ -160,7 +209,104 @@ class PostgresFolderMixin:
                 "displayName": r["display_name"],
             }
 
-        return {"folders": folder_list, "sessions": sessions}
+        board_items = await self.get_board_items()
+
+        return {"folders": folder_list, "sessions": sessions, "boardItems": board_items}
+
+    async def ensure_board_items(self) -> None:
+        await self._pool.execute("SELECT board_seed_items()")
+
+    async def get_board_items(self) -> list[dict]:
+        rows = await self._pool.fetch("SELECT * FROM board_item_get_all()")
+        return [_normalize_board_item(dict(r)) for r in rows]
+
+    async def update_board_item_position(self, board_item_id: str, x: float, y: float) -> None:
+        await self._pool.execute(
+            """
+            UPDATE board_items
+            SET x = $2, y = $3, updated_at = NOW()
+            WHERE id = $1
+            """,
+            board_item_id, x, y,
+        )
+
+    async def create_markdown_document(
+        self,
+        document_id: str,
+        folder_id: str,
+        title: str,
+        body: str,
+        x: float,
+        y: float,
+    ) -> dict:
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                doc_row = await conn.fetchrow(
+                    """
+                    INSERT INTO markdown_documents (id, title, body)
+                    VALUES ($1, $2, $3)
+                    RETURNING *
+                    """,
+                    document_id, title, body,
+                )
+                item_row = await conn.fetchrow(
+                    """
+                    INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata)
+                    VALUES ($1, $2, 'markdown', $3, $4, $5, '{}'::jsonb)
+                    RETURNING *
+                    """,
+                    f"markdown:{document_id}", folder_id, document_id, x, y,
+                )
+        assert doc_row is not None
+        assert item_row is not None
+        board_item = _normalize_board_item(dict(item_row))
+        board_item["metadata"] = {
+            "title": title,
+            "preview": " ".join(body.split())[:180],
+        }
+        return {
+            "document": _normalize_markdown_document(dict(doc_row)),
+            "boardItem": board_item,
+        }
+
+    async def get_markdown_document(self, document_id: str) -> Optional[dict]:
+        row = await self._pool.fetchrow(
+            "SELECT * FROM markdown_documents WHERE id = $1",
+            document_id,
+        )
+        return _normalize_markdown_document(dict(row)) if row else None
+
+    async def update_markdown_document(
+        self,
+        document_id: str,
+        title: Optional[str] = None,
+        body: Optional[str] = None,
+    ) -> Optional[dict]:
+        fields = []
+        values: list[object] = []
+        if title is not None:
+            values.append(title)
+            fields.append(f"title = ${len(values) + 1}")
+        if body is not None:
+            values.append(body)
+            fields.append(f"body = ${len(values) + 1}")
+        if fields:
+            values.insert(0, document_id)
+            await self._pool.execute(
+                f"""
+                UPDATE markdown_documents
+                SET {", ".join(fields)}, updated_at = NOW()
+                WHERE id = $1
+                """,
+                *values,
+            )
+        return await self.get_markdown_document(document_id)
+
+    async def delete_markdown_document(self, document_id: str) -> None:
+        await self._pool.execute(
+            "DELETE FROM markdown_documents WHERE id = $1",
+            document_id,
+        )
 
     async def _validate_parent_folder(
         self,

@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { CatalogState, SessionSummary } from "../shared/types";
 import {
   buildBoardWorkspaceItems,
+  computeBoardCanvasSize,
+  findFirstOpenBoardPosition,
   formatBoardWorkspaceTime,
   getSessionBoardPreview,
   getSessionBoardTitle,
+  snapBoardPosition,
 } from "./board-workspace-items";
 
 const catalog: CatalogState = {
@@ -37,6 +40,60 @@ const catalog: CatalogState = {
     "session-b": { folderId: "root", displayName: "Pinned name" },
     nested: { folderId: "folder-new", displayName: null },
   },
+  boardItems: [
+    {
+      id: "session:session-b",
+      folderId: "root",
+      itemType: "session",
+      itemId: "session-b",
+      x: 0,
+      y: 0,
+    },
+    {
+      id: "session:session-a",
+      folderId: "root",
+      itemType: "session",
+      itemId: "session-a",
+      x: 200,
+      y: 40,
+    },
+    {
+      id: "subfolder:folder-new",
+      folderId: "root",
+      itemType: "subfolder",
+      itemId: "folder-new",
+      x: 40,
+      y: 160,
+    },
+    {
+      id: "markdown:doc-root",
+      folderId: "root",
+      itemType: "markdown",
+      itemId: "doc-root",
+      x: 240,
+      y: 160,
+      metadata: {
+        title: "Board note",
+        preview: "Short markdown preview",
+      },
+    },
+    {
+      id: "subfolder:nested",
+      folderId: "folder-new",
+      itemType: "subfolder",
+      itemId: "nested",
+      x: 0,
+      y: 0,
+    },
+    {
+      id: "session:nested",
+      folderId: "folder-new",
+      itemType: "session",
+      itemId: "nested",
+      x: 160,
+      y: 0,
+    },
+  ],
 };
 
 const sessions: SessionSummary[] = [
@@ -63,7 +120,7 @@ const sessions: SessionSummary[] = [
 ];
 
 describe("board workspace item helpers", () => {
-  it("builds a single sorted item list from direct child folders and sessions", () => {
+  it("builds a coordinate-sorted item list from catalog boardItems", () => {
     const items = buildBoardWorkspaceItems({
       catalog,
       selectedFolderId: "root",
@@ -72,14 +129,53 @@ describe("board workspace item helpers", () => {
 
     expect(items.map((item) => `${item.type}:${item.id}`)).toEqual([
       "session:session-b",
-      "folder:folder-new",
       "session:session-a",
-      "folder:folder-old",
+      "folder:folder-new",
+      "markdown:doc-root",
     ]);
     expect(items.find((item) => item.id === "folder-new")).toMatchObject({
       type: "folder",
       childCount: 2,
     });
+    expect(items.find((item) => item.id === "doc-root")).toMatchObject({
+      type: "markdown",
+      title: "Board note",
+      preview: "Short markdown preview",
+    });
+  });
+
+  it("falls back to deterministic 160px placement when boardItems are absent", () => {
+    const { boardItems: _unused, ...legacyCatalog } = catalog;
+    const items = buildBoardWorkspaceItems({
+      catalog: legacyCatalog,
+      selectedFolderId: "root",
+      sessions,
+    });
+
+    expect(items.map((item) => `${item.type}:${item.id}`)).toEqual([
+      "folder:folder-old",
+      "folder:folder-new",
+      "session:session-a",
+      "session:session-b",
+    ]);
+    expect(items.map((item) => [item.x, item.y])).toEqual([
+      [0, 0],
+      [160, 0],
+      [320, 0],
+      [480, 0],
+    ]);
+  });
+
+  it("snaps positions to 40px and finds the first empty 160px tile slot", () => {
+    const items = buildBoardWorkspaceItems({
+      catalog,
+      selectedFolderId: "root",
+      sessions,
+    });
+
+    expect(snapBoardPosition(59, 101)).toEqual({ x: 40, y: 120 });
+    expect(findFirstOpenBoardPosition(items)).toEqual({ x: 160, y: 0 });
+    expect(computeBoardCanvasSize(items)).toEqual({ width: 600, height: 520 });
   });
 
   it("uses lastMessage.preview for session previews and displayName for titles", () => {

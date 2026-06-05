@@ -6,6 +6,10 @@ import {
 } from "@seosoyoung/soul-ui";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
+import {
+  createMarkdownDocument,
+  updateBoardItemPosition,
+} from "client/lib/board-workspace-operations";
 import { createFolder } from "client/lib/folder-operations";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
 import { renameSessionOptimistic } from "client/lib/rename-session";
@@ -48,6 +52,8 @@ export function FolderWorkspaceView({
       onMoveSessions={handleMoveSessions}
       onRenameSession={renameSessionOptimistic}
       onCreateFolder={createFolder}
+      onUpdateBoardItemPosition={updateBoardItemPosition}
+      onCreateMarkdownDocument={createMarkdownDocument}
       onLoadMore={onLoadMore}
       hasMore={hasMore}
     />

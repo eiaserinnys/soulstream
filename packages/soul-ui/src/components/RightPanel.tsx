@@ -13,6 +13,7 @@ import { Tabs, TabsList, TabsTab, TabsPanel } from "./ui/tabs";
 import { DetailView } from "./DetailView";
 import { ChatView } from "./chat";
 import { SessionInfoView } from "./SessionInfoView";
+import { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
 import { useDashboardStore } from "../stores/dashboard-store";
 
 const TAB_VALUES = { chat: 0, detail: 1, info: 2 } as const;
@@ -29,6 +30,7 @@ export function RightPanel({
   fileUploadUrl,
 }: RightPanelProps = {}) {
   const activeRightTab = useDashboardStore((s) => s.activeRightTab);
+  const activeBoardDocumentId = useDashboardStore((s) => s.activeBoardDocumentId);
   const setActiveRightTab = useDashboardStore((s) => s.setActiveRightTab);
 
   const handleTabChange = useCallback(
@@ -57,11 +59,15 @@ export function RightPanel({
         </TabsList>
 
         <TabsPanel value={0} className="flex-1 overflow-hidden" keepMounted>
-          <ChatView
-            chatInputDisabled={chatInputDisabled}
-            isOtherNodeSession={isOtherNodeSession}
-            fileUploadUrl={fileUploadUrl}
-          />
+          {activeBoardDocumentId ? (
+            <MarkdownDocumentPanel />
+          ) : (
+            <ChatView
+              chatInputDisabled={chatInputDisabled}
+              isOtherNodeSession={isOtherNodeSession}
+              fileUploadUrl={fileUploadUrl}
+            />
+          )}
         </TabsPanel>
 
         <TabsPanel value={1} className="flex-1 overflow-hidden" keepMounted>

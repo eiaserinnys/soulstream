@@ -15,6 +15,7 @@ import type {
   EventTreeNode,
   CatalogState,
   CatalogFolder,
+  CatalogBoardItem,
   CatalogFolderReorderItem,
   TokenUsage,
   TaskItem,
@@ -197,6 +198,9 @@ export interface DashboardState {
   /** 모바일 활성 탭 */
   activeTab: MobileTab;
 
+  /** 오른쪽 Chat 슬롯에 표시 중인 보드 마크다운 문서 */
+  activeBoardDocumentId: string | null;
+
   /** 폴더 카탈로그 상태 */
   catalog: CatalogState | null;
 
@@ -284,6 +288,7 @@ export interface DashboardActions {
 
   // 오른쪽 패널 탭
   setActiveRightTab: (tab: "detail" | "chat" | "info") => void;
+  setActiveBoardDocument: (documentId: string | null) => void;
 
   // 대시보드 프로필 설정
   setDashboardConfig: (config: DashboardConfig) => void;
@@ -314,6 +319,9 @@ export interface DashboardActions {
   moveSessionsToFolder: (sessionIds: string[], folderId: string | null) => void;
   renameSession: (sessionId: string, displayName: string | null) => void;
   addFolder: (folder: CatalogFolder) => void;
+  addBoardItem: (boardItem: CatalogBoardItem) => void;
+  updateBoardItemPosition: (boardItemId: string, x: number, y: number) => void;
+  removeBoardItem: (boardItemId: string) => void;
   updateFolderName: (folderId: string, name: string) => void;
   updateFolderSettings: (
     folderId: string,

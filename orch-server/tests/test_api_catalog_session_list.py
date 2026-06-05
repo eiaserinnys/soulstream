@@ -283,12 +283,35 @@ class TestCatalogSessionListBackend:
         mock_catalog_service.get_catalog.return_value = {
             "folders": [],
             "sessions": {"s1": {"folderId": None, "displayName": None}},
+            "boardItems": [
+                {
+                    "id": "session:s1",
+                    "folderId": "f1",
+                    "itemType": "session",
+                    "itemId": "s1",
+                    "x": 40,
+                    "y": 80,
+                    "metadata": {},
+                }
+            ],
         }
 
         resp = await client.get("/api/catalog")
 
         assert resp.status_code == 200
-        item = resp.json()["sessionList"][0]
+        body = resp.json()
+        assert body["boardItems"] == [
+            {
+                "id": "session:s1",
+                "folderId": "f1",
+                "itemType": "session",
+                "itemId": "s1",
+                "x": 40,
+                "y": 80,
+                "metadata": {},
+            }
+        ]
+        item = body["sessionList"][0]
         assert item["backend"] == "claude"
         assert item["agentId"] == "agent-claude-1"
         assert item["agentName"] == "Claude Agent"

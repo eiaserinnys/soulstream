@@ -13,6 +13,13 @@ export { formatTime } from "./input-request-utils";
 // === Folder / Session Operations ===
 export { createFolderOperations } from "./folder-operations";
 export type { FolderApiConfig, FolderOperations } from "./folder-operations";
+export { createBoardWorkspaceOperations } from "./board-workspace-operations";
+export type {
+  BoardWorkspaceApiConfig,
+  BoardWorkspaceOperations,
+  CreateMarkdownDocumentRequest,
+  CreateMarkdownDocumentResponse,
+} from "./board-workspace-operations";
 export { createMoveSessionsOperations } from "./move-sessions";
 export type { MoveSessionsApiConfig, MoveSessionsOperations } from "./move-sessions";
 export { shouldLoadMoreAfterSessionMove } from "./session-move-load-more";

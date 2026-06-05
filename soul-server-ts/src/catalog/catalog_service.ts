@@ -17,6 +17,10 @@ import { randomUUID } from "node:crypto";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
+const BOARD_GRID_SIZE = 40;
+const BOARD_TILE_SIZE = 160;
+const BOARD_DEFAULT_COLUMNS = 4;
+
 export interface CatalogFolderDto {
   id: string;
   name: string;
@@ -101,6 +105,7 @@ export class CatalogService {
     for (const sessionId of sessionIds) {
       await this.db.assignSessionToFolder(sessionId, folderId);
     }
+    await this.db.ensureBoardItems();
     await this.broadcastCatalog();
   }
 
@@ -201,6 +206,76 @@ export class CatalogService {
     await this.broadcaster.emitCatalogUpdated(catalog);
   }
 
+  async updateBoardItemPosition(
+    boardItemId: string,
+    x: number,
+    y: number,
+  ): Promise<void> {
+    await this.db.updateBoardItemPosition(
+      boardItemId,
+      snapBoardPosition(x),
+      snapBoardPosition(y),
+    );
+    await this.broadcastCatalog();
+  }
+
+  async createMarkdownDocument(params: {
+    folderId: string;
+    title: string;
+    body?: string;
+    x?: number;
+    y?: number;
+  }): Promise<Awaited<ReturnType<SessionDB["createMarkdownDocument"]>>> {
+    const documentId = randomUUID();
+    const [x, y] = params.x !== undefined && params.y !== undefined
+      ? [snapBoardPosition(params.x), snapBoardPosition(params.y)]
+      : await this.nextBoardPosition(params.folderId);
+    const result = await this.db.createMarkdownDocument({
+      documentId,
+      folderId: params.folderId,
+      title: params.title,
+      body: params.body ?? "",
+      x,
+      y,
+    });
+    await this.broadcastCatalog();
+    return result;
+  }
+
+  async getMarkdownDocument(documentId: string) {
+    return this.db.getMarkdownDocument(documentId);
+  }
+
+  async updateMarkdownDocument(
+    documentId: string,
+    fields: { title?: string; body?: string },
+  ) {
+    const document = await this.db.updateMarkdownDocument(documentId, fields);
+    await this.broadcastCatalog();
+    return document;
+  }
+
+  async deleteMarkdownDocument(documentId: string): Promise<void> {
+    await this.db.deleteMarkdownDocument(documentId);
+    await this.broadcastCatalog();
+  }
+
+  private async nextBoardPosition(folderId: string): Promise<[number, number]> {
+    await this.db.ensureBoardItems();
+    const occupied = new Set(
+      (await this.db.getBoardItems())
+        .filter((item) => item.folderId === folderId)
+        .map((item) => `${item.x}:${item.y}`),
+    );
+    let index = 0;
+    while (true) {
+      const x = (index % BOARD_DEFAULT_COLUMNS) * BOARD_TILE_SIZE;
+      const y = Math.floor(index / BOARD_DEFAULT_COLUMNS) * BOARD_TILE_SIZE;
+      if (!occupied.has(`${x}:${y}`)) return [x, y];
+      index += 1;
+    }
+  }
+
   private async assertParentAllowed(
     folderId: string,
     parentFolderId: string | null,
@@ -224,4 +299,8 @@ export class CatalogService {
       current = parentById.get(current);
     }
   }
+}
+
+function snapBoardPosition(value: number): number {
+  return Math.max(0, Math.round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE);
 }

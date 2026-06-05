@@ -456,6 +456,100 @@ class TestCatalog:
         assert len(catalog["folders"]) == 1
         assert "s1" in catalog["sessions"]
         assert catalog["sessions"]["s1"]["folderId"] == "f1"
+        assert catalog["boardItems"] == [
+            {
+                "id": "session:s1",
+                "folderId": "f1",
+                "itemType": "session",
+                "itemId": "s1",
+                "x": 0.0,
+                "y": 0.0,
+                "metadata": {},
+                "createdAt": catalog["boardItems"][0]["createdAt"],
+                "updatedAt": catalog["boardItems"][0]["updatedAt"],
+            }
+        ]
+
+    async def test_board_item_position_roundtrip(self, db: SqliteSessionDB):
+        await db.create_folder("f1", "Folder 1")
+        await db.upsert_session("s1", folder_id="f1")
+        await db.ensure_board_items()
+
+        await db.update_board_item_position("session:s1", 40, 120)
+
+        items = await db.get_board_items()
+        session_item = next(item for item in items if item["id"] == "session:s1")
+        assert session_item["x"] == 40.0
+        assert session_item["y"] == 120.0
+
+    async def test_board_item_seed_matches_legacy_last_message_sort_grid(self, db: SqliteSessionDB):
+        await db.create_folder("f1", "Folder 1")
+        sessions = [
+            ("s-newest", "2026-06-05T05:00:00+00:00", "2026-06-01T00:00:00+00:00"),
+            ("s-second", "2026-06-04T05:00:00+00:00", "2026-06-02T00:00:00+00:00"),
+            ("s-third", "2026-06-03T05:00:00+00:00", "2026-06-03T00:00:00+00:00"),
+            ("s-fourth", "2026-06-02T05:00:00+00:00", "2026-06-04T00:00:00+00:00"),
+            ("s-oldest", "2026-06-01T05:00:00+00:00", "2026-06-05T00:00:00+00:00"),
+        ]
+        for session_id, message_ts, updated_at in sessions:
+            await db.upsert_session("seed-" + session_id, folder_id="f1")
+            await db.update_last_message(
+                "seed-" + session_id,
+                {"timestamp": message_ts, "preview": session_id},
+            )
+            await db._conn.execute(
+                "UPDATE sessions SET updated_at = ? WHERE session_id = ?",
+                (updated_at, "seed-" + session_id),
+            )
+        await db._conn.commit()
+
+        await db.ensure_board_items()
+
+        seeded = [
+            (item["id"], item["x"], item["y"])
+            for item in await db.get_board_items()
+            if item["folderId"] == "f1"
+        ]
+        assert seeded == [
+            ("session:seed-s-newest", 0.0, 0.0),
+            ("session:seed-s-second", 160.0, 0.0),
+            ("session:seed-s-third", 320.0, 0.0),
+            ("session:seed-s-fourth", 480.0, 0.0),
+            ("session:seed-s-oldest", 0.0, 160.0),
+        ]
+
+    async def test_markdown_document_crud_and_catalog_preview(self, db: SqliteSessionDB):
+        await db.create_folder("f1", "Folder 1")
+
+        result = await db.create_markdown_document(
+            "doc-1",
+            "f1",
+            "Note",
+            "First line\n\nSecond line",
+            80,
+            160,
+        )
+
+        assert result["document"]["body"] == "First line\n\nSecond line"
+        assert result["boardItem"]["metadata"] == {
+            "title": "Note",
+            "preview": "First line Second line",
+        }
+
+        catalog = await db.get_catalog()
+        markdown_item = next(item for item in catalog["boardItems"] if item["id"] == "markdown:doc-1")
+        assert markdown_item["metadata"] == {
+            "title": "Note",
+            "preview": "First line Second line",
+        }
+
+        updated = await db.update_markdown_document("doc-1", title="New", body="Changed")
+        assert updated["title"] == "New"
+        assert updated["body"] == "Changed"
+
+        await db.delete_markdown_document("doc-1")
+        assert await db.get_markdown_document("doc-1") is None
+        assert [item for item in await db.get_board_items() if item["id"] == "markdown:doc-1"] == []
 
     async def test_assign_session_to_folder(self, db: SqliteSessionDB):
         await db.create_folder("f1", "Folder 1")

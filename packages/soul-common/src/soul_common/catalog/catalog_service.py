@@ -11,6 +11,9 @@ from typing import Any, Optional, Protocol, runtime_checkable
 from soul_common.db.session_db import PostgresSessionDB
 
 _UNSET = object()
+BOARD_GRID_SIZE = 40
+BOARD_TILE_SIZE = 160
+BOARD_DEFAULT_COLUMNS = 4
 
 
 @runtime_checkable
@@ -45,6 +48,27 @@ class CatalogService:
             "type": "catalog_updated",
             "catalog": catalog,
         })
+
+    def _snap_position(self, value: float) -> float:
+        return float(max(0, round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE))
+
+    async def _next_board_position(self, folder_id: str) -> tuple[float, float]:
+        await self._db.ensure_board_items()
+        items = [
+            item for item in await self._db.get_board_items()
+            if item.get("folderId") == folder_id
+        ]
+        occupied = {
+            (int(item.get("x", 0)), int(item.get("y", 0)))
+            for item in items
+        }
+        index = 0
+        while True:
+            x = (index % BOARD_DEFAULT_COLUMNS) * BOARD_TILE_SIZE
+            y = (index // BOARD_DEFAULT_COLUMNS) * BOARD_TILE_SIZE
+            if (x, y) not in occupied:
+                return float(x), float(y)
+            index += 1
 
     # --- 폴더 CRUD ---
 
@@ -153,6 +177,7 @@ class CatalogService:
         """세션들을 지정한 폴더로 이동한다. folder_id가 None이면 미배정."""
         for sid in session_ids:
             await self._db.assign_session_to_folder(sid, folder_id)
+        await self._db.ensure_board_items()
         await self._broadcast_catalog()
 
     async def broadcast_catalog(self) -> None:
@@ -179,6 +204,67 @@ class CatalogService:
     async def get_catalog(self) -> dict:
         """전체 카탈로그(폴더 + 세션 배정)를 반환한다."""
         return await self._db.get_catalog()
+
+    async def update_board_item_position(
+        self,
+        board_item_id: str,
+        x: float,
+        y: float,
+    ) -> None:
+        """보드 항목 좌표를 40px 격자에 스냅하여 저장한다."""
+        await self._db.update_board_item_position(
+            board_item_id,
+            self._snap_position(x),
+            self._snap_position(y),
+        )
+        await self._broadcast_catalog()
+
+    async def create_markdown_document(
+        self,
+        folder_id: str,
+        title: str,
+        body: str = "",
+        x: Optional[float] = None,
+        y: Optional[float] = None,
+    ) -> dict:
+        """마크다운 문서를 만들고 같은 폴더의 board item으로 배치한다."""
+        document_id = str(uuid.uuid4())
+        resolved_x, resolved_y = (
+            (self._snap_position(x), self._snap_position(y))
+            if x is not None and y is not None
+            else await self._next_board_position(folder_id)
+        )
+        result = await self._db.create_markdown_document(
+            document_id,
+            folder_id,
+            title,
+            body,
+            resolved_x,
+            resolved_y,
+        )
+        await self._broadcast_catalog()
+        return result
+
+    async def get_markdown_document(self, document_id: str) -> Optional[dict]:
+        return await self._db.get_markdown_document(document_id)
+
+    async def update_markdown_document(
+        self,
+        document_id: str,
+        title: Optional[str] = None,
+        body: Optional[str] = None,
+    ) -> Optional[dict]:
+        document = await self._db.update_markdown_document(
+            document_id,
+            title=title,
+            body=body,
+        )
+        await self._broadcast_catalog()
+        return document
+
+    async def delete_markdown_document(self, document_id: str) -> None:
+        await self._db.delete_markdown_document(document_id)
+        await self._broadcast_catalog()
 
     async def _validate_parent_folder(
         self,

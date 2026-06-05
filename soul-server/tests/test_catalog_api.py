@@ -30,6 +30,22 @@ def mock_catalog_service():
     cs.move_sessions_to_folder = AsyncMock()
     cs.rename_session = AsyncMock()
     cs.delete_session = AsyncMock()
+    cs.update_board_item_position = AsyncMock()
+    cs.create_markdown_document = AsyncMock(return_value={
+        "document": {"id": "doc-1", "title": "Note", "body": "Body"},
+        "boardItem": {
+            "id": "markdown:doc-1",
+            "folderId": "f1",
+            "itemType": "markdown",
+            "itemId": "doc-1",
+            "x": 40,
+            "y": 80,
+            "metadata": {"title": "Note", "preview": "Body"},
+        },
+    })
+    cs.get_markdown_document = AsyncMock(return_value={"id": "doc-1", "title": "Note", "body": "Body"})
+    cs.update_markdown_document = AsyncMock(return_value={"id": "doc-1", "title": "New", "body": "Body"})
+    cs.delete_markdown_document = AsyncMock()
     return cs
 
 
@@ -193,3 +209,73 @@ class TestDeleteSession:
 
         assert resp.status_code == 204
         mock_catalog_service.delete_session.assert_called_once_with("s1")
+
+
+class TestBoardItems:
+    def test_update_board_item_position(self, client, mock_catalog_service):
+        resp = client.patch(
+            "/catalog/board-items/session:s1/position",
+            json={"x": 59, "y": 101},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        mock_catalog_service.update_board_item_position.assert_called_once_with("session:s1", 59, 101)
+
+
+class TestMarkdownDocuments:
+    def test_create_markdown_document(self, client, mock_catalog_service):
+        resp = client.post(
+            "/catalog/markdown-documents",
+            json={"folderId": "f1", "title": "Note", "body": "Body", "x": 40, "y": 80},
+        )
+
+        assert resp.status_code == 201
+        assert resp.json()["document"]["id"] == "doc-1"
+        mock_catalog_service.create_markdown_document.assert_called_once_with(
+            folder_id="f1",
+            title="Note",
+            body="Body",
+            x=40,
+            y=80,
+        )
+
+    def test_get_markdown_document(self, client, mock_catalog_service):
+        resp = client.get("/catalog/markdown-documents/doc-1")
+
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "Note"
+        mock_catalog_service.get_markdown_document.assert_called_once_with("doc-1")
+
+    def test_get_markdown_document_404(self, client, mock_catalog_service):
+        mock_catalog_service.get_markdown_document.return_value = None
+
+        resp = client.get("/catalog/markdown-documents/missing")
+
+        assert resp.status_code == 404
+
+    def test_update_markdown_document(self, client, mock_catalog_service):
+        resp = client.put(
+            "/catalog/markdown-documents/doc-1",
+            json={"title": "New"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "New"
+        mock_catalog_service.update_markdown_document.assert_called_once_with(
+            "doc-1",
+            title="New",
+            body=None,
+        )
+
+    def test_update_markdown_document_empty_body_returns_400(self, client, mock_catalog_service):
+        resp = client.put("/catalog/markdown-documents/doc-1", json={})
+
+        assert resp.status_code == 400
+        mock_catalog_service.update_markdown_document.assert_not_called()
+
+    def test_delete_markdown_document(self, client, mock_catalog_service):
+        resp = client.delete("/catalog/markdown-documents/doc-1")
+
+        assert resp.status_code == 204
+        mock_catalog_service.delete_markdown_document.assert_called_once_with("doc-1")

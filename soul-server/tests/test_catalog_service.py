@@ -26,6 +26,24 @@ def mock_db():
     db.rename_session = AsyncMock()
     db.delete_session = AsyncMock()
     db.get_catalog = AsyncMock(return_value={"folders": [], "sessions": {}})
+    db.ensure_board_items = AsyncMock()
+    db.get_board_items = AsyncMock(return_value=[])
+    db.update_board_item_position = AsyncMock()
+    db.create_markdown_document = AsyncMock(return_value={
+        "document": {"id": "doc-1", "title": "Note", "body": "Body"},
+        "boardItem": {
+            "id": "markdown:doc-1",
+            "folderId": "f1",
+            "itemType": "markdown",
+            "itemId": "doc-1",
+            "x": 40.0,
+            "y": 120.0,
+            "metadata": {"title": "Note", "preview": "Body"},
+        },
+    })
+    db.get_markdown_document = AsyncMock(return_value=None)
+    db.update_markdown_document = AsyncMock(return_value=None)
+    db.delete_markdown_document = AsyncMock()
     return db
 
 
@@ -186,11 +204,86 @@ class TestMoveSessionsToFolder:
     async def test_moves_multiple_sessions(self, catalog_service, mock_db, mock_broadcaster):
         await catalog_service.move_sessions_to_folder(["s1", "s2", "s3"], "f1")
         assert mock_db.assign_session_to_folder.await_count == 3
+        mock_db.ensure_board_items.assert_awaited_once()
         mock_broadcaster.broadcast.assert_awaited()
 
     async def test_moves_to_none(self, catalog_service, mock_db):
         await catalog_service.move_sessions_to_folder(["s1"], None)
         mock_db.assign_session_to_folder.assert_awaited_once_with("s1", None)
+
+
+class TestBoardItems:
+    async def test_update_board_item_position_snaps_to_40px_grid(
+        self,
+        catalog_service,
+        mock_db,
+        mock_broadcaster,
+    ):
+        await catalog_service.update_board_item_position("session:s1", 59, 101)
+
+        mock_db.update_board_item_position.assert_awaited_once_with("session:s1", 40.0, 120.0)
+        mock_broadcaster.broadcast.assert_awaited()
+
+
+class TestMarkdownDocuments:
+    async def test_create_markdown_document_uses_supplied_snapped_position(
+        self,
+        catalog_service,
+        mock_db,
+        mock_broadcaster,
+    ):
+        result = await catalog_service.create_markdown_document(
+            "f1",
+            "Note",
+            "Body",
+            x=57,
+            y=121,
+        )
+
+        assert result["document"]["title"] == "Note"
+        args = mock_db.create_markdown_document.await_args.args
+        assert args[1:] == ("f1", "Note", "Body", 40.0, 120.0)
+        assert args[0]
+        mock_broadcaster.broadcast.assert_awaited()
+
+    async def test_create_markdown_document_without_position_uses_first_open_slot(
+        self,
+        catalog_service,
+        mock_db,
+    ):
+        mock_db.get_board_items.return_value = [
+            {"folderId": "f1", "x": 0, "y": 0},
+            {"folderId": "f1", "x": 160, "y": 0},
+        ]
+
+        await catalog_service.create_markdown_document("f1", "Note")
+
+        mock_db.ensure_board_items.assert_awaited_once()
+        args = mock_db.create_markdown_document.await_args.args
+        assert args[4:] == (320.0, 0.0)
+
+    async def test_get_markdown_document_delegates_to_db(self, catalog_service, mock_db):
+        mock_db.get_markdown_document.return_value = {"id": "doc-1", "title": "Note", "body": ""}
+
+        result = await catalog_service.get_markdown_document("doc-1")
+
+        assert result == {"id": "doc-1", "title": "Note", "body": ""}
+        mock_db.get_markdown_document.assert_awaited_once_with("doc-1")
+
+    async def test_update_markdown_document_broadcasts(self, catalog_service, mock_db, mock_broadcaster):
+        mock_db.update_markdown_document.return_value = {"id": "doc-1", "title": "New", "body": "Body"}
+
+        result = await catalog_service.update_markdown_document("doc-1", title="New")
+
+        assert result["title"] == "New"
+        mock_db.update_markdown_document.assert_awaited_once_with("doc-1", title="New", body=None)
+        mock_broadcaster.broadcast.assert_awaited()
+
+    async def test_delete_markdown_document_broadcasts(self, catalog_service, mock_db, mock_broadcaster):
+        await catalog_service.delete_markdown_document("doc-1")
+
+        mock_db.delete_markdown_document.assert_awaited_once_with("doc-1")
+        mock_broadcaster.broadcast.assert_awaited()
 
 
 class TestRenameSession:

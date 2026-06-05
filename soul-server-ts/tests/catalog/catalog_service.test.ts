@@ -198,6 +198,79 @@ describe("CatalogService.moveSessionsToFolder", () => {
   });
 });
 
+describe("CatalogService board items", () => {
+  it("updateBoardItemPosition은 40px 격자에 스냅한 뒤 broadcast", async () => {
+    const db = {
+      updateBoardItemPosition: vi.fn().mockResolvedValue(undefined),
+      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+    } as unknown as SessionDB;
+    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await svc.updateBoardItemPosition("session:s1", 59, 101);
+
+    expect(db.updateBoardItemPosition).toHaveBeenCalledWith("session:s1", 40, 120);
+    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+  });
+
+  it("createMarkdownDocument는 명시 좌표를 스냅해 board item 생성", async () => {
+    const db = {
+      createMarkdownDocument: vi.fn().mockResolvedValue({
+        document: { id: "doc-1", title: "Note", body: "Body" },
+        boardItem: { id: "markdown:doc-1", folderId: "f1", itemType: "markdown", itemId: "doc-1", x: 40, y: 120 },
+      }),
+      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+    } as unknown as SessionDB;
+    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await svc.createMarkdownDocument({
+      folderId: "f1",
+      title: "Note",
+      body: "Body",
+      x: 59,
+      y: 101,
+    });
+
+    const payload = vi.mocked(db.createMarkdownDocument).mock.calls[0][0];
+    expect(payload.documentId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(payload).toMatchObject({
+      folderId: "f1",
+      title: "Note",
+      body: "Body",
+      x: 40,
+      y: 120,
+    });
+    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+  });
+
+  it("createMarkdownDocument는 좌표가 없으면 첫 빈 160px 슬롯에 배치", async () => {
+    const db = {
+      ensureBoardItems: vi.fn().mockResolvedValue(undefined),
+      getBoardItems: vi.fn().mockResolvedValue([
+        { folderId: "f1", x: 0, y: 0 },
+        { folderId: "f1", x: 160, y: 0 },
+      ]),
+      createMarkdownDocument: vi.fn().mockResolvedValue({
+        document: { id: "doc-1", title: "Note", body: "" },
+        boardItem: { id: "markdown:doc-1", folderId: "f1", itemType: "markdown", itemId: "doc-1", x: 320, y: 0 },
+      }),
+      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+    } as unknown as SessionDB;
+    const { broadcaster } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await svc.createMarkdownDocument({ folderId: "f1", title: "Note" });
+
+    expect(db.ensureBoardItems).toHaveBeenCalledTimes(1);
+    expect(db.createMarkdownDocument).toHaveBeenCalledWith(expect.objectContaining({
+      folderId: "f1",
+      x: 320,
+      y: 0,
+    }));
+  });
+});
+
 describe("CatalogService.renameSession", () => {
   it("db.renameSession + broadcast", async () => {
     const { sql, calls } = setupSqlWithCatalog();

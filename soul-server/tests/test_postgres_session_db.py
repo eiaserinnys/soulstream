@@ -497,17 +497,34 @@ class TestFolderCRUD:
                 "session_id": "s1", "folder_id": "claude", "display_name": None,
             }),
         ]
-        db._pool.fetch = AsyncMock(side_effect=[folder_records, session_records])
+        board_records = [
+            _make_record({
+                "id": "session:s1",
+                "folder_id": "claude",
+                "item_type": "session",
+                "item_id": "s1",
+                "x": 0,
+                "y": 0,
+                "metadata": {},
+                "created_at": None,
+                "updated_at": None,
+            }),
+        ]
+        db._pool.fetch = AsyncMock(side_effect=[folder_records, session_records, board_records])
 
         catalog = await db.get_catalog()
         assert "folders" in catalog
         assert "sessions" in catalog
+        assert "boardItems" in catalog
         assert catalog["folders"][0]["id"] == "claude"
         assert "s1" in catalog["sessions"]
+        assert catalog["boardItems"][0]["id"] == "session:s1"
 
         # catalog_get_sessions 프로시저 호출 확인
         second_fetch = db._pool.fetch.call_args_list[1]
         assert "catalog_get_sessions" in second_fetch[0][0]
+        third_fetch = db._pool.fetch.call_args_list[2]
+        assert "board_item_get_all" in third_fetch[0][0]
 
     @pytest.mark.asyncio
     async def test_update_folder(self, db):
