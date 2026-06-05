@@ -9,7 +9,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
-import { ArrowLeft, MessageSquare, Search } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Search } from "lucide-react";
 import { DragHandle } from "./DragHandle";
 import { BottomTabBar } from "./BottomTabBar";
 import { ConnectionBadge, type ConnectionStatus } from "./ConnectionBadge";
@@ -20,6 +20,12 @@ import { useIsMobile } from "../hooks/use-mobile";
 import { useDashboardStore, type MobileTab } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
 import { Button } from "../components/ui/button";
+import {
+  isDashboardSidebarToggleShortcut,
+  isEditableShortcutTarget,
+  readDashboardLeftSidebarCollapsed,
+  writeDashboardLeftSidebarCollapsed,
+} from "./dashboard-sidebar-collapse";
 
 /** 패널 기본 비율 (%) */
 const DEFAULT_LEFT = 20;
@@ -172,6 +178,15 @@ export function DashboardShell({
   const catalog = useDashboardStore((s) => s.catalog);
   const clearSelectedFolder = useDashboardStore((s) => s.clearSelectedFolder);
   const setViewMode = useDashboardStore((s) => s.setViewMode);
+  const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(() => readDashboardLeftSidebarCollapsed());
+
+  const toggleLeftSidebarCollapsed = useCallback(() => {
+    setIsLeftSidebarCollapsed((previous) => {
+      const next = !previous;
+      writeDashboardLeftSidebarCollapsed(next);
+      return next;
+    });
+  }, []);
 
   // 채팅 탭 뒤로가기 시 돌아갈 이전 탭 추적
   const [previousTab, setPreviousTab] = useState<typeof activeTab>("feed");
@@ -187,6 +202,17 @@ export function DashboardShell({
       setActiveTab("feed");
     }
   }, [isMobile, setActiveTab]);
+
+  useEffect(() => {
+    if (isMobile) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (isEditableShortcutTarget(event.target) || !isDashboardSidebarToggleShortcut(event)) return;
+      event.preventDefault();
+      toggleLeftSidebarCollapsed();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isMobile, toggleLeftSidebarCollapsed]);
 
   /**
    * 모바일 탭 변경 핸들러.
@@ -332,20 +358,49 @@ export function DashboardShell({
           {/* Left panel */}
           <aside
             data-testid="session-panel"
-            className="overflow-hidden"
-            style={{ width: `${leftPercent}%` }}
+            className="relative overflow-hidden transition-[width] duration-150 ease-out"
+            style={{ width: isLeftSidebarCollapsed ? 44 : `${leftPercent}%` }}
           >
-            {leftPanelContent}
+            {isLeftSidebarCollapsed ? (
+              <div className="flex h-full items-start justify-center pt-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  data-testid="left-sidebar-toggle"
+                  title="Expand sidebar"
+                  onClick={toggleLeftSidebarCollapsed}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <>
+                {leftPanelContent}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1 z-20 h-7 w-7 bg-popover/80"
+                  data-testid="left-sidebar-toggle"
+                  title="Collapse sidebar"
+                  onClick={toggleLeftSidebarCollapsed}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+              </>
+            )}
           </aside>
 
           {/* Left drag handle */}
-          <DragHandle onDrag={handleLeftDrag} />
+          {!isLeftSidebarCollapsed && <DragHandle onDrag={handleLeftDrag} />}
 
           {/* Center panel */}
           <main
             data-testid="graph-panel"
             className="overflow-hidden flex flex-col"
-            style={{ width: `${centerPercent}%` }}
+            style={isLeftSidebarCollapsed ? { flex: "1 1 auto" } : { width: `${centerPercent}%` }}
           >
             {centerPanel}
           </main>
