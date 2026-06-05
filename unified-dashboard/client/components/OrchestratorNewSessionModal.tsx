@@ -168,7 +168,7 @@ export function OrchestratorNewSessionModal() {
         setAgents([]);
       });
 
-    fetch(`/api/nodes/${encodeURIComponent(selectedNodeId)}/oauth-profiles`)
+    fetch(`/api/nodes/${encodeURIComponent(selectedNodeId)}/claude-auth/profiles`)
       .then((res) => res.json())
       .then((data: { profiles: OAuthProfile[] }) => {
         setOauthProfiles(data.profiles ?? []);

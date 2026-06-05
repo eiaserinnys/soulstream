@@ -3,7 +3,7 @@ mod external_nav;
 use std::sync::{Arc, Mutex};
 
 use tauri::webview::NewWindowResponse;
-use tauri::{State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{State, WebviewWindowBuilder};
 use url::Url;
 
 use external_nav::{
@@ -18,6 +18,57 @@ use external_nav::{
 /// persistent 정본은 `tauri-plugin-store`의 `server_url`(full URL); 본 state는 그 파생물(origin).
 type OriginState = Arc<Mutex<Option<Url>>>;
 type AuthFlowState = Arc<Mutex<bool>>;
+
+const WEBVIEW2_NO_CACHE_ARGS: &str =
+    "--disable-http-cache --disk-cache-size=1 --media-cache-size=1";
+
+const DEPRECATED_API_HARD_RELOAD_SCRIPT: &str = concat!(
+    r#"(function () {
+  const cacheParam = "soul_desktop_cache_bust";
+  const reloadParam = "soul_desktop_hard_reload";
+  const cacheValue = "v"#,
+    env!("CARGO_PKG_VERSION"),
+    r#"";
+  const reloadSessionKey = "soul_desktop_deprecated_api_reload_at";
+  const minReloadIntervalMs = 10000;
+
+  function shouldRunInThisLocation() {
+    return (window.location.protocol === "http:" || window.location.protocol === "https:")
+      && window.location.hostname !== "tauri.localhost";
+  }
+
+  function buildReloadUrl() {
+    const next = new URL(window.location.href);
+    next.searchParams.set(cacheParam, cacheValue);
+    next.searchParams.set(reloadParam, String(Date.now()));
+    return next.toString();
+  }
+
+  function triggerHardReload() {
+    if (!shouldRunInThisLocation()) return;
+    const now = Date.now();
+    const last = Number(sessionStorage.getItem(reloadSessionKey) || "0");
+    if (now - last < minReloadIntervalMs) return;
+    sessionStorage.setItem(reloadSessionKey, String(now));
+    window.location.replace(buildReloadUrl());
+  }
+
+  const originalFetch = window.fetch;
+  window.fetch = function () {
+    return originalFetch.apply(this, arguments).then(function (response) {
+      if (
+        response &&
+        response.status === 410 &&
+        response.headers &&
+        response.headers.get("x-soulstream-deprecated-path")
+      ) {
+        triggerHardReload();
+      }
+      return response;
+    });
+  };
+})();"#,
+);
 
 /// frontend(`src/utils/origin.ts`의 `registerDashboardOrigin`)가 호출하는 command.
 ///
@@ -87,11 +138,18 @@ pub fn run() {
             //    위임 + (`on_navigation`은 navigation 취소).
             //  - HTTP(S) internal origin: `on_navigation` 허용, `on_new_window`도 OS 위임
             //    (일관성을 위해 — dashboard 안에서 같은 origin을 _blank로 여는 사례는 없음).
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("Soulstream")
-                .inner_size(1280.0, 800.0)
-                .min_inner_size(800.0, 600.0)
-                .resizable(true)
+            let main_window_config = app
+                .config()
+                .app
+                .windows
+                .iter()
+                .find(|window| window.label == "main")
+                .cloned()
+                .expect("main window config missing");
+
+            WebviewWindowBuilder::from_config(app, &main_window_config)?
+                .additional_browser_args(WEBVIEW2_NO_CACHE_ARGS)
+                .initialization_script(DEPRECATED_API_HARD_RELOAD_SCRIPT)
                 .on_navigation(move |url| {
                     let allowed = snapshot_allowed(&origin_state_nav);
                     let auth_flow_active = snapshot_auth_flow(&auth_flow_state_nav);

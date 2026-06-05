@@ -1,8 +1,7 @@
 """orch-server nodes 프록시 헤더 forward 테스트.
 
-api/nodes.py의 3개 프록시 핸들러:
+api/nodes.py의 프록시 핸들러:
 - proxy_agent_portrait        (GET /api/nodes/{node_id}/agents/{agent_id}/portrait)
-- list_node_oauth_profiles    (GET /api/nodes/{node_id}/oauth-profiles)
 - proxy_user_portrait         (GET /api/nodes/{node_id}/user/portrait)
 
 각 호출이 들어온 요청의 Authorization 헤더를 forward하는지 검증한다.
@@ -62,21 +61,43 @@ class TestAgentPortraitProxy:
         assert called_kwargs["headers"]["authorization"] == f"Bearer {TEST_AUTH_TOKEN}"
 
 
-class TestNodeOAuthProfilesProxy:
-    """`GET /api/nodes/{id}/oauth-profiles` 프록시 — verify_token 보호."""
+class TestNodeOAuthProfilesDeprecated:
+    """`GET /api/nodes/{id}/oauth-profiles` deprecated path."""
+
+    async def test_returns_410_without_proxying(self, client, node_manager):
+        node = await _register_node(node_manager)
+
+        with patch("soulstream_server.api.nodes.httpx.AsyncClient") as mock_client_cls:
+            resp = await client.get(f"/api/nodes/{node.node_id}/oauth-profiles")
+
+        assert resp.status_code == 410
+        assert resp.headers["x-soulstream-replacement-path"] == (
+            f"/api/nodes/{node.node_id}/claude-auth/profiles"
+        )
+        mock_client_cls.assert_not_called()
+
+
+class TestNodeClaudeAuthProfilesProxy:
+    """`GET /api/nodes/{id}/claude-auth/profiles` 프록시."""
 
     async def test_forwards_auth_header(self, client, node_manager):
         node = await _register_node(node_manager)
-        mock_resp = _make_response(200, json_body={"profiles": []})
+        mock_body = {
+            "node_id": node.node_id,
+            "profiles": ["default", "work"],
+            "current_profile": "default",
+        }
+        mock_resp = _make_response(200, json_body=mock_body)
 
-        with patch("soulstream_server.api.nodes.httpx.AsyncClient") as mock_client_cls:
+        with patch("soulstream_server.api.claude_auth.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = AsyncMock(return_value=mock_resp)
             mock_client_cls.return_value.__aenter__.return_value = mock_client
 
-            resp = await client.get(f"/api/nodes/{node.node_id}/oauth-profiles")
+            resp = await client.get(f"/api/nodes/{node.node_id}/claude-auth/profiles")
 
         assert resp.status_code == 200
+        assert resp.json() == mock_body
         called_url, called_kwargs = mock_client.get.call_args
         assert called_url[0] == f"http://{node.host}:{node.port}/auth/claude/profiles"
         assert called_kwargs["headers"]["authorization"] == f"Bearer {TEST_AUTH_TOKEN}"

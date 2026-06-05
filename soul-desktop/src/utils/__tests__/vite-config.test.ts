@@ -14,4 +14,8 @@ describe("vite config", () => {
   it("builds relative asset URLs for the packaged Tauri app", () => {
     expect(readFileSync(configPath, "utf8")).toContain('base: "./"');
   });
+
+  it("exposes the package version to the bundled app", () => {
+    expect(readFileSync(configPath, "utf8")).toContain("__SOUL_DESKTOP_VERSION__");
+  });
 });
