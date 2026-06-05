@@ -28,7 +28,7 @@ function makeBroadcaster(
 }
 
 describe("RunningInterventionTransition", () => {
-  it("queues running interventions without live steering or immediate wire events", async () => {
+  it("delivers running interventions to a live engine and publishes intervention_sent immediately", async () => {
     const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
     const task = makeRunningTask({
       engine: {
@@ -48,13 +48,43 @@ describe("RunningInterventionTransition", () => {
 
     await expect(
       transition.deliver(task, {
+        text: "reach the active turn",
+        user: "alice",
+        attachmentPaths: ["/tmp/a.png"],
+      }),
+    ).resolves.toEqual({ delivered: true });
+
+    expect(steerActiveTurn).toHaveBeenCalledWith({
+      prompt: "reach the active turn\n\n[첨부 파일 로컬 경로: /tmp/a.png]",
+      imageAttachmentPaths: ["/tmp/a.png"],
+    });
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        type: "intervention_sent",
+        text: "reach the active turn",
+        attachments: ["/tmp/a.png"],
+      }),
+    );
+    expect(task.interventionQueue).toEqual([]);
+  });
+
+  it("falls back to the next-turn queue when the engine has no live delivery surface", async () => {
+    const task = makeRunningTask();
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(emitEventEnvelope),
+      logger: silentLogger,
+    });
+
+    await expect(
+      transition.deliver(task, {
         text: "next turn only",
         user: "alice",
         attachmentPaths: ["/tmp/a.png"],
       }),
     ).resolves.toEqual({ queued: true, queuePosition: 1 });
 
-    expect(steerActiveTurn).not.toHaveBeenCalled();
     expect(emitEventEnvelope).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([
       {

@@ -6,16 +6,19 @@ import type {
 
 import type {
   BackendId,
+  EngineUserInput,
   EngineExecuteParams,
   EnginePort,
   InputResponseDeliveryResult,
   ClaudePermissionMode,
   ClaudeBackgroundTaskControlResult,
+  LiveTurnSteerResult,
   ScheduleToolUseHandler,
   SSEEventPayload,
   SupportsClaudeBackgroundTasks,
   SupportsCompact,
   SupportsInputResponse,
+  SupportsLiveTurnSteering,
 } from "./protocol.js";
 import {
   mapClaudeClientEvent,
@@ -74,6 +77,9 @@ export interface ClaudeClient {
   stopClaudeRuntimeTask?(
     taskId: string,
   ): Promise<ClaudeBackgroundTaskControlResult> | ClaudeBackgroundTaskControlResult;
+  steerActiveTurn?(
+    input: EngineUserInput,
+  ): Promise<LiveTurnSteerResult> | LiveTurnSteerResult;
   interrupt?(): Promise<boolean>;
   close?(): Promise<void>;
 }
@@ -92,7 +98,8 @@ export class ClaudeEngineAdapter
     EnginePort,
     SupportsInputResponse,
     SupportsCompact,
-    SupportsClaudeBackgroundTasks
+    SupportsClaudeBackgroundTasks,
+    SupportsLiveTurnSteering
 {
   public readonly backendId: BackendId = "claude";
   public readonly workspaceDir: string;
@@ -189,6 +196,22 @@ export class ClaudeEngineAdapter
       return await this.client.interrupt();
     }
     return true;
+  }
+
+  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
+    if (!this.currentTurn) {
+      return {
+        status: "no_active_turn",
+        message: "No active Claude turn",
+      };
+    }
+    if (!this.client.steerActiveTurn) {
+      return {
+        status: "not_supported",
+        message: "Claude client does not support active-turn steering",
+      };
+    }
+    return await this.client.steerActiveTurn(input);
   }
 
   async compact(sessionId: string): Promise<void> {

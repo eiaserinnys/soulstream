@@ -254,5 +254,19 @@ describe("TaskRuntimeCommands ACK builders", () => {
       outcome: "auto_resumed",
       agentSessionId: "sess-1",
     });
+
+    expect(
+      buildInterveneAck({
+        requestId: "req-delivered",
+        agentSessionId: "sess-1",
+        result: { delivered: true },
+      }),
+    ).toEqual({
+      type: "intervene_ack",
+      requestId: "req-delivered",
+      status: "ok",
+      outcome: "delivered",
+      agentSessionId: "sess-1",
+    });
   });
 });

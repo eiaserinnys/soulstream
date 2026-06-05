@@ -836,7 +836,7 @@ describe("TaskManager.shutdown", () => {
 });
 
 describe("TaskManager.addIntervention (B-4)", () => {
-  it("running task queues even if the engine object has a legacy steering method", async () => {
+  it("running task delivers to a live engine when the engine supports active-turn steering", async () => {
     const { db, broadcaster, emitEventEnvelope } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     const task = await tm.createTask({
@@ -864,19 +864,17 @@ describe("TaskManager.addIntervention (B-4)", () => {
       vi.fn(),
     );
 
-    expect(result).toEqual({ queued: true, queuePosition: 1 });
-    expect(task.interventionQueue).toHaveLength(1);
-    expect(task.interventionQueue[0]).toMatchObject({
-      text: "focus on the failing test",
-      user: "alice",
-      attachmentPaths: ["/tmp/a.png"],
+    expect(result).toEqual({ delivered: true });
+    expect(task.interventionQueue).toHaveLength(0);
+    expect(steerActiveTurn).toHaveBeenCalledWith({
+      prompt: "focus on the failing test\n\n[첨부 파일 로컬 경로: /tmp/a.png]",
+      imageAttachmentPaths: ["/tmp/a.png"],
     });
-    expect(steerActiveTurn).not.toHaveBeenCalled();
     expect(
       emitEventEnvelope.mock.calls.filter(
         (c) => (c[1] as { type: string }).type === "intervention_sent",
       ),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
   });
 
   it("running task → queue push only; intervention_sent is emitted when executor dequeues", async () => {
