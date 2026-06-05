@@ -30,6 +30,13 @@ export interface CatalogFolder {
   createdAt?: string;
 }
 
+/** 폴더 drag/reorder mutation 항목 */
+export interface CatalogFolderReorderItem {
+  id: string;
+  sortOrder: number;
+  parentFolderId?: string | null;
+}
+
 /** 카탈로그 세션 배치 정보 */
 export interface CatalogAssignment {
   folderId: string | null;

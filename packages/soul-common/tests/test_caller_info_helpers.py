@@ -494,7 +494,7 @@ class TestResolveCallerInfoOrSystem:
     # T-R6-H5 — JWT decode 실패 → browser (verify_token=None → graceful fallback)
     def test_jwt_decode_failure_returns_browser(self):
         """위조/만료 JWT — verify_token None → build_browser_caller_info (신원 키 부재 graceful)."""
-        bad_token = generate_token({"email": "x@y.z", "name": "X"}, "wrong-secret")
+        bad_token = generate_token({"email": "x@y.z", "name": "X"}, "wrong-secret-for-resolver-test-32b")
         req = _make_request(
             headers={"Authorization": f"Bearer {bad_token}", "user-agent": "BadClient/1.0"},
         )

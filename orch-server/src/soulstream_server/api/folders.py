@@ -31,6 +31,7 @@ class UpdateFolderRequest(BaseModel):
 class FolderReorderItem(BaseModel):
     id: str
     sortOrder: int
+    parentFolderId: Optional[str] = None
 
 
 def _field_supplied(model: BaseModel, field_name: str) -> bool:
@@ -89,9 +90,13 @@ def create_folders_router(
     @router.patch("/reorder")
     async def reorder_folders(body: list[FolderReorderItem]) -> dict:
         """폴더 순서 일괄 변경."""
-        await catalog_service.reorder_folders(
-            [{"id": item.id, "sortOrder": item.sortOrder} for item in body]
-        )
+        payload = []
+        for item in body:
+            entry = {"id": item.id, "sortOrder": item.sortOrder}
+            if _field_supplied(item, "parentFolderId"):
+                entry["parentFolderId"] = item.parentFolderId
+            payload.append(entry)
+        await catalog_service.reorder_folders(payload)
         return {"success": True}
 
     return router

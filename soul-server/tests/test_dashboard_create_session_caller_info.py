@@ -67,7 +67,9 @@ def _post(mock_task_manager, body: dict, cookies: dict | None = None, headers: d
     ):
         mock_rm.can_acquire.return_value = True
         client = TestClient(app, raise_server_exceptions=True)
-        return client.post("/api/sessions", json=body, cookies=cookies or {}, headers=headers or {})
+        for name, value in (cookies or {}).items():
+            client.cookies.set(name, value)
+        return client.post("/api/sessions", json=body, headers=headers or {})
 
 
 def _captured_caller_info(mock_task_manager):
@@ -141,7 +143,7 @@ class TestDashboardCreateSessionCallerInfoJwtAutoFill:
 
     def test_jwt_decode_failure_falls_back_to_base(self, mock_task_manager, jwt_secret):
         """위조 JWT는 verify 실패 → base caller_info만 (신원 필드 없음)."""
-        bad_token = generate_token({"email": "x@y.z", "name": "x"}, "wrong-secret")
+        bad_token = generate_token({"email": "x@y.z", "name": "x"}, "wrong-secret-for-caller-info-32b")
         resp = _post(
             mock_task_manager,
             {"prompt": "test"},

@@ -31,6 +31,7 @@ import { TasksItem } from "./TasksItem";
 import { FolderItem } from "./FolderItem";
 import { FolderContextMenu, type FolderContextMenuTarget } from "./FolderContextMenu";
 import type { FolderSettings } from "../shared/types";
+import type { CatalogFolderReorderItem } from "../shared/catalog-types";
 import {
   readFolderTreeExpandedState,
   writeFolderTreeExpandedState,
@@ -51,8 +52,8 @@ export interface FolderTreeProps {
   onRenameFolder?: (folderId: string, newName: string) => void;
   onDeleteFolder?: (folderId: string) => void;
   onUpdateFolderSettings?: (folderId: string, settings: FolderSettings) => void;
-  /** 폴더 순서 변경 완료 콜백 (사용자 지정 DnD 모드). orderedFolderIds는 재정렬된 일반 폴더 ID 배열 */
-  onReorderFolders?: (orderedFolderIds: string[]) => Promise<void>;
+  /** 폴더 부모/순서 변경 완료 콜백 (사용자 지정 DnD 모드) */
+  onReorderFolders?: (items: CatalogFolderReorderItem[]) => Promise<void>;
   /**
    * 폴더별 세션 수 (서버 집계값).
    * 제공되면 sessions 배열 필터링 대신 이 값을 우선 사용합니다.
@@ -158,10 +159,15 @@ export function FolderTree({
     }
   }, [folderSortMode]);
 
-  const renderFolderItem = (folder: typeof allFolders[number], depth = 0): ReactNode => {
+  const renderFolderItem = (
+    folder: typeof allFolders[number],
+    depth = 0,
+    siblingFolderIds = sortedNormalFolderIds,
+  ): ReactNode => {
     const isSystem = SYSTEM_FOLDER_NAMES.has(folder.name);
-    const isDraggableFolder = depth === 0 && folderSortMode === "custom" && !isSystem;
+    const isDraggableFolder = folderSortMode === "custom" && !isSystem;
     const childFolders = sortTreeFolders(getChildFolders(allFolders, folder.id));
+    const childFolderIds = childFolders.map((child) => child.id);
     const hasChildren = childFolders.length > 0;
     const isExpanded = hasChildren && isFolderExpanded(folder.id);
     return (
@@ -170,7 +176,8 @@ export function FolderTree({
           folder={folder}
           isSystem={isSystem}
           isDraggableFolder={isDraggableFolder}
-          sortedNormalFolderIds={sortedNormalFolderIds}
+          siblingFolderIds={siblingFolderIds}
+          childFolderIds={childFolderIds}
           isSelected={viewMode === "folder" && selectedFolderId === folder.id}
           isEditingThis={editingId === folder.id}
           editName={editName}
@@ -192,7 +199,11 @@ export function FolderTree({
           onEditSubmit={() => handleRenameSubmit(folder.id)}
           onEditCancel={() => setEditingId(null)}
         />
-        {isExpanded && childFolders.map((child) => renderFolderItem(child, depth + 1))}
+        {isExpanded && (
+          <SortableContext items={childFolderIds} strategy={verticalListSortingStrategy}>
+            {childFolders.map((child) => renderFolderItem(child, depth + 1, childFolderIds))}
+          </SortableContext>
+        )}
       </div>
     );
   };

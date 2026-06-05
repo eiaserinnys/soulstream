@@ -362,6 +362,7 @@ class TestHandleIntervene:
             user="admin",
             attachment_paths=None,
             caller_info=None,
+            extra_context_items=None,
         )
 
     @pytest.mark.asyncio

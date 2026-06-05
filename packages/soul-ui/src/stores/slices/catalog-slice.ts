@@ -105,11 +105,11 @@ export const createCatalogSlice: StateCreator<
     }));
   },
 
-  reorderFolders: (orderedFolderIds) => {
+  reorderFolders: (items) => {
     const { catalog } = get();
     if (!catalog) return;
     set((state) => ({
-      catalog: reorderFoldersInCatalog(catalog, orderedFolderIds),
+      catalog: reorderFoldersInCatalog(catalog, items),
       catalogVersion: state.catalogVersion + 1,
     }));
   },

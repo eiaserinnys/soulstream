@@ -5,7 +5,7 @@
  * 각 함수는 현재 CatalogState를 받아 새 CatalogState를 반환한다.
  */
 
-import type { CatalogState, CatalogFolder } from "@shared/types";
+import type { CatalogState, CatalogFolder, CatalogFolderReorderItem } from "@shared/types";
 
 export function moveSessionsInCatalog(
   catalog: CatalogState,
@@ -91,17 +91,21 @@ export function removeFolderFromCatalog(
 
 export function reorderFoldersInCatalog(
   catalog: CatalogState,
-  orderedFolderIds: string[],
+  items: CatalogFolderReorderItem[],
 ): CatalogState {
-  const idSet = new Set(orderedFolderIds);
-  const folderMap = new Map(catalog.folders.map((f) => [f.id, f]));
-  const reordered = orderedFolderIds
-    .map((id, index) => {
-      const f = folderMap.get(id);
-      return f ? { ...f, sortOrder: index } : null;
-    })
-    .filter((f): f is CatalogFolder => f !== null);
-  // orderedFolderIds에 없는 폴더(시스템 폴더 등) 보존
-  const others = catalog.folders.filter((f) => !idSet.has(f.id));
-  return { ...catalog, folders: [...others, ...reordered] };
+  const itemById = new Map(items.map((item) => [item.id, item]));
+  return {
+    ...catalog,
+    folders: catalog.folders.map((folder) => {
+      const item = itemById.get(folder.id);
+      if (!item) return folder;
+      return {
+        ...folder,
+        sortOrder: item.sortOrder,
+        ...(Object.prototype.hasOwnProperty.call(item, "parentFolderId")
+          ? { parentFolderId: item.parentFolderId }
+          : {}),
+      };
+    }),
+  };
 }

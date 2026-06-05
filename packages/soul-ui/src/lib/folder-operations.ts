@@ -14,10 +14,8 @@
  */
 
 import { useDashboardStore } from "../stores/dashboard-store";
-import type { CatalogFolder, FolderSettings } from "../shared/types";
-import { SYSTEM_FOLDERS } from "../shared/constants";
-
-const SYSTEM_FOLDER_NAME_SET: Set<string> = new Set(Object.values(SYSTEM_FOLDERS));
+import type { CatalogFolder, CatalogFolderReorderItem, FolderSettings } from "../shared/types";
+import { toastManager } from "../components/ui/toast";
 
 export interface FolderApiConfig {
   createUrl: string;
@@ -38,7 +36,7 @@ export interface FolderOperations {
   renameFolderOptimistic: (folderId: string, name: string) => Promise<void>;
   deleteFolderOptimistic: (folderId: string) => Promise<void>;
   updateFolderSettingsOptimistic: (folderId: string, settings: FolderSettings) => Promise<void>;
-  reorderFoldersOptimistic: (orderedFolderIds: string[]) => Promise<void>;
+  reorderFoldersOptimistic: (items: CatalogFolderReorderItem[]) => Promise<void>;
 }
 
 export function createFolderOperations(config: FolderApiConfig): FolderOperations {
@@ -195,15 +193,14 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
    * 로컬 store의 folders 순서를 즉시 갱신 → API → 실패 시 이전 순서로 롤백.
    * SSE `catalog_updated`가 서버 정본으로 최종 덮어쓴다.
    */
-  async function reorderFoldersOptimistic(orderedFolderIds: string[]): Promise<void> {
-    const { reorderFolders, catalog } = useDashboardStore.getState();
-    const prevFolders = catalog?.folders ? [...catalog.folders] : [];
+  async function reorderFoldersOptimistic(items: CatalogFolderReorderItem[]): Promise<void> {
+    const { reorderFolders, setCatalog, catalog } = useDashboardStore.getState();
+    const prevCatalog = catalog;
 
     // 낙관적 갱신
-    reorderFolders(orderedFolderIds);
+    reorderFolders(items);
 
     try {
-      const items = orderedFolderIds.map((id, index) => ({ id, sortOrder: index }));
       const res = await fetch(config.reorderUrl, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -211,11 +208,12 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
       });
       if (!res.ok) throw new Error(`Reorder folders failed: ${res.status}`);
     } catch (err) {
-      // 롤백: 이전 순서에서 일반 폴더 ID만 전달 (시스템 폴더는 reorderFolders 내부에서 보존됨)
-      const prevNormalIds = prevFolders
-        .filter((f) => !SYSTEM_FOLDER_NAME_SET.has(f.name))
-        .map((f) => f.id);
-      reorderFolders(prevNormalIds);
+      if (prevCatalog) setCatalog(prevCatalog);
+      toastManager.add({
+        title: "Folder move failed",
+        description: "The folder tree was restored to the server state.",
+        type: "warning",
+      });
       console.error("Folder reorder failed, rolled back:", err);
     }
   }

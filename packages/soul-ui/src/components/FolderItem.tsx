@@ -16,12 +16,14 @@ import { cn } from "../lib/cn";
 import { Badge } from "./ui/badge";
 import { Spinner } from "./ui/spinner";
 import { ChevronDown, ChevronRight, GripVertical } from "lucide-react";
+import type { FolderDragData } from "../providers/folder-dnd";
 
 export interface FolderItemProps {
-  folder: { id: string; name: string; sortOrder: number; createdAt?: string };
+  folder: { id: string; name: string; sortOrder: number; parentFolderId?: string | null; createdAt?: string };
   isSystem: boolean;
   isDraggableFolder: boolean;
-  sortedNormalFolderIds: string[];
+  siblingFolderIds: string[];
+  childFolderIds: string[];
   isSelected: boolean;
   isEditingThis: boolean;
   editName: string;
@@ -47,7 +49,8 @@ export const FolderItem = memo(function FolderItem({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   isSystem: _isSystem,
   isDraggableFolder,
-  sortedNormalFolderIds,
+  siblingFolderIds,
+  childFolderIds,
   isSelected,
   isEditingThis,
   editName,
@@ -66,6 +69,13 @@ export const FolderItem = memo(function FolderItem({
   onEditSubmit,
   onEditCancel,
 }: FolderItemProps) {
+  const folderDragData: FolderDragData = {
+    type: "folder",
+    parentFolderId: folder.parentFolderId ?? null,
+    siblingIds: siblingFolderIds,
+    childIds: childFolderIds,
+  };
+
   // 폴더 재정렬용 (custom 모드에서만 active)
   const {
     attributes,
@@ -77,16 +87,13 @@ export const FolderItem = memo(function FolderItem({
   } = useSortable({
     id: folder.id,
     disabled: !isDraggableFolder,
-    data: {
-      type: "folder",
-      currentOrder: sortedNormalFolderIds,
-    },
+    data: folderDragData,
   });
 
   // 세션 drop target
   const { setNodeRef: setDroppableRef, isOver } = useDroppable({
     id: folder.id,
-    data: { type: "folder", folderId: folder.id },
+    data: folderDragData,
   });
 
   // 두 ref를 합성
@@ -105,7 +112,7 @@ export const FolderItem = memo(function FolderItem({
           transition,
         }
       : {}),
-    paddingLeft: `${12 + depth * 14}px`,
+    paddingLeft: `${12 + depth * 18}px`,
   };
 
   return (
@@ -115,6 +122,7 @@ export const FolderItem = memo(function FolderItem({
       data-testid={isDraggableFolder ? "draggable-folder" : undefined}
       className={cn(
         "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50 group select-none",
+        "relative",
         isSelected && "bg-accent text-accent-foreground",
         (isOver || dragOverId === folder.id) && "ring-2 ring-primary",
         isDraggableFolder && isSortableDragging && "opacity-50",
@@ -123,6 +131,14 @@ export const FolderItem = memo(function FolderItem({
       onDoubleClick={onDoubleClick}
       onContextMenu={onContextMenu}
     >
+      {depth > 0 && (
+        <span
+          data-testid="folder-tree-guide-line"
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-0 top-0 border-l border-border/50"
+          style={{ left: `${12 + (depth - 1) * 18 + 8}px` }}
+        />
+      )}
       {isEditingThis ? (
         <input
           autoFocus

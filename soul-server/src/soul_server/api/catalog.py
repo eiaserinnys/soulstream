@@ -34,6 +34,7 @@ class SessionCatalogUpdate(BaseModel):
 class FolderReorderItem(BaseModel):
     id: str
     sortOrder: int
+    parentFolderId: Optional[str] = None
 
 
 class BatchMoveRequest(BaseModel):
@@ -80,9 +81,13 @@ def create_catalog_router(catalog_service: CatalogService) -> APIRouter:
 
     @router.patch("/folders/reorder")
     async def reorder_folders(body: list[FolderReorderItem]):
-        await catalog_service.reorder_folders(
-            [{"id": item.id, "sortOrder": item.sortOrder} for item in body]
-        )
+        payload = []
+        for item in body:
+            entry = {"id": item.id, "sortOrder": item.sortOrder}
+            if _field_supplied(item, "parentFolderId"):
+                entry["parentFolderId"] = item.parentFolderId
+            payload.append(entry)
+        await catalog_service.reorder_folders(payload)
         return {"ok": True}
 
     @router.delete("/folders/{folder_id}", status_code=204)

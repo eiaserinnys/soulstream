@@ -2160,7 +2160,11 @@ describe("dashboard-store", () => {
       });
 
       // 일반 폴더를 역순으로 재정렬 (시스템 폴더 ID는 포함하지 않음)
-      store.reorderFolders(["folder-c", "folder-b", "folder-a"]);
+      store.reorderFolders([
+        { id: "folder-c", sortOrder: 0, parentFolderId: null },
+        { id: "folder-b", sortOrder: 1, parentFolderId: null },
+        { id: "folder-a", sortOrder: 2, parentFolderId: null },
+      ]);
 
       const { catalog } = useDashboardStore.getState();
       expect(catalog).not.toBeNull();

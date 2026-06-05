@@ -15,8 +15,8 @@ class TestReorderFolders:
     async def test_reorder_folders(self, client, mock_catalog_service):
         """Calls catalog_service.reorder_folders with correct payload."""
         payload = [
-            {"id": "f1", "sortOrder": 0},
-            {"id": "f2", "sortOrder": 1},
+            {"id": "f1", "sortOrder": 0, "parentFolderId": None},
+            {"id": "f2", "sortOrder": 1, "parentFolderId": "f1"},
             {"id": "f3", "sortOrder": 2},
         ]
 
@@ -25,7 +25,11 @@ class TestReorderFolders:
         assert resp.status_code == 200
         assert resp.json() == {"success": True}
         mock_catalog_service.reorder_folders.assert_called_once_with(
-            [{"id": "f1", "sortOrder": 0}, {"id": "f2", "sortOrder": 1}, {"id": "f3", "sortOrder": 2}]
+            [
+                {"id": "f1", "sortOrder": 0, "parentFolderId": None},
+                {"id": "f2", "sortOrder": 1, "parentFolderId": "f1"},
+                {"id": "f3", "sortOrder": 2},
+            ]
         )
 
     async def test_reorder_folders_empty(self, client, mock_catalog_service):

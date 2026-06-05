@@ -38,7 +38,10 @@ const sessions: SessionSummary[] = [
     agentSessionId: "session-a",
     status: "running",
     eventCount: 12,
-    prompt: "Session title that should stay on one line",
+    agentId: "roselin_codex",
+    agentName: "Roselin",
+    agentPortraitUrl: "/api/nodes/eias/agents/roselin_codex/portrait",
+    prompt: "Session title that should wrap up to three lines inside the tile before it is clamped",
     updatedAt: "2026-06-04T00:00:00.000Z",
     lastMessage: {
       type: "assistant",
@@ -138,11 +141,18 @@ describe("BoardWorkspaceView", () => {
     expect(sessionTile?.className).toContain("rounded-xl");
   });
 
-  it("keeps folder names, session titles, and previews bounded inside each tile", () => {
+  it("keeps folder names, session titles, agent profile, and previews bounded inside each tile", () => {
     ({ container, root } = renderBoard());
 
     expect(container.querySelector('[data-testid="board-folder-title"]')?.className).toContain("truncate");
-    expect(container.querySelector('[data-testid="board-session-title"]')?.className).toContain("truncate");
+    expect(container.querySelector('[data-testid="board-session-title"]')?.className).toContain("line-clamp-3");
+    expect(container.querySelector('[data-testid="board-session-title"]')?.textContent).toContain(
+      "Session title that should wrap",
+    );
+    expect(container.querySelector('[data-testid="board-session-agent"]')?.textContent).toContain("Roselin");
+    expect(container.querySelector<HTMLImageElement>('[data-testid="board-session-agent-avatar"]')?.src).toContain(
+      "/api/nodes/eias/agents/roselin_codex/portrait",
+    );
     expect(container.querySelector('[data-testid="board-session-preview"]')?.className).toContain("line-clamp-2");
   });
 
