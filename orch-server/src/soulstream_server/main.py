@@ -260,7 +260,7 @@ def _mount_api_routers(
     app.include_router(create_claude_auth_router(node_manager, dependencies=api_deps))
     app.include_router(create_provider_usage_router(node_manager, dependencies=api_deps))
     app.include_router(create_folders_router(catalog_service, dependencies=api_deps))
-    app.include_router(create_catalog_router(catalog_service, db, node_manager, dependencies=api_deps))
+    app.include_router(create_catalog_router(catalog_service, dependencies=api_deps))
     app.include_router(create_attachments_router(node_manager, dependencies=api_deps))
     app.include_router(create_cogito_router(node_manager, dependencies=api_deps))
     app.include_router(create_atom_router(dependencies=api_deps))

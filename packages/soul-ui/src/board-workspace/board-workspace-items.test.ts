@@ -166,6 +166,26 @@ describe("board workspace item helpers", () => {
     ]);
   });
 
+  it("keeps board session tiles visible before session summaries arrive", () => {
+    const items = buildBoardWorkspaceItems({
+      catalog,
+      selectedFolderId: "folder-new",
+      sessions: [],
+    });
+
+    const sessionItem = items.find((item) => item.type === "session");
+    expect(sessionItem).toMatchObject({
+      type: "session",
+      id: "nested",
+      session: {
+        agentSessionId: "nested",
+        folderId: "folder-new",
+        status: "unknown",
+        eventCount: 0,
+      },
+    });
+  });
+
   it("snaps positions to 20px, allows negative coordinates, and finds the first empty tile slot", () => {
     const items = buildBoardWorkspaceItems({
       catalog,

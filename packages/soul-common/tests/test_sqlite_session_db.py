@@ -470,6 +470,17 @@ class TestCatalog:
             }
         ]
 
+    async def test_get_session_assignments_does_not_seed_board_items(self, db: SqliteSessionDB):
+        await db.create_folder("f1", "Folder 1")
+        await db.upsert_session("s1", folder_id="f1", display_name="Session 1")
+
+        assignments = await db.get_session_assignments()
+
+        assert assignments == {"s1": {"folderId": "f1", "displayName": "Session 1"}}
+        cursor = await db._conn.execute("SELECT COUNT(*) AS count FROM board_items")
+        row = await cursor.fetchone()
+        assert row["count"] == 0
+
     async def test_board_item_position_roundtrip(self, db: SqliteSessionDB):
         await db.create_folder("f1", "Folder 1")
         await db.upsert_session("s1", folder_id="f1")

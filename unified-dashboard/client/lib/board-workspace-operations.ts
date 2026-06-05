@@ -4,6 +4,6 @@ export const {
   updateBoardItemPosition,
   createMarkdownDocument,
 } = createBoardWorkspaceOperations({
-  updateBoardItemPositionUrl: (id) => `/api/catalog/board-items/${id}/position`,
-  createMarkdownDocumentUrl: "/api/catalog/markdown-documents",
+  updateBoardItemPositionUrl: (id) => `/api/board-items/${id}/position`,
+  createMarkdownDocumentUrl: "/api/markdown-documents",
 });

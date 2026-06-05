@@ -117,6 +117,36 @@ export function applyCatalogDisplayNames(
   });
 }
 
+export function mergeSessionAssignmentsFromSummaries(
+  catalog: CatalogState,
+  sessions: readonly SessionSummary[],
+): CatalogState {
+  let changed = false;
+  const updatedSessions = { ...catalog.sessions };
+
+  for (const session of sessions) {
+    if (session.folderId === undefined && session.displayName === undefined) continue;
+    const current = updatedSessions[session.agentSessionId];
+    const next = {
+      folderId: session.folderId !== undefined ? session.folderId : current?.folderId ?? null,
+      displayName:
+        session.displayName !== undefined
+          ? session.displayName ?? null
+          : current?.displayName ?? null,
+    };
+    if (
+      !current ||
+      current.folderId !== next.folderId ||
+      current.displayName !== next.displayName
+    ) {
+      updatedSessions[session.agentSessionId] = next;
+      changed = true;
+    }
+  }
+
+  return changed ? { ...catalog, sessions: updatedSessions } : catalog;
+}
+
 function applyCatalogDisplayName(
   session: SessionSummary,
   catalog: CatalogState,

@@ -84,8 +84,10 @@ export interface SessionSummary extends AgentProfile, UserProfile {
   clientId?: string;
   /** 마지막 readable-event의 메시지 정보 */
   lastMessage?: LastMessage;
+  /** 카탈로그 폴더 배정. 세션 목록 응답에서 catalog.sessions를 보강할 때 사용한다. */
+  folderId?: string | null;
   /** 카탈로그에서 설정한 세션 표시 이름 */
-  displayName?: string;
+  displayName?: string | null;
   /** 세션 메타데이터 (커밋, 브랜치, 카드 등 산출물 기록) */
   metadata?: MetadataEntry[];
   /** 마지막 이벤트 ID (읽음 상태 비교용) */

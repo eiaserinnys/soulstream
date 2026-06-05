@@ -8,7 +8,7 @@ describe("buildFetchSessionsUrl", () => {
 
   it("serializes the existing session list filter contract", () => {
     expect(
-      buildFetchSessionsUrl("/api/catalog", {
+      buildFetchSessionsUrl("/api/sessions", {
         sessionType: "claude",
         offset: 50,
         limit: 25,
@@ -16,7 +16,7 @@ describe("buildFetchSessionsUrl", () => {
         feedOnly: true,
       }),
     ).toBe(
-      "/api/catalog?session_type=claude&offset=50&limit=25&folder_id=folder+A%2FB&feed_only=true",
+      "/api/sessions?session_type=claude&offset=50&limit=25&folder_id=folder+A%2FB&feed_only=true",
     );
   });
 

@@ -170,6 +170,7 @@ def mock_catalog_service():
     cs.rename_session = AsyncMock()
     cs.delete_session = AsyncMock()
     cs.update_board_item_position = AsyncMock()
+    cs.list_board_items = AsyncMock(return_value=[])
     cs.create_markdown_document = AsyncMock(return_value={
         "document": {"id": "doc-1", "title": "Note", "body": "Body"},
         "boardItem": {

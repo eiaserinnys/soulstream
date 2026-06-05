@@ -119,5 +119,10 @@ class RenameSessionRequest(BaseModel):
     displayName: Optional[str] = None
 
 
+class SessionCatalogUpdate(BaseModel):
+    folderId: Optional[str] = None
+    displayName: Optional[str] = None
+
+
 class ReadPositionRequest(BaseModel):
     last_read_event_id: int

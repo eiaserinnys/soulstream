@@ -317,6 +317,7 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS subtree_height INTEGER NOT NULL DEFA
 CREATE INDEX IF NOT EXISTS idx_events_session_id_id ON events (session_id, id);
 CREATE INDEX IF NOT EXISTS idx_events_search_vector ON events USING GIN (search_vector);
 CREATE INDEX IF NOT EXISTS idx_event_search_terms_term ON event_search_terms (term);
+CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions (updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_soulstream_schedules_session
     ON soulstream_schedules (session_id, status, next_run_at);
 CREATE INDEX IF NOT EXISTS idx_soulstream_schedules_due

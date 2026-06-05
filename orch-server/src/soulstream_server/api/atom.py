@@ -1,5 +1,5 @@
 """
-Atom 연동 API — /api/catalog/atom
+Atom 연동 API — /api/atom
 
 atom 트리 노드 조회를 프록시한다.
 폴더 설정 다이얼로그의 드롭다운에서 사용.
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 def create_atom_router(dependencies: list | None = None) -> APIRouter:
     router = APIRouter(
-        prefix="/api/catalog/atom",
+        prefix="/api/atom",
         tags=["atom"],
         dependencies=dependencies or [],
     )

@@ -1,7 +1,7 @@
 export async function deleteSessions(sessionIds: string[]): Promise<void> {
   const responses = await Promise.all(
     sessionIds.map((sessionId) =>
-      fetch(`/api/catalog/sessions/${encodeURIComponent(sessionId)}`, {
+      fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, {
         method: "DELETE",
       }),
     ),

@@ -221,6 +221,18 @@ class PostgresFolderMixin:
 
         return {"folders": folder_list, "sessions": sessions, "boardItems": board_items}
 
+    async def get_session_assignments(self) -> dict:
+        rows = await self._pool.fetch(
+            "SELECT * FROM catalog_get_sessions()"
+        )
+        return {
+            r["session_id"]: {
+                "folderId": r["folder_id"],
+                "displayName": r["display_name"],
+            }
+            for r in rows
+        }
+
     async def ensure_board_items(self) -> None:
         await self._pool.execute("SELECT board_seed_items()")
 
@@ -229,14 +241,25 @@ class PostgresFolderMixin:
         rows = await self._pool.fetch("SELECT * FROM board_item_get_all()")
         return [_normalize_board_item(dict(r)) for r in rows]
 
-    async def get_board_yjs_catalog_items(self) -> list[dict]:
-        rows = await self._pool.fetch(
-            """
-            SELECT board_items
-            FROM board_yjs_catalog_cache
-            ORDER BY folder_id
-            """
-        )
+    async def get_board_yjs_catalog_items(self, folder_id: Optional[str] = None) -> list[dict]:
+        if folder_id is None:
+            rows = await self._pool.fetch(
+                """
+                SELECT board_items
+                FROM board_yjs_catalog_cache
+                ORDER BY folder_id
+                """
+            )
+        else:
+            rows = await self._pool.fetch(
+                """
+                SELECT board_items
+                FROM board_yjs_catalog_cache
+                WHERE folder_id = $1
+                ORDER BY folder_id
+                """,
+                folder_id,
+            )
         items: list[dict] = []
         for row in rows:
             items.extend(dict(item) for item in _decode_jsonb_list(row["board_items"]))

@@ -1,7 +1,7 @@
 /**
  * AtomNodeSelector - atom 트리 노드를 드롭다운으로 탐색하여 선택하는 컴포넌트
  *
- * /api/catalog/atom/nodes (루트) 및 /api/catalog/atom/nodes/{id}/children 엔드포인트를 통해
+ * /api/atom/nodes (루트) 및 /api/atom/nodes/{id}/children 엔드포인트를 통해
  * atom 트리를 계층형으로 탐색하고 원하는 노드를 선택한다.
  *
  * 포지셔닝/포털/바깥 클릭/포커스 복원은 Base UI Popover 래퍼(`./ui/popover`)에 위임한다.
@@ -55,8 +55,8 @@ export function AtomNodeSelector({
     try {
       const url =
         nodeId === null
-          ? "/api/catalog/atom/nodes"
-          : `/api/catalog/atom/nodes/${nodeId}/children`;
+          ? "/api/atom/nodes"
+          : `/api/atom/nodes/${nodeId}/children`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = (await res.json()) as { children: AtomNode[] };

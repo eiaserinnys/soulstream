@@ -99,6 +99,16 @@ export function addBoardItemToCatalog(
   return { ...catalog, boardItems: [...current, boardItem] };
 }
 
+export function setBoardItemsForFolderInCatalog(
+  catalog: CatalogState,
+  folderId: string,
+  boardItems: CatalogBoardItem[],
+): CatalogState {
+  const current = catalog.boardItems ?? [];
+  const otherFolders = current.filter((item) => item.folderId !== folderId);
+  return { ...catalog, boardItems: [...otherFolders, ...boardItems] };
+}
+
 export function updateBoardItemPositionInCatalog(
   catalog: CatalogState,
   boardItemId: string,

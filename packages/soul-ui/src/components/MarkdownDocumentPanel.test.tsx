@@ -191,14 +191,14 @@ describe("MarkdownDocumentPanel", () => {
   beforeEach(() => {
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url.endsWith("/api/catalog/markdown-documents/doc-a") && !init) {
+      if (url.endsWith("/api/markdown-documents/doc-a") && !init) {
         return new Response(JSON.stringify({
           id: "doc-a",
           title: "Design note",
           body: "Initial body",
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
-      if (url.endsWith("/api/catalog/markdown-documents/doc-a") && init?.method === "PUT") {
+      if (url.endsWith("/api/markdown-documents/doc-a") && init?.method === "PUT") {
         const body = JSON.parse(String(init.body));
         return new Response(JSON.stringify({
           id: "doc-a",
@@ -248,7 +248,7 @@ describe("MarkdownDocumentPanel", () => {
     await waitForFetchBody(fetchMock, JSON.stringify({ title: "Design note", body: "Edited body" }));
 
     expect(fetchMock.mock.calls).toContainEqual([
-      "/api/catalog/markdown-documents/doc-a",
+      "/api/markdown-documents/doc-a",
       expect.objectContaining({
         method: "PUT",
         body: JSON.stringify({ title: "Design note", body: "Edited body" }),

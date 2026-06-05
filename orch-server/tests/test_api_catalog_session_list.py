@@ -1,4 +1,4 @@
-"""GET /api/catalog의 sessionList 항목 userName/userPortraitUrl 검증.
+"""GET /api/sessions의 sessionList 항목 userName/userPortraitUrl 검증.
 
 caller_info(통합 스키마 v1, atom ed3a216d) 발신자 신원이 노드 user_info를
 override하는지 확인한다. caller_info 부재 세션은 노드 user_info fallback이 보존된다.
@@ -36,7 +36,7 @@ def node_with_user(node_manager, mock_node_connection):
 def node_with_agent_profile(node_manager, mock_node_connection):
     """agent_profiles가 등록된 노드를 node_manager에 등록.
 
-    Phase A-bis: catalog sessionList의 backend 키가 _session_to_response 정본
+    Phase A-bis: sessions response sessionList의 backend 키가 _session_to_response 정본
     helper를 통해 profile.backend("claude")로 채워지는지 검증하는 fixture.
     """
     mock_node_connection._agent_profiles = {
@@ -72,8 +72,8 @@ def _session_with_caller_info(session_id: str, node_id: str, caller_info_value: 
     }
 
 
-class TestCatalogSessionListUserInfo:
-    """GET /api/catalog의 sessionList userName/userPortraitUrl 결정 정책."""
+class TestSessionListUserInfo:
+    """GET /api/sessions의 sessionList userName/userPortraitUrl 결정 정책."""
 
     async def test_caller_info_browser_overrides_node_user_info(
         self, client, mock_db, mock_catalog_service, node_with_user
@@ -92,7 +92,7 @@ class TestCatalogSessionListUserInfo:
             "sessions": {"s1": {"folderId": None, "displayName": None}},
         }
 
-        resp = await client.get("/api/catalog")
+        resp = await client.get("/api/sessions")
 
         assert resp.status_code == 200
         body = resp.json()
@@ -118,7 +118,7 @@ class TestCatalogSessionListUserInfo:
             "sessions": {"s1": {"folderId": None, "displayName": None}},
         }
 
-        resp = await client.get("/api/catalog")
+        resp = await client.get("/api/sessions")
 
         body = resp.json()
         item = body["sessionList"][0]
@@ -144,7 +144,7 @@ class TestCatalogSessionListUserInfo:
             "sessions": {"s1": {"folderId": None, "displayName": None}},
         }
 
-        resp = await client.get("/api/catalog")
+        resp = await client.get("/api/sessions")
 
         body = resp.json()
         item = body["sessionList"][0]
@@ -166,7 +166,7 @@ class TestCatalogSessionListUserInfo:
             "sessions": {"s1": {"folderId": None, "displayName": None}},
         }
 
-        resp = await client.get("/api/catalog")
+        resp = await client.get("/api/sessions")
 
         body = resp.json()
         item = body["sessionList"][0]
@@ -184,7 +184,7 @@ class TestCatalogSessionListUserInfo:
             "sessions": {"s1": {"folderId": None, "displayName": None}},
         }
 
-        resp = await client.get("/api/catalog")
+        resp = await client.get("/api/sessions")
 
         body = resp.json()
         item = body["sessionList"][0]
@@ -206,7 +206,7 @@ class TestCatalogSessionListUserInfo:
             "sessions": {"s1": {"folderId": None, "displayName": None}},
         }
 
-        resp = await client.get("/api/catalog")
+        resp = await client.get("/api/sessions")
 
         body = resp.json()
         item = body["sessionList"][0]
@@ -218,7 +218,7 @@ class TestCatalogSessionListUserInfo:
     ):
         """위임 신규 케이스 (260507.10 fix 후): build_agent_caller_info가 생성한
         노드 프록시 형식 avatar_url(/api/nodes/{node}/agents/{id}/portrait)이
-        catalog 응답까지 정확히 통과되는지 단언.
+        sessions 응답까지 정확히 통과되는지 단언.
 
         본 fix(260507.10)의 송신 측 invariant — 1-A·1-B가 build_agent_caller_info를
         통해 node proxy path를 채움 — 이 catalog 정본(session_serializer.caller_info →
@@ -241,7 +241,7 @@ class TestCatalogSessionListUserInfo:
             "sessions": {"s1": {"folderId": None, "displayName": None}},
         }
 
-        resp = await client.get("/api/catalog")
+        resp = await client.get("/api/sessions")
 
         body = resp.json()
         item = body["sessionList"][0]
@@ -267,10 +267,10 @@ def _session_with_agent(session_id: str, node_id: str, agent_id: str | None) -> 
     }
 
 
-class TestCatalogSessionListBackend:
-    """Phase A-bis: catalog sessionList의 backend 키 박힘 + camelCase 응답 키 통일.
+class TestSessionListBackend:
+    """Phase A-bis: sessions response sessionList의 backend 키 박힘 + camelCase 응답 키 통일.
 
-    자리 1·2(정본 helper _session_to_response) 통일 후, catalog 응답이 helper와
+    자리 1·2(정본 helper _session_to_response) 통일 후, sessions 응답이 helper와
     동일한 키 셋을 가지는지 검증한다. 정본 둘 안티패턴(atom d7a1ad86) 회귀 차단.
     """
 
@@ -296,21 +296,11 @@ class TestCatalogSessionListBackend:
             ],
         }
 
-        resp = await client.get("/api/catalog")
+        resp = await client.get("/api/sessions")
 
         assert resp.status_code == 200
         body = resp.json()
-        assert body["boardItems"] == [
-            {
-                "id": "session:s1",
-                "folderId": "f1",
-                "itemType": "session",
-                "itemId": "s1",
-                "x": 40,
-                "y": 80,
-                "metadata": {},
-            }
-        ]
+        assert "boardItems" not in body
         item = body["sessionList"][0]
         assert item["backend"] == "claude"
         assert item["agentId"] == "agent-claude-1"
@@ -327,7 +317,7 @@ class TestCatalogSessionListBackend:
             "sessions": {"s1": {"folderId": None, "displayName": None}},
         }
 
-        resp = await client.get("/api/catalog")
+        resp = await client.get("/api/sessions")
 
         item = resp.json()["sessionList"][0]
         assert "backend" in item, "backend 키는 항상 응답에 포함되어야 함 (None일지언정)"
@@ -349,7 +339,7 @@ class TestCatalogSessionListBackend:
             "sessions": {"s1": {"folderId": None, "displayName": None}},
         }
 
-        resp = await client.get("/api/catalog")
+        resp = await client.get("/api/sessions")
 
         item = resp.json()["sessionList"][0]
         assert item["backend"] is None
@@ -367,14 +357,14 @@ class TestCatalogSessionListBackend:
         camelCase 키(agentSessionId, nodeId, createdAt, ...)만 박힘. 자리 1·2
         정본 단일화 회귀 차단.
         """
-        session = _session_with_agent("s-camel", node_with_agent_profile.node_id, "agent-claude-1")
-        mock_db.get_all_sessions.return_value = ([session], 1)
-        mock_catalog_service.get_catalog.return_value = {
-            "folders": [],
-            "sessions": {"s-camel": {"folderId": "f-1", "displayName": "Renamed"}},
+        session = {
+            **_session_with_agent("s-camel", node_with_agent_profile.node_id, "agent-claude-1"),
+            "folder_id": "f-1",
+            "display_name": "Renamed",
         }
+        mock_db.get_all_sessions.return_value = ([session], 1)
 
-        resp = await client.get("/api/catalog")
+        resp = await client.get("/api/sessions")
 
         item = resp.json()["sessionList"][0]
         # camelCase 키 박힘 (자리 1 _session_to_response와 동일 셋)
@@ -397,7 +387,7 @@ class TestCatalogSessionListBackend:
         assert not (set(item.keys()) & forbidden_keys), (
             f"snake_case 잔존: {set(item.keys()) & forbidden_keys}"
         )
-        # folder_id/display_name이 folder_assignments에서 정확히 보충됐는지 (catalog 도메인)
+        # folder_id/display_name이 session list DB row에서 정확히 직렬화됐는지
         assert item["folderId"] == "f-1"
         assert item["displayName"] == "Renamed"
         # agentSessionId가 session_id에서 변환됐는지

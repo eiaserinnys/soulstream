@@ -4,7 +4,7 @@
  * orchestrator-dashboard의 OrchestratorSessionProvider를 unified-dashboard로 포팅.
  * soul-ui SessionStorageProvider 인터페이스를 구현한다.
  *
- * - fetchSessions: /api/catalog 에서 세션 목록 조회 (orchestrator BFF 경로)
+ * - fetchSessions: /api/sessions 에서 세션 목록 조회 (orchestrator BFF 경로)
  * - fetchCards: SSE 이벤트로 카드를 구성하므로 빈 배열 반환
  * - subscribe: /api/sessions/:key/events SSE 스트림 구독 (히스토리 포함)
  *   → soul-server EventStore가 히스토리 스트리밍을 처리하므로 SessionCache 불필요
@@ -22,13 +22,40 @@ import { buildFetchSessionsUrl, createSSESubscribe } from "@seosoyoung/soul-ui";
 
 export class OrchestratorSessionProvider implements SessionStorageProvider {
   async fetchSessions(options?: FetchSessionsOptions): Promise<SessionListResult> {
-    const res = await fetch(buildFetchSessionsUrl("/api/catalog", options));
+    const res = await fetch(buildFetchSessionsUrl("/api/sessions", options));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    // Phase A-bis(2026-05-16): catalog sessionList가 _session_to_response 정본
-    // helper로 통일됨 — 응답 키는 camelCase. backend 키 신규 박힘(R1, 본 fix 목적).
+    // Phase A-bis(2026-05-16): session list wire가 _session_to_response 정본
+    // helper로 통일됨 — 응답 키는 camelCase.
     const data: {
-      sessionList: Array<{
+      sessions?: Array<{
+        agentSessionId: string;
+        status: string;
+        prompt?: string | null;
+        createdAt: string;
+        updatedAt: string | null;
+        sessionType: string | null;
+        lastMessage: {
+          preview: string;
+          timestamp: string;
+          type: string;
+        } | null;
+        clientId?: string | null;
+        metadata?: unknown;
+        displayName: string | null;
+        nodeId: string;
+        folderId: string | null;
+        lastEventId: number | null;
+        lastReadEventId: number | null;
+        callerSessionId?: string | null;
+        agentId?: string | null;
+        agentName?: string | null;
+        agentPortraitUrl?: string | null;
+        backend?: string | null;
+        userName?: string | null;
+        userPortraitUrl?: string | null;
+      }>;
+      sessionList?: Array<{
         agentSessionId: string;
         status: string;
         prompt?: string | null;
@@ -58,7 +85,8 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
       total: number;
     } = await res.json();
 
-    const sessions = data.sessionList.map((s) => ({
+    const rows = data.sessions ?? data.sessionList ?? [];
+    const sessions = rows.map((s) => ({
       agentSessionId: s.agentSessionId,
       status: mapStatus(s.status),
       sessionType: (s.sessionType ?? "claude") as "claude" | "llm",
@@ -66,7 +94,8 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
       createdAt: s.createdAt,
       updatedAt: s.updatedAt ?? undefined,
       nodeId: s.nodeId,
-      displayName: s.displayName ?? undefined,
+      folderId: s.folderId,
+      displayName: s.displayName,
       lastMessage: s.lastMessage ?? undefined,
       lastEventId: s.lastEventId ?? 0,
       lastReadEventId: s.lastReadEventId ?? 0,
@@ -87,7 +116,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
 
   async fetchFolderCounts(): Promise<Record<string, number>> {
     try {
-      const res = await fetch("/api/catalog/folder-counts");
+      const res = await fetch("/api/sessions/folder-counts");
       if (!res.ok) return {};
       const data: { counts: Record<string, number> } = await res.json();
       return data.counts ?? {};
