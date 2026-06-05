@@ -1,4 +1,13 @@
 import type { CatalogBoardItem, CatalogFolder, CatalogState, SessionSummary } from "../shared/types";
+import {
+  buildBoardSessionRelations,
+  getSessionChildStack,
+  getSessionParentRef,
+  shouldSuppressSessionInFolder,
+  type BoardSessionRelationIndex,
+  type SessionChildStack,
+  type SessionParentRef,
+} from "./board-session-relations";
 
 export const BOARD_GRID_SIZE = 20;
 export const BOARD_TILE_WIDTH = 280;
@@ -24,6 +33,8 @@ export interface SessionBoardWorkspaceItem {
   id: string;
   boardItemId: string;
   session: SessionSummary;
+  childStack?: SessionChildStack;
+  parentRef?: SessionParentRef;
   x: number;
   y: number;
 }
@@ -48,6 +59,7 @@ export interface BuildBoardWorkspaceItemsParams {
   catalog: CatalogState;
   selectedFolderId: string | null;
   sessions: readonly SessionSummary[];
+  relationIndex?: BoardSessionRelationIndex;
 }
 
 function parseTimeMs(value: string | undefined | null): number {
@@ -101,9 +113,11 @@ function buildPositionedItems({
   catalog,
   selectedFolderId,
   sessions,
+  relationIndex,
 }: BuildBoardWorkspaceItemsParams): BoardWorkspaceItem[] {
   const folderById = new Map(catalog.folders.map((folder) => [folder.id, folder]));
-  const sessionById = new Map(sessions.map((session) => [session.agentSessionId, session]));
+  const relations = relationIndex ?? buildBoardSessionRelations({ catalog, sessions });
+  const sessionById = relations.sessionById;
   const selectedId = selectedFolderId ?? "";
   const items: BoardWorkspaceItem[] = [];
 
@@ -126,11 +140,14 @@ function buildPositionedItems({
     if (boardItem.itemType === "session") {
       const session = sessionById.get(boardItem.itemId);
       if (!session) continue;
+      if (shouldSuppressSessionInFolder(relations, session.agentSessionId, selectedFolderId)) continue;
       items.push({
         type: "session",
         id: session.agentSessionId,
         boardItemId: boardItem.id,
         session,
+        childStack: getSessionChildStack(relations, session.agentSessionId),
+        parentRef: getSessionParentRef(relations, session.agentSessionId) ?? undefined,
         x: boardItem.x,
         y: boardItem.y,
       });
@@ -157,9 +174,11 @@ export function buildBoardWorkspaceItems({
   catalog,
   selectedFolderId,
   sessions,
+  relationIndex,
 }: BuildBoardWorkspaceItemsParams): BoardWorkspaceItem[] {
+  const relations = relationIndex ?? buildBoardSessionRelations({ catalog, sessions });
   if (catalog.boardItems) {
-    return buildPositionedItems({ catalog, selectedFolderId, sessions });
+    return buildPositionedItems({ catalog, selectedFolderId, sessions, relationIndex: relations });
   }
 
   const folderItems: FolderBoardWorkspaceItem[] = catalog.folders
@@ -174,11 +193,16 @@ export function buildBoardWorkspaceItems({
       y: Math.floor(index / 4) * BOARD_TILE_HEIGHT,
     }));
 
-  const sessionItems: SessionBoardWorkspaceItem[] = sessions.map((session, index) => ({
+  const visibleSessions = sessions.filter((session) =>
+    !shouldSuppressSessionInFolder(relations, session.agentSessionId, selectedFolderId),
+  );
+  const sessionItems: SessionBoardWorkspaceItem[] = visibleSessions.map((session, index) => ({
     type: "session" as const,
     id: session.agentSessionId,
     boardItemId: `session:${session.agentSessionId}`,
     session,
+    childStack: getSessionChildStack(relations, session.agentSessionId),
+    parentRef: getSessionParentRef(relations, session.agentSessionId) ?? undefined,
     x: ((folderItems.length + index) % 4) * BOARD_TILE_WIDTH,
     y: Math.floor((folderItems.length + index) / 4) * BOARD_TILE_HEIGHT,
   }));

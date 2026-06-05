@@ -5,6 +5,8 @@
  * 표현하는 타입. 카탈로그 상태는 세션 목록과 별개로 관리됩니다.
  */
 
+import type { SessionSummary } from "./session-types";
+
 /** atom 트리 주입 설정 */
 export interface AtomContextNodeSettings {
   nodeId: string;        // atom 트리 노드 ID
@@ -70,4 +72,5 @@ export interface CatalogState {
   folders: CatalogFolder[];
   sessions: Record<string, CatalogAssignment>;
   boardItems?: CatalogBoardItem[];
+  sessionList?: SessionSummary[];
 }

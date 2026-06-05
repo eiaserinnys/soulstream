@@ -376,14 +376,70 @@ export function upsertSessionAssignmentInCatalog(
   catalog: CatalogState,
   agentSessionId: string,
   folderId: string | null,
+  session?: SessionSummary,
 ): CatalogState {
+  const nextCatalog = session
+    ? upsertSessionInCatalogSessionList(catalog, session)
+    : catalog;
   return {
-    ...catalog,
+    ...nextCatalog,
     sessions: {
-      ...catalog.sessions,
+      ...nextCatalog.sessions,
       [agentSessionId]: { folderId, displayName: null },
     },
   };
+}
+
+export function upsertSessionInCatalogSessionList(
+  catalog: CatalogState,
+  session: SessionSummary,
+): CatalogState {
+  const current = catalog.sessionList ?? [];
+  const exists = current.some((item) => item.agentSessionId === session.agentSessionId);
+  return {
+    ...catalog,
+    sessionList: exists
+      ? current.map((item) =>
+          item.agentSessionId === session.agentSessionId
+            ? mergeSessionCreatedSummary(item, session)
+            : item,
+        )
+      : [session, ...current],
+  };
+}
+
+export function updateSessionInCatalogSessionList(
+  catalog: CatalogState,
+  agentSessionId: string,
+  updates: Partial<SessionSummary>,
+): CatalogState {
+  if (!catalog.sessionList) return catalog;
+  return {
+    ...catalog,
+    sessionList: catalog.sessionList.map((session) =>
+      session.agentSessionId === agentSessionId ? { ...session, ...updates } : session,
+    ),
+  };
+}
+
+export function removeSessionFromCatalogSessionList(
+  catalog: CatalogState,
+  agentSessionId: string,
+): CatalogState {
+  if (!catalog.sessionList) return catalog;
+  return {
+    ...catalog,
+    sessionList: catalog.sessionList.filter((session) => session.agentSessionId !== agentSessionId),
+  };
+}
+
+export function preserveCatalogSessionList(
+  incoming: CatalogState,
+  current: CatalogState | null,
+): CatalogState {
+  if (incoming.sessionList) return incoming;
+  if (!current?.sessionList) return incoming;
+  return { ...incoming, sessionList: current.sessionList };
 }
 
 export type SessionUpdatesPatch = Partial<
