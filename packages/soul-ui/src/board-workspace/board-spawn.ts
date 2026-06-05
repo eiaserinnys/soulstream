@@ -1,6 +1,8 @@
 import { boardRectsIntersect, type BoardRect } from "./board-selection";
 import { getViewportBoardRect, type BoardViewport } from "./board-viewport";
 import {
+  BOARD_CANVAS_ORIGIN_X,
+  BOARD_CANVAS_ORIGIN_Y,
   BOARD_TILE_HEIGHT,
   BOARD_TILE_WIDTH,
   snapBoardPosition,
@@ -16,6 +18,15 @@ export interface BoardSpawnOptions {
 
 const DEFAULT_MAX_ATTEMPTS = 50;
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+export function getFallbackBoardSpawnViewport(zoom: number): BoardViewport {
+  return {
+    scrollLeft: (BOARD_CANVAS_ORIGIN_X - 80) * zoom,
+    scrollTop: (BOARD_CANVAS_ORIGIN_Y - 60) * zoom,
+    width: typeof window === "undefined" ? 1024 : window.innerWidth,
+    height: typeof window === "undefined" ? 768 : window.innerHeight,
+  };
+}
 
 function getTileRect(position: { x: number; y: number }): BoardRect {
   return {

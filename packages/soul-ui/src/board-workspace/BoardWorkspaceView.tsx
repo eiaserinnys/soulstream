@@ -1,22 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
-import type { CatalogBoardItem, CatalogFolder, FolderSettings, MarkdownDocument, SessionSummary } from "../shared/types";
+import type { CatalogBoardItem, SessionSummary } from "../shared/types";
 import { FolderDialog } from "../components/FolderDialog";
-import { runGuardedLoadMore, type LoadMoreCallback } from "../components/load-more-guard";
+import { runGuardedLoadMore } from "../components/load-more-guard";
 import { toastManager } from "../components/ui/toast";
 import { useIsMobile } from "../hooks/use-mobile";
 import { cn } from "../lib/cn";
 import { applyCatalogDisplayNames } from "../hooks/session-stream-helpers";
-import type { FolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 import { BoardWorkspaceCanvasContent } from "./BoardWorkspaceCanvasContent";
 import {
-  BOARD_CANVAS_ORIGIN_X,
-  BOARD_CANVAS_ORIGIN_Y,
+  boardToCanvasStyle,
   buildBoardWorkspaceItems,
   snapBoardPosition,
   type BoardWorkspaceItem,
 } from "./board-workspace-items";
+import { isBoardTileTarget } from "./board-workspace-dom";
 import { getFolderBreadcrumbs } from "./board-workspace-helpers";
 import { BoardWorkspaceHeader } from "./BoardWorkspaceHeader";
 import {
@@ -32,41 +31,13 @@ import { useBoardCanvasViewport } from "./useBoardCanvasViewport";
 import {
   buildBoardSessionRelations,
   getSameFolderChildBoardItemIdsToRemove,
+  type DirectChildPortalItem,
 } from "./board-session-relations";
-import { findOpenBoardPositionInViewport } from "./board-spawn";
+import { findOpenBoardPositionInViewport, getFallbackBoardSpawnViewport } from "./board-spawn";
 import { useBoardChildStackState } from "./useBoardChildStackState";
+import type { BoardWorkspaceViewProps } from "./BoardWorkspaceView.types";
+export type { BoardWorkspaceViewProps, CreateMarkdownDocumentInput, CreateMarkdownDocumentResult } from "./BoardWorkspaceView.types";
 const EMPTY_SESSIONS: SessionSummary[] = [];
-export interface CreateMarkdownDocumentInput {
-  folderId: string;
-  title: string;
-  body: string;
-  x: number;
-  y: number;
-}
-export interface CreateMarkdownDocumentResult {
-  document: MarkdownDocument;
-  boardItem: CatalogBoardItem;
-}
-export interface BoardWorkspaceViewProps {
-  sessions?: SessionSummary[];
-  onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
-  onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
-  onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
-  onCreateFolder?: (name: string, parentFolderId: string | null) => Promise<CatalogFolder | void> | CatalogFolder | void;
-  onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
-  onDeleteFolder?: (folderId: string) => Promise<void> | void;
-  onUpdateFolderSettings?: (folderId: string, settings: FolderSettings) => Promise<void> | void;
-  onUpdateBoardItemPosition?: (boardItemId: string, x: number, y: number) => Promise<void> | void;
-  onCreateMarkdownDocument?: (input: CreateMarkdownDocumentInput) => Promise<CreateMarkdownDocumentResult>;
-  onLoadMore?: LoadMoreCallback;
-  hasMore?: boolean;
-  workspaceViewMode?: FolderWorkspaceViewMode;
-  onWorkspaceViewModeChange?: (mode: FolderWorkspaceViewMode) => void;
-}
-
-function isBoardTileTarget(target: EventTarget | null): boolean {
-  return target instanceof HTMLElement && Boolean(target.closest("[data-board-tile='true']"));
-}
 export function BoardWorkspaceView({
   sessions = EMPTY_SESSIONS,
   onMoveSessions,
@@ -86,11 +57,11 @@ export function BoardWorkspaceView({
   const catalog = useDashboardStore((s) => s.catalog);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const selectFolder = useDashboardStore((s) => s.selectFolder);
-  const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const setActiveBoardDocument = useDashboardStore((s) => s.setActiveBoardDocument);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
+  const toggleSessionSelection = useDashboardStore((s) => s.toggleSessionSelection);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const activeBoardDocumentId = useDashboardStore((s) => s.activeBoardDocumentId);
   const addBoardItem = useDashboardStore((s) => s.addBoardItem);
@@ -227,12 +198,7 @@ export function BoardWorkspaceView({
   const resolveSpawnPosition = useCallback(() => {
     const spawnViewport = viewport.width > 0 && viewport.height > 0
       ? viewport
-      : {
-          scrollLeft: (BOARD_CANVAS_ORIGIN_X - 80) * zoom,
-          scrollTop: (BOARD_CANVAS_ORIGIN_Y - 60) * zoom,
-          width: typeof window === "undefined" ? 1024 : window.innerWidth,
-          height: typeof window === "undefined" ? 768 : window.innerHeight,
-        };
+      : getFallbackBoardSpawnViewport(zoom);
     return findOpenBoardPositionInViewport(boardItems, {
       viewport: spawnViewport,
       zoom,
@@ -336,11 +302,6 @@ export function BoardWorkspaceView({
     setNewMenuOpen(false);
   }, [openNewSessionModal, resolveSpawnPosition, selectedFolderId]);
 
-  const boardToCanvasStyle = useCallback((position: { x: number; y: number }) => ({
-    left: BOARD_CANVAS_ORIGIN_X + position.x,
-    top: BOARD_CANVAS_ORIGIN_Y + position.y,
-  }), []);
-
   useEffect(() => {
     if (!onLoadMore || !hasMore) return;
     const sentinel = sentinelRef.current;
@@ -400,10 +361,22 @@ export function BoardWorkspaceView({
       selectSingleBoardItem(item.boardItemId);
       raiseBoardItems([item.boardItemId]);
     }
-    setActiveSession(session.agentSessionId);
+    toggleSessionSelection(session.agentSessionId, false, false, displaySessions);
     setActiveSessionSummary(session);
     if (isMobile) setActiveTab("chat");
-  }, [isMobile, raiseBoardItems, selectSingleBoardItem, setActiveSession, setActiveSessionSummary, setActiveTab]);
+  }, [
+    displaySessions,
+    isMobile,
+    raiseBoardItems,
+    selectSingleBoardItem,
+    setActiveSessionSummary,
+    setActiveTab,
+    toggleSessionSelection,
+  ]);
+  const openChildRef = useCallback((child: DirectChildPortalItem) => {
+    childStack.openChildRef(child);
+    openSession(child.session);
+  }, [childStack, openSession]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -468,7 +441,7 @@ export function BoardWorkspaceView({
                 shouldSuppressTileClick={shouldSuppressTileClick}
                 onToggleChildStack={childStack.toggleChildStack}
                 onNavigateToParent={childStack.navigateToParent}
-                onOpenChildRef={childStack.openChildRef}
+                onOpenChildRef={openChildRef}
                 onOpenSession={openSession}
                 onOpenFolder={(item, folderId) => {
                   selectSingleBoardItem(item.boardItemId);

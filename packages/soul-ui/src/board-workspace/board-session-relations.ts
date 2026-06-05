@@ -14,6 +14,7 @@ export interface SessionParentRef {
 
 export interface SessionChildStack {
   count: number;
+  status: "running" | "error" | "completed";
 }
 
 export interface BoardSessionRelationIndex {
@@ -45,6 +46,29 @@ function parseTimeMs(value: string | undefined | null): number {
 
 function getRelationSortMs(session: SessionSummary): number {
   return parseTimeMs(session.updatedAt ?? session.createdAt);
+}
+
+function compactFirstLine(value: string | undefined | null): string {
+  return value?.split(/\r?\n/).map((line) => line.trim()).find(Boolean) ?? "";
+}
+
+export function getChildSessionFirstLine(session: SessionSummary): string {
+  return compactFirstLine(session.prompt) || "(준비 중)";
+}
+
+function isUserReadableMessageType(type: string | undefined): boolean {
+  return type === "user" || type === "user_message" || type === "intervention_sent";
+}
+
+export function getChildSessionLastLine(session: SessionSummary): string {
+  if (isUserReadableMessageType(session.lastMessage?.type)) return getChildSessionFirstLine(session);
+  return compactFirstLine(session.lastMessage?.preview) || getChildSessionFirstLine(session);
+}
+
+function getChildStackStatus(children: readonly SessionSummary[]): SessionChildStack["status"] {
+  if (children.some((session) => session.status === "error")) return "error";
+  if (children.some((session) => session.status === "running")) return "running";
+  return "completed";
 }
 
 function mergeSessionLists(
@@ -139,8 +163,8 @@ export function getSessionChildStack(
   relationIndex: BoardSessionRelationIndex,
   sessionId: string,
 ): SessionChildStack | undefined {
-  const count = relationIndex.childrenByParentId.get(sessionId)?.length ?? 0;
-  return count > 0 ? { count } : undefined;
+  const children = relationIndex.childrenByParentId.get(sessionId) ?? [];
+  return children.length > 0 ? { count: children.length, status: getChildStackStatus(children) } : undefined;
 }
 
 export function shouldSuppressSessionInFolder(

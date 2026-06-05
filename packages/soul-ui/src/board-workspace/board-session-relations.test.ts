@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { CatalogState, SessionSummary } from "../shared/types";
 import {
   buildBoardSessionRelations,
+  getChildSessionFirstLine,
+  getChildSessionLastLine,
   getDirectChildPortalItems,
   getSameFolderChildBoardItemIdsToRemove,
   getSessionParentRef,
@@ -20,9 +22,14 @@ const sessions: SessionSummary[] = [
   },
   {
     agentSessionId: "same-child",
-    status: "completed",
+    status: "running",
     eventCount: 2,
-    prompt: "Same folder child",
+    prompt: "Same folder child\nDetailed delegation prompt",
+    lastMessage: {
+      type: "assistant",
+      preview: "Working on the child implementation\nSecond line ignored",
+      timestamp: "2026-06-01T01:10:00.000Z",
+    },
     callerSessionId: "parent",
     updatedAt: "2026-06-01T01:00:00.000Z",
   },
@@ -121,10 +128,51 @@ describe("board session relations", () => {
       "cross-child",
       "same-child",
     ]);
+    expect(relations.childrenByParentId.get("parent")?.[1].status).toBe("running");
     expect(getDirectChildPortalItems(relations, "parent", "root")).toHaveLength(2);
     expect(shouldSuppressSessionInFolder(relations, "same-child", "root")).toBe(true);
     expect(shouldSuppressSessionInFolder(relations, "cross-child", "other")).toBe(false);
     expect(shouldSuppressSessionInFolder(relations, "orphan-child", "root")).toBe(false);
+  });
+
+  it("aggregates direct child stack status and extracts compact child summaries", () => {
+    const relations = buildBoardSessionRelations({ catalog, sessions: [] });
+    const stack = buildBoardWorkspaceItems({ catalog, selectedFolderId: "root", sessions: [] })
+      .find((item) => item.id === "parent");
+
+    expect(stack).toMatchObject({
+      type: "session",
+      childStack: { count: 2, status: "running" },
+    });
+    expect(getChildSessionFirstLine(sessions[1])).toBe("Same folder child");
+    expect(getChildSessionLastLine(sessions[1])).toBe("Working on the child implementation");
+    expect(getChildSessionFirstLine({ ...sessions[1], prompt: "  \n" })).toBe("(준비 중)");
+    expect(getChildSessionLastLine({ ...sessions[1], prompt: "", lastMessage: undefined })).toBe("(준비 중)");
+    expect(getChildSessionLastLine({
+      ...sessions[1],
+      lastMessage: {
+        type: "user_message",
+        preview: "User follow-up should not replace current status",
+        timestamp: "2026-06-01T01:20:00.000Z",
+      },
+    })).toBe("Same folder child");
+
+    const errorRelations = buildBoardSessionRelations({
+      catalog,
+      sessions: sessions.map((session) =>
+        session.agentSessionId === "cross-child" ? { ...session, status: "error" } : session,
+      ),
+    });
+    expect(errorRelations.childrenByParentId.get("parent")?.some((session) => session.status === "error")).toBe(true);
+    expect(buildBoardWorkspaceItems({
+      catalog,
+      selectedFolderId: "root",
+      sessions: errorRelations.sessions,
+      relationIndex: errorRelations,
+    }).find((item) => item.id === "parent")).toMatchObject({
+      type: "session",
+      childStack: { count: 2, status: "error" },
+    });
   });
 
   it("keeps cross-folder children visible with a live back-ref and disables missing parent refs", () => {

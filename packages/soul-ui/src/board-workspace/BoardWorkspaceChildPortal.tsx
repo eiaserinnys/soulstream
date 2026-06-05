@@ -5,6 +5,10 @@ import { STATUS_CONFIG } from "../components/SessionItem";
 import { cn } from "../lib/cn";
 import type { DirectChildPortalItem } from "./board-session-relations";
 import {
+  getChildSessionFirstLine,
+  getChildSessionLastLine,
+} from "./board-session-relations";
+import {
   BOARD_TILE_WIDTH,
   type SessionBoardWorkspaceItem,
 } from "./board-workspace-items";
@@ -33,13 +37,13 @@ export function BoardWorkspaceChildPortal({
   return (
     <div
       data-testid="board-child-portal"
-      className="absolute z-40 grid max-h-[360px] grid-cols-[repeat(auto-fit,minmax(72px,1fr))] gap-2 overflow-auto rounded-md border border-border bg-popover p-2 shadow-lg"
+      className="absolute z-40 flex max-h-[360px] flex-col gap-2 overflow-auto rounded-md border border-border bg-popover p-2 shadow-lg"
       style={{
         ...boardToCanvasStyle({
           x: parentItem.x + BOARD_TILE_WIDTH + 24,
           y: parentItem.y,
         }),
-        width: children.length >= 20 ? 360 : Math.min(360, children.length * 104),
+        width: BOARD_TILE_WIDTH + 18,
       }}
     >
       {children.map((child) =>
@@ -68,31 +72,16 @@ function SameFolderChildCard({
   child: DirectChildPortalItem;
   onOpenSession: (session: SessionSummary) => void;
 }) {
-  const config = STATUS_CONFIG[child.session.status] ?? STATUS_CONFIG.unknown;
   return (
     <button
       type="button"
       data-testid="board-child-portal-card"
       data-session-id={child.session.agentSessionId}
-      className="relative flex h-20 w-20 items-center justify-center rounded-md border border-border bg-card shadow-sm hover:ring-2 hover:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={childCardClassName(child)}
       title="Open delegated child session"
-      onDoubleClick={() => onOpenSession(child.session)}
+      onClick={() => onOpenSession(child.session)}
     >
-      <span
-        className={cn("absolute right-2 top-2 h-2 w-2 rounded-full", config.dotClass)}
-        aria-hidden="true"
-      />
-      {child.session.agentPortraitUrl ? (
-        <img
-          src={child.session.agentPortraitUrl}
-          alt=""
-          className="h-9 w-9 rounded-sm object-cover"
-        />
-      ) : (
-        <span className="flex h-9 w-9 items-center justify-center rounded-sm border border-border bg-muted text-xs">
-          {getAgentInitial(child.session)}
-        </span>
-      )}
+      <ChildCardContent child={child} kind="same" />
     </button>
   );
 }
@@ -109,15 +98,83 @@ function RefChildCard({
       type="button"
       data-testid="board-child-ref-card"
       data-session-id={child.session.agentSessionId}
-      className="flex h-20 min-w-24 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-primary/50 bg-muted px-2 text-primary shadow-sm hover:ring-2 hover:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(childCardClassName(child), "border-dashed")}
       onClick={() => onOpenRef(child)}
     >
-      <span className="relative flex h-8 w-8 items-center justify-center">
-        <Folder className="h-7 w-7" aria-hidden="true" />
-        <GitBranch className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-muted" aria-hidden="true" />
-      </span>
-      <span className="max-w-20 truncate text-[10px] font-medium">{child.folderName}</span>
-      <UserRound className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+      <ChildCardContent child={child} kind="ref" />
     </button>
+  );
+}
+
+function childCardClassName(child: DirectChildPortalItem): string {
+  return cn(
+    "relative flex h-24 w-[280px] items-stretch gap-2 rounded-md border border-border bg-card p-2 text-left shadow-sm transition-[border-color,box-shadow,color,opacity] duration-200 hover:ring-2 hover:ring-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    child.session.status === "running" &&
+      "animate-[pulse_1.5s_ease-in-out_infinite] ring-1 ring-success",
+    child.session.status === "error" &&
+      "ring-1 ring-accent-red",
+  );
+}
+
+function ChildCardContent({
+  child,
+  kind,
+}: {
+  child: DirectChildPortalItem;
+  kind: "same" | "ref";
+}) {
+  const config = STATUS_CONFIG[child.session.status] ?? STATUS_CONFIG.unknown;
+  const firstLine = getChildSessionFirstLine(child.session);
+  const lastLine = getChildSessionLastLine(child.session);
+  return (
+    <>
+      <span
+        className={cn("absolute right-2 top-2 h-2 w-2 rounded-full", config.dotClass)}
+        aria-hidden="true"
+      />
+      <span className="flex h-full w-11 shrink-0 items-center justify-center">
+        {kind === "ref" ? (
+          <span className="relative flex h-9 w-9 items-center justify-center text-primary">
+            <Folder className="h-8 w-8" aria-hidden="true" />
+            <GitBranch className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full bg-card" aria-hidden="true" />
+          </span>
+        ) : child.session.agentPortraitUrl ? (
+          <img
+            src={child.session.agentPortraitUrl}
+            alt=""
+            className="h-9 w-9 rounded-sm object-cover"
+          />
+        ) : (
+          <span className="flex h-9 w-9 items-center justify-center rounded-sm border border-border bg-muted text-xs">
+            {getAgentInitial(child.session)}
+          </span>
+        )}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col justify-center gap-1 pr-3">
+        {kind === "ref" && (
+          <span className="flex min-w-0 items-center gap-1 text-[10px] font-medium text-primary">
+            <UserRound className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <span className="truncate">{child.folderName}</span>
+          </span>
+        )}
+        <span
+          data-testid="board-child-first-message"
+          className="truncate text-xs font-medium text-foreground"
+        >
+          {firstLine}
+        </span>
+        <span
+          data-testid="board-child-last-message"
+          className={cn(
+            "truncate text-[11px] leading-snug text-muted-foreground",
+            child.session.status === "running" &&
+              "animate-[pulse_1.5s_ease-in-out_infinite]",
+            child.session.status === "error" && "text-accent-red",
+          )}
+        >
+          {lastLine}
+        </span>
+      </span>
+    </>
   );
 }
