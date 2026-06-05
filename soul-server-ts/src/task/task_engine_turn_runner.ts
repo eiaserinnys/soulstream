@@ -14,7 +14,6 @@ export interface TaskEngineTurnInput {
   prompt: string;
   imageAttachmentPaths?: string[];
   systemPrompt?: string;
-  onSafeInterventionDrain?: () => Promise<boolean>;
 }
 
 export interface TaskEngineTurnRunnerDeps {
@@ -75,8 +74,8 @@ export class TaskEngineTurnRunner {
         this.deps.snapshotPersistence.persistRunStateSnapshot(task, snapshot),
       onSessionItemsSnapshot: (snapshot) =>
         this.deps.snapshotPersistence.persistSessionItemsSnapshot(task, snapshot),
-      // Do not pass the legacy polling hook. Active-turn delivery is handled out-of-band
-      // through SupportsLiveTurnSteering; queued fallback remains a next-turn input.
+      // Do not pass the legacy polling hook. Running interventions remain in the
+      // task queue and become the next turn input.
       ...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
       ...(effectiveAllowedTools !== undefined ? { allowedTools: effectiveAllowedTools } : {}),
       ...(effectiveDisallowedTools !== undefined
@@ -90,9 +89,6 @@ export class TaskEngineTurnRunner {
       ...(extraEnv !== undefined ? { extraEnv } : {}),
       ...(this.deps.scheduleToolHandler !== undefined
         ? { onScheduleToolUse: this.deps.scheduleToolHandler }
-        : {}),
-      ...(input.onSafeInterventionDrain !== undefined
-        ? { onSafeInterventionDrain: input.onSafeInterventionDrain }
         : {}),
     });
   }

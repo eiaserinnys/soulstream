@@ -18,10 +18,7 @@ import type { Logger } from "pino";
 
 import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
 import type { ClaudeClientEvent } from "./claude_event_mapper.js";
-import type {
-  ClaudeBackgroundTaskControlResult,
-  EngineUserInput,
-} from "./protocol.js";
+import type { ClaudeBackgroundTaskControlResult } from "./protocol.js";
 import { getImageAttachmentMediaType } from "../attachments/image_media.js";
 import { SOULSTREAM_AGENT_SESSION_HEADER } from "../mcp/request_context.js";
 
@@ -177,14 +174,8 @@ export class ClaudeSdkClient implements ClaudeClient {
   private readonly pendingCanUseToolCalls = new Set<symbol>();
   private readonly runtimeTasksById = new Map<string, ClaudeRuntimeTaskSnapshot>();
   private runtimeSessionState: ClaudeRuntimeSessionState | undefined;
-  private toolUseTurnOpen = false;
-  private toolUseTurnNeedsSafeDrain = false;
-  private postResultDrainDepth = 0;
-  private safeInterventionDrainInProgress = false;
 
   private activeQuery: ClaudeSdkQuery | null = null;
-  private activeInput: PushAsyncIterable<SDKUserMessage> | null = null;
-  private activeSafeInterventionDrain: ClaudeRunOptions["onSafeInterventionDrain"];
   private lastWorkspaceDir: string | null = null;
   private lastEnv: Record<string, string> | undefined;
 
@@ -207,10 +198,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.clearPerRunState();
 
     const output = createEventQueue<ClaudeClientEvent>();
-    const input = new PushAsyncIterable<SDKUserMessage>();
-    input.push(makeUserMessage(options.prompt, options.imageAttachmentPaths));
-    this.activeInput = input;
-    this.activeSafeInterventionDrain = options.onSafeInterventionDrain;
+    const prompt = makeQueryPrompt(options.prompt, options.imageAttachmentPaths);
 
     const abortController = new AbortController();
     const abortSdk = () => abortController.abort(signal.reason);
@@ -223,12 +211,9 @@ export class ClaudeSdkClient implements ClaudeClient {
     const queryOptions = this.buildSdkOptions(options, abortController, output);
     let query: ClaudeSdkQuery;
     try {
-      query = this.queryFn({ prompt: input, options: queryOptions });
+      query = this.queryFn({ prompt, options: queryOptions });
     } catch (err) {
       signal.removeEventListener("abort", abortSdk);
-      input.close();
-      if (this.activeInput === input) this.activeInput = null;
-      this.activeSafeInterventionDrain = undefined;
       throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
     }
     this.activeQuery = query;
@@ -243,10 +228,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
     } finally {
       signal.removeEventListener("abort", abortSdk);
-      input.close();
-      if (this.activeInput === input) this.activeInput = null;
       if (this.activeQuery === query) this.activeQuery = null;
-      this.activeSafeInterventionDrain = undefined;
       this.abortPendingInputRequests();
       await pump.catch(() => undefined);
     }
@@ -258,9 +240,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     }
 
     const controller = new AbortController();
-    const input = new PushAsyncIterable<SDKUserMessage>();
-    input.push(makeUserMessage("/compact"));
-    input.close();
     const output = createEventQueue<ClaudeClientEvent>();
     const queryOptions = this.buildSdkOptions(
       {
@@ -274,9 +253,8 @@ export class ClaudeSdkClient implements ClaudeClient {
     );
     let query: ClaudeSdkQuery;
     try {
-      query = this.queryFn({ prompt: input, options: queryOptions });
+      query = this.queryFn({ prompt: "/compact", options: queryOptions });
     } catch (err) {
-      input.close();
       throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
     }
     this.activeQuery = query;
@@ -288,7 +266,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     } catch (err) {
       throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
     } finally {
-      input.close();
       if (this.activeQuery === query) this.activeQuery = null;
     }
   }
@@ -298,13 +275,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     if (!pending) return false;
     pending.resolve(answers);
     return true;
-  }
-
-  steerActiveTurn(input: EngineUserInput): boolean {
-    const activeInput = this.activeInput;
-    if (!activeInput) return false;
-    if (!this.canAcceptLiveUserInput()) return false;
-    return activeInput.push(makeUserMessage(input.prompt, input.imageAttachmentPaths));
   }
 
   async backgroundClaudeRuntimeTasks(
@@ -369,14 +339,8 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   async close(): Promise<void> {
-    this.activeInput?.close();
     this.activeQuery?.close();
     this.abortPendingInputRequests();
-  }
-
-  private deactivateActiveInput(): void {
-    this.activeInput?.close();
-    this.activeInput = null;
   }
 
   private buildSdkOptions(
@@ -522,7 +486,6 @@ export class ClaudeSdkClient implements ClaudeClient {
         };
       } finally {
         this.pendingCanUseToolCalls.delete(pendingToolCall);
-        await this.drainSafeInterventions();
       }
     };
   }
@@ -975,7 +938,6 @@ export class ClaudeSdkClient implements ClaudeClient {
             sawResult = true;
             const terminalEvents = this.mapResultMessage(msg);
             const resultEvent = terminalEvents.find((event) => event.type === "result");
-            this.noteResultBoundary(resultEvent);
             const continuations =
               resultEvent?.type === "result"
                 ? this.postResultContinuations(resultEvent, compactRetryCount)
@@ -989,15 +951,7 @@ export class ClaudeSdkClient implements ClaudeClient {
               continue;
             }
 
-            const drainedLiveIntervention =
-              await this.drainSafeInterventionsAfterResultBoundary();
-            if (!drainedLiveIntervention) {
-              this.deactivateActiveInput();
-            }
             this.pushTerminalEvents(output, terminalEvents, drain.events);
-            if (drainedLiveIntervention) {
-              continue;
-            }
             query.close();
             output.close();
             return;
@@ -1020,7 +974,6 @@ export class ClaudeSdkClient implements ClaudeClient {
               queryIter,
               new Set<PostResultContinuationKind>(),
             );
-            this.deactivateActiveInput();
             for (const event of drain.events) output.push(event);
             query.close();
             output.close();
@@ -1067,94 +1020,87 @@ export class ClaudeSdkClient implements ClaudeClient {
     const startedAt = Date.now();
     const events: ClaudeClientEvent[] = [];
 
-    this.postResultDrainDepth += 1;
-    try {
-      for (;;) {
-        const pendingRuntime = this.hasPendingRuntimeWork();
-        const waitMs = pendingRuntime
-          ? Math.max(0, this.runtimeDrainMaxMs - (Date.now() - startedAt))
-          : this.postResultDrainMs;
+    for (;;) {
+      const pendingRuntime = this.hasPendingRuntimeWork();
+      const waitMs = pendingRuntime
+        ? Math.max(0, this.runtimeDrainMaxMs - (Date.now() - startedAt))
+        : this.postResultDrainMs;
 
-        if (waitMs <= 0) {
+      if (waitMs <= 0) {
+        events.push(...this.makeRuntimeTimeoutEvents());
+        return { action: "finish", events };
+      }
+
+      let settled: IteratorResult<SDKMessage> | typeof DRAIN_TIMEOUT;
+      try {
+        settled = await this.nextWithDrainTimeout(queryIter, waitMs);
+      } catch (err) {
+        events.push(this.makeDrainErrorEvent(err));
+        return { action: "finish", events };
+      }
+      if (settled === DRAIN_TIMEOUT) {
+        if (pendingRuntime) {
           events.push(...this.makeRuntimeTimeoutEvents());
-          return { action: "finish", events };
+        } else {
+          this.logger.debug?.({ ms: this.postResultDrainMs }, "post-result drain timed out");
         }
+        return { action: "finish", events };
+      }
+      if (settled.done) {
+        return { action: "finish", events };
+      }
 
-        let settled: IteratorResult<SDKMessage> | typeof DRAIN_TIMEOUT;
-        try {
-          settled = await this.nextWithDrainTimeout(queryIter, waitMs);
-        } catch (err) {
-          events.push(this.makeDrainErrorEvent(err));
-          return { action: "finish", events };
-        }
-        if (settled === DRAIN_TIMEOUT) {
-          if (pendingRuntime) {
-            events.push(...this.makeRuntimeTimeoutEvents());
-          } else {
-            this.logger.debug?.({ ms: this.postResultDrainMs }, "post-result drain timed out");
-          }
-          return { action: "finish", events };
-        }
-        if (settled.done) {
-          return { action: "finish", events };
-        }
-
-        const msg = asRecord(settled.value);
-        if (msg && msg.type === "prompt_suggestion") {
-          events.push(...this.mapPromptSuggestion(msg));
-          if (this.hasPendingRuntimeWork()) continue;
-          return { action: "finish", events };
-        }
-        if (msg && isRuntimeSystemMessage(msg)) {
-          events.push(...this.mapSystemMessage(msg));
-          if (this.hasPendingRuntimeWork()) continue;
-          return { action: "finish", events };
-        }
-        if (msg?.type === "system" && msg.subtype === "compact_boundary") {
-          const mapped = this.mapSystemMessage(msg);
-          events.push(...mapped);
-          if (continuations.has("compact_boundary")) {
-            return { action: "continue", reason: "compact_boundary", events };
-          }
-          if (this.hasPendingRuntimeWork()) continue;
-          return { action: "finish", events };
-        }
-        if (continuations.has("tool_use")) {
-          this.logger.debug?.(
-            { messageType: msg?.type ?? "unknown" },
-            "post-tool-use-result drain received continuation message",
-          );
-          if (msg?.type === "result") {
-            const terminalEvents = this.mapResultMessage(msg);
-            const resultEvent = terminalEvents.find((event) => event.type === "result");
-            this.noteResultBoundary(resultEvent);
-            const nextContinuations =
-              resultEvent?.type === "result"
-                ? this.postResultContinuations(resultEvent, 0)
-                : new Set<PostResultContinuationKind>();
-            const drain = await this.drainAfterResult(queryIter, nextContinuations);
-            if (drain.action === "continue") {
-              events.push(...drain.events);
-              return { action: "continue", reason: drain.reason, events };
-            }
-            await this.drainSafeInterventionsAfterResultBoundary();
-            events.push(...this.orderTerminalEvents(terminalEvents, drain.events));
-            return { action: "continue", reason: "tool_use", events };
-          }
-          const mapped = this.mapSdkMessage(settled.value);
-          events.push(...mapped);
-          return { action: "continue", reason: "tool_use", events };
-        }
-        // Runtime이 이미 pending이면 stray 메시지 하나 때문에 query를 닫지 않는다.
-        this.logger.warn?.(
-          { messageType: msg?.type ?? "unknown" },
-          "post-result drain received unexpected message type — ignoring",
-        );
+      const msg = asRecord(settled.value);
+      if (msg && msg.type === "prompt_suggestion") {
+        events.push(...this.mapPromptSuggestion(msg));
         if (this.hasPendingRuntimeWork()) continue;
         return { action: "finish", events };
       }
-    } finally {
-      this.postResultDrainDepth = Math.max(0, this.postResultDrainDepth - 1);
+      if (msg && isRuntimeSystemMessage(msg)) {
+        events.push(...this.mapSystemMessage(msg));
+        if (this.hasPendingRuntimeWork()) continue;
+        return { action: "finish", events };
+      }
+      if (msg?.type === "system" && msg.subtype === "compact_boundary") {
+        const mapped = this.mapSystemMessage(msg);
+        events.push(...mapped);
+        if (continuations.has("compact_boundary")) {
+          return { action: "continue", reason: "compact_boundary", events };
+        }
+        if (this.hasPendingRuntimeWork()) continue;
+        return { action: "finish", events };
+      }
+      if (continuations.has("tool_use")) {
+        this.logger.debug?.(
+          { messageType: msg?.type ?? "unknown" },
+          "post-tool-use-result drain received continuation message",
+        );
+        if (msg?.type === "result") {
+          const terminalEvents = this.mapResultMessage(msg);
+          const resultEvent = terminalEvents.find((event) => event.type === "result");
+          const nextContinuations =
+            resultEvent?.type === "result"
+              ? this.postResultContinuations(resultEvent, 0)
+              : new Set<PostResultContinuationKind>();
+          const drain = await this.drainAfterResult(queryIter, nextContinuations);
+          if (drain.action === "continue") {
+            events.push(...drain.events);
+            return { action: "continue", reason: drain.reason, events };
+          }
+          events.push(...this.orderTerminalEvents(terminalEvents, drain.events));
+          return { action: "continue", reason: "tool_use", events };
+        }
+        const mapped = this.mapSdkMessage(settled.value);
+        events.push(...mapped);
+        return { action: "continue", reason: "tool_use", events };
+      }
+      // Runtime이 이미 pending이면 stray 메시지 하나 때문에 query를 닫지 않는다.
+      this.logger.warn?.(
+        { messageType: msg?.type ?? "unknown" },
+        "post-result drain received unexpected message type — ignoring",
+      );
+      if (this.hasPendingRuntimeWork()) continue;
+      return { action: "finish", events };
     }
   }
 
@@ -1558,8 +1504,6 @@ export class ClaudeSdkClient implements ClaudeClient {
         const toolUseId = asString(record.id) ?? null;
         const toolName = asString(record.name) ?? "tool";
         if (toolUseId) this.toolNamesById.set(toolUseId, toolName);
-        this.toolUseTurnOpen = true;
-        this.toolUseTurnNeedsSafeDrain = true;
         const toolInput = asRecord(record.input) ?? {};
         if (toolName === "Agent") this.rememberBackgroundAgentToolUse(toolUseId, toolInput);
         events.push({
@@ -1791,65 +1735,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     return false;
   }
 
-  private canAcceptLiveUserInput(): boolean {
-    return (
-      this.pendingCanUseToolCalls.size === 0 &&
-      !this.toolUseTurnOpen &&
-      (this.postResultDrainDepth === 0 || this.safeInterventionDrainInProgress) &&
-      !this.hasPendingRuntimeWork() &&
-      !this.hasPendingToolUseResults()
-    );
-  }
-
-  private hasPendingToolUseResults(): boolean {
-    for (const toolUseId of this.toolNamesById.keys()) {
-      if (this.interceptedScheduleToolUseIds.has(toolUseId)) continue;
-      if (!this.emittedToolResultIds.has(toolUseId)) return true;
-    }
-    return false;
-  }
-
-  private async drainSafeInterventions(): Promise<boolean> {
-    const drain = this.activeSafeInterventionDrain;
-    if (!drain) return false;
-    try {
-      const result = await drain();
-      return result !== false;
-    } catch (err) {
-      this.logger.warn({ err }, "safe live intervention drain failed");
-      return false;
-    }
-  }
-
-  private async drainSafeInterventionsAfterResultBoundary(): Promise<boolean> {
-    if (!this.toolUseTurnNeedsSafeDrain) return false;
-    this.safeInterventionDrainInProgress = true;
-    try {
-      if (!this.canAcceptLiveUserInput()) return false;
-      this.toolUseTurnNeedsSafeDrain = false;
-      return await this.drainSafeInterventions();
-    } finally {
-      this.safeInterventionDrainInProgress = false;
-    }
-  }
-
-  private noteResultBoundary(resultEvent: ClaudeClientEvent | undefined): void {
-    if (!resultEvent || resultEvent.type !== "result") return;
-    if (!resultEvent.success) {
-      this.toolUseTurnOpen = false;
-      this.toolUseTurnNeedsSafeDrain = false;
-      return;
-    }
-    if (resultEvent.stopReason === "tool_use") {
-      this.toolUseTurnOpen = true;
-      this.toolUseTurnNeedsSafeDrain = true;
-      return;
-    }
-    if (this.toolUseTurnOpen) {
-      this.toolUseTurnOpen = false;
-    }
-  }
-
   private consumePendingCompactHookTrigger(trigger: string): boolean {
     const index = this.pendingCompactHookTriggers.indexOf(trigger);
     if (index === -1) return false;
@@ -1914,10 +1799,6 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.pendingCanUseToolCalls.clear();
     this.runtimeTasksById.clear();
     this.runtimeSessionState = undefined;
-    this.toolUseTurnOpen = false;
-    this.toolUseTurnNeedsSafeDrain = false;
-    this.postResultDrainDepth = 0;
-    this.safeInterventionDrainInProgress = false;
   }
 
   private abortPendingInputRequests(): void {
@@ -1926,47 +1807,6 @@ export class ClaudeSdkClient implements ClaudeClient {
       this.pendingInputRequests.delete(requestId);
       pending.resolve(INPUT_REQUEST_ABORTED);
     }
-  }
-}
-
-class PushAsyncIterable<T> implements AsyncIterableIterator<T> {
-  private readonly values: T[] = [];
-  private readonly waiters: Array<(result: IteratorResult<T>) => void> = [];
-  private closed = false;
-
-  push(value: T): boolean {
-    if (this.closed) return false;
-    const waiter = this.waiters.shift();
-    if (waiter) {
-      waiter({ done: false, value });
-      return true;
-    }
-    this.values.push(value);
-    return true;
-  }
-
-  close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    for (const waiter of this.waiters.splice(0)) {
-      waiter({ done: true, value: undefined as T });
-    }
-  }
-
-  async next(): Promise<IteratorResult<T>> {
-    const value = this.values.shift();
-    if (value !== undefined) return { done: false, value };
-    if (this.closed) return { done: true, value: undefined as T };
-    return new Promise((resolve) => this.waiters.push(resolve));
-  }
-
-  async return(): Promise<IteratorResult<T>> {
-    this.close();
-    return { done: true, value: undefined as T };
-  }
-
-  [Symbol.asyncIterator](): AsyncIterableIterator<T> {
-    return this;
   }
 }
 
@@ -2022,6 +1862,22 @@ function createEventQueue<T>(): EventQueue<T> {
     },
   };
   return iterator;
+}
+
+function makeQueryPrompt(
+  content: string,
+  imageAttachmentPaths?: string[],
+): string | AsyncIterable<SDKUserMessage> {
+  if (!imageAttachmentPaths || imageAttachmentPaths.length === 0) {
+    return content;
+  }
+  return singleUserMessage(makeUserMessage(content, imageAttachmentPaths));
+}
+
+async function* singleUserMessage(
+  message: SDKUserMessage,
+): AsyncIterable<SDKUserMessage> {
+  yield message;
 }
 
 function makeUserMessage(content: string, imageAttachmentPaths?: string[]): SDKUserMessage {

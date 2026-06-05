@@ -9,8 +9,7 @@ import type {
 /**
  * `addIntervention` 결과. Python `task_manager.add_intervention` L590-595 정본 형상.
  *
- * - running 세션 + live steering 지원 → `{delivered: true}` — 현 active turn에 직접 전달.
- * - running 세션 fallback → `{queued: true, queuePosition}` — 현 turn 종료 후 task_executor가 dequeue.
+ * - running 세션 → `{queued: true, queuePosition}` — 현 turn 종료 후 task_executor가 dequeue.
  * - completed/error/interrupted → `{autoResumed: true}` — task_executor.startExecution이
  *   resumeSessionId(task.codexThreadId)로 다음 turn 자동 시작.
  */

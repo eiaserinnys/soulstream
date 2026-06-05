@@ -366,10 +366,9 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     ).resolves.toEqual({ status: "expired" });
   });
 
-  it("active Claude turn에 live steering을 전달하고 onIntervention polling은 넘기지 않는다", async () => {
+  it("keeps running interventions queue-only by not exposing Claude live steering", async () => {
     const release = deferred<void>();
     const captured: ClaudeRunOptions[] = [];
-    const steerActiveTurn = vi.fn().mockReturnValue(true);
     const client: ClaudeClient = {
       async *run(options: ClaudeRunOptions): AsyncIterable<ClaudeClientEvent> {
         captured.push(options);
@@ -377,24 +376,19 @@ describe("ClaudeEngineAdapter fake client flow", () => {
         await release.promise;
         yield { type: "complete" };
       },
-      steerActiveTurn,
     };
     const engine = new ClaudeEngineAdapter(
       { workspaceDir: "/tmp/claude-work", client, processEnv: {} },
       silentLogger,
     );
-    const onIntervention = vi.fn().mockResolvedValue("injected while waiting");
+    const onIntervention = vi.fn().mockResolvedValue("queue-only intervention");
 
     const iterator = engine.execute({ prompt: "hi", onIntervention })[Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toMatchObject({
       value: { type: "session", session_id: "claude-sess-1" },
     });
 
-    await expect(
-      engine.steerActiveTurn({ prompt: "injected while waiting" }),
-    ).resolves.toEqual({ status: "delivered" });
-
-    expect(steerActiveTurn).toHaveBeenCalledWith({ prompt: "injected while waiting" });
+    expect((engine as unknown as Record<string, unknown>).steerActiveTurn).toBeUndefined();
     expect(captured[0]).not.toHaveProperty("onIntervention");
     expect(onIntervention).not.toHaveBeenCalled();
 
@@ -403,99 +397,6 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       value: { type: "complete" },
     });
     await expect(iterator.next()).resolves.toMatchObject({ done: true });
-  });
-
-  it("maps active client input refusal to not_accepting_input so callers can queue", async () => {
-    const release = deferred<void>();
-    const client: ClaudeClient = {
-      async *run(): AsyncIterable<ClaudeClientEvent> {
-        yield { type: "session", sessionId: "claude-sess-not-accepting" };
-        await release.promise;
-        yield { type: "complete" };
-      },
-      steerActiveTurn: vi.fn().mockReturnValue(false),
-    };
-    const engine = new ClaudeEngineAdapter(
-      { workspaceDir: "/tmp/claude-work", client, processEnv: {} },
-      silentLogger,
-    );
-
-    const iterator = engine.execute({ prompt: "hi" })[Symbol.asyncIterator]();
-    await expect(iterator.next()).resolves.toMatchObject({
-      value: { type: "session", session_id: "claude-sess-not-accepting" },
-    });
-
-    await expect(engine.steerActiveTurn({ prompt: "queue this" })).resolves.toEqual({
-      status: "not_accepting_input",
-      message: "Claude active input is not accepting steering",
-    });
-
-    release.resolve();
-    await collectIterator(iterator);
-  });
-
-  it("Claude live steering 미지원/비활성/실패 상태를 명시적으로 반환한다", async () => {
-    const unsupportedRelease = deferred<void>();
-    const unsupportedClient: ClaudeClient = {
-      async *run(): AsyncIterable<ClaudeClientEvent> {
-        yield { type: "session", sessionId: "claude-sess-no-steer" };
-        await unsupportedRelease.promise;
-        yield { type: "complete" };
-      },
-    };
-    const unsupportedEngine = new ClaudeEngineAdapter(
-      { workspaceDir: "/tmp/claude-work", client: unsupportedClient, processEnv: {} },
-      silentLogger,
-    );
-    await expect(
-      unsupportedEngine.steerActiveTurn({ prompt: "before run" }),
-    ).resolves.toEqual({
-      status: "no_active_turn",
-      message: "No active Claude turn",
-    });
-    const unsupportedIterator = unsupportedEngine.execute({ prompt: "hi" })[Symbol.asyncIterator]();
-    await unsupportedIterator.next();
-    await expect(
-      unsupportedEngine.steerActiveTurn({ prompt: "during run" }),
-    ).resolves.toEqual({
-      status: "not_supported",
-      message: "Claude client does not support live turn steering",
-    });
-    unsupportedRelease.resolve();
-    await collectIterator(unsupportedIterator);
-
-    const failingRelease = deferred<void>();
-    const failingClient: ClaudeClient = {
-      async *run(): AsyncIterable<ClaudeClientEvent> {
-        yield { type: "session", sessionId: "claude-sess-fail" };
-        await failingRelease.promise;
-        yield { type: "complete" };
-      },
-      steerActiveTurn: vi.fn(() => {
-        throw new Error("active input closed");
-      }),
-    };
-    const failingEngine = new ClaudeEngineAdapter(
-      { workspaceDir: "/tmp/claude-work", client: failingClient, processEnv: {} },
-      silentLogger,
-    );
-    const failingIterator = failingEngine.execute({ prompt: "hi" })[Symbol.asyncIterator]();
-    await failingIterator.next();
-    await expect(
-      failingEngine.steerActiveTurn({ prompt: "during run" }),
-    ).resolves.toEqual({
-      status: "failed",
-      message: "active input closed",
-    });
-    failingRelease.resolve();
-    await collectIterator(failingIterator);
-
-    await expect(
-      failingEngine.steerActiveTurn({ prompt: "after run" }),
-    ).resolves.toEqual({
-      status: "no_active_turn",
-      message: "No active Claude turn",
-    });
   });
 
   it("ClaudeEngineAdapter.compact는 fake client compact boundary를 호출한다", async () => {

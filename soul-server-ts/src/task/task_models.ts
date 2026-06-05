@@ -295,11 +295,4 @@ export interface Task {
    */
   interventionQueue: InterventionMessage[];
 
-  /**
-   * Live-steered interventions that were publicly announced as delivered but
-   * have not yet produced a meaningful assistant/tool/result event. If the SDK
-   * closes the turn with an empty terminal result, TaskExecutor restores these
-   * messages to interventionQueue so they are retried by the next query.
-   */
-  liveInterventionsInFlight?: InterventionMessage[];
 }

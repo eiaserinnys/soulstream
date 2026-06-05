@@ -75,13 +75,6 @@ export type InterventionInput = string | EngineUserInput;
 export type InterventionCallback = () => Promise<InterventionInput | null>;
 
 /**
- * Backend-specific safe point callback. Claude SDK invokes this only after it has
- * consumed a tool_result or otherwise returned to a state where normal user input
- * can be appended without violating the SDK tool_use ordering.
- */
-export type SafeInterventionDrainCallback = () => Promise<boolean | void> | boolean | void;
-
-/**
  * compact 이벤트 콜백 (Claude 고유 `/compact`). Codex는 발행 안 함 — Codex 어댑터에서
  * 호출되지 않음(no-op). interface에는 *미래 백엔드*를 위해 자리 둠.
  */
@@ -152,10 +145,9 @@ export interface EngineExecuteParams {
   onSession?: SessionCallback;
   /**
    * Legacy polling hook. TaskEngineTurnRunner must not pass this for Claude resumed turns.
-   * Active-turn delivery uses SupportsLiveTurnSteering.steerActiveTurn instead.
+   * Running interventions are delivered by the task queue on the next turn.
    */
   onIntervention?: InterventionCallback;
-  onSafeInterventionDrain?: SafeInterventionDrainCallback;
   onCompact?: CompactCallback;
   onRunStateSnapshot?: RunStateSnapshotCallback;
   onSessionItemsSnapshot?: SessionItemsSnapshotCallback;
@@ -185,7 +177,7 @@ export interface EnginePort {
    * - resumeSessionId 있으면 해당 세션 이어 실행. 없으면 새 thread/session 생성.
    * - 새 세션 시작 시 onSession 콜백으로 sessionId 통지 (호출자가 task에 영속).
    * - 첫 yield되는 SSEEvent는 보통 `session` 타입 (session_id 운반).
-   * - onIntervention: legacy polling hook. Live input steering uses SupportsLiveTurnSteering.
+   * - onIntervention: legacy polling hook. Task queue resume is the intervention path.
    * - onCompact: Codex는 호출되지 않음 (no-op).
    */
   execute(params: EngineExecuteParams): AsyncIterable<SSEEventPayload>;

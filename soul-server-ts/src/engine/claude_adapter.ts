@@ -8,8 +8,6 @@ import type {
   BackendId,
   EngineExecuteParams,
   EnginePort,
-  EngineUserInput,
-  LiveTurnSteerResult,
   InputResponseDeliveryResult,
   ClaudePermissionMode,
   ClaudeBackgroundTaskControlResult,
@@ -18,7 +16,6 @@ import type {
   SupportsClaudeBackgroundTasks,
   SupportsCompact,
   SupportsInputResponse,
-  SupportsLiveTurnSteering,
 } from "./protocol.js";
 import {
   mapClaudeClientEvent,
@@ -59,7 +56,6 @@ export interface ClaudeRunOptions {
   claudePermissionMode?: ClaudePermissionMode;
   env?: Record<string, string>;
   onScheduleToolUse?: ScheduleToolUseHandler;
-  onSafeInterventionDrain?: EngineExecuteParams["onSafeInterventionDrain"];
   sessionStore?: SessionStore;
   sessionStoreFlush?: SessionStoreFlush;
   loadTimeoutMs?: number;
@@ -68,7 +64,6 @@ export interface ClaudeRunOptions {
 export interface ClaudeClient {
   run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent>;
   compact?(sessionId: string): Promise<void>;
-  steerActiveTurn?(input: EngineUserInput): Promise<boolean> | boolean;
   deliverInputResponse?(
     requestId: string,
     answers: Record<string, unknown>,
@@ -97,7 +92,6 @@ export class ClaudeEngineAdapter
     EnginePort,
     SupportsInputResponse,
     SupportsCompact,
-    SupportsLiveTurnSteering,
     SupportsClaudeBackgroundTasks
 {
   public readonly backendId: BackendId = "claude";
@@ -195,38 +189,6 @@ export class ClaudeEngineAdapter
       return await this.client.interrupt();
     }
     return true;
-  }
-
-  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
-    const currentTurn = this.currentTurn;
-    if (!currentTurn || currentTurn.signal.aborted) {
-      return {
-        status: "no_active_turn",
-        message: "No active Claude turn",
-      };
-    }
-    if (!this.client.steerActiveTurn) {
-      return {
-        status: "not_supported",
-        message: "Claude client does not support live turn steering",
-      };
-    }
-
-    try {
-      const delivered = await this.client.steerActiveTurn(input);
-      if (!delivered) {
-        return {
-          status: "not_accepting_input",
-          message: "Claude active input is not accepting steering",
-        };
-      }
-      return { status: "delivered" };
-    } catch (err) {
-      return {
-        status: "failed",
-        message: err instanceof Error ? err.message : String(err),
-      };
-    }
   }
 
   async compact(sessionId: string): Promise<void> {
@@ -327,9 +289,6 @@ export class ClaudeEngineAdapter
       ...(env !== undefined ? { env } : {}),
       ...(params.onScheduleToolUse !== undefined
         ? { onScheduleToolUse: params.onScheduleToolUse }
-        : {}),
-      ...(params.onSafeInterventionDrain !== undefined
-        ? { onSafeInterventionDrain: params.onSafeInterventionDrain }
         : {}),
       ...(this.sessionStore !== undefined ? { sessionStore: this.sessionStore } : {}),
       ...(this.sessionStoreFlush !== undefined ? { sessionStoreFlush: this.sessionStoreFlush } : {}),
