@@ -51,6 +51,15 @@ def _normalize_board_item(row: dict) -> dict:
     }
 
 
+def _decode_jsonb_list(value: object) -> list:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, list) else []
+    return value if isinstance(value, list) else []
+
+
 def _normalize_markdown_document(row: dict) -> dict:
     created_at = row.get("created_at")
     updated_at = row.get("updated_at")
@@ -183,7 +192,6 @@ class PostgresFolderMixin:
         )
 
     async def get_catalog(self) -> dict:
-        await self.ensure_board_items()
         folders = await self.get_all_folders()
         folder_list = []
         for f in folders:
@@ -209,7 +217,7 @@ class PostgresFolderMixin:
                 "displayName": r["display_name"],
             }
 
-        board_items = await self.get_board_items()
+        board_items = await self.get_board_yjs_catalog_items()
 
         return {"folders": folder_list, "sessions": sessions, "boardItems": board_items}
 
@@ -217,8 +225,22 @@ class PostgresFolderMixin:
         await self._pool.execute("SELECT board_seed_items()")
 
     async def get_board_items(self) -> list[dict]:
+        # Legacy seed/read-replica access. get_catalog uses board_yjs_catalog_cache.
         rows = await self._pool.fetch("SELECT * FROM board_item_get_all()")
         return [_normalize_board_item(dict(r)) for r in rows]
+
+    async def get_board_yjs_catalog_items(self) -> list[dict]:
+        rows = await self._pool.fetch(
+            """
+            SELECT board_items
+            FROM board_yjs_catalog_cache
+            ORDER BY folder_id
+            """
+        )
+        items: list[dict] = []
+        for row in rows:
+            items.extend(dict(item) for item in _decode_jsonb_list(row["board_items"]))
+        return items
 
     async def update_board_item_position(self, board_item_id: str, x: float, y: float) -> None:
         await self._pool.execute(

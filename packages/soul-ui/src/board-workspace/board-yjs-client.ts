@@ -25,6 +25,8 @@ export interface RemoteBoardSelection {
   color: string;
 }
 
+export type BoardYjsConnectionStatus = "connected" | "disconnected" | "reconnecting";
+
 export interface BoardYjsRuntime {
   folderId: string;
   doc: Y.Doc;
@@ -274,6 +276,7 @@ export function useBoardYjsRuntime(params: {
   boardItems: CatalogBoardItem[] | null;
   isLoading: boolean;
   remoteSelections: RemoteBoardSelection[];
+  connectionStatus: BoardYjsConnectionStatus;
   connectionError: string | null;
 } {
   const { folderId, catalog, selectionItemId, localSelectionColor = "#22c55e" } = params;
@@ -282,12 +285,14 @@ export function useBoardYjsRuntime(params: {
     boardItems: CatalogBoardItem[] | null;
     isLoading: boolean;
     remoteSelections: RemoteBoardSelection[];
+    connectionStatus: BoardYjsConnectionStatus;
     connectionError: string | null;
   }>({
     runtime: null,
     boardItems: null,
     isLoading: false,
     remoteSelections: [],
+    connectionStatus: "disconnected",
     connectionError: null,
   });
   const latestCatalogRef = useRef(catalog);
@@ -300,6 +305,7 @@ export function useBoardYjsRuntime(params: {
         boardItems: null,
         isLoading: false,
         remoteSelections: [],
+        connectionStatus: "disconnected",
         connectionError: null,
       });
       return;
@@ -309,7 +315,11 @@ export function useBoardYjsRuntime(params: {
     const awareness = new Awareness(doc);
     const listeners = new Set<() => void>();
     const canConnect = isBoardYjsBrowserConnectionAvailable();
-    let connectionError: string | null = null;
+    let connectionStatus: BoardYjsConnectionStatus = canConnect ? "reconnecting" : "disconnected";
+    let connectionError: string | null = canConnect
+      ? null
+      : "Board sync websocket is unavailable in this browser environment.";
+    let hasConnected = false;
     let provider: HocuspocusProvider | null = null;
     if (!canConnect) {
       seedBoardYDocFromCatalog(doc, folderId, latestCatalogRef.current);
@@ -322,8 +332,9 @@ export function useBoardYjsRuntime(params: {
       setState({
         runtime,
         boardItems: runtime.getBoardItems(),
-        isLoading: canConnect && !provider?.isSynced,
+        isLoading: canConnect && connectionStatus === "reconnecting" && !provider?.isSynced,
         remoteSelections: runtime.getRemoteSelections(),
+        connectionStatus,
         connectionError,
       });
     };
@@ -336,10 +347,26 @@ export function useBoardYjsRuntime(params: {
         token: "cookie",
         onSynced: refresh,
         onAuthenticationFailed: ({ reason }) => {
+          connectionStatus = "disconnected";
           connectionError = reason || "Authentication failed";
           refresh();
         },
-        onStatus: refresh,
+        onStatus: ({ status }) => {
+          if (status === "connected") {
+            hasConnected = true;
+            connectionStatus = "connected";
+            connectionError = null;
+          } else if (status === "connecting") {
+            connectionStatus = "reconnecting";
+            connectionError = hasConnected ? "Reconnecting board sync websocket." : null;
+          } else {
+            connectionStatus = "disconnected";
+            connectionError = hasConnected
+              ? "Board sync websocket disconnected."
+              : "Board sync websocket failed to connect.";
+          }
+          refresh();
+        },
         onAwarenessChange: refresh,
       });
     }

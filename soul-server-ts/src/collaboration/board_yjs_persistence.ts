@@ -48,6 +48,15 @@ export function createBoardYjsPersistence(db: SessionDB): BoardYjsPersistence {
       extensionName: "soulstream-board-yjs-update-log",
       async onChange(payload: onChangePayload) {
         await db.appendBoardYjsUpdate(payload.documentName, payload.update);
+        const folderId = getFolderIdFromBoardYjsDocumentName(payload.documentName);
+        if (!folderId) return;
+        const snapshot = Y.encodeStateAsUpdate(payload.document);
+        await db.storeBoardYjsSnapshot(payload.documentName, snapshot);
+        await db.syncBoardYjsReplica(
+          folderId,
+          readBoardYDocReplica(folderId, payload.document),
+        );
+        db.invalidateBoardYjsCatalogCache(folderId);
       },
     },
   };

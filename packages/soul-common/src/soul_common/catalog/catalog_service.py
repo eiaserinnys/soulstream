@@ -54,6 +54,7 @@ class CatalogService:
         return float(round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE)
 
     async def _next_board_position(self, folder_id: str) -> tuple[float, float]:
+        # Legacy REST/MCP markdown placement. Board catalog reads are Yjs-derived.
         await self._db.ensure_board_items()
         items = [
             item for item in await self._db.get_board_items()

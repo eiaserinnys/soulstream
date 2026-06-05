@@ -8,6 +8,7 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createBoardYDocSnapshot } from "../../src/collaboration/board_yjs_model.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 
 interface MockCall {
@@ -290,6 +291,11 @@ describe("SessionDB board Yjs persistence", () => {
     expect(calls[0].fragments.join("?")).toContain("DELETE FROM board_items");
     expect(calls[1].fragments.join("?")).toContain("INSERT INTO board_items");
     expect(calls[2].fragments.join("?")).toContain("INSERT INTO markdown_documents");
+    expect(calls[3].fragments.join("?")).toContain("INSERT INTO board_yjs_catalog_cache");
+    expect(calls[3].values[0]).toBe("f1");
+    expect(JSON.parse(calls[3].values[1] as string)).toEqual([
+      expect.objectContaining({ id: "markdown:d1", x: 280, y: 160 }),
+    ]);
   });
 });
 
@@ -508,8 +514,7 @@ describe("SessionDB folder ops (B-5)", () => {
     expect(await new SessionDB(emptySql).getDefaultFolder("missing")).toBeNull();
   });
 
-  it("getCatalog → folder_get_all + catalog_get_sessions 합성하여 {folders, sessions} 반환", async () => {
-    let callIndex = 0;
+  it("getCatalog → folders/sessions와 Y-doc snapshot boardItems를 합성하고 snapshot decode를 캐시", async () => {
     const createdAt = new Date("2026-06-03T00:00:00.000Z");
     const folderRows = [
       { id: "f1", name: "F1", sort_order: 1, settings: { excludeFromFeed: true }, parent_folder_id: null, created_at: createdAt },
@@ -519,29 +524,45 @@ describe("SessionDB folder ops (B-5)", () => {
       { session_id: "s1", folder_id: "f1", display_name: "Hello" },
       { session_id: "s2", folder_id: null, display_name: null },
     ];
-    const boardRows = [
-      {
+    const f1Snapshot = createBoardYDocSnapshot({
+      folderId: "f1",
+      boardItems: [{
         id: "session:s1",
-        folder_id: "f1",
-        item_type: "session",
-        item_id: "s1",
+        folderId: "f1",
+        itemType: "session",
+        itemId: "s1",
         x: 0,
         y: 0,
         metadata: {},
-        created_at: createdAt,
-        updated_at: createdAt,
-      },
-    ];
-    const { sql } = createMockSql((call) => {
+        createdAt: "2026-06-03T00:00:00.000Z",
+        updatedAt: "2026-06-03T00:00:00.000Z",
+      }],
+      markdownDocuments: [],
+    });
+    const f2Snapshot = createBoardYDocSnapshot({
+      folderId: "f2",
+      boardItems: [],
+      markdownDocuments: [],
+    });
+    const { sql, calls } = createMockSql((call) => {
       const text = call.fragments.join("|");
-      callIndex += 1;
-      if (text.includes("board_seed_items")) return [];
       if (text.includes("folder_get_all")) return folderRows;
       if (text.includes("catalog_get_sessions")) return sessionRows;
-      if (text.includes("board_item_get_all")) return boardRows;
+      if (text.includes("SELECT snapshot FROM board_yjs_documents")) {
+        return call.values[0] === "board-folder:f1"
+          ? [{ snapshot: Buffer.from(f1Snapshot) }]
+          : [{ snapshot: Buffer.from(f2Snapshot) }];
+      }
+      if (text.includes("SELECT update FROM board_yjs_updates")) return [];
+      if (text.includes("board_item_get_all")) {
+        throw new Error("catalog must not read board_items directly when Y-doc snapshots exist");
+      }
       return [];
     });
-    const catalog = await new SessionDB(sql).getCatalog();
+    const db = new SessionDB(sql);
+    const catalog = await db.getCatalog();
+    const secondCatalog = await db.getCatalog();
+
     expect(catalog.folders).toEqual([
       {
         id: "f1",
@@ -570,7 +591,13 @@ describe("SessionDB folder ops (B-5)", () => {
         updatedAt: "2026-06-03T00:00:00.000Z",
       },
     ]);
-    expect(callIndex).toBe(4);
+    expect(secondCatalog.boardItems).toEqual(catalog.boardItems);
+    expect(calls.filter((call) =>
+      call.fragments.join("|").includes("SELECT snapshot FROM board_yjs_documents")
+    )).toHaveLength(2);
+    expect(calls.some((call) =>
+      call.fragments.join("|").includes("board_item_get_all")
+    )).toBe(false);
   });
 });
 

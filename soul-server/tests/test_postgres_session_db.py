@@ -497,20 +497,22 @@ class TestFolderCRUD:
                 "session_id": "s1", "folder_id": "claude", "display_name": None,
             }),
         ]
-        board_records = [
+        board_cache_records = [
             _make_record({
-                "id": "session:s1",
-                "folder_id": "claude",
-                "item_type": "session",
-                "item_id": "s1",
-                "x": 0,
-                "y": 0,
-                "metadata": {},
-                "created_at": None,
-                "updated_at": None,
+                "board_items": [
+                    {
+                        "id": "session:s1",
+                        "folderId": "claude",
+                        "itemType": "session",
+                        "itemId": "s1",
+                        "x": 0,
+                        "y": 0,
+                        "metadata": {},
+                    },
+                ],
             }),
         ]
-        db._pool.fetch = AsyncMock(side_effect=[folder_records, session_records, board_records])
+        db._pool.fetch = AsyncMock(side_effect=[folder_records, session_records, board_cache_records])
 
         catalog = await db.get_catalog()
         assert "folders" in catalog
@@ -524,7 +526,7 @@ class TestFolderCRUD:
         second_fetch = db._pool.fetch.call_args_list[1]
         assert "catalog_get_sessions" in second_fetch[0][0]
         third_fetch = db._pool.fetch.call_args_list[2]
-        assert "board_item_get_all" in third_fetch[0][0]
+        assert "board_yjs_catalog_cache" in third_fetch[0][0]
 
     @pytest.mark.asyncio
     async def test_update_folder(self, db):

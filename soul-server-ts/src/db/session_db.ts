@@ -21,6 +21,12 @@ import postgres from "postgres";
 import type { TaskStatus } from "../task/task_models.js";
 import { SoulstreamScheduleRepository } from "../schedule/schedule_repository.js";
 import { TaskTreeRepository } from "../task_tree/task_tree_repository.js";
+import {
+  createBoardYDocSnapshot,
+  getBoardYjsDocumentName,
+  getFolderIdFromBoardYjsDocumentName,
+  readBoardYDocSnapshot,
+} from "../collaboration/board_yjs_model.js";
 
 export type SessionType = "claude" | "llm";
 
@@ -202,6 +208,7 @@ export class SessionDB {
   private readonly ownsSql: boolean;
   private taskTreeRepository?: TaskTreeRepository;
   private scheduleRepository?: SoulstreamScheduleRepository;
+  private readonly boardYjsCatalogCache = new Map<string, CatalogBoardItemRow[]>();
 
   /**
    * @param sqlOrUrl `postgres()` 인스턴스 또는 DATABASE_URL 문자열.
@@ -504,9 +511,61 @@ export class SessionDB {
       };
     }
 
-    const boardItems = await this.getBoardItems();
+    const boardItems = await this.getCatalogBoardItemsFromYjs(folders);
 
     return { folders, sessions, boardItems };
+  }
+
+  invalidateBoardYjsCatalogCache(folderId?: string | null): void {
+    if (folderId) {
+      this.boardYjsCatalogCache.delete(folderId);
+      return;
+    }
+    this.boardYjsCatalogCache.clear();
+  }
+
+  private async getCatalogBoardItemsFromYjs(
+    folders: readonly CatalogFolderRow[],
+  ): Promise<CatalogBoardItemRow[]> {
+    const result: CatalogBoardItemRow[] = [];
+    for (const folder of folders) {
+      result.push(...await this.getFolderCatalogBoardItemsFromYjs(folder.id));
+    }
+    return result.sort((a, b) => (
+      a.folderId.localeCompare(b.folderId) ||
+      a.y - b.y ||
+      a.x - b.x ||
+      a.id.localeCompare(b.id)
+    ));
+  }
+
+  private async getFolderCatalogBoardItemsFromYjs(
+    folderId: string,
+  ): Promise<CatalogBoardItemRow[]> {
+    const cached = this.boardYjsCatalogCache.get(folderId);
+    if (cached) return cached;
+
+    const documentName = getBoardYjsDocumentName(folderId);
+    const snapshot = await this.getBoardYjsSnapshot(documentName);
+    const updates = await this.getBoardYjsUpdates(documentName);
+    if ((snapshot && snapshot.byteLength > 0) || updates.length > 0) {
+      const decoded = readBoardYDocSnapshot({ folderId, snapshot, updates });
+      await this.storeBoardYjsSnapshot(documentName, decoded.snapshot);
+      await this.syncBoardYjsReplica(folderId, decoded.replica);
+      this.boardYjsCatalogCache.set(folderId, decoded.replica.boardItems);
+      return decoded.replica.boardItems;
+    }
+
+    const seed = await this.loadBoardYjsSeed(folderId);
+    const encoded = createBoardYDocSnapshot({
+      folderId,
+      boardItems: seed.boardItems,
+      markdownDocuments: seed.markdownDocuments,
+    });
+    await this.storeBoardYjsSnapshot(documentName, encoded);
+    await this.syncBoardYjsReplica(folderId, seed);
+    this.boardYjsCatalogCache.set(folderId, seed.boardItems);
+    return seed.boardItems;
   }
 
   async ensureBoardItems(): Promise<void> {
@@ -514,6 +573,7 @@ export class SessionDB {
   }
 
   async getBoardItems(): Promise<CatalogBoardItemRow[]> {
+    // Legacy seed/read-replica access. getCatalog derives board items from Yjs.
     const rows = await this.sql<
       Array<{
         id: string;
@@ -675,6 +735,9 @@ export class SessionDB {
       SET snapshot = EXCLUDED.snapshot,
           updated_at = EXCLUDED.updated_at
     `;
+    this.invalidateBoardYjsCatalogCache(
+      getFolderIdFromBoardYjsDocumentName(documentName),
+    );
   }
 
   async appendBoardYjsUpdate(
@@ -690,9 +753,22 @@ export class SessionDB {
       INSERT INTO board_yjs_updates (document_name, update)
       VALUES (${documentName}, ${Buffer.from(update)})
     `;
+    this.invalidateBoardYjsCatalogCache(
+      getFolderIdFromBoardYjsDocumentName(documentName),
+    );
+  }
+
+  async getBoardYjsUpdates(documentName: string): Promise<Uint8Array[]> {
+    const rows = await this.sql<Array<{ update: Buffer | Uint8Array }>>`
+      SELECT update FROM board_yjs_updates
+      WHERE document_name = ${documentName}
+      ORDER BY id ASC
+    `;
+    return rows.map((row) => new Uint8Array(row.update));
   }
 
   async loadBoardYjsSeed(folderId: string): Promise<BoardYjsSeed> {
+    // One-time migration seed from the pre-Yjs board_items replica.
     await this.ensureBoardItems();
     const boardItems = (await this.getBoardItems()).filter((item) => item.folderId === folderId);
     const markdownIds = boardItems
@@ -716,6 +792,7 @@ export class SessionDB {
     folderId: string,
     replica: BoardYjsReplica,
   ): Promise<void> {
+    this.invalidateBoardYjsCatalogCache(folderId);
     const boardItemIds = replica.boardItems.map((item) => item.id);
     if (boardItemIds.length === 0) {
       await this.sql`DELETE FROM board_items WHERE folder_id = ${folderId}`;
@@ -761,6 +838,20 @@ export class SessionDB {
             updated_at = EXCLUDED.updated_at
       `;
     }
+
+    await this.sql`
+      INSERT INTO board_yjs_catalog_cache (folder_id, board_items, markdown_documents, updated_at)
+      VALUES (
+        ${folderId},
+        ${JSON.stringify(replica.boardItems)}::jsonb,
+        ${JSON.stringify(replica.markdownDocuments)}::jsonb,
+        NOW()
+      )
+      ON CONFLICT (folder_id) DO UPDATE
+      SET board_items = EXCLUDED.board_items,
+          markdown_documents = EXCLUDED.markdown_documents,
+          updated_at = EXCLUDED.updated_at
+    `;
   }
 
   // ---------------------------------------------------------------------

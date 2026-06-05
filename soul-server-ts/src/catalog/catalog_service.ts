@@ -263,6 +263,7 @@ export class CatalogService {
   }
 
   private async nextBoardPosition(folderId: string): Promise<[number, number]> {
+    // Legacy REST/MCP markdown placement. Board catalog reads are Yjs-derived.
     await this.db.ensureBoardItems();
     const occupied = new Set(
       (await this.db.getBoardItems())

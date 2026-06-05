@@ -45,6 +45,7 @@ export {
   useBoardYjsRuntime,
 } from "./board-yjs-client";
 export type {
+  BoardYjsConnectionStatus,
   BoardYjsItemValue,
   BoardYjsRuntime,
   RemoteBoardSelection,
