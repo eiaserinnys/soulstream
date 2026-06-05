@@ -4,10 +4,13 @@ import * as Y from "yjs";
 import {
   applyBoardYjsPosition,
   createBoardYDocSnapshot,
+  createMarkdownYjsDocument,
+  deleteMarkdownYjsDocument,
   getBoardYjsDocumentName,
   getFolderIdFromBoardYjsDocumentName,
   readBoardYDocSnapshot,
   readBoardYDocReplica,
+  updateMarkdownYjsDocument,
 } from "../../src/collaboration/board_yjs_model.js";
 
 describe("board_yjs_model", () => {
@@ -78,6 +81,31 @@ describe("board_yjs_model", () => {
     expect(decoded.snapshot.byteLength).toBeGreaterThan(0);
   });
 
+  it("snapshot derive 결과는 Yjs 문서 정본만 반영한다", () => {
+    const snapshot = createBoardYDocSnapshot({
+      folderId: "folder-1",
+      boardItems: [{
+        id: "session:s1",
+        folderId: "folder-1",
+        itemType: "session",
+        itemId: "s1",
+        x: 0,
+        y: 0,
+        metadata: {},
+      }],
+      markdownDocuments: [],
+    });
+
+    const decoded = readBoardYDocSnapshot({
+      folderId: "folder-1",
+      snapshot,
+    });
+
+    expect(decoded).not.toHaveProperty("seedMerged");
+    expect(decoded.replica.boardItems.map((item) => item.id)).toEqual(["session:s1"]);
+    expect(decoded.replica.markdownDocuments).toEqual([]);
+  });
+
   it("position update는 같은 Y-map entry만 갱신", () => {
     const doc = new Y.Doc();
     Y.applyUpdate(doc, createBoardYDocSnapshot({
@@ -100,6 +128,47 @@ describe("board_yjs_model", () => {
       id: "session:s1",
       x: -80,
       y: 40,
+    });
+  });
+
+  it("markdown create/update/delete helper는 board item과 markdown body를 함께 갱신", () => {
+    const doc = new Y.Doc();
+
+    const created = createMarkdownYjsDocument(doc, "folder-1", {
+      documentId: "doc-1",
+      title: "  Note  ",
+      body: "hello\nworld",
+      x: 80,
+      y: 40,
+    });
+
+    expect(created.document).toEqual({ id: "doc-1", title: "Note", body: "hello\nworld" });
+    expect(readBoardYDocReplica("folder-1", doc)).toMatchObject({
+      boardItems: [{
+        id: "markdown:doc-1",
+        folderId: "folder-1",
+        itemType: "markdown",
+        itemId: "doc-1",
+        x: 80,
+        y: 40,
+        metadata: { title: "Note", preview: "hello world" },
+      }],
+      markdownDocuments: [{ id: "doc-1", title: "Note", body: "hello\nworld" }],
+    });
+
+    const updated = updateMarkdownYjsDocument(doc, "doc-1", {
+      title: "Renamed",
+      body: "updated body",
+    });
+    expect(updated).toEqual({ id: "doc-1", title: "Renamed", body: "updated body" });
+    expect(readBoardYDocReplica("folder-1", doc).markdownDocuments).toEqual([
+      { id: "doc-1", title: "Renamed", body: "updated body" },
+    ]);
+
+    deleteMarkdownYjsDocument(doc, "doc-1");
+    expect(readBoardYDocReplica("folder-1", doc)).toEqual({
+      boardItems: [],
+      markdownDocuments: [],
     });
   });
 

@@ -14,6 +14,7 @@
 
 import { randomUUID } from "node:crypto";
 
+import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
@@ -46,6 +47,7 @@ export class CatalogService {
   constructor(
     private readonly db: SessionDB,
     private readonly broadcaster: SessionBroadcaster,
+    private readonly boardYjsService?: BoardYjsService,
   ) {}
 
   async listFolders(): Promise<CatalogFolderDto[]> {
@@ -212,11 +214,26 @@ export class CatalogService {
     x: number,
     y: number,
   ): Promise<void> {
+    const snappedX = snapBoardPosition(x);
+    const snappedY = snapBoardPosition(y);
+    if (this.boardYjsService) {
+      const boardItem = await this.db.getBoardItemById(boardItemId);
+      if (boardItem) {
+        await this.boardYjsService.updateBoardItemPosition(
+          boardItem.folderId,
+          boardItemId,
+          snappedX,
+          snappedY,
+        );
+        await this.broadcastCatalog();
+        return;
+      }
+    }
     await this.db.ensureBoardItems();
     await this.db.updateBoardItemPosition(
       boardItemId,
-      snapBoardPosition(x),
-      snapBoardPosition(y),
+      snappedX,
+      snappedY,
     );
     await this.broadcastCatalog();
   }
@@ -232,6 +249,18 @@ export class CatalogService {
     const [x, y] = params.x !== undefined && params.y !== undefined
       ? [snapBoardPosition(params.x), snapBoardPosition(params.y)]
       : await this.nextBoardPosition(params.folderId);
+    if (this.boardYjsService) {
+      const result = await this.boardYjsService.createMarkdownDocument({
+        documentId,
+        folderId: params.folderId,
+        title: params.title,
+        body: params.body ?? "",
+        x,
+        y,
+      });
+      await this.broadcastCatalog();
+      return result;
+    }
     const result = await this.db.createMarkdownDocument({
       documentId,
       folderId: params.folderId,
@@ -252,12 +281,35 @@ export class CatalogService {
     documentId: string,
     fields: { title?: string; body?: string },
   ) {
+    if (this.boardYjsService) {
+      const boardItem = await this.db.getMarkdownDocumentBoardItem(documentId);
+      if (boardItem) {
+        const document = await this.boardYjsService.updateMarkdownDocument(
+          boardItem.folderId,
+          documentId,
+          fields,
+        );
+        await this.broadcastCatalog();
+        return document;
+      }
+    }
     const document = await this.db.updateMarkdownDocument(documentId, fields);
     await this.broadcastCatalog();
     return document;
   }
 
   async deleteMarkdownDocument(documentId: string): Promise<void> {
+    if (this.boardYjsService) {
+      const boardItem = await this.db.getMarkdownDocumentBoardItem(documentId);
+      if (boardItem) {
+        await this.boardYjsService.deleteMarkdownDocument(
+          boardItem.folderId,
+          documentId,
+        );
+        await this.broadcastCatalog();
+        return;
+      }
+    }
     await this.db.deleteMarkdownDocument(documentId);
     await this.broadcastCatalog();
   }

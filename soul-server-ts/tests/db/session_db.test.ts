@@ -14,27 +14,40 @@ import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 interface MockCall {
   fragments: string[];
   values: unknown[];
+  inTransaction: boolean;
 }
 
 /** postgres.js의 tagged template 함수를 흉내내는 mock. */
 function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
   const calls: MockCall[] = [];
+  let inTransaction = false;
 
   const fn = ((strings: TemplateStringsArray, ...values: unknown[]) => {
-    const call: MockCall = { fragments: Array.from(strings), values };
+    const call: MockCall = { fragments: Array.from(strings), values, inTransaction };
     calls.push(call);
     const result = resultFor ? resultFor(call) : [];
     // postgres.js의 query는 Promise<row[]>를 반환
     return Promise.resolve(result);
   }) as unknown as SqlClient & {
     array: (a: unknown[]) => unknown[];
+    json: (value: unknown) => unknown;
     end: () => Promise<void>;
+    begin: <T>(callback: (sql: SqlClient) => Promise<T>) => Promise<T>;
   };
 
   fn.array = (a: unknown[]) => a;
+  fn.json = (value: unknown) => value;
   fn.end = vi.fn().mockResolvedValue(undefined);
+  fn.begin = vi.fn(async <T>(callback: (sql: SqlClient) => Promise<T>) => {
+    inTransaction = true;
+    try {
+      return await callback(fn as unknown as SqlClient);
+    } finally {
+      inTransaction = false;
+    }
+  });
 
-  return { sql: fn as unknown as SqlClient, calls };
+  return { sql: fn as unknown as SqlClient, calls, begin: fn.begin };
 }
 
 describe("SessionDB.registerSession", () => {
@@ -292,10 +305,47 @@ describe("SessionDB board Yjs persistence", () => {
     expect(calls[1].fragments.join("?")).toContain("INSERT INTO board_items");
     expect(calls[2].fragments.join("?")).toContain("INSERT INTO markdown_documents");
     expect(calls[3].fragments.join("?")).toContain("INSERT INTO board_yjs_catalog_cache");
+    expect(calls[1].values[6]).toEqual({ title: "Note" });
     expect(calls[3].values[0]).toBe("f1");
-    expect(JSON.parse(calls[3].values[1] as string)).toEqual([
+    expect(calls[3].values[1]).toEqual([
       expect.objectContaining({ id: "markdown:d1", x: 280, y: 160 }),
     ]);
+    expect(calls[3].values[2]).toEqual([
+      expect.objectContaining({ id: "d1", title: "Note", body: "Body" }),
+    ]);
+    expect(typeof calls[3].values[1]).not.toBe("string");
+    expect(typeof calls[3].values[2]).not.toBe("string");
+  });
+
+  it("replica sync는 board_items, markdown_documents, catalog cache 갱신을 한 transaction에서 수행", async () => {
+    const { sql, calls, begin } = createMockSql();
+    const db = new SessionDB(sql);
+
+    await db.syncBoardYjsReplica("f1", {
+      boardItems: [{
+        id: "markdown:d1",
+        folderId: "f1",
+        itemType: "markdown",
+        itemId: "d1",
+        x: 280,
+        y: 160,
+        metadata: { title: "Note" },
+      }],
+      markdownDocuments: [{ id: "d1", title: "Note", body: "Body" }],
+    });
+
+    expect(begin).toHaveBeenCalledTimes(1);
+    const mutationCalls = calls.filter((call) => {
+      const query = call.fragments.join("?");
+      return (
+        query.includes("DELETE FROM board_items") ||
+        query.includes("INSERT INTO board_items") ||
+        query.includes("INSERT INTO markdown_documents") ||
+        query.includes("INSERT INTO board_yjs_catalog_cache")
+      );
+    });
+    expect(mutationCalls).toHaveLength(4);
+    expect(mutationCalls.every((call) => call.inTransaction)).toBe(true);
   });
 });
 

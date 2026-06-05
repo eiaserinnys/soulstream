@@ -19,10 +19,12 @@ export function createBoardYjsPersistence(db: SessionDB): BoardYjsPersistence {
     database: new Database({
       fetch: async (payload: fetchPayload) => {
         const snapshot = await db.getBoardYjsSnapshot(payload.documentName);
-        if (snapshot) return snapshot;
-
         const folderId = getFolderIdFromBoardYjsDocumentName(payload.documentName);
-        if (!folderId) return null;
+        if (!folderId) return snapshot ?? null;
+        if (snapshot) {
+          return snapshot;
+        }
+
         const seed = await db.loadBoardYjsSeed(folderId);
         const encoded = createBoardYDocSnapshot({
           folderId,

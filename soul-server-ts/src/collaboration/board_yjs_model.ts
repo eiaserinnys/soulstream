@@ -143,3 +143,119 @@ export function applyBoardYjsPosition(
     updated_at: new Date().toISOString(),
   });
 }
+
+export function createMarkdownYjsDocument(
+  doc: Y.Doc,
+  folderId: string,
+  input: {
+    title: string;
+    body: string;
+    x: number;
+    y: number;
+    documentId: string;
+  },
+): { document: MarkdownDocumentRow; boardItem: CatalogBoardItemRow } {
+  const title = normalizeMarkdownTitle(input.title);
+  const body = input.body;
+  const text = getOrCreateMarkdownText(doc, input.documentId);
+  text.delete(0, text.length);
+  text.insert(0, body);
+  const boardItem: CatalogBoardItemRow = {
+    id: `markdown:${input.documentId}`,
+    folderId,
+    itemType: "markdown",
+    itemId: input.documentId,
+    x: input.x,
+    y: input.y,
+    metadata: {
+      title,
+      preview: getMarkdownPreview(body),
+    },
+  };
+  upsertBoardYjsItem(doc, boardItem);
+  return {
+    document: { id: input.documentId, title, body },
+    boardItem,
+  };
+}
+
+export function updateMarkdownYjsDocument(
+  doc: Y.Doc,
+  documentId: string,
+  fields: { title?: string; body?: string },
+): MarkdownDocumentRow | null {
+  const boardItems = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
+  const boardItemId = `markdown:${documentId}`;
+  const current = boardItems.get(boardItemId);
+  if (!current) return null;
+
+  const currentMetadata = current.metadata && typeof current.metadata === "object"
+    ? current.metadata
+    : {};
+  const currentTitle = typeof currentMetadata.title === "string"
+    ? currentMetadata.title
+    : "Untitled document";
+  const title = fields.title !== undefined
+    ? normalizeMarkdownTitle(fields.title)
+    : currentTitle;
+  const text = getOrCreateMarkdownText(doc, documentId);
+  const body = fields.body !== undefined ? fields.body : text.toString();
+  if (fields.body !== undefined) {
+    text.delete(0, text.length);
+    text.insert(0, body);
+  }
+
+  boardItems.set(boardItemId, {
+    ...current,
+    metadata: {
+      ...currentMetadata,
+      title,
+      preview: getMarkdownPreview(body),
+    },
+    updated_at: new Date().toISOString(),
+  });
+
+  return {
+    id: documentId,
+    title,
+    body,
+  };
+}
+
+export function deleteMarkdownYjsDocument(
+  doc: Y.Doc,
+  documentId: string,
+): void {
+  doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP).delete(`markdown:${documentId}`);
+  doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP).delete(documentId);
+}
+
+function upsertBoardYjsItem(doc: Y.Doc, boardItem: CatalogBoardItemRow): void {
+  doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP).set(boardItem.id, {
+    item_type: boardItem.itemType,
+    item_id: boardItem.itemId,
+    x: boardItem.x,
+    y: boardItem.y,
+    metadata: boardItem.metadata ?? {},
+    ...(boardItem.createdAt ? { created_at: boardItem.createdAt } : {}),
+    ...(boardItem.updatedAt ? { updated_at: boardItem.updatedAt } : {}),
+  });
+}
+
+function getOrCreateMarkdownText(doc: Y.Doc, documentId: string): Y.Text {
+  const map = doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP);
+  let text = map.get(documentId);
+  if (!text) {
+    text = new Y.Text();
+    map.set(documentId, text);
+  }
+  return text;
+}
+
+function normalizeMarkdownTitle(title: string): string {
+  return title.trim() || "Untitled document";
+}
+
+function getMarkdownPreview(body: string): string {
+  return body.replace(/\s+/g, " ").trim().slice(0, 180);
+}
