@@ -5,9 +5,10 @@
 2. GET /api/nodes/claude-auth/callback         → code 수신, token 교환, WS로 soul-server push
 3. GET /api/nodes/{node_id}/claude-auth/status → soul-server 토큰 존재 여부
 4. GET /api/nodes/{node_id}/claude-auth/usage  → soul-server Usage 대리 조회
-5. DELETE /api/nodes/{node_id}/claude-auth/token → soul-server 토큰 삭제
-6. GET /api/nodes/{node_id}/claude-auth/headless/start       → headless OAuth auth_url 반환
-7. POST /api/nodes/{node_id}/claude-auth/headless/submit-code → paste-code 수신, 토큰 교환, WS push
+5. GET /api/nodes/{node_id}/claude-auth/profiles → soul-server OAuth 프로필 목록 대리 조회
+6. DELETE /api/nodes/{node_id}/claude-auth/token → soul-server 토큰 삭제
+7. GET /api/nodes/{node_id}/claude-auth/headless/start       → headless OAuth auth_url 반환
+8. POST /api/nodes/{node_id}/claude-auth/headless/submit-code → paste-code 수신, 토큰 교환, WS push
 """
 from __future__ import annotations
 
@@ -16,10 +17,11 @@ import os
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel
 
+from soulstream_server.api._proxy_utils import forward_auth_headers
 from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.utils.pkce import generate_verifier, generate_challenge, generate_state
 from soulstream_server.utils.web_session import WebSessionStore
@@ -150,6 +152,30 @@ def create_claude_auth_router(
                 status_code=400, detail=result.get("error", "unknown")
             )
         return result["data"]
+
+    @router.get("/nodes/{node_id}/claude-auth/profiles")
+    async def node_claude_auth_profiles(node_id: str, request: Request):
+        """노드의 OAuth 토큰 프로필 목록.
+
+        soul-server의 GET /auth/claude/profiles를 HTTP 프록시하여 반환한다.
+        soul-server verify_token이 401을 반환하지 않도록
+        들어온 요청의 Authorization 헤더를 forward한다.
+        """
+        node = node_manager.get_node(node_id)
+        if node is None:
+            raise HTTPException(status_code=404, detail=f"Node {node_id} not connected")
+
+        url = f"http://{node.host}:{node.port}/auth/claude/profiles"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, headers=forward_auth_headers(request))
+        except httpx.RequestError:
+            return Response(status_code=502)
+
+        if resp.status_code != 200:
+            return Response(status_code=resp.status_code)
+
+        return resp.json()
 
     @router.delete("/nodes/{node_id}/claude-auth/token")
     async def node_claude_auth_delete_token(node_id: str):

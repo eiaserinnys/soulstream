@@ -16,6 +16,7 @@ from fastapi.responses import Response
 from sse_starlette.sse import EventSourceResponse
 
 from soulstream_server.api._proxy_utils import forward_auth_headers
+from soulstream_server.api.deprecated import deprecated_api_response
 from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
 
@@ -249,28 +250,17 @@ def create_nodes_router(
             raise HTTPException(status_code=400, detail=str(err)) from err
 
     @router.get("/{node_id}/oauth-profiles")
-    async def list_node_oauth_profiles(node_id: str, request: Request) -> dict:
-        """노드의 OAuth 토큰 프로필 목록.
-
-        soul-server의 GET /auth/claude/profiles를 HTTP 프록시하여 반환한다.
-        soul-server verify_token이 401을 반환하지 않도록
-        들어온 요청의 Authorization 헤더를 forward한다.
-        """
-        node = node_manager.get_node(node_id)
-        if not node:
-            raise HTTPException(status_code=404, detail=f"노드를 찾을 수 없습니다: {node_id}")
-
-        url = f"http://{node.host}:{node.port}/auth/claude/profiles"
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(url, headers=forward_auth_headers(request))
-        except httpx.RequestError:
-            return Response(status_code=502)
-
-        if resp.status_code != 200:
-            return Response(status_code=resp.status_code)
-
-        return resp.json()
+    async def deprecated_node_oauth_profiles(node_id: str):
+        """Deprecated profile endpoint kept to explain the replacement path."""
+        return deprecated_api_response(
+            deprecated_path=f"/api/nodes/{node_id}/oauth-profiles",
+            replacement_path=f"/api/nodes/{node_id}/claude-auth/profiles",
+            replacement_method="GET",
+            message=(
+                "Deprecated API path. Refresh the dashboard bundle and use "
+                f"GET /api/nodes/{node_id}/claude-auth/profiles."
+            ),
+        )
 
     @router.get("/{node_id}/user/portrait")
     async def proxy_user_portrait(node_id: str, request: Request):

@@ -17,6 +17,7 @@ from soul_common.auth.caller_info import resolve_caller_info_or_system
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
+from soulstream_server.api.deprecated import deprecated_api_response
 from soulstream_server.api.node_utils import find_session_node
 from soulstream_server.api.session_events import create_session_events_response
 from soulstream_server.api.session_models import (
@@ -273,6 +274,19 @@ def create_sessions_router(
                 raise HTTPException(status_code=404, detail=msg)
             # 그 외 처리 불가 → 422
             raise HTTPException(status_code=422, detail=msg)
+
+    @router.post("/{session_id}/message")
+    async def deprecated_session_message(session_id: str):
+        """Deprecated singular message endpoint for stale desktop bundles."""
+        return deprecated_api_response(
+            deprecated_path=f"/api/sessions/{session_id}/message",
+            replacement_path=f"/api/sessions/{session_id}/intervene",
+            replacement_method="POST",
+            message=(
+                "Deprecated API path. Refresh the dashboard bundle and use "
+                f"POST /api/sessions/{session_id}/intervene."
+            ),
+        )
 
     @router.post("/{session_id}/interrupt")
     async def interrupt_session(session_id: str) -> dict:
