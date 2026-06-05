@@ -18,6 +18,13 @@ export const BOARD_CANVAS_HEIGHT = 12000;
 export const BOARD_CANVAS_ORIGIN_X = BOARD_CANVAS_WIDTH / 2;
 export const BOARD_CANVAS_ORIGIN_Y = BOARD_CANVAS_HEIGHT / 2;
 
+export function boardToCanvasStyle(position: { x: number; y: number }) {
+  return {
+    left: BOARD_CANVAS_ORIGIN_X + position.x,
+    top: BOARD_CANVAS_ORIGIN_Y + position.y,
+  };
+}
+
 export interface FolderBoardWorkspaceItem {
   type: "folder";
   id: string;

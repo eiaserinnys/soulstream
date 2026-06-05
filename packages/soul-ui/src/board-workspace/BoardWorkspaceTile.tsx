@@ -144,6 +144,7 @@ export function BoardWorkspaceTile({
   const config = STATUS_CONFIG[item.session.status] ?? STATUS_CONFIG.unknown;
   const activityTime =
     item.session.lastMessage?.timestamp ?? item.session.updatedAt ?? item.session.createdAt;
+  const stackStatus = item.childStack?.status;
   return (
     <button
       key={item.id}
@@ -157,6 +158,10 @@ export function BoardWorkspaceTile({
           !isSelected &&
           !remoteSelectionColor &&
           "ring-1 ring-ring ring-offset-2 ring-offset-background",
+        stackStatus === "running" &&
+          "animate-[pulse_1.5s_ease-in-out_infinite] ring-2 ring-success ring-offset-2 ring-offset-background shadow-md",
+        stackStatus === "error" &&
+          "ring-2 ring-accent-red ring-offset-2 ring-offset-background shadow-md",
       )}
       style={tileStyle}
       onPointerDown={(event) => onTilePointerDown(event, item)}
@@ -168,36 +173,33 @@ export function BoardWorkspaceTile({
     >
       <div className="relative flex min-h-0 flex-1 flex-col">
         {item.childStack && (
-          <>
-            <span
-              data-testid="board-session-stack-shadow"
-              className="pointer-events-none absolute bottom-1 right-1 h-14 w-24 rounded-md border border-border/80 bg-transparent shadow-sm"
-              aria-hidden="true"
-            />
-            <span
-              role="button"
-              tabIndex={0}
-              data-testid="board-session-child-stack-badge"
-              className={cn(
-                "absolute right-0 top-0 z-10 inline-flex h-5 min-w-8 items-center justify-center gap-0.5 rounded border border-border bg-card px-1 text-[10px] font-semibold text-muted-foreground shadow-sm",
-                isStackExpanded && "border-primary text-primary ring-1 ring-primary",
-              )}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                onToggleChildStack?.(item);
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter" && event.key !== " ") return;
-                event.preventDefault();
-                event.stopPropagation();
-                onToggleChildStack?.(item);
-              }}
-            >
-              <span aria-hidden="true">⤷</span>
-              {item.childStack.count}
-            </span>
-          </>
+          <span
+            role="button"
+            tabIndex={0}
+            data-testid="board-session-child-stack-badge"
+            className={cn(
+              "absolute right-0 top-0 z-10 inline-flex h-5 min-w-8 items-center justify-center gap-0.5 rounded border border-border bg-card px-1 text-[10px] font-semibold text-muted-foreground shadow-sm transition-[border-color,box-shadow,color,opacity] duration-200",
+              isStackExpanded && "border-primary text-primary ring-1 ring-primary",
+              stackStatus === "running" &&
+                "animate-[pulse_1.5s_ease-in-out_infinite] border-success text-success ring-1 ring-success",
+              stackStatus === "error" &&
+                "border-accent-red text-accent-red ring-1 ring-accent-red",
+            )}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              onToggleChildStack?.(item);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              event.stopPropagation();
+              onToggleChildStack?.(item);
+            }}
+          >
+            <span aria-hidden="true">⤷</span>
+            {item.childStack.count}
+          </span>
         )}
         {item.parentRef && (
           <span

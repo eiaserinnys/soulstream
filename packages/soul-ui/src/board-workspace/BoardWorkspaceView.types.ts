@@ -1,0 +1,33 @@
+import type { CatalogBoardItem, CatalogFolder, FolderSettings, MarkdownDocument, SessionSummary } from "../shared/types";
+import type { LoadMoreCallback } from "../components/load-more-guard";
+import type { FolderWorkspaceViewMode } from "./folder-workspace-view-mode";
+
+export interface CreateMarkdownDocumentInput {
+  folderId: string;
+  title: string;
+  body: string;
+  x: number;
+  y: number;
+}
+
+export interface CreateMarkdownDocumentResult {
+  document: MarkdownDocument;
+  boardItem: CatalogBoardItem;
+}
+
+export interface BoardWorkspaceViewProps {
+  sessions?: SessionSummary[];
+  onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
+  onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
+  onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
+  onCreateFolder?: (name: string, parentFolderId: string | null) => Promise<CatalogFolder | void> | CatalogFolder | void;
+  onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
+  onDeleteFolder?: (folderId: string) => Promise<void> | void;
+  onUpdateFolderSettings?: (folderId: string, settings: FolderSettings) => Promise<void> | void;
+  onUpdateBoardItemPosition?: (boardItemId: string, x: number, y: number) => Promise<void> | void;
+  onCreateMarkdownDocument?: (input: CreateMarkdownDocumentInput) => Promise<CreateMarkdownDocumentResult>;
+  onLoadMore?: LoadMoreCallback;
+  hasMore?: boolean;
+  workspaceViewMode?: FolderWorkspaceViewMode;
+  onWorkspaceViewModeChange?: (mode: FolderWorkspaceViewMode) => void;
+}

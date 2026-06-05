@@ -93,12 +93,17 @@ const relationSessions: SessionSummary[] = [
   },
   {
     agentSessionId: "same-child",
-    status: "completed",
+    status: "running",
     eventCount: 2,
     agentId: "shay",
     agentName: "Shay",
     callerSessionId: "parent",
-    prompt: "Same child",
+    prompt: "Implement the same-folder child card summary\nwith extra detail",
+    lastMessage: {
+      type: "assistant",
+      preview: "Currently editing the child portal component\nsecond line ignored",
+      timestamp: "2026-06-04T01:30:00.000Z",
+    },
     updatedAt: "2026-06-04T01:00:00.000Z",
   },
   {
@@ -108,7 +113,12 @@ const relationSessions: SessionSummary[] = [
     agentId: "kiki",
     agentName: "Kiki",
     callerSessionId: "parent",
-    prompt: "Cross child",
+    prompt: "Review cross-folder delegated work",
+    lastMessage: {
+      type: "assistant",
+      preview: "Waiting for the target folder check",
+      timestamp: "2026-06-04T02:30:00.000Z",
+    },
     updatedAt: "2026-06-04T02:00:00.000Z",
   },
 ];
@@ -488,6 +498,8 @@ describe("BoardWorkspaceView", () => {
     expect(sessionTile?.className).toContain("bg-card");
     expect(sessionTile?.className).not.toContain("hover:bg-accent/50");
     expect(sessionTile?.className.split(/\s+/)).not.toContain("bg-accent");
+    expect(useDashboardStore.getState().activeSessionKey).toBe("session-a");
+    expect(Array.from(useDashboardStore.getState().selectedSessionIds)).toEqual(["session-a"]);
   });
 
   it("renders direct child sessions as a parent stack portal and cross-folder refs", async () => {
@@ -501,6 +513,8 @@ describe("BoardWorkspaceView", () => {
 
     const stackBadge = container.querySelector<HTMLElement>('[data-testid="board-session-child-stack-badge"]');
     expect(stackBadge?.textContent).toContain("2");
+    expect(stackBadge?.className).toContain("animate-[pulse_1.5s_ease-in-out_infinite]");
+    expect(container.querySelector('[data-testid="board-session-stack-shadow"]')).toBeNull();
     flushSync(() => {
       stackBadge!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
@@ -508,13 +522,30 @@ describe("BoardWorkspaceView", () => {
     expect(container.querySelector('[data-testid="board-child-portal"]')).not.toBeNull();
     expect(container.querySelectorAll('[data-testid="board-child-portal-card"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-testid="board-child-ref-card"]')).toHaveLength(1);
+    const childCard = container.querySelector<HTMLElement>('[data-testid="board-child-portal-card"]');
+    expect(childCard?.className).toContain("w-[280px]");
+    expect(childCard?.className).toContain("animate-[pulse_1.5s_ease-in-out_infinite]");
+    expect(childCard?.querySelector('[data-testid="board-child-first-message"]')?.textContent)
+      .toBe("Implement the same-folder child card summary");
+    expect(childCard?.querySelector('[data-testid="board-child-last-message"]')?.textContent)
+      .toBe("Currently editing the child portal component");
+    flushSync(() => {
+      childCard!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(useDashboardStore.getState().activeSessionKey).toBe("same-child");
+    expect(Array.from(useDashboardStore.getState().selectedSessionIds)).toEqual(["same-child"]);
 
+    flushSync(() => {
+      stackBadge!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
     const refCard = container.querySelector<HTMLElement>('[data-testid="board-child-ref-card"]');
     flushSync(() => {
       refCard!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     expect(useDashboardStore.getState().selectedFolderId).toBe("other");
+    expect(useDashboardStore.getState().activeSessionKey).toBe("cross-child");
+    expect(Array.from(useDashboardStore.getState().selectedSessionIds)).toEqual(["cross-child"]);
     await new Promise((resolve) => setTimeout(resolve, 0));
     const crossChildTile = container.querySelector<HTMLElement>('[data-session-id="cross-child"]');
     expect(crossChildTile?.className).toContain("animate-pulse");
@@ -527,7 +558,31 @@ describe("BoardWorkspaceView", () => {
 
     expect(useDashboardStore.getState().selectedFolderId).toBe("root");
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(container.querySelector<HTMLElement>('[data-session-id="parent"]')?.className).toContain("animate-pulse");
+    expect(container.querySelector<HTMLElement>('[data-session-id="parent"]')?.className)
+      .toContain("animate-[pulse_1.5s_ease-in-out_infinite]");
+  });
+
+  it("renders child stack errors with red rings instead of running pulse", () => {
+    const errorSessions = relationSessions.map((session) =>
+      session.agentSessionId === "cross-child" ? { ...session, status: "error" as const } : session,
+    );
+    ({ container, root } = renderBoard({}, {
+      catalog: { ...relationCatalog, sessionList: errorSessions },
+      sessions: errorSessions,
+    }));
+
+    const stackBadge = container.querySelector<HTMLElement>('[data-testid="board-session-child-stack-badge"]');
+    expect(stackBadge?.className).toContain("ring-accent-red");
+    expect(stackBadge?.className).not.toContain("animate-[pulse_1.5s_ease-in-out_infinite]");
+
+    flushSync(() => {
+      stackBadge!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(stackBadge?.className).toContain("ring-accent-red");
+
+    const refCard = container.querySelector<HTMLElement>('[data-testid="board-child-ref-card"]');
+    expect(refCard?.className).toContain("ring-accent-red");
+    expect(container.querySelector('[data-testid="board-child-last-message"]')?.className).toContain("text-accent-red");
   });
 
   it("folds the child portal with Escape and empty canvas clicks", () => {
