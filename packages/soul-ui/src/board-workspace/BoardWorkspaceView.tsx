@@ -34,6 +34,7 @@ import {
   type BoardContextMenuState,
 } from "./BoardWorkspaceContextMenus";
 import { useBoardWorkspaceDrag } from "./useBoardWorkspaceDrag";
+import { useBoardYjsRuntime } from "./board-yjs-client";
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
 const DOT_GRID_STYLE = {
@@ -85,8 +86,8 @@ export function BoardWorkspaceView({
   onRenameFolder,
   onDeleteFolder,
   onUpdateFolderSettings,
-  onUpdateBoardItemPosition,
-  onCreateMarkdownDocument,
+  onUpdateBoardItemPosition: _onUpdateBoardItemPosition,
+  onCreateMarkdownDocument: _onCreateMarkdownDocument,
   onLoadMore,
   hasMore,
   workspaceViewMode,
@@ -115,6 +116,29 @@ export function BoardWorkspaceView({
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadMoreGateRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const folders = catalog?.folders ?? [];
+  const selectedFolder = folders.find((folder) => folder.id === selectedFolderId) ?? null;
+  const displaySessions = useMemo(() => applyCatalogDisplayNames(sessions, catalog), [sessions, catalog]);
+  const boardSync = useBoardYjsRuntime({
+    folderId: selectedFolderId,
+    catalog,
+    selectionItemId: selectedBoardItemId,
+  });
+  const effectiveCatalog = useMemo(() => {
+    if (!catalog || !boardSync.boardItems || boardSync.isLoading) return catalog;
+    return { ...catalog, boardItems: boardSync.boardItems };
+  }, [boardSync.boardItems, boardSync.isLoading, catalog]);
+  const remoteSelectionByItemId = useMemo(() => {
+    const selections = new Map<string, string>();
+    for (const selection of boardSync.remoteSelections) {
+      selections.set(selection.itemId, selection.color);
+    }
+    return selections;
+  }, [boardSync.remoteSelections]);
+  const yjsUpdateBoardItemPosition = useCallback((boardItemId: string, x: number, y: number) => {
+    boardSync.runtime?.updateBoardItemPosition(boardItemId, x, y);
+    updateBoardItemPosition(boardItemId, x, y);
+  }, [boardSync.runtime, updateBoardItemPosition]);
   const {
     dragPreview,
     handleCanvasPointerDown,
@@ -124,13 +148,8 @@ export function BoardWorkspaceView({
     shouldSuppressTileClick,
   } = useBoardWorkspaceDrag({
     scrollRef,
-    updateBoardItemPosition,
-    onUpdateBoardItemPosition,
+    updateBoardItemPosition: yjsUpdateBoardItemPosition,
   });
-
-  const folders = catalog?.folders ?? [];
-  const selectedFolder = folders.find((folder) => folder.id === selectedFolderId) ?? null;
-  const displaySessions = useMemo(() => applyCatalogDisplayNames(sessions, catalog), [sessions, catalog]);
 
   const breadcrumbs = useMemo(
     () => getFolderBreadcrumbs(folders, selectedFolderId),
@@ -138,13 +157,13 @@ export function BoardWorkspaceView({
   );
 
   const boardItems = useMemo(() => {
-    if (!catalog) return [];
+    if (!effectiveCatalog) return [];
     return buildBoardWorkspaceItems({
-      catalog,
+      catalog: effectiveCatalog,
       selectedFolderId,
       sessions: displaySessions,
     });
-  }, [catalog, selectedFolderId, displaySessions]);
+  }, [effectiveCatalog, selectedFolderId, displaySessions]);
 
   const handleCreateFolder = async (name: string) => {
     const position = createFolderPosition ? snapBoardPosition(createFolderPosition.x, createFolderPosition.y) : null;
@@ -158,18 +177,8 @@ export function BoardWorkspaceView({
         x: position.x,
         y: position.y,
       };
+      boardSync.runtime?.upsertBoardItem(boardItem);
       addBoardItem(boardItem);
-      try {
-        await onUpdateBoardItemPosition?.(boardItem.id, position.x, position.y);
-      } catch (err) {
-        removeBoardItem(boardItem.id);
-        toastManager.add({
-          title: "Folder placement failed",
-          description: "The folder was created, but its board position was restored by the server.",
-          type: "warning",
-        });
-        console.error("Folder board item placement failed:", err);
-      }
     }
     setCreateFolderPosition(null);
     setCreateDialogOpen(false);
@@ -183,12 +192,11 @@ export function BoardWorkspaceView({
   };
 
   const createMarkdownAt = useCallback(async (position?: { x: number; y: number }) => {
-    if (!selectedFolderId || !onCreateMarkdownDocument) return;
+    if (!selectedFolderId || !boardSync.runtime) return;
     const resolved = position ?? findFirstOpenBoardPosition(boardItems);
     const snapped = snapBoardPosition(resolved.x, resolved.y);
     try {
-      const result = await onCreateMarkdownDocument({
-        folderId: selectedFolderId,
+      const result = boardSync.runtime.createMarkdownDocument({
         title: "Untitled document",
         body: "",
         x: snapped.x,
@@ -202,7 +210,16 @@ export function BoardWorkspaceView({
     } catch (err) {
       console.error("Markdown document creation failed:", err);
     }
-  }, [addBoardItem, boardItems, isMobile, onCreateMarkdownDocument, selectedFolderId, setActiveBoardDocument, setActiveTab]);
+  }, [addBoardItem, boardItems, boardSync.runtime, isMobile, selectedFolderId, setActiveBoardDocument, setActiveTab]);
+
+  useEffect(() => {
+    if (!boardSync.connectionError) return;
+    toastManager.add({
+      title: "Board sync unavailable",
+      description: boardSync.connectionError,
+      type: "warning",
+    });
+  }, [boardSync.connectionError]);
 
   const openNewSessionAt = useCallback((position?: { x: number; y: number }) => {
     const boardPosition = position ? snapBoardPosition(position.x, position.y) : undefined;
@@ -329,7 +346,14 @@ export function BoardWorkspaceView({
             ...DOT_GRID_STYLE,
           }}
         >
-          {boardItems.length === 0 && (
+          {boardSync.isLoading && (
+            <div className="absolute left-3 top-3 z-30 rounded-md border border-border bg-background/90 p-2 shadow-sm">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
+              <span className="sr-only">Loading board sync</span>
+            </div>
+          )}
+
+          {boardItems.length === 0 && !boardSync.isLoading && (
             <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
               No folders or sessions on this board
             </div>
@@ -347,6 +371,7 @@ export function BoardWorkspaceView({
                   (item.type === "session" && activeSessionKey === item.session.agentSessionId) ||
                   (item.type === "markdown" && activeBoardDocumentId === item.documentId)
                 }
+                remoteSelectionColor={remoteSelectionByItemId.get(item.boardItemId)}
                 onTilePointerDown={handleTilePointerDown}
                 onTileContextMenu={handleTileContextMenu}
                 shouldSuppressClick={shouldSuppressTileClick}
@@ -372,7 +397,7 @@ export function BoardWorkspaceView({
           {dragPreview && (
             <div
               data-testid="board-drag-ghost"
-              className="pointer-events-none absolute z-20 h-[120px] w-[160px] rounded-md border-2 border-dashed border-primary/70 bg-primary/10 opacity-50"
+              className="pointer-events-none absolute z-20 h-[160px] w-[280px] rounded-md border-2 border-dashed border-primary/70 bg-primary/10 opacity-50"
               style={boardToCanvasStyle(snapBoardPosition(dragPreview.x, dragPreview.y))}
             />
           )}
@@ -400,6 +425,7 @@ export function BoardWorkspaceView({
           displaySessions={displaySessions}
           folders={folders}
           activeBoardDocumentId={activeBoardDocumentId}
+          boardYjsRuntime={boardSync.runtime}
           onCloseCardContextMenu={closeCardContextMenu}
           onOpenCreateFolder={openCreateFolderDialog}
           onOpenNewSession={openNewSessionAt}

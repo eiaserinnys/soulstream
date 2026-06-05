@@ -24,6 +24,32 @@ export {
 } from "./board-workspace-items";
 export type { BoardWorkspaceItem } from "./board-workspace-items";
 export {
+  buildBoardYjsUrl,
+  catalogBoardItemsFromYDoc,
+  createMarkdownYjsDocument,
+  deleteBoardYjsItem,
+  getBoardYjsDocumentName,
+  getBoardYjsRuntime,
+  getOrCreateMarkdownText,
+  isBoardYjsBrowserConnectionAvailable,
+  placeBoardSessionInYjs,
+  readRemoteBoardSelections,
+  registerBoardYjsRuntime,
+  seedBoardYDocFromCatalog,
+  setBoardAwarenessSelection,
+  subscribeBoardYjsRuntime,
+  updateBoardYjsItemPosition,
+  updateMarkdownYjsBody,
+  updateMarkdownYjsTitle,
+  upsertBoardYjsItem,
+  useBoardYjsRuntime,
+} from "./board-yjs-client";
+export type {
+  BoardYjsItemValue,
+  BoardYjsRuntime,
+  RemoteBoardSelection,
+} from "./board-yjs-client";
+export {
   getFolderWorkspaceViewModeStorageKey,
   readFolderWorkspaceViewMode,
   writeFolderWorkspaceViewMode,

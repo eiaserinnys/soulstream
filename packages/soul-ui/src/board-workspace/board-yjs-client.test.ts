@@ -1,0 +1,96 @@
+import { describe, expect, it } from "vitest";
+import { Awareness, applyAwarenessUpdate, encodeAwarenessUpdate } from "y-protocols/awareness";
+import * as Y from "yjs";
+
+import type { CatalogState } from "../shared/types";
+import {
+  catalogBoardItemsFromYDoc,
+  createMarkdownYjsDocument,
+  getBoardYjsDocumentName,
+  readRemoteBoardSelections,
+  seedBoardYDocFromCatalog,
+  setBoardAwarenessSelection,
+  updateBoardYjsItemPosition,
+} from "./board-yjs-client";
+
+const catalog: CatalogState = {
+  folders: [],
+  sessions: {},
+  boardItems: [{
+    id: "session:s1",
+    folderId: "f1",
+    itemType: "session",
+    itemId: "s1",
+    x: 0,
+    y: 0,
+  }],
+};
+
+describe("board-yjs-client", () => {
+  it("folder id를 Hocuspocus document name으로 변환", () => {
+    expect(getBoardYjsDocumentName("f1")).toBe("board-folder:f1");
+  });
+
+  it("catalog seed를 Y-doc boardItems map으로 로드하고 position을 즉시 갱신", () => {
+    const doc = new Y.Doc();
+    seedBoardYDocFromCatalog(doc, "f1", catalog);
+
+    updateBoardYjsItemPosition(doc, "session:s1", 280, 160);
+
+    expect(catalogBoardItemsFromYDoc("f1", doc)[0]).toMatchObject({
+      id: "session:s1",
+      x: 280,
+      y: 160,
+    });
+  });
+
+  it("Yjs update 적용으로 두 doc 사이 board position이 동기화", () => {
+    const a = new Y.Doc();
+    const b = new Y.Doc();
+    seedBoardYDocFromCatalog(a, "f1", catalog);
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
+
+    updateBoardYjsItemPosition(a, "session:s1", -80, 40);
+    Y.applyUpdate(b, Y.encodeStateAsUpdate(a));
+
+    expect(catalogBoardItemsFromYDoc("f1", b)[0]).toMatchObject({
+      x: -80,
+      y: 40,
+    });
+  });
+
+  it("markdown document는 board item과 Y.Text를 같이 만든다", () => {
+    const doc = new Y.Doc();
+
+    const result = createMarkdownYjsDocument(doc, "f1", {
+      documentId: "d1",
+      title: "Note",
+      body: "hello",
+      x: 0,
+      y: 0,
+    });
+
+    expect(result.boardItem).toMatchObject({ id: "markdown:d1", itemType: "markdown" });
+    expect(doc.getMap<Y.Text>("markdownBodies").get("d1")?.toString()).toBe("hello");
+  });
+
+  it("awareness selection은 remote client만 읽는다", () => {
+    const localDoc = new Y.Doc();
+    const remoteDoc = new Y.Doc();
+    const local = new Awareness(localDoc);
+    const remote = new Awareness(remoteDoc);
+
+    setBoardAwarenessSelection(local, "session:s1", "#22c55e");
+    applyAwarenessUpdate(
+      remote,
+      encodeAwarenessUpdate(local, [local.clientID]),
+      "test",
+    );
+
+    expect(readRemoteBoardSelections(remote)).toEqual([{
+      clientId: local.clientID,
+      itemId: "session:s1",
+      color: "#22c55e",
+    }]);
+  });
+});

@@ -195,6 +195,104 @@ describe("SessionDB.appendMetadata", () => {
   });
 });
 
+describe("SessionDB board Yjs persistence", () => {
+  it("snapshot 저장과 조회는 board_yjs_documents를 사용", async () => {
+    const snapshot = Buffer.from([1, 2, 3]);
+    const { sql, calls } = createMockSql((call) => {
+      if (call.fragments.join("?").includes("SELECT snapshot FROM board_yjs_documents")) {
+        return [{ snapshot }];
+      }
+      return [];
+    });
+    const db = new SessionDB(sql);
+
+    await db.storeBoardYjsSnapshot("board-folder:f1", snapshot);
+    const loaded = await db.getBoardYjsSnapshot("board-folder:f1");
+
+    expect(calls[0].fragments.join("?")).toContain("INSERT INTO board_yjs_documents");
+    expect(calls[0].values[0]).toBe("board-folder:f1");
+    expect(calls[0].values[1]).toEqual(snapshot);
+    expect(loaded).toEqual(new Uint8Array(snapshot));
+  });
+
+  it("update log는 document row를 보장한 뒤 board_yjs_updates에 append", async () => {
+    const { sql, calls } = createMockSql();
+    const db = new SessionDB(sql);
+
+    await db.appendBoardYjsUpdate("board-folder:f1", new Uint8Array([9]));
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].fragments.join("?")).toContain("INSERT INTO board_yjs_documents");
+    expect(calls[1].fragments.join("?")).toContain("INSERT INTO board_yjs_updates");
+    expect(calls[1].values).toEqual(["board-folder:f1", Buffer.from([9])]);
+  });
+
+  it("첫 진입 seed는 board_items와 markdown_documents를 함께 로드", async () => {
+    const { sql } = createMockSql((call) => {
+      const query = call.fragments.join("?");
+      if (query.includes("board_item_get_all")) {
+        return [
+          {
+            id: "markdown:d1",
+            folder_id: "f1",
+            item_type: "markdown",
+            item_id: "d1",
+            x: 0,
+            y: 0,
+            metadata: { title: "Note" },
+            created_at: null,
+            updated_at: null,
+          },
+          {
+            id: "session:s2",
+            folder_id: "f2",
+            item_type: "session",
+            item_id: "s2",
+            x: 0,
+            y: 0,
+            metadata: {},
+            created_at: null,
+            updated_at: null,
+          },
+        ];
+      }
+      if (query.includes("FROM markdown_documents")) {
+        return [{ id: "d1", title: "Note", body: "Body", created_at: null, updated_at: null }];
+      }
+      return [];
+    });
+    const db = new SessionDB(sql);
+
+    const seed = await db.loadBoardYjsSeed("f1");
+
+    expect(seed.boardItems).toHaveLength(1);
+    expect(seed.boardItems[0].id).toBe("markdown:d1");
+    expect(seed.markdownDocuments).toEqual([{ id: "d1", title: "Note", body: "Body" }]);
+  });
+
+  it("replica sync는 폴더 내 누락 item 삭제 후 board_items와 markdown_documents를 upsert", async () => {
+    const { sql, calls } = createMockSql();
+    const db = new SessionDB(sql);
+
+    await db.syncBoardYjsReplica("f1", {
+      boardItems: [{
+        id: "markdown:d1",
+        folderId: "f1",
+        itemType: "markdown",
+        itemId: "d1",
+        x: 280,
+        y: 160,
+        metadata: { title: "Note" },
+      }],
+      markdownDocuments: [{ id: "d1", title: "Note", body: "Body" }],
+    });
+
+    expect(calls[0].fragments.join("?")).toContain("DELETE FROM board_items");
+    expect(calls[1].fragments.join("?")).toContain("INSERT INTO board_items");
+    expect(calls[2].fragments.join("?")).toContain("INSERT INTO markdown_documents");
+  });
+});
+
 describe("SessionDB.setClaudeSessionId (F-3B)", () => {
   it("T5: session_set_claude_id stored proc에 (sessionId, threadId) 전달", async () => {
     const { sql, calls } = createMockSql();

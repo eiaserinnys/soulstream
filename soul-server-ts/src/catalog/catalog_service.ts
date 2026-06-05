@@ -18,8 +18,8 @@ import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 const BOARD_GRID_SIZE = 20;
-const BOARD_TILE_WIDTH = 160;
-const BOARD_TILE_HEIGHT = 120;
+const BOARD_TILE_WIDTH = 280;
+const BOARD_TILE_HEIGHT = 160;
 const BOARD_DEFAULT_COLUMNS = 4;
 
 export interface CatalogFolderDto {

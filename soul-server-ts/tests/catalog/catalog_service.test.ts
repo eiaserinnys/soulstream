@@ -246,16 +246,16 @@ describe("CatalogService board items", () => {
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
 
-  it("createMarkdownDocument는 좌표가 없으면 첫 빈 160px 슬롯에 배치", async () => {
+  it("createMarkdownDocument는 좌표가 없으면 첫 빈 280px 슬롯에 배치", async () => {
     const db = {
       ensureBoardItems: vi.fn().mockResolvedValue(undefined),
       getBoardItems: vi.fn().mockResolvedValue([
         { folderId: "f1", x: 0, y: 0 },
-        { folderId: "f1", x: 160, y: 0 },
+        { folderId: "f1", x: 280, y: 0 },
       ]),
       createMarkdownDocument: vi.fn().mockResolvedValue({
         document: { id: "doc-1", title: "Note", body: "" },
-        boardItem: { id: "markdown:doc-1", folderId: "f1", itemType: "markdown", itemId: "doc-1", x: 320, y: 0 },
+        boardItem: { id: "markdown:doc-1", folderId: "f1", itemType: "markdown", itemId: "doc-1", x: 560, y: 0 },
       }),
       getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
     } as unknown as SessionDB;
@@ -267,7 +267,7 @@ describe("CatalogService board items", () => {
     expect(db.ensureBoardItems).toHaveBeenCalledTimes(1);
     expect(db.createMarkdownDocument).toHaveBeenCalledWith(expect.objectContaining({
       folderId: "f1",
-      x: 320,
+      x: 560,
       y: 0,
     }));
   });

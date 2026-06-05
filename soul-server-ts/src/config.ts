@@ -23,6 +23,8 @@ export const EnvSchema = z
       .default("info"),
     DASH_USER_NAME: z.string().default(""),
     DASH_USER_PORTRAIT: z.string().default(""),
+    GOOGLE_CLIENT_ID: z.string().optional(),
+    JWT_SECRET: z.string().optional(),
     /** LLM proxy provider keys. Optional — route mounts only for configured providers. */
     LLM_OPENAI_API_KEY: z.string().optional(),
     LLM_ANTHROPIC_API_KEY: z.string().optional(),
@@ -147,6 +149,13 @@ export const EnvSchema = z
         path: ["MCP_ALLOWED_HOSTS"],
         message:
           "MCP_ALLOWED_HOSTS or MCP_REQUIRE_AUTH required when HOST is non-loopback and MCP_ENABLED",
+      });
+    }
+    if (env.GOOGLE_CLIENT_ID && !env.JWT_SECRET) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["JWT_SECRET"],
+        message: "JWT_SECRET is required when GOOGLE_CLIENT_ID enables dashboard auth",
       });
     }
   });

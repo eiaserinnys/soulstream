@@ -1,8 +1,8 @@
 import type { CatalogBoardItem, CatalogFolder, CatalogState, SessionSummary } from "../shared/types";
 
 export const BOARD_GRID_SIZE = 20;
-export const BOARD_TILE_WIDTH = 160;
-export const BOARD_TILE_HEIGHT = 120;
+export const BOARD_TILE_WIDTH = 280;
+export const BOARD_TILE_HEIGHT = 160;
 export const BOARD_CANVAS_BUFFER = 200;
 export const BOARD_CANVAS_WIDTH = 20000;
 export const BOARD_CANVAS_HEIGHT = 12000;
