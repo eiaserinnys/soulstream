@@ -421,11 +421,26 @@ describe("SessionDB folder ops (B-5)", () => {
       { session_id: "s1", folder_id: "f1", display_name: "Hello" },
       { session_id: "s2", folder_id: null, display_name: null },
     ];
+    const boardRows = [
+      {
+        id: "session:s1",
+        folder_id: "f1",
+        item_type: "session",
+        item_id: "s1",
+        x: 0,
+        y: 0,
+        metadata: {},
+        created_at: createdAt,
+        updated_at: createdAt,
+      },
+    ];
     const { sql } = createMockSql((call) => {
       const text = call.fragments.join("|");
       callIndex += 1;
+      if (text.includes("board_seed_items")) return [];
       if (text.includes("folder_get_all")) return folderRows;
       if (text.includes("catalog_get_sessions")) return sessionRows;
+      if (text.includes("board_item_get_all")) return boardRows;
       return [];
     });
     const catalog = await new SessionDB(sql).getCatalog();
@@ -444,7 +459,20 @@ describe("SessionDB folder ops (B-5)", () => {
       s1: { folderId: "f1", displayName: "Hello" },
       s2: { folderId: null, displayName: null },
     });
-    expect(callIndex).toBe(2);
+    expect(catalog.boardItems).toEqual([
+      {
+        id: "session:s1",
+        folderId: "f1",
+        itemType: "session",
+        itemId: "s1",
+        x: 0,
+        y: 0,
+        metadata: {},
+        createdAt: "2026-06-03T00:00:00.000Z",
+        updatedAt: "2026-06-03T00:00:00.000Z",
+      },
+    ]);
+    expect(callIndex).toBe(4);
   });
 });
 

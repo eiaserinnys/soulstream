@@ -1,21 +1,43 @@
-import type { CatalogFolder, CatalogState, SessionSummary } from "../shared/types";
+import type { CatalogBoardItem, CatalogFolder, CatalogState, SessionSummary } from "../shared/types";
+
+export const BOARD_GRID_SIZE = 40;
+export const BOARD_TILE_SIZE = 160;
+export const BOARD_CANVAS_BUFFER = 200;
 
 export interface FolderBoardWorkspaceItem {
   type: "folder";
   id: string;
+  boardItemId: string;
   folder: CatalogFolder;
   childCount: number;
-  activityMs: number;
+  x: number;
+  y: number;
 }
 
 export interface SessionBoardWorkspaceItem {
   type: "session";
   id: string;
+  boardItemId: string;
   session: SessionSummary;
-  activityMs: number;
+  x: number;
+  y: number;
 }
 
-export type BoardWorkspaceItem = FolderBoardWorkspaceItem | SessionBoardWorkspaceItem;
+export interface MarkdownBoardWorkspaceItem {
+  type: "markdown";
+  id: string;
+  boardItemId: string;
+  documentId: string;
+  title: string;
+  preview: string;
+  x: number;
+  y: number;
+}
+
+export type BoardWorkspaceItem =
+  | FolderBoardWorkspaceItem
+  | SessionBoardWorkspaceItem
+  | MarkdownBoardWorkspaceItem;
 
 export interface BuildBoardWorkspaceItemsParams {
   catalog: CatalogState;
@@ -57,13 +79,73 @@ export function formatBoardWorkspaceTime(value: string | undefined | null): stri
 }
 
 export function getFolderDirectChildCount(catalog: CatalogState, folderId: string): number {
-  const childFolderCount = catalog.folders.filter(
-    (folder) => (folder.parentFolderId ?? null) === folderId,
-  ).length;
-  const sessionCount = Object.values(catalog.sessions).filter(
-    (assignment) => assignment.folderId === folderId,
-  ).length;
+  if (catalog.boardItems) {
+    return catalog.boardItems.filter((item) => item.folderId === folderId).length;
+  }
+  const childFolderCount = catalog.folders.filter((folder) => (folder.parentFolderId ?? null) === folderId).length;
+  const sessionCount = Object.values(catalog.sessions).filter((assignment) => assignment.folderId === folderId).length;
   return childFolderCount + sessionCount;
+}
+
+function metadataText(item: CatalogBoardItem, key: string): string {
+  const value = item.metadata?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function buildPositionedItems({
+  catalog,
+  selectedFolderId,
+  sessions,
+}: BuildBoardWorkspaceItemsParams): BoardWorkspaceItem[] {
+  const folderById = new Map(catalog.folders.map((folder) => [folder.id, folder]));
+  const sessionById = new Map(sessions.map((session) => [session.agentSessionId, session]));
+  const selectedId = selectedFolderId ?? "";
+  const items: BoardWorkspaceItem[] = [];
+
+  for (const boardItem of catalog.boardItems ?? []) {
+    if (boardItem.folderId !== selectedId) continue;
+    if (boardItem.itemType === "subfolder") {
+      const folder = folderById.get(boardItem.itemId);
+      if (!folder) continue;
+      items.push({
+        type: "folder",
+        id: folder.id,
+        boardItemId: boardItem.id,
+        folder,
+        childCount: getFolderDirectChildCount(catalog, folder.id),
+        x: boardItem.x,
+        y: boardItem.y,
+      });
+      continue;
+    }
+    if (boardItem.itemType === "session") {
+      const session = sessionById.get(boardItem.itemId);
+      if (!session) continue;
+      items.push({
+        type: "session",
+        id: session.agentSessionId,
+        boardItemId: boardItem.id,
+        session,
+        x: boardItem.x,
+        y: boardItem.y,
+      });
+      continue;
+    }
+    if (boardItem.itemType === "markdown") {
+      items.push({
+        type: "markdown",
+        id: boardItem.itemId,
+        boardItemId: boardItem.id,
+        documentId: boardItem.itemId,
+        title: metadataText(boardItem, "title") || "Untitled document",
+        preview: metadataText(boardItem, "preview"),
+        x: boardItem.x,
+        y: boardItem.y,
+      });
+    }
+  }
+
+  return items.sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
 }
 
 export function buildBoardWorkspaceItems({
@@ -71,29 +153,58 @@ export function buildBoardWorkspaceItems({
   selectedFolderId,
   sessions,
 }: BuildBoardWorkspaceItemsParams): BoardWorkspaceItem[] {
+  if (catalog.boardItems) {
+    return buildPositionedItems({ catalog, selectedFolderId, sessions });
+  }
+
   const folderItems: FolderBoardWorkspaceItem[] = catalog.folders
     .filter((folder) => (folder.parentFolderId ?? null) === selectedFolderId)
-    .map((folder) => ({
-      type: "folder",
+    .map((folder, index) => ({
+      type: "folder" as const,
       id: folder.id,
+      boardItemId: `subfolder:${folder.id}`,
       folder,
       childCount: getFolderDirectChildCount(catalog, folder.id),
-      activityMs: getFolderActivityMs(folder),
+      x: (index % 4) * BOARD_TILE_SIZE,
+      y: Math.floor(index / 4) * BOARD_TILE_SIZE,
     }));
 
-  const sessionItems: SessionBoardWorkspaceItem[] = sessions.map((session) => ({
-    type: "session",
+  const sessionItems: SessionBoardWorkspaceItem[] = sessions.map((session, index) => ({
+    type: "session" as const,
     id: session.agentSessionId,
+    boardItemId: `session:${session.agentSessionId}`,
     session,
-    activityMs: getSessionActivityMs(session),
+    x: ((folderItems.length + index) % 4) * BOARD_TILE_SIZE,
+    y: Math.floor((folderItems.length + index) / 4) * BOARD_TILE_SIZE,
   }));
 
-  return [...folderItems, ...sessionItems].sort((a, b) => {
-    const activityDelta = b.activityMs - a.activityMs;
-    if (activityDelta !== 0) return activityDelta;
-    if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-    const aTitle = a.type === "folder" ? a.folder.name : getSessionBoardTitle(a.session);
-    const bTitle = b.type === "folder" ? b.folder.name : getSessionBoardTitle(b.session);
-    return aTitle.localeCompare(bTitle);
-  });
+  return [...folderItems, ...sessionItems];
+}
+
+export function snapBoardCoordinate(value: number): number {
+  return Math.max(0, Math.round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE);
+}
+
+export function snapBoardPosition(x: number, y: number): { x: number; y: number } {
+  return { x: snapBoardCoordinate(x), y: snapBoardCoordinate(y) };
+}
+
+export function findFirstOpenBoardPosition(items: readonly BoardWorkspaceItem[]): { x: number; y: number } {
+  const occupied = new Set(items.map((item) => `${item.x}:${item.y}`));
+  let index = 0;
+  while (true) {
+    const x = (index % 4) * BOARD_TILE_SIZE;
+    const y = Math.floor(index / 4) * BOARD_TILE_SIZE;
+    if (!occupied.has(`${x}:${y}`)) return { x, y };
+    index += 1;
+  }
+}
+
+export function computeBoardCanvasSize(items: readonly BoardWorkspaceItem[]): { width: number; height: number } {
+  const maxX = items.reduce((max, item) => Math.max(max, item.x), 0);
+  const maxY = items.reduce((max, item) => Math.max(max, item.y), 0);
+  return {
+    width: maxX + BOARD_TILE_SIZE + BOARD_CANVAS_BUFFER,
+    height: maxY + BOARD_TILE_SIZE + BOARD_CANVAS_BUFFER,
+  };
 }

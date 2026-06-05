@@ -117,6 +117,41 @@ class SqliteSessionDB(
         except Exception:
             pass
 
+        await self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS markdown_documents (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL DEFAULT '',
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
+        await self._conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS board_items (
+                id TEXT PRIMARY KEY,
+                folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+                item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder')),
+                item_id TEXT NOT NULL,
+                x REAL NOT NULL DEFAULT 0,
+                y REAL NOT NULL DEFAULT 0,
+                metadata TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT,
+                updated_at TEXT,
+                UNIQUE (folder_id, item_id)
+            )
+            """
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_board_items_folder ON board_items (folder_id, y, x)"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_board_items_ref ON board_items (item_type, item_id)"
+        )
+        await self._conn.commit()
+
         try:
             await self._conn.execute(
                 "ALTER TABLE sessions ADD COLUMN caller_session_id TEXT"

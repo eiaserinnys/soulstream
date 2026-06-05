@@ -43,8 +43,31 @@ export interface CatalogAssignment {
   displayName: string | null;
 }
 
+export type CatalogBoardItemType = "session" | "markdown" | "subfolder";
+
+export interface CatalogBoardItem {
+  id: string;
+  folderId: string;
+  itemType: CatalogBoardItemType;
+  itemId: string;
+  x: number;
+  y: number;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface MarkdownDocument {
+  id: string;
+  title: string;
+  body: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 /** 카탈로그 상태 */
 export interface CatalogState {
   folders: CatalogFolder[];
   sessions: Record<string, CatalogAssignment>;
+  boardItems?: CatalogBoardItem[];
 }

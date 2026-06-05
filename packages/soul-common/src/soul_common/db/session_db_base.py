@@ -272,6 +272,33 @@ class FolderProtocol(Protocol):
 
     async def get_catalog(self) -> dict: ...
 
+    async def ensure_board_items(self) -> None: ...
+
+    async def get_board_items(self) -> list[dict]: ...
+
+    async def update_board_item_position(self, board_item_id: str, x: float, y: float) -> None: ...
+
+    async def create_markdown_document(
+        self,
+        document_id: str,
+        folder_id: str,
+        title: str,
+        body: str,
+        x: float,
+        y: float,
+    ) -> dict: ...
+
+    async def get_markdown_document(self, document_id: str) -> Optional[dict]: ...
+
+    async def update_markdown_document(
+        self,
+        document_id: str,
+        title: Optional[str] = None,
+        body: Optional[str] = None,
+    ) -> Optional[dict]: ...
+
+    async def delete_markdown_document(self, document_id: str) -> None: ...
+
 
 @runtime_checkable
 class SearchProtocol(Protocol):
@@ -568,6 +595,40 @@ class SessionDBBase(ABC):
 
     @abstractmethod
     async def get_catalog(self) -> dict: ...
+
+    @abstractmethod
+    async def ensure_board_items(self) -> None: ...
+
+    @abstractmethod
+    async def get_board_items(self) -> list[dict]: ...
+
+    @abstractmethod
+    async def update_board_item_position(self, board_item_id: str, x: float, y: float) -> None: ...
+
+    @abstractmethod
+    async def create_markdown_document(
+        self,
+        document_id: str,
+        folder_id: str,
+        title: str,
+        body: str,
+        x: float,
+        y: float,
+    ) -> dict: ...
+
+    @abstractmethod
+    async def get_markdown_document(self, document_id: str) -> Optional[dict]: ...
+
+    @abstractmethod
+    async def update_markdown_document(
+        self,
+        document_id: str,
+        title: Optional[str] = None,
+        body: Optional[str] = None,
+    ) -> Optional[dict]: ...
+
+    @abstractmethod
+    async def delete_markdown_document(self, document_id: str) -> None: ...
 
     # ── 경량 세션 목록 ──
 

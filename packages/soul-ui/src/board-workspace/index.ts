@@ -1,5 +1,9 @@
 export { BoardWorkspaceView } from "./BoardWorkspaceView";
-export type { BoardWorkspaceViewProps } from "./BoardWorkspaceView";
+export type {
+  BoardWorkspaceViewProps,
+  CreateMarkdownDocumentInput,
+  CreateMarkdownDocumentResult,
+} from "./BoardWorkspaceView";
 export { FolderWorkspaceView } from "./FolderWorkspaceView";
 export type { FolderWorkspaceViewProps } from "./FolderWorkspaceView";
 export {
@@ -10,9 +14,13 @@ export {
 } from "./board-workspace-helpers";
 export {
   buildBoardWorkspaceItems,
+  computeBoardCanvasSize,
+  findFirstOpenBoardPosition,
   formatBoardWorkspaceTime,
   getSessionBoardPreview,
   getSessionBoardTitle,
+  snapBoardCoordinate,
+  snapBoardPosition,
 } from "./board-workspace-items";
 export type { BoardWorkspaceItem } from "./board-workspace-items";
 export {

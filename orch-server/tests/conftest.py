@@ -169,6 +169,22 @@ def mock_catalog_service():
     cs.move_sessions_to_folder = AsyncMock()
     cs.rename_session = AsyncMock()
     cs.delete_session = AsyncMock()
+    cs.update_board_item_position = AsyncMock()
+    cs.create_markdown_document = AsyncMock(return_value={
+        "document": {"id": "doc-1", "title": "Note", "body": "Body"},
+        "boardItem": {
+            "id": "markdown:doc-1",
+            "folderId": "f1",
+            "itemType": "markdown",
+            "itemId": "doc-1",
+            "x": 40,
+            "y": 80,
+            "metadata": {"title": "Note", "preview": "Body"},
+        },
+    })
+    cs.get_markdown_document = AsyncMock(return_value={"id": "doc-1", "title": "Note", "body": "Body"})
+    cs.update_markdown_document = AsyncMock(return_value={"id": "doc-1", "title": "New", "body": "Body"})
+    cs.delete_markdown_document = AsyncMock()
     cs.get_catalog = AsyncMock(return_value={"folders": [], "sessions": {}})
     return cs
 

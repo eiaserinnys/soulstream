@@ -111,6 +111,111 @@ export function registerCatalogTools(
   );
 
   server.registerTool(
+    "update_board_item_position",
+    {
+      description: "보드 항목 좌표 갱신. 좌표는 서버에서 40px 격자에 스냅된다.",
+      inputSchema: {
+        board_item_id: z.string().min(1),
+        x: z.number(),
+        y: z.number(),
+      },
+    },
+    async ({ board_item_id, x, y }) => {
+      try {
+        await runtime.catalogService.updateBoardItemPosition(board_item_id, x, y);
+        return jsonResult({ ok: true, board_item_id });
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "create_markdown_document",
+    {
+      description: "현재 보드 폴더에 마크다운 문서와 보드 카드를 생성.",
+      inputSchema: {
+        folder_id: z.string().min(1),
+        title: z.string().min(1),
+        body: z.string().default(""),
+        x: z.number().optional(),
+        y: z.number().optional(),
+      },
+    },
+    async ({ folder_id, title, body, x, y }) => {
+      try {
+        const result = await runtime.catalogService.createMarkdownDocument({
+          folderId: folder_id,
+          title,
+          body: body ?? "",
+          x,
+          y,
+        });
+        return jsonResult(result);
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_markdown_document",
+    {
+      description: "마크다운 문서 본문 조회.",
+      inputSchema: { document_id: z.string().min(1) },
+    },
+    async ({ document_id }) => {
+      try {
+        const document = await runtime.catalogService.getMarkdownDocument(document_id);
+        if (!document) return errorResult("document not found");
+        return jsonResult(document);
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "update_markdown_document",
+    {
+      description: "마크다운 문서 제목 또는 본문 수정.",
+      inputSchema: {
+        document_id: z.string().min(1),
+        title: z.string().optional(),
+        body: z.string().optional(),
+      },
+    },
+    async ({ document_id, title, body }) => {
+      try {
+        const document = await runtime.catalogService.updateMarkdownDocument(
+          document_id,
+          { ...(title !== undefined ? { title } : {}), ...(body !== undefined ? { body } : {}) },
+        );
+        if (!document) return errorResult("document not found");
+        return jsonResult(document);
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
+    "delete_markdown_document",
+    {
+      description: "마크다운 문서와 해당 보드 카드를 삭제.",
+      inputSchema: { document_id: z.string().min(1) },
+    },
+    async ({ document_id }) => {
+      try {
+        await runtime.catalogService.deleteMarkdownDocument(document_id);
+        return jsonResult({ ok: true, document_id });
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
     "get_folder_system_prompt",
     {
       description: "폴더 시스템 프롬프트 조회.",

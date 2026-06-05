@@ -15,6 +15,9 @@ import {
   updateFolderSettingsInCatalog,
   removeFolderFromCatalog,
   reorderFoldersInCatalog,
+  addBoardItemToCatalog,
+  updateBoardItemPositionInCatalog,
+  removeBoardItemFromCatalog,
 } from "../catalog-actions";
 
 export type CatalogSlice = Pick<
@@ -29,6 +32,9 @@ export type CatalogSlice = Pick<
     | "moveSessionsToFolder"
     | "renameSession"
     | "addFolder"
+    | "addBoardItem"
+    | "updateBoardItemPosition"
+    | "removeBoardItem"
     | "updateFolderName"
     | "updateFolderSettings"
     | "removeFolder"
@@ -76,6 +82,32 @@ export const createCatalogSlice: StateCreator<
     const updated = addFolderToCatalog(catalog, folder);
     if (updated === catalog) return; // 이미 존재
     set((state) => ({ catalog: updated, catalogVersion: state.catalogVersion + 1 }));
+  },
+
+  addBoardItem: (boardItem) => {
+    const { catalog } = get();
+    if (!catalog) return;
+    const updated = addBoardItemToCatalog(catalog, boardItem);
+    if (updated === catalog) return;
+    set((state) => ({ catalog: updated, catalogVersion: state.catalogVersion + 1 }));
+  },
+
+  updateBoardItemPosition: (boardItemId, x, y) => {
+    const { catalog } = get();
+    if (!catalog) return;
+    set((state) => ({
+      catalog: updateBoardItemPositionInCatalog(catalog, boardItemId, x, y),
+      catalogVersion: state.catalogVersion + 1,
+    }));
+  },
+
+  removeBoardItem: (boardItemId) => {
+    const { catalog } = get();
+    if (!catalog) return;
+    set((state) => ({
+      catalog: removeBoardItemFromCatalog(catalog, boardItemId),
+      catalogVersion: state.catalogVersion + 1,
+    }));
   },
 
   updateFolderName: (folderId, name) => {

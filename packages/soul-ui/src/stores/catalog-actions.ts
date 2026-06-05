@@ -5,7 +5,7 @@
  * 각 함수는 현재 CatalogState를 받아 새 CatalogState를 반환한다.
  */
 
-import type { CatalogState, CatalogFolder, CatalogFolderReorderItem } from "@shared/types";
+import type { CatalogState, CatalogFolder, CatalogFolderReorderItem, CatalogBoardItem } from "@shared/types";
 
 export function moveSessionsInCatalog(
   catalog: CatalogState,
@@ -85,7 +85,42 @@ export function removeFolderFromCatalog(
     folders: catalog.folders
       .filter((f) => f.id !== folderId)
       .map((f) => (f.parentFolderId === folderId ? { ...f, parentFolderId: null } : f)),
+    boardItems: catalog.boardItems?.filter((item) => item.folderId !== folderId && item.itemId !== folderId),
     sessions: updatedSessions,
+  };
+}
+
+export function addBoardItemToCatalog(
+  catalog: CatalogState,
+  boardItem: CatalogBoardItem,
+): CatalogState {
+  const current = catalog.boardItems ?? [];
+  if (current.some((item) => item.id === boardItem.id)) return catalog;
+  return { ...catalog, boardItems: [...current, boardItem] };
+}
+
+export function updateBoardItemPositionInCatalog(
+  catalog: CatalogState,
+  boardItemId: string,
+  x: number,
+  y: number,
+): CatalogState {
+  const current = catalog.boardItems ?? [];
+  return {
+    ...catalog,
+    boardItems: current.map((item) =>
+      item.id === boardItemId ? { ...item, x, y } : item,
+    ),
+  };
+}
+
+export function removeBoardItemFromCatalog(
+  catalog: CatalogState,
+  boardItemId: string,
+): CatalogState {
+  return {
+    ...catalog,
+    boardItems: (catalog.boardItems ?? []).filter((item) => item.id !== boardItemId),
   };
 }
 

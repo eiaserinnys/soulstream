@@ -17,6 +17,7 @@ export type UISlice = Pick<
   | "newSessionParentTask"
   | "newSessionDefaults"
   | "activeRightTab"
+  | "activeBoardDocumentId"
   | "dashboardConfig"
   | "activeTab"
 > &
@@ -26,6 +27,7 @@ export type UISlice = Pick<
     | "openNewSessionModal"
     | "closeNewSessionModal"
     | "setActiveRightTab"
+    | "setActiveBoardDocument"
     | "setDashboardConfig"
     | "setViewMode"
     | "selectFeed"
@@ -47,6 +49,7 @@ export const createUISlice: StateCreator<
   newSessionParentTask: null,
   newSessionDefaults: null,
   activeRightTab: "chat",
+  activeBoardDocumentId: null,
   dashboardConfig: null,
   activeTab: "feed",
 
@@ -63,6 +66,9 @@ export const createUISlice: StateCreator<
     set({ isNewSessionModalOpen: false, newSessionParentTask: null, newSessionDefaults: null }),
 
   setActiveRightTab: (activeRightTab) => set({ activeRightTab }),
+
+  setActiveBoardDocument: (activeBoardDocumentId) =>
+    set({ activeBoardDocumentId, activeRightTab: "chat" }),
 
   setDashboardConfig: (dashboardConfig) => set({ dashboardConfig }),
 

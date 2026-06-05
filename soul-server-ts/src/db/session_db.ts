@@ -91,6 +91,28 @@ export interface CatalogFolderRow {
   createdAt?: string;
 }
 
+export type BoardItemType = "session" | "markdown" | "subfolder";
+
+export interface CatalogBoardItemRow {
+  id: string;
+  folderId: string;
+  itemType: BoardItemType;
+  itemId: string;
+  x: number;
+  y: number;
+  metadata: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface MarkdownDocumentRow {
+  id: string;
+  title: string;
+  body: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 /** `session_get` 반환 행 (sessions 테이블 컬럼 매핑). */
 export interface SessionRow {
   session_id: string;
@@ -441,7 +463,9 @@ export class SessionDB {
   async getCatalog(): Promise<{
     folders: CatalogFolderRow[];
     sessions: Record<string, { folderId: string | null; displayName: string | null }>;
+    boardItems: CatalogBoardItemRow[];
   }> {
+    await this.ensureBoardItems();
     const folderRows = await this.sql<
       { id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null; created_at: Date | string | null }[]
     >`SELECT * FROM folder_get_all()`;
@@ -470,7 +494,156 @@ export class SessionDB {
       };
     }
 
-    return { folders, sessions };
+    const boardItems = await this.getBoardItems();
+
+    return { folders, sessions, boardItems };
+  }
+
+  async ensureBoardItems(): Promise<void> {
+    await this.sql`SELECT board_seed_items()`;
+  }
+
+  async getBoardItems(): Promise<CatalogBoardItemRow[]> {
+    const rows = await this.sql<
+      Array<{
+        id: string;
+        folder_id: string;
+        item_type: BoardItemType;
+        item_id: string;
+        x: string | number;
+        y: string | number;
+        metadata: unknown;
+        created_at: Date | string | null;
+        updated_at: Date | string | null;
+      }>
+    >`SELECT * FROM board_item_get_all()`;
+    return rows.map(toCatalogBoardItemRow);
+  }
+
+  async updateBoardItemPosition(
+    boardItemId: string,
+    x: number,
+    y: number,
+  ): Promise<void> {
+    await this.sql`
+      UPDATE board_items
+      SET x = ${x}, y = ${y}, updated_at = NOW()
+      WHERE id = ${boardItemId}
+    `;
+  }
+
+  async createMarkdownDocument(params: {
+    documentId: string;
+    folderId: string;
+    title: string;
+    body: string;
+    x: number;
+    y: number;
+  }): Promise<{ document: MarkdownDocumentRow; boardItem: CatalogBoardItemRow }> {
+    const rows = await this.sql<
+      Array<{
+        doc_id: string;
+        doc_title: string;
+        doc_body: string;
+        doc_created_at: Date | string | null;
+        doc_updated_at: Date | string | null;
+        item_id: string;
+        item_folder_id: string;
+        item_type: BoardItemType;
+        item_ref_id: string;
+        item_x: string | number;
+        item_y: string | number;
+        item_metadata: unknown;
+        item_created_at: Date | string | null;
+        item_updated_at: Date | string | null;
+      }>
+    >`
+      WITH doc AS (
+        INSERT INTO markdown_documents (id, title, body)
+        VALUES (${params.documentId}, ${params.title}, ${params.body})
+        RETURNING *
+      ),
+      item AS (
+        INSERT INTO board_items (id, folder_id, item_type, item_id, x, y)
+        VALUES (${"markdown:" + params.documentId}, ${params.folderId}, ${"markdown"}, ${params.documentId}, ${params.x}, ${params.y})
+        RETURNING *
+      )
+      SELECT
+        doc.id AS doc_id,
+        doc.title AS doc_title,
+        doc.body AS doc_body,
+        doc.created_at AS doc_created_at,
+        doc.updated_at AS doc_updated_at,
+        item.id AS item_id,
+        item.folder_id AS item_folder_id,
+        item.item_type AS item_type,
+        item.item_id AS item_ref_id,
+        item.x AS item_x,
+        item.y AS item_y,
+        item.metadata AS item_metadata,
+        item.created_at AS item_created_at,
+        item.updated_at AS item_updated_at
+      FROM doc, item
+    `;
+    const row = rows[0];
+    if (!row) {
+      throw new Error("Markdown document creation returned no rows");
+    }
+    const document = toMarkdownDocumentRow({
+      id: row.doc_id,
+      title: row.doc_title,
+      body: row.doc_body,
+      created_at: row.doc_created_at,
+      updated_at: row.doc_updated_at,
+    });
+    const boardItem = toCatalogBoardItemRow({
+      id: row.item_id,
+      folder_id: row.item_folder_id,
+      item_type: row.item_type,
+      item_id: row.item_ref_id,
+      x: row.item_x,
+      y: row.item_y,
+      metadata: row.item_metadata,
+      created_at: row.item_created_at,
+      updated_at: row.item_updated_at,
+    });
+    boardItem.metadata = {
+      title: params.title,
+      preview: params.body.replace(/\s+/g, " ").trim().slice(0, 180),
+    };
+    return { document, boardItem };
+  }
+
+  async getMarkdownDocument(documentId: string): Promise<MarkdownDocumentRow | null> {
+    const rows = await this.sql<
+      Array<{ id: string; title: string; body: string; created_at: Date | string | null; updated_at: Date | string | null }>
+    >`SELECT * FROM markdown_documents WHERE id = ${documentId}`;
+    return rows[0] ? toMarkdownDocumentRow(rows[0]) : null;
+  }
+
+  async updateMarkdownDocument(
+    documentId: string,
+    fields: { title?: string; body?: string },
+  ): Promise<MarkdownDocumentRow | null> {
+    if (fields.title !== undefined) {
+      await this.sql`
+        UPDATE markdown_documents
+        SET title = ${fields.title}, updated_at = NOW()
+        WHERE id = ${documentId}
+      `;
+    }
+    if (fields.body !== undefined) {
+      await this.sql`
+        UPDATE markdown_documents
+        SET body = ${fields.body}, updated_at = NOW()
+        WHERE id = ${documentId}
+      `;
+    }
+    return this.getMarkdownDocument(documentId);
+  }
+
+  async deleteMarkdownDocument(documentId: string): Promise<void> {
+    await this.sql`DELETE FROM markdown_documents WHERE id = ${documentId}`;
   }
 
   // ---------------------------------------------------------------------
@@ -976,6 +1149,50 @@ function toIsoString(value: Date | string | null | undefined): string | undefine
   if (value instanceof Date) return value.toISOString();
   const ms = Date.parse(value);
   return Number.isFinite(ms) ? new Date(ms).toISOString() : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function toCatalogBoardItemRow(row: {
+  id: string;
+  folder_id: string;
+  item_type: BoardItemType;
+  item_id: string;
+  x: string | number;
+  y: string | number;
+  metadata: unknown;
+  created_at: Date | string | null;
+  updated_at: Date | string | null;
+}): CatalogBoardItemRow {
+  return {
+    id: row.id,
+    folderId: row.folder_id,
+    itemType: row.item_type,
+    itemId: row.item_id,
+    x: Number(row.x),
+    y: Number(row.y),
+    metadata: isRecord(row.metadata) ? row.metadata : {},
+    ...(toIsoString(row.created_at) ? { createdAt: toIsoString(row.created_at) } : {}),
+    ...(toIsoString(row.updated_at) ? { updatedAt: toIsoString(row.updated_at) } : {}),
+  };
+}
+
+function toMarkdownDocumentRow(row: {
+  id: string;
+  title: string;
+  body: string;
+  created_at: Date | string | null;
+  updated_at: Date | string | null;
+}): MarkdownDocumentRow {
+  return {
+    id: row.id,
+    title: row.title,
+    body: row.body,
+    ...(toIsoString(row.created_at) ? { createdAt: toIsoString(row.created_at) } : {}),
+    ...(toIsoString(row.updated_at) ? { updatedAt: toIsoString(row.updated_at) } : {}),
+  };
 }
 
 function normalizeTranscriptSubpath(value: string | null | undefined): string | null {

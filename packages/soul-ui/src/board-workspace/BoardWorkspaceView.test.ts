@@ -31,6 +31,36 @@ const catalog: CatalogState = {
   sessions: {
     "session-a": { folderId: "root", displayName: null },
   },
+  boardItems: [
+    {
+      id: "subfolder:child-folder",
+      folderId: "root",
+      itemType: "subfolder",
+      itemId: "child-folder",
+      x: 40,
+      y: 80,
+    },
+    {
+      id: "session:session-a",
+      folderId: "root",
+      itemType: "session",
+      itemId: "session-a",
+      x: 200,
+      y: 40,
+    },
+    {
+      id: "markdown:doc-a",
+      folderId: "root",
+      itemType: "markdown",
+      itemId: "doc-a",
+      x: 360,
+      y: 80,
+      metadata: {
+        title: "Design note",
+        preview: "Markdown preview",
+      },
+    },
+  ],
 };
 
 const sessions: SessionSummary[] = [
@@ -85,6 +115,20 @@ function renderBoard(props: Partial<React.ComponentProps<typeof BoardWorkspaceVi
   return { container, root };
 }
 
+function dispatchPointer(
+  target: EventTarget,
+  type: string,
+  init: MouseEventInit = {},
+) {
+  const PointerCtor = window.PointerEvent ?? window.MouseEvent;
+  target.dispatchEvent(new PointerCtor(type, {
+    bubbles: true,
+    cancelable: true,
+    button: 0,
+    ...init,
+  }));
+}
+
 describe("BoardWorkspaceView", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
@@ -121,27 +165,33 @@ describe("BoardWorkspaceView", () => {
     window.matchMedia = originalMatchMedia as typeof window.matchMedia;
   });
 
-  it("renders fixed 160px square grid tiles for folders and sessions", () => {
+  it("renders fixed 160px positioned tiles on a 40px dotted canvas", () => {
     ({ container, root } = renderBoard());
 
-    const grid = container.querySelector('[data-testid="board-workspace-grid"]');
-    const folderTile = container.querySelector('[data-testid="board-folder-tile"]');
-    const sessionTile = container.querySelector('[data-testid="board-session-tile"]');
+    const canvas = container.querySelector<HTMLElement>('[data-testid="board-workspace-canvas"]');
+    const folderTile = container.querySelector<HTMLElement>('[data-testid="board-folder-tile"]');
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    const markdownTile = container.querySelector<HTMLElement>('[data-testid="board-markdown-tile"]');
 
-    expect(grid?.className).toContain("grid-cols-[repeat(auto-fill,160px)]");
-    expect(grid?.className).toContain("auto-rows-[160px]");
-    expect(grid?.className).toContain("gap-3");
-    expect(grid?.className).toContain("justify-start");
+    expect(canvas?.parentElement?.style.backgroundSize).toBe("40px 40px");
+    expect(canvas?.style.width).toBe("720px");
+    expect(canvas?.style.height).toBe("440px");
 
     expect(folderTile?.className).toContain("h-40");
     expect(folderTile?.className).toContain("w-40");
     expect(folderTile?.className).toContain("rounded-xl");
+    expect(folderTile?.style.left).toBe("40px");
+    expect(folderTile?.style.top).toBe("80px");
     expect(sessionTile?.className).toContain("h-40");
     expect(sessionTile?.className).toContain("w-40");
     expect(sessionTile?.className).toContain("rounded-xl");
+    expect(sessionTile?.style.left).toBe("200px");
+    expect(sessionTile?.style.top).toBe("40px");
+    expect(markdownTile?.style.left).toBe("360px");
+    expect(markdownTile?.style.top).toBe("80px");
   });
 
-  it("keeps folder names, session titles, agent profile, and previews bounded inside each tile", () => {
+  it("keeps folder names, session titles, markdown previews, and agent profiles bounded inside tiles", () => {
     ({ container, root } = renderBoard());
 
     expect(container.querySelector('[data-testid="board-folder-title"]')?.className).toContain("truncate");
@@ -154,6 +204,75 @@ describe("BoardWorkspaceView", () => {
       "/api/nodes/eias/agents/roselin_codex/portrait",
     );
     expect(container.querySelector('[data-testid="board-session-preview"]')?.className).toContain("line-clamp-2");
+    expect(container.querySelector('[data-testid="board-markdown-title"]')?.className).toContain("line-clamp-2");
+    expect(container.querySelector('[data-testid="board-markdown-preview"]')?.textContent).toBe("Markdown preview");
+  });
+
+  it("snaps dragged tiles to the 40px grid and persists the board item position", async () => {
+    const onUpdateBoardItemPosition = vi.fn().mockResolvedValue(undefined);
+    ({ container, root } = renderBoard({ onUpdateBoardItemPosition }));
+
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    expect(sessionTile).not.toBeNull();
+
+    flushSync(() => {
+      dispatchPointer(sessionTile!, "pointerdown", { clientX: 200, clientY: 40 });
+      dispatchPointer(window, "pointermove", { clientX: 255, clientY: 101 });
+      dispatchPointer(window, "pointerup", { clientX: 255, clientY: 101 });
+    });
+    await Promise.resolve();
+
+    expect(onUpdateBoardItemPosition).toHaveBeenCalledWith("session:session-a", 240, 120);
+    expect(sessionTile?.style.left).toBe("240px");
+    expect(sessionTile?.style.top).toBe("120px");
+  });
+
+  it("creates a markdown document from the New menu at the first open grid slot", async () => {
+    const onCreateMarkdownDocument = vi.fn().mockResolvedValue({
+      document: {
+        id: "doc-new",
+        title: "Untitled document",
+        body: "",
+      },
+      boardItem: {
+        id: "markdown:doc-new",
+        folderId: "root",
+        itemType: "markdown",
+        itemId: "doc-new",
+        x: 0,
+        y: 0,
+        metadata: {
+          title: "Untitled document",
+          preview: "",
+        },
+      },
+    });
+    ({ container, root } = renderBoard({ onCreateMarkdownDocument }));
+
+    const newButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("New"));
+    expect(newButton).not.toBeUndefined();
+
+    flushSync(() => {
+      newButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const documentButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("문서"));
+    expect(documentButton).not.toBeUndefined();
+
+    flushSync(() => {
+      documentButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await Promise.resolve();
+
+    expect(onCreateMarkdownDocument).toHaveBeenCalledWith({
+      folderId: "root",
+      title: "Untitled document",
+      body: "",
+      x: 0,
+      y: 0,
+    });
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-new");
   });
 
   it("auto-prefetches through a sentinel and suppresses duplicate intersections while pending", async () => {

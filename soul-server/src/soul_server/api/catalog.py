@@ -42,6 +42,24 @@ class BatchMoveRequest(BaseModel):
     folderId: Optional[str]
 
 
+class BoardItemPositionUpdate(BaseModel):
+    x: float
+    y: float
+
+
+class MarkdownDocumentCreate(BaseModel):
+    folderId: str
+    title: str
+    body: str = ""
+    x: Optional[float] = None
+    y: Optional[float] = None
+
+
+class MarkdownDocumentUpdate(BaseModel):
+    title: Optional[str] = None
+    body: Optional[str] = None
+
+
 def _field_supplied(model: BaseModel, field_name: str) -> bool:
     fields = getattr(model, "model_fields_set", None)
     if fields is None:
@@ -55,6 +73,45 @@ def create_catalog_router(catalog_service: CatalogService) -> APIRouter:
     @router.get("")
     async def get_catalog():
         return await catalog_service.get_catalog()
+
+    @router.patch("/board-items/{board_item_id}/position")
+    async def update_board_item_position(board_item_id: str, body: BoardItemPositionUpdate):
+        await catalog_service.update_board_item_position(board_item_id, body.x, body.y)
+        return {"ok": True}
+
+    @router.post("/markdown-documents", status_code=201)
+    async def create_markdown_document(body: MarkdownDocumentCreate):
+        return await catalog_service.create_markdown_document(
+            folder_id=body.folderId,
+            title=body.title,
+            body=body.body,
+            x=body.x,
+            y=body.y,
+        )
+
+    @router.get("/markdown-documents/{document_id}")
+    async def get_markdown_document(document_id: str):
+        document = await catalog_service.get_markdown_document(document_id)
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return document
+
+    @router.put("/markdown-documents/{document_id}")
+    async def update_markdown_document(document_id: str, body: MarkdownDocumentUpdate):
+        if not _field_supplied(body, "title") and not _field_supplied(body, "body"):
+            raise HTTPException(status_code=400, detail="No fields to update")
+        document = await catalog_service.update_markdown_document(
+            document_id,
+            title=body.title if _field_supplied(body, "title") else None,
+            body=body.body if _field_supplied(body, "body") else None,
+        )
+        if document is None:
+            raise HTTPException(status_code=404, detail="Document not found")
+        return document
+
+    @router.delete("/markdown-documents/{document_id}", status_code=204)
+    async def delete_markdown_document(document_id: str):
+        await catalog_service.delete_markdown_document(document_id)
 
     @router.post("/folders", status_code=201)
     async def create_folder(body: FolderCreate):
