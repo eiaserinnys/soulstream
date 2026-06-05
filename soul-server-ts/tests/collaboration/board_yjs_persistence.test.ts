@@ -10,6 +10,56 @@ import {
 import type { SessionDB } from "../../src/db/session_db.js";
 
 describe("board_yjs_persistence", () => {
+  it("fetch는 기존 snapshot이 있으면 DB seed를 읽지 않고 Yjs 정본을 그대로 반환", async () => {
+    const folderId = "folder-1";
+    const documentName = getBoardYjsDocumentName(folderId);
+    const snapshot = createBoardYDocSnapshot({
+      folderId,
+      boardItems: [{
+        id: "session:s1",
+        folderId,
+        itemType: "session",
+        itemId: "s1",
+        x: 0,
+        y: 0,
+        metadata: {},
+      }],
+      markdownDocuments: [],
+    });
+    const db = {
+      getBoardYjsSnapshot: vi.fn().mockResolvedValue(snapshot),
+      loadBoardYjsSeed: vi.fn().mockResolvedValue({
+        boardItems: [{
+          id: "markdown:d1",
+          folderId,
+          itemType: "markdown",
+          itemId: "d1",
+          x: 280,
+          y: 160,
+          metadata: { title: "Recovered" },
+        }],
+        markdownDocuments: [{ id: "d1", title: "Recovered", body: "restored body" }],
+      }),
+      storeBoardYjsSnapshot: vi.fn().mockResolvedValue(undefined),
+      syncBoardYjsReplica: vi.fn().mockResolvedValue(undefined),
+    } as unknown as SessionDB;
+
+    const persistence = createBoardYjsPersistence(db);
+    const fetched = await persistence.database.configuration.fetch?.({
+      documentName,
+    } as never);
+
+    expect(fetched).toBe(snapshot);
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, fetched as Uint8Array);
+    expect(readBoardYDocReplica(folderId, doc).boardItems.map((item) => item.id)).toEqual([
+      "session:s1",
+    ]);
+    expect(db.loadBoardYjsSeed).not.toHaveBeenCalled();
+    expect(db.storeBoardYjsSnapshot).not.toHaveBeenCalled();
+    expect(db.syncBoardYjsReplica).not.toHaveBeenCalled();
+  });
+
   it("onChange stores update, writes compact snapshot, syncs replica, and invalidates catalog cache", async () => {
     const folderId = "folder-1";
     const documentName = getBoardYjsDocumentName(folderId);

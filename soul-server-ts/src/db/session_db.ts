@@ -202,6 +202,13 @@ export interface ClaudeTranscriptSessionSummary {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type SqlClient = postgres.Sql<any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type ReplicaSyncSql = postgres.Sql<any> | postgres.TransactionSql<any>;
+type PostgresJsonValue = Parameters<ReplicaSyncSql["json"]>[0];
+
+function asPostgresJsonValue(value: unknown): PostgresJsonValue {
+  return value as PostgresJsonValue;
+}
 
 export class SessionDB {
   private readonly sql: SqlClient;
@@ -590,6 +597,51 @@ export class SessionDB {
     return rows.map(toCatalogBoardItemRow);
   }
 
+  async getBoardItemById(boardItemId: string): Promise<CatalogBoardItemRow | null> {
+    const rows = await this.sql<
+      Array<{
+        id: string;
+        folder_id: string;
+        item_type: BoardItemType;
+        item_id: string;
+        x: string | number;
+        y: string | number;
+        metadata: unknown;
+        created_at: Date | string | null;
+        updated_at: Date | string | null;
+      }>
+    >`
+      SELECT *
+      FROM board_items
+      WHERE id = ${boardItemId}
+      LIMIT 1
+    `;
+    return rows[0] ? toCatalogBoardItemRow(rows[0]) : null;
+  }
+
+  async getMarkdownDocumentBoardItem(documentId: string): Promise<CatalogBoardItemRow | null> {
+    const rows = await this.sql<
+      Array<{
+        id: string;
+        folder_id: string;
+        item_type: BoardItemType;
+        item_id: string;
+        x: string | number;
+        y: string | number;
+        metadata: unknown;
+        created_at: Date | string | null;
+        updated_at: Date | string | null;
+      }>
+    >`
+      SELECT *
+      FROM board_items
+      WHERE item_type = ${"markdown"}
+        AND item_id = ${documentId}
+      LIMIT 1
+    `;
+    return rows[0] ? toCatalogBoardItemRow(rows[0]) : null;
+  }
+
   async updateBoardItemPosition(
     boardItemId: string,
     x: number,
@@ -793,19 +845,29 @@ export class SessionDB {
     replica: BoardYjsReplica,
   ): Promise<void> {
     this.invalidateBoardYjsCatalogCache(folderId);
+    await this.sql.begin(async (sql) => {
+      await this.syncBoardYjsReplicaWithSql(sql, folderId, replica);
+    });
+  }
+
+  private async syncBoardYjsReplicaWithSql(
+    sql: ReplicaSyncSql,
+    folderId: string,
+    replica: BoardYjsReplica,
+  ): Promise<void> {
     const boardItemIds = replica.boardItems.map((item) => item.id);
     if (boardItemIds.length === 0) {
-      await this.sql`DELETE FROM board_items WHERE folder_id = ${folderId}`;
+      await sql`DELETE FROM board_items WHERE folder_id = ${folderId}`;
     } else {
-      await this.sql`
+      await sql`
         DELETE FROM board_items
         WHERE folder_id = ${folderId}
-          AND id <> ALL(${this.sql.array(boardItemIds)})
+          AND id <> ALL(${sql.array(boardItemIds)})
       `;
     }
 
     for (const item of replica.boardItems) {
-      await this.sql`
+      await sql`
         INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata, updated_at)
         VALUES (
           ${item.id},
@@ -814,7 +876,7 @@ export class SessionDB {
           ${item.itemId},
           ${item.x},
           ${item.y},
-          ${JSON.stringify(item.metadata ?? {})}::jsonb,
+          ${sql.json(asPostgresJsonValue(item.metadata ?? {}))}::jsonb,
           NOW()
         )
         ON CONFLICT (id) DO UPDATE
@@ -829,7 +891,7 @@ export class SessionDB {
     }
 
     for (const document of replica.markdownDocuments) {
-      await this.sql`
+      await sql`
         INSERT INTO markdown_documents (id, title, body, updated_at)
         VALUES (${document.id}, ${document.title}, ${document.body}, NOW())
         ON CONFLICT (id) DO UPDATE
@@ -839,12 +901,12 @@ export class SessionDB {
       `;
     }
 
-    await this.sql`
+    await sql`
       INSERT INTO board_yjs_catalog_cache (folder_id, board_items, markdown_documents, updated_at)
       VALUES (
         ${folderId},
-        ${JSON.stringify(replica.boardItems)}::jsonb,
-        ${JSON.stringify(replica.markdownDocuments)}::jsonb,
+        ${sql.json(asPostgresJsonValue(replica.boardItems))}::jsonb,
+        ${sql.json(asPostgresJsonValue(replica.markdownDocuments))}::jsonb,
         NOW()
       )
       ON CONFLICT (folder_id) DO UPDATE

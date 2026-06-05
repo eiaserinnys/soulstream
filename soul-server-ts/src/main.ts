@@ -6,6 +6,7 @@ import { loadAgentRegistry } from "./agent_registry.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "./auth/claude_auth.js";
 import { FileAttachmentStore } from "./attachments/file_manager.js";
 import { CatalogService } from "./catalog/catalog_service.js";
+import { BoardYjsService } from "./collaboration/board_yjs_service.js";
 import { parseEnv } from "./config.js";
 import { SessionDB } from "./db/session_db.js";
 import { EventPersistence } from "./db/event_persistence.js";
@@ -348,10 +349,21 @@ async function main(): Promise<void> {
   );
   scheduleDispatcher.start();
 
+  const boardYjsService = new BoardYjsService({
+    db,
+    logger,
+    auth: {
+      authBearerToken: env.AUTH_BEARER_TOKEN,
+      environment: env.ENVIRONMENT,
+      dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
+      jwtSecret: env.JWT_SECRET,
+    },
+  });
+
   // CatalogService — MCP catalog 도구·set_session_name이 경유.
   // 본 카드(soul-server-ts Streamable HTTP MCP) 신설. dashboard 진입점이 같은 service를
   // 경유하면 정책 정본 단일 (design-principles §3).
-  const catalogService = new CatalogService(db, broadcaster);
+  const catalogService = new CatalogService(db, broadcaster, boardYjsService);
   const llmAdapters = {
     ...(env.LLM_OPENAI_API_KEY
       ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) }
@@ -425,14 +437,7 @@ async function main(): Promise<void> {
         }
       : undefined,
     boardYjs: {
-      db,
-      logger,
-      auth: {
-        authBearerToken: env.AUTH_BEARER_TOKEN,
-        environment: env.ENVIRONMENT,
-        dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
-        jwtSecret: env.JWT_SECRET,
-      },
+      service: boardYjsService,
     },
   });
   await startServer(server, env.HOST, env.PORT);
