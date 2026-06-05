@@ -64,6 +64,22 @@ describe("board_yjs_auth", () => {
       },
     })).rejects.toThrow(/signature/);
   });
+
+  it("dashboard auth가 켜졌는데 JWT_SECRET이 없으면 명확히 차단", async () => {
+    const token = signJwt({ sub: "user-1" }, "jwt-secret");
+
+    await expect(authenticateBoardYjsConnection({
+      token: "cookie",
+      requestHeaders: {
+        cookie: `${DASHBOARD_AUTH_COOKIE_NAME}=${token}`,
+      },
+      config: {
+        authBearerToken: "",
+        environment: "production",
+        dashboardAuthEnabled: true,
+      },
+    })).rejects.toThrow(/JWT_SECRET is required/);
+  });
 });
 
 function signJwt(payload: Record<string, unknown>, secret: string): string {

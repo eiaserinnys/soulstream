@@ -108,6 +108,26 @@ export function readBoardYDocReplica(folderId: string, doc: Y.Doc): BoardYjsRepl
   };
 }
 
+export function readBoardYDocSnapshot(params: {
+  folderId: string;
+  snapshot?: Uint8Array | null;
+  updates?: readonly Uint8Array[];
+}): { replica: BoardYjsReplica; snapshot: Uint8Array } {
+  const doc = new Y.Doc();
+  if (params.snapshot && params.snapshot.byteLength > 0) {
+    Y.applyUpdate(doc, params.snapshot);
+  }
+  for (const update of params.updates ?? []) {
+    if (update.byteLength > 0) {
+      Y.applyUpdate(doc, update);
+    }
+  }
+  return {
+    replica: readBoardYDocReplica(params.folderId, doc),
+    snapshot: Y.encodeStateAsUpdate(doc),
+  };
+}
+
 export function applyBoardYjsPosition(
   doc: Y.Doc,
   boardItemId: string,

@@ -6,6 +6,7 @@ import {
   createBoardYDocSnapshot,
   getBoardYjsDocumentName,
   getFolderIdFromBoardYjsDocumentName,
+  readBoardYDocSnapshot,
   readBoardYDocReplica,
 } from "../../src/collaboration/board_yjs_model.js";
 
@@ -42,6 +43,39 @@ describe("board_yjs_model", () => {
 
     expect(replica.boardItems.map((item) => item.id)).toEqual(["markdown:d1", "session:s1"]);
     expect(replica.markdownDocuments).toEqual([{ id: "d1", title: "Note", body: "hello" }]);
+  });
+
+  it("snapshot과 누적 update에서 catalog replica를 derive", () => {
+    const snapshot = createBoardYDocSnapshot({
+      folderId: "folder-1",
+      boardItems: [{
+        id: "session:s1",
+        folderId: "folder-1",
+        itemType: "session",
+        itemId: "s1",
+        x: 0,
+        y: 0,
+        metadata: {},
+      }],
+      markdownDocuments: [],
+    });
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, snapshot);
+    applyBoardYjsPosition(doc, "session:s1", { x: 280, y: 160 });
+    const update = Y.encodeStateAsUpdate(doc);
+
+    const decoded = readBoardYDocSnapshot({
+      folderId: "folder-1",
+      snapshot,
+      updates: [update],
+    });
+
+    expect(decoded.replica.boardItems[0]).toMatchObject({
+      id: "session:s1",
+      x: 280,
+      y: 160,
+    });
+    expect(decoded.snapshot.byteLength).toBeGreaterThan(0);
   });
 
   it("position update는 같은 Y-map entry만 갱신", () => {

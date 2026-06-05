@@ -198,6 +198,15 @@ describe("BoardWorkspaceView", () => {
     expect(markdownTile?.style.top).toBe("6080px");
   });
 
+  it("shows board sync status when websocket connection is unavailable", () => {
+    ({ container, root } = renderBoard());
+
+    const status = container.querySelector<HTMLElement>('[data-testid="board-sync-status"]');
+
+    expect(status?.textContent).toContain("연결 끊김");
+    expect(status?.title).toContain("websocket is unavailable");
+  });
+
   it("keeps folder names, session titles, markdown previews, and agent profiles bounded inside tiles", () => {
     ({ container, root } = renderBoard());
 

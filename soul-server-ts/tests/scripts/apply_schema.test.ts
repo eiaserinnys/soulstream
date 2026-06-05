@@ -39,6 +39,8 @@ describe("apply-schema.mjs", () => {
     expect(first.stdout).toContain("[apply-schema] schema applied");
     expectNoSecretLeak(first);
 
+    await seedLegacyBoardItem(url);
+
     const second = runApplySchema(cwd);
     expect(second.status).toBe(0);
     expect(second.stdout).toContain("[apply-schema] schema applied");
@@ -50,6 +52,7 @@ describe("apply-schema.mjs", () => {
         heartbeat_table: string | null;
         transcript_table: string | null;
         transcript_function_count: string | number;
+        board_yjs_cache_count: string | number;
       }>>`
         SELECT
           to_regclass('public.soulstream_node_heartbeats')::text AS heartbeat_table,
@@ -58,14 +61,46 @@ describe("apply-schema.mjs", () => {
             SELECT COUNT(*)::int
             FROM pg_proc
             WHERE proname = 'claude_transcript_append'
-          ) AS transcript_function_count
+          ) AS transcript_function_count,
+          (
+            SELECT COUNT(*)::int
+            FROM board_yjs_catalog_cache
+            WHERE folder_id = 'folder-schema'
+          ) AS board_yjs_cache_count
       `;
 
       expect(rows[0]).toMatchObject({
         heartbeat_table: "soulstream_node_heartbeats",
         transcript_table: "claude_transcript_entries",
         transcript_function_count: 1,
+        board_yjs_cache_count: 1,
       });
+      const cacheRows = await sql<Array<{
+        board_items: Array<Record<string, unknown>>;
+        markdown_documents: Array<Record<string, unknown>>;
+      }>>`
+        SELECT board_items, markdown_documents
+        FROM board_yjs_catalog_cache
+        WHERE folder_id = 'folder-schema'
+      `;
+      expect(cacheRows[0].board_items).toEqual([
+        expect.objectContaining({
+          id: "markdown:doc-schema",
+          folderId: "folder-schema",
+          itemType: "markdown",
+          itemId: "doc-schema",
+          x: 10,
+          y: 20,
+          metadata: expect.objectContaining({ title: "Schema doc" }),
+        }),
+      ]);
+      expect(cacheRows[0].markdown_documents).toEqual([
+        expect.objectContaining({
+          id: "doc-schema",
+          title: "Schema doc",
+          body: "body",
+        }),
+      ]);
     } finally {
       await sql.end({ timeout: 5 });
     }
@@ -165,6 +200,34 @@ async function startPostgres(): Promise<{ url: string }> {
     await sql.end({ timeout: 5 });
   }
   return { url };
+}
+
+async function seedLegacyBoardItem(url: string): Promise<void> {
+  const sql = postgres(url, { max: 1, idle_timeout: 1 });
+  try {
+    await sql`
+      INSERT INTO folders (id, name, sort_order)
+      VALUES ('folder-schema', 'Schema folder', 0)
+    `;
+    await sql`
+      INSERT INTO markdown_documents (id, title, body)
+      VALUES ('doc-schema', 'Schema doc', 'body')
+    `;
+    await sql`
+      INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata)
+      VALUES (
+        'markdown:doc-schema',
+        'folder-schema',
+        'markdown',
+        'doc-schema',
+        10,
+        20,
+        '{"title":"Schema doc"}'::jsonb
+      )
+    `;
+  } finally {
+    await sql.end({ timeout: 5 });
+  }
 }
 
 function dockerMappedPort(containerId: string): string {

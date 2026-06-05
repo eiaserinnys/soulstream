@@ -116,6 +116,7 @@ export function BoardWorkspaceView({
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadMoreGateRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const previousBoardSyncStatusRef = useRef<string | null>(null);
   const folders = catalog?.folders ?? [];
   const selectedFolder = folders.find((folder) => folder.id === selectedFolderId) ?? null;
   const displaySessions = useMemo(() => applyCatalogDisplayNames(sessions, catalog), [sessions, catalog]);
@@ -221,6 +222,21 @@ export function BoardWorkspaceView({
     });
   }, [boardSync.connectionError]);
 
+  useEffect(() => {
+    const previous = previousBoardSyncStatusRef.current;
+    previousBoardSyncStatusRef.current = boardSync.connectionStatus;
+    if (
+      boardSync.connectionStatus === "connected" &&
+      (previous === "disconnected" || previous === "reconnecting")
+    ) {
+      toastManager.add({
+        title: "Board sync reconnected",
+        description: "Board changes are live again.",
+        type: "success",
+      });
+    }
+  }, [boardSync.connectionStatus]);
+
   const openNewSessionAt = useCallback((position?: { x: number; y: number }) => {
     const boardPosition = position ? snapBoardPosition(position.x, position.y) : undefined;
     openNewSessionModal(
@@ -313,6 +329,8 @@ export function BoardWorkspaceView({
         selectedFolder={selectedFolder}
         selectedFolderId={selectedFolderId}
         workspaceViewMode={workspaceViewMode}
+        connectionStatus={boardSync.connectionStatus}
+        connectionError={boardSync.connectionError}
         onWorkspaceViewModeChange={onWorkspaceViewModeChange}
         newMenuOpen={newMenuOpen}
         onToggleNewMenu={() => setNewMenuOpen((open) => !open)}

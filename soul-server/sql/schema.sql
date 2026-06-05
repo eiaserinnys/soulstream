@@ -151,6 +151,13 @@ CREATE TABLE IF NOT EXISTS board_yjs_updates (
     created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS board_yjs_catalog_cache (
+    folder_id           TEXT PRIMARY KEY REFERENCES folders(id) ON DELETE CASCADE,
+    board_items         JSONB NOT NULL DEFAULT '[]'::jsonb,
+    markdown_documents  JSONB NOT NULL DEFAULT '[]'::jsonb,
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE OR REPLACE FUNCTION board_delete_markdown_refs()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
@@ -1377,6 +1384,44 @@ RETURNS TABLE(
      AND bi.item_id = md.id
     ORDER BY bi.folder_id, bi.y, bi.x, bi.created_at;
 $$;
+
+INSERT INTO board_yjs_catalog_cache (folder_id, board_items, markdown_documents, updated_at)
+SELECT
+    bi.folder_id,
+    jsonb_agg(
+        jsonb_build_object(
+            'id', bi.id,
+            'folderId', bi.folder_id,
+            'itemType', bi.item_type,
+            'itemId', bi.item_id,
+            'x', bi.x,
+            'y', bi.y,
+            'metadata', COALESCE(bi.metadata, '{}'::jsonb),
+            'createdAt', bi.created_at,
+            'updatedAt', bi.updated_at
+        )
+        ORDER BY bi.y, bi.x, bi.created_at
+    ),
+    COALESCE((
+        SELECT jsonb_agg(
+            jsonb_build_object(
+                'id', md.id,
+                'title', md.title,
+                'body', md.body,
+                'createdAt', md.created_at,
+                'updatedAt', md.updated_at
+            )
+            ORDER BY md.created_at, md.id
+        )
+        FROM board_items mbi
+        JOIN markdown_documents md ON md.id = mbi.item_id
+        WHERE mbi.folder_id = bi.folder_id
+          AND mbi.item_type = 'markdown'
+    ), '[]'::jsonb),
+    NOW()
+FROM board_item_get_all() bi
+GROUP BY bi.folder_id
+ON CONFLICT (folder_id) DO NOTHING;
 
 -- 마이그레이션 ----------------------------------------------------
 
