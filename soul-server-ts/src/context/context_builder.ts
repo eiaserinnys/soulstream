@@ -2,9 +2,9 @@
  * ExecutionContextBuilder — B-6 풀세트, Python `service/execution_context_builder.py` 정본 이식.
  *
  * codex task 첫 turn 진입 전에 다음을 조립:
- *   1. _resolveFolder    — sessions.folder_id → folder.settings (folderPrompt·atomContextNode)
+ *   1. _resolveFolder    — sessions.folder_id → folder chain settings (folderPrompt·atomContextNode)
  *   2. _fetchAgentAtomContext — agents.yaml atom_contexts → system prompt용 마크다운
- *   3. _fetchAtomContext — folder atomContextNode → context item용 마크다운
+ *   3. _fetchAtomContext — folder chain atomContextNode → context item용 마크다운
  *   4. _fetchCogitoContext — orchestrator cluster brief → 안전 요약 context item
  *   5. _resolveProfile   — agents.yaml profile에서 workspace_dir·max_turns·tools
  *   6. _assembleContext  — agent atom + folder_prompt + system_prompt + context items를
@@ -25,7 +25,11 @@ import type { AgentRegistry, AgentProfile } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { Task } from "../task/task_models.js";
 
-import { fetchAtomContext, fetchAtomContexts } from "./atom_context.js";
+import {
+  fetchAtomContext,
+  fetchAtomContexts,
+  type AtomContextSpec,
+} from "./atom_context.js";
 import { buildBoardWorkspaceContextItem } from "./board_workspace_item.js";
 import {
   fetchCogitoContextItem,
@@ -51,6 +55,12 @@ export interface PreparedContext {
   maxTurns?: number;
   /** Python `assembled_prompt` 등가 — 현재 task.prompt 그대로 (task.context wire 별건). */
   assembledPrompt: string;
+}
+
+interface FolderChainEntry {
+  id: string;
+  parentFolderId: string | null;
+  settings: Record<string, unknown>;
 }
 
 /** atom 호출 설정 (config.ts env에서 주입). */
@@ -131,9 +141,9 @@ export class ExecutionContextBuilder {
    * (`task.resume_session_id is None`) 정합.
    */
   async build(task: Task, agent: AgentProfile): Promise<PreparedContext> {
-    const { folderId, folderName, folderPrompt, folderSettings } = await this._resolveFolder(task);
+    const { folderId, folderName, folderPrompt, atomContextSpecs } = await this._resolveFolder(task);
     const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
-    const atomMarkdown = await this._fetchAtomContext(folderSettings);
+    const atomMarkdown = await this._fetchAtomContext(atomContextSpecs);
     const boardWorkspaceItem = await this._fetchBoardWorkspaceContext(folderId);
     const cogitoContextItem = await this._fetchCogitoContext();
     const { workingDir, maxTurns } = this._resolveProfile(task);
@@ -162,7 +172,7 @@ export class ExecutionContextBuilder {
     folderId?: string;
     folderName?: string;
     folderPrompt?: string;
-    folderSettings?: Record<string, unknown>;
+    atomContextSpecs?: AtomContextSpec[];
   }> {
     let sessionRow;
     try {
@@ -189,16 +199,24 @@ export class ExecutionContextBuilder {
     if (!folderRow) return {};
 
     const folderName = folderRow.name;
-    const settings = folderRow.settings;
-    const folderPrompt = await this._resolveFolderPromptChain(folderRow);
-    return { folderId: folderRow.id, folderName, folderPrompt, folderSettings: settings };
+    const chain = await this._resolveFolderChain(folderRow);
+    const folderPrompt = composeFolderPromptChain(chain);
+    const atomContextSpecs = extractFolderAtomContextSpecs(chain);
+    return { folderId: folderRow.id, folderName, folderPrompt, atomContextSpecs };
   }
 
-  private async _resolveFolderPromptChain(folderRow: {
+  private async _resolveFolderChain(folderRow: {
     id: string;
-    settings: Record<string, unknown>;
-  }): Promise<string | undefined> {
-    const fallback = extractFolderPrompt(folderRow.settings);
+    parent_folder_id?: string | null;
+    settings?: Record<string, unknown>;
+  }): Promise<FolderChainEntry[]> {
+    const fallback: FolderChainEntry[] = [
+      {
+        id: folderRow.id,
+        parentFolderId: folderRow.parent_folder_id ?? null,
+        settings: normalizeSettings(folderRow.settings),
+      },
+    ];
     const getCatalog = (this.db as unknown as {
       getCatalog?: SessionDB["getCatalog"];
     }).getCatalog;
@@ -206,49 +224,51 @@ export class ExecutionContextBuilder {
 
     try {
       const catalog = await getCatalog.call(this.db);
-      const byId = new Map(catalog.folders.map((folder) => [folder.id, folder]));
-      const path: Array<{ id: string; parentFolderId: string | null; settings: Record<string, unknown> }> = [];
+      const byId = new Map(
+        catalog.folders.map((folder) => [
+          folder.id,
+          {
+            id: folder.id,
+            parentFolderId: folder.parentFolderId,
+            settings: normalizeSettings(folder.settings),
+          },
+        ]),
+      );
+      const path: FolderChainEntry[] = [];
       const seen = new Set<string>();
-      let current = byId.get(folderRow.id);
+      let current = byId.get(folderRow.id) ?? fallback[0];
       while (current && !seen.has(current.id)) {
         path.push(current);
         seen.add(current.id);
         current = current.parentFolderId ? byId.get(current.parentFolderId) : undefined;
       }
-      if (path.length === 0) return fallback;
-      const prompts = path.reverse()
-        .map((folder) => extractFolderPrompt(folder.settings))
-        .filter((prompt): prompt is string => Boolean(prompt));
-      return prompts.length > 0 ? prompts.join("\n\n") : undefined;
+      return path.length > 0 ? path.reverse() : fallback;
     } catch (err) {
-      this.logger.warn({ err, folderId: folderRow.id }, "_resolveFolderPromptChain: getCatalog failed");
+      this.logger.warn({ err, folderId: folderRow.id }, "_resolveFolderChain: getCatalog failed");
       return fallback;
     }
   }
 
   /**
-   * folder.settings.atomContextNode가 dict이면 atom API 호출 (Python L107-120).
+   * folder chain의 settings.atomContextNode가 dict이면 atom API 호출.
    *
    * `{nodeId, depth?, titlesOnly?}` 형식. nodeId 누락 또는 atom 비활성 → null.
    * 실패는 graceful — turn 시작 차단하지 않음 (Python try/except).
    */
   private async _fetchAtomContext(
-    folderSettings?: Record<string, unknown>,
+    specs?: AtomContextSpec[],
   ): Promise<string | null> {
-    if (!folderSettings) return null;
-    const cfg = folderSettings.atomContextNode;
-    if (!cfg || typeof cfg !== "object") return null;
-    const nodeId = (cfg as Record<string, unknown>).nodeId;
-    if (typeof nodeId !== "string" || !nodeId) return null;
-    const depth = typeof (cfg as Record<string, unknown>).depth === "number"
-      ? ((cfg as Record<string, unknown>).depth as number)
-      : 3;
-    const titlesOnly = Boolean((cfg as Record<string, unknown>).titlesOnly);
+    if (!specs || specs.length === 0) return null;
+    if (specs.length > 1) {
+      return await fetchAtomContexts(this.cfg.atom, specs, this.logger);
+    }
+    const spec = specs[0];
+    if (!spec) return null;
     return await fetchAtomContext(
       this.cfg.atom,
-      nodeId,
-      depth,
-      titlesOnly,
+      spec.nodeId,
+      spec.depth,
+      spec.titlesOnly,
       this.logger,
     );
   }
@@ -421,4 +441,47 @@ export function composeFirstTurnPrompt(ctx: PreparedContext): string {
 function extractFolderPrompt(settings: Record<string, unknown>): string | undefined {
   const value = settings.folderPrompt;
   return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function composeFolderPromptChain(chain: FolderChainEntry[]): string | undefined {
+  const prompts: string[] = [];
+  const seenPrompts = new Set<string>();
+  for (const folder of chain) {
+    const prompt = extractFolderPrompt(folder.settings);
+    if (!prompt || seenPrompts.has(prompt)) continue;
+    seenPrompts.add(prompt);
+    prompts.push(prompt);
+  }
+  return prompts.length > 0 ? prompts.join("\n\n") : undefined;
+}
+
+function extractFolderAtomContextSpecs(chain: FolderChainEntry[]): AtomContextSpec[] {
+  const specsByNodeId = new Map<string, AtomContextSpec>();
+  for (const folder of chain) {
+    const spec = extractAtomContextSpec(folder.settings);
+    if (!spec) continue;
+    specsByNodeId.delete(spec.nodeId);
+    specsByNodeId.set(spec.nodeId, spec);
+  }
+  return [...specsByNodeId.values()];
+}
+
+function extractAtomContextSpec(settings: Record<string, unknown>): AtomContextSpec | null {
+  const cfg = settings.atomContextNode;
+  if (!cfg || typeof cfg !== "object") return null;
+  const record = cfg as Record<string, unknown>;
+  const nodeId = record.nodeId;
+  if (typeof nodeId !== "string" || !nodeId) return null;
+  const depth = typeof record.depth === "number" ? record.depth : 3;
+  return {
+    nodeId,
+    depth,
+    titlesOnly: Boolean(record.titlesOnly),
+  };
+}
+
+function normalizeSettings(settings: unknown): Record<string, unknown> {
+  return settings && typeof settings === "object"
+    ? (settings as Record<string, unknown>)
+    : {};
 }
