@@ -4,7 +4,7 @@
  * soul-ui의 SSESessionProvider와 unified-dashboard의 OrchestratorSessionProvider를 관리.
  *
  * - single-node 모드: soul-ui SSESessionProvider (/api/sessions)
- * - orchestrator 모드: OrchestratorSessionProvider (/api/catalog)
+ * - orchestrator 모드: OrchestratorSessionProvider (/api/sessions)
  */
 
 import type { SessionStorageProvider } from "@seosoyoung/soul-ui";

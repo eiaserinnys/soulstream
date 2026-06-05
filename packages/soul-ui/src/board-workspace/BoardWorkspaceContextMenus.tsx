@@ -115,7 +115,7 @@ export function BoardWorkspaceContextMenus({
       if (boardYjsRuntime) {
         boardYjsRuntime.updateMarkdownTitle(renameMarkdownTarget.documentId, title);
       } else {
-        const res = await fetch(`/api/catalog/markdown-documents/${encodeURIComponent(renameMarkdownTarget.documentId)}`, {
+        const res = await fetch(`/api/markdown-documents/${encodeURIComponent(renameMarkdownTarget.documentId)}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title }),
@@ -134,7 +134,7 @@ export function BoardWorkspaceContextMenus({
       if (boardYjsRuntime) {
         boardYjsRuntime.deleteMarkdownDocument(documentId);
       } else {
-        const res = await fetch(`/api/catalog/markdown-documents/${encodeURIComponent(documentId)}`, {
+        const res = await fetch(`/api/markdown-documents/${encodeURIComponent(documentId)}`, {
           method: "DELETE",
         });
         if (!res.ok) throw new Error(`Delete markdown document failed: ${res.status}`);

@@ -3,7 +3,7 @@
  *
  * 검증 목표:
  * 1. 폴더 정렬을 "custom" (사용자 지정)으로 설정했을 때 DnD가 가능한지
- * 2. DnD 발생 시 PATCH /api/catalog/folders/reorder 요청이 실제로 서버에 전송되는지
+ * 2. DnD 발생 시 PATCH /api/folders/reorder 요청이 실제로 서버에 전송되는지
  * 3. 요청이 성공하면 페이지 리로드 후에도 순서가 유지되는지
  *
  * 대상 URL: http://localhost:3105 (soul-stream 서비스)
@@ -70,7 +70,7 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
 
   test.beforeEach(async () => {
     try {
-      const res = await fetch(`${DASHBOARD_URL}/api/catalog`);
+      const res = await fetch(`${DASHBOARD_URL}/api/folders`);
       if (!res.ok) {
         console.log(`서버 응답 실패: ${res.status}`);
         test.skip();
@@ -91,7 +91,7 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
 
     page.on("request", (req) => {
       if (
-        req.url().includes("/api/catalog/folders/reorder") &&
+        req.url().includes("/api/folders/reorder") &&
         req.method() === "PATCH"
       ) {
         reorderRequests.push({
@@ -105,7 +105,7 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
     });
 
     page.on("response", (res) => {
-      if (res.url().includes("/api/catalog/folders/reorder")) {
+      if (res.url().includes("/api/folders/reorder")) {
         const entry = reorderRequests.find((r) => r.url === res.url() && r.status === 0);
         if (entry) {
           entry.status = res.status();
@@ -204,13 +204,13 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
 
     // PATCH 요청 또는 최대 3초 대기
     await page.waitForResponse(
-      (res) => res.url().includes("/api/catalog/folders/reorder"),
+      (res) => res.url().includes("/api/folders/reorder"),
       { timeout: 3000 },
     ).catch(() => {});
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "03-after-drag.png") });
 
     // ── 8. 네트워크 요청 분석 ────────────────────────────────────────────────
-    console.log("\n=== PATCH /api/catalog/folders/reorder 요청 분석 ===");
+    console.log("\n=== PATCH /api/folders/reorder 요청 분석 ===");
     if (reorderRequests.length === 0) {
       console.log("❌ PATCH 요청 없음 — DnD 이벤트가 onReorderFolders를 트리거하지 못했을 수 있음");
     } else {
@@ -257,7 +257,7 @@ test.describe("폴더 커스텀 정렬 DnD", () => {
 
     expect(
       patchSent,
-      "DnD 발생 시 PATCH /api/catalog/folders/reorder 요청이 전송되어야 합니다."
+      "DnD 발생 시 PATCH /api/folders/reorder 요청이 전송되어야 합니다."
     ).toBe(true);
   });
 

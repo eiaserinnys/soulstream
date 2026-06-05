@@ -3,7 +3,7 @@
 soul-server에서 soulstream-server 호환 경로를 통해 세션 이름을 변경하는
 엔드포인트를 검증한다.
 
-기존 PUT /api/catalog/sessions/{id} (displayName 필드)는 별도 경로로 유지된다.
+기존 catalog session 표시명 경로와 동일한 동작을 제공한다.
 이 테스트는 새로 추가된 PATCH 경로만 검증한다.
 """
 

@@ -8,8 +8,8 @@
 import { createMoveSessionsOperations } from "@seosoyoung/soul-ui";
 
 export const { moveSessionsOptimistic } = createMoveSessionsOperations({
-  singleUrl: (id) => `/api/catalog/sessions/${id}`,
+  singleUrl: (id) => `/api/sessions/${id}`,
   singleMethod: "PUT",
-  batchUrl: "/api/catalog/sessions/batch",
-  batchMethod: "PUT",
+  batchUrl: "/api/sessions/folder",
+  batchMethod: "PATCH",
 });

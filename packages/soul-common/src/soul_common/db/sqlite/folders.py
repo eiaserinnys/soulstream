@@ -200,6 +200,19 @@ class SqliteFolderMixin:
         board_items = await self.get_board_items()
         return {"folders": folder_list, "sessions": sessions, "boardItems": board_items}
 
+    async def get_session_assignments(self) -> dict:
+        cursor = await self._conn.execute(
+            "SELECT session_id, folder_id, display_name FROM sessions"
+        )
+        rows = await cursor.fetchall()
+        return {
+            row["session_id"]: {
+                "folderId": row["folder_id"],
+                "displayName": row["display_name"],
+            }
+            for row in rows
+        }
+
     async def ensure_board_items(self) -> None:
         await self._conn.execute(
             """
@@ -301,6 +314,12 @@ class SqliteFolderMixin:
                 }
             items.append(item)
         return items
+
+    async def get_board_yjs_catalog_items(self, folder_id: Optional[str] = None) -> list[dict]:
+        items = await self.get_board_items()
+        if folder_id is None:
+            return items
+        return [item for item in items if item.get("folderId") == folder_id]
 
     async def update_board_item_position(self, board_item_id: str, x: float, y: float) -> None:
         await self._conn.execute(

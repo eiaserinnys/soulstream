@@ -20,7 +20,7 @@ const MarkdownCodeMirrorEditor = lazy(async () => {
 });
 
 async function fetchMarkdownDocument(documentId: string): Promise<MarkdownDocument> {
-  const res = await fetch(`/api/catalog/markdown-documents/${encodeURIComponent(documentId)}`);
+  const res = await fetch(`/api/markdown-documents/${encodeURIComponent(documentId)}`);
   if (!res.ok) throw new Error(`Load markdown document failed: ${res.status}`);
   return await res.json() as MarkdownDocument;
 }
@@ -30,7 +30,7 @@ async function saveMarkdownDocument(
   title: string,
   body: string,
 ): Promise<MarkdownDocument> {
-  const res = await fetch(`/api/catalog/markdown-documents/${encodeURIComponent(documentId)}`, {
+  const res = await fetch(`/api/markdown-documents/${encodeURIComponent(documentId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ title, body }),
@@ -181,7 +181,7 @@ export function MarkdownDocumentPanel() {
       if (runtime) {
         runtime.deleteMarkdownDocument(documentId);
       } else {
-        const res = await fetch(`/api/catalog/markdown-documents/${encodeURIComponent(documentId)}`, {
+        const res = await fetch(`/api/markdown-documents/${encodeURIComponent(documentId)}`, {
           method: "DELETE",
         });
         if (!res.ok) throw new Error(`Delete markdown document failed: ${res.status}`);

@@ -28,7 +28,10 @@ import {
   buildFetchSessionsOptions,
   type SessionListQueryKey,
 } from "./session-list-query";
-import { countLoadedSessionsForQuery } from "./session-stream-helpers";
+import {
+  countLoadedSessionsForQuery,
+  mergeSessionAssignmentsFromSummaries,
+} from "./session-stream-helpers";
 
 const DEFAULT_PAGE_SIZE = 50;
 
@@ -99,6 +102,17 @@ export function useSessionListProvider(
           DEFAULT_PAGE_SIZE,
         ),
       );
+
+      const store = useDashboardStore.getState();
+      if (store.catalog) {
+        const nextCatalog = mergeSessionAssignmentsFromSummaries(
+          store.catalog,
+          result.sessions,
+        );
+        if (nextCatalog !== store.catalog) {
+          store.setCatalog(nextCatalog);
+        }
+      }
 
       // 폴더별 세션 수 조회 (provider가 지원하는 경우)
       if (provider.fetchFolderCounts) {

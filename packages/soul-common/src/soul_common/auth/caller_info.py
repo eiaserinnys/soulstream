@@ -136,7 +136,7 @@ def extract_caller_info_from_metadata(metadata) -> Optional[dict]:
 
     호출 위치 (4 곳, §9 대칭):
     - orch-server/api/session_serializer.py: REST /api/sessions 응답 직렬화
-    - orch-server/api/catalog.py: REST /api/catalog sessionList
+    - orch-server/api/sessions.py: REST /api/sessions sessionList
     - soul-server/service/session_query_service.py: soul-server 자체 대시보드 REST
     - soul-server/service/session_eviction_manager.py: evicted task on-demand 복원
 

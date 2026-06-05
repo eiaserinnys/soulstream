@@ -81,7 +81,7 @@ async def api_rename_session(session_id: str, body: RenameSessionRequest):
     """세션 표시 이름 변경 (PATCH /api/sessions/{id}/display-name).
 
     soulstream-server 호환 경로. soul-server에서도 동일하게 동작하도록 추가.
-    기존 PUT /api/catalog/sessions/{id} (displayName 필드)는 그대로 유지한다.
+    기존 catalog session 표시명 경로와 동일한 동작을 제공한다.
     """
     from soul_server.service.catalog_service import get_catalog_service
     catalog_service = get_catalog_service()

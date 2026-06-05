@@ -109,6 +109,23 @@ function metadataText(item: CatalogBoardItem, key: string): string {
   return typeof value === "string" ? value : "";
 }
 
+function buildSessionPlaceholder(
+  boardItem: CatalogBoardItem,
+  catalog: CatalogState,
+): SessionSummary {
+  const assignment = catalog.sessions[boardItem.itemId];
+  return {
+    agentSessionId: boardItem.itemId,
+    status: "unknown",
+    eventCount: 0,
+    sessionType: "claude",
+    displayName: assignment?.displayName ?? undefined,
+    folderId: assignment?.folderId ?? boardItem.folderId,
+    createdAt: boardItem.createdAt,
+    updatedAt: boardItem.updatedAt,
+  };
+}
+
 function buildPositionedItems({
   catalog,
   selectedFolderId,
@@ -138,9 +155,14 @@ function buildPositionedItems({
       continue;
     }
     if (boardItem.itemType === "session") {
-      const session = sessionById.get(boardItem.itemId);
-      if (!session) continue;
-      if (shouldSuppressSessionInFolder(relations, session.agentSessionId, selectedFolderId)) continue;
+      const knownSession = sessionById.get(boardItem.itemId);
+      if (
+        knownSession &&
+        shouldSuppressSessionInFolder(relations, knownSession.agentSessionId, selectedFolderId)
+      ) {
+        continue;
+      }
+      const session = knownSession ?? buildSessionPlaceholder(boardItem, catalog);
       items.push({
         type: "session",
         id: session.agentSessionId,

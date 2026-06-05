@@ -14,9 +14,9 @@ export const {
   updateFolderSettingsOptimistic,
   reorderFoldersOptimistic,
 } = createFolderOperations({
-  createUrl: "/api/catalog/folders",
-  updateUrl: (id) => `/api/catalog/folders/${id}`,
-  deleteUrl: (id) => `/api/catalog/folders/${id}`,
-  reorderUrl: "/api/catalog/folders/reorder",
+  createUrl: "/api/folders",
+  updateUrl: (id) => `/api/folders/${id}`,
+  deleteUrl: (id) => `/api/folders/${id}`,
+  reorderUrl: "/api/folders/reorder",
   deleteFallbackFolderName: SYSTEM_FOLDERS.claude,
 });

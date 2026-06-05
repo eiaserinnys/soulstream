@@ -1,5 +1,5 @@
 """
-Folders API 라우터 — /api/catalog/folders
+Folders API 라우터 — /api/folders
 
 폴더 CRUD.
 """
@@ -46,7 +46,7 @@ def create_folders_router(
     dependencies: list | None = None,
 ) -> APIRouter:
     router = APIRouter(
-        prefix="/api/catalog/folders",
+        prefix="/api/folders",
         tags=["folders"],
         dependencies=dependencies or [],
     )

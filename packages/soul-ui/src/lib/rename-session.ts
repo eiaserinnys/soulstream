@@ -59,8 +59,8 @@ export async function renameSessionOptimistic(
   renameSession(sessionId, displayName);
 
   try {
-    const res = await fetch(`/api/catalog/sessions/${sessionId}`, {
-      method: "PUT",
+    const res = await fetch(`/api/sessions/${sessionId}/display-name`, {
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ displayName }),
     });

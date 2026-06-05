@@ -94,6 +94,7 @@ export function BoardWorkspaceView({
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const activeBoardDocumentId = useDashboardStore((s) => s.activeBoardDocumentId);
   const addBoardItem = useDashboardStore((s) => s.addBoardItem);
+  const setBoardItemsForFolder = useDashboardStore((s) => s.setBoardItemsForFolder);
   const updateBoardItemPosition = useDashboardStore((s) => s.updateBoardItemPosition);
   const removeBoardItem = useDashboardStore((s) => s.removeBoardItem);
   const isMobile = useIsMobile();
@@ -123,6 +124,30 @@ export function BoardWorkspaceView({
     catalog,
     selectionItemId: primarySelectedBoardItemId,
   });
+
+  useEffect(() => {
+    if (!selectedFolderId) return;
+    const controller = new AbortController();
+    fetch(`/api/board-items?folder_id=${encodeURIComponent(selectedFolderId)}`, {
+      signal: controller.signal,
+    })
+      .then((r) => {
+        if (r.ok) return r.json();
+        throw new Error("board items fetch failed");
+      })
+      .then((data) => {
+        if (Array.isArray(data?.boardItems)) {
+          setBoardItemsForFolder(selectedFolderId, data.boardItems);
+        }
+      })
+      .catch((err) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [selectedFolderId, setBoardItemsForFolder]);
+
   const effectiveCatalog = useMemo(() => {
     if (!catalog || !boardSync.boardItems || boardSync.isLoading) return catalog;
     return { ...catalog, boardItems: boardSync.boardItems };

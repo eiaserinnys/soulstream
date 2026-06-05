@@ -53,7 +53,7 @@ def apply_user_profile_enrichment(
 
     호출 지점:
     - _session_to_response (REST /api/sessions, /api/sessions/stream session_list)
-    - catalog.py:get_catalog (REST /api/catalog sessionList)
+    - sessions.py:list_sessions (REST /api/sessions sessionList)
     - main.py:_on_node_change (SSE session_created · session_updated wire)
     """
     # R-2 + R-4: 정체성 명시 source는 owner로 덮지 않음.

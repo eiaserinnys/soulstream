@@ -44,7 +44,10 @@ class CatalogService:
 
     async def _broadcast_catalog(self) -> None:
         """카탈로그 변경을 모든 리스너에게 브로드캐스트한다."""
-        catalog = await self._db.get_catalog()
+        catalog = {
+            "folders": await self.list_folders(),
+            "sessions": await self.list_session_assignments(),
+        }
         await self._broadcaster.broadcast({
             "type": "catalog_updated",
             "catalog": catalog,
@@ -206,6 +209,25 @@ class CatalogService:
     async def get_catalog(self) -> dict:
         """전체 카탈로그(폴더 + 세션 배정)를 반환한다."""
         return await self._db.get_catalog()
+
+    async def list_session_assignments(self) -> dict:
+        """세션의 폴더 배정/표시 이름 맵을 반환한다."""
+        getter = getattr(self._db, "get_session_assignments", None)
+        if getter is not None:
+            return await getter()
+        catalog = await self._db.get_catalog()
+        return catalog.get("sessions", {})
+
+    async def list_board_items(self, folder_id: str) -> list[dict]:
+        """현재 폴더의 보드 항목만 반환한다."""
+        getter = getattr(self._db, "get_board_yjs_catalog_items", None)
+        if getter is not None:
+            return await getter(folder_id=folder_id)
+        await self._db.ensure_board_items()
+        return [
+            item for item in await self._db.get_board_items()
+            if item.get("folderId") == folder_id
+        ]
 
     async def update_board_item_position(
         self,

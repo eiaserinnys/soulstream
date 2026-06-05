@@ -30,6 +30,7 @@ from soulstream_server.api.session_models import (
     RealtimeToolApprovalRequest,
     RenameSessionRequest,
     RespondRequest,
+    SessionCatalogUpdate,
     ToolApprovalRequest,
 )
 from soulstream_server.api.session_serializer import _session_to_response
@@ -63,6 +64,13 @@ TOOL_APPROVAL_ACK_ERROR_HTTP_STATUS = {
 }
 
 
+def _field_supplied(model: Any, field_name: str) -> bool:
+    fields = getattr(model, "model_fields_set", None)
+    if fields is None:
+        fields = getattr(model, "__fields_set__", set())
+    return field_name in fields
+
+
 # --- Router Factory ---
 
 def create_sessions_router(
@@ -82,34 +90,58 @@ def create_sessions_router(
     @router.get("")
     async def list_sessions(
         folderId: Optional[str] = Query(None),
-        limit: int = Query(50, ge=1, le=200),
+        folder_id: Optional[str] = Query(None),
+        session_type: Optional[str] = Query(None),
+        feed_only: bool = Query(False),
+        offset: int = Query(0, ge=0),
+        limit: int = Query(50, ge=0, le=200),
         cursor: Optional[str] = Query(None),
     ) -> dict:
-        """세션 목록 조회. cursor 기반 페이지네이션."""
-        offset = 0
+        """세션 목록 조회.
+
+        신규 클라이언트는 snake_case `offset`, `limit`, `folder_id`,
+        `feed_only`, `session_type`을 사용한다. 기존 dashboard cursor/folderId
+        호출은 호환 입력으로 유지한다.
+        """
+        resolved_offset = offset
         if cursor:
             try:
-                offset = int(cursor)
+                resolved_offset = int(cursor)
             except ValueError:
-                offset = 0
+                resolved_offset = 0
+        resolved_folder_id = folder_id if folder_id is not None else folderId
 
         sessions, total = await db.get_all_sessions(
-            offset=offset,
+            offset=resolved_offset,
             limit=limit,
-            folder_id=folderId,
+            session_type=session_type,
+            folder_id=resolved_folder_id,
+            feed_only=feed_only,
         )
 
         result = [_session_to_response(s, node_manager=node_manager) for s in sessions]
 
         next_cursor = None
-        if offset + limit < total:
-            next_cursor = str(offset + limit)
+        has_more = False
+        if limit > 0:
+            loaded_count = resolved_offset + len(result)
+            has_more = loaded_count < total
+            if has_more:
+                next_cursor = str(resolved_offset + limit)
 
         return {
             "sessions": result,
+            "sessionList": result,
             "total": total,
             "cursor": next_cursor,
+            "hasMore": has_more,
         }
+
+    @router.get("/folder-counts")
+    async def get_folder_counts_endpoint() -> dict:
+        """폴더별 세션 수 조회."""
+        counts = await db.get_folder_counts(node_id=None)
+        return {"counts": {str(k) if k is not None else "null": v for k, v in counts.items()}}
 
     @router.get("/stream")
     async def session_stream(request: Request) -> EventSourceResponse:
@@ -528,6 +560,7 @@ def create_sessions_router(
         return {"success": True}
 
     @router.patch("/folder")
+    @router.put("/folder")
     async def batch_move_folder(body: BatchMoveRequest) -> dict:
         """세션 일괄 폴더 이동. CatalogService 경유로 cross-tab SSE 동기화."""
         if catalog_service:
@@ -538,6 +571,29 @@ def create_sessions_router(
             for sid in body.sessionIds:
                 await db.assign_session_to_folder(sid, body.folderId)
         return {"success": True, "count": len(body.sessionIds)}
+
+    @router.put("/{session_id}")
+    async def update_session_catalog(session_id: str, body: SessionCatalogUpdate) -> dict:
+        """세션 폴더 이동 + 이름 변경 (개별)."""
+        if _field_supplied(body, "folderId"):
+            if catalog_service:
+                await catalog_service.move_sessions_to_folder([session_id], body.folderId)
+            else:
+                await db.assign_session_to_folder(session_id, body.folderId)
+        if _field_supplied(body, "displayName"):
+            if catalog_service:
+                await catalog_service.rename_session(session_id, body.displayName)
+            else:
+                await db.rename_session(session_id, body.displayName)
+        return {"ok": True}
+
+    @router.delete("/{session_id}", status_code=204)
+    async def delete_session(session_id: str):
+        """세션 삭제."""
+        if catalog_service:
+            await catalog_service.delete_session(session_id)
+        else:
+            await db.delete_session(session_id)
 
     @router.get("/{session_id}/cards")
     async def session_cards(session_id: str) -> list[dict]:

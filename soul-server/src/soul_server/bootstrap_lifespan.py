@@ -160,7 +160,6 @@ async def startup_lifespan(
 
     catalog_router = create_catalog_router(catalog_service)
     app.include_router(catalog_router, prefix="/catalog", tags=["catalog"])
-    app.include_router(catalog_router, prefix="/api/catalog", tags=["catalog"])
     logger.info("  Catalog API registered")
 
     # 11. 이전 종료 세션 재개

@@ -321,6 +321,7 @@ export interface DashboardActions {
   moveSessionsToFolder: (sessionIds: string[], folderId: string | null) => void;
   renameSession: (sessionId: string, displayName: string | null) => void;
   addFolder: (folder: CatalogFolder) => void;
+  setBoardItemsForFolder: (folderId: string, boardItems: CatalogBoardItem[]) => void;
   addBoardItem: (boardItem: CatalogBoardItem) => void;
   updateBoardItemPosition: (boardItemId: string, x: number, y: number) => void;
   removeBoardItem: (boardItemId: string) => void;
