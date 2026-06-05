@@ -190,10 +190,40 @@ export class ExecutionContextBuilder {
 
     const folderName = folderRow.name;
     const settings = folderRow.settings;
-    const folderPromptValue = settings.folderPrompt;
-    const folderPrompt =
-      typeof folderPromptValue === "string" && folderPromptValue ? folderPromptValue : undefined;
+    const folderPrompt = await this._resolveFolderPromptChain(folderRow);
     return { folderId: folderRow.id, folderName, folderPrompt, folderSettings: settings };
+  }
+
+  private async _resolveFolderPromptChain(folderRow: {
+    id: string;
+    settings: Record<string, unknown>;
+  }): Promise<string | undefined> {
+    const fallback = extractFolderPrompt(folderRow.settings);
+    const getCatalog = (this.db as unknown as {
+      getCatalog?: SessionDB["getCatalog"];
+    }).getCatalog;
+    if (typeof getCatalog !== "function") return fallback;
+
+    try {
+      const catalog = await getCatalog.call(this.db);
+      const byId = new Map(catalog.folders.map((folder) => [folder.id, folder]));
+      const path: Array<{ id: string; parentFolderId: string | null; settings: Record<string, unknown> }> = [];
+      const seen = new Set<string>();
+      let current = byId.get(folderRow.id);
+      while (current && !seen.has(current.id)) {
+        path.push(current);
+        seen.add(current.id);
+        current = current.parentFolderId ? byId.get(current.parentFolderId) : undefined;
+      }
+      if (path.length === 0) return fallback;
+      const prompts = path.reverse()
+        .map((folder) => extractFolderPrompt(folder.settings))
+        .filter((prompt): prompt is string => Boolean(prompt));
+      return prompts.length > 0 ? prompts.join("\n\n") : undefined;
+    } catch (err) {
+      this.logger.warn({ err, folderId: folderRow.id }, "_resolveFolderPromptChain: getCatalog failed");
+      return fallback;
+    }
   }
 
   /**
@@ -386,4 +416,9 @@ export function composeFirstTurnPrompt(ctx: PreparedContext): string {
   }
   parts.push(ctx.assembledPrompt);
   return parts.join("\n\n");
+}
+
+function extractFolderPrompt(settings: Record<string, unknown>): string | undefined {
+  const value = settings.folderPrompt;
+  return typeof value === "string" && value.trim() ? value : undefined;
 }
