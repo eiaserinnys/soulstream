@@ -61,11 +61,24 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          if (id.includes("/packages/soul-ui/src/components/MarkdownCodeMirrorEditor.tsx")) {
+            return "markdown-editor";
+          }
           if (id.includes("/packages/soul-ui/src/")) {
             return "soul-ui";
           }
           if (!id.includes("/node_modules/")) {
             return undefined;
+          }
+          if (
+            id.includes("/@codemirror/") ||
+            id.includes("/@lezer/") ||
+            id.includes("/y-codemirror.next/") ||
+            id.includes("/crelt/") ||
+            id.includes("/style-mod/") ||
+            id.includes("/w3c-keyname/")
+          ) {
+            return "vendor-markdown-editor";
           }
           if (id.includes("/@tanstack/")) {
             return "vendor-tanstack";

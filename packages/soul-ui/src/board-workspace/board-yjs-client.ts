@@ -479,7 +479,7 @@ function createDocumentId(): string {
   return `doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function getMarkdownPreview(body: string): string {
+export function getMarkdownPreview(body: string): string {
   return body.replace(/\s+/g, " ").trim().slice(0, 180);
 }
 
