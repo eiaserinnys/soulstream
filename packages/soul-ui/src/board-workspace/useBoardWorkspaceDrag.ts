@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 
-import { toastManager } from "../components/ui/toast";
 import { snapBoardPosition, type BoardWorkspaceItem } from "./board-workspace-items";
 
 const DRAG_ACTIVATION_DISTANCE = 8;
@@ -29,7 +28,6 @@ interface PanState {
 interface UseBoardWorkspaceDragOptions {
   scrollRef: RefObject<HTMLDivElement | null>;
   updateBoardItemPosition: (boardItemId: string, x: number, y: number) => void;
-  onUpdateBoardItemPosition?: (boardItemId: string, x: number, y: number) => Promise<void> | void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -44,7 +42,6 @@ function isBoardTileTarget(target: EventTarget | null): boolean {
 export function useBoardWorkspaceDrag({
   scrollRef,
   updateBoardItemPosition,
-  onUpdateBoardItemPosition,
 }: UseBoardWorkspaceDragOptions) {
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
@@ -134,17 +131,6 @@ export function useBoardWorkspaceDrag({
           dragPreviewRef.current = null;
           setDragPreview(null);
           updateBoardItemPosition(drag.item.boardItemId, snapped.x, snapped.y);
-          try {
-            await onUpdateBoardItemPosition?.(drag.item.boardItemId, snapped.x, snapped.y);
-          } catch (err) {
-            updateBoardItemPosition(drag.item.boardItemId, drag.originX, drag.originY);
-            toastManager.add({
-              title: "Board position update failed",
-              description: "The card was restored to its previous position.",
-              type: "warning",
-            });
-            console.error("Board item position update failed:", err);
-          }
         }
       }
       panStateRef.current = null;
@@ -157,7 +143,7 @@ export function useBoardWorkspaceDrag({
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [autoPanDuringDrag, onUpdateBoardItemPosition, scrollRef, updateBoardItemPosition]);
+  }, [autoPanDuringDrag, scrollRef, updateBoardItemPosition]);
 
   const handleCanvasPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!isSpaceDown || event.button !== 0 || isBoardTileTarget(event.target)) return;

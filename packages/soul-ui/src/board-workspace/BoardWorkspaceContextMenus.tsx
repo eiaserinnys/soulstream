@@ -9,6 +9,7 @@ import { FolderContextMenu, type FolderContextMenuTarget } from "../components/F
 import { FolderSettingsDialog } from "../components/FolderSettingsDialog";
 import { SessionContextMenu } from "../components/SessionContextMenu";
 import type { BoardWorkspaceItem } from "./board-workspace-items";
+import type { BoardYjsRuntime } from "./board-yjs-client";
 
 export interface BoardContextMenuState {
   screenX: number;
@@ -29,6 +30,7 @@ interface BoardWorkspaceContextMenusProps {
   displaySessions: SessionSummary[];
   folders: CatalogFolder[];
   activeBoardDocumentId: string | null;
+  boardYjsRuntime: BoardYjsRuntime | null;
   onCloseCardContextMenu: () => void;
   onOpenCreateFolder: (position: { x: number; y: number }) => void;
   onOpenNewSession: (position: { x: number; y: number }) => void;
@@ -47,6 +49,7 @@ export function BoardWorkspaceContextMenus({
   displaySessions,
   folders,
   activeBoardDocumentId,
+  boardYjsRuntime,
   onCloseCardContextMenu,
   onOpenCreateFolder,
   onOpenNewSession,
@@ -109,13 +112,17 @@ export function BoardWorkspaceContextMenus({
     if (!renameMarkdownTarget) return;
     const title = renameMarkdownInput.trim() || "Untitled document";
     try {
-      const res = await fetch(`/api/catalog/markdown-documents/${encodeURIComponent(renameMarkdownTarget.documentId)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
-      });
-      if (!res.ok) throw new Error(`Rename markdown document failed: ${res.status}`);
-      await res.json();
+      if (boardYjsRuntime) {
+        boardYjsRuntime.updateMarkdownTitle(renameMarkdownTarget.documentId, title);
+      } else {
+        const res = await fetch(`/api/catalog/markdown-documents/${encodeURIComponent(renameMarkdownTarget.documentId)}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title }),
+        });
+        if (!res.ok) throw new Error(`Rename markdown document failed: ${res.status}`);
+        await res.json();
+      }
       setRenameMarkdownTarget(null);
     } catch (err) {
       console.error("Markdown document rename failed:", err);
@@ -124,10 +131,14 @@ export function BoardWorkspaceContextMenus({
 
   const handleDeleteMarkdown = async (documentId: string) => {
     try {
-      const res = await fetch(`/api/catalog/markdown-documents/${encodeURIComponent(documentId)}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error(`Delete markdown document failed: ${res.status}`);
+      if (boardYjsRuntime) {
+        boardYjsRuntime.deleteMarkdownDocument(documentId);
+      } else {
+        const res = await fetch(`/api/catalog/markdown-documents/${encodeURIComponent(documentId)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error(`Delete markdown document failed: ${res.status}`);
+      }
       removeBoardItem(`markdown:${documentId}`);
       if (activeBoardDocumentId === documentId) setActiveBoardDocument(null);
     } catch (err) {

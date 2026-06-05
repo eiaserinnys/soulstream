@@ -1,0 +1,125 @@
+import * as Y from "yjs";
+
+import type {
+  BoardItemType,
+  CatalogBoardItemRow,
+  MarkdownDocumentRow,
+} from "../db/session_db.js";
+
+export const BOARD_YJS_PREFIX = "board-folder:";
+export const BOARD_ITEMS_MAP = "boardItems";
+export const MARKDOWN_BODIES_MAP = "markdownBodies";
+
+export interface BoardYjsItemValue {
+  item_type: BoardItemType;
+  item_id: string;
+  x: number;
+  y: number;
+  metadata?: Record<string, unknown>;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface BoardYjsReplica {
+  boardItems: CatalogBoardItemRow[];
+  markdownDocuments: MarkdownDocumentRow[];
+}
+
+export function getBoardYjsDocumentName(folderId: string): string {
+  if (!folderId.trim()) {
+    throw new Error("folderId is required");
+  }
+  return `${BOARD_YJS_PREFIX}${folderId}`;
+}
+
+export function getFolderIdFromBoardYjsDocumentName(documentName: string): string | null {
+  if (!documentName.startsWith(BOARD_YJS_PREFIX)) return null;
+  const folderId = documentName.slice(BOARD_YJS_PREFIX.length);
+  return folderId.length > 0 ? folderId : null;
+}
+
+export function createBoardYDocSnapshot(params: {
+  folderId: string;
+  boardItems: readonly CatalogBoardItemRow[];
+  markdownDocuments: readonly MarkdownDocumentRow[];
+}): Uint8Array {
+  const doc = new Y.Doc();
+  const boardItems = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
+  const markdownBodies = doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP);
+
+  doc.transact(() => {
+    for (const item of params.boardItems) {
+      if (item.folderId !== params.folderId) continue;
+      boardItems.set(item.id, {
+        item_type: item.itemType,
+        item_id: item.itemId,
+        x: item.x,
+        y: item.y,
+        metadata: item.metadata ?? {},
+        ...(item.createdAt ? { created_at: item.createdAt } : {}),
+        ...(item.updatedAt ? { updated_at: item.updatedAt } : {}),
+      });
+    }
+
+    for (const markdown of params.markdownDocuments) {
+      const text = new Y.Text();
+      text.insert(0, markdown.body);
+      markdownBodies.set(markdown.id, text);
+    }
+  });
+
+  return Y.encodeStateAsUpdate(doc);
+}
+
+export function readBoardYDocReplica(folderId: string, doc: Y.Doc): BoardYjsReplica {
+  const boardItems = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
+  const markdownBodies = doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP);
+  const markdownDocumentsById = new Map<string, MarkdownDocumentRow>();
+
+  const rows: CatalogBoardItemRow[] = [];
+  for (const [id, value] of boardItems.entries()) {
+    const metadata = value.metadata && typeof value.metadata === "object" ? value.metadata : {};
+    rows.push({
+      id,
+      folderId,
+      itemType: value.item_type,
+      itemId: value.item_id,
+      x: Number(value.x),
+      y: Number(value.y),
+      metadata,
+      ...(value.created_at ? { createdAt: value.created_at } : {}),
+      ...(value.updated_at ? { updatedAt: value.updated_at } : {}),
+    });
+
+    if (value.item_type === "markdown") {
+      const title = typeof metadata.title === "string" ? metadata.title : "Untitled document";
+      const body = markdownBodies.get(value.item_id)?.toString() ?? "";
+      markdownDocumentsById.set(value.item_id, {
+        id: value.item_id,
+        title,
+        body,
+      });
+    }
+  }
+
+  return {
+    boardItems: rows.sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)),
+    markdownDocuments: Array.from(markdownDocumentsById.values()),
+  };
+}
+
+export function applyBoardYjsPosition(
+  doc: Y.Doc,
+  boardItemId: string,
+  position: { x: number; y: number },
+): void {
+  const boardItems = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
+  const current = boardItems.get(boardItemId);
+  if (!current) return;
+  boardItems.set(boardItemId, {
+    ...current,
+    x: position.x,
+    y: position.y,
+    updated_at: new Date().toISOString(),
+  });
+}

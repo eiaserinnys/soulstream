@@ -113,6 +113,16 @@ export interface MarkdownDocumentRow {
   updatedAt?: string;
 }
 
+export interface BoardYjsSeed {
+  boardItems: CatalogBoardItemRow[];
+  markdownDocuments: MarkdownDocumentRow[];
+}
+
+export interface BoardYjsReplica {
+  boardItems: CatalogBoardItemRow[];
+  markdownDocuments: MarkdownDocumentRow[];
+}
+
 /** `session_get` 반환 행 (sessions 테이블 컬럼 매핑). */
 export interface SessionRow {
   session_id: string;
@@ -644,6 +654,113 @@ export class SessionDB {
 
   async deleteMarkdownDocument(documentId: string): Promise<void> {
     await this.sql`DELETE FROM markdown_documents WHERE id = ${documentId}`;
+  }
+
+  async getBoardYjsSnapshot(documentName: string): Promise<Uint8Array | null> {
+    const rows = await this.sql<Array<{ snapshot: Buffer | Uint8Array }>>`
+      SELECT snapshot FROM board_yjs_documents WHERE name = ${documentName}
+    `;
+    const snapshot = rows[0]?.snapshot;
+    return snapshot ? new Uint8Array(snapshot) : null;
+  }
+
+  async storeBoardYjsSnapshot(
+    documentName: string,
+    snapshot: Uint8Array,
+  ): Promise<void> {
+    await this.sql`
+      INSERT INTO board_yjs_documents (name, snapshot, updated_at)
+      VALUES (${documentName}, ${Buffer.from(snapshot)}, NOW())
+      ON CONFLICT (name) DO UPDATE
+      SET snapshot = EXCLUDED.snapshot,
+          updated_at = EXCLUDED.updated_at
+    `;
+  }
+
+  async appendBoardYjsUpdate(
+    documentName: string,
+    update: Uint8Array,
+  ): Promise<void> {
+    await this.sql`
+      INSERT INTO board_yjs_documents (name, snapshot)
+      VALUES (${documentName}, ${Buffer.alloc(0)})
+      ON CONFLICT (name) DO NOTHING
+    `;
+    await this.sql`
+      INSERT INTO board_yjs_updates (document_name, update)
+      VALUES (${documentName}, ${Buffer.from(update)})
+    `;
+  }
+
+  async loadBoardYjsSeed(folderId: string): Promise<BoardYjsSeed> {
+    await this.ensureBoardItems();
+    const boardItems = (await this.getBoardItems()).filter((item) => item.folderId === folderId);
+    const markdownIds = boardItems
+      .filter((item) => item.itemType === "markdown")
+      .map((item) => item.itemId);
+    if (markdownIds.length === 0) {
+      return { boardItems, markdownDocuments: [] };
+    }
+    const rows = await this.sql<
+      Array<{ id: string; title: string; body: string; created_at: Date | string | null; updated_at: Date | string | null }>
+    >`
+      SELECT * FROM markdown_documents WHERE id = ANY(${this.sql.array(markdownIds)})
+    `;
+    return {
+      boardItems,
+      markdownDocuments: rows.map(toMarkdownDocumentRow),
+    };
+  }
+
+  async syncBoardYjsReplica(
+    folderId: string,
+    replica: BoardYjsReplica,
+  ): Promise<void> {
+    const boardItemIds = replica.boardItems.map((item) => item.id);
+    if (boardItemIds.length === 0) {
+      await this.sql`DELETE FROM board_items WHERE folder_id = ${folderId}`;
+    } else {
+      await this.sql`
+        DELETE FROM board_items
+        WHERE folder_id = ${folderId}
+          AND id <> ALL(${this.sql.array(boardItemIds)})
+      `;
+    }
+
+    for (const item of replica.boardItems) {
+      await this.sql`
+        INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata, updated_at)
+        VALUES (
+          ${item.id},
+          ${folderId},
+          ${item.itemType},
+          ${item.itemId},
+          ${item.x},
+          ${item.y},
+          ${JSON.stringify(item.metadata ?? {})}::jsonb,
+          NOW()
+        )
+        ON CONFLICT (id) DO UPDATE
+        SET folder_id = EXCLUDED.folder_id,
+            item_type = EXCLUDED.item_type,
+            item_id = EXCLUDED.item_id,
+            x = EXCLUDED.x,
+            y = EXCLUDED.y,
+            metadata = EXCLUDED.metadata,
+            updated_at = EXCLUDED.updated_at
+      `;
+    }
+
+    for (const document of replica.markdownDocuments) {
+      await this.sql`
+        INSERT INTO markdown_documents (id, title, body, updated_at)
+        VALUES (${document.id}, ${document.title}, ${document.body}, NOW())
+        ON CONFLICT (id) DO UPDATE
+        SET title = EXCLUDED.title,
+            body = EXCLUDED.body,
+            updated_at = EXCLUDED.updated_at
+      `;
+    }
   }
 
   // ---------------------------------------------------------------------

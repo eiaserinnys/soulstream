@@ -7,10 +7,6 @@ import {
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
-  createMarkdownDocument,
-  updateBoardItemPosition,
-} from "client/lib/board-workspace-operations";
-import {
   createFolder,
   deleteFolderOptimistic,
   renameFolderOptimistic,
@@ -62,8 +58,6 @@ export function FolderWorkspaceView({
       onRenameFolder={renameFolderOptimistic}
       onDeleteFolder={deleteFolderOptimistic}
       onUpdateFolderSettings={updateFolderSettingsOptimistic}
-      onUpdateBoardItemPosition={updateBoardItemPosition}
-      onCreateMarkdownDocument={createMarkdownDocument}
       onLoadMore={onLoadMore}
       hasMore={hasMore}
     />

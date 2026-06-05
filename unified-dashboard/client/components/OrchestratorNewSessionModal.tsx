@@ -18,7 +18,7 @@ import {
   cn,
   DEFAULT_REASONING_EFFORT,
   REASONING_EFFORT_OPTIONS,
-  toastManager,
+  placeBoardSessionInYjs,
   type ReasoningEffort,
 } from "@seosoyoung/soul-ui";
 import type { AgentInfo } from "@seosoyoung/soul-ui";
@@ -28,7 +28,6 @@ import {
   reasoningEffortForSubmit,
   selectedAgentBackend,
 } from "../utils/reasoningEffort";
-import { updateBoardItemPosition } from "../lib/board-workspace-operations";
 
 interface OAuthProfile {
   name: string;
@@ -241,16 +240,7 @@ export function OrchestratorNewSessionModal() {
         boardPosition,
       );
       if (boardPosition && selectedModalFolderId) {
-        try {
-          await updateBoardItemPosition(`session:${agentSessionId}`, boardPosition.x, boardPosition.y);
-        } catch (err) {
-          toastManager.add({
-            title: "Session placement failed",
-            description: "The session was created, but the board position was restored by the server.",
-            type: "warning",
-          });
-          console.error("Session board item placement failed:", err);
-        }
+        placeBoardSessionInYjs(selectedModalFolderId, agentSessionId, boardPosition);
       }
       clearDraft(draftKey);
       closeNewSessionModal();

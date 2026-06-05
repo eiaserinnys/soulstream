@@ -137,6 +137,20 @@ CREATE TABLE IF NOT EXISTS board_items (
 ALTER TABLE board_items ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE board_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
+CREATE TABLE IF NOT EXISTS board_yjs_documents (
+    name        TEXT PRIMARY KEY,
+    snapshot    BYTEA NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS board_yjs_updates (
+    id             BIGSERIAL PRIMARY KEY,
+    document_name  TEXT NOT NULL REFERENCES board_yjs_documents(name) ON DELETE CASCADE,
+    update         BYTEA NOT NULL,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE OR REPLACE FUNCTION board_delete_markdown_refs()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
@@ -305,6 +319,7 @@ CREATE INDEX IF NOT EXISTS idx_soulstream_node_heartbeats_seen
     ON soulstream_node_heartbeats (last_seen_at);
 CREATE INDEX IF NOT EXISTS idx_board_items_folder ON board_items (folder_id, y, x);
 CREATE INDEX IF NOT EXISTS idx_board_items_ref ON board_items (item_type, item_id);
+CREATE INDEX IF NOT EXISTS idx_board_yjs_updates_document ON board_yjs_updates (document_name, id);
 
 CREATE INDEX IF NOT EXISTS idx_task_items_parent ON task_items (parent_id, position_key);
 CREATE INDEX IF NOT EXISTS idx_task_items_status ON task_items (status) WHERE archived = FALSE;
@@ -1318,8 +1333,8 @@ BEGIN
         folder_id,
         item_type,
         item_id,
-        ((item_index % 4) * 160)::DOUBLE PRECISION,
-        (FLOOR(item_index / 4) * 120)::DOUBLE PRECISION,
+        ((item_index % 4) * 280)::DOUBLE PRECISION,
+        (FLOOR(item_index / 4) * 160)::DOUBLE PRECISION,
         '{}'::jsonb
     FROM numbered
     ON CONFLICT (id) DO NOTHING;

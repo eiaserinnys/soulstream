@@ -4,6 +4,10 @@ import type { McpAuthConfig } from "./mcp/auth.js";
 import type { McpRuntime } from "./mcp/runtime.js";
 import { registerMcpRoutes } from "./mcp/transport.js";
 import { registerLlmRoutes, type LlmRouteConfig } from "./llm/router.js";
+import {
+  registerBoardYjsRoutes,
+  type BoardYjsRouteConfig,
+} from "./collaboration/board_yjs_route.js";
 
 export interface ServerParams {
   host: string;
@@ -26,6 +30,8 @@ export interface ServerParams {
   };
   /** LLM proxy route 설정. 미지정 시 `/llm/completions` 미등록. */
   llm?: LlmRouteConfig;
+  /** Board workspace Yjs collaboration route 설정. */
+  boardYjs?: BoardYjsRouteConfig;
 }
 
 export type ServerInstance = FastifyInstance & {
@@ -66,6 +72,9 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
   }
   if (params.llm) {
     registerLlmRoutes(fastify, params.llm);
+  }
+  if (params.boardYjs) {
+    await registerBoardYjsRoutes(fastify, params.boardYjs);
   }
 
   return fastify;

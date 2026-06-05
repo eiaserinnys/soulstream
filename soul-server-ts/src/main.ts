@@ -424,6 +424,16 @@ async function main(): Promise<void> {
           logger,
         }
       : undefined,
+    boardYjs: {
+      db,
+      logger,
+      auth: {
+        authBearerToken: env.AUTH_BEARER_TOKEN,
+        environment: env.ENVIRONMENT,
+        dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
+        jwtSecret: env.JWT_SECRET,
+      },
+    },
   });
   await startServer(server, env.HOST, env.PORT);
   logger.info(

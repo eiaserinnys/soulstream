@@ -172,7 +172,7 @@ describe("BoardWorkspaceView", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders fixed 160x120 positioned tiles on a 20px dotted infinite canvas", () => {
+  it("renders fixed 280x160 positioned tiles on a 20px dotted infinite canvas", () => {
     ({ container, root } = renderBoard());
 
     const canvas = container.querySelector<HTMLElement>('[data-testid="board-workspace-canvas"]');
@@ -184,13 +184,13 @@ describe("BoardWorkspaceView", () => {
     expect(canvas?.style.width).toBe("20000px");
     expect(canvas?.style.height).toBe("12000px");
 
-    expect(folderTile?.className).toContain("h-[120px]");
-    expect(folderTile?.className).toContain("w-[160px]");
+    expect(folderTile?.className).toContain("h-[160px]");
+    expect(folderTile?.className).toContain("w-[280px]");
     expect(folderTile?.className).toContain("rounded-md");
     expect(folderTile?.style.left).toBe("10040px");
     expect(folderTile?.style.top).toBe("6080px");
-    expect(sessionTile?.className).toContain("h-[120px]");
-    expect(sessionTile?.className).toContain("w-[160px]");
+    expect(sessionTile?.className).toContain("h-[160px]");
+    expect(sessionTile?.className).toContain("w-[280px]");
     expect(sessionTile?.className).toContain("rounded-md");
     expect(sessionTile?.style.left).toBe("10200px");
     expect(sessionTile?.style.top).toBe("6040px");
@@ -215,7 +215,7 @@ describe("BoardWorkspaceView", () => {
     expect(container.querySelector('[data-testid="board-markdown-preview"]')?.textContent).toBe("Markdown preview");
   });
 
-  it("shows a snapped drag ghost and persists an optimistic 20px board position", async () => {
+  it("shows a snapped drag ghost and updates the Y-doc board position without HTTP persistence", async () => {
     const onUpdateBoardItemPosition = vi.fn().mockResolvedValue(undefined);
     ({ container, root } = renderBoard({ onUpdateBoardItemPosition }));
 
@@ -236,12 +236,12 @@ describe("BoardWorkspaceView", () => {
     });
     await Promise.resolve();
 
-    expect(onUpdateBoardItemPosition).toHaveBeenCalledWith("session:session-a", 260, 100);
+    expect(onUpdateBoardItemPosition).not.toHaveBeenCalled();
     expect(sessionTile?.style.left).toBe("10260px");
     expect(sessionTile?.style.top).toBe("6100px");
   });
 
-  it("rolls back an optimistic position when the server rejects the move", async () => {
+  it("does not roll back to a stale server position when the legacy callback rejects", async () => {
     const onUpdateBoardItemPosition = vi.fn().mockRejectedValue(new Error("no"));
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     ({ container, root } = renderBoard({ onUpdateBoardItemPosition }));
@@ -257,9 +257,10 @@ describe("BoardWorkspaceView", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(sessionTile?.style.left).toBe("10200px");
-    expect(sessionTile?.style.top).toBe("6040px");
-    expect(consoleError).toHaveBeenCalledWith("Board item position update failed:", expect.any(Error));
+    expect(onUpdateBoardItemPosition).not.toHaveBeenCalled();
+    expect(sessionTile?.style.left).toBe("10260px");
+    expect(sessionTile?.style.top).toBe("6100px");
+    expect(consoleError).not.toHaveBeenCalledWith("Board item position update failed:", expect.any(Error));
   });
 
   it("allows negative board coordinates when dragging left and up", async () => {
@@ -276,7 +277,7 @@ describe("BoardWorkspaceView", () => {
     });
     await Promise.resolve();
 
-    expect(onUpdateBoardItemPosition).toHaveBeenCalledWith("subfolder:child-folder", -80, -120);
+    expect(onUpdateBoardItemPosition).not.toHaveBeenCalled();
     expect(folderTile?.style.left).toBe("9920px");
     expect(folderTile?.style.top).toBe("5880px");
   });
@@ -310,25 +311,7 @@ describe("BoardWorkspaceView", () => {
   });
 
   it("creates a markdown document from the New menu at the first open grid slot", async () => {
-    const onCreateMarkdownDocument = vi.fn().mockResolvedValue({
-      document: {
-        id: "doc-new",
-        title: "Untitled document",
-        body: "",
-      },
-      boardItem: {
-        id: "markdown:doc-new",
-        folderId: "root",
-        itemType: "markdown",
-        itemId: "doc-new",
-        x: 0,
-        y: 0,
-        metadata: {
-          title: "Untitled document",
-          preview: "",
-        },
-      },
-    });
+    const onCreateMarkdownDocument = vi.fn();
     ({ container, root } = renderBoard({ onCreateMarkdownDocument }));
 
     const newButton = Array.from(container.querySelectorAll("button"))
@@ -347,37 +330,19 @@ describe("BoardWorkspaceView", () => {
     });
     await Promise.resolve();
 
-    expect(onCreateMarkdownDocument).toHaveBeenCalledWith({
-      folderId: "root",
-      title: "Untitled document",
-      body: "",
-      x: 0,
-      y: 0,
-    });
-    expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-new");
+    expect(onCreateMarkdownDocument).not.toHaveBeenCalled();
+    const activeDocumentId = useDashboardStore.getState().activeBoardDocumentId;
+    expect(activeDocumentId).toBeTruthy();
+    expect(useDashboardStore.getState().catalog?.boardItems?.some((item) =>
+      item.id === `markdown:${activeDocumentId}` &&
+      item.folderId === "root" &&
+      item.x === 0 &&
+      item.y === 0
+    )).toBe(true);
   });
 
   it("opens the desktop context menu with folder, session, and markdown actions at a snapped board point", async () => {
-    const onCreateMarkdownDocument = vi.fn().mockResolvedValue({
-      document: {
-        id: "doc-context",
-        title: "Untitled document",
-        body: "",
-      },
-      boardItem: {
-        id: "markdown:doc-context",
-        folderId: "root",
-        itemType: "markdown",
-        itemId: "doc-context",
-        x: 20,
-        y: 40,
-        metadata: {
-          title: "Untitled document",
-          preview: "",
-        },
-      },
-    });
-    ({ container, root } = renderBoard({ onCreateMarkdownDocument }));
+    ({ container, root } = renderBoard());
 
     const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-canvas"]')?.parentElement;
     expect(scroller).not.toBeNull();
