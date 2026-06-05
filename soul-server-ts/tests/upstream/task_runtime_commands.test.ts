@@ -229,23 +229,9 @@ describe("TaskRuntimeCommands ACK builders", () => {
   it("maps intervention route results to stable intervene_ack outcomes", () => {
     expect(
       buildInterveneAck({
-        requestId: "req-delivered",
-        agentSessionId: "sess-1",
-        result: { delivered: true },
-      }),
-    ).toEqual({
-      type: "intervene_ack",
-      requestId: "req-delivered",
-      status: "ok",
-      outcome: "delivered",
-      agentSessionId: "sess-1",
-    });
-
-    expect(
-      buildInterveneAck({
         requestId: "req-queued",
         agentSessionId: "sess-1",
-        result: { queued: true, queuePosition: 3, liveSteerStatus: "not_supported" },
+        result: { queued: true, queuePosition: 3 },
       }),
     ).toEqual({
       type: "intervene_ack",
@@ -253,7 +239,6 @@ describe("TaskRuntimeCommands ACK builders", () => {
       status: "ok",
       outcome: "queued",
       queuePosition: 3,
-      liveSteerStatus: "not_supported",
     });
 
     expect(

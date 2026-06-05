@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type {
   EnginePort,
-  SupportsLiveTurnSteering,
   SupportsToolApproval,
 } from "../../src/engine/protocol.js";
 import { TaskManager } from "../../src/task/task_manager.js";
@@ -837,7 +836,7 @@ describe("TaskManager.shutdown", () => {
 });
 
 describe("TaskManager.addIntervention (B-4)", () => {
-  it("running task + live steering capability delivered → intervention_sent broadcast + no queue", async () => {
+  it("running task queues even if the engine object has a legacy steering method", async () => {
     const { db, broadcaster, emitEventEnvelope } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     const task = await tm.createTask({
@@ -853,7 +852,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       async interrupt() { return true; },
       async close() {},
       steerActiveTurn,
-    } as EnginePort & SupportsLiveTurnSteering;
+    } as unknown as EnginePort;
 
     const result = await tm.addIntervention(
       {
@@ -865,61 +864,22 @@ describe("TaskManager.addIntervention (B-4)", () => {
       vi.fn(),
     );
 
-    expect(result).toEqual({ delivered: true });
-    expect(task.interventionQueue).toEqual([]);
-    expect(steerActiveTurn).toHaveBeenCalledWith({
-      prompt: "focus on the failing test",
-      imageAttachmentPaths: ["/tmp/a.png"],
-    });
-    expect(emitEventEnvelope).toHaveBeenCalledWith(
-      "s-live",
-      expect.objectContaining({
-        type: "intervention_sent",
-        text: "focus on the failing test",
-        user: "alice",
-      }),
-    );
-  });
-
-  it("running task + live steering capability failure → existing queue fallback with status", async () => {
-    const { db, broadcaster } = makeMocks();
-    const tm = new TaskManager("n", db, broadcaster, silentLogger);
-    const task = await tm.createTask({
-      agentSessionId: "s-fallback",
-      prompt: "p",
-      profileId: "codex-default",
-    });
-    const steerActiveTurn = vi.fn().mockResolvedValue({
-      status: "no_active_turn",
-      message: "active turn missing",
-    });
-    task.engine = {
-      backendId: "codex",
-      workspaceDir: "/tmp/codex",
-      async *execute(): AsyncIterable<never> {},
-      async interrupt() { return true; },
-      async close() {},
-      steerActiveTurn,
-    } as EnginePort & SupportsLiveTurnSteering;
-
-    const result = await tm.addIntervention(
-      { agentSessionId: "s-fallback", text: "queue me", user: "alice" },
-      vi.fn(),
-    );
-
-    expect(result).toEqual({
-      queued: true,
-      queuePosition: 1,
-      liveSteerStatus: "no_active_turn",
-    });
+    expect(result).toEqual({ queued: true, queuePosition: 1 });
     expect(task.interventionQueue).toHaveLength(1);
-    expect(task.interventionQueue[0]).toMatchObject({ text: "queue me", user: "alice" });
-    expect(steerActiveTurn).toHaveBeenCalledTimes(1);
+    expect(task.interventionQueue[0]).toMatchObject({
+      text: "focus on the failing test",
+      user: "alice",
+      attachmentPaths: ["/tmp/a.png"],
+    });
+    expect(steerActiveTurn).not.toHaveBeenCalled();
+    expect(
+      emitEventEnvelope.mock.calls.filter(
+        (c) => (c[1] as { type: string }).type === "intervention_sent",
+      ),
+    ).toHaveLength(0);
   });
 
-  it("running task → queue push + intervention_sent broadcast via emitEventEnvelope + queued result", async () => {
-    // ride-along 5자리 fix (Ft1NJquP): intervention_sent는 _event_id 박힌 dict를
-    // emitEventEnvelope으로 발행한다.
+  it("running task → queue push only; intervention_sent is emitted when executor dequeues", async () => {
     const { db, broadcaster, emitEventEnvelope } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
@@ -935,16 +895,11 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(result).toEqual({ queued: true, queuePosition: 1 });
     expect(task.interventionQueue).toHaveLength(1);
     expect(task.interventionQueue[0]).toMatchObject({ text: "hello", user: "alice" });
-    // intervention_sent envelope이 emitEventEnvelope 경로로 발행됨 (persistence 미주입 분기 — _event_id 없음)
-    const interventionCall = emitEventEnvelope.mock.calls.find(
-      (c) => (c[1] as { type: string }).type === "intervention_sent",
-    );
-    expect(interventionCall).toBeDefined();
-    expect(interventionCall![1]).toMatchObject({
-      type: "intervention_sent",
-      text: "hello",
-      user: "alice",
-    });
+    expect(
+      emitEventEnvelope.mock.calls.filter(
+        (c) => (c[1] as { type: string }).type === "intervention_sent",
+      ),
+    ).toHaveLength(0);
     expect(onResume).not.toHaveBeenCalled();
   });
 
@@ -1179,7 +1134,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(task.engine).toBeUndefined();
   });
 
-  it("intervention_sent broadcast 실패 시 격리 (task 진행 유지) — running 경로", async () => {
+  it("running intervention arrival does not touch broadcast, so queue is isolated from wire failure", async () => {
     const { db, broadcaster, emitEventEnvelope } = makeMocks();
     emitEventEnvelope.mockRejectedValueOnce(new Error("ws down"));
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
@@ -1190,7 +1145,8 @@ describe("TaskManager.addIntervention (B-4)", () => {
       onResume,
     );
     expect(result).toEqual({ queued: true, queuePosition: 1 });
-    expect(task.interventionQueue).toHaveLength(1);  // broadcast 실패에도 queue는 살아있음
+    expect(task.interventionQueue).toHaveLength(1);
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
   });
 });
 
@@ -1288,9 +1244,9 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
 
 // B-5: session_broadcaster.emitCatalogUpdated wire 형상 회귀는 session_broadcaster.test.ts에서 보호.
 
-// B-5: intervention_sent 영속화 (Python `task_executor.py:352-389` 정합)
-describe("TaskManager.addIntervention — intervention_sent 영속화 (B-5)", () => {
-  it("persistence 주입 시 intervention_sent를 persistEvent + broadcast 모두 호출", async () => {
+// B-5: intervention_sent 영속화는 executor dequeue 시점이 정본.
+describe("TaskManager.addIntervention — running queue-only arrival (B-5)", () => {
+  it("persistence 주입 시에도 addIntervention은 queue만 갱신하고 wire를 발행하지 않음", async () => {
     const mocks = makeMocks();
     const persistEvent = vi.fn().mockResolvedValue(123);
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
@@ -1305,68 +1261,64 @@ describe("TaskManager.addIntervention — intervention_sent 영속화 (B-5)", ()
       vi.fn(),
     );
 
-    expect(persistEvent).toHaveBeenCalledTimes(1);
-    const persisted = persistEvent.mock.calls[0][1] as Record<string, unknown>;
-    expect(persisted.type).toBe("intervention_sent");
-    expect(persisted.text).toBe("추가 메시지");
-    expect(persisted.user).toBe("alice");
-    expect(persisted.caller_info).toEqual({ source: "slack" });
-    expect(typeof persisted.timestamp).toBe("number");
-
-    expect(handleSideEffects).toHaveBeenCalledTimes(1);
-    // ride-along 5자리 fix: emitEventEnvelope으로 발행 (_event_id 박힌 dict).
-    const interventionEnvelope = mocks.emitEventEnvelope.mock.calls.find(
-      (c) => (c[1] as { type: string }).type === "intervention_sent",
-    );
-    expect(interventionEnvelope).toBeDefined();
-    expect((interventionEnvelope![1] as Record<string, unknown>)._event_id).toBe(123);
-    // 호출 순서: persistEvent → handleSideEffects → emitEventEnvelope (last_message 갱신 후 broadcast)
-    expect(persistEvent.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.emitEventEnvelope.mock.invocationCallOrder[0],
-    );
-    expect(task.lastEventId).toBe(123);
+    expect(task.interventionQueue).toEqual([
+      {
+        text: "추가 메시지",
+        user: "alice",
+        callerInfo: { source: "slack" },
+      },
+    ]);
+    expect(persistEvent).not.toHaveBeenCalled();
+    expect(handleSideEffects).not.toHaveBeenCalled();
+    expect(
+      mocks.emitEventEnvelope.mock.calls.filter(
+        (c) => (c[1] as { type: string }).type === "intervention_sent",
+      ),
+    ).toHaveLength(0);
+    expect(task.lastEventId).toBe(0);
   });
 
-  it("persistence 미주입(legacy) → persistEvent skip, broadcast만 발행 (_event_id 없음)", async () => {
+  it("persistence 미주입(legacy) → queue만 갱신하고 broadcast 없음", async () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);  // persistence 생략
-    await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     await tm.addIntervention(
       { agentSessionId: "s1", text: "x", user: "u" },
       vi.fn(),
     );
-    // broadcast는 호출됨 (intervention_sent envelope via emitEventEnvelope)
-    const interventionCall = mocks.emitEventEnvelope.mock.calls.find(
-      (c) => (c[1] as { type: string }).type === "intervention_sent",
-    );
-    expect(interventionCall).toBeDefined();
-    // persistence 미주입이라 _event_id 박힘 안 함
-    expect((interventionCall![1] as Record<string, unknown>)._event_id).toBeUndefined();
+    expect(task.interventionQueue).toEqual([{ text: "x", user: "u" }]);
+    expect(
+      mocks.emitEventEnvelope.mock.calls.filter(
+        (c) => (c[1] as { type: string }).type === "intervention_sent",
+      ),
+    ).toHaveLength(0);
   });
 
-  it("persistEvent throw → 격리, broadcast는 정상 진행 (_event_id 없음)", async () => {
+  it("persistEvent throw 주입 상태여도 running arrival에서는 호출하지 않아 queue가 보존됨", async () => {
     const mocks = makeMocks();
     const persistEvent = vi.fn().mockRejectedValueOnce(new Error("events db down"));
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
     const persistence = { persistEvent, handleSideEffects } as unknown as import("../../src/db/event_persistence.js").EventPersistence;
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger, persistence);
-    await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
+    const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
     const result = await tm.addIntervention(
       { agentSessionId: "s1", text: "x", user: "u" },
       vi.fn(),
     );
     expect(result).toEqual({ queued: true, queuePosition: 1 });
-    const interventionCall = mocks.emitEventEnvelope.mock.calls.find(
-      (c) => (c[1] as { type: string }).type === "intervention_sent",
-    );
-    expect(interventionCall).toBeDefined();
-    expect((interventionCall![1] as Record<string, unknown>)._event_id).toBeUndefined();
+    expect(task.interventionQueue).toEqual([{ text: "x", user: "u" }]);
+    expect(persistEvent).not.toHaveBeenCalled();
+    expect(
+      mocks.emitEventEnvelope.mock.calls.filter(
+        (c) => (c[1] as { type: string }).type === "intervention_sent",
+      ),
+    ).toHaveLength(0);
   });
 });
 
 // PR #55: 결함 A·B 정합 (resume vs intervention 분기 + typing indicator)
 describe("TaskManager.addIntervention — running vs completed wire 분기 (결함 A·B)", () => {
-  it("running task → intervention_sent wire 발행, user_message·session_updated 발행 안 함", async () => {
+  it("running task → queue only, user_message·intervention_sent·session_updated 발행 안 함", async () => {
     const mocks = makeMocks();
     const persistEvent = vi.fn().mockResolvedValue(1);
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
@@ -1380,13 +1332,11 @@ describe("TaskManager.addIntervention — running vs completed wire 분기 (결�
       vi.fn(),
     );
 
-    // ride-along 5자리 fix: intervention_sent도 emitEventEnvelope으로 발행. user_message envelope·session_updated는 없음.
     const envelopeCalls = mocks.emitEventEnvelope.mock.calls;
-    expect(envelopeCalls).toHaveLength(1);
-    expect((envelopeCalls[0][1] as { type: string }).type).toBe("intervention_sent");
+    expect(envelopeCalls).toHaveLength(0);
     expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
-    // persistEvent에 박힌 type은 intervention_sent
-    expect((persistEvent.mock.calls[0][1] as { type: string }).type).toBe("intervention_sent");
+    expect(persistEvent).not.toHaveBeenCalled();
+    expect(task.interventionQueue).toEqual([{ text: "추가", user: "u" }]);
   });
 
   it("completed task → session_updated + onResume, user_message는 executor initial path가 담당", async () => {

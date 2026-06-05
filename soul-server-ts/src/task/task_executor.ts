@@ -21,7 +21,6 @@ import type {
   EnginePort,
   ScheduleToolUseHandler,
   SSEEventPayload,
-  SupportsLiveTurnSteering,
 } from "../engine/protocol.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
@@ -36,15 +35,9 @@ import { TaskEngineEventPublisher } from "./task_engine_event_publisher.js";
 import { TaskEngineTurnRunner } from "./task_engine_turn_runner.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
 import { publishInterventionSent } from "./task_intervention_events.js";
-import {
-  markLiveInterventionInFlight,
-  noteLiveInterventionEngineEvent,
-  restoreUnconsumedLiveInterventions,
-} from "./task_live_intervention_invariant.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import type { Task, TaskStatus } from "./task_models.js";
 import {
-  composeInterventionTurnPrompt,
   isOpenAiAgentsApprovalPending,
   resolveTurnLoopTransition,
 } from "./task_turn_loop_transition.js";
@@ -213,12 +206,9 @@ export class TaskExecutor {
               prompt: turnPrompt,
               imageAttachmentPaths: turnImageAttachmentPaths,
               ...(turnSystemPrompt !== undefined ? { systemPrompt: turnSystemPrompt } : {}),
-              onSafeInterventionDrain: () =>
-                this.drainQueuedLiveInterventions(task, engine),
             },
           })) {
             await this.engineEventPublisher.publishEngineEvent(task, event);
-            noteLiveInterventionEngineEvent(task, event);
             this.collectClaudeRuntimeTaskFollowup(task, event);
           }
         } catch (err) {
@@ -231,16 +221,6 @@ export class TaskExecutor {
           currentTurnIntervention,
           previousAssistantText,
         );
-        const restoredLiveInterventions = restoreUnconsumedLiveInterventions(task);
-        if (restoredLiveInterventions > 0) {
-          this.logger.warn(
-            {
-              sessionId: task.agentSessionId,
-              restoredLiveInterventions,
-            },
-            "live intervention closed with empty turn result — restoring queued fallback",
-          );
-        }
         // turn 정상 종료 — 외부에서 status가 interrupted 등으로 박혔는지, queue가 남았는지 결정
         const transition = resolveTurnLoopTransition(task, agent);
         if (transition.kind === "awaiting_runtime") {
@@ -250,11 +230,11 @@ export class TaskExecutor {
         if (transition.kind !== "continue") {
           break;
         }
+        await publishInterventionSent(task, transition.intervention, this.interventionEventDeps);
         turnPrompt = transition.prompt;
         turnImageAttachmentPaths = transition.imageAttachmentPaths;
         turnSystemPrompt = stableSystemPrompt;
         currentTurnIntervention = transition.intervention;
-        // (intervention_sent는 addIntervention에서 이미 broadcast됨 — 여기서 재발행 안 함.)
       }
     } finally {
       if (!isOpenAiAgentsApprovalPending(task)) {
@@ -303,42 +283,6 @@ export class TaskExecutor {
     }
   }
 
-  private async drainQueuedLiveInterventions(
-    task: Task,
-    engine: EnginePort,
-  ): Promise<boolean> {
-    if (task.status !== "running") return false;
-    if (!supportsLiveTurnSteering(engine)) return false;
-
-    let deliveredAny = false;
-    while (task.interventionQueue.length > 0) {
-      const next = task.interventionQueue[0]!;
-      const composed = composeInterventionTurnPrompt(next);
-      const result = await engine.steerActiveTurn({
-        prompt: composed.prompt,
-        ...(composed.imageAttachmentPaths.length > 0
-          ? { imageAttachmentPaths: composed.imageAttachmentPaths }
-          : {}),
-      });
-      if (result.status !== "delivered") {
-        this.logger.warn(
-          {
-            sessionId: task.agentSessionId,
-            status: result.status,
-            message: result.message,
-          },
-          "safe live intervention drain stopped — keeping queued fallback",
-        );
-        return deliveredAny;
-      }
-      await publishInterventionSent(task, next, this.interventionEventDeps);
-      markLiveInterventionInFlight(task, next);
-      task.interventionQueue.shift();
-      deliveredAny = true;
-    }
-    return deliveredAny;
-  }
-
   private async handleClaudeRuntimeFollowupStall(
     task: Task,
     intervention: InterventionMessage | undefined,
@@ -384,11 +328,4 @@ function resolveFollowupStallReason(
     return "repeated_response";
   }
   return null;
-}
-
-function supportsLiveTurnSteering(
-  engine: EnginePort,
-): engine is EnginePort & SupportsLiveTurnSteering {
-  return typeof (engine as unknown as Partial<SupportsLiveTurnSteering>).steerActiveTurn ===
-    "function";
 }

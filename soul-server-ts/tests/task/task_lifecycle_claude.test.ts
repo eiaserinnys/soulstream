@@ -20,7 +20,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type Query as ClaudeSdkQuery,
   type SDKMessage,
-  type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
@@ -141,10 +140,6 @@ function sdkSuccessResult(
   } as unknown as SDKMessage;
 }
 
-function sdkUserMessageText(message: SDKUserMessage): string {
-  return typeof message.message.content === "string" ? message.message.content : "";
-}
-
 describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
   it("첫 turn 정상 종료 → complete 1회 + status completed", async () => {
     const mocks = makeMocks();
@@ -249,7 +244,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     expect(completeCalls).toHaveLength(2);
   });
 
-  it("post-result drain 중 거부된 Claude live intervention은 큐에 남아 다음 SDK query로 전달된다", async () => {
+  it("post-result drain 중 도착한 intervention은 큐에 남아 다음 SDK query로 전달된다", async () => {
     const mocks = makeMocks();
     const readyDuringPostResultDrain = deferred<void>();
     const releaseDrain = deferred<void>();
@@ -262,11 +257,8 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
         (async function* () {
           queryCalls += 1;
           capturedResumeSessionIds.push(params.options?.resume);
-          const input = params.prompt as AsyncIterable<SDKUserMessage>;
-          const iterator = input[Symbol.asyncIterator]();
-          const initial = await iterator.next();
-          expect(initial.done).toBe(false);
-          capturedPrompts.push(sdkUserMessageText(initial.value));
+          expect(typeof params.prompt).toBe("string");
+          capturedPrompts.push(params.prompt as string);
 
           if (queryCalls === 1) {
             yield sdkSystemInit("claude-sess-drain-queue");
@@ -306,10 +298,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     });
     await expect(
       transition.deliver(task, { text: "second at 80ms", user: "alice" }),
-    ).resolves.toMatchObject({
-      queued: true,
-      liveSteerStatus: "not_accepting_input",
-    });
+    ).resolves.toEqual({ queued: true, queuePosition: 1 });
     expect(task.interventionQueue.map((item) => item.text)).toEqual([
       "second at 80ms",
     ]);
@@ -328,7 +317,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     expect(task.status).toBe("completed");
   });
 
-  it("live delivered intervention 뒤 SDK가 빈 result로 닫히면 intervention을 다음 query로 복구한다", async () => {
+  it("빈 result로 첫 query가 닫혀도 Continue trailer intervention은 다음 query로 처리된다", async () => {
     const mocks = makeMocks();
     const readyForIntervention = deferred<void>();
     const capturedPrompts: string[] = [];
@@ -340,18 +329,12 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
         (async function* () {
           queryCalls += 1;
           capturedResumeSessionIds.push(params.options?.resume);
-          const input = params.prompt as AsyncIterable<SDKUserMessage>;
-          const iterator = input[Symbol.asyncIterator]();
-          const initial = await iterator.next();
-          expect(initial.done).toBe(false);
-          capturedPrompts.push(sdkUserMessageText(initial.value));
+          expect(typeof params.prompt).toBe("string");
+          capturedPrompts.push(params.prompt as string);
 
           if (queryCalls === 1) {
             yield sdkSystemInit("claude-sess-empty-live");
             readyForIntervention.resolve();
-            const liveInput = await iterator.next();
-            expect(liveInput.done).toBe(false);
-            expect(sdkUserMessageText(liveInput.value)).toBe("dashboard intervention");
             yield sdkSuccessResult("claude-sess-empty-live", "", {
               stop_reason: null,
               usage: {},
@@ -396,8 +379,11 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       persistence: mocks.persistence,
     });
     await expect(
-      transition.deliver(task, { text: "dashboard intervention", user: "dashboard" }),
-    ).resolves.toEqual({ delivered: true });
+      transition.deliver(task, {
+        text: "Continue from where you left off.",
+        user: "dashboard",
+      }),
+    ).resolves.toEqual({ queued: true, queuePosition: 1 });
     await task.executionPromise;
 
     expect(queryCalls).toBe(2);
@@ -405,7 +391,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       undefined,
       "claude-sess-empty-live",
     ]);
-    expect(capturedPrompts[1]).toContain("dashboard intervention");
+    expect(capturedPrompts[1]).toContain("Continue from where you left off.");
     expect(task.interventionQueue).toEqual([]);
     expect(mocks.emitEventEnvelope).toHaveBeenCalledWith(
       "sess-lc",
