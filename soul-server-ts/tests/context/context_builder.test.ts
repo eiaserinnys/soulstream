@@ -159,6 +159,86 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     expect(ctx.effectiveSystemPrompt).toBe("root prompt\n\nleaf prompt\n\ntask system");
   });
 
+  it("folderPrompt 상속은 동일 텍스트 중복을 한 번만 유지한다", async () => {
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "leaf" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "leaf",
+      name: "Leaf",
+      sort_order: 2,
+      parent_folder_id: "middle",
+      settings: { folderPrompt: "shared prompt" },
+    });
+    const getCatalog = vi.fn().mockResolvedValue({
+      folders: [
+        {
+          id: "root",
+          name: "Root",
+          sortOrder: 0,
+          parentFolderId: null,
+          settings: { folderPrompt: "shared prompt" },
+        },
+        {
+          id: "middle",
+          name: "Middle",
+          sortOrder: 1,
+          parentFolderId: "root",
+          settings: { folderPrompt: "middle prompt" },
+        },
+        {
+          id: "leaf",
+          name: "Leaf",
+          sortOrder: 2,
+          parentFolderId: "middle",
+          settings: { folderPrompt: "shared prompt" },
+        },
+      ],
+      sessions: {},
+    });
+    const cb = makeBuilder({ getSession, getFolderById, getCatalog } as Partial<SessionDB>);
+
+    const ctx = await cb.build(
+      makeTask({ systemPrompt: "task system" }),
+      codexAgent,
+    );
+
+    expect(ctx.effectiveSystemPrompt).toBe("shared prompt\n\nmiddle prompt\n\ntask system");
+  });
+
+  it("folder chain cycle이 있어도 방문한 경로만 합성하고 종료한다", async () => {
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "leaf" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "leaf",
+      name: "Leaf",
+      sort_order: 1,
+      parent_folder_id: "parent",
+      settings: { folderPrompt: "leaf prompt" },
+    });
+    const getCatalog = vi.fn().mockResolvedValue({
+      folders: [
+        {
+          id: "parent",
+          name: "Parent",
+          sortOrder: 0,
+          parentFolderId: "leaf",
+          settings: { folderPrompt: "parent prompt" },
+        },
+        {
+          id: "leaf",
+          name: "Leaf",
+          sortOrder: 1,
+          parentFolderId: "parent",
+          settings: { folderPrompt: "leaf prompt" },
+        },
+      ],
+      sessions: {},
+    });
+    const cb = makeBuilder({ getSession, getFolderById, getCatalog } as Partial<SessionDB>);
+
+    const ctx = await cb.build(makeTask(), codexAgent);
+
+    expect(ctx.effectiveSystemPrompt).toBe("parent prompt\n\nleaf prompt");
+  });
+
   it("folderPrompt 없고 task.systemPrompt만 있음 → 그대로 반환", async () => {
     const cb = makeBuilder();
     const ctx = await cb.build(
@@ -274,6 +354,138 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     expect(ctx.combinedContextItems).toHaveLength(2);  // soulstream + atom
     expect(ctx.combinedContextItems[1].key).toBe("atom_context");
     expect(ctx.combinedContextItems[1].content).toContain("## atom node");
+  });
+
+  it("folder atomContextNode는 root부터 leaf까지 상속 fetch한다", async () => {
+    vi.mocked(globalThis.fetch)
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ markdown: "# root atom\nbody" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ markdown: "# leaf atom\nbody" }), { status: 200 }),
+      );
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "leaf" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "leaf",
+      name: "Leaf",
+      sort_order: 2,
+      parent_folder_id: "root",
+      settings: {
+        atomContextNode: {
+          nodeId: "22222222-3333-4444-5555-666666666666",
+          depth: 4,
+          titlesOnly: false,
+        },
+      },
+    });
+    const getCatalog = vi.fn().mockResolvedValue({
+      folders: [
+        {
+          id: "root",
+          name: "Root",
+          sortOrder: 0,
+          parentFolderId: null,
+          settings: {
+            atomContextNode: {
+              nodeId: "11111111-2222-3333-4444-555555555555",
+              depth: 2,
+              titlesOnly: true,
+            },
+          },
+        },
+        {
+          id: "leaf",
+          name: "Leaf",
+          sortOrder: 2,
+          parentFolderId: "root",
+          settings: {
+            atomContextNode: {
+              nodeId: "22222222-3333-4444-5555-666666666666",
+              depth: 4,
+              titlesOnly: false,
+            },
+          },
+        },
+      ],
+      sessions: {},
+    });
+    const cb = makeBuilder({ getSession, getFolderById, getCatalog } as Partial<SessionDB>, undefined, true);
+
+    const ctx = await cb.build(makeTask(), codexAgent);
+
+    const urls = vi.mocked(globalThis.fetch).mock.calls.map(([url]) => new URL(String(url)));
+    expect(urls).toHaveLength(2);
+    expect(urls[0].pathname).toContain("/api/tree/11111111-2222-3333-4444-555555555555/compile");
+    expect(urls[0].searchParams.get("depth")).toBe("2");
+    expect(urls[0].searchParams.get("titles_only")).toBe("true");
+    expect(urls[1].pathname).toContain("/api/tree/22222222-3333-4444-5555-666666666666/compile");
+    expect(urls[1].searchParams.get("depth")).toBe("4");
+    expect(urls[1].searchParams.has("titles_only")).toBe(false);
+    const atomItem = ctx.combinedContextItems.find((item) => item.key === "atom_context");
+    expect(atomItem).toBeDefined();
+    const content = String(atomItem?.content);
+    expect(content.indexOf("# root atom")).toBeLessThan(content.indexOf("# leaf atom"));
+  });
+
+  it("folder atomContextNode 중복 nodeId는 leaf 설정으로 한 번만 fetch한다", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ markdown: "# leaf atom\nbody" }), { status: 200 }),
+    );
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "leaf" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "leaf",
+      name: "Leaf",
+      sort_order: 1,
+      parent_folder_id: "root",
+      settings: {
+        atomContextNode: {
+          nodeId: "11111111-2222-3333-4444-555555555555",
+          depth: 5,
+          titlesOnly: false,
+        },
+      },
+    });
+    const getCatalog = vi.fn().mockResolvedValue({
+      folders: [
+        {
+          id: "root",
+          name: "Root",
+          sortOrder: 0,
+          parentFolderId: null,
+          settings: {
+            atomContextNode: {
+              nodeId: "11111111-2222-3333-4444-555555555555",
+              depth: 2,
+              titlesOnly: true,
+            },
+          },
+        },
+        {
+          id: "leaf",
+          name: "Leaf",
+          sortOrder: 1,
+          parentFolderId: "root",
+          settings: {
+            atomContextNode: {
+              nodeId: "11111111-2222-3333-4444-555555555555",
+              depth: 5,
+              titlesOnly: false,
+            },
+          },
+        },
+      ],
+      sessions: {},
+    });
+    const cb = makeBuilder({ getSession, getFolderById, getCatalog } as Partial<SessionDB>, undefined, true);
+
+    const ctx = await cb.build(makeTask(), codexAgent);
+
+    const urls = vi.mocked(globalThis.fetch).mock.calls.map(([url]) => new URL(String(url)));
+    expect(urls).toHaveLength(1);
+    expect(urls[0].searchParams.get("depth")).toBe("5");
+    expect(urls[0].searchParams.has("titles_only")).toBe(false);
+    const atomItem = ctx.combinedContextItems.find((item) => item.key === "atom_context");
+    expect(atomItem?.content).toContain("# leaf atom");
   });
 
   it("atom 호출 실패 → atom_context 미포함, turn 진행 계속 (graceful)", async () => {
