@@ -168,6 +168,80 @@ class TestBoardItems:
         mock_catalog_service.update_board_item_position.assert_called_once_with("session:s1", 59, 101)
 
 
+class TestBoardAssets:
+    """Board asset direct-upload routes."""
+
+    async def test_init_board_asset_returns_presigned_put(self, client, mock_catalog_service):
+        resp = await client.post(
+            "/api/board/f1/assets/init",
+            json={"name": "photo.png", "mime": "image/png", "size": 123},
+        )
+
+        assert resp.status_code == 201
+        assert resp.json()["uploadMode"] == "single"
+        assert resp.json()["uploadUrl"] == "https://r2.example/upload"
+        mock_catalog_service.init_file_asset.assert_called_once_with(
+            folder_id="f1",
+            name="photo.png",
+            mime_type="image/png",
+            byte_size=123,
+        )
+
+    async def test_init_board_asset_size_rejection_is_413(self, client, mock_catalog_service):
+        mock_catalog_service.init_file_asset.side_effect = ValueError("file size exceeds board asset limit")
+
+        resp = await client.post(
+            "/api/board/f1/assets/init",
+            json={"name": "large.mov", "mime": "video/quicktime", "size": 999999999},
+        )
+
+        assert resp.status_code == 413
+        assert "size" in resp.json()["detail"]
+
+    async def test_init_board_asset_without_storage_is_503(self, client, mock_catalog_service):
+        mock_catalog_service.init_file_asset.side_effect = RuntimeError("board asset storage is not configured")
+
+        resp = await client.post(
+            "/api/board/f1/assets/init",
+            json={"name": "photo.png", "mime": "image/png", "size": 123},
+        )
+
+        assert resp.status_code == 503
+        assert "not configured" in resp.json()["detail"]
+
+    async def test_commit_board_asset_passes_metadata_and_multipart_parts(self, client, mock_catalog_service):
+        resp = await client.post(
+            "/api/board/f1/assets/asset-1/commit",
+            json={
+                "x": 41,
+                "y": 79,
+                "width": 640,
+                "height": 480,
+                "durationSeconds": 3.5,
+                "parts": [
+                    {"partNumber": 1, "etag": "etag-1"},
+                    {"partNumber": 2, "etag": "etag-2"},
+                ],
+            },
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["boardItem"]["itemType"] == "asset"
+        mock_catalog_service.commit_file_asset.assert_called_once_with(
+            folder_id="f1",
+            asset_id="asset-1",
+            x=41,
+            y=79,
+            width=640,
+            height=480,
+            duration_seconds=3.5,
+            parts=[
+                {"partNumber": 1, "etag": "etag-1"},
+                {"partNumber": 2, "etag": "etag-2"},
+            ],
+        )
+
+
 class TestMarkdownDocuments:
     """Markdown document CRUD routes."""
 

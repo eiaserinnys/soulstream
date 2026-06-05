@@ -466,10 +466,19 @@ function toYjsItemValue(item: CatalogBoardItem): BoardYjsItemValue {
     item_id: item.itemId,
     x: item.x,
     y: item.y,
-    metadata: item.metadata ?? {},
+    metadata: sanitizeBoardItemMetadata(item.metadata),
     ...(item.createdAt ? { created_at: item.createdAt } : {}),
     ...(item.updatedAt ? { updated_at: item.updatedAt } : {}),
   };
+}
+
+function sanitizeBoardItemMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
+  const cleaned = { ...(metadata ?? {}) };
+  delete cleaned.signedUrl;
+  delete cleaned.uploadUrl;
+  delete cleaned.uploadUrls;
+  delete cleaned.uploadProgress;
+  return cleaned;
 }
 
 function createDocumentId(): string {

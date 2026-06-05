@@ -76,6 +76,34 @@ def _normalize_markdown_document(row: dict) -> dict:
     }
 
 
+def _normalize_file_asset(row: dict) -> dict:
+    created_at = row.get("created_at")
+    updated_at = row.get("updated_at")
+    garbage_collected_at = row.get("garbage_collected_at")
+    if hasattr(created_at, "isoformat"):
+        created_at = created_at.isoformat()
+    if hasattr(updated_at, "isoformat"):
+        updated_at = updated_at.isoformat()
+    if hasattr(garbage_collected_at, "isoformat"):
+        garbage_collected_at = garbage_collected_at.isoformat()
+    return {
+        "id": row["id"],
+        "storageKey": row["storage_key"],
+        "originalName": row["original_name"],
+        "mimeType": row["mime_type"],
+        "byteSize": int(row["byte_size"]),
+        "width": row.get("width"),
+        "height": row.get("height"),
+        "durationSeconds": row.get("duration_seconds"),
+        "checksumSha256": row.get("checksum_sha256"),
+        "uploadStatus": row.get("upload_status"),
+        "multipartUploadId": row.get("multipart_upload_id"),
+        "garbageCollectedAt": garbage_collected_at,
+        "createdAt": created_at,
+        "updatedAt": updated_at,
+    }
+
+
 class PostgresFolderMixin:
     """폴더 CRUD + 카탈로그 (PostgreSQL 구현)
 
@@ -352,6 +380,128 @@ class PostgresFolderMixin:
             "DELETE FROM markdown_documents WHERE id = $1",
             document_id,
         )
+
+    async def create_pending_file_asset(
+        self,
+        asset_id: str,
+        storage_key: str,
+        original_name: str,
+        mime_type: str,
+        byte_size: int,
+        multipart_upload_id: Optional[str] = None,
+    ) -> dict:
+        row = await self._pool.fetchrow(
+            """
+            INSERT INTO file_assets (
+                id, storage_key, original_name, mime_type, byte_size,
+                multipart_upload_id
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING *
+            """,
+            asset_id, storage_key, original_name, mime_type, byte_size, multipart_upload_id,
+        )
+        assert row is not None
+        return _normalize_file_asset(dict(row))
+
+    async def get_file_asset(self, asset_id: str) -> Optional[dict]:
+        row = await self._pool.fetchrow(
+            "SELECT * FROM file_assets WHERE id = $1",
+            asset_id,
+        )
+        return _normalize_file_asset(dict(row)) if row else None
+
+    async def mark_stale_pending_file_assets_garbage_collected(
+        self,
+        stale_before: datetime,
+    ) -> int:
+        result = await self._pool.execute(
+            """
+            UPDATE file_assets
+            SET garbage_collected_at = NOW(),
+                updated_at = NOW()
+            WHERE upload_status = 'pending'
+              AND garbage_collected_at IS NULL
+              AND created_at < $1
+            """,
+            stale_before,
+        )
+        return int(result.rsplit(" ", 1)[-1])
+
+    async def get_file_asset_daily_bytes(self) -> int:
+        row = await self._pool.fetchrow(
+            """
+            SELECT COALESCE(SUM(byte_size), 0)::BIGINT AS total
+            FROM file_assets
+            WHERE created_at >= date_trunc('day', NOW())
+              AND garbage_collected_at IS NULL
+            """
+        )
+        return int(row["total"]) if row else 0
+
+    async def commit_file_asset(
+        self,
+        asset_id: str,
+        folder_id: str,
+        x: float,
+        y: float,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        duration_seconds: Optional[float] = None,
+    ) -> dict:
+        async with self._pool.acquire() as conn:
+            async with conn.transaction():
+                asset_row = await conn.fetchrow(
+                    """
+                    UPDATE file_assets
+                    SET upload_status = 'committed',
+                        width = COALESCE($2, width),
+                        height = COALESCE($3, height),
+                        duration_seconds = COALESCE($4, duration_seconds),
+                        updated_at = NOW()
+                    WHERE id = $1
+                      AND garbage_collected_at IS NULL
+                    RETURNING *
+                    """,
+                    asset_id, width, height, duration_seconds,
+                )
+                if asset_row is None:
+                    raise ValueError(f"file asset not found: {asset_id}")
+                asset = _normalize_file_asset(dict(asset_row))
+                metadata = {
+                    "assetId": asset["id"],
+                    "storageKey": asset["storageKey"],
+                    "originalName": asset["originalName"],
+                    "mimeType": asset["mimeType"],
+                    "byteSize": asset["byteSize"],
+                    "width": asset["width"],
+                    "height": asset["height"],
+                    "durationSeconds": asset["durationSeconds"],
+                }
+                item_row = await conn.fetchrow(
+                    """
+                    INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata)
+                    VALUES ($1, $2, 'asset', $3, $4, $5, $6::jsonb)
+                    ON CONFLICT (id) DO UPDATE
+                    SET folder_id = EXCLUDED.folder_id,
+                        x = EXCLUDED.x,
+                        y = EXCLUDED.y,
+                        metadata = EXCLUDED.metadata,
+                        updated_at = NOW()
+                    RETURNING *
+                    """,
+                    f"asset:{asset_id}",
+                    folder_id,
+                    asset_id,
+                    x,
+                    y,
+                    json.dumps(metadata),
+                )
+        assert item_row is not None
+        return {
+            "asset": asset,
+            "boardItem": _normalize_board_item(dict(item_row)),
+        }
 
     async def _validate_parent_folder(
         self,

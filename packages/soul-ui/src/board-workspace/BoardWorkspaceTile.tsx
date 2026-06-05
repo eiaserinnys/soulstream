@@ -7,6 +7,7 @@ import { FileText, Folder } from "lucide-react";
 
 import type { SessionSummary } from "../shared/types";
 import { Badge } from "../components/ui/badge";
+import { BoardAssetCard } from "../components/BoardAssetCard";
 import { STATUS_CONFIG } from "../components/SessionItem";
 import { cn } from "../lib/cn";
 import type { SessionParentRef } from "./board-session-relations";
@@ -34,7 +35,7 @@ interface BoardWorkspaceTileProps {
   style: CSSProperties;
   activeSessionKey: string | null;
   onTilePointerDown: (
-    event: ReactPointerEvent<HTMLButtonElement>,
+    event: ReactPointerEvent<HTMLElement>,
     item: BoardWorkspaceItem,
   ) => void;
   onOpenFolder: (folderId: string) => void;
@@ -44,7 +45,7 @@ interface BoardWorkspaceTileProps {
   isSelected: boolean;
   remoteSelectionColor?: string;
   onTileContextMenu: (
-    event: ReactMouseEvent<HTMLButtonElement>,
+    event: ReactMouseEvent<HTMLElement>,
     item: BoardWorkspaceItem,
   ) => void;
   isStackExpanded?: boolean;
@@ -138,6 +139,33 @@ export function BoardWorkspaceTile({
           {item.preview || "Empty document"}
         </div>
       </button>
+    );
+  }
+
+  if (item.type === "asset") {
+    return (
+      <div
+        key={item.id}
+        role="button"
+        tabIndex={0}
+        data-testid="board-asset-tile"
+        data-board-tile="true"
+        className={cn(tileClassName, "h-[200px]")}
+        style={tileStyle}
+        onPointerDown={(event) => onTilePointerDown(event, item)}
+        onContextMenu={(event) => onTileContextMenu(event, item)}
+      >
+        <BoardAssetCard
+          fileName={item.fileName}
+          mimeType={item.mimeType}
+          byteSize={item.byteSize}
+          signedUrl={item.signedUrl}
+          sourceUrl={item.sourceUrl}
+          uploadProgress={item.uploadProgress}
+          uploadState={item.uploadState}
+          errorMessage={item.errorMessage}
+        />
+      </div>
     );
   }
 

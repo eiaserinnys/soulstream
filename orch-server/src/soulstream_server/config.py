@@ -28,6 +28,14 @@ class Settings(BaseOAuthSettings):
     # Dashboard
     dashboard_dir: str = ""
 
+    # Board asset uploads (Cloudflare R2, S3-compatible).
+    # Empty values disable `/api/board/{folderId}/assets/*` until operations
+    # provision the board-assets bucket and credentials.
+    r2_board_assets_access_key_id: str = ""
+    r2_board_assets_secret_access_key: str = ""
+    r2_board_assets_bucket: str = ""
+    r2_board_assets_endpoint: str = ""
+
     # Atom 연동 (선택 사항 — 미설정/ATOM_ENABLED=false 시 비활성)
     atom_enabled: bool = False
     atom_server_url: str = ""   # 예: https://atom.eiaserinnys.me

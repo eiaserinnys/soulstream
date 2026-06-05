@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { CatalogBoardItem, SessionSummary } from "../shared/types";
 import { FolderDialog } from "../components/FolderDialog";
@@ -11,8 +11,11 @@ import { applyCatalogDisplayNames } from "../hooks/session-stream-helpers";
 import { BoardWorkspaceCanvasContent } from "./BoardWorkspaceCanvasContent";
 import {
   boardToCanvasStyle,
+  BOARD_ASSET_TILE_HEIGHT,
+  BOARD_TILE_WIDTH,
   buildBoardWorkspaceItems,
   snapBoardPosition,
+  type AssetBoardWorkspaceItem,
   type BoardWorkspaceItem,
 } from "./board-workspace-items";
 import { isBoardTileTarget } from "./board-workspace-dom";
@@ -34,10 +37,82 @@ import {
   type DirectChildPortalItem,
 } from "./board-session-relations";
 import { findOpenBoardPositionInViewport, getFallbackBoardSpawnViewport } from "./board-spawn";
+import { findEmptyPlacement } from "./findEmptyPlacement";
 import { useBoardChildStackState } from "./useBoardChildStackState";
 import type { BoardWorkspaceViewProps } from "./BoardWorkspaceView.types";
 export type { BoardWorkspaceViewProps, CreateMarkdownDocumentInput, CreateMarkdownDocumentResult } from "./BoardWorkspaceView.types";
 const EMPTY_SESSIONS: SessionSummary[] = [];
+
+function fileListFromDataTransfer(dataTransfer: DataTransfer | null): File[] {
+  return Array.from(dataTransfer?.files ?? []).filter((file) => file.size >= 0);
+}
+
+function hasDraggedFiles(dataTransfer: DataTransfer | null): boolean {
+  return Array.from(dataTransfer?.types ?? []).includes("Files");
+}
+
+function createUploadPlaceholderId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return `upload:${crypto.randomUUID()}`;
+  return `upload:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createObjectUrl(file: File): string | undefined {
+  if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return undefined;
+  return URL.createObjectURL(file);
+}
+
+function revokeObjectUrl(url: string | undefined): void {
+  if (!url || typeof URL === "undefined" || typeof URL.revokeObjectURL !== "function") return;
+  URL.revokeObjectURL(url);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Upload failed";
+}
+
+async function withTimeout<T>(promise: Promise<T>, fallback: T, timeoutMs = 250): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function extractMediaMetadata(
+  file: File,
+  sourceUrl: string | undefined,
+): Promise<{ width?: number; height?: number; durationSeconds?: number }> {
+  if (!sourceUrl || typeof document === "undefined") return {};
+  if (file.type.startsWith("image/")) {
+    return await withTimeout(new Promise<{ width?: number; height?: number }>((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+      img.onerror = () => resolve({});
+      img.src = sourceUrl;
+    }), {});
+  }
+  if (file.type.startsWith("audio/") || file.type.startsWith("video/")) {
+    return await withTimeout(new Promise<{ width?: number; height?: number; durationSeconds?: number }>((resolve) => {
+      const element = file.type.startsWith("video/")
+        ? document.createElement("video")
+        : document.createElement("audio");
+      element.preload = "metadata";
+      element.onloadedmetadata = () => resolve({
+        ...(element instanceof HTMLVideoElement ? { width: element.videoWidth, height: element.videoHeight } : {}),
+        durationSeconds: Number.isFinite(element.duration) ? element.duration : undefined,
+      });
+      element.onerror = () => resolve({});
+      element.src = sourceUrl;
+    }), {});
+  }
+  return {};
+}
 export function BoardWorkspaceView({
   sessions = EMPTY_SESSIONS,
   onMoveSessions,
@@ -49,6 +124,7 @@ export function BoardWorkspaceView({
   onUpdateFolderSettings,
   onUpdateBoardItemPosition: _onUpdateBoardItemPosition,
   onCreateMarkdownDocument: _onCreateMarkdownDocument,
+  onUploadBoardAsset,
   onLoadMore,
   hasMore,
   workspaceViewMode,
@@ -74,7 +150,10 @@ export function BoardWorkspaceView({
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<BoardContextMenuState | null>(null);
   const [cardContextMenu, setCardContextMenu] = useState<BoardCardContextMenuState | null>(null);
+  const [assetPlaceholders, setAssetPlaceholders] = useState<AssetBoardWorkspaceItem[]>([]);
+  const [assetSignedUrls, setAssetSignedUrls] = useState<Record<string, string>>({});
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const assetObjectUrlsRef = useRef(new Set<string>());
   const loadMoreGateRef = useRef(false);
   const previousBoardSyncStatusRef = useRef<string | null>(null);
   const {
@@ -96,6 +175,22 @@ export function BoardWorkspaceView({
     selectionItemId: primarySelectedBoardItemId,
   });
 
+  const rememberAssetSignedUrls = useCallback((items: CatalogBoardItem[]) => {
+    setAssetSignedUrls((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const item of items) {
+        if (item.itemType !== "asset") continue;
+        const signedUrl = item.metadata?.signedUrl;
+        if (typeof signedUrl !== "string" || !signedUrl) continue;
+        if (next[item.id] === signedUrl) continue;
+        next[item.id] = signedUrl;
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, []);
+
   useEffect(() => {
     if (!selectedFolderId) return;
     const controller = new AbortController();
@@ -108,6 +203,7 @@ export function BoardWorkspaceView({
       })
       .then((data) => {
         if (Array.isArray(data?.boardItems)) {
+          rememberAssetSignedUrls(data.boardItems);
           setBoardItemsForFolder(selectedFolderId, data.boardItems);
         }
       })
@@ -117,12 +213,32 @@ export function BoardWorkspaceView({
     return () => {
       controller.abort();
     };
-  }, [selectedFolderId, setBoardItemsForFolder]);
+  }, [rememberAssetSignedUrls, selectedFolderId, setBoardItemsForFolder]);
 
+  useEffect(() => {
+    rememberAssetSignedUrls(catalog?.boardItems ?? []);
+  }, [catalog?.boardItems, rememberAssetSignedUrls]);
+
+  const yjsBoardItemsForSelectedFolder =
+    boardSync.runtime?.folderId === selectedFolderId ? boardSync.boardItems : null;
   const effectiveCatalog = useMemo(() => {
-    if (!catalog || !boardSync.boardItems || boardSync.isLoading) return catalog;
-    return { ...catalog, boardItems: boardSync.boardItems };
-  }, [boardSync.boardItems, boardSync.isLoading, catalog]);
+    if (!catalog || !yjsBoardItemsForSelectedFolder || boardSync.isLoading) return catalog;
+    return {
+      ...catalog,
+      boardItems: yjsBoardItemsForSelectedFolder.map((item) => {
+        if (item.itemType !== "asset") return item;
+        const signedUrl = assetSignedUrls[item.id];
+        if (!signedUrl) return item;
+        return {
+          ...item,
+          metadata: {
+            ...(item.metadata ?? {}),
+            signedUrl,
+          },
+        };
+      }),
+    };
+  }, [assetSignedUrls, boardSync.isLoading, catalog, yjsBoardItemsForSelectedFolder]);
   const relationIndex = useMemo(() => {
     if (!effectiveCatalog) return null;
     return buildBoardSessionRelations({
@@ -146,7 +262,7 @@ export function BoardWorkspaceView({
     [folders, selectedFolderId],
   );
 
-  const boardItems = useMemo(() => {
+  const persistedBoardItems = useMemo(() => {
     if (!effectiveCatalog) return [];
     return buildBoardWorkspaceItems({
       catalog: effectiveCatalog,
@@ -155,6 +271,10 @@ export function BoardWorkspaceView({
       ...(relationIndex ? { relationIndex } : {}),
     });
   }, [effectiveCatalog, selectedFolderId, displaySessions, relationIndex]);
+  const boardItems = useMemo(
+    () => [...persistedBoardItems, ...assetPlaceholders].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)),
+    [assetPlaceholders, persistedBoardItems],
+  );
   const childStack = useBoardChildStackState({
     boardItems,
     relationIndex,
@@ -338,7 +458,7 @@ export function BoardWorkspaceView({
     };
   };
 
-  const handleTileContextMenu = (event: ReactMouseEvent<HTMLButtonElement>, item: BoardWorkspaceItem) => {
+  const handleTileContextMenu = (event: ReactMouseEvent<HTMLElement>, item: BoardWorkspaceItem) => {
     event.preventDefault();
     event.stopPropagation();
     setContextMenu(null);
@@ -378,6 +498,107 @@ export function BoardWorkspaceView({
     openSession(child.session);
   }, [childStack, openSession]);
 
+  const updateAssetPlaceholder = useCallback((
+    boardItemId: string,
+    fields: Partial<AssetBoardWorkspaceItem>,
+  ) => {
+    setAssetPlaceholders((items) => items.map((item) =>
+      item.boardItemId === boardItemId ? { ...item, ...fields } : item
+    ));
+  }, []);
+
+  const handleDroppedFiles = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
+    const files = fileListFromDataTransfer(event.dataTransfer);
+    if (files.length === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu(null);
+    setCardContextMenu(null);
+    if (!selectedFolderId || !onUploadBoardAsset) {
+      toastManager.add({
+        title: "Board asset upload unavailable",
+        description: "Asset upload is not configured for this board.",
+        type: "warning",
+      });
+      return;
+    }
+
+    const preferredPoint = resolveBoardPoint(event.clientX, event.clientY);
+    const placements = findEmptyPlacement({
+      existingItems: boardItems,
+      preferredPoint,
+      size: { width: BOARD_TILE_WIDTH, height: BOARD_ASSET_TILE_HEIGHT },
+      count: files.length,
+    });
+
+    files.forEach((file, index) => {
+      const position = placements[index] ?? snapBoardPosition(preferredPoint.x, preferredPoint.y);
+      const boardItemId = createUploadPlaceholderId();
+      const sourceUrl = createObjectUrl(file);
+      if (sourceUrl) assetObjectUrlsRef.current.add(sourceUrl);
+      const placeholder: AssetBoardWorkspaceItem = {
+        type: "asset",
+        id: boardItemId,
+        boardItemId,
+        assetId: boardItemId,
+        fileName: file.name || "Untitled file",
+        mimeType: file.type || "application/octet-stream",
+        byteSize: file.size,
+        sourceUrl,
+        uploadProgress: 0,
+        uploadState: "uploading",
+        x: position.x,
+        y: position.y,
+        width: BOARD_TILE_WIDTH,
+        height: BOARD_ASSET_TILE_HEIGHT,
+      };
+      setAssetPlaceholders((items) => [...items, placeholder]);
+
+      void (async () => {
+        try {
+          const metadata = await extractMediaMetadata(file, sourceUrl);
+          const result = await onUploadBoardAsset({
+            folderId: selectedFolderId,
+            file,
+            x: position.x,
+            y: position.y,
+            ...metadata,
+            onProgress: (progress) => updateAssetPlaceholder(boardItemId, { uploadProgress: progress }),
+          });
+          rememberAssetSignedUrls([result.boardItem]);
+          boardSync.runtime?.upsertBoardItem(result.boardItem);
+          addBoardItem(result.boardItem);
+          setAssetPlaceholders((items) => items.filter((item) => item.boardItemId !== boardItemId));
+          revokeObjectUrl(sourceUrl);
+          if (sourceUrl) assetObjectUrlsRef.current.delete(sourceUrl);
+          selectSingleBoardItem(result.boardItem.id);
+          raiseBoardItems([result.boardItem.id]);
+        } catch (err) {
+          updateAssetPlaceholder(boardItemId, {
+            uploadState: "error",
+            errorMessage: errorMessage(err),
+          });
+        }
+      })();
+    });
+  }, [
+    addBoardItem,
+    boardItems,
+    boardSync.runtime,
+    onUploadBoardAsset,
+    raiseBoardItems,
+    rememberAssetSignedUrls,
+    resolveBoardPoint,
+    selectSingleBoardItem,
+    selectedFolderId,
+    updateAssetPlaceholder,
+  ]);
+
+  useEffect(() => () => {
+    for (const url of assetObjectUrlsRef.current) revokeObjectUrl(url);
+    assetObjectUrlsRef.current.clear();
+  }, []);
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <BoardWorkspaceHeader
@@ -406,6 +627,11 @@ export function BoardWorkspaceView({
             isPanning && "cursor-grabbing",
           )}
           onPointerDown={handleCanvasPointerDown}
+          onDragOver={(event) => {
+            if (!hasDraggedFiles(event.dataTransfer)) return;
+            event.preventDefault();
+          }}
+          onDrop={handleDroppedFiles}
           onContextMenu={handleCanvasContextMenu}
           onClick={() => {
             setContextMenu(null);

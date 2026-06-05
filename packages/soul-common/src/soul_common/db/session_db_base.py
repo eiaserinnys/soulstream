@@ -10,6 +10,7 @@ SessionDB 공용 인터페이스 및 유틸리티
 import json
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
+from datetime import datetime
 from typing import Optional, Protocol, Union, runtime_checkable
 
 # ── 공유 상수 ──
@@ -298,6 +299,36 @@ class FolderProtocol(Protocol):
     ) -> Optional[dict]: ...
 
     async def delete_markdown_document(self, document_id: str) -> None: ...
+
+    async def create_pending_file_asset(
+        self,
+        asset_id: str,
+        storage_key: str,
+        original_name: str,
+        mime_type: str,
+        byte_size: int,
+        multipart_upload_id: Optional[str] = None,
+    ) -> dict: ...
+
+    async def get_file_asset(self, asset_id: str) -> Optional[dict]: ...
+
+    async def mark_stale_pending_file_assets_garbage_collected(
+        self,
+        stale_before: datetime,
+    ) -> int: ...
+
+    async def get_file_asset_daily_bytes(self) -> int: ...
+
+    async def commit_file_asset(
+        self,
+        asset_id: str,
+        folder_id: str,
+        x: float,
+        y: float,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        duration_seconds: Optional[float] = None,
+    ) -> dict: ...
 
 
 @runtime_checkable
@@ -629,6 +660,41 @@ class SessionDBBase(ABC):
 
     @abstractmethod
     async def delete_markdown_document(self, document_id: str) -> None: ...
+
+    @abstractmethod
+    async def create_pending_file_asset(
+        self,
+        asset_id: str,
+        storage_key: str,
+        original_name: str,
+        mime_type: str,
+        byte_size: int,
+        multipart_upload_id: Optional[str] = None,
+    ) -> dict: ...
+
+    @abstractmethod
+    async def get_file_asset(self, asset_id: str) -> Optional[dict]: ...
+
+    @abstractmethod
+    async def mark_stale_pending_file_assets_garbage_collected(
+        self,
+        stale_before: datetime,
+    ) -> int: ...
+
+    @abstractmethod
+    async def get_file_asset_daily_bytes(self) -> int: ...
+
+    @abstractmethod
+    async def commit_file_asset(
+        self,
+        asset_id: str,
+        folder_id: str,
+        x: float,
+        y: float,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        duration_seconds: Optional[float] = None,
+    ) -> dict: ...
 
     # ── 경량 세션 목록 ──
 

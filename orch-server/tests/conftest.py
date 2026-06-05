@@ -171,6 +171,47 @@ def mock_catalog_service():
     cs.delete_session = AsyncMock()
     cs.update_board_item_position = AsyncMock()
     cs.list_board_items = AsyncMock(return_value=[])
+    cs.init_file_asset = AsyncMock(return_value={
+        "assetId": "asset-1",
+        "asset": {
+            "id": "asset-1",
+            "storageKey": "folders/f1/assets/asset-1/photo.png",
+            "originalName": "photo.png",
+            "mimeType": "image/png",
+            "byteSize": 123,
+            "uploadStatus": "pending",
+        },
+        "storageKey": "folders/f1/assets/asset-1/photo.png",
+        "uploadMode": "single",
+        "uploadUrl": "https://r2.example/upload",
+        "headers": {"Content-Type": "image/png"},
+    })
+    cs.commit_file_asset = AsyncMock(return_value={
+        "asset": {
+            "id": "asset-1",
+            "storageKey": "folders/f1/assets/asset-1/photo.png",
+            "originalName": "photo.png",
+            "mimeType": "image/png",
+            "byteSize": 123,
+            "uploadStatus": "committed",
+        },
+        "boardItem": {
+            "id": "asset:asset-1",
+            "folderId": "f1",
+            "itemType": "asset",
+            "itemId": "asset-1",
+            "x": 40,
+            "y": 80,
+            "metadata": {
+                "assetId": "asset-1",
+                "storageKey": "folders/f1/assets/asset-1/photo.png",
+                "originalName": "photo.png",
+                "mimeType": "image/png",
+                "byteSize": 123,
+                "signedUrl": "https://r2.example/get",
+            },
+        },
+    })
     cs.create_markdown_document = AsyncMock(return_value={
         "document": {"id": "doc-1", "title": "Note", "body": "Body"},
         "boardItem": {

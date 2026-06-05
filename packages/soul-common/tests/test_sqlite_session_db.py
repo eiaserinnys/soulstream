@@ -562,6 +562,66 @@ class TestCatalog:
         assert await db.get_markdown_document("doc-1") is None
         assert [item for item in await db.get_board_items() if item["id"] == "markdown:doc-1"] == []
 
+    async def test_file_asset_commit_creates_board_item(self, db: SqliteSessionDB):
+        await db.create_folder("f1", "Folder 1")
+
+        pending = await db.create_pending_file_asset(
+            "asset-1",
+            "folders/f1/assets/asset-1/photo.png",
+            "photo.png",
+            "image/png",
+            123,
+        )
+        assert pending["uploadStatus"] == "pending"
+        assert [item for item in await db.get_board_items() if item["id"] == "asset:asset-1"] == []
+
+        result = await db.commit_file_asset(
+            "asset-1",
+            "f1",
+            40,
+            80,
+            width=640,
+            height=480,
+        )
+
+        assert result["asset"]["uploadStatus"] == "committed"
+        assert result["boardItem"] == {
+            "id": "asset:asset-1",
+            "folderId": "f1",
+            "itemType": "asset",
+            "itemId": "asset-1",
+            "x": 40.0,
+            "y": 80.0,
+            "metadata": {
+                "assetId": "asset-1",
+                "storageKey": "folders/f1/assets/asset-1/photo.png",
+                "originalName": "photo.png",
+                "mimeType": "image/png",
+                "byteSize": 123,
+                "width": 640,
+                "height": 480,
+                "durationSeconds": None,
+            },
+            "createdAt": result["boardItem"]["createdAt"],
+            "updatedAt": result["boardItem"]["updatedAt"],
+        }
+
+    async def test_file_asset_delete_trigger_removes_board_item(self, db: SqliteSessionDB):
+        await db.create_folder("f1", "Folder 1")
+        await db.create_pending_file_asset(
+            "asset-2",
+            "folders/f1/assets/asset-2/song.mp3",
+            "song.mp3",
+            "audio/mpeg",
+            456,
+        )
+        await db.commit_file_asset("asset-2", "f1", 20, 40, duration_seconds=12.5)
+
+        await db._conn.execute("DELETE FROM file_assets WHERE id = ?", ("asset-2",))
+        await db._conn.commit()
+
+        assert [item for item in await db.get_board_items() if item["id"] == "asset:asset-2"] == []
+
     async def test_assign_session_to_folder(self, db: SqliteSessionDB):
         await db.create_folder("f1", "Folder 1")
         await db.upsert_session("s1", status="running")

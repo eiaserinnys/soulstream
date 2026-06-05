@@ -30,6 +30,8 @@ export type { FolderSettingsDialogProps } from "./FolderSettingsDialog";
 export { ChatInput } from "./ChatInput";
 export { RightPanel } from "./RightPanel";
 export { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
+export { BoardAssetCard } from "./BoardAssetCard";
+export type { BoardAssetCardProps } from "./BoardAssetCard";
 export { DetailView } from "./DetailView";
 export { SessionInfoView } from "./SessionInfoView";
 export { AskQuestionBanner } from "./AskQuestionBanner";

@@ -1,6 +1,6 @@
 import {
-  BOARD_TILE_HEIGHT,
-  BOARD_TILE_WIDTH,
+  getBoardItemHeight,
+  getBoardItemWidth,
   snapBoardPosition,
   type BoardWorkspaceItem,
 } from "./board-workspace-items";
@@ -36,8 +36,8 @@ export function getBoardItemRect(item: BoardWorkspaceItem): BoardRect {
   return {
     x: item.x,
     y: item.y,
-    width: BOARD_TILE_WIDTH,
-    height: BOARD_TILE_HEIGHT,
+    width: getBoardItemWidth(item),
+    height: getBoardItemHeight(item),
   };
 }
 

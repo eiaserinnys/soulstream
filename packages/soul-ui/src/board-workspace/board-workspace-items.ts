@@ -12,6 +12,7 @@ import {
 export const BOARD_GRID_SIZE = 20;
 export const BOARD_TILE_WIDTH = 280;
 export const BOARD_TILE_HEIGHT = 160;
+export const BOARD_ASSET_TILE_HEIGHT = 200;
 export const BOARD_CANVAS_BUFFER = 200;
 export const BOARD_CANVAS_WIDTH = 20000;
 export const BOARD_CANVAS_HEIGHT = 12000;
@@ -57,10 +58,33 @@ export interface MarkdownBoardWorkspaceItem {
   y: number;
 }
 
+export interface AssetBoardWorkspaceItem {
+  type: "asset";
+  id: string;
+  boardItemId: string;
+  assetId: string;
+  fileName: string;
+  mimeType: string;
+  byteSize: number;
+  signedUrl?: string;
+  sourceUrl?: string;
+  mediaWidth?: number;
+  mediaHeight?: number;
+  durationSeconds?: number;
+  uploadProgress?: number;
+  uploadState?: "uploading" | "error";
+  errorMessage?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export type BoardWorkspaceItem =
   | FolderBoardWorkspaceItem
   | SessionBoardWorkspaceItem
-  | MarkdownBoardWorkspaceItem;
+  | MarkdownBoardWorkspaceItem
+  | AssetBoardWorkspaceItem;
 
 export interface BuildBoardWorkspaceItemsParams {
   catalog: CatalogState;
@@ -114,6 +138,16 @@ export function getFolderDirectChildCount(catalog: CatalogState, folderId: strin
 function metadataText(item: CatalogBoardItem, key: string): string {
   const value = item.metadata?.[key];
   return typeof value === "string" ? value : "";
+}
+
+function metadataNumber(item: CatalogBoardItem, key: string): number | undefined {
+  const value = item.metadata?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }
 
 function buildSessionPlaceholder(
@@ -193,6 +227,26 @@ function buildPositionedItems({
         x: boardItem.x,
         y: boardItem.y,
       });
+      continue;
+    }
+    if (boardItem.itemType === "asset") {
+      items.push({
+        type: "asset",
+        id: boardItem.itemId,
+        boardItemId: boardItem.id,
+        assetId: metadataText(boardItem, "assetId") || boardItem.itemId,
+        fileName: metadataText(boardItem, "originalName") || "Untitled file",
+        mimeType: metadataText(boardItem, "mimeType") || "application/octet-stream",
+        byteSize: metadataNumber(boardItem, "byteSize") ?? 0,
+        signedUrl: metadataText(boardItem, "signedUrl") || undefined,
+        mediaWidth: metadataNumber(boardItem, "width"),
+        mediaHeight: metadataNumber(boardItem, "height"),
+        durationSeconds: metadataNumber(boardItem, "durationSeconds"),
+        x: boardItem.x,
+        y: boardItem.y,
+        width: BOARD_TILE_WIDTH,
+        height: BOARD_ASSET_TILE_HEIGHT,
+      });
     }
   }
 
@@ -258,11 +312,19 @@ export function findFirstOpenBoardPosition(items: readonly BoardWorkspaceItem[])
   }
 }
 
+export function getBoardItemWidth(item: BoardWorkspaceItem): number {
+  return "width" in item ? item.width : BOARD_TILE_WIDTH;
+}
+
+export function getBoardItemHeight(item: BoardWorkspaceItem): number {
+  return "height" in item ? item.height : BOARD_TILE_HEIGHT;
+}
+
 export function computeBoardCanvasSize(items: readonly BoardWorkspaceItem[]): { width: number; height: number } {
-  const maxX = items.reduce((max, item) => Math.max(max, item.x), 0);
-  const maxY = items.reduce((max, item) => Math.max(max, item.y), 0);
+  const maxX = items.reduce((max, item) => Math.max(max, item.x + getBoardItemWidth(item)), 0);
+  const maxY = items.reduce((max, item) => Math.max(max, item.y + getBoardItemHeight(item)), 0);
   return {
-    width: maxX + BOARD_TILE_WIDTH + BOARD_CANVAS_BUFFER,
-    height: maxY + BOARD_TILE_HEIGHT + BOARD_CANVAS_BUFFER,
+    width: maxX + BOARD_CANVAS_BUFFER,
+    height: maxY + BOARD_CANVAS_BUFFER,
   };
 }

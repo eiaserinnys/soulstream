@@ -15,6 +15,7 @@ import {
 import { deleteSessions } from "client/lib/delete-session";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
 import { renameSessionOptimistic } from "client/lib/rename-session";
+import { uploadBoardAsset } from "client/lib/board-workspace-operations";
 
 interface BoardWorkspaceViewWrapperProps {
   sessions?: SessionSummary[];
@@ -58,6 +59,7 @@ export function BoardWorkspaceView({
       onRenameFolder={renameFolderOptimistic}
       onDeleteFolder={deleteFolderOptimistic}
       onUpdateFolderSettings={updateFolderSettingsOptimistic}
+      onUploadBoardAsset={uploadBoardAsset}
       onLoadMore={onLoadMore}
       hasMore={hasMore}
     />

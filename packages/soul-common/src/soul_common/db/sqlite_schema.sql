@@ -50,10 +50,27 @@ CREATE TABLE IF NOT EXISTS markdown_documents (
     updated_at TEXT
 );
 
+CREATE TABLE IF NOT EXISTS file_assets (
+    id TEXT PRIMARY KEY,
+    storage_key TEXT NOT NULL UNIQUE,
+    original_name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    byte_size INTEGER NOT NULL CHECK (byte_size >= 0),
+    width INTEGER,
+    height INTEGER,
+    duration_seconds REAL,
+    checksum_sha256 TEXT,
+    upload_status TEXT NOT NULL DEFAULT 'pending' CHECK (upload_status IN ('pending', 'committed')),
+    multipart_upload_id TEXT,
+    garbage_collected_at TEXT,
+    created_at TEXT,
+    updated_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS board_items (
     id TEXT PRIMARY KEY,
     folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
-    item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder')),
+    item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset')),
     item_id TEXT NOT NULL,
     x REAL NOT NULL DEFAULT 0,
     y REAL NOT NULL DEFAULT 0,
@@ -82,6 +99,12 @@ CREATE TRIGGER IF NOT EXISTS board_delete_markdown_refs
 AFTER DELETE ON markdown_documents
 BEGIN
     DELETE FROM board_items WHERE item_type = 'markdown' AND item_id = OLD.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS board_delete_asset_refs
+AFTER DELETE ON file_assets
+BEGIN
+    DELETE FROM board_items WHERE item_type = 'asset' AND item_id = OLD.id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS folders_prevent_cycle_insert

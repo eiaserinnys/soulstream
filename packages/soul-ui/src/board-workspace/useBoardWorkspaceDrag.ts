@@ -253,7 +253,7 @@ export function useBoardWorkspaceDrag({
     setIsPanning(true);
   };
 
-  const handleTilePointerDown = (event: ReactPointerEvent<HTMLButtonElement>, item: BoardWorkspaceItem) => {
+  const handleTilePointerDown = (event: ReactPointerEvent<HTMLElement>, item: BoardWorkspaceItem) => {
     if (event.button !== 0 || isSpaceDown) return;
     event.stopPropagation();
     if (isBoardSelectionToggle(event)) {

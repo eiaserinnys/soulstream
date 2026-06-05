@@ -1,4 +1,4 @@
-import { boardRectsIntersect, type BoardRect } from "./board-selection";
+import type { BoardRect } from "./board-selection";
 import { getViewportBoardRect, type BoardViewport } from "./board-viewport";
 import {
   BOARD_CANVAS_ORIGIN_X,
@@ -8,6 +8,7 @@ import {
   snapBoardPosition,
   type BoardWorkspaceItem,
 } from "./board-workspace-items";
+import { findEmptyPlacement } from "./findEmptyPlacement";
 
 export interface BoardSpawnOptions {
   viewport: BoardViewport;
@@ -17,7 +18,6 @@ export interface BoardSpawnOptions {
 }
 
 const DEFAULT_MAX_ATTEMPTS = 50;
-const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
 export function getFallbackBoardSpawnViewport(zoom: number): BoardViewport {
   return {
@@ -25,15 +25,6 @@ export function getFallbackBoardSpawnViewport(zoom: number): BoardViewport {
     scrollTop: (BOARD_CANVAS_ORIGIN_Y - 60) * zoom,
     width: typeof window === "undefined" ? 1024 : window.innerWidth,
     height: typeof window === "undefined" ? 768 : window.innerHeight,
-  };
-}
-
-function getTileRect(position: { x: number; y: number }): BoardRect {
-  return {
-    x: position.x,
-    y: position.y,
-    width: BOARD_TILE_WIDTH,
-    height: BOARD_TILE_HEIGHT,
   };
 }
 
@@ -54,34 +45,6 @@ function isInsideViewport(position: { x: number; y: number }, viewportRect: Boar
     position.y >= viewportRect.y &&
     position.x + BOARD_TILE_WIDTH <= viewportRect.x + viewportRect.width &&
     position.y + BOARD_TILE_HEIGHT <= viewportRect.y + viewportRect.height
-  );
-}
-
-function collidesWithAny(
-  position: { x: number; y: number },
-  items: readonly BoardWorkspaceItem[],
-): boolean {
-  const candidateRect = getTileRect(position);
-  return items.some((item) =>
-    boardRectsIntersect(candidateRect, {
-      x: item.x,
-      y: item.y,
-      width: BOARD_TILE_WIDTH,
-      height: BOARD_TILE_HEIGHT,
-    }),
-  );
-}
-
-function findCandidate(
-  base: { x: number; y: number },
-  attempt: number,
-): { x: number; y: number } {
-  if (attempt === 0) return base;
-  const radius = (BOARD_TILE_WIDTH / 2) * Math.sqrt(attempt);
-  const angle = attempt * GOLDEN_ANGLE;
-  return snapBoardPosition(
-    base.x + Math.cos(angle) * radius,
-    base.y + Math.sin(angle) * radius,
   );
 }
 
@@ -108,9 +71,18 @@ export function findOpenBoardPositionInViewport(
   }
 
   for (let attempt = 0; attempt <= maxAttempts; attempt += 1) {
-    const candidate = findCandidate(base, attempt);
+    const candidate = findEmptyPlacement({
+      existingItems: items,
+      preferredPoint: attempt === 0
+        ? base
+        : {
+            x: base.x + attempt * BOARD_TILE_WIDTH,
+            y: base.y,
+          },
+      size: { width: BOARD_TILE_WIDTH, height: BOARD_TILE_HEIGHT },
+    })[0] ?? base;
     if (!isInsideViewport(candidate, viewportRect)) continue;
-    if (!collidesWithAny(candidate, items)) return candidate;
+    return candidate;
   }
 
   return fallbackPosition(base, options.random ?? Math.random);
