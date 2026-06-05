@@ -31,7 +31,7 @@ class TestJwtUtils:
     def test_generate_and_verify_token(self):
         """정상적인 토큰 생성 및 검증."""
         user = {"email": "test@example.com", "name": "Test User", "picture": "https://example.com/pic.jpg"}
-        secret = "test-secret-key"
+        secret = "test-secret-key-for-jwt-utils-32b"
 
         token = generate_token(user, secret)
         payload = verify_token(token, secret)
@@ -45,13 +45,13 @@ class TestJwtUtils:
     def test_verify_token_wrong_secret(self):
         """잘못된 시크릿으로 검증 시 None 반환."""
         user = {"email": "test@example.com"}
-        token = generate_token(user, "correct-secret")
-        result = verify_token(token, "wrong-secret")
+        token = generate_token(user, "correct-secret-for-jwt-utils-32b")
+        result = verify_token(token, "wrong-secret-for-jwt-utils-32bytes")
         assert result is None
 
     def test_verify_token_invalid_token(self):
         """유효하지 않은 토큰 검증 시 None 반환."""
-        result = verify_token("invalid.token.string", "any-secret")
+        result = verify_token("invalid.token.string", "any-secret-for-jwt-utils-32b")
         assert result is None
 
     def test_generate_token_minimal_user(self):
@@ -63,7 +63,7 @@ class TestJwtUtils:
         결함을 닫는다.
         """
         user = {"email": "min@example.com"}
-        secret = "test-secret"
+        secret = "test-secret-for-minimal-user-32b"
 
         token = generate_token(user, secret)
         payload = verify_token(token, secret)
@@ -160,7 +160,8 @@ class TestAuthStatusEndpoint:
 
         app = _create_test_app(auth_enabled=True, google_client_id="test-client-id", jwt_secret=secret)
         client = TestClient(app)
-        resp = client.get("/api/auth/status", cookies={COOKIE_NAME: token})
+        client.cookies.set(COOKIE_NAME, token)
+        resp = client.get("/api/auth/status")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -171,7 +172,8 @@ class TestAuthStatusEndpoint:
         """인증 활성 + 유효하지 않은 JWT 쿠키 → authenticated: false."""
         app = _create_test_app(auth_enabled=True, google_client_id="test-client-id")
         client = TestClient(app)
-        resp = client.get("/api/auth/status", cookies={COOKIE_NAME: "invalid-token"})
+        client.cookies.set(COOKIE_NAME, "invalid-token")
+        resp = client.get("/api/auth/status")
 
         assert resp.status_code == 200
         data = resp.json()
@@ -417,7 +419,8 @@ class TestRequireDashboardAuth:
             mock_settings.return_value = settings
 
             client = TestClient(app)
-            resp = client.get("/protected", cookies={COOKIE_NAME: token})
+            client.cookies.set(COOKIE_NAME, token)
+            resp = client.get("/protected")
 
         assert resp.status_code == 200
         assert resp.json()["email"] == "user@example.com"
