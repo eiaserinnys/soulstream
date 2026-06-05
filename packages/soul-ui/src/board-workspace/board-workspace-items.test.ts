@@ -144,7 +144,7 @@ describe("board workspace item helpers", () => {
     });
   });
 
-  it("falls back to deterministic 160px placement when boardItems are absent", () => {
+  it("falls back to deterministic 160x120 placement when boardItems are absent", () => {
     const { boardItems: _unused, ...legacyCatalog } = catalog;
     const items = buildBoardWorkspaceItems({
       catalog: legacyCatalog,
@@ -166,16 +166,17 @@ describe("board workspace item helpers", () => {
     ]);
   });
 
-  it("snaps positions to 40px and finds the first empty 160px tile slot", () => {
+  it("snaps positions to 20px, allows negative coordinates, and finds the first empty tile slot", () => {
     const items = buildBoardWorkspaceItems({
       catalog,
       selectedFolderId: "root",
       sessions,
     });
 
-    expect(snapBoardPosition(59, 101)).toEqual({ x: 40, y: 120 });
+    expect(snapBoardPosition(59, 101)).toEqual({ x: 60, y: 100 });
+    expect(snapBoardPosition(-31, -51)).toEqual({ x: -40, y: -60 });
     expect(findFirstOpenBoardPosition(items)).toEqual({ x: 160, y: 0 });
-    expect(computeBoardCanvasSize(items)).toEqual({ width: 600, height: 520 });
+    expect(computeBoardCanvasSize(items)).toEqual({ width: 600, height: 480 });
   });
 
   it("uses lastMessage.preview for session previews and displayName for titles", () => {

@@ -32,7 +32,7 @@ export interface FolderApiConfig {
 }
 
 export interface FolderOperations {
-  createFolder: (name: string, parentFolderId?: string | null) => Promise<void>;
+  createFolder: (name: string, parentFolderId?: string | null) => Promise<CatalogFolder | void>;
   renameFolderOptimistic: (folderId: string, name: string) => Promise<void>;
   deleteFolderOptimistic: (folderId: string) => Promise<void>;
   updateFolderSettingsOptimistic: (folderId: string, settings: FolderSettings) => Promise<void>;
@@ -50,7 +50,7 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
   async function createFolder(
     name: string,
     parentFolderId?: string | null,
-  ): Promise<void> {
+  ): Promise<CatalogFolder | void> {
     const { addFolder } = useDashboardStore.getState();
 
     try {
@@ -67,8 +67,10 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
 
       const created: CatalogFolder = await res.json();
       addFolder(created);
+      return created;
     } catch (err) {
       console.error("Folder creation failed:", err);
+      return undefined;
     }
   }
 

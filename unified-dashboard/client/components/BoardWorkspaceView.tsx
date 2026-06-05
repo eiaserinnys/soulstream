@@ -10,7 +10,13 @@ import {
   createMarkdownDocument,
   updateBoardItemPosition,
 } from "client/lib/board-workspace-operations";
-import { createFolder } from "client/lib/folder-operations";
+import {
+  createFolder,
+  deleteFolderOptimistic,
+  renameFolderOptimistic,
+  updateFolderSettingsOptimistic,
+} from "client/lib/folder-operations";
+import { deleteSessions } from "client/lib/delete-session";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
 import { renameSessionOptimistic } from "client/lib/rename-session";
 
@@ -51,7 +57,11 @@ export function BoardWorkspaceView({
       sessions={sessions}
       onMoveSessions={handleMoveSessions}
       onRenameSession={renameSessionOptimistic}
+      onDeleteSessions={deleteSessions}
       onCreateFolder={createFolder}
+      onRenameFolder={renameFolderOptimistic}
+      onDeleteFolder={deleteFolderOptimistic}
+      onUpdateFolderSettings={updateFolderSettingsOptimistic}
       onUpdateBoardItemPosition={updateBoardItemPosition}
       onCreateMarkdownDocument={createMarkdownDocument}
       onLoadMore={onLoadMore}

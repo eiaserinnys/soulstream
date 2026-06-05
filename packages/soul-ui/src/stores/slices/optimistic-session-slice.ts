@@ -38,6 +38,7 @@ export const createOptimisticSessionSlice: StateCreator<
     agentName,
     agentPortraitUrl,
     backend,
+    boardPosition,
   ) => {
     let catalog = get().catalog;
     const userConfig = get().dashboardConfig?.user;
@@ -102,6 +103,19 @@ export const createOptimisticSessionSlice: StateCreator<
           ...catalog.sessions,
           [agentSessionId]: { folderId, displayName: null },
         },
+        boardItems: boardPosition
+          ? [
+              ...(catalog.boardItems ?? []).filter((item) => item.id !== `session:${agentSessionId}`),
+              {
+                id: `session:${agentSessionId}`,
+                folderId,
+                itemType: "session",
+                itemId: agentSessionId,
+                x: boardPosition.x,
+                y: boardPosition.y,
+              },
+            ]
+          : catalog.boardItems,
       };
     }
 

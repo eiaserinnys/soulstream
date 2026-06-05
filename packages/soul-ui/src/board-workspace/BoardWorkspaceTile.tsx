@@ -1,4 +1,8 @@
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type {
+  CSSProperties,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { FileText, Folder } from "lucide-react";
 
 import type { SessionSummary } from "../shared/types";
@@ -13,7 +17,7 @@ import {
 } from "./board-workspace-items";
 
 const BOARD_TILE_CLASS =
-  "absolute flex h-40 w-40 touch-none select-none flex-col overflow-hidden rounded-xl border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "absolute z-10 flex h-[120px] w-[160px] touch-none select-none flex-col overflow-hidden rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 function getSessionAgentLabel(session: SessionSummary): string {
   return session.agentName?.trim() || session.agentId?.trim() || "—";
@@ -36,6 +40,11 @@ interface BoardWorkspaceTileProps {
   onOpenMarkdown: (documentId: string) => void;
   onOpenSession: (session: SessionSummary) => void;
   shouldSuppressClick: () => boolean;
+  isSelected: boolean;
+  onTileContextMenu: (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    item: BoardWorkspaceItem,
+  ) => void;
 }
 
 export function BoardWorkspaceTile({
@@ -47,7 +56,14 @@ export function BoardWorkspaceTile({
   onOpenMarkdown,
   onOpenSession,
   shouldSuppressClick,
+  isSelected,
+  onTileContextMenu,
 }: BoardWorkspaceTileProps) {
+  const tileClassName = cn(
+    BOARD_TILE_CLASS,
+    isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
+  );
+
   if (item.type === "folder") {
     return (
       <button
@@ -55,9 +71,10 @@ export function BoardWorkspaceTile({
         type="button"
         data-testid="board-folder-tile"
         data-board-tile="true"
-        className={BOARD_TILE_CLASS}
+        className={tileClassName}
         style={style}
         onPointerDown={(event) => onTilePointerDown(event, item)}
+        onContextMenu={(event) => onTileContextMenu(event, item)}
         onClick={() => {
           if (shouldSuppressClick()) return;
           onOpenFolder(item.folder.id);
@@ -85,9 +102,10 @@ export function BoardWorkspaceTile({
         type="button"
         data-testid="board-markdown-tile"
         data-board-tile="true"
-        className={cn(BOARD_TILE_CLASS, "bg-card")}
+        className={tileClassName}
         style={style}
         onPointerDown={(event) => onTilePointerDown(event, item)}
+        onContextMenu={(event) => onTileContextMenu(event, item)}
         onClick={() => {
           if (shouldSuppressClick()) return;
           onOpenMarkdown(item.documentId);
@@ -117,11 +135,12 @@ export function BoardWorkspaceTile({
       data-board-tile="true"
       data-session-id={item.session.agentSessionId}
       className={cn(
-        BOARD_TILE_CLASS,
+        tileClassName,
         activeSessionKey === item.session.agentSessionId && "bg-accent text-accent-foreground",
       )}
       style={style}
       onPointerDown={(event) => onTilePointerDown(event, item)}
+      onContextMenu={(event) => onTileContextMenu(event, item)}
       onClick={() => {
         if (shouldSuppressClick()) return;
         onOpenSession(item.session);

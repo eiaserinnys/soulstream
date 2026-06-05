@@ -129,6 +129,11 @@ function dispatchPointer(
   }));
 }
 
+function findButtonByText(scope: ParentNode, text: string): HTMLButtonElement | undefined {
+  return Array.from(scope.querySelectorAll<HTMLButtonElement>("button"))
+    .find((button) => button.textContent?.trim() === text);
+}
+
 describe("BoardWorkspaceView", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
@@ -139,6 +144,7 @@ describe("BoardWorkspaceView", () => {
     originalIntersectionObserver = globalThis.IntersectionObserver;
     originalMatchMedia = window.matchMedia;
     MockIntersectionObserver.instances = [];
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
     globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver;
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
       matches: false,
@@ -163,9 +169,10 @@ describe("BoardWorkspaceView", () => {
     container = undefined;
     globalThis.IntersectionObserver = originalIntersectionObserver as typeof IntersectionObserver;
     window.matchMedia = originalMatchMedia as typeof window.matchMedia;
+    vi.restoreAllMocks();
   });
 
-  it("renders fixed 160px positioned tiles on a 40px dotted canvas", () => {
+  it("renders fixed 160x120 positioned tiles on a 20px dotted infinite canvas", () => {
     ({ container, root } = renderBoard());
 
     const canvas = container.querySelector<HTMLElement>('[data-testid="board-workspace-canvas"]');
@@ -173,22 +180,22 @@ describe("BoardWorkspaceView", () => {
     const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
     const markdownTile = container.querySelector<HTMLElement>('[data-testid="board-markdown-tile"]');
 
-    expect(canvas?.parentElement?.style.backgroundSize).toBe("40px 40px");
-    expect(canvas?.style.width).toBe("720px");
-    expect(canvas?.style.height).toBe("440px");
+    expect(canvas?.style.backgroundSize).toBe("20px 20px");
+    expect(canvas?.style.width).toBe("20000px");
+    expect(canvas?.style.height).toBe("12000px");
 
-    expect(folderTile?.className).toContain("h-40");
-    expect(folderTile?.className).toContain("w-40");
-    expect(folderTile?.className).toContain("rounded-xl");
-    expect(folderTile?.style.left).toBe("40px");
-    expect(folderTile?.style.top).toBe("80px");
-    expect(sessionTile?.className).toContain("h-40");
-    expect(sessionTile?.className).toContain("w-40");
-    expect(sessionTile?.className).toContain("rounded-xl");
-    expect(sessionTile?.style.left).toBe("200px");
-    expect(sessionTile?.style.top).toBe("40px");
-    expect(markdownTile?.style.left).toBe("360px");
-    expect(markdownTile?.style.top).toBe("80px");
+    expect(folderTile?.className).toContain("h-[120px]");
+    expect(folderTile?.className).toContain("w-[160px]");
+    expect(folderTile?.className).toContain("rounded-md");
+    expect(folderTile?.style.left).toBe("10040px");
+    expect(folderTile?.style.top).toBe("6080px");
+    expect(sessionTile?.className).toContain("h-[120px]");
+    expect(sessionTile?.className).toContain("w-[160px]");
+    expect(sessionTile?.className).toContain("rounded-md");
+    expect(sessionTile?.style.left).toBe("10200px");
+    expect(sessionTile?.style.top).toBe("6040px");
+    expect(markdownTile?.style.left).toBe("10360px");
+    expect(markdownTile?.style.top).toBe("6080px");
   });
 
   it("keeps folder names, session titles, markdown previews, and agent profiles bounded inside tiles", () => {
@@ -208,8 +215,35 @@ describe("BoardWorkspaceView", () => {
     expect(container.querySelector('[data-testid="board-markdown-preview"]')?.textContent).toBe("Markdown preview");
   });
 
-  it("snaps dragged tiles to the 40px grid and persists the board item position", async () => {
+  it("shows a snapped drag ghost and persists an optimistic 20px board position", async () => {
     const onUpdateBoardItemPosition = vi.fn().mockResolvedValue(undefined);
+    ({ container, root } = renderBoard({ onUpdateBoardItemPosition }));
+
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    expect(sessionTile).not.toBeNull();
+
+    flushSync(() => {
+      dispatchPointer(sessionTile!, "pointerdown", { clientX: 200, clientY: 40 });
+      dispatchPointer(window, "pointermove", { clientX: 255, clientY: 101 });
+    });
+
+    const ghost = container.querySelector<HTMLElement>('[data-testid="board-drag-ghost"]');
+    expect(ghost?.style.left).toBe("10260px");
+    expect(ghost?.style.top).toBe("6100px");
+
+    flushSync(() => {
+      dispatchPointer(window, "pointerup", { clientX: 255, clientY: 101 });
+    });
+    await Promise.resolve();
+
+    expect(onUpdateBoardItemPosition).toHaveBeenCalledWith("session:session-a", 260, 100);
+    expect(sessionTile?.style.left).toBe("10260px");
+    expect(sessionTile?.style.top).toBe("6100px");
+  });
+
+  it("rolls back an optimistic position when the server rejects the move", async () => {
+    const onUpdateBoardItemPosition = vi.fn().mockRejectedValue(new Error("no"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     ({ container, root } = renderBoard({ onUpdateBoardItemPosition }));
 
     const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
@@ -221,10 +255,58 @@ describe("BoardWorkspaceView", () => {
       dispatchPointer(window, "pointerup", { clientX: 255, clientY: 101 });
     });
     await Promise.resolve();
+    await Promise.resolve();
 
-    expect(onUpdateBoardItemPosition).toHaveBeenCalledWith("session:session-a", 240, 120);
-    expect(sessionTile?.style.left).toBe("240px");
-    expect(sessionTile?.style.top).toBe("120px");
+    expect(sessionTile?.style.left).toBe("10200px");
+    expect(sessionTile?.style.top).toBe("6040px");
+    expect(consoleError).toHaveBeenCalledWith("Board item position update failed:", expect.any(Error));
+  });
+
+  it("allows negative board coordinates when dragging left and up", async () => {
+    const onUpdateBoardItemPosition = vi.fn().mockResolvedValue(undefined);
+    ({ container, root } = renderBoard({ onUpdateBoardItemPosition }));
+
+    const folderTile = container.querySelector<HTMLElement>('[data-testid="board-folder-tile"]');
+    expect(folderTile).not.toBeNull();
+
+    flushSync(() => {
+      dispatchPointer(folderTile!, "pointerdown", { clientX: 40, clientY: 80 });
+      dispatchPointer(window, "pointermove", { clientX: -82, clientY: -116 });
+      dispatchPointer(window, "pointerup", { clientX: -82, clientY: -116 });
+    });
+    await Promise.resolve();
+
+    expect(onUpdateBoardItemPosition).toHaveBeenCalledWith("subfolder:child-folder", -80, -120);
+    expect(folderTile?.style.left).toBe("9920px");
+    expect(folderTile?.style.top).toBe("5880px");
+  });
+
+  it("auto-pans the canvas while dragging near the viewport edge", () => {
+    ({ container, root } = renderBoard());
+
+    const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    expect(scroller).not.toBeNull();
+    expect(sessionTile).not.toBeNull();
+    vi.spyOn(scroller!, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 300,
+      bottom: 200,
+      width: 300,
+      height: 200,
+      toJSON: () => ({}),
+    });
+    const startScrollLeft = scroller!.scrollLeft;
+
+    flushSync(() => {
+      dispatchPointer(sessionTile!, "pointerdown", { clientX: 200, clientY: 40 });
+      dispatchPointer(window, "pointermove", { clientX: 290, clientY: 100 });
+    });
+
+    expect(scroller!.scrollLeft).toBe(startScrollLeft + 24);
   });
 
   it("creates a markdown document from the New menu at the first open grid slot", async () => {
@@ -273,6 +355,109 @@ describe("BoardWorkspaceView", () => {
       y: 0,
     });
     expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-new");
+  });
+
+  it("opens the desktop context menu with folder, session, and markdown actions at a snapped board point", async () => {
+    const onCreateMarkdownDocument = vi.fn().mockResolvedValue({
+      document: {
+        id: "doc-context",
+        title: "Untitled document",
+        body: "",
+      },
+      boardItem: {
+        id: "markdown:doc-context",
+        folderId: "root",
+        itemType: "markdown",
+        itemId: "doc-context",
+        x: 20,
+        y: 40,
+        metadata: {
+          title: "Untitled document",
+          preview: "",
+        },
+      },
+    });
+    ({ container, root } = renderBoard({ onCreateMarkdownDocument }));
+
+    const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-canvas"]')?.parentElement;
+    expect(scroller).not.toBeNull();
+
+    flushSync(() => {
+      scroller!.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 10023,
+        clientY: 6041,
+      }));
+    });
+
+    const menuText = container.textContent ?? "";
+    expect(menuText).toContain("폴더 추가");
+    expect(menuText).toContain("새 세션 시작");
+    expect(menuText).toContain("새 문서");
+
+    const sessionButton = Array.from(container.querySelectorAll("button"))
+      .find((button) => button.textContent?.includes("새 세션 시작"));
+    expect(sessionButton).not.toBeUndefined();
+
+    flushSync(() => {
+      sessionButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(useDashboardStore.getState().isNewSessionModalOpen).toBe(true);
+    expect(useDashboardStore.getState().newSessionDefaults).toEqual({
+      folderId: "root",
+      boardPosition: { x: 20, y: 40 },
+    });
+  });
+
+  it("marks the selected board card with a visible ring", () => {
+    ({ container, root } = renderBoard());
+
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    expect(sessionTile).not.toBeNull();
+
+    flushSync(() => {
+      sessionTile!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(sessionTile?.className).toContain("ring-2");
+    expect(sessionTile?.className).toContain("ring-primary");
+  });
+
+  it("opens a session card context menu with delete action", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    const onDeleteSessions = vi.fn().mockResolvedValue(undefined);
+    ({ container, root } = renderBoard({ onDeleteSessions }));
+
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    expect(sessionTile).not.toBeNull();
+
+    flushSync(() => {
+      sessionTile!.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 120,
+        clientY: 80,
+      }));
+    });
+    await Promise.resolve();
+
+    const deleteAction = findButtonByText(document.body, "삭제");
+    expect(deleteAction).not.toBeUndefined();
+    flushSync(() => {
+      deleteAction!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await Promise.resolve();
+
+    const confirmDelete = findButtonByText(document.body, "삭제");
+    expect(confirmDelete).not.toBeUndefined();
+    flushSync(() => {
+      confirmDelete!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await Promise.resolve();
+
+    expect(onDeleteSessions).toHaveBeenCalledWith(["session-a"]);
   });
 
   it("auto-prefetches through a sentinel and suppresses duplicate intersections while pending", async () => {

@@ -2,7 +2,7 @@
  * SessionContextMenu - 세션 우클릭 컨텍스트 메뉴 공통 컴포넌트
  *
  * FeedView, FolderContents 등에서 세션 우클릭 시 동일한 메뉴와 모달을 제공한다.
- * 세션 ID 복사 · 이름 변경 · 폴더 이동 기능을 제공한다.
+ * 세션 ID 복사 · 이름 변경 · 폴더 이동 · 삭제 기능을 제공한다.
  *
  * 모바일: Dialog 하단 시트 (bottomStickOnMobile)
  * 데스크탑: base-ui Menu 프리미티브 (VirtualElement anchor + scale/opacity 진입·퇴장 전환)
@@ -32,6 +32,8 @@ export interface SessionContextMenuProps {
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   /** 세션 폴더 이동 콜백. 미지정 시 폴더 이동 메뉴 비활성화 */
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
+  /** 세션 삭제 콜백. 미지정 시 삭제 메뉴 비활성화 */
+  onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
   /** 세션의 현재 표시 이름 조회 (이름 변경 모달 초기값용) */
   getSessionName: (sessionId: string) => string;
   /**
@@ -47,15 +49,19 @@ function MenuItems({
   onCopyId,
   onRename,
   onMove,
+  onDelete,
   hasRename,
   hasMove,
+  hasDelete,
   className,
 }: {
   onCopyId: () => void;
   onRename?: () => void;
   onMove?: () => void;
+  onDelete?: () => void;
   hasRename: boolean;
   hasMove: boolean;
+  hasDelete: boolean;
   className?: string;
 }) {
   return (
@@ -88,6 +94,17 @@ function MenuItems({
           </button>
         </>
       )}
+      {hasDelete && onDelete && (
+        <>
+          <div className="border-t border-border my-1" />
+          <button
+            className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md text-destructive"
+            onClick={onDelete}
+          >
+            삭제
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -97,6 +114,7 @@ export function SessionContextMenu({
   onClose,
   onRenameSession,
   onMoveSessions,
+  onDeleteSessions,
   getSessionName,
   resolveSessionIds,
 }: SessionContextMenuProps) {
@@ -129,6 +147,10 @@ export function SessionContextMenu({
     sessionIds: string[];
     selectedFolderId: string | null;
   }>({ open: false, sessionIds: [], selectedFolderId: null });
+  const [deleteDialog, setDeleteDialog] = useState<{
+    open: boolean;
+    sessionIds: string[];
+  }>({ open: false, sessionIds: [] });
 
   const handleCopyId = useCallback(() => {
     if (!contextMenu) return;
@@ -165,6 +187,20 @@ export function SessionContextMenu({
     await onMoveSessions(sessionIds, selectedFolderId);
   }, [onMoveSessions, moveFolderDialog]);
 
+  const handleDeleteClick = useCallback(() => {
+    if (!contextMenu || !onDeleteSessions) return;
+    const sessionIds = resolveSessionIds(contextMenu.sessionId);
+    onClose();
+    setDeleteDialog({ open: true, sessionIds });
+  }, [contextMenu, onDeleteSessions, onClose, resolveSessionIds]);
+
+  const handleDeleteSubmit = useCallback(async () => {
+    if (!onDeleteSessions) return;
+    const { sessionIds } = deleteDialog;
+    setDeleteDialog((d) => ({ ...d, open: false }));
+    await onDeleteSessions(sessionIds);
+  }, [deleteDialog, onDeleteSessions]);
+
   return (
     <>
       {/* 컨텍스트 메뉴 — 모바일: Dialog 하단 시트, 데스크탑: base-ui Menu */}
@@ -176,8 +212,10 @@ export function SessionContextMenu({
                 onCopyId={handleCopyId}
                 onRename={onRenameSession ? handleRenameClick : undefined}
                 onMove={onMoveSessions ? handleMoveClick : undefined}
+                onDelete={onDeleteSessions ? handleDeleteClick : undefined}
                 hasRename={!!onRenameSession}
                 hasMove={!!onMoveSessions}
+                hasDelete={!!onDeleteSessions}
               />
             </div>
           </DialogPopup>
@@ -213,6 +251,14 @@ export function SessionContextMenu({
               <>
                 <MenuSeparator />
                 <MenuItem onClick={handleMoveClick}>다른 폴더로 이동</MenuItem>
+              </>
+            )}
+            {!!onDeleteSessions && (
+              <>
+                <MenuSeparator />
+                <MenuItem onClick={handleDeleteClick} className="text-destructive">
+                  삭제
+                </MenuItem>
               </>
             )}
           </MenuPopup>
@@ -308,6 +354,37 @@ export function SessionContextMenu({
                 onClick={handleMoveFolderSubmit}
               >
                 이동하기
+              </Button>
+            </DialogFooter>
+          </DialogPopup>
+        </Dialog>
+      )}
+
+      {/* 삭제 확인 모달 */}
+      {onDeleteSessions && (
+        <Dialog
+          open={deleteDialog.open}
+          onOpenChange={(open) => setDeleteDialog((d) => ({ ...d, open }))}
+        >
+          <DialogPopup className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>세션 삭제</DialogTitle>
+            </DialogHeader>
+            <DialogPanel>
+              <p className="text-sm text-muted-foreground">
+                선택한 세션 {deleteDialog.sessionIds.length}개를 삭제합니다.
+              </p>
+            </DialogPanel>
+            <DialogFooter variant="bare">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDeleteDialog((d) => ({ ...d, open: false }))}
+              >
+                취소
+              </Button>
+              <Button type="button" variant="destructive" onClick={handleDeleteSubmit}>
+                삭제
               </Button>
             </DialogFooter>
           </DialogPopup>

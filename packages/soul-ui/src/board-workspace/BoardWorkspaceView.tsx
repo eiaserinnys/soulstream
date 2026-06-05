@@ -1,63 +1,46 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
-import {
-  ChevronRight,
-  FolderPlus,
-  List,
-  Loader2,
-  Plus,
-  SquarePen,
-} from "lucide-react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
+import { Loader2 } from "lucide-react";
 
 import { useDashboardStore } from "../stores/dashboard-store";
-import type { CatalogBoardItem, MarkdownDocument, SessionSummary } from "../shared/types";
-import { Button } from "../components/ui/button";
-import { Badge } from "../components/ui/badge";
+import type { CatalogBoardItem, CatalogFolder, FolderSettings, MarkdownDocument, SessionSummary } from "../shared/types";
 import { FolderDialog } from "../components/FolderDialog";
 import { runGuardedLoadMore, type LoadMoreCallback } from "../components/load-more-guard";
+import { toastManager } from "../components/ui/toast";
 import { useIsMobile } from "../hooks/use-mobile";
 import { cn } from "../lib/cn";
 import { applyCatalogDisplayNames } from "../hooks/session-stream-helpers";
 import type { FolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 import { BoardWorkspaceTile } from "./BoardWorkspaceTile";
 import {
-  BOARD_TILE_SIZE,
+  BOARD_TILE_WIDTH,
+  BOARD_TILE_HEIGHT,
+  BOARD_CANVAS_WIDTH,
+  BOARD_CANVAS_HEIGHT,
+  BOARD_CANVAS_ORIGIN_X,
+  BOARD_CANVAS_ORIGIN_Y,
+  BOARD_GRID_SIZE,
   buildBoardWorkspaceItems,
-  computeBoardCanvasSize,
   findFirstOpenBoardPosition,
   snapBoardPosition,
   type BoardWorkspaceItem,
 } from "./board-workspace-items";
 
 import { getFolderBreadcrumbs } from "./board-workspace-helpers";
+import { BoardWorkspaceHeader } from "./BoardWorkspaceHeader";
+import {
+  BoardWorkspaceContextMenus,
+  type BoardCardContextMenuState,
+  type BoardContextMenuState,
+} from "./BoardWorkspaceContextMenus";
+import { useBoardWorkspaceDrag } from "./useBoardWorkspaceDrag";
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
 const DOT_GRID_STYLE = {
-  backgroundImage: "radial-gradient(circle, hsl(var(--muted-foreground) / 0.28) 1px, transparent 1px)",
-  backgroundSize: "40px 40px",
+  backgroundImage: "radial-gradient(circle, hsl(var(--muted-foreground) / 0.34) 1px, transparent 1px)",
+  backgroundSize: `${BOARD_GRID_SIZE}px ${BOARD_GRID_SIZE}px`,
+  backgroundPosition: `${BOARD_CANVAS_ORIGIN_X % BOARD_GRID_SIZE}px ${BOARD_CANVAS_ORIGIN_Y % BOARD_GRID_SIZE}px`,
 } satisfies CSSProperties;
-
-interface BoardContextMenuState {
-  screenX: number;
-  screenY: number;
-  boardX: number;
-  boardY: number;
-}
-
-interface DragState {
-  item: BoardWorkspaceItem;
-  startClientX: number;
-  startClientY: number;
-  originX: number;
-  originY: number;
-}
-
-interface PanState {
-  startClientX: number;
-  startClientY: number;
-  scrollLeft: number;
-  scrollTop: number;
-}
 
 export interface CreateMarkdownDocumentInput {
   folderId: string;
@@ -76,7 +59,11 @@ export interface BoardWorkspaceViewProps {
   sessions?: SessionSummary[];
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
-  onCreateFolder?: (name: string, parentFolderId: string | null) => Promise<void> | void;
+  onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
+  onCreateFolder?: (name: string, parentFolderId: string | null) => Promise<CatalogFolder | void> | CatalogFolder | void;
+  onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
+  onDeleteFolder?: (folderId: string) => Promise<void> | void;
+  onUpdateFolderSettings?: (folderId: string, settings: FolderSettings) => Promise<void> | void;
   onUpdateBoardItemPosition?: (boardItemId: string, x: number, y: number) => Promise<void> | void;
   onCreateMarkdownDocument?: (input: CreateMarkdownDocumentInput) => Promise<CreateMarkdownDocumentResult>;
   onLoadMore?: LoadMoreCallback;
@@ -85,18 +72,19 @@ export interface BoardWorkspaceViewProps {
   onWorkspaceViewModeChange?: (mode: FolderWorkspaceViewMode) => void;
 }
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
-}
-
 function isBoardTileTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && Boolean(target.closest("[data-board-tile='true']"));
 }
 
 export function BoardWorkspaceView({
   sessions = EMPTY_SESSIONS,
+  onMoveSessions,
+  onRenameSession,
+  onDeleteSessions,
   onCreateFolder,
+  onRenameFolder,
+  onDeleteFolder,
+  onUpdateFolderSettings,
   onUpdateBoardItemPosition,
   onCreateMarkdownDocument,
   onLoadMore,
@@ -113,22 +101,32 @@ export function BoardWorkspaceView({
   const setActiveBoardDocument = useDashboardStore((s) => s.setActiveBoardDocument);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const activeBoardDocumentId = useDashboardStore((s) => s.activeBoardDocumentId);
   const addBoardItem = useDashboardStore((s) => s.addBoardItem);
+  const removeBoardItem = useDashboardStore((s) => s.removeBoardItem);
   const updateBoardItemPosition = useDashboardStore((s) => s.updateBoardItemPosition);
   const isMobile = useIsMobile();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createFolderPosition, setCreateFolderPosition] = useState<{ x: number; y: number } | null>(null);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<BoardContextMenuState | null>(null);
-  const [isSpaceDown, setIsSpaceDown] = useState(false);
-  const [isPanning, setIsPanning] = useState(false);
-  const [dragPreview, setDragPreview] = useState<{ boardItemId: string; x: number; y: number } | null>(null);
+  const [cardContextMenu, setCardContextMenu] = useState<BoardCardContextMenuState | null>(null);
+  const [selectedBoardItemId, setSelectedBoardItemId] = useState<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const loadMoreGateRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const dragStateRef = useRef<DragState | null>(null);
-  const dragPreviewRef = useRef<{ boardItemId: string; x: number; y: number } | null>(null);
-  const panStateRef = useRef<PanState | null>(null);
-  const suppressClickRef = useRef(false);
+  const {
+    dragPreview,
+    handleCanvasPointerDown,
+    handleTilePointerDown,
+    isPanning,
+    isSpaceDown,
+    shouldSuppressTileClick,
+  } = useBoardWorkspaceDrag({
+    scrollRef,
+    updateBoardItemPosition,
+    onUpdateBoardItemPosition,
+  });
 
   const folders = catalog?.folders ?? [];
   const selectedFolder = folders.find((folder) => folder.id === selectedFolderId) ?? null;
@@ -148,11 +146,40 @@ export function BoardWorkspaceView({
     });
   }, [catalog, selectedFolderId, displaySessions]);
 
-  const canvasSize = useMemo(() => computeBoardCanvasSize(boardItems), [boardItems]);
-
   const handleCreateFolder = async (name: string) => {
-    await onCreateFolder?.(name.trim(), selectedFolderId);
+    const position = createFolderPosition ? snapBoardPosition(createFolderPosition.x, createFolderPosition.y) : null;
+    const created = await onCreateFolder?.(name.trim(), selectedFolderId);
+    if (created && position && selectedFolderId) {
+      const boardItem: CatalogBoardItem = {
+        id: `subfolder:${created.id}`,
+        folderId: selectedFolderId,
+        itemType: "subfolder",
+        itemId: created.id,
+        x: position.x,
+        y: position.y,
+      };
+      addBoardItem(boardItem);
+      try {
+        await onUpdateBoardItemPosition?.(boardItem.id, position.x, position.y);
+      } catch (err) {
+        removeBoardItem(boardItem.id);
+        toastManager.add({
+          title: "Folder placement failed",
+          description: "The folder was created, but its board position was restored by the server.",
+          type: "warning",
+        });
+        console.error("Folder board item placement failed:", err);
+      }
+    }
+    setCreateFolderPosition(null);
     setCreateDialogOpen(false);
+  };
+
+  const openCreateFolderDialog = (position?: { x: number; y: number }) => {
+    setCreateFolderPosition(position ? snapBoardPosition(position.x, position.y) : null);
+    setCreateDialogOpen(true);
+    setContextMenu(null);
+    setNewMenuOpen(false);
   };
 
   const createMarkdownAt = useCallback(async (position?: { x: number; y: number }) => {
@@ -177,6 +204,42 @@ export function BoardWorkspaceView({
     }
   }, [addBoardItem, boardItems, isMobile, onCreateMarkdownDocument, selectedFolderId, setActiveBoardDocument, setActiveTab]);
 
+  const openNewSessionAt = useCallback((position?: { x: number; y: number }) => {
+    const boardPosition = position ? snapBoardPosition(position.x, position.y) : undefined;
+    openNewSessionModal(
+      "folder",
+      null,
+      {
+        ...(selectedFolderId ? { folderId: selectedFolderId } : {}),
+        ...(boardPosition ? { boardPosition } : {}),
+      },
+    );
+    setContextMenu(null);
+    setNewMenuOpen(false);
+  }, [openNewSessionModal, selectedFolderId]);
+
+  const boardToCanvasStyle = useCallback((position: { x: number; y: number }) => ({
+    left: BOARD_CANVAS_ORIGIN_X + position.x,
+    top: BOARD_CANVAS_ORIGIN_Y + position.y,
+  }), []);
+
+  const resolveBoardPoint = useCallback((clientX: number, clientY: number) => {
+    const canvas = scrollRef.current?.querySelector<HTMLElement>('[data-testid="board-workspace-canvas"]');
+    if (!canvas) return { x: 0, y: 0 };
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: clientX - rect.left - BOARD_CANVAS_ORIGIN_X,
+      y: clientY - rect.top - BOARD_CANVAS_ORIGIN_Y,
+    };
+  }, []);
+
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    scroller.scrollLeft = BOARD_CANVAS_ORIGIN_X - 80;
+    scroller.scrollTop = BOARD_CANVAS_ORIGIN_Y - 60;
+  }, [selectedFolderId]);
+
   useEffect(() => {
     if (!onLoadMore || !hasMore) return;
     const sentinel = sentinelRef.current;
@@ -191,102 +254,11 @@ export function BoardWorkspaceView({
     return () => observer.disconnect();
   }, [onLoadMore, hasMore]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || isEditableTarget(event.target)) return;
-      event.preventDefault();
-      setIsSpaceDown(true);
-    };
-    const handleKeyUp = (event: KeyboardEvent) => {
-      if (event.code !== "Space") return;
-      setIsSpaceDown(false);
-      setIsPanning(false);
-      panStateRef.current = null;
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("keyup", handleKeyUp);
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("keyup", handleKeyUp);
-    };
-  }, []);
-
-  useEffect(() => {
-    const handlePointerMove = (event: PointerEvent) => {
-      const drag = dragStateRef.current;
-      if (drag) {
-        const next = {
-          boardItemId: drag.item.boardItemId,
-          x: Math.max(0, drag.originX + event.clientX - drag.startClientX),
-          y: Math.max(0, drag.originY + event.clientY - drag.startClientY),
-        };
-        if (Math.abs(next.x - drag.originX) >= 2 || Math.abs(next.y - drag.originY) >= 2) {
-          suppressClickRef.current = true;
-        }
-        dragPreviewRef.current = next;
-        setDragPreview(next);
-        return;
-      }
-      const pan = panStateRef.current;
-      const scroller = scrollRef.current;
-      if (pan && scroller) {
-        scroller.scrollLeft = pan.scrollLeft - (event.clientX - pan.startClientX);
-        scroller.scrollTop = pan.scrollTop - (event.clientY - pan.startClientY);
-      }
-    };
-
-    const handlePointerUp = async () => {
-      const drag = dragStateRef.current;
-      if (drag) {
-        const preview = dragPreviewRef.current;
-        const snapped = snapBoardPosition(preview?.x ?? drag.originX, preview?.y ?? drag.originY);
-        dragStateRef.current = null;
-        dragPreviewRef.current = null;
-        setDragPreview(null);
-        updateBoardItemPosition(drag.item.boardItemId, snapped.x, snapped.y);
-        try {
-          await onUpdateBoardItemPosition?.(drag.item.boardItemId, snapped.x, snapped.y);
-        } catch (err) {
-          updateBoardItemPosition(drag.item.boardItemId, drag.originX, drag.originY);
-          console.error("Board item position update failed:", err);
-        }
-      }
-      panStateRef.current = null;
-      setIsPanning(false);
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-    };
-  }, [onUpdateBoardItemPosition, updateBoardItemPosition]);
-
-  const handleCanvasPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!isSpaceDown || event.button !== 0 || isBoardTileTarget(event.target)) return;
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-    event.preventDefault();
-    panStateRef.current = {
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      scrollLeft: scroller.scrollLeft,
-      scrollTop: scroller.scrollTop,
-    };
-    setIsPanning(true);
-  };
-
   const handleCanvasContextMenu = (event: ReactMouseEvent<HTMLDivElement>) => {
     if (isBoardTileTarget(event.target)) return;
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-    const rect = scroller.getBoundingClientRect();
-    const position = snapBoardPosition(
-      event.clientX - rect.left + scroller.scrollLeft,
-      event.clientY - rect.top + scroller.scrollTop,
-    );
+    const position = snapBoardPosition(resolveBoardPoint(event.clientX, event.clientY).x, resolveBoardPoint(event.clientX, event.clientY).y);
     event.preventDefault();
+    setCardContextMenu(null);
     setContextMenu({
       screenX: event.clientX,
       screenY: event.clientY,
@@ -295,135 +267,66 @@ export function BoardWorkspaceView({
     });
   };
 
-  const handleTilePointerDown = (event: ReactPointerEvent<HTMLButtonElement>, item: BoardWorkspaceItem) => {
-    if (event.button !== 0 || isSpaceDown) return;
+  const itemPosition = (item: BoardWorkspaceItem) => {
+    return boardToCanvasStyle({ x: item.x, y: item.y });
+  };
+
+  const handleTileContextMenu = (event: ReactMouseEvent<HTMLButtonElement>, item: BoardWorkspaceItem) => {
     event.preventDefault();
     event.stopPropagation();
-    dragStateRef.current = {
-      item,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      originX: item.x,
-      originY: item.y,
-    };
-    dragPreviewRef.current = { boardItemId: item.boardItemId, x: item.x, y: item.y };
-    suppressClickRef.current = false;
-    setDragPreview(dragPreviewRef.current);
-  };
-
-  const shouldSuppressTileClick = () => {
-    if (!suppressClickRef.current) return false;
-    suppressClickRef.current = false;
-    return true;
-  };
-
-  const itemPosition = (item: BoardWorkspaceItem) => {
-    if (dragPreview?.boardItemId === item.boardItemId) {
-      return { left: dragPreview.x, top: dragPreview.y };
+    setContextMenu(null);
+    setSelectedBoardItemId(item.boardItemId);
+    if (item.type === "session") {
+      setCardContextMenu({ screenX: event.clientX, screenY: event.clientY, item });
+      return;
     }
-    return { left: item.x, top: item.y };
+    if (item.type === "folder") {
+      setCardContextMenu({ screenX: event.clientX, screenY: event.clientY, item });
+      return;
+    }
+    setCardContextMenu({ screenX: event.clientX, screenY: event.clientY, item });
   };
+
+  const closeCardContextMenu = () => setCardContextMenu(null);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-1.5">
-        <div className="flex min-w-0 items-center gap-1">
-          {breadcrumbs.map((folder, index) => (
-            <div key={folder.id} className="flex min-w-0 items-center gap-1">
-              {index > 0 && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-              <button
-                type="button"
-                className={`truncate text-sm font-medium hover:text-foreground ${
-                  folder.id === selectedFolderId ? "text-foreground" : "text-muted-foreground"
-                }`}
-                aria-current={folder.id === selectedFolderId ? "page" : undefined}
-                onClick={() => selectFolder(folder.id)}
-              >
-                {folder.name}
-              </button>
-            </div>
-          ))}
-          {breadcrumbs.length === 0 && (
-            <span className="truncate text-sm font-semibold">
-              {selectedFolder?.name ?? "Folder"}
-            </span>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {workspaceViewMode && onWorkspaceViewModeChange && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onWorkspaceViewModeChange("list")}
-              title="List view"
-            >
-              <List className="mr-1 h-3.5 w-3.5" />
-              리스트
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setCreateDialogOpen(true)}
-            title="New folder"
-          >
-            <FolderPlus className="mr-1 h-3.5 w-3.5" />
-            Folder
-          </Button>
-          <div className="relative">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setNewMenuOpen((open) => !open)}
-              title="New"
-            >
-              <Plus className="mr-1 h-3.5 w-3.5" />
-              New
-            </Button>
-            {newMenuOpen && (
-              <div className="absolute right-0 top-full z-20 mt-1 w-36 rounded-md border border-border bg-popover p-1 shadow-lg">
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-                  onClick={() => {
-                    setNewMenuOpen(false);
-                    openNewSessionModal("folder");
-                  }}
-                >
-                  <Plus className="h-4 w-4" />
-                  Session
-                </button>
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-                  onClick={() => createMarkdownAt()}
-                >
-                  <SquarePen className="h-4 w-4" />
-                  문서
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      <BoardWorkspaceHeader
+        breadcrumbs={breadcrumbs}
+        selectedFolder={selectedFolder}
+        selectedFolderId={selectedFolderId}
+        workspaceViewMode={workspaceViewMode}
+        onWorkspaceViewModeChange={onWorkspaceViewModeChange}
+        newMenuOpen={newMenuOpen}
+        onToggleNewMenu={() => setNewMenuOpen((open) => !open)}
+        onSelectFolder={selectFolder}
+        onCreateFolder={() => openCreateFolderDialog()}
+        onOpenNewSession={() => openNewSessionAt()}
+        onCreateMarkdown={() => createMarkdownAt()}
+      />
 
       <div
         ref={scrollRef}
+        data-testid="board-workspace-scroll"
         className={cn(
           "relative min-h-0 flex-1 overflow-auto",
           isSpaceDown && "cursor-grab",
           isPanning && "cursor-grabbing",
         )}
-        style={DOT_GRID_STYLE}
         onPointerDown={handleCanvasPointerDown}
         onContextMenu={handleCanvasContextMenu}
+        onClick={() => {
+          setContextMenu(null);
+          setCardContextMenu(null);
+        }}
       >
         <div
           data-testid="board-workspace-canvas"
-          className="relative"
+          className="relative bg-background"
           style={{
-            width: Math.max(canvasSize.width, BOARD_TILE_SIZE),
-            height: Math.max(canvasSize.height, BOARD_TILE_SIZE),
+            width: BOARD_CANVAS_WIDTH,
+            height: BOARD_CANVAS_HEIGHT,
+            ...DOT_GRID_STYLE,
           }}
         >
           {boardItems.length === 0 && (
@@ -439,14 +342,25 @@ export function BoardWorkspaceView({
                 item={item}
                 style={itemPosition(item)}
                 activeSessionKey={activeSessionKey}
+                isSelected={
+                  selectedBoardItemId === item.boardItemId ||
+                  (item.type === "session" && activeSessionKey === item.session.agentSessionId) ||
+                  (item.type === "markdown" && activeBoardDocumentId === item.documentId)
+                }
                 onTilePointerDown={handleTilePointerDown}
+                onTileContextMenu={handleTileContextMenu}
                 shouldSuppressClick={shouldSuppressTileClick}
-                onOpenFolder={selectFolder}
+                onOpenFolder={(folderId) => {
+                  setSelectedBoardItemId(item.boardItemId);
+                  selectFolder(folderId);
+                }}
                 onOpenMarkdown={(documentId) => {
+                  setSelectedBoardItemId(item.boardItemId);
                   setActiveBoardDocument(documentId);
                   if (isMobile) setActiveTab("chat");
                 }}
                 onOpenSession={(session) => {
+                  setSelectedBoardItemId(item.boardItemId);
                   setActiveSession(session.agentSessionId);
                   setActiveSessionSummary(session);
                   if (isMobile) setActiveTab("chat");
@@ -455,12 +369,20 @@ export function BoardWorkspaceView({
             );
           })}
 
+          {dragPreview && (
+            <div
+              data-testid="board-drag-ghost"
+              className="pointer-events-none absolute z-20 h-[120px] w-[160px] rounded-md border-2 border-dashed border-primary/70 bg-primary/10 opacity-50"
+              style={boardToCanvasStyle(snapBoardPosition(dragPreview.x, dragPreview.y))}
+            />
+          )}
+
           {hasMore && onLoadMore && (
             <div
               ref={sentinelRef}
               data-testid="board-load-more-sentinel"
               className="absolute bottom-0 left-0 flex items-center justify-center py-3 text-xs text-muted-foreground"
-              style={{ width: Math.max(canvasSize.width, BOARD_TILE_SIZE) }}
+              style={{ width: BOARD_CANVAS_WIDTH }}
             >
               <Loader2
                 data-testid="board-load-more-spinner"
@@ -472,21 +394,23 @@ export function BoardWorkspaceView({
           )}
         </div>
 
-        {contextMenu && (
-          <div
-            className="fixed z-30 w-40 rounded-md border border-border bg-popover p-1 shadow-lg"
-            style={{ left: contextMenu.screenX, top: contextMenu.screenY }}
-          >
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-              onClick={() => createMarkdownAt({ x: contextMenu.boardX, y: contextMenu.boardY })}
-            >
-              <SquarePen className="h-4 w-4" />
-              새 문서
-            </button>
-          </div>
-        )}
+        <BoardWorkspaceContextMenus
+          contextMenu={contextMenu}
+          cardContextMenu={cardContextMenu}
+          displaySessions={displaySessions}
+          folders={folders}
+          activeBoardDocumentId={activeBoardDocumentId}
+          onCloseCardContextMenu={closeCardContextMenu}
+          onOpenCreateFolder={openCreateFolderDialog}
+          onOpenNewSession={openNewSessionAt}
+          onCreateMarkdown={createMarkdownAt}
+          onMoveSessions={onMoveSessions}
+          onRenameSession={onRenameSession}
+          onDeleteSessions={onDeleteSessions}
+          onRenameFolder={onRenameFolder}
+          onDeleteFolder={onDeleteFolder}
+          onUpdateFolderSettings={onUpdateFolderSettings}
+        />
       </div>
 
       <FolderDialog

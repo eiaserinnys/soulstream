@@ -17,8 +17,9 @@ import { randomUUID } from "node:crypto";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
-const BOARD_GRID_SIZE = 40;
-const BOARD_TILE_SIZE = 160;
+const BOARD_GRID_SIZE = 20;
+const BOARD_TILE_WIDTH = 160;
+const BOARD_TILE_HEIGHT = 120;
 const BOARD_DEFAULT_COLUMNS = 4;
 
 export interface CatalogFolderDto {
@@ -211,6 +212,7 @@ export class CatalogService {
     x: number,
     y: number,
   ): Promise<void> {
+    await this.db.ensureBoardItems();
     await this.db.updateBoardItemPosition(
       boardItemId,
       snapBoardPosition(x),
@@ -269,8 +271,8 @@ export class CatalogService {
     );
     let index = 0;
     while (true) {
-      const x = (index % BOARD_DEFAULT_COLUMNS) * BOARD_TILE_SIZE;
-      const y = Math.floor(index / BOARD_DEFAULT_COLUMNS) * BOARD_TILE_SIZE;
+      const x = (index % BOARD_DEFAULT_COLUMNS) * BOARD_TILE_WIDTH;
+      const y = Math.floor(index / BOARD_DEFAULT_COLUMNS) * BOARD_TILE_HEIGHT;
       if (!occupied.has(`${x}:${y}`)) return [x, y];
       index += 1;
     }
@@ -302,5 +304,5 @@ export class CatalogService {
 }
 
 function snapBoardPosition(value: number): number {
-  return Math.max(0, Math.round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE);
+  return Math.round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE;
 }
