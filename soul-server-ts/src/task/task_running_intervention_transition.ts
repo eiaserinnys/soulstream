@@ -9,6 +9,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import { splitAttachmentPaths } from "./attachment_context.js";
 import { publishInterventionSent } from "./task_intervention_events.js";
+import { markLiveInterventionInFlight } from "./task_live_intervention_invariant.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 
 export type RunningInterventionResult =
@@ -58,6 +59,7 @@ export class RunningInterventionTransition {
       const liveSteerStatus = await this.tryLiveSteer(task, message);
       if (liveSteerStatus === "delivered") {
         await this.publishIntervention(task, message);
+        markLiveInterventionInFlight(task, message);
         return { delivered: true };
       }
       return {
@@ -69,6 +71,7 @@ export class RunningInterventionTransition {
     const liveSteerStatus = await this.tryLiveSteer(task, message);
     if (liveSteerStatus === "delivered") {
       await this.publishIntervention(task, message);
+      markLiveInterventionInFlight(task, message);
       return { delivered: true };
     }
 
