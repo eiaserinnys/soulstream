@@ -389,7 +389,9 @@ describe("BoardWorkspaceView", () => {
     ({ container, root } = renderBoard());
 
     const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    const canvas = container.querySelector<HTMLElement>('[data-testid="board-workspace-canvas"]');
     expect(sessionTile).not.toBeNull();
+    expect(canvas).not.toBeNull();
 
     flushSync(() => {
       sessionTile!.dispatchEvent(new MouseEvent("click", { bubbles: true }));

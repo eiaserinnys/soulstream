@@ -1,20 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject } from "react";
 
-import { snapBoardPosition, type BoardWorkspaceItem } from "./board-workspace-items";
+import type { BoardWorkspaceItem } from "./board-workspace-items";
+import {
+  findBoardItemsInRect,
+  getDraggedBoardItems,
+  isBoardSelectionToggle,
+  normalizeBoardRect,
+  snapBoardItemPositionUpdates,
+  type BoardItemPositionUpdate,
+  type BoardPoint,
+  type BoardRect,
+} from "./board-selection";
 
 const DRAG_ACTIVATION_DISTANCE = 8;
+const MARQUEE_ACTIVATION_DISTANCE = 4;
 const AUTO_PAN_EDGE_SIZE = 48;
 const AUTO_PAN_STEP = 24;
 
 interface DragState {
-  item: BoardWorkspaceItem;
+  items: BoardWorkspaceItem[];
   startClientX: number;
   startClientY: number;
   startScrollLeft: number;
   startScrollTop: number;
-  originX: number;
-  originY: number;
   active: boolean;
 }
 
@@ -25,9 +34,23 @@ interface PanState {
   scrollTop: number;
 }
 
+interface MarqueeState {
+  start: BoardPoint;
+  current: BoardPoint;
+  active: boolean;
+}
+
 interface UseBoardWorkspaceDragOptions {
   scrollRef: RefObject<HTMLDivElement | null>;
-  updateBoardItemPosition: (boardItemId: string, x: number, y: number) => void;
+  zoom: number;
+  boardItems: BoardWorkspaceItem[];
+  selectedBoardItemIds: Set<string>;
+  resolveBoardPoint: (clientX: number, clientY: number) => BoardPoint;
+  selectBoardItems: (boardItemIds: string[], primaryBoardItemId: string | null) => void;
+  toggleBoardItemSelection: (boardItemId: string) => void;
+  clearBoardSelection: () => void;
+  raiseBoardItems: (boardItemIds: string[]) => void;
+  updateBoardItemPositions: (updates: BoardItemPositionUpdate[]) => void;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -39,17 +62,52 @@ function isBoardTileTarget(target: EventTarget | null): boolean {
   return target instanceof HTMLElement && Boolean(target.closest("[data-board-tile='true']"));
 }
 
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(target.closest("button, a, input, textarea, select, [contenteditable='true'], [role='menu'], [role='menuitem']"));
+}
+
 export function useBoardWorkspaceDrag({
   scrollRef,
-  updateBoardItemPosition,
+  zoom,
+  boardItems,
+  selectedBoardItemIds,
+  resolveBoardPoint,
+  selectBoardItems,
+  toggleBoardItemSelection,
+  clearBoardSelection,
+  raiseBoardItems,
+  updateBoardItemPositions,
 }: UseBoardWorkspaceDragOptions) {
   const [isSpaceDown, setIsSpaceDown] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
-  const [dragPreview, setDragPreview] = useState<{ boardItemId: string; x: number; y: number } | null>(null);
+  const [dragPreviews, setDragPreviews] = useState<BoardItemPositionUpdate[]>([]);
+  const [marqueeRect, setMarqueeRect] = useState<BoardRect | null>(null);
   const dragStateRef = useRef<DragState | null>(null);
-  const dragPreviewRef = useRef<{ boardItemId: string; x: number; y: number } | null>(null);
+  const dragPreviewsRef = useRef<BoardItemPositionUpdate[]>([]);
+  const marqueeStateRef = useRef<MarqueeState | null>(null);
   const panStateRef = useRef<PanState | null>(null);
   const suppressClickRef = useRef(false);
+  const latestRef = useRef({
+    zoom,
+    boardItems,
+    selectedBoardItemIds,
+    resolveBoardPoint,
+    selectBoardItems,
+    clearBoardSelection,
+    raiseBoardItems,
+    updateBoardItemPositions,
+  });
+  latestRef.current = {
+    zoom,
+    boardItems,
+    selectedBoardItemIds,
+    resolveBoardPoint,
+    selectBoardItems,
+    clearBoardSelection,
+    raiseBoardItems,
+    updateBoardItemPositions,
+  };
 
   const autoPanDuringDrag = useCallback((event: PointerEvent) => {
     const scroller = scrollRef.current;
@@ -98,14 +156,29 @@ export function useBoardWorkspaceDrag({
         const scroller = scrollRef.current;
         const scrollX = scroller ? scroller.scrollLeft - drag.startScrollLeft : 0;
         const scrollY = scroller ? scroller.scrollTop - drag.startScrollTop : 0;
-        const next = {
-          boardItemId: drag.item.boardItemId,
-          x: drag.originX + moveX + scrollX,
-          y: drag.originY + moveY + scrollY,
-        };
+        const currentZoom = latestRef.current.zoom;
+        const deltaX = (moveX + scrollX) / currentZoom;
+        const deltaY = (moveY + scrollY) / currentZoom;
+        const next = drag.items.map((item) => ({
+          boardItemId: item.boardItemId,
+          x: item.x + deltaX,
+          y: item.y + deltaY,
+        }));
         suppressClickRef.current = true;
-        dragPreviewRef.current = next;
-        setDragPreview(next);
+        dragPreviewsRef.current = next;
+        setDragPreviews(next);
+        return;
+      }
+
+      const marquee = marqueeStateRef.current;
+      if (marquee) {
+        const current = latestRef.current.resolveBoardPoint(event.clientX, event.clientY);
+        const rect = normalizeBoardRect(marquee.start, current);
+        marquee.current = current;
+        if (!marquee.active && Math.hypot(rect.width, rect.height) < MARQUEE_ACTIVATION_DISTANCE) return;
+        marquee.active = true;
+        suppressClickRef.current = true;
+        setMarqueeRect(rect);
         return;
       }
 
@@ -122,15 +195,29 @@ export function useBoardWorkspaceDrag({
       if (drag) {
         if (!drag.active) {
           dragStateRef.current = null;
-          dragPreviewRef.current = null;
-          setDragPreview(null);
+          dragPreviewsRef.current = [];
+          setDragPreviews([]);
         } else {
-          const preview = dragPreviewRef.current;
-          const snapped = snapBoardPosition(preview?.x ?? drag.originX, preview?.y ?? drag.originY);
+          const previews = dragPreviewsRef.current.length > 0
+            ? dragPreviewsRef.current
+            : drag.items.map((item) => ({ boardItemId: item.boardItemId, x: item.x, y: item.y }));
           dragStateRef.current = null;
-          dragPreviewRef.current = null;
-          setDragPreview(null);
-          updateBoardItemPosition(drag.item.boardItemId, snapped.x, snapped.y);
+          dragPreviewsRef.current = [];
+          setDragPreviews([]);
+          latestRef.current.updateBoardItemPositions(snapBoardItemPositionUpdates(previews));
+        }
+      }
+      const marquee = marqueeStateRef.current;
+      if (marquee) {
+        marqueeStateRef.current = null;
+        setMarqueeRect(null);
+        if (!marquee.active) {
+          latestRef.current.clearBoardSelection();
+        } else {
+          const rect = normalizeBoardRect(marquee.start, marquee.current);
+          const selectedIds = findBoardItemsInRect(latestRef.current.boardItems, rect);
+          latestRef.current.selectBoardItems(selectedIds, selectedIds[selectedIds.length - 1] ?? null);
+          latestRef.current.raiseBoardItems(selectedIds);
         }
       }
       panStateRef.current = null;
@@ -143,13 +230,20 @@ export function useBoardWorkspaceDrag({
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
-  }, [autoPanDuringDrag, scrollRef, updateBoardItemPosition]);
+  }, [autoPanDuringDrag, scrollRef]);
 
   const handleCanvasPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!isSpaceDown || event.button !== 0 || isBoardTileTarget(event.target)) return;
+    if (event.button !== 0 || isBoardTileTarget(event.target)) return;
     const scroller = scrollRef.current;
     if (!scroller) return;
+    if (!isSpaceDown && isInteractiveTarget(event.target)) return;
     event.preventDefault();
+    if (!isSpaceDown) {
+      const start = latestRef.current.resolveBoardPoint(event.clientX, event.clientY);
+      marqueeStateRef.current = { start, current: start, active: false };
+      setMarqueeRect(null);
+      return;
+    }
     panStateRef.current = {
       startClientX: event.clientX,
       startClientY: event.clientY,
@@ -162,20 +256,30 @@ export function useBoardWorkspaceDrag({
   const handleTilePointerDown = (event: ReactPointerEvent<HTMLButtonElement>, item: BoardWorkspaceItem) => {
     if (event.button !== 0 || isSpaceDown) return;
     event.stopPropagation();
+    if (isBoardSelectionToggle(event)) {
+      event.preventDefault();
+      suppressClickRef.current = true;
+      toggleBoardItemSelection(item.boardItemId);
+      raiseBoardItems([item.boardItemId]);
+      return;
+    }
     const scroller = scrollRef.current;
+    const dragItems = getDraggedBoardItems(boardItems, selectedBoardItemIds, item);
+    if (!selectedBoardItemIds.has(item.boardItemId) || selectedBoardItemIds.size <= 1) {
+      selectBoardItems([item.boardItemId], item.boardItemId);
+    }
+    raiseBoardItems(dragItems.map((dragItem) => dragItem.boardItemId));
     dragStateRef.current = {
-      item,
+      items: dragItems,
       startClientX: event.clientX,
       startClientY: event.clientY,
       startScrollLeft: scroller?.scrollLeft ?? 0,
       startScrollTop: scroller?.scrollTop ?? 0,
-      originX: item.x,
-      originY: item.y,
       active: false,
     };
-    dragPreviewRef.current = null;
+    dragPreviewsRef.current = [];
     suppressClickRef.current = false;
-    setDragPreview(null);
+    setDragPreviews([]);
   };
 
   const shouldSuppressTileClick = () => {
@@ -185,7 +289,8 @@ export function useBoardWorkspaceDrag({
   };
 
   return {
-    dragPreview,
+    dragPreviews,
+    marqueeRect,
     isPanning,
     isSpaceDown,
     handleCanvasPointerDown,
