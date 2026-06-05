@@ -71,7 +71,7 @@ const sessions: SessionSummary[] = [
     agentId: "roselin_codex",
     agentName: "Roselin",
     agentPortraitUrl: "/api/nodes/eias/agents/roselin_codex/portrait",
-    prompt: "Session title that should wrap up to three lines inside the tile before it is clamped",
+    prompt: "Session title that should wrap up to two lines inside the tile before it is clamped",
     updatedAt: "2026-06-04T00:00:00.000Z",
     lastMessage: {
       type: "assistant",
@@ -307,7 +307,7 @@ describe("BoardWorkspaceView", () => {
     ({ container, root } = renderBoard());
 
     expect(container.querySelector('[data-testid="board-folder-title"]')?.className).toContain("truncate");
-    expect(container.querySelector('[data-testid="board-session-title"]')?.className).toContain("line-clamp-3");
+    expect(container.querySelector('[data-testid="board-session-title"]')?.className).toContain("line-clamp-2");
     expect(container.querySelector('[data-testid="board-session-title"]')?.textContent).toContain(
       "Session title that should wrap",
     );
@@ -315,9 +315,26 @@ describe("BoardWorkspaceView", () => {
     expect(container.querySelector<HTMLImageElement>('[data-testid="board-session-agent-avatar"]')?.src).toContain(
       "/api/nodes/eias/agents/roselin_codex/portrait",
     );
-    expect(container.querySelector('[data-testid="board-session-preview"]')?.className).toContain("line-clamp-2");
+    expect(container.querySelector('[data-testid="board-session-agent-avatar"]')?.className).toContain("h-5 w-5");
+    expect(container.querySelector('[data-testid="board-session-preview"]')?.className).toContain("line-clamp-3");
     expect(container.querySelector('[data-testid="board-markdown-title"]')?.className).toContain("line-clamp-2");
     expect(container.querySelector('[data-testid="board-markdown-preview"]')?.textContent).toBe("Markdown preview");
+  });
+
+  it("keeps the fallback agent avatar aligned with the enlarged board session avatar size", () => {
+    ({ container, root } = renderBoard({}, {
+      sessions: [
+        {
+          ...sessions[0],
+          agentPortraitUrl: undefined,
+        },
+      ],
+    }));
+
+    const fallbackAvatar = container.querySelector<HTMLElement>('[data-testid="board-session-agent-avatar"]');
+
+    expect(fallbackAvatar?.tagName).toBe("SPAN");
+    expect(fallbackAvatar?.className).toContain("h-5 w-5");
   });
 
   it("shows a snapped drag ghost and updates the Y-doc board position without HTTP persistence", async () => {

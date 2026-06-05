@@ -242,7 +242,7 @@ export function BoardWorkspaceTile({
         <div
           data-testid="board-session-title"
           className={cn(
-            "line-clamp-3 pr-4 text-sm font-medium leading-snug",
+            "line-clamp-2 pr-4 text-sm font-medium leading-snug",
             item.parentRef && "pt-6",
             item.childStack && "pr-10",
           )}
@@ -259,12 +259,12 @@ export function BoardWorkspaceTile({
                 data-testid="board-session-agent-avatar"
                 src={item.session.agentPortraitUrl}
                 alt={getSessionAgentLabel(item.session)}
-                className="h-4 w-4 shrink-0 rounded-sm object-cover"
+                className="h-5 w-5 shrink-0 rounded-sm object-cover"
               />
             ) : (
               <span
                 data-testid="board-session-agent-avatar"
-                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-border bg-muted text-[9px]"
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border border-border bg-muted text-[9px]"
               >
                 {getAgentInitial(getSessionAgentLabel(item.session))}
               </span>
@@ -275,7 +275,7 @@ export function BoardWorkspaceTile({
           </div>
           <div
             data-testid="board-session-preview"
-            className="line-clamp-2 min-w-0 text-xs leading-snug text-muted-foreground"
+            className="line-clamp-3 min-w-0 text-xs leading-snug text-muted-foreground"
           >
             {getSessionBoardPreview(item.session)}
           </div>
