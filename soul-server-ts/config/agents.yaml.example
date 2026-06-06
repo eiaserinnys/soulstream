@@ -7,16 +7,24 @@
 # Python `soul-server/data/agents.yaml`과 키 호환 — 운영자가 두 서비스를
 # 같은 양식으로 관리 가능.
 #
-# 필수 필드: id, name, backend (claude|codex), workspace_dir
-# 선택 필드: max_turns, allowed_tools, disallowed_tools, portrait_path
+# 필수 필드: id, name, backend (claude|codex|openai-agents), workspace_dir
+# 선택 필드: model, max_turns, allowed_tools, disallowed_tools, portrait_path
 
 agents:
   - id: codex-default
     name: Codex Default
     backend: codex
     workspace_dir: /tmp/codex-default
+    # model: gpt-5.5
     # max_turns: 50
     # allowed_tools:
     #   - bash
     #   - read
     # portrait_path: /var/lib/soulstream/portraits/codex-default.png
+
+  - id: zombie-labyrinth-bot
+    name: Zombie Labyrinth Bot
+    backend: codex
+    workspace_dir: /tmp/zombie-labyrinth-bot
+    # Codex CLI 0.137.0 `codex debug models` 기준: ultra-fast catalog model.
+    model: gpt-5.3-codex-spark

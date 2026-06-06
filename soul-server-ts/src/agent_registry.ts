@@ -210,6 +210,7 @@ export const AgentProfileSchema = z.object({
   id: z.string().min(1, "agent.id required"),
   name: z.string().min(1, "agent.name required"),
   backend: z.enum(["claude", "codex", "openai-agents"]),
+  model: z.string().trim().min(1, "agent.model must not be empty").optional(),
   workspace_dir: z.string().min(1, "agent.workspace_dir required"),
   max_turns: z.number().int().positive().optional(),
   allowed_tools: z.array(z.string()).optional(),

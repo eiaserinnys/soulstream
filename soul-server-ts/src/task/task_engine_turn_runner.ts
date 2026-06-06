@@ -54,6 +54,7 @@ export class TaskEngineTurnRunner {
     const effectiveAllowedTools = task.allowedTools ?? agent.allowed_tools;
     const effectiveDisallowedTools = task.disallowedTools ?? agent.disallowed_tools;
     const effectiveClaudePermissionMode = task.claudePermissionMode ?? agent.claude_permission_mode;
+    const effectiveModel = task.model ?? agent.model;
     const extraEnv = task.oauthToken && engine.backendId === "claude"
       ? { [CLAUDE_OAUTH_TOKEN_ENV]: task.oauthToken }
       : undefined;
@@ -62,7 +63,7 @@ export class TaskEngineTurnRunner {
       agentSessionId: task.agentSessionId,
       prompt: input.prompt,
       imageAttachmentPaths: input.imageAttachmentPaths,
-      model: task.model,
+      model: effectiveModel,
       reasoningEffort: task.reasoningEffort,
       resumeSessionId: task.codexThreadId,
       resumeRunState: task.agentsRunState,
