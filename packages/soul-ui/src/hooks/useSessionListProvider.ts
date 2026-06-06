@@ -15,6 +15,7 @@
 import { useCallback, useRef, useState, useMemo } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useDashboardStore } from "../stores/dashboard-store";
+import type { DashboardState } from "../stores/dashboard-store-types";
 import type { SessionSummary } from "../shared/types";
 import type { SessionStorageProvider } from "../providers/types";
 import { useInitialCatalogLoad } from "./useInitialCatalogLoad";
@@ -52,6 +53,19 @@ export interface UseSessionListProviderOptions {
    * 이 프로바이더의 fetchSessions를 intervalMs 간격으로 폴링한다.
    */
   externalProvider?: SessionStorageProvider;
+  /**
+   * Store의 현재 viewMode와 별개로 고정 조회할 목록 종류.
+   * 좌측 사이드바 피드처럼 중앙 표면 네비게이션과 독립된 목록에서 사용한다.
+   */
+  viewModeOverride?: DashboardState["viewMode"];
+  /** viewModeOverride와 함께 사용할 폴더 ID. null을 명시하면 미분류/전역 의미를 유지한다. */
+  folderIdOverride?: string | null;
+  /** catalog SSE 구독 활성화. 기본 true */
+  streamEnabled?: boolean;
+  /** 초기 catalog 로드 활성화. 기본 true */
+  initialCatalogLoadEnabled?: boolean;
+  /** 폴더 카운트 조회 활성화. 기본 true */
+  folderCountsEnabled?: boolean;
 }
 
 export function useSessionListProvider(
@@ -62,14 +76,26 @@ export function useSessionListProvider(
     enabled = true,
     getSessionProvider,
     externalProvider,
+    viewModeOverride,
+    folderIdOverride,
+    streamEnabled = true,
+    initialCatalogLoadEnabled = true,
+    folderCountsEnabled = true,
   } = options;
 
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
 
   // 필터 상태
   const sessionTypeFilter = useDashboardStore((s) => s.sessionTypeFilter);
-  const viewMode = useDashboardStore((s) => s.viewMode);
-  const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const storeViewMode = useDashboardStore((s) => s.viewMode);
+  const storeSelectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const viewMode = viewModeOverride ?? storeViewMode;
+  const selectedFolderId = Object.prototype.hasOwnProperty.call(
+    options,
+    "folderIdOverride",
+  )
+    ? (folderIdOverride ?? null)
+    : storeSelectedFolderId;
 
   // 피드 뷰에서는 selectedFolderId 변경 시 재조회 불필요
   const effectiveFolderId = viewMode === "folder" ? selectedFolderId : null;
@@ -115,7 +141,7 @@ export function useSessionListProvider(
       }
 
       // 폴더별 세션 수 조회 (provider가 지원하는 경우)
-      if (provider.fetchFolderCounts) {
+      if (folderCountsEnabled && provider.fetchFolderCounts) {
         provider.fetchFolderCounts().then(setFolderCounts).catch(() => {});
       }
 
@@ -154,7 +180,7 @@ export function useSessionListProvider(
   }, [fetchNextPage]);
 
   // --- 초기 카탈로그 로드 ---
-  useInitialCatalogLoad(enabled);
+  useInitialCatalogLoad(enabled && initialCatalogLoadEnabled);
 
   // --- Last-Event-ID resume 정본 (provider 레벨) ---
   // 매 SSE id 부착 이벤트마다 lastEventIdRef를 갱신, instance_id 변경/replay_gap
@@ -165,7 +191,7 @@ export function useSessionListProvider(
 
   // --- SSE 구독: 연결 + 캐시/store 동기화 ---
   useSessionStreamCacheSync({
-    enabled: enabled && !externalProvider,
+    enabled: enabled && streamEnabled && !externalProvider,
     urlBuilder: () =>
       buildCatalogStreamUrl(lastEventIdRef.current, instanceIdRef.current),
     queryKey,

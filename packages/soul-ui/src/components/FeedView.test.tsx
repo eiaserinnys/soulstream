@@ -139,6 +139,43 @@ describe("FeedView sidebar placement", () => {
     expect(state.activeSessionKey).toBe("in-folder");
     expect(state.activeSessionSummary?.agentSessionId).toBe("in-folder");
     expect(state.leftNavigationMode).toBe("feed");
+    expect(container.querySelector('[data-session-id="in-folder"]')).not.toBeNull();
+    expect(container.querySelector('[data-session-id="orphan"]')).not.toBeNull();
+  });
+
+  it("keeps injected sidebar feed sessions visible after folder navigation", async () => {
+    queryClient.clear();
+    flushSync(() => {
+      root.render(
+        createElement(
+          QueryClientProvider,
+          { client: queryClient },
+          createElement(
+            DndContext,
+            null,
+            createElement(FeedView, {
+              placement: "sidebar",
+              sessions: [makeSession("in-folder"), makeSession("orphan")],
+            }),
+          ),
+        ),
+      );
+    });
+    await Promise.resolve();
+
+    const card = container.querySelector<HTMLElement>('[data-session-id="in-folder"]');
+    expect(card).not.toBeNull();
+
+    flushSync(() => {
+      card!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const state = useDashboardStore.getState();
+    expect(state.viewMode).toBe("folder");
+    expect(state.selectedFolderId).toBe("folder-a");
+    expect(state.leftNavigationMode).toBe("feed");
+    expect(container.querySelector('[data-session-id="in-folder"]')).not.toBeNull();
+    expect(container.querySelector('[data-session-id="orphan"]')).not.toBeNull();
   });
 
   it("keeps the current folder surface when a sidebar feed card has no folder assignment", async () => {

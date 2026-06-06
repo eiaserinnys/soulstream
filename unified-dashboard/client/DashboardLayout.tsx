@@ -74,6 +74,20 @@ export function DashboardLayout() {
     intervalMs: 5000,
     getSessionProvider,
   });
+  const {
+    hasMore: feedHasMore,
+    loadMore: loadMoreFeed,
+    sessions: feedSessions,
+  } = useSessionListProvider({
+    intervalMs: 5000,
+    enabled: !isRestrictedAccess,
+    getSessionProvider,
+    viewModeOverride: "feed",
+    folderIdOverride: null,
+    streamEnabled: false,
+    initialCatalogLoadEnabled: false,
+    folderCountsEnabled: false,
+  });
 
   // 활성 세션 구독 (Provider 기반)
   const { status: sseStatus } = useSessionProvider({
@@ -196,8 +210,9 @@ export function DashboardLayout() {
           <FeedView
             placement="sidebar"
             onNewSession={() => openNewSessionModal("feed")}
-            onLoadMore={loadMore}
-            hasMore={hasMore}
+            onLoadMore={loadMoreFeed}
+            hasMore={feedHasMore}
+            sessions={feedSessions}
           />
         )
       }
@@ -240,8 +255,9 @@ export function DashboardLayout() {
       mobileSessionsView={
         isRestrictedAccess ? restrictedFolderView : <FeedView
           onNewSession={() => openNewSessionModal("feed")}
-          onLoadMore={loadMore}
-          hasMore={hasMore}
+          onLoadMore={loadMoreFeed}
+          hasMore={feedHasMore}
+          sessions={feedSessions}
         />
       }
       mobileFolderContents={

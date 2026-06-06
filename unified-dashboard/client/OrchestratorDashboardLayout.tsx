@@ -109,6 +109,20 @@ export function OrchestratorDashboardLayout() {
     intervalMs: 5000,
     getSessionProvider: () => orchestratorSessionProvider,
   });
+  const {
+    hasMore: feedHasMore,
+    loadMore: loadMoreFeed,
+    sessions: feedSessions,
+  } = useSessionListProvider({
+    intervalMs: 5000,
+    enabled: !isRestrictedAccess,
+    getSessionProvider: () => orchestratorSessionProvider,
+    viewModeOverride: "feed",
+    folderIdOverride: null,
+    streamEnabled: false,
+    initialCatalogLoadEnabled: false,
+    folderCountsEnabled: false,
+  });
 
   // 활성 세션 구독
   const { status: sseStatus } = useSessionProvider({
@@ -200,8 +214,9 @@ export function OrchestratorDashboardLayout() {
           <FeedView
             placement="sidebar"
             onNewSession={() => openNewSessionModal("feed")}
-            onLoadMore={loadMore}
-            hasMore={hasMore}
+            onLoadMore={loadMoreFeed}
+            hasMore={feedHasMore}
+            sessions={feedSessions}
           />
         )
       }
@@ -247,8 +262,9 @@ export function OrchestratorDashboardLayout() {
       mobileSessionsView={
         isRestrictedAccess ? restrictedFolderView : <FeedView
           onNewSession={() => openNewSessionModal("feed")}
-          onLoadMore={loadMore}
-          hasMore={hasMore}
+          onLoadMore={loadMoreFeed}
+          hasMore={feedHasMore}
+          sessions={feedSessions}
         />
       }
       mobileFolderContents={
