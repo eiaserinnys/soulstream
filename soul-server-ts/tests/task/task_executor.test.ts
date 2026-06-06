@@ -1427,6 +1427,120 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     expect(task.interventionQueue).toHaveLength(0);
   });
 
+  it("intervention queued during turn still resumes when runtime task lingers without non-idle session state", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    const capturedPrompts: string[] = [];
+    let turnCount = 0;
+
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedPrompts.push(params.prompt);
+        turnCount += 1;
+        if (turnCount === 1) {
+          yield { type: "session", session_id: "claude-sess-intervention" } as SSEEventPayload;
+          task.interventionQueue.push({ text: "correct this while running", user: "u" });
+          yield {
+            type: "claude_runtime_task_started",
+            task_id: "lingering-runtime-task",
+            task_type: "local_agent",
+            description: "runtime task started before intervention",
+          } as SSEEventPayload;
+          yield { type: "complete", result: "first turn", timestamp: 1 } as SSEEventPayload;
+          return;
+        }
+        yield { type: "complete", result: "second turn", timestamp: 2 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    task.profileId = claudeAgent.id;
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(turnCount).toBe(2);
+    expect(capturedPrompts[1]).toBe("correct this while running");
+    expect(task.status).toBe("completed");
+    expect(task.interventionQueue).toHaveLength(0);
+    expect(task.claudeRuntime).toMatchObject({
+      tasks: {
+        "lingering-runtime-task": {
+          status: "running",
+        },
+      },
+    });
+    const pendingAfterTurnError = mocks.persistEvent.mock.calls.find(
+      (call) =>
+        (call[1] as { error_code?: string }).error_code ===
+        "claude_runtime_pending_after_turn",
+    );
+    expect(pendingAfterTurnError).toBeUndefined();
+  });
+
+  it("intervention queued during turn resumes after runtime session returns to idle", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    let turnCount = 0;
+
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        turnCount += 1;
+        if (turnCount === 1) {
+          task.interventionQueue.push({ text: "resume after idle", user: "u" });
+          yield {
+            type: "claude_runtime_session_state",
+            state: "running",
+            session_id: "claude-sess-idle-after-intervention",
+          } as SSEEventPayload;
+          yield {
+            type: "claude_runtime_session_state",
+            state: "idle",
+            session_id: "claude-sess-idle-after-intervention",
+          } as SSEEventPayload;
+          yield { type: "complete", result: "first turn", timestamp: 1 } as SSEEventPayload;
+          return;
+        }
+        yield { type: "complete", result: "second turn", timestamp: 2 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    task.profileId = claudeAgent.id;
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(turnCount).toBe(2);
+    expect(task.status).toBe("completed");
+    expect(task.interventionQueue).toHaveLength(0);
+    expect(task.claudeRuntime?.sessionState).toBe("idle");
+    const pendingAfterTurnError = mocks.persistEvent.mock.calls.find(
+      (call) =>
+        (call[1] as { error_code?: string }).error_code ===
+        "claude_runtime_pending_after_turn",
+    );
+    expect(pendingAfterTurnError).toBeUndefined();
+  });
+
   it("P1-3: turn 진행 중 intervention 도착 후 turn throw → interventionQueue 미처리 메시지 wire error 이벤트 발행 + queue 정리", async () => {
     // 사용자가 인터벤션을 보냈는데(intervention_sent broadcast 수신) 그 직후 turn이 throw하면
     // 메시지가 silent로 사라진다. 사용자에게 명시 error 이벤트로 통지하여 재전송 결정 가능하게 한다.

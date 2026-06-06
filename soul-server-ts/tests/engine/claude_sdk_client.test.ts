@@ -2102,6 +2102,68 @@ describe("ClaudeSdkClient", () => {
     });
   });
 
+  it("does not emit fatal error when SDK echoes a mid-turn intervention as user before null stop result", async () => {
+    const streamedMessages: SDKUserMessage[] = [];
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const input = params.prompt as AsyncIterable<SDKUserMessage>;
+              const iterator = input[Symbol.asyncIterator]();
+              const first = await iterator.next();
+              if (!first.done) streamedMessages.push(first.value);
+              yield sdkSystemInit("claude-sess-user-result");
+
+              const intervention = await iterator.next();
+              if (!intervention.done) streamedMessages.push(intervention.value);
+              yield {
+                type: "user",
+                message: { role: "user", content: [] },
+                parent_tool_use_id: null,
+                uuid: "user-empty-after-intervention",
+                session_id: "claude-sess-user-result",
+              } as unknown as SDKMessage;
+              yield sdkSuccessResult("claude-sess-user-result", "", {
+                stop_reason: null,
+              });
+            })(),
+          ),
+        postResultDrainMs: 10,
+      },
+      silentLogger,
+    );
+
+    const iterator = client.run(
+      {
+        prompt: "first",
+        workspaceDir: "/tmp/claude-work",
+        env: {},
+      },
+      new AbortController().signal,
+    )[Symbol.asyncIterator]();
+
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { type: "session", sessionId: "claude-sess-user-result" },
+    });
+    await expect(client.steerActiveTurn({ prompt: "mid-turn intervention" })).resolves.toEqual({
+      status: "delivered",
+    });
+    const events = await collectIterator(iterator);
+
+    expect(streamedMessages.map((message) => message.message.content)).toEqual([
+      "first",
+      "mid-turn intervention",
+    ]);
+    expect(events.find((event) => event.type === "error")).toBeUndefined();
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "result", stopReason: null, output: "" }),
+        expect.objectContaining({ type: "complete", result: "" }),
+      ]),
+    );
+  });
+
   it("keeps tool_result continuation output-only with no live input stream", async () => {
     const promptKinds: string[] = [];
     const client = new ClaudeSdkClient(
