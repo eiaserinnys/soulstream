@@ -38,6 +38,7 @@ export class AutoResumeTransition {
     onResume: AutoResumeCallback,
   ): Promise<{ autoResumed: true }> {
     await this.awaitExecutionDrain(task);
+    await this.closeStaleEngine(task);
     await this.promoteCallerInfo(task, message.callerInfo);
 
     transitionTaskToRunning(task, message);
@@ -54,6 +55,22 @@ export class AutoResumeTransition {
       await task.executionPromise;
     } catch {
       // ignore; finalize has drained.
+    } finally {
+      task.executionPromise = undefined;
+    }
+  }
+
+  private async closeStaleEngine(task: Task): Promise<void> {
+    if (!task.engine) return;
+    const engine = task.engine;
+    task.engine = undefined;
+    try {
+      await engine.close();
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "stale engine close failed before auto-resume",
+      );
     }
   }
 

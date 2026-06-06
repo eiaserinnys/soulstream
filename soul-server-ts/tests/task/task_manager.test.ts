@@ -1132,6 +1132,40 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(task.engine).toBeUndefined();
   });
 
+  it("completed task에 stale engine만 남아도 정리 후 auto-resume한다", async () => {
+    const { db, broadcaster } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "s1",
+      prompt: "p",
+      profileId: "codex-default",
+    });
+    task.status = "completed";
+    task.completedAt = new Date();
+
+    const close = vi.fn().mockResolvedValue(undefined);
+    task.engine = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-work",
+      execute: vi.fn(),
+      interrupt: vi.fn(),
+      close,
+    } as unknown as EnginePort;
+    task.executionPromise = undefined;
+
+    const onResume = vi.fn((resumedTask: Task) => {
+      expect(resumedTask.engine).toBeUndefined();
+    });
+
+    await expect(
+      tm.addIntervention({ agentSessionId: "s1", text: "resume", user: "u" }, onResume),
+    ).resolves.toEqual({ autoResumed: true });
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(task.engine).toBeUndefined();
+    expect(onResume).toHaveBeenCalledWith(task);
+  });
+
   it("running intervention arrival does not touch broadcast, so queue is isolated from wire failure", async () => {
     const { db, broadcaster, emitEventEnvelope } = makeMocks();
     emitEventEnvelope.mockRejectedValueOnce(new Error("ws down"));

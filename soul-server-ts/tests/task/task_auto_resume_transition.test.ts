@@ -5,6 +5,7 @@ import type { AgentRegistry } from "../../src/agent_registry.js";
 import type { ExecutionContextBuilder } from "../../src/context/context_builder.js";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import type { SessionDB } from "../../src/db/session_db.js";
+import type { EnginePort } from "../../src/engine/protocol.js";
 import type { Task } from "../../src/task/task_models.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -119,6 +120,59 @@ describe("AutoResumeTransition", () => {
       type: "caller_info",
       value: callerInfo,
     });
+  });
+
+  it("clears a stale drained engine before resuming the next user turn", async () => {
+    const order: string[] = [];
+    const close = vi.fn(async () => {
+      order.push("close");
+    });
+    const engine = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-work",
+      execute: vi.fn(),
+      interrupt: vi.fn(),
+      close,
+    } as unknown as EnginePort;
+    const task = makeTerminalTask({
+      engine,
+      executionPromise: Promise.resolve(),
+    });
+
+    const transition = new AutoResumeTransition({
+      db: {
+        appendMetadata: vi.fn(),
+        updateSession: vi.fn(async () => {
+          order.push("updateSession");
+        }),
+      } as unknown as SessionDB,
+      broadcaster: {
+        emitEventEnvelope: vi.fn(),
+        emitSessionUpdated: vi.fn(async () => {
+          order.push("emitSessionUpdated");
+        }),
+      } as unknown as SessionBroadcaster,
+      logger: silentLogger,
+    });
+    const onResume = vi.fn((resumedTask: Task) => {
+      order.push("onResume");
+      expect(resumedTask.engine).toBeUndefined();
+      expect(resumedTask.executionPromise).toBeUndefined();
+    });
+
+    await transition.resume(
+      task,
+      {
+        text: "resume",
+        user: "u",
+      },
+      onResume,
+    );
+
+    expect(close).toHaveBeenCalledTimes(1);
+    expect(task.engine).toBeUndefined();
+    expect(task.executionPromise).toBeUndefined();
+    expect(order).toEqual(["close", "updateSession", "emitSessionUpdated", "onResume"]);
   });
 
   it("stores resume message context for the executor initial-message path", async () => {
