@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CatalogState, SessionSummary } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { BoardWorkspaceView } from "./BoardWorkspaceView";
+import { FolderWorkspaceView } from "./FolderWorkspaceView";
+import { writeFolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 
 const catalog: CatalogState = {
   folders: [
@@ -211,6 +213,26 @@ function renderBoard(
   return { container, root };
 }
 
+function renderFolderWorkspace(
+  props: Partial<React.ComponentProps<typeof FolderWorkspaceView>> = {},
+  options: { catalog?: CatalogState; sessions?: SessionSummary[] } = {},
+) {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+
+  useDashboardStore.getState().reset();
+  useDashboardStore.getState().setCatalog(options.catalog ?? catalog);
+  useDashboardStore.getState().selectFolder("root");
+  writeFolderWorkspaceViewMode(window.localStorage, "root", "board");
+
+  flushSync(() => {
+    root.render(createElement(FolderWorkspaceView, { sessions: options.sessions ?? sessions, ...props }));
+  });
+
+  return { container, root };
+}
+
 function dispatchPointer(
   target: EventTarget,
   type: string,
@@ -223,6 +245,26 @@ function dispatchPointer(
     button: 0,
     ...init,
   }));
+}
+
+function dispatchFileDragEvent(
+  target: EventTarget,
+  type: "dragover" | "drop",
+  files: File[],
+  init: MouseEventInit = {},
+) {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    ...init,
+  });
+  Object.defineProperty(event, "dataTransfer", {
+    value: { files, types: ["Files"] },
+  });
+  flushSync(() => {
+    target.dispatchEvent(event);
+  });
+  return event;
 }
 
 function findButtonByText(scope: ParentNode, text: string): HTMLButtonElement | undefined {
@@ -252,6 +294,7 @@ describe("BoardWorkspaceView", () => {
       removeListener: vi.fn(),
       dispatchEvent: vi.fn(),
     }));
+    window.localStorage.clear();
   });
 
   afterEach(() => {
@@ -491,19 +534,17 @@ describe("BoardWorkspaceView", () => {
     const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
     expect(scroller).not.toBeNull();
     const file = new File(["hello"], "report.pdf", { type: "application/pdf" });
-    const drop = new MouseEvent("drop", {
-      bubbles: true,
-      cancelable: true,
+    const dragover = dispatchFileDragEvent(scroller!, "dragover", [file], {
       clientX: 12000,
       clientY: 8000,
     });
-    Object.defineProperty(drop, "dataTransfer", {
-      value: { files: [file], types: ["Files"] },
+    const drop = dispatchFileDragEvent(scroller!, "drop", [file], {
+      clientX: 12000,
+      clientY: 8000,
     });
 
-    flushSync(() => {
-      scroller!.dispatchEvent(drop);
-    });
+    expect(dragover.defaultPrevented).toBe(true);
+    expect(drop.defaultPrevented).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -520,6 +561,121 @@ describe("BoardWorkspaceView", () => {
       item.itemType === "asset" &&
       item.metadata?.signedUrl === "https://r2.example/report.pdf"
     )).toBe(true);
+  });
+
+  it("prevents native file dragover on board descendants and keeps a single scroll drop target", () => {
+    ({ container, root } = renderBoard({}, {
+      catalog: relationCatalog,
+      sessions: relationSessions,
+    }));
+
+    const scrollers = container.querySelectorAll<HTMLElement>('[data-testid="board-workspace-scroll"]');
+    expect(scrollers).toHaveLength(1);
+    const scroller = scrollers[0];
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    const stackBadge = container.querySelector<HTMLElement>('[data-testid="board-session-child-stack-badge"]');
+    expect(sessionTile).not.toBeNull();
+    expect(stackBadge).not.toBeNull();
+    const file = new File(["hello"], "report.pdf", { type: "application/pdf" });
+
+    expect(dispatchFileDragEvent(scroller, "dragover", [file]).defaultPrevented).toBe(true);
+    expect(dispatchFileDragEvent(sessionTile!, "dragover", [file]).defaultPrevented).toBe(true);
+
+    flushSync(() => {
+      stackBadge!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const childCard = container.querySelector<HTMLElement>('[data-testid="board-child-portal-card"]');
+    expect(childCard).not.toBeNull();
+    expect(dispatchFileDragEvent(childCard!, "dragover", [file]).defaultPrevented).toBe(true);
+  });
+
+  it("routes child portal file drops to the current board upload handler", async () => {
+    const onUploadBoardAsset = vi.fn(async (input) => ({
+      asset: { id: "asset-child" },
+      boardItem: {
+        id: "asset:asset-child",
+        folderId: input.folderId,
+        itemType: "asset" as const,
+        itemId: "asset-child",
+        x: input.x,
+        y: input.y,
+        metadata: {
+          assetId: "asset-child",
+          storageKey: "folders/root/assets/asset-child/report.pdf",
+          originalName: input.file.name,
+          mimeType: input.file.type,
+          byteSize: input.file.size,
+          signedUrl: "https://r2.example/report.pdf",
+        },
+      },
+    }));
+    ({ container, root } = renderBoard({ onUploadBoardAsset }, {
+      catalog: relationCatalog,
+      sessions: relationSessions,
+    }));
+
+    const stackBadge = container.querySelector<HTMLElement>('[data-testid="board-session-child-stack-badge"]');
+    flushSync(() => {
+      stackBadge!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const childCard = container.querySelector<HTMLElement>('[data-testid="board-child-portal-card"]');
+    expect(childCard).not.toBeNull();
+    const file = new File(["hello"], "report.pdf", { type: "application/pdf" });
+
+    expect(dispatchFileDragEvent(childCard!, "dragover", [file], {
+      clientX: 12000,
+      clientY: 8000,
+    }).defaultPrevented).toBe(true);
+    dispatchFileDragEvent(childCard!, "drop", [file], {
+      clientX: 12000,
+      clientY: 8000,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onUploadBoardAsset).toHaveBeenCalledTimes(1);
+    expect(onUploadBoardAsset.mock.calls[0]?.[0]).toMatchObject({
+      folderId: "root",
+      file,
+      x: 2000,
+      y: 2000,
+    });
+  });
+
+  it("forwards board asset uploads through FolderWorkspaceView board mode", async () => {
+    const onUploadBoardAsset = vi.fn(async (input) => ({
+      asset: { id: "asset-folder-workspace" },
+      boardItem: {
+        id: "asset:asset-folder-workspace",
+        folderId: input.folderId,
+        itemType: "asset" as const,
+        itemId: "asset-folder-workspace",
+        x: input.x,
+        y: input.y,
+        metadata: {
+          assetId: "asset-folder-workspace",
+          storageKey: "folders/root/assets/asset-folder-workspace/report.pdf",
+          originalName: input.file.name,
+          mimeType: input.file.type,
+          byteSize: input.file.size,
+          signedUrl: "https://r2.example/report.pdf",
+        },
+      },
+    }));
+    ({ container, root } = renderFolderWorkspace({ onUploadBoardAsset }));
+
+    const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
+    expect(scroller).not.toBeNull();
+    const file = new File(["hello"], "report.pdf", { type: "application/pdf" });
+
+    dispatchFileDragEvent(scroller!, "drop", [file], {
+      clientX: 12000,
+      clientY: 8000,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onUploadBoardAsset).toHaveBeenCalledTimes(1);
   });
 
   it("opens the desktop context menu with folder, session, and markdown actions at a snapped board point", async () => {

@@ -5,6 +5,7 @@ import type { LoadMoreCallback } from "../components/load-more-guard";
 import { useDashboardStore } from "../stores/dashboard-store";
 import {
   BoardWorkspaceView,
+  type BoardWorkspaceViewProps,
   type CreateMarkdownDocumentInput,
   type CreateMarkdownDocumentResult,
 } from "./BoardWorkspaceView";
@@ -23,6 +24,7 @@ export interface FolderWorkspaceViewProps {
   onCreateMarkdownDocument?: (
     input: CreateMarkdownDocumentInput,
   ) => Promise<CreateMarkdownDocumentResult>;
+  onUploadBoardAsset?: BoardWorkspaceViewProps["onUploadBoardAsset"];
   onLoadMore?: LoadMoreCallback;
   hasMore?: boolean;
 }
@@ -38,6 +40,7 @@ export function FolderWorkspaceView({
   onUpdateFolderSettings,
   onUpdateBoardItemPosition,
   onCreateMarkdownDocument,
+  onUploadBoardAsset,
   onLoadMore,
   hasMore,
 }: FolderWorkspaceViewProps) {
@@ -58,6 +61,7 @@ export function FolderWorkspaceView({
         onUpdateFolderSettings={onUpdateFolderSettings}
         onUpdateBoardItemPosition={onUpdateBoardItemPosition}
         onCreateMarkdownDocument={onCreateMarkdownDocument}
+        onUploadBoardAsset={onUploadBoardAsset}
         onLoadMore={onLoadMore}
         hasMore={hasMore}
         workspaceViewMode={workspaceViewMode}
