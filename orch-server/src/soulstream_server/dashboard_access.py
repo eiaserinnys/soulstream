@@ -153,8 +153,14 @@ def require_folder_allowed(
         raise HTTPException(status_code=403, detail="Folder access denied")
 
 
-async def require_session_allowed(request: Request, db, session_id: str) -> None:
-    access = access_for_request(request)
+async def require_session_allowed(
+    request: Request,
+    db,
+    session_id: str,
+    *,
+    access_email: str | None = None,
+) -> None:
+    access = access_for_request(request, access_email=access_email)
     if not access.restricted:
         return
     session = await db.get_session(session_id)
