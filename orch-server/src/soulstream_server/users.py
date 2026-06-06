@@ -14,7 +14,7 @@ from soulstream_server.dashboard_access import DashboardAccess, normalize_email
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _UNSET = object()
 
-USER_SCHEMA_SQL = """
+USER_TABLE_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS users (
     email TEXT PRIMARY KEY,
     display_name TEXT,
@@ -23,9 +23,25 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_by TEXT
 );
+"""
 
+USER_SCHEMA_MIGRATION_SQL = """
+ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_folder_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE users ADD COLUMN IF NOT EXISTS created_by TEXT;
+"""
+
+USER_INDEX_SCHEMA_SQL = """
 CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users (is_admin);
 """
+
+USER_SCHEMA_SQL = "\n".join([
+    USER_TABLE_SCHEMA_SQL,
+    USER_SCHEMA_MIGRATION_SQL,
+    USER_INDEX_SCHEMA_SQL,
+])
 
 
 def validate_user_email(value: str) -> str:
