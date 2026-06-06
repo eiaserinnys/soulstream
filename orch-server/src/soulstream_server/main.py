@@ -16,6 +16,7 @@ from soul_common.catalog.board_asset_storage import R2BoardAssetStorage
 from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
+from soulstream_server.api.admin_users import create_admin_users_router
 from soulstream_server.api.attachments import create_attachments_router
 from soulstream_server.api.atom import create_atom_router
 from soulstream_server.api.auth import verify_auth
@@ -39,7 +40,6 @@ from soulstream_server.api.system_portraits import create_system_portraits_route
 from soulstream_server.api.tasks import create_tasks_router
 from soulstream_server.push import ExpoPushProvider, PushNotifier, PushRepository
 from soulstream_server.config import Settings, get_settings
-from soulstream_server.dashboard_access import access_for_email, extra_login_allowed_emails
 from soulstream_server.dashboard.auth import create_auth_router
 from soulstream_server.dashboard.serving import mount_dashboard
 from soulstream_server.nodes.node_manager import NodeManager
@@ -48,6 +48,7 @@ from soulstream_server.service.session_broadcaster import SessionBroadcaster
 from soulstream_server.service.session_router import SessionRouter
 from soulstream_server.service.task_broadcaster import TaskBroadcaster
 from soulstream_server.service.task_change_listener import TaskChangeListener
+from soulstream_server.users import DashboardUserService
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +259,7 @@ def _mount_api_routers(
     catalog_service: CatalogService,
     settings: Settings,
     push_repo: PushRepository | None = None,
+    user_service: DashboardUserService | None = None,
 ) -> None:
     """API 라우터들을 `dependencies=[Depends(verify_auth)]`와 함께 앱에 마운트한다.
 
@@ -267,6 +269,8 @@ def _mount_api_routers(
     OAuth 라우터(create_auth_router)는 로그인 자체가 인증 전 단계이므로 면제된다.
     """
     api_deps = [Depends(verify_auth)]
+    if user_service is not None:
+        app.state.user_service = user_service
 
     app.include_router(
         create_sessions_router(
@@ -279,6 +283,8 @@ def _mount_api_routers(
     # 정본 라우트. agent portrait와 §9 대칭으로 verify_auth 의존성 포함.
     app.include_router(create_system_portraits_router(dependencies=api_deps))
     app.include_router(create_config_router(node_manager, dependencies=api_deps))
+    if user_service is not None:
+        app.include_router(create_admin_users_router(user_service, catalog_service, dependencies=api_deps))
     app.include_router(create_claude_auth_router(node_manager, dependencies=api_deps))
     app.include_router(create_provider_usage_router(node_manager, dependencies=api_deps))
     app.include_router(create_folders_router(catalog_service, dependencies=api_deps))
@@ -330,10 +336,12 @@ def _mount_api_routers(
             allowed_email=settings.allowed_email,
             jwt_secret=settings.jwt_secret,
             is_development=settings.is_development,
-            extra_allowed_emails=extra_login_allowed_emails(settings),
-            user_payload_extra=lambda payload: {
-                "dashboardAccess": access_for_email(payload.get("email"), settings).to_payload()
-            },
+            user_authorizer=(
+                lambda payload: user_service.oauth_error_for_email(payload.get("email"))
+            ) if user_service is not None else None,
+            user_payload_extra=(
+                lambda payload: {**user_service.user_payload_extra(payload.get("email"))}
+            ) if user_service is not None else None,
         )
         app.include_router(auth_router)
 
@@ -350,6 +358,16 @@ async def lifespan(app: FastAPI):
     db = PostgresSessionDB(database_url=settings.database_url, node_id=None)
     await db.connect()
     await db.ensure_default_folders()
+    user_service = DashboardUserService.postgres(db.pool)
+    await user_service.initialize()
+    if not user_service.cache.has_users():
+        logger.warning(
+            "No dashboard users initialized; run `python -m soulstream_server.init_admin`"
+        )
+    if settings.allowed_email:
+        logger.warning("ALLOWED_EMAIL is deprecated; users table is now the dashboard auth source")
+    if settings.dashboard_user_folder_access:
+        logger.warning("DASHBOARD_USER_FOLDER_ACCESS is deprecated; users table is now the folder access source")
 
     # 서비스 초기화
     # 빌드 20: NodeManager에 allowed_email을 fallback user_email로 전달.
@@ -392,6 +410,7 @@ async def lifespan(app: FastAPI):
     app.state.task_change_listener = task_change_listener
     app.state.session_router = session_router
     app.state.catalog_service = catalog_service
+    app.state.user_service = user_service
     app.state.push_repo = push_repo
     app.state.push_notifier = push_notifier
 
@@ -406,6 +425,7 @@ async def lifespan(app: FastAPI):
         catalog_service=catalog_service,
         settings=settings,
         push_repo=push_repo,
+        user_service=user_service,
     )
 
     logger.info(
@@ -431,6 +451,7 @@ def create_app(
     task_broadcaster: TaskBroadcaster | None = None,
     catalog_service: CatalogService | None = None,
     push_repo: PushRepository | None = None,
+    user_service: DashboardUserService | None = None,
 ) -> FastAPI:
     """FastAPI 앱 생성.
 
@@ -537,6 +558,8 @@ def create_app(
         app.state.task_broadcaster = task_broadcaster
         app.state.session_router = session_router
         app.state.catalog_service = catalog_service
+        if user_service is not None:
+            app.state.user_service = user_service
         _mount_api_routers(
             app,
             db=db,
@@ -547,6 +570,7 @@ def create_app(
             catalog_service=catalog_service,
             settings=settings,
             push_repo=push_repo,
+            user_service=user_service,
         )
 
     return app

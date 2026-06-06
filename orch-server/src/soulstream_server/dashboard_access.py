@@ -1,7 +1,7 @@
 """Dashboard folder access policy.
 
-The policy is resolved per request from the authenticated dashboard user's
-Gmail address. Unmapped users keep the existing unrestricted dashboard.
+Runtime policy is resolved through the dashboard User service attached to the
+FastAPI app state. The legacy env parser remains only for bootstrap and tests.
 """
 
 from __future__ import annotations
@@ -31,14 +31,6 @@ def normalize_email(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
-def extra_login_allowed_emails(settings: Settings) -> set[str]:
-    return {
-        email
-        for email, rule in settings.dashboard_user_folder_access.items()
-        if rule.get("restricted", True)
-    }
-
-
 def access_for_email(email: str | None, settings: Settings | None = None) -> DashboardAccess:
     settings = settings or get_settings()
     rule = settings.dashboard_user_folder_access.get(normalize_email(email))
@@ -51,12 +43,22 @@ def access_for_email(email: str | None, settings: Settings | None = None) -> Das
 
 
 def access_for_request(request: Request, settings: Settings | None = None) -> DashboardAccess:
+    user_service = _user_service_from_request(request)
     settings = settings or get_settings()
     auth_user = getattr(request.state, "auth_user", None)
     if not isinstance(auth_user, dict):
         auth_user = decode_dashboard_jwt_user(request, settings.jwt_secret or "")
     email = auth_user.get("email") if isinstance(auth_user, dict) else None
+    if user_service is not None:
+        return user_service.access_for_email(email)
     return access_for_email(email, settings)
+
+
+def _user_service_from_request(request: Request):
+    state_values = getattr(getattr(request.app, "state", None), "_state", None)
+    if isinstance(state_values, dict):
+        return state_values.get("user_service")
+    return None
 
 
 def visible_folder_ids(access: DashboardAccess, folders: list[dict]) -> set[str] | None:

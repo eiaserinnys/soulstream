@@ -2,7 +2,7 @@
  * OrchestratorDashboardLayout - unified-dashboard orchestrator 모드 레이아웃
  *
  * orchestrator-dashboard의 App.tsx를 unified-dashboard로 포팅.
- * features.nodePanel = true일 때 NodePanel 표시,
+ * ConfigModal의 노드 탭에서 노드 정보를 표시,
  * useNodes()로 /api/nodes/stream SSE 구독,
  * 30초 폴링 안전망으로 SSE 누락 대비.
  *
@@ -19,7 +19,6 @@ import {
   reorderFoldersOptimistic,
 } from "./lib/folder-operations";
 import { moveSessionsOptimistic } from "./lib/move-sessions";
-import { NodePanel } from "./components/NodePanel";
 import { OrchestratorNewSessionModal } from "./components/OrchestratorNewSessionModal";
 import { ConfigButton } from "./components/ConfigButton";
 import { ConfigModal } from "./components/ConfigModal";
@@ -47,19 +46,10 @@ import {
   useDashboardStore,
   ConnectionBadge,
   useSessionListProvider,
-  useIsMobile,
-  useAuth,
   shouldLoadMoreAfterSessionMove,
   TaskTreeView,
 } from "@seosoyoung/soul-ui";
 import { FeedView } from "./components/FeedView";
-import { useAppConfig } from "./config/AppConfigContext";
-import {
-  getRestrictedEntryFolderId,
-  isFolderVisibleInRestrictedCatalog,
-  isRestrictedDashboardAccess,
-  RestrictedNoFoldersView,
-} from "./restricted-dashboard-access";
 
 export function OrchestratorDashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
@@ -71,12 +61,6 @@ export function OrchestratorDashboardLayout() {
   const nodes = useOrchestratorStore((s) => s.nodes);
   const connectionStatus = useOrchestratorStore((s) => s.connectionStatus);
 
-  const { features } = useAppConfig();
-  const { user, logout } = useAuth();
-  const isMobile = useIsMobile();
-  const dashboardAccess = user?.dashboardAccess;
-  const isRestrictedAccess = isRestrictedDashboardAccess(dashboardAccess);
-
   // 테마 초기화
   useEffect(() => { initTheme(); }, []);
 
@@ -84,10 +68,10 @@ export function OrchestratorDashboardLayout() {
   useUrlSync();
 
   useEffect(() => {
-    if (!isMobile && !isRestrictedAccess && viewMode === "feed") {
+    if (viewMode === "feed") {
       useDashboardStore.getState().setViewMode("folder");
     }
-  }, [isMobile, isRestrictedAccess, viewMode]);
+  }, [viewMode]);
 
   // 읽음 위치 동기화
   useReadPositionSync();
@@ -115,7 +99,6 @@ export function OrchestratorDashboardLayout() {
     sessions: feedSessions,
   } = useSessionListProvider({
     intervalMs: 5000,
-    enabled: !isRestrictedAccess,
     getSessionProvider: () => orchestratorSessionProvider,
     viewModeOverride: "feed",
     folderIdOverride: null,
@@ -135,19 +118,6 @@ export function OrchestratorDashboardLayout() {
     [activeSessionKey, activeSessionSummary, sessions],
   );
 
-  const restrictedEntryFolderId = useMemo(
-    () => getRestrictedEntryFolderId(dashboardAccess, catalog),
-    [dashboardAccess, catalog],
-  );
-  const restrictedHasNoFolders = isRestrictedAccess && catalog !== null && restrictedEntryFolderId === null;
-
-  useEffect(() => {
-    if (!isRestrictedAccess || restrictedEntryFolderId === null) return;
-    if (viewMode !== "folder" || !isFolderVisibleInRestrictedCatalog(catalog, selectedFolderId)) {
-      useDashboardStore.getState().selectFolder(restrictedEntryFolderId);
-    }
-  }, [catalog, isRestrictedAccess, restrictedEntryFolderId, selectedFolderId, viewMode]);
-
   // 활성 세션의 노드가 없거나 disconnected이면 ChatInput 비활성화
   const isChatInputDisabled = useMemo(() => {
     if (!activeSessionKey) return false;
@@ -166,7 +136,6 @@ export function OrchestratorDashboardLayout() {
   // 세션 이동 후 빈 자리 보충
   const handleMoveSessions = useCallback(
     async (sessionIds: string[], targetFolderId: string | null) => {
-      if (isRestrictedAccess && !isFolderVisibleInRestrictedCatalog(catalog, targetFolderId)) return;
       const shouldBackfill = shouldLoadMoreAfterSessionMove({
         viewMode,
         selectedFolderId,
@@ -177,18 +146,12 @@ export function OrchestratorDashboardLayout() {
       await moveSessionsOptimistic(sessionIds, targetFolderId);
       if (hasMore && shouldBackfill) loadMore();
     },
-    [catalog, hasMore, isRestrictedAccess, loadMore, selectedFolderId, viewMode],
+    [catalog, hasMore, loadMore, selectedFolderId, viewMode],
   );
 
   // Config / Search 모달 상태
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-
-  const restrictedFolderView = restrictedHasNoFolders ? (
-    <RestrictedNoFoldersView onLogout={() => { void logout(); }} />
-  ) : (
-    <FolderWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
-  );
 
   return (
     <DashboardDndProvider
@@ -197,7 +160,6 @@ export function OrchestratorDashboardLayout() {
     >
     <DashboardShell
       title="Soulstream Orchestrator"
-      hideLeftPanel={isRestrictedAccess}
       leftPanel={
         <FolderTree
           onMoveSessions={handleMoveSessions}
@@ -210,23 +172,16 @@ export function OrchestratorDashboardLayout() {
         />
       }
       leftFeedPanel={
-        isRestrictedAccess ? undefined : (
-          <FeedView
-            placement="sidebar"
-            onNewSession={() => openNewSessionModal("feed")}
-            onLoadMore={loadMoreFeed}
-            hasMore={feedHasMore}
-            sessions={feedSessions}
-          />
-        )
+        <FeedView
+          placement="sidebar"
+          onNewSession={() => openNewSessionModal("feed")}
+          onLoadMore={loadMoreFeed}
+          hasMore={feedHasMore}
+          sessions={feedSessions}
+        />
       }
-      leftPanelBottom={features.nodePanel && !isMobile && !isRestrictedAccess ? <NodePanel /> : undefined}
-      leftBottomRatio={features.nodePanel && !isMobile && !isRestrictedAccess ? 3 : undefined}
-      leftSplitStorageKey="soulstream:orchestrator-dashboard:left-split-top-percent:v1"
       centerPanel={
-        isRestrictedAccess ? (
-          restrictedFolderView
-        ) : viewMode === "tasks" ? (
+        viewMode === "tasks" ? (
           <TaskTreeView
             sessions={sessions}
             onNewSession={(task, defaults) => openNewSessionModal("feed", task ?? null, defaults ?? null)}
@@ -242,7 +197,7 @@ export function OrchestratorDashboardLayout() {
         />
       }
       connectionStatus={connectionStatus ?? sseStatus}
-      onSearchClick={isRestrictedAccess ? undefined : () => setSearchOpen(true)}
+      onSearchClick={() => setSearchOpen(true)}
       banner={
         isDraining ? (
           <div
@@ -256,11 +211,11 @@ export function OrchestratorDashboardLayout() {
       headerRight={
         <>
           <ThemeToggle />
-          {!isRestrictedAccess && <ConfigButton onClick={() => setConfigOpen(true)} />}
+          <ConfigButton onClick={() => setConfigOpen(true)} />
         </>
       }
       mobileSessionsView={
-        isRestrictedAccess ? restrictedFolderView : <FeedView
+        <FeedView
           onNewSession={() => openNewSessionModal("feed")}
           onLoadMore={loadMoreFeed}
           hasMore={feedHasMore}
@@ -268,10 +223,10 @@ export function OrchestratorDashboardLayout() {
         />
       }
       mobileFolderContents={
-        restrictedFolderView
+        <FolderWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
       }
       mobileTasksView={
-        isRestrictedAccess ? restrictedFolderView : <TaskTreeView
+        <TaskTreeView
           sessions={sessions}
           onNewSession={(task, defaults) => openNewSessionModal("feed", task ?? null, defaults ?? null)}
         />
@@ -287,11 +242,6 @@ export function OrchestratorDashboardLayout() {
       mobileSettingsContent={
         <div className="p-4 space-y-4">
           <h2 className="text-base font-semibold">설정</h2>
-          {features.nodePanel && !isRestrictedAccess && (
-            <div className="rounded-lg border border-border overflow-hidden">
-              <NodePanel />
-            </div>
-          )}
           <div className="flex items-center justify-between">
             <span className="text-sm">테마</span>
             <ThemeToggle />

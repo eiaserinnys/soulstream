@@ -10,7 +10,7 @@
  * orchestrator 모드에서는 NodePanel이 Claude Auth를 처리하므로 해당 탭을 숨긴다.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogPopup,
@@ -20,9 +20,12 @@ import {
   DialogDescription,
   DialogPanel,
   Button,
+  useAuth,
 } from "@seosoyoung/soul-ui";
 import { useAppConfig } from "../config/AppConfigContext";
 import { ClaudeAuthTab } from "./ClaudeAuthTab";
+import { NodePanel } from "./NodePanel";
+import { UserManagementTab } from "./UserManagementTab";
 import { SettingFieldWidget } from "./config/SettingFieldWidget";
 import { ConfigCategoryNav } from "./config/ConfigCategoryNav";
 import { ConfigResultMessage } from "./config/ConfigResultMessage";
@@ -30,6 +33,8 @@ import { useConfigSettings } from "../hooks/useConfigSettings";
 
 const CLAUDE_AUTH_TAB_NAME = "claude_auth";
 const CLAUDE_AUTH_TAB_LABEL = "Claude Code 인증";
+const NODES_TAB_NAME = "nodes";
+const USERS_TAB_NAME = "users";
 
 interface ConfigModalProps {
   open: boolean;
@@ -38,6 +43,7 @@ interface ConfigModalProps {
 
 export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
   const config = useAppConfig();
+  const { user } = useAuth();
   const showClaudeAuthTab = config.mode !== "orchestrator";
 
   const {
@@ -54,21 +60,32 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
   } = useConfigSettings(open);
 
   const [selectedTab, setSelectedTab] = useState<string>("");
+  const extraTabs = useMemo(() => {
+    if (config.mode === "orchestrator") {
+      return [
+        { name: NODES_TAB_NAME, label: "노드" },
+        ...(user?.isAdmin ? [{ name: USERS_TAB_NAME, label: "사용자" }] : []),
+      ];
+    }
+    return showClaudeAuthTab
+      ? [{ name: CLAUDE_AUTH_TAB_NAME, label: CLAUDE_AUTH_TAB_LABEL }]
+      : [];
+  }, [config.mode, showClaudeAuthTab, user?.isAdmin]);
 
   // 카테고리 로드 시 첫 탭 선택. 모달을 닫으면 다음 오픈 시 재선택되도록 리셋.
   useEffect(() => {
-    if (categories.length > 0 && !selectedTab) {
-      setSelectedTab(categories[0].name);
+    if (!selectedTab) {
+      const firstTab = categories[0]?.name ?? extraTabs[0]?.name;
+      if (firstTab) setSelectedTab(firstTab);
     }
-  }, [categories, selectedTab]);
+  }, [categories, extraTabs, selectedTab]);
   useEffect(() => {
     if (!open) setSelectedTab("");
   }, [open]);
 
-  const extraTabs = showClaudeAuthTab
-    ? [{ name: CLAUDE_AUTH_TAB_NAME, label: CLAUDE_AUTH_TAB_LABEL }]
-    : [];
   const activeCategory = categories.find((c) => c.name === selectedTab);
+  const isOperationalTab = selectedTab === NODES_TAB_NAME || selectedTab === USERS_TAB_NAME;
+  const hasTabs = categories.length > 0 || extraTabs.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -76,8 +93,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
         <DialogHeader>
           <DialogTitle>⚙️ 서버 설정</DialogTitle>
           <DialogDescription>
-            .env 환경변수를 편집합니다. 🔄 표시된 항목은 서버 재시작 후
-            적용됩니다.
+            서버 설정과 운영 패널을 관리합니다. 🔄 표시된 항목은 서버 재시작 후 적용됩니다.
           </DialogDescription>
         </DialogHeader>
 
@@ -92,7 +108,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
               ❌ {error}
             </div>
           )}
-          {!loading && !error && categories.length > 0 && (
+          {!loading && !error && hasTabs && (
             <>
               <ConfigCategoryNav
                 categories={categories}
@@ -102,6 +118,12 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
               />
               {selectedTab === CLAUDE_AUTH_TAB_NAME ? (
                 <ClaudeAuthTab />
+              ) : selectedTab === NODES_TAB_NAME ? (
+                <div className="h-[420px] overflow-hidden rounded border border-border">
+                  <NodePanel />
+                </div>
+              ) : selectedTab === USERS_TAB_NAME ? (
+                <UserManagementTab />
               ) : activeCategory ? (
                 <div className="space-y-2">
                   {activeCategory.fields.map((field) => (
@@ -128,7 +150,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
               <Button
                 data-testid="config-save-button"
                 size="sm"
-                disabled={!hasChanges || saving}
+                disabled={isOperationalTab || !hasChanges || saving}
                 onClick={save}
               >
                 {saving ? "저장 중..." : `저장${hasChanges ? ` (${changedKeys.length})` : ""}`}

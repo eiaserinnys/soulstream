@@ -81,8 +81,6 @@ async def create_session_stream_response(
             last_event_id = None
 
     async def event_generator():
-        access = access_for_request(request)
-
         async def get_folders() -> list[dict]:
             if catalog_service is not None:
                 return await catalog_service.list_folders()
@@ -99,6 +97,7 @@ async def create_session_stream_response(
             ]
 
         async def filter_event(event: dict) -> dict | None:
+            access = access_for_request(request)
             if not access.restricted:
                 return event
             event_type = event.get("type")
@@ -174,6 +173,7 @@ async def create_session_stream_response(
 
             if last_event_id is None:
                 # 첫 연결: initial session_list (REST 풀 스냅샷, SSE id 미부착)
+                access = access_for_request(request)
                 folder_id = None
                 if access.restricted:
                     folder_id = first_allowed_folder_id(access, await get_folders())

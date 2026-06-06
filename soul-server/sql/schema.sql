@@ -1753,3 +1753,15 @@ CREATE TABLE IF NOT EXISTS push_tokens (
 );
 
 CREATE INDEX IF NOT EXISTS idx_push_tokens_email ON push_tokens(user_email);
+
+-- Dashboard users and folder visibility policy (orch-server).
+CREATE TABLE IF NOT EXISTS users (
+    email TEXT PRIMARY KEY,
+    display_name TEXT,
+    is_admin BOOLEAN NOT NULL DEFAULT FALSE,
+    allowed_folder_ids TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_by TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users(is_admin);
