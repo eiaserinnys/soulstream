@@ -277,6 +277,7 @@ export function useBoardYjsRuntime(params: {
 }): {
   runtime: BoardYjsRuntime | null;
   boardItems: CatalogBoardItem[] | null;
+  hasSynced: boolean;
   isLoading: boolean;
   remoteSelections: RemoteBoardSelection[];
   connectionStatus: BoardYjsConnectionStatus;
@@ -286,6 +287,7 @@ export function useBoardYjsRuntime(params: {
   const [state, setState] = useState<{
     runtime: BoardYjsRuntime | null;
     boardItems: CatalogBoardItem[] | null;
+    hasSynced: boolean;
     isLoading: boolean;
     remoteSelections: RemoteBoardSelection[];
     connectionStatus: BoardYjsConnectionStatus;
@@ -293,6 +295,7 @@ export function useBoardYjsRuntime(params: {
   }>({
     runtime: null,
     boardItems: null,
+    hasSynced: false,
     isLoading: false,
     remoteSelections: [],
     connectionStatus: "disconnected",
@@ -306,6 +309,7 @@ export function useBoardYjsRuntime(params: {
       setState({
         runtime: null,
         boardItems: null,
+        hasSynced: false,
         isLoading: false,
         remoteSelections: [],
         connectionStatus: "disconnected",
@@ -332,10 +336,12 @@ export function useBoardYjsRuntime(params: {
     const boardItemsMap = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
     const markdownBodies = doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP);
     const refresh = () => {
+      const hasSynced = !canConnect || provider?.isSynced === true;
       setState({
         runtime,
         boardItems: runtime.getBoardItems(),
-        isLoading: canConnect && connectionStatus === "reconnecting" && !provider?.isSynced,
+        hasSynced,
+        isLoading: canConnect && connectionStatus === "reconnecting" && !hasSynced,
         remoteSelections: runtime.getRemoteSelections(),
         connectionStatus,
         connectionError,

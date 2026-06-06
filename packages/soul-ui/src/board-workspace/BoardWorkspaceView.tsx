@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
-import type { CatalogBoardItem, SessionSummary } from "../shared/types";
+import type { CatalogBoardItem, CatalogState, SessionSummary } from "../shared/types";
 import { FolderDialog } from "../components/FolderDialog";
 import { runGuardedLoadMore } from "../components/load-more-guard";
 import { toastManager } from "../components/ui/toast";
@@ -42,6 +42,38 @@ import { useBoardChildStackState } from "./useBoardChildStackState";
 import type { BoardWorkspaceViewProps } from "./BoardWorkspaceView.types";
 export type { BoardWorkspaceViewProps, CreateMarkdownDocumentInput, CreateMarkdownDocumentResult } from "./BoardWorkspaceView.types";
 const EMPTY_SESSIONS: SessionSummary[] = [];
+
+export function resolveEffectiveBoardCatalog(params: {
+  catalog: CatalogState | null;
+  yjsBoardItemsForSelectedFolder: CatalogBoardItem[] | null;
+  isYjsLoading: boolean;
+  hasYjsSynced: boolean;
+  assetSignedUrls: Record<string, string>;
+}): CatalogState | null {
+  const {
+    catalog,
+    yjsBoardItemsForSelectedFolder,
+    isYjsLoading,
+    hasYjsSynced,
+    assetSignedUrls,
+  } = params;
+  if (!catalog || !yjsBoardItemsForSelectedFolder || isYjsLoading || !hasYjsSynced) return catalog;
+  return {
+    ...catalog,
+    boardItems: yjsBoardItemsForSelectedFolder.map((item) => {
+      if (item.itemType !== "asset") return item;
+      const signedUrl = assetSignedUrls[item.id];
+      if (!signedUrl) return item;
+      return {
+        ...item,
+        metadata: {
+          ...(item.metadata ?? {}),
+          signedUrl,
+        },
+      };
+    }),
+  };
+}
 
 function fileListFromDataTransfer(dataTransfer: DataTransfer | null): File[] {
   return Array.from(dataTransfer?.files ?? []).filter((file) => file.size >= 0);
@@ -221,24 +253,13 @@ export function BoardWorkspaceView({
 
   const yjsBoardItemsForSelectedFolder =
     boardSync.runtime?.folderId === selectedFolderId ? boardSync.boardItems : null;
-  const effectiveCatalog = useMemo(() => {
-    if (!catalog || !yjsBoardItemsForSelectedFolder || boardSync.isLoading) return catalog;
-    return {
-      ...catalog,
-      boardItems: yjsBoardItemsForSelectedFolder.map((item) => {
-        if (item.itemType !== "asset") return item;
-        const signedUrl = assetSignedUrls[item.id];
-        if (!signedUrl) return item;
-        return {
-          ...item,
-          metadata: {
-            ...(item.metadata ?? {}),
-            signedUrl,
-          },
-        };
-      }),
-    };
-  }, [assetSignedUrls, boardSync.isLoading, catalog, yjsBoardItemsForSelectedFolder]);
+  const effectiveCatalog = useMemo(() => resolveEffectiveBoardCatalog({
+    catalog,
+    yjsBoardItemsForSelectedFolder,
+    isYjsLoading: boardSync.isLoading,
+    hasYjsSynced: boardSync.hasSynced,
+    assetSignedUrls,
+  }), [assetSignedUrls, boardSync.hasSynced, boardSync.isLoading, catalog, yjsBoardItemsForSelectedFolder]);
   const relationIndex = useMemo(() => {
     if (!effectiveCatalog) return null;
     return buildBoardSessionRelations({
