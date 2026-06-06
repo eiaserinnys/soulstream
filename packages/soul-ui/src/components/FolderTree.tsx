@@ -20,7 +20,7 @@ import { useDashboardStore } from "../stores/dashboard-store";
 import { useSortedFolders } from "../hooks/useSortedFolders";
 import { useFolderSessionStats } from "../hooks/useFolderSessionStats";
 import { Button } from "./ui/button";
-import { SYSTEM_FOLDERS } from "../shared/constants";
+import { isSystemFolderId } from "../shared/constants";
 import { Plus } from "lucide-react";
 import { getChildFolders } from "../board-workspace/board-workspace-helpers";
 import { FolderDialog } from "./FolderDialog";
@@ -35,8 +35,6 @@ import {
   readFolderTreeExpandedState,
   writeFolderTreeExpandedState,
 } from "./folder-tree-expansion";
-
-const SYSTEM_FOLDER_NAMES: Set<string> = new Set(Object.values(SYSTEM_FOLDERS));
 
 function folderSortKey(name: string): string {
   return (
@@ -99,6 +97,10 @@ export function FolderTree({
 
   const handleDeleteFolder = async () => {
     if (!deleteTarget) return;
+    if (isSystemFolderId(deleteTarget.id)) {
+      setDeleteTarget(null);
+      return;
+    }
     try {
       await onDeleteFolder?.(deleteTarget.id);
       setDeleteTarget(null);
@@ -108,11 +110,16 @@ export function FolderTree({
   };
 
   const handleDoubleClick = (folderId: string, currentName: string) => {
+    if (isSystemFolderId(folderId)) return;
     setEditingId(folderId);
     setEditName(currentName);
   };
 
   const handleRenameSubmit = async (folderId: string) => {
+    if (isSystemFolderId(folderId)) {
+      setEditingId(null);
+      return;
+    }
     if (editName.trim()) {
       await onRenameFolder?.(folderId, editName.trim());
     }
@@ -138,7 +145,7 @@ export function FolderTree({
   }, [isFolderExpanded, storage]);
 
   const sortTreeFolders = useCallback((folders: typeof allFolders) => {
-    const normal = folders.filter((f) => !SYSTEM_FOLDER_NAMES.has(f.name));
+    const normal = folders.filter((f) => !isSystemFolderId(f.id));
     switch (folderSortMode) {
       case "name-asc":
         return [...normal].sort((a, b) => folderSortKey(a.name).localeCompare(folderSortKey(b.name)));
@@ -163,7 +170,7 @@ export function FolderTree({
     depth = 0,
     siblingFolderIds = sortedNormalFolderIds,
   ): ReactNode => {
-    const isSystem = SYSTEM_FOLDER_NAMES.has(folder.name);
+    const isSystem = isSystemFolderId(folder.id);
     const isDraggableFolder = folderSortMode === "custom" && !isSystem;
     const childFolders = sortTreeFolders(getChildFolders(allFolders, folder.id));
     const childFolderIds = childFolders.map((child) => child.id);

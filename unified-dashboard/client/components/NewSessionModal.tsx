@@ -6,7 +6,7 @@
  * UI 본체는 soul-ui의 NewSessionDialog에 위임한다.
  *
  * 진입 경로(newSessionSource)에 따라 초기 폴더를 다르게 설정한다:
- * - 'feed' 진입: '클로드 코드 세션' 폴더 사전 선택
+ * - 'feed' 진입: 기본 폴더 id(`claude`) 사전 선택
  * - 'folder' 진입: 현재 선택된 폴더 사전 선택
  */
 
@@ -21,6 +21,7 @@ import {
   SelectItem,
   cn,
   DEFAULT_REASONING_EFFORT,
+  DEFAULT_FOLDER_ID,
   REASONING_EFFORT_OPTIONS,
   placeBoardSessionInYjs,
   type CreateSessionResponse,
@@ -55,8 +56,7 @@ export function NewSessionModal() {
   // 에이전트 목록 (dashboardConfig에서)
   const agents: DashboardAgentConfig[] = dashboardConfig?.agents ?? [];
 
-  // '클로드 코드 세션' 폴더 ID
-  const claudeFolder = catalog?.folders.find((f) => f.name === '클로드 코드 세션');
+  const defaultFolderExists = catalog?.folders.some((f) => f.id === DEFAULT_FOLDER_ID) ?? false;
 
   // 폴더 초기화 1회 제한 — catalog 갱신 시 사용자 선택을 덮어쓰지 않도록
   const folderInitialized = useRef(false);
@@ -87,7 +87,7 @@ export function NewSessionModal() {
     if (defaultFolderId) {
       setSelectedModalFolderId(defaultFolderId);
     } else if (newSessionSource === 'feed') {
-      setSelectedModalFolderId(claudeFolder?.id ?? null);
+      setSelectedModalFolderId(defaultFolderExists ? DEFAULT_FOLDER_ID : null);
     } else {
       setSelectedModalFolderId(selectedFolderId);
     }

@@ -16,9 +16,15 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
   const appendMetadata = vi.fn().mockResolvedValue(1);
   const updateSession = vi.fn().mockResolvedValue(undefined);
   const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
-  const getDefaultFolder = vi
+  const getFolderById = vi
     .fn()
-    .mockResolvedValue({ id: "default-llm", name: "⚙️ LLM 세션" });
+    .mockResolvedValue({
+      id: "llm",
+      name: "사용자가 바꾼 LLM 폴더 이름",
+      sort_order: 1,
+      settings: {},
+      parent_folder_id: null,
+    });
   const getCatalog = vi.fn().mockResolvedValue({ folders: [], sessions: {} });
   const appendEvent = vi.fn().mockImplementation(async () => {
     eventId += 1;
@@ -31,7 +37,7 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
     appendMetadata,
     updateSession,
     assignSessionToFolder,
-    getDefaultFolder,
+    getFolderById,
     getCatalog,
     appendEvent,
     updateLastMessage,
@@ -60,7 +66,7 @@ export function makeLlmHarness(adapter?: LlmAdapter) {
       appendMetadata,
       updateSession,
       assignSessionToFolder,
-      getDefaultFolder,
+      getFolderById,
       getCatalog,
       appendEvent,
       updateLastMessage,

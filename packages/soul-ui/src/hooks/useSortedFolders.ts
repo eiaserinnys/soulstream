@@ -7,10 +7,8 @@
 
 import { useMemo } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { SYSTEM_FOLDERS } from "../shared/constants";
+import { isSystemFolderId } from "../shared/constants";
 import { getRootFolders } from "../board-workspace/board-workspace-helpers";
-
-const SYSTEM_FOLDER_NAMES: Set<string> = new Set(Object.values(SYSTEM_FOLDERS));
 
 /** 이름 정렬 키 — 앞쪽 이모지+공백 제거 후 텍스트 반환 */
 function sortKey(name: string): string {
@@ -43,7 +41,7 @@ export function useSortedFolders(folders: readonly SortedFolder[]): UseSortedFol
   const catalogVersion = useDashboardStore((s) => s.catalogVersion);
 
   const sortedNormalFolders = useMemo(() => {
-    const normal = getRootFolders(folders).filter((f) => !SYSTEM_FOLDER_NAMES.has(f.name));
+    const normal = getRootFolders(folders).filter((f) => !isSystemFolderId(f.id));
     switch (folderSortMode) {
       case "name-asc":
         return [...normal].sort((a, b) => sortKey(a.name).localeCompare(sortKey(b.name)));
@@ -71,7 +69,7 @@ export function useSortedFolders(folders: readonly SortedFolder[]): UseSortedFol
   );
 
   const systemFolders = useMemo(
-    () => getRootFolders(folders).filter((f) => SYSTEM_FOLDER_NAMES.has(f.name)),
+    () => getRootFolders(folders).filter((f) => isSystemFolderId(f.id)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [folders, catalogVersion],
   );

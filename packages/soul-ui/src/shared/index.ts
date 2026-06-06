@@ -6,7 +6,15 @@
  */
 
 // === Constants ===
-export { SYSTEM_FOLDERS, DEFAULT_FOLDER_KEY, SSE_EVENT_TYPES } from "./constants";
+export {
+  SYSTEM_FOLDER_IDS,
+  SYSTEM_FOLDERS,
+  DEFAULT_FOLDER_KEY,
+  DEFAULT_FOLDER_ID,
+  isSystemFolderId,
+  SSE_EVENT_TYPES,
+} from "./constants";
+export type { SystemFolderKey, SystemFolderId } from "./constants";
 export { DEFAULT_REASONING_EFFORT, REASONING_EFFORT_OPTIONS } from "./api-types";
 
 // === Types (types.ts is itself a barrel) ===

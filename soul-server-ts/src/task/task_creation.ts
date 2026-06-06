@@ -1,8 +1,9 @@
 import type { Logger } from "pino";
 
 import type { ContextItem } from "../context/prompt_assembler.js";
-import { DEFAULT_FOLDERS, type SessionDB } from "../db/session_db.js";
+import type { SessionDB } from "../db/session_db.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
+import { defaultFolderIdForSessionType } from "../system_folders.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type {
@@ -167,7 +168,7 @@ export class TaskCreation {
    *
    * Python `service/task_manager.py:284-323 _assign_default_folder_and_broadcast` 정본 이식.
    *   - folder_id 명시 → 그 폴더에 배정
-   *   - 미지정 → `DEFAULT_FOLDERS[sessionType]` 기본 폴더 lookup → 배정
+   *   - 미지정 → sessionType에 대응하는 기본 폴더 id lookup → 배정
    *   - 기본 폴더 미존재 → 폴더 배정 없음(graceful) + broadcast 없음
    *   - 폴더 배정 후 `getCatalog` + `emitCatalogUpdated` (dashboard 폴더 트리 즉시 갱신)
    *
@@ -187,13 +188,8 @@ export class TaskCreation {
         await this.deps.db.assignSessionToFolder(sessionId, folderId);
         assigned = folderId;
       } else {
-        // Python L302-303 `DEFAULT_FOLDERS.get(session_type, DEFAULT_FOLDERS["claude"])` 정합.
-        // `DEFAULT_FOLDERS.claude`는 정본 상수(session_db.ts:35)에 *항상* 정의되어 있으므로
-        // non-null assertion으로 명시. 추가 폴백(`?? ""`)은 *불가능 분기*라 design-principles §3
-        // 정본 하나 측면에서 제거 (code-reviewer P2-3).
-        const claudeDefault = DEFAULT_FOLDERS["claude"] as string;
-        const defaultName = DEFAULT_FOLDERS[sessionType] ?? claudeDefault;
-        const folder = await this.deps.db.getDefaultFolder(defaultName);
+        const defaultFolderId = defaultFolderIdForSessionType(sessionType);
+        const folder = await this.deps.db.getFolderById(defaultFolderId);
         if (folder) {
           await this.deps.db.assignSessionToFolder(sessionId, folder.id);
           assigned = folder.id;

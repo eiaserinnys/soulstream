@@ -17,11 +17,17 @@ function makeMocks() {
   const appendMetadata = vi.fn().mockResolvedValue(1);
   const deleteSession = vi.fn().mockResolvedValue(undefined);
   const updateSession = vi.fn().mockResolvedValue(undefined);
-  // B-5: 폴더 배정 정본 흐름 mocks (Python `_assign_default_folder_and_broadcast` 정합).
+  // B-5: 폴더 배정 정본 흐름 mocks.
   const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
-  const getDefaultFolder = vi
+  const getFolderById = vi
     .fn()
-    .mockResolvedValue({ id: "default-claude", name: "⚙️ 클로드 코드 세션" });
+    .mockResolvedValue({
+      id: "claude",
+      name: "사용자가 바꾼 클로드 폴더 이름",
+      sort_order: 0,
+      settings: {},
+      parent_folder_id: null,
+    });
   const getCatalog = vi
     .fn()
     .mockResolvedValue({ folders: [], sessions: {} });
@@ -33,7 +39,7 @@ function makeMocks() {
     deleteSession,
     updateSession,
     assignSessionToFolder,
-    getDefaultFolder,
+    getFolderById,
     getCatalog,
     getSession,
   } as unknown as SessionDB;
@@ -59,7 +65,7 @@ function makeMocks() {
     deleteSession,
     updateSession,
     assignSessionToFolder,
-    getDefaultFolder,
+    getFolderById,
     getCatalog,
     getSession,
     emitSessionCreated,
@@ -103,8 +109,7 @@ describe("TaskManager.createTask", () => {
     ]);
 
     expect(emitSessionCreated).toHaveBeenCalledTimes(1);
-    // 폴더 명시 없으면 default-claude로 자동 배정 (Python _assign_default_folder_and_broadcast 정합)
-    expect(emitSessionCreated.mock.calls[0][1]).toBe("default-claude");
+    expect(emitSessionCreated.mock.calls[0][1]).toBe("claude");
   });
 
   it("callerInfo 부재/빈 객체면 metadata append 생략", async () => {
@@ -1185,7 +1190,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
 // B-5: 세션-폴더 배정 정본 (Python `_assign_default_folder_and_broadcast` 정합)
 describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
   it("folderId 명시 → assignSessionToFolder(folderId) + emitSessionCreated(task, folderId)", async () => {
-    const { db, broadcaster, assignSessionToFolder, getDefaultFolder, emitSessionCreated, emitCatalogUpdated } = makeMocks();
+    const { db, broadcaster, assignSessionToFolder, getFolderById, emitSessionCreated, emitCatalogUpdated } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     await tm.createTask({
       agentSessionId: "s1",
@@ -1194,28 +1199,28 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
       folderId: "folder-explicit",
     });
     expect(assignSessionToFolder).toHaveBeenCalledWith("s1", "folder-explicit");
-    expect(getDefaultFolder).not.toHaveBeenCalled();  // 명시 folder가 있으면 default lookup 안 함
+    expect(getFolderById).not.toHaveBeenCalled();  // 명시 folder가 있으면 default lookup 안 함
     expect(emitSessionCreated.mock.calls[0][1]).toBe("folder-explicit");
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
 
-  it("folderId 미지정 → DEFAULT_FOLDERS['claude'] lookup + assign + emit", async () => {
-    const { db, broadcaster, assignSessionToFolder, getDefaultFolder, emitSessionCreated, emitCatalogUpdated } = makeMocks();
+  it("folderId 미지정 → 기본 폴더 id 'claude' lookup + assign + emit", async () => {
+    const { db, broadcaster, assignSessionToFolder, getFolderById, emitSessionCreated, emitCatalogUpdated } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     await tm.createTask({
       agentSessionId: "s2",
       prompt: "x",
       profileId: "codex-default",
     });
-    expect(getDefaultFolder).toHaveBeenCalledWith("⚙️ 클로드 코드 세션");
-    expect(assignSessionToFolder).toHaveBeenCalledWith("s2", "default-claude");
-    expect(emitSessionCreated.mock.calls[0][1]).toBe("default-claude");
+    expect(getFolderById).toHaveBeenCalledWith("claude");
+    expect(assignSessionToFolder).toHaveBeenCalledWith("s2", "claude");
+    expect(emitSessionCreated.mock.calls[0][1]).toBe("claude");
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
 
   it("folderId 미지정 + 기본 폴더 없음 → 폴더 배정·broadcast 안 함 (graceful, Python L306-307)", async () => {
-    const { db, broadcaster, assignSessionToFolder, emitSessionCreated, emitCatalogUpdated, getDefaultFolder } = makeMocks();
-    getDefaultFolder.mockResolvedValueOnce(null);
+    const { db, broadcaster, assignSessionToFolder, emitSessionCreated, emitCatalogUpdated, getFolderById } = makeMocks();
+    getFolderById.mockResolvedValueOnce(null);
     const tm = new TaskManager("n", db, broadcaster, silentLogger);
     await tm.createTask({
       agentSessionId: "s3",

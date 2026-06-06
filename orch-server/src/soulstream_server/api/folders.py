@@ -8,7 +8,7 @@ import logging
 from inspect import isawaitable
 from typing import Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from soul_common.catalog.catalog_service import CatalogService
@@ -20,6 +20,20 @@ from soulstream_server.dashboard_access import (
 )
 
 logger = logging.getLogger(__name__)
+
+SYSTEM_FOLDER_IDS = frozenset({"claude", "llm"})
+
+
+def _is_system_folder(folder_id: str) -> bool:
+    return folder_id in SYSTEM_FOLDER_IDS
+
+
+def _reject_system_folder_mutation(folder_id: str, operation: str) -> None:
+    if _is_system_folder(folder_id):
+        raise HTTPException(
+            status_code=400,
+            detail=f"System folder '{folder_id}' cannot be {operation}.",
+        )
 
 
 class CreateFolderRequest(BaseModel):
@@ -94,6 +108,12 @@ def create_folders_router(
         folders = await catalog_service.list_folders()
         require_folder_allowed(access, folders, folder_id)
         parent_supplied = _field_supplied(body, "parentFolderId")
+        if body.name is not None:
+            _reject_system_folder_mutation(folder_id, "renamed")
+        if body.sortOrder is not None:
+            _reject_system_folder_mutation(folder_id, "reordered")
+        if parent_supplied:
+            _reject_system_folder_mutation(folder_id, "moved")
         kwargs = {
             "name": body.name,
             "sort_order": body.sortOrder,
@@ -111,6 +131,7 @@ def create_folders_router(
         access = access_for_request(request)
         folders = await catalog_service.list_folders()
         require_folder_allowed(access, folders, folder_id)
+        _reject_system_folder_mutation(folder_id, "deleted")
         await catalog_service.delete_folder(folder_id)
         return {"success": True}
 
@@ -122,6 +143,7 @@ def create_folders_router(
         payload = []
         for item in body:
             require_folder_allowed(access, folders, item.id)
+            _reject_system_folder_mutation(item.id, "moved or reordered")
             entry = {"id": item.id, "sortOrder": item.sortOrder}
             if _field_supplied(item, "parentFolderId"):
                 require_folder_allowed(access, folders, item.parentFolderId)

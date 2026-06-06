@@ -23,14 +23,14 @@ const catalog: CatalogState = {
   sessions: {},
 };
 
-function renderFolderTree() {
+function renderFolderTree(catalogOverride: CatalogState = catalog) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   useDashboardStore.getState().reset();
-  useDashboardStore.getState().setCatalog(catalog);
+  useDashboardStore.getState().setCatalog(catalogOverride);
 
   flushSync(() => {
     root.render(
@@ -135,5 +135,28 @@ describe("FolderTree", () => {
     ({ container, root } = renderFolderTree());
 
     expect(container.textContent).not.toContain("피드");
+  });
+
+  it("keeps system folders non-draggable and non-editable based on id, not display name", () => {
+    ({ container, root } = renderFolderTree({
+      folders: [
+        { id: "claude", name: "이름이 바뀐 클로드 폴더", sortOrder: -1, parentFolderId: null },
+        { id: "normal", name: "Normal", sortOrder: 0, parentFolderId: null },
+      ],
+      sessions: {},
+    }));
+
+    expect(container.textContent).toContain("이름이 바뀐 클로드 폴더");
+    expect(container.querySelectorAll('[data-testid="draggable-folder"]')).toHaveLength(1);
+
+    const label = Array.from(container.querySelectorAll("span"))
+      .find((element) => element.textContent === "이름이 바뀐 클로드 폴더");
+    expect(label).toBeDefined();
+
+    flushSync(() => {
+      label?.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    });
+
+    expect(container.querySelector("input")).toBeNull();
   });
 });

@@ -8,6 +8,7 @@
  */
 
 import { useIsMobile } from "../hooks/use-mobile";
+import { isSystemFolderId } from "../shared/constants";
 import { Dialog, DialogPopup } from "./ui/dialog";
 
 export interface FolderContextMenuTarget {
@@ -35,32 +36,41 @@ export function FolderContextMenu({
   if (!target) return null;
 
   const { folder } = target;
+  const isSystemFolder = isSystemFolderId(folder.id);
 
   if (isMobile) {
     return (
       <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
         <DialogPopup className="max-w-sm" showCloseButton={false}>
           <div className="py-2 px-2">
-            <button
-              className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
-              onClick={() => { onRename(folder); onClose(); }}
-            >
-              이름 변경
-            </button>
-            <div className="border-t border-border my-1" />
+            {!isSystemFolder && (
+              <>
+                <button
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
+                  onClick={() => { onRename(folder); onClose(); }}
+                >
+                  이름 변경
+                </button>
+                <div className="border-t border-border my-1" />
+              </>
+            )}
             <button
               className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md"
               onClick={() => { onOpenSettings(folder); onClose(); }}
             >
               설정
             </button>
-            <div className="border-t border-border my-1" />
-            <button
-              className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md text-destructive"
-              onClick={() => { onDelete(folder); onClose(); }}
-            >
-              삭제
-            </button>
+            {!isSystemFolder && (
+              <>
+                <div className="border-t border-border my-1" />
+                <button
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md text-destructive"
+                  onClick={() => { onDelete(folder); onClose(); }}
+                >
+                  삭제
+                </button>
+              </>
+            )}
           </div>
         </DialogPopup>
       </Dialog>
@@ -73,24 +83,28 @@ export function FolderContextMenu({
       style={{ top: target.y, left: target.x }}
       onMouseLeave={onClose}
     >
-      <button
-        className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50"
-        onClick={() => { onRename(folder); onClose(); }}
-      >
-        이름 변경
-      </button>
+      {!isSystemFolder && (
+        <button
+          className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50"
+          onClick={() => { onRename(folder); onClose(); }}
+        >
+          이름 변경
+        </button>
+      )}
       <button
         className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50"
         onClick={() => { onOpenSettings(folder); onClose(); }}
       >
         설정
       </button>
-      <button
-        className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 text-destructive"
-        onClick={() => { onDelete(folder); onClose(); }}
-      >
-        삭제
-      </button>
+      {!isSystemFolder && (
+        <button
+          className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent/50 text-destructive"
+          onClick={() => { onDelete(folder); onClose(); }}
+        >
+          삭제
+        </button>
+      )}
     </div>
   );
 }
