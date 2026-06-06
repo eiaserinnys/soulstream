@@ -42,6 +42,7 @@ export type {
   SelectedEventNodeData,
   FolderSortMode,
   MobileTab,
+  LeftNavigationMode,
   ProcessEventsResult,
   DashboardState,
   DashboardActions,
@@ -122,6 +123,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       partialize: (state) => ({
         drafts: state.drafts,
         folderSortMode: state.folderSortMode,
+        leftNavigationMode: state.leftNavigationMode,
       }),
     },
   ),

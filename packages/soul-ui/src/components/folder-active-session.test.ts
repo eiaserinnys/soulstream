@@ -57,6 +57,17 @@ describe("resolveFolderActiveSessionDecision", () => {
     expect(decision).toEqual({ action: "clear" });
   });
 
+  it("keeps a selected folder session while the folder list is still loading", () => {
+    const decision = resolveFolderActiveSessionDecision({
+      activeSessionKey: "sess-from-feed",
+      keepActiveSessionWhenEmpty: true,
+      isMobile: false,
+      sessions: [],
+    });
+
+    expect(decision).toEqual({ action: "none" });
+  });
+
   it("does not auto-open or clear chat selection on mobile folder navigation", () => {
     const decision = resolveFolderActiveSessionDecision({
       activeSessionKey: "sess-old-folder",

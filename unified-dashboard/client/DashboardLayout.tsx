@@ -45,6 +45,7 @@ import {
   ConnectionBadge,
   useSessionListProvider,
   useAuth,
+  useIsMobile,
   shouldLoadMoreAfterSessionMove,
   TaskTreeView,
 } from "@seosoyoung/soul-ui";
@@ -64,6 +65,7 @@ export function DashboardLayout() {
   const catalog = useDashboardStore((s) => s.catalog);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
   const { user, logout } = useAuth();
+  const isMobile = useIsMobile();
   const dashboardAccess = user?.dashboardAccess;
   const isRestrictedAccess = isRestrictedDashboardAccess(dashboardAccess);
 
@@ -90,6 +92,12 @@ export function DashboardLayout() {
 
   // URL ↔ 스토어 동기화 (/{sessionId} 라우팅)
   useUrlSync();
+
+  useEffect(() => {
+    if (!isMobile && !isRestrictedAccess && viewMode === "feed") {
+      useDashboardStore.getState().setViewMode("folder");
+    }
+  }, [isMobile, isRestrictedAccess, viewMode]);
 
   // 대시보드 프로필 설정 로드
   useDashboardConfig();
@@ -183,15 +191,19 @@ export function DashboardLayout() {
           folderCounts={folderCounts}
         />
       }
-      centerPanel={
-        isRestrictedAccess ? (
-          restrictedFolderView
-        ) : viewMode === "feed" ? (
+      leftFeedPanel={
+        isRestrictedAccess ? undefined : (
           <FeedView
+            placement="sidebar"
             onNewSession={() => openNewSessionModal("feed")}
             onLoadMore={loadMore}
             hasMore={hasMore}
           />
+        )
+      }
+      centerPanel={
+        isRestrictedAccess ? (
+          restrictedFolderView
         ) : viewMode === "tasks" ? (
           <TaskTreeView
             sessions={sessions}

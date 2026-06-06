@@ -11,7 +11,7 @@
  * 본 컴포넌트는 컨테이너 역할만 수행한다:
  *  - 다이얼로그/컨텍스트 메뉴 상태 관리
  *  - 폴더 정렬·세션 카운트 훅 연결
- *  - FeedItem / FolderItem 자식 렌더링
+ *  - TasksItem / FolderItem 자식 렌더링
  */
 
 import { useState, useCallback, type ReactNode } from "react";
@@ -26,7 +26,6 @@ import { getChildFolders } from "../board-workspace/board-workspace-helpers";
 import { FolderDialog } from "./FolderDialog";
 import { FolderSettingsDialog } from "./FolderSettingsDialog";
 import { FolderSortButton } from "./FolderSortButton";
-import { FeedItem } from "./FeedItem";
 import { TasksItem } from "./TasksItem";
 import { FolderItem } from "./FolderItem";
 import { FolderContextMenu, type FolderContextMenuTarget } from "./FolderContextMenu";
@@ -221,7 +220,6 @@ export function FolderTree({
       </div>
 
       <div className="flex-1 overflow-y-auto py-1">
-        <FeedItem />
         <TasksItem />
 
         <div className="border-t border-border my-1 mx-3" />

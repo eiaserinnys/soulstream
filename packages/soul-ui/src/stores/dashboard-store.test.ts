@@ -2215,6 +2215,19 @@ describe("dashboard-store", () => {
   // 해당 액션들의 store 상태 변경이 올바른지 회귀 검증한다.
 
   describe("catalog 자동 폴더 선택 가드 — store 사전 조건 회귀 테스트", () => {
+    it("left navigation mode defaults to folders and persists feed selection", () => {
+      const store = useDashboardStore.getState();
+
+      expect(store.leftNavigationMode).toBe("folders");
+
+      store.setLeftNavigationMode("feed");
+
+      const state = useDashboardStore.getState();
+      expect(state.leftNavigationMode).toBe("feed");
+      const persisted = useDashboardStore.persist.getOptions().partialize?.(state);
+      expect(persisted).toMatchObject({ leftNavigationMode: "feed" });
+    });
+
     it("selectFolder 호출 시 viewMode가 'folder'로 변경되고 selectedFolderId가 설정된다", () => {
       useDashboardStore.getState().selectFolder("folder-1");
 

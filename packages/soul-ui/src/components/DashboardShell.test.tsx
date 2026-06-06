@@ -19,7 +19,8 @@ function renderShell(options: { hideLeftPanel?: boolean } = {}) {
   flushSync(() => {
     root.render(createElement(DashboardShell, {
       title: "Dashboard",
-      leftPanel: createElement("div", null, "left"),
+      leftPanel: createElement("div", { "data-testid": "folders-panel" }, "left"),
+      leftFeedPanel: createElement("div", { "data-testid": "feed-panel" }, "feed"),
       centerPanel: createElement("div", null, "center"),
       rightPanel: createElement("div", null, "right"),
       hideLeftPanel: options.hideLeftPanel,
@@ -84,5 +85,24 @@ describe("DashboardShell", () => {
     expect(container.querySelector('[data-testid="left-sidebar-toggle"]')).toBeNull();
     expect(container.textContent).toContain("center");
     expect(container.textContent).toContain("right");
+  });
+
+  it("toggles the desktop left sidebar between folders and feed", () => {
+    ({ container, root } = renderShell());
+
+    expect(container.querySelector('[data-testid="folders-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="feed-panel"]')).toBeNull();
+
+    const feedToggle = container.querySelector<HTMLButtonElement>('[data-testid="left-navigation-feed"]');
+    expect(feedToggle).not.toBeNull();
+
+    flushSync(() => {
+      feedToggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.querySelector('[data-testid="folders-panel"]')).toBeNull();
+    expect(container.querySelector('[data-testid="feed-panel"]')).not.toBeNull();
+    expect(useDashboardStore.getState().leftNavigationMode).toBe("feed");
+    expect(window.localStorage.getItem("soul-dashboard-storage")).toContain('"leftNavigationMode":"feed"');
   });
 });
