@@ -86,6 +86,34 @@ async def rename_folder(folder_id: str, name: str) -> dict:
 
 
 @cogito_mcp.tool()
+async def move_folder(
+    folder_id: str,
+    parent_folder_id: str | None = None,
+) -> dict:
+    """폴더를 다른 부모 폴더 아래로 이동한다.
+
+    Args:
+        folder_id: 이동할 폴더 ID.
+        parent_folder_id: 대상 부모 폴더 ID. None이면 루트로 이동.
+
+    Returns:
+        {ok: true}
+    """
+    try:
+        catalog_svc = get_catalog_service()
+    except RuntimeError as e:
+        return {"error": str(e)}
+    try:
+        await catalog_svc.update_folder(
+            folder_id,
+            parent_folder_id=parent_folder_id,
+        )
+    except ValueError as e:
+        return {"error": str(e)}
+    return {"ok": True}
+
+
+@cogito_mcp.tool()
 async def delete_folder(folder_id: str) -> dict:
     """폴더를 삭제한다.
 

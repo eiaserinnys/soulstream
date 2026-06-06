@@ -133,6 +133,33 @@ describe("CatalogService.listChildFolders", () => {
 });
 
 describe("CatalogService.setFolderParent", () => {
+  it("parent_folder_id 갱신 + null 루트 복귀 후 broadcast", async () => {
+    const { sql, calls } = createMockSql((call) => {
+      const text = call.fragments.join("|");
+      if (text.includes("folder_get_all"))
+        return [
+          { id: "root", name: "Root", sort_order: 0, settings: {}, parent_folder_id: null },
+          { id: "child", name: "Child", sort_order: 1, settings: {}, parent_folder_id: "root" },
+        ];
+      if (text.includes("catalog_get_sessions")) return [];
+      return [];
+    });
+    const db = new SessionDB(sql);
+    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await svc.setFolderParent("child", "root");
+    await svc.setFolderParent("child", null);
+
+    const updates = calls.filter((c) =>
+      c.fragments.join("|").includes("folder_update"),
+    );
+    expect(updates).toHaveLength(2);
+    expect(updates[0]!.values).toEqual(["child", ["parent_folder_id"], ["root"]]);
+    expect(updates[1]!.values).toEqual(["child", ["parent_folder_id"], [null]]);
+    expect(emitCatalogUpdated).toHaveBeenCalledTimes(2);
+  });
+
   it("자기 자신을 parent로 지정하면 DB update 전에 거부", async () => {
     const { sql, calls } = setupSqlWithCatalog();
     const db = new SessionDB(sql);
@@ -140,6 +167,24 @@ describe("CatalogService.setFolderParent", () => {
     const svc = new CatalogService(db, broadcaster);
 
     await expect(svc.setFolderParent("f1", "f1")).rejects.toThrow(/cycle/);
+    expect(calls.some((c) => c.fragments.join("|").includes("folder_update"))).toBe(false);
+  });
+
+  it("후손 폴더를 parent로 지정하면 DB update 전에 거부", async () => {
+    const { sql, calls } = createMockSql((call) => {
+      if (call.fragments.join("|").includes("folder_get_all"))
+        return [
+          { id: "root", name: "Root", sort_order: 0, settings: {}, parent_folder_id: null },
+          { id: "child", name: "Child", sort_order: 1, settings: {}, parent_folder_id: "root" },
+          { id: "grand", name: "Grand", sort_order: 2, settings: {}, parent_folder_id: "child" },
+        ];
+      return [];
+    });
+    const db = new SessionDB(sql);
+    const { broadcaster } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await expect(svc.setFolderParent("root", "grand")).rejects.toThrow(/cycle/);
     expect(calls.some((c) => c.fragments.join("|").includes("folder_update"))).toBe(false);
   });
 });

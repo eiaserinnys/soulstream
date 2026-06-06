@@ -64,7 +64,7 @@ from soul_server.cogito.mcp_session_mgmt import (  # noqa: E402
 
 # mcp_catalog
 from soul_server.cogito.mcp_catalog import (  # noqa: E402
-    list_folders, list_child_folders, create_folder, rename_folder, delete_folder,
+    list_folders, list_child_folders, create_folder, move_folder, rename_folder, delete_folder,
     move_sessions_to_folder, get_folder_system_prompt, set_folder_system_prompt,
     delete_session,
 )
