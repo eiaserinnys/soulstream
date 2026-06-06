@@ -139,7 +139,44 @@ describe("TaskEngineTurnRunner", () => {
     expect(captured?.disallowedTools).toEqual(["WebFetch"]);
     expect(captured?.claudePermissionMode).toBe("acceptEdits");
     expect(captured?.maxTurns).toBe(25);
+    expect(captured?.model).toBeUndefined();
     expect(captured?.extraEnv).toBeUndefined();
+  });
+
+  it("uses agent model when task-level model is absent", async () => {
+    const task = makeTask();
+    let captured: EngineExecuteParams | undefined;
+    const engine = makeEngine((params) => {
+      captured = params;
+    });
+    const { runner } = makeSubject();
+
+    await drain(runner.executeTurn({
+      task,
+      agent: { ...agent, model: "gpt-5.3-codex-spark" },
+      engine,
+      input: { prompt: "turn prompt", imageAttachmentPaths: [] },
+    }));
+
+    expect(captured?.model).toBe("gpt-5.3-codex-spark");
+  });
+
+  it("keeps task-level model override above agent model", async () => {
+    const task = makeTask({ model: "gpt-5.5" });
+    let captured: EngineExecuteParams | undefined;
+    const engine = makeEngine((params) => {
+      captured = params;
+    });
+    const { runner } = makeSubject();
+
+    await drain(runner.executeTurn({
+      task,
+      agent: { ...agent, model: "gpt-5.3-codex-spark" },
+      engine,
+      input: { prompt: "turn prompt", imageAttachmentPaths: [] },
+    }));
+
+    expect(captured?.model).toBe("gpt-5.5");
   });
 
   it("does not forward Claude oauthToken to non-Claude backends", async () => {

@@ -250,5 +250,8 @@ function agentProfileSummaryWire(profile: AgentProfile): Record<string, unknown>
   if (profile.max_turns !== undefined) {
     entry.max_turns = profile.max_turns;
   }
+  if (profile.model !== undefined) {
+    entry.model = profile.model;
+  }
   return entry;
 }

@@ -57,6 +57,7 @@ describe("AgentConfigService", () => {
       backend: "codex",
       workspace_dir: "/tmp/codex",
       max_turns: 25,
+      model: "gpt-5.3-codex-spark",
     });
 
     expect(result.changed).toBe(true);
@@ -75,6 +76,7 @@ describe("AgentConfigService", () => {
     expect(result.diff).toContain("+    name: Codex Updated");
     expect(registry.get("codex-default")?.name).toBe("Codex Updated");
     expect(registry.get("codex-default")?.max_turns).toBe(25);
+    expect(registry.get("codex-default")?.model).toBe("gpt-5.3-codex-spark");
   });
 
   it("plans an add profile as a semantic change without default text diff", async () => {

@@ -56,6 +56,30 @@ describe("AgentProfileSchema", () => {
     expect(parsed.allowed_tools).toBeUndefined();
   });
 
+  it("model은 optional agent-level Codex 모델 override로 파싱한다", () => {
+    const parsed = AgentProfileSchema.parse({
+      id: "zombie-labyrinth-bot",
+      name: "Zombie Labyrinth Bot",
+      backend: "codex",
+      workspace_dir: "/tmp/zombie-labyrinth-bot",
+      model: "gpt-5.3-codex-spark",
+    });
+
+    expect(parsed.model).toBe("gpt-5.3-codex-spark");
+  });
+
+  it("model 빈 문자열은 거부한다", () => {
+    expect(() =>
+      AgentProfileSchema.parse({
+        id: "zombie-labyrinth-bot",
+        name: "Zombie Labyrinth Bot",
+        backend: "codex",
+        workspace_dir: "/tmp/zombie-labyrinth-bot",
+        model: "",
+      }),
+    ).toThrow(ZodError);
+  });
+
   it("atom_contexts는 node_id/depth/titles_only를 파싱한다", () => {
     const parsed = AgentProfileSchema.parse({
       id: "a",
@@ -353,6 +377,7 @@ agents:
     backend: codex
     workspace_dir: /tmp/a
     max_turns: 50
+    model: gpt-5.3-codex-spark
     allowed_tools:
       - bash
       - read
@@ -361,6 +386,7 @@ agents:
       const r = loadAgentRegistry(p);
       const a = r.get("a");
       expect(a?.max_turns).toBe(50);
+      expect(a?.model).toBe("gpt-5.3-codex-spark");
       expect(a?.allowed_tools).toEqual(["bash", "read"]);
     });
   });

@@ -1496,6 +1496,7 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
         name: "Codex Helper",
         backend: "codex",
         workspace_dir: "/tmp/codex-helper",
+        model: "gpt-5.3-codex-spark",
         portrait_path: "/tmp/codex-helper.png",
       } as const,
     ];
@@ -1582,6 +1583,7 @@ describe("CommandDispatcher.plan_agent_profile_update", () => {
           id: "codex-helper",
           name: "Codex Helper",
           backend: "codex",
+          model: "gpt-5.3-codex-spark",
           portrait_url: "/api/agents/codex-helper/portrait",
         },
       ],
