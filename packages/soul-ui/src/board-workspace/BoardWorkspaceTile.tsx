@@ -71,11 +71,16 @@ export function BoardWorkspaceTile({
   onToggleChildStack,
   onNavigateToParent,
 }: BoardWorkspaceTileProps) {
-  const tileClassName = cn(
-    BOARD_TILE_CLASS,
+  const selectionClassName = cn(
     isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
     remoteSelectionColor && !isSelected && "ring-2 ring-[var(--board-remote-ring)] ring-offset-2 ring-offset-background",
-    isPulsing && "animate-pulse ring-2 ring-primary ring-offset-2 ring-offset-background",
+  );
+  const pulsingClassName =
+    isPulsing && "animate-pulse ring-2 ring-primary ring-offset-2 ring-offset-background";
+  const tileClassName = cn(
+    BOARD_TILE_CLASS,
+    selectionClassName,
+    pulsingClassName,
   );
   const tileStyle = {
     ...style,
@@ -173,6 +178,8 @@ export function BoardWorkspaceTile({
   const activityTime =
     item.session.lastMessage?.timestamp ?? item.session.updatedAt ?? item.session.createdAt;
   const stackStatus = item.childStack?.status;
+  const isSessionRunning = item.session.status === "running";
+  const isSessionActive = activeSessionKey === item.session.agentSessionId;
   return (
     <button
       key={item.id}
@@ -181,13 +188,18 @@ export function BoardWorkspaceTile({
       data-board-tile="true"
       data-session-id={item.session.agentSessionId}
       className={cn(
-        tileClassName,
-        activeSessionKey === item.session.agentSessionId &&
+        BOARD_TILE_CLASS,
+        selectionClassName,
+        !isSessionRunning && pulsingClassName,
+        isSessionRunning && [
+          "border-transparent card-running-base",
+          isSessionActive ? "card-running-active" : "card-running",
+        ],
+        isSessionActive &&
           !isSelected &&
           !remoteSelectionColor &&
+          !isSessionRunning &&
           "ring-1 ring-ring ring-offset-2 ring-offset-background",
-        stackStatus === "running" &&
-          "animate-[pulse_1.5s_ease-in-out_infinite] ring-2 ring-success ring-offset-2 ring-offset-background shadow-md",
         stackStatus === "error" &&
           "ring-2 ring-accent-red ring-offset-2 ring-offset-background shadow-md",
       )}
@@ -206,10 +218,10 @@ export function BoardWorkspaceTile({
             tabIndex={0}
             data-testid="board-session-child-stack-badge"
             className={cn(
-              "absolute right-0 top-0 z-10 inline-flex h-5 min-w-8 items-center justify-center gap-0.5 rounded border border-border bg-card px-1 text-[10px] font-semibold text-muted-foreground shadow-sm transition-[border-color,box-shadow,color,opacity] duration-200",
+              "absolute right-0 top-0 z-10 inline-flex h-5 min-w-8 items-center justify-center gap-0.5 overflow-hidden rounded border border-border bg-card px-1 text-[10px] font-semibold text-muted-foreground shadow-sm transition-[border-color,box-shadow,color,opacity] duration-200",
               isStackExpanded && "border-primary text-primary ring-1 ring-primary",
               stackStatus === "running" &&
-                "animate-[pulse_1.5s_ease-in-out_infinite] border-success text-success ring-1 ring-success",
+                "card-running-base card-running border-success text-success ring-1 ring-success",
               stackStatus === "error" &&
                 "border-accent-red text-accent-red ring-1 ring-accent-red",
             )}
@@ -258,19 +270,23 @@ export function BoardWorkspaceTile({
             <span className="truncate">{item.parentRef.parentFolderName}</span>
           </span>
         )}
-        <span
-          className={cn(
-            "absolute h-2.5 w-2.5 rounded-full",
-            item.childStack ? "right-0 top-7" : "right-0 top-0",
-            config.dotClass,
-            config.animate && "animate-[pulse_2s_infinite]",
-          )}
-          aria-hidden="true"
-        />
+        {!isSessionRunning && (
+          <span
+            data-testid="board-session-status-dot"
+            className={cn(
+              "absolute h-2.5 w-2.5 rounded-full",
+              item.childStack ? "right-0 top-7" : "right-0 top-0",
+              config.dotClass,
+              config.animate && "animate-[pulse_2s_infinite]",
+            )}
+            aria-hidden="true"
+          />
+        )}
         <div
           data-testid="board-session-title"
           className={cn(
-            "line-clamp-2 pr-4 text-sm font-medium leading-snug",
+            "line-clamp-2 text-sm font-medium leading-snug",
+            !isSessionRunning && "pr-4",
             item.parentRef && "pt-6",
             item.childStack && "pr-10",
           )}

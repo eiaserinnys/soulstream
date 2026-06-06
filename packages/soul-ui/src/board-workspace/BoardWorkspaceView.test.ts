@@ -415,6 +415,22 @@ describe("BoardWorkspaceView", () => {
     expect(fallbackAvatar?.className).toContain("h-5 w-5");
   });
 
+  it("renders a running session tile with the shared feed card glow instead of a status dot pulse", () => {
+    ({ container, root } = renderBoard());
+
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    const title = container.querySelector<HTMLElement>('[data-testid="board-session-title"]');
+    const tileClasses = sessionTile?.className.split(/\s+/) ?? [];
+
+    expect(tileClasses).toContain("card-running-base");
+    expect(tileClasses).toContain("card-running");
+    expect(tileClasses).toContain("border-transparent");
+    expect(sessionTile?.className).not.toContain("animate-pulse");
+    expect(sessionTile?.className).not.toContain("animate-[pulse_");
+    expect(container.querySelector('[data-testid="board-session-status-dot"]')).toBeNull();
+    expect(title?.className.split(/\s+/)).not.toContain("pr-4");
+  });
+
   it("shows a snapped drag ghost and updates the Y-doc board position without HTTP persistence", async () => {
     const onUpdateBoardItemPosition = vi.fn().mockResolvedValue(undefined);
     ({ container, root } = renderBoard({ onUpdateBoardItemPosition }));
@@ -779,8 +795,11 @@ describe("BoardWorkspaceView", () => {
     expect(Array.from(sessionTiles).map((tile) => tile.dataset.sessionId)).toEqual(["parent"]);
 
     const stackBadge = container.querySelector<HTMLElement>('[data-testid="board-session-child-stack-badge"]');
+    const stackBadgeClasses = stackBadge?.className.split(/\s+/) ?? [];
     expect(stackBadge?.textContent).toContain("2");
-    expect(stackBadge?.className).toContain("animate-[pulse_1.5s_ease-in-out_infinite]");
+    expect(stackBadgeClasses).toContain("card-running-base");
+    expect(stackBadgeClasses).toContain("card-running");
+    expect(stackBadgeClasses).toContain("overflow-hidden");
     expect(container.querySelector('[data-testid="board-session-stack-shadow"]')).toBeNull();
     flushSync(() => {
       stackBadge!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -825,8 +844,52 @@ describe("BoardWorkspaceView", () => {
 
     expect(useDashboardStore.getState().selectedFolderId).toBe("root");
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(container.querySelector<HTMLElement>('[data-session-id="parent"]')?.className)
-      .toContain("animate-[pulse_1.5s_ease-in-out_infinite]");
+    const parentTile = container.querySelector<HTMLElement>('[data-session-id="parent"]');
+    const parentClasses = parentTile?.className.split(/\s+/) ?? [];
+    expect(parentClasses).toContain("card-running-base");
+    expect(parentClasses).toContain("card-running");
+    expect(parentTile?.className).not.toContain("animate-pulse");
+    expect(parentTile?.className).not.toContain("animate-[pulse_1.5s_ease-in-out_infinite]");
+  });
+
+  it("keeps child-running glow on the stack button without glowing the parent tile", () => {
+    const childOnlyRunningSessions = relationSessions.map((session) =>
+      session.agentSessionId === "parent" ? { ...session, status: "completed" as const } : session,
+    );
+    ({ container, root } = renderBoard({}, {
+      catalog: { ...relationCatalog, sessionList: childOnlyRunningSessions },
+      sessions: childOnlyRunningSessions,
+    }));
+
+    const parentTile = container.querySelector<HTMLElement>('[data-session-id="parent"]');
+    const stackBadge = container.querySelector<HTMLElement>('[data-testid="board-session-child-stack-badge"]');
+    const stackBadgeClasses = stackBadge?.className.split(/\s+/) ?? [];
+
+    expect(parentTile?.className).not.toContain("card-running-base");
+    expect(parentTile?.className).not.toContain("ring-success");
+    expect(parentTile?.className).not.toContain("animate-[pulse_1.5s_ease-in-out_infinite]");
+    expect(stackBadgeClasses).toContain("card-running-base");
+    expect(stackBadgeClasses).toContain("card-running");
+    expect(stackBadgeClasses).toContain("border-success");
+    expect(stackBadgeClasses).toContain("text-success");
+  });
+
+  it("shows both the parent running glow and stack button glow when parent and child are running", () => {
+    ({ container, root } = renderBoard({}, {
+      catalog: relationCatalog,
+      sessions: relationSessions,
+    }));
+
+    const parentTile = container.querySelector<HTMLElement>('[data-session-id="parent"]');
+    const stackBadge = container.querySelector<HTMLElement>('[data-testid="board-session-child-stack-badge"]');
+    const parentClasses = parentTile?.className.split(/\s+/) ?? [];
+    const stackBadgeClasses = stackBadge?.className.split(/\s+/) ?? [];
+
+    expect(parentClasses).toContain("card-running-base");
+    expect(parentClasses).toContain("card-running");
+    expect(parentTile?.className).not.toContain("animate-pulse");
+    expect(stackBadgeClasses).toContain("card-running-base");
+    expect(stackBadgeClasses).toContain("card-running");
   });
 
   it("renders child stack errors with red rings instead of running pulse", () => {
