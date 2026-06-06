@@ -1,5 +1,6 @@
 """Dashboard User domain tests."""
 
+import re
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -16,6 +17,7 @@ from soulstream_server.users import (
     DashboardUser,
     DashboardUserService,
     InMemoryDashboardUserRepository,
+    PostgresDashboardUserRepository,
     seed_users_from_settings,
 )
 
@@ -71,6 +73,80 @@ def _build_app(monkeypatch, user_service: DashboardUserService):
     ), catalog_service
 
 
+class _FakeUsersSchemaPool:
+    """Small DDL simulator for the users table startup path."""
+
+    _column_re = re.compile(r"ALTER TABLE users ADD COLUMN IF NOT EXISTS ([a-z_]+)\b")
+    _expected_columns = {
+        "email",
+        "display_name",
+        "is_admin",
+        "allowed_folder_ids",
+        "created_at",
+        "created_by",
+    }
+
+    def __init__(
+        self,
+        *,
+        existing_columns: set[str] | None,
+        rows: list[dict[str, object]] | None = None,
+    ) -> None:
+        self.columns = None if existing_columns is None else set(existing_columns)
+        self.rows = rows or []
+        self.executed: list[str] = []
+
+    async def execute(self, sql: str) -> str:
+        self.executed.append(sql)
+        for statement in (part.strip() for part in sql.split(";")):
+            if not statement:
+                continue
+            if statement.startswith("CREATE TABLE IF NOT EXISTS users"):
+                if self.columns is None:
+                    self.columns = set(self._expected_columns)
+                    for row in self.rows:
+                        self._apply_defaults(row)
+                continue
+            match = self._column_re.match(statement)
+            if match:
+                column = match.group(1)
+                if self.columns is None:
+                    raise AssertionError("users table must be created before ALTER")
+                self.columns.add(column)
+                for row in self.rows:
+                    self._apply_default(row, column)
+                continue
+            if statement.startswith("CREATE INDEX IF NOT EXISTS idx_users_is_admin"):
+                if self.columns is None or "is_admin" not in self.columns:
+                    raise AssertionError("idx_users_is_admin created before is_admin migration")
+        return "OK"
+
+    async def fetch(self, _sql: str) -> list[dict[str, object]]:
+        if self.columns is None:
+            raise AssertionError("users table was not created")
+        missing = self._expected_columns - self.columns
+        if missing:
+            raise AssertionError(f"users SELECT missing migrated columns: {sorted(missing)}")
+        return self.rows
+
+    def _apply_defaults(self, row: dict[str, object]) -> None:
+        for column in self._expected_columns:
+            self._apply_default(row, column)
+
+    def _apply_default(self, row: dict[str, object], column: str) -> None:
+        if column in row:
+            return
+        defaults: dict[str, object] = {
+            "display_name": None,
+            "is_admin": False,
+            "allowed_folder_ids": [],
+            "created_at": datetime.now(timezone.utc),
+            "created_by": None,
+        }
+        if column in defaults:
+            row[column] = defaults[column]
+
+
 def _token(email: str) -> str:
     return generate_token({"email": email, "name": email}, JWT_SECRET)
 
@@ -100,6 +176,37 @@ async def test_init_seed_is_idempotent(monkeypatch):
     ]
     assert service.cache.get("owner@example.com").is_admin is True
     assert service.cache.get("bellon.lovedive@gmail.com").allowed_folder_ids == ("root", "child")
+
+
+@pytest.mark.asyncio
+async def test_postgres_users_schema_initializes_new_database():
+    pool = _FakeUsersSchemaPool(existing_columns=None)
+    service = DashboardUserService(PostgresDashboardUserRepository(pool))
+
+    await service.initialize()
+
+    assert pool.columns == _FakeUsersSchemaPool._expected_columns
+    assert service.cache.list_users() == []
+
+
+@pytest.mark.asyncio
+async def test_postgres_users_schema_migrates_legacy_table_before_refresh():
+    pool = _FakeUsersSchemaPool(
+        existing_columns={"email"},
+        rows=[{"email": "Owner@Example.com"}],
+    )
+    service = DashboardUserService(PostgresDashboardUserRepository(pool))
+
+    await service.initialize()
+    await service.initialize()
+
+    assert pool.columns == _FakeUsersSchemaPool._expected_columns
+    user = service.cache.get("owner@example.com")
+    assert user is not None
+    assert user.is_admin is False
+    assert user.allowed_folder_ids == ()
+    assert user.display_name is None
+    assert user.created_by is None
 
 
 def test_user_cache_resolves_dashboard_access():
