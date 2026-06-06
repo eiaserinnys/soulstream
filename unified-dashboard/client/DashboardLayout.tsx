@@ -9,7 +9,7 @@
  * - ConfigModal / SearchModal / NewSessionModal / DrainBanner 추가 (Phase 4)
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { FolderWorkspaceView } from "./components/FolderWorkspaceView";
 import {
   createFolder,
@@ -44,11 +44,18 @@ import {
   useDashboardStore,
   ConnectionBadge,
   useSessionListProvider,
+  useAuth,
   shouldLoadMoreAfterSessionMove,
   TaskTreeView,
 } from "@seosoyoung/soul-ui";
 import { FeedView } from "./components/FeedView";
 import { getSessionProvider } from "./providers";
+import {
+  getRestrictedEntryFolderId,
+  isFolderVisibleInRestrictedCatalog,
+  isRestrictedDashboardAccess,
+  RestrictedNoFoldersView,
+} from "./restricted-dashboard-access";
 
 export function DashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
@@ -56,6 +63,9 @@ export function DashboardLayout() {
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
+  const { user, logout } = useAuth();
+  const dashboardAccess = user?.dashboardAccess;
+  const isRestrictedAccess = isRestrictedDashboardAccess(dashboardAccess);
 
   // 세션 목록 구독 (SSE 모드: 실시간)
   const { folderCounts, hasMore, loadMore, sessions } = useSessionListProvider({
@@ -87,6 +97,19 @@ export function DashboardLayout() {
   // Soul Server 드레이닝 상태 폴링 (3초 간격)
   const { isDraining } = useServerStatus();
 
+  const restrictedEntryFolderId = useMemo(
+    () => getRestrictedEntryFolderId(dashboardAccess, catalog),
+    [dashboardAccess, catalog],
+  );
+  const restrictedHasNoFolders = isRestrictedAccess && catalog !== null && restrictedEntryFolderId === null;
+
+  useEffect(() => {
+    if (!isRestrictedAccess || restrictedEntryFolderId === null) return;
+    if (viewMode !== "folder" || !isFolderVisibleInRestrictedCatalog(catalog, selectedFolderId)) {
+      useDashboardStore.getState().selectFolder(restrictedEntryFolderId);
+    }
+  }, [catalog, isRestrictedAccess, restrictedEntryFolderId, selectedFolderId, viewMode]);
+
   // features.nodeGuard = true인 single-node 모드에서 /api/node-info로 현재 노드 판별
   // features.nodeGuard = false(orchestrator 모드)에서는 항상 false
   const { features } = useAppConfig();
@@ -115,6 +138,7 @@ export function DashboardLayout() {
   // 세션 이동 후 빈 자리 보충 — 이동으로 폴더 표시 세션 수가 줄면 더 있으면 loadMore
   const handleMoveSessions = useCallback(
     async (sessionIds: string[], targetFolderId: string | null) => {
+      if (isRestrictedAccess && !isFolderVisibleInRestrictedCatalog(catalog, targetFolderId)) return;
       const shouldBackfill = shouldLoadMoreAfterSessionMove({
         viewMode,
         selectedFolderId,
@@ -127,12 +151,18 @@ export function DashboardLayout() {
         loadMore();
       }
     },
-    [catalog, hasMore, loadMore, selectedFolderId, viewMode],
+    [catalog, hasMore, isRestrictedAccess, loadMore, selectedFolderId, viewMode],
   );
 
   // Config / Search 모달 상태
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+
+  const restrictedFolderView = restrictedHasNoFolders ? (
+    <RestrictedNoFoldersView onLogout={() => { void logout(); }} />
+  ) : (
+    <FolderWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
+  );
 
   return (
     <DashboardDndProvider
@@ -141,6 +171,7 @@ export function DashboardLayout() {
     >
     <DashboardShell
       title="Soul Dashboard"
+      hideLeftPanel={isRestrictedAccess}
       leftPanel={
         <FolderTree
           onMoveSessions={handleMoveSessions}
@@ -153,7 +184,9 @@ export function DashboardLayout() {
         />
       }
       centerPanel={
-        viewMode === "feed" ? (
+        isRestrictedAccess ? (
+          restrictedFolderView
+        ) : viewMode === "feed" ? (
           <FeedView
             onNewSession={() => openNewSessionModal("feed")}
             onLoadMore={loadMore}
@@ -175,7 +208,7 @@ export function DashboardLayout() {
         />
       }
       connectionStatus={sseStatus}
-      onSearchClick={() => setSearchOpen(true)}
+      onSearchClick={isRestrictedAccess ? undefined : () => setSearchOpen(true)}
       banner={
         isDraining ? (
           <div
@@ -189,11 +222,11 @@ export function DashboardLayout() {
       headerRight={
         <>
           <ThemeToggle />
-          <ConfigButton onClick={() => setConfigOpen(true)} />
+          {!isRestrictedAccess && <ConfigButton onClick={() => setConfigOpen(true)} />}
         </>
       }
       mobileSessionsView={
-        <FeedView
+        isRestrictedAccess ? restrictedFolderView : <FeedView
           onNewSession={() => openNewSessionModal("feed")}
           onLoadMore={loadMore}
           hasMore={hasMore}
@@ -202,14 +235,10 @@ export function DashboardLayout() {
       mobileFolderContents={
         // DashboardShell의 isMobile && selectedFolderId 조건이 표시 여부를 제어하므로
         // 항상 FolderContents를 전달한다. 조건부로 undefined를 전달하면 타이밍 이슈로 빈 화면이 보인다.
-        <FolderWorkspaceView
-          sessions={sessions}
-          onLoadMore={loadMore}
-          hasMore={hasMore}
-        />
+        restrictedFolderView
       }
       mobileTasksView={
-        <TaskTreeView
+        isRestrictedAccess ? restrictedFolderView : <TaskTreeView
           sessions={sessions}
           onNewSession={(task, defaults) => openNewSessionModal("feed", task ?? null, defaults ?? null)}
         />

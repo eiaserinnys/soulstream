@@ -3,6 +3,9 @@ Sessions API 라우터 — /api/sessions
 
 세션 CRUD, SSE 이벤트 스트림, 개입/응답 프록시.
 SSE 핸들러는 session_stream.py, session_events.py에 분리되어 있다.
+
+500-line exception: FastAPI route registration stays in one module so endpoint
+paths remain auditable; shared policy logic lives in dashboard_access.py.
 """
 
 import json
@@ -38,6 +41,13 @@ from soulstream_server.api.session_stream import create_session_stream_response
 from soulstream_server.api.task_scoped_sessions import (
     prepare_task_scoped_session_request,
     task_scoped_response_fields,
+)
+from soulstream_server.dashboard_access import (
+    access_for_request,
+    first_allowed_folder_id,
+    require_folder_allowed,
+    require_session_allowed,
+    visible_folder_ids,
 )
 from soulstream_server.models import BatchMoveRequest
 from soulstream_server.nodes.node_manager import NodeManager
@@ -89,6 +99,7 @@ def create_sessions_router(
 
     @router.get("")
     async def list_sessions(
+        request: Request,
         folderId: Optional[str] = Query(None),
         folder_id: Optional[str] = Query(None),
         session_type: Optional[str] = Query(None),
@@ -110,14 +121,30 @@ def create_sessions_router(
             except ValueError:
                 resolved_offset = 0
         resolved_folder_id = folder_id if folder_id is not None else folderId
+        access = access_for_request(request)
+        if access.restricted:
+            folders = await catalog_service.list_folders() if catalog_service else await db.get_all_folders()
+            if resolved_folder_id is None:
+                resolved_folder_id = first_allowed_folder_id(access, folders)
+                if resolved_folder_id is None:
+                    return {
+                        "sessions": [],
+                        "sessionList": [],
+                        "total": 0,
+                        "cursor": None,
+                        "nextCursor": None,
+                        "hasMore": False,
+                    }
+            require_folder_allowed(access, folders, resolved_folder_id)
 
-        sessions, total = await db.get_all_sessions(
-            offset=resolved_offset,
-            limit=limit,
-            session_type=session_type,
-            folder_id=resolved_folder_id,
-            feed_only=feed_only,
-        )
+        query_kwargs: dict = {"offset": resolved_offset, "limit": limit}
+        if session_type is not None:
+            query_kwargs["session_type"] = session_type
+        if resolved_folder_id is not None:
+            query_kwargs["folder_id"] = resolved_folder_id
+        if feed_only:
+            query_kwargs["feed_only"] = True
+        sessions, total = await db.get_all_sessions(**query_kwargs)
 
         result = [_session_to_response(s, node_manager=node_manager) for s in sessions]
 
@@ -138,16 +165,25 @@ def create_sessions_router(
         }
 
     @router.get("/folder-counts")
-    async def get_folder_counts_endpoint() -> dict:
+    async def get_folder_counts_endpoint(request: Request) -> dict:
         """폴더별 세션 수 조회."""
         counts = await db.get_folder_counts(node_id=None)
+        access = access_for_request(request)
+        if access.restricted:
+            folders = await catalog_service.list_folders() if catalog_service else await db.get_all_folders()
+            allowed_ids = visible_folder_ids(access, folders) or set()
+            counts = {
+                folder_id: count
+                for folder_id, count in counts.items()
+                if folder_id in allowed_ids
+            }
         return {"counts": {str(k) if k is not None else "null": v for k, v in counts.items()}}
 
     @router.get("/stream")
     async def session_stream(request: Request) -> EventSourceResponse:
         """세션 목록 변경 SSE 스트림. 구현은 session_stream.py 참조."""
         return await create_session_stream_response(
-            request, db, node_manager, broadcaster,
+            request, db, node_manager, broadcaster, catalog_service,
         )
 
     @router.post("", status_code=201)
@@ -169,6 +205,15 @@ def create_sessions_router(
         if task_scope.existing_response:
             return task_scope.existing_response
         payload = body.model_dump(exclude_none=True)
+        access = access_for_request(request)
+        if access.restricted:
+            folders = await catalog_service.list_folders() if catalog_service else await db.get_all_folders()
+            requested_folder_id = payload.get("folderId")
+            if requested_folder_id is None:
+                requested_folder_id = first_allowed_folder_id(access, folders)
+                if requested_folder_id is not None:
+                    payload["folderId"] = requested_folder_id
+            require_folder_allowed(access, folders, requested_folder_id)
         payload["caller_info"] = caller_info
         if task_scope.extra_context_items:
             payload["extra_context_items"] = task_scope.extra_context_items
@@ -194,16 +239,19 @@ def create_sessions_router(
 
     @router.get("/{session_id}/events/viewport")
     async def get_session_viewport(
+        request: Request,
         session_id: str,
         y_min: int = Query(..., ge=1),
         y_max: int = Query(..., ge=1),
     ):
         """세션 이벤트 뷰포트 조회. DB에서 직접 SELECT."""
+        await require_session_allowed(request, db, session_id)
         result = await db.read_viewport(session_id, y_min, y_max)
         return result
 
     @router.get("/{session_id}/messages")
     async def get_session_messages(
+        request: Request,
         session_id: str,
         before: Optional[str] = Query(None),
         limit: int = Query(50, ge=1, le=200),
@@ -212,6 +260,7 @@ def create_sessions_router(
 
         soul-server get_session_messages와 동일 반환 형식.
         """
+        await require_session_allowed(request, db, session_id)
         messages, next_cursor = await db.read_messages(
             session_id, before=before, limit=limit,
         )
@@ -219,6 +268,7 @@ def create_sessions_router(
 
     @router.get("/{session_id}/timeline")
     async def get_session_timeline(
+        request: Request,
         session_id: str,
         before: Optional[str] = Query(None),
         limit: int = Query(50, ge=1, le=200),
@@ -227,6 +277,7 @@ def create_sessions_router(
 
         `/messages` raw endpoint는 호환용으로 유지한다.
         """
+        await require_session_allowed(request, db, session_id)
         messages, next_cursor = await db.read_timeline(
             session_id, before=before, limit=limit,
         )
@@ -234,10 +285,12 @@ def create_sessions_router(
 
     @router.get("/{session_id}/timeline/{timeline_id}/trace")
     async def get_session_timeline_trace(
+        request: Request,
         session_id: str,
         timeline_id: str = Path(..., description="timeline_id (예: tool:{tool_use_id})"),
     ):
         """tool summary 상세 trace lazy-load. DB에서 직접 SELECT."""
+        await require_session_allowed(request, db, session_id)
         trace = await db.read_timeline_trace(session_id, timeline_id)
         if trace is None:
             raise HTTPException(
@@ -258,6 +311,7 @@ def create_sessions_router(
         request: Request,
     ) -> EventSourceResponse:
         """SSE 이벤트 스트림. 구현은 session_events.py 참조."""
+        await require_session_allowed(request, db, session_id)
         return await create_session_events_response(
             session_id, request, db, node_manager,
         )
@@ -276,6 +330,7 @@ def create_sessions_router(
         `InterveneRequest`에 `nodeId` 필드가 없어 `find_session_node` 결과 `node.node_id` 사용.
         예외 발생 시 caller_info 조립 미발동 — 기존 동작 정합 (fastapi 자동 처리).
         """
+        await require_session_allowed(request, db, session_id)
         from soulstream_server.config import get_settings
         settings = get_settings()
         node = await find_session_node(session_id, db, node_manager)
@@ -321,8 +376,9 @@ def create_sessions_router(
         )
 
     @router.post("/{session_id}/interrupt")
-    async def interrupt_session(session_id: str) -> dict:
+    async def interrupt_session(session_id: str, request: Request) -> dict:
         """진행 중인 에이전트 대화를 중단한다."""
+        await require_session_allowed(request, db, session_id)
         node = await find_session_node(session_id, db, node_manager)
         try:
             result = await node.send_interrupt_session(session_id)
@@ -341,8 +397,9 @@ def create_sessions_router(
         return result
 
     @router.get("/{session_id}/background-tasks")
-    async def list_background_tasks(session_id: str) -> dict:
+    async def list_background_tasks(session_id: str, request: Request) -> dict:
         """Claude runtime background task 목록을 조회한다."""
+        await require_session_allowed(request, db, session_id)
         node = await find_session_node(session_id, db, node_manager)
         try:
             return await node.send_claude_runtime_list_tasks(session_id)
@@ -355,8 +412,9 @@ def create_sessions_router(
             raise _claude_runtime_http_exception(e)
 
     @router.get("/{session_id}/background-tasks/{task_id}/output")
-    async def get_background_task_output(session_id: str, task_id: str) -> dict:
+    async def get_background_task_output(session_id: str, task_id: str, request: Request) -> dict:
         """Claude runtime background task 출력 조회."""
+        await require_session_allowed(request, db, session_id)
         node = await find_session_node(session_id, db, node_manager)
         try:
             return await node.send_claude_runtime_task_output(session_id, task_id)
@@ -369,8 +427,9 @@ def create_sessions_router(
             raise _claude_runtime_http_exception(e)
 
     @router.post("/{session_id}/background-tasks/{task_id}/stop")
-    async def stop_background_task(session_id: str, task_id: str) -> dict:
+    async def stop_background_task(session_id: str, task_id: str, request: Request) -> dict:
         """Claude runtime background task를 중단한다."""
+        await require_session_allowed(request, db, session_id)
         node = await find_session_node(session_id, db, node_manager)
         try:
             return await node.send_claude_runtime_stop_task(session_id, task_id)
@@ -385,9 +444,11 @@ def create_sessions_router(
     @router.post("/{session_id}/background-tasks/background")
     async def background_tasks(
         session_id: str,
+        request: Request,
         body: ClaudeRuntimeBackgroundTasksRequest | None = None,
     ) -> dict:
         """Claude SDK Query.backgroundTasks(toolUseId)를 호출한다."""
+        await require_session_allowed(request, db, session_id)
         node = await find_session_node(session_id, db, node_manager)
         try:
             return await node.send_claude_runtime_background_tasks(
@@ -403,8 +464,9 @@ def create_sessions_router(
             raise _claude_runtime_http_exception(e)
 
     @router.get("/{session_id}/schedules")
-    async def list_schedules(session_id: str) -> dict:
+    async def list_schedules(session_id: str, request: Request) -> dict:
         """Soulstream durable schedule 목록을 조회한다."""
+        await require_session_allowed(request, db, session_id)
         node = await find_session_node(session_id, db, node_manager)
         try:
             return await node.send_claude_runtime_list_schedules(session_id)
@@ -417,8 +479,9 @@ def create_sessions_router(
             raise _claude_runtime_http_exception(e)
 
     @router.delete("/{session_id}/schedules/{schedule_id}")
-    async def delete_schedule(session_id: str, schedule_id: str) -> dict:
+    async def delete_schedule(session_id: str, schedule_id: str, request: Request) -> dict:
         """Soulstream durable schedule을 prompt 없이 직접 취소/삭제한다."""
+        await require_session_allowed(request, db, session_id)
         node = await find_session_node(session_id, db, node_manager)
         try:
             result = await node.send_claude_runtime_delete_schedule(
@@ -437,8 +500,9 @@ def create_sessions_router(
             raise _claude_runtime_http_exception(e)
 
     @router.post("/{session_id}/respond")
-    async def respond(session_id: str, body: RespondRequest) -> dict:
+    async def respond(session_id: str, body: RespondRequest, request: Request) -> dict:
         """입력 요청 응답."""
+        await require_session_allowed(request, db, session_id)
         node = await find_session_node(session_id, db, node_manager)
         result = await node.send_respond(
             session_id, body.request_id, body.answers
@@ -451,9 +515,11 @@ def create_sessions_router(
     async def approve_tool(
         session_id: str,
         approval_id: str,
+        request: Request,
         body: ToolApprovalRequest | None = None,
     ) -> dict:
         """OpenAI Agents SDK tool approval 승인."""
+        await require_session_allowed(request, db, session_id)
         node = await find_session_node(session_id, db, node_manager)
         req = body or ToolApprovalRequest()
         result = await node.send_tool_approval(
@@ -471,9 +537,11 @@ def create_sessions_router(
     async def reject_tool(
         session_id: str,
         approval_id: str,
+        request: Request,
         body: ToolApprovalRequest | None = None,
     ) -> dict:
         """OpenAI Agents SDK tool approval 거부."""
+        await require_session_allowed(request, db, session_id)
         node = await find_session_node(session_id, db, node_manager)
         req = body or ToolApprovalRequest()
         result = await node.send_tool_approval(
@@ -491,8 +559,10 @@ def create_sessions_router(
     async def create_realtime_call(
         session_id: str,
         body: RealtimeCreateCallRequest,
+        request: Request,
     ) -> dict:
         """soul-app WebRTC SDP offer를 노드 OpenAI Realtime broker로 전달한다."""
+        await require_session_allowed(request, db, session_id)
         node = await find_session_node(session_id, db, node_manager)
         result = await node.send_realtime_create_call(
             session_id,
@@ -512,8 +582,10 @@ def create_sessions_router(
     async def relay_realtime_event(
         session_id: str,
         body: RealtimeEventRequest,
+        request: Request,
     ) -> dict:
         """soul-app Realtime data-channel event를 세션 SSE/DB로 relay한다."""
+        await require_session_allowed(request, db, session_id)
         node = await find_session_node(session_id, db, node_manager)
         result = await node.send_realtime_event(
             session_id,
@@ -532,8 +604,10 @@ def create_sessions_router(
         session_id: str,
         approval_id: str,
         body: RealtimeToolApprovalRequest,
+        request: Request,
     ) -> dict:
         """Realtime voice 중 발생한 tool approval을 tap/voice 결정으로 resolve한다."""
+        await require_session_allowed(request, db, session_id)
         node = await find_session_node(session_id, db, node_manager)
         result = await node.send_realtime_tool_approval(
             session_id,
@@ -551,8 +625,9 @@ def create_sessions_router(
         return result
 
     @router.patch("/{session_id}/display-name")
-    async def rename_session(session_id: str, body: RenameSessionRequest) -> dict:
+    async def rename_session(session_id: str, body: RenameSessionRequest, request: Request) -> dict:
         """세션 표시 이름 변경."""
+        await require_session_allowed(request, db, session_id)
         if catalog_service:
             await catalog_service.rename_session(session_id, body.displayName)
         else:
@@ -561,8 +636,14 @@ def create_sessions_router(
 
     @router.patch("/folder")
     @router.put("/folder")
-    async def batch_move_folder(body: BatchMoveRequest) -> dict:
+    async def batch_move_folder(body: BatchMoveRequest, request: Request) -> dict:
         """세션 일괄 폴더 이동. CatalogService 경유로 cross-tab SSE 동기화."""
+        access = access_for_request(request)
+        if access.restricted:
+            folders = await catalog_service.list_folders() if catalog_service else await db.get_all_folders()
+            require_folder_allowed(access, folders, body.folderId)
+            for session_id in body.sessionIds:
+                await require_session_allowed(request, db, session_id)
         if catalog_service:
             await catalog_service.move_sessions_to_folder(
                 body.sessionIds, body.folderId
@@ -573,9 +654,18 @@ def create_sessions_router(
         return {"success": True, "count": len(body.sessionIds)}
 
     @router.put("/{session_id}")
-    async def update_session_catalog(session_id: str, body: SessionCatalogUpdate) -> dict:
+    async def update_session_catalog(
+        session_id: str,
+        body: SessionCatalogUpdate,
+        request: Request,
+    ) -> dict:
         """세션 폴더 이동 + 이름 변경 (개별)."""
+        await require_session_allowed(request, db, session_id)
         if _field_supplied(body, "folderId"):
+            access = access_for_request(request)
+            if access.restricted:
+                folders = await catalog_service.list_folders() if catalog_service else await db.get_all_folders()
+                require_folder_allowed(access, folders, body.folderId)
             if catalog_service:
                 await catalog_service.move_sessions_to_folder([session_id], body.folderId)
             else:
@@ -588,16 +678,18 @@ def create_sessions_router(
         return {"ok": True}
 
     @router.delete("/{session_id}", status_code=204)
-    async def delete_session(session_id: str):
+    async def delete_session(session_id: str, request: Request):
         """세션 삭제."""
+        await require_session_allowed(request, db, session_id)
         if catalog_service:
             await catalog_service.delete_session(session_id)
         else:
             await db.delete_session(session_id)
 
     @router.get("/{session_id}/cards")
-    async def session_cards(session_id: str) -> list[dict]:
+    async def session_cards(session_id: str, request: Request) -> list[dict]:
         """세션의 모든 이벤트를 JSON 배열로 반환."""
+        await require_session_allowed(request, db, session_id)
         events = await db.read_events(session_id)
         result = []
         for evt in events:
@@ -617,9 +709,10 @@ def create_sessions_router(
 
     @router.put("/{session_id}/read-position")
     async def update_read_position(
-        session_id: str, body: ReadPositionRequest
+        session_id: str, body: ReadPositionRequest, request: Request
     ) -> dict:
         """읽음 위치 갱신 + SSE 브로드캐스트."""
+        await require_session_allowed(request, db, session_id)
         await db.update_last_read_event_id(session_id, body.last_read_event_id)
         last_event_id, last_read_event_id = await db.get_read_position(session_id)
         if broadcaster:

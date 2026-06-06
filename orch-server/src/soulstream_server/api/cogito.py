@@ -15,6 +15,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
 from soulstream_server.api._proxy_utils import forward_auth_headers
+from soulstream_server.dashboard_access import access_for_request, is_folder_allowed
 from soulstream_server.nodes.node_manager import NodeManager
 
 logger = logging.getLogger(__name__)
@@ -163,6 +164,8 @@ def _aggregate_status(entries: list[dict]) -> str:
 
 def create_cogito_router(
     node_manager: NodeManager,
+    db: Any | None = None,
+    catalog_service: Any | None = None,
     dependencies: list | None = None,
 ) -> APIRouter:
     router = APIRouter(
@@ -190,6 +193,20 @@ def create_cogito_router(
         nodes = node_manager.get_connected_nodes()
         if not nodes:
             return {"results": []}
+        access = access_for_request(request)
+        folders: list[dict] = []
+        if access.restricted:
+            if catalog_service is not None:
+                folders = await catalog_service.list_folders()
+            elif db is not None:
+                rows = await db.get_all_folders()
+                folders = [
+                    {
+                        "id": row.get("id"),
+                        "parentFolderId": row.get("parent_folder_id", row.get("parentFolderId")),
+                    }
+                    for row in rows
+                ]
 
         all_results: list[dict] = []
 
@@ -220,6 +237,8 @@ def create_cogito_router(
                     logger.warning("cogito/search: node %s unreachable: %s", node.node_id, e)
 
         # score 내림차순 정렬 후 top_k 개 반환
+        if access.restricted:
+            all_results = await _filter_search_results_by_access(all_results, db, folders, access)
         all_results.sort(key=lambda x: x.get("score", 0.0), reverse=True)
         return {"results": all_results[:top_k]}
 
@@ -236,3 +255,25 @@ def create_cogito_router(
         return await collect_cogito_briefs(node_manager, per_node_timeout=timeout)
 
     return router
+
+
+async def _filter_search_results_by_access(
+    results: list[dict],
+    db: Any | None,
+    folders: list[dict],
+    access: Any,
+) -> list[dict]:
+    if db is None:
+        return []
+    allowed: list[dict] = []
+    for item in results:
+        session_id = item.get("session_id") or item.get("sessionId")
+        if not isinstance(session_id, str):
+            continue
+        row = await db.get_session(session_id)
+        if not isinstance(row, dict):
+            continue
+        folder_id = row.get("folder_id") or row.get("folderId")
+        if is_folder_allowed(access, folders, folder_id):
+            allowed.append(item)
+    return allowed

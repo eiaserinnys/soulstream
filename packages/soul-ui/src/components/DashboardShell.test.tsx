@@ -11,7 +11,7 @@ import { useDashboardStore } from "../stores/dashboard-store";
 import { DashboardShell } from "./DashboardShell";
 import { DASHBOARD_LEFT_SIDEBAR_COLLAPSED_STORAGE_KEY } from "./dashboard-sidebar-collapse";
 
-function renderShell() {
+function renderShell(options: { hideLeftPanel?: boolean } = {}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -22,6 +22,7 @@ function renderShell() {
       leftPanel: createElement("div", null, "left"),
       centerPanel: createElement("div", null, "center"),
       rightPanel: createElement("div", null, "right"),
+      hideLeftPanel: options.hideLeftPanel,
     }));
   });
   return { container, root };
@@ -74,5 +75,14 @@ describe("DashboardShell", () => {
 
     expect(sidebar?.style.width).toBe("44px");
     expect(window.localStorage.getItem(DASHBOARD_LEFT_SIDEBAR_COLLAPSED_STORAGE_KEY)).toBe("true");
+  });
+
+  it("does not render the desktop left sidebar when hidden", () => {
+    ({ container, root } = renderShell({ hideLeftPanel: true }));
+
+    expect(container.querySelector('[data-testid="session-panel"]')).toBeNull();
+    expect(container.querySelector('[data-testid="left-sidebar-toggle"]')).toBeNull();
+    expect(container.textContent).toContain("center");
+    expect(container.textContent).toContain("right");
   });
 });

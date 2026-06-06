@@ -4,9 +4,9 @@ Settings — 환경변수 기반 설정.
 
 import json
 from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, Any
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import NoDecode
 
 from soul_common.config import BaseOAuthSettings
@@ -27,6 +27,7 @@ class Settings(BaseOAuthSettings):
 
     # Dashboard
     dashboard_dir: str = ""
+    dashboard_user_folder_access: Annotated[dict[str, dict[str, Any]], NoDecode] = Field(default_factory=dict)
 
     # Board asset uploads (Cloudflare R2, S3-compatible).
     # Empty values disable `/api/board/{folderId}/assets/*` until operations
@@ -74,6 +75,55 @@ class Settings(BaseOAuthSettings):
                 return json.loads(s)
             return [item.strip() for item in v.split(",") if item.strip()]
         return v
+
+    @field_validator("dashboard_user_folder_access", mode="before")
+    @classmethod
+    def _parse_dashboard_user_folder_access(cls, v):
+        """Parse Gmail-account folder access rules from env JSON.
+
+        Canonical env shape:
+        {"user@gmail.com":{"restricted":true,"allowedFolderIds":["folder-id"]}}
+        """
+        if v is None:
+            return {}
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return {}
+            parsed = json.loads(s)
+        else:
+            parsed = v
+        if not isinstance(parsed, dict):
+            raise ValueError("DASHBOARD_USER_FOLDER_ACCESS must be a JSON object")
+
+        normalized: dict[str, dict[str, Any]] = {}
+        for raw_email, raw_rule in parsed.items():
+            email = str(raw_email).strip().lower()
+            if not email:
+                raise ValueError("DASHBOARD_USER_FOLDER_ACCESS contains an empty email key")
+
+            if isinstance(raw_rule, list):
+                restricted = True
+                folder_ids = raw_rule
+            elif isinstance(raw_rule, dict):
+                restricted = bool(raw_rule.get("restricted", True))
+                folder_ids = raw_rule.get("allowedFolderIds", raw_rule.get("allowed_folder_ids", []))
+            else:
+                raise ValueError(
+                    "DASHBOARD_USER_FOLDER_ACCESS values must be objects or folder-id arrays"
+                )
+
+            if not isinstance(folder_ids, list):
+                raise ValueError("allowedFolderIds must be an array")
+            normalized[email] = {
+                "restricted": restricted,
+                "allowedFolderIds": [
+                    str(folder_id).strip()
+                    for folder_id in folder_ids
+                    if str(folder_id).strip()
+                ],
+            }
+        return normalized
 
     @property
     def is_production(self) -> bool:

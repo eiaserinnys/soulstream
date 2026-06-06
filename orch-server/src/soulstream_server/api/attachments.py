@@ -15,6 +15,8 @@ host=127.0.0.1) 회로 차단. 노드 등록 시 신뢰 가능하게 outbound로
 
 import base64
 import io
+from pathlib import PurePath
+from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -24,11 +26,13 @@ from soulstream_server.constants import (
     LEGACY_ATTACHMENT_MAX_SIZE,
     MAX_ATTACHMENT_SIZE,
 )
+from soulstream_server.dashboard_access import access_for_request, require_session_allowed
 from soulstream_server.nodes.node_manager import NodeManager
 
 
 def create_attachments_router(
     node_manager: NodeManager,
+    db: Any | None = None,
     dependencies: list | None = None,
 ) -> APIRouter:
     """attachments 라우터 팩토리.
@@ -59,6 +63,8 @@ def create_attachments_router(
         node = node_manager.get_node(node_id)
         if node is None:
             raise HTTPException(404, f"Node '{node_id}' not found")
+        if db is not None and access_for_request(request).restricted:
+            await require_session_allowed(request, db, session_id)
 
         expected_size = getattr(file, "size", None)
         if expected_size is not None and expected_size > MAX_ATTACHMENT_SIZE:
@@ -145,6 +151,8 @@ def create_attachments_router(
         node = node_manager.get_node(node_id)
         if node is None:
             raise HTTPException(404, f"Node '{node_id}' not found")
+        if db is not None and access_for_request(request).restricted:
+            await require_session_allowed(request, db, session_id)
 
         try:
             result = await node.send_delete_session_attachments(session_id)
@@ -186,6 +194,8 @@ def create_attachments_router(
         node = node_manager.get_node(node_id)
         if node is None:
             raise HTTPException(404, f"Node '{node_id}' not found")
+        if db is not None and access_for_request(request).restricted:
+            await require_session_allowed(request, db, PurePath(path).parent.name)
 
         try:
             result = await node.send_download_attachment(path=path)
