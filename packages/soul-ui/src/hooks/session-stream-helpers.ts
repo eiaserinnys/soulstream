@@ -14,7 +14,21 @@ import type {
 } from "../shared/types";
 import type { SessionUpdatedStreamEvent } from "../shared/stream-events";
 import { normalizeSessionStatus } from "../shared/session-status";
+import {
+  applyCatalogDisplayName,
+  mergeSessionCreatedSummary,
+} from "./session-catalog-helpers";
 export { normalizeSessionStatus } from "../shared/session-status";
+export {
+  applyCatalogDisplayNames,
+  mergeSessionAssignmentsFromSummaries,
+  mergeSessionCreatedSummary,
+  preserveCatalogSessionList,
+  removeSessionFromCatalogSessionList,
+  updateSessionInCatalogSessionList,
+  upsertSessionAssignmentInCatalog,
+  upsertSessionInCatalogSessionList,
+} from "./session-catalog-helpers";
 
 export interface SessionPage {
   sessions: SessionSummary[];
@@ -93,69 +107,6 @@ export function filterSessionsInFolder(
       }
       return s;
     });
-}
-
-/**
- * 카탈로그의 displayName override만 적용한다.
- *
- * useSessionListProvider가 이미 folder_id로 서버 필터링한 목록을 FolderContents에
- * 넘기는 경로에서는 catalog.sessions 할당이 늦게 도착할 수 있다. 그 목록에 다시
- * 폴더 필터를 걸면 방금 생성된 세션이 폴더 뷰에서 사라질 수 있으므로, prop 기반
- * 경로에서는 provider 결과를 신뢰하고 표시명만 덧씌운다.
- */
-export function applyCatalogDisplayNames(
-  sessions: SessionSummary[],
-  catalog: CatalogState | null,
-): SessionSummary[] {
-  if (!catalog?.sessions) return sessions;
-  return sessions.map((s) => {
-    const assignment = catalog.sessions[s.agentSessionId];
-    if (assignment?.displayName) {
-      return { ...s, displayName: assignment.displayName };
-    }
-    return s;
-  });
-}
-
-export function mergeSessionAssignmentsFromSummaries(
-  catalog: CatalogState,
-  sessions: readonly SessionSummary[],
-): CatalogState {
-  let changed = false;
-  const updatedSessions = { ...catalog.sessions };
-
-  for (const session of sessions) {
-    if (session.folderId === undefined && session.displayName === undefined) continue;
-    const current = updatedSessions[session.agentSessionId];
-    const next = {
-      folderId: session.folderId !== undefined ? session.folderId : current?.folderId ?? null,
-      displayName:
-        session.displayName !== undefined
-          ? session.displayName ?? null
-          : current?.displayName ?? null,
-    };
-    if (
-      !current ||
-      current.folderId !== next.folderId ||
-      current.displayName !== next.displayName
-    ) {
-      updatedSessions[session.agentSessionId] = next;
-      changed = true;
-    }
-  }
-
-  return changed ? { ...catalog, sessions: updatedSessions } : catalog;
-}
-
-function applyCatalogDisplayName(
-  session: SessionSummary,
-  catalog: CatalogState,
-): SessionSummary {
-  const assignment = catalog.sessions[session.agentSessionId];
-  if (assignment?.displayName) {
-    return { ...session, displayName: assignment.displayName };
-  }
-  return session;
 }
 
 function sessionMatchesCatalogCache(
@@ -283,30 +234,6 @@ export function shouldApplySessionCreatedToCache(
 }
 
 /**
- * 낙관적 세션이 캐시에 박힌 상태에서 서버 정본 `session_created`가 도착할 때, *정의된 incoming
- * 필드만* 덮어쓰는 helper. 분석 캐시 `20260518-1405-cycle-a-optimistic-session-merge.md`.
- *
- * - `undefined`만 filter — 서버가 *명시적으로 박지 않은 필드*는 기존 값 보존
- * - `null`은 *유효 unset*이므로 살림 (session-types: `agentPortraitUrl?: string | null` 등)
- * - 순수 함수 — InfiniteData·캐시 상태 불변
- *
- * 필드별 null 안전성 (spec-reviewer P2-3):
- * - portrait 계열(`agentPortraitUrl`·`userPortraitUrl`·`awaySummary`): 타입 `string | null` —
- *   서버가 null로 명시적 unset 가능. 본 helper가 살림 동작 정합.
- * - `lastEventId`: 타입 `number | undefined` — null 도달 불가. wire가 null을 보내도 type-safe
- *   하지 않은 entry. 본 helper의 일관성 정합 (`null`을 살리는 일반 규칙으로 처리).
- */
-export function mergeSessionCreatedSummary(
-  current: SessionSummary,
-  incoming: SessionSummary,
-): SessionSummary {
-  const definedIncoming = Object.fromEntries(
-    Object.entries(incoming).filter(([, value]) => value !== undefined),
-  ) as Partial<SessionSummary>;
-  return { ...current, ...definedIncoming };
-}
-
-/**
  * session_created 이벤트:
  * pages[0] 앞에 newSession을 prepend하고 total을 +1. 낙관적 업데이트(addOptimisticSession)가
  * 임시 세션을 박은 상태면 *정의된 server 필드로 덮어쓴다* — `mergeSessionCreatedSummary` 적용.
@@ -395,81 +322,6 @@ export function findSessionInPages(
     }
   }
   return null;
-}
-
-/**
- * catalog.sessions에 { agentSessionId → { folderId, displayName: null } } 매핑을
- * 낙관적으로 추가한 새 CatalogState를 반환한다.
- * (session_created에서 서버가 folder_id를 함께 보내는 경우 사용)
- */
-export function upsertSessionAssignmentInCatalog(
-  catalog: CatalogState,
-  agentSessionId: string,
-  folderId: string | null,
-  session?: SessionSummary,
-): CatalogState {
-  const nextCatalog = session
-    ? upsertSessionInCatalogSessionList(catalog, session)
-    : catalog;
-  return {
-    ...nextCatalog,
-    sessions: {
-      ...nextCatalog.sessions,
-      [agentSessionId]: { folderId, displayName: null },
-    },
-  };
-}
-
-export function upsertSessionInCatalogSessionList(
-  catalog: CatalogState,
-  session: SessionSummary,
-): CatalogState {
-  const current = catalog.sessionList ?? [];
-  const exists = current.some((item) => item.agentSessionId === session.agentSessionId);
-  return {
-    ...catalog,
-    sessionList: exists
-      ? current.map((item) =>
-          item.agentSessionId === session.agentSessionId
-            ? mergeSessionCreatedSummary(item, session)
-            : item,
-        )
-      : [session, ...current],
-  };
-}
-
-export function updateSessionInCatalogSessionList(
-  catalog: CatalogState,
-  agentSessionId: string,
-  updates: Partial<SessionSummary>,
-): CatalogState {
-  if (!catalog.sessionList) return catalog;
-  return {
-    ...catalog,
-    sessionList: catalog.sessionList.map((session) =>
-      session.agentSessionId === agentSessionId ? { ...session, ...updates } : session,
-    ),
-  };
-}
-
-export function removeSessionFromCatalogSessionList(
-  catalog: CatalogState,
-  agentSessionId: string,
-): CatalogState {
-  if (!catalog.sessionList) return catalog;
-  return {
-    ...catalog,
-    sessionList: catalog.sessionList.filter((session) => session.agentSessionId !== agentSessionId),
-  };
-}
-
-export function preserveCatalogSessionList(
-  incoming: CatalogState,
-  current: CatalogState | null,
-): CatalogState {
-  if (incoming.sessionList) return incoming;
-  if (!current?.sessionList) return incoming;
-  return { ...incoming, sessionList: current.sessionList };
 }
 
 export type SessionUpdatesPatch = Partial<

@@ -16,6 +16,7 @@ import {
   buildSessionUpdates,
   countLoadedSessionsForQuery,
   filterFeedSessions,
+  mergeSessionAssignmentsFromSummaries,
   mergeSessionCreatedSummary,
   normalizeSessionStatus,
   preserveCatalogSessionList,
@@ -107,6 +108,29 @@ describe("catalog sessionList helpers", () => {
 
     expect(result.sessionList?.[0].agentSessionId).toBe("s1");
     expect(result.sessions.s1.folderId).toBe("root");
+  });
+
+  it("stores /api/sessions summaries in catalog.sessionList while merging assignments", () => {
+    const summary = makeSession("folder-session", {
+      folderId: "folder-a",
+      displayName: "Pinned title",
+      agentName: "Roselin",
+      agentPortraitUrl: "/api/nodes/eias/agents/roselin_codex/portrait",
+      backend: "codex",
+    });
+
+    const result = mergeSessionAssignmentsFromSummaries(makeCatalog(), [summary]);
+
+    expect(result.sessions["folder-session"]).toEqual({
+      folderId: "folder-a",
+      displayName: "Pinned title",
+    });
+    expect(result.sessionList?.[0]).toMatchObject({
+      agentSessionId: "folder-session",
+      agentName: "Roselin",
+      agentPortraitUrl: "/api/nodes/eias/agents/roselin_codex/portrait",
+      backend: "codex",
+    });
   });
 });
 
