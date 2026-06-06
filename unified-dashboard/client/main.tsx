@@ -8,6 +8,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
+import { ToastProvider } from "@seosoyoung/soul-ui";
 import { AuthProvider } from "@seosoyoung/soul-ui/providers";
 import { AuthGate } from "@seosoyoung/soul-ui/components/auth";
 import { AppConfigProvider } from "./config/AppConfigContext";
@@ -35,7 +36,9 @@ createRoot(root).render(
       <AuthProvider>
         <AuthGate loginTitle="Soul Dashboard">
           <AppConfigProvider>
-            <App />
+            <ToastProvider>
+              <App />
+            </ToastProvider>
           </AppConfigProvider>
         </AuthGate>
       </AuthProvider>
