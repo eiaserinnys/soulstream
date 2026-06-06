@@ -16,6 +16,7 @@
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from starlette.requests import Request
 
 from soul_common.auth.jwt import COOKIE_NAME, generate_token
 
@@ -25,6 +26,24 @@ from tests.conftest import TEST_AUTH_TOKEN
 def _make_jwt_cookie(secret: str, email: str = "dev@example.com") -> str:
     """유효 JWT 쿠키 값을 생성한다."""
     return generate_token({"email": email, "name": "Dev", "picture": ""}, secret)
+
+
+def _make_request(
+    *,
+    authorization: str | None = None,
+    cookie: str | None = None,
+) -> Request:
+    headers: list[tuple[bytes, bytes]] = []
+    if authorization is not None:
+        headers.append((b"authorization", authorization.encode()))
+    if cookie is not None:
+        headers.append((b"cookie", cookie.encode()))
+    return Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/api/status",
+        "headers": headers,
+    })
 
 
 class TestBearerAuth:
@@ -66,6 +85,40 @@ class TestBearerAuth:
             headers={"Authorization": "Bearer wrong-token"},
         )
         assert resp.status_code == 401
+
+
+class TestAuthModeMarkers:
+    """verify_auth가 인증 경로를 request.state에 명시한다."""
+
+    async def test_service_token_success_sets_service_token_auth_mode(self):
+        from soulstream_server.api.auth import verify_auth
+
+        authorization = f"Bearer {TEST_AUTH_TOKEN}"
+        request = _make_request(authorization=authorization)
+
+        await verify_auth(request, authorization=authorization)
+
+        assert request.state.auth_mode == "service_token"
+        assert not hasattr(request.state, "auth_user")
+
+    async def test_jwt_success_sets_auth_user_and_jwt_auth_mode(self, monkeypatch):
+        from soulstream_server.api.auth import verify_auth
+        from soulstream_server.config import get_settings
+
+        settings = get_settings()
+        monkeypatch.setattr(settings, "google_client_id", "fake-client-id-for-test")
+        monkeypatch.setattr(
+            settings,
+            "jwt_secret",
+            "test-jwt-secret-at-least-32-bytes-long",
+        )
+        cookie_value = _make_jwt_cookie(settings.jwt_secret, "jwt-user@example.com")
+        request = _make_request(cookie=f"{COOKIE_NAME}={cookie_value}")
+
+        await verify_auth(request, authorization=None)
+
+        assert request.state.auth_mode == "jwt"
+        assert request.state.auth_user["email"] == "jwt-user@example.com"
 
 
 class TestJWTCookieAuth:

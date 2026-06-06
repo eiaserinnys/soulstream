@@ -132,7 +132,9 @@ async def verify_auth(
 
     # 1. Bearer 시도 — verify_token이 빈 토큰 + non-production이면 dev mode 바이패스 처리
     try:
-        await verify_token(authorization)
+        token = await verify_token(authorization)
+        if token:
+            request.state.auth_mode = "service_token"
         return
     except HTTPException as e:
         bearer_err = e
@@ -144,6 +146,7 @@ async def verify_auth(
         try:
             auth_dep = create_auth_dep(settings.jwt_secret, True)
             await auth_dep(request)
+            request.state.auth_mode = "jwt"
             return
         except HTTPException as e:
             cookie_err = e
