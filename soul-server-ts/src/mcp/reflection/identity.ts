@@ -41,6 +41,7 @@ export const SELF_IDENTITY = {
         "list_folders",
         "list_child_folders",
         "create_folder",
+        "move_folder",
         "rename_folder",
         "delete_folder",
         "move_sessions_to_folder",

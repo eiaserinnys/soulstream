@@ -73,6 +73,28 @@ export function registerCatalogTools(
   );
 
   server.registerTool(
+    "move_folder",
+    {
+      description: "폴더를 다른 부모 폴더 아래로 이동. parent_folder_id=null/미지정 → 루트로 이동.",
+      inputSchema: {
+        folder_id: z.string(),
+        parent_folder_id: z.string().nullable().optional(),
+      },
+    },
+    async ({ folder_id, parent_folder_id }) => {
+      try {
+        await runtime.catalogService.setFolderParent(
+          folder_id,
+          parent_folder_id ?? null,
+        );
+        return jsonResult({ ok: true });
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
     "delete_folder",
     {
       description: "폴더 삭제.",

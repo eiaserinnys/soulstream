@@ -46,6 +46,7 @@ const EXPECTED_TOOLS = [
   "list_folders",
   "list_child_folders",
   "create_folder",
+  "move_folder",
   "rename_folder",
   "delete_folder",
   "move_sessions_to_folder",
@@ -79,14 +80,55 @@ const EXPECTED_TOOLS = [
   "rollback_remote_agents_config",
 ];
 
+interface MockSqlCall {
+  fragments: string[];
+  values: unknown[];
+}
+
 function createMockSql() {
-  const fn = ((_strings: TemplateStringsArray, ..._values: unknown[]) =>
-    Promise.resolve([])) as unknown as SqlClient & {
+  const calls: MockSqlCall[] = [];
+  const fn = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+    const call = { fragments: Array.from(strings), values };
+    calls.push(call);
+    const text = call.fragments.join("|");
+    if (text.includes("folder_get_all")) {
+      return Promise.resolve([
+        {
+          id: "root",
+          name: "Root",
+          sort_order: 0,
+          settings: {},
+          parent_folder_id: null,
+          created_at: null,
+        },
+        {
+          id: "child",
+          name: "Child",
+          sort_order: 1,
+          settings: {},
+          parent_folder_id: "root",
+          created_at: null,
+        },
+      ]);
+    }
+    if (text.includes("catalog_get_sessions")) {
+      return Promise.resolve([]);
+    }
+    return Promise.resolve([]);
+  }) as unknown as SqlClient & {
     array: (a: unknown[]) => unknown[];
+    json: (value: unknown) => unknown;
     end: () => Promise<void>;
+    begin: <T>(callback: (sql: SqlClient) => Promise<T>) => Promise<T>;
+    __calls: MockSqlCall[];
   };
   fn.array = (a: unknown[]) => a;
+  fn.json = (value: unknown) => value;
   fn.end = vi.fn().mockResolvedValue(undefined);
+  fn.begin = vi.fn(async <T>(callback: (sql: SqlClient) => Promise<T>) =>
+    callback(fn as unknown as SqlClient),
+  );
+  fn.__calls = calls;
   return fn as unknown as SqlClient;
 }
 
@@ -105,8 +147,11 @@ function createSilentLogger() {
   } as unknown as McpRuntime["logger"];
 }
 
+let sqlCalls: MockSqlCall[] = [];
+
 function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRuntime {
-  const sql = createMockSql();
+  const sql = createMockSql() as SqlClient & { __calls: MockSqlCall[] };
+  sqlCalls = sql.__calls;
   const db = new SessionDB(sql);
   const broadcaster = {
     emitCatalogUpdated: vi.fn().mockResolvedValue(undefined),
@@ -326,6 +371,46 @@ describe("MCP SDK client smoke", () => {
     expect(structured.agents).toHaveLength(1);
     expect(structured.agents[0]?.id).toBe("codex-default");
     expect(structured.agents[0]?.max_turns).toBe(50);
+  });
+
+  it("callTool('move_folder') → 부모 이동, 루트 복귀, 순환 거부", async () => {
+    sqlCalls.length = 0;
+
+    const moved = await client.callTool({
+      name: "move_folder",
+      arguments: { folder_id: "child", parent_folder_id: "root" },
+    });
+    expect(moved.isError).not.toBe(true);
+    expect(moved.structuredContent).toEqual({ ok: true });
+
+    const rooted = await client.callTool({
+      name: "move_folder",
+      arguments: { folder_id: "child", parent_folder_id: null },
+    });
+    expect(rooted.isError).not.toBe(true);
+    expect(rooted.structuredContent).toEqual({ ok: true });
+
+    const updateCalls = sqlCalls.filter((call) =>
+      call.fragments.join("|").includes("folder_update"),
+    );
+    expect(updateCalls).toHaveLength(2);
+    expect(updateCalls[0]?.values).toEqual([
+      "child",
+      ["parent_folder_id"],
+      ["root"],
+    ]);
+    expect(updateCalls[1]?.values).toEqual([
+      "child",
+      ["parent_folder_id"],
+      [null],
+    ]);
+
+    const cycle = await client.callTool({
+      name: "move_folder",
+      arguments: { folder_id: "root", parent_folder_id: "child" },
+    });
+    expect(cycle.isError).toBe(true);
+    expect(cycle.structuredContent).toEqual({ error: "folder parent cycle" });
   });
 
   it("callTool('reflect_service', soul-server-ts, level=0) → identity + capabilities", async () => {
