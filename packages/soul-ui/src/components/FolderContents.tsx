@@ -44,6 +44,7 @@ export interface FolderContentsProps {
 export function FolderContents({ sessions: sessionsProp = EMPTY_SESSIONS, onMoveSessions, onRenameSession, onLoadMore, hasMore }: FolderContentsProps) {
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const clearActiveSession = useDashboardStore((s) => s.clearActiveSession);
   const toggleSessionSelection = useDashboardStore((s) => s.toggleSessionSelection);
@@ -62,6 +63,16 @@ export function FolderContents({ sessions: sessionsProp = EMPTY_SESSIONS, onMove
 
   const prevFolderIdRef = useRef<string | null | undefined>(undefined);
   const parentRef = useRef<HTMLDivElement>(null);
+  const keepActiveSessionWhenEmpty = useMemo(() => {
+    if (!activeSessionKey || activeSessionSummary?.agentSessionId !== activeSessionKey) {
+      return false;
+    }
+    const activeFolderId =
+      catalog?.sessions?.[activeSessionKey]?.folderId
+      ?? activeSessionSummary.folderId
+      ?? null;
+    return activeFolderId === selectedFolderId;
+  }, [activeSessionKey, activeSessionSummary, catalog, selectedFolderId]);
 
   // 폴더 전환 시 스크롤 초기화
   useEffect(() => {
@@ -76,6 +87,7 @@ export function FolderContents({ sessions: sessionsProp = EMPTY_SESSIONS, onMove
   useEffect(() => {
     const decision = resolveFolderActiveSessionDecision({
       activeSessionKey,
+      keepActiveSessionWhenEmpty,
       isMobile,
       sessions: displaySessions,
     });
@@ -90,6 +102,7 @@ export function FolderContents({ sessions: sessionsProp = EMPTY_SESSIONS, onMove
     clearActiveSession,
     displaySessions,
     isMobile,
+    keepActiveSessionWhenEmpty,
     setActiveSession,
     setActiveSessionSummary,
   ]);

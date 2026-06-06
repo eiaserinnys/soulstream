@@ -26,6 +26,8 @@ const ESTIMATED_SIZE = CARD_HEIGHT + CARD_GAP;
 
 export interface FeedViewProps {
   onNewSession?: () => void;
+  /** main은 기존 가운데/모바일 피드, sidebar는 데스크톱 좌측 탐색 피드 */
+  placement?: "main" | "sidebar";
   /** 인피니트 스크롤: 목록 끝 근처에 도달하면 호출 */
   onLoadMore?: LoadMoreCallback;
   /** 추가 로드 가능 여부 */
@@ -36,18 +38,27 @@ export interface FeedViewProps {
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
 }
 
-export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, onMoveSessions }: FeedViewProps = {}) {
+export function FeedView({
+  onNewSession,
+  placement = "main",
+  onLoadMore,
+  hasMore,
+  onRenameSession,
+  onMoveSessions,
+}: FeedViewProps = {}) {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
   const catalog = useDashboardStore((s) => s.catalog);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
+  const setLeftNavigationMode = useDashboardStore((s) => s.setLeftNavigationMode);
   const clearActiveSession = useDashboardStore((s) => s.clearActiveSession);
   const selectFolder = useDashboardStore((s) => s.selectFolder);
   const feedScrollOffset = useDashboardStore((s) => s.feedScrollOffset);
   const setFeedScrollOffset = useDashboardStore((s) => s.setFeedScrollOffset);
   const dashboardConfig = useDashboardStore((s) => s.dashboardConfig);
+  const isSidebarPlacement = placement === "sidebar";
 
   // useFeedSessions: Zustand sessions + catalog 구독 → filterFeedSessions로 반응형 계산
   const feedSessions = useFeedSessions();
@@ -66,6 +77,7 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
 
   // 자동 선택: 피드 뷰에서 activeSessionKey가 없으면 최신 세션 선택
   useEffect(() => {
+    if (placement !== "main") return;
     if (viewMode !== "feed") return;
     if (activeSessionKey) {
       // activeSessionKey가 피드 세션 목록에 존재하는지 확인.
@@ -88,7 +100,7 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
     if (firstFeedId) {
       setActiveSession(firstFeedId);
     }
-  }, [viewMode, activeSessionKey, firstFeedId, feedSessions, setActiveSession, clearActiveSession]);
+  }, [placement, viewMode, activeSessionKey, firstFeedId, feedSessions, setActiveSession, clearActiveSession]);
 
   // 가상 스크롤
   const parentRef = useRef<HTMLDivElement>(null);
@@ -150,9 +162,24 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
       setActiveSession(sessionId);
       const session = feedSessions.find((s) => s.agentSessionId === sessionId);
       if (session) setActiveSessionSummary(session);
+      if (isSidebarPlacement) {
+        setLeftNavigationMode("feed");
+        const assignment = catalog?.sessions?.[sessionId];
+        if (assignment) selectFolder(assignment.folderId ?? null);
+        return;
+      }
       setActiveTab("chat"); // 모바일에서 채팅 탭으로 전환 (데스크탑에서는 무해)
     },
-    [setActiveSession, setActiveSessionSummary, setActiveTab, feedSessions],
+    [
+      catalog,
+      feedSessions,
+      isSidebarPlacement,
+      selectFolder,
+      setActiveSession,
+      setActiveSessionSummary,
+      setActiveTab,
+      setLeftNavigationMode,
+    ],
   );
 
   // 카드 더블클릭 → 폴더 뷰로 전환
@@ -160,11 +187,12 @@ export function FeedView({ onNewSession, onLoadMore, hasMore, onRenameSession, o
     (sessionId: string) => {
       if (!catalog?.sessions) return;
       const assignment = catalog.sessions[sessionId];
+      if (isSidebarPlacement && !assignment) return;
       const folderId = assignment?.folderId ?? null;
       selectFolder(folderId);
       // selectFolder가 viewMode: "folder"도 함께 설정
     },
-    [catalog, selectFolder],
+    [catalog, isSidebarPlacement, selectFolder],
   );
 
   // 컨텍스트 메뉴

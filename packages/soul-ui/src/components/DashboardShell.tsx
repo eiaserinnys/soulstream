@@ -4,12 +4,12 @@
  * slot props로 내용물을 주입받습니다.
  * 레이아웃 구조만 제공하며, 앱 레벨 훅이나 구체적 컴포넌트는 포함하지 않습니다.
  *
- * 데스크탑: leftPanel | DragHandle | centerPanel | DragHandle | rightPanel
+ * 데스크탑: left navigation(Folders/Feeds) | DragHandle | centerPanel | DragHandle | rightPanel
  * 모바일: base-ui Tabs(keepMounted) + BottomTabBar. inactive 패널은 DOM을 유지한 채 페이드 전환된다.
  */
 
 import { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, MessageSquare, Search } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, FolderTree, MessageSquare, Newspaper, Search } from "lucide-react";
 import { DragHandle } from "./DragHandle";
 import { BottomTabBar } from "./BottomTabBar";
 import { ConnectionBadge, type ConnectionStatus } from "./ConnectionBadge";
@@ -38,6 +38,8 @@ const MIN_CENTER = 20;
 export interface DashboardShellProps {
   /** 왼쪽 패널 내용물 (FolderTree 등) */
   leftPanel: ReactNode;
+  /** 데스크톱 좌측 피드 패널. 지정되면 leftPanel과 토글된다. */
+  leftFeedPanel?: ReactNode;
   /** 왼쪽 패널 하단 내용물 (NodePanel 등). leftBottomRatio > 0일 때 표시 */
   leftPanelBottom?: ReactNode;
   /** 센터 패널 내용물 */
@@ -121,6 +123,7 @@ function DefaultMobileChatHeader({ onBack }: { onBack: () => void }) {
 
 export function DashboardShell({
   leftPanel,
+  leftFeedPanel,
   leftPanelBottom,
   centerPanel,
   rightPanel,
@@ -181,7 +184,10 @@ export function DashboardShell({
   const catalog = useDashboardStore((s) => s.catalog);
   const clearSelectedFolder = useDashboardStore((s) => s.clearSelectedFolder);
   const setViewMode = useDashboardStore((s) => s.setViewMode);
+  const leftNavigationMode = useDashboardStore((s) => s.leftNavigationMode);
+  const setLeftNavigationMode = useDashboardStore((s) => s.setLeftNavigationMode);
   const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(() => readDashboardLeftSidebarCollapsed());
+  const hasLeftFeedPanel = leftFeedPanel != null;
 
   const toggleLeftSidebarCollapsed = useCallback(() => {
     setIsLeftSidebarCollapsed((previous) => {
@@ -199,12 +205,14 @@ export function DashboardShell({
     }
   }, [activeTab]);
 
-  // PC 전환 시 피드 탭으로 초기화
+  // PC 전환 시 모바일 탭 상태만 피드로 유지하고, 가운데 표면은 폴더 작업 표면으로 정규화한다.
   useEffect(() => {
     if (!isMobile) {
-      setActiveTab("feed");
+      const state = useDashboardStore.getState();
+      if (state.activeTab !== "feed") setActiveTab("feed");
+      if (hasLeftFeedPanel && state.viewMode === "feed") setViewMode("folder");
     }
-  }, [isMobile, setActiveTab]);
+  }, [hasLeftFeedPanel, isMobile, setActiveTab, setViewMode]);
 
   useEffect(() => {
     if (isMobile) return;
@@ -243,6 +251,44 @@ export function DashboardShell({
   }, [setActiveTab, clearSelectedFolder, setViewMode]);
 
   const centerPercent = Math.max(MIN_CENTER, 100 - (hideLeftPanel ? 0 : leftPercent) - rightPercent);
+  const showLeftNavigationToggle = hasLeftFeedPanel;
+  const selectedLeftPanel =
+    showLeftNavigationToggle && leftNavigationMode === "feed" ? leftFeedPanel : leftPanel;
+  const leftNavigationPanel = showLeftNavigationToggle ? (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-center gap-1 border-b border-border p-1">
+        <Button
+          type="button"
+          variant={leftNavigationMode === "folders" ? "secondary" : "ghost"}
+          size="sm"
+          className="h-7 min-w-0 flex-1 gap-1.5 px-2 text-xs"
+          data-testid="left-navigation-folders"
+          aria-pressed={leftNavigationMode === "folders"}
+          onClick={() => setLeftNavigationMode("folders")}
+        >
+          <FolderTree className="h-3.5 w-3.5" />
+          <span className="truncate">Folders</span>
+        </Button>
+        <Button
+          type="button"
+          variant={leftNavigationMode === "feed" ? "secondary" : "ghost"}
+          size="sm"
+          className="h-7 min-w-0 flex-1 gap-1.5 px-2 text-xs"
+          data-testid="left-navigation-feed"
+          aria-pressed={leftNavigationMode === "feed"}
+          onClick={() => setLeftNavigationMode("feed")}
+        >
+          <Newspaper className="h-3.5 w-3.5" />
+          <span className="truncate">Feed</span>
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        {selectedLeftPanel}
+      </div>
+    </div>
+  ) : (
+    leftPanel
+  );
 
   // leftPanel에 하단 영역이 있을 때 드래그 가능한 상하 분할 (VerticalSplitPane 재사용)
   // leftBottomRatio(0~10) → defaultTopPercent(0~100): leftBottomRatio=3 → top=70%
@@ -251,7 +297,7 @@ export function DashboardShell({
     leftBottomRatio > 0 && leftPanelBottom ? (
       <VerticalSplitPane
         className="h-full"
-        top={leftPanel}
+        top={leftNavigationPanel}
         bottom={leftPanelBottom}
         defaultTopPercent={(10 - leftBottomRatio) * 10}
         minTopPx={120}
@@ -259,7 +305,7 @@ export function DashboardShell({
         storageKey={leftSplitStorageKey}
       />
     ) : (
-      leftPanel
+      leftNavigationPanel
     );
 
   return (

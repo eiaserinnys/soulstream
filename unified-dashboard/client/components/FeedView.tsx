@@ -14,11 +14,12 @@ import { renameSessionOptimistic } from "client/lib/rename-session";
 
 interface FeedViewWrapperProps {
   onNewSession?: () => void;
+  placement?: "main" | "sidebar";
   onLoadMore?: () => Promise<unknown> | void;
   hasMore?: boolean;
 }
 
-export function FeedView({ onNewSession, onLoadMore, hasMore }: FeedViewWrapperProps = {}) {
+export function FeedView({ onNewSession, placement, onLoadMore, hasMore }: FeedViewWrapperProps = {}) {
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
@@ -45,6 +46,7 @@ export function FeedView({ onNewSession, onLoadMore, hasMore }: FeedViewWrapperP
       onMoveSessions={handleMoveSessions}
       onRenameSession={renameSessionOptimistic}
       onNewSession={onNewSession}
+      placement={placement}
       onLoadMore={onLoadMore}
       hasMore={hasMore}
     />

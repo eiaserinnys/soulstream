@@ -130,4 +130,10 @@ describe("FolderTree", () => {
     expect(container.textContent).toContain("Child A");
     expect(container.textContent).not.toContain("Grand A");
   });
+
+  it("does not render feed as a folder-tree row", () => {
+    ({ container, root } = renderFolderTree());
+
+    expect(container.textContent).not.toContain("피드");
+  });
 });

@@ -73,6 +73,7 @@ export function OrchestratorDashboardLayout() {
 
   const { features } = useAppConfig();
   const { user, logout } = useAuth();
+  const isMobile = useIsMobile();
   const dashboardAccess = user?.dashboardAccess;
   const isRestrictedAccess = isRestrictedDashboardAccess(dashboardAccess);
 
@@ -81,6 +82,12 @@ export function OrchestratorDashboardLayout() {
 
   // URL ↔ 스토어 동기화
   useUrlSync();
+
+  useEffect(() => {
+    if (!isMobile && !isRestrictedAccess && viewMode === "feed") {
+      useDashboardStore.getState().setViewMode("folder");
+    }
+  }, [isMobile, isRestrictedAccess, viewMode]);
 
   // 읽음 위치 동기화
   useReadPositionSync();
@@ -142,8 +149,6 @@ export function OrchestratorDashboardLayout() {
     return `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSession.nodeId)}`;
   }, [activeSession, isChatInputDisabled]);
 
-  const isMobile = useIsMobile();
-
   // 세션 이동 후 빈 자리 보충
   const handleMoveSessions = useCallback(
     async (sessionIds: string[], targetFolderId: string | null) => {
@@ -190,18 +195,22 @@ export function OrchestratorDashboardLayout() {
           folderCounts={folderCounts}
         />
       }
+      leftFeedPanel={
+        isRestrictedAccess ? undefined : (
+          <FeedView
+            placement="sidebar"
+            onNewSession={() => openNewSessionModal("feed")}
+            onLoadMore={loadMore}
+            hasMore={hasMore}
+          />
+        )
+      }
       leftPanelBottom={features.nodePanel && !isMobile && !isRestrictedAccess ? <NodePanel /> : undefined}
       leftBottomRatio={features.nodePanel && !isMobile && !isRestrictedAccess ? 3 : undefined}
       leftSplitStorageKey="soulstream:orchestrator-dashboard:left-split-top-percent:v1"
       centerPanel={
         isRestrictedAccess ? (
           restrictedFolderView
-        ) : viewMode === "feed" ? (
-          <FeedView
-            onNewSession={() => openNewSessionModal("feed")}
-            onLoadMore={loadMore}
-            hasMore={hasMore}
-          />
         ) : viewMode === "tasks" ? (
           <TaskTreeView
             sessions={sessions}

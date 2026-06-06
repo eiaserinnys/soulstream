@@ -20,6 +20,7 @@ export type UISlice = Pick<
   | "activeBoardDocumentId"
   | "dashboardConfig"
   | "activeTab"
+  | "leftNavigationMode"
 > &
   Pick<
     DashboardActions,
@@ -33,6 +34,7 @@ export type UISlice = Pick<
     | "selectFeed"
     | "setFeedScrollOffset"
     | "setActiveTab"
+    | "setLeftNavigationMode"
   >;
 
 export const createUISlice: StateCreator<
@@ -52,6 +54,7 @@ export const createUISlice: StateCreator<
   activeBoardDocumentId: null,
   dashboardConfig: null,
   activeTab: "feed",
+  leftNavigationMode: "folders",
 
   setSessionTypeFilter: (sessionTypeFilter) => set({ sessionTypeFilter }),
 
@@ -82,4 +85,6 @@ export const createUISlice: StateCreator<
   setFeedScrollOffset: (offset) => set({ feedScrollOffset: offset }),
 
   setActiveTab: (activeTab) => set({ activeTab }),
+
+  setLeftNavigationMode: (leftNavigationMode) => set({ leftNavigationMode }),
 });

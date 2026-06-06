@@ -78,6 +78,10 @@ export type FolderSortMode =
 
 export type MobileTab = "feed" | "folder" | "tasks" | "chat" | "settings";
 
+// === Desktop Left Navigation ===
+
+export type LeftNavigationMode = "folders" | "feed";
+
 // === ProcessEventsResult ===
 
 /** processEvents 반환 타입: SSE 이벤트 배치 처리 결과 */
@@ -198,6 +202,9 @@ export interface DashboardState {
 
   /** 모바일 활성 탭 */
   activeTab: MobileTab;
+
+  /** 데스크톱 좌측 탐색 패널 모드 */
+  leftNavigationMode: LeftNavigationMode;
 
   /** 오른쪽 Chat 슬롯에 표시 중인 보드 마크다운 문서 */
   activeBoardDocumentId: string | null;
@@ -339,6 +346,9 @@ export interface DashboardActions {
 
   // 모바일 탭 전환
   setActiveTab: (tab: MobileTab) => void;
+
+  // 데스크톱 좌측 탐색 패널 전환
+  setLeftNavigationMode: (mode: LeftNavigationMode) => void;
 
   // 활성 세션 해제 (selectedFolderId를 유지하면서 세션만 해제)
   clearActiveSession: () => void;
