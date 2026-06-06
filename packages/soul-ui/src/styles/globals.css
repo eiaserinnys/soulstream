@@ -228,11 +228,11 @@
 /* Feed card: running state (Style E: Breathing + Shimmer + Border Glow) */
 @keyframes card-running-breathe {
   0%, 100% {
-    background-color: color-mix(in srgb, var(--color-success) 0%, transparent);
+    background-color: color-mix(in srgb, var(--card) 100%, var(--color-success) 0%);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success) 12%, transparent);
   }
   50% {
-    background-color: color-mix(in srgb, var(--color-success) 7%, transparent);
+    background-color: color-mix(in srgb, var(--card) 93%, var(--color-success) 7%);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success) 50%, transparent),
                 0 0 14px color-mix(in srgb, var(--color-success) 14%, transparent);
   }
@@ -241,11 +241,11 @@
 @keyframes card-running-breathe-tint {
   /* running + unread/active 기반 variant: 4% tint를 베이스로 숨쉬기 */
   0%, 100% {
-    background-color: color-mix(in srgb, var(--color-success) 4%, transparent);
+    background-color: color-mix(in srgb, var(--card) 96%, var(--color-success) 4%);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success) 12%, transparent);
   }
   50% {
-    background-color: color-mix(in srgb, var(--color-success) 7%, transparent);
+    background-color: color-mix(in srgb, var(--card) 93%, var(--color-success) 7%);
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-success) 50%, transparent),
                 0 0 14px color-mix(in srgb, var(--color-success) 14%, transparent);
   }
@@ -254,12 +254,12 @@
 @keyframes card-running-breathe-active {
   /* running + isActive: ring 고정(숨쉬기 없음), glow만 맥동 */
   0%, 100% {
-    background-color: color-mix(in srgb, var(--color-success) 4%, transparent);
+    background-color: color-mix(in srgb, var(--card) 96%, var(--color-success) 4%);
     box-shadow: 0 0 0 1.5px var(--color-success),
                 0 0 0px transparent;
   }
   50% {
-    background-color: color-mix(in srgb, var(--color-success) 7%, transparent);
+    background-color: color-mix(in srgb, var(--card) 93%, var(--color-success) 7%);
     box-shadow: 0 0 0 1.5px var(--color-success),
                 0 0 14px color-mix(in srgb, var(--color-success) 14%, transparent);
   }

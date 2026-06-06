@@ -154,7 +154,7 @@ describe("FeedView sidebar placement", () => {
           createElement(
             DndContext,
             null,
-            createElement(FeedView, {
+            createElement(SidebarFeedView, {
               placement: "sidebar",
               sessions: [makeSession("in-folder"), makeSession("orphan")],
             }),

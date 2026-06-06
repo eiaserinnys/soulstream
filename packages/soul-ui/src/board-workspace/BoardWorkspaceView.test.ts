@@ -427,6 +427,7 @@ describe("BoardWorkspaceView", () => {
     expect(tileClasses).toContain("border-transparent");
     expect(sessionTile?.className).not.toContain("animate-pulse");
     expect(sessionTile?.className).not.toContain("animate-[pulse_");
+    expect(getComputedStyle(sessionTile!).opacity || "1").toBe("1");
     expect(container.querySelector('[data-testid="board-session-status-dot"]')).toBeNull();
     expect(title?.className.split(/\s+/)).not.toContain("pr-4");
   });
