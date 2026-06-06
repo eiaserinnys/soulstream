@@ -88,7 +88,7 @@ export class BoardYjsService {
   async updateMarkdownDocument(
     folderId: string,
     documentId: string,
-    fields: { title?: string; body?: string },
+    fields: { title?: string; body?: string; expectedVersion: number },
   ): Promise<MarkdownDocumentRow | null> {
     return await this.withDirectConnection(folderId, (doc) =>
       updateMarkdownYjsDocument(doc, documentId, fields)

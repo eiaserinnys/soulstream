@@ -8,9 +8,12 @@ CatalogService를 경유하여 비즈니스 로직 중복을 제거한다.
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from soul_server.service.catalog_service import CatalogService
+from soul_server.service.catalog_service import (
+    CatalogService,
+    MarkdownDocumentVersionConflictError,
+)
 
 
 class FolderCreate(BaseModel):
@@ -58,6 +61,7 @@ class MarkdownDocumentCreate(BaseModel):
 class MarkdownDocumentUpdate(BaseModel):
     title: Optional[str] = None
     body: Optional[str] = None
+    expected_version: int = Field(..., alias="expectedVersion")
 
 
 def _field_supplied(model: BaseModel, field_name: str) -> bool:
@@ -98,13 +102,19 @@ def create_catalog_router(catalog_service: CatalogService) -> APIRouter:
 
     @router.put("/markdown-documents/{document_id}")
     async def update_markdown_document(document_id: str, body: MarkdownDocumentUpdate):
-        if not _field_supplied(body, "title") and not _field_supplied(body, "body"):
+        has_title = _field_supplied(body, "title") and body.title is not None
+        has_body = _field_supplied(body, "body") and body.body is not None
+        if not has_title and not has_body:
             raise HTTPException(status_code=400, detail="No fields to update")
-        document = await catalog_service.update_markdown_document(
-            document_id,
-            title=body.title if _field_supplied(body, "title") else None,
-            body=body.body if _field_supplied(body, "body") else None,
-        )
+        try:
+            document = await catalog_service.update_markdown_document(
+                document_id,
+                title=body.title if has_title else None,
+                body=body.body if has_body else None,
+                expected_version=body.expected_version,
+            )
+        except MarkdownDocumentVersionConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         if document is None:
             raise HTTPException(status_code=404, detail="Document not found")
         return document

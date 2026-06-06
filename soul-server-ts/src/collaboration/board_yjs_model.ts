@@ -5,6 +5,10 @@ import type {
   CatalogBoardItemRow,
   MarkdownDocumentRow,
 } from "../db/session_db.js";
+import {
+  MarkdownDocumentVersionConflictError,
+  normalizeMarkdownVersion,
+} from "../db/markdown_document_version.js";
 
 export const BOARD_YJS_PREFIX = "board-folder:";
 export const BOARD_ITEMS_MAP = "boardItems";
@@ -46,16 +50,24 @@ export function createBoardYDocSnapshot(params: {
   const doc = new Y.Doc();
   const boardItems = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
   const markdownBodies = doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP);
+  const markdownById = new Map(params.markdownDocuments.map((markdown) => [markdown.id, markdown]));
 
   doc.transact(() => {
     for (const item of params.boardItems) {
       if (item.folderId !== params.folderId) continue;
+      const metadata = item.metadata ?? {};
+      const markdown = item.itemType === "markdown" ? markdownById.get(item.itemId) : undefined;
       boardItems.set(item.id, {
         item_type: item.itemType,
         item_id: item.itemId,
         x: item.x,
         y: item.y,
-        metadata: item.metadata ?? {},
+        metadata: markdown
+          ? {
+              ...metadata,
+              version: normalizeMarkdownVersion(metadata.version ?? markdown.version),
+            }
+          : metadata,
         ...(item.createdAt ? { created_at: item.createdAt } : {}),
         ...(item.updatedAt ? { updated_at: item.updatedAt } : {}),
       });
@@ -98,6 +110,7 @@ export function readBoardYDocReplica(folderId: string, doc: Y.Doc): BoardYjsRepl
         id: value.item_id,
         title,
         body,
+        version: normalizeMarkdownVersion(metadata.version),
       });
     }
   }
@@ -170,11 +183,12 @@ export function createMarkdownYjsDocument(
     metadata: {
       title,
       preview: getMarkdownPreview(body),
+      version: 1,
     },
   };
   upsertBoardYjsItem(doc, boardItem);
   return {
-    document: { id: input.documentId, title, body },
+    document: { id: input.documentId, title, body, version: 1 },
     boardItem,
   };
 }
@@ -182,7 +196,7 @@ export function createMarkdownYjsDocument(
 export function updateMarkdownYjsDocument(
   doc: Y.Doc,
   documentId: string,
-  fields: { title?: string; body?: string },
+  fields: { title?: string; body?: string; expectedVersion: number },
 ): MarkdownDocumentRow | null {
   const boardItems = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
   const boardItemId = `markdown:${documentId}`;
@@ -195,6 +209,14 @@ export function updateMarkdownYjsDocument(
   const currentTitle = typeof currentMetadata.title === "string"
     ? currentMetadata.title
     : "Untitled document";
+  const currentVersion = normalizeMarkdownVersion(currentMetadata.version);
+  if (currentVersion !== fields.expectedVersion) {
+    throw new MarkdownDocumentVersionConflictError(
+      documentId,
+      fields.expectedVersion,
+      currentVersion,
+    );
+  }
   const title = fields.title !== undefined
     ? normalizeMarkdownTitle(fields.title)
     : currentTitle;
@@ -211,6 +233,7 @@ export function updateMarkdownYjsDocument(
       ...currentMetadata,
       title,
       preview: getMarkdownPreview(body),
+      version: currentVersion + 1,
     },
     updated_at: new Date().toISOString(),
   });
@@ -219,6 +242,7 @@ export function updateMarkdownYjsDocument(
     id: documentId,
     title,
     body,
+    version: currentVersion + 1,
   };
 }
 

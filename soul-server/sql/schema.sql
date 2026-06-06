@@ -117,9 +117,13 @@ CREATE TABLE IF NOT EXISTS markdown_documents (
     id          TEXT PRIMARY KEY,
     title       TEXT NOT NULL,
     body        TEXT NOT NULL DEFAULT '',
+    version     INTEGER NOT NULL DEFAULT 1,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE markdown_documents
+    ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
 
 CREATE TABLE IF NOT EXISTS file_assets (
     id                   TEXT PRIMARY KEY,
@@ -1413,7 +1417,8 @@ RETURNS TABLE(
             WHEN bi.item_type = 'markdown' THEN
                 bi.metadata || jsonb_build_object(
                     'title', md.title,
-                    'preview', LEFT(regexp_replace(md.body, '[[:space:]]+', ' ', 'g'), 180)
+                    'preview', LEFT(regexp_replace(md.body, '[[:space:]]+', ' ', 'g'), 180),
+                    'version', md.version
                 )
             WHEN bi.item_type = 'asset' THEN
                 bi.metadata || jsonb_build_object(
@@ -1463,6 +1468,7 @@ SELECT
                 'id', md.id,
                 'title', md.title,
                 'body', md.body,
+                'version', md.version,
                 'createdAt', md.created_at,
                 'updatedAt', md.updated_at
             )

@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 
+from soul_common.catalog.catalog_service import MarkdownDocumentVersionConflictError
 from soul_common.db.sqlite_session_db import SqliteSessionDB
 
 _SCHEMA_PATH = (
@@ -542,9 +543,11 @@ class TestCatalog:
         )
 
         assert result["document"]["body"] == "First line\n\nSecond line"
+        assert result["document"]["version"] == 1
         assert result["boardItem"]["metadata"] == {
             "title": "Note",
             "preview": "First line Second line",
+            "version": 1,
         }
 
         catalog = await db.get_catalog()
@@ -552,11 +555,21 @@ class TestCatalog:
         assert markdown_item["metadata"] == {
             "title": "Note",
             "preview": "First line Second line",
+            "version": 1,
         }
 
-        updated = await db.update_markdown_document("doc-1", title="New", body="Changed")
+        updated = await db.update_markdown_document("doc-1", title="New", body="Changed", expected_version=1)
         assert updated["title"] == "New"
         assert updated["body"] == "Changed"
+        assert updated["version"] == 2
+
+        with pytest.raises(MarkdownDocumentVersionConflictError):
+            await db.update_markdown_document("doc-1", body="Stale", expected_version=1)
+
+        preserved = await db.get_markdown_document("doc-1")
+        assert preserved["title"] == "New"
+        assert preserved["body"] == "Changed"
+        assert preserved["version"] == 2
 
         await db.delete_markdown_document("doc-1")
         assert await db.get_markdown_document("doc-1") is None

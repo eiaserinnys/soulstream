@@ -153,11 +153,12 @@ export function createMarkdownYjsDocument(
     metadata: {
       title,
       preview: getMarkdownPreview(body),
+      version: 1,
     },
   };
   upsertBoardYjsItem(doc, boardItem);
   return {
-    document: { id: documentId, title, body },
+    document: { id: documentId, title, body, version: 1 },
     boardItem,
   };
 }
@@ -182,6 +183,7 @@ export function updateMarkdownYjsTitle(doc: Y.Doc, documentId: string, title: st
     metadata: {
       ...(current.metadata ?? {}),
       title: title.trim() || "Untitled document",
+      version: nextMarkdownVersion(current.metadata),
     },
     updated_at: new Date().toISOString(),
   });
@@ -200,6 +202,7 @@ export function updateMarkdownYjsBody(doc: Y.Doc, documentId: string, body: stri
     metadata: {
       ...(current.metadata ?? {}),
       preview: getMarkdownPreview(body),
+      version: nextMarkdownVersion(current.metadata),
     },
     updated_at: new Date().toISOString(),
   });
@@ -470,6 +473,18 @@ function toYjsItemValue(item: CatalogBoardItem): BoardYjsItemValue {
     ...(item.createdAt ? { created_at: item.createdAt } : {}),
     ...(item.updatedAt ? { updated_at: item.updatedAt } : {}),
   };
+}
+
+function nextMarkdownVersion(metadata: Record<string, unknown> | undefined): number {
+  const value = metadata?.version;
+  if (typeof value === "number" && Number.isFinite(value) && value >= 1) {
+    return Math.trunc(value) + 1;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed) && parsed >= 1) return Math.trunc(parsed) + 1;
+  }
+  return 2;
 }
 
 function sanitizeBoardItemMetadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> {

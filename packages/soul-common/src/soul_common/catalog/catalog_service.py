@@ -15,6 +15,7 @@ from soul_common.catalog.board_asset_storage import (
     CompletedUploadPart,
 )
 from soul_common.db.session_db import PostgresSessionDB
+from soul_common.markdown_document_errors import MarkdownDocumentVersionConflictError
 
 _UNSET = object()
 BOARD_GRID_SIZE = 20
@@ -418,11 +419,16 @@ class CatalogService:
         document_id: str,
         title: Optional[str] = None,
         body: Optional[str] = None,
+        *,
+        expected_version: int,
     ) -> Optional[dict]:
+        if title is None and body is None:
+            return await self.get_markdown_document(document_id)
         document = await self._db.update_markdown_document(
             document_id,
             title=title,
             body=body,
+            expected_version=expected_version,
         )
         await self._broadcast_catalog()
         return document

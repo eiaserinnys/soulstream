@@ -296,6 +296,8 @@ class FolderProtocol(Protocol):
         document_id: str,
         title: Optional[str] = None,
         body: Optional[str] = None,
+        *,
+        expected_version: int,
     ) -> Optional[dict]: ...
 
     async def delete_markdown_document(self, document_id: str) -> None: ...
@@ -656,6 +658,8 @@ class SessionDBBase(ABC):
         document_id: str,
         title: Optional[str] = None,
         body: Optional[str] = None,
+        *,
+        expected_version: int,
     ) -> Optional[dict]: ...
 
     @abstractmethod

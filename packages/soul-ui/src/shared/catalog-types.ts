@@ -63,6 +63,7 @@ export interface MarkdownDocument {
   id: string;
   title: string;
   body: string;
+  version: number;
   createdAt?: string;
   updatedAt?: string;
 }

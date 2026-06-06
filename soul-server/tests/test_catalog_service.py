@@ -9,6 +9,7 @@ from soul_server.service.catalog_service import (
     CatalogService,
     init_catalog_service,
     get_catalog_service,
+    MarkdownDocumentVersionConflictError,
 )
 
 
@@ -30,7 +31,7 @@ def mock_db():
     db.get_board_items = AsyncMock(return_value=[])
     db.update_board_item_position = AsyncMock()
     db.create_markdown_document = AsyncMock(return_value={
-        "document": {"id": "doc-1", "title": "Note", "body": "Body"},
+        "document": {"id": "doc-1", "title": "Note", "body": "Body", "version": 1},
         "boardItem": {
             "id": "markdown:doc-1",
             "folderId": "f1",
@@ -38,7 +39,7 @@ def mock_db():
             "itemId": "doc-1",
             "x": 40.0,
             "y": 120.0,
-            "metadata": {"title": "Note", "preview": "Body"},
+            "metadata": {"title": "Note", "preview": "Body", "version": 1},
         },
     })
     db.get_markdown_document = AsyncMock(return_value=None)
@@ -264,21 +265,39 @@ class TestMarkdownDocuments:
         assert args[4:] == (320.0, 0.0)
 
     async def test_get_markdown_document_delegates_to_db(self, catalog_service, mock_db):
-        mock_db.get_markdown_document.return_value = {"id": "doc-1", "title": "Note", "body": ""}
+        mock_db.get_markdown_document.return_value = {"id": "doc-1", "title": "Note", "body": "", "version": 1}
 
         result = await catalog_service.get_markdown_document("doc-1")
 
-        assert result == {"id": "doc-1", "title": "Note", "body": ""}
+        assert result == {"id": "doc-1", "title": "Note", "body": "", "version": 1}
         mock_db.get_markdown_document.assert_awaited_once_with("doc-1")
 
     async def test_update_markdown_document_broadcasts(self, catalog_service, mock_db, mock_broadcaster):
-        mock_db.update_markdown_document.return_value = {"id": "doc-1", "title": "New", "body": "Body"}
+        mock_db.update_markdown_document.return_value = {"id": "doc-1", "title": "New", "body": "Body", "version": 2}
 
-        result = await catalog_service.update_markdown_document("doc-1", title="New")
+        result = await catalog_service.update_markdown_document("doc-1", title="New", expected_version=1)
 
         assert result["title"] == "New"
-        mock_db.update_markdown_document.assert_awaited_once_with("doc-1", title="New", body=None)
+        assert result["version"] == 2
+        mock_db.update_markdown_document.assert_awaited_once_with(
+            "doc-1",
+            title="New",
+            body=None,
+            expected_version=1,
+        )
         mock_broadcaster.broadcast.assert_awaited()
+
+    async def test_update_markdown_document_conflict_does_not_broadcast(self, catalog_service, mock_db, mock_broadcaster):
+        mock_db.update_markdown_document.side_effect = MarkdownDocumentVersionConflictError(
+            "doc-1",
+            expected_version=1,
+            actual_version=2,
+        )
+
+        with pytest.raises(MarkdownDocumentVersionConflictError):
+            await catalog_service.update_markdown_document("doc-1", body="stale", expected_version=1)
+
+        mock_broadcaster.broadcast.assert_not_awaited()
 
     async def test_delete_markdown_document_broadcasts(self, catalog_service, mock_db, mock_broadcaster):
         await catalog_service.delete_markdown_document("doc-1")

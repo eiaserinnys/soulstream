@@ -12,7 +12,14 @@ import {
 import { Button } from "./ui/button";
 import { MarkdownContent } from "./MarkdownContent";
 
-type SaveStatus = "idle" | "dirty" | "saving" | "saved";
+type SaveStatus = "idle" | "dirty" | "saving" | "saved" | "conflict";
+
+class MarkdownDocumentConflictError extends Error {
+  constructor() {
+    super("Markdown document changed elsewhere. Reload and retry.");
+    this.name = "MarkdownDocumentConflictError";
+  }
+}
 
 const MarkdownCodeMirrorEditor = lazy(async () => {
   const module = await import("./MarkdownCodeMirrorEditor");
@@ -29,12 +36,14 @@ async function saveMarkdownDocument(
   documentId: string,
   title: string,
   body: string,
+  expectedVersion: number,
 ): Promise<MarkdownDocument> {
   const res = await fetch(`/api/markdown-documents/${encodeURIComponent(documentId)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, body }),
+    body: JSON.stringify({ title, body, expectedVersion }),
   });
+  if (res.status === 409) throw new MarkdownDocumentConflictError();
   if (!res.ok) throw new Error(`Save markdown document failed: ${res.status}`);
   return await res.json() as MarkdownDocument;
 }
@@ -55,6 +64,7 @@ export function MarkdownDocumentPanel() {
   const [body, setBody] = useState("");
   const [savedTitle, setSavedTitle] = useState("");
   const [savedBody, setSavedBody] = useState("");
+  const [savedVersion, setSavedVersion] = useState(1);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editBodySnapshotRef = useRef("");
@@ -71,12 +81,14 @@ export function MarkdownDocumentPanel() {
     const item = runtime.getBoardItems().find((candidate) => candidate.id === `markdown:${documentId}`);
     const nextTitle = getMetadataText(item?.metadata, "title") || "Untitled document";
     const nextBody = runtime.getMarkdownText(documentId).toString();
-    const nextDocument = { id: documentId, title: nextTitle, body: nextBody };
+    const nextVersion = getMetadataNumber(item?.metadata, "version") ?? 1;
+    const nextDocument = { id: documentId, title: nextTitle, body: nextBody, version: nextVersion };
     setDocument(nextDocument);
     setTitle(nextTitle);
     setBody(nextBody);
     setSavedTitle(nextTitle);
     setSavedBody(nextBody);
+    setSavedVersion(nextVersion);
     setSaveStatus("saved");
   }, [documentId, runtime]);
 
@@ -100,18 +112,23 @@ export function MarkdownDocumentPanel() {
     }
     setSaveStatus("saving");
     try {
-      const updated = await saveMarkdownDocument(documentId, currentTitle, body);
+      const updated = await saveMarkdownDocument(documentId, currentTitle, body, savedVersion);
       setDocument(updated);
       setTitle(updated.title);
       setBody(updated.body);
       setSavedTitle(updated.title);
       setSavedBody(updated.body);
+      setSavedVersion(updated.version);
       setSaveStatus("saved");
     } catch (err) {
-      setSaveStatus("dirty");
-      console.error("Markdown document save failed:", err);
+      if (err instanceof MarkdownDocumentConflictError) {
+        setSaveStatus("conflict");
+      } else {
+        setSaveStatus("dirty");
+        console.error("Markdown document save failed:", err);
+      }
     }
-  }, [body, clearSaveTimer, documentId, runtime, savedBody, savedTitle, title, yText]);
+  }, [body, clearSaveTimer, documentId, runtime, savedBody, savedTitle, savedVersion, title, yText]);
 
   useEffect(() => {
     clearSaveTimer();
@@ -134,6 +151,7 @@ export function MarkdownDocumentPanel() {
         setBody(next.body);
         setSavedTitle(next.title);
         setSavedBody(next.body);
+        setSavedVersion(next.version);
         setSaveStatus("saved");
       })
       .catch(() => {
@@ -254,7 +272,13 @@ export function MarkdownDocumentPanel() {
           aria-label="Document title"
         />
         <span data-testid="markdown-save-status" className="shrink-0 text-xs text-muted-foreground">
-          {saveStatus === "saving" ? "저장 중..." : saveStatus === "saved" ? (runtime ? "동기화됨" : "저장됨") : ""}
+          {saveStatus === "saving"
+            ? "저장 중..."
+            : saveStatus === "conflict"
+              ? "충돌: 새로고침 필요"
+              : saveStatus === "saved"
+                ? (runtime ? "동기화됨" : "저장됨")
+                : ""}
         </span>
         <Button variant="ghost" size="icon" onClick={remove} title="Delete document">
           <Trash2 className="h-4 w-4" />
@@ -306,6 +330,16 @@ function getMetadataText(metadata: Record<string, unknown> | undefined, key: str
   return typeof value === "string" ? value : "";
 }
 
+function getMetadataNumber(metadata: Record<string, unknown> | undefined, key: string): number | undefined {
+  const value = metadata?.[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
 function refreshRuntimeMarkdownPreview(runtime: BoardYjsRuntime, documentId: string, body: string) {
   const boardItemId = `markdown:${documentId}`;
   const item = runtime.getBoardItems().find((candidate) => candidate.id === boardItemId);
@@ -315,6 +349,7 @@ function refreshRuntimeMarkdownPreview(runtime: BoardYjsRuntime, documentId: str
     metadata: {
       ...(item.metadata ?? {}),
       preview: getMarkdownPreview(body),
+      version: (getMetadataNumber(item.metadata, "version") ?? 1) + 1,
     },
     updatedAt: new Date().toISOString(),
   });

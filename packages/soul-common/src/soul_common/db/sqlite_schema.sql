@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS markdown_documents (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     body TEXT NOT NULL DEFAULT '',
+    version INTEGER NOT NULL DEFAULT 1,
     created_at TEXT,
     updated_at TEXT
 );

@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createBoardYDocSnapshot } from "../../src/collaboration/board_yjs_model.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
+import { MarkdownDocumentVersionConflictError } from "../../src/db/markdown_document_version.js";
 
 interface MockCall {
   fragments: string[];
@@ -271,7 +272,7 @@ describe("SessionDB board Yjs persistence", () => {
         ];
       }
       if (query.includes("FROM markdown_documents")) {
-        return [{ id: "d1", title: "Note", body: "Body", created_at: null, updated_at: null }];
+        return [{ id: "d1", title: "Note", body: "Body", version: 1, created_at: null, updated_at: null }];
       }
       return [];
     });
@@ -281,7 +282,7 @@ describe("SessionDB board Yjs persistence", () => {
 
     expect(seed.boardItems).toHaveLength(1);
     expect(seed.boardItems[0].id).toBe("markdown:d1");
-    expect(seed.markdownDocuments).toEqual([{ id: "d1", title: "Note", body: "Body" }]);
+    expect(seed.markdownDocuments).toEqual([{ id: "d1", title: "Note", body: "Body", version: 1 }]);
   });
 
   it("replica sync는 폴더 내 누락 item 삭제 후 board_items와 markdown_documents를 upsert", async () => {
@@ -298,7 +299,7 @@ describe("SessionDB board Yjs persistence", () => {
         y: 160,
         metadata: { title: "Note" },
       }],
-      markdownDocuments: [{ id: "d1", title: "Note", body: "Body" }],
+      markdownDocuments: [{ id: "d1", title: "Note", body: "Body", version: 3 }],
     });
 
     expect(calls[0].fragments.join("?")).toContain("DELETE FROM board_items");
@@ -311,7 +312,7 @@ describe("SessionDB board Yjs persistence", () => {
       expect.objectContaining({ id: "markdown:d1", x: 280, y: 160 }),
     ]);
     expect(calls[3].values[2]).toEqual([
-      expect.objectContaining({ id: "d1", title: "Note", body: "Body" }),
+      expect.objectContaining({ id: "d1", title: "Note", body: "Body", version: 3 }),
     ]);
     expect(typeof calls[3].values[1]).not.toBe("string");
     expect(typeof calls[3].values[2]).not.toBe("string");
@@ -331,7 +332,7 @@ describe("SessionDB board Yjs persistence", () => {
         y: 160,
         metadata: { title: "Note" },
       }],
-      markdownDocuments: [{ id: "d1", title: "Note", body: "Body" }],
+      markdownDocuments: [{ id: "d1", title: "Note", body: "Body", version: 3 }],
     });
 
     expect(begin).toHaveBeenCalledTimes(1);
@@ -346,6 +347,63 @@ describe("SessionDB board Yjs persistence", () => {
     });
     expect(mutationCalls).toHaveLength(4);
     expect(mutationCalls.every((call) => call.inTransaction)).toBe(true);
+  });
+
+  it("markdown update는 matching version에서만 성공하고 version을 증가시킨다", async () => {
+    const { sql, calls } = createMockSql((call) => {
+      const query = call.fragments.join("?");
+      if (query.includes("UPDATE markdown_documents")) {
+        return [{
+          id: "doc-1",
+          title: "New",
+          body: "Body",
+          version: 2,
+          created_at: null,
+          updated_at: null,
+        }];
+      }
+      return [];
+    });
+    const db = new SessionDB(sql);
+
+    const updated = await db.updateMarkdownDocument("doc-1", {
+      title: "New",
+      expectedVersion: 1,
+    });
+
+    expect(updated).toEqual({ id: "doc-1", title: "New", body: "Body", version: 2 });
+    const updateCall = calls.find((call) =>
+      call.fragments.join("?").includes("UPDATE markdown_documents")
+    );
+    expect(updateCall?.fragments.join("?")).toContain("version = version + 1");
+    expect(updateCall?.fragments.join("?")).toContain("AND version =");
+    expect(updateCall?.values).toContain(1);
+  });
+
+  it("markdown stale update는 기존 document가 있으면 conflict로 거부한다", async () => {
+    const { sql } = createMockSql((call) => {
+      const query = call.fragments.join("?");
+      if (query.includes("UPDATE markdown_documents")) return [];
+      if (query.includes("SELECT * FROM markdown_documents")) {
+        return [{
+          id: "doc-1",
+          title: "Old",
+          body: "Original",
+          version: 2,
+          created_at: null,
+          updated_at: null,
+        }];
+      }
+      return [];
+    });
+    const db = new SessionDB(sql);
+
+    await expect(
+      db.updateMarkdownDocument("doc-1", {
+        body: "Stale body",
+        expectedVersion: 1,
+      }),
+    ).rejects.toBeInstanceOf(MarkdownDocumentVersionConflictError);
   });
 });
 

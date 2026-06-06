@@ -586,6 +586,19 @@ describe("MCP SDK client smoke", () => {
     expect(agentRegistry.get("codex-default")?.mcp_profile).toBeUndefined();
   });
 
+  it("callTool('update_markdown_document') without expected_version → validation error", async () => {
+    const result = await callToolCapturingValidation(
+      client,
+      "update_markdown_document",
+      { document_id: "doc-1", body: "Body" },
+    );
+
+    expect(JSON.stringify(result)).toContain("expected_version");
+    if (result && typeof result === "object" && "isError" in result) {
+      expect((result as { isError?: boolean }).isError).toBe(true);
+    }
+  });
+
   it("callTool('plan_agent_mcp_profile_update') → read-only semantic plan", async () => {
     const before = fs.readFileSync(configPath, "utf-8");
     const result = await client.callTool({
