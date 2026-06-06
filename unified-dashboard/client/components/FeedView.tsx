@@ -6,6 +6,7 @@
 import { useCallback } from "react";
 import {
   FeedView as SoulUIFeedView,
+  type SessionSummary,
   shouldLoadMoreAfterSessionMove,
   useDashboardStore,
 } from "@seosoyoung/soul-ui";
@@ -17,9 +18,16 @@ interface FeedViewWrapperProps {
   placement?: "main" | "sidebar";
   onLoadMore?: () => Promise<unknown> | void;
   hasMore?: boolean;
+  sessions?: SessionSummary[];
 }
 
-export function FeedView({ onNewSession, placement, onLoadMore, hasMore }: FeedViewWrapperProps = {}) {
+export function FeedView({
+  onNewSession,
+  placement,
+  onLoadMore,
+  hasMore,
+  sessions,
+}: FeedViewWrapperProps = {}) {
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
@@ -49,6 +57,7 @@ export function FeedView({ onNewSession, placement, onLoadMore, hasMore }: FeedV
       placement={placement}
       onLoadMore={onLoadMore}
       hasMore={hasMore}
+      sessions={sessions}
     />
   );
 }

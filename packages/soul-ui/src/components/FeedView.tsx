@@ -5,15 +5,17 @@
  * @tanstack/react-virtual로 가상 스크롤을 적용한다.
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import type React from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useDashboardStore } from "../stores/dashboard-store";
+import type { SessionSummary } from "../shared/types";
 import { FeedCard } from "./FeedCard";
 import { FeedTopBar } from "./FeedTopBar";
 import { SessionContextMenu } from "./SessionContextMenu";
 import { useFlipAnimation } from "../hooks/useFlipAnimation";
 import { useFeedSessions } from "../hooks/useFeedSessions";
+import { filterFeedSessions } from "../hooks/session-stream-helpers";
 import {
   runGuardedLoadMore,
   shouldLoadMoreFromVirtualItems,
@@ -32,6 +34,8 @@ export interface FeedViewProps {
   onLoadMore?: LoadMoreCallback;
   /** 추가 로드 가능 여부 */
   hasMore?: boolean;
+  /** 외부에서 고정 주입하는 피드 세션 목록. 미지정 시 기존 feed query cache를 사용한다. */
+  sessions?: SessionSummary[];
   /** 세션 이름 변경 콜백. 미지정 시 이름 변경 메뉴 비활성화 */
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   /** 세션 폴더 이동 콜백. 미지정 시 폴더 이동 메뉴 비활성화 */
@@ -43,6 +47,7 @@ export function FeedView({
   placement = "main",
   onLoadMore,
   hasMore,
+  sessions,
   onRenameSession,
   onMoveSessions,
 }: FeedViewProps = {}) {
@@ -61,7 +66,14 @@ export function FeedView({
   const isSidebarPlacement = placement === "sidebar";
 
   // useFeedSessions: Zustand sessions + catalog 구독 → filterFeedSessions로 반응형 계산
-  const feedSessions = useFeedSessions();
+  const cachedFeedSessions = useFeedSessions();
+  const feedSessions = useMemo(
+    () =>
+      sessions === undefined
+        ? cachedFeedSessions
+        : filterFeedSessions(sessions, catalog),
+    [cachedFeedSessions, catalog, sessions],
+  );
   const firstFeedId = feedSessions[0]?.agentSessionId ?? null;
 
   // 폴더명 조회 헬퍼
