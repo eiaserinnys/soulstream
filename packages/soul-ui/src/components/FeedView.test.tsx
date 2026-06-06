@@ -4,7 +4,7 @@
 
 import { DndContext } from "@dnd-kit/core";
 import { QueryClient, QueryClientProvider, type InfiniteData } from "@tanstack/react-query";
-import { createElement } from "react";
+import { createElement, type ComponentType } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionPage } from "../hooks/session-stream-helpers";
 import type { CatalogState, SessionSummary } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { FeedView } from "./FeedView";
+import { FeedView, type FeedViewProps } from "./FeedView";
 
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: ({ count, estimateSize }: { count: number; estimateSize: () => number }) => ({
@@ -59,6 +59,7 @@ const catalog: CatalogState = {
 };
 
 describe("FeedView sidebar placement", () => {
+  const SidebarFeedView = FeedView as ComponentType<FeedViewProps>;
   let container: HTMLDivElement;
   let root: Root;
   let queryClient: QueryClient;
@@ -109,7 +110,7 @@ describe("FeedView sidebar placement", () => {
         createElement(
           QueryClientProvider,
           { client: queryClient },
-          createElement(DndContext, null, createElement(FeedView, { placement: "sidebar" })),
+          createElement(DndContext, null, createElement(SidebarFeedView, { placement: "sidebar" })),
         ),
       );
     });
