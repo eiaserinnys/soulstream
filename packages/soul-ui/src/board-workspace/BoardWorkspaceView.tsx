@@ -45,6 +45,7 @@ const EMPTY_SESSIONS: SessionSummary[] = [];
 
 export function resolveEffectiveBoardCatalog(params: {
   catalog: CatalogState | null;
+  selectedFolderId: string | null;
   yjsBoardItemsForSelectedFolder: CatalogBoardItem[] | null;
   isYjsLoading: boolean;
   hasYjsSynced: boolean;
@@ -52,15 +53,17 @@ export function resolveEffectiveBoardCatalog(params: {
 }): CatalogState | null {
   const {
     catalog,
+    selectedFolderId,
     yjsBoardItemsForSelectedFolder,
     isYjsLoading,
     hasYjsSynced,
     assetSignedUrls,
   } = params;
   if (!catalog || !yjsBoardItemsForSelectedFolder || isYjsLoading || !hasYjsSynced) return catalog;
+  const otherFolderBoardItems = (catalog.boardItems ?? []).filter((item) => item.folderId !== selectedFolderId);
   return {
     ...catalog,
-    boardItems: yjsBoardItemsForSelectedFolder.map((item) => {
+    boardItems: [...otherFolderBoardItems, ...yjsBoardItemsForSelectedFolder.map((item) => {
       if (item.itemType !== "asset") return item;
       const signedUrl = assetSignedUrls[item.id];
       if (!signedUrl) return item;
@@ -71,8 +74,38 @@ export function resolveEffectiveBoardCatalog(params: {
           signedUrl,
         },
       };
-    }),
+    })],
   };
+}
+
+function boardWorkspaceItemToCatalogBoardItem(
+  item: BoardWorkspaceItem,
+  folderId: string | null,
+  x: number,
+  y: number,
+): CatalogBoardItem | null {
+  if (!folderId) return null;
+  if (item.type === "session") {
+    return {
+      id: item.boardItemId,
+      folderId,
+      itemType: "session",
+      itemId: item.session.agentSessionId,
+      x,
+      y,
+    };
+  }
+  if (item.type === "folder") {
+    return {
+      id: item.boardItemId,
+      folderId,
+      itemType: "subfolder",
+      itemId: item.folder.id,
+      x,
+      y,
+    };
+  }
+  return null;
 }
 
 function fileListFromDataTransfer(dataTransfer: DataTransfer | null): File[] {
@@ -255,11 +288,12 @@ export function BoardWorkspaceView({
     boardSync.runtime?.folderId === selectedFolderId ? boardSync.boardItems : null;
   const effectiveCatalog = useMemo(() => resolveEffectiveBoardCatalog({
     catalog,
+    selectedFolderId,
     yjsBoardItemsForSelectedFolder,
     isYjsLoading: boardSync.isLoading,
     hasYjsSynced: boardSync.hasSynced,
     assetSignedUrls,
-  }), [assetSignedUrls, boardSync.hasSynced, boardSync.isLoading, catalog, yjsBoardItemsForSelectedFolder]);
+  }), [assetSignedUrls, boardSync.hasSynced, boardSync.isLoading, catalog, selectedFolderId, yjsBoardItemsForSelectedFolder]);
   const relationIndex = useMemo(() => {
     if (!effectiveCatalog) return null;
     return buildBoardSessionRelations({
@@ -274,10 +308,6 @@ export function BoardWorkspaceView({
     }
     return selections;
   }, [boardSync.remoteSelections]);
-  const yjsUpdateBoardItemPosition = useCallback((boardItemId: string, x: number, y: number) => {
-    boardSync.runtime?.updateBoardItemPosition(boardItemId, x, y);
-    updateBoardItemPosition(boardItemId, x, y);
-  }, [boardSync.runtime, updateBoardItemPosition]);
   const breadcrumbs = useMemo(
     () => getFolderBreadcrumbs(folders, selectedFolderId),
     [folders, selectedFolderId],
@@ -296,6 +326,19 @@ export function BoardWorkspaceView({
     () => [...persistedBoardItems, ...assetPlaceholders].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)),
     [assetPlaceholders, persistedBoardItems],
   );
+  const yjsUpdateBoardItemPosition = useCallback((boardItemId: string, x: number, y: number) => {
+    const existingItem = boardItems.find((item) => item.boardItemId === boardItemId);
+    const boardItem = existingItem
+      ? boardWorkspaceItemToCatalogBoardItem(existingItem, selectedFolderId, x, y)
+      : null;
+    if (boardItem) {
+      boardSync.runtime?.upsertBoardItem(boardItem);
+      addBoardItem(boardItem);
+    } else {
+      boardSync.runtime?.updateBoardItemPosition(boardItemId, x, y);
+    }
+    updateBoardItemPosition(boardItemId, x, y);
+  }, [addBoardItem, boardItems, boardSync.runtime, selectedFolderId, updateBoardItemPosition]);
   const childStack = useBoardChildStackState({
     boardItems,
     relationIndex,

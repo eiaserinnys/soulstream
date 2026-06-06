@@ -168,6 +168,21 @@ function buildSessionPlaceholder(
   };
 }
 
+function buildAssignedSessionPlaceholder(
+  sessionId: string,
+  catalog: CatalogState,
+): SessionSummary {
+  const assignment = catalog.sessions[sessionId];
+  return {
+    agentSessionId: sessionId,
+    status: "unknown",
+    eventCount: 0,
+    sessionType: "claude",
+    displayName: assignment?.displayName ?? undefined,
+    folderId: assignment?.folderId ?? null,
+  };
+}
+
 function buildPositionedItems({
   catalog,
   selectedFolderId,
@@ -250,6 +265,45 @@ function buildPositionedItems({
         height: BOARD_ASSET_TILE_HEIGHT,
       });
     }
+  }
+
+  const existingSessionIds = new Set(
+    items.filter((item): item is SessionBoardWorkspaceItem => item.type === "session").map((item) => item.id),
+  );
+
+  const sessionCandidates = new Map<string, SessionSummary>();
+  for (const session of relations.sessions) {
+    const assignedFolderId = catalog.sessions[session.agentSessionId]?.folderId ?? session.folderId ?? null;
+    if (assignedFolderId !== selectedFolderId) continue;
+    sessionCandidates.set(session.agentSessionId, { ...session, folderId: assignedFolderId });
+  }
+  for (const [sessionId, assignment] of Object.entries(catalog.sessions)) {
+    if ((assignment.folderId ?? null) !== selectedFolderId || sessionCandidates.has(sessionId)) continue;
+    sessionCandidates.set(
+      sessionId,
+      relations.sessionById.get(sessionId) ?? buildAssignedSessionPlaceholder(sessionId, catalog),
+    );
+  }
+
+  for (const session of sessionCandidates.values()) {
+    if (
+      existingSessionIds.has(session.agentSessionId) ||
+      shouldSuppressSessionInFolder(relations, session.agentSessionId, selectedFolderId)
+    ) {
+      continue;
+    }
+    const position = findFirstOpenBoardPosition(items);
+    existingSessionIds.add(session.agentSessionId);
+    items.push({
+      type: "session",
+      id: session.agentSessionId,
+      boardItemId: `session:${session.agentSessionId}`,
+      session,
+      childStack: getSessionChildStack(relations, session.agentSessionId),
+      parentRef: getSessionParentRef(relations, session.agentSessionId) ?? undefined,
+      x: position.x,
+      y: position.y,
+    });
   }
 
   return items.sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
