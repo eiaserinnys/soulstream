@@ -135,6 +135,27 @@ describe("Task turn loop transition", () => {
     expect(task.status).toBe("completed");
   });
 
+  it("idle Claude runtime with lingering unmarked task allows normal completion", () => {
+    const task = makeTask({
+      claudeRuntime: {
+        sessionState: "idle",
+        updatedAt: Date.now(),
+        tasks: {
+          "task-bg-unmarked": {
+            taskId: "task-bg-unmarked",
+            status: "running",
+            updatedAt: Date.now(),
+          },
+        },
+      },
+    });
+
+    const decision = resolveTurnLoopTransition(task, codexAgent);
+
+    expect(decision).toEqual({ kind: "stop" });
+    expect(task.status).toBe("completed");
+  });
+
   it("idle Claude runtime with terminal tasks allows normal completion", () => {
     const task = makeTask({
       claudeRuntime: {

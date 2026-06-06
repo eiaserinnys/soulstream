@@ -51,7 +51,7 @@ import {
 import type { InterventionMessage } from "./task_models.js";
 
 const CLAUDE_RUNTIME_PENDING_AFTER_TURN_MESSAGE =
-  "Claude runtime work remained pending after the engine turn ended; ending the session so follow-up messages can resume.";
+  "Claude runtime session remained active after the engine turn ended; marking this turn failed so follow-up messages can resume.";
 
 /** AgentProfile → EnginePort 생성. backend별 분기는 factory 구현체 담당. */
 export type EngineFactory = (agent: AgentProfile) => EnginePort;
@@ -256,6 +256,8 @@ export class TaskExecutor {
         .join(", ") || "unknown"}.`,
       error_code: "claude_runtime_pending_after_turn",
       fatal: true,
+      recoverable: true,
+      recovery_hint: "Send another message to resume this session in a fresh turn.",
     } as SSEEventPayload);
   }
 

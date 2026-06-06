@@ -647,7 +647,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
   });
 
-  it("stale foreground Claude runtime task after turn emits fatal error and finalizes", async () => {
+  it("idle Claude runtime with lingering unmarked task completes without pending-after-turn fatal", async () => {
     const mocks = makeMocks();
     const engine: EnginePort = {
       backendId: "claude",
@@ -671,11 +671,72 @@ describe("TaskExecutor.startExecution", () => {
       sessionState: "idle",
       updatedAt: Date.now(),
       tasks: {
-        "stale-foreground": {
-          taskId: "stale-foreground",
+        "lingering-unmarked": {
+          taskId: "lingering-unmarked",
           status: "running",
           updatedAt: Date.now(),
-          description: "left behind by a previous turn",
+          description: "background task that did not carry an isBackgrounded flag",
+        },
+      },
+    };
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("completed");
+    expect(task.error).toBeUndefined();
+    expect(task.completedAt).toBeInstanceOf(Date);
+    expect(task.engine).toBeUndefined();
+    expect(task.claudeRuntime).toMatchObject({
+      sessionState: "idle",
+      tasks: {
+        "lingering-unmarked": {
+          status: "running",
+        },
+      },
+    });
+    const pendingAfterTurnError = mocks.persistEvent.mock.calls.find(
+      (call) =>
+        (call[1] as { error_code?: string }).error_code ===
+        "claude_runtime_pending_after_turn",
+    );
+    expect(pendingAfterTurnError).toBeUndefined();
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+      status: "completed",
+      last_event_id: 2,
+    });
+    expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
+  });
+
+  it("active Claude runtime session after turn emits recoverable fatal error and finalizes", async () => {
+    const mocks = makeMocks();
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.claudeRuntime = {
+      sessionState: "running",
+      updatedAt: Date.now(),
+      tasks: {
+        "active-runtime-task": {
+          taskId: "active-runtime-task",
+          status: "running",
+          updatedAt: Date.now(),
+          description: "runtime session still active after turn",
         },
       },
     };
@@ -684,15 +745,15 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
 
     expect(task.status).toBe("error");
-    expect(task.error).toContain("Claude runtime work remained pending after the engine turn ended");
+    expect(task.error).toContain("Claude runtime session remained active after the engine turn ended");
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.engine).toBeUndefined();
     expect(task.claudeRuntime).toMatchObject({
       sessionState: "idle",
       tasks: {
-        "stale-foreground": {
+        "active-runtime-task": {
           status: "failed",
-          error: expect.stringContaining("engine turn ended"),
+          error: expect.stringContaining("runtime session remained active"),
         },
       },
     });
@@ -702,6 +763,8 @@ describe("TaskExecutor.startExecution", () => {
     expect(errorPersist?.[1]).toMatchObject({
       type: "error",
       fatal: true,
+      recoverable: true,
+      recovery_hint: expect.stringContaining("Send another message"),
       error_code: "claude_runtime_pending_after_turn",
     });
     const errorBroadcast = mocks.emitEventEnvelope.mock.calls.find(
@@ -710,6 +773,8 @@ describe("TaskExecutor.startExecution", () => {
     expect(errorBroadcast?.[1]).toMatchObject({
       type: "error",
       fatal: true,
+      recoverable: true,
+      recovery_hint: expect.stringContaining("Send another message"),
       error_code: "claude_runtime_pending_after_turn",
       _event_id: expect.any(Number),
     });

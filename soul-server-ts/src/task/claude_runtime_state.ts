@@ -258,15 +258,16 @@ function getBlockingClaudeRuntimeWork(task: Task): {
 } | null {
   const runtime = task.claudeRuntime;
   if (!runtime) return null;
+  const sessionState = runtime.sessionState && runtime.sessionState !== "idle"
+    ? runtime.sessionState
+    : undefined;
+  if (!sessionState) return null;
+
   const foregroundTasks = Object.values(runtime.tasks).filter(
     (runtimeTask) =>
       runtimeTask.isBackgrounded !== true &&
       !TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES.has(runtimeTask.status),
   );
-  const sessionState = runtime.sessionState && runtime.sessionState !== "idle"
-    ? runtime.sessionState
-    : undefined;
-  if (!sessionState && foregroundTasks.length === 0) return null;
   return { sessionState, foregroundTasks };
 }
 
