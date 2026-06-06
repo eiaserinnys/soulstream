@@ -142,7 +142,12 @@ describe("TaskCompletionNotifier.notify", () => {
       fetchImpl,
     );
 
-    await notifier.notify(makeChild());
+    await notifier.notify(makeChild({
+      callerInfo: {
+        source: "browser",
+        email: "owner@example.com",
+      },
+    }));
 
     // local 1회 시도 (throw)
     expect(tm.addIntervention).toHaveBeenCalledTimes(1);
@@ -163,6 +168,7 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(body.caller_info).toBeDefined();
     expect(body.caller_info.source).toBe("agent");
     expect(body.caller_info.agent_node).toBe(NODE_ID);
+    expect(body.caller_info.email).toBe("owner@example.com");
     // camelCase callerInfo 키는 *박히지 않는다*
     expect(body.callerInfo).toBeUndefined();
   });

@@ -61,7 +61,15 @@ function makeRuntime(
     createTask,
     addIntervention,
     getTask: vi.fn((sessionId: string) =>
-      sessionId === "caller-sess-1" ? { profileId: "codex-default" } : undefined,
+      sessionId === "caller-sess-1"
+        ? {
+            profileId: "codex-default",
+            callerInfo: {
+              source: "browser",
+              email: "owner@example.com",
+            },
+          }
+        : undefined,
     ),
     listTasks: vi.fn(() => []),
   } as unknown as TaskManager;
@@ -467,6 +475,7 @@ describe("create_remote_agent_session", () => {
       expect(body.caller_session_id).toBe("caller-sess-1");
       expect(body.caller_info.agent_id).toBe("codex-default");
       expect(body.caller_info.agent_node).toBe("node-test");
+      expect(body.caller_info.email).toBe("owner@example.com");
     } finally {
       await capture.close();
     }
@@ -519,6 +528,7 @@ describe("create_remote_agent_session", () => {
         source: "agent",
         agent_node: "node-test",
         agent_id: "codex-default",
+        email: "owner@example.com",
       }));
     } finally {
       await capture.close();
@@ -1039,6 +1049,7 @@ describe("send_message_to_session", () => {
       expect(body.caller_info.source).toBe("agent");
       expect(body.caller_info.agent_node).toBe("node-test");
       expect(body.caller_info.agent_id).toBe("codex-default");
+      expect(body.caller_info.email).toBe("owner@example.com");
       expect(body.callerInfo).toBeUndefined();
     } finally {
       await capture.close();

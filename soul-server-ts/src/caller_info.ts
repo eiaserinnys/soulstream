@@ -16,7 +16,7 @@ import type { CallerInfo } from "./task/task_models.js";
  * Agent origin caller_info — v1 promote 키가 명시 nullable이고 source가 narrow.
  *
  * Python build_agent_caller_info의 반환 dict와 1:1 키 호환:
- * source / agent_node / agent_id / agent_name / display_name / user_id / avatar_url.
+ * source / agent_node / agent_id / agent_name / display_name / user_id / avatar_url / email.
  *
  * `[k: string]: unknown` index signature는 `CallerInfo`로부터 상속 — 향후 v1 추가 필드
  * 대비 graceful 표면 유지.
@@ -37,6 +37,7 @@ export interface AgentCallerInfo extends CallerInfo {
   display_name?: string;
   user_id?: string;
   avatar_url?: string;
+  email?: string;
 }
 
 export interface BuildAgentCallerInfoParams {
@@ -46,6 +47,8 @@ export interface BuildAgentCallerInfoParams {
   agentName: string | null | undefined;
   /** AgentProfile.portrait_path. truthy + agentId truthy일 때만 avatar_url 부여. */
   portraitPath?: string | null;
+  /** 원 caller(browser/JWT)의 email. service-token orch access 평가에서 신원으로 쓰인다. */
+  email?: string | null;
 }
 
 /**
@@ -60,9 +63,10 @@ export interface BuildAgentCallerInfoParams {
 export function buildAgentCallerInfo(
   params: BuildAgentCallerInfoParams,
 ): AgentCallerInfo {
-  const { agentNode, agentId, agentName, portraitPath } = params;
+  const { agentNode, agentId, agentName, portraitPath, email } = params;
   const aid = agentId ?? undefined;
   const aname = agentName ?? undefined;
+  const sourceEmail = email ?? undefined;
   const avatarUrl =
     portraitPath && aid
       ? `/api/nodes/${agentNode}/agents/${aid}/portrait`
@@ -75,6 +79,7 @@ export function buildAgentCallerInfo(
     display_name: aname,
     user_id: aid,
     avatar_url: avatarUrl,
+    email: sourceEmail,
   };
 }
 
@@ -94,6 +99,7 @@ export function buildCallerInfoFromCallerSession(deps: {
   taskManager: {
     getTask(sessionId: string): {
       profileId?: string | null;
+      callerInfo?: CallerInfo | null;
     } | undefined;
   };
   agentRegistry: {
@@ -109,7 +115,13 @@ export function buildCallerInfoFromCallerSession(deps: {
     agentId: callerTask?.profileId ?? null,
     agentName: callerProfile?.name ?? null,
     portraitPath: callerProfile?.portrait_path ?? null,
+    email: extractEmail(callerTask?.callerInfo),
   });
+}
+
+function extractEmail(callerInfo: CallerInfo | null | undefined): string | undefined {
+  const email = callerInfo?.email;
+  return typeof email === "string" ? email : undefined;
 }
 
 /**
