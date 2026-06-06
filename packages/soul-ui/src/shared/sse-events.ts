@@ -241,6 +241,9 @@ export interface ErrorEvent {
   type: "error";
   message: string;
   error_code?: string;
+  fatal?: boolean;
+  recoverable?: boolean;
+  recovery_hint?: string;
   /** 부모 이벤트 ID (Phase 2: 순수 parent 기반 배치용) */
   /** @deprecated Phase 2-B-1: 백엔드 fallback 채움 폐기로 NULL 송출. FE·외부는 사용하지 않음. */
   parent_event_id?: string;
