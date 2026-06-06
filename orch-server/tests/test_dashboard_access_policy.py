@@ -4,9 +4,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from starlette.requests import Request
 
 from soul_common.auth.jwt import COOKIE_NAME, generate_token
 from soulstream_server.config import get_settings
+from soulstream_server.dashboard_access import access_for_request
 from soulstream_server.main import create_app
 from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
@@ -111,6 +113,30 @@ def _build_app(monkeypatch):
     return app, db, catalog_service
 
 
+def _access_request(
+    app,
+    *,
+    auth_user: dict | None = None,
+    auth_mode: str | None = None,
+    cookie: str | None = None,
+) -> Request:
+    headers: list[tuple[bytes, bytes]] = []
+    if cookie is not None:
+        headers.append((b"cookie", cookie.encode()))
+    request = Request({
+        "type": "http",
+        "method": "GET",
+        "path": "/",
+        "headers": headers,
+        "app": app,
+    })
+    if auth_user is not None:
+        request.state.auth_user = auth_user
+    if auth_mode is not None:
+        request.state.auth_mode = auth_mode
+    return request
+
+
 async def _restricted_client(app):
     token = generate_token(
         {"email": "bellon.lovedive@gmail.com", "name": "Bellon"},
@@ -123,6 +149,70 @@ async def _restricted_client(app):
         cookies={COOKIE_NAME: token},
     ) as client:
         yield client
+
+
+def test_access_for_request_service_token_trusts_explicit_admin_email(monkeypatch):
+    app, _db, _catalog_service = _build_app(monkeypatch)
+    request = _access_request(app, auth_mode="service_token")
+
+    access = access_for_request(request, access_email="owner@example.com")
+
+    assert access.restricted is False
+
+
+def test_access_for_request_jwt_restricted_user_ignores_spoofed_access_email(monkeypatch):
+    app, _db, _catalog_service = _build_app(monkeypatch)
+    request = _access_request(
+        app,
+        auth_mode="jwt",
+        auth_user={"email": "bellon.lovedive@gmail.com", "name": "Bellon"},
+    )
+
+    access = access_for_request(request, access_email="owner@example.com")
+
+    assert access.restricted is True
+    assert access.allowed_folder_ids == ("allowed-root",)
+
+
+def test_access_for_request_jwt_cookie_wins_over_service_token_access_email(monkeypatch):
+    app, _db, _catalog_service = _build_app(monkeypatch)
+    token = generate_token(
+        {"email": "bellon.lovedive@gmail.com", "name": "Bellon"},
+        JWT_SECRET,
+    )
+    request = _access_request(
+        app,
+        auth_mode="service_token",
+        cookie=f"{COOKIE_NAME}={token}",
+    )
+
+    access = access_for_request(request, access_email="owner@example.com")
+
+    assert access.restricted is True
+    assert access.allowed_folder_ids == ("allowed-root",)
+
+
+def test_access_for_request_service_token_without_email_keeps_unknown_denied(monkeypatch):
+    app, _db, _catalog_service = _build_app(monkeypatch)
+    request = _access_request(app, auth_mode="service_token")
+
+    access = access_for_request(request, access_email=None)
+
+    assert access.restricted is True
+    assert access.allowed_folder_ids == ()
+
+
+def test_access_for_request_jwt_admin_path_regression(monkeypatch):
+    app, _db, _catalog_service = _build_app(monkeypatch)
+    request = _access_request(
+        app,
+        auth_mode="jwt",
+        auth_user={"email": "owner@example.com", "name": "Owner"},
+    )
+
+    access = access_for_request(request)
+
+    assert access.restricted is False
 
 
 @pytest.mark.asyncio

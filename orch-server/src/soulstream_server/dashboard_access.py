@@ -42,13 +42,20 @@ def access_for_email(email: str | None, settings: Settings | None = None) -> Das
     )
 
 
-def access_for_request(request: Request, settings: Settings | None = None) -> DashboardAccess:
+def access_for_request(
+    request: Request,
+    settings: Settings | None = None,
+    *,
+    access_email: str | None = None,
+) -> DashboardAccess:
     user_service = _user_service_from_request(request)
     settings = settings or get_settings()
     auth_user = getattr(request.state, "auth_user", None)
     if not isinstance(auth_user, dict):
         auth_user = decode_dashboard_jwt_user(request, settings.jwt_secret or "")
     email = auth_user.get("email") if isinstance(auth_user, dict) else None
+    if email is None and getattr(request.state, "auth_mode", None) == "service_token":
+        email = access_email
     if user_service is not None:
         return user_service.access_for_email(email)
     return access_for_email(email, settings)
