@@ -27,6 +27,10 @@ import {
   getFolderIdFromBoardYjsDocumentName,
   readBoardYDocSnapshot,
 } from "../collaboration/board_yjs_model.js";
+import {
+  MarkdownDocumentVersionConflictError,
+  normalizeMarkdownVersion,
+} from "./markdown_document_version.js";
 
 export type SessionType = "claude" | "llm";
 
@@ -115,6 +119,7 @@ export interface MarkdownDocumentRow {
   id: string;
   title: string;
   body: string;
+  version: number;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -667,6 +672,7 @@ export class SessionDB {
         doc_id: string;
         doc_title: string;
         doc_body: string;
+        doc_version: string | number | null;
         doc_created_at: Date | string | null;
         doc_updated_at: Date | string | null;
         item_id: string;
@@ -694,6 +700,7 @@ export class SessionDB {
         doc.id AS doc_id,
         doc.title AS doc_title,
         doc.body AS doc_body,
+        doc.version AS doc_version,
         doc.created_at AS doc_created_at,
         doc.updated_at AS doc_updated_at,
         item.id AS item_id,
@@ -715,6 +722,7 @@ export class SessionDB {
       id: row.doc_id,
       title: row.doc_title,
       body: row.doc_body,
+      version: row.doc_version,
       created_at: row.doc_created_at,
       updated_at: row.doc_updated_at,
     });
@@ -738,30 +746,53 @@ export class SessionDB {
 
   async getMarkdownDocument(documentId: string): Promise<MarkdownDocumentRow | null> {
     const rows = await this.sql<
-      Array<{ id: string; title: string; body: string; created_at: Date | string | null; updated_at: Date | string | null }>
+      Array<{
+        id: string;
+        title: string;
+        body: string;
+        version: string | number | null;
+        created_at: Date | string | null;
+        updated_at: Date | string | null;
+      }>
     >`SELECT * FROM markdown_documents WHERE id = ${documentId}`;
     return rows[0] ? toMarkdownDocumentRow(rows[0]) : null;
   }
 
   async updateMarkdownDocument(
     documentId: string,
-    fields: { title?: string; body?: string },
+    fields: { title?: string; body?: string; expectedVersion: number },
   ): Promise<MarkdownDocumentRow | null> {
-    if (fields.title !== undefined) {
-      await this.sql`
-        UPDATE markdown_documents
-        SET title = ${fields.title}, updated_at = NOW()
-        WHERE id = ${documentId}
-      `;
+    const rows = await this.sql<
+      Array<{
+        id: string;
+        title: string;
+        body: string;
+        version: string | number | null;
+        created_at: Date | string | null;
+        updated_at: Date | string | null;
+      }>
+    >`
+      UPDATE markdown_documents
+      SET title = CASE WHEN ${fields.title !== undefined} THEN ${fields.title ?? ""} ELSE title END,
+          body = CASE WHEN ${fields.body !== undefined} THEN ${fields.body ?? ""} ELSE body END,
+          version = version + 1,
+          updated_at = NOW()
+      WHERE id = ${documentId}
+        AND version = ${fields.expectedVersion}
+      RETURNING *
+    `;
+    if (rows[0]) {
+      return toMarkdownDocumentRow(rows[0]);
     }
-    if (fields.body !== undefined) {
-      await this.sql`
-        UPDATE markdown_documents
-        SET body = ${fields.body}, updated_at = NOW()
-        WHERE id = ${documentId}
-      `;
+    const existing = await this.getMarkdownDocument(documentId);
+    if (existing) {
+      throw new MarkdownDocumentVersionConflictError(
+        documentId,
+        fields.expectedVersion,
+        existing.version,
+      );
     }
-    return this.getMarkdownDocument(documentId);
+    return null;
   }
 
   async deleteMarkdownDocument(documentId: string): Promise<void> {
@@ -830,7 +861,14 @@ export class SessionDB {
       return { boardItems, markdownDocuments: [] };
     }
     const rows = await this.sql<
-      Array<{ id: string; title: string; body: string; created_at: Date | string | null; updated_at: Date | string | null }>
+      Array<{
+        id: string;
+        title: string;
+        body: string;
+        version: string | number | null;
+        created_at: Date | string | null;
+        updated_at: Date | string | null;
+      }>
     >`
       SELECT * FROM markdown_documents WHERE id = ANY(${this.sql.array(markdownIds)})
     `;
@@ -892,11 +930,12 @@ export class SessionDB {
 
     for (const document of replica.markdownDocuments) {
       await sql`
-        INSERT INTO markdown_documents (id, title, body, updated_at)
-        VALUES (${document.id}, ${document.title}, ${document.body}, NOW())
+        INSERT INTO markdown_documents (id, title, body, version, updated_at)
+        VALUES (${document.id}, ${document.title}, ${document.body}, ${document.version}, NOW())
         ON CONFLICT (id) DO UPDATE
         SET title = EXCLUDED.title,
             body = EXCLUDED.body,
+            version = EXCLUDED.version,
             updated_at = EXCLUDED.updated_at
       `;
     }
@@ -1453,6 +1492,7 @@ function toMarkdownDocumentRow(row: {
   id: string;
   title: string;
   body: string;
+  version?: string | number | null;
   created_at: Date | string | null;
   updated_at: Date | string | null;
 }): MarkdownDocumentRow {
@@ -1460,6 +1500,7 @@ function toMarkdownDocumentRow(row: {
     id: row.id,
     title: row.title,
     body: row.body,
+    version: normalizeMarkdownVersion(row.version),
     ...(toIsoString(row.created_at) ? { createdAt: toIsoString(row.created_at) } : {}),
     ...(toIsoString(row.updated_at) ? { updatedAt: toIsoString(row.updated_at) } : {}),
   };

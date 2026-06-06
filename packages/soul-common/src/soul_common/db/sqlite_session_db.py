@@ -123,11 +123,19 @@ class SqliteSessionDB(
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
                 body TEXT NOT NULL DEFAULT '',
+                version INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT,
                 updated_at TEXT
             )
             """
         )
+        try:
+            await self._conn.execute(
+                "ALTER TABLE markdown_documents ADD COLUMN version INTEGER NOT NULL DEFAULT 1"
+            )
+            await self._conn.commit()
+        except Exception:
+            pass
         await self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS board_items (

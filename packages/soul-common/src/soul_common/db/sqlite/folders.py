@@ -16,6 +16,7 @@ from soul_common.db.session_db_base import (
     DEFAULT_FOLDERS,
 )
 from soul_common.db.sqlite._helpers import _utc_now
+from soul_common.markdown_document_errors import MarkdownDocumentVersionConflictError
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ def _normalize_markdown_document(row: dict) -> dict:
         "id": row["id"],
         "title": row["title"],
         "body": row["body"],
+        "version": int(row.get("version") or 1),
         "createdAt": row.get("created_at"),
         "updatedAt": row.get("updated_at"),
     }
@@ -327,6 +329,7 @@ class SqliteFolderMixin:
                 bi.*,
                 md.title AS markdown_title,
                 md.body AS markdown_body,
+                md.version AS markdown_version,
                 fa.storage_key AS asset_storage_key,
                 fa.original_name AS asset_original_name,
                 fa.mime_type AS asset_mime_type,
@@ -354,6 +357,7 @@ class SqliteFolderMixin:
                     **item["metadata"],
                     "title": data.get("markdown_title") or "",
                     "preview": " ".join((data.get("markdown_body") or "").split())[:180],
+                    "version": int(data.get("markdown_version") or 1),
                 }
             if item["itemType"] == "asset":
                 item["metadata"] = {
@@ -416,7 +420,11 @@ class SqliteFolderMixin:
             "itemId": document_id,
             "x": float(x),
             "y": float(y),
-            "metadata": {"title": title, "preview": " ".join(body.split())[:180]},
+            "metadata": {
+                "title": title,
+                "preview": " ".join(body.split())[:180],
+                "version": int(document.get("version") or 1),
+            },
             "createdAt": now,
             "updatedAt": now,
         }
@@ -435,21 +443,33 @@ class SqliteFolderMixin:
         document_id: str,
         title: Optional[str] = None,
         body: Optional[str] = None,
+        *,
+        expected_version: int,
     ) -> Optional[dict]:
-        fields: dict[str, object] = {}
-        if title is not None:
-            fields["title"] = title
-        if body is not None:
-            fields["body"] = body
-        if fields:
-            fields["updated_at"] = _utc_now()
-            set_clause = ", ".join(f"{name} = ?" for name in fields)
-            await self._conn.execute(
-                f"UPDATE markdown_documents SET {set_clause} WHERE id = ?",
-                [*fields.values(), document_id],
+        now = _utc_now()
+        cursor = await self._conn.execute(
+            """
+            UPDATE markdown_documents
+            SET title = COALESCE(?, title),
+                body = COALESCE(?, body),
+                version = version + 1,
+                updated_at = ?
+            WHERE id = ?
+              AND version = ?
+            """,
+            (title, body, now, document_id, expected_version),
+        )
+        await self._conn.commit()
+        if cursor.rowcount > 0:
+            return await self.get_markdown_document(document_id)
+        existing = await self.get_markdown_document(document_id)
+        if existing is not None:
+            raise MarkdownDocumentVersionConflictError(
+                document_id,
+                expected_version,
+                int(existing.get("version") or 1),
             )
-            await self._conn.commit()
-        return await self.get_markdown_document(document_id)
+        return None
 
     async def delete_markdown_document(self, document_id: str) -> None:
         await self._conn.execute(

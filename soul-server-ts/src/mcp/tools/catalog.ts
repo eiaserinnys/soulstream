@@ -181,15 +181,23 @@ export function registerCatalogTools(
       description: "마크다운 문서 제목 또는 본문 수정.",
       inputSchema: {
         document_id: z.string().min(1),
+        expected_version: z.number().int().positive(),
         title: z.string().optional(),
         body: z.string().optional(),
       },
     },
-    async ({ document_id, title, body }) => {
+    async ({ document_id, expected_version, title, body }) => {
       try {
+        if (title === undefined && body === undefined) {
+          return errorResult("No fields to update");
+        }
         const document = await runtime.catalogService.updateMarkdownDocument(
           document_id,
-          { ...(title !== undefined ? { title } : {}), ...(body !== undefined ? { body } : {}) },
+          {
+            expectedVersion: expected_version,
+            ...(title !== undefined ? { title } : {}),
+            ...(body !== undefined ? { body } : {}),
+          },
         );
         if (!document) return errorResult("document not found");
         return jsonResult(document);

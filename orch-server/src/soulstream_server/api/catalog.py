@@ -11,9 +11,12 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from soul_common.catalog.catalog_service import CatalogService
+from soul_common.catalog.catalog_service import (
+    CatalogService,
+    MarkdownDocumentVersionConflictError,
+)
 from soulstream_server.dashboard_access import access_for_request, require_folder_allowed
 
 logger = logging.getLogger(__name__)
@@ -35,6 +38,7 @@ class MarkdownDocumentCreate(BaseModel):
 class MarkdownDocumentUpdate(BaseModel):
     title: Optional[str] = None
     body: Optional[str] = None
+    expected_version: int = Field(..., alias="expectedVersion")
 
 
 class BoardAssetInit(BaseModel):
@@ -137,7 +141,9 @@ def create_catalog_router(
         body: MarkdownDocumentUpdate,
         request: Request,
     ) -> dict:
-        if not _field_supplied(body, "title") and not _field_supplied(body, "body"):
+        has_title = _field_supplied(body, "title") and body.title is not None
+        has_body = _field_supplied(body, "body") and body.body is not None
+        if not has_title and not has_body:
             raise HTTPException(status_code=400, detail="No fields to update")
         existing = await catalog_service.get_markdown_document(document_id)
         if existing is None:
@@ -145,11 +151,15 @@ def create_catalog_router(
         folder_id = existing.get("folderId") or existing.get("folder_id")
         folders = await catalog_service.list_folders()
         require_folder_allowed(access_for_request(request), folders, folder_id)
-        document = await catalog_service.update_markdown_document(
-            document_id,
-            title=body.title if _field_supplied(body, "title") else None,
-            body=body.body if _field_supplied(body, "body") else None,
-        )
+        try:
+            document = await catalog_service.update_markdown_document(
+                document_id,
+                title=body.title if has_title else None,
+                body=body.body if has_body else None,
+                expected_version=body.expected_version,
+            )
+        except MarkdownDocumentVersionConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         if document is None:
             raise HTTPException(status_code=404, detail="Document not found")
         return document

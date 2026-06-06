@@ -38,7 +38,7 @@ describe("board_yjs_persistence", () => {
           y: 160,
           metadata: { title: "Recovered" },
         }],
-        markdownDocuments: [{ id: "d1", title: "Recovered", body: "restored body" }],
+        markdownDocuments: [{ id: "d1", title: "Recovered", body: "restored body", version: 1 }],
       }),
       storeBoardYjsSnapshot: vi.fn().mockResolvedValue(undefined),
       syncBoardYjsReplica: vi.fn().mockResolvedValue(undefined),

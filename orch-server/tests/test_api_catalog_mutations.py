@@ -8,6 +8,8 @@ DELETE /api/sessions/{session_id}
 
 import pytest
 
+from soul_common.catalog.catalog_service import MarkdownDocumentVersionConflictError
+
 
 class TestReorderFolders:
     """PATCH /api/folders/reorder tests."""
@@ -266,6 +268,7 @@ class TestMarkdownDocuments:
 
         assert resp.status_code == 200
         assert resp.json()["title"] == "Note"
+        assert resp.json()["version"] == 1
         mock_catalog_service.get_markdown_document.assert_called_once_with("doc-1")
 
     async def test_get_markdown_document_404(self, client, mock_catalog_service):
@@ -278,22 +281,48 @@ class TestMarkdownDocuments:
     async def test_update_markdown_document(self, client, mock_catalog_service):
         resp = await client.put(
             "/api/markdown-documents/doc-1",
-            json={"title": "New"},
+            json={"title": "New", "expectedVersion": 1},
         )
 
         assert resp.status_code == 200
         assert resp.json()["title"] == "New"
+        assert resp.json()["version"] == 2
         mock_catalog_service.update_markdown_document.assert_called_once_with(
             "doc-1",
             title="New",
             body=None,
+            expected_version=1,
         )
+
+    async def test_update_markdown_document_missing_expected_version_returns_422(self, client, mock_catalog_service):
+        resp = await client.put(
+            "/api/markdown-documents/doc-1",
+            json={"title": "New"},
+        )
+
+        assert resp.status_code == 422
+        mock_catalog_service.update_markdown_document.assert_not_called()
 
     async def test_update_markdown_document_empty_body_returns_400(self, client, mock_catalog_service):
         resp = await client.put("/api/markdown-documents/doc-1", json={})
 
-        assert resp.status_code == 400
+        assert resp.status_code == 422
         mock_catalog_service.update_markdown_document.assert_not_called()
+
+    async def test_update_markdown_document_stale_version_returns_409(self, client, mock_catalog_service):
+        mock_catalog_service.update_markdown_document.side_effect = MarkdownDocumentVersionConflictError(
+            "doc-1",
+            expected_version=1,
+            actual_version=2,
+        )
+
+        resp = await client.put(
+            "/api/markdown-documents/doc-1",
+            json={"body": "Stale", "expectedVersion": 1},
+        )
+
+        assert resp.status_code == 409
+        assert "version conflict" in resp.json()["detail"]
 
     async def test_delete_markdown_document(self, client, mock_catalog_service):
         resp = await client.delete("/api/markdown-documents/doc-1")

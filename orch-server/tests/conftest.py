@@ -213,7 +213,7 @@ def mock_catalog_service():
         },
     })
     cs.create_markdown_document = AsyncMock(return_value={
-        "document": {"id": "doc-1", "title": "Note", "body": "Body"},
+        "document": {"id": "doc-1", "title": "Note", "body": "Body", "version": 1},
         "boardItem": {
             "id": "markdown:doc-1",
             "folderId": "f1",
@@ -221,11 +221,11 @@ def mock_catalog_service():
             "itemId": "doc-1",
             "x": 40,
             "y": 80,
-            "metadata": {"title": "Note", "preview": "Body"},
+            "metadata": {"title": "Note", "preview": "Body", "version": 1},
         },
     })
-    cs.get_markdown_document = AsyncMock(return_value={"id": "doc-1", "title": "Note", "body": "Body"})
-    cs.update_markdown_document = AsyncMock(return_value={"id": "doc-1", "title": "New", "body": "Body"})
+    cs.get_markdown_document = AsyncMock(return_value={"id": "doc-1", "title": "Note", "body": "Body", "version": 1})
+    cs.update_markdown_document = AsyncMock(return_value={"id": "doc-1", "title": "New", "body": "Body", "version": 2})
     cs.delete_markdown_document = AsyncMock()
     cs.get_catalog = AsyncMock(return_value={"folders": [], "sessions": {}})
     return cs

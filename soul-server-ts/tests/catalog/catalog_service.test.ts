@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CatalogService } from "../../src/catalog/catalog_service.js";
+import { MarkdownDocumentVersionConflictError } from "../../src/db/markdown_document_version.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
@@ -215,14 +216,14 @@ describe("CatalogService board items", () => {
   it("createMarkdownDocument는 BoardYjsService 경로를 우선 사용하고 legacy DB create를 호출하지 않는다", async () => {
     const db = {
       createMarkdownDocument: vi.fn().mockResolvedValue({
-        document: { id: "legacy-doc", title: "Legacy", body: "" },
+        document: { id: "legacy-doc", title: "Legacy", body: "", version: 1 },
         boardItem: { id: "markdown:legacy-doc", folderId: "f1", itemType: "markdown", itemId: "legacy-doc", x: 60, y: 100 },
       }),
       getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
     } as unknown as SessionDB;
     const boardYjsService = {
       createMarkdownDocument: vi.fn().mockResolvedValue({
-        document: { id: "doc-1", title: "Note", body: "Body" },
+        document: { id: "doc-1", title: "Note", body: "Body", version: 1 },
         boardItem: { id: "markdown:doc-1", folderId: "f1", itemType: "markdown", itemId: "doc-1", x: 60, y: 100 },
       }),
     };
@@ -300,7 +301,7 @@ describe("CatalogService board items", () => {
   it("createMarkdownDocument는 명시 좌표를 스냅해 board item 생성", async () => {
     const db = {
       createMarkdownDocument: vi.fn().mockResolvedValue({
-        document: { id: "doc-1", title: "Note", body: "Body" },
+        document: { id: "doc-1", title: "Note", body: "Body", version: 1 },
         boardItem: { id: "markdown:doc-1", folderId: "f1", itemType: "markdown", itemId: "doc-1", x: 60, y: 100 },
       }),
       getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
@@ -336,7 +337,7 @@ describe("CatalogService board items", () => {
         { folderId: "f1", x: 280, y: 0 },
       ]),
       createMarkdownDocument: vi.fn().mockResolvedValue({
-        document: { id: "doc-1", title: "Note", body: "" },
+        document: { id: "doc-1", title: "Note", body: "", version: 1 },
         boardItem: { id: "markdown:doc-1", folderId: "f1", itemType: "markdown", itemId: "doc-1", x: 560, y: 0 },
       }),
       getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
@@ -364,24 +365,69 @@ describe("CatalogService board items", () => {
         x: 0,
         y: 0,
       }),
-      updateMarkdownDocument: vi.fn().mockResolvedValue({ id: "doc-1", title: "Legacy", body: "" }),
+      updateMarkdownDocument: vi.fn().mockResolvedValue({ id: "doc-1", title: "Legacy", body: "", version: 2 }),
       getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
     } as unknown as SessionDB;
     const boardYjsService = {
-      updateMarkdownDocument: vi.fn().mockResolvedValue({ id: "doc-1", title: "New", body: "Body" }),
+      updateMarkdownDocument: vi.fn().mockResolvedValue({ id: "doc-1", title: "New", body: "Body", version: 2 }),
     };
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster, boardYjsService as never);
 
-    const result = await svc.updateMarkdownDocument("doc-1", { title: "New", body: "Body" });
+    const result = await svc.updateMarkdownDocument("doc-1", {
+      title: "New",
+      body: "Body",
+      expectedVersion: 1,
+    });
 
     expect(boardYjsService.updateMarkdownDocument).toHaveBeenCalledWith(
       "f1",
       "doc-1",
-      { title: "New", body: "Body" },
+      { title: "New", body: "Body", expectedVersion: 1 },
     );
     expect(db.updateMarkdownDocument).not.toHaveBeenCalled();
-    expect(result).toEqual({ id: "doc-1", title: "New", body: "Body" });
+    expect(result).toEqual({ id: "doc-1", title: "New", body: "Body", version: 2 });
+  });
+
+  it("updateMarkdownDocument DB fallback도 expectedVersion을 전달한다", async () => {
+    const db = {
+      getMarkdownDocumentBoardItem: vi.fn().mockResolvedValue(null),
+      updateMarkdownDocument: vi.fn().mockResolvedValue({ id: "doc-1", title: "New", body: "Body", version: 2 }),
+      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+    } as unknown as SessionDB;
+    const { broadcaster } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await svc.updateMarkdownDocument("doc-1", {
+      title: "New",
+      expectedVersion: 1,
+    });
+
+    expect(db.updateMarkdownDocument).toHaveBeenCalledWith(
+      "doc-1",
+      { title: "New", expectedVersion: 1 },
+    );
+  });
+
+  it("updateMarkdownDocument stale token은 broadcast 없이 전파한다", async () => {
+    const db = {
+      getMarkdownDocumentBoardItem: vi.fn().mockResolvedValue(null),
+      updateMarkdownDocument: vi.fn().mockRejectedValue(
+        new MarkdownDocumentVersionConflictError("doc-1", 1, 2),
+      ),
+      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+    } as unknown as SessionDB;
+    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await expect(
+      svc.updateMarkdownDocument("doc-1", {
+        body: "stale",
+        expectedVersion: 1,
+      }),
+    ).rejects.toThrow(/version conflict/);
+
+    expect(emitCatalogUpdated).not.toHaveBeenCalled();
   });
 
   it("deleteMarkdownDocument는 BoardYjsService 경로를 우선 사용해 Yjs replica에서 함께 제거", async () => {

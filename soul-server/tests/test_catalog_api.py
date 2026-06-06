@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from soul_server.api.catalog import create_catalog_router
+from soul_common.catalog.catalog_service import MarkdownDocumentVersionConflictError
 
 
 @pytest.fixture
@@ -32,7 +33,7 @@ def mock_catalog_service():
     cs.delete_session = AsyncMock()
     cs.update_board_item_position = AsyncMock()
     cs.create_markdown_document = AsyncMock(return_value={
-        "document": {"id": "doc-1", "title": "Note", "body": "Body"},
+        "document": {"id": "doc-1", "title": "Note", "body": "Body", "version": 1},
         "boardItem": {
             "id": "markdown:doc-1",
             "folderId": "f1",
@@ -40,11 +41,11 @@ def mock_catalog_service():
             "itemId": "doc-1",
             "x": 40,
             "y": 80,
-            "metadata": {"title": "Note", "preview": "Body"},
+            "metadata": {"title": "Note", "preview": "Body", "version": 1},
         },
     })
-    cs.get_markdown_document = AsyncMock(return_value={"id": "doc-1", "title": "Note", "body": "Body"})
-    cs.update_markdown_document = AsyncMock(return_value={"id": "doc-1", "title": "New", "body": "Body"})
+    cs.get_markdown_document = AsyncMock(return_value={"id": "doc-1", "title": "Note", "body": "Body", "version": 1})
+    cs.update_markdown_document = AsyncMock(return_value={"id": "doc-1", "title": "New", "body": "Body", "version": 2})
     cs.delete_markdown_document = AsyncMock()
     return cs
 
@@ -245,6 +246,7 @@ class TestMarkdownDocuments:
 
         assert resp.status_code == 200
         assert resp.json()["title"] == "Note"
+        assert resp.json()["version"] == 1
         mock_catalog_service.get_markdown_document.assert_called_once_with("doc-1")
 
     def test_get_markdown_document_404(self, client, mock_catalog_service):
@@ -257,22 +259,48 @@ class TestMarkdownDocuments:
     def test_update_markdown_document(self, client, mock_catalog_service):
         resp = client.put(
             "/catalog/markdown-documents/doc-1",
-            json={"title": "New"},
+            json={"title": "New", "expectedVersion": 1},
         )
 
         assert resp.status_code == 200
         assert resp.json()["title"] == "New"
+        assert resp.json()["version"] == 2
         mock_catalog_service.update_markdown_document.assert_called_once_with(
             "doc-1",
             title="New",
             body=None,
+            expected_version=1,
         )
+
+    def test_update_markdown_document_missing_expected_version_returns_422(self, client, mock_catalog_service):
+        resp = client.put(
+            "/catalog/markdown-documents/doc-1",
+            json={"title": "New"},
+        )
+
+        assert resp.status_code == 422
+        mock_catalog_service.update_markdown_document.assert_not_called()
 
     def test_update_markdown_document_empty_body_returns_400(self, client, mock_catalog_service):
         resp = client.put("/catalog/markdown-documents/doc-1", json={})
 
-        assert resp.status_code == 400
+        assert resp.status_code == 422
         mock_catalog_service.update_markdown_document.assert_not_called()
+
+    def test_update_markdown_document_stale_version_returns_409(self, client, mock_catalog_service):
+        mock_catalog_service.update_markdown_document.side_effect = MarkdownDocumentVersionConflictError(
+            "doc-1",
+            expected_version=1,
+            actual_version=2,
+        )
+
+        resp = client.put(
+            "/catalog/markdown-documents/doc-1",
+            json={"body": "Stale", "expectedVersion": 1},
+        )
+
+        assert resp.status_code == 409
+        assert "version conflict" in resp.json()["detail"]
 
     def test_delete_markdown_document(self, client, mock_catalog_service):
         resp = client.delete("/catalog/markdown-documents/doc-1")

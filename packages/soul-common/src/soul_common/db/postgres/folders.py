@@ -15,6 +15,7 @@ from soul_common.db.session_db_base import (
     FOLDER_JSONB_COLUMNS as _FOLDER_JSONB_COLUMNS,
     DEFAULT_FOLDERS,
 )
+from soul_common.markdown_document_errors import MarkdownDocumentVersionConflictError
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ def _normalize_markdown_document(row: dict) -> dict:
         "id": row["id"],
         "title": row["title"],
         "body": row["body"],
+        "version": int(row.get("version") or 1),
         "createdAt": created_at,
         "updatedAt": updated_at,
     }
@@ -336,6 +338,7 @@ class PostgresFolderMixin:
         board_item["metadata"] = {
             "title": title,
             "preview": " ".join(body.split())[:180],
+            "version": int(dict(doc_row).get("version") or 1),
         }
         return {
             "document": _normalize_markdown_document(dict(doc_row)),
@@ -354,26 +357,35 @@ class PostgresFolderMixin:
         document_id: str,
         title: Optional[str] = None,
         body: Optional[str] = None,
+        *,
+        expected_version: int,
     ) -> Optional[dict]:
-        fields = []
-        values: list[object] = []
-        if title is not None:
-            values.append(title)
-            fields.append(f"title = ${len(values) + 1}")
-        if body is not None:
-            values.append(body)
-            fields.append(f"body = ${len(values) + 1}")
-        if fields:
-            values.insert(0, document_id)
-            await self._pool.execute(
-                f"""
-                UPDATE markdown_documents
-                SET {", ".join(fields)}, updated_at = NOW()
-                WHERE id = $1
-                """,
-                *values,
+        row = await self._pool.fetchrow(
+            """
+            UPDATE markdown_documents
+            SET title = COALESCE($3, title),
+                body = COALESCE($4, body),
+                version = version + 1,
+                updated_at = NOW()
+            WHERE id = $1
+              AND version = $2
+            RETURNING *
+            """,
+            document_id,
+            expected_version,
+            title,
+            body,
+        )
+        if row is not None:
+            return _normalize_markdown_document(dict(row))
+        existing = await self.get_markdown_document(document_id)
+        if existing is not None:
+            raise MarkdownDocumentVersionConflictError(
+                document_id,
+                expected_version,
+                int(existing.get("version") or 1),
             )
-        return await self.get_markdown_document(document_id)
+        return None
 
     async def delete_markdown_document(self, document_id: str) -> None:
         await self._pool.execute(

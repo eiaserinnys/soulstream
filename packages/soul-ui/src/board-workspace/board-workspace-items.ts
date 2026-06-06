@@ -54,6 +54,7 @@ export interface MarkdownBoardWorkspaceItem {
   documentId: string;
   title: string;
   preview: string;
+  version: number;
   x: number;
   y: number;
 }
@@ -224,6 +225,7 @@ function buildPositionedItems({
         documentId: boardItem.itemId,
         title: metadataText(boardItem, "title") || "Untitled document",
         preview: metadataText(boardItem, "preview"),
+        version: metadataNumber(boardItem, "version") ?? 1,
         x: boardItem.x,
         y: boardItem.y,
       });

@@ -279,8 +279,11 @@ export class CatalogService {
 
   async updateMarkdownDocument(
     documentId: string,
-    fields: { title?: string; body?: string },
+    fields: { title?: string; body?: string; expectedVersion: number },
   ) {
+    if (fields.title === undefined && fields.body === undefined) {
+      return this.getMarkdownDocument(documentId);
+    }
     if (this.boardYjsService) {
       const boardItem = await this.db.getMarkdownDocumentBoardItem(documentId);
       if (boardItem) {

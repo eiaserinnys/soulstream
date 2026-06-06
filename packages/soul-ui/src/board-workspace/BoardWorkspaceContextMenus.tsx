@@ -67,8 +67,9 @@ export function BoardWorkspaceContextMenus({
   const [settingsFolderTarget, setSettingsFolderTarget] = useState<{ id: string; name: string } | null>(null);
   const [renameFolderTarget, setRenameFolderTarget] = useState<{ id: string; name: string } | null>(null);
   const [renameFolderInput, setRenameFolderInput] = useState("");
-  const [renameMarkdownTarget, setRenameMarkdownTarget] = useState<{ documentId: string; title: string } | null>(null);
+  const [renameMarkdownTarget, setRenameMarkdownTarget] = useState<{ documentId: string; title: string; version: number } | null>(null);
   const [renameMarkdownInput, setRenameMarkdownInput] = useState("");
+  const [renameMarkdownError, setRenameMarkdownError] = useState("");
 
   const folderContextTarget: FolderContextMenuTarget | null =
     cardContextMenu?.item.type === "folder"
@@ -112,14 +113,19 @@ export function BoardWorkspaceContextMenus({
     if (!renameMarkdownTarget) return;
     const title = renameMarkdownInput.trim() || "Untitled document";
     try {
+      setRenameMarkdownError("");
       if (boardYjsRuntime) {
         boardYjsRuntime.updateMarkdownTitle(renameMarkdownTarget.documentId, title);
       } else {
         const res = await fetch(`/api/markdown-documents/${encodeURIComponent(renameMarkdownTarget.documentId)}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title }),
+          body: JSON.stringify({ title, expectedVersion: renameMarkdownTarget.version }),
         });
+        if (res.status === 409) {
+          setRenameMarkdownError("문서가 다른 곳에서 변경되었습니다. 새로고침 후 다시 시도하세요.");
+          return;
+        }
         if (!res.ok) throw new Error(`Rename markdown document failed: ${res.status}`);
         await res.json();
       }
@@ -225,8 +231,10 @@ export function BoardWorkspaceContextMenus({
               setRenameMarkdownTarget({
                 documentId: markdownContextMenu.item.documentId,
                 title: markdownContextMenu.item.title,
+                version: markdownContextMenu.item.version,
               });
               setRenameMarkdownInput(markdownContextMenu.item.title);
+              setRenameMarkdownError("");
               onCloseCardContextMenu();
             }}
           >
@@ -280,6 +288,9 @@ export function BoardWorkspaceContextMenus({
               className="mb-3 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring"
               autoFocus
             />
+            {renameMarkdownError && (
+              <p className="mb-3 text-xs text-destructive">{renameMarkdownError}</p>
+            )}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="outline" onClick={() => setRenameMarkdownTarget(null)}>
                 취소

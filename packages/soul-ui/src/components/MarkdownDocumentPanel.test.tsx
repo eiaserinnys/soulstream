@@ -196,6 +196,7 @@ describe("MarkdownDocumentPanel", () => {
           id: "doc-a",
           title: "Design note",
           body: "Initial body",
+          version: 1,
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (url.endsWith("/api/markdown-documents/doc-a") && init?.method === "PUT") {
@@ -204,6 +205,7 @@ describe("MarkdownDocumentPanel", () => {
           id: "doc-a",
           title: body.title,
           body: body.body,
+          version: 2,
         }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       return new Response("not found", { status: 404 });
@@ -245,18 +247,54 @@ describe("MarkdownDocumentPanel", () => {
     flushSync(() => {
       view.contentDOM.dispatchEvent(new FocusEvent("blur"));
     });
-    await waitForFetchBody(fetchMock, JSON.stringify({ title: "Design note", body: "Edited body" }));
+    await waitForFetchBody(fetchMock, JSON.stringify({ title: "Design note", body: "Edited body", expectedVersion: 1 }));
 
     expect(fetchMock.mock.calls).toContainEqual([
       "/api/markdown-documents/doc-a",
       expect.objectContaining({
         method: "PUT",
-        body: JSON.stringify({ title: "Design note", body: "Edited body" }),
+        body: JSON.stringify({ title: "Design note", body: "Edited body", expectedVersion: 1 }),
       }),
     ]);
     await waitForText(container, '[data-testid="markdown-save-status"]', "저장됨");
     expect(container.querySelector('[data-testid="markdown-save-status"]')?.textContent).toBe("저장됨");
     expect(container.querySelector('button[title="Delete document"]')).not.toBeNull();
+  });
+
+  it("stale REST save keeps document dirty and shows a conflict message", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/markdown-documents/doc-a") && !init) {
+        return new Response(JSON.stringify({
+          id: "doc-a",
+          title: "Design note",
+          body: "Initial body",
+          version: 1,
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url.endsWith("/api/markdown-documents/doc-a") && init?.method === "PUT") {
+        return new Response(JSON.stringify({ detail: "Document changed elsewhere. Reload and retry." }), {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+    ({ container, root } = renderPanel());
+
+    const readBody = await waitForSelector<HTMLElement>(container, '[data-testid="markdown-read-body"]');
+    flushSync(() => {
+      readBody.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const view = await waitForEditorView(container);
+    flushSync(() => {
+      replaceEditorDoc(view, "Edited body");
+    });
+    flushSync(() => {
+      view.contentDOM.dispatchEvent(new FocusEvent("blur"));
+    });
+
+    await waitForText(container, '[data-testid="markdown-save-status"]', "충돌: 새로고침 필요");
   });
 
   it("restores the last saved body when Escape is pressed", async () => {

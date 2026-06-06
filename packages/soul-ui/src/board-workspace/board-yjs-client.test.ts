@@ -11,6 +11,8 @@ import {
   seedBoardYDocFromCatalog,
   setBoardAwarenessSelection,
   updateBoardYjsItemPosition,
+  updateMarkdownYjsBody,
+  updateMarkdownYjsTitle,
 } from "./board-yjs-client";
 
 const catalog: CatalogState = {
@@ -71,7 +73,30 @@ describe("board-yjs-client", () => {
     });
 
     expect(result.boardItem).toMatchObject({ id: "markdown:d1", itemType: "markdown" });
+    expect(result.document.version).toBe(1);
+    expect(result.boardItem.metadata).toMatchObject({ version: 1 });
     expect(doc.getMap<Y.Text>("markdownBodies").get("d1")?.toString()).toBe("hello");
+  });
+
+  it("markdown title/body 변경은 Yjs metadata version을 증가시킨다", () => {
+    const doc = new Y.Doc();
+    createMarkdownYjsDocument(doc, "f1", {
+      documentId: "d1",
+      title: "Note",
+      body: "hello",
+      x: 0,
+      y: 0,
+    });
+
+    updateMarkdownYjsTitle(doc, "d1", "Renamed");
+    updateMarkdownYjsBody(doc, "d1", "changed");
+
+    const [item] = catalogBoardItemsFromYDoc("f1", doc);
+    expect(item?.metadata).toMatchObject({
+      title: "Renamed",
+      preview: "changed",
+      version: 3,
+    });
   });
 
   it("awareness selection은 remote client만 읽는다", () => {

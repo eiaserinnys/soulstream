@@ -37,7 +37,7 @@ describe("board_yjs_model", () => {
           metadata: { title: "Note" },
         },
       ],
-      markdownDocuments: [{ id: "d1", title: "Note", body: "hello" }],
+      markdownDocuments: [{ id: "d1", title: "Note", body: "hello", version: 1 }],
     });
     const doc = new Y.Doc();
     Y.applyUpdate(doc, snapshot);
@@ -45,7 +45,7 @@ describe("board_yjs_model", () => {
     const replica = readBoardYDocReplica("folder-1", doc);
 
     expect(replica.boardItems.map((item) => item.id)).toEqual(["markdown:d1", "session:s1"]);
-    expect(replica.markdownDocuments).toEqual([{ id: "d1", title: "Note", body: "hello" }]);
+    expect(replica.markdownDocuments).toEqual([{ id: "d1", title: "Note", body: "hello", version: 1 }]);
   });
 
   it("snapshot과 누적 update에서 catalog replica를 derive", () => {
@@ -142,7 +142,7 @@ describe("board_yjs_model", () => {
       y: 40,
     });
 
-    expect(created.document).toEqual({ id: "doc-1", title: "Note", body: "hello\nworld" });
+    expect(created.document).toEqual({ id: "doc-1", title: "Note", body: "hello\nworld", version: 1 });
     expect(readBoardYDocReplica("folder-1", doc)).toMatchObject({
       boardItems: [{
         id: "markdown:doc-1",
@@ -151,18 +151,27 @@ describe("board_yjs_model", () => {
         itemId: "doc-1",
         x: 80,
         y: 40,
-        metadata: { title: "Note", preview: "hello world" },
+        metadata: { title: "Note", preview: "hello world", version: 1 },
       }],
-      markdownDocuments: [{ id: "doc-1", title: "Note", body: "hello\nworld" }],
+      markdownDocuments: [{ id: "doc-1", title: "Note", body: "hello\nworld", version: 1 }],
     });
 
     const updated = updateMarkdownYjsDocument(doc, "doc-1", {
       title: "Renamed",
       body: "updated body",
+      expectedVersion: 1,
     });
-    expect(updated).toEqual({ id: "doc-1", title: "Renamed", body: "updated body" });
+    expect(updated).toEqual({ id: "doc-1", title: "Renamed", body: "updated body", version: 2 });
     expect(readBoardYDocReplica("folder-1", doc).markdownDocuments).toEqual([
-      { id: "doc-1", title: "Renamed", body: "updated body" },
+      { id: "doc-1", title: "Renamed", body: "updated body", version: 2 },
+    ]);
+
+    expect(() => updateMarkdownYjsDocument(doc, "doc-1", {
+      body: "stale body",
+      expectedVersion: 1,
+    })).toThrow(/version conflict/);
+    expect(readBoardYDocReplica("folder-1", doc).markdownDocuments).toEqual([
+      { id: "doc-1", title: "Renamed", body: "updated body", version: 2 },
     ]);
 
     deleteMarkdownYjsDocument(doc, "doc-1");

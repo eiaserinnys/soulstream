@@ -9,6 +9,7 @@ from typing import Optional
 
 from soul_common.catalog.catalog_service import (  # noqa: F401
     CatalogService,
+    MarkdownDocumentVersionConflictError,
     SessionBroadcasterProtocol,
 )
 from soul_common.db.session_db import PostgresSessionDB
