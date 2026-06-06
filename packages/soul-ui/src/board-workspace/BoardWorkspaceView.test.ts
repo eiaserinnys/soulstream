@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogState, SessionSummary } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { BoardWorkspaceView } from "./BoardWorkspaceView";
+import { BoardWorkspaceView, resolveEffectiveBoardCatalog } from "./BoardWorkspaceView";
 import { FolderWorkspaceView } from "./FolderWorkspaceView";
 import { writeFolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 
@@ -309,6 +309,41 @@ describe("BoardWorkspaceView", () => {
     globalThis.IntersectionObserver = originalIntersectionObserver as typeof IntersectionObserver;
     window.matchMedia = originalMatchMedia as typeof window.matchMedia;
     vi.restoreAllMocks();
+  });
+
+  it("keeps catalog board items before the Yjs document has synced", () => {
+    const result = resolveEffectiveBoardCatalog({
+      catalog,
+      yjsBoardItemsForSelectedFolder: [],
+      isYjsLoading: false,
+      hasYjsSynced: false,
+      assetSignedUrls: {},
+    });
+
+    expect(result).toBe(catalog);
+    expect(result?.boardItems).toHaveLength(3);
+  });
+
+  it("uses Yjs board items after the document has synced", () => {
+    const yjsBoardItems = [{
+      id: "session:session-a",
+      folderId: "root",
+      itemType: "session" as const,
+      itemId: "session-a",
+      x: 999,
+      y: 888,
+    }];
+
+    const result = resolveEffectiveBoardCatalog({
+      catalog,
+      yjsBoardItemsForSelectedFolder: yjsBoardItems,
+      isYjsLoading: false,
+      hasYjsSynced: true,
+      assetSignedUrls: {},
+    });
+
+    expect(result).not.toBe(catalog);
+    expect(result?.boardItems).toEqual(yjsBoardItems);
   });
 
   it("renders fixed 280x160 positioned tiles on a 20px dotted infinite canvas", () => {
