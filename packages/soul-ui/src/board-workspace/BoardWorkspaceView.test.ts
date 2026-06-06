@@ -314,6 +314,7 @@ describe("BoardWorkspaceView", () => {
   it("keeps catalog board items before the Yjs document has synced", () => {
     const result = resolveEffectiveBoardCatalog({
       catalog,
+      selectedFolderId: "root",
       yjsBoardItemsForSelectedFolder: [],
       isYjsLoading: false,
       hasYjsSynced: false,
@@ -336,6 +337,7 @@ describe("BoardWorkspaceView", () => {
 
     const result = resolveEffectiveBoardCatalog({
       catalog,
+      selectedFolderId: "root",
       yjsBoardItemsForSelectedFolder: yjsBoardItems,
       isYjsLoading: false,
       hasYjsSynced: true,
@@ -344,6 +346,34 @@ describe("BoardWorkspaceView", () => {
 
     expect(result).not.toBe(catalog);
     expect(result?.boardItems).toEqual(yjsBoardItems);
+  });
+
+  it("preserves other folders when applying synced Yjs items for the selected folder", () => {
+    const result = resolveEffectiveBoardCatalog({
+      catalog: relationCatalog,
+      selectedFolderId: "root",
+      yjsBoardItemsForSelectedFolder: [{
+        id: "session:parent",
+        folderId: "root",
+        itemType: "session",
+        itemId: "parent",
+        x: 999,
+        y: 888,
+      }],
+      isYjsLoading: false,
+      hasYjsSynced: true,
+      assetSignedUrls: {},
+    });
+
+    expect(result?.boardItems?.map((item) => item.id)).toEqual([
+      "session:cross-child",
+      "session:parent",
+    ]);
+    expect(result?.boardItems?.find((item) => item.id === "session:cross-child")).toMatchObject({
+      folderId: "other",
+      x: 160,
+      y: 120,
+    });
   });
 
   it("renders fixed 280x160 positioned tiles on a 20px dotted infinite canvas", () => {
@@ -455,6 +485,56 @@ describe("BoardWorkspaceView", () => {
     expect(onUpdateBoardItemPosition).not.toHaveBeenCalled();
     expect(sessionTile?.style.left).toBe("10260px");
     expect(sessionTile?.style.top).toBe("6100px");
+  });
+
+  it("upserts a missing session board item when dragging a fallback session tile", async () => {
+    const fallbackCatalog: CatalogState = {
+      folders: [{
+        id: "root",
+        name: "김서하",
+        sortOrder: 0,
+        parentFolderId: null,
+        createdAt: "2026-06-06T00:00:00.000Z",
+      }],
+      sessions: {
+        "only-session": { folderId: "root", displayName: null },
+      },
+      sessionList: [{
+        agentSessionId: "only-session",
+        status: "running",
+        eventCount: 1,
+        sessionType: "claude",
+        folderId: "root",
+        prompt: "Single visible session",
+        createdAt: "2026-06-06T01:00:00.000Z",
+      }],
+      boardItems: [],
+    };
+    ({ container, root } = renderBoard({}, {
+      catalog: fallbackCatalog,
+      sessions: [],
+    }));
+
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    expect(sessionTile).not.toBeNull();
+
+    flushSync(() => {
+      dispatchPointer(sessionTile!, "pointerdown", { clientX: 0, clientY: 0 });
+      dispatchPointer(window, "pointermove", { clientX: 55, clientY: 61 });
+      dispatchPointer(window, "pointerup", { clientX: 55, clientY: 61 });
+    });
+    await Promise.resolve();
+
+    expect(useDashboardStore.getState().catalog?.boardItems).toEqual([
+      expect.objectContaining({
+        id: "session:only-session",
+        folderId: "root",
+        itemType: "session",
+        itemId: "only-session",
+        x: 60,
+        y: 60,
+      }),
+    ]);
   });
 
   it("does not roll back to a stale server position when the legacy callback rejects", async () => {

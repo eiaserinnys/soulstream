@@ -187,6 +187,46 @@ describe("board workspace item helpers", () => {
     });
   });
 
+  it("keeps a single assigned session visible when synced Yjs boardItems are empty", () => {
+    const singleSessionCatalog: CatalogState = {
+      folders: [{
+        id: "general-user-folder",
+        name: "김서하",
+        sortOrder: 0,
+        parentFolderId: null,
+        createdAt: "2026-06-06T00:00:00.000Z",
+      }],
+      sessions: {
+        "only-session": { folderId: "general-user-folder", displayName: null },
+      },
+      sessionList: [{
+        agentSessionId: "only-session",
+        status: "running",
+        eventCount: 1,
+        sessionType: "claude",
+        folderId: "general-user-folder",
+        prompt: "Single visible session",
+        createdAt: "2026-06-06T01:00:00.000Z",
+      }],
+      boardItems: [],
+    };
+
+    const items = buildBoardWorkspaceItems({
+      catalog: singleSessionCatalog,
+      selectedFolderId: "general-user-folder",
+      sessions: [],
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      type: "session",
+      id: "only-session",
+      boardItemId: "session:only-session",
+      x: 0,
+      y: 0,
+    });
+  });
+
   it("uses /api/sessions summaries for general-user board session agent metadata", () => {
     const generalUserCatalog: CatalogState = {
       ...catalog,
