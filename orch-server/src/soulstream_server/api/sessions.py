@@ -81,6 +81,13 @@ def _field_supplied(model: Any, field_name: str) -> bool:
     return field_name in fields
 
 
+def _access_email_from_caller_info(caller_info: dict | None) -> str | None:
+    if not isinstance(caller_info, dict):
+        return None
+    email = caller_info.get("email")
+    return email if isinstance(email, str) else None
+
+
 # --- Router Factory ---
 
 def create_sessions_router(
@@ -205,7 +212,10 @@ def create_sessions_router(
         if task_scope.existing_response:
             return task_scope.existing_response
         payload = body.model_dump(exclude_none=True)
-        access = access_for_request(request)
+        access = access_for_request(
+            request,
+            access_email=_access_email_from_caller_info(body.caller_info),
+        )
         if access.restricted:
             folders = await catalog_service.list_folders() if catalog_service else await db.get_all_folders()
             requested_folder_id = payload.get("folderId")
@@ -330,7 +340,12 @@ def create_sessions_router(
         `InterveneRequest`에 `nodeId` 필드가 없어 `find_session_node` 결과 `node.node_id` 사용.
         예외 발생 시 caller_info 조립 미발동 — 기존 동작 정합 (fastapi 자동 처리).
         """
-        await require_session_allowed(request, db, session_id)
+        await require_session_allowed(
+            request,
+            db,
+            session_id,
+            access_email=_access_email_from_caller_info(body.caller_info),
+        )
         from soulstream_server.config import get_settings
         settings = get_settings()
         node = await find_session_node(session_id, db, node_manager)

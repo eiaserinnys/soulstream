@@ -13,6 +13,7 @@ from soulstream_server.main import create_app
 from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
 from soulstream_server.service.session_router import SessionRouter
+from tests.conftest import TEST_AUTH_TOKEN
 from soulstream_server.users import DashboardUserService
 
 
@@ -60,6 +61,7 @@ def _build_app(monkeypatch):
     db = MagicMock()
     db.get_all_sessions = AsyncMock(return_value=([_session("s-allowed", "allowed-child")], 1))
     db.get_session = AsyncMock(return_value=_session("s-allowed", "allowed-child"))
+    db.get_all_folders = AsyncMock(return_value=_folders())
     db.read_events = AsyncMock(return_value=[])
     db.read_messages = AsyncMock(return_value=([], None))
     db.read_timeline = AsyncMock(return_value=([], None))
@@ -96,6 +98,7 @@ def _build_app(monkeypatch):
             "y": 0,
         }],
     })
+    catalog_service.broadcast_catalog = AsyncMock()
     catalog_service.update_board_item_position = AsyncMock()
     catalog_service.move_sessions_to_folder = AsyncMock()
 
@@ -110,7 +113,25 @@ def _build_app(monkeypatch):
         catalog_service=catalog_service,
         user_service=user_service,
     )
-    return app, db, catalog_service
+    return app, db, catalog_service, node_manager
+
+
+async def _register_node(node_manager: NodeManager):
+    ws = AsyncMock()
+    ws.send_json = AsyncMock()
+    ws.close = AsyncMock()
+    node = await node_manager.register_node(ws, {"node_id": "node-1"})
+
+    async def resolve_on_send(data):
+        req_id = data.get("requestId")
+        if req_id and req_id in node._pending:
+            if data.get("type") == "intervene":
+                node._pending[req_id].set_result({"status": "queued"})
+            else:
+                node._pending[req_id].set_result({"agentSessionId": "sess-routed"})
+
+    ws.send_json.side_effect = resolve_on_send
+    return node, ws
 
 
 def _access_request(
@@ -151,8 +172,32 @@ async def _restricted_client(app):
         yield client
 
 
+async def _admin_client(app):
+    token = generate_token(
+        {"email": "owner@example.com", "name": "Owner"},
+        JWT_SECRET,
+    )
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        cookies={COOKIE_NAME: token},
+    ) as client:
+        yield client
+
+
+async def _service_token_client(app):
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {TEST_AUTH_TOKEN}"},
+    ) as client:
+        yield client
+
+
 def test_access_for_request_service_token_trusts_explicit_admin_email(monkeypatch):
-    app, _db, _catalog_service = _build_app(monkeypatch)
+    app, _db, _catalog_service, _node_manager = _build_app(monkeypatch)
     request = _access_request(app, auth_mode="service_token")
 
     access = access_for_request(request, access_email="owner@example.com")
@@ -161,7 +206,7 @@ def test_access_for_request_service_token_trusts_explicit_admin_email(monkeypatc
 
 
 def test_access_for_request_jwt_restricted_user_ignores_spoofed_access_email(monkeypatch):
-    app, _db, _catalog_service = _build_app(monkeypatch)
+    app, _db, _catalog_service, _node_manager = _build_app(monkeypatch)
     request = _access_request(
         app,
         auth_mode="jwt",
@@ -175,7 +220,7 @@ def test_access_for_request_jwt_restricted_user_ignores_spoofed_access_email(mon
 
 
 def test_access_for_request_jwt_cookie_wins_over_service_token_access_email(monkeypatch):
-    app, _db, _catalog_service = _build_app(monkeypatch)
+    app, _db, _catalog_service, _node_manager = _build_app(monkeypatch)
     token = generate_token(
         {"email": "bellon.lovedive@gmail.com", "name": "Bellon"},
         JWT_SECRET,
@@ -193,7 +238,7 @@ def test_access_for_request_jwt_cookie_wins_over_service_token_access_email(monk
 
 
 def test_access_for_request_service_token_without_email_keeps_unknown_denied(monkeypatch):
-    app, _db, _catalog_service = _build_app(monkeypatch)
+    app, _db, _catalog_service, _node_manager = _build_app(monkeypatch)
     request = _access_request(app, auth_mode="service_token")
 
     access = access_for_request(request, access_email=None)
@@ -203,7 +248,7 @@ def test_access_for_request_service_token_without_email_keeps_unknown_denied(mon
 
 
 def test_access_for_request_jwt_admin_path_regression(monkeypatch):
-    app, _db, _catalog_service = _build_app(monkeypatch)
+    app, _db, _catalog_service, _node_manager = _build_app(monkeypatch)
     request = _access_request(
         app,
         auth_mode="jwt",
@@ -217,7 +262,7 @@ def test_access_for_request_jwt_admin_path_regression(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_auth_status_includes_restricted_dashboard_access(monkeypatch):
-    app, _db, _catalog_service = _build_app(monkeypatch)
+    app, _db, _catalog_service, _node_manager = _build_app(monkeypatch)
     async for client in _restricted_client(app):
         resp = await client.get("/api/auth/status")
 
@@ -233,7 +278,7 @@ async def test_auth_status_includes_restricted_dashboard_access(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_restricted_user_sees_allowed_folder_subtree_only(monkeypatch):
-    app, _db, _catalog_service = _build_app(monkeypatch)
+    app, _db, _catalog_service, _node_manager = _build_app(monkeypatch)
     async for client in _restricted_client(app):
         resp = await client.get("/api/folders")
 
@@ -251,7 +296,7 @@ async def test_restricted_user_sees_allowed_folder_subtree_only(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_restricted_user_cannot_query_blocked_folder_sessions(monkeypatch):
-    app, db, _catalog_service = _build_app(monkeypatch)
+    app, db, _catalog_service, _node_manager = _build_app(monkeypatch)
     async for client in _restricted_client(app):
         resp = await client.get("/api/sessions?folder_id=blocked-root")
 
@@ -261,7 +306,7 @@ async def test_restricted_user_cannot_query_blocked_folder_sessions(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_restricted_user_can_query_allowed_child_sessions(monkeypatch):
-    app, db, _catalog_service = _build_app(monkeypatch)
+    app, db, _catalog_service, _node_manager = _build_app(monkeypatch)
     async for client in _restricted_client(app):
         resp = await client.get("/api/sessions?folder_id=allowed-child")
 
@@ -272,7 +317,7 @@ async def test_restricted_user_can_query_allowed_child_sessions(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_restricted_user_with_no_allowed_folders_gets_empty_session_list(monkeypatch):
-    app, db, catalog_service = _build_app(monkeypatch)
+    app, db, catalog_service, _node_manager = _build_app(monkeypatch)
     catalog_service.list_folders.return_value = []
     async for client in _restricted_client(app):
         resp = await client.get("/api/sessions")
@@ -284,7 +329,7 @@ async def test_restricted_user_with_no_allowed_folders_gets_empty_session_list(m
 
 @pytest.mark.asyncio
 async def test_restricted_user_cannot_read_blocked_board_items(monkeypatch):
-    app, _db, catalog_service = _build_app(monkeypatch)
+    app, _db, catalog_service, _node_manager = _build_app(monkeypatch)
     async for client in _restricted_client(app):
         resp = await client.get("/api/board-items?folder_id=blocked-root")
 
@@ -294,7 +339,7 @@ async def test_restricted_user_cannot_read_blocked_board_items(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_restricted_user_cannot_move_blocked_board_item(monkeypatch):
-    app, _db, catalog_service = _build_app(monkeypatch)
+    app, _db, catalog_service, _node_manager = _build_app(monkeypatch)
     async for client in _restricted_client(app):
         resp = await client.patch(
             "/api/board-items/blocked-item/position",
@@ -303,3 +348,102 @@ async def test_restricted_user_cannot_move_blocked_board_item(monkeypatch):
 
     assert resp.status_code == 403
     catalog_service.update_board_item_position.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_create_session_service_token_uses_body_caller_email_for_folder_access(monkeypatch):
+    app, _db, _catalog_service, node_manager = _build_app(monkeypatch)
+    _node, ws = await _register_node(node_manager)
+
+    async for client in _service_token_client(app):
+        resp = await client.post(
+            "/api/sessions",
+            json={
+                "prompt": "delegate",
+                "nodeId": "node-1",
+                "folderId": "blocked-root",
+                "caller_info": {"source": "browser", "email": "owner@example.com"},
+            },
+        )
+
+    assert resp.status_code == 201, resp.text
+    ws.send_json.assert_awaited_once()
+    assert ws.send_json.await_args.args[0]["folderId"] == "blocked-root"
+
+
+@pytest.mark.asyncio
+async def test_create_session_jwt_restricted_user_cannot_spoof_body_caller_email(monkeypatch):
+    app, _db, _catalog_service, node_manager = _build_app(monkeypatch)
+    _node, ws = await _register_node(node_manager)
+
+    async for client in _restricted_client(app):
+        resp = await client.post(
+            "/api/sessions",
+            json={
+                "prompt": "blocked",
+                "nodeId": "node-1",
+                "folderId": "blocked-root",
+                "caller_info": {"source": "browser", "email": "owner@example.com"},
+            },
+        )
+
+    assert resp.status_code == 403
+    ws.send_json.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_session_jwt_admin_path_regression(monkeypatch):
+    app, _db, _catalog_service, node_manager = _build_app(monkeypatch)
+    _node, ws = await _register_node(node_manager)
+
+    async for client in _admin_client(app):
+        resp = await client.post(
+            "/api/sessions",
+            json={
+                "prompt": "admin",
+                "nodeId": "node-1",
+                "folderId": "blocked-root",
+            },
+        )
+
+    assert resp.status_code == 201, resp.text
+    ws.send_json.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_intervene_service_token_uses_body_caller_email_for_session_access(monkeypatch):
+    app, db, _catalog_service, node_manager = _build_app(monkeypatch)
+    _node, ws = await _register_node(node_manager)
+    db.get_session = AsyncMock(return_value=_session("s-blocked", "blocked-root"))
+
+    async for client in _service_token_client(app):
+        resp = await client.post(
+            "/api/sessions/s-blocked/intervene",
+            json={
+                "text": "relay",
+                "caller_info": {"source": "agent", "email": "owner@example.com"},
+            },
+        )
+
+    assert resp.status_code == 200, resp.text
+    ws.send_json.assert_awaited_once()
+    assert ws.send_json.await_args.args[0]["type"] == "intervene"
+
+
+@pytest.mark.asyncio
+async def test_intervene_jwt_restricted_user_cannot_spoof_body_caller_email(monkeypatch):
+    app, db, _catalog_service, node_manager = _build_app(monkeypatch)
+    _node, ws = await _register_node(node_manager)
+    db.get_session = AsyncMock(return_value=_session("s-blocked", "blocked-root"))
+
+    async for client in _restricted_client(app):
+        resp = await client.post(
+            "/api/sessions/s-blocked/intervene",
+            json={
+                "text": "blocked",
+                "caller_info": {"source": "agent", "email": "owner@example.com"},
+            },
+        )
+
+    assert resp.status_code == 403
+    ws.send_json.assert_not_awaited()
