@@ -59,6 +59,8 @@ export interface DashboardShellProps {
 
   /** 왼쪽 패널 기본 비율 (%). 기본 20 */
   defaultLeftPercent?: number;
+  /** 데스크톱 왼쪽 패널과 모바일 폴더 트리를 숨길지 여부 */
+  hideLeftPanel?: boolean;
   /** 오른쪽 패널 기본 비율 (%). 기본 30 */
   defaultRightPercent?: number;
   /**
@@ -128,6 +130,7 @@ export function DashboardShell({
   banner,
   modals,
   defaultLeftPercent = DEFAULT_LEFT,
+  hideLeftPanel = false,
   defaultRightPercent = DEFAULT_RIGHT,
   leftBottomRatio = 0,
   leftSplitStorageKey,
@@ -146,7 +149,7 @@ export function DashboardShell({
 
   // 드래그 중 최신 값을 참조하기 위한 refs (stale closure 방지)
   const leftRef = useRef(leftPercent);
-  leftRef.current = leftPercent;
+  leftRef.current = hideLeftPanel ? 0 : leftPercent;
   const rightRef = useRef(rightPercent);
   rightRef.current = rightPercent;
 
@@ -239,7 +242,7 @@ export function DashboardShell({
     }
   }, [setActiveTab, clearSelectedFolder, setViewMode]);
 
-  const centerPercent = Math.max(MIN_CENTER, 100 - leftPercent - rightPercent);
+  const centerPercent = Math.max(MIN_CENTER, 100 - (hideLeftPanel ? 0 : leftPercent) - rightPercent);
 
   // leftPanel에 하단 영역이 있을 때 드래그 가능한 상하 분할 (VerticalSplitPane 재사용)
   // leftBottomRatio(0~10) → defaultTopPercent(0~100): leftBottomRatio=3 → top=70%
@@ -310,14 +313,18 @@ export function DashboardShell({
 
             {/* 폴더 탭 — 2단계 네비게이션(폴더 목록 ↔ 폴더 내용)은 FolderStack이 슬라이드로 처리 */}
             <TabsPanel value="folder" keepMounted className="h-full">
-              <FolderStack
-                selectedFolderId={selectedFolderId}
-                leftPanelContent={leftPanelContent}
-                mobileFolderContents={mobileFolderContents}
-                folderName={catalog?.folders?.find((f) => f.id === selectedFolderId)?.name ?? "세션"}
-                onBack={() => clearSelectedFolder()}
-                onNewSession={onNewSession}
-              />
+              {hideLeftPanel ? (
+                mobileFolderContents ?? centerPanel
+              ) : (
+                <FolderStack
+                  selectedFolderId={selectedFolderId}
+                  leftPanelContent={leftPanelContent}
+                  mobileFolderContents={mobileFolderContents}
+                  folderName={catalog?.folders?.find((f) => f.id === selectedFolderId)?.name ?? "세션"}
+                  onBack={() => clearSelectedFolder()}
+                  onNewSession={onNewSession}
+                />
+              )}
             </TabsPanel>
 
             <TabsPanel value="tasks" keepMounted className="h-full">
@@ -356,51 +363,53 @@ export function DashboardShell({
         /* 데스크탑: 3-Panel content */
         <div className="flex flex-1 overflow-hidden">
           {/* Left panel */}
-          <aside
-            data-testid="session-panel"
-            className="relative overflow-hidden transition-[width] duration-150 ease-out"
-            style={{ width: isLeftSidebarCollapsed ? 44 : `${leftPercent}%` }}
-          >
-            {isLeftSidebarCollapsed ? (
-              <div className="flex h-full items-start justify-center pt-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  data-testid="left-sidebar-toggle"
-                  title="Expand sidebar"
-                  onClick={toggleLeftSidebarCollapsed}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            ) : (
-              <>
-                {leftPanelContent}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-1 top-1 z-20 h-7 w-7 bg-popover/80"
-                  data-testid="left-sidebar-toggle"
-                  title="Collapse sidebar"
-                  onClick={toggleLeftSidebarCollapsed}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-              </>
-            )}
-          </aside>
+          {!hideLeftPanel && (
+            <aside
+              data-testid="session-panel"
+              className="relative overflow-hidden transition-[width] duration-150 ease-out"
+              style={{ width: isLeftSidebarCollapsed ? 44 : `${leftPercent}%` }}
+            >
+              {isLeftSidebarCollapsed ? (
+                <div className="flex h-full items-start justify-center pt-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    data-testid="left-sidebar-toggle"
+                    title="Expand sidebar"
+                    onClick={toggleLeftSidebarCollapsed}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <>
+                  {leftPanelContent}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1 z-20 h-7 w-7 bg-popover/80"
+                    data-testid="left-sidebar-toggle"
+                    title="Collapse sidebar"
+                    onClick={toggleLeftSidebarCollapsed}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+            </aside>
+          )}
 
           {/* Left drag handle */}
-          {!isLeftSidebarCollapsed && <DragHandle onDrag={handleLeftDrag} />}
+          {!hideLeftPanel && !isLeftSidebarCollapsed && <DragHandle onDrag={handleLeftDrag} />}
 
           {/* Center panel */}
           <main
             data-testid="graph-panel"
             className="overflow-hidden flex flex-col"
-            style={isLeftSidebarCollapsed ? { flex: "1 1 auto" } : { width: `${centerPercent}%` }}
+            style={isLeftSidebarCollapsed && !hideLeftPanel ? { flex: "1 1 auto" } : { width: `${centerPercent}%` }}
           >
             {centerPanel}
           </main>

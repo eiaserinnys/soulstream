@@ -16,6 +16,8 @@ def create_auth_router(
     allowed_email: str,
     jwt_secret: str,
     is_development: bool = False,
+    extra_allowed_emails: set[str] | None = None,
+    user_payload_extra: Callable[[dict], dict[str, Any]] | None = None,
 ) -> APIRouter:
     """OAuth 라우터를 생성한다."""
     return create_oauth_router(
@@ -25,6 +27,8 @@ def create_auth_router(
         allowed_email=allowed_email,
         jwt_secret=jwt_secret,
         is_development=is_development,
+        extra_allowed_emails=extra_allowed_emails,
+        user_payload_extra=user_payload_extra,
     )
 
 

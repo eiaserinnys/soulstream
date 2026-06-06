@@ -44,6 +44,8 @@ def create_oauth_router(
     jwt_secret: str,
     cookie_name: str = COOKIE_NAME,
     is_development: bool = False,
+    extra_allowed_emails: set[str] | None = None,
+    user_payload_extra: Callable[[dict], dict[str, Any]] | None = None,
 ) -> APIRouter:
     """Google OAuth 라우터를 생성한다.
 
@@ -61,6 +63,11 @@ def create_oauth_router(
     """
     router = APIRouter()
     auth_enabled = bool(google_client_id)
+    allowed_emails = {
+        email.strip().lower()
+        for email in {allowed_email, *(extra_allowed_emails or set())}
+        if email and email.strip()
+    }
 
     def _get_callback_url(request: Request) -> str:
         if callback_url.startswith("http"):
@@ -147,7 +154,8 @@ def create_oauth_router(
             logger.exception("OAuth callback error: %s", e)
             return RedirectResponse("/?error=auth_failed")
 
-        if not allowed_email or userinfo.get("email") != allowed_email:
+        email = str(userinfo.get("email") or "").strip().lower()
+        if not allowed_emails or email not in allowed_emails:
             logger.warning("Email not allowed: %s", userinfo.get("email"))
             return RedirectResponse("/?error=no_user")
 
@@ -188,13 +196,16 @@ def create_oauth_router(
         if not payload:
             return {"authenticated": False, "user": None}
 
+        user = {
+            "email": payload["email"],
+            "name": payload.get("name", ""),
+            "picture": payload.get("picture", ""),
+        }
+        if user_payload_extra:
+            user.update(user_payload_extra(payload))
         return {
             "authenticated": True,
-            "user": {
-                "email": payload["email"],
-                "name": payload.get("name", ""),
-                "picture": payload.get("picture", ""),
-            },
+            "user": user,
         }
 
     @router.post("/api/auth/logout")

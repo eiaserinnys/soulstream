@@ -19,10 +19,16 @@ import {
   type ReactNode,
 } from "react";
 
+export interface DashboardAccess {
+  restricted: boolean;
+  allowedFolderIds: string[];
+}
+
 export interface AuthUser {
   email: string;
   name: string;
   picture?: string;
+  dashboardAccess?: DashboardAccess;
 }
 
 export interface AuthContextValue {

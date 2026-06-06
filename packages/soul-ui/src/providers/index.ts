@@ -28,4 +28,4 @@ export type {
 
 // === Auth ===
 export { AuthProvider, useAuth } from "./AuthProvider";
-export type { AuthContextValue, AuthUser } from "./AuthProvider";
+export type { AuthContextValue, AuthUser, DashboardAccess } from "./AuthProvider";

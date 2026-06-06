@@ -39,6 +39,7 @@ from soulstream_server.api.system_portraits import create_system_portraits_route
 from soulstream_server.api.tasks import create_tasks_router
 from soulstream_server.push import ExpoPushProvider, PushNotifier, PushRepository
 from soulstream_server.config import Settings, get_settings
+from soulstream_server.dashboard_access import access_for_email, extra_login_allowed_emails
 from soulstream_server.dashboard.auth import create_auth_router
 from soulstream_server.dashboard.serving import mount_dashboard
 from soulstream_server.nodes.node_manager import NodeManager
@@ -282,8 +283,8 @@ def _mount_api_routers(
     app.include_router(create_provider_usage_router(node_manager, dependencies=api_deps))
     app.include_router(create_folders_router(catalog_service, dependencies=api_deps))
     app.include_router(create_catalog_router(catalog_service, dependencies=api_deps))
-    app.include_router(create_attachments_router(node_manager, dependencies=api_deps))
-    app.include_router(create_cogito_router(node_manager, dependencies=api_deps))
+    app.include_router(create_attachments_router(node_manager, db, dependencies=api_deps))
+    app.include_router(create_cogito_router(node_manager, db, catalog_service, dependencies=api_deps))
     app.include_router(create_atom_router(dependencies=api_deps))
     app.include_router(
         create_tasks_router(
@@ -329,6 +330,10 @@ def _mount_api_routers(
             allowed_email=settings.allowed_email,
             jwt_secret=settings.jwt_secret,
             is_development=settings.is_development,
+            extra_allowed_emails=extra_login_allowed_emails(settings),
+            user_payload_extra=lambda payload: {
+                "dashboardAccess": access_for_email(payload.get("email"), settings).to_payload()
+            },
         )
         app.include_router(auth_router)
 

@@ -14,6 +14,13 @@ from sse_starlette.sse import EventSourceResponse
 from soul_common.db.session_db import PostgresSessionDB
 
 from soulstream_server.api.session_serializer import _session_to_response
+from soulstream_server.dashboard_access import (
+    access_for_request,
+    filter_folders,
+    filter_session_assignments,
+    first_allowed_folder_id,
+    is_folder_allowed,
+)
 from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
 
@@ -23,6 +30,7 @@ async def create_session_stream_response(
     db: PostgresSessionDB,
     node_manager: NodeManager,
     broadcaster: SessionBroadcaster | None,
+    catalog_service=None,
 ) -> EventSourceResponse:
     """세션 목록 변경 SSE 스트림 (Last-Event-ID resume 지원).
 
@@ -73,6 +81,70 @@ async def create_session_stream_response(
             last_event_id = None
 
     async def event_generator():
+        access = access_for_request(request)
+
+        async def get_folders() -> list[dict]:
+            if catalog_service is not None:
+                return await catalog_service.list_folders()
+            rows = await db.get_all_folders()
+            return [
+                {
+                    "id": row.get("id"),
+                    "name": row.get("name"),
+                    "sortOrder": row.get("sort_order", row.get("sortOrder", 0)),
+                    "parentFolderId": row.get("parent_folder_id", row.get("parentFolderId")),
+                    "settings": row.get("settings") or {},
+                }
+                for row in rows
+            ]
+
+        async def filter_event(event: dict) -> dict | None:
+            if not access.restricted:
+                return event
+            event_type = event.get("type")
+            folders = await get_folders()
+            if event_type == "catalog_updated":
+                catalog = event.get("catalog") if isinstance(event.get("catalog"), dict) else {}
+                catalog_folders = catalog.get("folders") if isinstance(catalog.get("folders"), list) else folders
+                sessions = catalog.get("sessions") if isinstance(catalog.get("sessions"), dict) else {}
+                return {
+                    **event,
+                    "catalog": {
+                        **catalog,
+                        "folders": filter_folders(access, catalog_folders),
+                        "sessions": filter_session_assignments(access, catalog_folders, sessions),
+                    },
+                }
+            if event_type in {"session_created", "session_updated"}:
+                session = event.get("session") if isinstance(event.get("session"), dict) else event
+                folder_id = (
+                    event.get("folder_id")
+                    or event.get("folderId")
+                    or session.get("folder_id")
+                    or session.get("folderId")
+                )
+                session_id = (
+                    event.get("agent_session_id")
+                    or event.get("agentSessionId")
+                    or session.get("agent_session_id")
+                    or session.get("agentSessionId")
+                )
+                if folder_id is None and isinstance(session_id, str):
+                    row = await db.get_session(session_id)
+                    if row:
+                        folder_id = row.get("folder_id") or row.get("folderId")
+                return event if is_folder_allowed(access, folders, folder_id) else None
+            if event_type == "session_deleted":
+                session_id = event.get("agent_session_id") or event.get("agentSessionId")
+                if not isinstance(session_id, str):
+                    return None
+                row = await db.get_session(session_id)
+                if not row:
+                    return None
+                folder_id = row.get("folder_id") or row.get("folderId")
+                return event if is_folder_allowed(access, folders, folder_id) else None
+            return event
+
         # broadcaster=None: stream_meta 송출 생략. 빈 instance_id 송출은
         # "정상 instance와 구분 안 됨"으로 명시적 실패 원칙(design-principles §4) 위반.
         if broadcaster is None:
@@ -102,7 +174,19 @@ async def create_session_stream_response(
 
             if last_event_id is None:
                 # 첫 연결: initial session_list (REST 풀 스냅샷, SSE id 미부착)
-                sessions, total = await db.get_all_sessions(offset=0, limit=200)
+                folder_id = None
+                if access.restricted:
+                    folder_id = first_allowed_folder_id(access, await get_folders())
+                    if folder_id is None:
+                        sessions, total = [], 0
+                    else:
+                        sessions, total = await db.get_all_sessions(
+                            offset=0,
+                            limit=200,
+                            folder_id=folder_id,
+                        )
+                else:
+                    sessions, total = await db.get_all_sessions(offset=0, limit=200)
                 result = [
                     _session_to_response(s, node_manager=node_manager)
                     for s in sessions
@@ -131,6 +215,9 @@ async def create_session_stream_response(
                 else:
                     # 누락 이벤트들을 SSE id 부착하여 yield
                     for eid, ev in replay.events:
+                        ev = await filter_event(ev)
+                        if ev is None:
+                            continue
                         ev_type = ev.get("type", "message")
                         yield {
                             "event": ev_type,
@@ -159,6 +246,10 @@ async def create_session_stream_response(
                     # replay에서 이미 yield한 이벤트의 큐 사본 — skip
                     continue
 
+                event_type = event.get("type", "message")
+                event = await filter_event(event)
+                if event is None:
+                    continue
                 event_type = event.get("type", "message")
                 # 브로드캐스터는 raw DB 딕셔너리를 그대로 전송한다.
                 # session_created/session_updated 이벤트에는 agentId(DB 컬럼)가 포함되나,
