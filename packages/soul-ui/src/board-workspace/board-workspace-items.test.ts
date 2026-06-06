@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CatalogState, SessionSummary } from "../shared/types";
+import { mergeSessionAssignmentsFromSummaries } from "../hooks/session-stream-helpers";
 import {
   buildBoardWorkspaceItems,
   computeBoardCanvasSize,
@@ -182,6 +183,59 @@ describe("board workspace item helpers", () => {
         folderId: "folder-new",
         status: "unknown",
         eventCount: 0,
+      },
+    });
+  });
+
+  it("uses /api/sessions summaries for general-user board session agent metadata", () => {
+    const generalUserCatalog: CatalogState = {
+      ...catalog,
+      sessions: {},
+      sessionList: undefined,
+      boardItems: [
+        {
+          id: "session:session-live",
+          folderId: "root",
+          itemType: "session",
+          itemId: "session-live",
+          x: 0,
+          y: 0,
+        },
+      ],
+    };
+    const sessionSummary: SessionSummary = {
+      agentSessionId: "session-live",
+      status: "running",
+      eventCount: 7,
+      sessionType: "claude",
+      folderId: "root",
+      prompt: "Live board session",
+      agentId: "roselin_codex",
+      agentName: "Roselin",
+      agentPortraitUrl: "/api/nodes/eias/agents/roselin_codex/portrait",
+      backend: "codex",
+      createdAt: "2026-06-05T00:00:00.000Z",
+      updatedAt: "2026-06-06T00:00:00.000Z",
+    };
+    const mergedCatalog = mergeSessionAssignmentsFromSummaries(
+      generalUserCatalog,
+      [sessionSummary],
+    );
+
+    const items = buildBoardWorkspaceItems({
+      catalog: mergedCatalog,
+      selectedFolderId: "root",
+      sessions: [],
+    });
+
+    const sessionItem = items.find((item) => item.type === "session");
+    expect(sessionItem).toMatchObject({
+      type: "session",
+      id: "session-live",
+      session: {
+        agentName: "Roselin",
+        agentPortraitUrl: "/api/nodes/eias/agents/roselin_codex/portrait",
+        backend: "codex",
       },
     });
   });
