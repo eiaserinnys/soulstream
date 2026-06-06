@@ -17,6 +17,7 @@ import {
   useDashboardStore,
   cn,
   DEFAULT_REASONING_EFFORT,
+  DEFAULT_FOLDER_ID,
   REASONING_EFFORT_OPTIONS,
   placeBoardSessionInYjs,
   type ReasoningEffort,
@@ -65,8 +66,7 @@ export function OrchestratorNewSessionModal() {
     [nodes],
   );
 
-  // '클로드 코드 세션' 폴더 ID
-  const claudeFolder = catalog?.folders.find((f) => f.name === '클로드 코드 세션');
+  const defaultFolderExists = catalog?.folders.some((f) => f.id === DEFAULT_FOLDER_ID) ?? false;
   const taskIdempotencyKeyRef = useRef<string | null>(null);
   const draftKey = newSessionParentTask
     ? `__draft__orchestrator__task__${newSessionParentTask.id}`
@@ -109,7 +109,7 @@ export function OrchestratorNewSessionModal() {
     if (defaultFolderId) {
       setSelectedModalFolderId(defaultFolderId);
     } else if (newSessionSource === 'feed') {
-      setSelectedModalFolderId(claudeFolder?.id ?? null);
+      setSelectedModalFolderId(defaultFolderExists ? DEFAULT_FOLDER_ID : null);
     } else {
       setSelectedModalFolderId(selectedFolderId);
     }

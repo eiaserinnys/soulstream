@@ -15,6 +15,7 @@
 
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { CatalogFolder, CatalogFolderReorderItem, FolderSettings } from "../shared/types";
+import { isSystemFolderId } from "../shared/constants";
 import { toastManager } from "../components/ui/toast";
 
 export interface FolderApiConfig {
@@ -25,10 +26,10 @@ export interface FolderApiConfig {
   reorderUrl: string;
   /**
    * 삭제 후 폴백 폴더 결정 로직:
-   * - string: 해당 이름의 폴더를 catalog에서 찾아 폴백 (soul-dashboard: SYSTEM_FOLDERS.claude)
-   * - undefined: 삭제 대상이 아닌 첫 번째 폴더로 폴백 (orchestrator 방식)
+   * - string: 해당 id의 폴더를 catalog에서 찾아 폴백
+   * - undefined/null: 폴더 미선택(null) 유지
    */
-  deleteFallbackFolderName?: string;
+  deleteFallbackFolderId?: string | null;
 }
 
 export interface FolderOperations {
@@ -83,6 +84,8 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
     folderId: string,
     name: string,
   ): Promise<void> {
+    if (isSystemFolderId(folderId)) return;
+
     const { updateFolderName, catalog } = useDashboardStore.getState();
     const prevName = catalog?.folders.find((f) => f.id === folderId)?.name;
 
@@ -109,6 +112,8 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
    * 로컬에서 즉시 삭제 → API → 실패 시 폴더 + 세션 배정 복원.
    */
   async function deleteFolderOptimistic(folderId: string): Promise<void> {
+    if (isSystemFolderId(folderId)) return;
+
     const { removeFolder, addFolder, moveSessionsToFolder, selectFolder, catalog, selectedFolderId } =
       useDashboardStore.getState();
 
@@ -125,15 +130,9 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
     if (selectedFolderId === folderId) {
       let fallbackId: string | null = null;
 
-      if (config.deleteFallbackFolderName) {
-        // name 기반 탐색 (soul-dashboard: SYSTEM_FOLDERS.claude)
-        const namedFolder = catalog?.folders.find(
-          (f) => f.name === config.deleteFallbackFolderName && f.id !== folderId,
-        );
-        fallbackId = namedFolder?.id ?? catalog?.folders.find((f) => f.id !== folderId)?.id ?? null;
-      } else {
-        // 인덱스 기반 폴백 (orchestrator 방식)
-        fallbackId = catalog?.folders.find((f) => f.id !== folderId)?.id ?? null;
+      if (config.deleteFallbackFolderId && config.deleteFallbackFolderId !== folderId) {
+        const fallbackFolder = catalog?.folders.find((f) => f.id === config.deleteFallbackFolderId);
+        fallbackId = fallbackFolder?.id ?? null;
       }
 
       selectFolder(fallbackId);
@@ -196,6 +195,8 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
    * SSE `catalog_updated`가 서버 정본으로 최종 덮어쓴다.
    */
   async function reorderFoldersOptimistic(items: CatalogFolderReorderItem[]): Promise<void> {
+    if (items.some((item) => isSystemFolderId(item.id))) return;
+
     const { reorderFolders, setCatalog, catalog } = useDashboardStore.getState();
     const prevCatalog = catalog;
 

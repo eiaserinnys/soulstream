@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 
 import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
 import type { SessionDB } from "../db/session_db.js";
+import { assertMutableFolder } from "../system_folders.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 const BOARD_GRID_SIZE = 20;
@@ -87,11 +88,13 @@ export class CatalogService {
   }
 
   async renameFolder(folderId: string, name: string): Promise<void> {
+    assertMutableFolder(folderId, "renamed");
     await this.db.updateFolder(folderId, ["name"], [name]);
     await this.broadcastCatalog();
   }
 
   async deleteFolder(folderId: string): Promise<void> {
+    assertMutableFolder(folderId, "deleted");
     await this.db.deleteFolderById(folderId);
     await this.broadcastCatalog();
   }
@@ -191,6 +194,7 @@ export class CatalogService {
     folderId: string,
     parentFolderId: string | null,
   ): Promise<void> {
+    assertMutableFolder(folderId, "moved");
     await this.assertParentAllowed(folderId, parentFolderId);
     await this.db.updateFolder(
       folderId,

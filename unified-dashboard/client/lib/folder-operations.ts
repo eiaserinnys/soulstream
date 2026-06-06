@@ -5,7 +5,7 @@
  * soul-server API 경로에 바인딩한다.
  */
 
-import { createFolderOperations, SYSTEM_FOLDERS } from "@seosoyoung/soul-ui";
+import { createFolderOperations, DEFAULT_FOLDER_ID } from "@seosoyoung/soul-ui";
 
 export const {
   createFolder,
@@ -18,5 +18,5 @@ export const {
   updateUrl: (id) => `/api/folders/${id}`,
   deleteUrl: (id) => `/api/folders/${id}`,
   reorderUrl: "/api/folders/reorder",
-  deleteFallbackFolderName: SYSTEM_FOLDERS.claude,
+  deleteFallbackFolderId: DEFAULT_FOLDER_ID,
 });

@@ -1,11 +1,26 @@
 import type { SSEEventType } from './types';
 
+export const SYSTEM_FOLDER_IDS = {
+  claude: "claude",
+  llm: "llm",
+} as const;
+
+export type SystemFolderKey = keyof typeof SYSTEM_FOLDER_IDS;
+export type SystemFolderId = (typeof SYSTEM_FOLDER_IDS)[SystemFolderKey];
+
 export const SYSTEM_FOLDERS = {
   claude: '⚙️ 클로드 코드 세션',
   llm: '⚙️ LLM 세션',
-} as const;
+} as const satisfies Readonly<Record<SystemFolderKey, string>>;
 
 export const DEFAULT_FOLDER_KEY = 'claude' as const;
+export const DEFAULT_FOLDER_ID = SYSTEM_FOLDER_IDS[DEFAULT_FOLDER_KEY];
+
+const SYSTEM_FOLDER_ID_SET: ReadonlySet<string> = new Set(Object.values(SYSTEM_FOLDER_IDS));
+
+export function isSystemFolderId(folderId: string | null | undefined): folderId is SystemFolderId {
+  return typeof folderId === "string" && SYSTEM_FOLDER_ID_SET.has(folderId);
+}
 
 // "init": 연결 초기화 시 발행되는 내부 이벤트 (SSESessionProvider가 직접 처리)
 // "reconnected": 재연결 후 발행되는 내부 이벤트 (SSESessionProvider가 직접 처리)

@@ -12,15 +12,21 @@ function makeHarness() {
   const registerSession = vi.fn().mockResolvedValue(undefined);
   const appendMetadata = vi.fn().mockResolvedValue(1);
   const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
-  const getDefaultFolder = vi
+  const getFolderById = vi
     .fn()
-    .mockResolvedValue({ id: "default-claude", name: "클로드" });
+    .mockResolvedValue({
+      id: "claude",
+      name: "사용자가 바꾼 클로드 폴더 이름",
+      sort_order: 0,
+      settings: {},
+      parent_folder_id: null,
+    });
   const getCatalog = vi.fn().mockResolvedValue({ folders: [], sessions: {} });
   const db = {
     registerSession,
     appendMetadata,
     assignSessionToFolder,
-    getDefaultFolder,
+    getFolderById,
     getCatalog,
   } as unknown as SessionDB;
 
@@ -49,7 +55,7 @@ function makeHarness() {
     registerSession,
     appendMetadata,
     assignSessionToFolder,
-    getDefaultFolder,
+    getFolderById,
     getCatalog,
     emitCatalogUpdated,
     emitSessionCreated,
@@ -112,7 +118,7 @@ describe("TaskCreation", () => {
       value: { source: "slack", display_name: "Alice" },
     });
     expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-1", "folder-42");
-    expect(h.getDefaultFolder).not.toHaveBeenCalled();
+    expect(h.getFolderById).not.toHaveBeenCalled();
     expect(h.emitCatalogUpdated).toHaveBeenCalledWith({ folders: [], sessions: {} });
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "folder-42");
 
@@ -126,7 +132,13 @@ describe("TaskCreation", () => {
 
   it("uses the session type default folder when no folderId is provided", async () => {
     const h = makeHarness();
-    h.getDefaultFolder.mockResolvedValueOnce({ id: "default-llm", name: "LLM" });
+    h.getFolderById.mockResolvedValueOnce({
+      id: "llm",
+      name: "사용자가 바꾼 LLM 폴더 이름",
+      sort_order: 1,
+      settings: {},
+      parent_folder_id: null,
+    });
 
     const task = await h.creation.createTask({
       agentSessionId: "sess-default",
@@ -135,14 +147,14 @@ describe("TaskCreation", () => {
       sessionType: "llm",
     });
 
-    expect(h.getDefaultFolder).toHaveBeenCalledWith("⚙️ LLM 세션");
-    expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-default", "default-llm");
-    expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "default-llm");
+    expect(h.getFolderById).toHaveBeenCalledWith("llm");
+    expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-default", "llm");
+    expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "llm");
   });
 
   it("continues without folder assignment when the default folder is missing", async () => {
     const h = makeHarness();
-    h.getDefaultFolder.mockResolvedValueOnce(null);
+    h.getFolderById.mockResolvedValueOnce(null);
 
     const task = await h.creation.createTask({
       agentSessionId: "sess-no-folder",

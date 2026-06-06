@@ -187,6 +187,16 @@ describe("CatalogService.setFolderParent", () => {
     await expect(svc.setFolderParent("root", "grand")).rejects.toThrow(/cycle/);
     expect(calls.some((c) => c.fragments.join("|").includes("folder_update"))).toBe(false);
   });
+
+  it("시스템 폴더 move는 DB update 전에 거부", async () => {
+    const { sql, calls } = setupSqlWithCatalog();
+    const db = new SessionDB(sql);
+    const { broadcaster } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await expect(svc.setFolderParent("claude", null)).rejects.toThrow(/system folder/i);
+    expect(calls.some((c) => c.fragments.join("|").includes("folder_update"))).toBe(false);
+  });
 });
 
 describe("CatalogService.renameFolder", () => {
@@ -205,6 +215,16 @@ describe("CatalogService.renameFolder", () => {
     expect(updateCall!.values).toEqual(["f1", ["name"], ["새 이름"]]);
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
+
+  it("시스템 폴더 rename은 DB update 전에 거부", async () => {
+    const { sql, calls } = setupSqlWithCatalog();
+    const db = new SessionDB(sql);
+    const { broadcaster } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await expect(svc.renameFolder("claude", "새 이름")).rejects.toThrow(/system folder/i);
+    expect(calls.some((c) => c.fragments.join("|").includes("folder_update"))).toBe(false);
+  });
 });
 
 describe("CatalogService.deleteFolder", () => {
@@ -222,6 +242,16 @@ describe("CatalogService.deleteFolder", () => {
     expect(deleteCall).toBeDefined();
     expect(deleteCall!.values).toEqual(["f1"]);
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+  });
+
+  it("시스템 폴더 delete는 DB delete 전에 거부", async () => {
+    const { sql, calls } = setupSqlWithCatalog();
+    const db = new SessionDB(sql);
+    const { broadcaster } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await expect(svc.deleteFolder("llm")).rejects.toThrow(/system folder/i);
+    expect(calls.some((c) => c.fragments.join("|").includes("folder_delete"))).toBe(false);
   });
 });
 

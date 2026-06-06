@@ -12,7 +12,16 @@
 
 import { useEffect } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { SYSTEM_FOLDERS } from "../shared/constants";
+import { DEFAULT_FOLDER_ID } from "../shared/constants";
+
+interface FolderIdentity {
+  id: string;
+  [key: string]: unknown;
+}
+
+export function resolveInitialDefaultFolderId(folders: readonly FolderIdentity[]): string | null {
+  return folders.some((folder) => folder.id === DEFAULT_FOLDER_ID) ? DEFAULT_FOLDER_ID : null;
+}
 
 export function useInitialCatalogLoad(enabled: boolean): void {
   useEffect(() => {
@@ -36,11 +45,7 @@ export function useInitialCatalogLoad(enabled: boolean): void {
           !store.activeSessionKey &&
           store.viewMode === "folder"
         ) {
-          const claudeFolder = catalog.folders.find(
-            (f: { name: string }) => f.name === SYSTEM_FOLDERS.claude,
-          );
-          const defaultFolderId =
-            claudeFolder?.id ?? catalog.folders[0]?.id ?? null;
+          const defaultFolderId = resolveInitialDefaultFolderId(catalog.folders);
           if (defaultFolderId) {
             useDashboardStore.getState().selectFolder(defaultFolderId);
           }

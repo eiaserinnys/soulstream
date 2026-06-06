@@ -42,7 +42,7 @@ describe("LlmExecutor", () => {
         agentId: null,
       }),
     );
-    expect(harness.mocks.getDefaultFolder).toHaveBeenCalledWith("⚙️ LLM 세션");
+    expect(harness.mocks.getFolderById).toHaveBeenCalledWith("llm");
     expect(harness.mocks.appendEvent).toHaveBeenCalledTimes(2);
     expect(harness.mocks.updateSession).toHaveBeenCalledWith(
       response.session_id,

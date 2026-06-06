@@ -18,6 +18,7 @@
 
 import postgres from "postgres";
 
+import { DEFAULT_FOLDERS as SYSTEM_DEFAULT_FOLDERS } from "../system_folders.js";
 import type { TaskStatus } from "../task/task_models.js";
 import { SoulstreamScheduleRepository } from "../schedule/schedule_repository.js";
 import { TaskTreeRepository } from "../task_tree/task_tree_repository.js";
@@ -35,14 +36,9 @@ import {
 export type SessionType = "claude" | "llm";
 
 /**
- * Python `soul_common.db.session_db_base.DEFAULT_FOLDERS` 정본 (line 47-50). session_type별
- * 자동 배정 기본 폴더 이름. codex 백엔드의 task.session_type은 "claude"이므로 (task_models 코멘트
- * "컬럼 의미는 LLM proxy 분리용"), codex 세션도 같은 폴더로 폴백.
+ * 표시 이름 하위 호환 export. 기본 폴더 식별 정본은 system_folders.ts의 id 상수다.
  */
-export const DEFAULT_FOLDERS: Readonly<Record<string, string>> = Object.freeze({
-  claude: "⚙️ 클로드 코드 세션",
-  llm: "⚙️ LLM 세션",
-});
+export const DEFAULT_FOLDERS = SYSTEM_DEFAULT_FOLDERS;
 
 /**
  * `session_update` stored procedure 화이트리스트 (schema.sql L257-262).

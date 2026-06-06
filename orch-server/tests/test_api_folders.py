@@ -105,6 +105,14 @@ class TestDeleteFolder:
         assert body["success"] is True
         mock_catalog_service.delete_folder.assert_called_once_with("f-del")
 
+    async def test_rejects_system_folder_delete(self, client, mock_catalog_service):
+        """System folders cannot be deleted at the server boundary."""
+        resp = await client.delete("/api/folders/llm")
+
+        assert resp.status_code == 400
+        assert "system folder" in resp.json()["detail"].lower()
+        mock_catalog_service.delete_folder.assert_not_called()
+
 
 class TestUpdateFolder:
     """PUT /api/folders/{id} tests."""
@@ -169,4 +177,41 @@ class TestUpdateFolder:
             name="New Name",
             sort_order=None,
             settings={"excludeFromFeed": False},
+        )
+
+    async def test_rejects_system_folder_rename(self, client, mock_catalog_service):
+        """System folders cannot be renamed at the server boundary."""
+        resp = await client.put(
+            "/api/folders/claude",
+            json={"name": "Renamed"},
+        )
+
+        assert resp.status_code == 400
+        assert "system folder" in resp.json()["detail"].lower()
+        mock_catalog_service.update_folder.assert_not_called()
+
+    async def test_rejects_system_folder_parent_move(self, client, mock_catalog_service):
+        """System folders cannot be moved under another parent or back to root."""
+        resp = await client.put(
+            "/api/folders/claude",
+            json={"parentFolderId": None},
+        )
+
+        assert resp.status_code == 400
+        assert "system folder" in resp.json()["detail"].lower()
+        mock_catalog_service.update_folder.assert_not_called()
+
+    async def test_allows_system_folder_settings_update(self, client, mock_catalog_service):
+        """Settings remain editable because they do not change system folder identity."""
+        resp = await client.put(
+            "/api/folders/claude",
+            json={"settings": {"excludeFromFeed": True}},
+        )
+
+        assert resp.status_code == 200
+        mock_catalog_service.update_folder.assert_called_once_with(
+            "claude",
+            name=None,
+            sort_order=None,
+            settings={"excludeFromFeed": True},
         )

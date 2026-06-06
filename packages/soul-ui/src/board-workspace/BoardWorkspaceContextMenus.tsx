@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Folder, MessageSquarePlus, Pencil, SquarePen, Trash2 } from "lucide-react";
 
 import type { CatalogFolder, FolderSettings, SessionSummary } from "../shared/types";
+import { isSystemFolderId } from "../shared/constants";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { Button } from "../components/ui/button";
 import { FolderDialog } from "../components/FolderDialog";
@@ -89,6 +90,10 @@ export function BoardWorkspaceContextMenus({
 
   const handleDeleteFolder = async () => {
     if (!deleteFolderTarget) return;
+    if (isSystemFolderId(deleteFolderTarget.id)) {
+      setDeleteFolderTarget(null);
+      return;
+    }
     try {
       await onDeleteFolder?.(deleteFolderTarget.id);
       setDeleteFolderTarget(null);
@@ -99,6 +104,10 @@ export function BoardWorkspaceContextMenus({
 
   const handleRenameFolder = async () => {
     if (!renameFolderTarget) return;
+    if (isSystemFolderId(renameFolderTarget.id)) {
+      setRenameFolderTarget(null);
+      return;
+    }
     const name = renameFolderInput.trim();
     if (!name) return;
     try {
@@ -212,11 +221,15 @@ export function BoardWorkspaceContextMenus({
         target={folderContextTarget}
         onClose={onCloseCardContextMenu}
         onRename={(folder) => {
+          if (isSystemFolderId(folder.id)) return;
           setRenameFolderTarget(folder);
           setRenameFolderInput(folder.name);
         }}
         onOpenSettings={(folder) => setSettingsFolderTarget(folder)}
-        onDelete={(folder) => setDeleteFolderTarget(folder)}
+        onDelete={(folder) => {
+          if (isSystemFolderId(folder.id)) return;
+          setDeleteFolderTarget(folder);
+        }}
       />
 
       {markdownContextMenu && (

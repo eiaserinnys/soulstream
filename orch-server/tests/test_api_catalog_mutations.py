@@ -41,6 +41,16 @@ class TestReorderFolders:
         assert resp.status_code == 200
         mock_catalog_service.reorder_folders.assert_called_once_with([])
 
+    async def test_rejects_system_folder_reorder(self, client, mock_catalog_service):
+        """System folders cannot be moved or reordered at the server boundary."""
+        payload = [{"id": "claude", "sortOrder": 99}]
+
+        resp = await client.patch("/api/folders/reorder", json=payload)
+
+        assert resp.status_code == 400
+        assert "system folder" in resp.json()["detail"].lower()
+        mock_catalog_service.reorder_folders.assert_not_called()
+
 
 class TestBatchMoveSessions:
     """PUT /api/sessions/folder tests."""
