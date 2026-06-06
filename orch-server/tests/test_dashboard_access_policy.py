@@ -11,6 +11,7 @@ from soulstream_server.main import create_app
 from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
 from soulstream_server.service.session_router import SessionRouter
+from soulstream_server.users import DashboardUserService
 
 
 JWT_SECRET = "test-jwt-secret-for-dashboard-access-32b"
@@ -98,12 +99,14 @@ def _build_app(monkeypatch):
 
     node_manager = NodeManager()
     broadcaster = SessionBroadcaster()
+    user_service = DashboardUserService.memory_from_settings(get_settings())
     app = create_app(
         db=db,
         node_manager=node_manager,
         session_router=SessionRouter(node_manager),
         broadcaster=broadcaster,
         catalog_service=catalog_service,
+        user_service=user_service,
     )
     return app, db, catalog_service
 

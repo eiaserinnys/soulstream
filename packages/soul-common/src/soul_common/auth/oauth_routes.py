@@ -7,6 +7,7 @@ Google OAuth Authorization Code Flow + JWT 쿠키 세션.
 
 import logging
 import secrets
+from inspect import isawaitable
 from typing import Any, Callable, Coroutine
 from urllib.parse import quote, urlencode
 
@@ -46,6 +47,7 @@ def create_oauth_router(
     is_development: bool = False,
     extra_allowed_emails: set[str] | None = None,
     user_payload_extra: Callable[[dict], dict[str, Any]] | None = None,
+    user_authorizer: Callable[[dict[str, Any]], Any] | None = None,
 ) -> APIRouter:
     """Google OAuth 라우터를 생성한다.
 
@@ -68,6 +70,17 @@ def create_oauth_router(
         for email in {allowed_email, *(extra_allowed_emails or set())}
         if email and email.strip()
     }
+
+    async def _authorization_error(payload: dict[str, Any]) -> str | None:
+        if user_authorizer is not None:
+            result = user_authorizer(payload)
+            if isawaitable(result):
+                result = await result
+            return str(result) if result else None
+        email = str(payload.get("email") or "").strip().lower()
+        if not allowed_emails or email not in allowed_emails:
+            return "no_user"
+        return None
 
     def _get_callback_url(request: Request) -> str:
         if callback_url.startswith("http"):
@@ -155,9 +168,14 @@ def create_oauth_router(
             return RedirectResponse("/?error=auth_failed")
 
         email = str(userinfo.get("email") or "").strip().lower()
-        if not allowed_emails or email not in allowed_emails:
+        auth_error = await _authorization_error({
+            "email": email,
+            "name": userinfo.get("name", ""),
+            "picture": userinfo.get("picture", ""),
+        })
+        if auth_error:
             logger.warning("Email not allowed: %s", userinfo.get("email"))
-            return RedirectResponse("/?error=no_user")
+            return RedirectResponse(f"/?error={auth_error}")
 
         jwt_token = generate_token(
             {
@@ -241,6 +259,14 @@ def create_oauth_router(
         # build_browser_caller_info의 truthy filter가 avatar_url을 drop한다 (B-5 결함).
         if not picture:
             picture = _dev_default_avatar_url(email)
+
+        auth_error = await _authorization_error({
+            "email": email,
+            "name": name,
+            "picture": picture,
+        })
+        if auth_error:
+            raise HTTPException(status_code=403, detail=auth_error)
 
         jwt_token = generate_token(
             {"email": email, "name": name, "picture": picture},

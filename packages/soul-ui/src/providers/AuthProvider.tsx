@@ -28,6 +28,7 @@ export interface AuthUser {
   email: string;
   name: string;
   picture?: string;
+  isAdmin?: boolean;
   dashboardAccess?: DashboardAccess;
 }
 

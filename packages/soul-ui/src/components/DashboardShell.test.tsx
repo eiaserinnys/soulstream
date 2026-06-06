@@ -11,7 +11,7 @@ import { useDashboardStore } from "../stores/dashboard-store";
 import { DashboardShell } from "./DashboardShell";
 import { DASHBOARD_LEFT_SIDEBAR_COLLAPSED_STORAGE_KEY } from "./dashboard-sidebar-collapse";
 
-function renderShell(options: { hideLeftPanel?: boolean } = {}) {
+function renderShell() {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -23,7 +23,6 @@ function renderShell(options: { hideLeftPanel?: boolean } = {}) {
       leftFeedPanel: createElement("div", { "data-testid": "feed-panel" }, "feed"),
       centerPanel: createElement("div", null, "center"),
       rightPanel: createElement("div", null, "right"),
-      hideLeftPanel: options.hideLeftPanel,
     }));
   });
   return { container, root };
@@ -78,11 +77,12 @@ describe("DashboardShell", () => {
     expect(window.localStorage.getItem(DASHBOARD_LEFT_SIDEBAR_COLLAPSED_STORAGE_KEY)).toBe("true");
   });
 
-  it("does not render the desktop left sidebar when hidden", () => {
-    ({ container, root } = renderShell({ hideLeftPanel: true }));
+  it("renders the desktop left sidebar in the standard layout", () => {
+    ({ container, root } = renderShell());
 
-    expect(container.querySelector('[data-testid="session-panel"]')).toBeNull();
-    expect(container.querySelector('[data-testid="left-sidebar-toggle"]')).toBeNull();
+    expect(container.querySelector('[data-testid="session-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="left-sidebar-toggle"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="folders-panel"]')).not.toBeNull();
     expect(container.textContent).toContain("center");
     expect(container.textContent).toContain("right");
   });
