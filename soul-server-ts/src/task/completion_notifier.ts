@@ -114,11 +114,13 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     const profile = task.profileId
       ? this.agentRegistry.get(task.profileId)
       : undefined;
+    const sourceEmail = task.callerInfo?.email;
     return buildAgentCallerInfo({
       agentNode: this.nodeId,
       agentId: task.profileId ?? null,
       agentName: profile?.name ?? null,
       portraitPath: profile?.portrait_path ?? null,
+      email: typeof sourceEmail === "string" ? sourceEmail : undefined,
     });
   }
 

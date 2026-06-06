@@ -86,6 +86,26 @@ describe("buildAgentCallerInfo", () => {
     const widened: CallerInfo = info;
     expect(widened.source).toBe("agent");
   });
+
+  it("원 caller email을 전달받으면 결과 caller_info.email에 보존한다", () => {
+    const info = buildAgentCallerInfo({
+      agentNode: "node-1",
+      agentId: "agent-1",
+      agentName: "에이전트",
+      email: "OWNER@EXAMPLE.COM",
+    });
+    expect(info.email).toBe("OWNER@EXAMPLE.COM");
+  });
+
+  it("email이 없으면 기존처럼 키를 생략한다", () => {
+    const info = buildAgentCallerInfo({
+      agentNode: "node-1",
+      agentId: "agent-1",
+      agentName: "에이전트",
+    });
+    expect(info.email).toBeUndefined();
+    expect(JSON.stringify(info)).not.toContain("\"email\"");
+  });
 });
 
 describe("buildCallerInfoFromCallerSession (code-reviewer P2-1 정정)", () => {
@@ -131,5 +151,27 @@ describe("buildCallerInfoFromCallerSession (code-reviewer P2-1 정정)", () => {
     );
     expect(info.display_name).toBe("에이전트");
     expect(info.avatar_url).toBe("/api/nodes/n1/agents/agent-x/portrait");
+  });
+
+  it("caller task의 callerInfo.email을 agent caller_info에 보존한다", () => {
+    const info = buildCallerInfoFromCallerSession(
+      {
+        nodeId: "n1",
+        taskManager: {
+          getTask: () => ({
+            profileId: "agent-x",
+            callerInfo: {
+              source: "browser",
+              email: "owner@example.com",
+            },
+          }),
+        },
+        agentRegistry: {
+          get: () => ({ name: "에이전트", portrait_path: "/p.png" }),
+        },
+      },
+      "sess-1",
+    );
+    expect(info.email).toBe("owner@example.com");
   });
 });
