@@ -18,6 +18,7 @@ import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.j
 import type { SessionDB } from "../db/session_db.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
+import { SupervisorDirectTargetGuard } from "../supervisor/direct_target_guard.js";
 import {
   AgentConfigCommandError,
   AgentConfigCommands,
@@ -121,6 +122,18 @@ interface IntervenCmd extends CommandLike {
   type: "intervene";
   agentSessionId?: string;
   session_id?: string;
+  text: string;
+  user?: string;
+  caller_info?: CallerInfo;
+  attachment_paths?: string[];
+  extra_context_items?: ContextItem[];
+}
+
+interface SupervisorInterveneCmd extends CommandLike {
+  type: "supervisor_intervene";
+  role?: string;
+  expected_epoch?: number;
+  expectedEpoch?: number;
   text: string;
   user?: string;
   caller_info?: CallerInfo;
@@ -244,6 +257,7 @@ export class CommandDispatcher {
   private readonly realtimeCommands: RealtimeCommands;
   private readonly agentConfigCommands: AgentConfigCommands;
   private readonly reflectionCommands: ReflectionCommands;
+  private readonly supervisorDirectTargetGuard?: SupervisorDirectTargetGuard;
 
   constructor(
     private readonly send: SendFn,
@@ -272,6 +286,9 @@ export class CommandDispatcher {
       taskExecutor,
       logger,
     });
+    this.supervisorDirectTargetGuard = sessionDb
+      ? new SupervisorDirectTargetGuard({ db: sessionDb, taskManager })
+      : undefined;
     this.attachmentCommands = new AttachmentCommands(attachmentStore);
     this.sessionListCommands = new SessionListCommands(sessionDb);
     this.claudeAuthCommands = new ClaudeAuthCommands({ agentRegistry, claudeAuth });
@@ -297,6 +314,8 @@ export class CommandDispatcher {
       health_check: (cmd) => this.handleHealthCheck(cmd),
       create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
       intervene: (cmd) => this.handleIntervene(cmd as IntervenCmd),
+      supervisor_intervene: (cmd) =>
+        this.handleSupervisorIntervene(cmd as SupervisorInterveneCmd),
       interrupt_session: (cmd) => this.handleInterruptSession(cmd as InterruptSessionCmd),
       respond: (cmd) => this.handleRespond(cmd as RespondCommand),
       approve_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCommand),
@@ -627,6 +646,7 @@ export class CommandDispatcher {
 
     let result;
     try {
+      await this.supervisorDirectTargetGuard?.assertCanTarget(sessionId);
       result = await this.taskRuntimeCommands.intervene({
         agentSessionId: sessionId,
         text: cmd.text,
@@ -645,6 +665,47 @@ export class CommandDispatcher {
       // ACK 발행 안 함 (atom c13f7826 빈 string ACK 금지) — orch _send_command 미사용 경로.
       return;
     }
+    await this.send(buildInterveneAck({ requestId, agentSessionId: sessionId, result }));
+  }
+
+  private async handleSupervisorIntervene(cmd: SupervisorInterveneCmd): Promise<void> {
+    if (!cmd.role || !cmd.text) {
+      await this.sendError(cmd, "supervisor_intervene requires role and text");
+      return;
+    }
+    if (!this.supervisorDirectTargetGuard) {
+      await this.sendError(cmd, "supervisor_intervene requires SessionDB");
+      return;
+    }
+
+    let sessionId;
+    try {
+      sessionId = await this.supervisorDirectTargetGuard.resolveActiveSession({
+        role: cmd.role,
+        expectedEpoch: cmd.expectedEpoch ?? cmd.expected_epoch,
+      });
+    } catch (err) {
+      await this.sendError(cmd, err instanceof Error ? err.message : String(err));
+      return;
+    }
+
+    let result;
+    try {
+      result = await this.taskRuntimeCommands.intervene({
+        agentSessionId: sessionId,
+        text: cmd.text,
+        user: cmd.user ?? "supervisor",
+        callerInfo: cmd.caller_info,
+        attachmentPaths: cmd.attachment_paths,
+        extraContextItems: cmd.extra_context_items,
+      });
+    } catch (err) {
+      await this.sendError(cmd, err instanceof Error ? err.message : String(err));
+      return;
+    }
+
+    const requestId = cmd.requestId ?? cmd.request_id ?? "";
+    if (!requestId) return;
     await this.send(buildInterveneAck({ requestId, agentSessionId: sessionId, result }));
   }
 

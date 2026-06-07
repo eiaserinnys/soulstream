@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import dotenv from "dotenv";
 import { ZodError } from "zod";
 
@@ -8,7 +10,7 @@ import { FileAttachmentStore } from "./attachments/file_manager.js";
 import { CatalogService } from "./catalog/catalog_service.js";
 import { BoardYjsService } from "./collaboration/board_yjs_service.js";
 import { parseEnv } from "./config.js";
-import { SessionDB } from "./db/session_db.js";
+import { SessionDB, type SupervisorEventRow } from "./db/session_db.js";
 import { EventPersistence } from "./db/event_persistence.js";
 import { ClaudeEngineAdapter } from "./engine/claude_adapter.js";
 import { DbClaudeSessionStore } from "./engine/claude_session_store.js";
@@ -37,6 +39,14 @@ import { UpstreamAdapter } from "./upstream/adapter.js";
 import { SessionBroadcaster } from "./upstream/session_broadcaster.js";
 import { ScheduleDispatcher } from "./schedule/schedule_dispatcher.js";
 import { SoulstreamScheduleService } from "./schedule/schedule_service.js";
+import { DEFAULT_HANDOVER_MIN_INTERVAL_MS } from "./supervisor/handover_policy.js";
+import {
+  SupervisorWakeRouter,
+  SupervisorWakeScheduler,
+  type SupervisorWakeEvent,
+} from "./supervisor/wake_router.js";
+import { SupervisorHandoverExecutor } from "./supervisor/handover_executor.js";
+import { detectMissingSupervisors } from "./supervisor/watchdog.js";
 
 // Haniel cwd는 ./services/soulstream — install.configs.soul-server-ts-env path와 정합.
 // `.env`(Python soul-server용)와 *분리* 유지 — SOULSTREAM_NODE_ID 충돌 회피
@@ -48,6 +58,8 @@ import { SoulstreamScheduleService } from "./schedule/schedule_service.js";
 // 부재 키는 부모 env 그대로 받음 — override는 *.env에 존재하는 키만* 덮어쓴다.
 // 회로: 260517 운영 사고(pm2 restart 209회 + EADDRINUSE + nodeId 충돌)를 영구 차단.
 const DOTENV_PATH = ".env.soul-server-ts";
+const SUPERVISOR_WATCHDOG_INTERVAL_MS = 60_000;
+const SUPERVISOR_WATCHDOG_MISSING_THRESHOLD_MS = 5 * 60_000;
 const dotenvResult = dotenv.config({ path: DOTENV_PATH, override: true });
 if (dotenvResult.error) {
   // logger 생성 *전*이라 console.warn 사용. fail-silent를 깨고 디버깅 가시성 확보.
@@ -328,6 +340,119 @@ async function main(): Promise<void> {
     onResume,
     logger,
   });
+  const supervisorWakeRouter = new SupervisorWakeRouter({
+    getCursor: (supervisorId) => db.getSupervisorConsumerCursor(supervisorId),
+    readEventsAfter: async (afterOffset, limit) =>
+      (await db.readSupervisorEventsAfter(afterOffset, limit)).map((event) => ({
+        offset: event.offset,
+        sourceSessionId: event.sourceSessionId,
+        eventType: event.eventType,
+        payload: event.payload,
+      })),
+    setCursor: async (supervisorId, cursorOffset) => {
+      await db.setSupervisorConsumerCursor(supervisorId, cursorOffset);
+    },
+    wake: async ({ supervisorId, events, wakeClass }) => {
+      const registry = await db.getSupervisorRegistry(supervisorId);
+      if (!registry?.activeSessionId) {
+        logger.warn({ supervisorId, wakeClass }, "Supervisor wake skipped: no active session");
+        return;
+      }
+      await taskManager.addIntervention(
+        {
+          agentSessionId: registry.activeSessionId,
+          text: buildSupervisorWakeText(supervisorId, wakeClass, events),
+          user: "supervisor",
+        },
+        onResume,
+      );
+    },
+  });
+  const supervisorWakeScheduler = new SupervisorWakeScheduler({
+    listSupervisors: () => db.listSupervisorRegistries(),
+    router: supervisorWakeRouter,
+    logger,
+  });
+  const runningSupervisorHandovers = new Set<string>();
+  const lastSupervisorHandoverAt = new Map<string, number>();
+  const supervisorHandoverRunner = {
+    async run(registry: Awaited<ReturnType<typeof db.recordSupervisorUsageDelta>>) {
+      if (runningSupervisorHandovers.has(registry.role)) return;
+      const lastHandoverAt = lastSupervisorHandoverAt.get(registry.role) ?? 0;
+      const nowMs = Date.now();
+      if (nowMs - lastHandoverAt < DEFAULT_HANDOVER_MIN_INTERVAL_MS) {
+        logger.warn(
+          { role: registry.role },
+          "Supervisor handover skipped by minimum interval guard",
+        );
+        return;
+      }
+
+      runningSupervisorHandovers.add(registry.role);
+      let replacementTask = null as Awaited<ReturnType<typeof taskManager.createTask>> | null;
+      try {
+        await new SupervisorHandoverExecutor({
+          bootReplacement: async ({ role, previousSessionId }) => {
+            const sessionId = `supervisor-${role}-${randomUUID()}`;
+            replacementTask = await taskManager.createTask({
+              agentSessionId: sessionId,
+              prompt: buildSupervisorHandoverPrompt({
+                role,
+                previousSessionId,
+                asOfOffset: registry.cursorOffset,
+                events: [],
+              }),
+              profileId: role,
+              callerInfo: { source: "agent", display_name: "supervisor" },
+            });
+            return { sessionId };
+          },
+          injectSnapshot: async ({ role, previousSessionId, asOfOffset }) => {
+            if (!replacementTask) return;
+            replacementTask.prompt = buildSupervisorHandoverPrompt({
+              role,
+              previousSessionId,
+              asOfOffset,
+              events: [],
+            });
+          },
+          drainReplacement: async ({ role, fromOffset }) => {
+            const events = await db.readSupervisorEventsAfter(fromOffset, 100);
+            const cursorOffset = events[events.length - 1]?.offset ?? fromOffset;
+            if (replacementTask) {
+              replacementTask.prompt = buildSupervisorHandoverPrompt({
+                role,
+                previousSessionId: registry.activeSessionId ?? "",
+                asOfOffset: fromOffset,
+                events,
+              });
+            }
+            return { cursorOffset };
+          },
+          activateReplacement: async (params) => {
+            await db.upsertSupervisorRegistry(params);
+            if (!replacementTask) {
+              throw new Error(`Replacement task missing for supervisor role: ${params.role}`);
+            }
+            const agent = agentRegistry.get(params.role);
+            if (!agent) {
+              throw new Error(`Supervisor profile not found: ${params.role}`);
+            }
+            taskExecutor.startExecution(replacementTask, agent);
+          },
+          killPrevious: async ({ role, previousSessionId }) => {
+            const interrupted = await taskManager.cancelTask(previousSessionId);
+            if (!interrupted) {
+              logger.warn({ role, previousSessionId }, "Previous supervisor session was not running");
+            }
+          },
+        }).run(registry);
+        lastSupervisorHandoverAt.set(registry.role, Date.now());
+      } finally {
+        runningSupervisorHandovers.delete(registry.role);
+      }
+    },
+  };
 
   taskExecutor = new TaskExecutor(
     engineFactory,
@@ -339,6 +464,9 @@ async function main(): Promise<void> {
     completionNotifier,
     scheduleService.makeToolHandler(),
     claudeRuntimeTaskFollowup,
+    supervisorWakeScheduler,
+    env.SOULSTREAM_NODE_ID,
+    supervisorHandoverRunner,
   );
   const scheduleDispatcher = new ScheduleDispatcher(
     { nodeId: env.SOULSTREAM_NODE_ID },
@@ -348,6 +476,22 @@ async function main(): Promise<void> {
     logger,
   );
   scheduleDispatcher.start();
+  const supervisorWatchdogInterval = setInterval(() => {
+    void (async () => {
+      try {
+        const alerts = detectMissingSupervisors(
+          await db.listSupervisorRegistries(),
+          new Date(),
+          SUPERVISOR_WATCHDOG_MISSING_THRESHOLD_MS,
+        );
+        for (const alert of alerts) {
+          logger.warn({ supervisor: alert }, "Supervisor watchdog alert");
+        }
+      } catch (err) {
+        logger.warn({ err }, "Supervisor watchdog check failed");
+      }
+    })();
+  }, SUPERVISOR_WATCHDOG_INTERVAL_MS);
 
   const boardYjsService = new BoardYjsService({
     db,
@@ -487,6 +631,8 @@ async function main(): Promise<void> {
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutdown signal received");
+    clearInterval(supervisorWatchdogInterval);
+    supervisorWakeScheduler.dispose();
     try {
       scheduleDispatcher.stop();
       await taskManager.shutdown();
@@ -519,3 +665,56 @@ main().catch((err) => {
   console.error("Fatal:", err);
   process.exit(1);
 });
+
+function buildSupervisorWakeText(
+  supervisorId: string,
+  wakeClass: string,
+  events: SupervisorWakeEvent[],
+): string {
+  const head = events[events.length - 1]?.offset ?? 0;
+  const eventCounts = new Map<string, number>();
+  for (const event of events) {
+    eventCounts.set(event.eventType, (eventCounts.get(event.eventType) ?? 0) + 1);
+  }
+  const summary = Array.from(eventCounts.entries())
+    .map(([eventType, count]) => `${eventType}:${count}`)
+    .join(", ");
+  const samples = events.slice(0, 10).map((event) => {
+    const session = event.sourceSessionId ? ` session=${event.sourceSessionId}` : "";
+    return `- #${event.offset} ${event.eventType}${session}`;
+  });
+  const lines = [
+    `[supervisor wake] role=${supervisorId} class=${wakeClass} head=${head}`,
+    `events=${events.length}${summary ? ` (${summary})` : ""}`,
+    ...samples,
+  ];
+  if (events.length > samples.length) {
+    lines.push(`- ... ${events.length - samples.length} more`);
+  }
+  lines.push("The wake router has queued this batch; decide whether action is needed.");
+  return lines.join("\n");
+}
+
+function buildSupervisorHandoverPrompt(params: {
+  role: string;
+  previousSessionId: string;
+  asOfOffset: number;
+  events: SupervisorEventRow[];
+}): string {
+  const head = params.events[params.events.length - 1]?.offset ?? params.asOfOffset;
+  const eventLines = params.events.slice(0, 20).map((event) =>
+    `- #${event.offset} ${event.eventType} session=${event.sourceSessionId} event=${event.sourceEventId}`,
+  );
+  const lines = [
+    `[supervisor handover] role=${params.role}`,
+    `previous_session=${params.previousSessionId}`,
+    `as_of_offset=${params.asOfOffset}`,
+    `drained_head=${head}`,
+    "You are the replacement supervisor. Continue from the drained supervisor_events summary and keep watching subsequent wake messages.",
+    ...eventLines,
+  ];
+  if (params.events.length > eventLines.length) {
+    lines.push(`- ... ${params.events.length - eventLines.length} more`);
+  }
+  return lines.join("\n");
+}

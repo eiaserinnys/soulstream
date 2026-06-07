@@ -1,23 +1,32 @@
 import type { Logger } from "pino";
 
 import {
+  extractTimestamp,
   shouldPersistEvent,
   type EventPersistence,
 } from "../db/event_persistence.js";
-import type { SessionDB } from "../db/session_db.js";
+import type { SessionDB, SupervisorRegistryRow } from "../db/session_db.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
+import { evaluateSupervisorHandover } from "../supervisor/handover_policy.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import { applyClaudeRuntimeEvent } from "./claude_runtime_state.js";
 import type { Task } from "./task_models.js";
 import { recordTerminationHint } from "./task_termination.js";
-import { usageTokenDelta } from "./supervisor_usage.js";
+import { supervisorUsageDeltaForEvent } from "./supervisor_usage.js";
 
 export interface TaskEngineEventPublisherDeps {
   broadcaster: SessionBroadcaster;
   db: SessionDB;
   logger: Logger;
   persistence: EventPersistence;
+  sourceNode?: string;
+  supervisorWakeScheduler?: {
+    ingest(eventType: string): Promise<{ scheduled: boolean }>;
+  };
+  supervisorHandoverRunner?: {
+    run(registry: SupervisorRegistryRow): Promise<void>;
+  };
 }
 
 /**
@@ -36,8 +45,9 @@ export class TaskEngineEventPublisher {
     this.captureClaudeRuntimeState(task, event);
     this.captureTerminationHint(task, event, eventType);
     this.captureFatalEngineError(task, event, eventType);
-    await this.persistEventIfNeeded(task, event, eventType);
+    const persistedEventId = await this.persistEventIfNeeded(task, event, eventType);
     await this.broadcastEvent(task, event, eventType);
+    await this.appendSupervisorEventIfNeeded(task, event, eventType, persistedEventId);
     await this.recordSupervisorUsageDelta(task, event, eventType);
     await this.handleSideEffects(task, event, eventType);
   }
@@ -108,10 +118,10 @@ export class TaskEngineEventPublisher {
     task: Task,
     event: SSEEventPayload,
     eventType: string,
-  ): Promise<void> {
+  ): Promise<number | null> {
     // `_live_only` chunks are generation-time wire events. Persisting them would
     // duplicate the final assistant_message in DB history.
-    if (!shouldPersistEvent(event)) return;
+    if (!shouldPersistEvent(event)) return null;
 
     try {
       const eventId = await this.deps.persistence.persistEvent(
@@ -121,11 +131,13 @@ export class TaskEngineEventPublisher {
       task.lastEventId = eventId;
       // Ride-along contract: orch SSE extracts event._event_id as the wire id.
       (event as Record<string, unknown>)._event_id = eventId;
+      return eventId;
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId, eventType },
         "persistEvent failed",
       );
+      return null;
     }
   }
 
@@ -173,25 +185,51 @@ export class TaskEngineEventPublisher {
     }
   }
 
+  private async appendSupervisorEventIfNeeded(
+    task: Task,
+    event: SSEEventPayload,
+    eventType: string,
+    eventId: number | null,
+  ): Promise<void> {
+    if (!eventId || !this.deps.sourceNode) return;
+    try {
+      await this.deps.db.appendSupervisorEvent({
+        sourceNode: this.deps.sourceNode,
+        sourceSessionId: task.agentSessionId,
+        sourceEventId: eventId,
+        eventType,
+        payload: event as unknown as Record<string, unknown>,
+        createdAt: extractTimestamp(event) ?? new Date(),
+      });
+      await this.deps.supervisorWakeScheduler?.ingest(eventType);
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId, eventId, eventType },
+        "appendSupervisorEvent failed",
+      );
+    }
+  }
+
   private async recordSupervisorUsageDelta(
     task: Task,
     event: SSEEventPayload,
     eventType: string,
   ): Promise<void> {
-    if (eventType !== "complete") return;
-    const tokenDelta = usageTokenDelta((event as { usage?: unknown }).usage);
-    if (tokenDelta <= 0) return;
+    const { tokenDelta, compactionDelta } = supervisorUsageDeltaForEvent(task, event);
+    if (tokenDelta <= 0 && compactionDelta <= 0) return;
     if (!task.profileId) return;
 
     try {
       const registry = await this.deps.db.getSupervisorRegistry(task.profileId);
       if (!registry) return;
-      await this.deps.db.recordSupervisorUsageDelta({
+      const updatedRegistry = await this.deps.db.recordSupervisorUsageDelta({
         role: task.profileId,
         tokenDelta,
-        compactionDelta: 0,
+        compactionDelta,
         lastSeenAt: new Date(),
       });
+      if (!updatedRegistry) return;
+      await this.applySupervisorHandoverState(task, updatedRegistry, eventType);
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId, eventType, role: task.profileId },
@@ -199,4 +237,45 @@ export class TaskEngineEventPublisher {
       );
     }
   }
+
+  private async applySupervisorHandoverState(
+    task: Task,
+    registry: Awaited<ReturnType<SessionDB["recordSupervisorUsageDelta"]>>,
+    eventType: string,
+  ): Promise<void> {
+    if (typeof registry.cumulativeTokens !== "number") return;
+    const decision = evaluateSupervisorHandover(
+      registry,
+      {
+        idle: eventType === "complete" && task.interventionQueue.length === 0,
+        atTurnBoundary: eventType === "complete",
+      },
+      {
+        minIntervalMs: 0,
+      },
+    );
+    if (decision.state === "handover_running" && this.deps.supervisorHandoverRunner) {
+      await this.deps.supervisorHandoverRunner.run(registry);
+      return;
+    }
+    const nextState = supervisorPendingState(decision.state, registry.handoverState);
+    if (!decision.changed || nextState === registry.handoverState) return;
+    await this.deps.db.upsertSupervisorRegistry({
+      role: registry.role,
+      activeSessionId: registry.activeSessionId,
+      epoch: registry.epoch,
+      cursorOffset: registry.cursorOffset,
+      handoverState: nextState,
+      cumulativeTokens: registry.cumulativeTokens,
+      compactionCount: registry.compactionCount,
+      lastSeenAt: registry.lastSeenAt,
+    });
+  }
+}
+
+function supervisorPendingState(nextState: string, currentState: string): string {
+  if (nextState !== "handover_running") return nextState;
+  if (currentState === "hard_pending") return "hard_pending";
+  if (currentState === "idle_pending") return "idle_pending";
+  return "hard_pending";
 }

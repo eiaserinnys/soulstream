@@ -224,7 +224,7 @@ function contentToText(content: unknown): string {
  * 이벤트의 timestamp 필드를 Date로 변환. 없으면 undefined.
  * 모든 SSE event payload는 `timestamp: number` (Unix epoch sec) — Python `models/schemas.py` 정본.
  */
-function extractTimestamp(event: SSEEventPayload): Date | undefined {
+export function extractTimestamp(event: SSEEventPayload): Date | undefined {
   const ts = (event as { timestamp?: unknown }).timestamp;
   if (typeof ts === "number" && Number.isFinite(ts)) {
     return new Date(ts * 1000);
