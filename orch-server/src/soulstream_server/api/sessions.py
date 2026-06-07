@@ -463,7 +463,14 @@ def create_sessions_router(
         body: ClaudeRuntimeBackgroundTasksRequest | None = None,
     ) -> dict:
         """Claude SDK Query.backgroundTasks(toolUseId)를 호출한다."""
-        await require_session_allowed(request, db, session_id)
+        await require_session_allowed(
+            request,
+            db,
+            session_id,
+            access_email=_access_email_from_caller_info(
+                body.caller_info if body else None
+            ),
+        )
         node = await find_session_node(session_id, db, node_manager)
         try:
             return await node.send_claude_runtime_background_tasks(
@@ -517,7 +524,12 @@ def create_sessions_router(
     @router.post("/{session_id}/respond")
     async def respond(session_id: str, body: RespondRequest, request: Request) -> dict:
         """입력 요청 응답."""
-        await require_session_allowed(request, db, session_id)
+        await require_session_allowed(
+            request,
+            db,
+            session_id,
+            access_email=_access_email_from_caller_info(body.caller_info),
+        )
         node = await find_session_node(session_id, db, node_manager)
         result = await node.send_respond(
             session_id, body.request_id, body.answers
@@ -534,7 +546,14 @@ def create_sessions_router(
         body: ToolApprovalRequest | None = None,
     ) -> dict:
         """OpenAI Agents SDK tool approval 승인."""
-        await require_session_allowed(request, db, session_id)
+        await require_session_allowed(
+            request,
+            db,
+            session_id,
+            access_email=_access_email_from_caller_info(
+                body.caller_info if body else None
+            ),
+        )
         node = await find_session_node(session_id, db, node_manager)
         req = body or ToolApprovalRequest()
         result = await node.send_tool_approval(
@@ -556,7 +575,14 @@ def create_sessions_router(
         body: ToolApprovalRequest | None = None,
     ) -> dict:
         """OpenAI Agents SDK tool approval 거부."""
-        await require_session_allowed(request, db, session_id)
+        await require_session_allowed(
+            request,
+            db,
+            session_id,
+            access_email=_access_email_from_caller_info(
+                body.caller_info if body else None
+            ),
+        )
         node = await find_session_node(session_id, db, node_manager)
         req = body or ToolApprovalRequest()
         result = await node.send_tool_approval(
@@ -577,7 +603,12 @@ def create_sessions_router(
         request: Request,
     ) -> dict:
         """soul-app WebRTC SDP offer를 노드 OpenAI Realtime broker로 전달한다."""
-        await require_session_allowed(request, db, session_id)
+        await require_session_allowed(
+            request,
+            db,
+            session_id,
+            access_email=_access_email_from_caller_info(body.caller_info),
+        )
         node = await find_session_node(session_id, db, node_manager)
         result = await node.send_realtime_create_call(
             session_id,
@@ -600,7 +631,12 @@ def create_sessions_router(
         request: Request,
     ) -> dict:
         """soul-app Realtime data-channel event를 세션 SSE/DB로 relay한다."""
-        await require_session_allowed(request, db, session_id)
+        await require_session_allowed(
+            request,
+            db,
+            session_id,
+            access_email=_access_email_from_caller_info(body.caller_info),
+        )
         node = await find_session_node(session_id, db, node_manager)
         result = await node.send_realtime_event(
             session_id,
@@ -622,7 +658,12 @@ def create_sessions_router(
         request: Request,
     ) -> dict:
         """Realtime voice 중 발생한 tool approval을 tap/voice 결정으로 resolve한다."""
-        await require_session_allowed(request, db, session_id)
+        await require_session_allowed(
+            request,
+            db,
+            session_id,
+            access_email=_access_email_from_caller_info(body.caller_info),
+        )
         node = await find_session_node(session_id, db, node_manager)
         result = await node.send_realtime_tool_approval(
             session_id,
@@ -642,7 +683,12 @@ def create_sessions_router(
     @router.patch("/{session_id}/display-name")
     async def rename_session(session_id: str, body: RenameSessionRequest, request: Request) -> dict:
         """세션 표시 이름 변경."""
-        await require_session_allowed(request, db, session_id)
+        await require_session_allowed(
+            request,
+            db,
+            session_id,
+            access_email=_access_email_from_caller_info(body.caller_info),
+        )
         if catalog_service:
             await catalog_service.rename_session(session_id, body.displayName)
         else:
@@ -653,12 +699,18 @@ def create_sessions_router(
     @router.put("/folder")
     async def batch_move_folder(body: BatchMoveRequest, request: Request) -> dict:
         """세션 일괄 폴더 이동. CatalogService 경유로 cross-tab SSE 동기화."""
-        access = access_for_request(request)
+        access_email = _access_email_from_caller_info(body.caller_info)
+        access = access_for_request(request, access_email=access_email)
         if access.restricted:
             folders = await catalog_service.list_folders() if catalog_service else await db.get_all_folders()
             require_folder_allowed(access, folders, body.folderId)
             for session_id in body.sessionIds:
-                await require_session_allowed(request, db, session_id)
+                await require_session_allowed(
+                    request,
+                    db,
+                    session_id,
+                    access_email=access_email,
+                )
         if catalog_service:
             await catalog_service.move_sessions_to_folder(
                 body.sessionIds, body.folderId
@@ -675,9 +727,15 @@ def create_sessions_router(
         request: Request,
     ) -> dict:
         """세션 폴더 이동 + 이름 변경 (개별)."""
-        await require_session_allowed(request, db, session_id)
+        access_email = _access_email_from_caller_info(body.caller_info)
+        await require_session_allowed(
+            request,
+            db,
+            session_id,
+            access_email=access_email,
+        )
         if _field_supplied(body, "folderId"):
-            access = access_for_request(request)
+            access = access_for_request(request, access_email=access_email)
             if access.restricted:
                 folders = await catalog_service.list_folders() if catalog_service else await db.get_all_folders()
                 require_folder_allowed(access, folders, body.folderId)
@@ -727,7 +785,12 @@ def create_sessions_router(
         session_id: str, body: ReadPositionRequest, request: Request
     ) -> dict:
         """읽음 위치 갱신 + SSE 브로드캐스트."""
-        await require_session_allowed(request, db, session_id)
+        await require_session_allowed(
+            request,
+            db,
+            session_id,
+            access_email=_access_email_from_caller_info(body.caller_info),
+        )
         await db.update_last_read_event_id(session_id, body.last_read_event_id)
         last_event_id, last_read_event_id = await db.get_read_position(session_id)
         if broadcaster:

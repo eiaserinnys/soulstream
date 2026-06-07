@@ -78,6 +78,7 @@ class RespondRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
     request_id: str = Field(alias="requestId")
     answers: dict
+    caller_info: Optional[dict] = None
 
 
 class ClaudeRuntimeBackgroundTasksRequest(BaseModel):
@@ -86,12 +87,14 @@ class ClaudeRuntimeBackgroundTasksRequest(BaseModel):
         default=None,
         validation_alias=AliasChoices("toolUseId", "tool_use_id"),
     )
+    caller_info: Optional[dict] = None
 
 
 class ToolApprovalRequest(BaseModel):
     message: Optional[str] = None
     alwaysApprove: Optional[bool] = None
     alwaysReject: Optional[bool] = None
+    caller_info: Optional[dict] = None
 
 
 class RealtimeCreateCallRequest(BaseModel):
@@ -101,11 +104,13 @@ class RealtimeCreateCallRequest(BaseModel):
     model: Optional[str] = None
     voice: Optional[str] = None
     instructions: Optional[str] = None
+    caller_info: Optional[dict] = None
 
 
 class RealtimeEventRequest(BaseModel):
     event: dict[str, Any]
     callId: Optional[str] = None
+    caller_info: Optional[dict] = None
 
 
 class RealtimeToolApprovalRequest(BaseModel):
@@ -113,16 +118,20 @@ class RealtimeToolApprovalRequest(BaseModel):
     message: Optional[str] = None
     source: Optional[Literal["tap", "voice"]] = None
     callId: Optional[str] = None
+    caller_info: Optional[dict] = None
 
 
 class RenameSessionRequest(BaseModel):
     displayName: Optional[str] = None
+    caller_info: Optional[dict] = None
 
 
 class SessionCatalogUpdate(BaseModel):
     folderId: Optional[str] = None
     displayName: Optional[str] = None
+    caller_info: Optional[dict] = None
 
 
 class ReadPositionRequest(BaseModel):
     last_read_event_id: int
+    caller_info: Optional[dict] = None
