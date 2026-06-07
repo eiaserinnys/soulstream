@@ -45,27 +45,26 @@ export async function fetchRunningSessionsContextItem(
   try {
     const result = await listRunningSessionsSummary.call(db, {
       limit: BOARD_WORKSPACE_SESSION_LIMIT,
-      offset: 0,
-      excludeSessionId: currentSessionId ?? null,
+      excludeSessionId: currentSessionId,
     });
-    const sessions = result.sessions.map((session) => ({
-      agent_session_id: session.session_id,
-      title: session.display_name ?? session.session_id,
-      node_id: session.node_id,
-      folder_id: session.folder_id,
-      updated_at: toIsoString(session.updated_at),
-    }));
+    const sessions = result.sessions.map((session) => {
+      const item: Record<string, unknown> = {
+        agent_session_id: session.session_id,
+        title: session.display_name ?? session.session_id,
+      };
+      if (session.node_id) item.node_id = session.node_id;
+      if (session.folder_id) item.folder_id = session.folder_id;
+      if (session.folder_name) item.folder_name = session.folder_name;
+      return item;
+    });
     const truncated = result.total > sessions.length;
     return {
       key: "running_sessions",
       label: "Running Soulstream sessions",
       content: {
         status: "ok",
-        scope: "current_node",
-        current_session_id: currentSessionId ?? null,
-        session_limit: BOARD_WORKSPACE_SESSION_LIMIT,
-        total_running_session_count: result.total,
-        shown_running_session_count: sessions.length,
+        scope: "cluster_database_running_sessions",
+        current_session_id: currentSessionId,
         ...(truncated
           ? {
               running_sessions_truncated: {
@@ -90,14 +89,14 @@ export async function fetchRunningSessionsContextItem(
       label: "Running Soulstream sessions",
       content: {
         status: "unavailable",
-        scope: "current_node",
-        current_session_id: currentSessionId ?? null,
+        scope: "cluster_database_running_sessions",
+        current_session_id: currentSessionId,
         sessions: [],
         warnings: [
           {
             code: "running_sessions_unavailable",
             message:
-              "Running sessions unavailable; startup continues without live running session context.",
+              "running sessions unavailable; startup continues without live running session context",
           },
         ],
       },
@@ -130,9 +129,4 @@ async function fetchBoardWorkspaceFolderSessions(
     );
     return null;
   }
-}
-
-function toIsoString(value: Date | string | null | undefined): string | undefined {
-  if (!value) return undefined;
-  return value instanceof Date ? value.toISOString() : value;
 }

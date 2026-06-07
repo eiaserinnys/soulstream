@@ -818,6 +818,7 @@ describe("ExecutionContextBuilder.build — board_workspace/running_sessions con
       display_name: idx === 0 ? null : `Running ${idx}`,
       node_id: idx % 2 === 0 ? "node-A" : "node-B",
       folder_id: idx % 2 === 0 ? "folder-A" : null,
+      folder_name: idx % 2 === 0 ? "Folder A" : null,
       updated_at: new Date(`2026-06-${String(20 - idx).padStart(2, "0")}T00:00:00Z`),
     }));
     const listRunningSessionsSummary = vi.fn().mockResolvedValue({
@@ -834,12 +835,11 @@ describe("ExecutionContextBuilder.build — board_workspace/running_sessions con
 
     expect(listRunningSessionsSummary).toHaveBeenCalledWith({
       limit: 15,
-      offset: 0,
       excludeSessionId: "sess-current",
     });
     expect(content).toMatchObject({
       status: "ok",
-      scope: "current_node",
+      scope: "cluster_database_running_sessions",
       current_session_id: "sess-current",
       running_sessions_truncated: {
         total: 16,
@@ -854,16 +854,39 @@ describe("ExecutionContextBuilder.build — board_workspace/running_sessions con
         title: "running-0",
         node_id: "node-A",
         folder_id: "folder-A",
-        updated_at: "2026-06-20T00:00:00.000Z",
+        folder_name: "Folder A",
       },
       ...rows.slice(1).map((row) => ({
         agent_session_id: row.session_id,
         title: row.display_name,
         node_id: row.node_id,
-        folder_id: row.folder_id,
-        updated_at: row.updated_at.toISOString(),
+        ...(row.folder_id ? { folder_id: row.folder_id } : {}),
+        ...(row.folder_name ? { folder_name: row.folder_name } : {}),
       })),
     ]);
+  });
+
+  it("running_sessions가 정확히 15개이거나 0개이면 잘림 메타를 붙이지 않는다", async () => {
+    async function buildWithPage(total: number) {
+      const rows = Array.from({ length: total }, (_, idx) => ({
+        session_id: `running-${idx}`,
+        display_name: `Running ${idx}`,
+        node_id: "node-A",
+        folder_id: null,
+        folder_name: null,
+        updated_at: new Date("2026-06-01T00:00:00Z"),
+      }));
+      const listRunningSessionsSummary = vi.fn().mockResolvedValue({ sessions: rows, total });
+      const cb = makeBuilder({
+        listRunningSessionsSummary,
+      } as unknown as Partial<SessionDB>);
+      const ctx = await cb.build(makeTask({ agentSessionId: "sess-current" }), codexAgent);
+      const runningItem = ctx.combinedContextItems.find((item) => item.key === "running_sessions");
+      return runningItem?.content as Record<string, unknown>;
+    }
+
+    expect(await buildWithPage(15)).not.toHaveProperty("running_sessions_truncated");
+    expect(await buildWithPage(0)).not.toHaveProperty("running_sessions_truncated");
   });
 
   it("running_sessions 조회 실패는 warning context item으로 격리하고 build는 계속한다", async () => {
@@ -878,13 +901,14 @@ describe("ExecutionContextBuilder.build — board_workspace/running_sessions con
     expect(ctx.combinedContextItems[0].key).toBe("soulstream_session");
     expect(runningItem?.content).toEqual({
       status: "unavailable",
-      scope: "current_node",
+      scope: "cluster_database_running_sessions",
       current_session_id: "sess-current",
       sessions: [],
       warnings: [
         {
           code: "running_sessions_unavailable",
-          message: "Running sessions unavailable; startup continues without live running session context.",
+          message:
+            "running sessions unavailable; startup continues without live running session context",
         },
       ],
     });
