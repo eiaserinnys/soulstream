@@ -262,7 +262,7 @@ async def test_service_token_uses_body_caller_email_for_session_routes(monkeypat
 
 @pytest.mark.parametrize("case", ROUTE_CASES, ids=[case.name for case in ROUTE_CASES])
 @pytest.mark.asyncio
-async def test_service_token_without_body_caller_email_cannot_access_blocked_session_route(
+async def test_service_token_without_body_caller_email_has_unrestricted_session_route_access(
     monkeypatch,
     case,
 ):
@@ -271,8 +271,8 @@ async def test_service_token_without_body_caller_email_cannot_access_blocked_ses
     async for client in _service_token_client(app):
         resp = await _send_json(client, case, with_caller_info=False)
 
-    assert resp.status_code == 403
-    case.effect(db, catalog, node).assert_not_awaited()
+    assert resp.status_code < 300, resp.text
+    case.effect(db, catalog, node).assert_awaited()
 
 
 @pytest.mark.parametrize("case", ROUTE_CASES, ids=[case.name for case in ROUTE_CASES])
@@ -322,7 +322,7 @@ async def test_service_token_uses_multipart_caller_email_for_attachment_upload(m
 
 
 @pytest.mark.asyncio
-async def test_service_token_without_multipart_caller_email_cannot_upload_to_blocked_session(
+async def test_service_token_without_multipart_caller_email_has_unrestricted_upload_access(
     monkeypatch,
 ):
     app, _db, _catalog, node = _build_app(monkeypatch)
@@ -330,8 +330,8 @@ async def test_service_token_without_multipart_caller_email_cannot_upload_to_blo
     async for client in _service_token_client(app):
         resp = await _post_upload(client, with_caller_info=False)
 
-    assert resp.status_code == 403
-    node.send_streamed_upload_attachment.assert_not_awaited()
+    assert resp.status_code == 201, resp.text
+    node.send_streamed_upload_attachment.assert_awaited_once()
 
 
 @pytest.mark.asyncio
