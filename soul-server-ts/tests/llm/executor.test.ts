@@ -43,10 +43,14 @@ describe("LlmExecutor", () => {
       }),
     );
     expect(harness.mocks.getFolderById).toHaveBeenCalledWith("llm");
-    expect(harness.mocks.appendEvent).toHaveBeenCalledTimes(2);
+    expect(harness.mocks.appendEvent).toHaveBeenCalledTimes(3);
     expect(harness.mocks.updateSession).toHaveBeenCalledWith(
       response.session_id,
-      expect.objectContaining({ status: "completed", last_event_id: 2 }),
+      expect.objectContaining({
+        status: "completed",
+        last_event_id: 3,
+        termination_reason: "completed_ok",
+      }),
     );
 
     const task = harness.taskManager.getTask(response.session_id);
@@ -166,10 +170,14 @@ describe("LlmExecutor", () => {
     ).rejects.toThrow(/rate limited/);
 
     const sessionId = harness.mocks.registerSession.mock.calls[0]?.[0].sessionId;
-    expect(harness.mocks.appendEvent).toHaveBeenCalledTimes(2);
+    expect(harness.mocks.appendEvent).toHaveBeenCalledTimes(3);
     expect(harness.mocks.updateSession).toHaveBeenCalledWith(
       sessionId,
-      expect.objectContaining({ status: "error", last_event_id: 2 }),
+      expect.objectContaining({
+        status: "error",
+        last_event_id: 3,
+        termination_reason: "unknown",
+      }),
     );
   });
 });

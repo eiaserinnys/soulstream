@@ -670,10 +670,11 @@ describe("TaskManager.finalizeTask", () => {
     expect(task.error).toBeUndefined();
     expect(task.llmUsage).toEqual({ input_tokens: 2, output_tokens: 3 });
     expect(task.completedAt).toBeInstanceOf(Date);
-    expect(updateSession).toHaveBeenCalledWith("s1", {
+    expect(updateSession).toHaveBeenCalledWith("s1", expect.objectContaining({
       status: "completed",
       last_event_id: 13,
-    });
+      termination_reason: "completed_ok",
+    }));
     expect(emitSessionUpdated).toHaveBeenCalledWith(task);
   });
 
@@ -688,10 +689,11 @@ describe("TaskManager.finalizeTask", () => {
     expect(task.status).toBe("error");
     expect(task.error).toBe("boom");
     expect(task.result).toBeUndefined();
-    expect(updateSession).toHaveBeenCalledWith("s1", {
+    expect(updateSession).toHaveBeenCalledWith("s1", expect.objectContaining({
       status: "error",
       last_event_id: task.lastEventId,
-    });
+      termination_reason: "unknown",
+    }));
   });
 
   it("final state side effect 실패는 finalize 결과를 막지 않음", async () => {
@@ -810,14 +812,18 @@ describe("TaskManager.shutdown", () => {
     await tm.shutdown();
     expect(t1.status).toBe("interrupted");
     expect(t2.status).toBe("interrupted");
-    expect(updateSession).toHaveBeenCalledWith("s1", {
+    expect(updateSession).toHaveBeenCalledWith("s1", expect.objectContaining({
       status: "interrupted",
       last_event_id: t1.lastEventId,
-    });
-    expect(updateSession).toHaveBeenCalledWith("s2", {
+      termination_reason: "killed",
+      termination_detail: "shutdown",
+    }));
+    expect(updateSession).toHaveBeenCalledWith("s2", expect.objectContaining({
       status: "interrupted",
       last_event_id: t2.lastEventId,
-    });
+      termination_reason: "killed",
+      termination_detail: "shutdown",
+    }));
     expect(emitSessionUpdated).toHaveBeenCalledWith(t1);
     expect(emitSessionUpdated).toHaveBeenCalledWith(t2);
     expect(int1).toHaveBeenCalledTimes(1);

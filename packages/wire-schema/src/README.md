@@ -4,9 +4,9 @@
 
 ## 정본
 
-- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 81개 (`$defs`).
-  - wire 메시지 36종
-  - SSE event payload 45종 (`event` 메시지의 `event` 키 안에 packed — orch-server/constants.py KNOWN_SSE_EVENT_TYPES + Agents SDK events)
+- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 104개 (`$defs`).
+  - wire 메시지 49종
+  - SSE event payload 55종 (`event` 메시지의 `event` 키 안에 packed — wire-schema generated SSE types + Agents SDK events)
 
 ## 생성물 (직접 편집 금지)
 
@@ -28,7 +28,7 @@ CI가 `scripts/verify.sh`로 schema ↔ generated 정합을 검증한다.
 
 ## 주요 결정 (`20260516-0732-option-d-phase-a-design.md` §2)
 
-- 단일 schema 파일 (메시지 47개가 평탄하므로 분리 가치 0)
+- 단일 schema 파일 (wire 메시지가 평탄하므로 분리 가치 0)
 - discriminator union (`type` 필드)
 - Python TypedDict 출력 (기존 `soul-server/upstream/protocol.py`와 호환)
 - TS interface + discriminated union 출력

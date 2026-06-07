@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 103개 $defs (wire 49 + SSE event 54)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 104개 $defs (wire 49 + SSE event 55)를 모두 포함하는지 확인한다.
 """
 
 import json
@@ -103,6 +103,7 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventComplete",
         "SSEEventError",
         "SSEEventCredentialAlert",
+        "SSEEventSessionEnded",
         "SSEEventThinking",
         "SSEEventTextStart",
         "SSEEventTextDelta",
@@ -143,8 +144,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventAssistantError",
         "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 54, (
-        "SSE event $defs 54종 (orch-server/constants.py KNOWN_SSE_EVENT_TYPES + Agents SDK events)."
+    assert len(sse_types) == 55, (
+        "SSE event $defs 55종 (wire-schema 정본 + session_ended)."
     )
 
     expected = wire_types | sse_types
@@ -169,6 +170,14 @@ def test_create_session_has_reasoning_effort() -> None:
     prop = create_session["properties"]["reasoningEffort"]
     assert prop["type"] == "string"
     assert prop["enum"] == ["minimal", "low", "medium", "high", "xhigh"]
+
+
+def test_intervene_has_extra_context_items() -> None:
+    schema = _load_schema()
+    intervene = schema["$defs"]["Intervene"]
+    prop = intervene["properties"]["extra_context_items"]
+    assert prop["type"] == "array"
+    assert prop["items"]["type"] == "object"
 
 
 def test_oneof_covers_all_wire_messages() -> None:
@@ -273,6 +282,7 @@ def test_known_sse_event_types_completeness() -> None:
         "complete",
         "error",
         "credential_alert",
+        "session_ended",
         "thinking",
         "text_start",
         "text_delta",

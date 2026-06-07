@@ -562,6 +562,9 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       agentSessionId: "sess-live",
       text: "steer now",
       user: "alice",
+      extra_context_items: [
+        { key: "supervisor", label: "Supervisor", content: "fresh context" },
+      ],
       requestId: "i-live",
     });
 
@@ -570,6 +573,9 @@ describe("CommandDispatcher.intervene (B-4)", () => {
         agentSessionId: "sess-live",
         text: "steer now",
         user: "alice",
+        context: [
+          { key: "supervisor", label: "Supervisor", content: "fresh context" },
+        ],
       }),
       expect.any(Function),
     );

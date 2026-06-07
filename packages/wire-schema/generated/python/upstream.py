@@ -313,6 +313,7 @@ class Intervene(TypedDict):
     user: NotRequired[str]
     requestId: NotRequired[str]
     attachment_paths: NotRequired[list[str]]
+    extra_context_items: NotRequired[list[dict[str, Any]]]
     caller_info: NotRequired[dict[str, Any]]
 
 
@@ -846,6 +847,20 @@ class SSEEventCredentialAlert(TypedDict):
     type: Literal['credential_alert']
 
 
+class SSEEventSessionEnded(TypedDict):
+    """
+    SSE: 세션 종료 사유 확정 이벤트.
+    """
+
+    type: Literal['session_ended']
+    status: str
+    termination_reason: Literal[
+        'completed_ok', 'killed', 'limit_hit', 'error_aborted', 'unknown'
+    ]
+    termination_detail: NotRequired[str | None]
+    timestamp: NotRequired[float]
+
+
 class SSEEventThinking(TypedDict):
     """
     SSE: thinking 블록.
@@ -1341,6 +1356,7 @@ class SessionEventEnvelope(TypedDict):
         | SSEEventComplete
         | SSEEventError
         | SSEEventCredentialAlert
+        | SSEEventSessionEnded
         | SSEEventThinking
         | SSEEventTextStart
         | SSEEventTextDelta

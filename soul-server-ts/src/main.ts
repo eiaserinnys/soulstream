@@ -404,6 +404,7 @@ async function main(): Promise<void> {
     mcpConfigService,
     catalogService,
     logger,
+    mcpToolProfile: env.MCP_TOOL_PROFILE,
     // Completion relay and MCP multi-node tools share the same upstream HTTP config.
     // Completion relay is not gated by MCP exposure; MCP route mounting still is.
     orch: orchProxyConfig,

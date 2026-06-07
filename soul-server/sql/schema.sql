@@ -91,7 +91,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at              TIMESTAMPTZ DEFAULT NOW(),
     updated_at              TIMESTAMPTZ DEFAULT NOW(),
     agent_id                VARCHAR,
-    caller_session_id       TEXT
+    caller_session_id       TEXT,
+    termination_reason      TEXT,
+    termination_detail      TEXT
 );
 
 -- 기존 테이블에 caller_session_id 컬럼 추가 (멱등)
@@ -99,6 +101,10 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS caller_session_id TEXT;
 
 -- away_summary 컬럼 추가 (멱등)
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS away_summary TEXT;
+
+-- Supervisor termination reason 컬럼 추가 (멱등)
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS termination_reason TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS termination_detail TEXT;
 
 CREATE OR REPLACE FUNCTION board_delete_session_refs()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
@@ -560,7 +566,8 @@ DECLARE
         'prompt', 'client_id', 'claude_session_id', 'last_message',
         'metadata', 'was_running_at_shutdown',
         'last_event_id', 'last_read_event_id',
-        'created_at', 'updated_at', 'node_id', 'agent_id'
+        'created_at', 'updated_at', 'node_id', 'agent_id',
+        'termination_reason', 'termination_detail'
     ];
     col_list  TEXT;
     val_list  TEXT;
@@ -692,7 +699,8 @@ DECLARE
         'folder_id', 'display_name', 'status',
         'prompt', 'client_id', 'last_message',
         'metadata', 'was_running_at_shutdown',
-        'last_event_id', 'last_read_event_id'
+        'last_event_id', 'last_read_event_id',
+        'termination_reason', 'termination_detail'
     ];
     set_list  TEXT;
     i         INTEGER;

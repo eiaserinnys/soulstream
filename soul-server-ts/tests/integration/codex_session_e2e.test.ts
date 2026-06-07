@@ -165,9 +165,10 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     const ack = orchReceived.find((m) => m.type === "session_created" && m.requestId === "req-1");
     expect(ack?.agentSessionId).toBe("sess-e2e-1");
 
-    // event envelopes — B-5: 첫 envelope는 user_message(초기 영속화), 그 다음 codexEvents
+    // event envelopes — B-5: 첫 envelope는 user_message(초기 영속화), 그 다음 codexEvents,
+    // 마지막은 Supervisor termination_reason 정본 session_ended.
     const envelopes = orchReceived.filter((m) => m.type === "event");
-    expect(envelopes.length).toBe(codexEvents.length + 1);  // +user_message
+    expect(envelopes.length).toBe(codexEvents.length + 2);  // +user_message + session_ended
     expect((envelopes[0].event as Record<string, unknown>).type).toBe("user_message");
     expect((envelopes[1].event as Record<string, unknown>).type).toBe("session");
     expect((envelopes[2].event as Record<string, unknown>).type).toBe("text_start");
@@ -176,6 +177,7 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     expect((envelopes[5].event as Record<string, unknown>).type).toBe("text_end");
     expect((envelopes[6].event as Record<string, unknown>).type).toBe("assistant_message");
     expect((envelopes[7].event as Record<string, unknown>).type).toBe("complete");
+    expect((envelopes[8].event as Record<string, unknown>).type).toBe("session_ended");
 
     // session_updated 완료 시 1회 (status=completed)
     const updated = orchReceived.filter((m) => m.type === "session_updated");
@@ -187,9 +189,9 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     // === ASSERT — DB stored proc 호출 ===
     const procNames = dbCalls.map((c) => c.fragments.join("?"));
     expect(procNames.some((p) => p.includes("session_register"))).toBe(true);
-    // B-5: user_message + session + assistant_message + complete만 durable 저장.
+    // B-5: user_message + session + assistant_message + complete + session_ended만 durable 저장.
     // text_start/text_delta/text_end는 live transport 전용이라 event_append를 호출하지 않는다.
-    expect(procNames.filter((p) => p.includes("event_append")).length).toBe(4);
+    expect(procNames.filter((p) => p.includes("event_append")).length).toBe(5);
     expect(procNames.some((p) => p.includes("session_update"))).toBe(true);
 
     // F-3B: session_set_claude_id 1회 호출 (thread id 영속화)
@@ -211,7 +213,7 @@ describe("Phase B-3 E2E: create_session → engine drain → broadcast", () => {
     // task 상태
     expect(task!.status).toBe("completed");
     expect(task!.codexThreadId).toBe("thr-codex-1");
-    expect(task!.lastEventId).toBe(4);  // user_message + session + assistant_message + complete
+    expect(task!.lastEventId).toBe(5);  // user_message + session + assistant_message + complete + session_ended
     expect(task!.lastAssistantText).toBe("Hello world");
   });
 

@@ -189,6 +189,9 @@ describe("TaskRuntimeCommands.createSession", () => {
 describe("TaskRuntimeCommands.intervene", () => {
   it("forwards intervention params and auto-resume callback starts execution with the task profile", async () => {
     const resumedTask = makeTask({ agentSessionId: "sess-resume", profileId: codexAgent.id });
+    const extraContextItems = [
+      { key: "supervisor", label: "Supervisor", content: "fresh context" },
+    ];
     const addIntervention = vi.fn(async (_params, onResume) => {
       onResume(resumedTask);
       return { autoResumed: true };
@@ -200,6 +203,7 @@ describe("TaskRuntimeCommands.intervene", () => {
       text: "continue",
       callerInfo: { source: "agent" },
       attachmentPaths: ["/tmp/context.txt"],
+      extraContextItems,
     });
 
     expect(taskManager.addIntervention).toHaveBeenCalledWith(
@@ -209,6 +213,7 @@ describe("TaskRuntimeCommands.intervene", () => {
         user: "upstream",
         callerInfo: { source: "agent" },
         attachmentPaths: ["/tmp/context.txt"],
+        context: extraContextItems,
       },
       expect.any(Function),
     );

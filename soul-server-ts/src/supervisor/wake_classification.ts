@@ -1,0 +1,71 @@
+import type { SSEEventPayload } from "../engine/protocol.js";
+
+export type KnownSseEventType = SSEEventPayload["type"];
+export type WakeClass = "quiet" | "batch" | "wake" | "critical";
+
+export const WAKE_CLASS_BY_EVENT_TYPE = {
+  init: "quiet",
+  reconnected: "wake",
+  progress: "quiet",
+  memory: "quiet",
+  session: "quiet",
+  intervention_sent: "wake",
+  user_message: "wake",
+  assistant_message: "batch",
+  input_request: "wake",
+  input_request_expired: "wake",
+  input_request_responded: "batch",
+  debug: "quiet",
+  complete: "batch",
+  error: "critical",
+  credential_alert: "critical",
+  session_ended: "wake",
+  thinking: "quiet",
+  text_start: "quiet",
+  text_delta: "quiet",
+  text_end: "quiet",
+  tool_start: "batch",
+  tool_result: "batch",
+  agent_updated: "wake",
+  handoff_requested: "wake",
+  handoff_occurred: "wake",
+  tool_approval_requested: "wake",
+  tool_approval_resolved: "batch",
+  guardrail_tripwire: "critical",
+  realtime_status: "quiet",
+  realtime_transcript: "quiet",
+  result: "batch",
+  prompt_suggestion: "batch",
+  subagent_start: "batch",
+  subagent_stop: "batch",
+  claude_runtime_session_state: "quiet",
+  claude_runtime_task_started: "batch",
+  claude_runtime_task_created: "batch",
+  claude_runtime_task_updated: "quiet",
+  claude_runtime_task_progress: "quiet",
+  claude_runtime_task_completed: "batch",
+  claude_runtime_task_notification: "batch",
+  claude_runtime_notification: "wake",
+  claude_runtime_remote_trigger: "wake",
+  claude_runtime_transcript_mirror_error: "critical",
+  claude_runtime_hook_event: "quiet",
+  claude_runtime_mode_state: "quiet",
+  claude_runtime_schedule_updated: "batch",
+  claude_runtime_schedule_deleted: "batch",
+  context_usage: "quiet",
+  compact: "batch",
+  reconnect: "wake",
+  history_sync: "batch",
+  metadata_updated: "quiet",
+  assistant_error: "critical",
+  away_summary: "batch",
+} satisfies Record<KnownSseEventType, WakeClass>;
+
+export function classifyWakeEvent(eventType: string): WakeClass {
+  const wakeClass =
+    WAKE_CLASS_BY_EVENT_TYPE[eventType as KnownSseEventType];
+  if (!wakeClass) {
+    throw new Error(`Unmapped SSE event type: ${eventType}`);
+  }
+  return wakeClass;
+}

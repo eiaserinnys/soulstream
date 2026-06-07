@@ -1,5 +1,6 @@
 import type { AutoResumeCallback, AutoResumeTransition } from "./task_auto_resume_transition.js";
 import type { ActiveTaskRecovery } from "./task_active_recovery.js";
+import type { ContextItem } from "../context/prompt_assembler.js";
 import type { CallerInfo, InterventionMessage, Task } from "./task_models.js";
 import type {
   RunningInterventionResult,
@@ -24,6 +25,7 @@ export interface AddInterventionParams {
   user: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
+  context?: ContextItem[];
   source?: string;
   followupAttempt?: number;
   followupKey?: string;
@@ -73,6 +75,7 @@ export class TaskInterventionRoute {
       user: params.user,
       callerInfo: params.callerInfo,
       attachmentPaths: params.attachmentPaths,
+      context: params.context,
       source: params.source,
       followupAttempt: params.followupAttempt,
       followupKey: params.followupKey,

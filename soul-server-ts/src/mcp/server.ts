@@ -7,6 +7,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { McpRuntime } from "./runtime.js";
+import { createGuardedMcpServer } from "./tool_access.js";
 import { registerAgentConfigTools } from "./tools/agent_config.js";
 import { registerCatalogTools } from "./tools/catalog.js";
 import { registerClaudeRuntimeTools } from "./tools/claude_runtime.js";
@@ -21,13 +22,14 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
     name: "soul-server-ts",
     version: "0.0.1",
   });
-  registerReflectTools(server, runtime);
-  registerSessionQueryTools(server, runtime);
-  registerSessionMgmtTools(server, runtime);
-  registerClaudeRuntimeTools(server, runtime);
-  registerCatalogTools(server, runtime);
-  registerAgentConfigTools(server, runtime);
-  registerMultiNodeTools(server, runtime);
-  registerTaskTreeTools(server, runtime);
+  const guardedServer = createGuardedMcpServer(server, runtime);
+  registerReflectTools(guardedServer, runtime);
+  registerSessionQueryTools(guardedServer, runtime);
+  registerSessionMgmtTools(guardedServer, runtime);
+  registerClaudeRuntimeTools(guardedServer, runtime);
+  registerCatalogTools(guardedServer, runtime);
+  registerAgentConfigTools(guardedServer, runtime);
+  registerMultiNodeTools(guardedServer, runtime);
+  registerTaskTreeTools(guardedServer, runtime);
   return server;
 }
