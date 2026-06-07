@@ -10,13 +10,16 @@ import { ClaudeRuntimeTasksPanel } from "./ClaudeRuntimeTasksPanel";
 import { ClaudeRuntimeSchedulesPanel } from "./ClaudeRuntimeSchedulesPanel";
 import { ClaudeRuntimeNotificationsPanel } from "./ClaudeRuntimeNotificationsPanel";
 import { SessionMetadata } from "./detail/SessionMetadata";
+import { shouldShowClaudeRuntimePanels } from "./claude-runtime-visibility";
 import { ScrollArea } from "./ui/scroll-area";
 
 export function SessionInfoView() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const metadata = useDashboardStore((s) => s.activeSessionSummary?.metadata);
   const callerSessionId = useDashboardStore((s) => s.activeSessionSummary?.callerSessionId);
+  const backend = useDashboardStore((s) => s.activeSessionSummary?.backend);
   const claudeRuntime = useDashboardStore((s) => s.claudeRuntime);
+  const showClaudeRuntimePanels = shouldShowClaudeRuntimePanels(backend);
 
   if (!activeSessionKey) {
     return (
@@ -29,9 +32,13 @@ export function SessionInfoView() {
   return (
     <ScrollArea className="h-full">
       <SessionMetadata metadata={metadata ?? []} callerSessionId={callerSessionId} />
-      <ClaudeRuntimeTasksPanel sessionId={activeSessionKey} runtime={claudeRuntime} />
-      <ClaudeRuntimeSchedulesPanel sessionId={activeSessionKey} runtime={claudeRuntime} />
-      <ClaudeRuntimeNotificationsPanel sessionId={activeSessionKey} />
+      {showClaudeRuntimePanels ? (
+        <>
+          <ClaudeRuntimeTasksPanel sessionId={activeSessionKey} runtime={claudeRuntime} />
+          <ClaudeRuntimeSchedulesPanel sessionId={activeSessionKey} runtime={claudeRuntime} />
+          <ClaudeRuntimeNotificationsPanel sessionId={activeSessionKey} />
+        </>
+      ) : null}
     </ScrollArea>
   );
 }

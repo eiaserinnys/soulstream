@@ -2,6 +2,7 @@ import { useDashboardStore } from "../../stores/dashboard-store";
 import { ClaudeRuntimeNotificationsPanel } from "../ClaudeRuntimeNotificationsPanel";
 import { ClaudeRuntimeSchedulesPanel } from "../ClaudeRuntimeSchedulesPanel";
 import { ClaudeRuntimeTasksPanel } from "../ClaudeRuntimeTasksPanel";
+import { shouldShowClaudeRuntimePanels } from "../claude-runtime-visibility";
 
 interface ChatRuntimeCompactStripsProps {
   sessionId: string;
@@ -9,6 +10,9 @@ interface ChatRuntimeCompactStripsProps {
 
 export function ChatRuntimeCompactStrips({ sessionId }: ChatRuntimeCompactStripsProps) {
   const runtime = useDashboardStore((s) => s.claudeRuntime);
+  const backend = useDashboardStore((s) => s.activeSessionSummary?.backend);
+
+  if (!shouldShowClaudeRuntimePanels(backend)) return null;
 
   return (
     <div className="shrink-0">
