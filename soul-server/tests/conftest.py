@@ -166,6 +166,10 @@ async def test_db():
     yield pool
 
     # 정리: 의존성 순서에 맞게 삭제
+    await pool.execute("DELETE FROM supervisor_events")
+    await pool.execute("DELETE FROM supervisor_source_cursors")
+    await pool.execute("DELETE FROM supervisor_consumers")
+    await pool.execute("DELETE FROM supervisor_registry")
     await pool.execute("DELETE FROM events")
     await pool.execute("DELETE FROM sessions")
     await pool.execute("DELETE FROM folders")

@@ -7,6 +7,7 @@ TEST_DATABASE_URL 환경변수가 없으면 전체 skip.
 import asyncio
 import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -92,8 +93,8 @@ async def test_session_upsert_jsonb_columns(test_db):
         "s-json", ["metadata", "last_message", "status"], [meta, msg, "idle"], now, now,
     )
     row = await test_db.fetchrow("SELECT * FROM session_get($1)", "s-json")
-    assert row["metadata"] == [{"type": "test", "value": "hello"}]
-    assert row["last_message"] == {"text": "hi"}
+    assert _decode_jsonb(row["metadata"]) == [{"type": "test", "value": "hello"}]
+    assert _decode_jsonb(row["last_message"]) == {"text": "hi"}
 
 
 async def test_session_get_all_and_count(test_db):
@@ -231,7 +232,7 @@ async def test_session_append_metadata(test_db):
     # metadata가 append됐는지
     row = await test_db.fetchrow("SELECT * FROM session_get($1)", "s-meta")
     assert row["metadata"] is not None
-    assert len(row["metadata"]) == 1
+    assert len(_decode_jsonb(row["metadata"])) == 1
 
     # last_event_id 갱신됐는지
     assert row["last_event_id"] == 1
@@ -254,7 +255,7 @@ async def test_session_update_last_message(test_db):
         "SELECT session_update_last_message($1, $2, $3)", "s-msg", msg, now
     )
     row = await test_db.fetchrow("SELECT * FROM session_get($1)", "s-msg")
-    assert row["last_message"] == {"text": "hello"}
+    assert _decode_jsonb(row["last_message"]) == {"text": "hello"}
 
 
 # === 읽음 상태 ===
@@ -426,6 +427,138 @@ async def test_event_count(test_db):
     assert count == 3
 
 
+async def test_supervisor_event_append_idempotent_and_contiguous_cursor(test_db):
+    now = _utc_now()
+
+    first = await test_db.fetchrow(
+        "SELECT * FROM supervisor_event_append($1, $2, $3, $4, $5, $6)",
+        "node-a", "sess-a", 1, "text_delta", '{"text":"one"}', now,
+    )
+    assert first["offset"] > 0
+    assert first["inserted"] is True
+    assert first["contiguous_upto"] == 1
+    assert first["highest_seen_event_id"] == 1
+    assert first["gap_start"] is None
+    assert first["gap_end"] is None
+
+    third = await test_db.fetchrow(
+        "SELECT * FROM supervisor_event_append($1, $2, $3, $4, $5, $6)",
+        "node-a", "sess-a", 3, "tool_result", '{"text":"three"}', now,
+    )
+    assert third["offset"] > first["offset"]
+    assert third["inserted"] is True
+    assert third["contiguous_upto"] == 1
+    assert third["highest_seen_event_id"] == 3
+    assert third["gap_start"] == 2
+    assert third["gap_end"] == 2
+
+    duplicate = await test_db.fetchrow(
+        "SELECT * FROM supervisor_event_append($1, $2, $3, $4, $5, $6)",
+        "node-a", "sess-a", 3, "tool_result", '{"text":"duplicate"}', now,
+    )
+    assert duplicate["offset"] == third["offset"]
+    assert duplicate["inserted"] is False
+    assert await test_db.fetchval("SELECT COUNT(*) FROM supervisor_events") == 2
+
+    second = await test_db.fetchrow(
+        "SELECT * FROM supervisor_event_append($1, $2, $3, $4, $5, $6)",
+        "node-a", "sess-a", 2, "text_delta", '{"text":"two"}', now,
+    )
+    assert second["offset"] > third["offset"]
+    assert second["inserted"] is True
+    assert second["contiguous_upto"] == 3
+    assert second["highest_seen_event_id"] == 3
+    assert second["gap_start"] is None
+    assert second["gap_end"] is None
+
+    cursor = await test_db.fetchrow(
+        "SELECT * FROM supervisor_source_cursor_get($1, $2)",
+        "node-a", "sess-a",
+    )
+    assert cursor["contiguous_upto"] == 3
+    assert cursor["highest_seen_event_id"] == 3
+    assert cursor["gap_start"] is None
+    assert cursor["gap_end"] is None
+
+    rows = await test_db.fetch("SELECT * FROM supervisor_event_read_after($1, $2)", 0, 10)
+    assert [row["offset"] for row in rows] == [
+        first["offset"],
+        third["offset"],
+        second["offset"],
+    ]
+    assert [row["source_event_id"] for row in rows] == [1, 3, 2]
+
+
+async def test_supervisor_consumer_cursor_registry_and_schema_reapply(test_db):
+    now = _utc_now()
+
+    await test_db.fetchrow(
+        "SELECT * FROM supervisor_event_append($1, $2, $3, $4, $5, $6)",
+        "node-restart", "sess-restart", 1, "session_created", '{"ok":true}', now,
+    )
+    await test_db.execute(
+        "SELECT supervisor_consumer_cursor_set($1, $2)",
+        "cluster-supervisor", 1,
+    )
+    assert await test_db.fetchval(
+        "SELECT supervisor_consumer_cursor_get($1)",
+        "cluster-supervisor",
+    ) == 1
+
+    registry = await test_db.fetchrow(
+        "SELECT * FROM supervisor_registry_upsert($1, $2, $3, $4, $5, $6, $7, $8)",
+        "cluster",
+        "sess-supervisor",
+        7,
+        1,
+        "idle_pending",
+        1200,
+        1,
+        now,
+    )
+    assert registry["role"] == "cluster"
+    assert registry["active_session_id"] == "sess-supervisor"
+    assert registry["epoch"] == 7
+    assert registry["cursor_offset"] == 1
+    assert registry["handover_state"] == "idle_pending"
+    assert registry["cumulative_tokens"] == 1200
+    assert registry["compaction_count"] == 1
+    assert registry["last_seen_at"] == now
+
+    usage = await test_db.fetchrow(
+        "SELECT * FROM supervisor_registry_record_usage_delta($1, $2, $3, $4)",
+        "cluster",
+        300,
+        2,
+        now,
+    )
+    assert usage["cumulative_tokens"] == 1500
+    assert usage["compaction_count"] == 3
+
+    touched = await test_db.fetchrow(
+        "SELECT * FROM supervisor_registry_touch($1, $2)",
+        "cluster",
+        now,
+    )
+    assert touched["role"] == "cluster"
+    assert touched["last_seen_at"] == now
+
+    schema_path = Path(__file__).resolve().parent.parent / "sql" / "schema.sql"
+    await test_db.execute(schema_path.read_text(encoding="utf-8"))
+
+    recovered = await test_db.fetch("SELECT * FROM supervisor_event_read_after($1, $2)", 0, 10)
+    assert len(recovered) == 1
+    assert recovered[0]["source_node"] == "node-restart"
+    assert await test_db.fetchval(
+        "SELECT supervisor_consumer_cursor_get($1)",
+        "cluster-supervisor",
+    ) == 1
+    assert await test_db.fetchrow("SELECT * FROM supervisor_registry_get($1)", "cluster")
+
+    assert await test_db.fetchval("SELECT supervisor_registry_delete($1)", "cluster") is True
+    assert await test_db.fetchrow("SELECT * FROM supervisor_registry_get($1)", "cluster") is None
+
+
 async def test_event_append_parent_event_id_integer(test_db):
     """payload.parent_event_id가 정수 문자열이면 컬럼에 INTEGER로 저장된다."""
     await _create_session(test_db, "ev-pe-int")
@@ -514,7 +647,7 @@ async def test_event_append_parent_event_id_int_overflow(test_db):
 
 
 async def test_event_append_parent_event_id_int_max_boundary(test_db):
-    """INT MAX(2147483647)는 캐스트 가능, MAX+1(2147483648)은 NULL."""
+    """INT MAX라도 부모 행이 없으면 NULL, MAX+1(2147483648)도 NULL."""
     await _create_session(test_db, "ev-pe-boundary")
     now = _utc_now()
 
@@ -527,7 +660,7 @@ async def test_event_append_parent_event_id_int_max_boundary(test_db):
     row = await test_db.fetchrow(
         "SELECT * FROM event_read_one($1, $2)", "ev-pe-boundary", eid_max
     )
-    assert row["parent_event_id"] == 2147483647
+    assert row["parent_event_id"] is None
 
     eid_over = await test_db.fetchval(
         "SELECT event_append($1, $2, $3, $4, $5)",

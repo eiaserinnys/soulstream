@@ -483,6 +483,174 @@ describe("SessionDB.appendEvent", () => {
   });
 });
 
+describe("SessionDB supervisor data layer", () => {
+  it("appendSupervisorEvent → supervisor_event_append payload JSON + result parse", async () => {
+    const now = new Date("2026-06-07T09:00:00Z");
+    const { sql, calls } = createMockSql(() => [
+      {
+        offset: "5",
+        inserted: true,
+        contiguous_upto: 3,
+        highest_seen_event_id: 3,
+        gap_start: null,
+        gap_end: null,
+      },
+    ]);
+    const db = new SessionDB(sql);
+
+    const result = await db.appendSupervisorEvent({
+      sourceNode: "node-a",
+      sourceSessionId: "sess-a",
+      sourceEventId: 3,
+      eventType: "text_delta",
+      payload: { text: "안녕" },
+      createdAt: now,
+    });
+
+    expect(result).toEqual({
+      offset: 5,
+      inserted: true,
+      contiguousUpto: 3,
+      highestSeenEventId: 3,
+      gapStart: null,
+      gapEnd: null,
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].fragments.join("?")).toContain("supervisor_event_append");
+    expect(calls[0].values).toEqual([
+      "node-a",
+      "sess-a",
+      3,
+      "text_delta",
+      "{\"text\":\"안녕\"}",
+      now,
+    ]);
+  });
+
+  it("readSupervisorEventsAfter → supervisor_event_read_after ordered rows", async () => {
+    const createdAt = new Date("2026-06-07T09:00:00Z");
+    const insertedAt = new Date("2026-06-07T09:00:01Z");
+    const { sql, calls } = createMockSql(() => [
+      {
+        offset: "1",
+        source_node: "node-a",
+        source_session_id: "sess-a",
+        source_event_id: 1,
+        event_type: "text_delta",
+        payload: { text: "hello" },
+        created_at: createdAt,
+        inserted_at: insertedAt,
+      },
+    ]);
+
+    const rows = await new SessionDB(sql).readSupervisorEventsAfter(0, 10);
+
+    expect(calls[0].fragments.join("?")).toContain("supervisor_event_read_after");
+    expect(calls[0].values).toEqual([0, 10]);
+    expect(rows[0]).toEqual({
+      offset: 1,
+      sourceNode: "node-a",
+      sourceSessionId: "sess-a",
+      sourceEventId: 1,
+      eventType: "text_delta",
+      payload: { text: "hello" },
+      createdAt,
+      insertedAt,
+    });
+  });
+
+  it("consumer cursor and registry methods call supervisor procedures", async () => {
+    const now = new Date("2026-06-07T09:00:00Z");
+    const { sql, calls } = createMockSql((call) => {
+      const query = call.fragments.join("?");
+      if (query.includes("supervisor_consumer_cursor_get")) {
+        return [{ supervisor_consumer_cursor_get: "7" }];
+      }
+      if (query.includes("supervisor_consumer_cursor_set")) {
+        return [{ supervisor_consumer_cursor_set: "9" }];
+      }
+      if (query.includes("supervisor_registry_upsert")) {
+        return [
+          {
+            role: "cluster",
+            active_session_id: "sess-supervisor",
+            epoch: "2",
+            cursor_offset: "9",
+            handover_state: "hard_pending",
+            cumulative_tokens: "42",
+            compaction_count: "1",
+            last_seen_at: now,
+            created_at: now,
+            updated_at: now,
+          },
+        ];
+      }
+      if (query.includes("supervisor_registry_record_usage_delta")) {
+        return [
+          {
+            role: "cluster",
+            active_session_id: "sess-supervisor",
+            epoch: "2",
+            cursor_offset: "9",
+            handover_state: "hard_pending",
+            cumulative_tokens: "142",
+            compaction_count: "2",
+            last_seen_at: now,
+            created_at: now,
+            updated_at: now,
+          },
+        ];
+      }
+      if (query.includes("supervisor_registry_delete")) {
+        return [{ supervisor_registry_delete: true }];
+      }
+      return [];
+    });
+    const db = new SessionDB(sql);
+
+    await expect(db.getSupervisorConsumerCursor("cluster-supervisor")).resolves.toBe(7);
+    await expect(db.setSupervisorConsumerCursor("cluster-supervisor", 9)).resolves.toBe(9);
+    const registry = await db.upsertSupervisorRegistry({
+      role: "cluster",
+      activeSessionId: "sess-supervisor",
+      epoch: 2,
+      cursorOffset: 9,
+      handoverState: "hard_pending",
+      cumulativeTokens: 42,
+      compactionCount: 1,
+      lastSeenAt: now,
+    });
+    const usage = await db.recordSupervisorUsageDelta({
+      role: "cluster",
+      tokenDelta: 100,
+      compactionDelta: 1,
+      lastSeenAt: now,
+    });
+    await expect(db.deleteSupervisorRegistry("cluster")).resolves.toBe(true);
+
+    expect(registry).toMatchObject({
+      role: "cluster",
+      activeSessionId: "sess-supervisor",
+      epoch: 2,
+      cursorOffset: 9,
+      handoverState: "hard_pending",
+      cumulativeTokens: 42,
+      compactionCount: 1,
+    });
+    expect(usage).toMatchObject({
+      cumulativeTokens: 142,
+      compactionCount: 2,
+    });
+    expect(calls.map((c) => c.fragments.join("?"))).toEqual([
+      expect.stringContaining("supervisor_consumer_cursor_get"),
+      expect.stringContaining("supervisor_consumer_cursor_set"),
+      expect.stringContaining("supervisor_registry_upsert"),
+      expect.stringContaining("supervisor_registry_record_usage_delta"),
+      expect.stringContaining("supervisor_registry_delete"),
+    ]);
+  });
+});
+
 describe("SessionDB Claude transcript mirror", () => {
   it("appendClaudeTranscriptEntries delegates JSON batch to stored proc", async () => {
     const { sql, calls } = createMockSql(() => [{ claude_transcript_append: 2 }]);
