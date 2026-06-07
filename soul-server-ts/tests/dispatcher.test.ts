@@ -15,8 +15,9 @@ import type {
 import type { SessionDB } from "../src/db/session_db.js";
 import type { RealtimeBroker } from "../src/realtime/realtime_broker.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
-import type { TaskManager } from "../src/task/task_manager.js";
+import { TaskManager } from "../src/task/task_manager.js";
 import type { Task } from "../src/task/task_models.js";
+import type { SessionBroadcaster } from "../src/upstream/session_broadcaster.js";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -661,6 +662,128 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       outcome: "auto_resumed",
       agentSessionId: "sess-2",
     });
+  });
+
+  it("completed+evicted Claude 세션 intervene는 dispatcher 경유로 hydrate 후 기존 Claude session id로 재개", async () => {
+    const sessionId = "c23ddf98-3c2d-4e22-baa7-aa1e6d226b03";
+    const claudeSessionId = "736ddf46-4c72-4b02-a44a-fab3e5e58fe5";
+    const prodClaudeAgent: AgentProfile = {
+      id: "seosoyoung",
+      name: "서소영",
+      backend: "claude",
+      workspace_dir: "/home/eias/seosoyoung-workspace/seosoyoung",
+    };
+    const registry = new AgentRegistry([prodClaudeAgent]);
+    const sent: unknown[] = [];
+    const send = vi.fn(async (data: unknown) => {
+      sent.push(data);
+    });
+    const getSession = vi.fn(async (id: string) =>
+      id === sessionId
+        ? {
+            session_id: sessionId,
+            folder_id: "8dff6b9c-60a8-4c66-961c-b5c347fa9c0a",
+            display_name: "완료된 claude 세션",
+            node_id: "eiaserinnys",
+            session_type: "claude",
+            status: "completed",
+            prompt: "previous turn",
+            client_id: null,
+            claude_session_id: claudeSessionId,
+            last_message: null,
+            metadata: [],
+            was_running_at_shutdown: false,
+            last_event_id: 581,
+            last_read_event_id: 581,
+            created_at: new Date("2026-06-07T14:00:00.000Z"),
+            updated_at: new Date("2026-06-07T16:15:32.000Z"),
+            agent_id: prodClaudeAgent.id,
+            caller_session_id: null,
+            away_summary: null,
+            termination_reason: "completed_ok",
+            termination_detail: null,
+          }
+        : null,
+    );
+    const updateSession = vi.fn(async () => undefined);
+    const db = {
+      getSession,
+      updateSession,
+      appendMetadata: vi.fn(async () => undefined),
+      listSupervisorRegistries: vi.fn(async () => [
+        { role: "ariella-ashwood-codex", activeSessionId: "supervisor-1", epoch: 1 },
+      ]),
+    } as unknown as SessionDB;
+    const broadcaster = {
+      emitSessionUpdated: vi.fn(async () => undefined),
+    } as unknown as SessionBroadcaster;
+    const taskManager = new TaskManager(
+      "eiaserinnys",
+      db,
+      broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      registry,
+    );
+    const startExecution = vi.fn();
+    const dispatcher = new CommandDispatcher(
+      send,
+      silentLogger,
+      "eiaserinnys",
+      registry,
+      taskManager,
+      { startExecution } as unknown as TaskExecutor,
+      undefined,
+      undefined,
+      db,
+    );
+
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: sessionId,
+      text: "이어가",
+      user: "browser",
+      requestId: "resume-c23",
+    });
+
+    expect(sent).toEqual([
+      {
+        type: "intervene_ack",
+        requestId: "resume-c23",
+        status: "ok",
+        outcome: "auto_resumed",
+        agentSessionId: sessionId,
+      },
+    ]);
+    expect(getSession).toHaveBeenCalledWith(sessionId);
+    expect(updateSession).toHaveBeenCalledWith(sessionId, {
+      status: "running",
+      last_event_id: 581,
+      termination_reason: null,
+      termination_detail: null,
+    });
+    expect(startExecution).toHaveBeenCalledTimes(1);
+    const [resumedTask, agent] = startExecution.mock.calls[0] as [Task, AgentProfile];
+    expect(agent).toBe(prodClaudeAgent);
+    expect(resumedTask).toMatchObject({
+      agentSessionId: sessionId,
+      status: "running",
+      hydratedFromDb: true,
+      profileId: prodClaudeAgent.id,
+      sessionType: "claude",
+      codexThreadId: claudeSessionId,
+      lastEventId: 581,
+      lastReadEventId: 581,
+      terminationReason: undefined,
+      terminationDetail: undefined,
+    });
+    expect(resumedTask.interventionQueue).toEqual([
+      expect.objectContaining({
+        text: "이어가",
+        user: "browser",
+      }),
+    ]);
   });
 
   it("미존재 task에 intervene → addIntervention throw → error wire", async () => {

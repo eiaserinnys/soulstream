@@ -449,3 +449,43 @@ class TestInterveneCallerInfoSystemRouting:
         )
         # find_session_node가 HTTPException(404) 던짐 — caller_info 조립 진입 못 함
         assert resp.status_code == 404
+
+    async def test_intervene_node_timeout_returns_retryable_503(
+        self, client, node_manager, mock_db, jwt_secret
+    ):
+        """Node command timeout must not leak as ASGI 500."""
+        node, _ws = await _register_node(node_manager)()
+        mock_db.get_session = AsyncMock(return_value={"node_id": node.node_id})
+        node.send_intervene = AsyncMock(
+            side_effect=TimeoutError("Command intervene timed out after 30s")
+        )
+
+        token = generate_token({"email": "cron@example.com"}, jwt_secret)
+        resp = await client.post(
+            "/api/sessions/sess-timeout/intervene",
+            json={"text": "retry later"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert resp.status_code == 503
+        assert "timed out" in resp.text
+
+    async def test_intervene_existing_session_runtime_not_found_is_retryable_503(
+        self, client, node_manager, mock_db, jwt_secret
+    ):
+        """A persisted session row plus node runtime miss is node unavailability, not HTTP 404."""
+        node, _ws = await _register_node(node_manager)()
+        mock_db.get_session = AsyncMock(return_value={"node_id": node.node_id})
+        node.send_intervene = AsyncMock(
+            side_effect=RuntimeError("Task not found: sess-evicted")
+        )
+
+        token = generate_token({"email": "cron@example.com"}, jwt_secret)
+        resp = await client.post(
+            "/api/sessions/sess-evicted/intervene",
+            json={"text": "resume existing"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert resp.status_code == 503
+        assert "existing session" in resp.text
