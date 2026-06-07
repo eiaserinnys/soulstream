@@ -61,11 +61,26 @@ export const WAKE_CLASS_BY_EVENT_TYPE = {
   away_summary: "batch",
 } satisfies Record<KnownSseEventType, WakeClass>;
 
+const warnedUnmappedEventTypes = new Set<string>();
+
 export function classifyWakeEvent(eventType: string): WakeClass {
   const wakeClass =
     WAKE_CLASS_BY_EVENT_TYPE[eventType as KnownSseEventType];
-  if (!wakeClass) {
-    throw new Error(`Unmapped SSE event type: ${eventType}`);
+  if (wakeClass) return wakeClass;
+
+  // Unknown event types must NOT throw here. This runs on the supervisor wake
+  // hot path (ingest + flush); a single unmapped type would stall the flush
+  // cursor and re-fire every debounce tick, starving the node's keepalive and
+  // collapsing the orch↔node WebSocket (P0). Exhaustiveness over the SSE wire
+  // union is already guaranteed at compile time by the
+  // `satisfies Record<KnownSseEventType, WakeClass>` above; at runtime we
+  // degrade unknown / non-wire types (e.g. the internal "metadata" event written
+  // by appendMetadata, which is not part of the wire union) to "quiet" so they
+  // never wake a supervisor. We warn once per type to keep visibility without
+  // flooding the log.
+  if (!warnedUnmappedEventTypes.has(eventType)) {
+    warnedUnmappedEventTypes.add(eventType);
+    console.warn(`[wake] unmapped SSE event type treated as quiet: ${eventType}`);
   }
-  return wakeClass;
+  return "quiet";
 }
