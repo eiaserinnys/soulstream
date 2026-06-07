@@ -153,6 +153,14 @@ export interface SessionRow {
   away_summary: string | null;
 }
 
+export interface RunningSessionSummaryRow {
+  session_id: string;
+  display_name: string | null;
+  node_id: string | null;
+  folder_id: string | null;
+  updated_at: Date;
+}
+
 export interface RegisterSessionParams {
   sessionId: string;
   nodeId: string;
@@ -1036,6 +1044,62 @@ export class SessionDB {
       caller_session_id: r.caller_session_id,
     }));
     return { sessions, total };
+  }
+
+  /**
+   * Context builder용 running 세션 경량 조회.
+   *
+   * 현재 node DB의 sessions 테이블을 updated_at DESC로 읽는다. cross-node HTTP wire에
+   * 의존하지 않으므로 조회 실패가 context 조립 전체로 번지지 않는다.
+   */
+  async listRunningSessionsSummary(params: {
+    limit: number;
+    offset?: number;
+    excludeSessionId?: string | null;
+  }): Promise<{
+    sessions: RunningSessionSummaryRow[];
+    total: number;
+  }> {
+    const rows = await this.sql<
+      Array<{
+        session_id: string;
+        display_name: string | null;
+        node_id: string | null;
+        folder_id: string | null;
+        updated_at: Date;
+        total_count: string | number;
+      }>
+    >`
+      WITH args AS (
+        SELECT ${params.excludeSessionId ?? null}::text AS exclude_session_id
+      ),
+      filtered AS (
+        SELECT
+          session_id,
+          display_name,
+          node_id,
+          folder_id,
+          updated_at
+        FROM sessions, args
+        WHERE status = 'running'
+          AND (args.exclude_session_id IS NULL OR session_id <> args.exclude_session_id)
+        ORDER BY updated_at DESC
+      )
+      SELECT f.*, (SELECT COUNT(*) FROM filtered)::BIGINT AS total_count
+      FROM filtered f
+      LIMIT ${params.limit} OFFSET ${params.offset ?? 0}
+    `;
+    const total = rows.length > 0 && rows[0] ? Number(rows[0].total_count) : 0;
+    return {
+      sessions: rows.map((r) => ({
+        session_id: r.session_id,
+        display_name: r.display_name,
+        node_id: r.node_id,
+        folder_id: r.folder_id,
+        updated_at: r.updated_at,
+      })),
+      total,
+    };
   }
 
   /**

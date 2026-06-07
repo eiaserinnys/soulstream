@@ -553,13 +553,23 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     expect(ctx.combinedContextItems[1]).toEqual(attachmentContext);
   });
 
-  it("현재 폴더의 직접 자식만 board_workspace context item에 주입", async () => {
+  it("현재 폴더의 직접 자식만 board_workspace context item에 최소 필드로 주입", async () => {
     const getSession = vi.fn().mockResolvedValue({ folder_id: "root" });
     const getFolderById = vi.fn().mockResolvedValue({
       id: "root",
       name: "Root",
       sort_order: 0,
       settings: {},
+    });
+    const listSessionsSummary = vi.fn().mockResolvedValue({
+      sessions: [
+        {
+          session_id: "sess-direct",
+          display_name: "Direct Session",
+          updated_at: new Date("2026-06-07T04:00:00.000Z"),
+        },
+      ],
+      total: 1,
     });
     const getCatalog = vi.fn().mockResolvedValue({
       folders: [
@@ -572,7 +582,12 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
         "sess-nested": { folderId: "child", displayName: "Nested Session" },
       },
     });
-    const cb = makeBuilder({ getSession, getFolderById, getCatalog } as Partial<SessionDB>);
+    const cb = makeBuilder({
+      getSession,
+      getFolderById,
+      getCatalog,
+      listSessionsSummary,
+    } as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask(), codexAgent);
     const boardItem = ctx.combinedContextItems.find((item) => item.key === "board_workspace");
@@ -594,7 +609,13 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
         },
       ],
     });
+    expect(listSessionsSummary).toHaveBeenCalledWith({
+      limit: 15,
+      offset: 0,
+      folderId: "root",
+    });
   });
+
 });
 
 describe("ExecutionContextBuilder.build — cogito_context fetch", () => {
@@ -681,6 +702,189 @@ describe("ExecutionContextBuilder.build — cogito_context fetch", () => {
           code: "cogito_context_unavailable",
           message:
             "cogito cluster brief unavailable; startup continues without live cluster context",
+        },
+      ],
+    });
+  });
+});
+
+describe("ExecutionContextBuilder.build — board_workspace/running_sessions context", () => {
+  it("board_workspace.sessions는 updated_at DESC page의 최근 15개만 주입하고 잘림 메타를 붙인다", async () => {
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "root" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "root",
+      name: "Root",
+      sort_order: 0,
+      settings: {},
+    });
+    const getCatalog = vi.fn().mockResolvedValue({
+      folders: [
+        { id: "root", name: "Root", sortOrder: 0, settings: {}, parentFolderId: null },
+      ],
+      sessions: Object.fromEntries(
+        Array.from({ length: 16 }, (_, idx) => [
+          `sess-${idx}`,
+          { folderId: "root", displayName: `Catalog ${idx}` },
+        ]),
+      ),
+    });
+    const rows = Array.from({ length: 15 }, (_, idx) => ({
+      session_id: `sess-${idx}`,
+      display_name: `Recent ${idx}`,
+      status: idx === 0 ? "running" : "completed",
+      session_type: "claude",
+      created_at: new Date(`2026-06-${String(idx + 1).padStart(2, "0")}T00:00:00Z`),
+      updated_at: new Date(`2026-06-${String(20 - idx).padStart(2, "0")}T00:00:00Z`),
+      event_count: idx,
+      away_summary: null,
+      caller_session_id: null,
+    }));
+    const listSessionsSummary = vi.fn().mockResolvedValue({ sessions: rows, total: 16 });
+    const cb = makeBuilder({
+      getSession,
+      getFolderById,
+      getCatalog,
+      listSessionsSummary,
+    } as unknown as Partial<SessionDB>);
+
+    const ctx = await cb.build(makeTask(), codexAgent);
+    const boardItem = ctx.combinedContextItems.find((item) => item.key === "board_workspace");
+    const content = boardItem?.content as Record<string, unknown>;
+
+    expect(listSessionsSummary).toHaveBeenCalledWith({
+      folderId: "root",
+      limit: 15,
+      offset: 0,
+    });
+    expect(content.sessions).toEqual(
+      rows.map((row) => ({
+        agent_session_id: row.session_id,
+        title: row.display_name,
+      })),
+    );
+    expect(content.sessions_truncated).toEqual({
+      total: 16,
+      shown: 15,
+      sort: "updated_at_desc",
+      message: "Showing 15 most recently active sessions out of 16.",
+    });
+  });
+
+  it("board_workspace.sessions가 정확히 15개이거나 0개이면 잘림 메타를 붙이지 않는다", async () => {
+    async function buildWithPage(total: number) {
+      const getSession = vi.fn().mockResolvedValue({ folder_id: "root" });
+      const getFolderById = vi.fn().mockResolvedValue({
+        id: "root",
+        name: "Root",
+        sort_order: 0,
+        settings: {},
+      });
+      const getCatalog = vi.fn().mockResolvedValue({
+        folders: [
+          { id: "root", name: "Root", sortOrder: 0, settings: {}, parentFolderId: null },
+        ],
+        sessions: {},
+      });
+      const sessions = Array.from({ length: total }, (_, idx) => ({
+        session_id: `sess-${idx}`,
+        display_name: `Session ${idx}`,
+        status: "completed",
+        session_type: "claude",
+        created_at: new Date("2026-06-01T00:00:00Z"),
+        updated_at: new Date("2026-06-01T00:00:00Z"),
+        event_count: 0,
+        away_summary: null,
+        caller_session_id: null,
+      }));
+      const listSessionsSummary = vi.fn().mockResolvedValue({ sessions, total });
+      const cb = makeBuilder({
+        getSession,
+        getFolderById,
+        getCatalog,
+        listSessionsSummary,
+      } as unknown as Partial<SessionDB>);
+      const ctx = await cb.build(makeTask(), codexAgent);
+      const boardItem = ctx.combinedContextItems.find((item) => item.key === "board_workspace");
+      return boardItem?.content as Record<string, unknown>;
+    }
+
+    expect(await buildWithPage(15)).not.toHaveProperty("sessions_truncated");
+    expect(await buildWithPage(0)).not.toHaveProperty("sessions_truncated");
+  });
+
+  it("running_sessions는 현재 세션을 제외하고 최근 15개와 잘림 메타를 주입한다", async () => {
+    const rows = Array.from({ length: 15 }, (_, idx) => ({
+      session_id: `running-${idx}`,
+      display_name: idx === 0 ? null : `Running ${idx}`,
+      node_id: idx % 2 === 0 ? "node-A" : "node-B",
+      folder_id: idx % 2 === 0 ? "folder-A" : null,
+      updated_at: new Date(`2026-06-${String(20 - idx).padStart(2, "0")}T00:00:00Z`),
+    }));
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue({
+      sessions: rows,
+      total: 16,
+    });
+    const cb = makeBuilder({
+      listRunningSessionsSummary,
+    } as unknown as Partial<SessionDB>);
+
+    const ctx = await cb.build(makeTask({ agentSessionId: "sess-current" }), codexAgent);
+    const runningItem = ctx.combinedContextItems.find((item) => item.key === "running_sessions");
+    const content = runningItem?.content as Record<string, unknown>;
+
+    expect(listRunningSessionsSummary).toHaveBeenCalledWith({
+      limit: 15,
+      offset: 0,
+      excludeSessionId: "sess-current",
+    });
+    expect(content).toMatchObject({
+      status: "ok",
+      scope: "current_node",
+      current_session_id: "sess-current",
+      running_sessions_truncated: {
+        total: 16,
+        shown: 15,
+        sort: "updated_at_desc",
+        message: "Showing 15 most recently active running sessions out of 16.",
+      },
+    });
+    expect(content.sessions).toEqual([
+      {
+        agent_session_id: "running-0",
+        title: "running-0",
+        node_id: "node-A",
+        folder_id: "folder-A",
+        updated_at: "2026-06-20T00:00:00.000Z",
+      },
+      ...rows.slice(1).map((row) => ({
+        agent_session_id: row.session_id,
+        title: row.display_name,
+        node_id: row.node_id,
+        folder_id: row.folder_id,
+        updated_at: row.updated_at.toISOString(),
+      })),
+    ]);
+  });
+
+  it("running_sessions 조회 실패는 warning context item으로 격리하고 build는 계속한다", async () => {
+    const listRunningSessionsSummary = vi.fn().mockRejectedValue(new Error("db down"));
+    const cb = makeBuilder({
+      listRunningSessionsSummary,
+    } as unknown as Partial<SessionDB>);
+
+    const ctx = await cb.build(makeTask({ agentSessionId: "sess-current" }), codexAgent);
+    const runningItem = ctx.combinedContextItems.find((item) => item.key === "running_sessions");
+
+    expect(ctx.combinedContextItems[0].key).toBe("soulstream_session");
+    expect(runningItem?.content).toEqual({
+      status: "unavailable",
+      scope: "current_node",
+      current_session_id: "sess-current",
+      sessions: [],
+      warnings: [
+        {
+          code: "running_sessions_unavailable",
+          message: "Running sessions unavailable; startup continues without live running session context.",
         },
       ],
     });

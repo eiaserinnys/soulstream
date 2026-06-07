@@ -766,6 +766,41 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
     expect(calls[0].values).toEqual(["Hi", null, 20, 0, "claude", "node-1"]);
   });
 
+  it("listRunningSessionsSummary → running 세션만 current session 제외 후 최신순으로 조회", async () => {
+    const now = new Date("2026-06-07T05:00:00Z");
+    const { sql, calls } = createMockSql(() => [
+      {
+        session_id: "running-2",
+        display_name: "Running 2",
+        node_id: "node-B",
+        folder_id: "folder-B",
+        updated_at: now,
+        total_count: "16",
+      },
+    ]);
+    const result = await new SessionDB(sql).listRunningSessionsSummary({
+      limit: 15,
+      offset: 0,
+      excludeSessionId: "current-session",
+    });
+
+    expect(result.total).toBe(16);
+    expect(result.sessions).toEqual([
+      {
+        session_id: "running-2",
+        display_name: "Running 2",
+        node_id: "node-B",
+        folder_id: "folder-B",
+        updated_at: now,
+      },
+    ]);
+    const query = calls[0].fragments.join("?");
+    expect(query).toContain("status = 'running'");
+    expect(query).toContain("session_id <> args.exclude_session_id");
+    expect(query).toContain("ORDER BY updated_at DESC");
+    expect(calls[0].values).toEqual(["current-session", 15, 0]);
+  });
+
   it("getAllFolders → folder_get_all 행 그대로 + settings null 정규화", async () => {
     const { sql } = createMockSql(() => [
       { id: "f1", name: "F1", sort_order: 0, settings: { x: 1 }, parent_folder_id: null },

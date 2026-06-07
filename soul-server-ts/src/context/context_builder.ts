@@ -30,7 +30,6 @@ import {
   fetchAtomContexts,
   type AtomContextSpec,
 } from "./atom_context.js";
-import { buildBoardWorkspaceContextItem } from "./board_workspace_item.js";
 import {
   fetchCogitoContextItem,
   type CogitoContextConfig,
@@ -40,6 +39,10 @@ import {
   formatContextItems,
   type ContextItem,
 } from "./prompt_assembler.js";
+import {
+  fetchBoardWorkspaceContextItem,
+  fetchRunningSessionsContextItem,
+} from "./session_context_items.js";
 import { buildSoulstreamContextItem } from "./soulstream_item.js";
 
 /** Python `_PreparedContext` (execution_context_builder.py:24-34) TS 등가. */
@@ -144,7 +147,16 @@ export class ExecutionContextBuilder {
     const { folderId, folderName, folderPrompt, atomContextSpecs } = await this._resolveFolder(task);
     const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
     const atomMarkdown = await this._fetchAtomContext(atomContextSpecs);
-    const boardWorkspaceItem = await this._fetchBoardWorkspaceContext(folderId);
+    const boardWorkspaceItem = await fetchBoardWorkspaceContextItem(
+      this.db,
+      this.logger,
+      folderId,
+    );
+    const runningSessionsItem = await fetchRunningSessionsContextItem(
+      this.db,
+      this.logger,
+      task.agentSessionId,
+    );
     const cogitoContextItem = await this._fetchCogitoContext();
     const { workingDir, maxTurns } = this._resolveProfile(task);
     return this._assembleContext({
@@ -155,6 +167,7 @@ export class ExecutionContextBuilder {
       agentAtomMarkdown,
       atomMarkdown,
       boardWorkspaceItem,
+      runningSessionsItem,
       cogitoContextItem,
       workingDir,
       maxTurns,
@@ -299,17 +312,6 @@ export class ExecutionContextBuilder {
     }
   }
 
-  private async _fetchBoardWorkspaceContext(folderId?: string): Promise<ContextItem | null> {
-    if (!folderId) return null;
-    try {
-      const catalog = await this.db.getCatalog();
-      return buildBoardWorkspaceContextItem(folderId, catalog);
-    } catch (err) {
-      this.logger.warn({ err, folderId }, "_fetchBoardWorkspaceContext: getCatalog failed");
-      return null;
-    }
-  }
-
   /**
    * profile_id → agent registry 조회 (Python L122-135).
    *
@@ -347,6 +349,7 @@ export class ExecutionContextBuilder {
     agentAtomMarkdown: string | null;
     atomMarkdown: string | null;
     boardWorkspaceItem: ContextItem | null;
+    runningSessionsItem: ContextItem | null;
     cogitoContextItem: ContextItem | null;
     workingDir?: string;
     maxTurns?: number;
@@ -372,6 +375,9 @@ export class ExecutionContextBuilder {
     const combinedContextItems: ContextItem[] = [soulstreamItem];
     if (args.boardWorkspaceItem) {
       combinedContextItems.push(args.boardWorkspaceItem);
+    }
+    if (args.runningSessionsItem) {
+      combinedContextItems.push(args.runningSessionsItem);
     }
     if (args.cogitoContextItem) {
       combinedContextItems.push(args.cogitoContextItem);
