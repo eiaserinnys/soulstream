@@ -16,6 +16,12 @@ from sse_starlette.sse import EventSourceResponse
 
 from soulstream_server.api.session_models import ClaudePermissionMode
 from soulstream_server.api.node_utils import find_session_node
+from soulstream_server.dashboard_access import (
+    access_for_request,
+    first_allowed_folder_id,
+    require_folder_allowed,
+    require_session_allowed,
+)
 from soulstream_server.service.session_router import SessionRouter
 
 logger = logging.getLogger(__name__)
@@ -53,6 +59,13 @@ class ExecuteProxyRequest(BaseModel):
     )
     caller_info: Optional[dict] = None
     node_id: Optional[str] = None
+
+
+def _access_email_from_caller_info(caller_info: dict | None) -> str | None:
+    if not isinstance(caller_info, dict):
+        return None
+    email = caller_info.get("email")
+    return email if isinstance(email, str) else None
 
 
 # --- Router Factory ---
@@ -142,6 +155,23 @@ def create_execute_proxy_router(
         if body.context_items:
             request_dict["extra_context_items"] = body.context_items
 
+        access = access_for_request(
+            request,
+            access_email=_access_email_from_caller_info(body.caller_info),
+        )
+        if access.restricted:
+            folders = (
+                await catalog_service.list_folders()
+                if catalog_service
+                else await db.get_all_folders()
+            )
+            requested_folder_id = request_dict.get("folderId")
+            if requested_folder_id is None:
+                requested_folder_id = first_allowed_folder_id(access, folders)
+                if requested_folder_id is not None:
+                    request_dict["folderId"] = requested_folder_id
+            require_folder_allowed(access, folders, requested_folder_id)
+
         # 세션 생성 (SSE 시작 전이므로 HTTPException 가능)
         session_id, node_id = await session_router.route_create_session(request_dict)
 
@@ -164,6 +194,13 @@ def create_execute_proxy_router(
     ) -> EventSourceResponse:
         """Resume 모드: 기존 세션 재개 + SSE 이벤트 스트리밍."""
         session_id = body.agent_session_id
+
+        await require_session_allowed(
+            request,
+            db,
+            session_id,
+            access_email=_access_email_from_caller_info(body.caller_info),
+        )
 
         # 노드 탐색 (SSE 시작 전이므로 HTTPException 가능)
         node = await find_session_node(session_id, db, node_manager)
