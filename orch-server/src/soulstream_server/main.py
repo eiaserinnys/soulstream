@@ -46,6 +46,7 @@ from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.nodes.ws_handler import handle_node_ws
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
 from soulstream_server.service.session_router import SessionRouter
+from soulstream_server.service.supervisor_ingest import SupervisorIngestService
 from soulstream_server.service.task_broadcaster import TaskBroadcaster
 from soulstream_server.service.task_change_listener import TaskChangeListener
 from soulstream_server.users import DashboardUserService
@@ -94,6 +95,7 @@ async def _on_node_change(
     event_type: str,
     node_id: str,
     data: dict | None,
+    supervisor_ingest: SupervisorIngestService | None = None,
 ) -> None:
     """노드 변경 이벤트를 클라이언트 SSE 형식으로 변환하여 브로드캐스트.
 
@@ -105,6 +107,9 @@ async def _on_node_change(
     enrichment를 적용한다. caller_info가 부실한 세션이 라이브로 도착할 때
     노드 owner 정보로 채워 catalog REST와 정합 — 클라이언트 폴백 표시 차단.
     """
+    if supervisor_ingest is not None:
+        await supervisor_ingest.append_node_change(event_type, node_id, data)
+
     if event_type == "node_session_session_created":
         raw_data = data or {}
         folder_key_present = "folder_id" in raw_data or "folderId" in raw_data
@@ -373,7 +378,11 @@ async def lifespan(app: FastAPI):
     # 빌드 20: NodeManager에 allowed_email을 fallback user_email로 전달.
     # soul-server `/api/dashboard/config` 응답이 email을 포함하지 않는 케이스에서
     # PushNotifier가 push_tokens 조회 키로 매칭할 수 있도록 함.
-    node_manager = NodeManager(default_user_email=settings.allowed_email)
+    supervisor_ingest = SupervisorIngestService(db)
+    node_manager = NodeManager(
+        default_user_email=settings.allowed_email,
+        supervisor_ingest=supervisor_ingest,
+    )
     broadcaster = SessionBroadcaster()
     task_broadcaster = TaskBroadcaster()
     task_change_listener = TaskChangeListener(db=db, broadcaster=task_broadcaster)
@@ -389,7 +398,14 @@ async def lifespan(app: FastAPI):
     async def on_node_change(
         event_type: str, node_id: str, data: dict | None
     ) -> None:
-        await _on_node_change(broadcaster, node_manager, event_type, node_id, data)
+        await _on_node_change(
+            broadcaster,
+            node_manager,
+            event_type,
+            node_id,
+            data,
+            supervisor_ingest=supervisor_ingest,
+        )
 
     node_manager.add_change_listener(on_node_change)
 
@@ -416,6 +432,7 @@ async def lifespan(app: FastAPI):
     app.state.user_service = user_service
     app.state.push_repo = push_repo
     app.state.push_notifier = push_notifier
+    app.state.supervisor_ingest = supervisor_ingest
 
     # 라우터 마운트 (인증 가드 포함)
     _mount_api_routers(

@@ -278,6 +278,21 @@ class TestDevLoginEndpoint:
 
         assert resp.status_code == 400
 
+    def test_dev_login_respects_allowed_email_when_configured(self):
+        """allowed_email이 있으면 dev-login도 같은 allow-list를 따른다."""
+        app = _create_test_app(
+            is_development=True,
+            allowed_email="allowed@example.com",
+        )
+        client = TestClient(app)
+
+        resp = client.post(
+            "/api/auth/dev-login",
+            json={"email": "blocked@example.com"},
+        )
+
+        assert resp.status_code == 403
+
     def test_dev_login_default_picture_when_omitted(self):
         """picture 미공급 시 deterministic identicon URL이 JWT에 박힘.
 

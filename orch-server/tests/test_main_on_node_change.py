@@ -138,6 +138,32 @@ async def test_session_updated_broadcasts_session_event(mock_broadcaster, mock_n
 
 
 @pytest.mark.asyncio
+async def test_session_updated_appends_to_supervisor_ingest(
+    mock_broadcaster, mock_node_manager
+):
+    """node change producer hook feeds the same supervisor append service."""
+    supervisor_ingest = MagicMock()
+    supervisor_ingest.append_node_change = AsyncMock()
+    data = {"agentSessionId": "sess-456", "last_event_id": 12, "status": "running"}
+
+    await _on_node_change(
+        mock_broadcaster,
+        mock_node_manager,
+        "node_session_session_updated",
+        "node-1",
+        data,
+        supervisor_ingest=supervisor_ingest,
+    )
+
+    supervisor_ingest.append_node_change.assert_awaited_once_with(
+        "node_session_session_updated",
+        "node-1",
+        data,
+    )
+    mock_broadcaster.broadcast.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_session_updated_with_snake_case_id(mock_broadcaster, mock_node_manager):
     """node_session_session_updated — data에 agent_session_id(snake_case)가 올 때도 처리."""
     data = {"agent_session_id": "sess-789", "status": "done"}

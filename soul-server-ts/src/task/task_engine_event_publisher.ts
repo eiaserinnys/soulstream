@@ -11,6 +11,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { applyClaudeRuntimeEvent } from "./claude_runtime_state.js";
 import type { Task } from "./task_models.js";
 import { recordTerminationHint } from "./task_termination.js";
+import { usageTokenDelta } from "./supervisor_usage.js";
 
 export interface TaskEngineEventPublisherDeps {
   broadcaster: SessionBroadcaster;
@@ -37,6 +38,7 @@ export class TaskEngineEventPublisher {
     this.captureFatalEngineError(task, event, eventType);
     await this.persistEventIfNeeded(task, event, eventType);
     await this.broadcastEvent(task, event, eventType);
+    await this.recordSupervisorUsageDelta(task, event, eventType);
     await this.handleSideEffects(task, event, eventType);
   }
 
@@ -167,6 +169,33 @@ export class TaskEngineEventPublisher {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId, eventType },
         "handleSideEffects threw",
+      );
+    }
+  }
+
+  private async recordSupervisorUsageDelta(
+    task: Task,
+    event: SSEEventPayload,
+    eventType: string,
+  ): Promise<void> {
+    if (eventType !== "complete") return;
+    const tokenDelta = usageTokenDelta((event as { usage?: unknown }).usage);
+    if (tokenDelta <= 0) return;
+    if (!task.profileId) return;
+
+    try {
+      const registry = await this.deps.db.getSupervisorRegistry(task.profileId);
+      if (!registry) return;
+      await this.deps.db.recordSupervisorUsageDelta({
+        role: task.profileId,
+        tokenDelta,
+        compactionDelta: 0,
+        lastSeenAt: new Date(),
+      });
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId, eventType, role: task.profileId },
+        "recordSupervisorUsageDelta failed",
       );
     }
   }

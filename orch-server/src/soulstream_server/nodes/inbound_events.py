@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 OnSessionChangeCallback = Callable[
     [str, str, dict | None], Coroutine[Any, Any, None]
 ]
+OnEventIngestCallback = Callable[[str, dict], Coroutine[Any, Any, None]]
 
 
 def _nested_session(data: dict) -> dict:
@@ -139,9 +140,11 @@ class NodeInboundEvents:
         *,
         node_id: str,
         on_session_change: OnSessionChangeCallback | None = None,
+        on_event_ingest: OnEventIngestCallback | None = None,
     ):
         self.node_id = node_id
         self.on_session_change = on_session_change
+        self.on_event_ingest = on_event_ingest
         self._sessions: dict[str, dict] = {}
         self._subscribe_listeners: dict[str, dict[str, Callable]] = {}
         self._tool_inputs: dict[tuple[str, str], dict] = {}
@@ -225,6 +228,9 @@ class NodeInboundEvents:
         session_id = _session_id_from_payload(data)
         subscribe_id = data.get("subscribeId")
         event = _event_payload(data)
+
+        if self.on_event_ingest:
+            await self.on_event_ingest(self.node_id, data)
 
         if session_id and session_id in self._subscribe_listeners:
             listeners = self._subscribe_listeners[session_id]

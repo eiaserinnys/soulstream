@@ -59,6 +59,28 @@ describe("Codex app-server notification mapper", () => {
     });
   });
 
+  it("turn/completed preserves codex usage on the complete event", () => {
+    const completed = turn("turn-1", "completed");
+    completed.usage = {
+      input_tokens: 11,
+      output_tokens: 13,
+    };
+
+    const out = mapAppServerNotification({
+      method: "turn/completed",
+      params: { threadId: "thread-1", turn: completed },
+    });
+
+    expect(out[0]).toMatchObject({
+      type: "complete",
+      raw_event_type: "turn/completed",
+      usage: {
+        input_tokens: 11,
+        output_tokens: 13,
+      },
+    });
+  });
+
   it("failed turn completion maps to non-fatal error", () => {
     const out = mapAppServerNotification({
       method: "turn/completed",
