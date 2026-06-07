@@ -21,16 +21,23 @@ async def find_session_node(session_id: str, db, node_manager) -> NodeConnection
 
     Raises:
         HTTPException 404: 세션 노드를 찾을 수 없음
+        HTTPException 503: 세션은 있으나 owner node가 연결되어 있지 않음
     """
+    session_data = None
     node = node_manager.find_node_for_session(session_id)
     if not node:
         session_data = await db.get_session(session_id)
         if session_data and session_data.get("node_id"):
             node = node_manager.get_node(session_data["node_id"])
+            if not node:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Session owner node unavailable: {session_data['node_id']}",
+                )
     if not node:
-        # node_id가 stale하거나 노드가 재연결된 경우 (예: soul-server 재시작 3초 공백)
-        # — 활성 노드 중 첫 번째를 폴백으로 사용한다.
-        # soul-server는 단일 노드 구성이므로 활성 노드가 있으면 그것이 정답이다.
+        # Legacy rows can lack node_id. In that case only, single-node fallback is
+        # acceptable. A row with an explicit owner node must not be routed to an
+        # arbitrary active node.
         active_nodes = node_manager.get_connected_nodes()
         if active_nodes:
             node = active_nodes[0]

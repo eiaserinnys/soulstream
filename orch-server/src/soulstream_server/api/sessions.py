@@ -369,11 +369,22 @@ def create_sessions_router(
                 status_code=503,
                 detail=f"Node disconnected, please retry: {e}",
             )
+        except TimeoutError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Node command timed out, please retry: {e}",
+            )
         except RuntimeError as e:
             msg = str(e)
             # soul-server SESSION_NOT_FOUND 에러 → 404
             if "찾을 수 없" in msg or "not found" in msg.lower():
-                raise HTTPException(status_code=404, detail=msg)
+                session = await db.get_session(session_id)
+                if session is None:
+                    raise HTTPException(status_code=404, detail=msg)
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Node could not resume existing session, please retry: {msg}",
+                )
             # 그 외 처리 불가 → 422
             raise HTTPException(status_code=422, detail=msg)
 

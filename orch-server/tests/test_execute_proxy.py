@@ -513,6 +513,22 @@ class TestFindSessionNode:
         assert result == mock_node
         mock_db.get_session.assert_called_with("sess-1")
 
+    async def test_existing_session_owner_node_unavailable_returns_503(self, mock_db):
+        """find_session_node: an existing owned session is unavailable, not missing."""
+        from fastapi import HTTPException
+        from soulstream_server.api.node_utils import find_session_node
+
+        nm = MagicMock()
+        nm.find_node_for_session = MagicMock(return_value=None)
+        nm.get_node = MagicMock(return_value=None)
+        nm.get_connected_nodes = MagicMock(return_value=[])
+        mock_db.get_session = AsyncMock(return_value={"node_id": "owner-node"})
+
+        with pytest.raises(HTTPException) as exc_info:
+            await find_session_node("sess-1", mock_db, nm)
+        assert exc_info.value.status_code == 503
+        assert "owner-node" in exc_info.value.detail
+
     async def test_falls_back_to_active_node(self, mock_db, mock_node):
         """find_session_node: falls back to first active node."""
         from soulstream_server.api.node_utils import find_session_node
