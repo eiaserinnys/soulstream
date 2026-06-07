@@ -1767,13 +1767,17 @@ CREATE OR REPLACE FUNCTION session_list_summary(
     event_count   BIGINT,
     away_summary  TEXT,
     caller_session_id TEXT,
+    last_event_id INTEGER,
+    last_read_event_id INTEGER,
+    node_id TEXT,
     total_count   BIGINT
 ) LANGUAGE sql STABLE AS $$
     WITH filtered AS (
         SELECT s.session_id, s.display_name, s.status, s.session_type,
                s.created_at, s.updated_at,
                (SELECT COUNT(*) FROM events e WHERE e.session_id = s.session_id) AS event_count,
-               s.away_summary, s.caller_session_id
+               s.away_summary, s.caller_session_id,
+               s.last_event_id, s.last_read_event_id, s.node_id
         FROM sessions s
         WHERE (p_session_type IS NULL OR s.session_type = p_session_type)
           AND (p_search IS NULL OR s.display_name ILIKE '%' || p_search || '%')

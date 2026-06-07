@@ -10,6 +10,7 @@ import httpx
 from fastapi import WebSocket
 
 from soulstream_server.nodes.node_connection import NodeConnection
+from soulstream_server.service.supervisor_ingest import SupervisorIngestService
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +32,15 @@ class AmbiguousAgentProfile(Exception):
 class NodeManager:
     """연결된 모든 soul-server 노드를 추적."""
 
-    def __init__(self, *, default_user_email: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        default_user_email: str = "",
+        supervisor_ingest: SupervisorIngestService | None = None,
+    ) -> None:
         self._nodes: dict[str, NodeConnection] = {}
         self._change_listeners: list[ChangeListener] = []
+        self._supervisor_ingest = supervisor_ingest
         # 빌드 20: soul-server `/api/dashboard/config` 응답에 email 필드가 없어
         # PushNotifier가 user_email로 push_tokens를 조회 못 하는 케이스 fallback.
         # single-user 시스템(allowed_email로 한 명만 OAuth 통과)에서는 이 fallback이
@@ -92,6 +99,7 @@ class NodeManager:
             supported_backends=supported_backends,
             on_close=self._on_node_close,
             on_session_change=self._on_session_change,
+            on_event_ingest=self._on_supervisor_event_ingest,
         )
         self._nodes[node_id] = node
 
@@ -139,6 +147,7 @@ class NodeManager:
             # HTTP 폴백: 구 버전 soul-server 호환 또는 메시지에 user 없는 경우
             await self._fetch_user_info(node, host, port)
 
+        await self._sync_supervisor_sessions(node_id, registration.get("sessions"))
         await self._emit_change("node_registered", node_id, node.to_info())
         return node
 
@@ -204,7 +213,19 @@ class NodeManager:
     async def _on_session_change(
         self, node_id: str, change_type: str, data: dict | None
     ) -> None:
+        if change_type == "sessions_update":
+            await self._sync_supervisor_sessions(node_id, (data or {}).get("sessions"))
         await self._emit_change(f"node_session_{change_type}", node_id, data)
+
+    async def _on_supervisor_event_ingest(self, node_id: str, data: dict) -> None:
+        if self._supervisor_ingest is None:
+            return
+        await self._supervisor_ingest.append_event_envelope(node_id, data)
+
+    async def _sync_supervisor_sessions(self, node_id: str, sessions: Any) -> None:
+        if self._supervisor_ingest is None or not isinstance(sessions, list):
+            return
+        await self._supervisor_ingest.sync_sessions_from_dump(node_id, sessions)
 
     def unregister_node(self, node_id: str) -> None:
         self._nodes.pop(node_id, None)

@@ -288,6 +288,7 @@ export interface AppServerTurn {
   startedAt: number | null;
   completedAt: number | null;
   durationMs: number | null;
+  usage?: unknown;
 }
 
 export interface ThreadStartResponse {

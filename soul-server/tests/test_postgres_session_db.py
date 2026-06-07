@@ -1008,14 +1008,22 @@ class TestListSessionsSummary:
                 "status": "idle", "session_type": "claude",
                 "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
                 "updated_at": datetime(2026, 1, 2, tzinfo=timezone.utc),
-                "event_count": 42, "total_count": 5,
+                "event_count": 42,
+                "last_event_id": 42,
+                "last_read_event_id": 40,
+                "node_id": "node-1",
+                "total_count": 5,
             }),
             _make_record({
                 "session_id": "s2", "display_name": None,
                 "status": "running", "session_type": "claude",
                 "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
                 "updated_at": datetime(2026, 1, 2, tzinfo=timezone.utc),
-                "event_count": 10, "total_count": 5,
+                "event_count": 10,
+                "last_event_id": 10,
+                "last_read_event_id": 8,
+                "node_id": "node-1",
+                "total_count": 5,
             }),
         ]
         db._pool.fetch = AsyncMock(return_value=records)
@@ -1024,6 +1032,9 @@ class TestListSessionsSummary:
         assert len(sessions) == 2
         assert sessions[0]["session_id"] == "s1"
         assert sessions[0]["event_count"] == 42
+        assert sessions[0]["last_event_id"] == 42
+        assert sessions[0]["last_read_event_id"] == 40
+        assert sessions[0]["node_id"] == "node-1"
         # total_count는 제거됨
         assert "total_count" not in sessions[0]
 

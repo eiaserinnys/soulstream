@@ -31,7 +31,13 @@ function makePublisherDeps() {
   } as unknown as EventPersistence;
 
   const setClaudeSessionId = vi.fn(async () => undefined);
-  const db = { setClaudeSessionId } as unknown as SessionDB;
+  const getSupervisorRegistry = vi.fn(async () => null);
+  const recordSupervisorUsageDelta = vi.fn(async () => undefined);
+  const db = {
+    setClaudeSessionId,
+    getSupervisorRegistry,
+    recordSupervisorUsageDelta,
+  } as unknown as SessionDB;
 
   const emitEventEnvelope = vi.fn(async () => undefined);
   const broadcaster = {
@@ -51,6 +57,8 @@ function makePublisherDeps() {
     logger,
     persistEvent,
     persistence,
+    getSupervisorRegistry,
+    recordSupervisorUsageDelta,
     setClaudeSessionId,
   };
 }
@@ -186,6 +194,53 @@ describe("TaskEngineEventPublisher", () => {
       },
       "persistEvent failed",
     );
+  });
+
+  it("records complete usage delta for registered supervisor profile", async () => {
+    const deps = makePublisherDeps();
+    deps.getSupervisorRegistry.mockResolvedValueOnce({
+      role: "ariela_codex",
+    } as never);
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({ profileId: "ariela_codex" });
+    const event = {
+      type: "complete",
+      usage: {
+        input_tokens: 11,
+        output_tokens: 13,
+        cache_creation_input_tokens: 2,
+        cache_read_input_tokens: 3,
+      },
+      timestamp: 2,
+    } as unknown as SSEEventPayload;
+
+    await publisher.publishEngineEvent(task, event);
+
+    expect(deps.getSupervisorRegistry).toHaveBeenCalledWith("ariela_codex");
+    expect(deps.recordSupervisorUsageDelta).toHaveBeenCalledWith({
+      role: "ariela_codex",
+      tokenDelta: 29,
+      compactionDelta: 0,
+      lastSeenAt: expect.any(Date),
+    });
+    expect(deps.recordSupervisorUsageDelta.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.handleSideEffects.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("does not record complete usage when profile is not a supervisor registry", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({ profileId: "ordinary-agent" });
+
+    await publisher.publishEngineEvent(task, {
+      type: "complete",
+      usage: { input_tokens: 11, output_tokens: 13 },
+      timestamp: 2,
+    } as unknown as SSEEventPayload);
+
+    expect(deps.getSupervisorRegistry).toHaveBeenCalledWith("ordinary-agent");
+    expect(deps.recordSupervisorUsageDelta).not.toHaveBeenCalled();
   });
 
   it("records credential_alert as a pending limit_hit termination hint only", async () => {

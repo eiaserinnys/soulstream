@@ -132,6 +132,34 @@ class TestNodeInboundEventsSessionCache:
             "node-1", "sessions_update", data
         )
 
+    async def test_event_calls_supervisor_ingest_before_listener_fanout(self):
+        calls = []
+
+        async def on_event_ingest(node_id, data):
+            calls.append(("ingest", node_id, data["event"]["_event_id"]))
+
+        async def listener(data):
+            calls.append(("listener", data["event"]["_event_id"]))
+
+        inbound = NodeInboundEvents(
+            node_id="node-1",
+            on_event_ingest=on_event_ingest,
+        )
+        inbound.register_subscribe_listener("sess-1", "sub-1", listener)
+        data = {
+            "type": EVT_EVENT,
+            "agentSessionId": "sess-1",
+            "subscribeId": "sub-1",
+            "event": {"_event_id": 9, "type": "complete"},
+        }
+
+        await inbound.handle(data)
+
+        assert calls == [
+            ("ingest", "node-1", 9),
+            ("listener", 9),
+        ]
+
     async def test_session_updated_updates_existing_cache_item_and_reports_change(
         self, inbound, on_session_change
     ):

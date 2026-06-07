@@ -1353,6 +1353,9 @@ describe("CommandDispatcher.list_sessions (Python parity)", () => {
         event_count: 12,
         away_summary: null,
         caller_session_id: null,
+        last_event_id: 12,
+        last_read_event_id: 0,
+        node_id: "node-1",
       },
       {
         session_id: "sess-b",
@@ -1364,6 +1367,9 @@ describe("CommandDispatcher.list_sessions (Python parity)", () => {
         event_count: 7,
         away_summary: "지난 세션 요약",
         caller_session_id: "parent-sess",
+        last_event_id: 7,
+        last_read_event_id: 6,
+        node_id: "node-1",
       },
     ];
     const listSessionsSummary = vi.fn().mockResolvedValue({

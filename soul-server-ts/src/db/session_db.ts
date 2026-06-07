@@ -169,6 +169,21 @@ export interface RunningSessionSummaryRow {
   updated_at: Date;
 }
 
+export interface ListSessionSummaryRow {
+  session_id: string;
+  display_name: string | null;
+  status: string | null;
+  session_type: string | null;
+  created_at: Date;
+  updated_at: Date;
+  event_count: number;
+  away_summary: string | null;
+  caller_session_id: string | null;
+  last_event_id: number | null;
+  last_read_event_id: number | null;
+  node_id: string | null;
+}
+
 export interface RegisterSessionParams {
   sessionId: string;
   nodeId: string;
@@ -1140,17 +1155,7 @@ export class SessionDB {
     folderId?: string | null;
     nodeId?: string | null;
   }): Promise<{
-    sessions: Array<{
-      session_id: string;
-      display_name: string | null;
-      status: string | null;
-      session_type: string | null;
-      created_at: Date;
-      updated_at: Date;
-      event_count: number;
-      away_summary: string | null;
-      caller_session_id: string | null;
-    }>;
+    sessions: ListSessionSummaryRow[];
     total: number;
   }> {
     const rows = await this.sql<
@@ -1164,6 +1169,9 @@ export class SessionDB {
         event_count: string | number;
         away_summary: string | null;
         caller_session_id: string | null;
+        last_event_id: string | number | null;
+        last_read_event_id: string | number | null;
+        node_id: string | null;
         total_count: string | number;
       }>
     >`
@@ -1187,6 +1195,10 @@ export class SessionDB {
       event_count: Number(r.event_count),
       away_summary: r.away_summary,
       caller_session_id: r.caller_session_id,
+      last_event_id: r.last_event_id == null ? null : Number(r.last_event_id),
+      last_read_event_id:
+        r.last_read_event_id == null ? null : Number(r.last_read_event_id),
+      node_id: r.node_id,
     }));
     return { sessions, total };
   }

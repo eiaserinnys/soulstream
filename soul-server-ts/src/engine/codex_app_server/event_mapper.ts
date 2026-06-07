@@ -70,6 +70,7 @@ export function mapAppServerNotification(
           timestamp: nowEpochSec(),
           status: turn.status,
           duration_ms: turn.durationMs,
+          ...(turn.usage !== undefined ? { usage: turn.usage } : {}),
           ...rawContext(notification.method, { threadId, turnId: turn.id }),
         } as SSEEventPayload,
       ];

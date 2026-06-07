@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WebSocketServer, type WebSocket as WSServerWebSocket } from "ws";
 import pino from "pino";
 import type { AddressInfo } from "node:net";
@@ -7,6 +7,7 @@ import { AgentRegistry, type AgentProfile } from "../src/agent_registry.js";
 import { UpstreamAdapter, isConnectionError } from "../src/upstream/adapter.js";
 import type { TaskExecutor } from "../src/task/task_executor.js";
 import type { TaskManager } from "../src/task/task_manager.js";
+import type { SessionDB } from "../src/db/session_db.js";
 
 const codexAgent: AgentProfile = {
   id: "codex-default",
@@ -15,7 +16,13 @@ const codexAgent: AgentProfile = {
   workspace_dir: "/tmp/codex-default",
 };
 
-function makeDeps(opts: { agents?: AgentProfile[]; runningCount?: number } = {}) {
+function makeDeps(
+  opts: {
+    agents?: AgentProfile[];
+    runningCount?: number;
+    sessionDb?: SessionDB;
+  } = {},
+) {
   const agentRegistry = new AgentRegistry(opts.agents ?? [codexAgent]);
   const taskManager = {
     listTasks: () =>
@@ -34,7 +41,7 @@ function makeDeps(opts: { agents?: AgentProfile[]; runningCount?: number } = {})
   const taskExecutor = {
     startExecution: () => undefined,
   } as unknown as TaskExecutor;
-  return { agentRegistry, taskManager, taskExecutor };
+  return { agentRegistry, taskManager, taskExecutor, sessionDb: opts.sessionDb };
 }
 
 interface MockOrch {
@@ -135,6 +142,64 @@ describe("UpstreamAdapter", () => {
     expect(first.agents).toEqual([
       { id: "codex-default", name: "Codex Default", backend: "codex", portrait_url: "" },
     ]);
+
+    await adapter.shutdown();
+  });
+
+  it("sessionDb가 있으면 node_register 직후 현재 세션 dump를 sessions_update로 보낸다", async () => {
+    const sessionDb = {
+      listSessionsSummary: vi.fn(async () => ({
+        sessions: [
+          {
+            session_id: "sess-1",
+            display_name: "Running",
+            status: "running",
+            session_type: "codex",
+            created_at: new Date("2026-06-07T00:00:00Z"),
+            updated_at: new Date("2026-06-07T00:01:00Z"),
+            event_count: 3,
+            away_summary: null,
+            caller_session_id: null,
+            last_event_id: 3,
+            last_read_event_id: 0,
+            node_id: "eias-shopping-ts",
+          },
+        ],
+        total: 1,
+      })),
+    } as unknown as SessionDB;
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      silentLogger,
+      makeDeps({ sessionDb }),
+    );
+
+    void adapter.run();
+    await waitFor(() => orch.receivedMessages.length >= 2);
+
+    expect(sessionDb.listSessionsSummary).toHaveBeenCalledWith({
+      limit: 10_000,
+      offset: 0,
+    });
+    const second = orch.receivedMessages[1] as Record<string, unknown>;
+    expect(second).toMatchObject({
+      type: "sessions_update",
+      total: 1,
+      requestId: "",
+    });
+    expect((second.sessions as Array<Record<string, unknown>>)[0]).toMatchObject({
+      session_id: "sess-1",
+      last_event_id: 3,
+    });
 
     await adapter.shutdown();
   });

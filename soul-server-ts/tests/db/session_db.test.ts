@@ -916,6 +916,9 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
         event_count: "5",
         away_summary: null,
         caller_session_id: null,
+        last_event_id: "9",
+        last_read_event_id: "4",
+        node_id: "node-1",
         total_count: "42",
       },
     ]);
@@ -930,6 +933,9 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
     expect(result.sessions).toHaveLength(1);
     expect(result.sessions[0].event_count).toBe(5);
     expect(result.sessions[0].session_id).toBe("s1");
+    expect(result.sessions[0].last_event_id).toBe(9);
+    expect(result.sessions[0].last_read_event_id).toBe(4);
+    expect(result.sessions[0].node_id).toBe("node-1");
     // 인자 순서: search, session_type(null), limit, offset, folderId, nodeId
     expect(calls[0].values).toEqual(["Hi", null, 20, 0, "claude", "node-1"]);
   });

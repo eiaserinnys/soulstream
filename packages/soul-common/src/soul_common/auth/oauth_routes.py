@@ -78,7 +78,7 @@ def create_oauth_router(
                 result = await result
             return str(result) if result else None
         email = str(payload.get("email") or "").strip().lower()
-        if not allowed_emails or email not in allowed_emails:
+        if allowed_emails and email not in allowed_emails:
             return "no_user"
         return None
 

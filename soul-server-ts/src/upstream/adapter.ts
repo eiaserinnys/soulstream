@@ -15,6 +15,7 @@ import type { ClaudeRuntimeScheduleCommands } from "./claude_runtime_commands.js
 import { CommandDispatcher } from "./dispatcher.js";
 import { ReconnectPolicy } from "./reconnect.js";
 import { buildRegistrationMsg } from "./registration.js";
+import { SessionListCommands } from "./session_list_commands.js";
 
 export interface UpstreamConfig {
   url: string;
@@ -50,7 +51,7 @@ export interface UpstreamDependencies {
  * 3. 명령 수신 → dispatcher 전달
  * 4. 자동 재연결 (ReconnectPolicy)
  *
- * B-1에서 *미구현*: EventRelay, _send_initial_sessions, intervene/respond/list_sessions 핸들러.
+ * B-1에서 *미구현*: EventRelay, intervene/respond/list_sessions 핸들러.
  */
 export class UpstreamAdapter {
   private ws: WebSocket | null = null;
@@ -176,6 +177,7 @@ export class UpstreamAdapter {
         logger: this.logger,
       }),
     );
+    await this.sendInitialSessions();
 
     // 명령 수신 루프 — close 또는 error로 종료
     await new Promise<void>((resolve) => {
@@ -212,6 +214,20 @@ export class UpstreamAdapter {
     });
 
     this.ws = null;
+  }
+
+  private async sendInitialSessions(): Promise<void> {
+    if (!this.deps.sessionDb) {
+      this.logger.warn("sessionDb dependency missing — initial sessions_update skipped");
+      return;
+    }
+
+    try {
+      const commands = new SessionListCommands(this.deps.sessionDb);
+      await this.send(await commands.listSessions({ requestId: "" }));
+    } catch (err) {
+      this.logger.warn({ err }, "initial sessions_update failed");
+    }
   }
 
   private async send(data: unknown): Promise<void> {

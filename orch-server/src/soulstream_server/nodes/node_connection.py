@@ -50,6 +50,7 @@ from soulstream_server.constants import (
 )
 from soulstream_server.nodes.inbound_events import (
     NodeInboundEvents,
+    OnEventIngestCallback,
     OnSessionChangeCallback,
 )
 from soulstream_server.nodes.pending_commands import PendingCommands
@@ -70,6 +71,7 @@ class NodeConnection:
         supported_backends: list[str] | None = None,
         on_close: OnCloseCallback | None = None,
         on_session_change: OnSessionChangeCallback | None = None,
+        on_event_ingest: OnEventIngestCallback | None = None,
     ):
         self._ws = ws
         self.node_id = node_id
@@ -93,6 +95,7 @@ class NodeConnection:
         self._inbound_events = NodeInboundEvents(
             node_id=node_id,
             on_session_change=on_session_change,
+            on_event_ingest=on_event_ingest,
         )
         self._sessions = self._inbound_events.sessions
         self._subscribe_listeners = self._inbound_events.subscribe_listeners

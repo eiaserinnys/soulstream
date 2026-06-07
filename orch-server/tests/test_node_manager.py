@@ -74,6 +74,26 @@ class TestRegisterNode:
 
         assert node.supported_backends == []
 
+    async def test_register_node_replays_supervisor_sessions_from_registration(
+        self, mock_ws
+    ):
+        supervisor_ingest = MagicMock()
+        supervisor_ingest.sync_sessions_from_dump = AsyncMock()
+        manager = NodeManager(supervisor_ingest=supervisor_ingest)
+        reg = make_registration("n-supervisor")
+        reg.update({
+            "agents": [],
+            "user": {"name": "User"},
+            "sessions": [{"agentSessionId": "sess-1", "last_event_id": 3}],
+        })
+
+        await manager.register_node(mock_ws, reg)
+
+        supervisor_ingest.sync_sessions_from_dump.assert_awaited_once_with(
+            "n-supervisor",
+            [{"agentSessionId": "sess-1", "last_event_id": 3}],
+        )
+
 
 class TestUnregisterNode:
     """unregister_node tests."""
@@ -183,6 +203,26 @@ class TestChangeListeners:
         await manager.register_node(mock_ws, make_registration("n1"))
 
         assert len(events) == 0
+
+    async def test_sessions_update_replays_supervisor_sessions_before_emit(self):
+        events = []
+        supervisor_ingest = MagicMock()
+        supervisor_ingest.sync_sessions_from_dump = AsyncMock()
+        manager = NodeManager(supervisor_ingest=supervisor_ingest)
+
+        async def listener(event_type, node_id, data):
+            events.append((event_type, node_id, data))
+
+        manager.add_change_listener(listener)
+        data = {"sessions": [{"agentSessionId": "sess-1", "last_event_id": 5}]}
+
+        await manager._on_session_change("node-1", "sessions_update", data)
+
+        supervisor_ingest.sync_sessions_from_dump.assert_awaited_once_with(
+            "node-1",
+            [{"agentSessionId": "sess-1", "last_event_id": 5}],
+        )
+        assert events == [("node_session_sessions_update", "node-1", data)]
 
 
 class TestAgentProfileRegistration:
