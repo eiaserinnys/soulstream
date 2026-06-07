@@ -774,13 +774,13 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
         display_name: "Running 2",
         node_id: "node-B",
         folder_id: "folder-B",
+        folder_name: "Folder B",
         updated_at: now,
         total_count: "16",
       },
     ]);
     const result = await new SessionDB(sql).listRunningSessionsSummary({
       limit: 15,
-      offset: 0,
       excludeSessionId: "current-session",
     });
 
@@ -791,14 +791,16 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
         display_name: "Running 2",
         node_id: "node-B",
         folder_id: "folder-B",
+        folder_name: "Folder B",
         updated_at: now,
       },
     ]);
     const query = calls[0].fragments.join("?");
-    expect(query).toContain("status = 'running'");
-    expect(query).toContain("session_id <> args.exclude_session_id");
-    expect(query).toContain("ORDER BY updated_at DESC");
-    expect(calls[0].values).toEqual(["current-session", 15, 0]);
+    expect(query).toContain("s.status = 'running'");
+    expect(query).toContain("LEFT JOIN folders f ON f.id = s.folder_id");
+    expect(query).toContain("s.session_id <>");
+    expect(query).toContain("ORDER BY s.updated_at DESC");
+    expect(calls[0].values).toEqual(["current-session", "current-session", 15]);
   });
 
   it("getAllFolders → folder_get_all 행 그대로 + settings null 정규화", async () => {

@@ -158,6 +158,7 @@ export interface RunningSessionSummaryRow {
   display_name: string | null;
   node_id: string | null;
   folder_id: string | null;
+  folder_name: string | null;
   updated_at: Date;
 }
 
@@ -1049,12 +1050,11 @@ export class SessionDB {
   /**
    * Context builder용 running 세션 경량 조회.
    *
-   * 현재 node DB의 sessions 테이블을 updated_at DESC로 읽는다. cross-node HTTP wire에
-   * 의존하지 않으므로 조회 실패가 context 조립 전체로 번지지 않는다.
+   * 클러스터 공유 sessions 테이블을 updated_at DESC로 읽는다. cross-node HTTP wire에
+   * 의존하지 않으므로 노드 간 wire 실패가 context 조립 전체로 번지지 않는다.
    */
   async listRunningSessionsSummary(params: {
     limit: number;
-    offset?: number;
     excludeSessionId?: string | null;
   }): Promise<{
     sessions: RunningSessionSummaryRow[];
@@ -1066,28 +1066,31 @@ export class SessionDB {
         display_name: string | null;
         node_id: string | null;
         folder_id: string | null;
+        folder_name: string | null;
         updated_at: Date;
         total_count: string | number;
       }>
     >`
-      WITH args AS (
-        SELECT ${params.excludeSessionId ?? null}::text AS exclude_session_id
-      ),
-      filtered AS (
+      WITH filtered AS (
         SELECT
-          session_id,
-          display_name,
-          node_id,
-          folder_id,
-          updated_at
-        FROM sessions, args
-        WHERE status = 'running'
-          AND (args.exclude_session_id IS NULL OR session_id <> args.exclude_session_id)
-        ORDER BY updated_at DESC
+          s.session_id,
+          s.display_name,
+          s.node_id,
+          s.folder_id,
+          f.name AS folder_name,
+          s.updated_at
+        FROM sessions s
+        LEFT JOIN folders f ON f.id = s.folder_id
+        WHERE s.status = 'running'
+          AND (
+            ${params.excludeSessionId ?? null}::text IS NULL
+            OR s.session_id <> ${params.excludeSessionId ?? null}
+          )
+        ORDER BY s.updated_at DESC
       )
       SELECT f.*, (SELECT COUNT(*) FROM filtered)::BIGINT AS total_count
       FROM filtered f
-      LIMIT ${params.limit} OFFSET ${params.offset ?? 0}
+      LIMIT ${params.limit}
     `;
     const total = rows.length > 0 && rows[0] ? Number(rows[0].total_count) : 0;
     return {
@@ -1096,6 +1099,7 @@ export class SessionDB {
         display_name: r.display_name,
         node_id: r.node_id,
         folder_id: r.folder_id,
+        folder_name: r.folder_name,
         updated_at: r.updated_at,
       })),
       total,
