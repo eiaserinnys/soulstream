@@ -24,7 +24,10 @@ export interface SupervisorActivationResult {
 export interface SupervisorActivationDeps {
   config: SupervisorActivationConfig;
   agentRegistry: Pick<AgentRegistry, "get">;
-  db: Pick<SessionDB, "getSupervisorRegistry" | "getSession" | "upsertSupervisorRegistry">;
+  db: Pick<
+    SessionDB,
+    "getSupervisorRegistry" | "getSession" | "upsertSupervisorRegistry" | "updateSession"
+  >;
   taskManager: Pick<TaskManager, "createTask" | "cancelTask">;
   taskExecutor: Pick<TaskExecutor, "startExecution">;
   logger: Pick<Logger, "info" | "warn">;
@@ -48,11 +51,26 @@ export async function startConfiguredSupervisors(
     return [{ role: "", status: "disabled" }];
   }
 
+  validateConfiguredSupervisors(deps.config, deps.agentRegistry);
+
   const results: SupervisorActivationResult[] = [];
   for (const role of deps.config.roles) {
     results.push(await ensureSupervisorStarted(deps, role));
   }
   return results;
+}
+
+export function validateConfiguredSupervisors(
+  config: SupervisorActivationConfig,
+  agentRegistry: Pick<AgentRegistry, "get">,
+): void {
+  if (!config.enabled) return;
+
+  for (const role of config.roles) {
+    if (!agentRegistry.get(role)) {
+      throw new Error(`Supervisor role not found in agents.yaml: ${role}`);
+    }
+  }
 }
 
 async function ensureSupervisorStarted(
@@ -99,24 +117,14 @@ async function ensureSupervisorStarted(
       lastSeenAt: deps.now?.() ?? new Date(),
     });
   } catch (err) {
-    await deps.taskManager.cancelTask(sessionId).catch((cancelErr) => {
-      deps.logger.warn(
-        { err: cancelErr, role, sessionId },
-        "Supervisor activation cleanup failed after registry upsert error",
-      );
-    });
+    await finalizeCreatedSupervisorSession(deps, role, sessionId, "registry upsert error");
     throw err;
   }
 
   try {
     deps.taskExecutor.startExecution(task, agent);
   } catch (err) {
-    await deps.taskManager.cancelTask(sessionId).catch((cancelErr) => {
-      deps.logger.warn(
-        { err: cancelErr, role, sessionId },
-        "Supervisor activation cleanup failed after start error",
-      );
-    });
+    await finalizeCreatedSupervisorSession(deps, role, sessionId, "start error");
     await rollbackSupervisorRegistry(deps, role, existing).catch((rollbackErr) => {
       deps.logger.warn(
         { err: rollbackErr, role, sessionId },
@@ -163,5 +171,29 @@ async function rollbackSupervisorRegistry(
     cumulativeTokens: existing?.cumulativeTokens ?? 0,
     compactionCount: existing?.compactionCount ?? 0,
     lastSeenAt: existing?.lastSeenAt ?? null,
+  });
+}
+
+async function finalizeCreatedSupervisorSession(
+  deps: SupervisorActivationDeps,
+  role: string,
+  sessionId: string,
+  reason: string,
+): Promise<void> {
+  await deps.taskManager.cancelTask(sessionId).catch((cancelErr) => {
+    deps.logger.warn(
+      { err: cancelErr, role, sessionId },
+      `Supervisor activation cleanup failed after ${reason}`,
+    );
+  });
+  await deps.db.updateSession(sessionId, {
+    status: "interrupted",
+    termination_reason: "killed",
+    termination_detail: `supervisor activation failed: ${reason}`,
+  }).catch((updateErr) => {
+    deps.logger.warn(
+      { err: updateErr, role, sessionId },
+      "Supervisor activation DB session cleanup failed",
+    );
   });
 }

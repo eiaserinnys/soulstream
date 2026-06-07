@@ -6,6 +6,7 @@ import type { SessionDB, SupervisorRegistryRow } from "../../src/db/session_db.j
 import {
   buildSupervisorBootPrompt,
   startConfiguredSupervisors,
+  validateConfiguredSupervisors,
   type SupervisorActivationConfig,
 } from "../../src/supervisor/activation.js";
 import type { TaskExecutor } from "../../src/task/task_executor.js";
@@ -88,6 +89,10 @@ function createHarness(options: {
         lastSeenAt: params.lastSeenAt,
       }),
     ),
+    updateSession: vi.fn(async () => ({
+      session_id: "supervisor-ariella-1",
+      status: "interrupted",
+    })),
   } satisfies Partial<SessionDB>;
   const taskManager = {
     createTask: vi.fn(async (params) => {
@@ -98,7 +103,7 @@ function createHarness(options: {
       createdTasks.push(task);
       return task;
     }),
-    cancelTask: vi.fn(async () => true),
+    cancelTask: vi.fn(async () => false),
   } satisfies Partial<TaskManager>;
   const taskExecutor = {
     startExecution: vi.fn(),
@@ -115,6 +120,26 @@ function createHarness(options: {
 }
 
 describe("supervisor activation", () => {
+  it("validates configured supervisor roles before startup side effects", () => {
+    const harness = createHarness();
+
+    expect(() =>
+      validateConfiguredSupervisors(baseConfig, harness.agentRegistry),
+    ).not.toThrow();
+    expect(() =>
+      validateConfiguredSupervisors(
+        { ...baseConfig, roles: ["missing-supervisor"] },
+        harness.agentRegistry,
+      ),
+    ).toThrow("Supervisor role not found in agents.yaml: missing-supervisor");
+    expect(() =>
+      validateConfiguredSupervisors(
+        { ...baseConfig, enabled: false, roles: ["missing-supervisor"] },
+        harness.agentRegistry,
+      ),
+    ).not.toThrow();
+  });
+
   it("skips all startup work when disabled", async () => {
     const harness = createHarness();
 
@@ -210,6 +235,7 @@ describe("supervisor activation", () => {
       harness.createdTasks[0],
       supervisorAgent,
     );
+    expect(harness.db.updateSession).not.toHaveBeenCalled();
   });
 
   it("cancels the task and rolls back registry when startup fails after upsert", async () => {
@@ -231,6 +257,11 @@ describe("supervisor activation", () => {
     ).rejects.toThrow("engine factory boom");
 
     expect(harness.taskManager.cancelTask).toHaveBeenCalledWith("supervisor-ariella-1");
+    expect(harness.db.updateSession).toHaveBeenCalledWith("supervisor-ariella-1", {
+      status: "interrupted",
+      termination_reason: "killed",
+      termination_detail: "supervisor activation failed: start error",
+    });
     expect(harness.db.upsertSupervisorRegistry).toHaveBeenNthCalledWith(2, {
       role,
       activeSessionId: null,
@@ -241,6 +272,33 @@ describe("supervisor activation", () => {
       compactionCount: 0,
       lastSeenAt: null,
     });
+  });
+
+  it("marks the created supervisor session interrupted when registry upsert fails", async () => {
+    const harness = createHarness({ registry: null });
+    vi.mocked(harness.db.upsertSupervisorRegistry).mockRejectedValueOnce(
+      new Error("registry boom"),
+    );
+
+    await expect(
+      startConfiguredSupervisors({
+        config: baseConfig,
+        agentRegistry: harness.agentRegistry,
+        db: harness.db,
+        taskManager: harness.taskManager,
+        taskExecutor: harness.taskExecutor,
+        logger: silentLogger,
+        sessionIdFactory: () => "supervisor-ariella-1",
+      }),
+    ).rejects.toThrow("registry boom");
+
+    expect(harness.taskManager.cancelTask).toHaveBeenCalledWith("supervisor-ariella-1");
+    expect(harness.db.updateSession).toHaveBeenCalledWith("supervisor-ariella-1", {
+      status: "interrupted",
+      termination_reason: "killed",
+      termination_detail: "supervisor activation failed: registry upsert error",
+    });
+    expect(harness.taskExecutor.startExecution).not.toHaveBeenCalled();
   });
 
   it("fails fast when a configured supervisor role is missing from agents.yaml", async () => {

@@ -46,7 +46,10 @@ import {
 } from "./supervisor/wake_router.js";
 import { SupervisorHandoverExecutor } from "./supervisor/handover_executor.js";
 import { detectMissingSupervisors } from "./supervisor/watchdog.js";
-import { startConfiguredSupervisors } from "./supervisor/activation.js";
+import {
+  startConfiguredSupervisors,
+  validateConfiguredSupervisors,
+} from "./supervisor/activation.js";
 
 // Haniel cwd는 ./services/soulstream — install.configs.soul-server-ts-env path와 정합.
 // `.env`(Python soul-server용)와 *분리* 유지 — SOULSTREAM_NODE_ID 충돌 회피
@@ -125,6 +128,18 @@ async function main(): Promise<void> {
 
   const hasClaudeBackend = agentRegistry.supportedBackends().includes("claude");
   const hasCodexBackend = agentRegistry.supportedBackends().includes("codex");
+  const supervisorActivationConfig = {
+    enabled: env.SUPERVISOR_ENABLED,
+    roles: env.SUPERVISOR_ROLES,
+    folderId: env.SUPERVISOR_FOLDER_ID,
+  };
+  try {
+    validateConfiguredSupervisors(supervisorActivationConfig, agentRegistry);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Supervisor startup validation failed: ${message}`);
+    process.exit(1);
+  }
   if (hasClaudeBackend && !env.CLAUDE_AUTH_TOKEN_PATH) {
     console.error(
       "CLAUDE_AUTH_TOKEN_PATH is required when agents.yaml contains a Claude backend agent.",
@@ -651,11 +666,7 @@ async function main(): Promise<void> {
   if (env.SUPERVISOR_ENABLED) {
     try {
       const supervisorActivation = await startConfiguredSupervisors({
-        config: {
-          enabled: env.SUPERVISOR_ENABLED,
-          roles: env.SUPERVISOR_ROLES,
-          folderId: env.SUPERVISOR_FOLDER_ID,
-        },
+        config: supervisorActivationConfig,
         agentRegistry,
         db,
         taskManager,
