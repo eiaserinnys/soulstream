@@ -322,6 +322,117 @@ class TestEventCRUD:
         sql = db._pool.fetch.call_args[0][0]
         assert "event_read" in sql
 
+
+class TestSupervisorDataLayer:
+    @pytest.mark.asyncio
+    async def test_append_supervisor_event_calls_procedure_and_preserves_unicode(self, db):
+        row = _make_record({
+            "offset": 10,
+            "inserted": True,
+            "contiguous_upto": 3,
+            "highest_seen_event_id": 3,
+            "gap_start": None,
+            "gap_end": None,
+        })
+        db._pool.fetchrow = AsyncMock(return_value=row)
+        now = datetime.now(timezone.utc)
+
+        result = await db.append_supervisor_event(
+            source_node="node-a",
+            source_session_id="sess-a",
+            source_event_id=3,
+            event_type="text_delta",
+            payload={"text": "안녕"},
+            created_at=now,
+        )
+
+        assert result["offset"] == 10
+        assert result["inserted"] is True
+        call_args = db._pool.fetchrow.call_args[0]
+        assert "supervisor_event_append" in call_args[0]
+        assert call_args[1:5] == ("node-a", "sess-a", 3, "text_delta")
+        assert call_args[5] == '{"text": "안녕"}'
+        assert call_args[6] == now
+
+    @pytest.mark.asyncio
+    async def test_read_supervisor_events_after_deserializes_payload(self, db):
+        now = datetime.now(timezone.utc)
+        db._pool.fetch = AsyncMock(return_value=[
+            _make_record({
+                "offset": 1,
+                "source_node": "node-a",
+                "source_session_id": "sess-a",
+                "source_event_id": 1,
+                "event_type": "text_delta",
+                "payload": '{"text":"hello"}',
+                "created_at": now,
+                "inserted_at": now,
+            })
+        ])
+
+        rows = await db.read_supervisor_events_after(0, limit=10)
+
+        assert rows[0]["payload"] == {"text": "hello"}
+        call_args = db._pool.fetch.call_args[0]
+        assert "supervisor_event_read_after" in call_args[0]
+        assert call_args[1:] == (0, 10)
+
+    @pytest.mark.asyncio
+    async def test_supervisor_cursor_and_registry_methods_call_procedures(self, db):
+        now = datetime.now(timezone.utc)
+        registry_data = {
+            "role": "cluster",
+            "active_session_id": "sess-supervisor",
+            "epoch": 2,
+            "cursor_offset": 9,
+            "handover_state": "idle_pending",
+            "cumulative_tokens": 42,
+            "compaction_count": 1,
+            "last_seen_at": now,
+            "created_at": now,
+            "updated_at": now,
+        }
+        registry_row = _make_record(registry_data)
+        usage_row = _make_record({
+            **registry_data,
+            "cumulative_tokens": 142,
+            "compaction_count": 2,
+        })
+        db._pool.fetchval = AsyncMock(side_effect=[9, True])
+        db._pool.fetchrow = AsyncMock(side_effect=[registry_row, usage_row])
+
+        cursor = await db.set_supervisor_consumer_cursor("cluster-supervisor", 9)
+        assert cursor == 9
+        assert "supervisor_consumer_cursor_set" in db._pool.fetchval.call_args_list[0][0][0]
+
+        registry = await db.upsert_supervisor_registry(
+            role="cluster",
+            active_session_id="sess-supervisor",
+            epoch=2,
+            cursor_offset=9,
+            handover_state="idle_pending",
+            cumulative_tokens=42,
+            compaction_count=1,
+            last_seen_at=now,
+        )
+        assert registry["cumulative_tokens"] == 42
+        assert registry["compaction_count"] == 1
+        assert "supervisor_registry_upsert" in db._pool.fetchrow.call_args[0][0]
+
+        usage = await db.record_supervisor_usage_delta(
+            role="cluster",
+            token_delta=100,
+            compaction_delta=1,
+            last_seen_at=now,
+        )
+        assert usage["cumulative_tokens"] == 142
+        assert usage["compaction_count"] == 2
+        assert "supervisor_registry_record_usage_delta" in db._pool.fetchrow.call_args[0][0]
+
+        deleted = await db.delete_supervisor_registry("cluster")
+        assert deleted is True
+        assert "supervisor_registry_delete" in db._pool.fetchval.call_args_list[1][0][0]
+
     @pytest.mark.asyncio
     async def test_stream_events_raw_empty(self, db_with_conn):
         """빈 세션에서 stream_events_raw는 아무것도 yield하지 않는다"""

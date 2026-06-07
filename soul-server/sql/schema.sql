@@ -256,6 +256,54 @@ CREATE TABLE IF NOT EXISTS soulstream_node_heartbeats (
     last_seen_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS supervisor_events (
+    "offset"          BIGSERIAL PRIMARY KEY,
+    source_node       TEXT NOT NULL,
+    source_session_id TEXT NOT NULL,
+    source_event_id   INTEGER NOT NULL CHECK (source_event_id > 0),
+    event_type        TEXT NOT NULL,
+    payload           JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at        TIMESTAMPTZ NOT NULL,
+    inserted_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT supervisor_events_source_key UNIQUE (source_node, source_session_id, source_event_id)
+);
+
+CREATE TABLE IF NOT EXISTS supervisor_source_cursors (
+    source_node           TEXT NOT NULL,
+    source_session_id     TEXT NOT NULL,
+    contiguous_upto       INTEGER NOT NULL DEFAULT 0 CHECK (contiguous_upto >= 0),
+    highest_seen_event_id INTEGER NOT NULL DEFAULT 0 CHECK (highest_seen_event_id >= 0),
+    gap_start             INTEGER,
+    gap_end               INTEGER,
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (source_node, source_session_id),
+    CHECK (highest_seen_event_id >= contiguous_upto),
+    CHECK (
+        (gap_start IS NULL AND gap_end IS NULL)
+        OR (gap_start IS NOT NULL AND gap_end IS NOT NULL AND gap_start <= gap_end)
+    )
+);
+
+CREATE TABLE IF NOT EXISTS supervisor_consumers (
+    supervisor_id TEXT PRIMARY KEY,
+    cursor_offset BIGINT NOT NULL DEFAULT 0 CHECK (cursor_offset >= 0),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS supervisor_registry (
+    role                TEXT PRIMARY KEY,
+    active_session_id   TEXT,
+    epoch               BIGINT NOT NULL DEFAULT 0 CHECK (epoch >= 0),
+    cursor_offset       BIGINT NOT NULL DEFAULT 0 CHECK (cursor_offset >= 0),
+    handover_state      TEXT NOT NULL DEFAULT 'idle',
+    cumulative_tokens   BIGINT NOT NULL DEFAULT 0 CHECK (cumulative_tokens >= 0),
+    compaction_count    INTEGER NOT NULL DEFAULT 0 CHECK (compaction_count >= 0),
+    last_seen_at        TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (handover_state IN ('idle', 'idle_pending', 'hard_pending', 'handover_running'))
+);
+
 CREATE TABLE IF NOT EXISTS event_search_terms (
     session_id TEXT NOT NULL,
     event_id   INTEGER NOT NULL,
@@ -362,6 +410,12 @@ CREATE INDEX IF NOT EXISTS idx_soulstream_schedules_due
     WHERE status = 'active';
 CREATE INDEX IF NOT EXISTS idx_soulstream_node_heartbeats_seen
     ON soulstream_node_heartbeats (last_seen_at);
+CREATE INDEX IF NOT EXISTS idx_supervisor_events_source
+    ON supervisor_events (source_node, source_session_id, source_event_id);
+CREATE INDEX IF NOT EXISTS idx_supervisor_events_inserted_at
+    ON supervisor_events (inserted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_supervisor_registry_last_seen
+    ON supervisor_registry (last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_board_items_folder ON board_items (folder_id, y, x);
 CREATE INDEX IF NOT EXISTS idx_board_items_ref ON board_items (item_type, item_id);
 CREATE INDEX IF NOT EXISTS idx_board_yjs_updates_document ON board_yjs_updates (document_name, id);
@@ -947,6 +1001,14 @@ BEGIN
         THEN (v_payload->>'parent_event_id')::INTEGER
         ELSE NULL
     END;
+    IF v_parent IS NOT NULL AND NOT EXISTS (
+        SELECT 1
+        FROM events e
+        WHERE e.session_id = p_session_id
+          AND e.id = v_parent
+    ) THEN
+        v_parent := NULL;
+    END IF;
 
     -- 행 잠금으로 동시 append 직렬화
     PERFORM session_id FROM sessions WHERE session_id = p_session_id FOR UPDATE;
@@ -989,6 +1051,8 @@ CREATE OR REPLACE FUNCTION event_read(
 $$;
 
 -- 18. event_read_one
+DROP FUNCTION IF EXISTS event_read_one(TEXT, INTEGER);
+
 CREATE OR REPLACE FUNCTION event_read_one(
     p_session_id TEXT,
     p_event_id   INTEGER
@@ -996,11 +1060,12 @@ CREATE OR REPLACE FUNCTION event_read_one(
     id              INTEGER,
     session_id      TEXT,
     event_type      TEXT,
+    parent_event_id INTEGER,
     payload         JSONB,
     searchable_text TEXT,
     created_at      TIMESTAMPTZ
 ) LANGUAGE sql STABLE AS $$
-    SELECT id, session_id, event_type, payload, searchable_text, created_at
+    SELECT id, session_id, event_type, parent_event_id, payload, searchable_text, created_at
     FROM events
     WHERE session_id = p_session_id AND id = p_event_id;
 $$;
@@ -1025,6 +1090,516 @@ CREATE OR REPLACE FUNCTION event_count(
     p_session_id TEXT
 ) RETURNS BIGINT LANGUAGE sql STABLE AS $$
     SELECT COUNT(*) FROM events WHERE session_id = p_session_id;
+$$;
+
+-- 20s. Supervisor durable queue -------------------------------------
+
+CREATE OR REPLACE FUNCTION supervisor_source_cursor_recompute(
+    p_source_node       TEXT,
+    p_source_session_id TEXT
+) RETURNS TABLE(
+    source_node           TEXT,
+    source_session_id     TEXT,
+    contiguous_upto       INTEGER,
+    highest_seen_event_id INTEGER,
+    gap_start             INTEGER,
+    gap_end               INTEGER,
+    updated_at            TIMESTAMPTZ
+) LANGUAGE plpgsql AS $$
+DECLARE
+    v_start      INTEGER;
+    v_contiguous INTEGER;
+    v_highest    INTEGER;
+    v_next_seen  INTEGER;
+    v_gap_start  INTEGER;
+    v_gap_end    INTEGER;
+BEGIN
+    INSERT INTO supervisor_source_cursors (source_node, source_session_id)
+    VALUES (p_source_node, p_source_session_id)
+    ON CONFLICT ON CONSTRAINT supervisor_source_cursors_pkey DO NOTHING;
+
+    SELECT c.contiguous_upto
+    INTO v_start
+    FROM supervisor_source_cursors c
+    WHERE c.source_node = p_source_node
+      AND c.source_session_id = p_source_session_id
+    FOR UPDATE;
+
+    WITH ordered AS (
+        SELECT
+            e.source_event_id,
+            ROW_NUMBER() OVER (ORDER BY e.source_event_id)::INTEGER AS rn
+        FROM supervisor_events e
+        WHERE e.source_node = p_source_node
+          AND e.source_session_id = p_source_session_id
+          AND e.source_event_id > v_start
+    ),
+    contiguous AS (
+        SELECT source_event_id
+        FROM ordered
+        WHERE source_event_id = v_start + rn
+    )
+    SELECT COALESCE(MAX(source_event_id), v_start)
+    INTO v_contiguous
+    FROM contiguous;
+
+    SELECT COALESCE(MAX(e.source_event_id), 0)
+    INTO v_highest
+    FROM supervisor_events e
+    WHERE e.source_node = p_source_node
+      AND e.source_session_id = p_source_session_id;
+
+    IF v_highest > v_contiguous THEN
+        SELECT MIN(e.source_event_id)
+        INTO v_next_seen
+        FROM supervisor_events e
+        WHERE e.source_node = p_source_node
+          AND e.source_session_id = p_source_session_id
+          AND e.source_event_id > v_contiguous;
+        v_gap_start := v_contiguous + 1;
+        v_gap_end := v_next_seen - 1;
+    ELSE
+        v_gap_start := NULL;
+        v_gap_end := NULL;
+    END IF;
+
+    UPDATE supervisor_source_cursors c
+    SET contiguous_upto = v_contiguous,
+        highest_seen_event_id = v_highest,
+        gap_start = v_gap_start,
+        gap_end = v_gap_end,
+        updated_at = NOW()
+    WHERE c.source_node = p_source_node
+      AND c.source_session_id = p_source_session_id;
+
+    RETURN QUERY
+    SELECT
+        c.source_node,
+        c.source_session_id,
+        c.contiguous_upto,
+        c.highest_seen_event_id,
+        c.gap_start,
+        c.gap_end,
+        c.updated_at
+    FROM supervisor_source_cursors c
+    WHERE c.source_node = p_source_node
+      AND c.source_session_id = p_source_session_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION supervisor_event_append(
+    p_source_node       TEXT,
+    p_source_session_id TEXT,
+    p_source_event_id   INTEGER,
+    p_event_type        TEXT,
+    p_payload           TEXT,
+    p_created_at        TIMESTAMPTZ
+) RETURNS TABLE(
+    "offset"              BIGINT,
+    inserted              BOOLEAN,
+    contiguous_upto       INTEGER,
+    highest_seen_event_id INTEGER,
+    gap_start             INTEGER,
+    gap_end               INTEGER
+) LANGUAGE plpgsql AS $$
+DECLARE
+    v_offset   BIGINT;
+    v_inserted BOOLEAN;
+    v_payload  JSONB := COALESCE(NULLIF(p_payload, ''), '{}')::jsonb;
+    v_cursor   RECORD;
+BEGIN
+    IF p_source_event_id <= 0 THEN
+        RAISE EXCEPTION 'source_event_id must be positive: %', p_source_event_id;
+    END IF;
+
+    INSERT INTO supervisor_source_cursors (source_node, source_session_id)
+    VALUES (p_source_node, p_source_session_id)
+    ON CONFLICT ON CONSTRAINT supervisor_source_cursors_pkey DO NOTHING;
+
+    PERFORM 1
+    FROM supervisor_source_cursors c
+    WHERE c.source_node = p_source_node
+      AND c.source_session_id = p_source_session_id
+    FOR UPDATE;
+
+    INSERT INTO supervisor_events (
+        source_node,
+        source_session_id,
+        source_event_id,
+        event_type,
+        payload,
+        created_at
+    )
+    VALUES (
+        p_source_node,
+        p_source_session_id,
+        p_source_event_id,
+        p_event_type,
+        v_payload,
+        p_created_at
+    )
+    ON CONFLICT ON CONSTRAINT supervisor_events_source_key DO NOTHING
+    RETURNING supervisor_events."offset" INTO v_offset;
+
+    IF v_offset IS NULL THEN
+        v_inserted := FALSE;
+        SELECT e."offset"
+        INTO v_offset
+        FROM supervisor_events e
+        WHERE e.source_node = p_source_node
+          AND e.source_session_id = p_source_session_id
+          AND e.source_event_id = p_source_event_id;
+    ELSE
+        v_inserted := TRUE;
+    END IF;
+
+    SELECT *
+    INTO v_cursor
+    FROM supervisor_source_cursor_recompute(p_source_node, p_source_session_id);
+
+    RETURN QUERY SELECT
+        v_offset,
+        v_inserted,
+        v_cursor.contiguous_upto,
+        v_cursor.highest_seen_event_id,
+        v_cursor.gap_start,
+        v_cursor.gap_end;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION supervisor_event_read_after(
+    p_after_offset BIGINT DEFAULT 0,
+    p_limit        INTEGER DEFAULT 100
+) RETURNS TABLE(
+    "offset"          BIGINT,
+    source_node       TEXT,
+    source_session_id TEXT,
+    source_event_id   INTEGER,
+    event_type        TEXT,
+    payload           JSONB,
+    created_at        TIMESTAMPTZ,
+    inserted_at       TIMESTAMPTZ
+) LANGUAGE sql STABLE AS $$
+    SELECT
+        e."offset",
+        e.source_node,
+        e.source_session_id,
+        e.source_event_id,
+        e.event_type,
+        e.payload,
+        e.created_at,
+        e.inserted_at
+    FROM supervisor_events e
+    WHERE e."offset" > p_after_offset
+    ORDER BY e."offset"
+    LIMIT p_limit;
+$$;
+
+CREATE OR REPLACE FUNCTION supervisor_source_cursor_get(
+    p_source_node       TEXT,
+    p_source_session_id TEXT
+) RETURNS TABLE(
+    source_node           TEXT,
+    source_session_id     TEXT,
+    contiguous_upto       INTEGER,
+    highest_seen_event_id INTEGER,
+    gap_start             INTEGER,
+    gap_end               INTEGER,
+    updated_at            TIMESTAMPTZ
+) LANGUAGE sql STABLE AS $$
+    SELECT
+        c.source_node,
+        c.source_session_id,
+        c.contiguous_upto,
+        c.highest_seen_event_id,
+        c.gap_start,
+        c.gap_end,
+        c.updated_at
+    FROM supervisor_source_cursors c
+    WHERE c.source_node = p_source_node
+      AND c.source_session_id = p_source_session_id;
+$$;
+
+CREATE OR REPLACE FUNCTION supervisor_source_cursor_set(
+    p_source_node           TEXT,
+    p_source_session_id     TEXT,
+    p_contiguous_upto       INTEGER,
+    p_highest_seen_event_id INTEGER,
+    p_gap_start             INTEGER DEFAULT NULL,
+    p_gap_end               INTEGER DEFAULT NULL
+) RETURNS TABLE(
+    source_node           TEXT,
+    source_session_id     TEXT,
+    contiguous_upto       INTEGER,
+    highest_seen_event_id INTEGER,
+    gap_start             INTEGER,
+    gap_end               INTEGER,
+    updated_at            TIMESTAMPTZ
+) LANGUAGE plpgsql AS $$
+BEGIN
+    IF p_contiguous_upto < 0 OR p_highest_seen_event_id < 0 THEN
+        RAISE EXCEPTION 'cursor values must be non-negative';
+    END IF;
+    IF p_highest_seen_event_id < p_contiguous_upto THEN
+        RAISE EXCEPTION 'highest_seen_event_id must be >= contiguous_upto';
+    END IF;
+
+    INSERT INTO supervisor_source_cursors (
+        source_node,
+        source_session_id,
+        contiguous_upto,
+        highest_seen_event_id,
+        gap_start,
+        gap_end,
+        updated_at
+    )
+    VALUES (
+        p_source_node,
+        p_source_session_id,
+        p_contiguous_upto,
+        p_highest_seen_event_id,
+        p_gap_start,
+        p_gap_end,
+        NOW()
+    )
+    ON CONFLICT ON CONSTRAINT supervisor_source_cursors_pkey DO UPDATE
+    SET contiguous_upto = EXCLUDED.contiguous_upto,
+        highest_seen_event_id = EXCLUDED.highest_seen_event_id,
+        gap_start = EXCLUDED.gap_start,
+        gap_end = EXCLUDED.gap_end,
+        updated_at = NOW();
+
+    RETURN QUERY
+    SELECT *
+    FROM supervisor_source_cursor_get(p_source_node, p_source_session_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION supervisor_consumer_cursor_get(
+    p_supervisor_id TEXT
+) RETURNS BIGINT LANGUAGE sql STABLE AS $$
+    SELECT COALESCE((
+        SELECT c.cursor_offset
+        FROM supervisor_consumers c
+        WHERE c.supervisor_id = p_supervisor_id
+    ), 0)::BIGINT;
+$$;
+
+CREATE OR REPLACE FUNCTION supervisor_consumer_cursor_set(
+    p_supervisor_id TEXT,
+    p_cursor_offset BIGINT
+) RETURNS BIGINT LANGUAGE plpgsql AS $$
+BEGIN
+    IF p_cursor_offset < 0 THEN
+        RAISE EXCEPTION 'cursor_offset must be non-negative: %', p_cursor_offset;
+    END IF;
+
+    INSERT INTO supervisor_consumers (supervisor_id, cursor_offset, updated_at)
+    VALUES (p_supervisor_id, p_cursor_offset, NOW())
+    ON CONFLICT ON CONSTRAINT supervisor_consumers_pkey DO UPDATE
+    SET cursor_offset = EXCLUDED.cursor_offset,
+        updated_at = NOW();
+
+    RETURN p_cursor_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION supervisor_registry_upsert(
+    p_role               TEXT,
+    p_active_session_id  TEXT,
+    p_epoch              BIGINT,
+    p_cursor_offset      BIGINT,
+    p_handover_state     TEXT,
+    p_cumulative_tokens  BIGINT,
+    p_compaction_count   INTEGER,
+    p_last_seen_at       TIMESTAMPTZ
+) RETURNS TABLE(
+    role               TEXT,
+    active_session_id  TEXT,
+    epoch              BIGINT,
+    cursor_offset      BIGINT,
+    handover_state     TEXT,
+    cumulative_tokens  BIGINT,
+    compaction_count   INTEGER,
+    last_seen_at       TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ,
+    updated_at         TIMESTAMPTZ
+) LANGUAGE plpgsql AS $$
+BEGIN
+    IF p_epoch < 0 OR p_cursor_offset < 0 OR p_cumulative_tokens < 0 OR p_compaction_count < 0 THEN
+        RAISE EXCEPTION 'epoch, cursor_offset, cumulative_tokens, and compaction_count must be non-negative';
+    END IF;
+
+    INSERT INTO supervisor_registry (
+        role,
+        active_session_id,
+        epoch,
+        cursor_offset,
+        handover_state,
+        cumulative_tokens,
+        compaction_count,
+        last_seen_at,
+        updated_at
+    )
+    VALUES (
+        p_role,
+        p_active_session_id,
+        p_epoch,
+        p_cursor_offset,
+        p_handover_state,
+        p_cumulative_tokens,
+        p_compaction_count,
+        p_last_seen_at,
+        NOW()
+    )
+    ON CONFLICT ON CONSTRAINT supervisor_registry_pkey DO UPDATE
+    SET active_session_id = EXCLUDED.active_session_id,
+        epoch = EXCLUDED.epoch,
+        cursor_offset = EXCLUDED.cursor_offset,
+        handover_state = EXCLUDED.handover_state,
+        cumulative_tokens = EXCLUDED.cumulative_tokens,
+        compaction_count = EXCLUDED.compaction_count,
+        last_seen_at = EXCLUDED.last_seen_at,
+        updated_at = NOW();
+
+    RETURN QUERY
+    SELECT *
+    FROM supervisor_registry_get(p_role);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION supervisor_registry_get(
+    p_role TEXT
+) RETURNS TABLE(
+    role               TEXT,
+    active_session_id  TEXT,
+    epoch              BIGINT,
+    cursor_offset      BIGINT,
+    handover_state     TEXT,
+    cumulative_tokens  BIGINT,
+    compaction_count   INTEGER,
+    last_seen_at       TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ,
+    updated_at         TIMESTAMPTZ
+) LANGUAGE sql STABLE AS $$
+    SELECT
+        r.role,
+        r.active_session_id,
+        r.epoch,
+        r.cursor_offset,
+        r.handover_state,
+        r.cumulative_tokens,
+        r.compaction_count,
+        r.last_seen_at,
+        r.created_at,
+        r.updated_at
+    FROM supervisor_registry r
+    WHERE r.role = p_role;
+$$;
+
+CREATE OR REPLACE FUNCTION supervisor_registry_list()
+RETURNS TABLE(
+    role               TEXT,
+    active_session_id  TEXT,
+    epoch              BIGINT,
+    cursor_offset      BIGINT,
+    handover_state     TEXT,
+    cumulative_tokens  BIGINT,
+    compaction_count   INTEGER,
+    last_seen_at       TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ,
+    updated_at         TIMESTAMPTZ
+) LANGUAGE sql STABLE AS $$
+    SELECT
+        r.role,
+        r.active_session_id,
+        r.epoch,
+        r.cursor_offset,
+        r.handover_state,
+        r.cumulative_tokens,
+        r.compaction_count,
+        r.last_seen_at,
+        r.created_at,
+        r.updated_at
+    FROM supervisor_registry r
+    ORDER BY r.role;
+$$;
+
+CREATE OR REPLACE FUNCTION supervisor_registry_touch(
+    p_role         TEXT,
+    p_last_seen_at TIMESTAMPTZ
+) RETURNS TABLE(
+    role               TEXT,
+    active_session_id  TEXT,
+    epoch              BIGINT,
+    cursor_offset      BIGINT,
+    handover_state     TEXT,
+    cumulative_tokens  BIGINT,
+    compaction_count   INTEGER,
+    last_seen_at       TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ,
+    updated_at         TIMESTAMPTZ
+) LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE supervisor_registry r
+    SET last_seen_at = p_last_seen_at,
+        updated_at = NOW()
+    WHERE r.role = p_role;
+
+    RETURN QUERY
+    SELECT *
+    FROM supervisor_registry_get(p_role);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION supervisor_registry_record_usage_delta(
+    p_role             TEXT,
+    p_token_delta      BIGINT,
+    p_compaction_delta INTEGER DEFAULT 0,
+    p_last_seen_at     TIMESTAMPTZ DEFAULT NULL
+) RETURNS TABLE(
+    role               TEXT,
+    active_session_id  TEXT,
+    epoch              BIGINT,
+    cursor_offset      BIGINT,
+    handover_state     TEXT,
+    cumulative_tokens  BIGINT,
+    compaction_count   INTEGER,
+    last_seen_at       TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ,
+    updated_at         TIMESTAMPTZ
+) LANGUAGE plpgsql AS $$
+BEGIN
+    IF p_token_delta < 0 OR p_compaction_delta < 0 THEN
+        RAISE EXCEPTION 'usage deltas must be non-negative';
+    END IF;
+
+    UPDATE supervisor_registry r
+    SET cumulative_tokens = r.cumulative_tokens + p_token_delta,
+        compaction_count = r.compaction_count + p_compaction_delta,
+        last_seen_at = COALESCE(p_last_seen_at, r.last_seen_at),
+        updated_at = NOW()
+    WHERE r.role = p_role;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'supervisor registry not found: %', p_role;
+    END IF;
+
+    RETURN QUERY
+    SELECT *
+    FROM supervisor_registry_get(p_role);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION supervisor_registry_delete(
+    p_role TEXT
+) RETURNS BOOLEAN LANGUAGE sql AS $$
+    WITH deleted AS (
+        DELETE FROM supervisor_registry
+        WHERE role = p_role
+        RETURNING 1
+    )
+    SELECT EXISTS(SELECT 1 FROM deleted);
 $$;
 
 -- 20b. events_viewport — 가상 Y축 범위 [y_min, y_max]와 겹치는 이벤트 조회
