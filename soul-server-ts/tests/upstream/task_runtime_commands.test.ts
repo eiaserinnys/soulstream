@@ -220,6 +220,42 @@ describe("TaskRuntimeCommands.intervene", () => {
     expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, codexAgent);
     expect(result).toEqual({ autoResumed: true });
   });
+
+  it("completed+evicted Claude auto-resume starts execution with the persisted Claude profile", async () => {
+    const resumedTask = makeTask({
+      agentSessionId: "sess-evicted-claude",
+      profileId: claudeAgent.id,
+      hydratedFromDb: true,
+      sessionType: "claude",
+      codexThreadId: "736ddf46-4c72-4b02-a44a-fab3e5e58fe5",
+      lastEventId: 581,
+    });
+    const addIntervention = vi.fn(async (_params, onResume) => {
+      onResume(resumedTask);
+      return { autoResumed: true };
+    });
+    const { runtime, taskExecutor } = createRuntime({
+      agents: [codexAgent, claudeAgent],
+      addIntervention,
+    });
+
+    const result = await runtime.intervene({
+      agentSessionId: "sess-evicted-claude",
+      text: "continue after completion",
+      user: "browser",
+    });
+
+    expect(addIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentSessionId: "sess-evicted-claude",
+        text: "continue after completion",
+        user: "browser",
+      }),
+      expect.any(Function),
+    );
+    expect(taskExecutor.startExecution).toHaveBeenCalledWith(resumedTask, claudeAgent);
+    expect(result).toEqual({ autoResumed: true });
+  });
 });
 
 describe("TaskRuntimeCommands ACK builders", () => {

@@ -1579,6 +1579,58 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
 
+  it("DB completed Claude row는 hydrate 후 기존 Claude session id로 auto-resume 흐름 진입", async () => {
+    const mocks = makeMocks();
+    mocks.getSession.mockResolvedValueOnce({
+      session_id: "sess-evicted-claude",
+      folder_id: "f-1",
+      display_name: null,
+      node_id: "n",
+      session_type: "claude",
+      status: "completed",
+      prompt: "original prompt",
+      client_id: null,
+      claude_session_id: "736ddf46-4c72-4b02-a44a-fab3e5e58fe5",
+      last_message: null,
+      metadata: null,
+      was_running_at_shutdown: false,
+      last_event_id: 581,
+      last_read_event_id: 580,
+      created_at: new Date("2026-06-07T16:00:00Z"),
+      updated_at: new Date("2026-06-07T16:15:00Z"),
+      agent_id: "claude-roselin",
+      caller_session_id: null,
+      away_summary: null,
+    });
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const onResume = vi.fn();
+
+    const result = await tm.addIntervention(
+      { agentSessionId: "sess-evicted-claude", text: "resume from last event", user: "browser" },
+      onResume,
+    );
+
+    expect(result).toEqual({ autoResumed: true });
+    expect(mocks.getSession).toHaveBeenCalledWith("sess-evicted-claude");
+    const memTask = tm.getTask("sess-evicted-claude");
+    expect(memTask).toBeDefined();
+    expect(memTask!.status).toBe("running");
+    expect(memTask!.profileId).toBe("claude-roselin");
+    expect(memTask!.sessionType).toBe("claude");
+    expect(memTask!.codexThreadId).toBe("736ddf46-4c72-4b02-a44a-fab3e5e58fe5");
+    expect(memTask!.lastEventId).toBe(581);
+    expect(memTask!.lastReadEventId).toBe(580);
+    expect(memTask!.prompt).toBe("resume from last event");
+    expect(mocks.emitEventEnvelope).not.toHaveBeenCalled();
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-evicted-claude", {
+      status: "running",
+      last_event_id: memTask!.lastEventId,
+      termination_reason: null,
+      termination_detail: null,
+    });
+    expect(onResume).toHaveBeenCalledWith(memTask);
+  });
+
   it("DB running row without active execution is auto-resumed instead of queued", async () => {
     const mocks = makeMocks();
     mocks.getSession.mockResolvedValueOnce({
