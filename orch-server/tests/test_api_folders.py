@@ -164,6 +164,25 @@ class TestUpdateFolder:
             settings={"excludeFromFeed": True},
         )
 
+    async def test_updates_notification_setting_with_feed_setting(
+        self, client, mock_catalog_service
+    ):
+        """Folder settings preserve feed and notification exclusion flags together."""
+        settings = {"excludeFromFeed": True, "excludeFromNotification": True}
+
+        resp = await client.put(
+            "/api/folders/f-settings",
+            json={"settings": settings},
+        )
+
+        assert resp.status_code == 200
+        mock_catalog_service.update_folder.assert_called_once_with(
+            "f-settings",
+            name=None,
+            sort_order=None,
+            settings=settings,
+        )
+
     async def test_updates_name_and_settings(self, client, mock_catalog_service):
         """Updates both name and settings in a single request."""
         resp = await client.put(

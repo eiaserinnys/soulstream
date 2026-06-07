@@ -305,6 +305,17 @@ class NodeInboundEvents:
             or envelope.get("session_type")
             or envelope.get("sessionType")
         )
+        folder_id = (
+            session.get("folder_id")
+            if "folder_id" in session
+            else session.get("folderId")
+        )
+        if folder_id is None:
+            folder_id = (
+                envelope.get("folder_id")
+                if "folder_id" in envelope
+                else envelope.get("folderId")
+            )
         foreground_count = len(self._subscribe_listeners.get(session_id, {}))
         return {
             "type": EVT_INPUT_REQUEST,
@@ -313,6 +324,8 @@ class NodeInboundEvents:
             "session_id": session_id,
             "session_type": session_type,
             "caller_source": caller_source,
+            "folder_id": folder_id,
+            "folderId": folder_id,
             "session_name": _session_name(session, session_id),
             "foreground_observer_count": foreground_count,
             **signal,

@@ -171,6 +171,7 @@ def mock_catalog_service():
     cs.delete_session = AsyncMock()
     cs.update_board_item_position = AsyncMock()
     cs.list_board_items = AsyncMock(return_value=[])
+    cs.list_session_assignments = AsyncMock(return_value={})
     cs.init_file_asset = AsyncMock(return_value={
         "assetId": "asset-1",
         "asset": {

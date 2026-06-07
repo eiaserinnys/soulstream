@@ -2,7 +2,7 @@
  * FolderSettingsDialog - 폴더 설정 다이얼로그
  *
  * 폴더별 설정을 편집하는 다이얼로그.
- * 지원하는 설정: 피드에서 제외 (excludeFromFeed), 폴더 프롬프트 (folderPrompt)
+ * 지원하는 설정: 피드에서 제외, 알림에서 제외, 폴더 프롬프트
  */
 
 import { useEffect } from "react";
@@ -26,6 +26,7 @@ import type { AtomContextNodeSettings, CatalogFolder, FolderSettings } from "../
 
 const settingsSchema = z.object({
   excludeFromFeed: z.boolean(),
+  excludeFromNotification: z.boolean(),
   folderPrompt: z.string(),
   atomNodeId: z.string(),
   atomNodeTitle: z.string(),
@@ -59,6 +60,7 @@ export function FolderSettingsDialog({
       resolver: zodResolver(settingsSchema),
       defaultValues: {
         excludeFromFeed: false,
+        excludeFromNotification: false,
         folderPrompt: "",
         atomNodeId: "",
         atomNodeTitle: "",
@@ -71,6 +73,7 @@ export function FolderSettingsDialog({
     if (open && folder) {
       reset({
         excludeFromFeed: folder.settings?.excludeFromFeed ?? false,
+        excludeFromNotification: folder.settings?.excludeFromNotification ?? false,
         folderPrompt: folder.settings?.folderPrompt ?? "",
         atomNodeId: folder.settings?.atomContextNode?.nodeId ?? "",
         atomNodeTitle: folder.settings?.atomContextNode?.nodeTitle ?? "",
@@ -92,6 +95,7 @@ export function FolderSettingsDialog({
         : undefined;
     onConfirm({
       excludeFromFeed: data.excludeFromFeed,
+      excludeFromNotification: data.excludeFromNotification,
       folderPrompt: data.folderPrompt || undefined,
       atomContextNode,
     });
@@ -113,6 +117,14 @@ export function FolderSettingsDialog({
                 className="h-4 w-4"
               />
               피드에서 제외
+            </label>
+            <label className="mt-3 flex items-center gap-2 cursor-pointer text-sm">
+              <input
+                type="checkbox"
+                {...register("excludeFromNotification")}
+                className="h-4 w-4"
+              />
+              알림에서 제외
             </label>
             <div className="mt-3 flex flex-col gap-1">
               <label className="text-sm text-[--color-text-secondary]">

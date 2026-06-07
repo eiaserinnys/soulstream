@@ -398,7 +398,10 @@ async def lifespan(app: FastAPI):
     push_provider = ExpoPushProvider()
     push_repo = PushRepository(db.pool)
     push_notifier = PushNotifier(
-        provider=push_provider, repo=push_repo, node_manager=node_manager
+        provider=push_provider,
+        repo=push_repo,
+        node_manager=node_manager,
+        catalog_service=catalog_service,
     )
     push_notifier.start()  # node_manager listener 등록
 
