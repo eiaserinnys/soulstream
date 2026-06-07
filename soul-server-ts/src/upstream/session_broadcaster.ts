@@ -69,6 +69,10 @@ export class SessionBroadcaster {
         typeof callerInfo.display_name === "string" ? callerInfo.display_name : null,
       userPortraitUrl:
         typeof callerInfo.avatar_url === "string" ? callerInfo.avatar_url : null,
+      termination_reason: task.terminationReason ?? null,
+      terminationReason: task.terminationReason ?? null,
+      termination_detail: task.terminationDetail ?? null,
+      terminationDetail: task.terminationDetail ?? null,
     });
   }
 
@@ -170,6 +174,10 @@ export class SessionBroadcaster {
       last_event_id: task.lastEventId,
       last_read_event_id: task.lastReadEventId,
       node_id: this.nodeId,
+      termination_reason: task.terminationReason ?? null,
+      terminationReason: task.terminationReason ?? null,
+      termination_detail: task.terminationDetail ?? null,
+      terminationDetail: task.terminationDetail ?? null,
     };
     if (sessionType !== "claude") {
       info.llm_provider = task.llmProvider ?? null;

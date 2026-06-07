@@ -25,6 +25,18 @@ import type {
 /** task lifecycle 상태. Python `TaskStatus` enum과 값 일치 (DB sessions.status 컬럼 정본). */
 export type TaskStatus = "running" | "completed" | "error" | "interrupted";
 
+export type TerminationReason =
+  | "completed_ok"
+  | "killed"
+  | "limit_hit"
+  | "error_aborted"
+  | "unknown";
+
+export type PendingTerminationHint = Exclude<
+  TerminationReason,
+  "completed_ok" | "unknown"
+>;
+
 /**
  * 사용자가 turn 사이에 보내는 개입 메시지. claude `task_manager.py:603-608`의 message dict와
  * *키 동등* (wire payload에 그대로 운반 가능).
@@ -270,6 +282,13 @@ export interface Task {
   /** 정상 완료 시 결과 텍스트, 실패 시 error 메시지. */
   result?: string;
   error?: string;
+
+  /** Supervisor Phase A: terminal reason is finalized once by TaskLifecycleTransition. */
+  terminationReason?: TerminationReason;
+  terminationDetail?: string | null;
+  pendingTerminationHint?: PendingTerminationHint;
+  pendingTerminationDetail?: string | null;
+  terminationEventRecorded?: boolean;
 
   /** Claude Agent SDK 장기 실행 runtime 상태. Task Tree와 별도 정본이다. */
   claudeRuntime?: ClaudeRuntimeState;

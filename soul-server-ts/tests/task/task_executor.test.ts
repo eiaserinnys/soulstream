@@ -135,7 +135,7 @@ describe("TaskExecutor.startExecution", () => {
     // B-5: user_message + session + assistant_message만 durable 저장.
     // text_delta/text_end는 live transport 전용이라 persist하지 않는다.
     expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
-    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(5);
+    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(6);
     expect(mocks.handleSideEffects).toHaveBeenCalledTimes(5);
 
     // 첫 persistEvent는 user_message 영속화
@@ -150,10 +150,11 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.engine).toBeUndefined();
 
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "completed",
       last_event_id: 3,
-    });
+      termination_reason: "completed_ok",
+    }));
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
   });
 
@@ -217,7 +218,7 @@ describe("TaskExecutor.startExecution", () => {
       "user_message",
       "assistant_message",
     ]);
-    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(6);
+    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(7);
     expect(mocks.handleSideEffects).toHaveBeenCalledTimes(6);
     const broadcastEventIds = mocks.emitEventEnvelope.mock.calls.map(
       (c) => (c[1] as Record<string, unknown>)._event_id,
@@ -229,12 +230,14 @@ describe("TaskExecutor.startExecution", () => {
       undefined,
       2,
       undefined,
+      undefined,
     ]);
     expect(task.lastEventId).toBe(2);
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "completed",
       last_event_id: 2,
-    });
+      termination_reason: "completed_ok",
+    }));
   });
 
   it("신규 task attachmentPaths → user_message.attachments 보존 + 이미지 path는 engine params로 전달", async () => {
@@ -334,10 +337,11 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.codexThreadId).toBe("claude-sess-1");
     expect(task.lastAssistantText).toBe("claude says hi");
     expect(mocks.setClaudeSessionId).toHaveBeenCalledWith("sess-1", "claude-sess-1");
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "completed",
       last_event_id: 4,
-    });
+      termination_reason: "completed_ok",
+    }));
   });
 
   it("Agents SDK 합성 시나리오: handoff 중 tool approval 거부 → graceful complete", async () => {
@@ -530,10 +534,11 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.status).toBe("error");
     expect(task.error).toContain("engine boom");
     expect(mocks.emitSessionUpdated).toHaveBeenCalled();
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "error",
       last_event_id: 2,  // B-5: user_message(1) + session(2)
-    });
+      termination_reason: "unknown",
+    }));
   });
 
   it("Claude fatal error event 후 throw → error event를 남기고 task status=error로 finalize", async () => {
@@ -568,10 +573,11 @@ describe("TaskExecutor.startExecution", () => {
       message: "claude boom",
       fatal: true,
     });
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "error",
       last_event_id: 2,
-    });
+      termination_reason: "error_aborted",
+    }));
   });
 
   it("Claude runtime timeout fatal event clears pending runtime and finalizes as error", async () => {
@@ -640,10 +646,11 @@ describe("TaskExecutor.startExecution", () => {
         },
       },
     });
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "error",
       last_event_id: 7,
-    });
+      termination_reason: "error_aborted",
+    }));
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
   });
 
@@ -701,10 +708,11 @@ describe("TaskExecutor.startExecution", () => {
         "claude_runtime_pending_after_turn",
     );
     expect(pendingAfterTurnError).toBeUndefined();
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "completed",
       last_event_id: 2,
-    });
+      termination_reason: "completed_ok",
+    }));
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
   });
 
@@ -778,10 +786,11 @@ describe("TaskExecutor.startExecution", () => {
       error_code: "claude_runtime_pending_after_turn",
       _event_id: expect.any(Number),
     });
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "error",
       last_event_id: expect.any(Number),
-    });
+      termination_reason: "error_aborted",
+    }));
     expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
   });
 
@@ -812,7 +821,7 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.status).toBe("completed");
     expect(mocks.persistEvent).toHaveBeenCalledTimes(3);
     // emitEventEnvelope는 user_message + 2건 = 3건 (persistEvent throw에도 broadcast는 호출됨)
-    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(3);
+    expect(mocks.emitEventEnvelope).toHaveBeenCalledTimes(4);
   });
 
   it("session 이벤트의 session_id가 task.codexThreadId에 박힘 (1회만)", async () => {
@@ -955,10 +964,11 @@ describe("TaskExecutor.startExecution", () => {
     await task.executionPromise;
     // 정상 종료 분기의 `if (status === "running") status = "completed"`가 발동 안 함
     expect(task.status).toBe("interrupted");
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "interrupted",
       last_event_id: expect.any(Number),
-    });
+      termination_reason: "unknown",
+    }));
   });
 
   it("engineFactory throw → status=error, finalize 호출", async () => {
@@ -1004,10 +1014,11 @@ describe("TaskExecutor.startExecution", () => {
     expect(task.error).toBe("prepare boom");
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(task.interventionQueue).toEqual([]);
-    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", {
+    expect(mocks.updateSession).toHaveBeenCalledWith("sess-1", expect.objectContaining({
       status: "error",
       last_event_id: 0,
-    });
+      termination_reason: "unknown",
+    }));
     const errorBroadcast = mocks.emitEventEnvelope.mock.calls.find(
       (c) =>
         (c[1] as { type: string }).type === "error" &&

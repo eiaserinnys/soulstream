@@ -24,6 +24,7 @@ describe("parseEnv", () => {
     expect(env.LLM_ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.CODEX_CLI_PATH).toBeUndefined();
     expect(env.CODEX_ADAPTER_MODE).toBe("sdk");
+    expect(env.MCP_TOOL_PROFILE).toBe("default");
   });
 
   it("SOULSTREAM_NODE_ID 부재 시 ZodError", () => {
@@ -163,6 +164,16 @@ describe("parseEnv", () => {
     it("MCP_PATH default '/mcp'", () => {
       const env = parseEnv(minimal);
       expect(env.MCP_PATH).toBe("/mcp");
+    });
+
+    it("MCP_TOOL_PROFILE은 default 또는 supervisor_readonly만 허용", () => {
+      expect(parseEnv(minimal).MCP_TOOL_PROFILE).toBe("default");
+      expect(
+        parseEnv({ ...minimal, MCP_TOOL_PROFILE: "supervisor_readonly" }).MCP_TOOL_PROFILE,
+      ).toBe("supervisor_readonly");
+      expect(() =>
+        parseEnv({ ...minimal, MCP_TOOL_PROFILE: "readonly" }),
+      ).toThrow(ZodError);
     });
 
     it("MCP_REQUIRE_AUTH default false", () => {

@@ -60,6 +60,9 @@ describe("TaskInterventionRoute.addIntervention", () => {
     const { route, loadEvictedTask, runningInterventionTransition, autoResumeTransition } =
       makeSubject([task]);
     const onResume = vi.fn();
+    const context = [
+      { key: "supervisor", label: "Supervisor", content: "fresh context" },
+    ];
 
     await expect(route.addIntervention({
       agentSessionId: "sess-intervention",
@@ -67,6 +70,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       user: "alice",
       callerInfo: { source: "slack", display_name: "Alice" },
       attachmentPaths: ["/tmp/a.png"],
+      context,
     }, onResume)).resolves.toEqual({ queued: true, queuePosition: 1 });
 
     expect(loadEvictedTask).not.toHaveBeenCalled();
@@ -75,6 +79,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       user: "alice",
       callerInfo: { source: "slack", display_name: "Alice" },
       attachmentPaths: ["/tmp/a.png"],
+      context,
     }, {
       queueIfUndelivered: true,
     });
@@ -102,6 +107,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       user: "alice",
       callerInfo: undefined,
       attachmentPaths: undefined,
+      context: undefined,
     }, onResume);
   });
 

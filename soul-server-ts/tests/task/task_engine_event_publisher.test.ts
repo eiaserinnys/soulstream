@@ -188,6 +188,42 @@ describe("TaskEngineEventPublisher", () => {
     );
   });
 
+  it("records credential_alert as a pending limit_hit termination hint only", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+
+    await publisher.publishEngineEvent(task, {
+      type: "credential_alert",
+      message: "rate limit",
+      timestamp: 2,
+    } as unknown as SSEEventPayload);
+
+    expect(task.status).toBe("running");
+    expect(task.pendingTerminationHint).toBe("limit_hit");
+    expect(task.pendingTerminationDetail).toBe("rate limit");
+    expect(task.terminationReason).toBeUndefined();
+  });
+
+  it("records fatal error as error_aborted hint before finalizer runs", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+
+    await publisher.publishEngineEvent(task, {
+      type: "error",
+      message: "backend died",
+      error_code: "provider_shutdown",
+      timestamp: 2,
+    } as unknown as SSEEventPayload);
+
+    expect(task.status).toBe("error");
+    expect(task.error).toBe("backend died");
+    expect(task.pendingTerminationHint).toBe("error_aborted");
+    expect(task.pendingTerminationDetail).toBe("provider_shutdown");
+    expect(task.terminationReason).toBeUndefined();
+  });
+
   it("isolates broadcast failure and still runs side effects", async () => {
     const deps = makePublisherDeps();
     deps.emitEventEnvelope.mockRejectedValueOnce(new Error("upstream down"));

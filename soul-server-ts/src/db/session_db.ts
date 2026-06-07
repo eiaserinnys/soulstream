@@ -20,6 +20,7 @@ import postgres from "postgres";
 
 import { DEFAULT_FOLDERS as SYSTEM_DEFAULT_FOLDERS } from "../system_folders.js";
 import type { TaskStatus } from "../task/task_models.js";
+import type { TerminationReason } from "../task/task_models.js";
 import { SoulstreamScheduleRepository } from "../schedule/schedule_repository.js";
 import { TaskTreeRepository } from "../task_tree/task_tree_repository.js";
 import {
@@ -57,6 +58,8 @@ const SESSION_UPDATE_ALLOWED = new Set([
   "was_running_at_shutdown",
   "last_event_id",
   "last_read_event_id",
+  "termination_reason",
+  "termination_detail",
 ]);
 
 /** 화이트리스트 컬럼만 허용. 위반 시 진입 시점 throw. */
@@ -71,6 +74,8 @@ export interface SessionUpdateFields {
   was_running_at_shutdown?: boolean;
   last_event_id?: number;
   last_read_event_id?: number;
+  termination_reason?: TerminationReason | null;
+  termination_detail?: string | null;
 }
 
 export interface LastMessageRow {
@@ -151,6 +156,8 @@ export interface SessionRow {
   agent_id: string | null;
   caller_session_id: string | null;
   away_summary: string | null;
+  termination_reason: string | null;
+  termination_detail: string | null;
 }
 
 export interface RunningSessionSummaryRow {
@@ -467,6 +474,7 @@ export class SessionDB {
         UPDATE sessions
         SET status = 'interrupted',
             was_running_at_shutdown = FALSE,
+            termination_reason = 'unknown',
             updated_at = NOW()
         WHERE node_id = ${nodeId}
           AND status = 'running'

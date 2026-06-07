@@ -10,6 +10,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import { applyClaudeRuntimeEvent } from "./claude_runtime_state.js";
 import type { Task } from "./task_models.js";
+import { recordTerminationHint } from "./task_termination.js";
 
 export interface TaskEngineEventPublisherDeps {
   broadcaster: SessionBroadcaster;
@@ -32,6 +33,7 @@ export class TaskEngineEventPublisher {
 
     await this.captureSessionId(task, event, eventType);
     this.captureClaudeRuntimeState(task, event);
+    this.captureTerminationHint(task, event, eventType);
     this.captureFatalEngineError(task, event, eventType);
     await this.persistEventIfNeeded(task, event, eventType);
     await this.broadcastEvent(task, event, eventType);
@@ -49,6 +51,33 @@ export class TaskEngineEventPublisher {
     task.status = "error";
     task.error = typeof payload.message === "string" ? payload.message : "Engine fatal error";
     task.result = undefined;
+  }
+
+  private captureTerminationHint(
+    task: Task,
+    event: SSEEventPayload,
+    eventType: string,
+  ): void {
+    if (eventType === "credential_alert") {
+      const detail = (event as { message?: unknown; detail?: unknown }).message ??
+        (event as { detail?: unknown }).detail;
+      recordTerminationHint(
+        task,
+        "limit_hit",
+        typeof detail === "string" ? detail : "credential_alert",
+      );
+      return;
+    }
+    if (eventType !== "error") return;
+    const payload = event as { fatal?: unknown; message?: unknown; error_code?: unknown };
+    if (payload.fatal === false) return;
+    const detail =
+      typeof payload.error_code === "string"
+        ? payload.error_code
+        : typeof payload.message === "string"
+          ? payload.message
+          : "Engine fatal error";
+    recordTerminationHint(task, "error_aborted", detail);
   }
 
   private async captureSessionId(

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 103개 $defs (wire 49 + SSE event 54). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 104개 $defs (wire 49 + SSE event 55). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -99,6 +99,7 @@
             { "$ref": "#/$defs/SSEEventComplete" },
             { "$ref": "#/$defs/SSEEventError" },
             { "$ref": "#/$defs/SSEEventCredentialAlert" },
+            { "$ref": "#/$defs/SSEEventSessionEnded" },
             { "$ref": "#/$defs/SSEEventThinking" },
             { "$ref": "#/$defs/SSEEventTextStart" },
             { "$ref": "#/$defs/SSEEventTextDelta" },
@@ -456,6 +457,11 @@
         "attachment_paths": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "extra_context_items": {
+          "type": "array",
+          "description": "Supervisor/live intervention ride-along context items.",
+          "items": { "type": "object", "additionalProperties": true }
         },
         "caller_info": { "type": "object", "additionalProperties": true }
       }
@@ -1193,6 +1199,22 @@
       "required": ["type"],
       "additionalProperties": true,
       "properties": { "type": { "const": "credential_alert" } }
+    },
+    "SSEEventSessionEnded": {
+      "type": "object",
+      "description": "SSE: 세션 종료 사유 확정 이벤트.",
+      "required": ["type", "status", "termination_reason"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "session_ended" },
+        "status": { "type": "string" },
+        "termination_reason": {
+          "type": "string",
+          "enum": ["completed_ok", "killed", "limit_hit", "error_aborted", "unknown"]
+        },
+        "termination_detail": { "type": ["string", "null"] },
+        "timestamp": { "type": "number" }
+      }
     },
     "SSEEventThinking": {
       "type": "object",

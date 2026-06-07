@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 103개 $defs (wire 49 + SSE event 54). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / orch-server/constants.py KNOWN_SSE_EVENT_TYPES L60-69 (실측 2026-05-16) + OpenAI Agents SDK parity (2026-05-21).
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 104개 $defs (wire 49 + SSE event 55). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -140,6 +140,7 @@ export interface SessionEventEnvelope {
     | SSEEventComplete
     | SSEEventError
     | SSEEventCredentialAlert
+    | SSEEventSessionEnded
     | SSEEventThinking
     | SSEEventTextStart
     | SSEEventTextDelta
@@ -284,6 +285,17 @@ export interface SSEEventError {
  */
 export interface SSEEventCredentialAlert {
   type: "credential_alert";
+  [k: string]: unknown;
+}
+/**
+ * SSE: 세션 종료 사유 확정 이벤트.
+ */
+export interface SSEEventSessionEnded {
+  type: "session_ended";
+  status: string;
+  termination_reason: "completed_ok" | "killed" | "limit_hit" | "error_aborted" | "unknown";
+  termination_detail?: string | null;
+  timestamp?: number;
   [k: string]: unknown;
 }
 /**
@@ -979,6 +991,12 @@ export interface Intervene {
   user?: string;
   requestId?: string;
   attachment_paths?: string[];
+  /**
+   * Supervisor/live intervention ride-along context items.
+   */
+  extra_context_items?: {
+    [k: string]: unknown;
+  }[];
   caller_info?: {
     [k: string]: unknown;
   };

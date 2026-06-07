@@ -24,10 +24,12 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 
 function makeMocks() {
   const updateSession = vi.fn().mockResolvedValue(undefined);
-  const db = { updateSession } as unknown as SessionDB;
+  const appendEvent = vi.fn().mockResolvedValue(8);
+  const db = { updateSession, appendEvent } as unknown as SessionDB;
 
   const emitSessionUpdated = vi.fn().mockResolvedValue(undefined);
-  const broadcaster = { emitSessionUpdated } as unknown as SessionBroadcaster;
+  const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+  const broadcaster = { emitSessionUpdated, emitEventEnvelope } as unknown as SessionBroadcaster;
 
   const transition = new TaskLifecycleTransition({
     db,
@@ -38,7 +40,9 @@ function makeMocks() {
   return {
     transition,
     updateSession,
+    appendEvent,
     emitSessionUpdated,
+    emitEventEnvelope,
   };
 }
 
@@ -91,9 +95,61 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(updateSession).toHaveBeenCalledWith("sess-1", {
       status: "completed",
-      last_event_id: 7,
+      last_event_id: 8,
+      termination_reason: "completed_ok",
+      termination_detail: null,
     });
     expect(emitSessionUpdated).toHaveBeenCalledWith(task);
+    expect(emitSessionUpdated).toHaveBeenCalledTimes(1);
+    expect(emitSessionUpdated.mock.invocationCallOrder[0]).toBeGreaterThan(
+      updateSession.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("emits session_ended once when finalizing a completed task", async () => {
+    const { transition, appendEvent, emitEventEnvelope } = makeMocks();
+    const task = makeTask();
+
+    await transition.finalizeExternalTask(task, { result: "done" });
+    await transition.persistExecutorFinalState(task);
+
+    expect(task.terminationReason).toBe("completed_ok");
+    expect(appendEvent).toHaveBeenCalledTimes(1);
+    expect(appendEvent).toHaveBeenCalledWith({
+      sessionId: "sess-1",
+      eventType: "session_ended",
+      payload: expect.stringContaining('"termination_reason":"completed_ok"'),
+      searchableText: "",
+      createdAt: task.completedAt,
+    });
+    expect(emitEventEnvelope).toHaveBeenCalledTimes(1);
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({
+        type: "session_ended",
+        status: "completed",
+        termination_reason: "completed_ok",
+        _event_id: 8,
+      }),
+    );
+  });
+
+  it("lets completed_ok outrank a prior limit_hit hint", async () => {
+    const { transition, updateSession } = makeMocks();
+    const task = makeTask({
+      pendingTerminationHint: "limit_hit",
+      pendingTerminationDetail: "rate limited once",
+    });
+
+    await transition.finalizeExternalTask(task, { result: "done" });
+
+    expect(task.terminationReason).toBe("completed_ok");
+    expect(updateSession).toHaveBeenCalledWith("sess-1", {
+      status: "completed",
+      last_event_id: 8,
+      termination_reason: "completed_ok",
+      termination_detail: null,
+    });
   });
 
   it("records error result and clears stale completed result", async () => {
@@ -108,7 +164,27 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
     expect(task.completedAt).toBeInstanceOf(Date);
     expect(updateSession).toHaveBeenCalledWith("sess-1", {
       status: "error",
-      last_event_id: 7,
+      last_event_id: 8,
+      termination_reason: "unknown",
+      termination_detail: null,
+    });
+  });
+
+  it("uses pending termination hints by precedence for non-completed final states", async () => {
+    const { transition, updateSession } = makeMocks();
+    const task = makeTask({
+      pendingTerminationHint: "limit_hit",
+      pendingTerminationDetail: "rate limit",
+    });
+
+    await transition.finalizeExternalTask(task, { error: "boom" });
+
+    expect(task.terminationReason).toBe("limit_hit");
+    expect(updateSession).toHaveBeenCalledWith("sess-1", {
+      status: "error",
+      last_event_id: 8,
+      termination_reason: "limit_hit",
+      termination_detail: "rate limit",
     });
   });
 });
@@ -125,7 +201,9 @@ describe("TaskLifecycleTransition.persistExecutorFinalState", () => {
     expect(task.completedAt).toBe(completedAt);
     expect(updateSession).toHaveBeenCalledWith("sess-1", {
       status: "interrupted",
-      last_event_id: 7,
+      last_event_id: 8,
+      termination_reason: "unknown",
+      termination_detail: null,
     });
     expect(emitSessionUpdated).toHaveBeenCalledWith(task);
   });
@@ -155,7 +233,9 @@ describe("TaskLifecycleTransition shutdown/delete interrupt helpers", () => {
     expect(task.completedAt).toBe(shutdownAt);
     expect(updateSession).toHaveBeenCalledWith("sess-1", {
       status: "interrupted",
-      last_event_id: 7,
+      last_event_id: 8,
+      termination_reason: "killed",
+      termination_detail: "shutdown",
     });
     expect(emitSessionUpdated).toHaveBeenCalledWith(task);
   });

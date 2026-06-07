@@ -94,6 +94,13 @@ export const EnvSchema = z
      */
     MCP_PATH: z.string().default("/mcp"),
     /**
+     * MCP tool surface profile. supervisor_readonly is for Supervisor sessions:
+     * mutation tools are hidden from listTools and blocked at execution time.
+     */
+    MCP_TOOL_PROFILE: z
+      .enum(["default", "supervisor_readonly"])
+      .default("default"),
+    /**
      * MCP 호출에 bearer auth 강제. superRefine으로 production + MCP_ENABLED일 때 강제.
      */
     MCP_REQUIRE_AUTH: z

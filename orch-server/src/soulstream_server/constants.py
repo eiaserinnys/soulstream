@@ -91,7 +91,7 @@ KNOWN_SSE_EVENT_TYPES = frozenset({
     "progress", "memory", "session", "intervention_sent", "user_message",
     "assistant_message", "input_request", "input_request_expired",
     "input_request_responded", "debug", "complete", "error",
-    "credential_alert", "thinking", "text_start", "text_delta", "text_end",
+    "credential_alert", "session_ended", "thinking", "text_start", "text_delta", "text_end",
     "tool_start", "tool_result", "result", "prompt_suggestion",
     "agent_updated", "handoff_requested", "handoff_occurred",
     "tool_approval_requested", "tool_approval_resolved",
@@ -113,5 +113,5 @@ KNOWN_SSE_EVENT_TYPES = frozenset({
     "claude_runtime_schedule_updated",
     "claude_runtime_schedule_deleted",
     "context_usage", "compact", "reconnect", "history_sync",
-    "metadata_updated",
+    "metadata_updated", "assistant_error", "away_summary",
 })

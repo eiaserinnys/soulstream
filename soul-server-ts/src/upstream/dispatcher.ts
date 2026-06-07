@@ -125,6 +125,7 @@ interface IntervenCmd extends CommandLike {
   user?: string;
   caller_info?: CallerInfo;
   attachment_paths?: string[];
+  extra_context_items?: ContextItem[];
 }
 
 interface InterruptSessionCmd extends CommandLike {
@@ -632,6 +633,7 @@ export class CommandDispatcher {
         user: cmd.user,
         callerInfo: cmd.caller_info,
         attachmentPaths: cmd.attachment_paths,
+        extraContextItems: cmd.extra_context_items,
       });
     } catch (err) {
       await this.sendError(cmd, err instanceof Error ? err.message : String(err));

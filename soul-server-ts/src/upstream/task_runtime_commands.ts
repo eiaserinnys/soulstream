@@ -43,6 +43,7 @@ export interface InterveneRuntimeParams {
   user?: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
+  extraContextItems?: ContextItem[];
 }
 
 export interface SessionCreatedAck {
@@ -130,6 +131,7 @@ export class TaskRuntimeCommands {
         user: params.user ?? "upstream",
         callerInfo: params.callerInfo,
         attachmentPaths: params.attachmentPaths,
+        context: params.extraContextItems,
       },
       (task) => this.startResumedTask(task),
     );
