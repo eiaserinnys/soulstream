@@ -23,9 +23,10 @@ import type {
   SSEEventPayload,
 } from "../engine/protocol.js";
 import type { EventPersistence } from "../db/event_persistence.js";
-import type { SessionDB } from "../db/session_db.js";
+import type { SessionDB, SupervisorRegistryRow } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
+import type { SupervisorWakeScheduler } from "../supervisor/wake_router.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
@@ -93,6 +94,9 @@ export class TaskExecutor {
     completionNotifier?: CompletionNotifier,
     scheduleToolHandler?: ScheduleToolUseHandler,
     private readonly claudeRuntimeTaskFollowup?: ClaudeRuntimeTaskFollowupPort,
+    supervisorWakeScheduler?: Pick<SupervisorWakeScheduler, "ingest">,
+    sourceNode?: string,
+    supervisorHandoverRunner?: { run(registry: SupervisorRegistryRow): Promise<void> },
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       db,
@@ -109,6 +113,9 @@ export class TaskExecutor {
       db,
       logger: this.logger,
       persistence,
+      sourceNode,
+      supervisorWakeScheduler,
+      supervisorHandoverRunner,
     });
     this.engineFailureRecovery = new TaskEngineFailureRecovery({
       broadcaster,

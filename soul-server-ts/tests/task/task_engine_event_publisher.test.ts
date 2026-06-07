@@ -31,13 +31,27 @@ function makePublisherDeps() {
   } as unknown as EventPersistence;
 
   const setClaudeSessionId = vi.fn(async () => undefined);
+  const appendSupervisorEvent = vi.fn(async () => ({
+    offset: 1,
+    inserted: true,
+    contiguousUpto: 1,
+    highestSeenEventId: 1,
+    gapStart: null,
+    gapEnd: null,
+  }));
   const getSupervisorRegistry = vi.fn(async () => null);
   const recordSupervisorUsageDelta = vi.fn(async () => undefined);
+  const upsertSupervisorRegistry = vi.fn(async () => undefined);
   const db = {
     setClaudeSessionId,
+    appendSupervisorEvent,
     getSupervisorRegistry,
     recordSupervisorUsageDelta,
+    upsertSupervisorRegistry,
   } as unknown as SessionDB;
+  const supervisorWakeScheduler = {
+    ingest: vi.fn(async () => ({ scheduled: true })),
+  };
 
   const emitEventEnvelope = vi.fn(async () => undefined);
   const broadcaster = {
@@ -58,7 +72,10 @@ function makePublisherDeps() {
     persistEvent,
     persistence,
     getSupervisorRegistry,
+    appendSupervisorEvent,
     recordSupervisorUsageDelta,
+    supervisorWakeScheduler,
+    upsertSupervisorRegistry,
     setClaudeSessionId,
   };
 }
@@ -94,6 +111,35 @@ describe("TaskEngineEventPublisher", () => {
     expect(deps.logger.info).toHaveBeenCalledWith(
       { sessionId: "sess-1", eventType: "assistant_message" },
       "emitEventEnvelope completed",
+    );
+  });
+
+  it("appends persisted events to supervisor_events and schedules wake routing", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher({
+      ...deps,
+      sourceNode: "node-1",
+      supervisorWakeScheduler: deps.supervisorWakeScheduler,
+    });
+    const task = makeTask();
+    const event = {
+      type: "assistant_message",
+      content: "hello",
+      timestamp: 1,
+    } as SSEEventPayload;
+
+    await publisher.publishEngineEvent(task, event);
+
+    expect(deps.appendSupervisorEvent).toHaveBeenCalledWith({
+      sourceNode: "node-1",
+      sourceSessionId: "sess-1",
+      sourceEventId: 42,
+      eventType: "assistant_message",
+      payload: event,
+      createdAt: new Date(1000),
+    });
+    expect(deps.supervisorWakeScheduler.ingest).toHaveBeenCalledWith(
+      "assistant_message",
     );
   });
 
@@ -226,6 +272,171 @@ describe("TaskEngineEventPublisher", () => {
     expect(deps.recordSupervisorUsageDelta.mock.invocationCallOrder[0]).toBeLessThan(
       deps.handleSideEffects.mock.invocationCallOrder[0],
     );
+  });
+
+  it("records only new complete usage for a repeated Codex turn id", async () => {
+    const deps = makePublisherDeps();
+    deps.getSupervisorRegistry.mockResolvedValue({
+      role: "ariela_codex",
+    } as never);
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({ profileId: "ariela_codex" });
+
+    await publisher.publishEngineEvent(task, {
+      type: "complete",
+      turn_id: "turn-1",
+      usage: { input_tokens: 10, output_tokens: 5 },
+      timestamp: 2,
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
+      type: "complete",
+      turn_id: "turn-1",
+      usage: { input_tokens: 10, output_tokens: 5 },
+      timestamp: 3,
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
+      type: "complete",
+      turn_id: "turn-1",
+      usage: { input_tokens: 12, output_tokens: 8 },
+      timestamp: 4,
+    } as unknown as SSEEventPayload);
+
+    expect(deps.recordSupervisorUsageDelta).toHaveBeenCalledTimes(2);
+    expect(deps.recordSupervisorUsageDelta).toHaveBeenNthCalledWith(1, {
+      role: "ariela_codex",
+      tokenDelta: 15,
+      compactionDelta: 0,
+      lastSeenAt: expect.any(Date),
+    });
+    expect(deps.recordSupervisorUsageDelta).toHaveBeenNthCalledWith(2, {
+      role: "ariela_codex",
+      tokenDelta: 5,
+      compactionDelta: 0,
+      lastSeenAt: expect.any(Date),
+    });
+  });
+
+  it("records Claude compact count and context usage delta", async () => {
+    const deps = makePublisherDeps();
+    deps.getSupervisorRegistry.mockResolvedValue({
+      role: "ariela_claude",
+    } as never);
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({ profileId: "ariela_claude" });
+
+    await publisher.publishEngineEvent(task, {
+      type: "context_usage",
+      used_tokens: 100,
+      timestamp: 2,
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
+      type: "context_usage",
+      used_tokens: 140,
+      timestamp: 3,
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
+      type: "compact",
+      timestamp: 4,
+    } as unknown as SSEEventPayload);
+
+    expect(deps.recordSupervisorUsageDelta).toHaveBeenCalledTimes(3);
+    expect(deps.recordSupervisorUsageDelta).toHaveBeenNthCalledWith(1, {
+      role: "ariela_claude",
+      tokenDelta: 100,
+      compactionDelta: 0,
+      lastSeenAt: expect.any(Date),
+    });
+    expect(deps.recordSupervisorUsageDelta).toHaveBeenNthCalledWith(2, {
+      role: "ariela_claude",
+      tokenDelta: 40,
+      compactionDelta: 0,
+      lastSeenAt: expect.any(Date),
+    });
+    expect(deps.recordSupervisorUsageDelta).toHaveBeenNthCalledWith(3, {
+      role: "ariela_claude",
+      tokenDelta: 0,
+      compactionDelta: 1,
+      lastSeenAt: expect.any(Date),
+    });
+  });
+
+  it("persists supervisor hard pending state without marking handover_running from publisher", async () => {
+    const now = new Date("2026-06-07T00:00:00.000Z");
+    const deps = makePublisherDeps();
+    deps.getSupervisorRegistry.mockResolvedValue({
+      role: "ariela_codex",
+    } as never);
+    deps.recordSupervisorUsageDelta.mockResolvedValueOnce({
+      role: "ariela_codex",
+      activeSessionId: "sess-supervisor",
+      epoch: 4,
+      cursorOffset: 11,
+      handoverState: "idle",
+      cumulativeTokens: 1_500_001,
+      compactionCount: 0,
+      lastSeenAt: now,
+      createdAt: now,
+      updatedAt: now,
+    } as never);
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({ profileId: "ariela_codex" });
+
+    await publisher.publishEngineEvent(task, {
+      type: "complete",
+      turn_id: "turn-hard",
+      usage: { input_tokens: 10 },
+      timestamp: 2,
+    } as unknown as SSEEventPayload);
+
+    expect(deps.upsertSupervisorRegistry).toHaveBeenCalledWith({
+      role: "ariela_codex",
+      activeSessionId: "sess-supervisor",
+      epoch: 4,
+      cursorOffset: 11,
+      handoverState: "hard_pending",
+      cumulativeTokens: 1_500_001,
+      compactionCount: 0,
+      lastSeenAt: now,
+    });
+  });
+
+  it("runs supervisor handover runner when a trigger is ready and runner is injected", async () => {
+    const now = new Date("2026-06-07T00:00:00.000Z");
+    const deps = makePublisherDeps();
+    const registry = {
+      role: "ariela_codex",
+      activeSessionId: "sess-supervisor",
+      epoch: 4,
+      cursorOffset: 11,
+      handoverState: "idle",
+      cumulativeTokens: 1_500_001,
+      compactionCount: 0,
+      lastSeenAt: now,
+      createdAt: now,
+      updatedAt: now,
+    };
+    deps.getSupervisorRegistry.mockResolvedValue({
+      role: "ariela_codex",
+    } as never);
+    deps.recordSupervisorUsageDelta.mockResolvedValueOnce(registry as never);
+    const supervisorHandoverRunner = {
+      run: vi.fn(async () => undefined),
+    };
+    const publisher = new TaskEngineEventPublisher({
+      ...deps,
+      supervisorHandoverRunner,
+    });
+    const task = makeTask({ profileId: "ariela_codex" });
+
+    await publisher.publishEngineEvent(task, {
+      type: "complete",
+      turn_id: "turn-hard",
+      usage: { input_tokens: 10 },
+      timestamp: 2,
+    } as unknown as SSEEventPayload);
+
+    expect(supervisorHandoverRunner.run).toHaveBeenCalledWith(registry);
+    expect(deps.upsertSupervisorRegistry).not.toHaveBeenCalled();
   });
 
   it("does not record complete usage when profile is not a supervisor registry", async () => {

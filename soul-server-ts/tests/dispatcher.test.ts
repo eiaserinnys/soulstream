@@ -708,6 +708,81 @@ describe("CommandDispatcher.intervene (B-4)", () => {
     expect(addIntervention).toHaveBeenCalled();
     expect(sent).toHaveLength(0);
   });
+
+  it("stale supervisor session direct-target intervene를 거부한다", async () => {
+    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { addIntervention } as Partial<TaskManager>,
+      sessionDb: {
+        listSupervisorRegistries: vi.fn(async () => [
+          {
+            role: "ariela_codex",
+            activeSessionId: "sess-active",
+            epoch: 3,
+          },
+        ]),
+        getSession: vi.fn(async () => ({
+          session_id: "sess-stale",
+          agent_id: "ariela_codex",
+        })),
+      } as Partial<SessionDB>,
+    });
+
+    await dispatcher.dispatch({
+      type: "intervene",
+      agentSessionId: "sess-stale",
+      text: "direct stale",
+      requestId: "stale-1",
+    });
+
+    expect(addIntervention).not.toHaveBeenCalled();
+    expect(sent[0]).toMatchObject({
+      type: "error",
+      requestId: "stale-1",
+      command_type: "intervene",
+    });
+    expect((sent[0] as { message: string }).message).toContain(
+      "Stale supervisor session direct target rejected",
+    );
+  });
+
+  it("supervisor_intervene는 role epoch를 active session으로 해석해 기존 intervention 경로를 사용한다", async () => {
+    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { addIntervention } as Partial<TaskManager>,
+      sessionDb: {
+        listSupervisorRegistries: vi.fn(async () => []),
+        getSession: vi.fn(async () => null),
+        getSupervisorRegistry: vi.fn(async () => ({
+          role: "ariela_codex",
+          activeSessionId: "sess-active",
+          epoch: 7,
+        })),
+      } as Partial<SessionDB>,
+    });
+
+    await dispatcher.dispatch({
+      type: "supervisor_intervene",
+      role: "ariela_codex",
+      expected_epoch: 7,
+      text: "drain cursor head",
+      requestId: "sup-1",
+    });
+
+    expect(addIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentSessionId: "sess-active",
+        text: "drain cursor head",
+        user: "supervisor",
+      }),
+      expect.any(Function),
+    );
+    expect(sent[0]).toMatchObject({
+      type: "intervene_ack",
+      requestId: "sup-1",
+      outcome: "queued",
+    });
+  });
 });
 
 describe("CommandDispatcher.interrupt_session", () => {

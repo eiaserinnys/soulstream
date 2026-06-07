@@ -289,6 +289,8 @@ export interface Task {
   pendingTerminationHint?: PendingTerminationHint;
   pendingTerminationDetail?: string | null;
   terminationEventRecorded?: boolean;
+  /** Supervisor usage normalization state. Runtime-only, never serialized to DB. */
+  supervisorUsageTotals?: Record<string, number>;
 
   /** Claude Agent SDK 장기 실행 runtime 상태. Task Tree와 별도 정본이다. */
   claudeRuntime?: ClaudeRuntimeState;
