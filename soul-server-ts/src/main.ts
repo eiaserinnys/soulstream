@@ -39,7 +39,6 @@ import { UpstreamAdapter } from "./upstream/adapter.js";
 import { SessionBroadcaster } from "./upstream/session_broadcaster.js";
 import { ScheduleDispatcher } from "./schedule/schedule_dispatcher.js";
 import { SoulstreamScheduleService } from "./schedule/schedule_service.js";
-import { DEFAULT_HANDOVER_MIN_INTERVAL_MS } from "./supervisor/handover_policy.js";
 import {
   SupervisorWakeRouter,
   SupervisorWakeScheduler,
@@ -47,6 +46,10 @@ import {
 } from "./supervisor/wake_router.js";
 import { SupervisorHandoverExecutor } from "./supervisor/handover_executor.js";
 import { detectMissingSupervisors } from "./supervisor/watchdog.js";
+import {
+  startConfiguredSupervisors,
+  validateConfiguredSupervisors,
+} from "./supervisor/activation.js";
 
 // Haniel cwd는 ./services/soulstream — install.configs.soul-server-ts-env path와 정합.
 // `.env`(Python soul-server용)와 *분리* 유지 — SOULSTREAM_NODE_ID 충돌 회피
@@ -58,8 +61,6 @@ import { detectMissingSupervisors } from "./supervisor/watchdog.js";
 // 부재 키는 부모 env 그대로 받음 — override는 *.env에 존재하는 키만* 덮어쓴다.
 // 회로: 260517 운영 사고(pm2 restart 209회 + EADDRINUSE + nodeId 충돌)를 영구 차단.
 const DOTENV_PATH = ".env.soul-server-ts";
-const SUPERVISOR_WATCHDOG_INTERVAL_MS = 60_000;
-const SUPERVISOR_WATCHDOG_MISSING_THRESHOLD_MS = 5 * 60_000;
 const dotenvResult = dotenv.config({ path: DOTENV_PATH, override: true });
 if (dotenvResult.error) {
   // logger 생성 *전*이라 console.warn 사용. fail-silent를 깨고 디버깅 가시성 확보.
@@ -127,6 +128,18 @@ async function main(): Promise<void> {
 
   const hasClaudeBackend = agentRegistry.supportedBackends().includes("claude");
   const hasCodexBackend = agentRegistry.supportedBackends().includes("codex");
+  const supervisorActivationConfig = {
+    enabled: env.SUPERVISOR_ENABLED,
+    roles: env.SUPERVISOR_ROLES,
+    folderId: env.SUPERVISOR_FOLDER_ID,
+  };
+  try {
+    validateConfiguredSupervisors(supervisorActivationConfig, agentRegistry);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Supervisor startup validation failed: ${message}`);
+    process.exit(1);
+  }
   if (hasClaudeBackend && !env.CLAUDE_AUTH_TOKEN_PATH) {
     console.error(
       "CLAUDE_AUTH_TOKEN_PATH is required when agents.yaml contains a Claude backend agent.",
@@ -340,39 +353,47 @@ async function main(): Promise<void> {
     onResume,
     logger,
   });
-  const supervisorWakeRouter = new SupervisorWakeRouter({
-    getCursor: (supervisorId) => db.getSupervisorConsumerCursor(supervisorId),
-    readEventsAfter: async (afterOffset, limit) =>
-      (await db.readSupervisorEventsAfter(afterOffset, limit)).map((event) => ({
-        offset: event.offset,
-        sourceSessionId: event.sourceSessionId,
-        eventType: event.eventType,
-        payload: event.payload,
-      })),
-    setCursor: async (supervisorId, cursorOffset) => {
-      await db.setSupervisorConsumerCursor(supervisorId, cursorOffset);
+  const supervisorWakeRouter = new SupervisorWakeRouter(
+    {
+      getCursor: (supervisorId) => db.getSupervisorConsumerCursor(supervisorId),
+      readEventsAfter: async (afterOffset, limit) =>
+        (await db.readSupervisorEventsAfter(afterOffset, limit)).map((event) => ({
+          offset: event.offset,
+          sourceSessionId: event.sourceSessionId,
+          eventType: event.eventType,
+          payload: event.payload,
+        })),
+      setCursor: async (supervisorId, cursorOffset) => {
+        await db.setSupervisorConsumerCursor(supervisorId, cursorOffset);
+      },
+      wake: async ({ supervisorId, events, wakeClass }) => {
+        const registry = await db.getSupervisorRegistry(supervisorId);
+        if (!registry?.activeSessionId) {
+          logger.warn({ supervisorId, wakeClass }, "Supervisor wake skipped: no active session");
+          return;
+        }
+        await taskManager.addIntervention(
+          {
+            agentSessionId: registry.activeSessionId,
+            text: buildSupervisorWakeText(supervisorId, wakeClass, events),
+            user: "supervisor",
+          },
+          onResume,
+        );
+      },
     },
-    wake: async ({ supervisorId, events, wakeClass }) => {
-      const registry = await db.getSupervisorRegistry(supervisorId);
-      if (!registry?.activeSessionId) {
-        logger.warn({ supervisorId, wakeClass }, "Supervisor wake skipped: no active session");
-        return;
-      }
-      await taskManager.addIntervention(
-        {
-          agentSessionId: registry.activeSessionId,
-          text: buildSupervisorWakeText(supervisorId, wakeClass, events),
-          user: "supervisor",
-        },
-        onResume,
-      );
-    },
-  });
-  const supervisorWakeScheduler = new SupervisorWakeScheduler({
-    listSupervisors: () => db.listSupervisorRegistries(),
-    router: supervisorWakeRouter,
-    logger,
-  });
+    { batchLimit: env.SUPERVISOR_WAKE_BATCH_LIMIT },
+  );
+  const supervisorWakeScheduler = env.SUPERVISOR_ENABLED
+    ? new SupervisorWakeScheduler(
+      {
+        listSupervisors: () => db.listSupervisorRegistries(),
+        router: supervisorWakeRouter,
+        logger,
+      },
+      { debounceMs: env.SUPERVISOR_WAKE_DEBOUNCE_MS },
+    )
+    : undefined;
   const runningSupervisorHandovers = new Set<string>();
   const lastSupervisorHandoverAt = new Map<string, number>();
   const supervisorHandoverRunner = {
@@ -380,7 +401,7 @@ async function main(): Promise<void> {
       if (runningSupervisorHandovers.has(registry.role)) return;
       const lastHandoverAt = lastSupervisorHandoverAt.get(registry.role) ?? 0;
       const nowMs = Date.now();
-      if (nowMs - lastHandoverAt < DEFAULT_HANDOVER_MIN_INTERVAL_MS) {
+      if (nowMs - lastHandoverAt < env.SUPERVISOR_HANDOVER_MIN_INTERVAL_MS) {
         logger.warn(
           { role: registry.role },
           "Supervisor handover skipped by minimum interval guard",
@@ -401,8 +422,10 @@ async function main(): Promise<void> {
                 previousSessionId,
                 asOfOffset: registry.cursorOffset,
                 events: [],
+                promptEventLimit: env.SUPERVISOR_HANDOVER_PROMPT_EVENT_LIMIT,
               }),
               profileId: role,
+              folderId: env.SUPERVISOR_FOLDER_ID,
               callerInfo: { source: "agent", display_name: "supervisor" },
             });
             return { sessionId };
@@ -414,10 +437,14 @@ async function main(): Promise<void> {
               previousSessionId,
               asOfOffset,
               events: [],
+              promptEventLimit: env.SUPERVISOR_HANDOVER_PROMPT_EVENT_LIMIT,
             });
           },
           drainReplacement: async ({ role, fromOffset }) => {
-            const events = await db.readSupervisorEventsAfter(fromOffset, 100);
+            const events = await db.readSupervisorEventsAfter(
+              fromOffset,
+              env.SUPERVISOR_HANDOVER_DRAIN_LIMIT,
+            );
             const cursorOffset = events[events.length - 1]?.offset ?? fromOffset;
             if (replacementTask) {
               replacementTask.prompt = buildSupervisorHandoverPrompt({
@@ -425,6 +452,7 @@ async function main(): Promise<void> {
                 previousSessionId: registry.activeSessionId ?? "",
                 asOfOffset: fromOffset,
                 events,
+                promptEventLimit: env.SUPERVISOR_HANDOVER_PROMPT_EVENT_LIMIT,
               });
             }
             return { cursorOffset };
@@ -466,7 +494,11 @@ async function main(): Promise<void> {
     claudeRuntimeTaskFollowup,
     supervisorWakeScheduler,
     env.SOULSTREAM_NODE_ID,
-    supervisorHandoverRunner,
+    env.SUPERVISOR_ENABLED ? supervisorHandoverRunner : undefined,
+    {
+      softTokenThreshold: env.SUPERVISOR_SOFT_TOKEN_THRESHOLD,
+      hardTokenThreshold: env.SUPERVISOR_HARD_TOKEN_THRESHOLD,
+    },
   );
   const scheduleDispatcher = new ScheduleDispatcher(
     { nodeId: env.SOULSTREAM_NODE_ID },
@@ -476,22 +508,24 @@ async function main(): Promise<void> {
     logger,
   );
   scheduleDispatcher.start();
-  const supervisorWatchdogInterval = setInterval(() => {
-    void (async () => {
-      try {
-        const alerts = detectMissingSupervisors(
-          await db.listSupervisorRegistries(),
-          new Date(),
-          SUPERVISOR_WATCHDOG_MISSING_THRESHOLD_MS,
-        );
-        for (const alert of alerts) {
-          logger.warn({ supervisor: alert }, "Supervisor watchdog alert");
+  const supervisorWatchdogInterval = env.SUPERVISOR_ENABLED
+    ? setInterval(() => {
+      void (async () => {
+        try {
+          const alerts = detectMissingSupervisors(
+            await db.listSupervisorRegistries(),
+            new Date(),
+            env.SUPERVISOR_WATCHDOG_MISSING_THRESHOLD_MS,
+          );
+          for (const alert of alerts) {
+            logger.warn({ supervisor: alert }, "Supervisor watchdog alert");
+          }
+        } catch (err) {
+          logger.warn({ err }, "Supervisor watchdog check failed");
         }
-      } catch (err) {
-        logger.warn({ err }, "Supervisor watchdog check failed");
-      }
-    })();
-  }, SUPERVISOR_WATCHDOG_INTERVAL_MS);
+      })();
+    }, env.SUPERVISOR_WATCHDOG_INTERVAL_MS)
+    : undefined;
 
   const boardYjsService = new BoardYjsService({
     db,
@@ -629,10 +663,27 @@ async function main(): Promise<void> {
     process.exit(1);
   });
 
+  if (env.SUPERVISOR_ENABLED) {
+    try {
+      const supervisorActivation = await startConfiguredSupervisors({
+        config: supervisorActivationConfig,
+        agentRegistry,
+        db,
+        taskManager,
+        taskExecutor,
+        logger,
+      });
+      logger.info({ supervisorActivation }, "Supervisor activation completed");
+    } catch (err) {
+      logger.fatal({ err }, "Supervisor activation failed");
+      process.exit(1);
+    }
+  }
+
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutdown signal received");
-    clearInterval(supervisorWatchdogInterval);
-    supervisorWakeScheduler.dispose();
+    if (supervisorWatchdogInterval) clearInterval(supervisorWatchdogInterval);
+    supervisorWakeScheduler?.dispose();
     try {
       scheduleDispatcher.stop();
       await taskManager.shutdown();
@@ -700,9 +751,11 @@ function buildSupervisorHandoverPrompt(params: {
   previousSessionId: string;
   asOfOffset: number;
   events: SupervisorEventRow[];
+  promptEventLimit?: number;
 }): string {
   const head = params.events[params.events.length - 1]?.offset ?? params.asOfOffset;
-  const eventLines = params.events.slice(0, 20).map((event) =>
+  const promptEventLimit = params.promptEventLimit ?? 20;
+  const eventLines = params.events.slice(0, promptEventLimit).map((event) =>
     `- #${event.offset} ${event.eventType} session=${event.sourceSessionId} event=${event.sourceEventId}`,
   );
   const lines = [
