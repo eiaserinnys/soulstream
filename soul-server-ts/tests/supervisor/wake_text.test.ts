@@ -125,6 +125,43 @@ describe("Supervisor wake text", () => {
     expect(text).toContain("omitted_sessions=1");
   });
 
+  it("prioritizes trigger sessions over earlier noise-only sessions when applying the session cap", () => {
+    const events: SupervisorWakeEvent[] = [
+      ...Array.from({ length: 5 }, (_, index) => ({
+        offset: index + 1,
+        sourceSessionId: `noise-${index + 1}`,
+        eventType: "text_delta",
+        payload: { type: "text_delta", text: `noise ${index + 1}` },
+      })),
+      {
+        offset: 6,
+        sourceSessionId: "trigger-session",
+        eventType: "credential_alert",
+        payload: { type: "credential_alert", message: "OAuth token expired" },
+      },
+    ];
+
+    const text = buildSupervisorWakeText({
+      supervisorId: "ariela_codex",
+      wakeClass: "critical",
+      events,
+      sessions: {
+        "trigger-session": {
+          sessionId: "trigger-session",
+          title: "Needs intervention",
+          status: "running",
+        },
+      },
+      maxSessions: 5,
+      maxTextChars: 120,
+    });
+
+    expect(text).toContain("trigger_sessions=trigger-session");
+    expect(text).toContain("## session trigger-session");
+    expect(text).toContain("title=Needs intervention");
+    expect(text).toContain("omitted_sessions=1");
+  });
+
   it("truncates long message bodies", () => {
     const text = buildSupervisorWakeText({
       supervisorId: "ariela_codex",

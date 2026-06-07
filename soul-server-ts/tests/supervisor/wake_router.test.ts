@@ -186,7 +186,7 @@ describe("SupervisorWakeRouter", () => {
     });
   });
 
-  it("drains a source session instead of waking when owner lookup fails", async () => {
+  it("does not advance the cursor or wake when source session owner lookup fails", async () => {
     const wake = vi.fn(async () => undefined);
     const setCursor = vi.fn(async () => undefined);
     const warn = vi.fn();
@@ -203,11 +203,10 @@ describe("SupervisorWakeRouter", () => {
       logger: { warn },
     });
 
-    await expect(router.flush("ariela_codex", "sess-current-supervisor")).resolves.toEqual({
-      woken: false,
-      drained: 1,
-    });
-    expect(setCursor).toHaveBeenCalledWith("ariela_codex", 71);
+    await expect(router.flush("ariela_codex", "sess-current-supervisor")).rejects.toThrow(
+      "Supervisor wake router source session lookup failed",
+    );
+    expect(setCursor).not.toHaveBeenCalled();
     expect(wake).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(
       {

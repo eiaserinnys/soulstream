@@ -107,6 +107,8 @@ export class TaskExecutor {
       db,
       broadcaster,
       logger: this.logger,
+      sourceNode,
+      supervisorWakeScheduler,
     });
     this.executorFinalizer = new TaskExecutorFinalizer({
       lifecycleTransition: this.lifecycleTransition,

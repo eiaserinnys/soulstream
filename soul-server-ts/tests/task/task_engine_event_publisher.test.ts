@@ -148,6 +148,9 @@ describe("TaskEngineEventPublisher", () => {
 
   it("touches supervisor heartbeat for non-usage activity events", async () => {
     const deps = makePublisherDeps();
+    deps.getSupervisorRegistry.mockResolvedValueOnce({
+      role: "ariela_codex",
+    } as never);
     const publisher = new TaskEngineEventPublisher(deps);
     const task = makeTask({ profileId: "ariela_codex" });
     const event = {
@@ -158,6 +161,7 @@ describe("TaskEngineEventPublisher", () => {
 
     await publisher.publishEngineEvent(task, event);
 
+    expect(deps.getSupervisorRegistry).toHaveBeenCalledWith("ariela_codex");
     expect(deps.touchSupervisorRegistry).toHaveBeenCalledWith(
       "ariela_codex",
       expect.any(Date),
@@ -165,7 +169,7 @@ describe("TaskEngineEventPublisher", () => {
     expect(deps.recordSupervisorUsageDelta).not.toHaveBeenCalled();
   });
 
-  it("throttles heartbeat touch attempts even when the profile has no supervisor registry", async () => {
+  it("skips heartbeat touch for non-supervisor profiles and throttles registry checks", async () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date(1_000));
@@ -183,7 +187,8 @@ describe("TaskEngineEventPublisher", () => {
       await vi.advanceTimersByTimeAsync(15_000);
       await publisher.publishEngineEvent(task, event);
 
-      expect(deps.touchSupervisorRegistry).toHaveBeenCalledTimes(2);
+      expect(deps.getSupervisorRegistry).toHaveBeenCalledTimes(2);
+      expect(deps.touchSupervisorRegistry).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

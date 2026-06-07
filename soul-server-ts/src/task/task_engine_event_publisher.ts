@@ -272,6 +272,11 @@ export class TaskEngineEventPublisher {
 
     const lastSeenAt = new Date(nowMs);
     try {
+      const registry = await this.deps.db.getSupervisorRegistry(task.profileId);
+      if (!registry) {
+        this.supervisorHeartbeatTouchedAtMs.set(task.profileId, nowMs);
+        return;
+      }
       await this.deps.db.touchSupervisorRegistry(
         task.profileId,
         lastSeenAt,

@@ -1,6 +1,7 @@
 import type { SessionRow } from "../db/session_db.js";
 import { extractCallerInfoFromMetadata } from "../task/task_metadata.js";
 
+import { classifyWakeEvent, type WakeClass } from "./wake_classification.js";
 import type { SupervisorWakeEvent } from "./wake_router.js";
 
 export interface SupervisorWakeSessionSummary {
@@ -30,6 +31,12 @@ const DEFAULT_MAX_SESSIONS = 5;
 const DEFAULT_MAX_EVENTS_PER_SESSION = 6;
 const DEFAULT_MAX_TEXT_CHARS = 320;
 const NOISE_EVENT_TYPES = new Set(["text_delta", "progress", "debug"]);
+const WAKE_CLASS_PRIORITY: Record<WakeClass, number> = {
+  critical: 0,
+  wake: 1,
+  batch: 2,
+  quiet: 3,
+};
 
 type WakeSessionRow = Partial<
   Pick<
@@ -72,7 +79,7 @@ export function buildSupervisorWakeText(params: BuildSupervisorWakeTextParams): 
   const maxTextChars = params.maxTextChars ?? DEFAULT_MAX_TEXT_CHARS;
   const head = params.events[params.events.length - 1]?.offset ?? 0;
   const groups = groupEventsBySession(params.events);
-  const triggerSessions = triggerSessionIds(params.events);
+  const triggerSessions = triggerSessionIds(groups);
   const lines = [
     `[supervisor wake] role=${params.supervisorId} class=${params.wakeClass} head=${head} trigger_sessions=${triggerSessions.join(",") || "none"}`,
     `events=${params.events.length} sessions=${groups.length}`,
@@ -94,33 +101,62 @@ function groupEventsBySession(events: SupervisorWakeEvent[]): Array<{
   sessionId: string;
   events: SupervisorWakeEvent[];
 }> {
-  const groups = new Map<string, SupervisorWakeEvent[]>();
-  for (const event of events) {
+  const groups = new Map<string, { events: SupervisorWakeEvent[]; firstIndex: number }>();
+  for (const [index, event] of events.entries()) {
     const sessionId = event.sourceSessionId ?? "unknown";
     const group = groups.get(sessionId);
     if (group) {
-      group.push(event);
+      group.events.push(event);
     } else {
-      groups.set(sessionId, [event]);
+      groups.set(sessionId, { events: [event], firstIndex: index });
     }
   }
-  return Array.from(groups.entries()).map(([sessionId, groupEvents]) => ({
-    sessionId,
-    events: groupEvents,
-  }));
+  return Array.from(groups.entries())
+    .map(([sessionId, group]) => ({
+      sessionId,
+      events: group.events,
+      firstIndex: group.firstIndex,
+      priority: groupPriority(group.events),
+    }))
+    .sort((left, right) =>
+      left.priority - right.priority || left.firstIndex - right.firstIndex
+    )
+    .map(({ sessionId, events: groupEvents }) => ({
+      sessionId,
+      events: groupEvents,
+    }));
 }
 
-function triggerSessionIds(events: SupervisorWakeEvent[]): string[] {
+function triggerSessionIds(groups: Array<{
+  sessionId: string;
+  events: SupervisorWakeEvent[];
+}>): string[] {
   const result: string[] = [];
   const seen = new Set<string>();
-  for (const event of events) {
-    if (NOISE_EVENT_TYPES.has(event.eventType)) continue;
-    const sessionId = event.sourceSessionId ?? "unknown";
-    if (seen.has(sessionId)) continue;
-    seen.add(sessionId);
-    result.push(sessionId);
+  for (const group of groups) {
+    if (!hasTriggerEvent(group.events)) continue;
+    if (seen.has(group.sessionId)) continue;
+    seen.add(group.sessionId);
+    result.push(group.sessionId);
   }
   return result;
+}
+
+function groupPriority(events: SupervisorWakeEvent[]): number {
+  let priority = Number.POSITIVE_INFINITY;
+  for (const event of events) {
+    const wakeClass = classifyWakeEvent(event.eventType);
+    if (!wakeClass) continue;
+    priority = Math.min(priority, WAKE_CLASS_PRIORITY[wakeClass]);
+  }
+  return Number.isFinite(priority) ? priority : 4;
+}
+
+function hasTriggerEvent(events: SupervisorWakeEvent[]): boolean {
+  return events.some((event) => {
+    const wakeClass = classifyWakeEvent(event.eventType);
+    return wakeClass !== null && wakeClass !== "quiet";
+  });
 }
 
 function formatSessionGroup(

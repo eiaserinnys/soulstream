@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
+import { buildSupervisorWakeText } from "../../src/supervisor/wake_text.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
@@ -22,10 +23,21 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function makeMocks() {
+function makeMocks(options: {
+  sourceNode?: string;
+  supervisorWakeScheduler?: { ingest(eventType: string): Promise<{ scheduled: boolean }> };
+} = {}) {
   const updateSession = vi.fn().mockResolvedValue(undefined);
   const appendEvent = vi.fn().mockResolvedValue(8);
-  const db = { updateSession, appendEvent } as unknown as SessionDB;
+  const appendSupervisorEvent = vi.fn().mockResolvedValue({
+    offset: 1,
+    inserted: true,
+    contiguousUpto: 8,
+    highestSeenEventId: 8,
+    gapStart: null,
+    gapEnd: null,
+  });
+  const db = { updateSession, appendEvent, appendSupervisorEvent } as unknown as SessionDB;
 
   const emitSessionUpdated = vi.fn().mockResolvedValue(undefined);
   const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
@@ -35,12 +47,15 @@ function makeMocks() {
     db,
     broadcaster,
     logger: silentLogger,
+    sourceNode: options.sourceNode,
+    supervisorWakeScheduler: options.supervisorWakeScheduler,
   });
 
   return {
     transition,
     updateSession,
     appendEvent,
+    appendSupervisorEvent,
     emitSessionUpdated,
     emitEventEnvelope,
   };
@@ -132,6 +147,56 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
         _event_id: 8,
       }),
     );
+  });
+
+  it("routes session_ended into supervisor wake text with session summary", async () => {
+    const supervisorWakeScheduler = {
+      ingest: vi.fn(async () => ({ scheduled: true })),
+    };
+    const { transition, appendSupervisorEvent } = makeMocks({
+      sourceNode: "node-1",
+      supervisorWakeScheduler,
+    });
+    const task = makeTask();
+
+    await transition.finalizeExternalTask(task, { result: "done" });
+    const supervisorEvent = appendSupervisorEvent.mock.calls[0]?.[0];
+    const wakeText = buildSupervisorWakeText({
+      supervisorId: "ariela_codex",
+      wakeClass: "wake",
+      events: [
+        {
+          offset: 1,
+          sourceSessionId: supervisorEvent.sourceSessionId,
+          eventType: supervisorEvent.eventType,
+          payload: supervisorEvent.payload,
+        },
+      ],
+      sessions: {
+        "sess-1": {
+          sessionId: "sess-1",
+          title: "Finished task",
+          status: "completed",
+          awaySummary: "Completed after checking the queue.",
+        },
+      },
+    });
+
+    expect(appendSupervisorEvent).toHaveBeenCalledWith({
+      sourceNode: "node-1",
+      sourceSessionId: "sess-1",
+      sourceEventId: 8,
+      eventType: "session_ended",
+      payload: expect.objectContaining({
+        type: "session_ended",
+        status: "completed",
+        termination_reason: "completed_ok",
+        _event_id: 8,
+      }),
+      createdAt: task.completedAt,
+    });
+    expect(supervisorWakeScheduler.ingest).toHaveBeenCalledWith("session_ended");
+    expect(wakeText).toContain("session_summary=Completed after checking the queue.");
   });
 
   it("lets completed_ok outrank a prior limit_hit hint", async () => {

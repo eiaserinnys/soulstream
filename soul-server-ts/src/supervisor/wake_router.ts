@@ -189,7 +189,9 @@ export class SupervisorWakeRouter {
           { err, supervisorId, sourceSessionId },
           "Supervisor wake router source session lookup failed",
         );
-        selfGeneratedSessionIds.add(sourceSessionId);
+        throw new Error("Supervisor wake router source session lookup failed", {
+          cause: err,
+        });
       }
     }
     return selfGeneratedSessionIds;
