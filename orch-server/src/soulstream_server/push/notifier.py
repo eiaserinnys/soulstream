@@ -97,6 +97,13 @@ def _wire_session_id(data: dict) -> str | None:
     return session_id if isinstance(session_id, str) and session_id else None
 
 
+def _wire_folder_id(data: dict) -> str | None:
+    folder_id = (
+        data.get("folder_id") if "folder_id" in data else data.get("folderId")
+    )
+    return folder_id if isinstance(folder_id, str) and folder_id else None
+
+
 def _wire_session_type(data: dict) -> str:
     value = data.get("session_type") or data.get("sessionType") or ""
     return str(value).lower()
@@ -148,16 +155,47 @@ def _input_request_body(data: dict, session_id: str) -> str:
     )
 
 
+def _assignment_folder_id(assignments: Any, session_id: str) -> tuple[bool, str | None]:
+    if not isinstance(assignments, dict) or session_id not in assignments:
+        return False, None
+    assignment = assignments.get(session_id)
+    if isinstance(assignment, dict):
+        raw = (
+            assignment.get("folderId")
+            if "folderId" in assignment
+            else assignment.get("folder_id")
+        )
+    else:
+        raw = assignment
+    return True, raw if isinstance(raw, str) and raw else None
+
+
+def _folder_excludes_notifications(folders: Any, folder_id: str) -> bool:
+    if not isinstance(folders, list):
+        return False
+    for folder in folders:
+        if not isinstance(folder, dict) or folder.get("id") != folder_id:
+            continue
+        settings = folder.get("settings") or {}
+        return (
+            isinstance(settings, dict)
+            and settings.get("excludeFromNotification") is True
+        )
+    return False
+
+
 class PushNotifier:
     def __init__(
         self,
         provider: PushNotificationProvider,
         repo: PushRepository,
         node_manager: Any,
+        catalog_service: Any | None = None,
     ):
         self._provider = provider
         self._repo = repo
         self._node_manager = node_manager
+        self._catalog_service = catalog_service
         # (node_id, session_id) → 직전 status. terminal 전환 시점만 push 발사.
         # 메모리에만 유지 (orch-server 재시작 시 리셋되어도 OK — 첫 push는 "완료 알림"이 정상).
         self._last_status: dict[tuple[str, str], str] = {}
@@ -222,6 +260,8 @@ class PushNotifier:
             session_id[:8], prev, new_status, will_fire,
         )
         if will_fire:
+            if await self._should_skip_for_notification_settings(session_id, data):
+                return
             title = "세션 완료" if new_status == "completed" else "세션 오류"
             # 본문 우선순위: last_assistant_text → last_message.preview → display_name
             #              → last_progress_text → title fallback. (_push_body_preview 참조)
@@ -250,7 +290,10 @@ class PushNotifier:
             return
         session_id = _wire_session_id(data)
         if not session_id:
-            logger.info("[push] input_request skipped — no session_id (data_keys=%s)", sorted((data or {}).keys()))
+            logger.info(
+                "[push] input_request skipped — no session_id (data_keys=%s)",
+                sorted((data or {}).keys()),
+            )
             return
         foreground_count = _foreground_observer_count(data)
         if foreground_count > 0:
@@ -258,6 +301,8 @@ class PushNotifier:
                 "[push] input_request skipped — foreground observer(s) sid=%s count=%d",
                 session_id[:8], foreground_count,
             )
+            return
+        if await self._should_skip_for_notification_settings(session_id, data):
             return
         title = _input_request_title(data)
         body = _input_request_body(data, session_id)
@@ -272,11 +317,46 @@ class PushNotifier:
             data={
                 "sessionId": session_id,
                 "kind": "input_request",
-                "responseWaitKind": data.get("response_wait_kind") or data.get("responseWaitKind"),
+                "responseWaitKind": data.get("response_wait_kind")
+                or data.get("responseWaitKind"),
                 "sessionType": data.get("session_type") or data.get("sessionType"),
                 "callerSource": data.get("caller_source") or data.get("callerSource"),
             },
         )
+
+    async def _should_skip_for_notification_settings(
+        self, session_id: str, data: dict
+    ) -> bool:
+        """Return true when the session's direct folder disables push notifications."""
+        if self._catalog_service is None:
+            return False
+
+        try:
+            assignments = await self._catalog_service.list_session_assignments()
+            assignment_found, folder_id = _assignment_folder_id(
+                assignments, session_id
+            )
+            if assignment_found and folder_id is None:
+                return False
+            if not assignment_found:
+                folder_id = _wire_folder_id(data)
+            if folder_id is None:
+                return False
+
+            folders = await self._catalog_service.list_folders()
+            if _folder_excludes_notifications(folders, folder_id):
+                logger.info(
+                    "[push] skipped — folder excludes notifications sid=%s folder=%s",
+                    session_id[:8],
+                    folder_id,
+                )
+                return True
+        except Exception:
+            logger.exception(
+                "[push] folder notification setting lookup failed sid=%s",
+                session_id[:8],
+            )
+        return False
 
     async def _send_to_user(
         self, node_id: str, *, title: str, body: str, data: dict

@@ -18,6 +18,7 @@ export interface AtomContextNodeSettings {
 /** 폴더 설정 */
 export interface FolderSettings {
   excludeFromFeed?: boolean;
+  excludeFromNotification?: boolean;
   folderPrompt?: string;          // 새 세션 시작 시 컨텍스트에 주입할 지시사항
   atomContextNode?: AtomContextNodeSettings; // atom 트리 주입 설정
 }
