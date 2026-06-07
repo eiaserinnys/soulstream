@@ -151,6 +151,73 @@ describe("SupervisorWakeRouter", () => {
     expect(wake).not.toHaveBeenCalled();
   });
 
+  it("drains events from any session owned by the same supervisor role", async () => {
+    const wake = vi.fn(async () => undefined);
+    const setCursor = vi.fn(async () => undefined);
+    const getSourceSessionAgentId = vi.fn(async (sourceSessionId: string) =>
+      sourceSessionId === "sess-old-supervisor" ? "ariela_codex" : "ordinary-agent"
+    );
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => 60),
+      readEventsAfter: vi.fn(async () => [
+        { offset: 61, sourceSessionId: "sess-old-supervisor", eventType: "assistant_message" },
+        { offset: 62, sourceSessionId: "sess-old-supervisor", eventType: "complete" },
+        { offset: 63, sourceSessionId: "sess-other", eventType: "user_message" },
+      ]),
+      setCursor,
+      wake,
+      getSourceSessionAgentId,
+    });
+
+    await expect(router.flush("ariela_codex", "sess-current-supervisor")).resolves.toEqual({
+      woken: true,
+      drained: 3,
+    });
+    expect(getSourceSessionAgentId).toHaveBeenCalledTimes(2);
+    expect(getSourceSessionAgentId).toHaveBeenCalledWith("sess-old-supervisor");
+    expect(getSourceSessionAgentId).toHaveBeenCalledWith("sess-other");
+    expect(setCursor).toHaveBeenCalledWith("ariela_codex", 63);
+    expect(wake).toHaveBeenCalledWith({
+      supervisorId: "ariela_codex",
+      wakeClass: "wake",
+      events: [
+        { offset: 63, sourceSessionId: "sess-other", eventType: "user_message" },
+      ],
+    });
+  });
+
+  it("does not advance the cursor or wake when source session owner lookup fails", async () => {
+    const wake = vi.fn(async () => undefined);
+    const setCursor = vi.fn(async () => undefined);
+    const warn = vi.fn();
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => 70),
+      readEventsAfter: vi.fn(async () => [
+        { offset: 71, sourceSessionId: "sess-unknown", eventType: "user_message" },
+      ]),
+      setCursor,
+      wake,
+      getSourceSessionAgentId: vi.fn(async () => {
+        throw new Error("db down");
+      }),
+      logger: { warn },
+    });
+
+    await expect(router.flush("ariela_codex", "sess-current-supervisor")).rejects.toThrow(
+      "Supervisor wake router source session lookup failed",
+    );
+    expect(setCursor).not.toHaveBeenCalled();
+    expect(wake).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      {
+        err: expect.any(Error),
+        supervisorId: "ariela_codex",
+        sourceSessionId: "sess-unknown",
+      },
+      "Supervisor wake router source session lookup failed",
+    );
+  });
+
   it("does not advance the cursor when wake delivery fails", async () => {
     const wake = vi.fn(async () => {
       throw new Error("wake failed");

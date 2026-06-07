@@ -20,6 +20,10 @@ interface TaskLifecycleTransitionDeps {
   db: SessionDB;
   broadcaster: SessionBroadcaster;
   logger: Logger;
+  sourceNode?: string;
+  supervisorWakeScheduler?: {
+    ingest(eventType: string): Promise<{ scheduled: boolean }>;
+  };
 }
 
 interface FinalStateLogMessages {
@@ -173,6 +177,7 @@ export class TaskLifecycleTransition {
       task.lastEventId = eventId;
       (event as Record<string, unknown>)._event_id = eventId;
       task.terminationEventRecorded = true;
+      await this.appendSupervisorSessionEndedIfNeeded(task, event, eventId);
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
@@ -186,6 +191,30 @@ export class TaskLifecycleTransition {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
         messages.broadcast,
+      );
+    }
+  }
+
+  private async appendSupervisorSessionEndedIfNeeded(
+    task: Task,
+    event: ReturnType<typeof buildSessionEndedEvent>,
+    eventId: number,
+  ): Promise<void> {
+    if (!this.deps.sourceNode) return;
+    try {
+      await this.deps.db.appendSupervisorEvent({
+        sourceNode: this.deps.sourceNode,
+        sourceSessionId: task.agentSessionId,
+        sourceEventId: eventId,
+        eventType: "session_ended",
+        payload: event,
+        createdAt: task.completedAt ?? new Date(),
+      });
+      await this.deps.supervisorWakeScheduler?.ingest("session_ended");
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId, eventId },
+        "appendSupervisorEvent failed for session_ended",
       );
     }
   }

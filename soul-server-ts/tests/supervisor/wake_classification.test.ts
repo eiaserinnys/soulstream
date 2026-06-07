@@ -19,5 +19,7 @@ describe("Supervisor wake classification", () => {
   it("returns null for unknown events instead of throwing or classifying as quiet", () => {
     expect(() => classifyWakeEvent("metadata")).not.toThrow();
     expect(classifyWakeEvent("metadata")).toBeNull();
+    expect(() => classifyWakeEvent("system_message")).not.toThrow();
+    expect(classifyWakeEvent("system_message")).toBeNull();
   });
 });
