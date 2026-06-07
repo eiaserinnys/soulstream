@@ -1,0 +1,167 @@
+import { randomUUID } from "node:crypto";
+
+import type { Logger } from "pino";
+
+import type { AgentRegistry } from "../agent_registry.js";
+import type { SessionDB, SupervisorRegistryRow } from "../db/session_db.js";
+import type { TaskExecutor } from "../task/task_executor.js";
+import type { TaskManager } from "../task/task_manager.js";
+
+export interface SupervisorActivationConfig {
+  enabled: boolean;
+  roles: string[];
+  folderId?: string;
+}
+
+export type SupervisorActivationStatus = "disabled" | "existing" | "started";
+
+export interface SupervisorActivationResult {
+  role: string;
+  status: SupervisorActivationStatus;
+  sessionId?: string;
+}
+
+export interface SupervisorActivationDeps {
+  config: SupervisorActivationConfig;
+  agentRegistry: Pick<AgentRegistry, "get">;
+  db: Pick<SessionDB, "getSupervisorRegistry" | "getSession" | "upsertSupervisorRegistry">;
+  taskManager: Pick<TaskManager, "createTask" | "cancelTask">;
+  taskExecutor: Pick<TaskExecutor, "startExecution">;
+  logger: Pick<Logger, "info" | "warn">;
+  now?: () => Date;
+  sessionIdFactory?: (role: string) => string;
+}
+
+export function buildSupervisorBootPrompt(role: string): string {
+  return [
+    `[supervisor bootstrap] role=${role}`,
+    "Watch supervisor wake messages and decide whether action is needed.",
+    "The durable supervisor registry has selected this session as the active supervisor for the role.",
+    "When a wake message arrives, inspect the event summary before intervening.",
+  ].join("\n");
+}
+
+export async function startConfiguredSupervisors(
+  deps: SupervisorActivationDeps,
+): Promise<SupervisorActivationResult[]> {
+  if (!deps.config.enabled) {
+    return [{ role: "", status: "disabled" }];
+  }
+
+  const results: SupervisorActivationResult[] = [];
+  for (const role of deps.config.roles) {
+    results.push(await ensureSupervisorStarted(deps, role));
+  }
+  return results;
+}
+
+async function ensureSupervisorStarted(
+  deps: SupervisorActivationDeps,
+  role: string,
+): Promise<SupervisorActivationResult> {
+  const agent = deps.agentRegistry.get(role);
+  if (!agent) {
+    throw new Error(`Supervisor role not found in agents.yaml: ${role}`);
+  }
+
+  const existing = await deps.db.getSupervisorRegistry(role);
+  if (existing?.activeSessionId && await sessionExists(deps, existing.activeSessionId)) {
+    return {
+      role,
+      status: "existing",
+      sessionId: existing.activeSessionId,
+    };
+  }
+
+  const sessionId = deps.sessionIdFactory?.(role) ?? `supervisor-${role}-${randomUUID()}`;
+  const task = await deps.taskManager.createTask({
+    agentSessionId: sessionId,
+    prompt: buildSupervisorBootPrompt(role),
+    profileId: role,
+    callerInfo: {
+      source: "agent",
+      display_name: "supervisor",
+      agent_id: role,
+      agent_name: agent.name,
+    },
+    folderId: deps.config.folderId,
+  });
+
+  try {
+    await deps.db.upsertSupervisorRegistry({
+      role,
+      activeSessionId: sessionId,
+      epoch: nextEpoch(existing),
+      cursorOffset: existing?.cursorOffset ?? 0,
+      handoverState: "idle",
+      cumulativeTokens: 0,
+      compactionCount: existing?.compactionCount ?? 0,
+      lastSeenAt: deps.now?.() ?? new Date(),
+    });
+  } catch (err) {
+    await deps.taskManager.cancelTask(sessionId).catch((cancelErr) => {
+      deps.logger.warn(
+        { err: cancelErr, role, sessionId },
+        "Supervisor activation cleanup failed after registry upsert error",
+      );
+    });
+    throw err;
+  }
+
+  try {
+    deps.taskExecutor.startExecution(task, agent);
+  } catch (err) {
+    await deps.taskManager.cancelTask(sessionId).catch((cancelErr) => {
+      deps.logger.warn(
+        { err: cancelErr, role, sessionId },
+        "Supervisor activation cleanup failed after start error",
+      );
+    });
+    await rollbackSupervisorRegistry(deps, role, existing).catch((rollbackErr) => {
+      deps.logger.warn(
+        { err: rollbackErr, role, sessionId },
+        "Supervisor activation registry rollback failed after start error",
+      );
+    });
+    throw err;
+  }
+  deps.logger.info(
+    { role, sessionId },
+    "Supervisor activation started missing supervisor session",
+  );
+
+  return {
+    role,
+    status: "started",
+    sessionId,
+  };
+}
+
+async function sessionExists(
+  deps: SupervisorActivationDeps,
+  sessionId: string,
+): Promise<boolean> {
+  return Boolean(await deps.db.getSession(sessionId));
+}
+
+function nextEpoch(existing: SupervisorRegistryRow | null): number {
+  if (!existing?.activeSessionId) return existing?.epoch ?? 0;
+  return existing.epoch + 1;
+}
+
+async function rollbackSupervisorRegistry(
+  deps: SupervisorActivationDeps,
+  role: string,
+  existing: SupervisorRegistryRow | null,
+): Promise<void> {
+  await deps.db.upsertSupervisorRegistry({
+    role,
+    activeSessionId: existing?.activeSessionId ?? null,
+    epoch: existing?.epoch ?? 0,
+    cursorOffset: existing?.cursorOffset ?? 0,
+    handoverState: existing?.handoverState ?? "idle",
+    cumulativeTokens: existing?.cumulativeTokens ?? 0,
+    compactionCount: existing?.compactionCount ?? 0,
+    lastSeenAt: existing?.lastSeenAt ?? null,
+  });
+}

@@ -7,7 +7,10 @@ import {
 } from "../db/event_persistence.js";
 import type { SessionDB, SupervisorRegistryRow } from "../db/session_db.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
-import { evaluateSupervisorHandover } from "../supervisor/handover_policy.js";
+import {
+  evaluateSupervisorHandover,
+  type SupervisorHandoverPolicyOptions,
+} from "../supervisor/handover_policy.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import { applyClaudeRuntimeEvent } from "./claude_runtime_state.js";
@@ -27,6 +30,10 @@ export interface TaskEngineEventPublisherDeps {
   supervisorHandoverRunner?: {
     run(registry: SupervisorRegistryRow): Promise<void>;
   };
+  supervisorHandoverPolicy?: Pick<
+    SupervisorHandoverPolicyOptions,
+    "softTokenThreshold" | "hardTokenThreshold"
+  >;
 }
 
 /**
@@ -251,6 +258,7 @@ export class TaskEngineEventPublisher {
         atTurnBoundary: eventType === "complete",
       },
       {
+        ...this.deps.supervisorHandoverPolicy,
         minIntervalMs: 0,
       },
     );

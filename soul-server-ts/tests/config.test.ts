@@ -25,6 +25,17 @@ describe("parseEnv", () => {
     expect(env.CODEX_CLI_PATH).toBeUndefined();
     expect(env.CODEX_ADAPTER_MODE).toBe("sdk");
     expect(env.MCP_TOOL_PROFILE).toBe("default");
+    expect(env.SUPERVISOR_ENABLED).toBe(false);
+    expect(env.SUPERVISOR_ROLES).toEqual([]);
+    expect(env.SUPERVISOR_WAKE_DEBOUNCE_MS).toBe(250);
+    expect(env.SUPERVISOR_WAKE_BATCH_LIMIT).toBe(100);
+    expect(env.SUPERVISOR_SOFT_TOKEN_THRESHOLD).toBe(1_000_000);
+    expect(env.SUPERVISOR_HARD_TOKEN_THRESHOLD).toBe(1_500_000);
+    expect(env.SUPERVISOR_HANDOVER_MIN_INTERVAL_MS).toBe(600_000);
+    expect(env.SUPERVISOR_HANDOVER_DRAIN_LIMIT).toBe(100);
+    expect(env.SUPERVISOR_HANDOVER_PROMPT_EVENT_LIMIT).toBe(20);
+    expect(env.SUPERVISOR_WATCHDOG_INTERVAL_MS).toBe(60_000);
+    expect(env.SUPERVISOR_WATCHDOG_MISSING_THRESHOLD_MS).toBe(300_000);
   });
 
   it("SOULSTREAM_NODE_ID 부재 시 ZodError", () => {
@@ -248,6 +259,65 @@ describe("parseEnv", () => {
       const env = parseEnv({ ...minimal, MCP_ENABLED: "true" });
       expect(env.MCP_ENABLED).toBe(true);
       expect(env.HOST).toBe("127.0.0.1");
+    });
+  });
+
+  describe("Supervisor activation env", () => {
+    it('SUPERVISOR_ENABLED "true" requires at least one role', () => {
+      expect(() =>
+        parseEnv({
+          ...minimal,
+          SUPERVISOR_ENABLED: "true",
+        }),
+      ).toThrow(ZodError);
+    });
+
+    it("parses supervisor roles, folder, and tuning values", () => {
+      const env = parseEnv({
+        ...minimal,
+        SUPERVISOR_ENABLED: "true",
+        SUPERVISOR_ROLES: "ariella-ashwood-codex, backup-supervisor",
+        SUPERVISOR_FOLDER_ID: "fa1a7018-6262-4452-b1e3-1f7e9c61d7d0",
+        SUPERVISOR_WAKE_DEBOUNCE_MS: "500",
+        SUPERVISOR_WAKE_BATCH_LIMIT: "50",
+        SUPERVISOR_SOFT_TOKEN_THRESHOLD: "900000",
+        SUPERVISOR_HARD_TOKEN_THRESHOLD: "1200000",
+        SUPERVISOR_HANDOVER_MIN_INTERVAL_MS: "300000",
+        SUPERVISOR_HANDOVER_DRAIN_LIMIT: "75",
+        SUPERVISOR_HANDOVER_PROMPT_EVENT_LIMIT: "15",
+        SUPERVISOR_WATCHDOG_INTERVAL_MS: "45000",
+        SUPERVISOR_WATCHDOG_MISSING_THRESHOLD_MS: "180000",
+      });
+
+      expect(env.SUPERVISOR_ENABLED).toBe(true);
+      expect(env.SUPERVISOR_ROLES).toEqual([
+        "ariella-ashwood-codex",
+        "backup-supervisor",
+      ]);
+      expect(env.SUPERVISOR_FOLDER_ID).toBe(
+        "fa1a7018-6262-4452-b1e3-1f7e9c61d7d0",
+      );
+      expect(env.SUPERVISOR_WAKE_DEBOUNCE_MS).toBe(500);
+      expect(env.SUPERVISOR_WAKE_BATCH_LIMIT).toBe(50);
+      expect(env.SUPERVISOR_SOFT_TOKEN_THRESHOLD).toBe(900_000);
+      expect(env.SUPERVISOR_HARD_TOKEN_THRESHOLD).toBe(1_200_000);
+      expect(env.SUPERVISOR_HANDOVER_MIN_INTERVAL_MS).toBe(300_000);
+      expect(env.SUPERVISOR_HANDOVER_DRAIN_LIMIT).toBe(75);
+      expect(env.SUPERVISOR_HANDOVER_PROMPT_EVENT_LIMIT).toBe(15);
+      expect(env.SUPERVISOR_WATCHDOG_INTERVAL_MS).toBe(45_000);
+      expect(env.SUPERVISOR_WATCHDOG_MISSING_THRESHOLD_MS).toBe(180_000);
+    });
+
+    it("rejects hard threshold below soft threshold", () => {
+      expect(() =>
+        parseEnv({
+          ...minimal,
+          SUPERVISOR_ENABLED: "true",
+          SUPERVISOR_ROLES: "ariella-ashwood-codex",
+          SUPERVISOR_SOFT_TOKEN_THRESHOLD: "100",
+          SUPERVISOR_HARD_TOKEN_THRESHOLD: "99",
+        }),
+      ).toThrow(ZodError);
     });
   });
 });

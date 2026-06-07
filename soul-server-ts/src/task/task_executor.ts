@@ -27,6 +27,7 @@ import type { SessionDB, SupervisorRegistryRow } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { SupervisorWakeScheduler } from "../supervisor/wake_router.js";
+import type { SupervisorHandoverPolicyOptions } from "../supervisor/handover_policy.js";
 
 import type { CompletionNotifier } from "./completion_notifier.js";
 import { TaskExecutorFinalizer } from "./task_executor_finalizer.js";
@@ -97,6 +98,10 @@ export class TaskExecutor {
     supervisorWakeScheduler?: Pick<SupervisorWakeScheduler, "ingest">,
     sourceNode?: string,
     supervisorHandoverRunner?: { run(registry: SupervisorRegistryRow): Promise<void> },
+    supervisorHandoverPolicy?: Pick<
+      SupervisorHandoverPolicyOptions,
+      "softTokenThreshold" | "hardTokenThreshold"
+    >,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       db,
@@ -116,6 +121,7 @@ export class TaskExecutor {
       sourceNode,
       supervisorWakeScheduler,
       supervisorHandoverRunner,
+      supervisorHandoverPolicy,
     });
     this.engineFailureRecovery = new TaskEngineFailureRecovery({
       broadcaster,
