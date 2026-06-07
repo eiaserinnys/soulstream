@@ -16,6 +16,9 @@ export interface SupervisorWakeRouterDeps {
     events: SupervisorWakeEvent[];
     wakeClass: Exclude<WakeClass, "quiet">;
   }): Promise<void>;
+  logger?: {
+    warn(payload: unknown, message: string): void;
+  };
 }
 
 export interface SupervisorWakeRouterOptions {
@@ -41,6 +44,8 @@ export interface SupervisorWakeSchedulerOptions {
 
 export class SupervisorWakeRouter {
   private readonly batchLimit: number;
+  private readonly warnedUnknownEventTypes = new Set<string>();
+  private readonly warnedClassificationFailures = new Set<string>();
 
   constructor(
     private readonly deps: SupervisorWakeRouterDeps,
@@ -50,8 +55,8 @@ export class SupervisorWakeRouter {
   }
 
   async ingest(supervisorId: string, eventType: string): Promise<{ scheduled: boolean }> {
-    const wakeClass = classifyWakeEvent(eventType);
-    return { scheduled: wakeClass !== "quiet" };
+    const wakeClass = this.classifyEvent(supervisorId, eventType);
+    return { scheduled: wakeClass !== null && wakeClass !== "quiet" };
   }
 
   async flush(
@@ -72,16 +77,81 @@ export class SupervisorWakeRouter {
       return { woken: false, drained: events.length };
     }
 
+    const classifiedWakeEvents = wakeEvents
+      .map((event) => ({
+        event,
+        wakeClass: this.classifyEvent(supervisorId, event.eventType, event.offset),
+      }))
+      .filter((entry): entry is { event: SupervisorWakeEvent; wakeClass: WakeClass } =>
+        entry.wakeClass !== null
+      );
+
     const wakeClass = strongestWakeClass(
-      wakeEvents.map((event) => classifyWakeEvent(event.eventType)),
+      classifiedWakeEvents.map((entry) => entry.wakeClass),
     );
     if (wakeClass === "quiet") {
       await this.deps.setCursor(supervisorId, head);
       return { woken: false, drained: events.length };
     }
-    await this.deps.wake({ supervisorId, events: wakeEvents, wakeClass });
+    await this.deps.wake({
+      supervisorId,
+      events: classifiedWakeEvents.map((entry) => entry.event),
+      wakeClass,
+    });
     await this.deps.setCursor(supervisorId, head);
     return { woken: true, drained: events.length };
+  }
+
+  private classifyEvent(
+    supervisorId: string,
+    eventType: string,
+    offset?: number,
+  ): WakeClass | null {
+    try {
+      const wakeClass = classifyWakeEvent(eventType);
+      if (wakeClass) return wakeClass;
+      this.warnUnmappedEventType(supervisorId, eventType, offset);
+      return null;
+    } catch (err) {
+      this.warnClassificationFailure(supervisorId, eventType, offset, err);
+      return null;
+    }
+  }
+
+  private warnUnmappedEventType(
+    supervisorId: string,
+    eventType: string,
+    offset?: number,
+  ): void {
+    if (this.warnedUnknownEventTypes.has(eventType)) return;
+    this.warnedUnknownEventTypes.add(eventType);
+    this.deps.logger?.warn(
+      {
+        supervisorId,
+        eventType,
+        ...(offset !== undefined ? { offset } : {}),
+      },
+      "Supervisor wake router skipped unmapped SSE event type",
+    );
+  }
+
+  private warnClassificationFailure(
+    supervisorId: string,
+    eventType: string,
+    offset: number | undefined,
+    err: unknown,
+  ): void {
+    if (this.warnedClassificationFailures.has(eventType)) return;
+    this.warnedClassificationFailures.add(eventType);
+    this.deps.logger?.warn(
+      {
+        err,
+        supervisorId,
+        eventType,
+        ...(offset !== undefined ? { offset } : {}),
+      },
+      "Supervisor wake router skipped event classification failure",
+    );
   }
 }
 

@@ -61,11 +61,8 @@ export const WAKE_CLASS_BY_EVENT_TYPE = {
   away_summary: "batch",
 } satisfies Record<KnownSseEventType, WakeClass>;
 
-export function classifyWakeEvent(eventType: string): WakeClass {
+export function classifyWakeEvent(eventType: string): WakeClass | null {
   const wakeClass =
     WAKE_CLASS_BY_EVENT_TYPE[eventType as KnownSseEventType];
-  if (!wakeClass) {
-    throw new Error(`Unmapped SSE event type: ${eventType}`);
-  }
-  return wakeClass;
+  return wakeClass ?? null;
 }

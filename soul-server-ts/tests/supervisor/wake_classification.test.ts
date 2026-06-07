@@ -16,9 +16,8 @@ describe("Supervisor wake classification", () => {
     expect(exhaustive.away_summary).toBe("batch");
   });
 
-  it("does not silently classify unknown events as quiet", () => {
-    expect(() => classifyWakeEvent("new_unmapped_event")).toThrow(
-      "Unmapped SSE event type: new_unmapped_event",
-    );
+  it("returns null for unknown events instead of throwing or classifying as quiet", () => {
+    expect(() => classifyWakeEvent("metadata")).not.toThrow();
+    expect(classifyWakeEvent("metadata")).toBeNull();
   });
 });

@@ -381,6 +381,7 @@ async function main(): Promise<void> {
           onResume,
         );
       },
+      logger,
     },
     { batchLimit: env.SUPERVISOR_WAKE_BATCH_LIMIT },
   );

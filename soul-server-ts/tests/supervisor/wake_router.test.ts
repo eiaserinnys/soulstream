@@ -19,6 +19,30 @@ describe("SupervisorWakeRouter", () => {
     });
   });
 
+  it("skips unknown ingests and warns once per event type", async () => {
+    const warn = vi.fn();
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(),
+      readEventsAfter: vi.fn(),
+      setCursor: vi.fn(),
+      wake: vi.fn(),
+      logger: { warn },
+    });
+
+    await expect(router.ingest("ariela_codex", "metadata")).resolves.toEqual({
+      scheduled: false,
+    });
+    await expect(router.ingest("ariela_codex", "metadata")).resolves.toEqual({
+      scheduled: false,
+    });
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      { supervisorId: "ariela_codex", eventType: "metadata" },
+      "Supervisor wake router skipped unmapped SSE event type",
+    );
+  });
+
   it("drains cursor to head and wakes once for a burst", async () => {
     const wake = vi.fn(async () => undefined);
     const setCursor = vi.fn(async () => undefined);
@@ -48,6 +72,62 @@ describe("SupervisorWakeRouter", () => {
         { offset: 13, sourceSessionId: "sess-other", eventType: "tool_result" },
       ],
     });
+  });
+
+  it("skips unknown flush events and keeps waking for mapped events", async () => {
+    const wake = vi.fn(async () => undefined);
+    const setCursor = vi.fn(async () => undefined);
+    const warn = vi.fn();
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => 40),
+      readEventsAfter: vi.fn(async () => [
+        { offset: 41, sourceSessionId: "sess-other", eventType: "metadata" },
+        { offset: 42, sourceSessionId: "sess-other", eventType: "assistant_message" },
+        { offset: 43, sourceSessionId: "sess-other", eventType: "user_message" },
+      ]),
+      setCursor,
+      wake,
+      logger: { warn },
+    });
+
+    await expect(router.flush("ariela_codex")).resolves.toEqual({
+      woken: true,
+      drained: 3,
+    });
+    expect(setCursor).toHaveBeenCalledWith("ariela_codex", 43);
+    expect(wake).toHaveBeenCalledWith({
+      supervisorId: "ariela_codex",
+      wakeClass: "wake",
+      events: [
+        { offset: 42, sourceSessionId: "sess-other", eventType: "assistant_message" },
+        { offset: 43, sourceSessionId: "sess-other", eventType: "user_message" },
+      ],
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("drains all-unknown flush events without waking", async () => {
+    const wake = vi.fn(async () => undefined);
+    const setCursor = vi.fn(async () => undefined);
+    const warn = vi.fn();
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => 50),
+      readEventsAfter: vi.fn(async () => [
+        { offset: 51, sourceSessionId: "sess-other", eventType: "metadata" },
+        { offset: 52, sourceSessionId: "sess-other", eventType: "metadata" },
+      ]),
+      setCursor,
+      wake,
+      logger: { warn },
+    });
+
+    await expect(router.flush("ariela_codex")).resolves.toEqual({
+      woken: false,
+      drained: 2,
+    });
+    expect(setCursor).toHaveBeenCalledWith("ariela_codex", 52);
+    expect(wake).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it("drains self-generated supervisor events without waking itself", async () => {
