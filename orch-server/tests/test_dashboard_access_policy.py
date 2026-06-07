@@ -196,13 +196,23 @@ async def _service_token_client(app):
         yield client
 
 
-def test_access_for_request_service_token_with_access_email_has_full_access(monkeypatch):
+def test_access_for_request_service_token_with_admin_access_email_has_full_access(monkeypatch):
+    app, _db, _catalog_service, _node_manager = _build_app(monkeypatch)
+    request = _access_request(app, auth_mode="service_token")
+
+    access = access_for_request(request, access_email="owner@example.com")
+
+    assert access.restricted is False
+
+
+def test_access_for_request_service_token_with_restricted_access_email_uses_user_rule(monkeypatch):
     app, _db, _catalog_service, _node_manager = _build_app(monkeypatch)
     request = _access_request(app, auth_mode="service_token")
 
     access = access_for_request(request, access_email="bellon.lovedive@gmail.com")
 
-    assert access.restricted is False
+    assert access.restricted is True
+    assert access.allowed_folder_ids == ("allowed-root",)
 
 
 def test_access_for_request_jwt_restricted_user_ignores_spoofed_access_email(monkeypatch):
@@ -351,7 +361,7 @@ async def test_restricted_user_cannot_move_blocked_board_item(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_create_session_service_token_with_body_caller_email_has_full_folder_access(monkeypatch):
+async def test_create_session_service_token_uses_body_caller_email_for_folder_access(monkeypatch):
     app, _db, _catalog_service, node_manager = _build_app(monkeypatch)
     _node, ws = await _register_node(node_manager)
 
@@ -362,7 +372,7 @@ async def test_create_session_service_token_with_body_caller_email_has_full_fold
                 "prompt": "delegate",
                 "nodeId": "node-1",
                 "folderId": "blocked-root",
-                "caller_info": {"source": "browser", "email": "bellon.lovedive@gmail.com"},
+                "caller_info": {"source": "browser", "email": "owner@example.com"},
             },
         )
 
@@ -431,7 +441,7 @@ async def test_create_session_jwt_admin_path_regression(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_intervene_service_token_with_body_caller_email_has_full_session_access(monkeypatch):
+async def test_intervene_service_token_uses_body_caller_email_for_session_access(monkeypatch):
     app, db, _catalog_service, node_manager = _build_app(monkeypatch)
     _node, ws = await _register_node(node_manager)
     db.get_session = AsyncMock(return_value=_session("s-blocked", "blocked-root"))
@@ -441,7 +451,7 @@ async def test_intervene_service_token_with_body_caller_email_has_full_session_a
             "/api/sessions/s-blocked/intervene",
             json={
                 "text": "relay",
-                "caller_info": {"source": "agent", "email": "bellon.lovedive@gmail.com"},
+                "caller_info": {"source": "agent", "email": "owner@example.com"},
             },
         )
 

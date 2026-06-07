@@ -55,8 +55,10 @@ def access_for_request(
         auth_user = decode_dashboard_jwt_user(request, settings.jwt_secret or "")
     email = auth_user.get("email") if isinstance(auth_user, dict) else None
     auth_mode = getattr(request.state, "auth_mode", None)
-    if email is None and auth_mode == "service_token":
+    if email is None and auth_mode == "service_token" and access_email is None:
         return DashboardAccess(restricted=False)
+    if email is None and auth_mode == "service_token":
+        email = access_email
     if user_service is not None:
         return user_service.access_for_email(email)
     return access_for_email(email, settings)

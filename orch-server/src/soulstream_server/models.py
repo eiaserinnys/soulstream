@@ -8,3 +8,4 @@ from pydantic import BaseModel
 class BatchMoveRequest(BaseModel):
     sessionIds: list[str]
     folderId: Optional[str] = None
+    caller_info: Optional[dict] = None

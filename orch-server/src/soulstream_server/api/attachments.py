@@ -15,6 +15,7 @@ host=127.0.0.1) 회로 차단. 노드 등록 시 신뢰 가능하게 outbound로
 
 import base64
 import io
+import json
 from pathlib import PurePath
 from typing import Any
 
@@ -28,6 +29,19 @@ from soulstream_server.constants import (
 )
 from soulstream_server.dashboard_access import access_for_request, require_session_allowed
 from soulstream_server.nodes.node_manager import NodeManager
+
+
+def _access_email_from_multipart_caller_info(caller_info: str | None) -> str | None:
+    if caller_info is None:
+        return None
+    try:
+        parsed = json.loads(caller_info)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    email = parsed.get("email")
+    return email if isinstance(email, str) else None
 
 
 def create_attachments_router(
@@ -51,6 +65,7 @@ def create_attachments_router(
         request: Request,
         file: UploadFile = File(...),
         session_id: str = Form(...),
+        caller_info: str | None = Form(None),
         node_id: str = Query(..., alias="nodeId"),
     ):
         """WS reverse-proxy: 노드에 chunked attachment 업로드를 위임.
@@ -63,8 +78,17 @@ def create_attachments_router(
         node = node_manager.get_node(node_id)
         if node is None:
             raise HTTPException(404, f"Node '{node_id}' not found")
-        if db is not None and access_for_request(request).restricted:
-            await require_session_allowed(request, db, session_id)
+        access_email = _access_email_from_multipart_caller_info(caller_info)
+        if db is not None and access_for_request(
+            request,
+            access_email=access_email,
+        ).restricted:
+            await require_session_allowed(
+                request,
+                db,
+                session_id,
+                access_email=access_email,
+            )
 
         expected_size = getattr(file, "size", None)
         if expected_size is not None and expected_size > MAX_ATTACHMENT_SIZE:
