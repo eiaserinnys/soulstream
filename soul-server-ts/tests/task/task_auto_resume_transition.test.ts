@@ -8,6 +8,7 @@ import type { SessionDB } from "../../src/db/session_db.js";
 import type { EnginePort } from "../../src/engine/protocol.js";
 import type { Task } from "../../src/task/task_models.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
+import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -44,7 +45,12 @@ describe("AutoResumeTransition", () => {
       order.push("updateSession");
       expect(task.status).toBe("running");
       expect(task.interventionQueue).toHaveLength(1);
-      expect(fields).toEqual({ status: "running", last_event_id: 7 });
+      expect(fields).toEqual({
+        status: "running",
+        last_event_id: 7,
+        termination_reason: null,
+        termination_detail: null,
+      });
     });
     const db = { appendMetadata, updateSession } as unknown as SessionDB;
 
@@ -76,6 +82,11 @@ describe("AutoResumeTransition", () => {
       expect(task.completedAt).toBeUndefined();
       expect(task.result).toBeUndefined();
       expect(task.error).toBeUndefined();
+      expect(task.terminationReason).toBeUndefined();
+      expect(task.terminationDetail).toBeUndefined();
+      expect(task.pendingTerminationHint).toBeUndefined();
+      expect(task.pendingTerminationDetail).toBeUndefined();
+      expect(task.terminationEventRecorded).toBe(false);
       expect(task.interventionQueue).toHaveLength(1);
     });
     const broadcaster = { emitEventEnvelope, emitSessionUpdated } as unknown as SessionBroadcaster;
@@ -119,6 +130,76 @@ describe("AutoResumeTransition", () => {
     expect(appendMetadata).toHaveBeenCalledWith("s1", {
       type: "caller_info",
       value: callerInfo,
+    });
+  });
+
+  it("clears termination state so a resumed turn can finalize with a fresh session_ended event", async () => {
+    const task = makeTerminalTask({
+      terminationReason: "completed_ok",
+      terminationDetail: null,
+      pendingTerminationHint: "limit_hit",
+      pendingTerminationDetail: "stale limit",
+      terminationEventRecorded: true,
+    });
+    const updateSession = vi.fn().mockResolvedValue(undefined);
+    const appendEvent = vi.fn().mockResolvedValue(12);
+    const db = {
+      appendMetadata: vi.fn(),
+      updateSession,
+      appendEvent,
+    } as unknown as SessionDB;
+    const emitSessionUpdated = vi.fn().mockResolvedValue(undefined);
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const broadcaster = {
+      emitEventEnvelope,
+      emitSessionUpdated,
+    } as unknown as SessionBroadcaster;
+    const autoResume = new AutoResumeTransition({
+      db,
+      broadcaster,
+      logger: silentLogger,
+    });
+    const lifecycle = new TaskLifecycleTransition({
+      db,
+      broadcaster,
+      logger: silentLogger,
+    });
+
+    await autoResume.resume(task, { text: "retry", user: "u" }, vi.fn());
+    task.pendingTerminationHint = "limit_hit";
+    task.pendingTerminationDetail = "fresh limit";
+    await lifecycle.finalizeExternalTask(task, { error: "rate limited" });
+
+    expect(updateSession).toHaveBeenNthCalledWith(1, "s1", {
+      status: "running",
+      last_event_id: 7,
+      termination_reason: null,
+      termination_detail: null,
+    });
+    expect(task.terminationReason).toBe("limit_hit");
+    expect(task.terminationDetail).toBe("fresh limit");
+    expect(task.terminationEventRecorded).toBe(true);
+    expect(appendEvent).toHaveBeenCalledTimes(1);
+    expect(appendEvent).toHaveBeenCalledWith({
+      sessionId: "s1",
+      eventType: "session_ended",
+      payload: expect.stringContaining('"termination_reason":"limit_hit"'),
+      searchableText: "",
+      createdAt: task.completedAt,
+    });
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        type: "session_ended",
+        termination_reason: "limit_hit",
+        _event_id: 12,
+      }),
+    );
+    expect(updateSession).toHaveBeenLastCalledWith("s1", {
+      status: "error",
+      last_event_id: 12,
+      termination_reason: "limit_hit",
+      termination_detail: "fresh limit",
     });
   });
 

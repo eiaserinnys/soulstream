@@ -97,6 +97,8 @@ export class AutoResumeTransition {
       await this.deps.db.updateSession(task.agentSessionId, {
         status: "running",
         last_event_id: task.lastEventId,
+        termination_reason: null,
+        termination_detail: null,
       });
     } catch (err) {
       this.deps.logger.warn(
@@ -130,5 +132,10 @@ function transitionTaskToRunning(task: Task, message: InterventionMessage): void
   task.completedAt = undefined;
   task.error = undefined;
   task.result = undefined;
+  task.terminationReason = undefined;
+  task.terminationDetail = undefined;
+  task.pendingTerminationHint = undefined;
+  task.pendingTerminationDetail = undefined;
+  task.terminationEventRecorded = false;
   task.interventionQueue.push(message);
 }

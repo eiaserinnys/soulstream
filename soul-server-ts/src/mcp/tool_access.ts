@@ -23,6 +23,7 @@ export const MUTATION_MCP_TOOLS = [
   "delete_markdown_document",
   "set_folder_system_prompt",
   "delete_session",
+  "download_session_history",
   "update_agent_profile",
   "set_agent_mcp_profile",
   "set_agent_atom_contexts",

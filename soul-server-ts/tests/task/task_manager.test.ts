@@ -960,6 +960,8 @@ describe("TaskManager.addIntervention (B-4)", () => {
     expect(broadcasterMocks.updateSession).toHaveBeenCalledWith("s1", {
       status: "running",
       last_event_id: task.lastEventId,
+      termination_reason: null,
+      termination_detail: null,
     });
   });
 
@@ -1571,6 +1573,8 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-evicted", {
       status: "running",
       last_event_id: memTask!.lastEventId,
+      termination_reason: null,
+      termination_detail: null,
     });
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
@@ -1619,6 +1623,8 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(mocks.updateSession).toHaveBeenCalledWith("sess-stale-running", {
       status: "running",
       last_event_id: memTask!.lastEventId,
+      termination_reason: null,
+      termination_detail: null,
     });
     expect(onResume).toHaveBeenCalledWith(memTask);
   });

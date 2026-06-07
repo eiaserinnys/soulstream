@@ -24,6 +24,7 @@ describe("MCP tool access profiles", () => {
         "set_agent_mcp_profile",
         "create_markdown_document",
         "update_markdown_document",
+        "download_session_history",
         "delete_session",
         "create_task_item",
         "delegate_task_item",
@@ -45,10 +46,12 @@ describe("MCP tool access profiles", () => {
     );
 
     guarded.registerTool("send_message_to_session", { inputSchema: {} }, vi.fn());
+    guarded.registerTool("download_session_history", { inputSchema: {} }, vi.fn());
     guarded.registerTool("list_sessions", { inputSchema: {} }, vi.fn());
 
     expect(registerTool).toHaveBeenCalledTimes(1);
     expect(registered.has("send_message_to_session")).toBe(false);
+    expect(registered.has("download_session_history")).toBe(false);
     expect(registered.has("list_sessions")).toBe(true);
   });
 
@@ -62,6 +65,12 @@ describe("MCP tool access profiles", () => {
       error:
         'MCP tool "send_message_to_session" is blocked by profile supervisor_readonly',
     });
+    expect(
+      guardMcpToolExecution(
+        makeRuntime("supervisor_readonly"),
+        "download_session_history",
+      )?.isError,
+    ).toBe(true);
     expect(guardMcpToolExecution(makeRuntime("default"), "send_message_to_session")).toBeUndefined();
   });
 });
