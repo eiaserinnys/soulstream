@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import dotenv from "dotenv";
+import type { Logger } from "pino";
 import { ZodError } from "zod";
 
 import { AgentConfigService } from "./agent_config_service.js";
@@ -44,6 +45,11 @@ import {
   SupervisorWakeScheduler,
   type SupervisorWakeEvent,
 } from "./supervisor/wake_router.js";
+import {
+  buildSupervisorWakeText,
+  type SupervisorWakeSessionSummary,
+  wakeSessionSummaryFromRow,
+} from "./supervisor/wake_text.js";
 import { SupervisorHandoverExecutor } from "./supervisor/handover_executor.js";
 import { detectMissingSupervisors } from "./supervisor/watchdog.js";
 import {
@@ -363,6 +369,8 @@ async function main(): Promise<void> {
           eventType: event.eventType,
           payload: event.payload,
         })),
+      getSourceSessionAgentId: async (sourceSessionId) =>
+        (await db.getSession(sourceSessionId))?.agent_id ?? null,
       setCursor: async (supervisorId, cursorOffset) => {
         await db.setSupervisorConsumerCursor(supervisorId, cursorOffset);
       },
@@ -372,10 +380,16 @@ async function main(): Promise<void> {
           logger.warn({ supervisorId, wakeClass }, "Supervisor wake skipped: no active session");
           return;
         }
+        const sessions = await buildSupervisorWakeSessionSummaries(events, db, logger);
         await taskManager.addIntervention(
           {
             agentSessionId: registry.activeSessionId,
-            text: buildSupervisorWakeText(supervisorId, wakeClass, events),
+            text: buildSupervisorWakeText({
+              supervisorId,
+              wakeClass,
+              events,
+              sessions,
+            }),
             user: "supervisor",
           },
           onResume,
@@ -718,33 +732,31 @@ main().catch((err) => {
   process.exit(1);
 });
 
-function buildSupervisorWakeText(
-  supervisorId: string,
-  wakeClass: string,
+async function buildSupervisorWakeSessionSummaries(
   events: SupervisorWakeEvent[],
-): string {
-  const head = events[events.length - 1]?.offset ?? 0;
-  const eventCounts = new Map<string, number>();
+  db: Pick<SessionDB, "getSession">,
+  logger: Pick<Logger, "warn">,
+): Promise<Record<string, SupervisorWakeSessionSummary>> {
+  const summaries: Record<string, SupervisorWakeSessionSummary> = {};
+  const sourceSessionIds = new Set<string>();
   for (const event of events) {
-    eventCounts.set(event.eventType, (eventCounts.get(event.eventType) ?? 0) + 1);
+    if (event.sourceSessionId) sourceSessionIds.add(event.sourceSessionId);
   }
-  const summary = Array.from(eventCounts.entries())
-    .map(([eventType, count]) => `${eventType}:${count}`)
-    .join(", ");
-  const samples = events.slice(0, 10).map((event) => {
-    const session = event.sourceSessionId ? ` session=${event.sourceSessionId}` : "";
-    return `- #${event.offset} ${event.eventType}${session}`;
-  });
-  const lines = [
-    `[supervisor wake] role=${supervisorId} class=${wakeClass} head=${head}`,
-    `events=${events.length}${summary ? ` (${summary})` : ""}`,
-    ...samples,
-  ];
-  if (events.length > samples.length) {
-    lines.push(`- ... ${events.length - samples.length} more`);
+  for (const sourceSessionId of sourceSessionIds) {
+    try {
+      summaries[sourceSessionId] = wakeSessionSummaryFromRow(
+        sourceSessionId,
+        await db.getSession(sourceSessionId),
+      );
+    } catch (err) {
+      logger.warn(
+        { err, sourceSessionId },
+        "Supervisor wake session summary lookup failed",
+      );
+      summaries[sourceSessionId] = { sessionId: sourceSessionId };
+    }
   }
-  lines.push("The wake router has queued this batch; decide whether action is needed.");
-  return lines.join("\n");
+  return summaries;
 }
 
 function buildSupervisorHandoverPrompt(params: {

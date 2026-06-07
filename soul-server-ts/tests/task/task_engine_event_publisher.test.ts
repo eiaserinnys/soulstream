@@ -40,12 +40,14 @@ function makePublisherDeps() {
     gapEnd: null,
   }));
   const getSupervisorRegistry = vi.fn(async () => null);
+  const touchSupervisorRegistry = vi.fn(async () => null);
   const recordSupervisorUsageDelta = vi.fn(async () => undefined);
   const upsertSupervisorRegistry = vi.fn(async () => undefined);
   const db = {
     setClaudeSessionId,
     appendSupervisorEvent,
     getSupervisorRegistry,
+    touchSupervisorRegistry,
     recordSupervisorUsageDelta,
     upsertSupervisorRegistry,
   } as unknown as SessionDB;
@@ -75,6 +77,7 @@ function makePublisherDeps() {
     appendSupervisorEvent,
     recordSupervisorUsageDelta,
     supervisorWakeScheduler,
+    touchSupervisorRegistry,
     upsertSupervisorRegistry,
     setClaudeSessionId,
   };
@@ -141,6 +144,49 @@ describe("TaskEngineEventPublisher", () => {
     expect(deps.supervisorWakeScheduler.ingest).toHaveBeenCalledWith(
       "assistant_message",
     );
+  });
+
+  it("touches supervisor heartbeat for non-usage activity events", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({ profileId: "ariela_codex" });
+    const event = {
+      type: "assistant_message",
+      content: "still working",
+      timestamp: 1,
+    } as SSEEventPayload;
+
+    await publisher.publishEngineEvent(task, event);
+
+    expect(deps.touchSupervisorRegistry).toHaveBeenCalledWith(
+      "ariela_codex",
+      expect.any(Date),
+    );
+    expect(deps.recordSupervisorUsageDelta).not.toHaveBeenCalled();
+  });
+
+  it("throttles heartbeat touch attempts even when the profile has no supervisor registry", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date(1_000));
+      const deps = makePublisherDeps();
+      const publisher = new TaskEngineEventPublisher(deps);
+      const task = makeTask({ profileId: "ordinary-agent" });
+      const event = {
+        type: "assistant_message",
+        content: "still working",
+        timestamp: 1,
+      } as SSEEventPayload;
+
+      await publisher.publishEngineEvent(task, event);
+      await publisher.publishEngineEvent(task, event);
+      await vi.advanceTimersByTimeAsync(15_000);
+      await publisher.publishEngineEvent(task, event);
+
+      expect(deps.touchSupervisorRegistry).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("captures only the first session id and still publishes every session event", async () => {
@@ -269,6 +315,7 @@ describe("TaskEngineEventPublisher", () => {
       compactionDelta: 0,
       lastSeenAt: expect.any(Date),
     });
+    expect(deps.touchSupervisorRegistry).not.toHaveBeenCalled();
     expect(deps.recordSupervisorUsageDelta.mock.invocationCallOrder[0]).toBeLessThan(
       deps.handleSideEffects.mock.invocationCallOrder[0],
     );

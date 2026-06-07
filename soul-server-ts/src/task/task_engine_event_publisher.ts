@@ -18,6 +18,8 @@ import type { Task } from "./task_models.js";
 import { recordTerminationHint } from "./task_termination.js";
 import { supervisorUsageDeltaForEvent } from "./supervisor_usage.js";
 
+const SUPERVISOR_HEARTBEAT_TOUCH_MIN_INTERVAL_MS = 15_000;
+
 export interface TaskEngineEventPublisherDeps {
   broadcaster: SessionBroadcaster;
   db: SessionDB;
@@ -43,6 +45,8 @@ export interface TaskEngineEventPublisherDeps {
  * have separate publishers. This class only handles events yielded by EnginePort.
  */
 export class TaskEngineEventPublisher {
+  private readonly supervisorHeartbeatTouchedAtMs = new Map<string, number>();
+
   constructor(private readonly deps: TaskEngineEventPublisherDeps) {}
 
   async publishEngineEvent(task: Task, event: SSEEventPayload): Promise<void> {
@@ -55,7 +59,8 @@ export class TaskEngineEventPublisher {
     const persistedEventId = await this.persistEventIfNeeded(task, event, eventType);
     await this.broadcastEvent(task, event, eventType);
     await this.appendSupervisorEventIfNeeded(task, event, eventType, persistedEventId);
-    await this.recordSupervisorUsageDelta(task, event, eventType);
+    const usageRecorded = await this.recordSupervisorUsageDelta(task, event, eventType);
+    await this.touchSupervisorHeartbeatIfNeeded(task, eventType, usageRecorded);
     await this.handleSideEffects(task, event, eventType);
   }
 
@@ -221,26 +226,61 @@ export class TaskEngineEventPublisher {
     task: Task,
     event: SSEEventPayload,
     eventType: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const { tokenDelta, compactionDelta } = supervisorUsageDeltaForEvent(task, event);
-    if (tokenDelta <= 0 && compactionDelta <= 0) return;
-    if (!task.profileId) return;
+    if (tokenDelta <= 0 && compactionDelta <= 0) return false;
+    if (!task.profileId) return false;
 
     try {
       const registry = await this.deps.db.getSupervisorRegistry(task.profileId);
-      if (!registry) return;
+      if (!registry) return false;
       const updatedRegistry = await this.deps.db.recordSupervisorUsageDelta({
         role: task.profileId,
         tokenDelta,
         compactionDelta,
         lastSeenAt: new Date(),
       });
-      if (!updatedRegistry) return;
+      this.supervisorHeartbeatTouchedAtMs.set(task.profileId, Date.now());
+      if (!updatedRegistry) return true;
       await this.applySupervisorHandoverState(task, updatedRegistry, eventType);
+      return true;
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId, eventType, role: task.profileId },
         "recordSupervisorUsageDelta failed",
+      );
+      return false;
+    }
+  }
+
+  private async touchSupervisorHeartbeatIfNeeded(
+    task: Task,
+    eventType: string,
+    usageRecorded: boolean,
+  ): Promise<void> {
+    if (usageRecorded) return;
+    if (!task.profileId) return;
+
+    const nowMs = Date.now();
+    const lastTouchedAt = this.supervisorHeartbeatTouchedAtMs.get(task.profileId);
+    if (
+      lastTouchedAt !== undefined &&
+      nowMs - lastTouchedAt < SUPERVISOR_HEARTBEAT_TOUCH_MIN_INTERVAL_MS
+    ) {
+      return;
+    }
+
+    const lastSeenAt = new Date(nowMs);
+    try {
+      await this.deps.db.touchSupervisorRegistry(
+        task.profileId,
+        lastSeenAt,
+      );
+      this.supervisorHeartbeatTouchedAtMs.set(task.profileId, nowMs);
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId, eventType, role: task.profileId },
+        "touchSupervisorRegistry failed",
       );
     }
   }

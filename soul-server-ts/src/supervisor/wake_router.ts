@@ -10,6 +10,7 @@ export interface SupervisorWakeEvent {
 export interface SupervisorWakeRouterDeps {
   getCursor(supervisorId: string): Promise<number>;
   readEventsAfter(afterOffset: number, limit: number): Promise<SupervisorWakeEvent[]>;
+  getSourceSessionAgentId?(sourceSessionId: string): Promise<string | null>;
   setCursor(supervisorId: string, cursorOffset: number): Promise<void>;
   wake(params: {
     supervisorId: string;
@@ -68,10 +69,15 @@ export class SupervisorWakeRouter {
     if (events.length === 0) return { woken: false, drained: 0 };
 
     const head = events[events.length - 1]?.offset ?? cursor;
+    const selfGeneratedSessionIds = await this.resolveSelfGeneratedSessionIds(
+      supervisorId,
+      activeSessionId,
+      events,
+    );
 
-    const wakeEvents = activeSessionId
-      ? events.filter((event) => event.sourceSessionId !== activeSessionId)
-      : events;
+    const wakeEvents = events.filter((event) =>
+      !event.sourceSessionId || !selfGeneratedSessionIds.has(event.sourceSessionId)
+    );
     if (wakeEvents.length === 0) {
       await this.deps.setCursor(supervisorId, head);
       return { woken: false, drained: events.length };
@@ -152,6 +158,41 @@ export class SupervisorWakeRouter {
       },
       "Supervisor wake router skipped event classification failure",
     );
+  }
+
+  private async resolveSelfGeneratedSessionIds(
+    supervisorId: string,
+    activeSessionId: string | null | undefined,
+    events: SupervisorWakeEvent[],
+  ): Promise<Set<string>> {
+    const selfGeneratedSessionIds = new Set<string>();
+    if (activeSessionId) selfGeneratedSessionIds.add(activeSessionId);
+    if (!this.deps.getSourceSessionAgentId) return selfGeneratedSessionIds;
+
+    const sourceSessionIds = Array.from(
+      new Set(
+        events
+          .map((event) => event.sourceSessionId)
+          .filter((sessionId): sessionId is string =>
+            Boolean(sessionId) && sessionId !== activeSessionId
+          ),
+      ),
+    );
+    for (const sourceSessionId of sourceSessionIds) {
+      try {
+        const agentId = await this.deps.getSourceSessionAgentId(sourceSessionId);
+        if (agentId === supervisorId) {
+          selfGeneratedSessionIds.add(sourceSessionId);
+        }
+      } catch (err) {
+        this.deps.logger?.warn(
+          { err, supervisorId, sourceSessionId },
+          "Supervisor wake router source session lookup failed",
+        );
+        selfGeneratedSessionIds.add(sourceSessionId);
+      }
+    }
+    return selfGeneratedSessionIds;
   }
 }
 
