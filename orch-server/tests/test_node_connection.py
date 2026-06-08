@@ -246,6 +246,42 @@ class TestHandleMessage:
             await wait_task
         ws.close.assert_called()
 
+    async def test_app_heartbeat_pong_round_trip_prevents_timeout(self, ws):
+        """Normal app heartbeat pong resets the miss counter and keeps the node connected."""
+        node = NodeConnection(
+            ws=ws,
+            node_id="heartbeat-node",
+            host="localhost",
+            port=4100,
+            capabilities={"app_heartbeat_v1": True},
+        )
+        sent_ping_count = 0
+
+        async def send_json(data):
+            nonlocal sent_ping_count
+            if data.get("type") == EVT_APP_HEARTBEAT_PING:
+                sent_ping_count += 1
+                await node.handle_message({
+                    "type": EVT_APP_HEARTBEAT_PONG,
+                    "sentAt": data.get("sentAt"),
+                })
+
+        ws.send_json.side_effect = send_json
+
+        heartbeat_task = asyncio.create_task(
+            node.run_heartbeat(interval=0.01, max_missed=2)
+        )
+        await asyncio.sleep(0.05)
+
+        assert sent_ping_count >= 2
+        assert node._missed_heartbeat_pongs == 0
+        ws.close.assert_not_called()
+        assert not heartbeat_task.done()
+
+        heartbeat_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await heartbeat_task
+
     async def test_legacy_node_does_not_support_app_heartbeat(self, node):
         """Legacy nodes without the capability are not subject to heartbeat timeout."""
         assert node.supports_app_heartbeat is False
