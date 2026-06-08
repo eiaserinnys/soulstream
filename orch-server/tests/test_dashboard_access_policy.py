@@ -22,6 +22,15 @@ ACCESS_ENV = (
     '{"bellon.lovedive@gmail.com":'
     '{"restricted":true,"allowedFolderIds":["allowed-root"]}}'
 )
+DEFAULT_AGENT_REGISTRATION = {
+    "agents": [
+        {
+            "id": "default-agent",
+            "name": "Default Agent",
+            "backend": "claude",
+        }
+    ]
+}
 
 
 def _session(session_id: str, folder_id: str) -> dict:
@@ -120,7 +129,10 @@ async def _register_node(node_manager: NodeManager):
     ws = AsyncMock()
     ws.send_json = AsyncMock()
     ws.close = AsyncMock()
-    node = await node_manager.register_node(ws, {"node_id": "node-1"})
+    node = await node_manager.register_node(
+        ws,
+        {"node_id": "node-1", **DEFAULT_AGENT_REGISTRATION},
+    )
 
     async def resolve_on_send(data):
         req_id = data.get("requestId")
