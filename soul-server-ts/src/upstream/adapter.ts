@@ -177,33 +177,26 @@ export class UpstreamAdapter {
     this.authWarned = false;
     this.logger.info({ nodeId: this.config.nodeId }, "Connected to upstream");
 
-    // node_register 발행
-    await this.send(
-      buildRegistrationMsg({
-        nodeId: this.config.nodeId,
-        host: this.config.host,
-        port: this.config.port,
-        userName: this.config.userName,
-        userPortraitPath: this.config.userPortraitPath,
-        agentRegistry: this.deps.agentRegistry,
-        logger: this.logger,
-      }),
-    );
-    await this.sendInitialSessions();
-
-    // 명령 수신 루프 — close 또는 error로 종료
-    await new Promise<void>((resolve) => {
+    // 명령 수신 루프 — node_register 직후 orch heartbeat가 와도 놓치지 않도록
+    // registration 발행 전에 listener를 먼저 설치한다.
+    const servePromise = new Promise<void>((resolve) => {
       const onMessage = async (raw: Buffer | ArrayBuffer | Buffer[]) => {
         let cmd: unknown;
         try {
-          const text = Buffer.isBuffer(raw) ? raw.toString("utf-8") : String(raw);
+          const text = Array.isArray(raw)
+            ? Buffer.concat(raw).toString("utf-8")
+            : Buffer.isBuffer(raw)
+              ? raw.toString("utf-8")
+              : raw instanceof ArrayBuffer
+                ? Buffer.from(raw).toString("utf-8")
+                : String(raw);
           cmd = JSON.parse(text);
         } catch (err) {
           this.logger.warn({ err }, "Invalid JSON from upstream");
           return;
         }
         try {
-          if (this.handleAppHeartbeatMessage(cmd)) {
+          if (await this.handleAppHeartbeatMessage(cmd)) {
             return;
           }
           await this.dispatcher.dispatch(cmd);
@@ -230,7 +223,26 @@ export class UpstreamAdapter {
       ws.once("error", onError);
     });
 
-    this.ws = null;
+    try {
+      // node_register 발행
+      await this.send(
+        buildRegistrationMsg({
+          nodeId: this.config.nodeId,
+          host: this.config.host,
+          port: this.config.port,
+          userName: this.config.userName,
+          userPortraitPath: this.config.userPortraitPath,
+          agentRegistry: this.deps.agentRegistry,
+          logger: this.logger,
+        }),
+      );
+      await this.sendInitialSessions();
+      await servePromise;
+    } finally {
+      if (this.ws === ws) {
+        this.ws = null;
+      }
+    }
   }
 
   private startAppHeartbeat(ws: WebSocket): void {
@@ -282,19 +294,23 @@ export class UpstreamAdapter {
     this.missedHeartbeatPongs = 0;
   }
 
-  private handleAppHeartbeatMessage(msg: unknown): boolean {
+  private async handleAppHeartbeatMessage(msg: unknown): Promise<boolean> {
     if (!msg || typeof msg !== "object") {
       return false;
     }
     const data = msg as Record<string, unknown>;
     if (data.type === APP_HEARTBEAT_PING) {
       const ws = this.ws;
-      void this.send({
-        type: APP_HEARTBEAT_PONG,
-        sentAt: data.sentAt,
-      }).catch((err) => {
-        this.logger.warn({ err }, "Failed to send app heartbeat pong");
-      });
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          await this.sendOnSocket(ws, {
+            type: APP_HEARTBEAT_PONG,
+            sentAt: data.sentAt,
+          });
+        } catch (err) {
+          this.logger.warn({ err }, "Failed to send app heartbeat pong");
+        }
+      }
       if (ws && ws.readyState === WebSocket.OPEN && !this.heartbeatTimer) {
         this.startAppHeartbeat(ws);
       }

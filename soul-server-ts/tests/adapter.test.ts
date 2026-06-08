@@ -53,7 +53,13 @@ interface MockOrch {
   expectedAuthHeader?: string;
 }
 
-async function startMockOrch(opts: { authToken?: string; autoPong?: boolean } = {}): Promise<MockOrch> {
+async function startMockOrch(
+  opts: {
+    authToken?: string;
+    autoPong?: boolean;
+    pingOnRegister?: boolean;
+  } = {},
+): Promise<MockOrch> {
   const wss = new WebSocketServer({ port: 0, host: "127.0.0.1" });
   await new Promise<void>((r) => wss.once("listening", () => r()));
   const port = (wss.address() as AddressInfo).port;
@@ -76,6 +82,17 @@ async function startMockOrch(opts: { authToken?: string; autoPong?: boolean } = 
       try {
         const msg = JSON.parse(text);
         received.push(msg);
+        if (
+          opts.pingOnRegister &&
+          typeof msg === "object" &&
+          msg !== null &&
+          (msg as Record<string, unknown>).type === "node_register"
+        ) {
+          socket.send(JSON.stringify({
+            type: "app_heartbeat_ping",
+            sentAt: "2026-06-08T00:00:00Z",
+          }));
+        }
         if (
           opts.autoPong &&
           typeof msg === "object" &&
@@ -112,6 +129,16 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void
 }
 
 const silentLogger = pino({ level: "silent" });
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
 
 describe("UpstreamAdapter", () => {
   let orch: MockOrch;
@@ -390,6 +417,55 @@ describe("UpstreamAdapter", () => {
       (msg) => (msg as Record<string, unknown>).type === "app_heartbeat_pong",
     ) as Record<string, unknown>;
     expect(pong.sentAt).toBe("2026-06-08T00:00:00Z");
+
+    await adapter.shutdown();
+  });
+
+  it("node_register 직후 초기 세션 dump가 지연되어도 orch heartbeat ping에 응답한다", async () => {
+    await stopMockOrch(orch);
+    orch = await startMockOrch({ pingOnRegister: true });
+
+    const sessionDump = deferred<{
+      sessions: [];
+      total: number;
+    }>();
+    const sessionDb = {
+      listSessionsSummary: vi.fn(() => sessionDump.promise),
+    } as unknown as SessionDB;
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      silentLogger,
+      makeDeps({ sessionDb }),
+    );
+
+    void adapter.run();
+    await waitFor(() =>
+      orch.receivedMessages.some(
+        (msg) => (msg as Record<string, unknown>).type === "node_register",
+      ),
+    );
+    await waitFor(() =>
+      orch.receivedMessages.some(
+        (msg) => (msg as Record<string, unknown>).type === "app_heartbeat_pong",
+      ),
+      500,
+    );
+
+    sessionDump.resolve({ sessions: [], total: 0 });
+    await waitFor(() =>
+      orch.receivedMessages.some(
+        (msg) => (msg as Record<string, unknown>).type === "sessions_update",
+      ),
+    );
 
     await adapter.shutdown();
   });
