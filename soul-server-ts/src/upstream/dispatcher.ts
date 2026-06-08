@@ -290,7 +290,7 @@ export class CommandDispatcher {
       ? new SupervisorDirectTargetGuard({ db: sessionDb, taskManager })
       : undefined;
     this.attachmentCommands = new AttachmentCommands(attachmentStore);
-    this.sessionListCommands = new SessionListCommands(sessionDb);
+    this.sessionListCommands = new SessionListCommands(sessionDb, nodeId);
     this.claudeAuthCommands = new ClaudeAuthCommands({ agentRegistry, claudeAuth });
     this.providerUsageCommands = new ProviderUsageCommands({
       providerUsage: providerUsage ?? new ProviderUsageService({ claudeAuth }),

@@ -19,6 +19,10 @@ DEFAULT_AGENT_REGISTRATION = {
 }
 
 
+def _cache_session(node, session_id="test-session"):
+    node._sessions[session_id] = {"agentSessionId": session_id}
+
+
 def _task_row(**overrides):
     base = {
         "id": "parent-task",
@@ -368,6 +372,40 @@ class TestCreateSession:
         }
 
 
+class TestIntervene:
+    """POST /api/sessions/{session_id}/intervene tests."""
+
+    @pytest.mark.parametrize(
+        "node_error",
+        [
+            "Task hydration failed: sess-owned",
+            "Task owned by another node: sess-owned owner=owner-node current=wrong-node",
+        ],
+    )
+    async def test_node_resume_internal_errors_map_to_503(
+        self, client, mock_db, node_manager, node_error
+    ):
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(
+            ws,
+            {"node_id": "owner-node", **DEFAULT_AGENT_REGISTRATION},
+        )
+        node.send_intervene = AsyncMock(side_effect=RuntimeError(node_error))
+        mock_db.get_session = AsyncMock(
+            return_value={"session_id": "sess-owned", "node_id": "owner-node"}
+        )
+
+        resp = await client.post(
+            "/api/sessions/sess-owned/intervene",
+            json={"text": "resume", "user": "browser"},
+        )
+
+        assert resp.status_code == 503
+        assert node_error in resp.json()["detail"]
+
+
 class TestRespond:
     """POST /api/sessions/{session_id}/respond tests."""
 
@@ -392,6 +430,7 @@ class TestRespond:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "resp-node"})
+        _cache_session(node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(node)
 
         resp = await client.post(
@@ -417,6 +456,7 @@ class TestRespond:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "resp-node-2"})
+        _cache_session(node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(node)
 
         resp = await client.post(
@@ -451,6 +491,7 @@ class TestRespond:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "resp-node-error"})
+        _cache_session(node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -490,6 +531,7 @@ class TestClaudeBackgroundTasks:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "runtime-node"})
+        _cache_session(node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -532,6 +574,7 @@ class TestClaudeBackgroundTasks:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "runtime-node-2"})
+        _cache_session(node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -560,6 +603,7 @@ class TestClaudeBackgroundTasks:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "schedule-node"})
+        _cache_session(node)
 
         async def resolve_on_send(data):
             ws_command_id = data.get("requestId", "")
@@ -608,6 +652,7 @@ class TestClaudeBackgroundTasks:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "schedule-node"})
+        _cache_session(node)
 
         async def resolve_on_send(data):
             ws_command_id = data.get("requestId", "")
@@ -658,6 +703,7 @@ class TestToolApprovals:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "approval-node"})
+        _cache_session(node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -691,6 +737,7 @@ class TestToolApprovals:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "approval-node-2"})
+        _cache_session(node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -736,6 +783,7 @@ class TestToolApprovals:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "approval-node-error"})
+        _cache_session(node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -775,6 +823,7 @@ class TestRealtimeVoice:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "realtime-node"})
+        _cache_session(node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -806,6 +855,7 @@ class TestRealtimeVoice:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "realtime-node-2"})
+        _cache_session(node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -834,6 +884,7 @@ class TestRealtimeVoice:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "realtime-node-3"})
+        _cache_session(node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {

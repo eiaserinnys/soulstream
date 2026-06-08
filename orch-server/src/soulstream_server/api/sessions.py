@@ -376,6 +376,14 @@ def create_sessions_router(
             )
         except RuntimeError as e:
             msg = str(e)
+            if (
+                "task hydration failed" in msg.lower()
+                or "task owned by another node" in msg.lower()
+            ):
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Node could not resume existing session: {msg}",
+                )
             # soul-server SESSION_NOT_FOUND 에러 → 404
             if "찾을 수 없" in msg or "not found" in msg.lower():
                 session = await db.get_session(session_id)

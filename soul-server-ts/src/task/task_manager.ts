@@ -26,6 +26,10 @@ import type { Task, TaskStatus } from "./task_models.js";
 import { ActiveTaskRecovery } from "./task_active_recovery.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import { hydrateEvictedTaskFromSessionRow } from "./task_evicted_hydration.js";
+import {
+  TaskHydrationFailedError,
+  TaskOwnedByAnotherNodeError,
+} from "./task_hydration_errors.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import {
   TaskLifecycleRoute,
@@ -415,7 +419,7 @@ export class TaskManager {
       row = await this.db.getSession(sessionId);
     } catch (err) {
       this.logger.warn({ err, sessionId }, "loadEvictedTask: getSession failed");
-      return null;
+      throw new TaskHydrationFailedError(sessionId, err);
     }
     if (!row) return null;
     // Legacy rows can lack node_id; block only when DB has an authoritative owner.
@@ -428,7 +432,7 @@ export class TaskManager {
         },
         "loadEvictedTask: session belongs to another node",
       );
-      return null;
+      throw new TaskOwnedByAnotherNodeError(sessionId, row.node_id, this.nodeId);
     }
 
     return hydrateEvictedTaskFromSessionRow(row, this.logger);

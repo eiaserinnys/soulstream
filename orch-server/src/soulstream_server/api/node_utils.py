@@ -14,33 +14,39 @@ logger = logging.getLogger(__name__)
 
 
 async def find_session_node(session_id: str, db, node_manager) -> NodeConnection:
-    """인메모리 -> DB -> 활성 노드 폴백으로 세션의 노드를 찾는다.
+    """DB owner -> live cache -> legacy active-node fallback으로 세션 노드를 찾는다.
 
     NodeManager는 DB를 알지 않으므로(설계 원칙 S1 지식 경계),
-    DB 폴백은 이미 db를 보유한 API 핸들러 계층에서 수행한다.
+    DB owner 해석은 이미 db를 보유한 API 핸들러 계층에서 수행한다.
 
     Raises:
         HTTPException 404: 세션 노드를 찾을 수 없음
         HTTPException 503: 세션은 있으나 owner node가 연결되어 있지 않음
     """
-    session_data = None
-    node = node_manager.find_node_for_session(session_id)
-    if not node:
-        session_data = await db.get_session(session_id)
-        if session_data and session_data.get("node_id"):
-            node = node_manager.get_node(session_data["node_id"])
-            if not node:
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Session owner node unavailable: {session_data['node_id']}",
-                )
-    if not node:
-        # Legacy rows can lack node_id. In that case only, single-node fallback is
-        # acceptable. A row with an explicit owner node must not be routed to an
-        # arbitrary active node.
+    session_data = await db.get_session(session_id)
+    if session_data:
+        owner_node_id = session_data.get("node_id")
+        if owner_node_id:
+            node = node_manager.get_node(owner_node_id)
+            if node:
+                return node
+            raise HTTPException(
+                status_code=503,
+                detail=f"Session owner node unavailable: {owner_node_id}",
+            )
+
+        # Legacy rows can lack node_id. In that case only, live cache or
+        # single-node fallback is acceptable. Rows with explicit owners never
+        # route through stale per-node session dumps.
+        node = node_manager.find_node_for_session(session_id)
+        if node:
+            return node
         active_nodes = node_manager.get_connected_nodes()
         if active_nodes:
-            node = active_nodes[0]
-    if not node:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return node
+            return active_nodes[0]
+
+    node = node_manager.find_node_for_session(session_id)
+    if node:
+        return node
+
+    raise HTTPException(status_code=404, detail="Session not found")
