@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 104개 $defs (wire 49 + SSE event 55). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 106개 $defs (wire 51 + SSE event 55). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -16,7 +16,7 @@
         "port": { "type": "integer" },
         "capabilities": {
           "type": "object",
-          "description": "노드 자체 가용성 정보. 예: {max_concurrent: 5}",
+          "description": "노드 자체 가용성 정보. 예: {max_concurrent: 5, app_heartbeat_v1: true}",
           "additionalProperties": true
         },
         "supported_backends": {
@@ -44,6 +44,32 @@
           "type": "object",
           "description": "선택. 노드 사용자 프로필 (name, hasPortrait, portrait_b64).",
           "additionalProperties": true
+        }
+      }
+    },
+    "AppHeartbeatPing": {
+      "type": "object",
+      "description": "양방향 app-level heartbeat ping. requestId 없는 liveness 전용 메시지.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "app_heartbeat_ping" },
+        "sentAt": {
+          "type": "string",
+          "description": "디버깅/echo용 ISO timestamp. 수신자는 pong에 그대로 반사한다."
+        }
+      }
+    },
+    "AppHeartbeatPong": {
+      "type": "object",
+      "description": "양방향 app-level heartbeat pong. business command pending과 분리된 liveness 응답.",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "app_heartbeat_pong" },
+        "sentAt": {
+          "type": "string",
+          "description": "ping에서 받은 sentAt echo."
         }
       }
     },
@@ -1680,6 +1706,8 @@
   },
   "oneOf": [
     { "$ref": "#/$defs/NodeRegister" },
+    { "$ref": "#/$defs/AppHeartbeatPing" },
+    { "$ref": "#/$defs/AppHeartbeatPong" },
     { "$ref": "#/$defs/SessionCreated" },
     { "$ref": "#/$defs/SessionEventEnvelope" },
     { "$ref": "#/$defs/SessionsUpdate" },

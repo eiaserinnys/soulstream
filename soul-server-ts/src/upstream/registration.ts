@@ -75,6 +75,7 @@ export function _resetPortraitCacheForTest(): void {
  *
  * - max_concurrent = agents.length (각 agent 동시 1 turn 모델 — Codex 단일턴)
  * - reflect_brief = true (orchestrator cogito aggregate가 TS node만 대상으로 삼는 capability)
+ * - app_heartbeat_v1 = true (orch↔node app-level heartbeat negotiation)
  * - supported_backends = registry의 중복 제거 backend 목록
  * - agents = registry.list() 매핑 (id, name, backend, portrait_url, portrait_b64?)
  *   · portrait_path 미설정 시 portrait_url = "" + portrait_b64 키 미박힘
@@ -92,7 +93,11 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
     node_id: params.nodeId,
     host: params.host,
     port: params.port,
-    capabilities: { max_concurrent: agents.length, reflect_brief: true },
+    capabilities: {
+      max_concurrent: agents.length,
+      reflect_brief: true,
+      app_heartbeat_v1: true,
+    },
     supported_backends: params.agentRegistry.supportedBackends(),
     agents: agents.map((a) => {
       const entry: NonNullable<NodeRegister["agents"]>[number] = {

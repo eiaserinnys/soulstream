@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any, AsyncIterable, Callable, Coroutine
@@ -45,6 +46,11 @@ from soulstream_server.constants import (
     CMD_PROVIDER_USAGE_GET,
     CMD_REFLECT_BRIEF,
     COMMAND_TIMEOUT,
+    APP_HEARTBEAT_INTERVAL,
+    APP_HEARTBEAT_MAX_MISSED,
+    CAP_APP_HEARTBEAT_V1,
+    EVT_APP_HEARTBEAT_PING,
+    EVT_APP_HEARTBEAT_PONG,
     EVT_ERROR,
     MAX_ATTACHMENT_SIZE,
 )
@@ -56,6 +62,7 @@ from soulstream_server.nodes.inbound_events import (
 from soulstream_server.nodes.pending_commands import PendingCommands
 
 OnCloseCallback = Callable[["NodeConnection"], Coroutine[Any, Any, None]]
+logger = logging.getLogger(__name__)
 
 
 class NodeConnection:
@@ -99,6 +106,8 @@ class NodeConnection:
         )
         self._sessions = self._inbound_events.sessions
         self._subscribe_listeners = self._inbound_events.subscribe_listeners
+        self._heartbeat_pong_event = asyncio.Event()
+        self._missed_heartbeat_pongs = 0
 
         self.on_close = on_close
 
@@ -228,6 +237,10 @@ class NodeConnection:
     def _closed(self) -> bool:
         return self._pending_commands.closed
 
+    @property
+    def supports_app_heartbeat(self) -> bool:
+        return bool(self.capabilities.get(CAP_APP_HEARTBEAT_V1))
+
     def to_info(self) -> dict:
         return {
             "nodeId": self.node_id,
@@ -252,6 +265,65 @@ class NodeConnection:
             # "Cannot call 'send' once a close message has been sent." RuntimeError를 발생시킨다.
             # 이를 WebSocketDisconnect로 정규화하여 호출자가 일관되게 처리할 수 있게 한다.
             raise WebSocketDisconnect(code=1011, reason=str(e)) from e
+
+    async def _send_heartbeat_pong(self, sent_at: str | None = None) -> None:
+        data: dict[str, Any] = {"type": EVT_APP_HEARTBEAT_PONG}
+        if sent_at is not None:
+            data["sentAt"] = sent_at
+        await self._send(data)
+
+    async def _send_heartbeat_ping(self) -> None:
+        await self._send({
+            "type": EVT_APP_HEARTBEAT_PING,
+            "sentAt": datetime.now(timezone.utc).isoformat(),
+        })
+
+    async def run_heartbeat(
+        self,
+        *,
+        interval: float | None = None,
+        max_missed: int | None = None,
+    ) -> None:
+        """Run app-level heartbeat until the node disconnects or misses too many pongs."""
+        if not self.supports_app_heartbeat:
+            return
+
+        heartbeat_interval = APP_HEARTBEAT_INTERVAL if interval is None else interval
+        heartbeat_max_missed = max(
+            1, APP_HEARTBEAT_MAX_MISSED if max_missed is None else max_missed
+        )
+
+        while True:
+            loop = asyncio.get_running_loop()
+            started = loop.time()
+            self._heartbeat_pong_event.clear()
+            try:
+                await self._send_heartbeat_ping()
+            except WebSocketDisconnect:
+                await self.close()
+                return
+
+            try:
+                await asyncio.wait_for(
+                    self._heartbeat_pong_event.wait(),
+                    timeout=heartbeat_interval,
+                )
+            except asyncio.TimeoutError:
+                self._missed_heartbeat_pongs += 1
+                if self._missed_heartbeat_pongs >= heartbeat_max_missed:
+                    logger.warning(
+                        "Node app heartbeat timeout: node=%s missed=%d interval=%s",
+                        self.node_id,
+                        self._missed_heartbeat_pongs,
+                        heartbeat_interval,
+                    )
+                    await self.close()
+                    return
+            else:
+                self._missed_heartbeat_pongs = 0
+                elapsed = loop.time() - started
+                if elapsed < heartbeat_interval:
+                    await asyncio.sleep(heartbeat_interval - elapsed)
 
     async def _send_command(
         self, command: str, payload: dict, timeout: float = COMMAND_TIMEOUT
@@ -760,6 +832,15 @@ class NodeConnection:
     async def handle_message(self, data: dict) -> None:
         msg_type = data.get("type")
         request_id = data.get("requestId")
+
+        if msg_type == EVT_APP_HEARTBEAT_PING:
+            await self._send_heartbeat_pong(data.get("sentAt"))
+            return
+
+        if msg_type == EVT_APP_HEARTBEAT_PONG:
+            self._missed_heartbeat_pongs = 0
+            self._heartbeat_pong_event.set()
+            return
 
         # pending request에 대한 응답
         if request_id and request_id in self._pending:

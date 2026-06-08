@@ -53,7 +53,7 @@ interface MockOrch {
   expectedAuthHeader?: string;
 }
 
-async function startMockOrch(opts: { authToken?: string } = {}): Promise<MockOrch> {
+async function startMockOrch(opts: { authToken?: string; autoPong?: boolean } = {}): Promise<MockOrch> {
   const wss = new WebSocketServer({ port: 0, host: "127.0.0.1" });
   await new Promise<void>((r) => wss.once("listening", () => r()));
   const port = (wss.address() as AddressInfo).port;
@@ -74,7 +74,19 @@ async function startMockOrch(opts: { authToken?: string } = {}): Promise<MockOrc
     socket.on("message", (raw) => {
       const text = Buffer.isBuffer(raw) ? raw.toString("utf-8") : String(raw);
       try {
-        received.push(JSON.parse(text));
+        const msg = JSON.parse(text);
+        received.push(msg);
+        if (
+          opts.autoPong &&
+          typeof msg === "object" &&
+          msg !== null &&
+          (msg as Record<string, unknown>).type === "app_heartbeat_ping"
+        ) {
+          socket.send(JSON.stringify({
+            type: "app_heartbeat_pong",
+            sentAt: (msg as Record<string, unknown>).sentAt,
+          }));
+        }
       } catch {
         received.push(text);
       }
@@ -136,7 +148,11 @@ describe("UpstreamAdapter", () => {
     expect(first.node_id).toBe("eias-shopping-ts");
     expect(first.supported_backends).toEqual(["codex"]);
     // Phase B-3 + cogito aggregate: registry capacity and TS reflection capability.
-    expect(first.capabilities).toEqual({ max_concurrent: 1, reflect_brief: true });
+    expect(first.capabilities).toEqual({
+      max_concurrent: 1,
+      reflect_brief: true,
+      app_heartbeat_v1: true,
+    });
     // PR(portrait wire): agents 매핑에 portrait_url 추가 (Python adapter.py:212-233 정합).
     // portrait_path 미설정 fixture → portrait_url=""·portrait_b64 키 미박힘.
     expect(first.agents).toEqual([
@@ -184,13 +200,19 @@ describe("UpstreamAdapter", () => {
     );
 
     void adapter.run();
-    await waitFor(() => orch.receivedMessages.length >= 2);
+    await waitFor(() =>
+      orch.receivedMessages.some(
+        (msg) => (msg as Record<string, unknown>).type === "sessions_update",
+      ),
+    );
 
     expect(sessionDb.listSessionsSummary).toHaveBeenCalledWith({
       limit: 10_000,
       offset: 0,
     });
-    const second = orch.receivedMessages[1] as Record<string, unknown>;
+    const second = orch.receivedMessages.find(
+      (msg) => (msg as Record<string, unknown>).type === "sessions_update",
+    ) as Record<string, unknown>;
     expect(second).toMatchObject({
       type: "sessions_update",
       total: 1,
@@ -226,9 +248,15 @@ describe("UpstreamAdapter", () => {
     // orch가 health_check를 보냄
     orch.sockets[0]!.send(JSON.stringify({ type: "health_check", requestId: "hc-1" }));
 
-    await waitFor(() => orch.receivedMessages.length >= 2);
+    await waitFor(() =>
+      orch.receivedMessages.some(
+        (msg) => (msg as Record<string, unknown>).type === "health_status",
+      ),
+    );
 
-    const reply = orch.receivedMessages[1] as Record<string, unknown>;
+    const reply = orch.receivedMessages.find(
+      (msg) => (msg as Record<string, unknown>).type === "health_status",
+    ) as Record<string, unknown>;
     expect(reply.type).toBe("health_status");
     expect(reply.node_id).toBe("eias-shopping-ts");
     expect(reply.requestId).toBe("hc-1");
@@ -258,9 +286,15 @@ describe("UpstreamAdapter", () => {
 
     // P4에서 respond는 implemented — 필수 필드 누락은 명시 validation error.
     orch.sockets[0]!.send(JSON.stringify({ type: "respond", requestId: "r-1" }));
-    await waitFor(() => orch.receivedMessages.length >= 2);
+    await waitFor(() =>
+      orch.receivedMessages.some(
+        (msg) => (msg as Record<string, unknown>).type === "error",
+      ),
+    );
 
-    const reply = orch.receivedMessages[1] as Record<string, unknown>;
+    const reply = orch.receivedMessages.find(
+      (msg) => (msg as Record<string, unknown>).type === "error",
+    ) as Record<string, unknown>;
     expect(reply.type).toBe("error");
     expect(reply.command_type).toBe("respond");
     expect(reply.requestId).toBe("r-1");
@@ -317,6 +351,80 @@ describe("UpstreamAdapter", () => {
     // 잠시 대기 — 토큰 거부로 receivedMessages 0건 유지되어야 함
     await new Promise((r) => setTimeout(r, 200));
     expect(orch.receivedMessages).toHaveLength(0);
+
+    await adapter.shutdown();
+  });
+
+  it("orch app_heartbeat_ping에 app_heartbeat_pong으로 응답한다", async () => {
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      silentLogger,
+      makeDeps(),
+    );
+
+    void adapter.run();
+    await waitFor(() => orch.sockets.length >= 1 && orch.receivedMessages.length >= 1);
+
+    orch.sockets[0]!.send(JSON.stringify({
+      type: "app_heartbeat_ping",
+      sentAt: "2026-06-08T00:00:00Z",
+    }));
+
+    await waitFor(() =>
+      orch.receivedMessages.some(
+        (msg) => (msg as Record<string, unknown>).type === "app_heartbeat_pong",
+      ),
+    );
+
+    const pong = orch.receivedMessages.find(
+      (msg) => (msg as Record<string, unknown>).type === "app_heartbeat_pong",
+    ) as Record<string, unknown>;
+    expect(pong.sentAt).toBe("2026-06-08T00:00:00Z");
+
+    await adapter.shutdown();
+  });
+
+  it("app heartbeat pong이 없으면 연결을 닫고 재연결 루프로 넘긴다", async () => {
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+        heartbeatIntervalMs: 10,
+        heartbeatMaxMissed: 1,
+      },
+      silentLogger,
+      makeDeps(),
+    );
+
+    void adapter.run();
+    await waitFor(() => orch.sockets.length >= 1 && orch.receivedMessages.length >= 1);
+
+    orch.sockets[0]!.send(JSON.stringify({
+      type: "app_heartbeat_ping",
+      sentAt: "2026-06-08T00:00:00Z",
+    }));
+
+    await waitFor(
+      () =>
+        orch.sockets[0]!.readyState === orch.sockets[0]!.CLOSED ||
+        orch.sockets[0]!.readyState === orch.sockets[0]!.CLOSING,
+      500,
+    );
 
     await adapter.shutdown();
   });

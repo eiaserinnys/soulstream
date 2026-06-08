@@ -30,6 +30,24 @@ class NodeRegister(TypedDict):
     user: NotRequired[dict[str, Any]]
 
 
+class AppHeartbeatPing(TypedDict):
+    """
+    양방향 app-level heartbeat ping. requestId 없는 liveness 전용 메시지.
+    """
+
+    type: Literal['app_heartbeat_ping']
+    sentAt: NotRequired[str]
+
+
+class AppHeartbeatPong(TypedDict):
+    """
+    양방향 app-level heartbeat pong. business command pending과 분리된 liveness 응답.
+    """
+
+    type: Literal['app_heartbeat_pong']
+    sentAt: NotRequired[str]
+
+
 class SessionCreated(TypedDict):
     """
     노드→orch: 세션 생성 응답 또는 broadcast. command_handler.py L220-228 + event_relay.py L119-133.
@@ -1401,6 +1419,8 @@ class SessionEventEnvelope(TypedDict):
 
 SoulstreamUpstreamProtocol: TypeAlias = (
     NodeRegister
+    | AppHeartbeatPing
+    | AppHeartbeatPong
     | SessionCreated
     | SessionEventEnvelope
     | SessionsUpdate

@@ -35,6 +35,8 @@ from soulstream_server.constants import (
     CMD_UPLOAD_ATTACHMENT_CHUNK,
     CMD_UPLOAD_ATTACHMENT_FINISH,
     CMD_UPLOAD_ATTACHMENT_START,
+    EVT_APP_HEARTBEAT_PING,
+    EVT_APP_HEARTBEAT_PONG,
     EVT_ERROR,
     EVT_EVENT,
     EVT_SESSION_CREATED,
@@ -205,6 +207,48 @@ class TestHandleMessage:
 
         assert "sess-nested" in node.sessions
         assert node.sessions["sess-nested"]["status"] == "running"
+
+    async def test_app_heartbeat_ping_replies_with_pong(self, node, ws):
+        """app_heartbeat_ping is answered by orch without entering inbound event handling."""
+        await node.handle_message({
+            "type": EVT_APP_HEARTBEAT_PING,
+            "sentAt": "2026-06-08T00:00:00Z",
+        })
+
+        ws.send_json.assert_called_once_with({
+            "type": EVT_APP_HEARTBEAT_PONG,
+            "sentAt": "2026-06-08T00:00:00Z",
+        })
+
+    async def test_app_heartbeat_timeout_closes_and_cancels_pending_command(self, ws):
+        """Advertised heartbeat timeout closes the node and normalizes pending commands."""
+        node = NodeConnection(
+            ws=ws,
+            node_id="heartbeat-node",
+            host="localhost",
+            port=4100,
+            capabilities={"app_heartbeat_v1": True},
+        )
+        request_id = node._pending_commands.next_request_id()
+        future = node._pending_commands.register(request_id)
+        wait_task = asyncio.create_task(
+            node._pending_commands.wait_for_result(
+                request_id,
+                command=CMD_CREATE_SESSION,
+                future=future,
+                timeout=1,
+            )
+        )
+
+        await node.run_heartbeat(interval=0.01, max_missed=1)
+
+        with pytest.raises(ConnectionError, match="disconnected during command"):
+            await wait_task
+        ws.close.assert_called()
+
+    async def test_legacy_node_does_not_support_app_heartbeat(self, node):
+        """Legacy nodes without the capability are not subject to heartbeat timeout."""
+        assert node.supports_app_heartbeat is False
 
 
 class TestCommandSending:

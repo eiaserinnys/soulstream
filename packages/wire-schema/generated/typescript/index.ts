@@ -1,10 +1,12 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 104개 $defs (wire 49 + SSE event 55). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 106개 $defs (wire 51 + SSE event 55). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
+  | AppHeartbeatPing
+  | AppHeartbeatPong
   | SessionCreated
   | SessionEventEnvelope
   | SessionsUpdate
@@ -63,7 +65,7 @@ export interface NodeRegister {
   host?: string;
   port?: number;
   /**
-   * 노드 자체 가용성 정보. 예: {max_concurrent: 5}
+   * 노드 자체 가용성 정보. 예: {max_concurrent: 5, app_heartbeat_v1: true}
    */
   capabilities?: {
     [k: string]: unknown;
@@ -87,6 +89,28 @@ export interface NodeRegister {
   user?: {
     [k: string]: unknown;
   };
+  [k: string]: unknown;
+}
+/**
+ * 양방향 app-level heartbeat ping. requestId 없는 liveness 전용 메시지.
+ */
+export interface AppHeartbeatPing {
+  type: "app_heartbeat_ping";
+  /**
+   * 디버깅/echo용 ISO timestamp. 수신자는 pong에 그대로 반사한다.
+   */
+  sentAt?: string;
+  [k: string]: unknown;
+}
+/**
+ * 양방향 app-level heartbeat pong. business command pending과 분리된 liveness 응답.
+ */
+export interface AppHeartbeatPong {
+  type: "app_heartbeat_pong";
+  /**
+   * ping에서 받은 sentAt echo.
+   */
+  sentAt?: string;
   [k: string]: unknown;
 }
 /**
