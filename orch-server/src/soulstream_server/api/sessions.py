@@ -21,7 +21,10 @@ from soul_common.catalog.catalog_service import CatalogService
 from soul_common.db.session_db import PostgresSessionDB
 
 from soulstream_server.api.deprecated import deprecated_api_response
-from soulstream_server.api.node_utils import find_session_node
+from soulstream_server.api.node_utils import (
+    find_session_node,
+    http_exception_for_node_resume_runtime_error,
+)
 from soulstream_server.api.session_events import create_session_events_response
 from soulstream_server.api.session_models import (
     ClaudeRuntimeBackgroundTasksRequest,
@@ -375,26 +378,11 @@ def create_sessions_router(
                 detail=f"Node command timed out, please retry: {e}",
             )
         except RuntimeError as e:
-            msg = str(e)
-            if (
-                "task hydration failed" in msg.lower()
-                or "task owned by another node" in msg.lower()
-            ):
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Node could not resume existing session: {msg}",
-                )
-            # soul-server SESSION_NOT_FOUND 에러 → 404
-            if "찾을 수 없" in msg or "not found" in msg.lower():
-                session = await db.get_session(session_id)
-                if session is None:
-                    raise HTTPException(status_code=404, detail=msg)
-                raise HTTPException(
-                    status_code=503,
-                    detail=f"Node could not resume existing session, please retry: {msg}",
-                )
-            # 그 외 처리 불가 → 422
-            raise HTTPException(status_code=422, detail=msg)
+            raise await http_exception_for_node_resume_runtime_error(
+                session_id,
+                db,
+                e,
+            )
 
     @router.post("/{session_id}/message")
     async def deprecated_session_message(session_id: str):

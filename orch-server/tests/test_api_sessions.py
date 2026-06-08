@@ -19,8 +19,10 @@ DEFAULT_AGENT_REGISTRATION = {
 }
 
 
-def _cache_session(node, session_id="test-session"):
-    node._sessions[session_id] = {"agentSessionId": session_id}
+def _mock_session_owner(mock_db, node, session_id="test-session"):
+    mock_db.get_session = AsyncMock(
+        return_value={"session_id": session_id, "node_id": node.node_id}
+    )
 
 
 def _task_row(**overrides):
@@ -424,13 +426,13 @@ class TestRespond:
                 future.set_result(result)
         return resolve_on_send
 
-    async def test_camel_case_request_id(self, client, node_manager):
+    async def test_camel_case_request_id(self, client, mock_db, node_manager):
         """camelCase requestId 필드로 응답 전송 시 200 반환."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "resp-node"})
-        _cache_session(node)
+        _mock_session_owner(mock_db, node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(node)
 
         resp = await client.post(
@@ -450,13 +452,15 @@ class TestRespond:
         # WS 명령 ID는 _send_command가 부여한 형식 (input_request hex가 아님)
         assert respond_payloads[0].get("requestId") != "r123"
 
-    async def test_snake_case_request_id_backward_compat(self, client, node_manager):
+    async def test_snake_case_request_id_backward_compat(
+        self, client, mock_db, node_manager
+    ):
         """snake_case request_id 필드로 응답 전송 시 200 반환 (하위 호환)."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "resp-node-2"})
-        _cache_session(node)
+        _mock_session_owner(mock_db, node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(node)
 
         resp = await client.post(
@@ -484,14 +488,14 @@ class TestRespond:
         ],
     )
     async def test_respond_ack_error_status_maps_to_http_error(
-        self, client, node_manager, code, expected_status
+        self, client, mock_db, node_manager, code, expected_status
     ):
         """TS node가 respond_ack(status=error)를 보내도 orch는 timeout 없이 HTTP 에러로 정규화한다."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "resp-node-error"})
-        _cache_session(node)
+        _mock_session_owner(mock_db, node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -525,13 +529,13 @@ class TestClaudeBackgroundTasks:
         return resolve_on_send
 
     async def test_background_task_list_output_stop_routes_send_ws_commands(
-        self, client, node_manager
+        self, client, mock_db, node_manager
     ):
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "runtime-node"})
-        _cache_session(node)
+        _mock_session_owner(mock_db, node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -568,13 +572,13 @@ class TestClaudeBackgroundTasks:
         assert payloads[-1]["taskId"] == "bg-1"
 
     async def test_background_tasks_route_accepts_camel_case_tool_use_id(
-        self, client, node_manager
+        self, client, mock_db, node_manager
     ):
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "runtime-node-2"})
-        _cache_session(node)
+        _mock_session_owner(mock_db, node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -597,13 +601,13 @@ class TestClaudeBackgroundTasks:
         assert payload["toolUseId"] == "toolu-bash"
 
     async def test_schedule_list_delete_routes_send_ws_commands(
-        self, client, node_manager
+        self, client, mock_db, node_manager
     ):
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "schedule-node"})
-        _cache_session(node)
+        _mock_session_owner(mock_db, node)
 
         async def resolve_on_send(data):
             ws_command_id = data.get("requestId", "")
@@ -646,13 +650,13 @@ class TestClaudeBackgroundTasks:
         assert payloads[-1]["scheduleId"] == "sched-1"
 
     async def test_schedule_delete_already_firing_returns_conflict(
-        self, client, node_manager
+        self, client, mock_db, node_manager
     ):
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "schedule-node"})
-        _cache_session(node)
+        _mock_session_owner(mock_db, node)
 
         async def resolve_on_send(data):
             ws_command_id = data.get("requestId", "")
@@ -697,13 +701,13 @@ class TestToolApprovals:
                 future.set_result(result)
         return resolve_on_send
 
-    async def test_approve_tool_sends_ws_command(self, client, node_manager):
+    async def test_approve_tool_sends_ws_command(self, client, mock_db, node_manager):
         """approve endpoint는 approve_tool 명령과 approvalId를 노드로 전달한다."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "approval-node"})
-        _cache_session(node)
+        _mock_session_owner(mock_db, node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -731,13 +735,13 @@ class TestToolApprovals:
         assert approval_payloads[0].get("message") == "approved once"
         assert approval_payloads[0].get("alwaysApprove") is True
 
-    async def test_reject_tool_sends_ws_command(self, client, node_manager):
+    async def test_reject_tool_sends_ws_command(self, client, mock_db, node_manager):
         """reject endpoint는 reject_tool 명령과 거부 메시지를 노드로 전달한다."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "approval-node-2"})
-        _cache_session(node)
+        _mock_session_owner(mock_db, node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -776,14 +780,14 @@ class TestToolApprovals:
         ],
     )
     async def test_tool_approval_ack_error_status_maps_to_http_error(
-        self, client, node_manager, code, expected_status
+        self, client, mock_db, node_manager, code, expected_status
     ):
         """tool_approval_ack(status=error)를 HTTP 에러로 정규화한다."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "approval-node-error"})
-        _cache_session(node)
+        _mock_session_owner(mock_db, node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -817,13 +821,13 @@ class TestRealtimeVoice:
                 future.set_result(result)
         return resolve_on_send
 
-    async def test_realtime_call_sends_ws_command(self, client, node_manager):
+    async def test_realtime_call_sends_ws_command(self, client, mock_db, node_manager):
         """Realtime call endpoint forwards SDP offer without exposing provider key."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "realtime-node"})
-        _cache_session(node)
+        _mock_session_owner(mock_db, node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -849,13 +853,13 @@ class TestRealtimeVoice:
         assert realtime_payloads[0]["voice"] == "alloy"
         assert "apiKey" not in realtime_payloads[0]
 
-    async def test_realtime_event_sends_ws_command(self, client, node_manager):
+    async def test_realtime_event_sends_ws_command(self, client, mock_db, node_manager):
         """Realtime event endpoint forwards data-channel event to the node."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "realtime-node-2"})
-        _cache_session(node)
+        _mock_session_owner(mock_db, node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
@@ -878,13 +882,15 @@ class TestRealtimeVoice:
         assert len(event_payloads) == 1
         assert event_payloads[0]["callId"] == "call_1"
 
-    async def test_realtime_tool_approval_resolve_sends_ws_command(self, client, node_manager):
+    async def test_realtime_tool_approval_resolve_sends_ws_command(
+        self, client, mock_db, node_manager
+    ):
         """voice/tap approval resolve endpoint forwards decision to the node."""
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
         node = await node_manager.register_node(ws, {"node_id": "realtime-node-3"})
-        _cache_session(node)
+        _mock_session_owner(mock_db, node)
         ws.send_json.side_effect = self._make_resolve_by_request_id(
             node,
             {
