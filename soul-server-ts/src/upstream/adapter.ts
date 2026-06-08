@@ -17,6 +17,12 @@ import { ReconnectPolicy } from "./reconnect.js";
 import { buildRegistrationMsg } from "./registration.js";
 import { SessionListCommands } from "./session_list_commands.js";
 
+const APP_HEARTBEAT_PING = "app_heartbeat_ping";
+const APP_HEARTBEAT_PONG = "app_heartbeat_pong";
+const APP_HEARTBEAT_INTERVAL_MS = 10_000;
+const APP_HEARTBEAT_MAX_MISSED = 2;
+const APP_HEARTBEAT_CLOSE_CODE = 1011;
+
 export interface UpstreamConfig {
   url: string;
   nodeId: string;
@@ -26,6 +32,8 @@ export interface UpstreamConfig {
   userName: string;
   userPortraitPath: string;
   isProduction: boolean;
+  heartbeatIntervalMs?: number;
+  heartbeatMaxMissed?: number;
 }
 
 export interface UpstreamDependencies {
@@ -59,6 +67,9 @@ export class UpstreamAdapter {
   private readonly reconnect = new ReconnectPolicy();
   private readonly dispatcher: CommandDispatcher;
   private authWarned = false;
+  private heartbeatTimer: NodeJS.Timeout | null = null;
+  private awaitingHeartbeatPong = false;
+  private missedHeartbeatPongs = 0;
 
   constructor(
     private readonly config: UpstreamConfig,
@@ -110,6 +121,7 @@ export class UpstreamAdapter {
 
   async shutdown(): Promise<void> {
     this.running = false;
+    this.stopAppHeartbeat();
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.close();
     }
@@ -191,6 +203,9 @@ export class UpstreamAdapter {
           return;
         }
         try {
+          if (this.handleAppHeartbeatMessage(cmd)) {
+            return;
+          }
           await this.dispatcher.dispatch(cmd);
         } catch (err) {
           this.logger.error({ err }, "Dispatcher threw");
@@ -199,12 +214,14 @@ export class UpstreamAdapter {
       const onClose = (code: number, reason: Buffer) => {
         ws.off("message", onMessage);
         ws.off("error", onError);
+        this.stopAppHeartbeat();
         this.logger.info({ code, reason: reason.toString("utf-8") }, "Upstream connection closed");
         resolve();
       };
       const onError = (err: Error) => {
         ws.off("message", onMessage);
         ws.off("close", onClose);
+        this.stopAppHeartbeat();
         this.logger.warn({ err }, "WebSocket error during serve");
         resolve();
       };
@@ -214,6 +231,81 @@ export class UpstreamAdapter {
     });
 
     this.ws = null;
+  }
+
+  private startAppHeartbeat(ws: WebSocket): void {
+    this.stopAppHeartbeat();
+    const intervalMs = this.config.heartbeatIntervalMs ?? APP_HEARTBEAT_INTERVAL_MS;
+    const maxMissed = Math.max(1, this.config.heartbeatMaxMissed ?? APP_HEARTBEAT_MAX_MISSED);
+
+    const tick = () => {
+      if (ws !== this.ws || ws.readyState !== WebSocket.OPEN) {
+        this.stopAppHeartbeat();
+        return;
+      }
+
+      if (this.awaitingHeartbeatPong) {
+        this.missedHeartbeatPongs += 1;
+        if (this.missedHeartbeatPongs >= maxMissed) {
+          this.logger.warn(
+            { missed: this.missedHeartbeatPongs, intervalMs },
+            "Upstream app heartbeat timeout",
+          );
+          ws.close(APP_HEARTBEAT_CLOSE_CODE, "app heartbeat timeout");
+          this.stopAppHeartbeat();
+          return;
+        }
+      }
+
+      this.awaitingHeartbeatPong = true;
+      void this.sendOnSocket(ws, {
+        type: APP_HEARTBEAT_PING,
+        sentAt: new Date().toISOString(),
+      }).catch((err) => {
+        this.logger.warn({ err }, "Failed to send app heartbeat ping");
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.close(APP_HEARTBEAT_CLOSE_CODE, "app heartbeat send failed");
+        }
+      });
+    };
+
+    tick();
+    this.heartbeatTimer = setInterval(tick, intervalMs);
+  }
+
+  private stopAppHeartbeat(): void {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    this.awaitingHeartbeatPong = false;
+    this.missedHeartbeatPongs = 0;
+  }
+
+  private handleAppHeartbeatMessage(msg: unknown): boolean {
+    if (!msg || typeof msg !== "object") {
+      return false;
+    }
+    const data = msg as Record<string, unknown>;
+    if (data.type === APP_HEARTBEAT_PING) {
+      const ws = this.ws;
+      void this.send({
+        type: APP_HEARTBEAT_PONG,
+        sentAt: data.sentAt,
+      }).catch((err) => {
+        this.logger.warn({ err }, "Failed to send app heartbeat pong");
+      });
+      if (ws && ws.readyState === WebSocket.OPEN && !this.heartbeatTimer) {
+        this.startAppHeartbeat(ws);
+      }
+      return true;
+    }
+    if (data.type === APP_HEARTBEAT_PONG) {
+      this.awaitingHeartbeatPong = false;
+      this.missedHeartbeatPongs = 0;
+      return true;
+    }
+    return false;
   }
 
   private async sendInitialSessions(): Promise<void> {
@@ -236,6 +328,10 @@ export class UpstreamAdapter {
       this.logger.warn({ data }, "Cannot send — WebSocket not open");
       return;
     }
+    await this.sendOnSocket(ws, data);
+  }
+
+  private async sendOnSocket(ws: WebSocket, data: unknown): Promise<void> {
     await new Promise<void>((resolve, reject) => {
       ws.send(JSON.stringify(data), (err) => {
         if (err) reject(err);

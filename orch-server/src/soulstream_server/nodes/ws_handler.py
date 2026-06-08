@@ -28,6 +28,17 @@ from soulstream_server.nodes.node_manager import NodeManager
 logger = logging.getLogger(__name__)
 
 
+async def _node_message_loop(ws: WebSocket, node_id: str, node) -> None:
+    while True:
+        raw = await ws.receive_text()
+        try:
+            msg = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            logger.warning("Invalid JSON from node %s", node_id)
+            continue
+        await node.handle_message(msg)
+
+
 async def handle_node_ws(ws: WebSocket, node_manager: NodeManager) -> None:
     """soul-server 노드의 WebSocket 연결을 처리한다.
 
@@ -95,19 +106,27 @@ async def handle_node_ws(ws: WebSocket, node_manager: NodeManager) -> None:
     # 등록
     node = await node_manager.register_node(ws, data)
 
-    # 메시지 수신 루프
+    tasks: set[asyncio.Task] = {
+        asyncio.create_task(_node_message_loop(ws, node_id, node)),
+    }
+    if node.supports_app_heartbeat:
+        tasks.add(asyncio.create_task(node.run_heartbeat()))
+
     try:
-        while True:
-            raw = await ws.receive_text()
-            try:
-                msg = json.loads(raw)
-            except (json.JSONDecodeError, TypeError):
-                logger.warning("Invalid JSON from node %s", node_id)
-                continue
-            await node.handle_message(msg)
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            task.result()
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
     except WebSocketDisconnect:
         logger.info("Node %s disconnected", node_id)
     except Exception:
         logger.exception("Error in node %s message loop", node_id)
     finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
         await node.close()

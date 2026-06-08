@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from soulstream_server.constants import (
+    EVT_APP_HEARTBEAT_PING,
     EVT_NODE_REGISTER,
     WS_CLOSE_INVALID_FIRST_MSG,
     WS_CLOSE_NODE_ID_REQUIRED,
@@ -146,3 +147,56 @@ class TestMessageLoop:
 
         await handle_node_ws(ws, manager)
         # Should complete without error
+
+    async def test_heartbeat_capable_node_timeout_closes_connection(self, ws, manager):
+        """Heartbeat-capable nodes are closed when no app heartbeat pong arrives."""
+        first = True
+
+        async def receive_text():
+            nonlocal first
+            if first:
+                first = False
+                return json.dumps({
+                    "type": EVT_NODE_REGISTER,
+                    "node_id": "heartbeat-node",
+                    "capabilities": {"app_heartbeat_v1": True},
+                })
+            await asyncio.Future()
+
+        ws.receive_text.side_effect = receive_text
+
+        with patch("soulstream_server.nodes.node_connection.APP_HEARTBEAT_INTERVAL", 0.01):
+            with patch("soulstream_server.nodes.node_connection.APP_HEARTBEAT_MAX_MISSED", 1):
+                await asyncio.wait_for(handle_node_ws(ws, manager), timeout=0.2)
+
+        sent_types = [
+            call.args[0].get("type")
+            for call in ws.send_json.call_args_list
+            if call.args and isinstance(call.args[0], dict)
+        ]
+        assert EVT_APP_HEARTBEAT_PING in sent_types
+        ws.close.assert_called()
+
+    async def test_legacy_node_without_capability_is_not_heartbeat_closed(self, ws, manager):
+        """Legacy nodes keep the old receive-loop behavior and are not false-disconnected."""
+        from fastapi import WebSocketDisconnect
+
+        ws.receive_text.side_effect = [
+            json.dumps({
+                "type": EVT_NODE_REGISTER,
+                "node_id": "legacy-node",
+                "capabilities": {},
+            }),
+            WebSocketDisconnect(1000),
+        ]
+
+        with patch("soulstream_server.nodes.node_connection.APP_HEARTBEAT_INTERVAL", 0.01):
+            with patch("soulstream_server.nodes.node_connection.APP_HEARTBEAT_MAX_MISSED", 1):
+                await handle_node_ws(ws, manager)
+
+        sent_types = [
+            call.args[0].get("type")
+            for call in ws.send_json.call_args_list
+            if call.args and isinstance(call.args[0], dict)
+        ]
+        assert EVT_APP_HEARTBEAT_PING not in sent_types

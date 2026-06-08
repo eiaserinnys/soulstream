@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 104개 $defs (wire 49 + SSE event 55)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 106개 $defs (wire 51 + SSE event 55)를 모두 포함하는지 확인한다.
 """
 
 import json
@@ -36,6 +36,8 @@ def test_schema_has_all_message_types() -> None:
 
     wire_types = {
         "NodeRegister",
+        "AppHeartbeatPing",
+        "AppHeartbeatPong",
         "SessionCreated",
         "SessionEventEnvelope",
         "SessionsUpdate",
@@ -85,7 +87,7 @@ def test_schema_has_all_message_types() -> None:
         "ClaudeAuthGetUsage",
         "ClaudeAuthGetProfile",
     }
-    assert len(wire_types) == 49
+    assert len(wire_types) == 51
 
     sse_types = {
         "SSEEventInit",
@@ -164,6 +166,24 @@ def test_node_register_has_supported_backends() -> None:
     assert props["supported_backends"]["default"] == ["claude"]
 
 
+def test_node_register_has_app_heartbeat_capability_contract() -> None:
+    schema = _load_schema()
+    node_register = schema["$defs"]["NodeRegister"]
+    capabilities = node_register["properties"]["capabilities"]
+    assert capabilities["additionalProperties"] is True
+    assert "app_heartbeat_v1" in capabilities["description"]
+
+
+def test_app_heartbeat_messages_are_symmetric() -> None:
+    schema = _load_schema()
+    ping = schema["$defs"]["AppHeartbeatPing"]
+    pong = schema["$defs"]["AppHeartbeatPong"]
+    assert ping["properties"]["type"] == {"const": "app_heartbeat_ping"}
+    assert pong["properties"]["type"] == {"const": "app_heartbeat_pong"}
+    assert ping["properties"]["sentAt"]["type"] == "string"
+    assert pong["properties"]["sentAt"]["type"] == "string"
+
+
 def test_create_session_has_reasoning_effort() -> None:
     schema = _load_schema()
     create_session = schema["$defs"]["CreateSession"]
@@ -185,6 +205,8 @@ def test_oneof_covers_all_wire_messages() -> None:
     oneof_refs = {entry["$ref"].rsplit("/", 1)[-1] for entry in schema["oneOf"]}
     wire_types = {
         "NodeRegister",
+        "AppHeartbeatPing",
+        "AppHeartbeatPong",
         "SessionCreated",
         "SessionEventEnvelope",
         "SessionsUpdate",

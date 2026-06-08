@@ -49,6 +49,8 @@ CMD_ROLLBACK_AGENTS_CONFIG = "rollback_agents_config"
 
 # Events (node -> soulstream-server)
 EVT_NODE_REGISTER = "node_register"
+EVT_APP_HEARTBEAT_PING = "app_heartbeat_ping"
+EVT_APP_HEARTBEAT_PONG = "app_heartbeat_pong"
 EVT_SESSION_CREATED = "session_created"
 EVT_EVENT = "event"
 EVT_SESSIONS_UPDATE = "sessions_update"
@@ -76,6 +78,11 @@ REGISTRATION_TIMEOUT = 10
 
 # Command timeout (seconds)
 COMMAND_TIMEOUT = 30
+
+# App-level node WebSocket heartbeat.
+CAP_APP_HEARTBEAT_V1 = "app_heartbeat_v1"
+APP_HEARTBEAT_INTERVAL = 10.0
+APP_HEARTBEAT_MAX_MISSED = 2
 
 # Attachment limits.
 # 100MB is the user-facing single attachment limit. Upload transport uses
