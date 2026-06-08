@@ -1,9 +1,10 @@
 """SessionRouter backend 필터 회귀.
 
 agent.backend ↔ node.supported_backends 매칭 필터 검증.
-profile 부재는 legacy caller 호환으로 필터 우회.
+profile 부재는 연결 노드의 첫 호환 profile로 해석한다.
 unknown profile은 404, target_node backend 미지원은 409.
 """
+from uuid import UUID
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,6 +25,7 @@ def _make_node(
     node.supported_backends = supported_backends
     node.session_count = session_count
     node.agent_profiles = agent_profiles or {}
+    node.wait_for_session = AsyncMock(return_value=False)
     node.send_create_session = AsyncMock(
         return_value={"agentSessionId": f"sess-{node_id}"}
     )
@@ -40,13 +42,24 @@ def _make_node_manager(nodes: list):
     return nm
 
 
-async def test_no_profile_no_filter():
-    """profile 부재 시 backend 필터 우회 — least-sessions-first 그대로."""
-    n1 = _make_node("n1", ["claude"], session_count=5)
-    n2 = _make_node("n2", ["claude"], session_count=2)
+async def test_no_profile_resolves_default_profile_on_least_sessions_node():
+    """profile 부재 시 선택된 노드의 첫 호환 profile을 wire로 전달한다."""
+    n1 = _make_node(
+        "n1",
+        ["claude"],
+        session_count=5,
+        agent_profiles={"slow-agent": {"backend": "claude"}},
+    )
+    n2 = _make_node(
+        "n2",
+        ["claude"],
+        session_count=2,
+        agent_profiles={"default-agent": {"backend": "claude"}},
+    )
     router = SessionRouter(_make_node_manager([n1, n2]))
     _sid, nid = await router.route_create_session({"prompt": "hi"})
     assert nid == "n2"
+    assert n2.send_create_session.call_args.kwargs["profile"] == "default-agent"
 
 
 async def test_profile_matches_backend():
@@ -86,14 +99,105 @@ async def test_reasoning_effort_only_forwarded_for_codex_backend():
 
 async def test_reasoning_effort_forwarded_for_single_backend_codex_node_without_profile():
     """profile이 없어도 codex 전용 노드면 reasoningEffort를 넘긴다."""
-    codex_node = _make_node("codex-node", ["codex"])
+    codex_node = _make_node(
+        "codex-node",
+        ["codex"],
+        agent_profiles={"cody": {"backend": "codex"}},
+    )
     router = SessionRouter(_make_node_manager([codex_node]))
 
     await router.route_create_session(
         {"prompt": "hi", "nodeId": "codex-node", "reasoningEffort": "low"}
     )
 
+    assert codex_node.send_create_session.call_args.kwargs["profile"] == "cody"
     assert codex_node.send_create_session.call_args.kwargs["reasoning_effort"] == "low"
+
+
+async def test_create_session_timeout_reconciles_when_session_cached(monkeypatch):
+    """create_session ACK timeout 후 같은 session_id가 cache에 보이면 성공 반환."""
+    fixed_session_id = "11111111-1111-4111-8111-111111111111"
+    monkeypatch.setattr(
+        "soulstream_server.service.session_router.uuid.uuid4",
+        lambda: UUID(fixed_session_id),
+    )
+    node = _make_node(
+        "remote",
+        ["claude"],
+        agent_profiles={"roselin": {"backend": "claude"}},
+    )
+    node.send_create_session.side_effect = TimeoutError(
+        "Command create_session timed out after 30s"
+    )
+    node.wait_for_session.return_value = True
+    router = SessionRouter(_make_node_manager([node]))
+
+    session_id, node_id = await router.route_create_session(
+        {"prompt": "hi", "profile": "roselin"}
+    )
+
+    assert session_id == fixed_session_id
+    assert node_id == "remote"
+    node.wait_for_session.assert_awaited_once()
+
+
+async def test_create_session_timeout_raises_when_reconcile_misses(monkeypatch):
+    """timeout 후 cache에서도 session_id를 못 찾으면 원래 timeout을 유지한다."""
+    fixed_session_id = "22222222-2222-4222-8222-222222222222"
+    monkeypatch.setattr(
+        "soulstream_server.service.session_router.uuid.uuid4",
+        lambda: UUID(fixed_session_id),
+    )
+    node = _make_node(
+        "remote",
+        ["claude"],
+        agent_profiles={"roselin": {"backend": "claude"}},
+    )
+    node.send_create_session.side_effect = TimeoutError(
+        "Command create_session timed out after 30s"
+    )
+    node.wait_for_session.return_value = False
+    router = SessionRouter(_make_node_manager([node]))
+
+    with pytest.raises(TimeoutError, match="timed out"):
+        await router.route_create_session({"prompt": "hi", "profile": "roselin"})
+
+    node.wait_for_session.assert_awaited_once()
+
+
+async def test_create_session_reject_does_not_reconcile():
+    """requires-profile 같은 빠른 reject는 timeout reconciliation 대상이 아니다."""
+    node = _make_node(
+        "remote",
+        ["claude"],
+        agent_profiles={"roselin": {"backend": "claude"}},
+    )
+    node.send_create_session.side_effect = RuntimeError(
+        "REQUIRES_PROFILE: profile is required"
+    )
+    router = SessionRouter(_make_node_manager([node]))
+
+    with pytest.raises(RuntimeError, match="REQUIRES_PROFILE"):
+        await router.route_create_session({"prompt": "hi", "profile": "roselin"})
+
+    node.wait_for_session.assert_not_awaited()
+
+
+async def test_no_profile_without_compatible_default_returns_503():
+    """profile 자동 선택은 실행 가능한 등록 profile이 있을 때만 성공한다."""
+    node = _make_node(
+        "remote",
+        ["claude"],
+        agent_profiles={"cody": {"backend": "codex"}},
+    )
+    router = SessionRouter(_make_node_manager([node]))
+
+    with pytest.raises(HTTPException) as exc:
+        await router.route_create_session({"prompt": "hi"})
+
+    assert exc.value.status_code == 503
+    assert "No compatible agent profiles" in exc.value.detail
+    node.send_create_session.assert_not_awaited()
 
 
 async def test_profile_backend_inconsistent_with_node_returns_409():

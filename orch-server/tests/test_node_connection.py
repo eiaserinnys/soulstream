@@ -207,6 +207,37 @@ class TestHandleMessage:
         assert node.sessions["sess-nested"]["status"] == "running"
 
 
+class TestWaitForSession:
+    async def test_wait_for_session_returns_true_for_cached_session(self, node):
+        node._sessions["sess-hit"] = {"agentSessionId": "sess-hit"}
+
+        assert await node.wait_for_session("sess-hit", timeout=0.01) is True
+
+    async def test_wait_for_session_observes_late_session_created(self, node):
+        async def create_later():
+            await asyncio.sleep(0.01)
+            await node.handle_message({
+                "type": EVT_SESSION_CREATED,
+                "agentSessionId": "sess-late",
+            })
+
+        task = asyncio.create_task(create_later())
+
+        assert await node.wait_for_session(
+            "sess-late",
+            timeout=0.1,
+            poll_interval=0.005,
+        ) is True
+        await task
+
+    async def test_wait_for_session_returns_false_on_timeout(self, node):
+        assert await node.wait_for_session(
+            "sess-miss",
+            timeout=0.01,
+            poll_interval=0.005,
+        ) is False
+
+
 class TestCommandSending:
     """send_* method tests."""
 

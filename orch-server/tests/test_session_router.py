@@ -10,6 +10,17 @@ from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_router import SessionRouter
 
 
+DEFAULT_AGENT_REGISTRATION = {
+    "agents": [
+        {
+            "id": "default-agent",
+            "name": "Default Agent",
+            "backend": "claude",
+        }
+    ]
+}
+
+
 @pytest.fixture
 def manager():
     return NodeManager()
@@ -48,7 +59,10 @@ class TestRouting:
 
         ws.send_json.side_effect = resolve_on_send
 
-        node = await manager.register_node(ws, {"node_id": "target-node"})
+        node = await manager.register_node(
+            ws,
+            {"node_id": "target-node", **DEFAULT_AGENT_REGISTRATION},
+        )
 
         session_id, node_id = await router.route_create_session({
             "nodeId": "target-node",
@@ -68,8 +82,14 @@ class TestRouting:
         ws2.send_json = AsyncMock()
         ws2.close = AsyncMock()
 
-        node1 = await manager.register_node(ws1, {"node_id": "busy-node"})
-        node2 = await manager.register_node(ws2, {"node_id": "idle-node"})
+        node1 = await manager.register_node(
+            ws1,
+            {"node_id": "busy-node", **DEFAULT_AGENT_REGISTRATION},
+        )
+        node2 = await manager.register_node(
+            ws2,
+            {"node_id": "idle-node", **DEFAULT_AGENT_REGISTRATION},
+        )
 
         # Give node1 more sessions
         node1._sessions["s1"] = {}
@@ -101,7 +121,10 @@ class TestRouting:
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
-        await manager.register_node(ws, {"node_id": "other-node"})
+        await manager.register_node(
+            ws,
+            {"node_id": "other-node", **DEFAULT_AGENT_REGISTRATION},
+        )
 
         with pytest.raises(HTTPException) as exc_info:
             await router.route_create_session({
@@ -128,7 +151,10 @@ class TestAttachmentPathsRelay:
                 node._pending[req_id].set_result({"agentSessionId": "sess-r"})
 
         ws.send_json.side_effect = resolve_on_send
-        node = await manager.register_node(ws, {"node_id": "node-att"})
+        node = await manager.register_node(
+            ws,
+            {"node_id": "node-att", **DEFAULT_AGENT_REGISTRATION},
+        )
 
         session_id, node_id = await router.route_create_session({
             "nodeId": "node-att",
@@ -152,7 +178,10 @@ class TestAttachmentPathsRelay:
                 node._pending[req_id].set_result({"agentSessionId": "sess-r"})
 
         ws.send_json.side_effect = resolve_on_send
-        node = await manager.register_node(ws, {"node_id": "node-noatt"})
+        node = await manager.register_node(
+            ws,
+            {"node_id": "node-noatt", **DEFAULT_AGENT_REGISTRATION},
+        )
 
         await router.route_create_session({
             "nodeId": "node-noatt",

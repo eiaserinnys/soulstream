@@ -106,6 +106,33 @@ class NodeConnection:
     def sessions(self) -> dict[str, dict]:
         return self._sessions
 
+    async def wait_for_session(
+        self,
+        session_id: str,
+        *,
+        timeout: float,
+        poll_interval: float = 0.1,
+    ) -> bool:
+        """Wait until inbound session cache observes `session_id`.
+
+        create_session timeout reconciliation relies on the existing
+        session_created/session_updated inbound cache instead of adding a second
+        query path. This method is only used after a command timeout, so a small
+        polling loop is sufficient and keeps the cache owner here.
+        """
+        if session_id in self._sessions:
+            return True
+
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + timeout
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return session_id in self._sessions
+            await asyncio.sleep(min(poll_interval, remaining))
+            if session_id in self._sessions:
+                return True
+
     @property
     def agent_profiles(self) -> dict:
         return self._agent_profiles

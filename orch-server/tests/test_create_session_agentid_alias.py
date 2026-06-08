@@ -95,8 +95,8 @@ class TestCreateSessionProfileAlias:
         payload = _extract_ws_payload(ws)
         assert payload["profile"] == "from-profile"
 
-    async def test_no_profile_omits_key(self, client, node_manager):
-        """둘 다 없으면 WS 페이로드에 'profile' 키가 없다 (node_connection이 None을 skip)."""
+    async def test_no_profile_uses_default_profile(self, client, node_manager):
+        """둘 다 없으면 선택 노드의 첫 호환 profile을 WS 페이로드에 넣는다."""
         _, ws = await _register_node(node_manager)()
 
         resp = await client.post(
@@ -106,7 +106,7 @@ class TestCreateSessionProfileAlias:
         assert resp.status_code == 201
 
         payload = _extract_ws_payload(ws)
-        assert "profile" not in payload
+        assert payload["profile"] == "seosoyoung"
 
 
 class TestCreateSessionCallerSessionAlias:

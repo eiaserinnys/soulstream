@@ -8,6 +8,17 @@ import pytest
 from soulstream_server.api.task_scoped_sessions import existing_task_scoped_session_response
 
 
+DEFAULT_AGENT_REGISTRATION = {
+    "agents": [
+        {
+            "id": "default-agent",
+            "name": "Default Agent",
+            "backend": "claude",
+        }
+    ]
+}
+
+
 def _task_row(**overrides):
     base = {
         "id": "parent-task",
@@ -183,7 +194,10 @@ class TestCreateSession:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
 
-        node = await node_manager.register_node(ws, {"node_id": "api-node"})
+        node = await node_manager.register_node(
+            ws,
+            {"node_id": "api-node", **DEFAULT_AGENT_REGISTRATION},
+        )
 
         async def resolve_on_send(data):
             req_id = data.get("requestId")
@@ -217,7 +231,10 @@ class TestCreateSession:
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
-        await node_manager.register_node(ws, {"node_id": "other-node"})
+        await node_manager.register_node(
+            ws,
+            {"node_id": "other-node", **DEFAULT_AGENT_REGISTRATION},
+        )
 
         resp = await client.post(
             "/api/sessions",
@@ -234,7 +251,10 @@ class TestCreateSession:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
 
-        node = await node_manager.register_node(ws, {"node_id": "api-node"})
+        node = await node_manager.register_node(
+            ws,
+            {"node_id": "api-node", **DEFAULT_AGENT_REGISTRATION},
+        )
 
         async def resolve_on_send(data):
             req_id = data.get("requestId")
@@ -264,7 +284,10 @@ class TestCreateSession:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
 
-        node = await node_manager.register_node(ws, {"node_id": "api-node"})
+        node = await node_manager.register_node(
+            ws,
+            {"node_id": "api-node", **DEFAULT_AGENT_REGISTRATION},
+        )
 
         async def resolve_on_send(data):
             req_id = data.get("requestId")
@@ -290,7 +313,10 @@ class TestCreateSession:
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
-        node = await node_manager.register_node(ws, {"node_id": "api-node"})
+        node = await node_manager.register_node(
+            ws,
+            {"node_id": "api-node", **DEFAULT_AGENT_REGISTRATION},
+        )
 
         async def resolve_on_send(data):
             assert data["extra_context_items"][0]["key"] == "task_tree_parent"

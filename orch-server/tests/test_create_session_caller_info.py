@@ -24,6 +24,15 @@ from soul_common.auth.jwt import COOKIE_NAME, generate_token
 # jwt_secret 빈 값을 가정하므로, JWT 디코드 분기를 활성화하는 caller_info
 # 테스트만 격리하여 monkeypatch한다.
 _TEST_JWT_SECRET = "test-jwt-secret-for-caller-info-32b!"
+DEFAULT_AGENT_REGISTRATION = {
+    "agents": [
+        {
+            "id": "default-agent",
+            "name": "Default Agent",
+            "backend": "claude",
+        }
+    ]
+}
 
 
 @pytest.fixture
@@ -51,7 +60,10 @@ def _register_node(node_manager):
     ws.close = AsyncMock()
 
     async def _register():
-        node = await node_manager.register_node(ws, {"node_id": "test-node"})
+        node = await node_manager.register_node(
+            ws,
+            {"node_id": "test-node", **DEFAULT_AGENT_REGISTRATION},
+        )
 
         async def resolve_on_send(data):
             req_id = data.get("requestId")

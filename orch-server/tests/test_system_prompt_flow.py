@@ -16,6 +16,17 @@ from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_router import SessionRouter
 
 
+DEFAULT_AGENT_REGISTRATION = {
+    "agents": [
+        {
+            "id": "default-agent",
+            "name": "Default Agent",
+            "backend": "claude",
+        }
+    ]
+}
+
+
 # ---------------------------------------------------------------------------
 # CreateSessionRequest serialization
 # ---------------------------------------------------------------------------
@@ -54,7 +65,10 @@ class TestSessionRouterSystemPrompt:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
 
-        node = await manager.register_node(ws, {"node_id": "node-a"})
+        node = await manager.register_node(
+            ws,
+            {"node_id": "node-a", **DEFAULT_AGENT_REGISTRATION},
+        )
 
         # WebSocket send_json 호출 시 pending future를 즉시 resolve
         async def resolve_on_send(data):
@@ -83,7 +97,10 @@ class TestSessionRouterSystemPrompt:
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
 
-        node = await manager.register_node(ws, {"node_id": "node-b"})
+        node = await manager.register_node(
+            ws,
+            {"node_id": "node-b", **DEFAULT_AGENT_REGISTRATION},
+        )
 
         async def resolve_on_send(data):
             req_id = data.get("requestId")

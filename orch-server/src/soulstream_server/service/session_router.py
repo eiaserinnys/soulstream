@@ -2,7 +2,7 @@
 SessionRouter — 세션 생성 요청을 적절한 노드로 라우팅.
 
 옵션 D Phase A: agent.backend ↔ node.supported_backends 매칭 필터로 라우팅.
-profile 부재는 후방호환을 위해 backend 필터를 우회한다.
+profile 부재는 선택된 노드의 호환 기본 profile로 해석한다.
 """
 
 import logging
@@ -13,6 +13,9 @@ from fastapi import HTTPException
 from soulstream_server.nodes.node_manager import NodeManager
 
 logger = logging.getLogger(__name__)
+
+CREATE_SESSION_RECONCILE_TIMEOUT = 5.0
+CREATE_SESSION_RECONCILE_POLL_INTERVAL = 0.1
 
 
 class SessionRouter:
@@ -44,6 +47,8 @@ class SessionRouter:
                 detail="No nodes available",
             )
 
+        effective_profile_id = request.get("profile")
+
         if target_node_id:
             node = self._node_manager.get_node(target_node_id)
             if not node:
@@ -52,11 +57,23 @@ class SessionRouter:
                     detail=f"Node {target_node_id} not found",
                 )
             # nodeId 지정 시 해당 노드 profile로 backend를 해석한다.
-            backend = self._resolve_backend_from_node(
-                node,
-                request.get("profile"),
-                missing_profile_status=404,
-            )
+            if effective_profile_id:
+                backend = self._resolve_backend_from_node(
+                    node,
+                    effective_profile_id,
+                    missing_profile_status=404,
+                )
+            else:
+                default_profile = self._default_profile_for_node(node)
+                if default_profile is None:
+                    raise HTTPException(
+                        status_code=503,
+                        detail=(
+                            f"No compatible agent profile registered on node {target_node_id}"
+                        ),
+                    )
+                effective_profile_id, profile = default_profile
+                backend = profile.get("backend", "claude")
             if backend and backend not in node.supported_backends:
                 raise HTTPException(
                     status_code=409,
@@ -65,15 +82,14 @@ class SessionRouter:
                         f"(supports: {node.supported_backends})"
                     ),
                 )
-            effective_backend = backend or self._infer_backend_from_node(node)
+            effective_backend = backend
         else:
-            profile_id = request.get("profile")
-            if profile_id:
-                eligible = self._profile_nodes(profile_id, nodes)
+            if effective_profile_id:
+                eligible = self._profile_nodes(effective_profile_id, nodes)
                 if not eligible:
                     raise HTTPException(
                         status_code=404,
-                        detail=f"Agent profile '{profile_id}' is not registered on any connected node",
+                        detail=f"Agent profile '{effective_profile_id}' is not registered on any connected node",
                     )
                 compatible = [
                     (candidate_node, profile)
@@ -88,7 +104,7 @@ class SessionRouter:
                     raise HTTPException(
                         status_code=409,
                         detail=(
-                            f"Agent profile '{profile_id}' is registered on connected nodes "
+                            f"Agent profile '{effective_profile_id}' is registered on connected nodes "
                             f"but none supports its configured backend ({backends})"
                         ),
                     )
@@ -101,35 +117,66 @@ class SessionRouter:
                 backend = profile.get("backend", "claude")
                 effective_backend = backend
             else:
-                # profile 부재는 legacy caller 호환을 위해 모든 노드 후보.
-                node = min(nodes, key=lambda n: n.session_count)
-                effective_backend = self._infer_backend_from_node(node)
+                compatible_defaults = [
+                    (candidate_node, profile_id, profile)
+                    for candidate_node in nodes
+                    for profile_id, profile in self._compatible_profiles(candidate_node)
+                ]
+                if not compatible_defaults:
+                    raise HTTPException(
+                        status_code=503,
+                        detail="No compatible agent profiles available on connected nodes",
+                    )
+                node, effective_profile_id, profile = min(
+                    compatible_defaults,
+                    key=lambda item: item[0].session_count,
+                )
+                effective_backend = profile.get("backend", "claude")
 
         session_id = str(uuid.uuid4())
-        result = await node.send_create_session(
-            prompt=request.get("prompt", ""),
-            session_id=session_id,
-            profile=request.get("profile"),
-            allowed_tools=request.get("allowed_tools"),
-            disallowed_tools=request.get("disallowed_tools"),
-            use_mcp=request.get("use_mcp"),
-            claude_permission_mode=request.get("claude_permission_mode"),
-            folder_id=request.get("folderId"),
-            system_prompt=request.get("system_prompt"),
-            oauth_profile_name=request.get("oauth_profile_name"),
-            caller_session_id=request.get("caller_session_id"),
-            attachment_paths=request.get("attachmentPaths"),
-            caller_info=request.get("caller_info"),
-            model=request.get("model"),
-            reasoning_effort=(
-                request.get("reasoningEffort") if effective_backend == "codex" else None
-            ),
-            extra_context_items=request.get("extra_context_items"),
-        )
+        try:
+            result = await node.send_create_session(
+                prompt=request.get("prompt", ""),
+                session_id=session_id,
+                profile=effective_profile_id,
+                allowed_tools=request.get("allowed_tools"),
+                disallowed_tools=request.get("disallowed_tools"),
+                use_mcp=request.get("use_mcp"),
+                claude_permission_mode=request.get("claude_permission_mode"),
+                folder_id=request.get("folderId"),
+                system_prompt=request.get("system_prompt"),
+                oauth_profile_name=request.get("oauth_profile_name"),
+                caller_session_id=request.get("caller_session_id"),
+                attachment_paths=request.get("attachmentPaths"),
+                caller_info=request.get("caller_info"),
+                model=request.get("model"),
+                reasoning_effort=(
+                    request.get("reasoningEffort") if effective_backend == "codex" else None
+                ),
+                extra_context_items=request.get("extra_context_items"),
+            )
+        except TimeoutError:
+            if await self._reconcile_timed_out_create_session(node, session_id):
+                logger.warning(
+                    "create_session command timed out but session was observed "
+                    "via node cache; returning reconciled success "
+                    "(node=%s, session_id=%s)",
+                    node.node_id,
+                    session_id,
+                )
+                return session_id, node.node_id
+            raise
 
         # 노드가 반환한 세션 ID를 우선 사용
         actual_session_id = result.get("agentSessionId", session_id)
         return actual_session_id, node.node_id
+
+    async def _reconcile_timed_out_create_session(self, node, session_id: str) -> bool:
+        return await node.wait_for_session(
+            session_id,
+            timeout=CREATE_SESSION_RECONCILE_TIMEOUT,
+            poll_interval=CREATE_SESSION_RECONCILE_POLL_INTERVAL,
+        )
 
     def _resolve_backend_from_node(
         self,
@@ -160,9 +207,19 @@ class SessionRouter:
         return matches
 
     @staticmethod
-    def _infer_backend_from_node(node) -> str | None:
-        """단일 backend 노드면 profile 없이도 backend를 추론한다."""
-        backends = list(getattr(node, "supported_backends", []) or [])
-        if len(backends) == 1:
-            return backends[0]
-        return None
+    def _compatible_profiles(node) -> list[tuple[str, dict]]:
+        """노드가 실행 가능한 agent profile 후보를 등록 순서대로 반환한다."""
+        supported = set(getattr(node, "supported_backends", []) or [])
+        profiles = getattr(node, "agent_profiles", {}) or {}
+        return [
+            (profile_id, profile)
+            for profile_id, profile in profiles.items()
+            if profile.get("backend", "claude") in supported
+        ]
+
+    def _default_profile_for_node(self, node) -> tuple[str, dict] | None:
+        """profile 미지정 create_session에서 사용할 노드 기본 profile."""
+        compatible = self._compatible_profiles(node)
+        if not compatible:
+            return None
+        return compatible[0]
