@@ -19,7 +19,13 @@ def mock_db():
     """Mock PostgresSessionDB with async methods."""
     db = MagicMock()
     db.get_all_sessions = AsyncMock(return_value=([], 0))
-    db.get_session = AsyncMock(return_value=None)
+
+    async def get_session(session_id):
+        if session_id == "existing-sess":
+            return {"session_id": session_id, "node_id": "test-node-1"}
+        return None
+
+    db.get_session = AsyncMock(side_effect=get_session)
     db.read_events = AsyncMock(return_value=[])
     db.assign_session_to_folder = AsyncMock()
     db.get_all_folders = AsyncMock(return_value=[])
@@ -355,6 +361,32 @@ class TestResumeMode:
 
         assert call_order == ["subscribe", "intervene"]
 
+    @pytest.mark.parametrize(
+        "node_error",
+        [
+            "Task hydration failed: existing-sess",
+            "Task owned by another node: existing-sess owner=test-node-1 current=wrong-node",
+        ],
+    )
+    async def test_resume_intervene_internal_error_returns_503_before_sse(
+        self, exec_client, mock_node_manager, mock_node, mock_db, node_error
+    ):
+        """Resume mode: node internal resume failures are HTTP 503 before SSE starts."""
+        mock_node.send_subscribe_events = AsyncMock(return_value="sub-error")
+        mock_node.send_intervene = AsyncMock(side_effect=RuntimeError(node_error))
+
+        resp = await exec_client.post("/api/execute", json={
+            "prompt": "continue",
+            "agent_session_id": "existing-sess",
+        })
+
+        assert resp.status_code == 503
+        assert node_error in resp.json()["detail"]
+        mock_node.unsubscribe_events.assert_called_once_with(
+            "existing-sess",
+            "sub-error",
+        )
+
 
 class TestSSEFormat:
     """SSE event format verification."""
@@ -491,27 +523,45 @@ class TestErrorHandling:
 class TestFindSessionNode:
     """Tests for find_session_node utility function."""
 
-    async def test_finds_node_in_memory(self, mock_node_manager, mock_db, mock_node):
-        """find_session_node: finds node via in-memory lookup."""
+    async def test_db_owner_takes_precedence_over_stale_memory_match(self, mock_db):
+        """find_session_node: DB sessions.node_id is authoritative."""
         from soulstream_server.api.node_utils import find_session_node
 
-        result = await find_session_node("sess-1", mock_db, mock_node_manager)
-        assert result == mock_node
-        mock_node_manager.find_node_for_session.assert_called_with("sess-1")
+        stale_node = MagicMock()
+        stale_node.node_id = "stale-node"
+        owner_node = MagicMock()
+        owner_node.node_id = "owner-node"
+        nm = MagicMock()
+        nm.find_node_for_session = MagicMock(return_value=stale_node)
+        nm.get_node = MagicMock(return_value=owner_node)
+        nm.get_connected_nodes = MagicMock(return_value=[stale_node, owner_node])
+        mock_db.get_session = AsyncMock(return_value={"node_id": "owner-node"})
 
-    async def test_falls_back_to_db(self, mock_db, mock_node):
-        """find_session_node: falls back to DB when not in memory."""
+        result = await find_session_node("sess-1", mock_db, nm)
+
+        assert result is owner_node
+        mock_db.get_session.assert_called_once_with("sess-1")
+        nm.get_node.assert_called_once_with("owner-node")
+        nm.find_node_for_session.assert_not_called()
+
+    async def test_db_missing_session_ignores_stale_memory_match(
+        self, mock_db, mock_node
+    ):
+        """find_session_node: DB miss is authoritative even with a stale cache hit."""
+        from fastapi import HTTPException
         from soulstream_server.api.node_utils import find_session_node
 
         nm = MagicMock()
-        nm.find_node_for_session = MagicMock(return_value=None)
-        nm.get_node = MagicMock(return_value=mock_node)
+        nm.find_node_for_session = MagicMock(return_value=mock_node)
+        nm.get_node = MagicMock(return_value=None)
         nm.get_connected_nodes = MagicMock(return_value=[mock_node])
-        mock_db.get_session = AsyncMock(return_value={"node_id": "test-node-1"})
+        mock_db.get_session = AsyncMock(return_value=None)
 
-        result = await find_session_node("sess-1", mock_db, nm)
-        assert result == mock_node
-        mock_db.get_session.assert_called_with("sess-1")
+        with pytest.raises(HTTPException) as exc_info:
+            await find_session_node("sess-1", mock_db, nm)
+
+        assert exc_info.value.status_code == 404
+        nm.find_node_for_session.assert_not_called()
 
     async def test_existing_session_owner_node_unavailable_returns_503(self, mock_db):
         """find_session_node: an existing owned session is unavailable, not missing."""
@@ -529,8 +579,26 @@ class TestFindSessionNode:
         assert exc_info.value.status_code == 503
         assert "owner-node" in exc_info.value.detail
 
-    async def test_falls_back_to_active_node(self, mock_db, mock_node):
-        """find_session_node: falls back to first active node."""
+    async def test_legacy_row_without_owner_falls_back_to_active_node(
+        self, mock_db, mock_node
+    ):
+        """find_session_node: only legacy DB rows without node_id use active fallback."""
+        from soulstream_server.api.node_utils import find_session_node
+
+        nm = MagicMock()
+        nm.find_node_for_session = MagicMock(return_value=None)
+        nm.get_node = MagicMock(return_value=None)
+        nm.get_connected_nodes = MagicMock(return_value=[mock_node])
+        mock_db.get_session = AsyncMock(return_value={"node_id": None})
+
+        result = await find_session_node("sess-1", mock_db, nm)
+        assert result == mock_node
+
+    async def test_missing_session_does_not_fall_back_to_arbitrary_active_node(
+        self, mock_db, mock_node
+    ):
+        """find_session_node: real missing sessions return 404, not first active node."""
+        from fastapi import HTTPException
         from soulstream_server.api.node_utils import find_session_node
 
         nm = MagicMock()
@@ -539,8 +607,9 @@ class TestFindSessionNode:
         nm.get_connected_nodes = MagicMock(return_value=[mock_node])
         mock_db.get_session = AsyncMock(return_value=None)
 
-        result = await find_session_node("sess-1", mock_db, nm)
-        assert result == mock_node
+        with pytest.raises(HTTPException) as exc_info:
+            await find_session_node("sess-1", mock_db, nm)
+        assert exc_info.value.status_code == 404
 
     async def test_raises_404_when_no_node(self, mock_db):
         """find_session_node: raises HTTPException 404 when no node found."""

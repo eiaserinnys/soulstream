@@ -209,6 +209,7 @@ describe("UpstreamAdapter", () => {
     expect(sessionDb.listSessionsSummary).toHaveBeenCalledWith({
       limit: 10_000,
       offset: 0,
+      nodeId: "eias-shopping-ts",
     });
     const second = orch.receivedMessages.find(
       (msg) => (msg as Record<string, unknown>).type === "sessions_update",

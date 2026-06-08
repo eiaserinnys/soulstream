@@ -35,7 +35,10 @@ export class SessionListCommandError extends Error {
  * default offset, and sessions_update wire payload construction.
  */
 export class SessionListCommands {
-  constructor(private readonly sessionDb?: SessionListDb) {}
+  constructor(
+    private readonly sessionDb: SessionListDb | undefined,
+    private readonly nodeId: string,
+  ) {}
 
   async listSessions(params: ListSessionsParams): Promise<SessionsUpdateAck> {
     if (!this.sessionDb) {
@@ -47,6 +50,7 @@ export class SessionListCommands {
     const { sessions, total } = await this.sessionDb.listSessionsSummary({
       limit: LIST_SESSIONS_HARD_LIMIT,
       offset: 0,
+      nodeId: this.nodeId,
     });
     return {
       type: "sessions_update",

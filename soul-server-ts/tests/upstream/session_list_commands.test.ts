@@ -51,6 +51,7 @@ describe("session list command boundary", () => {
     }));
     const commands = new SessionListCommands(
       createSessionDb({ listSessionsSummary } as unknown as Partial<SessionDB>),
+      "node-1",
     );
 
     const ack = await commands.listSessions({ requestId: "list-1" });
@@ -58,6 +59,7 @@ describe("session list command boundary", () => {
     expect(listSessionsSummary).toHaveBeenCalledWith({
       limit: 10_000,
       offset: 0,
+      nodeId: "node-1",
     });
     expect(ack).toEqual({
       type: "sessions_update",
@@ -68,7 +70,7 @@ describe("session list command boundary", () => {
   });
 
   it("preserves Python parity by returning an empty requestId when absent", async () => {
-    const commands = new SessionListCommands(createSessionDb());
+    const commands = new SessionListCommands(createSessionDb(), "node-1");
 
     const ack = await commands.listSessions({ requestId: "" });
 
@@ -76,7 +78,7 @@ describe("session list command boundary", () => {
   });
 
   it("fails explicitly when the session DB dependency is not configured", async () => {
-    const commands = new SessionListCommands(undefined);
+    const commands = new SessionListCommands(undefined, "node-1");
 
     await expect(commands.listSessions({ requestId: "list-bad" })).rejects.toEqual(
       new SessionListCommandError(

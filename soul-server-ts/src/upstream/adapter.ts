@@ -315,7 +315,7 @@ export class UpstreamAdapter {
     }
 
     try {
-      const commands = new SessionListCommands(this.deps.sessionDb);
+      const commands = new SessionListCommands(this.deps.sessionDb, this.config.nodeId);
       await this.send(await commands.listSessions({ requestId: "" }));
     } catch (err) {
       this.logger.warn({ err }, "initial sessions_update failed");

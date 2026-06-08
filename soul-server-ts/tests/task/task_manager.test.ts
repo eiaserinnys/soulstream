@@ -1476,7 +1476,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(mocks.getSession).toHaveBeenCalledWith("missing");
   });
 
-  it("DB row가 다른 노드 소유이면 local hydrate·auto-resume하지 않고 Task not found로 fallback 신호", async () => {
+  it("DB row가 다른 노드 소유이면 owner mismatch를 Task not found와 구분해 보고", async () => {
     const mocks = makeMocks();
     mocks.getSession.mockResolvedValueOnce({
       session_id: "caller-owned-elsewhere",
@@ -1512,7 +1512,9 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
         },
         onResume,
       ),
-    ).rejects.toThrow("Task not found: caller-owned-elsewhere");
+    ).rejects.toThrow(
+      "Task owned by another node: caller-owned-elsewhere owner=owner-node current=reporting-node",
+    );
 
     expect(mocks.getSession).toHaveBeenCalledWith("caller-owned-elsewhere");
     expect(tm.getTask("caller-owned-elsewhere")).toBeUndefined();
@@ -1742,13 +1744,13 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     ).rejects.toThrow("Task not found: sess-bad");
   });
 
-  it("db.getSession throw → graceful null (Task not found으로 정규화)", async () => {
+  it("db.getSession throw → hydration failure로 명시적 실패", async () => {
     const mocks = makeMocks();
     mocks.getSession.mockRejectedValueOnce(new Error("db connection lost"));
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
     await expect(
       tm.addIntervention({ agentSessionId: "sess-x", text: "x", user: "u" }, vi.fn()),
-    ).rejects.toThrow("Task not found: sess-x");
+    ).rejects.toThrow("Task hydration failed: sess-x");
   });
 
   it("메모리에 task가 있으면 hydration skip (기존 동작 보존)", async () => {

@@ -15,7 +15,10 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 from sse_starlette.sse import EventSourceResponse
 
 from soulstream_server.api.session_models import ClaudePermissionMode
-from soulstream_server.api.node_utils import find_session_node
+from soulstream_server.api.node_utils import (
+    find_session_node,
+    http_exception_for_node_resume_runtime_error,
+)
 from soulstream_server.dashboard_access import (
     access_for_request,
     first_allowed_folder_id,
@@ -204,25 +207,53 @@ def create_execute_proxy_router(
 
         # 노드 탐색 (SSE 시작 전이므로 HTTPException 가능)
         node = await find_session_node(session_id, db, node_manager)
+        event_queue, subscribe_id = await _subscribe_session_events(node, session_id)
+        try:
+            await node.send_intervene(
+                session_id,
+                body.prompt,
+                "",
+                attachment_paths=body.attachment_paths,
+                caller_info=body.caller_info,
+                extra_context_items=body.context_items,
+            )
+        except RuntimeError as e:
+            node.unsubscribe_events(session_id, subscribe_id)
+            raise await http_exception_for_node_resume_runtime_error(
+                session_id,
+                db,
+                e,
+            )
 
         return _create_sse_response(
-            node, session_id, node.node_id,
-            intervene_prompt=body.prompt,
-            intervene_user="",
-            intervene_caller_info=body.caller_info,
-            intervene_attachment_paths=body.attachment_paths,
-            intervene_context_items=body.context_items,
+            node,
+            session_id,
+            node.node_id,
+            event_queue=event_queue,
+            subscribe_id=subscribe_id,
         )
+
+    async def _subscribe_session_events(node, session_id: str):
+        queue: asyncio.Queue[dict | None] = asyncio.Queue(maxsize=512)
+
+        async def on_event(data: dict) -> None:
+            try:
+                queue.put_nowait(data)
+            except asyncio.QueueFull:
+                logger.warning(
+                    "SSE queue full for session %s, dropping event",
+                    session_id,
+                )
+
+        subscribe_id = await node.send_subscribe_events(session_id, on_event)
+        return queue, subscribe_id
 
     def _create_sse_response(
         node,
         session_id: str,
         node_id: str,
-        intervene_prompt: str | None = None,
-        intervene_user: str = "",
-        intervene_caller_info: dict | None = None,
-        intervene_attachment_paths: list[str] | None = None,
-        intervene_context_items: list[dict] | None = None,
+        event_queue: asyncio.Queue[dict | None] | None = None,
+        subscribe_id: str | None = None,
     ) -> EventSourceResponse:
         """SSE 이벤트 스트림을 생성한다.
 
@@ -230,38 +261,21 @@ def create_execute_proxy_router(
             node: NodeConnection 인스턴스
             session_id: 세션 ID
             node_id: 노드 ID
-            intervene_prompt: Resume 모드일 때 intervention 텍스트. None이면 New 모드.
-            intervene_user: Resume 모드 intervention 사용자.
+            event_queue: 이미 구독한 이벤트 큐. None이면 generator 시작 시 구독.
+            subscribe_id: 이미 생성한 구독 ID. None이면 generator 시작 시 구독.
         """
 
         async def event_generator():
-            queue: asyncio.Queue[dict | None] = asyncio.Queue(maxsize=512)
-
-            async def on_event(data: dict) -> None:
-                try:
-                    queue.put_nowait(data)
-                except asyncio.QueueFull:
-                    logger.warning(
-                        "SSE queue full for session %s, dropping event",
-                        session_id,
-                    )
-
-            # 구독 (Resume 모드에서는 intervene 전에 구독해야 이벤트 유실 방지)
-            subscribe_id = await node.send_subscribe_events(session_id, on_event)
+            queue = event_queue
+            active_subscribe_id = subscribe_id
+            if queue is None or active_subscribe_id is None:
+                queue, active_subscribe_id = await _subscribe_session_events(
+                    node,
+                    session_id,
+                )
 
             try:
-                # Resume 모드: 구독 후 intervention 전송
-                if intervene_prompt is not None:
-                    await node.send_intervene(
-                        session_id,
-                        intervene_prompt,
-                        intervene_user,
-                        attachment_paths=intervene_attachment_paths,
-                        caller_info=intervene_caller_info,
-                        extra_context_items=intervene_context_items,
-                    )
-
-                # init 이벤트
+                # init event
                 yield {
                     "event": "init",
                     "data": json.dumps({
@@ -316,7 +330,7 @@ def create_execute_proxy_router(
                         break
 
             finally:
-                node.unsubscribe_events(session_id, subscribe_id)
+                node.unsubscribe_events(session_id, active_subscribe_id)
 
         return EventSourceResponse(event_generator())
 

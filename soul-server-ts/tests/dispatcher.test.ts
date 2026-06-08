@@ -1581,6 +1581,11 @@ describe("CommandDispatcher.list_sessions (Python parity)", () => {
     await dispatcher.dispatch({ type: "list_sessions", requestId: "list-1" });
 
     expect(listSessionsSummary).toHaveBeenCalledTimes(1);
+    expect(listSessionsSummary).toHaveBeenCalledWith({
+      limit: 10_000,
+      offset: 0,
+      nodeId: "eias-shopping-ts",
+    });
     expect(sent).toHaveLength(1);
     const reply = sent[0] as { type: string; sessions: unknown[]; total: number; requestId: string };
     expect(reply.type).toBe("sessions_update");
