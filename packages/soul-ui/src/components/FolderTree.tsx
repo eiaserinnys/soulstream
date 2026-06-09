@@ -23,6 +23,7 @@ import { Button } from "./ui/button";
 import { isSystemFolderId } from "../shared/constants";
 import { Plus } from "lucide-react";
 import { getChildFolders } from "../board-workspace/board-workspace-helpers";
+import { compareFoldersByName } from "../lib/folder-tree-options";
 import { FolderDialog } from "./FolderDialog";
 import { FolderSettingsDialog } from "./FolderSettingsDialog";
 import { FolderSortButton } from "./FolderSortButton";
@@ -35,13 +36,6 @@ import {
   readFolderTreeExpandedState,
   writeFolderTreeExpandedState,
 } from "./folder-tree-expansion";
-
-function folderSortKey(name: string): string {
-  return (
-    name.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+/u, "").trim()
-    || name
-  );
-}
 
 export interface FolderTreeProps {
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => void;
@@ -148,9 +142,9 @@ export function FolderTree({
     const normal = folders.filter((f) => !isSystemFolderId(f.id));
     switch (folderSortMode) {
       case "name-asc":
-        return [...normal].sort((a, b) => folderSortKey(a.name).localeCompare(folderSortKey(b.name)));
+        return [...normal].sort(compareFoldersByName);
       case "name-desc":
-        return [...normal].sort((a, b) => folderSortKey(b.name).localeCompare(folderSortKey(a.name)));
+        return [...normal].sort((a, b) => compareFoldersByName(b, a));
       case "created-desc":
         return [...normal].sort((a, b) =>
           new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()

@@ -46,6 +46,8 @@ export { ThemeToggle } from "./ThemeToggle";
 export { ConfigButton } from "./ConfigButton";
 export { NewSessionDialog } from "./NewSessionDialog";
 export type { NewSessionDialogProps } from "./NewSessionDialog";
+export { NewSessionFolderSelector } from "./NewSessionFolderSelector";
+export type { NewSessionFolderSelectorProps } from "./NewSessionFolderSelector";
 export { FileAttachmentPreview } from "./FileAttachmentPreview";
 export type { FileAttachmentPreviewProps } from "./FileAttachmentPreview";
 

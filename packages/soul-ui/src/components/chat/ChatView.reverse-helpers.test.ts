@@ -8,6 +8,8 @@ import { describe, it, expect } from "vitest";
 import {
   START_INDEX,
   computeFirstItemIndex,
+  getBottomItemIndex,
+  getInitialTopMostItemIndex,
   findFocusIndex,
 } from "./ChatView.reverse-helpers";
 import type { MessageOrGroup } from "../../lib/grouping";
@@ -37,6 +39,20 @@ describe("computeFirstItemIndex", () => {
 
   it("START_INDEX는 10_000 이상이어야 virtuoso prepend 안전", () => {
     expect(START_INDEX).toBeGreaterThanOrEqual(10_000);
+  });
+});
+
+describe("bottom focus index helpers", () => {
+  it("keeps initialTopMostItemIndex relative to the current data array", () => {
+    expect(getInitialTopMostItemIndex(0)).toBe(0);
+    expect(getInitialTopMostItemIndex(1)).toEqual({ index: 0, align: "end" });
+    expect(getInitialTopMostItemIndex(5)).toEqual({ index: 4, align: "end" });
+  });
+
+  it("uses absolute virtuoso coordinates for imperative bottom scrolling", () => {
+    expect(getBottomItemIndex(0, START_INDEX)).toBeNull();
+    expect(getBottomItemIndex(1, START_INDEX)).toBe(START_INDEX);
+    expect(getBottomItemIndex(5, START_INDEX - 2)).toBe(START_INDEX + 2);
   });
 });
 

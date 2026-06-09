@@ -13,6 +13,12 @@ export { formatTime } from "./input-request-utils";
 // === Folder / Session Operations ===
 export { createFolderOperations } from "./folder-operations";
 export type { FolderApiConfig, FolderOperations } from "./folder-operations";
+export {
+  buildFolderTreeOptions,
+  compareFoldersByName,
+  getFolderNameSortKey,
+} from "./folder-tree-options";
+export type { FolderTreeOption } from "./folder-tree-options";
 export { createBoardWorkspaceOperations } from "./board-workspace-operations";
 export type {
   BoardWorkspaceApiConfig,

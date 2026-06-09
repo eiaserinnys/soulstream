@@ -10,6 +10,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   NewSessionDialog as BaseNewSessionDialog,
+  NewSessionFolderSelector,
   Select,
   SelectTrigger,
   SelectPopup,
@@ -254,28 +255,11 @@ export function OrchestratorNewSessionModal() {
   );
 
   const folderSelector = (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-xs font-medium text-muted-foreground">Folder</label>
-      <Select
-        value={selectedModalFolderId ?? ''}
-        onValueChange={(v) => setSelectedModalFolderId(v || null)}
-      >
-        <SelectTrigger>
-          <span className={cn("flex-1 truncate", !selectedModalFolderId && "text-muted-foreground/72")}>
-            {selectedModalFolderId
-              ? (catalog?.folders.find(f => f.id === selectedModalFolderId)?.name ?? "Select a folder...")
-              : "Select a folder..."}
-          </span>
-        </SelectTrigger>
-        <SelectPopup>
-          {catalog?.folders.map((f) => (
-            <SelectItem key={f.id} value={f.id}>
-              {f.name}
-            </SelectItem>
-          ))}
-        </SelectPopup>
-      </Select>
-    </div>
+    <NewSessionFolderSelector
+      folders={catalog?.folders ?? []}
+      selectedFolderId={selectedModalFolderId}
+      onFolderChange={setSelectedModalFolderId}
+    />
   );
 
   const nodeSelector = (

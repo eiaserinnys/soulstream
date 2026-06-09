@@ -9,11 +9,7 @@ import { useMemo } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { isSystemFolderId } from "../shared/constants";
 import { getRootFolders } from "../board-workspace/board-workspace-helpers";
-
-/** 이름 정렬 키 — 앞쪽 이모지+공백 제거 후 텍스트 반환 */
-function sortKey(name: string): string {
-  return name.replace(/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+/u, '').trim() || name;
-}
+import { compareFoldersByName } from "../lib/folder-tree-options";
 
 export interface SortedFolder {
   id: string;
@@ -44,9 +40,9 @@ export function useSortedFolders(folders: readonly SortedFolder[]): UseSortedFol
     const normal = getRootFolders(folders).filter((f) => !isSystemFolderId(f.id));
     switch (folderSortMode) {
       case "name-asc":
-        return [...normal].sort((a, b) => sortKey(a.name).localeCompare(sortKey(b.name)));
+        return [...normal].sort(compareFoldersByName);
       case "name-desc":
-        return [...normal].sort((a, b) => sortKey(b.name).localeCompare(sortKey(a.name)));
+        return [...normal].sort((a, b) => compareFoldersByName(b, a));
       case "created-desc":
         return [...normal].sort((a, b) =>
           new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime()
