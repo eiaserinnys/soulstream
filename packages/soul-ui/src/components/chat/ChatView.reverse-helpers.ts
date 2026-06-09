@@ -24,6 +24,20 @@ export const START_INDEX = 10_000;
 export const computeFirstItemIndex = (prependedCount: number): number =>
   START_INDEX - prependedCount;
 
+export function getInitialTopMostItemIndex(
+  itemCount: number,
+): { index: number; align: "end" } | 0 {
+  return itemCount > 0 ? { index: itemCount - 1, align: "end" } : 0;
+}
+
+export function getBottomItemIndex(
+  itemCount: number,
+  firstItemIndex: number,
+): number | null {
+  if (itemCount <= 0) return null;
+  return firstItemIndex + itemCount - 1;
+}
+
 /**
  * `grouped[]`에서 `focusEventId`와 매칭되는 인덱스를 찾는다.
  * 매칭 실패 시 -1.

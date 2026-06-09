@@ -16,7 +16,7 @@
  * Tool grouping: 연속된 tool 메시지를 접기/펼치기 그룹으로 묶어 표시.
  */
 
-import { useMemo, useRef, useEffect, useState, useCallback } from "react";
+import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { flattenTree } from "../../lib/flatten-tree";
@@ -26,7 +26,12 @@ import { useLlmContext } from "./hooks";
 import { groupMessages } from "../../lib/grouping";
 import { VirtualizedItem } from "./VirtualizedItem";
 import { useMessageHistoryBuffer } from "./useMessageHistoryBuffer";
-import { computeFirstItemIndex, findFocusIndex } from "./ChatView.reverse-helpers";
+import {
+  computeFirstItemIndex,
+  findFocusIndex,
+  getBottomItemIndex,
+  getInitialTopMostItemIndex,
+} from "./ChatView.reverse-helpers";
 import {
   decideFollowOnAtBottomChange,
   resolveFollowOutput,
@@ -80,6 +85,14 @@ export function ChatView({
     () => computeFirstItemIndex(chatPrependedCount),
     [chatPrependedCount],
   );
+  const bottomItemIndex = useMemo(
+    () => getBottomItemIndex(grouped.length, firstItemIndex),
+    [grouped.length, firstItemIndex],
+  );
+  const initialTopMostItemIndex = useMemo(
+    () => getInitialTopMostItemIndex(grouped.length),
+    [grouped.length],
+  );
 
   // === Follow mode ===
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -103,6 +116,7 @@ export function ChatView({
    * 중첩되지 않도록 1회 처리 후 여기에 기록한다. 세션 전환 시 null로 초기화.
    */
   const handledFocusRef = useRef<number | null>(null);
+  const bottomFocusedSessionRef = useRef<string | null>(null);
 
   /**
    * 세션 전환 시점 기록 (auto-follow 가드용).
@@ -124,23 +138,37 @@ export function ChatView({
     sessionStartedAtRef.current = performance.now();
   }
 
+  useLayoutEffect(() => {
+    if (!activeSessionKey) {
+      bottomFocusedSessionRef.current = null;
+      return;
+    }
+    if (bottomItemIndex === null) return;
+    if (bottomFocusedSessionRef.current === activeSessionKey) return;
+    bottomFocusedSessionRef.current = activeSessionKey;
+    virtuosoRef.current?.scrollToIndex({
+      index: bottomItemIndex,
+      align: "end",
+      behavior: "auto",
+    });
+  }, [activeSessionKey, bottomItemIndex]);
+
   // 새 이벤트 시: following이 아니면 "New Messages" 배너 표시.
   // 실제 하단 유지는 virtuoso `followOutput="auto"` 가 담당하므로 여기서는
   // 배너 상태만 제어한다. (수동 scrollToIndex 호출 제거)
   useEffect(() => {
     if (treeVersion === prevTreeVersion.current) return;
     prevTreeVersion.current = treeVersion;
-    if (shouldScrollToBottomOnTreeChange(isFollowingRef.current, grouped.length)) {
-      const targetIndex = grouped.length - 1 + firstItemIndex;
+    if (shouldScrollToBottomOnTreeChange(isFollowingRef.current, grouped.length) && bottomItemIndex !== null) {
       requestAnimationFrame(() => {
         virtuosoRef.current?.scrollToIndex({
-          index: targetIndex,
+          index: bottomItemIndex,
           align: "end",
           behavior: "auto",
         });
         requestAnimationFrame(() => {
           virtuosoRef.current?.scrollToIndex({
-            index: targetIndex,
+            index: bottomItemIndex,
             align: "end",
             behavior: "auto",
           });
@@ -151,7 +179,7 @@ export function ChatView({
     if (!isFollowingRef.current && grouped.length > 0) {
       setShowNewMessage(true);
     }
-  }, [treeVersion, grouped.length, firstItemIndex]);
+  }, [treeVersion, grouped.length, bottomItemIndex]);
 
   // 세션 변경 시: follow 리셋 + 이전 세션의 focusEventId 잔재 정리.
   // 다른 세션에 우연히 같은 eventId가 존재하면 엉뚱한 메시지를 하이라이트할 수 있으므로
@@ -178,22 +206,22 @@ export function ChatView({
   }, [focusEventId, treeVersion, grouped, firstItemIndex]);
 
   const scrollToBottom = useCallback(() => {
-    if (grouped.length === 0) return;
+    if (bottomItemIndex === null) return;
     virtuosoRef.current?.scrollToIndex({
-      index: grouped.length - 1 + firstItemIndex,
+      index: bottomItemIndex,
       align: "end",
       behavior: "smooth",
     });
     setIsFollowing(true);
     setShowNewMessage(false);
-  }, [grouped.length, firstItemIndex]);
+  }, [bottomItemIndex]);
 
   const toggleFollow = useCallback(() => {
     setIsFollowing((prev) => {
       const next = !prev;
-      if (next && grouped.length > 0) {
+      if (next && bottomItemIndex !== null) {
         virtuosoRef.current?.scrollToIndex({
-          index: grouped.length - 1 + firstItemIndex,
+          index: bottomItemIndex,
           align: "end",
           behavior: "smooth",
         });
@@ -201,7 +229,7 @@ export function ChatView({
       }
       return next;
     });
-  }, [grouped.length, firstItemIndex]);
+  }, [bottomItemIndex]);
 
   const VirtuosoHeader = useCallback(
     () => (
@@ -256,9 +284,7 @@ export function ChatView({
           }}
           data={grouped}
           firstItemIndex={firstItemIndex}
-          initialTopMostItemIndex={
-            grouped.length > 0 ? { index: grouped.length - 1, align: "end" } : 0
-          }
+          initialTopMostItemIndex={initialTopMostItemIndex}
           alignToBottom
           atBottomThreshold={48}
           increaseViewportBy={{ top: 800, bottom: 400 }}
