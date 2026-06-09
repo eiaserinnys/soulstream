@@ -385,21 +385,78 @@ describe("BoardWorkspaceView", () => {
     const markdownTile = container.querySelector<HTMLElement>('[data-testid="board-markdown-tile"]');
 
     expect(canvas?.style.backgroundSize).toBe("20px 20px");
-    expect(canvas?.style.width).toBe("20000px");
-    expect(canvas?.style.height).toBe("12000px");
+    expect(canvas?.style.width).toBe("100000px");
+    expect(canvas?.style.height).toBe("100000px");
 
     expect(folderTile?.className).toContain("h-[160px]");
     expect(folderTile?.className).toContain("w-[280px]");
     expect(folderTile?.className).toContain("rounded-md");
-    expect(folderTile?.style.left).toBe("10040px");
-    expect(folderTile?.style.top).toBe("6080px");
+    expect(folderTile?.style.left).toBe("50040px");
+    expect(folderTile?.style.top).toBe("50080px");
     expect(sessionTile?.className).toContain("h-[160px]");
     expect(sessionTile?.className).toContain("w-[280px]");
     expect(sessionTile?.className).toContain("rounded-md");
-    expect(sessionTile?.style.left).toBe("10200px");
-    expect(sessionTile?.style.top).toBe("6040px");
-    expect(markdownTile?.style.left).toBe("10360px");
-    expect(markdownTile?.style.top).toBe("6080px");
+    expect(sessionTile?.style.left).toBe("50200px");
+    expect(sessionTile?.style.top).toBe("50040px");
+    expect(markdownTile?.style.left).toBe("50360px");
+    expect(markdownTile?.style.top).toBe("50080px");
+  });
+
+  it("declutters overlapping board cards through the header action", async () => {
+    const declutterCatalog: CatalogState = {
+      ...catalog,
+      boardItems: [
+        {
+          id: "session:session-a",
+          folderId: "root",
+          itemType: "session",
+          itemId: "session-a",
+          x: 0,
+          y: 0,
+        },
+        {
+          id: "subfolder:child-folder",
+          folderId: "root",
+          itemType: "subfolder",
+          itemId: "child-folder",
+          x: 120,
+          y: 0,
+        },
+        {
+          id: "markdown:doc-a",
+          folderId: "root",
+          itemType: "markdown",
+          itemId: "doc-a",
+          x: 700,
+          y: 0,
+          metadata: {
+            title: "Design note",
+            preview: "Markdown preview",
+          },
+        },
+      ],
+    };
+    const onUpdateBoardItemPosition = vi.fn().mockResolvedValue(undefined);
+    ({ container, root } = renderBoard({ onUpdateBoardItemPosition }, {
+      catalog: declutterCatalog,
+    }));
+
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="board-declutter-button"]');
+    expect(button).not.toBeNull();
+    expect(button?.disabled).toBe(false);
+
+    flushSync(() => {
+      button!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await Promise.resolve();
+
+    const updatedItems = useDashboardStore.getState().catalog?.boardItems ?? [];
+    const byId = new Map(updatedItems.map((item) => [item.id, item]));
+
+    expect(onUpdateBoardItemPosition).not.toHaveBeenCalled();
+    expect(byId.get("session:session-a")).toMatchObject({ x: 0, y: 0 });
+    expect(byId.get("markdown:doc-a")).toMatchObject({ x: 700, y: 0 });
+    expect(byId.get("subfolder:child-folder")).not.toMatchObject({ x: 120, y: 0 });
   });
 
   it("shows board sync status when websocket connection is unavailable", () => {
@@ -475,8 +532,8 @@ describe("BoardWorkspaceView", () => {
     });
 
     const ghost = container.querySelector<HTMLElement>('[data-testid="board-drag-ghost"]');
-    expect(ghost?.style.left).toBe("10260px");
-    expect(ghost?.style.top).toBe("6100px");
+    expect(ghost?.style.left).toBe("50260px");
+    expect(ghost?.style.top).toBe("50100px");
 
     flushSync(() => {
       dispatchPointer(window, "pointerup", { clientX: 255, clientY: 101 });
@@ -484,8 +541,8 @@ describe("BoardWorkspaceView", () => {
     await Promise.resolve();
 
     expect(onUpdateBoardItemPosition).not.toHaveBeenCalled();
-    expect(sessionTile?.style.left).toBe("10260px");
-    expect(sessionTile?.style.top).toBe("6100px");
+    expect(sessionTile?.style.left).toBe("50260px");
+    expect(sessionTile?.style.top).toBe("50100px");
   });
 
   it("upserts a missing session board item when dragging a fallback session tile", async () => {
@@ -555,8 +612,8 @@ describe("BoardWorkspaceView", () => {
     await Promise.resolve();
 
     expect(onUpdateBoardItemPosition).not.toHaveBeenCalled();
-    expect(sessionTile?.style.left).toBe("10260px");
-    expect(sessionTile?.style.top).toBe("6100px");
+    expect(sessionTile?.style.left).toBe("50260px");
+    expect(sessionTile?.style.top).toBe("50100px");
     expect(consoleError).not.toHaveBeenCalledWith("Board item position update failed:", expect.any(Error));
   });
 
@@ -575,8 +632,8 @@ describe("BoardWorkspaceView", () => {
     await Promise.resolve();
 
     expect(onUpdateBoardItemPosition).not.toHaveBeenCalled();
-    expect(folderTile?.style.left).toBe("9920px");
-    expect(folderTile?.style.top).toBe("5880px");
+    expect(folderTile?.style.left).toBe("49920px");
+    expect(folderTile?.style.top).toBe("49880px");
   });
 
   it("auto-pans the canvas while dragging near the viewport edge", () => {
@@ -667,12 +724,12 @@ describe("BoardWorkspaceView", () => {
     expect(scroller).not.toBeNull();
     const file = new File(["hello"], "report.pdf", { type: "application/pdf" });
     const dragover = dispatchFileDragEvent(scroller!, "dragover", [file], {
-      clientX: 12000,
-      clientY: 8000,
+      clientX: 52000,
+      clientY: 52000,
     });
     const drop = dispatchFileDragEvent(scroller!, "drop", [file], {
-      clientX: 12000,
-      clientY: 8000,
+      clientX: 52000,
+      clientY: 52000,
     });
 
     expect(dragover.defaultPrevented).toBe(true);
@@ -755,12 +812,12 @@ describe("BoardWorkspaceView", () => {
     const file = new File(["hello"], "report.pdf", { type: "application/pdf" });
 
     expect(dispatchFileDragEvent(childCard!, "dragover", [file], {
-      clientX: 12000,
-      clientY: 8000,
+      clientX: 52000,
+      clientY: 52000,
     }).defaultPrevented).toBe(true);
     dispatchFileDragEvent(childCard!, "drop", [file], {
-      clientX: 12000,
-      clientY: 8000,
+      clientX: 52000,
+      clientY: 52000,
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -801,8 +858,8 @@ describe("BoardWorkspaceView", () => {
     const file = new File(["hello"], "report.pdf", { type: "application/pdf" });
 
     dispatchFileDragEvent(scroller!, "drop", [file], {
-      clientX: 12000,
-      clientY: 8000,
+      clientX: 52000,
+      clientY: 52000,
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -820,8 +877,8 @@ describe("BoardWorkspaceView", () => {
       scroller!.dispatchEvent(new MouseEvent("contextmenu", {
         bubbles: true,
         cancelable: true,
-        clientX: 10023,
-        clientY: 6041,
+        clientX: 50023,
+        clientY: 50041,
       }));
     });
 

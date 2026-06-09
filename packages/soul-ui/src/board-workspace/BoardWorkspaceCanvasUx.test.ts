@@ -173,9 +173,9 @@ describe("BoardWorkspaceView canvas UX", () => {
     expect(markdownTile).not.toBeNull();
 
     flushSync(() => {
-      dispatchPointer(canvas!, "pointerdown", { clientX: 10020, clientY: 6020 });
-      dispatchPointer(window, "pointermove", { clientX: 10580, clientY: 6300 });
-      dispatchPointer(window, "pointerup", { clientX: 10580, clientY: 6300 });
+      dispatchPointer(canvas!, "pointerdown", { clientX: 50020, clientY: 50020 });
+      dispatchPointer(window, "pointermove", { clientX: 50580, clientY: 50300 });
+      dispatchPointer(window, "pointerup", { clientX: 50580, clientY: 50300 });
     });
 
     expect(folderTile!.className).toContain("ring-2");
@@ -189,12 +189,12 @@ describe("BoardWorkspaceView canvas UX", () => {
     });
     await Promise.resolve();
 
-    expect(folderTile!.style.left).toBe("10080px");
-    expect(folderTile!.style.top).toBe("6120px");
-    expect(sessionTile!.style.left).toBe("10240px");
-    expect(sessionTile!.style.top).toBe("6080px");
-    expect(markdownTile!.style.left).toBe("10400px");
-    expect(markdownTile!.style.top).toBe("6120px");
+    expect(folderTile!.style.left).toBe("50080px");
+    expect(folderTile!.style.top).toBe("50120px");
+    expect(sessionTile!.style.left).toBe("50240px");
+    expect(sessionTile!.style.top).toBe("50080px");
+    expect(markdownTile!.style.left).toBe("50400px");
+    expect(markdownTile!.style.top).toBe("50120px");
   });
 
   it("clears multi-selection when empty canvas space is clicked", () => {
@@ -211,8 +211,8 @@ describe("BoardWorkspaceView canvas UX", () => {
     expect(sessionTile!.className).toContain("ring-2");
 
     flushSync(() => {
-      dispatchPointer(canvas!, "pointerdown", { clientX: 9990, clientY: 5990 });
-      dispatchPointer(window, "pointerup", { clientX: 9990, clientY: 5990 });
+      dispatchPointer(canvas!, "pointerdown", { clientX: 49990, clientY: 49990 });
+      dispatchPointer(window, "pointerup", { clientX: 49990, clientY: 49990 });
     });
     expect(sessionTile!.className.split(/\s+/)).not.toContain("ring-2");
   });

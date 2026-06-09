@@ -1,4 +1,4 @@
-import { ChevronRight, FolderPlus, List, Plus, RefreshCw, SquarePen, Wifi, WifiOff } from "lucide-react";
+import { ChevronRight, FolderPlus, List, Plus, RefreshCw, Sparkles, SquarePen, Wifi, WifiOff } from "lucide-react";
 
 import type { CatalogFolder } from "../shared/types";
 import { Button } from "../components/ui/button";
@@ -19,6 +19,8 @@ interface BoardWorkspaceHeaderProps {
   onCreateFolder: () => void;
   onOpenNewSession: () => void;
   onCreateMarkdown: () => void;
+  declutterDisabled?: boolean;
+  onDeclutterBoard?: () => void;
 }
 
 export function BoardWorkspaceHeader({
@@ -35,6 +37,8 @@ export function BoardWorkspaceHeader({
   onCreateFolder,
   onOpenNewSession,
   onCreateMarkdown,
+  declutterDisabled,
+  onDeclutterBoard,
 }: BoardWorkspaceHeaderProps) {
   const syncStatus = getSyncStatusMeta(connectionStatus);
   const SyncIcon = syncStatus.icon;
@@ -85,6 +89,17 @@ export function BoardWorkspaceHeader({
             리스트
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onDeclutterBoard}
+          disabled={!onDeclutterBoard || declutterDisabled}
+          title="겹침 정리"
+          data-testid="board-declutter-button"
+        >
+          <Sparkles className="mr-1 h-3.5 w-3.5" />
+          정리
+        </Button>
         <Button variant="ghost" size="sm" onClick={onCreateFolder} title="New folder">
           <FolderPlus className="mr-1 h-3.5 w-3.5" />
           Folder

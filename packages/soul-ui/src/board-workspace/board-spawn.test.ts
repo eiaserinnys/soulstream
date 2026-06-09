@@ -22,7 +22,7 @@ function sessionItem(id: string, x: number, y: number): BoardWorkspaceItem {
 describe("board spawn placement", () => {
   it("spawns at the viewport center instead of the origin when the center is empty", () => {
     const position = findOpenBoardPositionInViewport([], {
-      viewport: { scrollLeft: 10_000, scrollTop: 6_000, width: 1_000, height: 600 },
+      viewport: { scrollLeft: 50_000, scrollTop: 50_000, width: 1_000, height: 600 },
       zoom: 1,
     });
 
@@ -32,7 +32,7 @@ describe("board spawn placement", () => {
   it("uses AABB collision checks and searches for the first non-overlapping viewport slot", () => {
     const occupied = sessionItem("occupied", 360, 220);
     const position = findOpenBoardPositionInViewport([occupied], {
-      viewport: { scrollLeft: 10_000, scrollTop: 6_000, width: 1_000, height: 600 },
+      viewport: { scrollLeft: 50_000, scrollTop: 50_000, width: 1_000, height: 600 },
       zoom: 1,
     });
 
@@ -49,7 +49,7 @@ describe("board spawn placement", () => {
 
   it("falls back to a deterministic random offset when the viewport cannot fit a tile", () => {
     const position = findOpenBoardPositionInViewport([], {
-      viewport: { scrollLeft: 10_000, scrollTop: 6_000, width: 100, height: 80 },
+      viewport: { scrollLeft: 50_000, scrollTop: 50_000, width: 100, height: 80 },
       zoom: 1,
       maxAttempts: 0,
       random: () => 1,

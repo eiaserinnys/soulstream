@@ -9,6 +9,7 @@ import {
   formatBoardZoom,
   getBoardGridStyle,
   getCanvasBoardPoint,
+  getScaledCanvasSize,
   getViewportBoardRect,
   setScrollerZoomAroundClientPoint,
 } from "./board-viewport";
@@ -21,10 +22,17 @@ describe("board-viewport", () => {
     expect(formatBoardZoom(1.25)).toBe("125%");
   });
 
-  it("keeps grid dots in board units while softening low zoom noise", () => {
+  it("keeps grid dot density stable while softening low zoom noise", () => {
     expect(getBoardGridStyle(1).backgroundSize).toBe("20px 20px");
+    expect(getBoardGridStyle(0.5).backgroundSize).toBe("40px 40px");
+    expect(getBoardGridStyle(2).backgroundSize).toBe("10px 10px");
     expect(getBoardGridStyle(1).backgroundColor).toContain("var(--background) 96%");
     expect(getBoardGridStyle(0.25).backgroundImage).toContain("16%");
+  });
+
+  it("scales the expanded canvas bounds with zoom", () => {
+    expect(getScaledCanvasSize(1)).toEqual({ width: 100000, height: 100000 });
+    expect(getScaledCanvasSize(0.25)).toEqual({ width: 25000, height: 25000 });
   });
 
   it("converts pointer coordinates through the transformed canvas", () => {
@@ -41,7 +49,7 @@ describe("board-viewport", () => {
       toJSON: () => ({}),
     });
 
-    expect(getCanvasBoardPoint(120, 60, canvas, 0.5)).toEqual({ x: -9800, y: -5900 });
+    expect(getCanvasBoardPoint(120, 60, canvas, 0.5)).toEqual({ x: -49800, y: -49900 });
   });
 
   it("keeps the pointer-anchored board point stable while zooming", () => {
@@ -67,8 +75,8 @@ describe("board-viewport", () => {
       top: -50,
       right: 19900,
       bottom: 11950,
-      width: 20000,
-      height: 12000,
+      width: 100000,
+      height: 100000,
       toJSON: () => ({}),
     });
 
@@ -79,7 +87,7 @@ describe("board-viewport", () => {
   });
 
   it("reports the visible viewport in board coordinates", () => {
-    expect(getViewportBoardRect({ scrollLeft: 5000, scrollTop: 3000, width: 1000, height: 500 }, 0.5)).toEqual({
+    expect(getViewportBoardRect({ scrollLeft: 25000, scrollTop: 25000, width: 1000, height: 500 }, 0.5)).toEqual({
       x: 0,
       y: 0,
       width: 2000,

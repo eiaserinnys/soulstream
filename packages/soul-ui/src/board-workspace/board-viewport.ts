@@ -30,13 +30,15 @@ export function formatBoardZoom(zoom: number): string {
 }
 
 export function getBoardGridStyle(zoom: number): CSSProperties {
+  const safeZoom = clampBoardZoom(zoom);
+  const scaledGridSize = BOARD_GRID_SIZE / safeZoom;
   const alpha = zoom < 0.5 ? 0.16 : zoom < 0.75 ? 0.22 : zoom > 1.4 ? 0.26 : 0.32;
   const dotColor = `color-mix(in srgb, var(--muted-foreground) ${Math.round(alpha * 100)}%, transparent)`;
   return {
     backgroundColor: "color-mix(in srgb, var(--background) 96%, var(--foreground) 4%)",
     backgroundImage: `radial-gradient(circle, ${dotColor} 1px, transparent 1px)`,
-    backgroundSize: `${BOARD_GRID_SIZE}px ${BOARD_GRID_SIZE}px`,
-    backgroundPosition: `${BOARD_CANVAS_ORIGIN_X % BOARD_GRID_SIZE}px ${BOARD_CANVAS_ORIGIN_Y % BOARD_GRID_SIZE}px`,
+    backgroundSize: `${scaledGridSize}px ${scaledGridSize}px`,
+    backgroundPosition: `${BOARD_CANVAS_ORIGIN_X % scaledGridSize}px ${BOARD_CANVAS_ORIGIN_Y % scaledGridSize}px`,
   };
 }
 
