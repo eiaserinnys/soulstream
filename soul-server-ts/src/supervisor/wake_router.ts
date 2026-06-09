@@ -6,6 +6,7 @@ import {
   type SupervisorWakeDispatchSnapshot,
   type SupervisorWakeDispatchUpdate,
 } from "./wake_dispatch_state.js";
+import { shouldDispatchSupervisorWakeCandidate } from "./wake_source_filter.js";
 
 const SNAPSHOT_CURSOR_ADVANCED = Symbol("supervisorSnapshotCursorAdvanced");
 
@@ -21,6 +22,9 @@ export interface SupervisorWakeRouterDeps {
   getCursor(supervisorId: string): Promise<number>;
   getHeadOffset?(): Promise<number>;
   readEventsAfter(afterOffset: number, limit: number): Promise<SupervisorWakeEvent[]>;
+  getSourceSessionWakeContext?(
+    sourceSessionId: string,
+  ): Promise<SupervisorWakeSourceSessionContext | null>;
   getSourceSessionAgentId?(sourceSessionId: string): Promise<string | null>;
   setCursor(supervisorId: string, cursorOffset: number): Promise<void>;
   getWakeDispatchState?(supervisorId: string): Promise<SupervisorWakeDispatchSnapshot | null>;
@@ -43,6 +47,11 @@ export interface SupervisorWakeRouterDeps {
 export interface SupervisorWakeRouterOptions {
   batchLimit?: number;
   noProgressThreshold?: number;
+}
+
+export interface SupervisorWakeSourceSessionContext {
+  agentId?: string | null;
+  callerSource?: string | null;
 }
 
 export interface SupervisorWakeSchedulerRegistry {
@@ -110,22 +119,8 @@ export class SupervisorWakeRouter {
 
     const head = events[events.length - 1]?.offset ?? cursor;
     const dispatchSignature = buildEventWakeDispatchSignature({ cursor, head, events });
-    const selfGeneratedSessionIds = await this.resolveSelfGeneratedSessionIds(
-      supervisorId,
-      activeSessionId,
-      events,
-    );
 
-    const wakeEvents = events.filter((event) =>
-      !event.sourceSessionId || !selfGeneratedSessionIds.has(event.sourceSessionId)
-    );
-    if (wakeEvents.length === 0) {
-      await this.deps.setCursor(supervisorId, head);
-      await this.circuitBreaker.recordForwardProgress(supervisorId);
-      return { woken: false, drained: events.length };
-    }
-
-    const classifiedWakeEvents = wakeEvents
+    const classifiedWakeEvents = events
       .map((event) => ({
         event,
         wakeClass: this.classifyEvent(supervisorId, event.eventType, event.offset),
@@ -133,9 +128,36 @@ export class SupervisorWakeRouter {
       .filter((entry): entry is { event: SupervisorWakeEvent; wakeClass: WakeClass } =>
         entry.wakeClass !== null
       );
+    if (classifiedWakeEvents.length === 0) {
+      await this.deps.setCursor(supervisorId, head);
+      await this.circuitBreaker.recordForwardProgress(supervisorId);
+      return { woken: false, drained: events.length };
+    }
+
+    const sourceContexts = await this.resolveSourceSessionWakeContexts(
+      supervisorId,
+      activeSessionId,
+      classifiedWakeEvents.map((entry) => entry.event),
+    );
+    const dispatchableWakeEvents = classifiedWakeEvents.filter((entry) => {
+      const sourceContext = entry.event.sourceSessionId
+        ? sourceContexts.get(entry.event.sourceSessionId)
+        : undefined;
+      return shouldDispatchSupervisorWakeCandidate({
+        supervisorId,
+        sourceAgentId: sourceContext?.agentId ?? null,
+        callerSource: sourceContext?.callerSource ?? null,
+        critical: entry.wakeClass === "critical",
+      });
+    });
+    if (dispatchableWakeEvents.length === 0) {
+      await this.deps.setCursor(supervisorId, head);
+      await this.circuitBreaker.recordForwardProgress(supervisorId);
+      return { woken: false, drained: events.length };
+    }
 
     const wakeClass = strongestWakeClass(
-      classifiedWakeEvents.map((entry) => entry.wakeClass),
+      dispatchableWakeEvents.map((entry) => entry.wakeClass),
     );
     if (wakeClass === "quiet") {
       await this.deps.setCursor(supervisorId, head);
@@ -152,7 +174,7 @@ export class SupervisorWakeRouter {
     try {
       await this.deps.wake({
         supervisorId,
-        events: classifiedWakeEvents.map((entry) => entry.event),
+        events: dispatchableWakeEvents.map((entry) => entry.event),
         wakeClass,
       });
     } catch (err) {
@@ -273,14 +295,13 @@ export class SupervisorWakeRouter {
     );
   }
 
-  private async resolveSelfGeneratedSessionIds(
+  private async resolveSourceSessionWakeContexts(
     supervisorId: string,
     activeSessionId: string | null | undefined,
     events: SupervisorWakeEvent[],
-  ): Promise<Set<string>> {
-    const selfGeneratedSessionIds = new Set<string>();
-    if (activeSessionId) selfGeneratedSessionIds.add(activeSessionId);
-    if (!this.deps.getSourceSessionAgentId) return selfGeneratedSessionIds;
+  ): Promise<Map<string, SupervisorWakeSourceSessionContext>> {
+    const contexts = new Map<string, SupervisorWakeSourceSessionContext>();
+    if (activeSessionId) contexts.set(activeSessionId, { agentId: supervisorId });
 
     const sourceSessionIds = Array.from(
       new Set(
@@ -293,9 +314,17 @@ export class SupervisorWakeRouter {
     );
     for (const sourceSessionId of sourceSessionIds) {
       try {
-        const agentId = await this.deps.getSourceSessionAgentId(sourceSessionId);
-        if (agentId === supervisorId) {
-          selfGeneratedSessionIds.add(sourceSessionId);
+        if (this.deps.getSourceSessionWakeContext) {
+          contexts.set(
+            sourceSessionId,
+            await this.deps.getSourceSessionWakeContext(sourceSessionId) ?? {},
+          );
+          continue;
+        }
+        if (this.deps.getSourceSessionAgentId) {
+          contexts.set(sourceSessionId, {
+            agentId: await this.deps.getSourceSessionAgentId(sourceSessionId),
+          });
         }
       } catch (err) {
         this.deps.logger?.warn(
@@ -307,7 +336,7 @@ export class SupervisorWakeRouter {
         });
       }
     }
-    return selfGeneratedSessionIds;
+    return contexts;
   }
 }
 

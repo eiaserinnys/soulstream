@@ -34,6 +34,7 @@ import {
   TaskManager,
   type StartExecutionCallback,
 } from "./task/task_manager.js";
+import { extractCallerInfoFromMetadata } from "./task/task_metadata.js";
 import { ExecutionContextBuilder } from "./context/context_builder.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "./context/cogito_context.js";
 import { UpstreamAdapter } from "./upstream/adapter.js";
@@ -51,6 +52,8 @@ import {
   type SupervisorWakeSessionSummary,
   wakeSessionSummaryFromRow,
 } from "./supervisor/wake_text.js";
+import { buildSupervisorSnapshotSessionSummaries } from "./supervisor/wake_snapshot.js";
+import { shouldDispatchSupervisorWakeCandidate } from "./supervisor/wake_source_filter.js";
 import { SupervisorHandoverExecutor } from "./supervisor/handover_executor.js";
 import { detectMissingSupervisors } from "./supervisor/watchdog.js";
 import {
@@ -374,8 +377,14 @@ async function main(): Promise<void> {
           payload: event.payload,
           createdAt: event.createdAt,
         })),
-      getSourceSessionAgentId: async (sourceSessionId) =>
-        (await db.getSession(sourceSessionId))?.agent_id ?? null,
+      getSourceSessionWakeContext: async (sourceSessionId) => {
+        const row = await db.getSession(sourceSessionId);
+        const callerInfo = extractCallerInfoFromMetadata(row?.metadata);
+        return {
+          agentId: row?.agent_id ?? null,
+          callerSource: typeof callerInfo?.source === "string" ? callerInfo.source : null,
+        };
+      },
       setCursor: async (supervisorId, cursorOffset) => {
         await db.setSupervisorConsumerCursor(supervisorId, cursorOffset);
       },
@@ -428,6 +437,7 @@ async function main(): Promise<void> {
           supervisorId,
           db,
           logger,
+          shouldDispatchSupervisorWakeCandidate,
         );
         await taskManager.addIntervention(
           {
@@ -815,60 +825,6 @@ async function buildSupervisorWakeSessionSummaries(
       summaries[sourceSessionId] = { sessionId: sourceSessionId };
     }
   }
-  return summaries;
-}
-
-async function buildSupervisorSnapshotSessionSummaries(
-  supervisorId: string,
-  db: Pick<SessionDB, "listSessionsSummary" | "getSession">,
-  logger: Pick<Logger, "warn">,
-): Promise<SupervisorWakeSessionSummary[]> {
-  const summaries: SupervisorWakeSessionSummary[] = [];
-  const pageSize = 100;
-  let offset = 0;
-  let total = Number.POSITIVE_INFINITY;
-
-  while (offset < total) {
-    const page = await db.listSessionsSummary({
-      limit: pageSize,
-      offset,
-    });
-    total = page.total;
-    if (page.sessions.length === 0) break;
-
-    for (const session of page.sessions) {
-      try {
-        const row = await db.getSession(session.session_id);
-        if (row?.agent_id === supervisorId) continue;
-        summaries.push({
-          ...(row
-            ? wakeSessionSummaryFromRow(session.session_id, row)
-            : {
-                sessionId: session.session_id,
-                title: session.display_name,
-                status: session.status,
-                updatedAt: session.updated_at,
-              }),
-          eventCount: session.event_count,
-        });
-      } catch (err) {
-        logger.warn(
-          { err, sessionId: session.session_id },
-          "Supervisor snapshot session summary lookup failed",
-        );
-        summaries.push({
-          sessionId: session.session_id,
-          title: session.display_name,
-          status: session.status,
-          updatedAt: session.updated_at,
-          eventCount: session.event_count,
-        });
-      }
-    }
-
-    offset += page.sessions.length;
-  }
-
   return summaries;
 }
 

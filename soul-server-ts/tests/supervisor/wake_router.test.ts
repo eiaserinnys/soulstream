@@ -5,6 +5,13 @@ import {
   SupervisorWakeScheduler,
 } from "../../src/supervisor/wake_router.js";
 
+function allowedSourceContext() {
+  return vi.fn(async () => ({
+    agentId: "ordinary-agent",
+    callerSource: "slack",
+  }));
+}
+
 describe("SupervisorWakeRouter", () => {
   it("does not schedule quiet progress deltas", async () => {
     const router = new SupervisorWakeRouter({
@@ -55,6 +62,7 @@ describe("SupervisorWakeRouter", () => {
       ]),
       setCursor,
       wake,
+      getSourceSessionWakeContext: allowedSourceContext(),
     });
 
     await expect(router.flush("ariela_codex")).resolves.toEqual({
@@ -87,6 +95,7 @@ describe("SupervisorWakeRouter", () => {
       ]),
       setCursor,
       wake,
+      getSourceSessionWakeContext: allowedSourceContext(),
       logger: { warn },
     });
 
@@ -151,11 +160,92 @@ describe("SupervisorWakeRouter", () => {
     expect(wake).not.toHaveBeenCalled();
   });
 
+  it("drains non-critical automatic source events without waking", async () => {
+    const wake = vi.fn(async () => undefined);
+    const setCursor = vi.fn(async () => undefined);
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => 80),
+      readEventsAfter: vi.fn(async () => [
+        { offset: 81, sourceSessionId: "sess-llm", eventType: "assistant_message" },
+      ]),
+      setCursor,
+      wake,
+      getSourceSessionWakeContext: vi.fn(async () => ({
+        agentId: "ordinary-agent",
+        callerSource: "llm",
+      })),
+    });
+
+    await expect(router.flush("ariela_codex", "sess-supervisor")).resolves.toEqual({
+      woken: false,
+      drained: 1,
+    });
+    expect(setCursor).toHaveBeenCalledWith("ariela_codex", 81);
+    expect(wake).not.toHaveBeenCalled();
+  });
+
+  it("wakes for critical automatic source events", async () => {
+    const wake = vi.fn(async () => undefined);
+    const setCursor = vi.fn(async () => undefined);
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => 90),
+      readEventsAfter: vi.fn(async () => [
+        { offset: 91, sourceSessionId: "sess-llm", eventType: "assistant_error" },
+      ]),
+      setCursor,
+      wake,
+      getSourceSessionWakeContext: vi.fn(async () => ({
+        agentId: "ordinary-agent",
+        callerSource: "llm",
+      })),
+    });
+
+    await expect(router.flush("ariela_codex", "sess-supervisor")).resolves.toEqual({
+      woken: true,
+      drained: 1,
+    });
+    expect(wake).toHaveBeenCalledWith({
+      supervisorId: "ariela_codex",
+      wakeClass: "critical",
+      events: [
+        { offset: 91, sourceSessionId: "sess-llm", eventType: "assistant_error" },
+      ],
+    });
+  });
+
+  it("keeps missing-source events silent unless they are critical", async () => {
+    const wake = vi.fn(async () => undefined);
+    const setCursor = vi.fn(async () => undefined);
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => 100),
+      readEventsAfter: vi.fn(async () => [
+        { offset: 101, eventType: "complete" },
+        { offset: 102, eventType: "error" },
+      ]),
+      setCursor,
+      wake,
+    });
+
+    await expect(router.flush("ariela_codex", "sess-supervisor")).resolves.toEqual({
+      woken: true,
+      drained: 2,
+    });
+    expect(wake).toHaveBeenCalledWith({
+      supervisorId: "ariela_codex",
+      wakeClass: "critical",
+      events: [
+        { offset: 102, eventType: "error" },
+      ],
+    });
+  });
+
   it("drains events from any session owned by the same supervisor role", async () => {
     const wake = vi.fn(async () => undefined);
     const setCursor = vi.fn(async () => undefined);
-    const getSourceSessionAgentId = vi.fn(async (sourceSessionId: string) =>
-      sourceSessionId === "sess-old-supervisor" ? "ariela_codex" : "ordinary-agent"
+    const getSourceSessionWakeContext = vi.fn(async (sourceSessionId: string) =>
+      sourceSessionId === "sess-old-supervisor"
+        ? { agentId: "ariela_codex", callerSource: "agent" }
+        : { agentId: "ordinary-agent", callerSource: "agent" }
     );
     const router = new SupervisorWakeRouter({
       getCursor: vi.fn(async () => 60),
@@ -166,16 +256,16 @@ describe("SupervisorWakeRouter", () => {
       ]),
       setCursor,
       wake,
-      getSourceSessionAgentId,
+      getSourceSessionWakeContext,
     });
 
     await expect(router.flush("ariela_codex", "sess-current-supervisor")).resolves.toEqual({
       woken: true,
       drained: 3,
     });
-    expect(getSourceSessionAgentId).toHaveBeenCalledTimes(2);
-    expect(getSourceSessionAgentId).toHaveBeenCalledWith("sess-old-supervisor");
-    expect(getSourceSessionAgentId).toHaveBeenCalledWith("sess-other");
+    expect(getSourceSessionWakeContext).toHaveBeenCalledTimes(2);
+    expect(getSourceSessionWakeContext).toHaveBeenCalledWith("sess-old-supervisor");
+    expect(getSourceSessionWakeContext).toHaveBeenCalledWith("sess-other");
     expect(setCursor).toHaveBeenCalledWith("ariela_codex", 63);
     expect(wake).toHaveBeenCalledWith({
       supervisorId: "ariela_codex",
@@ -230,6 +320,7 @@ describe("SupervisorWakeRouter", () => {
       ]),
       setCursor,
       wake,
+      getSourceSessionWakeContext: allowedSourceContext(),
     });
 
     await expect(router.flush("ariela_codex", "sess-supervisor")).rejects.toThrow(
@@ -311,6 +402,7 @@ describe("SupervisorWakeRouter", () => {
       readEventsAfter,
       setCursor: vi.fn(async () => undefined),
       wake,
+      getSourceSessionWakeContext: allowedSourceContext(),
       getWakeDispatchState: vi.fn(async () => wakeDispatchState),
       setWakeDispatchState,
       logger: { warn: vi.fn(), error },
@@ -365,6 +457,7 @@ describe("SupervisorWakeRouter", () => {
       ),
       setCursor,
       wake,
+      getSourceSessionWakeContext: allowedSourceContext(),
       getWakeDispatchState: vi.fn(async () => wakeDispatchState),
       setWakeDispatchState: vi.fn(async (next) => {
         wakeDispatchState = {
@@ -410,6 +503,7 @@ describe("SupervisorWakeRouter", () => {
       wake: vi.fn(async () => {
         throw new Error("wake failed");
       }),
+      getSourceSessionWakeContext: allowedSourceContext(),
       getWakeDispatchState: vi.fn(async () => wakeDispatchState),
       setWakeDispatchState: vi.fn(async (next) => {
         wakeDispatchState = {
