@@ -566,7 +566,7 @@ describe("SessionDB supervisor data layer", () => {
 
     const head = await new SessionDB(sql).getSupervisorEventHeadOffset();
 
-    expect(calls[0].fragments.join("?")).toContain("MAX(offset)");
+    expect(calls[0].fragments.join("?")).toContain('MAX("offset")');
     expect(head).toBe(123);
   });
 
