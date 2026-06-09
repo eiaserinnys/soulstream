@@ -183,6 +183,28 @@ function buildAssignedSessionPlaceholder(
   };
 }
 
+function getSessionFolderAssignment(
+  catalog: CatalogState,
+  sessionId: string,
+  session?: SessionSummary,
+): string | null {
+  const assignment = catalog.sessions[sessionId];
+  if (assignment !== undefined) return assignment.folderId ?? null;
+  if (session && Object.prototype.hasOwnProperty.call(session, "folderId")) {
+    return session.folderId ?? null;
+  }
+  return null;
+}
+
+function sessionBelongsToSelectedFolder(
+  catalog: CatalogState,
+  sessionId: string,
+  selectedFolderId: string | null,
+  session?: SessionSummary,
+): boolean {
+  return getSessionFolderAssignment(catalog, sessionId, session) === selectedFolderId;
+}
+
 function buildPositionedItems({
   catalog,
   selectedFolderId,
@@ -213,6 +235,9 @@ function buildPositionedItems({
     }
     if (boardItem.itemType === "session") {
       const knownSession = sessionById.get(boardItem.itemId);
+      if (!sessionBelongsToSelectedFolder(catalog, boardItem.itemId, selectedFolderId, knownSession)) {
+        continue;
+      }
       if (
         knownSession &&
         shouldSuppressSessionInFolder(relations, knownSession.agentSessionId, selectedFolderId)
@@ -273,7 +298,7 @@ function buildPositionedItems({
 
   const sessionCandidates = new Map<string, SessionSummary>();
   for (const session of relations.sessions) {
-    const assignedFolderId = catalog.sessions[session.agentSessionId]?.folderId ?? session.folderId ?? null;
+    const assignedFolderId = getSessionFolderAssignment(catalog, session.agentSessionId, session);
     if (assignedFolderId !== selectedFolderId) continue;
     sessionCandidates.set(session.agentSessionId, { ...session, folderId: assignedFolderId });
   }
@@ -333,6 +358,7 @@ export function buildBoardWorkspaceItems({
     }));
 
   const visibleSessions = sessions.filter((session) =>
+    sessionBelongsToSelectedFolder(catalog, session.agentSessionId, selectedFolderId, session) &&
     !shouldSuppressSessionInFolder(relations, session.agentSessionId, selectedFolderId),
   );
   const sessionItems: SessionBoardWorkspaceItem[] = visibleSessions.map((session, index) => ({
