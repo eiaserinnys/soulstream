@@ -1651,6 +1651,15 @@ export class SessionDB {
     }));
   }
 
+  async getSupervisorEventHeadOffset(): Promise<number> {
+    const rows = await this.sql<Array<{ head: string | number | null }>>`
+      SELECT COALESCE(MAX(offset), 0) AS head FROM supervisor_events
+    `;
+    return rows[0]?.head == null
+      ? 0
+      : numberFromDb(rows[0].head, "supervisor_events.head");
+  }
+
   async getSupervisorSourceCursor(
     sourceNode: string,
     sourceSessionId: string,

@@ -23,6 +23,7 @@ import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import { buildAgentCallerInfo, type AgentCallerInfo } from "../caller_info.js";
+import type { SessionDB } from "../db/session_db.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 
 import type {
@@ -56,13 +57,14 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     private readonly logger: Logger,
     private readonly orch?: OrchProxyConfig,
     fetchImpl?: typeof fetch,
+    private readonly supervisorRegistry?: Pick<SessionDB, "getSupervisorRegistry">,
   ) {
     // 테스트가 fetch mock을 주입 — 운영 시 globalThis.fetch (Node 18+ 내장).
     this.fetchImpl = fetchImpl ?? ((...args) => fetch(...args));
   }
 
   async notify(task: Task): Promise<void> {
-    const callerSessionId = task.callerSessionId;
+    const callerSessionId = await this._resolveTargetSessionId(task);
     if (!callerSessionId) {
       // 위임받지 않은 task — 회송 대상 없음.
       return;
@@ -104,6 +106,36 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       return;
     }
     await this._relayCrossNode(callerSessionId, text, callerInfo, childId);
+  }
+
+  private async _resolveTargetSessionId(task: Task): Promise<string | undefined> {
+    const callerSessionId = task.callerSessionId;
+    if (!callerSessionId) return undefined;
+
+    const supervisorRole = supervisorCallerRole(task);
+    if (!supervisorRole || !this.supervisorRegistry) return callerSessionId;
+
+    try {
+      const registry = await this.supervisorRegistry.getSupervisorRegistry(supervisorRole);
+      const activeSessionId = registry?.activeSessionId;
+      if (!activeSessionId || activeSessionId === callerSessionId) return callerSessionId;
+      this.logger.info(
+        {
+          childId: task.agentSessionId,
+          supervisorRole,
+          originalCallerSessionId: callerSessionId,
+          targetSessionId: activeSessionId,
+        },
+        "Completion notification retargeted to active supervisor session",
+      );
+      return activeSessionId;
+    } catch (err) {
+      this.logger.warn(
+        { err, childId: task.agentSessionId, supervisorRole, callerSessionId },
+        "Supervisor completion target lookup failed",
+      );
+      return callerSessionId;
+    }
   }
 
   /**
@@ -214,4 +246,11 @@ async function safeReadText(resp: Response): Promise<string> {
   } catch {
     return "";
   }
+}
+
+function supervisorCallerRole(task: Task): string | undefined {
+  const callerInfo = task.callerInfo;
+  if (callerInfo?.source !== "agent") return undefined;
+  const agentId = callerInfo.agent_id;
+  return typeof agentId === "string" && agentId.length > 0 ? agentId : undefined;
 }

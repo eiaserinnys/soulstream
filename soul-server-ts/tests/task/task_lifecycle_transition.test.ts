@@ -196,7 +196,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
       createdAt: task.completedAt,
     });
     expect(supervisorWakeScheduler.ingest).toHaveBeenCalledWith("session_ended");
-    expect(wakeText).toContain("session_summary=Completed after checking the queue.");
+    expect(wakeText).toContain("최근: Completed after checking the queue.");
   });
 
   it("lets completed_ok outrank a prior limit_hit hint", async () => {

@@ -5,10 +5,12 @@ export interface SupervisorWakeEvent {
   sourceSessionId?: string;
   eventType: string;
   payload?: Record<string, unknown>;
+  createdAt?: Date | string;
 }
 
 export interface SupervisorWakeRouterDeps {
   getCursor(supervisorId: string): Promise<number>;
+  getHeadOffset?(): Promise<number>;
   readEventsAfter(afterOffset: number, limit: number): Promise<SupervisorWakeEvent[]>;
   getSourceSessionAgentId?(sourceSessionId: string): Promise<string | null>;
   setCursor(supervisorId: string, cursorOffset: number): Promise<void>;
@@ -16,6 +18,10 @@ export interface SupervisorWakeRouterDeps {
     supervisorId: string;
     events: SupervisorWakeEvent[];
     wakeClass: Exclude<WakeClass, "quiet">;
+  }): Promise<void>;
+  wakeSnapshot?(params: {
+    supervisorId: string;
+    headOffset: number;
   }): Promise<void>;
   logger?: {
     warn(payload: unknown, message: string): void;
@@ -63,7 +69,12 @@ export class SupervisorWakeRouter {
   async flush(
     supervisorId: string,
     activeSessionId?: string | null,
+    options: { snapshot?: boolean } = {},
   ): Promise<{ woken: boolean; drained: number }> {
+    if (options.snapshot) {
+      return this.flushSnapshot(supervisorId);
+    }
+
     const cursor = await this.deps.getCursor(supervisorId);
     const events = await this.deps.readEventsAfter(cursor, this.batchLimit);
     if (events.length === 0) return { woken: false, drained: 0 };
@@ -106,6 +117,21 @@ export class SupervisorWakeRouter {
     });
     await this.deps.setCursor(supervisorId, head);
     return { woken: true, drained: events.length };
+  }
+
+  private async flushSnapshot(
+    supervisorId: string,
+  ): Promise<{ woken: boolean; drained: number }> {
+    if (!this.deps.getHeadOffset || !this.deps.wakeSnapshot) {
+      throw new Error("Supervisor wake snapshot dependencies are not configured");
+    }
+    const cursor = await this.deps.getCursor(supervisorId);
+    const head = await this.deps.getHeadOffset();
+    if (head <= cursor) return { woken: false, drained: 0 };
+
+    await this.deps.wakeSnapshot({ supervisorId, headOffset: head });
+    await this.deps.setCursor(supervisorId, head);
+    return { woken: true, drained: head - cursor };
   }
 
   private classifyEvent(
@@ -201,6 +227,7 @@ export class SupervisorWakeRouter {
 export class SupervisorWakeScheduler {
   private readonly debounceMs: number;
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly snapshotPending = new Set<string>();
 
   constructor(
     private readonly deps: SupervisorWakeSchedulerDeps,
@@ -229,7 +256,13 @@ export class SupervisorWakeScheduler {
       this.timers.delete(supervisorId);
     }
     const activeSessionId = await this.resolveActiveSessionId(supervisorId);
-    await this.deps.router.flush(supervisorId, activeSessionId);
+    const snapshot = this.snapshotPending.has(supervisorId);
+    if (snapshot) {
+      await this.deps.router.flush(supervisorId, activeSessionId, { snapshot: true });
+    } else {
+      await this.deps.router.flush(supervisorId, activeSessionId);
+    }
+    if (snapshot) this.snapshotPending.delete(supervisorId);
   }
 
   dispose(): void {
@@ -237,6 +270,10 @@ export class SupervisorWakeScheduler {
       clearTimeout(timer);
     }
     this.timers.clear();
+  }
+
+  markSnapshotPending(supervisorId: string): void {
+    this.snapshotPending.add(supervisorId);
   }
 
   private schedule(supervisorId: string): void {

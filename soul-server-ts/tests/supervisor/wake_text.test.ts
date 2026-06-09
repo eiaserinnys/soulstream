@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildSupervisorSnapshotWakeText,
   buildSupervisorWakeText,
   wakeSessionSummaryFromRow,
 } from "../../src/supervisor/wake_text.js";
@@ -58,18 +59,176 @@ describe("Supervisor wake text", () => {
       maxTextChars: 80,
     });
 
-    expect(text).toContain("[supervisor wake] role=ariela_codex class=wake");
-    expect(text).toContain("trigger_sessions=sess-a");
-    expect(text).toContain("## session sess-a");
-    expect(text).toContain("title=Deploy check");
-    expect(text).toContain("agent=worker-codex");
-    expect(text).toContain("caller=Alice (slack)");
-    expect(text).toContain("status=running");
-    expect(text).toContain("last_user=Please inspect the failed job.");
-    expect(text).toContain("last_assistant=I found the failing step.");
-    expect(text).toContain("tool_error=Bash: exit 1: missing file");
-    expect(text).toContain("noise=text_delta:1");
+    expect(text).toContain("[supervisor wake] wake · 세션 1개");
+    expect(text).toContain("▸ Deploy check");
+    expect(text).toContain("sess-a · worker-codex · 호출: Alice (slack)");
+    expect(text).toContain("상태: running");
+    expect(text).toContain("사용자: Please inspect the failed job.");
+    expect(text).toContain("최근: I found the failing step.");
+    expect(text).toContain("⚠ 오류: Bash: exit 1: missing file");
+    expect(text).toContain("활동: 이벤트 4개");
+    expect(text).toContain("오류 1건");
+    expect(text).not.toContain("#14");
+    expect(text).not.toContain("tool_result");
     expect(text).not.toContain("streaming noise");
+  });
+
+  it("drops tool and streaming noise while keeping only errored tool results", () => {
+    const text = buildSupervisorWakeText({
+      supervisorId: "ariela_codex",
+      wakeClass: "batch",
+      events: [
+        {
+          offset: 37906,
+          sourceSessionId: "c06cd339-1111-4222-9333-aaaaaaaaaaaa",
+          eventType: "tool_start",
+          payload: { type: "tool_start", tool_name: "Bash" },
+        },
+        {
+          offset: 37907,
+          sourceSessionId: "c06cd339-1111-4222-9333-aaaaaaaaaaaa",
+          eventType: "tool_result",
+          payload: { type: "tool_result", tool_name: "Bash", result: "ok", is_error: false },
+        },
+        {
+          offset: 37908,
+          sourceSessionId: "c06cd339-1111-4222-9333-aaaaaaaaaaaa",
+          eventType: "progress",
+          payload: { type: "progress", message: "87%" },
+        },
+        {
+          offset: 37909,
+          sourceSessionId: "c06cd339-1111-4222-9333-aaaaaaaaaaaa",
+          eventType: "tool_result",
+          payload: {
+            type: "tool_result",
+            tool_name: "Bash",
+            result: "exit 1: failing test",
+            is_error: true,
+          },
+        },
+        {
+          offset: 37919,
+          sourceSessionId: "c06cd339-1111-4222-9333-aaaaaaaaaaaa",
+          eventType: "assistant_message",
+          payload: {
+            type: "assistant_message",
+            content: "깨진 테스트 기대값을 갱신했습니다.",
+          },
+        },
+      ],
+      sessions: {
+        "c06cd339-1111-4222-9333-aaaaaaaaaaaa": {
+          sessionId: "c06cd339-1111-4222-9333-aaaaaaaaaaaa",
+          title: "Supervisor 페이즈A 잔여",
+          agentId: "roselin_codex",
+          callerDisplayName: "서소영",
+          callerSource: "agent",
+          status: "completed",
+        },
+      },
+      maxTextChars: 120,
+    });
+
+    expect(text).toContain("[supervisor wake] batch · 세션 1개");
+    expect(text).toContain("c06cd339 · roselin_codex · 호출: 서소영 (agent)");
+    expect(text).toContain("상태: completed");
+    expect(text).toContain("최근: 깨진 테스트 기대값을 갱신했습니다.");
+    expect(text).toContain("⚠ 오류: Bash: exit 1: failing test");
+    expect(text).toContain("진행·도구 위주");
+    expect(text).not.toContain("#37906");
+    expect(text).not.toContain("tool_start");
+    expect(text).not.toContain("ok");
+    expect(text).not.toContain("87%");
+  });
+
+  it("renders current time, completion time, and relative time when timestamps are present", () => {
+    const text = buildSupervisorWakeText({
+      supervisorId: "ariela_codex",
+      wakeClass: "batch",
+      now: new Date("2026-06-08T23:15:30.000Z"),
+      events: [
+        {
+          offset: 1,
+          sourceSessionId: "c06cd339-1111-4222-9333-aaaaaaaaaaaa",
+          eventType: "session_ended",
+          payload: { type: "session_ended", status: "completed" },
+          createdAt: new Date("2026-06-08T23:03:45.000Z"),
+        },
+        {
+          offset: 2,
+          sourceSessionId: "c06cd339-1111-4222-9333-aaaaaaaaaaaa",
+          eventType: "assistant_message",
+          payload: { type: "assistant_message", content: "완료 보고입니다." },
+          createdAt: new Date("2026-06-08T23:03:40.000Z"),
+        },
+      ],
+      sessions: {
+        "c06cd339-1111-4222-9333-aaaaaaaaaaaa": {
+          sessionId: "c06cd339-1111-4222-9333-aaaaaaaaaaaa",
+          title: "Finished task",
+          status: "completed",
+        },
+      },
+    });
+
+    expect(text).toContain("현재 2026-06-09 08:15:30 (KST)");
+    expect(text).toContain("상태: completed · 완료 08:03:45 (12분 전)");
+  });
+
+  it("omits time fields instead of fabricating timestamps when timestamps are absent", () => {
+    const text = buildSupervisorWakeText({
+      supervisorId: "ariela_codex",
+      wakeClass: "batch",
+      events: [
+        {
+          offset: 1,
+          sourceSessionId: "sess-a",
+          eventType: "assistant_message",
+          payload: { type: "assistant_message", content: "No timestamp here." },
+        },
+      ],
+      sessions: {
+        "sess-a": {
+          sessionId: "sess-a",
+          title: "No timestamp task",
+          status: "running",
+        },
+      },
+    });
+
+    expect(text).not.toContain("현재");
+    expect(text).not.toContain("최근활동");
+    expect(text).not.toContain("완료 ");
+    expect(text).toContain("상태: running");
+  });
+
+  it("renders cold-start snapshot from session summaries without event replay", () => {
+    const text = buildSupervisorSnapshotWakeText({
+      supervisorId: "ariela_codex",
+      now: new Date("2026-06-08T23:15:30.000Z"),
+      sessions: [
+        {
+          sessionId: "c06cd339-1111-4222-9333-aaaaaaaaaaaa",
+          title: "Supervisor 페이즈A 잔여",
+          agentId: "roselin_codex",
+          callerDisplayName: "서소영",
+          callerSource: "agent",
+          status: "completed",
+          updatedAt: new Date("2026-06-08T23:03:45.000Z"),
+          eventCount: 100,
+          lastMessagePreview: "깨진 테스트 기대값을 갱신했습니다.",
+        },
+      ],
+    });
+
+    expect(text).toContain("[supervisor wake] snapshot · 세션 1개");
+    expect(text).toContain("현재 2026-06-09 08:15:30 (KST)");
+    expect(text).toContain("상태: completed · 완료 08:03:45 (12분 전)");
+    expect(text).toContain("최근: 깨진 테스트 기대값을 갱신했습니다.");
+    expect(text).toContain("활동: 이벤트 100개 · 오류 없음");
+    expect(text).not.toContain("#");
+    expect(text).not.toContain("tool_start");
   });
 
   it("includes session_ended summary and caps session count", () => {
@@ -117,12 +276,12 @@ describe("Supervisor wake text", () => {
       maxTextChars: 120,
     });
 
-    expect(text).toContain("## session sess-a");
-    expect(text).toContain("session_summary=The task ended after checking the queue.");
-    expect(text).toContain("termination=completed_ok");
-    expect(text).toContain("## session sess-b");
-    expect(text).not.toContain("## session sess-c");
-    expect(text).toContain("omitted_sessions=1");
+    expect(text).toContain("▸ Finished task");
+    expect(text).toContain("최근: The task ended after checking the queue.");
+    expect(text).toContain("상태: completed");
+    expect(text).toContain("▸ B");
+    expect(text).not.toContain("▸ C");
+    expect(text).toContain("외 1개 세션 생략");
   });
 
   it("prioritizes trigger sessions over earlier noise-only sessions when applying the session cap", () => {
@@ -156,10 +315,9 @@ describe("Supervisor wake text", () => {
       maxTextChars: 120,
     });
 
-    expect(text).toContain("trigger_sessions=trigger-session");
-    expect(text).toContain("## session trigger-session");
-    expect(text).toContain("title=Needs intervention");
-    expect(text).toContain("omitted_sessions=1");
+    expect(text).toContain("[supervisor wake] critical · 세션 6개");
+    expect(text).toContain("▸ Needs intervention");
+    expect(text).toContain("외 1개 세션 생략");
   });
 
   it("truncates long message bodies", () => {
@@ -180,7 +338,7 @@ describe("Supervisor wake text", () => {
       maxTextChars: 10,
     });
 
-    expect(text).toContain("last_assistant=abcdefg...");
+    expect(text).toContain("최근: abcdefg...");
     expect(text).not.toContain("abcdefghijklmnopqrstuvwxyz");
   });
 
@@ -208,6 +366,7 @@ describe("Supervisor wake text", () => {
       agentId: "agent-a",
       callerDisplayName: "Browser User",
       callerSource: "browser",
+      updatedAt: null,
       lastMessagePreview: "last preview",
       awaySummary: "away summary",
       terminationReason: null,

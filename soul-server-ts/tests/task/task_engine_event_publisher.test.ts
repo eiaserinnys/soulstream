@@ -150,6 +150,7 @@ describe("TaskEngineEventPublisher", () => {
     const deps = makePublisherDeps();
     deps.getSupervisorRegistry.mockResolvedValueOnce({
       role: "ariela_codex",
+      activeSessionId: "sess-1",
     } as never);
     const publisher = new TaskEngineEventPublisher(deps);
     const task = makeTask({ profileId: "ariela_codex" });
@@ -167,6 +168,29 @@ describe("TaskEngineEventPublisher", () => {
       expect.any(Date),
     );
     expect(deps.recordSupervisorUsageDelta).not.toHaveBeenCalled();
+  });
+
+  it("does not touch supervisor heartbeat for stale sessions of the same role", async () => {
+    const deps = makePublisherDeps();
+    deps.getSupervisorRegistry.mockResolvedValueOnce({
+      role: "ariela_codex",
+      activeSessionId: "supervisor-current",
+    } as never);
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({
+      agentSessionId: "supervisor-old",
+      profileId: "ariela_codex",
+    });
+    const event = {
+      type: "assistant_message",
+      content: "stale session output",
+      timestamp: 1,
+    } as SSEEventPayload;
+
+    await publisher.publishEngineEvent(task, event);
+
+    expect(deps.getSupervisorRegistry).toHaveBeenCalledWith("ariela_codex");
+    expect(deps.touchSupervisorRegistry).not.toHaveBeenCalled();
   });
 
   it("skips heartbeat touch for non-supervisor profiles and throttles registry checks", async () => {
@@ -297,6 +321,7 @@ describe("TaskEngineEventPublisher", () => {
     const deps = makePublisherDeps();
     deps.getSupervisorRegistry.mockResolvedValueOnce({
       role: "ariela_codex",
+      activeSessionId: "sess-1",
     } as never);
     const publisher = new TaskEngineEventPublisher(deps);
     const task = makeTask({ profileId: "ariela_codex" });
@@ -326,10 +351,33 @@ describe("TaskEngineEventPublisher", () => {
     );
   });
 
+  it("does not record usage delta for stale supervisor sessions", async () => {
+    const deps = makePublisherDeps();
+    deps.getSupervisorRegistry.mockResolvedValue({
+      role: "ariela_codex",
+      activeSessionId: "supervisor-current",
+    } as never);
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask({
+      agentSessionId: "supervisor-old",
+      profileId: "ariela_codex",
+    });
+
+    await publisher.publishEngineEvent(task, {
+      type: "complete",
+      usage: { input_tokens: 10, output_tokens: 5 },
+      timestamp: 2,
+    } as unknown as SSEEventPayload);
+
+    expect(deps.recordSupervisorUsageDelta).not.toHaveBeenCalled();
+    expect(deps.touchSupervisorRegistry).not.toHaveBeenCalled();
+  });
+
   it("records only new complete usage for a repeated Codex turn id", async () => {
     const deps = makePublisherDeps();
     deps.getSupervisorRegistry.mockResolvedValue({
       role: "ariela_codex",
+      activeSessionId: "sess-1",
     } as never);
     const publisher = new TaskEngineEventPublisher(deps);
     const task = makeTask({ profileId: "ariela_codex" });
@@ -372,6 +420,7 @@ describe("TaskEngineEventPublisher", () => {
     const deps = makePublisherDeps();
     deps.getSupervisorRegistry.mockResolvedValue({
       role: "ariela_claude",
+      activeSessionId: "sess-1",
     } as never);
     const publisher = new TaskEngineEventPublisher(deps);
     const task = makeTask({ profileId: "ariela_claude" });
@@ -417,6 +466,7 @@ describe("TaskEngineEventPublisher", () => {
     const deps = makePublisherDeps();
     deps.getSupervisorRegistry.mockResolvedValue({
       role: "ariela_codex",
+      activeSessionId: "sess-1",
     } as never);
     deps.recordSupervisorUsageDelta.mockResolvedValueOnce({
       role: "ariela_codex",
@@ -469,6 +519,7 @@ describe("TaskEngineEventPublisher", () => {
     };
     deps.getSupervisorRegistry.mockResolvedValue({
       role: "ariela_codex",
+      activeSessionId: "sess-1",
     } as never);
     deps.recordSupervisorUsageDelta.mockResolvedValueOnce(registry as never);
     const supervisorHandoverRunner = {

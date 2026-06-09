@@ -28,7 +28,7 @@ export interface SupervisorActivationDeps {
     SessionDB,
     "getSupervisorRegistry" | "getSession" | "upsertSupervisorRegistry" | "updateSession"
   >;
-  taskManager: Pick<TaskManager, "createTask" | "cancelTask">;
+  taskManager: Pick<TaskManager, "createTask" | "cancelTask" | "getTask">;
   taskExecutor: Pick<TaskExecutor, "startExecution">;
   logger: Pick<Logger, "info" | "warn">;
   now?: () => Date;
@@ -83,7 +83,10 @@ async function ensureSupervisorStarted(
   }
 
   const existing = await deps.db.getSupervisorRegistry(role);
-  if (existing?.activeSessionId && await sessionExists(deps, existing.activeSessionId)) {
+  if (
+    existing?.activeSessionId &&
+    await isReusableActiveSupervisorSession(deps, role, existing.activeSessionId)
+  ) {
     return {
       role,
       status: "existing",
@@ -145,11 +148,32 @@ async function ensureSupervisorStarted(
   };
 }
 
-async function sessionExists(
+async function isReusableActiveSupervisorSession(
   deps: SupervisorActivationDeps,
+  role: string,
   sessionId: string,
 ): Promise<boolean> {
-  return Boolean(await deps.db.getSession(sessionId));
+  const activeTask = deps.taskManager.getTask(sessionId);
+  const existingSession = await deps.db.getSession(sessionId);
+  const reusable = Boolean(
+    activeTask?.status === "running" &&
+    activeTask.profileId === role &&
+    existingSession?.status === "running" &&
+    existingSession.agent_id === role,
+  );
+  if (!reusable) {
+    deps.logger.warn(
+      {
+        role,
+        sessionId,
+        taskStatus: activeTask?.status ?? null,
+        sessionStatus: existingSession?.status ?? null,
+        sessionAgentId: existingSession?.agent_id ?? null,
+      },
+      "Supervisor activation ignored stale active session",
+    );
+  }
+  return reusable;
 }
 
 function nextEpoch(existing: SupervisorRegistryRow | null): number {

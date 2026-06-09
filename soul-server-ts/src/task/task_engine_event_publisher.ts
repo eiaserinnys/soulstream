@@ -234,6 +234,7 @@ export class TaskEngineEventPublisher {
     try {
       const registry = await this.deps.db.getSupervisorRegistry(task.profileId);
       if (!registry) return false;
+      if (!isActiveSupervisorTask(task, registry)) return false;
       const updatedRegistry = await this.deps.db.recordSupervisorUsageDelta({
         role: task.profileId,
         tokenDelta,
@@ -277,6 +278,7 @@ export class TaskEngineEventPublisher {
         this.supervisorHeartbeatTouchedAtMs.set(task.profileId, nowMs);
         return;
       }
+      if (!isActiveSupervisorTask(task, registry)) return;
       await this.deps.db.touchSupervisorRegistry(
         task.profileId,
         lastSeenAt,
@@ -331,4 +333,8 @@ function supervisorPendingState(nextState: string, currentState: string): string
   if (currentState === "hard_pending") return "hard_pending";
   if (currentState === "idle_pending") return "idle_pending";
   return "hard_pending";
+}
+
+function isActiveSupervisorTask(task: Task, registry: SupervisorRegistryRow): boolean {
+  return registry.activeSessionId === task.agentSessionId;
 }
