@@ -31,6 +31,13 @@ export interface CogitoDependencyStatus {
   status: string;
 }
 
+export interface CogitoSupervisorWakeSummary {
+  status?: string;
+  total?: number;
+  blockedCount: number;
+  blockedRoles: string[];
+}
+
 export interface CogitoRuntimeSummary {
   status: string;
   uptimeLabel?: string;
@@ -39,6 +46,7 @@ export interface CogitoRuntimeSummary {
   activeTaskCount?: number;
   tasksByStatus: Record<string, number>;
   dependencies: CogitoDependencyStatus[];
+  supervisorWake?: CogitoSupervisorWakeSummary;
 }
 
 export interface CogitoNodeHealth {
@@ -143,6 +151,7 @@ function summarizeRuntime(serviceBrief: Record<string, unknown>): CogitoRuntimeS
     activeTaskCount: numberField(counts, "active_task_count"),
     tasksByStatus: pickNumericRecord(counts.tasks_by_status),
     dependencies: extractDependencyStatuses(runtimeData),
+    supervisorWake: extractSupervisorWake(runtimeData),
   };
 }
 
@@ -190,6 +199,24 @@ function extractDependencyStatuses(data: Record<string, unknown>): CogitoDepende
     if (typeof value === "string" && value) statuses.set(name, value);
   }
   return [...statuses.entries()].map(([name, status]) => ({ name, status }));
+}
+
+function extractSupervisorWake(
+  data: Record<string, unknown>,
+): CogitoSupervisorWakeSummary | undefined {
+  const supervisorWake = isRecord(data.supervisor_wake) ? data.supervisor_wake : {};
+  const blockedRoles = arrayField(supervisorWake, "blocked_roles")
+    ?.filter((role): role is string => typeof role === "string" && role.length > 0) ?? [];
+  const blockedCount = numberField(supervisorWake, "blocked_count") ?? blockedRoles.length;
+  const status = stringField(supervisorWake, "status");
+  const total = numberField(supervisorWake, "total");
+  if (!status && total === undefined && blockedCount === 0) return undefined;
+  return {
+    status,
+    total,
+    blockedCount,
+    blockedRoles,
+  };
 }
 
 function summarizeErrors(value: unknown): CogitoBriefError[] {
