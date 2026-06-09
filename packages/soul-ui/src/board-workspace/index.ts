@@ -1,4 +1,5 @@
 export { BoardWorkspaceView } from "./BoardWorkspaceView";
+export { declutterBoardItems } from "./board-declutter";
 export type {
   BoardWorkspaceViewProps,
   CreateMarkdownDocumentInput,

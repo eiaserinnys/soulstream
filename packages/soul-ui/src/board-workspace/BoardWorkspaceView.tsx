@@ -21,6 +21,7 @@ import {
 import { isBoardTileTarget } from "./board-workspace-dom";
 import { getFolderBreadcrumbs } from "./board-workspace-helpers";
 import { BoardWorkspaceHeader } from "./BoardWorkspaceHeader";
+import { declutterBoardItems } from "./board-declutter";
 import {
   BoardWorkspaceContextMenus,
   type BoardCardContextMenuState,
@@ -350,6 +351,11 @@ export function BoardWorkspaceView({
       yjsUpdateBoardItemPosition(update.boardItemId, update.x, update.y);
     }
   }, [yjsUpdateBoardItemPosition]);
+  const handleDeclutterBoard = useCallback(() => {
+    const declutterUpdates = declutterBoardItems(boardItems);
+    if (declutterUpdates.length === 0) return;
+    yjsUpdateBoardItemPositions(declutterUpdates);
+  }, [boardItems, yjsUpdateBoardItemPositions]);
   const {
     scrollRef,
     zoom,
@@ -679,6 +685,8 @@ export function BoardWorkspaceView({
         onCreateFolder={() => openCreateFolderDialog()}
         onOpenNewSession={() => openNewSessionAt()}
         onCreateMarkdown={() => createMarkdownAt()}
+        declutterDisabled={boardItems.length <= 1}
+        onDeclutterBoard={handleDeclutterBoard}
       />
 
       <div className="relative min-h-0 flex-1">
