@@ -2047,6 +2047,8 @@ $$;
 CREATE OR REPLACE FUNCTION board_seed_items()
 RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
+    PERFORM pg_advisory_xact_lock(hashtext('soulstream:board_items')::bigint);
+
     DELETE FROM board_items bi
     WHERE bi.item_type = 'session'
       AND NOT EXISTS (
@@ -2126,7 +2128,7 @@ BEGIN
         (FLOOR(item_index / 4) * 160)::DOUBLE PRECISION,
         '{}'::jsonb
     FROM numbered
-    ON CONFLICT (id) DO NOTHING;
+    ON CONFLICT DO NOTHING;
 END;
 $$;
 

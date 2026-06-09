@@ -307,6 +307,7 @@ export type SqlClient = postgres.Sql<any>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ReplicaSyncSql = postgres.Sql<any> | postgres.TransactionSql<any>;
 type PostgresJsonValue = Parameters<ReplicaSyncSql["json"]>[0];
+const BOARD_ITEMS_ADVISORY_LOCK_KEY = "soulstream:board_items";
 
 function asPostgresJsonValue(value: unknown): PostgresJsonValue {
   return value as PostgresJsonValue;
@@ -693,7 +694,7 @@ export class SessionDB {
     sessions: Record<string, { folderId: string | null; displayName: string | null }>;
     boardItems: CatalogBoardItemRow[];
   }> {
-    await this.ensureBoardItems();
+    // Catalog board items are Yjs-derived; legacy seeding writes on this read path deadlocked.
     const folderRows = await this.sql<
       { id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null; created_at: Date | string | null }[]
     >`SELECT * FROM folder_get_all()`;
@@ -1092,6 +1093,8 @@ export class SessionDB {
     folderId: string,
     replica: BoardYjsReplica,
   ): Promise<void> {
+    await this.lockBoardItemsReplica(sql);
+
     const boardItemIds = replica.boardItems.map((item) => item.id);
     if (boardItemIds.length === 0) {
       await sql`DELETE FROM board_items WHERE folder_id = ${folderId}`;
@@ -1151,6 +1154,12 @@ export class SessionDB {
       SET board_items = EXCLUDED.board_items,
           markdown_documents = EXCLUDED.markdown_documents,
           updated_at = EXCLUDED.updated_at
+    `;
+  }
+
+  private async lockBoardItemsReplica(sql: ReplicaSyncSql): Promise<void> {
+    await sql`
+      SELECT pg_advisory_xact_lock(hashtext(${BOARD_ITEMS_ADVISORY_LOCK_KEY})::bigint)
     `;
   }
 

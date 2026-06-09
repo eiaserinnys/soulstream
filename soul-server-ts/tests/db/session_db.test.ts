@@ -302,23 +302,24 @@ describe("SessionDB board Yjs persistence", () => {
       markdownDocuments: [{ id: "d1", title: "Note", body: "Body", version: 3 }],
     });
 
-    expect(calls[0].fragments.join("?")).toContain("DELETE FROM board_items");
-    expect(calls[1].fragments.join("?")).toContain("INSERT INTO board_items");
-    expect(calls[2].fragments.join("?")).toContain("INSERT INTO markdown_documents");
-    expect(calls[3].fragments.join("?")).toContain("INSERT INTO board_yjs_catalog_cache");
-    expect(calls[1].values[6]).toEqual({ title: "Note" });
-    expect(calls[3].values[0]).toBe("f1");
-    expect(calls[3].values[1]).toEqual([
+    expect(calls[0].fragments.join("?")).toContain("pg_advisory_xact_lock");
+    expect(calls[1].fragments.join("?")).toContain("DELETE FROM board_items");
+    expect(calls[2].fragments.join("?")).toContain("INSERT INTO board_items");
+    expect(calls[3].fragments.join("?")).toContain("INSERT INTO markdown_documents");
+    expect(calls[4].fragments.join("?")).toContain("INSERT INTO board_yjs_catalog_cache");
+    expect(calls[2].values[6]).toEqual({ title: "Note" });
+    expect(calls[4].values[0]).toBe("f1");
+    expect(calls[4].values[1]).toEqual([
       expect.objectContaining({ id: "markdown:d1", x: 280, y: 160 }),
     ]);
-    expect(calls[3].values[2]).toEqual([
+    expect(calls[4].values[2]).toEqual([
       expect.objectContaining({ id: "d1", title: "Note", body: "Body", version: 3 }),
     ]);
-    expect(typeof calls[3].values[1]).not.toBe("string");
-    expect(typeof calls[3].values[2]).not.toBe("string");
+    expect(typeof calls[4].values[1]).not.toBe("string");
+    expect(typeof calls[4].values[2]).not.toBe("string");
   });
 
-  it("replica sync는 board_items, markdown_documents, catalog cache 갱신을 한 transaction에서 수행", async () => {
+  it("replica sync는 lock, board_items, markdown_documents, catalog cache 갱신을 한 transaction에서 수행", async () => {
     const { sql, calls, begin } = createMockSql();
     const db = new SessionDB(sql);
 
@@ -339,13 +340,14 @@ describe("SessionDB board Yjs persistence", () => {
     const mutationCalls = calls.filter((call) => {
       const query = call.fragments.join("?");
       return (
+        query.includes("pg_advisory_xact_lock") ||
         query.includes("DELETE FROM board_items") ||
         query.includes("INSERT INTO board_items") ||
         query.includes("INSERT INTO markdown_documents") ||
         query.includes("INSERT INTO board_yjs_catalog_cache")
       );
     });
-    expect(mutationCalls).toHaveLength(4);
+    expect(mutationCalls).toHaveLength(5);
     expect(mutationCalls.every((call) => call.inTransaction)).toBe(true);
   });
 
@@ -933,6 +935,9 @@ describe("SessionDB folder ops (B-5)", () => {
     expect(calls.some((call) =>
       call.fragments.join("|").includes("board_item_get_all")
     )).toBe(false);
+    expect(calls.some((call) =>
+      call.fragments.join("|").includes("board_seed_items")
+    )).toBe(false);
   });
 });
 
@@ -1223,6 +1228,31 @@ describe("session_delete SQL", () => {
       expect(body.indexOf("DELETE FROM claude_transcript_entries")).toBeLessThan(
         body.indexOf("DELETE FROM sessions"),
       );
+    }
+  });
+});
+
+describe("board_seed_items SQL", () => {
+  it("serializes board_items writes and ignores every unique conflict", () => {
+    const schema = readFileSync(
+      new URL("../../../soul-server/sql/schema.sql", import.meta.url),
+      "utf8",
+    );
+    const migration = readFileSync(
+      new URL("../../../soul-server/sql/migrations/018_board_file_assets.sql", import.meta.url),
+      "utf8",
+    );
+
+    for (const sql of [schema, migration]) {
+      const start = sql.indexOf("CREATE OR REPLACE FUNCTION board_seed_items");
+      const end = sql.indexOf("$$;", start);
+      expect(start).toBeGreaterThanOrEqual(0);
+      expect(end).toBeGreaterThan(start);
+      const body = sql.slice(start, end);
+      expect(body).toContain("pg_advisory_xact_lock");
+      expect(body).toContain("hashtext('soulstream:board_items')::bigint");
+      expect(body).toContain("ON CONFLICT DO NOTHING");
+      expect(body).not.toContain("ON CONFLICT (id) DO NOTHING");
     }
   });
 });
