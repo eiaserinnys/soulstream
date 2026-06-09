@@ -145,6 +145,145 @@ describe("board workspace item helpers", () => {
     });
   });
 
+  it("ignores stale session board items whose session assignment moved to another folder", () => {
+    const staleCatalog: CatalogState = {
+      ...catalog,
+      folders: [
+        ...catalog.folders,
+        {
+          id: "other",
+          name: "Other",
+          sortOrder: 2,
+          parentFolderId: null,
+          createdAt: "2026-06-05T00:00:00.000Z",
+        },
+      ],
+      sessions: {
+        ...catalog.sessions,
+        "moved-away": { folderId: "other", displayName: null },
+      },
+      boardItems: [
+        ...(catalog.boardItems ?? []),
+        {
+          id: "session:moved-away",
+          folderId: "root",
+          itemType: "session",
+          itemId: "moved-away",
+          x: 0,
+          y: 320,
+        },
+      ],
+    };
+
+    const items = buildBoardWorkspaceItems({
+      catalog: staleCatalog,
+      selectedFolderId: "root",
+      sessions: [],
+    });
+
+    expect(items.map((item) => `${item.type}:${item.id}`)).not.toContain("session:moved-away");
+  });
+
+  it("shows a moved session only on its target board even when the old board item remains", () => {
+    const movedCatalog: CatalogState = {
+      folders: [
+        {
+          id: "source",
+          name: "Source",
+          sortOrder: 0,
+          parentFolderId: null,
+          createdAt: "2026-06-01T00:00:00.000Z",
+        },
+        {
+          id: "target",
+          name: "Target",
+          sortOrder: 1,
+          parentFolderId: null,
+          createdAt: "2026-06-02T00:00:00.000Z",
+        },
+      ],
+      sessions: {
+        "moved-session": { folderId: "target", displayName: null },
+      },
+      boardItems: [
+        {
+          id: "session:moved-session",
+          folderId: "source",
+          itemType: "session",
+          itemId: "moved-session",
+          x: 0,
+          y: 0,
+        },
+      ],
+    };
+
+    expect(buildBoardWorkspaceItems({
+      catalog: movedCatalog,
+      selectedFolderId: "source",
+      sessions: [],
+    }).map((item) => `${item.type}:${item.id}`)).not.toContain("session:moved-session");
+
+    expect(buildBoardWorkspaceItems({
+      catalog: movedCatalog,
+      selectedFolderId: "target",
+      sessions: [],
+    }).map((item) => `${item.type}:${item.id}`)).toEqual(["session:moved-session"]);
+  });
+
+  it("does not show uncategorized sessions on a concrete folder board through stale board items", () => {
+    const nullAssignmentCatalog: CatalogState = {
+      ...catalog,
+      sessions: {
+        ...catalog.sessions,
+        unassigned: { folderId: null, displayName: null },
+      },
+      boardItems: [
+        ...(catalog.boardItems ?? []),
+        {
+          id: "session:unassigned",
+          folderId: "root",
+          itemType: "session",
+          itemId: "unassigned",
+          x: 0,
+          y: 320,
+        },
+      ],
+    };
+
+    const items = buildBoardWorkspaceItems({
+      catalog: nullAssignmentCatalog,
+      selectedFolderId: "root",
+      sessions: [],
+    });
+
+    expect(items.map((item) => `${item.type}:${item.id}`)).not.toContain("session:unassigned");
+  });
+
+  it("applies the same folder assignment gate when boardItems are absent", () => {
+    const { boardItems: _unused, ...legacyCatalog } = catalog;
+    const foreignSession: SessionSummary = {
+      agentSessionId: "nested",
+      status: "running",
+      eventCount: 1,
+      sessionType: "claude",
+      folderId: "folder-new",
+      prompt: "Foreign folder session",
+    };
+
+    const items = buildBoardWorkspaceItems({
+      catalog: legacyCatalog,
+      selectedFolderId: "root",
+      sessions: [...sessions, foreignSession],
+    });
+
+    expect(items.map((item) => `${item.type}:${item.id}`)).toEqual([
+      "folder:folder-old",
+      "folder:folder-new",
+      "session:session-a",
+      "session:session-b",
+    ]);
+  });
+
   it("falls back to deterministic 280x160 placement when boardItems are absent", () => {
     const { boardItems: _unused, ...legacyCatalog } = catalog;
     const items = buildBoardWorkspaceItems({
