@@ -379,6 +379,24 @@ async function main(): Promise<void> {
       setCursor: async (supervisorId, cursorOffset) => {
         await db.setSupervisorConsumerCursor(supervisorId, cursorOffset);
       },
+      getWakeDispatchState: async (supervisorId) => {
+        const registry = await db.getSupervisorRegistry(supervisorId);
+        return {
+          state: registry?.wakeDispatchState ?? "active",
+          lastSignature: registry?.wakeLastSignature ?? null,
+          repeatCount: registry?.wakeRepeatCount ?? 0,
+        };
+      },
+      setWakeDispatchState: async (state) => {
+        await db.setSupervisorWakeDispatchState({
+          role: state.supervisorId,
+          state: state.state,
+          lastSignature: state.lastSignature,
+          repeatCount: state.repeatCount,
+          blockedReason: state.blockedReason,
+          blockedAt: state.blockedAt,
+        });
+      },
       wake: async ({ supervisorId, events, wakeClass }) => {
         const registry = await db.getSupervisorRegistry(supervisorId);
         if (!registry?.activeSessionId) {

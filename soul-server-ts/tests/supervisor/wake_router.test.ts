@@ -267,7 +267,7 @@ describe("SupervisorWakeRouter", () => {
     expect(setCursor).toHaveBeenCalledWith("ariela_codex", 110);
   });
 
-  it("does not advance snapshot cursor when snapshot delivery fails", async () => {
+  it("advances snapshot cursor even when snapshot delivery fails", async () => {
     const setCursor = vi.fn(async () => undefined);
     const router = new SupervisorWakeRouter({
       getCursor: vi.fn(async () => 10),
@@ -283,7 +283,277 @@ describe("SupervisorWakeRouter", () => {
     await expect(
       router.flush("ariela_codex", "sess-supervisor", { snapshot: true }),
     ).rejects.toThrow("snapshot failed");
+    expect(setCursor).toHaveBeenCalledWith("ariela_codex", 110);
+  });
+
+  it("blocks the first repeated no-progress wake dispatch before re-sending", async () => {
+    const wake = vi.fn(async () => {
+      throw new Error("wake failed");
+    });
+    const error = vi.fn();
+    let wakeDispatchState = {
+      state: "active" as const,
+      lastSignature: null as string | null,
+      repeatCount: 0,
+    };
+    const readEventsAfter = vi.fn(async () => [
+      { offset: 31, sourceSessionId: "sess-other", eventType: "user_message" },
+    ]);
+    const setWakeDispatchState = vi.fn(async (next) => {
+      wakeDispatchState = {
+        state: next.state,
+        lastSignature: next.lastSignature ?? null,
+        repeatCount: next.repeatCount,
+      };
+    });
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => 30),
+      readEventsAfter,
+      setCursor: vi.fn(async () => undefined),
+      wake,
+      getWakeDispatchState: vi.fn(async () => wakeDispatchState),
+      setWakeDispatchState,
+      logger: { warn: vi.fn(), error },
+    });
+
+    await expect(router.flush("ariela_codex", "sess-supervisor")).rejects.toThrow(
+      "wake failed",
+    );
+    expect(wakeDispatchState).toMatchObject({
+      state: "active",
+      repeatCount: 0,
+    });
+    expect(error).not.toHaveBeenCalled();
+
+    await expect(router.flush("ariela_codex", "sess-supervisor")).resolves.toEqual({
+      woken: false,
+      drained: 0,
+      blocked: true,
+    });
+    expect(wakeDispatchState).toMatchObject({
+      state: "blocked",
+      repeatCount: 1,
+    });
+    expect(error).toHaveBeenCalledTimes(1);
+
+    await expect(router.flush("ariela_codex", "sess-supervisor")).resolves.toEqual({
+      woken: false,
+      drained: 0,
+      blocked: true,
+    });
+    expect(readEventsAfter).toHaveBeenCalledTimes(2);
+    expect(wake).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not block repeated normal flushes when the cursor advances", async () => {
+    let cursor = 30;
+    let wakeDispatchState = {
+      state: "active" as const,
+      lastSignature: null as string | null,
+      repeatCount: 0,
+    };
+    const wake = vi.fn(async () => undefined);
+    const setCursor = vi.fn(async (_supervisorId: string, nextCursor: number) => {
+      cursor = nextCursor;
+    });
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => cursor),
+      readEventsAfter: vi.fn(async (afterOffset: number) =>
+        afterOffset === 30
+          ? [{ offset: 31, sourceSessionId: "sess-other", eventType: "user_message" }]
+          : [{ offset: 32, sourceSessionId: "sess-other", eventType: "user_message" }]
+      ),
+      setCursor,
+      wake,
+      getWakeDispatchState: vi.fn(async () => wakeDispatchState),
+      setWakeDispatchState: vi.fn(async (next) => {
+        wakeDispatchState = {
+          state: next.state,
+          lastSignature: next.lastSignature ?? null,
+          repeatCount: next.repeatCount,
+        };
+      }),
+      logger: { warn: vi.fn(), error: vi.fn() },
+    });
+
+    await expect(router.flush("ariela_codex", "sess-supervisor")).resolves.toEqual({
+      woken: true,
+      drained: 1,
+    });
+    await expect(router.flush("ariela_codex", "sess-supervisor")).resolves.toEqual({
+      woken: true,
+      drained: 1,
+    });
+
+    expect(setCursor).toHaveBeenNthCalledWith(1, "ariela_codex", 31);
+    expect(setCursor).toHaveBeenNthCalledWith(2, "ariela_codex", 32);
+    expect(wake).toHaveBeenCalledTimes(2);
+    expect(wakeDispatchState).toMatchObject({
+      state: "active",
+      repeatCount: 0,
+    });
+  });
+
+  it("re-blocks immediately when a retry release makes no forward progress", async () => {
+    let wakeDispatchState = {
+      state: "retrying" as const,
+      lastSignature: null as string | null,
+      repeatCount: 0,
+    };
+    const error = vi.fn();
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => 30),
+      readEventsAfter: vi.fn(async () => [
+        { offset: 31, sourceSessionId: "sess-other", eventType: "user_message" },
+      ]),
+      setCursor: vi.fn(async () => undefined),
+      wake: vi.fn(async () => {
+        throw new Error("wake failed");
+      }),
+      getWakeDispatchState: vi.fn(async () => wakeDispatchState),
+      setWakeDispatchState: vi.fn(async (next) => {
+        wakeDispatchState = {
+          state: next.state,
+          lastSignature: next.lastSignature ?? null,
+          repeatCount: next.repeatCount,
+        };
+      }),
+      logger: { warn: vi.fn(), error },
+    }, { noProgressThreshold: 3 });
+
+    await expect(router.flush("ariela_codex", "sess-supervisor")).rejects.toThrow(
+      "wake failed",
+    );
+    expect(wakeDispatchState).toMatchObject({
+      state: "blocked",
+      repeatCount: 1,
+    });
+    expect(error).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps persisted blocked state across cold-start unless manually released", async () => {
+    const wake = vi.fn(async () => undefined);
+    const wakeSnapshot = vi.fn(async () => undefined);
+    const readEventsAfter = vi.fn(async () => [
+      { offset: 31, sourceSessionId: "sess-other", eventType: "user_message" },
+    ]);
+    const setCursor = vi.fn(async () => undefined);
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => 30),
+      getHeadOffset: vi.fn(async () => 110),
+      readEventsAfter,
+      setCursor,
+      wake,
+      wakeSnapshot,
+      getWakeDispatchState: vi.fn(async () => ({
+        state: "blocked",
+        lastSignature: "events|30->31|count=1|sources=sess-other|types=user_message",
+        repeatCount: 3,
+      })),
+      setWakeDispatchState: vi.fn(async () => undefined),
+      logger: { warn: vi.fn(), error: vi.fn() },
+    });
+    const scheduler = new SupervisorWakeScheduler({
+      listSupervisors: vi.fn(async () => [
+        {
+          role: "ariela_codex",
+          activeSessionId: "sess-supervisor",
+          wakeDispatchState: "blocked",
+        },
+      ]),
+      router,
+      logger: { warn: vi.fn() },
+    });
+
+    scheduler.markSnapshotPending("ariela_codex");
+    await scheduler.flush("ariela_codex");
+
+    expect(wakeSnapshot).not.toHaveBeenCalled();
+    expect(readEventsAfter).not.toHaveBeenCalled();
+    expect(wake).not.toHaveBeenCalled();
     expect(setCursor).not.toHaveBeenCalled();
+  });
+
+  it("keeps snapshot pending when snapshot flush returns blocked", async () => {
+    const router = {
+      ingest: vi.fn(async () => ({ scheduled: true })),
+      flush: vi.fn(async () => ({ woken: false, drained: 0, blocked: true })),
+    };
+    const scheduler = new SupervisorWakeScheduler({
+      listSupervisors: vi.fn(async () => [
+        { role: "ariela_codex", activeSessionId: "sess-supervisor" },
+      ]),
+      router,
+      logger: { warn: vi.fn() },
+    });
+
+    scheduler.markSnapshotPending("ariela_codex");
+    await scheduler.flush("ariela_codex");
+    await scheduler.flush("ariela_codex");
+
+    expect(router.flush).toHaveBeenNthCalledWith(
+      1,
+      "ariela_codex",
+      "sess-supervisor",
+      { snapshot: true },
+    );
+    expect(router.flush).toHaveBeenNthCalledWith(
+      2,
+      "ariela_codex",
+      "sess-supervisor",
+      { snapshot: true },
+    );
+  });
+
+  it("keeps snapshot pending after cursor-advance failure and blocks repeated snapshot without incremental replay", async () => {
+    let wakeDispatchState = {
+      state: "active" as const,
+      lastSignature: null as string | null,
+      repeatCount: 0,
+    };
+    const wake = vi.fn(async () => undefined);
+    const wakeSnapshot = vi.fn(async () => undefined);
+    const readEventsAfter = vi.fn(async () => [
+      { offset: 31, sourceSessionId: "sess-other", eventType: "user_message" },
+    ]);
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => 30),
+      getHeadOffset: vi.fn(async () => 110),
+      readEventsAfter,
+      setCursor: vi.fn(async () => {
+        throw new Error("cursor failed");
+      }),
+      wake,
+      wakeSnapshot,
+      getWakeDispatchState: vi.fn(async () => wakeDispatchState),
+      setWakeDispatchState: vi.fn(async (next) => {
+        wakeDispatchState = {
+          state: next.state,
+          lastSignature: next.lastSignature ?? null,
+          repeatCount: next.repeatCount,
+        };
+      }),
+      logger: { warn: vi.fn(), error: vi.fn() },
+    });
+    const scheduler = new SupervisorWakeScheduler({
+      listSupervisors: vi.fn(async () => [
+        { role: "ariela_codex", activeSessionId: "sess-supervisor" },
+      ]),
+      router,
+      logger: { warn: vi.fn() },
+    });
+
+    scheduler.markSnapshotPending("ariela_codex");
+    await expect(scheduler.flush("ariela_codex")).rejects.toThrow("cursor failed");
+    await expect(scheduler.flush("ariela_codex")).resolves.toBeUndefined();
+
+    expect(wakeSnapshot).toHaveBeenCalledTimes(1);
+    expect(readEventsAfter).not.toHaveBeenCalled();
+    expect(wake).not.toHaveBeenCalled();
+    expect(wakeDispatchState).toMatchObject({
+      state: "blocked",
+      repeatCount: 1,
+    });
   });
 
   it("uses snapshot once for pending cold start and then resumes incremental flush", async () => {

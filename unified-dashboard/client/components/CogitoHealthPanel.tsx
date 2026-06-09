@@ -107,6 +107,9 @@ function CogitoNodeHealthRow({ node }: { node: CogitoNodeHealth }) {
     node.runtime.activeTaskCount !== undefined ? `${node.runtime.activeTaskCount} tasks` : null,
     node.runtime.uptimeLabel ? `up ${node.runtime.uptimeLabel}` : null,
     node.runtime.memoryLabel,
+    node.runtime.supervisorWake && node.runtime.supervisorWake.blockedCount > 0
+      ? `wake blocked ${node.runtime.supervisorWake.blockedCount}`
+      : null,
   ].filter(Boolean);
   const capabilityText = formatCapabilities(node);
   const dependencyText = formatDependencies(node);

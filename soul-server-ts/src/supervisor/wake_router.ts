@@ -1,4 +1,13 @@
 import { classifyWakeEvent, type WakeClass } from "./wake_classification.js";
+import {
+  buildEventWakeDispatchSignature,
+  buildSnapshotWakeDispatchSignature,
+  SupervisorWakeCircuitBreaker,
+  type SupervisorWakeDispatchSnapshot,
+  type SupervisorWakeDispatchUpdate,
+} from "./wake_dispatch_state.js";
+
+const SNAPSHOT_CURSOR_ADVANCED = Symbol("supervisorSnapshotCursorAdvanced");
 
 export interface SupervisorWakeEvent {
   offset: number;
@@ -14,6 +23,8 @@ export interface SupervisorWakeRouterDeps {
   readEventsAfter(afterOffset: number, limit: number): Promise<SupervisorWakeEvent[]>;
   getSourceSessionAgentId?(sourceSessionId: string): Promise<string | null>;
   setCursor(supervisorId: string, cursorOffset: number): Promise<void>;
+  getWakeDispatchState?(supervisorId: string): Promise<SupervisorWakeDispatchSnapshot | null>;
+  setWakeDispatchState?(state: SupervisorWakeDispatchUpdate): Promise<void>;
   wake(params: {
     supervisorId: string;
     events: SupervisorWakeEvent[];
@@ -25,16 +36,19 @@ export interface SupervisorWakeRouterDeps {
   }): Promise<void>;
   logger?: {
     warn(payload: unknown, message: string): void;
+    error?(payload: unknown, message: string): void;
   };
 }
 
 export interface SupervisorWakeRouterOptions {
   batchLimit?: number;
+  noProgressThreshold?: number;
 }
 
 export interface SupervisorWakeSchedulerRegistry {
   role: string;
   activeSessionId: string | null;
+  wakeDispatchState?: string | null;
 }
 
 export interface SupervisorWakeSchedulerDeps {
@@ -51,6 +65,7 @@ export interface SupervisorWakeSchedulerOptions {
 
 export class SupervisorWakeRouter {
   private readonly batchLimit: number;
+  private readonly circuitBreaker: SupervisorWakeCircuitBreaker;
   private readonly warnedUnknownEventTypes = new Set<string>();
   private readonly warnedClassificationFailures = new Set<string>();
 
@@ -59,6 +74,14 @@ export class SupervisorWakeRouter {
     options: SupervisorWakeRouterOptions = {},
   ) {
     this.batchLimit = options.batchLimit ?? 100;
+    this.circuitBreaker = new SupervisorWakeCircuitBreaker(
+      {
+        getWakeDispatchState: deps.getWakeDispatchState,
+        setWakeDispatchState: deps.setWakeDispatchState,
+        logger: deps.logger,
+      },
+      options.noProgressThreshold ?? 1,
+    );
   }
 
   async ingest(supervisorId: string, eventType: string): Promise<{ scheduled: boolean }> {
@@ -70,16 +93,23 @@ export class SupervisorWakeRouter {
     supervisorId: string,
     activeSessionId?: string | null,
     options: { snapshot?: boolean } = {},
-  ): Promise<{ woken: boolean; drained: number }> {
+  ): Promise<{ woken: boolean; drained: number; blocked?: boolean }> {
+    if (await this.circuitBreaker.isBlocked(supervisorId)) {
+      return { woken: false, drained: 0, blocked: true };
+    }
     if (options.snapshot) {
       return this.flushSnapshot(supervisorId);
     }
 
     const cursor = await this.deps.getCursor(supervisorId);
     const events = await this.deps.readEventsAfter(cursor, this.batchLimit);
-    if (events.length === 0) return { woken: false, drained: 0 };
+    if (events.length === 0) {
+      await this.circuitBreaker.recordForwardProgress(supervisorId);
+      return { woken: false, drained: 0 };
+    }
 
     const head = events[events.length - 1]?.offset ?? cursor;
+    const dispatchSignature = buildEventWakeDispatchSignature({ cursor, head, events });
     const selfGeneratedSessionIds = await this.resolveSelfGeneratedSessionIds(
       supervisorId,
       activeSessionId,
@@ -91,6 +121,7 @@ export class SupervisorWakeRouter {
     );
     if (wakeEvents.length === 0) {
       await this.deps.setCursor(supervisorId, head);
+      await this.circuitBreaker.recordForwardProgress(supervisorId);
       return { woken: false, drained: events.length };
     }
 
@@ -108,29 +139,85 @@ export class SupervisorWakeRouter {
     );
     if (wakeClass === "quiet") {
       await this.deps.setCursor(supervisorId, head);
+      await this.circuitBreaker.recordForwardProgress(supervisorId);
       return { woken: false, drained: events.length };
     }
-    await this.deps.wake({
+    if (await this.circuitBreaker.blockIfRepeatedNoProgress({
       supervisorId,
-      events: classifiedWakeEvents.map((entry) => entry.event),
-      wakeClass,
-    });
-    await this.deps.setCursor(supervisorId, head);
+      signature: dispatchSignature,
+      reason: "repeated no forward progress before wake dispatch",
+    })) {
+      return { woken: false, drained: 0, blocked: true };
+    }
+    try {
+      await this.deps.wake({
+        supervisorId,
+        events: classifiedWakeEvents.map((entry) => entry.event),
+        wakeClass,
+      });
+    } catch (err) {
+      await this.circuitBreaker.recordNoForwardProgress({
+        supervisorId,
+        signature: dispatchSignature,
+        reason: "wake delivery failed before cursor advance",
+      });
+      throw err;
+    }
+    try {
+      await this.deps.setCursor(supervisorId, head);
+    } catch (err) {
+      await this.circuitBreaker.recordNoForwardProgress({
+        supervisorId,
+        signature: dispatchSignature,
+        reason: "cursor advance failed after wake delivery",
+      });
+      throw err;
+    }
+    await this.circuitBreaker.recordForwardProgress(supervisorId);
     return { woken: true, drained: events.length };
   }
 
   private async flushSnapshot(
     supervisorId: string,
-  ): Promise<{ woken: boolean; drained: number }> {
+  ): Promise<{ woken: boolean; drained: number; blocked?: boolean }> {
     if (!this.deps.getHeadOffset || !this.deps.wakeSnapshot) {
       throw new Error("Supervisor wake snapshot dependencies are not configured");
     }
     const cursor = await this.deps.getCursor(supervisorId);
     const head = await this.deps.getHeadOffset();
-    if (head <= cursor) return { woken: false, drained: 0 };
+    if (head <= cursor) {
+      await this.circuitBreaker.recordForwardProgress(supervisorId);
+      return { woken: false, drained: 0 };
+    }
 
-    await this.deps.wakeSnapshot({ supervisorId, headOffset: head });
-    await this.deps.setCursor(supervisorId, head);
+    const dispatchSignature = buildSnapshotWakeDispatchSignature({ cursor, head });
+    if (await this.circuitBreaker.blockIfRepeatedNoProgress({
+      supervisorId,
+      signature: dispatchSignature,
+      reason: "repeated no forward progress before snapshot wake dispatch",
+    })) {
+      return { woken: false, drained: 0, blocked: true };
+    }
+    let snapshotError: unknown;
+    try {
+      await this.deps.wakeSnapshot({ supervisorId, headOffset: head });
+    } catch (err) {
+      snapshotError = err;
+    }
+    try {
+      await this.deps.setCursor(supervisorId, head);
+    } catch (err) {
+      await this.circuitBreaker.recordNoForwardProgress({
+        supervisorId,
+        signature: dispatchSignature,
+        reason: snapshotError
+          ? "cursor advance failed after snapshot delivery failure"
+          : "cursor advance failed after snapshot delivery",
+      });
+      throw err;
+    }
+    await this.circuitBreaker.recordForwardProgress(supervisorId);
+    if (snapshotError) throw markSnapshotCursorAdvancedError(snapshotError);
     return { woken: true, drained: head - cursor };
   }
 
@@ -241,6 +328,7 @@ export class SupervisorWakeScheduler {
     const supervisors = await this.deps.listSupervisors();
     for (const supervisor of supervisors) {
       if (!supervisor.activeSessionId) continue;
+      if (supervisor.wakeDispatchState === "blocked") continue;
       const decision = await this.deps.router.ingest(supervisor.role, eventType);
       if (!decision.scheduled) continue;
       scheduled = true;
@@ -257,12 +345,20 @@ export class SupervisorWakeScheduler {
     }
     const activeSessionId = await this.resolveActiveSessionId(supervisorId);
     const snapshot = this.snapshotPending.has(supervisorId);
-    if (snapshot) {
-      await this.deps.router.flush(supervisorId, activeSessionId, { snapshot: true });
-    } else {
-      await this.deps.router.flush(supervisorId, activeSessionId);
+    try {
+      let result: { woken: boolean; drained: number; blocked?: boolean };
+      if (snapshot) {
+        result = await this.deps.router.flush(supervisorId, activeSessionId, { snapshot: true });
+      } else {
+        result = await this.deps.router.flush(supervisorId, activeSessionId);
+      }
+      if (snapshot && !result.blocked) this.snapshotPending.delete(supervisorId);
+    } catch (err) {
+      if (snapshot && isSnapshotCursorAdvancedError(err)) {
+        this.snapshotPending.delete(supervisorId);
+      }
+      throw err;
     }
-    if (snapshot) this.snapshotPending.delete(supervisorId);
   }
 
   dispose(): void {
@@ -302,4 +398,21 @@ function strongestWakeClass(classes: WakeClass[]): WakeClass {
   if (classes.includes("wake")) return "wake";
   if (classes.includes("batch")) return "batch";
   return "quiet";
+}
+
+function markSnapshotCursorAdvancedError(err: unknown): Error {
+  const error = err instanceof Error ? err : new Error(String(err));
+  Object.defineProperty(error, SNAPSHOT_CURSOR_ADVANCED, {
+    value: true,
+    enumerable: false,
+  });
+  return error;
+}
+
+function isSnapshotCursorAdvancedError(err: unknown): boolean {
+  return Boolean(
+    err &&
+    typeof err === "object" &&
+    (err as { [SNAPSHOT_CURSOR_ADVANCED]?: boolean })[SNAPSHOT_CURSOR_ADVANCED],
+  );
 }

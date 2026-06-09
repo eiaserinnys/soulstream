@@ -305,10 +305,45 @@ CREATE TABLE IF NOT EXISTS supervisor_registry (
     cumulative_tokens   BIGINT NOT NULL DEFAULT 0 CHECK (cumulative_tokens >= 0),
     compaction_count    INTEGER NOT NULL DEFAULT 0 CHECK (compaction_count >= 0),
     last_seen_at        TIMESTAMPTZ,
+    wake_dispatch_state TEXT NOT NULL DEFAULT 'active',
+    wake_last_signature TEXT,
+    wake_repeat_count   INTEGER NOT NULL DEFAULT 0 CHECK (wake_repeat_count >= 0),
+    wake_blocked_reason TEXT,
+    wake_blocked_at     TIMESTAMPTZ,
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CHECK (handover_state IN ('idle', 'idle_pending', 'hard_pending', 'handover_running'))
+    CHECK (handover_state IN ('idle', 'idle_pending', 'hard_pending', 'handover_running')),
+    CHECK (wake_dispatch_state IN ('active', 'retrying', 'blocked'))
 );
+
+ALTER TABLE IF EXISTS supervisor_registry
+    ADD COLUMN IF NOT EXISTS wake_dispatch_state TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE IF EXISTS supervisor_registry
+    ADD COLUMN IF NOT EXISTS wake_last_signature TEXT;
+ALTER TABLE IF EXISTS supervisor_registry
+    ADD COLUMN IF NOT EXISTS wake_repeat_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE IF EXISTS supervisor_registry
+    ADD COLUMN IF NOT EXISTS wake_blocked_reason TEXT;
+ALTER TABLE IF EXISTS supervisor_registry
+    ADD COLUMN IF NOT EXISTS wake_blocked_at TIMESTAMPTZ;
+
+DO $$
+BEGIN
+    ALTER TABLE supervisor_registry
+        ADD CONSTRAINT supervisor_registry_wake_dispatch_state_check
+        CHECK (wake_dispatch_state IN ('active', 'retrying', 'blocked'));
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER TABLE supervisor_registry
+        ADD CONSTRAINT supervisor_registry_wake_repeat_count_check
+        CHECK (wake_repeat_count >= 0);
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS event_search_terms (
     session_id TEXT NOT NULL,
@@ -1412,6 +1447,29 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS supervisor_registry_upsert(
+    TEXT,
+    TEXT,
+    BIGINT,
+    BIGINT,
+    TEXT,
+    BIGINT,
+    INTEGER,
+    TIMESTAMPTZ
+);
+DROP FUNCTION IF EXISTS supervisor_registry_touch(TEXT, TIMESTAMPTZ);
+DROP FUNCTION IF EXISTS supervisor_registry_record_usage_delta(TEXT, BIGINT, INTEGER, TIMESTAMPTZ);
+DROP FUNCTION IF EXISTS supervisor_registry_set_wake_dispatch_state(
+    TEXT,
+    TEXT,
+    TEXT,
+    INTEGER,
+    TEXT,
+    TIMESTAMPTZ
+);
+DROP FUNCTION IF EXISTS supervisor_registry_get(TEXT);
+DROP FUNCTION IF EXISTS supervisor_registry_list();
+
 CREATE OR REPLACE FUNCTION supervisor_registry_upsert(
     p_role               TEXT,
     p_active_session_id  TEXT,
@@ -1430,6 +1488,11 @@ CREATE OR REPLACE FUNCTION supervisor_registry_upsert(
     cumulative_tokens  BIGINT,
     compaction_count   INTEGER,
     last_seen_at       TIMESTAMPTZ,
+    wake_dispatch_state TEXT,
+    wake_last_signature TEXT,
+    wake_repeat_count   INTEGER,
+    wake_blocked_reason TEXT,
+    wake_blocked_at     TIMESTAMPTZ,
     created_at         TIMESTAMPTZ,
     updated_at         TIMESTAMPTZ
 ) LANGUAGE plpgsql AS $$
@@ -1487,6 +1550,11 @@ CREATE OR REPLACE FUNCTION supervisor_registry_get(
     cumulative_tokens  BIGINT,
     compaction_count   INTEGER,
     last_seen_at       TIMESTAMPTZ,
+    wake_dispatch_state TEXT,
+    wake_last_signature TEXT,
+    wake_repeat_count   INTEGER,
+    wake_blocked_reason TEXT,
+    wake_blocked_at     TIMESTAMPTZ,
     created_at         TIMESTAMPTZ,
     updated_at         TIMESTAMPTZ
 ) LANGUAGE sql STABLE AS $$
@@ -1499,6 +1567,11 @@ CREATE OR REPLACE FUNCTION supervisor_registry_get(
         r.cumulative_tokens,
         r.compaction_count,
         r.last_seen_at,
+        r.wake_dispatch_state,
+        r.wake_last_signature,
+        r.wake_repeat_count,
+        r.wake_blocked_reason,
+        r.wake_blocked_at,
         r.created_at,
         r.updated_at
     FROM supervisor_registry r
@@ -1515,6 +1588,11 @@ RETURNS TABLE(
     cumulative_tokens  BIGINT,
     compaction_count   INTEGER,
     last_seen_at       TIMESTAMPTZ,
+    wake_dispatch_state TEXT,
+    wake_last_signature TEXT,
+    wake_repeat_count   INTEGER,
+    wake_blocked_reason TEXT,
+    wake_blocked_at     TIMESTAMPTZ,
     created_at         TIMESTAMPTZ,
     updated_at         TIMESTAMPTZ
 ) LANGUAGE sql STABLE AS $$
@@ -1527,6 +1605,11 @@ RETURNS TABLE(
         r.cumulative_tokens,
         r.compaction_count,
         r.last_seen_at,
+        r.wake_dispatch_state,
+        r.wake_last_signature,
+        r.wake_repeat_count,
+        r.wake_blocked_reason,
+        r.wake_blocked_at,
         r.created_at,
         r.updated_at
     FROM supervisor_registry r
@@ -1545,6 +1628,11 @@ CREATE OR REPLACE FUNCTION supervisor_registry_touch(
     cumulative_tokens  BIGINT,
     compaction_count   INTEGER,
     last_seen_at       TIMESTAMPTZ,
+    wake_dispatch_state TEXT,
+    wake_last_signature TEXT,
+    wake_repeat_count   INTEGER,
+    wake_blocked_reason TEXT,
+    wake_blocked_at     TIMESTAMPTZ,
     created_at         TIMESTAMPTZ,
     updated_at         TIMESTAMPTZ
 ) LANGUAGE plpgsql AS $$
@@ -1553,6 +1641,63 @@ BEGIN
     SET last_seen_at = p_last_seen_at,
         updated_at = NOW()
     WHERE r.role = p_role;
+
+    RETURN QUERY
+    SELECT *
+    FROM supervisor_registry_get(p_role);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION supervisor_registry_set_wake_dispatch_state(
+    p_role                TEXT,
+    p_wake_dispatch_state TEXT,
+    p_wake_last_signature TEXT DEFAULT NULL,
+    p_wake_repeat_count   INTEGER DEFAULT 0,
+    p_wake_blocked_reason TEXT DEFAULT NULL,
+    p_wake_blocked_at     TIMESTAMPTZ DEFAULT NULL
+) RETURNS TABLE(
+    role               TEXT,
+    active_session_id  TEXT,
+    epoch              BIGINT,
+    cursor_offset      BIGINT,
+    handover_state     TEXT,
+    cumulative_tokens  BIGINT,
+    compaction_count   INTEGER,
+    last_seen_at       TIMESTAMPTZ,
+    wake_dispatch_state TEXT,
+    wake_last_signature TEXT,
+    wake_repeat_count   INTEGER,
+    wake_blocked_reason TEXT,
+    wake_blocked_at     TIMESTAMPTZ,
+    created_at         TIMESTAMPTZ,
+    updated_at         TIMESTAMPTZ
+) LANGUAGE plpgsql AS $$
+BEGIN
+    IF p_wake_dispatch_state NOT IN ('active', 'retrying', 'blocked') THEN
+        RAISE EXCEPTION 'invalid supervisor wake dispatch state: %', p_wake_dispatch_state;
+    END IF;
+    IF p_wake_repeat_count < 0 THEN
+        RAISE EXCEPTION 'wake_repeat_count must be non-negative';
+    END IF;
+
+    UPDATE supervisor_registry r
+    SET wake_dispatch_state = p_wake_dispatch_state,
+        wake_last_signature = p_wake_last_signature,
+        wake_repeat_count = p_wake_repeat_count,
+        wake_blocked_reason = CASE
+            WHEN p_wake_dispatch_state = 'blocked' THEN p_wake_blocked_reason
+            ELSE NULL
+        END,
+        wake_blocked_at = CASE
+            WHEN p_wake_dispatch_state = 'blocked' THEN COALESCE(p_wake_blocked_at, NOW())
+            ELSE NULL
+        END,
+        updated_at = NOW()
+    WHERE r.role = p_role;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'supervisor registry not found: %', p_role;
+    END IF;
 
     RETURN QUERY
     SELECT *
@@ -1574,6 +1719,11 @@ CREATE OR REPLACE FUNCTION supervisor_registry_record_usage_delta(
     cumulative_tokens  BIGINT,
     compaction_count   INTEGER,
     last_seen_at       TIMESTAMPTZ,
+    wake_dispatch_state TEXT,
+    wake_last_signature TEXT,
+    wake_repeat_count   INTEGER,
+    wake_blocked_reason TEXT,
+    wake_blocked_at     TIMESTAMPTZ,
     created_at         TIMESTAMPTZ,
     updated_at         TIMESTAMPTZ
 ) LANGUAGE plpgsql AS $$

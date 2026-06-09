@@ -589,6 +589,32 @@ describe("SessionDB supervisor data layer", () => {
             cumulative_tokens: "42",
             compaction_count: "1",
             last_seen_at: now,
+            wake_dispatch_state: "active",
+            wake_last_signature: null,
+            wake_repeat_count: "0",
+            wake_blocked_reason: null,
+            wake_blocked_at: null,
+            created_at: now,
+            updated_at: now,
+          },
+        ];
+      }
+      if (query.includes("supervisor_registry_set_wake_dispatch_state")) {
+        return [
+          {
+            role: "cluster",
+            active_session_id: "sess-supervisor",
+            epoch: "2",
+            cursor_offset: "9",
+            handover_state: "hard_pending",
+            cumulative_tokens: "42",
+            compaction_count: "1",
+            last_seen_at: now,
+            wake_dispatch_state: "blocked",
+            wake_last_signature: "events|9->10|count=1|sources=sess-a|types=user_message",
+            wake_repeat_count: "3",
+            wake_blocked_reason: "wake delivery failed before cursor advance",
+            wake_blocked_at: now,
             created_at: now,
             updated_at: now,
           },
@@ -605,6 +631,11 @@ describe("SessionDB supervisor data layer", () => {
             cumulative_tokens: "142",
             compaction_count: "2",
             last_seen_at: now,
+            wake_dispatch_state: "active",
+            wake_last_signature: null,
+            wake_repeat_count: "0",
+            wake_blocked_reason: null,
+            wake_blocked_at: null,
             created_at: now,
             updated_at: now,
           },
@@ -629,6 +660,14 @@ describe("SessionDB supervisor data layer", () => {
       compactionCount: 1,
       lastSeenAt: now,
     });
+    const blocked = await db.setSupervisorWakeDispatchState({
+      role: "cluster",
+      state: "blocked",
+      lastSignature: "events|9->10|count=1|sources=sess-a|types=user_message",
+      repeatCount: 3,
+      blockedReason: "wake delivery failed before cursor advance",
+      blockedAt: now,
+    });
     const usage = await db.recordSupervisorUsageDelta({
       role: "cluster",
       tokenDelta: 100,
@@ -645,6 +684,16 @@ describe("SessionDB supervisor data layer", () => {
       handoverState: "hard_pending",
       cumulativeTokens: 42,
       compactionCount: 1,
+      wakeDispatchState: "active",
+      wakeRepeatCount: 0,
+    });
+    expect(blocked).toMatchObject({
+      role: "cluster",
+      wakeDispatchState: "blocked",
+      wakeLastSignature: "events|9->10|count=1|sources=sess-a|types=user_message",
+      wakeRepeatCount: 3,
+      wakeBlockedReason: "wake delivery failed before cursor advance",
+      wakeBlockedAt: now,
     });
     expect(usage).toMatchObject({
       cumulativeTokens: 142,
@@ -654,6 +703,7 @@ describe("SessionDB supervisor data layer", () => {
       expect.stringContaining("supervisor_consumer_cursor_get"),
       expect.stringContaining("supervisor_consumer_cursor_set"),
       expect.stringContaining("supervisor_registry_upsert"),
+      expect.stringContaining("supervisor_registry_set_wake_dispatch_state"),
       expect.stringContaining("supervisor_registry_record_usage_delta"),
       expect.stringContaining("supervisor_registry_delete"),
     ]);

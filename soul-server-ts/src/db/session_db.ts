@@ -29,6 +29,7 @@ import {
   getFolderIdFromBoardYjsDocumentName,
   readBoardYDocSnapshot,
 } from "../collaboration/board_yjs_model.js";
+import type { SupervisorWakeDispatchState } from "../supervisor/wake_dispatch_state.js";
 import {
   MarkdownDocumentVersionConflictError,
   normalizeMarkdownVersion,
@@ -259,8 +260,22 @@ export interface SupervisorRegistryUpsertParams {
 }
 
 export interface SupervisorRegistryRow extends SupervisorRegistryUpsertParams {
+  wakeDispatchState?: SupervisorWakeDispatchState;
+  wakeLastSignature?: string | null;
+  wakeRepeatCount?: number;
+  wakeBlockedReason?: string | null;
+  wakeBlockedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface SupervisorWakeDispatchStateParams {
+  role: string;
+  state: SupervisorWakeDispatchState;
+  lastSignature?: string | null;
+  repeatCount: number;
+  blockedReason?: string | null;
+  blockedAt?: Date | null;
 }
 
 export interface ClaudeTranscriptKey {
@@ -361,6 +376,11 @@ function mapSupervisorRegistryRow(row: {
   cumulative_tokens: string | number;
   compaction_count: string | number;
   last_seen_at: Date | null;
+  wake_dispatch_state?: string | null;
+  wake_last_signature?: string | null;
+  wake_repeat_count?: string | number | null;
+  wake_blocked_reason?: string | null;
+  wake_blocked_at?: Date | null;
   created_at: Date;
   updated_at: Date;
 }): SupervisorRegistryRow {
@@ -373,9 +393,24 @@ function mapSupervisorRegistryRow(row: {
     cumulativeTokens: numberFromDb(row.cumulative_tokens, "supervisor_registry.cumulative_tokens"),
     compactionCount: numberFromDb(row.compaction_count, "supervisor_registry.compaction_count"),
     lastSeenAt: row.last_seen_at,
+    wakeDispatchState: normalizeSupervisorWakeDispatchState(row.wake_dispatch_state),
+    wakeLastSignature: row.wake_last_signature ?? null,
+    wakeRepeatCount: numberFromDb(
+      row.wake_repeat_count ?? 0,
+      "supervisor_registry.wake_repeat_count",
+    ),
+    wakeBlockedReason: row.wake_blocked_reason ?? null,
+    wakeBlockedAt: row.wake_blocked_at ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function normalizeSupervisorWakeDispatchState(
+  state: string | null | undefined,
+): SupervisorWakeDispatchState {
+  if (state === "retrying" || state === "blocked") return state;
+  return "active";
 }
 
 export class SessionDB {
@@ -1738,6 +1773,44 @@ export class SessionDB {
       ) AS supervisor_consumer_cursor_set
     `;
     return Number(rows[0]?.supervisor_consumer_cursor_set ?? 0);
+  }
+
+  async setSupervisorWakeDispatchState(
+    params: SupervisorWakeDispatchStateParams,
+  ): Promise<SupervisorRegistryRow> {
+    const rows = await this.sql<
+      Array<{
+        role: string;
+        active_session_id: string | null;
+        epoch: string | number;
+        cursor_offset: string | number;
+        handover_state: string;
+        cumulative_tokens: string | number;
+        compaction_count: string | number;
+        last_seen_at: Date | null;
+        wake_dispatch_state: string;
+        wake_last_signature: string | null;
+        wake_repeat_count: string | number;
+        wake_blocked_reason: string | null;
+        wake_blocked_at: Date | null;
+        created_at: Date;
+        updated_at: Date;
+      }>
+    >`
+      SELECT * FROM supervisor_registry_set_wake_dispatch_state(
+        ${params.role},
+        ${params.state},
+        ${params.lastSignature ?? null},
+        ${params.repeatCount},
+        ${params.blockedReason ?? null},
+        ${params.blockedAt ?? null}
+      )
+    `;
+    const row = rows[0];
+    if (!row) {
+      throw new Error("supervisor_registry_set_wake_dispatch_state returned no row");
+    }
+    return mapSupervisorRegistryRow(row);
   }
 
   async upsertSupervisorRegistry(

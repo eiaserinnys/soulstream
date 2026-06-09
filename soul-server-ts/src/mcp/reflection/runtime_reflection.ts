@@ -36,7 +36,23 @@ export interface RuntimeReflectionData extends Record<string, unknown> {
       reason?: string;
     };
   };
+  supervisor_wake: SupervisorWakeReflectionData;
   errors: ReflectionError[];
+}
+
+export interface SupervisorWakeReflectionData {
+  status: ProbeStatus;
+  total: number;
+  blocked_count: number;
+  blocked_roles: string[];
+  states_by_role: Record<string, {
+    state: string;
+    active_session_id: string | null;
+    repeat_count: number;
+    blocked_reason: string | null;
+    blocked_at: string | null;
+  }>;
+  reason?: string;
 }
 
 export async function buildRuntimeReflection(
@@ -46,9 +62,11 @@ export async function buildRuntimeReflection(
   const tasks = runtime.taskManager.listTasks();
   const database = await probeDatabase(runtime);
   const orchestrator = probeOrchestrator(runtime);
+  const supervisorWake = await probeSupervisorWake(runtime);
   const errors = [
     ...probeError("database", database),
     ...probeError("orchestrator", orchestrator),
+    ...supervisorWakeErrors(supervisorWake),
   ];
   return {
     process: {
@@ -74,6 +92,7 @@ export async function buildRuntimeReflection(
       database,
       orchestrator,
     },
+    supervisor_wake: supervisorWake,
     errors,
   };
 }
@@ -123,6 +142,66 @@ function probeOrchestrator(runtime: McpRuntime): RuntimeReflectionData["dependen
   };
 }
 
+async function probeSupervisorWake(
+  runtime: McpRuntime,
+): Promise<SupervisorWakeReflectionData> {
+  const db = runtime.db as {
+    listSupervisorRegistries?: () => Promise<Array<{
+      role: string;
+      activeSessionId?: string | null;
+      wakeDispatchState?: string | null;
+      wakeRepeatCount?: number | null;
+      wakeBlockedReason?: string | null;
+      wakeBlockedAt?: Date | string | null;
+    }>>;
+  };
+  if (typeof db.listSupervisorRegistries !== "function") {
+    return {
+      status: "unavailable",
+      total: 0,
+      blocked_count: 0,
+      blocked_roles: [],
+      states_by_role: {},
+      reason: "SessionDB.listSupervisorRegistries is not available on this runtime object",
+    };
+  }
+
+  try {
+    const registries = await db.listSupervisorRegistries.call(runtime.db);
+    const statesByRole: SupervisorWakeReflectionData["states_by_role"] = {};
+    const blockedRoles: string[] = [];
+    for (const registry of registries) {
+      const state = registry.wakeDispatchState ?? "active";
+      if (state === "blocked") blockedRoles.push(registry.role);
+      statesByRole[registry.role] = {
+        state,
+        active_session_id: registry.activeSessionId ?? null,
+        repeat_count: registry.wakeRepeatCount ?? 0,
+        blocked_reason: registry.wakeBlockedReason ?? null,
+        blocked_at: registry.wakeBlockedAt
+          ? new Date(registry.wakeBlockedAt).toISOString()
+          : null,
+      };
+    }
+    return {
+      status: blockedRoles.length > 0 ? "partial" : "ok",
+      total: registries.length,
+      blocked_count: blockedRoles.length,
+      blocked_roles: blockedRoles,
+      states_by_role: statesByRole,
+    };
+  } catch (err) {
+    return {
+      status: "unavailable",
+      total: 0,
+      blocked_count: 0,
+      blocked_roles: [],
+      states_by_role: {},
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 function probeError(
   name: string,
   probe: { status: ProbeStatus; reason?: string },
@@ -135,6 +214,33 @@ function probeError(
       detail: probe.reason ? { reason: probe.reason } : undefined,
     },
   ];
+}
+
+function supervisorWakeErrors(
+  probe: SupervisorWakeReflectionData,
+): ReflectionError[] {
+  if (probe.blocked_count > 0) {
+    return [
+      {
+        code: "supervisor_wake_dispatch_blocked",
+        message: "supervisor wake dispatch is blocked",
+        detail: {
+          roles: probe.blocked_roles,
+          states_by_role: probe.states_by_role,
+        },
+      },
+    ];
+  }
+  if (probe.status === "unavailable" && probe.reason) {
+    return [
+      {
+        code: "supervisor_wake_unavailable",
+        message: "supervisor wake state is unavailable",
+        detail: { reason: probe.reason },
+      },
+    ];
+  }
+  return [];
 }
 
 function countTasksByStatus(tasks: Array<{ status?: string }>): Record<string, number> {

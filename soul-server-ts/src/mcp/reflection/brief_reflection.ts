@@ -238,6 +238,9 @@ function buildRuntimeBriefData(data: Record<string, unknown>): Record<string, un
   const processData = isRecord(data.process) ? data.process : {};
   const memory = isRecord(processData.memory) ? processData.memory : {};
   const dependencies = isRecord(data.dependencies) ? data.dependencies : {};
+  const supervisorWake = isRecord(data.supervisor_wake)
+    ? data.supervisor_wake
+    : {};
   return {
     process: {
       pid: processData.pid,
@@ -251,6 +254,14 @@ function buildRuntimeBriefData(data: Record<string, unknown>): Record<string, un
     },
     counts: isRecord(data.counts) ? data.counts : {},
     dependencies,
+    supervisor_wake: {
+      status: supervisorWake.status,
+      total: supervisorWake.total,
+      blocked_count: supervisorWake.blocked_count,
+      blocked_roles: Array.isArray(supervisorWake.blocked_roles)
+        ? supervisorWake.blocked_roles
+        : [],
+    },
     dependency_statuses: Object.fromEntries(
       Object.entries(dependencies).map(([name, value]) => [
         name,

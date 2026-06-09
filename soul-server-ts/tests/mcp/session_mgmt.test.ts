@@ -349,6 +349,47 @@ describe("agent profile backend boundary", () => {
     );
   });
 
+  it("release_supervisor_wake_dispatch는 blocked supervisor를 1회 재시도 상태로 해제한다", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+    );
+    const setWakeDispatchState = vi.fn(async (params) => ({
+      role: params.role,
+      wakeDispatchState: params.state,
+      wakeRepeatCount: params.repeatCount,
+      wakeLastSignature: params.lastSignature,
+    }));
+    runtime.db = {
+      ...runtime.db,
+      setSupervisorWakeDispatchState: setWakeDispatchState,
+    } as unknown as SessionDB;
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "release_supervisor_wake_dispatch",
+      arguments: { role: "ariela_codex" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      role: "ariela_codex",
+      wake_dispatch_state: "retrying",
+      wake_repeat_count: 0,
+      wake_last_signature: null,
+    });
+    expect(setWakeDispatchState).toHaveBeenCalledWith({
+      role: "ariela_codex",
+      state: "retrying",
+      lastSignature: null,
+      repeatCount: 0,
+      blockedReason: null,
+      blockedAt: null,
+    });
+  });
+
   it("reflect_service level=3은 typed runtime snapshot 안에 registry agent 수를 보고", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
@@ -376,6 +417,52 @@ describe("agent profile backend boundary", () => {
           },
         },
       },
+    });
+  });
+
+  it("reflect_service level=3은 blocked supervisor wake 상태를 partial error로 노출한다", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+    );
+    runtime.db = {
+      ...runtime.db,
+      ping: vi.fn(async () => undefined),
+      listSupervisorRegistries: vi.fn(async () => [
+        {
+          role: "ariela_codex",
+          activeSessionId: "sess-supervisor",
+          wakeDispatchState: "blocked",
+          wakeRepeatCount: 3,
+          wakeBlockedReason: "wake delivery failed before cursor advance",
+          wakeBlockedAt: new Date("2026-06-09T01:00:00.000Z"),
+        },
+      ]),
+    } as unknown as SessionDB;
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "reflect_service",
+      arguments: { service: "soul-server-ts", level: 3 },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      status: "partial",
+      data: {
+        supervisor_wake: {
+          status: "partial",
+          total: 1,
+          blocked_count: 1,
+          blocked_roles: ["ariela_codex"],
+        },
+      },
+      errors: [
+        expect.objectContaining({
+          code: "supervisor_wake_dispatch_blocked",
+        }),
+      ],
     });
   });
 });

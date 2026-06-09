@@ -208,6 +208,43 @@ export function registerSessionMgmtTools(
       });
     },
   );
+
+  server.registerTool(
+    "release_supervisor_wake_dispatch",
+    {
+      description:
+        "blocked supervisor wake dispatch를 수동 해제해 1회 재시도 상태로 전환한다. cursor/backlog는 건드리지 않는다.",
+      inputSchema: {
+        role: z.string().min(1),
+      },
+    },
+    async ({ role }) => {
+      try {
+        const registry = await runtime.db.setSupervisorWakeDispatchState({
+          role,
+          state: "retrying",
+          lastSignature: null,
+          repeatCount: 0,
+          blockedReason: null,
+          blockedAt: null,
+        });
+        runtime.logger.info(
+          { role },
+          "Supervisor wake dispatch manually released for one retry",
+        );
+        return jsonResult({
+          ok: true,
+          role: registry.role,
+          wake_dispatch_state: registry.wakeDispatchState,
+          wake_repeat_count: registry.wakeRepeatCount,
+          wake_last_signature: registry.wakeLastSignature,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return errorResult(msg);
+      }
+    },
+  );
 }
 
 async function relayMessageToOrch(
