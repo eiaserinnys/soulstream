@@ -851,7 +851,7 @@ describe("SessionDB folder ops (B-5)", () => {
     expect(await new SessionDB(emptySql).getDefaultFolder("missing")).toBeNull();
   });
 
-  it("getCatalog → folders/sessions와 Y-doc snapshot boardItems를 합성하고 snapshot decode를 캐시", async () => {
+  it("getCatalog → catalog cache 우선 + legacy read-only fallback으로 boardItems를 합성", async () => {
     const createdAt = new Date("2026-06-03T00:00:00.000Z");
     const folderRows = [
       { id: "f1", name: "F1", sort_order: 1, settings: { excludeFromFeed: true }, parent_folder_id: null, created_at: createdAt },
@@ -861,38 +861,32 @@ describe("SessionDB folder ops (B-5)", () => {
       { session_id: "s1", folder_id: "f1", display_name: "Hello" },
       { session_id: "s2", folder_id: null, display_name: null },
     ];
-    const f1Snapshot = createBoardYDocSnapshot({
+    const cachedBoardItems = [{
+      id: "session:s1",
       folderId: "f1",
-      boardItems: [{
-        id: "session:s1",
-        folderId: "f1",
-        itemType: "session",
-        itemId: "s1",
-        x: 0,
-        y: 0,
-        metadata: {},
-        createdAt: "2026-06-03T00:00:00.000Z",
-        updatedAt: "2026-06-03T00:00:00.000Z",
-      }],
-      markdownDocuments: [],
-    });
-    const f2Snapshot = createBoardYDocSnapshot({
-      folderId: "f2",
-      boardItems: [],
-      markdownDocuments: [],
-    });
+      itemType: "session",
+      itemId: "s1",
+      x: 0,
+      y: 0,
+      metadata: {},
+      createdAt: "2026-06-03T00:00:00.000Z",
+      updatedAt: "2026-06-03T00:00:00.000Z",
+    }];
     const { sql, calls } = createMockSql((call) => {
       const text = call.fragments.join("|");
       if (text.includes("folder_get_all")) return folderRows;
       if (text.includes("catalog_get_sessions")) return sessionRows;
-      if (text.includes("SELECT snapshot FROM board_yjs_documents")) {
-        return call.values[0] === "board-folder:f1"
-          ? [{ snapshot: Buffer.from(f1Snapshot) }]
-          : [{ snapshot: Buffer.from(f2Snapshot) }];
+      if (text.includes("FROM board_yjs_catalog_cache")) {
+        return [{ folder_id: "f1", board_items: cachedBoardItems }];
       }
-      if (text.includes("SELECT update FROM board_yjs_updates")) return [];
+      if (text.includes("board_yjs_documents") || text.includes("board_yjs_updates")) {
+        throw new Error("catalog must not decode or compact Yjs documents");
+      }
       if (text.includes("board_item_get_all")) {
-        throw new Error("catalog must not read board_items directly when Y-doc snapshots exist");
+        throw new Error("catalog must not read all board_items when cache exists");
+      }
+      if (text.includes("INSERT INTO board_items") || text.includes("DELETE FROM board_items")) {
+        throw new Error("catalog must not write board_items");
       }
       return [];
     });
@@ -930,13 +924,21 @@ describe("SessionDB folder ops (B-5)", () => {
     ]);
     expect(secondCatalog.boardItems).toEqual(catalog.boardItems);
     expect(calls.filter((call) =>
-      call.fragments.join("|").includes("SELECT snapshot FROM board_yjs_documents")
+      call.fragments.join("|").includes("FROM board_yjs_catalog_cache")
     )).toHaveLength(2);
+    expect(calls.some((call) =>
+      call.fragments.join("|").includes("board_yjs_documents") ||
+      call.fragments.join("|").includes("board_yjs_updates")
+    )).toBe(false);
     expect(calls.some((call) =>
       call.fragments.join("|").includes("board_item_get_all")
     )).toBe(false);
     expect(calls.some((call) =>
       call.fragments.join("|").includes("board_seed_items")
+    )).toBe(false);
+    expect(calls.some((call) =>
+      call.fragments.join("|").includes("INSERT INTO board_items") ||
+      call.fragments.join("|").includes("DELETE FROM board_items")
     )).toBe(false);
   });
 });

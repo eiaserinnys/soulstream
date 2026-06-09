@@ -24,10 +24,7 @@ import type { TerminationReason } from "../task/task_models.js";
 import { SoulstreamScheduleRepository } from "../schedule/schedule_repository.js";
 import { TaskTreeRepository } from "../task_tree/task_tree_repository.js";
 import {
-  createBoardYDocSnapshot,
-  getBoardYjsDocumentName,
   getFolderIdFromBoardYjsDocumentName,
-  readBoardYDocSnapshot,
 } from "../collaboration/board_yjs_model.js";
 import type { SupervisorWakeDispatchState } from "../supervisor/wake_dispatch_state.js";
 import {
@@ -694,7 +691,7 @@ export class SessionDB {
     sessions: Record<string, { folderId: string | null; displayName: string | null }>;
     boardItems: CatalogBoardItemRow[];
   }> {
-    // Catalog board items are Yjs-derived; legacy seeding writes on this read path deadlocked.
+    // Catalog reads stay read-only: cache first, legacy board_items read fallback only.
     const folderRows = await this.sql<
       { id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null; created_at: Date | string | null }[]
     >`SELECT * FROM folder_get_all()`;
@@ -723,7 +720,7 @@ export class SessionDB {
       };
     }
 
-    const boardItems = await this.getCatalogBoardItemsFromYjs(folders);
+    const boardItems = await this.getCatalogBoardItemsForCatalog(folders);
 
     return { folders, sessions, boardItems };
   }
@@ -736,13 +733,48 @@ export class SessionDB {
     this.boardYjsCatalogCache.clear();
   }
 
-  private async getCatalogBoardItemsFromYjs(
+  private async getCatalogBoardItemsForCatalog(
     folders: readonly CatalogFolderRow[],
   ): Promise<CatalogBoardItemRow[]> {
+    const folderIds = folders.map((folder) => folder.id);
+    if (folderIds.length === 0) return [];
+
+    const cachedRows = await this.sql<
+      Array<{ folder_id: string; board_items: unknown }>
+    >`
+      SELECT folder_id, board_items
+      FROM board_yjs_catalog_cache
+      WHERE folder_id = ANY(${this.sql.array(folderIds)})
+    `;
     const result: CatalogBoardItemRow[] = [];
-    for (const folder of folders) {
-      result.push(...await this.getFolderCatalogBoardItemsFromYjs(folder.id));
+    const cachedFolderIds = new Set<string>();
+    for (const row of cachedRows) {
+      cachedFolderIds.add(row.folder_id);
+      result.push(...parseCatalogBoardItems(row.board_items));
     }
+
+    const missingFolderIds = folderIds.filter((folderId) => !cachedFolderIds.has(folderId));
+    if (missingFolderIds.length > 0) {
+      const legacyRows = await this.sql<
+        Array<{
+          id: string;
+          folder_id: string;
+          item_type: BoardItemType;
+          item_id: string;
+          x: string | number;
+          y: string | number;
+          metadata: unknown;
+          created_at: Date | string | null;
+          updated_at: Date | string | null;
+        }>
+      >`
+        SELECT *
+        FROM board_items
+        WHERE folder_id = ANY(${this.sql.array(missingFolderIds)})
+      `;
+      result.push(...legacyRows.map(toCatalogBoardItemRow));
+    }
+
     return result.sort((a, b) => (
       a.folderId.localeCompare(b.folderId) ||
       a.y - b.y ||
@@ -751,41 +783,12 @@ export class SessionDB {
     ));
   }
 
-  private async getFolderCatalogBoardItemsFromYjs(
-    folderId: string,
-  ): Promise<CatalogBoardItemRow[]> {
-    const cached = this.boardYjsCatalogCache.get(folderId);
-    if (cached) return cached;
-
-    const documentName = getBoardYjsDocumentName(folderId);
-    const snapshot = await this.getBoardYjsSnapshot(documentName);
-    const updates = await this.getBoardYjsUpdates(documentName);
-    if ((snapshot && snapshot.byteLength > 0) || updates.length > 0) {
-      const decoded = readBoardYDocSnapshot({ folderId, snapshot, updates });
-      await this.storeBoardYjsSnapshot(documentName, decoded.snapshot);
-      await this.syncBoardYjsReplica(folderId, decoded.replica);
-      this.boardYjsCatalogCache.set(folderId, decoded.replica.boardItems);
-      return decoded.replica.boardItems;
-    }
-
-    const seed = await this.loadBoardYjsSeed(folderId);
-    const encoded = createBoardYDocSnapshot({
-      folderId,
-      boardItems: seed.boardItems,
-      markdownDocuments: seed.markdownDocuments,
-    });
-    await this.storeBoardYjsSnapshot(documentName, encoded);
-    await this.syncBoardYjsReplica(folderId, seed);
-    this.boardYjsCatalogCache.set(folderId, seed.boardItems);
-    return seed.boardItems;
-  }
-
   async ensureBoardItems(): Promise<void> {
     await this.sql`SELECT board_seed_items()`;
   }
 
   async getBoardItems(): Promise<CatalogBoardItemRow[]> {
-    // Legacy seed/read-replica access. getCatalog derives board items from Yjs.
+    // Legacy seed/read-replica access. getCatalog uses direct read fallback only.
     const rows = await this.sql<
       Array<{
         id: string;
@@ -2080,6 +2083,43 @@ function toCatalogBoardItemRow(row: {
     ...(toIsoString(row.created_at) ? { createdAt: toIsoString(row.created_at) } : {}),
     ...(toIsoString(row.updated_at) ? { updatedAt: toIsoString(row.updated_at) } : {}),
   };
+}
+
+function parseCatalogBoardItems(value: unknown): CatalogBoardItemRow[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item)) return [];
+    const id = typeof item.id === "string" ? item.id : null;
+    const folderId = typeof item.folderId === "string" ? item.folderId : null;
+    const itemType = isBoardItemType(item.itemType) ? item.itemType : null;
+    const itemId = typeof item.itemId === "string" ? item.itemId : null;
+    if (!id || !folderId || !itemType || !itemId) return [];
+
+    const x = Number(item.x);
+    const y = Number(item.y);
+    return [{
+      id,
+      folderId,
+      itemType,
+      itemId,
+      x: Number.isFinite(x) ? x : 0,
+      y: Number.isFinite(y) ? y : 0,
+      metadata: isRecord(item.metadata) ? item.metadata : {},
+      ...(toIsoString(typeof item.createdAt === "string" ? item.createdAt : null)
+        ? { createdAt: toIsoString(typeof item.createdAt === "string" ? item.createdAt : null) }
+        : {}),
+      ...(toIsoString(typeof item.updatedAt === "string" ? item.updatedAt : null)
+        ? { updatedAt: toIsoString(typeof item.updatedAt === "string" ? item.updatedAt : null) }
+        : {}),
+    }];
+  });
+}
+
+function isBoardItemType(value: unknown): value is BoardItemType {
+  return value === "session" ||
+    value === "markdown" ||
+    value === "subfolder" ||
+    value === "asset";
 }
 
 function toMarkdownDocumentRow(row: {
