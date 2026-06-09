@@ -46,6 +46,7 @@ import {
   type SupervisorWakeEvent,
 } from "./supervisor/wake_router.js";
 import {
+  buildSupervisorSnapshotWakeText,
   buildSupervisorWakeText,
   type SupervisorWakeSessionSummary,
   wakeSessionSummaryFromRow,
@@ -353,6 +354,8 @@ async function main(): Promise<void> {
     onResume,
     logger,
     orchProxyConfig,
+    undefined,
+    db,
   );
   const claudeRuntimeTaskFollowup = new ClaudeRuntimeTaskFollowupController({
     taskManager,
@@ -362,12 +365,14 @@ async function main(): Promise<void> {
   const supervisorWakeRouter = new SupervisorWakeRouter(
     {
       getCursor: (supervisorId) => db.getSupervisorConsumerCursor(supervisorId),
+      getHeadOffset: () => db.getSupervisorEventHeadOffset(),
       readEventsAfter: async (afterOffset, limit) =>
         (await db.readSupervisorEventsAfter(afterOffset, limit)).map((event) => ({
           offset: event.offset,
           sourceSessionId: event.sourceSessionId,
           eventType: event.eventType,
           payload: event.payload,
+          createdAt: event.createdAt,
         })),
       getSourceSessionAgentId: async (sourceSessionId) =>
         (await db.getSession(sourceSessionId))?.agent_id ?? null,
@@ -389,6 +394,30 @@ async function main(): Promise<void> {
               wakeClass,
               events,
               sessions,
+              now: new Date(),
+            }),
+            user: "supervisor",
+          },
+          onResume,
+        );
+      },
+      wakeSnapshot: async ({ supervisorId }) => {
+        const registry = await db.getSupervisorRegistry(supervisorId);
+        if (!registry?.activeSessionId) {
+          throw new Error(`Supervisor snapshot wake missing active session: ${supervisorId}`);
+        }
+        const sessions = await buildSupervisorSnapshotSessionSummaries(
+          supervisorId,
+          db,
+          logger,
+        );
+        await taskManager.addIntervention(
+          {
+            agentSessionId: registry.activeSessionId,
+            text: buildSupervisorSnapshotWakeText({
+              supervisorId,
+              sessions,
+              now: new Date(),
             }),
             user: "supervisor",
           },
@@ -688,6 +717,18 @@ async function main(): Promise<void> {
         taskExecutor,
         logger,
       });
+      for (const result of supervisorActivation) {
+        if (!result.role || result.status === "disabled") continue;
+        supervisorWakeScheduler?.markSnapshotPending(result.role);
+        try {
+          await supervisorWakeScheduler?.flush(result.role);
+        } catch (err) {
+          logger.warn(
+            { err, role: result.role },
+            "Supervisor cold-start snapshot wake failed",
+          );
+        }
+      }
       logger.info({ supervisorActivation }, "Supervisor activation completed");
     } catch (err) {
       logger.fatal({ err }, "Supervisor activation failed");
@@ -756,6 +797,60 @@ async function buildSupervisorWakeSessionSummaries(
       summaries[sourceSessionId] = { sessionId: sourceSessionId };
     }
   }
+  return summaries;
+}
+
+async function buildSupervisorSnapshotSessionSummaries(
+  supervisorId: string,
+  db: Pick<SessionDB, "listSessionsSummary" | "getSession">,
+  logger: Pick<Logger, "warn">,
+): Promise<SupervisorWakeSessionSummary[]> {
+  const summaries: SupervisorWakeSessionSummary[] = [];
+  const pageSize = 100;
+  let offset = 0;
+  let total = Number.POSITIVE_INFINITY;
+
+  while (offset < total) {
+    const page = await db.listSessionsSummary({
+      limit: pageSize,
+      offset,
+    });
+    total = page.total;
+    if (page.sessions.length === 0) break;
+
+    for (const session of page.sessions) {
+      try {
+        const row = await db.getSession(session.session_id);
+        if (row?.agent_id === supervisorId) continue;
+        summaries.push({
+          ...(row
+            ? wakeSessionSummaryFromRow(session.session_id, row)
+            : {
+                sessionId: session.session_id,
+                title: session.display_name,
+                status: session.status,
+                updatedAt: session.updated_at,
+              }),
+          eventCount: session.event_count,
+        });
+      } catch (err) {
+        logger.warn(
+          { err, sessionId: session.session_id },
+          "Supervisor snapshot session summary lookup failed",
+        );
+        summaries.push({
+          sessionId: session.session_id,
+          title: session.display_name,
+          status: session.status,
+          updatedAt: session.updated_at,
+          eventCount: session.event_count,
+        });
+      }
+    }
+
+    offset += page.sessions.length;
+  }
+
   return summaries;
 }
 

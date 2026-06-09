@@ -62,6 +62,8 @@ function makeTask(params: { sessionId: string; prompt: string }): Task {
 function createHarness(options: {
   registry?: SupervisorRegistryRow | null;
   sessionExists?: boolean;
+  sessionStatus?: "running" | "completed" | "error" | "interrupted";
+  activeTask?: Task;
   agents?: AgentProfile[];
 } = {}) {
   const createdTasks: Task[] = [];
@@ -72,7 +74,7 @@ function createHarness(options: {
         ? {
             session_id: "supervisor-existing",
             agent_id: role,
-            status: "completed",
+            status: options.sessionStatus ?? "completed",
             node_id: "eiaserinnys",
           }
         : null,
@@ -95,6 +97,9 @@ function createHarness(options: {
     })),
   } satisfies Partial<SessionDB>;
   const taskManager = {
+    getTask: vi.fn((sessionId: string) =>
+      options.activeTask?.agentSessionId === sessionId ? options.activeTask : undefined
+    ),
     createTask: vi.fn(async (params) => {
       const task = makeTask({
         sessionId: params.agentSessionId,
@@ -163,6 +168,11 @@ describe("supervisor activation", () => {
     const harness = createHarness({
       registry: registryRow(),
       sessionExists: true,
+      sessionStatus: "running",
+      activeTask: makeTask({
+        sessionId: "supervisor-existing",
+        prompt: "active supervisor",
+      }),
     });
 
     await expect(
@@ -181,8 +191,87 @@ describe("supervisor activation", () => {
     }]);
 
     expect(harness.db.getSession).toHaveBeenCalledWith("supervisor-existing");
+    expect(harness.taskManager.getTask).toHaveBeenCalledWith("supervisor-existing");
     expect(harness.taskManager.createTask).not.toHaveBeenCalled();
     expect(harness.taskExecutor.startExecution).not.toHaveBeenCalled();
+  });
+
+  it("starts a replacement when registry points at a persisted session without live task", async () => {
+    const harness = createHarness({
+      registry: registryRow(),
+      sessionExists: true,
+      sessionStatus: "completed",
+    });
+
+    await expect(
+      startConfiguredSupervisors({
+        config: baseConfig,
+        agentRegistry: harness.agentRegistry,
+        db: harness.db,
+        taskManager: harness.taskManager,
+        taskExecutor: harness.taskExecutor,
+        logger: silentLogger,
+        now: () => new Date("2026-06-08T23:46:47.000Z"),
+        sessionIdFactory: () => "supervisor-ariella-replacement",
+      }),
+    ).resolves.toEqual([{
+      role,
+      status: "started",
+      sessionId: "supervisor-ariella-replacement",
+    }]);
+
+    expect(harness.taskManager.getTask).toHaveBeenCalledWith("supervisor-existing");
+    expect(harness.db.getSession).toHaveBeenCalledWith("supervisor-existing");
+    expect(harness.taskManager.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentSessionId: "supervisor-ariella-replacement",
+        profileId: role,
+      }),
+    );
+    expect(harness.db.upsertSupervisorRegistry).toHaveBeenCalledWith({
+      role,
+      activeSessionId: "supervisor-ariella-replacement",
+      epoch: 3,
+      cursorOffset: 42,
+      handoverState: "idle",
+      cumulativeTokens: 0,
+      compactionCount: 1,
+      lastSeenAt: new Date("2026-06-08T23:46:47.000Z"),
+    });
+    expect(harness.taskExecutor.startExecution).toHaveBeenCalledWith(
+      harness.createdTasks[0],
+      supervisorAgent,
+    );
+  });
+
+  it("starts a replacement when the live task is not running", async () => {
+    const harness = createHarness({
+      registry: registryRow(),
+      sessionExists: true,
+      sessionStatus: "completed",
+      activeTask: {
+        ...makeTask({ sessionId: "supervisor-existing", prompt: "done" }),
+        status: "completed",
+      },
+    });
+
+    await expect(
+      startConfiguredSupervisors({
+        config: baseConfig,
+        agentRegistry: harness.agentRegistry,
+        db: harness.db,
+        taskManager: harness.taskManager,
+        taskExecutor: harness.taskExecutor,
+        logger: silentLogger,
+        sessionIdFactory: () => "supervisor-ariella-replacement",
+      }),
+    ).resolves.toEqual([{
+      role,
+      status: "started",
+      sessionId: "supervisor-ariella-replacement",
+    }]);
+
+    expect(harness.taskManager.createTask).toHaveBeenCalled();
   });
 
   it("creates, registers, and starts a configured supervisor when missing", async () => {

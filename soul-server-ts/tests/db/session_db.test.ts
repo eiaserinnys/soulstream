@@ -559,6 +559,15 @@ describe("SessionDB supervisor data layer", () => {
     });
   });
 
+  it("getSupervisorEventHeadOffset → supervisor_events max offset", async () => {
+    const { sql, calls } = createMockSql(() => [{ head: "123" }]);
+
+    const head = await new SessionDB(sql).getSupervisorEventHeadOffset();
+
+    expect(calls[0].fragments.join("?")).toContain("MAX(offset)");
+    expect(head).toBe(123);
+  });
+
   it("consumer cursor and registry methods call supervisor procedures", async () => {
     const now = new Date("2026-06-07T09:00:00Z");
     const { sql, calls } = createMockSql((call) => {

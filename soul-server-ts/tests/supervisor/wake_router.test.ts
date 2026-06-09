@@ -238,6 +238,84 @@ describe("SupervisorWakeRouter", () => {
     expect(setCursor).not.toHaveBeenCalled();
   });
 
+  it("cold-start snapshot drains backlog to head without per-event wake replay", async () => {
+    const wake = vi.fn(async () => undefined);
+    const wakeSnapshot = vi.fn(async () => undefined);
+    const setCursor = vi.fn(async () => undefined);
+    const readEventsAfter = vi.fn(async () => [
+      { offset: 11, sourceSessionId: "sess-other", eventType: "assistant_message" },
+    ]);
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => 10),
+      getHeadOffset: vi.fn(async () => 110),
+      readEventsAfter,
+      setCursor,
+      wake,
+      wakeSnapshot,
+    });
+
+    await expect(
+      router.flush("ariela_codex", "sess-supervisor", { snapshot: true }),
+    ).resolves.toEqual({ woken: true, drained: 100 });
+
+    expect(readEventsAfter).not.toHaveBeenCalled();
+    expect(wake).not.toHaveBeenCalled();
+    expect(wakeSnapshot).toHaveBeenCalledWith({
+      supervisorId: "ariela_codex",
+      headOffset: 110,
+    });
+    expect(setCursor).toHaveBeenCalledWith("ariela_codex", 110);
+  });
+
+  it("does not advance snapshot cursor when snapshot delivery fails", async () => {
+    const setCursor = vi.fn(async () => undefined);
+    const router = new SupervisorWakeRouter({
+      getCursor: vi.fn(async () => 10),
+      getHeadOffset: vi.fn(async () => 110),
+      readEventsAfter: vi.fn(),
+      setCursor,
+      wake: vi.fn(),
+      wakeSnapshot: vi.fn(async () => {
+        throw new Error("snapshot failed");
+      }),
+    });
+
+    await expect(
+      router.flush("ariela_codex", "sess-supervisor", { snapshot: true }),
+    ).rejects.toThrow("snapshot failed");
+    expect(setCursor).not.toHaveBeenCalled();
+  });
+
+  it("uses snapshot once for pending cold start and then resumes incremental flush", async () => {
+    const router = {
+      ingest: vi.fn(async () => ({ scheduled: true })),
+      flush: vi.fn(async () => ({ woken: true, drained: 1 })),
+    };
+    const scheduler = new SupervisorWakeScheduler({
+      listSupervisors: vi.fn(async () => [
+        { role: "ariela_codex", activeSessionId: "sess-supervisor" },
+      ]),
+      router,
+      logger: { warn: vi.fn() },
+    });
+
+    scheduler.markSnapshotPending("ariela_codex");
+    await scheduler.flush("ariela_codex");
+    await scheduler.flush("ariela_codex");
+
+    expect(router.flush).toHaveBeenNthCalledWith(
+      1,
+      "ariela_codex",
+      "sess-supervisor",
+      { snapshot: true },
+    );
+    expect(router.flush).toHaveBeenNthCalledWith(
+      2,
+      "ariela_codex",
+      "sess-supervisor",
+    );
+  });
+
   it("debounces multiple wake-class ingests into one flush", async () => {
     vi.useFakeTimers();
     const router = {

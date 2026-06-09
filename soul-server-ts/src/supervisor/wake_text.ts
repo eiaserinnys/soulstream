@@ -11,6 +11,8 @@ export interface SupervisorWakeSessionSummary {
   callerDisplayName?: string | null;
   callerSource?: string | null;
   status?: string | null;
+  updatedAt?: Date | string | null;
+  eventCount?: number | null;
   lastMessagePreview?: string | null;
   awaySummary?: string | null;
   terminationReason?: string | null;
@@ -22,15 +24,32 @@ export interface BuildSupervisorWakeTextParams {
   wakeClass: string;
   events: SupervisorWakeEvent[];
   sessions?: Record<string, SupervisorWakeSessionSummary | undefined>;
+  now?: Date | string;
   maxSessions?: number;
   maxEventsPerSession?: number;
   maxTextChars?: number;
 }
 
 const DEFAULT_MAX_SESSIONS = 5;
-const DEFAULT_MAX_EVENTS_PER_SESSION = 6;
-const DEFAULT_MAX_TEXT_CHARS = 320;
-const NOISE_EVENT_TYPES = new Set(["text_delta", "progress", "debug"]);
+const DEFAULT_MAX_TEXT_CHARS = 500;
+const SHORT_SESSION_ID_CHARS = 8;
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const NOISE_EVENT_TYPES = new Set([
+  "text_start",
+  "text_delta",
+  "text_end",
+  "thinking",
+  "progress",
+  "debug",
+  "realtime_status",
+  "realtime_transcript",
+  "claude_runtime_session_state",
+  "claude_runtime_task_updated",
+  "claude_runtime_task_progress",
+  "claude_runtime_hook_event",
+  "context_usage",
+]);
+const TOOL_NOISE_EVENT_TYPES = new Set(["tool_start", "tool_use"]);
 const WAKE_CLASS_PRIORITY: Record<WakeClass, number> = {
   critical: 0,
   wake: 1,
@@ -44,6 +63,7 @@ type WakeSessionRow = Partial<
     | "display_name"
     | "status"
     | "agent_id"
+    | "updated_at"
     | "last_message"
     | "away_summary"
     | "termination_reason"
@@ -62,6 +82,7 @@ export function wakeSessionSummaryFromRow(
     title: row?.display_name ?? null,
     status: row?.status ?? null,
     agentId: row?.agent_id ?? null,
+    updatedAt: row?.updated_at ?? null,
     callerDisplayName:
       typeof callerInfo?.display_name === "string" ? callerInfo.display_name : null,
     callerSource: typeof callerInfo?.source === "string" ? callerInfo.source : null,
@@ -72,28 +93,51 @@ export function wakeSessionSummaryFromRow(
   };
 }
 
+export function buildSupervisorSnapshotWakeText(params: {
+  supervisorId: string;
+  sessions: SupervisorWakeSessionSummary[];
+  now?: Date | string;
+  maxSessions?: number;
+  maxTextChars?: number;
+}): string {
+  const now = parseDate(params.now);
+  const maxSessions = params.maxSessions ?? params.sessions.length;
+  const maxTextChars = params.maxTextChars ?? DEFAULT_MAX_TEXT_CHARS;
+  const lines = [
+    formatWakeHeader("snapshot", params.sessions.length, now),
+    "",
+  ];
+
+  for (const summary of params.sessions.slice(0, maxSessions)) {
+    lines.push(...formatSnapshotSession(summary, now, maxTextChars), "");
+  }
+
+  if (params.sessions.length > maxSessions) {
+    lines.push(`외 ${params.sessions.length - maxSessions}개 세션 생략`, "");
+  }
+  lines.push("→ 개입이 필요한지 판단하세요.");
+  return lines.join("\n");
+}
+
 export function buildSupervisorWakeText(params: BuildSupervisorWakeTextParams): string {
   const maxSessions = params.maxSessions ?? DEFAULT_MAX_SESSIONS;
-  const maxEventsPerSession =
-    params.maxEventsPerSession ?? DEFAULT_MAX_EVENTS_PER_SESSION;
   const maxTextChars = params.maxTextChars ?? DEFAULT_MAX_TEXT_CHARS;
-  const head = params.events[params.events.length - 1]?.offset ?? 0;
+  const now = parseDate(params.now);
   const groups = groupEventsBySession(params.events);
-  const triggerSessions = triggerSessionIds(groups);
   const lines = [
-    `[supervisor wake] role=${params.supervisorId} class=${params.wakeClass} head=${head} trigger_sessions=${triggerSessions.join(",") || "none"}`,
-    `events=${params.events.length} sessions=${groups.length}`,
+    formatWakeHeader(params.wakeClass, groups.length, now),
+    "",
   ];
 
   for (const group of groups.slice(0, maxSessions)) {
     const summary = params.sessions?.[group.sessionId] ?? { sessionId: group.sessionId };
-    lines.push(...formatSessionGroup(group, summary, maxEventsPerSession, maxTextChars));
+    lines.push(...formatSessionGroup(group, summary, now, maxTextChars), "");
   }
 
   if (groups.length > maxSessions) {
-    lines.push(`omitted_sessions=${groups.length - maxSessions}`);
+    lines.push(`외 ${groups.length - maxSessions}개 세션 생략`, "");
   }
-  lines.push("Decide whether this wake batch needs intervention.");
+  lines.push("→ 개입이 필요한지 판단하세요.");
   return lines.join("\n");
 }
 
@@ -127,21 +171,6 @@ function groupEventsBySession(events: SupervisorWakeEvent[]): Array<{
     }));
 }
 
-function triggerSessionIds(groups: Array<{
-  sessionId: string;
-  events: SupervisorWakeEvent[];
-}>): string[] {
-  const result: string[] = [];
-  const seen = new Set<string>();
-  for (const group of groups) {
-    if (!hasTriggerEvent(group.events)) continue;
-    if (seen.has(group.sessionId)) continue;
-    seen.add(group.sessionId);
-    result.push(group.sessionId);
-  }
-  return result;
-}
-
 function groupPriority(events: SupervisorWakeEvent[]): number {
   let priority = Number.POSITIVE_INFINITY;
   for (const event of events) {
@@ -152,56 +181,82 @@ function groupPriority(events: SupervisorWakeEvent[]): number {
   return Number.isFinite(priority) ? priority : 4;
 }
 
-function hasTriggerEvent(events: SupervisorWakeEvent[]): boolean {
-  return events.some((event) => {
-    const wakeClass = classifyWakeEvent(event.eventType);
-    return wakeClass !== null && wakeClass !== "quiet";
-  });
-}
-
 function formatSessionGroup(
   group: { sessionId: string; events: SupervisorWakeEvent[] },
   summary: SupervisorWakeSessionSummary,
-  maxEventsPerSession: number,
+  now: Date | null,
   maxTextChars: number,
 ): string[] {
   const facts = summarizeGroupEvents(group.events, maxTextChars);
-  const lines = [`## session ${group.sessionId}`];
-  pushValue(lines, "title", summary.title ?? group.sessionId, maxTextChars);
-  pushValue(lines, "agent", summary.agentId, maxTextChars);
+  const timeFact = summarizeGroupTime(group.events, summary.status);
+  const title = truncate(summary.title ?? group.sessionId, maxTextChars) ?? shortSessionId(group.sessionId);
+  const lines = [`▸ ${title}`];
+  const metadata = [shortSessionId(group.sessionId)];
+  if (summary.agentId) metadata.push(summary.agentId);
   if (summary.callerDisplayName || summary.callerSource) {
     const source = summary.callerSource ? ` (${summary.callerSource})` : "";
-    pushValue(lines, "caller", `${summary.callerDisplayName ?? "unknown"}${source}`, maxTextChars);
+    metadata.push(`호출: ${summary.callerDisplayName ?? "unknown"}${source}`);
   }
-  pushValue(lines, "status", summary.status, maxTextChars);
-  pushValue(lines, "last_user", facts.lastUser, maxTextChars);
-  pushValue(lines, "last_assistant", facts.lastAssistant ?? summary.lastMessagePreview, maxTextChars);
-  pushValue(lines, "tool_error", facts.toolError, maxTextChars);
-  pushValue(lines, "error", facts.error, maxTextChars);
-  const sessionSummary = facts.sessionEnded
-    ? summary.awaySummary ?? summary.lastMessagePreview
-    : null;
-  pushValue(lines, "session_summary", sessionSummary, maxTextChars);
-  pushValue(lines, "termination", facts.termination ?? summary.terminationReason, maxTextChars);
+  lines.push(`   ${metadata.join(" · ")}`);
 
-  const noiseSummary = formatCounts(countEvents(group.events, true));
-  if (noiseSummary) lines.push(`noise=${noiseSummary}`);
-  const eventSummary = formatCounts(countEvents(group.events, false));
-  if (eventSummary) lines.push(`events=${eventSummary}`);
+  const statusParts: string[] = [];
+  if (summary.status) statusParts.push(`상태: ${summary.status}`);
+  const timeText = formatSessionTime(timeFact, now);
+  if (timeText) statusParts.push(timeText);
+  if (statusParts.length > 0) lines.push(`   ${statusParts.join(" · ")}`);
 
-  const visibleEvents = group.events
-    .filter((event) => !NOISE_EVENT_TYPES.has(event.eventType))
-    .slice(0, maxEventsPerSession);
-  for (const event of visibleEvents) {
-    lines.push(formatEventLine(event, maxTextChars));
+  pushValue(lines, "사용자", facts.lastUser, maxTextChars);
+  const recent = facts.lastAssistant ?? summary.awaySummary ?? summary.lastMessagePreview;
+  pushValue(lines, "최근", recent, maxTextChars);
+  for (const errorLine of facts.errors) {
+    pushValue(lines, "⚠ 오류", errorLine, maxTextChars);
   }
-  const meaningfulCount = group.events.filter((event) =>
-    !NOISE_EVENT_TYPES.has(event.eventType)
-  ).length;
-  if (meaningfulCount > visibleEvents.length) {
-    lines.push(`- ... ${meaningfulCount - visibleEvents.length} more meaningful events`);
-  }
+  lines.push(`   활동: ${formatActivity(group.events, facts.meaningfulCount, facts.errorCount)}`);
   return lines;
+}
+
+function formatSnapshotSession(
+  summary: SupervisorWakeSessionSummary,
+  now: Date | null,
+  maxTextChars: number,
+): string[] {
+  const title = truncate(summary.title ?? summary.sessionId, maxTextChars) ??
+    shortSessionId(summary.sessionId);
+  const lines = [`▸ ${title}`];
+  const metadata = [shortSessionId(summary.sessionId)];
+  if (summary.agentId) metadata.push(summary.agentId);
+  if (summary.callerDisplayName || summary.callerSource) {
+    const source = summary.callerSource ? ` (${summary.callerSource})` : "";
+    metadata.push(`호출: ${summary.callerDisplayName ?? "unknown"}${source}`);
+  }
+  lines.push(`   ${metadata.join(" · ")}`);
+
+  const statusParts: string[] = [];
+  if (summary.status) statusParts.push(`상태: ${summary.status}`);
+  const timeFact = summarizeSnapshotTime(summary);
+  const timeText = formatSessionTime(timeFact, now);
+  if (timeText) statusParts.push(timeText);
+  if (statusParts.length > 0) lines.push(`   ${statusParts.join(" · ")}`);
+
+  const recent = summary.awaySummary ?? summary.lastMessagePreview;
+  pushValue(lines, "최근", recent, maxTextChars);
+  const error = snapshotError(summary);
+  if (error) pushValue(lines, "⚠ 오류", error, maxTextChars);
+  lines.push(`   활동: ${formatSnapshotActivity(summary)}`);
+  return lines;
+}
+
+function formatWakeHeader(
+  wakeClass: string,
+  sessionCount: number,
+  now: Date | null,
+): string {
+  const parts = [
+    `[supervisor wake] ${wakeClass}`,
+    `세션 ${sessionCount}개`,
+  ];
+  if (now) parts.push(`현재 ${formatDateTime(now)} (KST)`);
+  return parts.join(" · ");
 }
 
 function summarizeGroupEvents(
@@ -210,19 +265,18 @@ function summarizeGroupEvents(
 ): {
   lastUser: string | null;
   lastAssistant: string | null;
-  toolError: string | null;
-  error: string | null;
-  sessionEnded: boolean;
-  termination: string | null;
+  errors: string[];
+  meaningfulCount: number;
+  errorCount: number;
 } {
   let lastUser: string | null = null;
   let lastAssistant: string | null = null;
-  let toolError: string | null = null;
-  let error: string | null = null;
-  let sessionEnded = false;
-  let termination: string | null = null;
+  const errors: string[] = [];
+  let meaningfulCount = 0;
+  let errorCount = 0;
   for (const event of events) {
     const payload = event.payload ?? {};
+    if (isSubstantiveMessageEvent(event)) meaningfulCount += 1;
     if (event.eventType === "user_message") {
       lastUser = truncate(extractText(payload, ["text", "content", "message"]), maxTextChars);
     }
@@ -232,56 +286,96 @@ function summarizeGroupEvents(
     if (event.eventType === "tool_result" && isErrorPayload(payload)) {
       const toolName = stringField(payload, "tool_name") ?? stringField(payload, "toolName") ?? "tool";
       const result = extractText(payload, ["result", "message", "content"]) ?? "error";
-      toolError = truncate(`${toolName}: ${normalizeText(result)}`, maxTextChars);
+      errorCount += 1;
+      const text = truncate(`${toolName}: ${normalizeText(result)}`, maxTextChars);
+      if (text) errors.push(text);
     }
     if (event.eventType === "error") {
-      error = truncate(extractText(payload, ["message", "detail", "error"]), maxTextChars);
-    }
-    if (event.eventType === "session_ended") {
-      sessionEnded = true;
-      termination = truncate(
-        extractText(payload, ["termination_reason", "termination_detail", "status"]),
-        maxTextChars,
-      );
+      errorCount += 1;
+      const text = truncate(extractText(payload, ["message", "detail", "error"]), maxTextChars);
+      if (text) errors.push(text);
     }
   }
-  return { lastUser, lastAssistant, toolError, error, sessionEnded, termination };
+  return { lastUser, lastAssistant, errors, meaningfulCount, errorCount };
 }
 
-function formatEventLine(event: SupervisorWakeEvent, maxTextChars: number): string {
-  const payload = event.payload ?? {};
-  const detail =
-    event.eventType === "assistant_message"
-      ? extractText(payload, ["content", "text", "message"])
-      : event.eventType === "user_message"
-        ? extractText(payload, ["text", "content", "message"])
-        : event.eventType === "tool_result" && isErrorPayload(payload)
-          ? extractText(payload, ["result", "message", "content"])
-          : event.eventType === "error"
-            ? extractText(payload, ["message", "detail", "error"])
-            : null;
-  return detail
-    ? `- #${event.offset} ${event.eventType}: ${truncate(detail, maxTextChars)}`
-    : `- #${event.offset} ${event.eventType}`;
-}
-
-function countEvents(
+function summarizeGroupTime(
   events: SupervisorWakeEvent[],
-  noiseOnly: boolean,
-): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const event of events) {
-    const isNoise = NOISE_EVENT_TYPES.has(event.eventType);
-    if (noiseOnly !== isNoise) continue;
-    counts.set(event.eventType, (counts.get(event.eventType) ?? 0) + 1);
+  status: string | null | undefined,
+): { label: "완료" | "최근활동"; at: Date } | null {
+  const completedEvent = [...events].reverse().find((event) =>
+    event.eventType === "session_ended" && parseDate(event.createdAt)
+  );
+  if (status === "completed" && completedEvent) {
+    return { label: "완료", at: parseDate(completedEvent.createdAt)! };
   }
-  return counts;
+
+  const latestAt = events.reduce<Date | null>((latest, event) => {
+    const createdAt = parseDate(event.createdAt);
+    if (!createdAt) return latest;
+    if (!latest || createdAt.getTime() > latest.getTime()) return createdAt;
+    return latest;
+  }, null);
+  return latestAt ? { label: "최근활동", at: latestAt } : null;
 }
 
-function formatCounts(counts: Map<string, number>): string {
-  return Array.from(counts.entries())
-    .map(([eventType, count]) => `${eventType}:${count}`)
-    .join(", ");
+function summarizeSnapshotTime(
+  summary: SupervisorWakeSessionSummary,
+): { label: "완료" | "최근활동"; at: Date } | null {
+  const updatedAt = parseDate(summary.updatedAt ?? undefined);
+  if (!updatedAt) return null;
+  return {
+    label: summary.status === "completed" ? "완료" : "최근활동",
+    at: updatedAt,
+  };
+}
+
+function formatSessionTime(
+  timeFact: { label: "완료" | "최근활동"; at: Date } | null,
+  now: Date | null,
+): string | null {
+  if (!timeFact) return null;
+  const relative = now ? ` (${formatRelativeTime(timeFact.at, now)})` : "";
+  return `${timeFact.label} ${formatSessionDateTime(timeFact.at, now)}${relative}`;
+}
+
+function isMeaningfulEvent(event: SupervisorWakeEvent): boolean {
+  if (NOISE_EVENT_TYPES.has(event.eventType)) return false;
+  if (TOOL_NOISE_EVENT_TYPES.has(event.eventType)) return false;
+  if (event.eventType === "tool_result") return isErrorPayload(event.payload ?? {});
+  return true;
+}
+
+function isSubstantiveMessageEvent(event: SupervisorWakeEvent): boolean {
+  return event.eventType === "user_message" || event.eventType === "assistant_message";
+}
+
+function formatActivity(
+  events: SupervisorWakeEvent[],
+  meaningfulCount: number,
+  errorCount: number,
+): string {
+  let noiseCount = 0;
+  for (const event of events) {
+    if (isMeaningfulEvent(event)) continue;
+    noiseCount += 1;
+  }
+  const dominant = noiseCount > meaningfulCount ? "진행·도구 위주" : "의미 신호 포함";
+  const errorSummary = errorCount > 0 ? `오류 ${errorCount}건` : "오류 없음";
+  return `이벤트 ${events.length}개 (${dominant}, 의미 메시지 ${meaningfulCount}) · ${errorSummary}`;
+}
+
+function formatSnapshotActivity(summary: SupervisorWakeSessionSummary): string {
+  const eventCount = typeof summary.eventCount === "number"
+    ? `이벤트 ${summary.eventCount}개`
+    : "현재 상태 스냅샷";
+  const hasError = Boolean(snapshotError(summary));
+  return `${eventCount} · ${hasError ? "오류 있음" : "오류 없음"}`;
+}
+
+function snapshotError(summary: SupervisorWakeSessionSummary): string | null {
+  if (summary.status !== "error") return null;
+  return summary.terminationDetail ?? summary.terminationReason ?? "error";
 }
 
 function pushValue(
@@ -292,7 +386,58 @@ function pushValue(
 ): void {
   const normalized = normalizeText(value);
   if (!normalized) return;
-  lines.push(`${key}=${truncate(normalized, maxTextChars)}`);
+  lines.push(`   ${key}: ${truncate(normalized, maxTextChars)}`);
+}
+
+function shortSessionId(sessionId: string): string {
+  if (sessionId.length <= 16) return sessionId;
+  return sessionId.slice(0, SHORT_SESSION_ID_CHARS);
+}
+
+function parseDate(value: Date | string | undefined): Date | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function formatDateTime(date: Date): string {
+  return formatKstParts(date, true);
+}
+
+function formatSessionDateTime(date: Date, now: Date | null): string {
+  if (now && formatKstDate(date) === formatKstDate(now)) {
+    return formatKstParts(date, false);
+  }
+  return `${formatKstParts(date, true)} (KST)`;
+}
+
+function formatKstDate(date: Date): string {
+  return formatKstParts(date, true).slice(0, 10);
+}
+
+function formatKstParts(date: Date, includeDate: boolean): string {
+  const kst = new Date(date.getTime() + KST_OFFSET_MS);
+  const year = String(kst.getUTCFullYear()).padStart(4, "0");
+  const month = String(kst.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(kst.getUTCDate()).padStart(2, "0");
+  const hour = String(kst.getUTCHours()).padStart(2, "0");
+  const minute = String(kst.getUTCMinutes()).padStart(2, "0");
+  const second = String(kst.getUTCSeconds()).padStart(2, "0");
+  const time = `${hour}:${minute}:${second}`;
+  if (!includeDate) return time;
+  return `${year}-${month}-${day} ${time}`;
+}
+
+function formatRelativeTime(at: Date, now: Date): string {
+  const diffMs = now.getTime() - at.getTime();
+  const suffix = diffMs < 0 ? "후" : "전";
+  const absMs = Math.abs(diffMs);
+  if (absMs < 60_000) return "방금";
+  const minutes = Math.round(absMs / 60_000);
+  if (minutes < 60) return `${minutes}분 ${suffix}`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}시간 ${suffix}`;
+  return `${Math.floor(hours / 24)}일 ${suffix}`;
 }
 
 function extractLastMessagePreview(lastMessage: unknown): string | null {

@@ -126,6 +126,41 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("1b. stale supervisor caller는 현재 active supervisor session으로 완료통지를 보낸다", async () => {
+    const tm = makeTaskManagerStub();
+    const registry = makeAgentRegistry();
+    const fetchImpl = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    const getSupervisorRegistry = vi.fn(async () => ({
+      role: "ariella-ashwood-codex",
+      activeSessionId: "supervisor-current",
+    }));
+    const onResume = vi.fn();
+
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      registry,
+      onResume,
+      silentLogger,
+      makeOrch(),
+      fetchImpl,
+      { getSupervisorRegistry } as never,
+    );
+
+    await notifier.notify(makeChild({
+      callerSessionId: "supervisor-old",
+      callerInfo: {
+        source: "agent",
+        agent_id: "ariella-ashwood-codex",
+      },
+    }));
+
+    expect(getSupervisorRegistry).toHaveBeenCalledWith("ariella-ashwood-codex");
+    expect(tm.addIntervention).toHaveBeenCalledTimes(1);
+    expect(tm.addIntervention.mock.calls[0]![0].agentSessionId).toBe("supervisor-current");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("2. orch fallback — local throw 시 /api/sessions/{caller}/intervene POST", async () => {
     const tm = makeTaskManagerStub(new Error("Task not found: parent-sess-1"));
     const registry = makeAgentRegistry();
