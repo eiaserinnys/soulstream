@@ -442,8 +442,11 @@ describe("BoardWorkspaceView", () => {
     }));
 
     const button = container.querySelector<HTMLButtonElement>('[data-testid="board-declutter-button"]');
+    const undoButton = container.querySelector<HTMLButtonElement>('[data-testid="board-declutter-undo-button"]');
     expect(button).not.toBeNull();
+    expect(undoButton).not.toBeNull();
     expect(button?.disabled).toBe(false);
+    expect(undoButton?.disabled).toBe(true);
 
     flushSync(() => {
       button!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -457,6 +460,19 @@ describe("BoardWorkspaceView", () => {
     expect(byId.get("session:session-a")).toMatchObject({ x: 0, y: 0 });
     expect(byId.get("markdown:doc-a")).toMatchObject({ x: 700, y: 0 });
     expect(byId.get("subfolder:child-folder")).not.toMatchObject({ x: 120, y: 0 });
+    expect(undoButton?.disabled).toBe(false);
+
+    flushSync(() => {
+      undoButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await Promise.resolve();
+
+    const restoredItems = useDashboardStore.getState().catalog?.boardItems ?? [];
+    const restoredById = new Map(restoredItems.map((item) => [item.id, item]));
+    expect(restoredById.get("session:session-a")).toMatchObject({ x: 0, y: 0 });
+    expect(restoredById.get("subfolder:child-folder")).toMatchObject({ x: 120, y: 0 });
+    expect(restoredById.get("markdown:doc-a")).toMatchObject({ x: 700, y: 0 });
+    expect(undoButton?.disabled).toBe(true);
   });
 
   it("shows board sync status when websocket connection is unavailable", () => {

@@ -25,11 +25,17 @@ function rectForItem(item: BoardWorkspaceItem, position = { x: item.x, y: item.y
   };
 }
 
-function rectsOverlap(a: BoardDeclutterRect, b: BoardDeclutterRect): boolean {
-  return a.x < b.x + b.width &&
-    a.x + a.width > b.x &&
-    a.y < b.y + b.height &&
-    a.y + a.height > b.y;
+function getFrameChildIds(items: readonly BoardWorkspaceItem[]): Set<string> {
+  const childIds = new Set<string>();
+  for (const item of items) {
+    if (item.type !== "frame") continue;
+    for (const childId of item.childItemIds) childIds.add(childId);
+  }
+  return childIds;
+}
+
+function isPinnedItem(item: BoardWorkspaceItem): boolean {
+  return item.type === "session" && item.generatedPlacementKind === "inbox";
 }
 
 function rectsConflictWithMargin(
@@ -92,31 +98,22 @@ function findNearestAvailablePosition(
 export function declutterBoardItems(items: readonly BoardWorkspaceItem[]): BoardItemPositionUpdate[] {
   if (items.length <= 1) return [];
 
-  const stationaryRects: BoardDeclutterRect[] = [];
-  const movingItems: BoardWorkspaceItem[] = [];
-  const movingBoardItemIds = new Set<string>();
-
-  for (const item of items) {
-    const rect = rectForItem(item);
-    if (stationaryRects.some((candidate) => rectsOverlap(rect, candidate))) {
-      movingItems.push(item);
-      movingBoardItemIds.add(item.boardItemId);
-    } else {
-      stationaryRects.push(rect);
-    }
-  }
-
-  if (movingItems.length === 0) return [];
-
-  const occupied = items
-    .filter((item) => !movingBoardItemIds.has(item.boardItemId))
-    .map((item) => rectForItem(item));
+  const frameChildIds = getFrameChildIds(items);
+  const layoutItems = items.filter((item) => !frameChildIds.has(item.boardItemId));
+  const pinnedItems = layoutItems.filter(isPinnedItem);
+  const movableItems = layoutItems.filter((item) => !isPinnedItem(item));
+  const occupied = pinnedItems.map((item) => rectForItem(item));
   const updates: BoardItemPositionUpdate[] = [];
 
-  for (const item of movingItems) {
-    const next = findNearestAvailablePosition(item, occupied);
+  for (const item of movableItems) {
+    const rect = rectForItem(item);
+    const next = hasMarginConflict(rect, occupied)
+      ? findNearestAvailablePosition(item, occupied)
+      : { x: item.x, y: item.y };
     occupied.push(rectForItem(item, next));
-    if (next.x === item.x && next.y === item.y) continue;
+    if (next.x === item.x && next.y === item.y) {
+      continue;
+    }
     updates.push({
       boardItemId: item.boardItemId,
       x: next.x,

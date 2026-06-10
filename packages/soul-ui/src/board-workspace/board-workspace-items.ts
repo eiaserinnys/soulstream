@@ -27,7 +27,7 @@ const BOARD_SPAWN_GAP = BOARD_GRID_SIZE * 2;
 const BOARD_SPAWN_X_STEP = BOARD_TILE_WIDTH + BOARD_SPAWN_GAP;
 const BOARD_SPAWN_Y_STEP = BOARD_TILE_HEIGHT + BOARD_GRID_SIZE;
 
-type GeneratedPlacementKind = "near-parent" | "inbox";
+export type GeneratedPlacementKind = "near-parent" | "inbox";
 
 interface BoardRect {
   x: number;
@@ -60,6 +60,7 @@ export interface SessionBoardWorkspaceItem {
   session: SessionSummary;
   childStack?: SessionChildStack;
   parentRef?: SessionParentRef;
+  generatedPlacementKind?: GeneratedPlacementKind;
   x: number;
   y: number;
 }
@@ -481,6 +482,7 @@ function buildPositionedItems({
       session,
       childStack: getSessionChildStack(relations, session.agentSessionId, selectedFolderId),
       parentRef: getSessionParentRef(relations, session.agentSessionId) ?? undefined,
+      generatedPlacementKind: shouldSpawnBesideParent ? "near-parent" : "inbox",
       x: position.x,
       y: position.y,
     });
