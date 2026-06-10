@@ -8,7 +8,7 @@ import { describe, it, expect } from "vitest";
 import {
   START_INDEX,
   computeFirstItemIndex,
-  getBottomItemIndex,
+  getBottomScrollLocation,
   getInitialTopMostItemIndex,
   findFocusIndex,
 } from "./ChatView.reverse-helpers";
@@ -49,10 +49,10 @@ describe("bottom focus index helpers", () => {
     expect(getInitialTopMostItemIndex(5)).toEqual({ index: 4, align: "end" });
   });
 
-  it("uses absolute virtuoso coordinates for imperative bottom scrolling", () => {
-    expect(getBottomItemIndex(0, START_INDEX)).toBeNull();
-    expect(getBottomItemIndex(1, START_INDEX)).toBe(START_INDEX);
-    expect(getBottomItemIndex(5, START_INDEX - 2)).toBe(START_INDEX + 2);
+  it("uses Virtuoso LAST for imperative bottom scrolling", () => {
+    expect(getBottomScrollLocation(0)).toBeNull();
+    expect(getBottomScrollLocation(1)).toEqual({ index: "LAST", align: "end" });
+    expect(getBottomScrollLocation(5)).toEqual({ index: "LAST", align: "end" });
   });
 });
 

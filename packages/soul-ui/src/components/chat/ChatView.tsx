@@ -29,7 +29,7 @@ import { useMessageHistoryBuffer } from "./useMessageHistoryBuffer";
 import {
   computeFirstItemIndex,
   findFocusIndex,
-  getBottomItemIndex,
+  getBottomScrollLocation,
   getInitialTopMostItemIndex,
 } from "./ChatView.reverse-helpers";
 import {
@@ -85,9 +85,9 @@ export function ChatView({
     () => computeFirstItemIndex(chatPrependedCount),
     [chatPrependedCount],
   );
-  const bottomItemIndex = useMemo(
-    () => getBottomItemIndex(grouped.length, firstItemIndex),
-    [grouped.length, firstItemIndex],
+  const bottomScrollLocation = useMemo(
+    () => getBottomScrollLocation(grouped.length),
+    [grouped.length],
   );
   const initialTopMostItemIndex = useMemo(
     () => getInitialTopMostItemIndex(grouped.length),
@@ -117,6 +117,9 @@ export function ChatView({
    */
   const handledFocusRef = useRef<number | null>(null);
   const bottomFocusedSessionRef = useRef<string | null>(null);
+  const initialBottomFocusPendingSessionRef = useRef<string | null>(
+    activeSessionKey,
+  );
 
   /**
    * 세션 전환 시점 기록 (auto-follow 가드용).
@@ -136,42 +139,51 @@ export function ChatView({
   if (prevSessionKeyForFollowRef.current !== activeSessionKey) {
     prevSessionKeyForFollowRef.current = activeSessionKey;
     sessionStartedAtRef.current = performance.now();
+    bottomFocusedSessionRef.current = null;
+    initialBottomFocusPendingSessionRef.current = activeSessionKey;
   }
+
+  const scrollToBottomWithBehavior = useCallback(
+    (behavior: "auto" | "smooth") => {
+      if (bottomScrollLocation === null) return;
+      virtuosoRef.current?.scrollToIndex({
+        ...bottomScrollLocation,
+        behavior,
+      });
+    },
+    [bottomScrollLocation],
+  );
 
   useLayoutEffect(() => {
     if (!activeSessionKey) {
       bottomFocusedSessionRef.current = null;
+      initialBottomFocusPendingSessionRef.current = null;
       return;
     }
-    if (bottomItemIndex === null) return;
+    if (bottomScrollLocation === null) return;
     if (bottomFocusedSessionRef.current === activeSessionKey) return;
-    bottomFocusedSessionRef.current = activeSessionKey;
-    virtuosoRef.current?.scrollToIndex({
-      index: bottomItemIndex,
-      align: "end",
-      behavior: "auto",
-    });
-  }, [activeSessionKey, bottomItemIndex]);
+    initialBottomFocusPendingSessionRef.current = activeSessionKey;
+    scrollToBottomWithBehavior("auto");
+  }, [activeSessionKey, bottomScrollLocation, scrollToBottomWithBehavior]);
 
   // 새 이벤트 시: following이 아니면 "New Messages" 배너 표시.
-  // 실제 하단 유지는 virtuoso `followOutput="auto"` 가 담당하므로 여기서는
-  // 배너 상태만 제어한다. (수동 scrollToIndex 호출 제거)
+  // following 중이거나 초기 bottom focus가 아직 완료되지 않았다면 하단을 유지한다.
   useEffect(() => {
     if (treeVersion === prevTreeVersion.current) return;
     prevTreeVersion.current = treeVersion;
-    if (shouldScrollToBottomOnTreeChange(isFollowingRef.current, grouped.length) && bottomItemIndex !== null) {
+    const isInitialBottomFocusPending =
+      activeSessionKey !== null &&
+      initialBottomFocusPendingSessionRef.current === activeSessionKey &&
+      bottomFocusedSessionRef.current !== activeSessionKey;
+    if (
+      bottomScrollLocation !== null &&
+      (isInitialBottomFocusPending ||
+        shouldScrollToBottomOnTreeChange(isFollowingRef.current, grouped.length))
+    ) {
       requestAnimationFrame(() => {
-        virtuosoRef.current?.scrollToIndex({
-          index: bottomItemIndex,
-          align: "end",
-          behavior: "auto",
-        });
+        scrollToBottomWithBehavior("auto");
         requestAnimationFrame(() => {
-          virtuosoRef.current?.scrollToIndex({
-            index: bottomItemIndex,
-            align: "end",
-            behavior: "auto",
-          });
+          scrollToBottomWithBehavior("auto");
         });
       });
       return;
@@ -179,7 +191,13 @@ export function ChatView({
     if (!isFollowingRef.current && grouped.length > 0) {
       setShowNewMessage(true);
     }
-  }, [treeVersion, grouped.length, bottomItemIndex]);
+  }, [
+    treeVersion,
+    grouped.length,
+    bottomScrollLocation,
+    activeSessionKey,
+    scrollToBottomWithBehavior,
+  ]);
 
   // 세션 변경 시: follow 리셋 + 이전 세션의 focusEventId 잔재 정리.
   // 다른 세션에 우연히 같은 eventId가 존재하면 엉뚱한 메시지를 하이라이트할 수 있으므로
@@ -206,30 +224,21 @@ export function ChatView({
   }, [focusEventId, treeVersion, grouped, firstItemIndex]);
 
   const scrollToBottom = useCallback(() => {
-    if (bottomItemIndex === null) return;
-    virtuosoRef.current?.scrollToIndex({
-      index: bottomItemIndex,
-      align: "end",
-      behavior: "smooth",
-    });
+    scrollToBottomWithBehavior("smooth");
     setIsFollowing(true);
     setShowNewMessage(false);
-  }, [bottomItemIndex]);
+  }, [scrollToBottomWithBehavior]);
 
   const toggleFollow = useCallback(() => {
     setIsFollowing((prev) => {
       const next = !prev;
-      if (next && bottomItemIndex !== null) {
-        virtuosoRef.current?.scrollToIndex({
-          index: bottomItemIndex,
-          align: "end",
-          behavior: "smooth",
-        });
+      if (next && bottomScrollLocation !== null) {
+        scrollToBottomWithBehavior("smooth");
         setShowNewMessage(false);
       }
       return next;
     });
-  }, [bottomItemIndex]);
+  }, [bottomScrollLocation, scrollToBottomWithBehavior]);
 
   const VirtuosoHeader = useCallback(
     () => (
@@ -294,6 +303,18 @@ export function ChatView({
           // callback 형태로 명시적 follow 의도를 반환한다.
           followOutput={resolveVirtuosoFollowOutput}
           atBottomStateChange={(atBottom) => {
+            const isInitialBottomFocusPending =
+              activeSessionKey !== null &&
+              initialBottomFocusPendingSessionRef.current === activeSessionKey &&
+              bottomFocusedSessionRef.current !== activeSessionKey;
+            if (isInitialBottomFocusPending) {
+              if (!atBottom) return;
+              initialBottomFocusPendingSessionRef.current = null;
+              bottomFocusedSessionRef.current = activeSessionKey;
+              setIsFollowing(true);
+              setShowNewMessage(false);
+              return;
+            }
             // 두 가지 measure 깜빡임을 모두 가드한다:
             //   - 세션 전환 직후 atBottom=false 깜빡임 (sessionMs 기반)
             //   - prepend 직후 atBottom=true 깜빡임 (prependAgeMs 기반)

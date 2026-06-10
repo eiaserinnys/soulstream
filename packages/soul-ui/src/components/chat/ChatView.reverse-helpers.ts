@@ -30,12 +30,13 @@ export function getInitialTopMostItemIndex(
   return itemCount > 0 ? { index: itemCount - 1, align: "end" } : 0;
 }
 
-export function getBottomItemIndex(
+export type BottomScrollLocation = { index: "LAST"; align: "end" };
+
+export function getBottomScrollLocation(
   itemCount: number,
-  firstItemIndex: number,
-): number | null {
+): BottomScrollLocation | null {
   if (itemCount <= 0) return null;
-  return firstItemIndex + itemCount - 1;
+  return { index: "LAST", align: "end" };
 }
 
 /**
