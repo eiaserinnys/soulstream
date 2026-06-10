@@ -13,6 +13,7 @@ import {
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
 import { renameSessionOptimistic } from "client/lib/rename-session";
+import { useContinueSession } from "client/hooks/useContinueSession";
 
 interface FolderContentsWrapperProps {
   sessions?: SessionSummary[];
@@ -24,6 +25,7 @@ export function FolderContents({ sessions, onLoadMore, hasMore }: FolderContents
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
+  const { continueSession, getContinueSessionDisabledReason } = useContinueSession(sessions);
 
   const handleMoveSessions = useCallback(
     async (sessionIds: string[], targetFolderId: string | null) => {
@@ -47,6 +49,8 @@ export function FolderContents({ sessions, onLoadMore, hasMore }: FolderContents
       sessions={sessions}
       onMoveSessions={handleMoveSessions}
       onRenameSession={renameSessionOptimistic}
+      onContinueSession={continueSession}
+      getContinueSessionDisabledReason={getContinueSessionDisabledReason}
       onLoadMore={onLoadMore}
       hasMore={hasMore}
     />

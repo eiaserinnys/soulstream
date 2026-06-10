@@ -1041,6 +1041,28 @@ describe("BoardWorkspaceView", () => {
     });
   });
 
+  it("shows continue-session action from a board session tile context menu", () => {
+    const onContinueSession = vi.fn().mockResolvedValue(undefined);
+    ({ container, root } = renderBoard({
+      onContinueSession,
+      getContinueSessionDisabledReason: () => null,
+    }));
+
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    expect(sessionTile).not.toBeNull();
+
+    flushSync(() => {
+      sessionTile!.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 50200,
+        clientY: 50040,
+      }));
+    });
+
+    expect(document.body.textContent).toContain("이 세션을 이어서 시작하기");
+  });
+
   it("marks the selected board card with a visible ring", () => {
     ({ container, root } = renderBoard());
 

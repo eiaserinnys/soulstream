@@ -34,6 +34,10 @@ export interface SessionContextMenuProps {
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   /** 세션 삭제 콜백. 미지정 시 삭제 메뉴 비활성화 */
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
+  /** 원본 세션의 맥락을 이어 받을 새 세션 생성 콜백 */
+  onContinueSession?: (sessionId: string) => Promise<void>;
+  /** 이어 시작 메뉴 비활성 사유. null이면 실행 가능 */
+  getContinueSessionDisabledReason?: (sessionId: string) => string | null;
   /** 세션의 현재 표시 이름 조회 (이름 변경 모달 초기값용) */
   getSessionName: (sessionId: string) => string;
   /**
@@ -47,18 +51,24 @@ export interface SessionContextMenuProps {
 /** 메뉴 항목 리스트 (모바일/데스크탑 공용) */
 function MenuItems({
   onCopyId,
+  onContinue,
   onRename,
   onMove,
   onDelete,
+  hasContinue,
+  continueDisabledReason,
   hasRename,
   hasMove,
   hasDelete,
   className,
 }: {
   onCopyId: () => void;
+  onContinue?: () => void;
   onRename?: () => void;
   onMove?: () => void;
   onDelete?: () => void;
+  hasContinue: boolean;
+  continueDisabledReason?: string | null;
   hasRename: boolean;
   hasMove: boolean;
   hasDelete: boolean;
@@ -72,6 +82,19 @@ function MenuItems({
       >
         세션 ID 복사
       </button>
+      {hasContinue && onContinue && (
+        <>
+          <div className="border-t border-border my-1" />
+          <button
+            className="w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md disabled:pointer-events-none disabled:opacity-64"
+            disabled={!!continueDisabledReason}
+            title={continueDisabledReason ?? undefined}
+            onClick={onContinue}
+          >
+            이 세션을 이어서 시작하기
+          </button>
+        </>
+      )}
       {hasRename && onRename && (
         <>
           <div className="border-t border-border my-1" />
@@ -115,6 +138,8 @@ export function SessionContextMenu({
   onRenameSession,
   onMoveSessions,
   onDeleteSessions,
+  onContinueSession,
+  getContinueSessionDisabledReason,
   getSessionName,
   resolveSessionIds,
 }: SessionContextMenuProps) {
@@ -151,6 +176,12 @@ export function SessionContextMenu({
     open: boolean;
     sessionIds: string[];
   }>({ open: false, sessionIds: [] });
+  const [continueError, setContinueError] = useState<string | null>(null);
+
+  const continueDisabledReason =
+    contextMenu && onContinueSession
+      ? getContinueSessionDisabledReason?.(contextMenu.sessionId) ?? null
+      : null;
 
   const handleCopyId = useCallback(() => {
     if (!contextMenu) return;
@@ -179,6 +210,20 @@ export function SessionContextMenu({
     onClose();
     setMoveFolderDialog({ open: true, sessionIds, selectedFolderId: null });
   }, [contextMenu, onMoveSessions, onClose, resolveSessionIds]);
+
+  const handleContinueClick = useCallback(async () => {
+    if (!contextMenu || !onContinueSession) return;
+    const { sessionId } = contextMenu;
+    const disabledReason = getContinueSessionDisabledReason?.(sessionId) ?? null;
+    if (disabledReason) return;
+    onClose();
+    try {
+      setContinueError(null);
+      await onContinueSession(sessionId);
+    } catch (err) {
+      setContinueError(err instanceof Error ? err.message : String(err));
+    }
+  }, [contextMenu, getContinueSessionDisabledReason, onClose, onContinueSession]);
 
   const handleMoveFolderSubmit = useCallback(async () => {
     if (!onMoveSessions) return;
@@ -210,9 +255,12 @@ export function SessionContextMenu({
             <div className="py-2 px-2">
               <MenuItems
                 onCopyId={handleCopyId}
+                onContinue={onContinueSession ? handleContinueClick : undefined}
                 onRename={onRenameSession ? handleRenameClick : undefined}
                 onMove={onMoveSessions ? handleMoveClick : undefined}
                 onDelete={onDeleteSessions ? handleDeleteClick : undefined}
+                hasContinue={!!onContinueSession}
+                continueDisabledReason={continueDisabledReason}
                 hasRename={!!onRenameSession}
                 hasMove={!!onMoveSessions}
                 hasDelete={!!onDeleteSessions}
@@ -241,6 +289,18 @@ export function SessionContextMenu({
             )}
           >
             <MenuItem onClick={handleCopyId}>세션 ID 복사</MenuItem>
+            {!!onContinueSession && (
+              <>
+                <MenuSeparator />
+                <MenuItem
+                  disabled={!!continueDisabledReason}
+                  title={continueDisabledReason ?? undefined}
+                  onClick={handleContinueClick}
+                >
+                  이 세션을 이어서 시작하기
+                </MenuItem>
+              </>
+            )}
             {!!onRenameSession && (
               <>
                 <MenuSeparator />
@@ -300,6 +360,33 @@ export function SessionContextMenu({
                 <Button type="submit">변경</Button>
               </DialogFooter>
             </form>
+          </DialogPopup>
+        </Dialog>
+      )}
+
+      {/* 이어 시작 실패 모달 */}
+      {onContinueSession && (
+        <Dialog
+          open={continueError !== null}
+          onOpenChange={(open) => { if (!open) setContinueError(null); }}
+        >
+          <DialogPopup className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>세션 이어서 시작 실패</DialogTitle>
+            </DialogHeader>
+            <DialogPanel>
+              <p className="text-sm text-muted-foreground">
+                {continueError}
+              </p>
+            </DialogPanel>
+            <DialogFooter variant="bare">
+              <Button
+                type="button"
+                onClick={() => setContinueError(null)}
+              >
+                확인
+              </Button>
+            </DialogFooter>
           </DialogPopup>
         </Dialog>
       )}

@@ -43,6 +43,8 @@ interface BoardWorkspaceContextMenusProps {
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
+  onContinueSession?: (sessionId: string) => Promise<void>;
+  getContinueSessionDisabledReason?: (sessionId: string) => string | null;
   onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
   onDeleteFolder?: (folderId: string) => Promise<void> | void;
   onUpdateFolderSettings?: (folderId: string, settings: FolderSettings) => Promise<void> | void;
@@ -66,6 +68,8 @@ export function BoardWorkspaceContextMenus({
   onMoveSessions,
   onRenameSession,
   onDeleteSessions,
+  onContinueSession,
+  getContinueSessionDisabledReason,
   onRenameFolder,
   onDeleteFolder,
   onUpdateFolderSettings,
@@ -240,6 +244,8 @@ export function BoardWorkspaceContextMenus({
         onRenameSession={onRenameSession}
         onMoveSessions={onMoveSessions}
         onDeleteSessions={onDeleteSessions}
+        onContinueSession={onContinueSession}
+        getContinueSessionDisabledReason={getContinueSessionDisabledReason}
         getSessionName={(sessionId) =>
           displaySessions.find((session) => session.agentSessionId === sessionId)?.displayName ?? ""
         }

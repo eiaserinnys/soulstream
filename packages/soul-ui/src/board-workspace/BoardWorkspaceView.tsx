@@ -203,6 +203,8 @@ export function BoardWorkspaceView({
   onMoveSessions,
   onRenameSession,
   onDeleteSessions,
+  onContinueSession,
+  getContinueSessionDisabledReason,
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
@@ -858,6 +860,8 @@ export function BoardWorkspaceView({
             onMoveSessions={onMoveSessions}
             onRenameSession={onRenameSession}
             onDeleteSessions={onDeleteSessions}
+            onContinueSession={onContinueSession}
+            getContinueSessionDisabledReason={getContinueSessionDisabledReason}
             onRenameFolder={onRenameFolder}
             onDeleteFolder={onDeleteFolder}
             onUpdateFolderSettings={onUpdateFolderSettings}

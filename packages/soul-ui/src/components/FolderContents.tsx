@@ -35,13 +35,25 @@ export interface FolderContentsProps {
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   /** 세션 이름 변경 콜백. 미지정 시 이름 변경 UI 비활성화 */
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
+  /** 원본 세션의 맥락을 이어 받을 새 세션 생성 콜백 */
+  onContinueSession?: (sessionId: string) => Promise<void>;
+  /** 이어 시작 메뉴 비활성 사유. null이면 실행 가능 */
+  getContinueSessionDisabledReason?: (sessionId: string) => string | null;
   /** 스크롤 하단 도달 시 다음 페이지 로드 콜백 */
   onLoadMore?: LoadMoreCallback;
   /** 추가 로드 가능 여부 */
   hasMore?: boolean;
 }
 
-export function FolderContents({ sessions: sessionsProp = EMPTY_SESSIONS, onMoveSessions, onRenameSession, onLoadMore, hasMore }: FolderContentsProps) {
+export function FolderContents({
+  sessions: sessionsProp = EMPTY_SESSIONS,
+  onMoveSessions,
+  onRenameSession,
+  onContinueSession,
+  getContinueSessionDisabledReason,
+  onLoadMore,
+  hasMore,
+}: FolderContentsProps) {
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
@@ -229,6 +241,8 @@ export function FolderContents({ sessions: sessionsProp = EMPTY_SESSIONS, onMove
         onClose={() => setContextMenu(null)}
         onRenameSession={onRenameSession}
         onMoveSessions={onMoveSessions}
+        onContinueSession={onContinueSession}
+        getContinueSessionDisabledReason={getContinueSessionDisabledReason}
         getSessionName={(sessionId) =>
           displaySessions.find((s) => s.agentSessionId === sessionId)?.displayName ?? ""
         }
