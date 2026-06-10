@@ -34,7 +34,6 @@ import { useBoardSelectionState } from "./useBoardSelectionState";
 import { useBoardCanvasViewport } from "./useBoardCanvasViewport";
 import {
   buildBoardSessionRelations,
-  getSameFolderChildBoardItemIdsToRemove,
   type DirectChildPortalItem,
 } from "./board-session-relations";
 import { findOpenBoardPositionInViewport, getFallbackBoardSpawnViewport } from "./board-spawn";
@@ -209,7 +208,6 @@ export function BoardWorkspaceView({
   const addBoardItem = useDashboardStore((s) => s.addBoardItem);
   const setBoardItemsForFolder = useDashboardStore((s) => s.setBoardItemsForFolder);
   const updateBoardItemPosition = useDashboardStore((s) => s.updateBoardItemPosition);
-  const removeBoardItem = useDashboardStore((s) => s.removeBoardItem);
   const isMobile = useIsMobile();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createFolderPosition, setCreateFolderPosition] = useState<{ x: number; y: number } | null>(null);
@@ -394,16 +392,6 @@ export function BoardWorkspaceView({
       zoom,
     });
   }, [boardItems, viewport, zoom]);
-
-  useEffect(() => {
-    if (!effectiveCatalog || !relationIndex || !boardSync.runtime) return;
-    const ids = getSameFolderChildBoardItemIdsToRemove(effectiveCatalog, relationIndex, selectedFolderId);
-    if (ids.length === 0) return;
-    for (const id of ids) {
-      boardSync.runtime.deleteBoardItem(id);
-      removeBoardItem(id);
-    }
-  }, [boardSync.runtime, effectiveCatalog, relationIndex, removeBoardItem, selectedFolderId]);
 
   const handleCreateFolder = async (name: string) => {
     const position = createFolderPosition ? snapBoardPosition(createFolderPosition.x, createFolderPosition.y) : null;
