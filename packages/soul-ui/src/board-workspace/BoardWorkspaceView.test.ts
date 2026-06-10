@@ -1259,6 +1259,38 @@ describe("BoardWorkspaceView", () => {
     expect(container.querySelector('[data-testid="board-child-portal"]')).toBeNull();
   });
 
+  it("pans the canvas from the background after the child stack badge is focused", () => {
+    ({ container, root } = renderBoard({}, {
+      catalog: relationCatalog,
+      sessions: relationSessions,
+    }));
+
+    const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
+    const canvas = container.querySelector<HTMLElement>('[data-testid="board-workspace-canvas"]');
+    const stackBadge = container.querySelector<HTMLElement>('[data-testid="board-session-child-stack-badge"]');
+    expect(scroller).not.toBeNull();
+    expect(canvas).not.toBeNull();
+    expect(stackBadge).not.toBeNull();
+
+    flushSync(() => {
+      stackBadge!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      stackBadge!.focus();
+    });
+    expect(container.querySelector('[data-testid="board-child-portal"]')).not.toBeNull();
+    expect(document.activeElement).toBe(stackBadge);
+
+    const startScrollLeft = scroller!.scrollLeft;
+    const startScrollTop = scroller!.scrollTop;
+    flushSync(() => {
+      dispatchPointer(canvas!, "pointerdown", { clientX: 360, clientY: 280 });
+      dispatchPointer(window, "pointermove", { clientX: 315, clientY: 245 });
+      dispatchPointer(window, "pointerup", { clientX: 315, clientY: 245 });
+    });
+
+    expect(scroller!.scrollLeft).toBe(startScrollLeft + 45);
+    expect(scroller!.scrollTop).toBe(startScrollTop + 35);
+  });
+
   it("opens a session card context menu with delete action", async () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
     const onDeleteSessions = vi.fn().mockResolvedValue(undefined);
