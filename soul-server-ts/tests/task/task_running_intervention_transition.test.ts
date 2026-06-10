@@ -69,6 +69,76 @@ describe("RunningInterventionTransition", () => {
     expect(task.interventionQueue).toEqual([]);
   });
 
+  it("retries one transient live-steer boundary before falling back", async () => {
+    const steerActiveTurn = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "not_accepting_input" })
+      .mockResolvedValueOnce({ status: "delivered" });
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const task = makeRunningTask({
+      engine: {
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        steerActiveTurn,
+      } as unknown as Task["engine"],
+    });
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(emitEventEnvelope),
+      logger: silentLogger,
+      liveRetryDelayMs: 25,
+      sleep,
+    });
+
+    await expect(
+      transition.deliver(task, { text: "safe boundary", user: "alice" }),
+    ).resolves.toEqual({ delivered: true });
+
+    expect(sleep).toHaveBeenCalledWith(25);
+    expect(steerActiveTurn).toHaveBeenCalledTimes(2);
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({ type: "intervention_sent", text: "safe boundary" }),
+    );
+    expect(task.interventionQueue).toEqual([]);
+  });
+
+  it("falls back to the next-turn queue when transient live-steer boundary remains unsafe", async () => {
+    const steerActiveTurn = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "no_active_turn" })
+      .mockResolvedValueOnce({ status: "not_accepting_input" });
+    const task = makeRunningTask({
+      engine: {
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        steerActiveTurn,
+      } as unknown as Task["engine"],
+    });
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(emitEventEnvelope),
+      logger: silentLogger,
+      liveRetryDelayMs: 0,
+    });
+
+    await expect(
+      transition.deliver(task, { text: "queue after unsafe boundary", user: "alice" }),
+    ).resolves.toEqual({ queued: true, queuePosition: 1 });
+
+    expect(steerActiveTurn).toHaveBeenCalledTimes(2);
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    expect(task.interventionQueue).toEqual([
+      { text: "queue after unsafe boundary", user: "alice" },
+    ]);
+  });
+
   it("falls back to the next-turn queue when the engine has no live delivery surface", async () => {
     const task = makeRunningTask();
     const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
@@ -143,6 +213,44 @@ describe("RunningInterventionTransition", () => {
       ),
     ).resolves.toEqual({ deferred: true });
 
+    expect(task.interventionQueue).toEqual([]);
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
+  });
+
+  it("defer durable callers after a transient live-steer retry still cannot deliver", async () => {
+    const steerActiveTurn = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "not_accepting_input" })
+      .mockResolvedValueOnce({ status: "no_active_turn" });
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const task = makeRunningTask({
+      engine: {
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        steerActiveTurn,
+      } as unknown as Task["engine"],
+    });
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(emitEventEnvelope),
+      logger: silentLogger,
+      liveRetryDelayMs: 10,
+      sleep,
+    });
+
+    await expect(
+      transition.deliver(
+        task,
+        { text: "durable retry after boundary", user: "alice" },
+        { queueIfUndelivered: false },
+      ),
+    ).resolves.toEqual({ deferred: true });
+
+    expect(sleep).toHaveBeenCalledWith(10);
+    expect(steerActiveTurn).toHaveBeenCalledTimes(2);
     expect(task.interventionQueue).toEqual([]);
     expect(emitEventEnvelope).not.toHaveBeenCalled();
   });

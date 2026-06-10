@@ -18,6 +18,8 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { SessionDB } from "./session_db.js";
 
+const LAST_MESSAGE_PREVIEW_LIMIT = 200;
+
 /**
  * 이벤트 타입별 last_message preview 텍스트 추출 필드.
  * text_start/text_delta/text_end는 live transport 전용이고, complete/result는 turn
@@ -59,9 +61,10 @@ export class EventPersistence {
     if (!shouldPersistEvent(event)) {
       throw new Error("transient live events must not be persisted");
     }
-    const eventType = (event as { type: string }).type;
-    const payload = JSON.stringify(event);
-    const searchable = extractSearchableText(event);
+    const safeEvent = sanitizeJsonValue(event) as SSEEventPayload;
+    const eventType = (safeEvent as { type: string }).type;
+    const payload = JSON.stringify(safeEvent);
+    const searchable = extractSearchableText(safeEvent);
     const createdAt = extractTimestamp(event) ?? new Date();
     return await this.db.appendEvent({
       sessionId,
@@ -127,7 +130,7 @@ export class EventPersistence {
       const ts = extractTimestamp(event)?.toISOString() ?? new Date().toISOString();
       const lastMessage = {
         type: eventType,
-        preview: previewText.slice(0, 200),
+        preview: truncateJsonText(previewText, LAST_MESSAGE_PREVIEW_LIMIT),
         timestamp: ts,
       };
 
@@ -165,7 +168,7 @@ export function extractPreviewText(event: SSEEventPayload): string {
   const field = PREVIEW_FIELD_MAP[eventType];
   if (!field) return "";
   const val = (event as Record<string, unknown>)[field];
-  return typeof val === "string" ? val : "";
+  return typeof val === "string" ? sanitizeJsonText(val) : "";
 }
 
 export function isLiveOnlyEvent(event: SSEEventPayload): boolean {
@@ -208,16 +211,57 @@ export function extractSearchableText(event: SSEEventPayload): string {
 }
 
 function contentToText(content: unknown): string {
-  if (typeof content === "string") return content;
+  if (typeof content === "string") return sanitizeJsonText(content);
   if (!Array.isArray(content)) return "";
   return content
     .map((item) => {
       if (!item || typeof item !== "object") return "";
       const record = item as Record<string, unknown>;
-      return typeof record.text === "string" ? record.text : "";
+      return typeof record.text === "string" ? sanitizeJsonText(record.text) : "";
     })
     .filter(Boolean)
     .join(" ");
+}
+
+export function truncateJsonText(value: string, maxCodePoints: number): string {
+  return Array.from(sanitizeJsonText(value)).slice(0, maxCodePoints).join("");
+}
+
+export function sanitizeJsonValue(value: unknown): unknown {
+  if (typeof value === "string") return sanitizeJsonText(value);
+  if (Array.isArray(value)) return value.map((item) => sanitizeJsonValue(item));
+  if (!value || typeof value !== "object") return value;
+  if (value instanceof Date) return value.toISOString();
+
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    result[key] = sanitizeJsonValue(item);
+  }
+  return result;
+}
+
+export function sanitizeJsonText(value: string): string {
+  let result = "";
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        result += value[index] ?? "";
+        result += value[index + 1] ?? "";
+        index += 1;
+      } else {
+        result += "\uFFFD";
+      }
+      continue;
+    }
+    if (code >= 0xdc00 && code <= 0xdfff) {
+      result += "\uFFFD";
+      continue;
+    }
+    result += value[index] ?? "";
+  }
+  return result;
 }
 
 /**

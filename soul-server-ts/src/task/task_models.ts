@@ -10,8 +10,8 @@
  *
  * B-4 추가 필드 (분석 캐시 `20260517-1410-codex-ts-folder-resume-intervene.md` §D):
  *   - interventionQueue: live delivery 미지원/idle-race/terminal auto-resume에서 turn 사이
- *     큐잉되는 사용자 메시지. claude `task_models.py` intervention_queue(asyncio.Queue)
- *     정본의 fallback queue 의미와 동등.
+   *     큐잉되는 사용자 메시지. claude `task_models.py` intervention_queue(asyncio.Queue)
+   *     정본의 fallback queue 의미와 동등.
  */
 
 import type { ContextItem } from "../context/prompt_assembler.js";

@@ -383,7 +383,7 @@ describe("ClaudeEngineAdapter fake client flow", () => {
       { workspaceDir: "/tmp/claude-work", client, processEnv: {} },
       silentLogger,
     );
-    const onIntervention = vi.fn().mockResolvedValue("queue-only intervention");
+    const onIntervention = vi.fn().mockResolvedValue("legacy callback intervention");
 
     const iterator = engine.execute({ prompt: "hi", onIntervention })[Symbol.asyncIterator]();
     await expect(iterator.next()).resolves.toMatchObject({

@@ -145,7 +145,8 @@ export interface EngineExecuteParams {
   onSession?: SessionCallback;
   /**
    * Legacy polling hook. TaskEngineTurnRunner must not pass this for Claude resumed turns.
-   * Running live delivery uses SupportsLiveTurnSteering; unsupported/idle-race cases fall back to queue.
+   * Running live delivery uses SupportsLiveTurnSteering; unsupported/unsafe boundary cases
+   * fall back to queue.
    */
   onIntervention?: InterventionCallback;
   onCompact?: CompactCallback;

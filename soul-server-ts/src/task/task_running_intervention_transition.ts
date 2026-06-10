@@ -4,6 +4,7 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type {
   EngineUserInput,
   LiveTurnSteerResult,
+  LiveTurnSteerStatus,
   SupportsLiveTurnSteering,
 } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -21,13 +22,15 @@ export interface RunningInterventionTransitionDeps {
   broadcaster: SessionBroadcaster;
   logger: Logger;
   persistence?: EventPersistence;
+  liveRetryDelayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
  * Running task intervention transition.
  *
  * Owns live delivery for engines that can accept input during a running turn,
- * then falls back to the queue policy for unsupported or idle-race cases.
+ * then falls back to the queue policy for unsupported or unsafe boundary cases.
  */
 export class RunningInterventionTransition {
   constructor(private readonly deps: RunningInterventionTransitionDeps) {}
@@ -43,9 +46,16 @@ export class RunningInterventionTransition {
       return { delivered: true };
     }
 
+    const retryResult = await this.retryTransientBoundary(task, message, liveResult);
+    if (retryResult?.status === "delivered") {
+      await publishInterventionSent(task, message, this.deps);
+      return { delivered: true };
+    }
+    const finalLiveResult = retryResult ?? liveResult;
+
     if (options.queueIfUndelivered === false) {
       this.deps.logger.debug?.(
-        { sessionId: task.agentSessionId, liveStatus: liveResult.status },
+        { sessionId: task.agentSessionId, liveStatus: finalLiveResult.status },
         "running intervention deferred by durable caller policy",
       );
       return { deferred: true };
@@ -56,6 +66,30 @@ export class RunningInterventionTransition {
       queued: true,
       queuePosition: task.interventionQueue.length,
     };
+  }
+
+  private async retryTransientBoundary(
+    task: Task,
+    message: InterventionMessage,
+    liveResult: LiveTurnSteerResult,
+  ): Promise<LiveTurnSteerResult | null> {
+    if (!isTransientSteerBoundary(liveResult.status)) return null;
+    const delayMs = this.deps.liveRetryDelayMs ?? 50;
+    if (delayMs > 0) {
+      await (this.deps.sleep ?? sleep)(delayMs);
+    }
+    const retryResult = await this.tryDeliverLive(task, message);
+    if (retryResult.status !== "delivered") {
+      this.deps.logger.debug?.(
+        {
+          sessionId: task.agentSessionId,
+          initialLiveStatus: liveResult.status,
+          retryLiveStatus: retryResult.status,
+        },
+        "running intervention live delivery boundary retry did not deliver",
+      );
+    }
+    return retryResult;
   }
 
   private async tryDeliverLive(
@@ -83,10 +117,20 @@ export class RunningInterventionTransition {
   }
 }
 
+function isTransientSteerBoundary(status: LiveTurnSteerStatus): boolean {
+  return status === "no_active_turn" || status === "not_accepting_input";
+}
+
 function isLiveTurnSteeringEngine(
   engine: Task["engine"],
 ): engine is Task["engine"] & SupportsLiveTurnSteering {
   return Boolean(
     engine && typeof (engine as Partial<SupportsLiveTurnSteering>).steerActiveTurn === "function",
   );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }

@@ -1289,9 +1289,9 @@ describe("TaskManager.createTask — 폴더 배정 + catalog broadcast", () => {
 
 // B-5: session_broadcaster.emitCatalogUpdated wire 형상 회귀는 session_broadcaster.test.ts에서 보호.
 
-// B-5: intervention_sent 영속화는 executor dequeue 시점이 정본.
-describe("TaskManager.addIntervention — running queue-only arrival (B-5)", () => {
-  it("persistence 주입 시에도 addIntervention은 queue만 갱신하고 wire를 발행하지 않음", async () => {
+// B-5: live surface가 없는 running task는 다음 turn queue fallback이 정본.
+describe("TaskManager.addIntervention — running fallback without live surface (B-5)", () => {
+  it("persistence 주입 시에도 live surface가 없으면 queue만 갱신하고 wire를 발행하지 않음", async () => {
     const mocks = makeMocks();
     const persistEvent = vi.fn().mockResolvedValue(123);
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
@@ -1323,7 +1323,7 @@ describe("TaskManager.addIntervention — running queue-only arrival (B-5)", () 
     expect(task.lastEventId).toBe(0);
   });
 
-  it("persistence 미주입(legacy) → queue만 갱신하고 broadcast 없음", async () => {
+  it("persistence 미주입(legacy) + live surface 없음 → queue만 갱신하고 broadcast 없음", async () => {
     const mocks = makeMocks();
     const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);  // persistence 생략
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "p", profileId: "codex-default" });
@@ -1339,7 +1339,7 @@ describe("TaskManager.addIntervention — running queue-only arrival (B-5)", () 
     ).toHaveLength(0);
   });
 
-  it("persistEvent throw 주입 상태여도 running arrival에서는 호출하지 않아 queue가 보존됨", async () => {
+  it("persistEvent throw 주입 상태여도 live surface 없는 running arrival에서는 호출하지 않아 queue가 보존됨", async () => {
     const mocks = makeMocks();
     const persistEvent = vi.fn().mockRejectedValueOnce(new Error("events db down"));
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
@@ -1363,7 +1363,7 @@ describe("TaskManager.addIntervention — running queue-only arrival (B-5)", () 
 
 // PR #55: 결함 A·B 정합 (resume vs intervention 분기 + typing indicator)
 describe("TaskManager.addIntervention — running vs completed wire 분기 (결함 A·B)", () => {
-  it("running task → queue only, user_message·intervention_sent·session_updated 발행 안 함", async () => {
+  it("running task without live surface → queue fallback, user_message·intervention_sent·session_updated 발행 안 함", async () => {
     const mocks = makeMocks();
     const persistEvent = vi.fn().mockResolvedValue(1);
     const handleSideEffects = vi.fn().mockResolvedValue(undefined);
