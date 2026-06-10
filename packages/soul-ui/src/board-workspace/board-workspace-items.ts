@@ -8,6 +8,7 @@ import {
   buildBoardSessionRelations,
   getSessionChildStack,
   getSessionParentRef,
+  shouldSuppressSessionInFolder,
   type BoardSessionRelationIndex,
   type SessionChildStack,
   type SessionParentRef,
@@ -330,6 +331,52 @@ function findSessionBoardItem(
   );
 }
 
+function hasPersistedStackParent(
+  relationIndex: BoardSessionRelationIndex,
+  sessionId: string,
+  selectedFolderId: string | null,
+  persistedSessionIds: ReadonlySet<string>,
+): boolean {
+  if (!shouldSuppressSessionInFolder(relationIndex, sessionId, selectedFolderId)) return false;
+  const parentSessionId = relationIndex.parentIdByChildId.get(sessionId);
+  return Boolean(parentSessionId && persistedSessionIds.has(parentSessionId));
+}
+
+function hasVisibleStackParent(
+  relationIndex: BoardSessionRelationIndex,
+  sessionId: string,
+  selectedFolderId: string | null,
+  items: readonly BoardWorkspaceItem[],
+): boolean {
+  if (!shouldSuppressSessionInFolder(relationIndex, sessionId, selectedFolderId)) return false;
+  const parentSessionId = relationIndex.parentIdByChildId.get(sessionId);
+  const parentItem = parentSessionId ? findSessionBoardItem(items, parentSessionId) : undefined;
+  return Boolean(parentItem && parentItem.generatedPlacementKind !== "inbox");
+}
+
+function refreshSessionChildStacks(
+  relationIndex: BoardSessionRelationIndex,
+  selectedFolderId: string | null,
+  items: readonly BoardWorkspaceItem[],
+): BoardWorkspaceItem[] {
+  const visibleSameFolderChildIds = new Set(
+    items
+      .filter((item): item is SessionBoardWorkspaceItem => item.type === "session")
+      .filter((item) => shouldSuppressSessionInFolder(relationIndex, item.session.agentSessionId, selectedFolderId))
+      .map((item) => item.session.agentSessionId),
+  );
+  return items.map((item) =>
+    item.type === "session"
+      ? {
+        ...item,
+        childStack: getSessionChildStack(relationIndex, item.session.agentSessionId, {
+          excludeSessionIds: visibleSameFolderChildIds,
+        }),
+      }
+      : item,
+  );
+}
+
 function buildPositionedItems({
   catalog,
   selectedFolderId,
@@ -341,7 +388,13 @@ function buildPositionedItems({
   const relations = relationIndex ?? buildBoardSessionRelations({ catalog, sessions });
   const sessionById = relations.sessionById;
   const selectedId = selectedFolderId ?? "";
+  const persistedSessionIds = new Set(
+    (catalog.boardItems ?? [])
+      .filter((item) => item.folderId === selectedId && item.itemType === "session")
+      .map((item) => item.itemId),
+  );
   const items: BoardWorkspaceItem[] = [];
+  const suppressedSessionIds = new Set<string>();
 
   for (const boardItem of catalog.boardItems ?? []) {
     if (boardItem.folderId !== selectedId) continue;
@@ -364,13 +417,17 @@ function buildPositionedItems({
       if (!sessionBelongsToSelectedFolder(catalog, boardItem.itemId, selectedFolderId, knownSession)) {
         continue;
       }
+      if (hasPersistedStackParent(relations, boardItem.itemId, selectedFolderId, persistedSessionIds)) {
+        suppressedSessionIds.add(boardItem.itemId);
+        continue;
+      }
       const session = knownSession ?? buildSessionPlaceholder(boardItem, catalog);
       items.push({
         type: "session",
         id: session.agentSessionId,
         boardItemId: boardItem.id,
         session,
-        childStack: getSessionChildStack(relations, session.agentSessionId, selectedFolderId),
+        childStack: getSessionChildStack(relations, session.agentSessionId),
         parentRef: getSessionParentRef(relations, session.agentSessionId) ?? undefined,
         x: boardItem.x,
         y: boardItem.y,
@@ -464,6 +521,14 @@ function buildPositionedItems({
     if (parentSessionId && sessionCandidates.has(parentSessionId) && !existingSessionIds.has(parentSessionId)) {
       placeGeneratedSession(parentSessionId);
     }
+    if (
+      (parentSessionId && suppressedSessionIds.has(parentSessionId)) ||
+      hasVisibleStackParent(relations, sessionId, selectedFolderId, items)
+    ) {
+      suppressedSessionIds.add(sessionId);
+      placingSessionIds.delete(sessionId);
+      return;
+    }
 
     const parentItem = parentSessionId ? findSessionBoardItem(items, parentSessionId) : undefined;
     const parentPlacementKind = parentSessionId ? generatedPlacementKindBySessionId.get(parentSessionId) : undefined;
@@ -480,7 +545,7 @@ function buildPositionedItems({
       id: session.agentSessionId,
       boardItemId: `session:${session.agentSessionId}`,
       session,
-      childStack: getSessionChildStack(relations, session.agentSessionId, selectedFolderId),
+      childStack: getSessionChildStack(relations, session.agentSessionId),
       parentRef: getSessionParentRef(relations, session.agentSessionId) ?? undefined,
       generatedPlacementKind: shouldSpawnBesideParent ? "near-parent" : "inbox",
       x: position.x,
@@ -494,7 +559,7 @@ function buildPositionedItems({
     placeGeneratedSession(session.agentSessionId);
   }
 
-  const summarized = applyFrameSummaries(items)
+  const summarized = applyFrameSummaries(refreshSessionChildStacks(relations, selectedFolderId, items))
     .sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
   return includeCollapsedFrameChildren ? summarized : getVisibleBoardWorkspaceItems(summarized);
 }
@@ -509,7 +574,10 @@ function applyFrameSummaries(items: readonly BoardWorkspaceItem[]): BoardWorkspa
     return {
       ...item,
       childCount: item.childItemIds.length,
-      hasRunningChild: children.some((child) => child.type === "session" && child.session.status === "running"),
+      hasRunningChild: children.some((child) =>
+        child.type === "session" &&
+        (child.session.status === "running" || child.childStack?.status === "running"),
+      ),
     };
   });
 }
@@ -547,14 +615,15 @@ export function buildBoardWorkspaceItems({
     }));
 
   const visibleSessions = sessions.filter((session) =>
-    sessionBelongsToSelectedFolder(catalog, session.agentSessionId, selectedFolderId, session),
+    sessionBelongsToSelectedFolder(catalog, session.agentSessionId, selectedFolderId, session) &&
+    !shouldSuppressSessionInFolder(relations, session.agentSessionId, selectedFolderId),
   );
   const sessionItems: SessionBoardWorkspaceItem[] = visibleSessions.map((session, index) => ({
     type: "session" as const,
     id: session.agentSessionId,
     boardItemId: `session:${session.agentSessionId}`,
     session,
-    childStack: getSessionChildStack(relations, session.agentSessionId, selectedFolderId),
+    childStack: getSessionChildStack(relations, session.agentSessionId),
     parentRef: getSessionParentRef(relations, session.agentSessionId) ?? undefined,
     x: ((folderItems.length + index) % 4) * BOARD_TILE_WIDTH,
     y: Math.floor((folderItems.length + index) / 4) * BOARD_TILE_HEIGHT,

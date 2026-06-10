@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { SessionParentRef, BoardSessionRelationIndex, DirectChildPortalItem } from "./board-session-relations";
-import { getDirectChildPortalItems } from "./board-session-relations";
+import { getDirectChildPortalItems, shouldSuppressSessionInFolder } from "./board-session-relations";
 import type { BoardWorkspaceItem, SessionBoardWorkspaceItem } from "./board-workspace-items";
 
 interface UseBoardChildStackStateParams {
@@ -66,10 +66,24 @@ export function useBoardChildStackState({
     return item ?? null;
   }, [boardItems, expandedStackParentId]);
 
+  const visibleSameFolderChildIds = useMemo(() => {
+    if (!relationIndex) return new Set<string>();
+    return new Set(
+      boardItems
+        .filter((item): item is SessionBoardWorkspaceItem => item.type === "session")
+        .filter((item) =>
+          shouldSuppressSessionInFolder(relationIndex, item.session.agentSessionId, selectedFolderId),
+        )
+        .map((item) => item.session.agentSessionId),
+    );
+  }, [boardItems, relationIndex, selectedFolderId]);
+
   const expandedChildren = useMemo(() => {
     if (!expandedStackParentId || !relationIndex) return [];
-    return getDirectChildPortalItems(relationIndex, expandedStackParentId, selectedFolderId);
-  }, [expandedStackParentId, relationIndex, selectedFolderId]);
+    return getDirectChildPortalItems(relationIndex, expandedStackParentId, selectedFolderId, {
+      excludeSessionIds: visibleSameFolderChildIds,
+    });
+  }, [expandedStackParentId, relationIndex, selectedFolderId, visibleSameFolderChildIds]);
 
   return {
     expandedStackParentId,
