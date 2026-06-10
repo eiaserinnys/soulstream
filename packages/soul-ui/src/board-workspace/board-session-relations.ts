@@ -1,5 +1,4 @@
 import type {
-  CatalogBoardItem,
   CatalogFolder,
   CatalogState,
   SessionSummary,
@@ -162,21 +161,13 @@ export function getSessionParentRef(
 export function getSessionChildStack(
   relationIndex: BoardSessionRelationIndex,
   sessionId: string,
+  selectedFolderId?: string | null,
 ): SessionChildStack | undefined {
-  const children = relationIndex.childrenByParentId.get(sessionId) ?? [];
+  const children = (relationIndex.childrenByParentId.get(sessionId) ?? []).filter((session) =>
+    selectedFolderId === undefined ||
+    getSessionFolderId(relationIndex.catalog, session.agentSessionId) !== selectedFolderId,
+  );
   return children.length > 0 ? { count: children.length, status: getChildStackStatus(children) } : undefined;
-}
-
-export function shouldSuppressSessionInFolder(
-  relationIndex: BoardSessionRelationIndex,
-  sessionId: string,
-  selectedFolderId: string | null,
-): boolean {
-  const parentSessionId = relationIndex.parentIdByChildId.get(sessionId);
-  if (!parentSessionId || !relationIndex.sessionById.has(parentSessionId)) return false;
-  const childFolderId = getSessionFolderId(relationIndex.catalog, sessionId);
-  const parentFolderId = getSessionFolderId(relationIndex.catalog, parentSessionId);
-  return childFolderId === selectedFolderId && parentFolderId === childFolderId;
 }
 
 export function getDirectChildPortalItems(
@@ -184,28 +175,15 @@ export function getDirectChildPortalItems(
   parentSessionId: string,
   selectedFolderId: string | null,
 ): DirectChildPortalItem[] {
-  return (relationIndex.childrenByParentId.get(parentSessionId) ?? []).map((session) => {
-    const folderId = getSessionFolderId(relationIndex.catalog, session.agentSessionId);
-    return {
-      session,
-      folderId,
-      folderName: getFolderDisplayName(relationIndex, folderId),
-      isSameFolder: folderId === selectedFolderId,
-    };
-  });
-}
-
-export function getSameFolderChildBoardItemIdsToRemove(
-  catalog: CatalogState,
-  relationIndex: BoardSessionRelationIndex,
-  selectedFolderId: string | null,
-): string[] {
-  const selectedId = selectedFolderId ?? "";
-  return (catalog.boardItems ?? [])
-    .filter((item): item is CatalogBoardItem & { itemType: "session" } =>
-      item.folderId === selectedId &&
-      item.itemType === "session" &&
-      shouldSuppressSessionInFolder(relationIndex, item.itemId, selectedFolderId),
-    )
-    .map((item) => item.id);
+  return (relationIndex.childrenByParentId.get(parentSessionId) ?? [])
+    .map((session) => {
+      const folderId = getSessionFolderId(relationIndex.catalog, session.agentSessionId);
+      return {
+        session,
+        folderId,
+        folderName: getFolderDisplayName(relationIndex, folderId),
+        isSameFolder: folderId === selectedFolderId,
+      };
+    })
+    .filter((child) => !child.isSameFolder);
 }

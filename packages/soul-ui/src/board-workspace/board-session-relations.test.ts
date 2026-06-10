@@ -6,9 +6,7 @@ import {
   getChildSessionFirstLine,
   getChildSessionLastLine,
   getDirectChildPortalItems,
-  getSameFolderChildBoardItemIdsToRemove,
   getSessionParentRef,
-  shouldSuppressSessionInFolder,
 } from "./board-session-relations";
 import { buildBoardWorkspaceItems } from "./board-workspace-items";
 
@@ -121,7 +119,7 @@ const catalog: CatalogState = {
 };
 
 describe("board session relations", () => {
-  it("counts direct children only and classifies same-folder suppression", () => {
+  it("counts direct children and keeps same-folder children as board cards", () => {
     const relations = buildBoardSessionRelations({ catalog, sessions: [] });
 
     expect(relations.childrenByParentId.get("parent")?.map((s) => s.agentSessionId)).toEqual([
@@ -129,20 +127,19 @@ describe("board session relations", () => {
       "same-child",
     ]);
     expect(relations.childrenByParentId.get("parent")?.[1].status).toBe("running");
-    expect(getDirectChildPortalItems(relations, "parent", "root")).toHaveLength(2);
-    expect(shouldSuppressSessionInFolder(relations, "same-child", "root")).toBe(true);
-    expect(shouldSuppressSessionInFolder(relations, "cross-child", "other")).toBe(false);
-    expect(shouldSuppressSessionInFolder(relations, "orphan-child", "root")).toBe(false);
+    expect(getDirectChildPortalItems(relations, "parent", "root").map((child) => child.session.agentSessionId)).toEqual([
+      "cross-child",
+    ]);
   });
 
-  it("aggregates direct child stack status and extracts compact child summaries", () => {
+  it("aggregates cross-folder child stack status and extracts compact child summaries", () => {
     const relations = buildBoardSessionRelations({ catalog, sessions: [] });
     const stack = buildBoardWorkspaceItems({ catalog, selectedFolderId: "root", sessions: [] })
       .find((item) => item.id === "parent");
 
     expect(stack).toMatchObject({
       type: "session",
-      childStack: { count: 2, status: "running" },
+      childStack: { count: 1, status: "completed" },
     });
     expect(getChildSessionFirstLine(sessions[1])).toBe("Same folder child");
     expect(getChildSessionLastLine(sessions[1])).toBe("Working on the child implementation");
@@ -171,7 +168,7 @@ describe("board session relations", () => {
       relationIndex: errorRelations,
     }).find((item) => item.id === "parent")).toMatchObject({
       type: "session",
-      childStack: { count: 2, status: "error" },
+      childStack: { count: 1, status: "error" },
     });
   });
 
@@ -191,12 +188,14 @@ describe("board session relations", () => {
 
     const rootItems = buildBoardWorkspaceItems({ catalog, selectedFolderId: "root", sessions: [] });
     expect(rootItems.map((item) => item.boardItemId)).toEqual([
+      "session:grandchild",
       "session:parent",
+      "session:same-child",
       "session:orphan-child",
     ]);
     expect(rootItems.find((item) => item.id === "parent")).toMatchObject({
       type: "session",
-      childStack: { count: 2 },
+      childStack: { count: 1 },
     });
 
     const otherItems = buildBoardWorkspaceItems({ catalog, selectedFolderId: "other", sessions: [] });
@@ -212,12 +211,4 @@ describe("board session relations", () => {
     });
   });
 
-  it("identifies same-folder child Yjs items that must be removed", () => {
-    const relations = buildBoardSessionRelations({ catalog, sessions: [] });
-
-    expect(getSameFolderChildBoardItemIdsToRemove(catalog, relations, "root")).toEqual([
-      "session:same-child",
-    ]);
-    expect(getSameFolderChildBoardItemIdsToRemove(catalog, relations, "other")).toEqual([]);
-  });
 });

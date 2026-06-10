@@ -3,7 +3,6 @@ import {
   buildBoardSessionRelations,
   getSessionChildStack,
   getSessionParentRef,
-  shouldSuppressSessionInFolder,
   type BoardSessionRelationIndex,
   type SessionChildStack,
   type SessionParentRef,
@@ -18,6 +17,19 @@ export const BOARD_CANVAS_WIDTH = 100000;
 export const BOARD_CANVAS_HEIGHT = 100000;
 export const BOARD_CANVAS_ORIGIN_X = BOARD_CANVAS_WIDTH / 2;
 export const BOARD_CANVAS_ORIGIN_Y = BOARD_CANVAS_HEIGHT / 2;
+
+const BOARD_SPAWN_GAP = BOARD_GRID_SIZE * 2;
+const BOARD_SPAWN_X_STEP = BOARD_TILE_WIDTH + BOARD_SPAWN_GAP;
+const BOARD_SPAWN_Y_STEP = BOARD_TILE_HEIGHT + BOARD_GRID_SIZE;
+
+type GeneratedPlacementKind = "near-parent" | "inbox";
+
+interface BoardRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export function boardToCanvasStyle(position: { x: number; y: number }) {
   return {
@@ -205,6 +217,95 @@ function sessionBelongsToSelectedFolder(
   return getSessionFolderAssignment(catalog, sessionId, session) === selectedFolderId;
 }
 
+function rectsOverlap(a: BoardRect, b: BoardRect): boolean {
+  return a.x < b.x + b.width &&
+    a.x + a.width > b.x &&
+    a.y < b.y + b.height &&
+    a.y + a.height > b.y;
+}
+
+function itemRect(item: BoardWorkspaceItem): BoardRect {
+  return {
+    x: item.x,
+    y: item.y,
+    width: getBoardItemWidth(item),
+    height: getBoardItemHeight(item),
+  };
+}
+
+function positionCollides(
+  items: readonly BoardWorkspaceItem[],
+  position: { x: number; y: number },
+  width = BOARD_TILE_WIDTH,
+  height = BOARD_TILE_HEIGHT,
+): boolean {
+  const candidate = { x: position.x, y: position.y, width, height };
+  return items.some((item) => rectsOverlap(candidate, itemRect(item)));
+}
+
+function findNearestOpenBoardPosition(
+  items: readonly BoardWorkspaceItem[],
+  preferred: { x: number; y: number },
+): { x: number; y: number } {
+  const snappedPreferred = snapBoardPosition(preferred.x, preferred.y);
+  for (let ring = 0; ; ring += 1) {
+    const candidates: { position: { x: number; y: number }; distance: number }[] = [];
+    for (let dx = -ring; dx <= ring; dx += 1) {
+      for (let dy = -ring; dy <= ring; dy += 1) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
+        const position = snapBoardPosition(
+          snappedPreferred.x + dx * BOARD_SPAWN_X_STEP,
+          snappedPreferred.y + dy * BOARD_SPAWN_Y_STEP,
+        );
+        candidates.push({
+          position,
+          distance: (position.x - snappedPreferred.x) ** 2 + (position.y - snappedPreferred.y) ** 2,
+        });
+      }
+    }
+    candidates.sort((a, b) =>
+      a.distance - b.distance ||
+      Math.abs(a.position.y - snappedPreferred.y) - Math.abs(b.position.y - snappedPreferred.y) ||
+      a.position.y - b.position.y ||
+      a.position.x - b.position.x,
+    );
+    for (const candidate of candidates) {
+      if (!positionCollides(items, candidate.position)) return candidate.position;
+    }
+  }
+}
+
+function resolveInboxRailX(items: readonly BoardWorkspaceItem[]): number {
+  if (items.length === 0) return 0;
+  const maxRight = items.reduce((max, item) => Math.max(max, item.x + getBoardItemWidth(item)), 0);
+  return snapBoardCoordinate(maxRight + BOARD_SPAWN_GAP);
+}
+
+function resolveInboxRailStartY(items: readonly BoardWorkspaceItem[]): number {
+  if (items.length === 0) return 0;
+  return snapBoardCoordinate(Math.min(...items.map((item) => item.y)));
+}
+
+function findInboxRailPosition(
+  items: readonly BoardWorkspaceItem[],
+  railX: number,
+  startY: number,
+): { x: number; y: number } {
+  for (let index = 0; ; index += 1) {
+    const position = { x: railX, y: startY + index * BOARD_SPAWN_Y_STEP };
+    if (!positionCollides(items, position)) return position;
+  }
+}
+
+function findSessionBoardItem(
+  items: readonly BoardWorkspaceItem[],
+  sessionId: string,
+): SessionBoardWorkspaceItem | undefined {
+  return items.find((item): item is SessionBoardWorkspaceItem =>
+    item.type === "session" && item.id === sessionId,
+  );
+}
+
 function buildPositionedItems({
   catalog,
   selectedFolderId,
@@ -238,19 +339,13 @@ function buildPositionedItems({
       if (!sessionBelongsToSelectedFolder(catalog, boardItem.itemId, selectedFolderId, knownSession)) {
         continue;
       }
-      if (
-        knownSession &&
-        shouldSuppressSessionInFolder(relations, knownSession.agentSessionId, selectedFolderId)
-      ) {
-        continue;
-      }
       const session = knownSession ?? buildSessionPlaceholder(boardItem, catalog);
       items.push({
         type: "session",
         id: session.agentSessionId,
         boardItemId: boardItem.id,
         session,
-        childStack: getSessionChildStack(relations, session.agentSessionId),
+        childStack: getSessionChildStack(relations, session.agentSessionId, selectedFolderId),
         parentRef: getSessionParentRef(relations, session.agentSessionId) ?? undefined,
         x: boardItem.x,
         y: boardItem.y,
@@ -310,25 +405,48 @@ function buildPositionedItems({
     );
   }
 
-  for (const session of sessionCandidates.values()) {
-    if (
-      existingSessionIds.has(session.agentSessionId) ||
-      shouldSuppressSessionInFolder(relations, session.agentSessionId, selectedFolderId)
-    ) {
-      continue;
+  const inboxRailX = resolveInboxRailX(items);
+  const inboxRailStartY = resolveInboxRailStartY(items);
+  const generatedPlacementKindBySessionId = new Map<string, GeneratedPlacementKind>();
+  const placingSessionIds = new Set<string>();
+
+  const placeGeneratedSession = (sessionId: string) => {
+    if (existingSessionIds.has(sessionId)) return;
+    const session = sessionCandidates.get(sessionId);
+    if (!session || placingSessionIds.has(sessionId)) return;
+    placingSessionIds.add(sessionId);
+
+    const parentSessionId = relations.parentIdByChildId.get(sessionId);
+    if (parentSessionId && sessionCandidates.has(parentSessionId) && !existingSessionIds.has(parentSessionId)) {
+      placeGeneratedSession(parentSessionId);
     }
-    const position = findFirstOpenBoardPosition(items);
+
+    const parentItem = parentSessionId ? findSessionBoardItem(items, parentSessionId) : undefined;
+    const parentPlacementKind = parentSessionId ? generatedPlacementKindBySessionId.get(parentSessionId) : undefined;
+    const shouldSpawnBesideParent = Boolean(parentItem && parentPlacementKind !== "inbox");
+    const position = parentItem && shouldSpawnBesideParent
+      ? findNearestOpenBoardPosition(items, {
+        x: parentItem.x + getBoardItemWidth(parentItem) + BOARD_SPAWN_GAP,
+        y: parentItem.y,
+      })
+      : findInboxRailPosition(items, inboxRailX, inboxRailStartY);
     existingSessionIds.add(session.agentSessionId);
     items.push({
       type: "session",
       id: session.agentSessionId,
       boardItemId: `session:${session.agentSessionId}`,
       session,
-      childStack: getSessionChildStack(relations, session.agentSessionId),
+      childStack: getSessionChildStack(relations, session.agentSessionId, selectedFolderId),
       parentRef: getSessionParentRef(relations, session.agentSessionId) ?? undefined,
       x: position.x,
       y: position.y,
     });
+    generatedPlacementKindBySessionId.set(sessionId, shouldSpawnBesideParent ? "near-parent" : "inbox");
+    placingSessionIds.delete(sessionId);
+  };
+
+  for (const session of sessionCandidates.values()) {
+    placeGeneratedSession(session.agentSessionId);
   }
 
   return items.sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
@@ -358,15 +476,14 @@ export function buildBoardWorkspaceItems({
     }));
 
   const visibleSessions = sessions.filter((session) =>
-    sessionBelongsToSelectedFolder(catalog, session.agentSessionId, selectedFolderId, session) &&
-    !shouldSuppressSessionInFolder(relations, session.agentSessionId, selectedFolderId),
+    sessionBelongsToSelectedFolder(catalog, session.agentSessionId, selectedFolderId, session),
   );
   const sessionItems: SessionBoardWorkspaceItem[] = visibleSessions.map((session, index) => ({
     type: "session" as const,
     id: session.agentSessionId,
     boardItemId: `session:${session.agentSessionId}`,
     session,
-    childStack: getSessionChildStack(relations, session.agentSessionId),
+    childStack: getSessionChildStack(relations, session.agentSessionId, selectedFolderId),
     parentRef: getSessionParentRef(relations, session.agentSessionId) ?? undefined,
     x: ((folderItems.length + index) % 4) * BOARD_TILE_WIDTH,
     y: Math.floor((folderItems.length + index) / 4) * BOARD_TILE_HEIGHT,
