@@ -24,7 +24,6 @@ import {
   DEFAULT_FOLDER_ID,
   REASONING_EFFORT_OPTIONS,
   placeBoardSessionInYjs,
-  type CreateSessionResponse,
   type DashboardAgentConfig,
   type ReasoningEffort,
 } from "@seosoyoung/soul-ui";
@@ -32,6 +31,7 @@ import {
   reasoningEffortForSubmit,
   selectedAgentBackend,
 } from "../utils/reasoningEffort";
+import { createDashboardSession } from "client/lib/session-create";
 
 export function NewSessionModal() {
   const queryClient = useQueryClient();
@@ -134,59 +134,29 @@ export function NewSessionModal() {
 
   const handleSubmit = useCallback(
     async (prompt: string, attachmentPaths?: string[]) => {
-      const response = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt,
-          ...(attachmentPaths?.length ? { attachmentPaths } : {}),
-          ...(selectedModalFolderId ? { folderId: selectedModalFolderId } : {}),
-          ...(selectedAgentId ? { profile: selectedAgentId } : {}),
-          ...(submitReasoningEffort ? { reasoningEffort: submitReasoningEffort } : {}),
-          ...(newSessionParentTask
-            ? {
-                parentTaskId: newSessionParentTask.id,
-                taskIdempotencyKey:
-                  taskIdempotencyKeyRef.current ?? createTaskIdempotencyKey(newSessionParentTask.id),
-              }
-            : {}),
-        }),
-      });
-
-      if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}`;
-        try {
-          const body = await response.json();
-          errorMessage = body.detail ?? body.error?.message ?? body.error ?? errorMessage;
-        } catch {
-          errorMessage = `Server error (${response.status})`;
-        }
-        throw new Error(errorMessage);
-      }
-
-      let result: CreateSessionResponse;
-      try {
-        result = await response.json();
-      } catch {
-        throw new Error("Server returned an invalid response");
-      }
-
-      // 성공: draft 삭제, 낙관적 추가, 모달 닫기
-      clearDraft(draftKey);
       const selectedAgent = agents.find((a) => a.id === selectedAgentId);
       const boardPosition = newSessionDefaults?.boardPosition ?? null;
-      addOptimisticSession(
+      const result = await createDashboardSession({
         queryClient,
-        result.agentSessionId,
+        addOptimisticSession,
         prompt,
-        selectedModalFolderId,
-        result.nodeId,
-        selectedAgentId || null,
-        selectedAgent?.name ?? null,
-        selectedAgent?.portraitUrl ?? null,
-        selectedAgent?.backend ?? null,
+        attachmentPaths,
+        folderId: selectedModalFolderId ?? undefined,
+        agentId: selectedAgentId || null,
+        agent: selectedAgent ?? null,
+        reasoningEffort: submitReasoningEffort,
+        ...(newSessionParentTask
+          ? {
+              parentTaskId: newSessionParentTask.id,
+              taskIdempotencyKey:
+                taskIdempotencyKeyRef.current ?? createTaskIdempotencyKey(newSessionParentTask.id),
+            }
+          : {}),
         boardPosition,
-      );
+      });
+
+      // 성공: draft 삭제, 보드 배치 반영, 모달 닫기
+      clearDraft(draftKey);
       if (boardPosition && selectedModalFolderId) {
         placeBoardSessionInYjs(
           selectedModalFolderId,

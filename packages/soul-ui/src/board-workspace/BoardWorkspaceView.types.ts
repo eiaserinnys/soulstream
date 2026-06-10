@@ -21,6 +21,8 @@ export interface BoardWorkspaceViewProps {
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
+  onContinueSession?: (sessionId: string) => Promise<void>;
+  getContinueSessionDisabledReason?: (sessionId: string) => string | null;
   onCreateFolder?: (name: string, parentFolderId: string | null) => Promise<CatalogFolder | void> | CatalogFolder | void;
   onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
   onDeleteFolder?: (folderId: string) => Promise<void> | void;

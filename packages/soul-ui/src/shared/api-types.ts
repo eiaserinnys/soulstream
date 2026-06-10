@@ -38,12 +38,18 @@ export interface CreateSessionRequest {
   prompt: string;
   /** resume 시 기존 세션 ID. 없으면 새 세션 생성 (Soul 서버가 ID 생성). */
   agentSessionId?: string;
+  /** orchestrator 모드에서 세션을 생성할 대상 노드 ID. */
+  nodeId?: string;
   /** 세션을 배치할 폴더 ID. 미지정 시 session_type 기반 자동 배정. */
-  folderId?: string;
+  folderId?: string | null;
   /** 에이전트 프로필 ID. 지정 시 해당 에이전트로 세션 실행. */
   profile?: string;
+  /** 세션 생성 전에 업로드한 첨부 파일 경로. */
+  attachmentPaths?: string[];
   /** 추론 backend(codex/claude)용 reasoning effort. 생략 시 서버 기본값 xhigh. */
   reasoningEffort?: ReasoningEffort;
+  /** orchestrator 모드 Claude OAuth 프로필 선택값. */
+  oauth_profile_name?: string;
   /** Task Tree parent task 아래 일반 New Session을 시작할 때 사용. */
   parentTaskId?: string;
   taskIdempotencyKey?: string;

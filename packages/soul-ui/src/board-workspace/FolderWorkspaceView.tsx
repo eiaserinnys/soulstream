@@ -16,6 +16,8 @@ export interface FolderWorkspaceViewProps {
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
+  onContinueSession?: (sessionId: string) => Promise<void>;
+  getContinueSessionDisabledReason?: (sessionId: string) => string | null;
   onCreateFolder?: (name: string, parentFolderId: string | null) => Promise<CatalogFolder | void> | CatalogFolder | void;
   onRenameFolder?: (folderId: string, name: string) => Promise<void> | void;
   onDeleteFolder?: (folderId: string) => Promise<void> | void;
@@ -34,6 +36,8 @@ export function FolderWorkspaceView({
   onMoveSessions,
   onRenameSession,
   onDeleteSessions,
+  onContinueSession,
+  getContinueSessionDisabledReason,
   onCreateFolder,
   onRenameFolder,
   onDeleteFolder,
@@ -55,6 +59,8 @@ export function FolderWorkspaceView({
         onMoveSessions={onMoveSessions}
         onRenameSession={onRenameSession}
         onDeleteSessions={onDeleteSessions}
+        onContinueSession={onContinueSession}
+        getContinueSessionDisabledReason={getContinueSessionDisabledReason}
         onCreateFolder={onCreateFolder}
         onRenameFolder={onRenameFolder}
         onDeleteFolder={onDeleteFolder}
@@ -80,6 +86,8 @@ export function FolderWorkspaceView({
         sessions={sessions}
         onMoveSessions={onMoveSessions}
         onRenameSession={onRenameSession}
+        onContinueSession={onContinueSession}
+        getContinueSessionDisabledReason={getContinueSessionDisabledReason}
         onLoadMore={onLoadMore}
         hasMore={hasMore}
       />

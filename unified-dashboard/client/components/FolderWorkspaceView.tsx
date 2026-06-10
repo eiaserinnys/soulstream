@@ -16,6 +16,7 @@ import { deleteSessions } from "client/lib/delete-session";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
 import { renameSessionOptimistic } from "client/lib/rename-session";
 import { uploadBoardAsset } from "client/lib/board-workspace-operations";
+import { useContinueSession } from "client/hooks/useContinueSession";
 
 interface FolderWorkspaceViewWrapperProps {
   sessions?: SessionSummary[];
@@ -31,6 +32,7 @@ export function FolderWorkspaceView({
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
+  const { continueSession, getContinueSessionDisabledReason } = useContinueSession(sessions);
 
   const handleMoveSessions = useCallback(
     async (sessionIds: string[], targetFolderId: string | null) => {
@@ -55,6 +57,8 @@ export function FolderWorkspaceView({
       onMoveSessions={handleMoveSessions}
       onRenameSession={renameSessionOptimistic}
       onDeleteSessions={deleteSessions}
+      onContinueSession={continueSession}
+      getContinueSessionDisabledReason={getContinueSessionDisabledReason}
       onCreateFolder={createFolder}
       onRenameFolder={renameFolderOptimistic}
       onDeleteFolder={deleteFolderOptimistic}

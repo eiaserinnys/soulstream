@@ -30,6 +30,7 @@ import {
   reasoningEffortForSubmit,
   selectedAgentBackend,
 } from "../utils/reasoningEffort";
+import { createDashboardSession } from "client/lib/session-create";
 
 interface OAuthProfile {
   name: string;
@@ -184,62 +185,30 @@ export function OrchestratorNewSessionModal() {
     async (prompt: string, attachmentPaths?: string[]) => {
       if (!selectedNodeId) throw new Error("Please select a node");
 
-      const res = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt,
-          nodeId: selectedNodeId,
-          ...(attachmentPaths?.length ? { attachmentPaths } : {}),
-          ...(selectedModalFolderId ? { folderId: selectedModalFolderId } : {}),
-          ...(selectedAgentId ? { profile: selectedAgentId } : {}),
-          ...(submitReasoningEffort ? { reasoningEffort: submitReasoningEffort } : {}),
-          ...(selectedOAuthProfile ? { oauth_profile_name: selectedOAuthProfile } : {}),
-          ...(newSessionParentTask
-            ? {
-                parentTaskId: newSessionParentTask.id,
-                taskIdempotencyKey:
-                  taskIdempotencyKeyRef.current ?? createTaskIdempotencyKey(newSessionParentTask.id),
-              }
-            : {}),
-        }),
-      });
-
-      if (!res.ok) {
-        let errorMessage = `HTTP ${res.status}`;
-        try {
-          const body = await res.json();
-          // FastAPI HTTPException → body.detail, custom error → body.error
-          errorMessage = body.detail ?? body.error ?? errorMessage;
-        } catch {
-          errorMessage = `Server error (${res.status})`;
-        }
-        throw new Error(errorMessage);
-      }
-
-      let sessionData: { agentSessionId: string };
-      try {
-        sessionData = await res.json();
-      } catch {
-        throw new Error("Server returned an invalid response");
-      }
-
-      const { agentSessionId } = sessionData;
       const { addOptimisticSession } = useDashboardStore.getState();
       const selectedAgent = agents.find((a) => a.id === selectedAgentId);
       const boardPosition = newSessionDefaults?.boardPosition ?? null;
-      addOptimisticSession(
-        queryClientRef.current!,
-        agentSessionId,
+      const result = await createDashboardSession({
+        queryClient: queryClientRef.current!,
+        addOptimisticSession,
         prompt,
-        selectedModalFolderId ?? null,
-        selectedNodeId,
-        selectedAgentId || null,
-        selectedAgent?.name ?? null,
-        selectedAgent?.portraitUrl ?? null,
-        selectedAgent?.backend ?? null,
+        nodeId: selectedNodeId,
+        attachmentPaths,
+        folderId: selectedModalFolderId ?? undefined,
+        agentId: selectedAgentId || null,
+        agent: selectedAgent ?? null,
+        reasoningEffort: submitReasoningEffort,
+        oauthProfileName: selectedOAuthProfile,
+        ...(newSessionParentTask
+          ? {
+              parentTaskId: newSessionParentTask.id,
+              taskIdempotencyKey:
+                taskIdempotencyKeyRef.current ?? createTaskIdempotencyKey(newSessionParentTask.id),
+            }
+          : {}),
         boardPosition,
-      );
+      });
+      const { agentSessionId } = result;
       if (boardPosition && selectedModalFolderId) {
         placeBoardSessionInYjs(selectedModalFolderId, agentSessionId, boardPosition);
       }
