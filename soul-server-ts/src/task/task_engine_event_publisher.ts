@@ -54,6 +54,7 @@ export class TaskEngineEventPublisher {
 
     await this.captureSessionId(task, event, eventType);
     this.captureClaudeRuntimeState(task, event);
+    this.captureCompactReinjectionNeed(task, eventType);
     this.captureTerminationHint(task, event, eventType);
     this.captureFatalEngineError(task, event, eventType);
     const persistedEventId = await this.persistEventIfNeeded(task, event, eventType);
@@ -66,6 +67,11 @@ export class TaskEngineEventPublisher {
 
   private captureClaudeRuntimeState(task: Task, event: SSEEventPayload): void {
     applyClaudeRuntimeEvent(task, event);
+  }
+
+  private captureCompactReinjectionNeed(task: Task, eventType: string): void {
+    if (eventType !== "compact") return;
+    task.needsFullContextReinjection = true;
   }
 
   private captureFatalEngineError(task: Task, event: SSEEventPayload, eventType: string): void {

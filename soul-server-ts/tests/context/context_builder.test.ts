@@ -953,92 +953,132 @@ describe("composeFirstTurnPrompt — 합성 알고리즘", () => {
   });
 });
 
-describe("ExecutionContextBuilder.buildResumeContextItems — Phase A context 정본 진입점", () => {
-  // T-2: 첫 턴과 auto-resume이 같은 `buildSoulstreamContextItem` helper를 거치도록
-  // ExecutionContextBuilder에 추가된 public method. atom_context·system_prompt 합성은 제외 —
-  // soulstream_item만 만든다 (auto-resume은 SDK가 system_prompt를 보유).
-  // atom d7a1ad86 정본 둘 안티패턴 차단.
+describe("ExecutionContextBuilder.buildResumeContextItems — legacy follow-up wrapper", () => {
+  it("legacy wrapper도 soulstream_session 재주입 없이 running_sessions만 반환한다", async () => {
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue([]);
+    const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
 
-  it("folder 없음 → soulstream_item 1개, folder='(unassigned)'", async () => {
-    const cb = makeBuilder();
     const items = await cb.buildResumeContextItems(makeTask(), codexAgent);
-    expect(items).toHaveLength(1);
-    expect(items[0].key).toBe("soulstream_session");
-    const content = items[0].content as Record<string, unknown>;
-    expect(content.folder).toBe("(unassigned)");
-    expect(content.agent_session_id).toBe("sess-1");
-    expect(content.workspace_dir).toBe("/agent/default");
+
+    expect(items.map((item) => item.key)).toEqual(["running_sessions"]);
   });
 
-  it("folder 있음 → soulstream_item.content.folder 박힘", async () => {
-    const getSession = vi.fn().mockResolvedValue({ folder_id: "f-1" });
-    const getFolderById = vi.fn().mockResolvedValue({
-      id: "f-1",
-      name: "📚 어떤 폴더",
-      settings: {},
-    });
-    const cb = makeBuilder({ getSession, getFolderById });
-    const items = await cb.buildResumeContextItems(makeTask(), codexAgent);
-    expect(items).toHaveLength(1);
-    const content = items[0].content as Record<string, unknown>;
-    expect(content.folder).toBe("📚 어떤 폴더");
-  });
+  it("legacy wrapper는 claude_session_id/caller_info delta를 running_sessions 앞에 붙인다", async () => {
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue([]);
+    const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
 
-  it("profile에 workspace_dir 있음 → workspaceDir에 박힘 (agent fallback 안 함)", async () => {
-    const cb = makeBuilder(
-      {},
-      new AgentRegistry([
-        {
-          id: "codex-default",
-          name: "Codex Default",
-          backend: "codex",
-          workspace_dir: "/profile/dir",
-        },
-      ]),
-    );
-    const items = await cb.buildResumeContextItems(makeTask(), codexAgent);
-    const content = items[0].content as Record<string, unknown>;
-    expect(content.workspace_dir).toBe("/profile/dir");
-  });
-
-  it("profile 미발견 → agent.workspace_dir로 폴백", async () => {
-    const cb = makeBuilder({}, new AgentRegistry([])); // 빈 registry
-    const items = await cb.buildResumeContextItems(makeTask(), codexAgent);
-    const content = items[0].content as Record<string, unknown>;
-    expect(content.workspace_dir).toBe("/agent/default"); // agent.workspace_dir
-  });
-
-  it("첫 턴(build)과 auto-resume(buildResumeContextItems)이 동일 soulstream_item key 반환 (정본 하나 §3)", async () => {
-    // T-2 핵심: 두 method가 같은 buildSoulstreamContextItem helper에 의존.
-    // 키/형상이 동일함을 검증하여 첫 턴↔resume 시각적 차이 0 (🔵 #9).
-    const cb = makeBuilder();
-    const firstTurn = await cb.build(makeTask(), codexAgent);
-    const resume = await cb.buildResumeContextItems(makeTask(), codexAgent);
-
-    const firstSoulItem = firstTurn.combinedContextItems[0];
-    expect(firstSoulItem.key).toBe("soulstream_session");
-    expect(resume[0].key).toBe("soulstream_session");
-
-    // content 키 집합 정합 (값 자체는 current_time 등 시점에 따라 달라지므로 key 비교).
-    const firstKeys = Object.keys(firstSoulItem.content as Record<string, unknown>).sort();
-    const resumeKeys = Object.keys(resume[0].content as Record<string, unknown>).sort();
-    expect(firstKeys).toEqual(resumeKeys);
-  });
-
-  it("callerInfo 운반 → soulstream_item.content.caller_info (R-2 정합)", async () => {
-    const cb = makeBuilder();
     const items = await cb.buildResumeContextItems(
       makeTask({
+        codexThreadId: "claude-session-1",
         callerInfo: { source: "agent", display_name: "서소영", agent_id: "seosoyoung" },
       }),
       codexAgent,
     );
-    const content = items[0].content as Record<string, unknown>;
-    expect(content.caller_info).toEqual({
-      source: "agent",
-      display_name: "서소영",
-      agent_id: "seosoyoung",
+
+    expect(items.map((item) => item.key)).toEqual([
+      "claude_session_id_update",
+      "caller_info_update",
+      "running_sessions",
+    ]);
+    expect(items.map((item) => item.key)).not.toContain("soulstream_session");
+  });
+});
+
+describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 context", () => {
+  it("일반 후속 턴은 claude_session_id delta + caller_info delta + running_sessions만 끝에 싣는다", async () => {
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue([
+      {
+        agent_session_id: "other-session",
+        title: "다른 세션",
+        node_id: "node-A",
+        folder_id: "folder-1",
+        folder_name: "✨ 소울스트림",
+      },
+    ]);
+    const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
+
+    const ctx = await cb.buildFollowupContext(
+      makeTask({ codexThreadId: "claude-session-1" }),
+      codexAgent,
+      {
+        includeClaudeSessionIdUpdate: true,
+        previousCallerInfo: { source: "browser", display_name: "Alice" },
+        currentCallerInfo: {
+          source: "agent",
+          display_name: "서소영",
+          agent_id: "seosoyoung",
+        },
+      },
+    );
+
+    expect(ctx.effectiveSystemPrompt).toBeUndefined();
+    expect(ctx.contextItems.map((item) => item.key)).toEqual([
+      "claude_session_id_update",
+      "caller_info_update",
+      "running_sessions",
+    ]);
+    expect(ctx.contextItems.map((item) => item.key)).not.toContain("soulstream_session");
+    expect(ctx.contextItems.map((item) => item.key)).not.toContain("board_workspace");
+    expect(ctx.contextItems.map((item) => item.key)).not.toContain("atom_context");
+    expect(ctx.contextItems[0].content).toEqual({
+      agent_session_id: "sess-1",
+      claude_session_id: "claude-session-1",
     });
+    expect(ctx.contextItems[1].content).toEqual({
+      previous_caller_info: { source: "browser", display_name: "Alice" },
+      current_caller_info: {
+        source: "agent",
+        display_name: "서소영",
+        agent_id: "seosoyoung",
+      },
+    });
+    expect(ctx.contextItems.at(-1)?.key).toBe("running_sessions");
+  });
+
+  it("변경 없는 일반 후속 턴은 running_sessions만 주입한다", async () => {
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue([]);
+    const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
+
+    const ctx = await cb.buildFollowupContext(
+      makeTask({ codexThreadId: "claude-session-1" }),
+      codexAgent,
+      {
+        includeClaudeSessionIdUpdate: false,
+        previousCallerInfo: { source: "browser", display_name: "Alice" },
+        currentCallerInfo: { source: "browser", display_name: "Alice" },
+      },
+    );
+
+    expect(ctx.contextItems.map((item) => item.key)).toEqual(["running_sessions"]);
+  });
+
+  it("compact 후 첫 사용자 메시지는 full context를 1회 재사용한다", async () => {
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "f-1" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "f-1",
+      name: "✨ 소울스트림",
+      sort_order: 0,
+      settings: { folderPrompt: "폴더 프롬프트" },
+    });
+    const getCatalog = vi.fn().mockResolvedValue({ folders: [], sessions: [] });
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue([]);
+    const cb = makeBuilder({
+      getSession,
+      getFolderById,
+      getCatalog,
+      listRunningSessionsSummary,
+    } as Partial<SessionDB>);
+
+    const ctx = await cb.buildFollowupContext(makeTask(), codexAgent, {
+      includeFullContext: true,
+    });
+
+    expect(ctx.effectiveSystemPrompt).toBe("폴더 프롬프트");
+    expect(ctx.contextItems.map((item) => item.key)).toEqual([
+      "soulstream_session",
+      "board_workspace",
+      "running_sessions",
+    ]);
   });
 });
 

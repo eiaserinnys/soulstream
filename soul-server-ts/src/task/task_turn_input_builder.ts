@@ -4,8 +4,10 @@ import type { AgentProfile } from "../agent_registry.js";
 import {
   composeFirstTurnPrompt,
   type ExecutionContextBuilder,
+  type FollowupContext,
   type PreparedContext,
 } from "../context/context_builder.js";
+import { formatContextItems } from "../context/prompt_assembler.js";
 
 import { splitAttachmentPaths } from "./attachment_context.js";
 import type { InterventionMessage, Task } from "./task_models.js";
@@ -32,14 +34,54 @@ export class TaskTurnInputBuilder {
   constructor(private readonly deps: TaskTurnInputBuilderDeps) {}
 
   async prepareInitialTurnInput(task: Task, agent: AgentProfile): Promise<TaskTurnInput> {
-    const ctx = await this.buildContext(task, agent);
-    await this.deps.initialMessagePublisher.publishInitialMessages(task, ctx);
-
     if (task.interventionQueue.length > 0) {
-      return this.prepareQueuedInterventionTurnInput(task, agent, ctx);
+      const intervention = task.interventionQueue.shift()!;
+      return this.prepareFollowupTurnInput(task, agent, intervention);
     }
 
+    const ctx = await this.buildContext(task, agent);
+    await this.deps.initialMessagePublisher.publishInitialMessages(task, ctx);
+    this.recordInitialContextInjection(task);
+
     return this.prepareNewTaskTurnInput(task, agent, ctx);
+  }
+
+  async prepareFollowupTurnInput(
+    task: Task,
+    agent: AgentProfile,
+    intervention: InterventionMessage,
+  ): Promise<TaskTurnInput> {
+    const currentCallerInfo = intervention.callerInfo ?? task.callerInfo;
+    const includeFullContext = task.needsFullContextReinjection === true;
+    const includeClaudeSessionIdUpdate =
+      Boolean(task.codexThreadId) &&
+      task.lastInjectedClaudeSessionId !== task.codexThreadId;
+    const ctx = await this.buildFollowupContext(task, agent, {
+      includeFullContext,
+      includeClaudeSessionIdUpdate,
+      previousCallerInfo: task.lastInjectedCallerInfo,
+      currentCallerInfo,
+    });
+    if (includeFullContext) {
+      task.needsFullContextReinjection = false;
+    }
+
+    if (ctx) {
+      this.recordFollowupContextInjection(task, currentCallerInfo);
+    }
+
+    const composed = composeInterventionTurnPrompt(intervention);
+    const prompt = appendContextBlock(composed.prompt, ctx?.contextItems ?? []);
+    const systemPrompt =
+      agent.backend === "claude" && includeFullContext
+        ? ctx?.effectiveSystemPrompt
+        : undefined;
+    return {
+      prompt,
+      imageAttachmentPaths: composed.imageAttachmentPaths,
+      ...(systemPrompt !== undefined ? { systemPrompt } : {}),
+      intervention,
+    };
   }
 
   private async buildContext(
@@ -97,20 +139,54 @@ export class TaskTurnInputBuilder {
     };
   }
 
-  private async prepareQueuedInterventionTurnInput(
+  private async buildFollowupContext(
     task: Task,
     agent: AgentProfile,
-    ctx: PreparedContext | undefined,
-  ): Promise<TaskTurnInput> {
-    const intervention = task.interventionQueue.shift()!;
-    const composed = composeInterventionTurnPrompt(intervention);
-    const systemPrompt =
-      agent.backend === "claude" ? ctx?.effectiveSystemPrompt : undefined;
-    return {
-      prompt: composed.prompt,
-      imageAttachmentPaths: composed.imageAttachmentPaths,
-      ...(systemPrompt !== undefined ? { systemPrompt } : {}),
-      intervention,
-    };
+    options: Parameters<ExecutionContextBuilder["buildFollowupContext"]>[2],
+  ): Promise<FollowupContext | undefined> {
+    if (!this.deps.contextBuilder) {
+      return undefined;
+    }
+
+    try {
+      return await this.deps.contextBuilder.buildFollowupContext(
+        task,
+        agent,
+        options,
+      );
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "follow-up context_builder failed — continuing without dynamic context",
+      );
+      return undefined;
+    }
   }
+
+  private recordInitialContextInjection(task: Task): void {
+    if (task.codexThreadId) {
+      task.lastInjectedClaudeSessionId = task.codexThreadId;
+    }
+    if (task.callerInfo) {
+      task.lastInjectedCallerInfo = task.callerInfo;
+    }
+  }
+
+  private recordFollowupContextInjection(
+    task: Task,
+    currentCallerInfo: Task["callerInfo"],
+  ): void {
+    if (task.codexThreadId) {
+      task.lastInjectedClaudeSessionId = task.codexThreadId;
+    }
+    if (currentCallerInfo) {
+      task.lastInjectedCallerInfo = currentCallerInfo;
+    }
+  }
+}
+
+function appendContextBlock(prompt: string, contextItems: FollowupContext["contextItems"]): string {
+  const contextBlock = formatContextItems(contextItems);
+  if (!contextBlock) return prompt;
+  return `${prompt}\n\n${contextBlock}`;
 }

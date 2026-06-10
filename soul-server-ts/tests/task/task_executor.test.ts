@@ -1290,7 +1290,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     )).toBe(true);
   });
 
-  it("Claude intervention turn에도 첫 turn systemPrompt를 SDK 옵션으로 다시 전달한다", async () => {
+  it("Claude intervention 후속 턴에는 첫 turn systemPrompt를 SDK 옵션으로 다시 전달하지 않는다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     task.profileId = claudeAgent.id;
@@ -1320,6 +1320,15 @@ describe("TaskExecutor multi-turn (B-4)", () => {
         combinedContextItems: [],
         assembledPrompt: "hi",
       })),
+      buildFollowupContext: vi.fn(async () => ({
+        contextItems: [
+          {
+            key: "running_sessions",
+            label: "Running Sessions",
+            content: { status: "ok", sessions: [] },
+          },
+        ],
+      })),
     };
     const executor = new TaskExecutor(
       () => engine,
@@ -1335,8 +1344,13 @@ describe("TaskExecutor multi-turn (B-4)", () => {
 
     expect(capturedSystemPrompts).toEqual([
       "folder prompt\n\nagent prompt",
-      "folder prompt\n\nagent prompt",
+      undefined,
     ]);
+    expect(fakeBuilder.buildFollowupContext).toHaveBeenCalledWith(
+      task,
+      claudeAgent,
+      expect.objectContaining({ includeFullContext: false }),
+    );
   });
 
   it("Codex execute params에는 onIntervention을 넘기지 않아 turn 사이 큐잉 semantics를 보존한다", async () => {
@@ -1638,18 +1652,21 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     );
   });
 
-  it("terminal auto-resume Claude turn은 systemPrompt를 SDK 옵션으로 다시 전달한다", async () => {
+  it("terminal auto-resume Claude turn은 full context/systemPrompt를 다시 전달하지 않는다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     task.profileId = claudeAgent.id;
     task.codexThreadId = "claude-existing";
+    task.lastInjectedClaudeSessionId = "claude-existing";
     task.interventionQueue.push({ text: "resume", user: "u" });
     const capturedSystemPrompts: Array<string | undefined> = [];
+    const capturedPrompts: string[] = [];
     const engine: EnginePort = {
       backendId: "claude",
       workspaceDir: "/tmp/claude-roselin",
       async *execute(params): AsyncIterable<SSEEventPayload> {
         capturedSystemPrompts.push(params.systemPrompt);
+        capturedPrompts.push(params.prompt);
         yield { type: "complete", result: "done", timestamp: 1 } as SSEEventPayload;
       },
       async interrupt() { return true; },
@@ -1662,6 +1679,15 @@ describe("TaskExecutor multi-turn (B-4)", () => {
         assembledPrompt: "unused",
       })),
       buildSystemPrompt: vi.fn(async () => "resume system prompt"),
+      buildFollowupContext: vi.fn(async () => ({
+        contextItems: [
+          {
+            key: "running_sessions",
+            label: "Running Sessions",
+            content: { status: "ok", sessions: [] },
+          },
+        ],
+      })),
     };
     const executor = new TaskExecutor(
       () => engine,
@@ -1675,9 +1701,19 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
-    expect(fakeBuilder.build).toHaveBeenCalledWith(task, claudeAgent);
+    expect(fakeBuilder.build).not.toHaveBeenCalled();
     expect(fakeBuilder.buildSystemPrompt).not.toHaveBeenCalled();
-    expect(capturedSystemPrompts).toEqual(["resume system prompt"]);
+    expect(fakeBuilder.buildFollowupContext).toHaveBeenCalledWith(
+      task,
+      claudeAgent,
+      expect.objectContaining({
+        includeFullContext: false,
+        includeClaudeSessionIdUpdate: false,
+      }),
+    );
+    expect(capturedSystemPrompts).toEqual([undefined]);
+    expect(capturedPrompts[0]).toContain("resume");
+    expect(capturedPrompts[0]).toContain("<running_sessions>");
   });
 
   it("Claude compact 이벤트는 P3 wire 그대로 persist/broadcast된다", async () => {
@@ -1727,6 +1763,78 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       message: "context compacted",
       _event_id: expect.any(Number),
     });
+  });
+
+  it("compact 후 첫 queued intervention만 full context/systemPrompt를 재주입한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    const capturedSystemPrompts: Array<string | undefined> = [];
+    const capturedPrompts: string[] = [];
+    let turnCount = 0;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        capturedSystemPrompts.push(params.systemPrompt);
+        capturedPrompts.push(params.prompt);
+        turnCount += 1;
+        if (turnCount === 1) {
+          yield {
+            type: "compact",
+            trigger: "auto",
+            message: "context compacted",
+            timestamp: 1,
+          } as SSEEventPayload;
+          task.interventionQueue.push({ text: "after compact", user: "u" });
+          yield { type: "complete", result: "first", timestamp: 2 } as SSEEventPayload;
+          return;
+        }
+        yield { type: "complete", result: "second", timestamp: 3 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const fakeBuilder = {
+      build: vi.fn(async () => ({
+        effectiveSystemPrompt: "initial system",
+        combinedContextItems: [],
+        assembledPrompt: "hi",
+      })),
+      buildSystemPrompt: vi.fn(async () => "unused"),
+      buildFollowupContext: vi.fn(async () => ({
+        effectiveSystemPrompt: "full system after compact",
+        contextItems: [
+          { key: "soulstream_session", label: "Soulstream", content: "full" },
+          { key: "running_sessions", label: "Running Sessions", content: [] },
+        ],
+      })),
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      fakeBuilder as unknown as Parameters<typeof TaskExecutor>[5],
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(turnCount).toBe(2);
+    expect(fakeBuilder.buildFollowupContext).toHaveBeenCalledWith(
+      task,
+      claudeAgent,
+      expect.objectContaining({ includeFullContext: true }),
+    );
+    expect(capturedSystemPrompts).toEqual([
+      "initial system",
+      "full system after compact",
+    ]);
+    expect(capturedPrompts[1]).toContain("after compact");
+    expect(capturedPrompts[1]).toContain("<soulstream_session>");
+    expect(task.needsFullContextReinjection).toBe(false);
   });
 });
 
@@ -1877,9 +1985,9 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     expect(task.status).toBe("completed");  // user_message 실패에도 task 정상 진행
   });
 
-  it("auto-resume task (queue에 메시지 push된 상태로 startExecution) → initial user_message를 발행", async () => {
-    // Python parity: terminal auto-resume은 재개 메시지를 새 task prompt로 승격하고
-    // executor의 initial-message 단일 경로에서 user_message를 발행한다.
+  it("auto-resume task (queue에 메시지 push된 상태로 startExecution) → initial user_message를 다시 발행하지 않는다", async () => {
+    // 후속 턴은 이미 큐잉된 사용자 개입을 처리한다. 첫 턴 전용 user_message/context
+    // durable 이벤트를 반복 발행하면 대시보드와 토큰 prefix가 둘 다 중복된다.
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
@@ -1894,11 +2002,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     const userMessages = mocks.persistEvent.mock.calls.filter(
       (c) => (c[1] as { type: string }).type === "user_message",
     );
-    expect(userMessages.length).toBe(1);
-    expect(userMessages[0][1]).toMatchObject({
-      type: "user_message",
-      text: "second turn",
-    });
+    expect(userMessages.length).toBe(0);
   });
 
   it("auto-resume task: 첫 turn prompt = queue dequeue.text (task.prompt 재실행 안 함)", async () => {
@@ -2016,9 +2120,19 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
     },
   ): {
     build: ReturnType<typeof vi.fn>;
+    buildFollowupContext: ReturnType<typeof vi.fn>;
   } {
     return {
       build: vi.fn(async () => ctx),
+      buildFollowupContext: vi.fn(async () => ({
+        contextItems: [
+          {
+            key: "running_sessions",
+            label: "Running Sessions",
+            content: { status: "ok", sessions: [] },
+          },
+        ],
+      })),
     };
   }
 
@@ -2270,7 +2384,7 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
     expect(task.status).toBe("completed");  // 본 task 진행에 영향 0
   });
 
-  it("auto-resume (queue 비어있지 않음) → contextBuilder.build 후 initial messages 발행", async () => {
+  it("auto-resume (queue 비어있지 않음) → contextBuilder.build 없이 follow-up context만 붙인다", async () => {
     const mocks = makeMocks();
     const events: SSEEventPayload[] = [
       { type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload,
@@ -2293,17 +2407,20 @@ describe("TaskExecutor initial message publishing — contextBuilder 주입 (Pyt
     executor.startExecution(task, agent);
     await task.executionPromise;
 
-    expect(fakeBuilder.build).toHaveBeenCalledWith(task, agent);
+    expect(fakeBuilder.build).not.toHaveBeenCalled();
+    expect(fakeBuilder.buildFollowupContext).toHaveBeenCalledWith(
+      task,
+      agent,
+      expect.objectContaining({ includeFullContext: false }),
+    );
     const sysCalls = mocks.persistEvent.mock.calls.filter(
       (c) => (c[1] as { type: string }).type === "system_message",
     );
-    expect(sysCalls.length).toBe(1);
+    expect(sysCalls.length).toBe(0);
     const userCall = mocks.persistEvent.mock.calls.find(
       (c) => (c[1] as { type: string }).type === "user_message",
     );
-    expect((userCall![1] as Record<string, unknown>).context).toEqual([
-      { key: "k", label: "L", content: "c" },
-    ]);
+    expect(userCall).toBeUndefined();
   });
 });
 

@@ -206,7 +206,6 @@ export class TaskExecutor {
     const initialTurnInput = await this.turnInputBuilder.prepareInitialTurnInput(task, agent);
     let turnPrompt = initialTurnInput.prompt;
     let turnImageAttachmentPaths = initialTurnInput.imageAttachmentPaths;
-    const stableSystemPrompt = initialTurnInput.systemPrompt;
     let turnSystemPrompt = initialTurnInput.systemPrompt;
     let currentTurnIntervention = initialTurnInput.intervention;
     try {
@@ -246,9 +245,14 @@ export class TaskExecutor {
           break;
         }
         await publishInterventionSent(task, transition.intervention, this.interventionEventDeps);
-        turnPrompt = transition.prompt;
-        turnImageAttachmentPaths = transition.imageAttachmentPaths;
-        turnSystemPrompt = stableSystemPrompt;
+        const followupTurnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+          task,
+          agent,
+          transition.intervention,
+        );
+        turnPrompt = followupTurnInput.prompt;
+        turnImageAttachmentPaths = followupTurnInput.imageAttachmentPaths;
+        turnSystemPrompt = followupTurnInput.systemPrompt;
         currentTurnIntervention = transition.intervention;
       }
     } finally {
