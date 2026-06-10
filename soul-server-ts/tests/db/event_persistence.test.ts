@@ -339,11 +339,11 @@ describe("EventPersistence.handleSideEffects", () => {
     expect(extractSearchableText(event)).toBe("Hello final answer");
   });
 
-  it("preview 200자 cap", async () => {
+  it("preview 200자 cap preserves surrogate pairs", async () => {
     const { db, updateLastMessage } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
     const ep = new EventPersistence(db, broadcaster, silentLogger);
-    const long = "a".repeat(250);
+    const long = `${"a".repeat(199)}😀tail`;
     await ep.handleSideEffects(
       "sess-1",
       {
@@ -354,7 +354,8 @@ describe("EventPersistence.handleSideEffects", () => {
       makeTask(),
     );
     const arg = updateLastMessage.mock.calls[0][1];
-    expect(arg.preview).toHaveLength(200);
+    expect(arg.preview).toBe(`${"a".repeat(199)}😀`);
+    expect(Array.from(arg.preview)).toHaveLength(200);
   });
 
   it("updateLastMessage throw → 호출자 전파 + wire 미발행 (Python 정합: DB·wire 일관성)", async () => {

@@ -73,6 +73,13 @@ export type InterveneAck =
       status: "ok";
       outcome: "auto_resumed";
       agentSessionId: string;
+    }
+  | {
+      type: "intervene_ack";
+      requestId: string;
+      status: "ok";
+      outcome: "deferred";
+      agentSessionId: string;
     };
 
 export class UnknownAgentProfileError extends Error {
@@ -197,6 +204,15 @@ export function buildInterveneAck(params: {
       requestId,
       status: "ok",
       outcome: "delivered",
+      agentSessionId,
+    };
+  }
+  if ("deferred" in result) {
+    return {
+      type: "intervene_ack",
+      requestId,
+      status: "ok",
+      outcome: "deferred",
       agentSessionId,
     };
   }
