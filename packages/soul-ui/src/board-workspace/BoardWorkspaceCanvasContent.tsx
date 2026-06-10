@@ -34,6 +34,7 @@ interface BoardWorkspaceCanvasContentProps {
   onToggleChildStack: (item: SessionBoardWorkspaceItem) => void;
   onNavigateToParent: (parentRef: SessionParentRef) => void;
   onOpenChildRef: (child: DirectChildPortalItem) => void;
+  onToggleFrameCollapsed: (item: Extract<BoardWorkspaceItem, { type: "frame" }>) => void;
 }
 
 export function BoardWorkspaceCanvasContent({
@@ -62,6 +63,7 @@ export function BoardWorkspaceCanvasContent({
   onToggleChildStack,
   onNavigateToParent,
   onOpenChildRef,
+  onToggleFrameCollapsed,
 }: BoardWorkspaceCanvasContentProps) {
   return (
     <>
@@ -92,6 +94,7 @@ export function BoardWorkspaceCanvasContent({
           onTileContextMenu={onTileContextMenu}
           onToggleChildStack={onToggleChildStack}
           onNavigateToParent={onNavigateToParent}
+          onToggleFrameCollapsed={onToggleFrameCollapsed}
           shouldSuppressClick={shouldSuppressTileClick}
           onOpenFolder={(folderId) => onOpenFolder(item, folderId)}
           onOpenMarkdown={(documentId) => onOpenMarkdown(item, documentId)}

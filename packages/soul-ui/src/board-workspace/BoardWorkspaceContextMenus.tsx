@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Folder, MessageSquarePlus, Pencil, SquarePen, Trash2 } from "lucide-react";
+import { Folder, Frame, Maximize2, MessageSquarePlus, Minimize2, Pencil, SquarePen, Trash2 } from "lucide-react";
 
 import type { CatalogFolder, FolderSettings, SessionSummary } from "../shared/types";
 import { isSystemFolderId } from "../shared/constants";
@@ -36,6 +36,10 @@ interface BoardWorkspaceContextMenusProps {
   onOpenCreateFolder: (position: { x: number; y: number }) => void;
   onOpenNewSession: (position: { x: number; y: number }) => void;
   onCreateMarkdown: (position: { x: number; y: number }) => void;
+  onCreateFrame: (position: { x: number; y: number }) => void;
+  onRenameFrame: (item: Extract<BoardWorkspaceItem, { type: "frame" }>, title: string) => void;
+  onToggleFrameCollapsed: (item: Extract<BoardWorkspaceItem, { type: "frame" }>) => void;
+  onDeleteFrame: (item: Extract<BoardWorkspaceItem, { type: "frame" }>) => void;
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
@@ -55,6 +59,10 @@ export function BoardWorkspaceContextMenus({
   onOpenCreateFolder,
   onOpenNewSession,
   onCreateMarkdown,
+  onCreateFrame,
+  onRenameFrame,
+  onToggleFrameCollapsed,
+  onDeleteFrame,
   onMoveSessions,
   onRenameSession,
   onDeleteSessions,
@@ -71,6 +79,8 @@ export function BoardWorkspaceContextMenus({
   const [renameMarkdownTarget, setRenameMarkdownTarget] = useState<{ documentId: string; title: string; version: number } | null>(null);
   const [renameMarkdownInput, setRenameMarkdownInput] = useState("");
   const [renameMarkdownError, setRenameMarkdownError] = useState("");
+  const [renameFrameTarget, setRenameFrameTarget] = useState<Extract<BoardWorkspaceItem, { type: "frame" }> | null>(null);
+  const [renameFrameInput, setRenameFrameInput] = useState("");
 
   const folderContextTarget: FolderContextMenuTarget | null =
     cardContextMenu?.item.type === "folder"
@@ -85,6 +95,10 @@ export function BoardWorkspaceContextMenus({
       : null;
   const markdownContextMenu =
     cardContextMenu?.item.type === "markdown"
+      ? { screenX: cardContextMenu.screenX, screenY: cardContextMenu.screenY, item: cardContextMenu.item }
+      : null;
+  const frameContextMenu =
+    cardContextMenu?.item.type === "frame"
       ? { screenX: cardContextMenu.screenX, screenY: cardContextMenu.screenY, item: cardContextMenu.item }
       : null;
 
@@ -163,6 +177,13 @@ export function BoardWorkspaceContextMenus({
     }
   };
 
+  const handleRenameFrame = () => {
+    if (!renameFrameTarget) return;
+    const title = renameFrameInput.trim() || "Frame";
+    onRenameFrame(renameFrameTarget, title);
+    setRenameFrameTarget(null);
+  };
+
   return (
     <>
       {contextMenu && (
@@ -193,6 +214,14 @@ export function BoardWorkspaceContextMenus({
           >
             <SquarePen className="h-4 w-4" />
             새 문서
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+            onClick={() => onCreateFrame({ x: contextMenu.boardX, y: contextMenu.boardY })}
+          >
+            <Frame className="h-4 w-4" />
+            프레임 추가
           </button>
         </div>
       )}
@@ -258,6 +287,52 @@ export function BoardWorkspaceContextMenus({
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-accent"
             onClick={() => handleDeleteMarkdown(markdownContextMenu.item.documentId)}
+          >
+            <Trash2 className="h-4 w-4" />
+            삭제
+          </button>
+        </div>
+      )}
+
+      {frameContextMenu && (
+        <div
+          className="fixed z-30 w-40 rounded-md border border-border bg-popover p-1 shadow-lg"
+          style={{ left: frameContextMenu.screenX, top: frameContextMenu.screenY }}
+        >
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+            onClick={() => {
+              setRenameFrameTarget(frameContextMenu.item);
+              setRenameFrameInput(frameContextMenu.item.title);
+              onCloseCardContextMenu();
+            }}
+          >
+            <Pencil className="h-4 w-4" />
+            이름 변경
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+            onClick={() => {
+              onToggleFrameCollapsed(frameContextMenu.item);
+              onCloseCardContextMenu();
+            }}
+          >
+            {frameContextMenu.item.collapsed ? (
+              <Maximize2 className="h-4 w-4" />
+            ) : (
+              <Minimize2 className="h-4 w-4" />
+            )}
+            {frameContextMenu.item.collapsed ? "펼치기" : "접기"}
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-accent"
+            onClick={() => {
+              onDeleteFrame(frameContextMenu.item);
+              onCloseCardContextMenu();
+            }}
           >
             <Trash2 className="h-4 w-4" />
             삭제
@@ -337,6 +412,36 @@ export function BoardWorkspaceContextMenus({
                 취소
               </Button>
               <Button type="submit" disabled={!renameFolderInput.trim()}>
+                변경
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
+      {renameFrameTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60">
+          <form
+            className="w-80 rounded-md border border-border bg-popover p-3 shadow-lg"
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleRenameFrame();
+            }}
+          >
+            <label className="mb-2 block text-sm font-medium" htmlFor="board-frame-rename-input">
+              프레임 이름
+            </label>
+            <input
+              id="board-frame-rename-input"
+              value={renameFrameInput}
+              onChange={(event) => setRenameFrameInput(event.target.value)}
+              className="mb-3 w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-2 focus:ring-ring"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setRenameFrameTarget(null)}>
+                취소
+              </Button>
+              <Button type="submit" disabled={!renameFrameInput.trim()}>
                 변경
               </Button>
             </div>

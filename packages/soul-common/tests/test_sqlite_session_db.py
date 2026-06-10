@@ -494,6 +494,32 @@ class TestCatalog:
         assert session_item["x"] == 40.0
         assert session_item["y"] == 120.0
 
+    async def test_frame_board_item_roundtrip(self, db: SqliteSessionDB):
+        await db.create_folder("f1", "Folder 1")
+        metadata = {
+            "title": "검토 묶음",
+            "collapsed": True,
+            "childItemIds": ["session:s1", "markdown:m1"],
+            "width": 420,
+            "height": 260,
+        }
+        await db._conn.execute(
+            """
+            INSERT INTO board_items
+                (id, folder_id, item_type, item_id, x, y, metadata, created_at, updated_at)
+            VALUES (?, ?, 'frame', ?, ?, ?, ?, '2026-06-10T00:00:00+00:00', '2026-06-10T00:00:00+00:00')
+            """,
+            ("frame:frame-1", "f1", "frame-1", 80, 140, json.dumps(metadata)),
+        )
+        await db._conn.commit()
+
+        frame_item = next(item for item in await db.get_board_items() if item["id"] == "frame:frame-1")
+
+        assert frame_item["itemType"] == "frame"
+        assert frame_item["x"] == 80.0
+        assert frame_item["y"] == 140.0
+        assert frame_item["metadata"] == metadata
+
     async def test_board_item_seed_matches_legacy_last_message_sort_grid(self, db: SqliteSessionDB):
         await db.create_folder("f1", "Folder 1")
         sessions = [

@@ -3,7 +3,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { FileText, Folder } from "lucide-react";
+import { FileText, Folder, Frame } from "lucide-react";
 
 import type { SessionSummary } from "../shared/types";
 import { Badge } from "../components/ui/badge";
@@ -52,6 +52,7 @@ interface BoardWorkspaceTileProps {
   isPulsing?: boolean;
   onToggleChildStack?: (item: Extract<BoardWorkspaceItem, { type: "session" }>) => void;
   onNavigateToParent?: (parentRef: SessionParentRef) => void;
+  onToggleFrameCollapsed?: (item: Extract<BoardWorkspaceItem, { type: "frame" }>) => void;
 }
 
 export function BoardWorkspaceTile({
@@ -70,6 +71,7 @@ export function BoardWorkspaceTile({
   isPulsing,
   onToggleChildStack,
   onNavigateToParent,
+  onToggleFrameCollapsed,
 }: BoardWorkspaceTileProps) {
   const selectionClassName = cn(
     isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
@@ -170,6 +172,72 @@ export function BoardWorkspaceTile({
           uploadState={item.uploadState}
           errorMessage={item.errorMessage}
         />
+      </div>
+    );
+  }
+
+  if (item.type === "frame") {
+    const frameRunningClassName = item.hasRunningChild && [
+      "border-transparent card-running-base",
+      "card-running",
+    ];
+    if (item.collapsed) {
+      return (
+        <button
+          key={item.id}
+          type="button"
+          data-testid="board-frame-tile"
+          data-board-tile="true"
+          className={cn(tileClassName, frameRunningClassName)}
+          style={tileStyle}
+          onPointerDown={(event) => onTilePointerDown(event, item)}
+          onContextMenu={(event) => onTileContextMenu(event, item)}
+          onClick={() => {
+            if (shouldSuppressClick()) return;
+            onToggleFrameCollapsed?.(item);
+          }}
+        >
+          <div className="flex items-center gap-2 border-b border-border/60 pb-2">
+            <Frame className="h-5 w-5 shrink-0 text-primary" />
+            <span data-testid="board-frame-title" className="line-clamp-2 text-sm font-medium leading-snug">
+              {item.title}
+            </span>
+          </div>
+          <div className="mt-auto flex items-center justify-between border-t border-border/60 pt-2 text-xs text-muted-foreground">
+            <span data-testid="board-frame-summary">{item.childCount} cards</span>
+            {item.hasRunningChild && (
+              <Badge variant="secondary" className="border-success text-success">
+                running
+              </Badge>
+            )}
+          </div>
+        </button>
+      );
+    }
+
+    return (
+      <div
+        key={item.id}
+        role="button"
+        tabIndex={0}
+        data-testid="board-frame-region"
+        data-board-tile="true"
+        className={cn(
+          "absolute z-0 flex touch-none select-none flex-col rounded-md border-2 border-dashed border-primary/50 bg-primary/[0.04] text-left shadow-sm transition-shadow hover:border-primary/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          selectionClassName,
+          pulsingClassName,
+        )}
+        style={{ ...tileStyle, width: item.width, height: item.height }}
+        onPointerDown={(event) => onTilePointerDown(event, item)}
+        onContextMenu={(event) => onTileContextMenu(event, item)}
+      >
+        <div className="flex h-8 min-w-0 items-center gap-2 rounded-t bg-background/90 px-2 text-xs font-medium text-primary shadow-sm">
+          <Frame className="h-4 w-4 shrink-0" />
+          <span data-testid="board-frame-title" className="truncate">{item.title}</span>
+          <Badge variant="secondary" className="ml-auto h-5 px-1 text-[10px]">
+            {item.childCount}
+          </Badge>
+        </div>
       </div>
     );
   }

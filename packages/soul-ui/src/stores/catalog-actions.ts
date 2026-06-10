@@ -95,7 +95,14 @@ export function addBoardItemToCatalog(
   boardItem: CatalogBoardItem,
 ): CatalogState {
   const current = catalog.boardItems ?? [];
-  if (current.some((item) => item.id === boardItem.id)) return catalog;
+  const existingIndex = current.findIndex((item) => item.id === boardItem.id);
+  if (existingIndex >= 0) {
+    if (current[existingIndex] === boardItem) return catalog;
+    return {
+      ...catalog,
+      boardItems: current.map((item, index) => index === existingIndex ? boardItem : item),
+    };
+  }
   return { ...catalog, boardItems: [...current, boardItem] };
 }
 

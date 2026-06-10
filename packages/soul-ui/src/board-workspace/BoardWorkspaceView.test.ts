@@ -519,6 +519,145 @@ describe("BoardWorkspaceView", () => {
     expect(title?.className.split(/\s+/)).not.toContain("pr-4");
   });
 
+  it("creates a frame from the canvas context menu", async () => {
+    ({ container, root } = renderBoard());
+
+    const scroll = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
+    expect(scroll).not.toBeNull();
+
+    flushSync(() => {
+      scroll!.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 320,
+        clientY: 220,
+      }));
+    });
+
+    const addFrame = findButtonByText(document, "프레임 추가");
+    expect(addFrame).not.toBeUndefined();
+    flushSync(() => {
+      addFrame!.click();
+    });
+    await Promise.resolve();
+
+    const frame = container.querySelector<HTMLElement>('[data-testid="board-frame-region"]');
+    expect(frame).not.toBeNull();
+    expect(useDashboardStore.getState().catalog?.boardItems?.some((item) => item.itemType === "frame")).toBe(true);
+  });
+
+  it("collapses a frame into one card and expands children at their original coordinates", async () => {
+    const framedCatalog: CatalogState = {
+      ...catalog,
+      boardItems: [
+        ...(catalog.boardItems ?? []),
+        {
+          id: "frame:launch",
+          folderId: "root",
+          itemType: "frame",
+          itemId: "frame:launch",
+          x: 120,
+          y: 0,
+          metadata: {
+            title: "Launch",
+            childItemIds: ["session:session-a"],
+            width: 520,
+            height: 260,
+          },
+        },
+      ],
+    };
+    ({ container, root } = renderBoard({}, { catalog: framedCatalog }));
+
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    expect(sessionTile?.style.left).toBe("50200px");
+    expect(sessionTile?.style.top).toBe("50040px");
+
+    const frameRegion = container.querySelector<HTMLElement>('[data-testid="board-frame-region"]');
+    expect(frameRegion).not.toBeNull();
+    flushSync(() => {
+      frameRegion!.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 120,
+        clientY: 40,
+      }));
+    });
+    flushSync(() => {
+      findButtonByText(document, "접기")?.click();
+    });
+    await Promise.resolve();
+
+    expect(container.querySelector('[data-testid="board-frame-tile"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="board-session-tile"]')).toBeNull();
+
+    flushSync(() => {
+      container!.querySelector<HTMLElement>('[data-testid="board-frame-tile"]')!.click();
+    });
+    await Promise.resolve();
+
+    const restoredSession = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    expect(restoredSession?.style.left).toBe("50200px");
+    expect(restoredSession?.style.top).toBe("50040px");
+  });
+
+  it("moves frame children with the frame and keeps a running glow on collapsed frame cards", async () => {
+    const framedCatalog: CatalogState = {
+      ...catalog,
+      boardItems: [
+        ...(catalog.boardItems ?? []),
+        {
+          id: "frame:launch",
+          folderId: "root",
+          itemType: "frame",
+          itemId: "frame:launch",
+          x: 120,
+          y: 0,
+          metadata: {
+            title: "Launch",
+            childItemIds: ["session:session-a"],
+            width: 520,
+            height: 260,
+          },
+        },
+      ],
+    };
+    ({ container, root } = renderBoard({}, { catalog: framedCatalog }));
+
+    const frameRegion = container.querySelector<HTMLElement>('[data-testid="board-frame-region"]');
+    expect(frameRegion).not.toBeNull();
+
+    flushSync(() => {
+      dispatchPointer(frameRegion!, "pointerdown", { clientX: 100, clientY: 40 });
+      dispatchPointer(window, "pointermove", { clientX: 200, clientY: 120 });
+      dispatchPointer(window, "pointerup", { clientX: 200, clientY: 120 });
+    });
+    await Promise.resolve();
+
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    expect(sessionTile?.style.left).toBe("50300px");
+    expect(sessionTile?.style.top).toBe("50120px");
+
+    const movedFrameRegion = container.querySelector<HTMLElement>('[data-testid="board-frame-region"]');
+    expect(movedFrameRegion).not.toBeNull();
+    flushSync(() => {
+      movedFrameRegion!.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 120,
+        clientY: 40,
+      }));
+    });
+    flushSync(() => {
+      findButtonByText(document, "접기")?.click();
+    });
+    await Promise.resolve();
+
+    const frameTile = container.querySelector<HTMLElement>('[data-testid="board-frame-tile"]');
+    expect(frameTile?.className.split(/\s+/)).toContain("card-running-base");
+    expect(frameTile?.className.split(/\s+/)).toContain("card-running");
+  });
+
   it("shows a snapped drag ghost and updates the Y-doc board position without HTTP persistence", async () => {
     const onUpdateBoardItemPosition = vi.fn().mockResolvedValue(undefined);
     ({ container, root } = renderBoard({ onUpdateBoardItemPosition }));
