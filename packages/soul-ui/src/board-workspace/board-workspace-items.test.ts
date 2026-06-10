@@ -210,6 +210,78 @@ describe("board workspace item helpers", () => {
     expect(getBoardFrameMetadata(frameCatalog.boardItems!.at(-1)!).childItemIds).toEqual(["session:session-b"]);
   });
 
+  it("keeps collapsed frame running state when only a stacked same-folder child is running", () => {
+    const frameCatalog: CatalogState = {
+      folders: [{
+        id: "root",
+        name: "Root",
+        sortOrder: 0,
+        parentFolderId: null,
+        createdAt: "2026-06-01T00:00:00.000Z",
+      }],
+      sessions: {
+        parent: { folderId: "root", displayName: null },
+        child: { folderId: "root", displayName: null },
+      },
+      sessionList: [
+        {
+          agentSessionId: "parent",
+          status: "completed",
+          eventCount: 1,
+          folderId: "root",
+          prompt: "Parent",
+        },
+        {
+          agentSessionId: "child",
+          status: "running",
+          eventCount: 1,
+          folderId: "root",
+          callerSessionId: "parent",
+          prompt: "Running child",
+        },
+      ],
+      boardItems: [
+        {
+          id: "session:parent",
+          folderId: "root",
+          itemType: "session",
+          itemId: "parent",
+          x: 0,
+          y: 0,
+        },
+        {
+          id: "frame:launch",
+          folderId: "root",
+          itemType: "frame",
+          itemId: "frame:launch",
+          x: -20,
+          y: -20,
+          metadata: {
+            title: "Launch",
+            width: 640,
+            height: 420,
+            collapsed: true,
+            childItemIds: ["session:parent"],
+          },
+        },
+      ],
+    };
+
+    const items = buildBoardWorkspaceItems({
+      catalog: frameCatalog,
+      selectedFolderId: "root",
+      sessions: [],
+    });
+
+    expect(items.find((item) => item.id === "child")).toBeUndefined();
+    expect(items.find((item) => item.type === "frame")).toMatchObject({
+      type: "frame",
+      id: "frame:launch",
+      childCount: 1,
+      hasRunningChild: true,
+    });
+  });
+
   it("moves frame children with the frame and updates membership without allowing nested frames", () => {
     const frameCatalog: CatalogState = {
       ...catalog,
@@ -493,7 +565,7 @@ describe("board workspace item helpers", () => {
     });
   });
 
-  it("spawns a generated child session beside its visible parent without moving existing cards", () => {
+  it("keeps a generated same-folder child in its visible parent stack without moving existing cards", () => {
     const spawnCatalog: CatalogState = {
       folders: [{
         id: "root",
@@ -542,65 +614,14 @@ describe("board workspace item helpers", () => {
     });
 
     expect(items.find((item) => item.id === "parent")).toMatchObject({ x: 0, y: 0 });
-    expect(items.find((item) => item.id === "child")).toMatchObject({
+    expect(items.find((item) => item.id === "parent")).toMatchObject({
       type: "session",
-      boardItemId: "session:child",
-      x: 320,
-      y: 0,
+      childStack: { count: 1, status: "running" },
     });
+    expect(items.find((item) => item.id === "child")).toBeUndefined();
   });
 
-  it("spawns generated sessions without a visible parent on the inbox rail", () => {
-    const spawnCatalog: CatalogState = {
-      folders: [{
-        id: "root",
-        name: "Root",
-        sortOrder: 0,
-        parentFolderId: null,
-        createdAt: "2026-06-01T00:00:00.000Z",
-      }],
-      sessions: {
-        anchor: { folderId: "root", displayName: null },
-        child: { folderId: "root", displayName: null },
-      },
-      sessionList: [
-        {
-          agentSessionId: "anchor",
-          status: "completed",
-          eventCount: 1,
-          folderId: "root",
-          prompt: "Existing card",
-        },
-        {
-          agentSessionId: "child",
-          status: "running",
-          eventCount: 1,
-          folderId: "root",
-          callerSessionId: "external-parent",
-          prompt: "Generated child",
-        },
-      ],
-      boardItems: [{
-        id: "session:anchor",
-        folderId: "root",
-        itemType: "session",
-        itemId: "anchor",
-        x: 0,
-        y: 0,
-      }],
-    };
-
-    const items = buildBoardWorkspaceItems({
-      catalog: spawnCatalog,
-      selectedFolderId: "root",
-      sessions: [],
-    });
-
-    expect(items.find((item) => item.id === "anchor")).toMatchObject({ x: 0, y: 0 });
-    expect(items.find((item) => item.id === "child")).toMatchObject({ x: 320, y: 0 });
-  });
-
-  it("keeps generated children in the inbox rail when the generated parent is also in the rail", () => {
+  it("keeps a generated same-folder child in the inbox rail when its parent is also generated there", () => {
     const spawnCatalog: CatalogState = {
       folders: [{
         id: "root",
@@ -655,11 +676,144 @@ describe("board workspace item helpers", () => {
       sessions: [],
     });
 
-    expect(items.find((item) => item.id === "parent")).toMatchObject({ x: 320, y: 0 });
-    expect(items.find((item) => item.id === "child")).toMatchObject({ x: 320, y: 180 });
+    expect(items.find((item) => item.id === "parent")).toMatchObject({
+      type: "session",
+      y: 0,
+      x: 320,
+      generatedPlacementKind: "inbox",
+    });
+    expect(items.find((item) => item.id === "parent")).toMatchObject({
+      type: "session",
+      childStack: undefined,
+    });
+    expect(items.find((item) => item.id === "child")).toMatchObject({
+      type: "session",
+      y: 180,
+      x: 320,
+      generatedPlacementKind: "inbox",
+    });
   });
 
-  it("expands the parent-side search when nearby slots are dense", () => {
+  it("spawns generated sessions without a visible parent on the inbox rail", () => {
+    const spawnCatalog: CatalogState = {
+      folders: [{
+        id: "root",
+        name: "Root",
+        sortOrder: 0,
+        parentFolderId: null,
+        createdAt: "2026-06-01T00:00:00.000Z",
+      }],
+      sessions: {
+        anchor: { folderId: "root", displayName: null },
+        child: { folderId: "root", displayName: null },
+      },
+      sessionList: [
+        {
+          agentSessionId: "anchor",
+          status: "completed",
+          eventCount: 1,
+          folderId: "root",
+          prompt: "Existing card",
+        },
+        {
+          agentSessionId: "child",
+          status: "running",
+          eventCount: 1,
+          folderId: "root",
+          callerSessionId: "external-parent",
+          prompt: "Generated child",
+        },
+      ],
+      boardItems: [{
+        id: "session:anchor",
+        folderId: "root",
+        itemType: "session",
+        itemId: "anchor",
+        x: 0,
+        y: 0,
+      }],
+    };
+
+    const items = buildBoardWorkspaceItems({
+      catalog: spawnCatalog,
+      selectedFolderId: "root",
+      sessions: [],
+    });
+
+    expect(items.find((item) => item.id === "anchor")).toMatchObject({ x: 0, y: 0 });
+    expect(items.find((item) => item.id === "child")).toMatchObject({ x: 320, y: 0 });
+  });
+
+  it("keeps generated parentless sessions in the inbox rail without overlapping frames or existing cards", () => {
+    const spawnCatalog: CatalogState = {
+      folders: [{
+        id: "root",
+        name: "Root",
+        sortOrder: 0,
+        parentFolderId: null,
+        createdAt: "2026-06-01T00:00:00.000Z",
+      }],
+      sessions: {
+        anchor: { folderId: "root", displayName: null },
+        child: { folderId: "root", displayName: null },
+      },
+      sessionList: [
+        {
+          agentSessionId: "child",
+          status: "running",
+          eventCount: 1,
+          folderId: "root",
+          callerSessionId: "external-parent",
+          prompt: "Generated child",
+        },
+        {
+          agentSessionId: "anchor",
+          status: "completed",
+          eventCount: 1,
+          folderId: "root",
+          prompt: "Existing card",
+        },
+      ],
+      boardItems: [
+        {
+          id: "session:anchor",
+          folderId: "root",
+          itemType: "session",
+          itemId: "anchor",
+          x: 0,
+          y: 0,
+        },
+        {
+          id: "frame:existing",
+          folderId: "root",
+          itemType: "frame",
+          itemId: "frame:existing",
+          x: 320,
+          y: 0,
+          metadata: {
+            title: "Existing frame",
+            collapsed: true,
+            childItemIds: [],
+          },
+        },
+      ],
+    };
+
+    const items = buildBoardWorkspaceItems({
+      catalog: spawnCatalog,
+      selectedFolderId: "root",
+      sessions: [],
+    });
+
+    expect(items.find((item) => item.id === "child")).toMatchObject({
+      type: "session",
+      x: 640,
+      y: 0,
+      generatedPlacementKind: "inbox",
+    });
+  });
+
+  it("does not create a board card for a dense same-folder child stack", () => {
     const spawnCatalog: CatalogState = {
       folders: [{
         id: "root",
@@ -725,15 +879,12 @@ describe("board workspace item helpers", () => {
       sessions: [],
     });
     const child = items.find((item) => item.id === "child");
-    const occupied = new Set(
-      items
-        .filter((item) => item.id !== "child")
-        .map((item) => `${item.x}:${item.y}`),
-    );
 
-    expect(child).toMatchObject({ type: "session" });
-    expect(occupied.has(`${child?.x}:${child?.y}`)).toBe(false);
-    expect(child).not.toMatchObject({ x: 320, y: 0 });
+    expect(items.find((item) => item.id === "parent")).toMatchObject({
+      type: "session",
+      childStack: { count: 1, status: "running" },
+    });
+    expect(child).toBeUndefined();
   });
 
   it("allocates non-overlapping inbox slots for simultaneous generated sessions", () => {

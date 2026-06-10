@@ -7,6 +7,7 @@ import {
   getChildSessionLastLine,
   getDirectChildPortalItems,
   getSessionParentRef,
+  shouldSuppressSessionInFolder,
 } from "./board-session-relations";
 import { buildBoardWorkspaceItems } from "./board-workspace-items";
 
@@ -119,7 +120,7 @@ const catalog: CatalogState = {
 };
 
 describe("board session relations", () => {
-  it("counts direct children and keeps same-folder children as board cards", () => {
+  it("counts direct children and classifies same-folder children as parent stack items", () => {
     const relations = buildBoardSessionRelations({ catalog, sessions: [] });
 
     expect(relations.childrenByParentId.get("parent")?.map((s) => s.agentSessionId)).toEqual([
@@ -129,17 +130,21 @@ describe("board session relations", () => {
     expect(relations.childrenByParentId.get("parent")?.[1].status).toBe("running");
     expect(getDirectChildPortalItems(relations, "parent", "root").map((child) => child.session.agentSessionId)).toEqual([
       "cross-child",
+      "same-child",
     ]);
+    expect(shouldSuppressSessionInFolder(relations, "same-child", "root")).toBe(true);
+    expect(shouldSuppressSessionInFolder(relations, "cross-child", "other")).toBe(false);
+    expect(shouldSuppressSessionInFolder(relations, "orphan-child", "root")).toBe(false);
   });
 
-  it("aggregates cross-folder child stack status and extracts compact child summaries", () => {
+  it("aggregates direct child stack status and extracts compact child summaries", () => {
     const relations = buildBoardSessionRelations({ catalog, sessions: [] });
     const stack = buildBoardWorkspaceItems({ catalog, selectedFolderId: "root", sessions: [] })
       .find((item) => item.id === "parent");
 
     expect(stack).toMatchObject({
       type: "session",
-      childStack: { count: 1, status: "completed" },
+      childStack: { count: 2, status: "running" },
     });
     expect(getChildSessionFirstLine(sessions[1])).toBe("Same folder child");
     expect(getChildSessionLastLine(sessions[1])).toBe("Working on the child implementation");
@@ -168,7 +173,7 @@ describe("board session relations", () => {
       relationIndex: errorRelations,
     }).find((item) => item.id === "parent")).toMatchObject({
       type: "session",
-      childStack: { count: 1, status: "error" },
+      childStack: { count: 2, status: "error" },
     });
   });
 
@@ -188,14 +193,12 @@ describe("board session relations", () => {
 
     const rootItems = buildBoardWorkspaceItems({ catalog, selectedFolderId: "root", sessions: [] });
     expect(rootItems.map((item) => item.boardItemId)).toEqual([
-      "session:grandchild",
       "session:parent",
-      "session:same-child",
       "session:orphan-child",
     ]);
     expect(rootItems.find((item) => item.id === "parent")).toMatchObject({
       type: "session",
-      childStack: { count: 1 },
+      childStack: { count: 2 },
     });
 
     const otherItems = buildBoardWorkspaceItems({ catalog, selectedFolderId: "other", sessions: [] });

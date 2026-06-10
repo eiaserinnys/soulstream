@@ -32,6 +32,10 @@ export interface DirectChildPortalItem {
   isSameFolder: boolean;
 }
 
+interface ChildStackOptions {
+  excludeSessionIds?: ReadonlySet<string>;
+}
+
 export interface BuildBoardSessionRelationsParams {
   catalog: CatalogState;
   sessions: readonly SessionSummary[];
@@ -161,21 +165,34 @@ export function getSessionParentRef(
 export function getSessionChildStack(
   relationIndex: BoardSessionRelationIndex,
   sessionId: string,
-  selectedFolderId?: string | null,
+  options: ChildStackOptions = {},
 ): SessionChildStack | undefined {
   const children = (relationIndex.childrenByParentId.get(sessionId) ?? []).filter((session) =>
-    selectedFolderId === undefined ||
-    getSessionFolderId(relationIndex.catalog, session.agentSessionId) !== selectedFolderId,
+    !options.excludeSessionIds?.has(session.agentSessionId),
   );
   return children.length > 0 ? { count: children.length, status: getChildStackStatus(children) } : undefined;
+}
+
+export function shouldSuppressSessionInFolder(
+  relationIndex: BoardSessionRelationIndex,
+  sessionId: string,
+  selectedFolderId: string | null,
+): boolean {
+  const parentSessionId = relationIndex.parentIdByChildId.get(sessionId);
+  if (!parentSessionId) return false;
+  const childFolderId = getSessionFolderId(relationIndex.catalog, sessionId);
+  const parentFolderId = getSessionFolderId(relationIndex.catalog, parentSessionId);
+  return childFolderId === selectedFolderId && parentFolderId === childFolderId;
 }
 
 export function getDirectChildPortalItems(
   relationIndex: BoardSessionRelationIndex,
   parentSessionId: string,
   selectedFolderId: string | null,
+  options: ChildStackOptions = {},
 ): DirectChildPortalItem[] {
   return (relationIndex.childrenByParentId.get(parentSessionId) ?? [])
+    .filter((session) => !options.excludeSessionIds?.has(session.agentSessionId))
     .map((session) => {
       const folderId = getSessionFolderId(relationIndex.catalog, session.agentSessionId);
       return {
@@ -184,6 +201,5 @@ export function getDirectChildPortalItems(
         folderName: getFolderDisplayName(relationIndex, folderId),
         isSameFolder: folderId === selectedFolderId,
       };
-    })
-    .filter((child) => !child.isSameFolder);
+    });
 }
