@@ -14,16 +14,16 @@
  * `20260517-2338-codex-ts-context-builder-B-6.md` §B), `composeFirstTurnPrompt` helper로
  * 합성 prompt를 만들어 engine.execute에 넘긴다.
  *
- * 신규 task는 system prompt + context items 전체를 조립한다.
- * Auto-resume·intervention turn은 `buildSystemPrompt()`만 호출해 Claude SDK option을 유지하고,
- * user_message/context 재영속화는 하지 않는다.
+ * 신규 task와 compact 후 첫 사용자 메시지는 system prompt + context items 전체를 조립한다.
+ * 일반 auto-resume·intervention turn은 매턴 갱신이 필요한 running_sessions와 짧은 delta만
+ * user prompt 말미에 붙인다.
  */
 
 import type { Logger } from "pino";
 
 import type { AgentRegistry, AgentProfile } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
-import type { Task } from "../task/task_models.js";
+import type { CallerInfo, Task } from "../task/task_models.js";
 
 import {
   fetchAtomContext,
@@ -60,6 +60,18 @@ export interface PreparedContext {
   assembledPrompt: string;
 }
 
+export interface FollowupContextOptions {
+  includeFullContext?: boolean;
+  includeClaudeSessionIdUpdate?: boolean;
+  previousCallerInfo?: CallerInfo;
+  currentCallerInfo?: CallerInfo;
+}
+
+export interface FollowupContext {
+  effectiveSystemPrompt?: string;
+  contextItems: ContextItem[];
+}
+
 interface FolderChainEntry {
   id: string;
   parentFolderId: string | null;
@@ -88,35 +100,60 @@ export class ExecutionContextBuilder {
     private readonly logger: Logger,
   ) {}
 
+  async buildFollowupContext(
+    task: Task,
+    agent: AgentProfile,
+    options: FollowupContextOptions = {},
+  ): Promise<FollowupContext> {
+    if (options.includeFullContext) {
+      const taskForContext = options.currentCallerInfo
+        ? { ...task, callerInfo: options.currentCallerInfo }
+        : task;
+      const ctx = await this.build(taskForContext, agent);
+      return {
+        effectiveSystemPrompt: ctx.effectiveSystemPrompt,
+        contextItems: ctx.combinedContextItems,
+      };
+    }
+
+    const contextItems: ContextItem[] = [];
+    if (options.includeClaudeSessionIdUpdate && task.codexThreadId) {
+      contextItems.push(buildClaudeSessionIdUpdateContextItem(task));
+    }
+    if (
+      options.currentCallerInfo &&
+      callerInfoChanged(options.previousCallerInfo, options.currentCallerInfo)
+    ) {
+      contextItems.push(
+        buildCallerInfoUpdateContextItem(
+          options.previousCallerInfo,
+          options.currentCallerInfo,
+        ),
+      );
+    }
+
+    const runningSessionsItem = await fetchRunningSessionsContextItem(
+      this.db,
+      this.logger,
+      task.agentSessionId,
+    );
+    if (runningSessionsItem) {
+      contextItems.push(runningSessionsItem);
+    }
+    return { contextItems };
+  }
+
   /**
-   * Auto-resume·intervention 흐름이 user_message wire에 담을 context_items를 조립한다.
-   *
-   * Phase A context 정본 진입점 (atom d7a1ad86 정본 둘 안티패턴 차단):
-   * - 첫 턴(`build()` → `_assembleContext` 내부 `buildSoulstreamContextItem`)과 본 method가
-   *   *같은 helper `buildSoulstreamContextItem`을 호출*하여 soulstream_session context_item을
-   *   조립 — design-principles §3 정본 하나.
-   * - 본 method는 context_item용 atom_context fetch / 첫 턴 prompt 합성을 *제외*하고
-   *   soulstream_item만 만든다. system prompt는 Claude SDK option으로 별도 재전달한다.
-   *
-   * 호출자: `TaskManager._addInterventionAutoResume` (terminal-resume 시 user_message context).
-   * 실패 격리: 본 method가 throw하면 호출자는 context 없이 user_message만 박는다
-   *           (design-principles §8 — context 빌더 실패가 핵심 user_message persist를 막지 않음).
+   * Legacy public wrapper. 후속 턴 context 정본은 `buildFollowupContext()` 하나다.
+   * 이 helper도 더 이상 soulstream_session을 만들지 않고, 일반 후속 턴 delta + running_sessions를
+   * 반환한다.
    */
   async buildResumeContextItems(task: Task, agent: AgentProfile): Promise<ContextItem[]> {
-    const { folderName } = await this._resolveFolder(task);
-    const { workingDir } = this._resolveProfile(task);
-    const effectiveWorkspaceDir = workingDir ?? agent.workspace_dir;
-
-    const soulstreamItem = buildSoulstreamContextItem({
-      agentSessionId: task.agentSessionId,
-      claudeSessionId: task.codexThreadId ?? null,
-      workspaceDir: effectiveWorkspaceDir,
-      folderName,
-      nodeId: this.cfg.nodeId,
-      agentId: task.profileId,
-      callerInfo: task.callerInfo,
+    const ctx = await this.buildFollowupContext(task, agent, {
+      includeClaudeSessionIdUpdate: Boolean(task.codexThreadId),
+      currentCallerInfo: task.callerInfo,
     });
-    return [soulstreamItem];
+    return ctx.contextItems;
   }
 
   /**
@@ -442,6 +479,57 @@ export function composeFirstTurnPrompt(ctx: PreparedContext): string {
   }
   parts.push(ctx.assembledPrompt);
   return parts.join("\n\n");
+}
+
+function buildClaudeSessionIdUpdateContextItem(task: Task): ContextItem {
+  return {
+    key: "claude_session_id_update",
+    label: "Claude session id update",
+    content: {
+      agent_session_id: task.agentSessionId,
+      claude_session_id: task.codexThreadId,
+    },
+  };
+}
+
+function buildCallerInfoUpdateContextItem(
+  previousCallerInfo: CallerInfo | undefined,
+  currentCallerInfo: CallerInfo,
+): ContextItem {
+  return {
+    key: "caller_info_update",
+    label: "Caller info update",
+    content: {
+      previous_caller_info: previousCallerInfo ?? null,
+      current_caller_info: currentCallerInfo,
+    },
+  };
+}
+
+function callerInfoChanged(
+  previousCallerInfo: CallerInfo | undefined,
+  currentCallerInfo: CallerInfo,
+): boolean {
+  return stableJson(previousCallerInfo ?? null) !== stableJson(currentCallerInfo);
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(sortObjectKeys(value));
+}
+
+function sortObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sortObjectKeys(item));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.keys(record)
+      .sort()
+      .map((key) => [key, sortObjectKeys(record[key])]),
+  );
 }
 
 function extractFolderPrompt(settings: Record<string, unknown>): string | undefined {

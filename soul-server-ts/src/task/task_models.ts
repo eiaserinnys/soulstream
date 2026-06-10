@@ -297,6 +297,15 @@ export interface Task {
 
   // === 런타임 전용 (DB·wire에 직접 박지 않음) ===
 
+  /** 후속 턴에 claude_session_id delta를 한 번만 주입하기 위한 런타임 마커. */
+  lastInjectedClaudeSessionId?: string;
+
+  /** 후속 턴에 caller_info delta를 한 번만 주입하기 위한 런타임 마커. */
+  lastInjectedCallerInfo?: CallerInfo;
+
+  /** compact 직후 첫 사용자 메시지에서만 full context를 재주입하기 위한 런타임 플래그. */
+  needsFullContextReinjection?: boolean;
+
   /** 진행 중 turn의 어댑터. cancelTask()에서 engine.interrupt() 호출 대상. */
   engine?: EnginePort;
 
