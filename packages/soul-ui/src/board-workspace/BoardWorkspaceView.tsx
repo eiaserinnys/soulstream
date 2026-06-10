@@ -237,6 +237,7 @@ export function BoardWorkspaceView({
   const [cardContextMenu, setCardContextMenu] = useState<BoardCardContextMenuState | null>(null);
   const [assetPlaceholders, setAssetPlaceholders] = useState<AssetBoardWorkspaceItem[]>([]);
   const [assetSignedUrls, setAssetSignedUrls] = useState<Record<string, string>>({});
+  const [declutterUndoUpdates, setDeclutterUndoUpdates] = useState<BoardItemPositionUpdate[]>([]);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const assetObjectUrlsRef = useRef(new Set<string>());
   const loadMoreGateRef = useRef(false);
@@ -389,8 +390,24 @@ export function BoardWorkspaceView({
   const handleDeclutterBoard = useCallback(() => {
     const declutterUpdates = declutterBoardItems(boardItems);
     if (declutterUpdates.length === 0) return;
+    const expandedUpdates = expandFramePositionUpdates(allBoardItems, declutterUpdates);
+    const currentById = new Map(allBoardItems.map((item) => [item.boardItemId, item]));
+    setDeclutterUndoUpdates(expandedUpdates.flatMap((update) => {
+      const current = currentById.get(update.boardItemId);
+      if (!current || (current.x === update.x && current.y === update.y)) return [];
+      return [{ boardItemId: current.boardItemId, x: current.x, y: current.y }];
+    }));
     yjsUpdateBoardItemPositions(declutterUpdates);
-  }, [boardItems, yjsUpdateBoardItemPositions]);
+  }, [allBoardItems, boardItems, yjsUpdateBoardItemPositions]);
+  const handleUndoDeclutter = useCallback(() => {
+    if (declutterUndoUpdates.length === 0) return;
+    yjsUpdateBoardItemPositions(declutterUndoUpdates);
+    setDeclutterUndoUpdates([]);
+  }, [declutterUndoUpdates, yjsUpdateBoardItemPositions]);
+
+  useEffect(() => {
+    setDeclutterUndoUpdates([]);
+  }, [selectedFolderId]);
   const {
     scrollRef,
     zoom,
@@ -770,6 +787,8 @@ export function BoardWorkspaceView({
         onCreateMarkdown={() => createMarkdownAt()}
         declutterDisabled={boardItems.length <= 1}
         onDeclutterBoard={handleDeclutterBoard}
+        undoDeclutterDisabled={declutterUndoUpdates.length === 0}
+        onUndoDeclutter={handleUndoDeclutter}
       />
 
       <div className="relative min-h-0 flex-1">

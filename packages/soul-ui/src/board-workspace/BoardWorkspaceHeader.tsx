@@ -1,4 +1,4 @@
-import { ChevronRight, FolderPlus, List, Plus, RefreshCw, Sparkles, SquarePen, Wifi, WifiOff } from "lucide-react";
+import { ChevronRight, FolderPlus, List, Plus, RefreshCw, Sparkles, SquarePen, Undo2, Wifi, WifiOff } from "lucide-react";
 
 import type { CatalogFolder } from "../shared/types";
 import { Button } from "../components/ui/button";
@@ -21,6 +21,8 @@ interface BoardWorkspaceHeaderProps {
   onCreateMarkdown: () => void;
   declutterDisabled?: boolean;
   onDeclutterBoard?: () => void;
+  undoDeclutterDisabled?: boolean;
+  onUndoDeclutter?: () => void;
 }
 
 export function BoardWorkspaceHeader({
@@ -39,6 +41,8 @@ export function BoardWorkspaceHeader({
   onCreateMarkdown,
   declutterDisabled,
   onDeclutterBoard,
+  undoDeclutterDisabled,
+  onUndoDeclutter,
 }: BoardWorkspaceHeaderProps) {
   const syncStatus = getSyncStatusMeta(connectionStatus);
   const SyncIcon = syncStatus.icon;
@@ -99,6 +103,17 @@ export function BoardWorkspaceHeader({
         >
           <Sparkles className="mr-1 h-3.5 w-3.5" />
           정리
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onUndoDeclutter}
+          disabled={!onUndoDeclutter || undoDeclutterDisabled}
+          title="정리 되돌리기"
+          data-testid="board-declutter-undo-button"
+        >
+          <Undo2 className="mr-1 h-3.5 w-3.5" />
+          되돌리기
         </Button>
         <Button variant="ghost" size="sm" onClick={onCreateFolder} title="New folder">
           <FolderPlus className="mr-1 h-3.5 w-3.5" />
