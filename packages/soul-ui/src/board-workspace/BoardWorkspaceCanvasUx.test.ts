@@ -173,9 +173,9 @@ describe("BoardWorkspaceView canvas UX", () => {
     expect(markdownTile).not.toBeNull();
 
     flushSync(() => {
-      dispatchPointer(canvas!, "pointerdown", { clientX: 50020, clientY: 50020 });
-      dispatchPointer(window, "pointermove", { clientX: 50580, clientY: 50300 });
-      dispatchPointer(window, "pointerup", { clientX: 50580, clientY: 50300 });
+      dispatchPointer(canvas!, "pointerdown", { clientX: 50020, clientY: 50020, shiftKey: true });
+      dispatchPointer(window, "pointermove", { clientX: 50580, clientY: 50300, shiftKey: true });
+      dispatchPointer(window, "pointerup", { clientX: 50580, clientY: 50300, shiftKey: true });
     });
 
     expect(folderTile!.className).toContain("ring-2");
@@ -195,6 +195,67 @@ describe("BoardWorkspaceView canvas UX", () => {
     expect(sessionTile!.style.top).toBe("50080px");
     expect(markdownTile!.style.left).toBe("50400px");
     expect(markdownTile!.style.top).toBe("50120px");
+  });
+
+  it("pans the canvas from the background after a session tile is selected", () => {
+    ({ container, root } = renderBoard());
+
+    const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
+    const canvas = container.querySelector<HTMLElement>('[data-testid="board-workspace-canvas"]');
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    expect(scroller).not.toBeNull();
+    expect(canvas).not.toBeNull();
+    expect(sessionTile).not.toBeNull();
+
+    flushSync(() => {
+      sessionTile!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(sessionTile!.className).toContain("ring-2");
+
+    const startScrollLeft = scroller!.scrollLeft;
+    const startScrollTop = scroller!.scrollTop;
+    flushSync(() => {
+      dispatchPointer(canvas!, "pointerdown", { clientX: 340, clientY: 260 });
+      dispatchPointer(window, "pointermove", { clientX: 290, clientY: 220 });
+      dispatchPointer(window, "pointerup", { clientX: 290, clientY: 220 });
+    });
+
+    expect(scroller!.scrollLeft).toBe(startScrollLeft + 50);
+    expect(scroller!.scrollTop).toBe(startScrollTop + 40);
+
+    const markdownTile = container.querySelector<HTMLElement>('[data-testid="board-markdown-tile"]');
+    expect(markdownTile).not.toBeNull();
+    flushSync(() => {
+      markdownTile!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-a");
+  });
+
+  it("pans the canvas from the background after a markdown tile is selected", () => {
+    ({ container, root } = renderBoard());
+
+    const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
+    const canvas = container.querySelector<HTMLElement>('[data-testid="board-workspace-canvas"]');
+    const markdownTile = container.querySelector<HTMLElement>('[data-testid="board-markdown-tile"]');
+    expect(scroller).not.toBeNull();
+    expect(canvas).not.toBeNull();
+    expect(markdownTile).not.toBeNull();
+
+    flushSync(() => {
+      markdownTile!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(markdownTile!.className).toContain("ring-2");
+
+    const startScrollLeft = scroller!.scrollLeft;
+    const startScrollTop = scroller!.scrollTop;
+    flushSync(() => {
+      dispatchPointer(canvas!, "pointerdown", { clientX: 420, clientY: 280 });
+      dispatchPointer(window, "pointermove", { clientX: 370, clientY: 250 });
+      dispatchPointer(window, "pointerup", { clientX: 370, clientY: 250 });
+    });
+
+    expect(scroller!.scrollLeft).toBe(startScrollLeft + 50);
+    expect(scroller!.scrollTop).toBe(startScrollTop + 30);
   });
 
   it("clears multi-selection when empty canvas space is clicked", () => {

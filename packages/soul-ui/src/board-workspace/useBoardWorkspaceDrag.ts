@@ -15,6 +15,7 @@ import {
 
 const DRAG_ACTIVATION_DISTANCE = 8;
 const MARQUEE_ACTIVATION_DISTANCE = 4;
+const PAN_ACTIVATION_DISTANCE = 1;
 const AUTO_PAN_EDGE_SIZE = 48;
 const AUTO_PAN_STEP = 24;
 
@@ -32,6 +33,7 @@ interface PanState {
   startClientY: number;
   scrollLeft: number;
   scrollTop: number;
+  active: boolean;
 }
 
 interface MarqueeState {
@@ -65,6 +67,10 @@ function isBoardTileTarget(target: EventTarget | null): boolean {
 function isInteractiveTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return Boolean(target.closest("button, a, input, textarea, select, [contenteditable='true'], [role='menu'], [role='menuitem']"));
+}
+
+function isMarqueeSelectionGesture(event: ReactPointerEvent<HTMLDivElement>): boolean {
+  return event.shiftKey;
 }
 
 export function useBoardWorkspaceDrag({
@@ -185,8 +191,12 @@ export function useBoardWorkspaceDrag({
       const pan = panStateRef.current;
       const scroller = scrollRef.current;
       if (pan && scroller) {
-        scroller.scrollLeft = pan.scrollLeft - (event.clientX - pan.startClientX);
-        scroller.scrollTop = pan.scrollTop - (event.clientY - pan.startClientY);
+        const moveX = event.clientX - pan.startClientX;
+        const moveY = event.clientY - pan.startClientY;
+        if (!pan.active && Math.hypot(moveX, moveY) < PAN_ACTIVATION_DISTANCE) return;
+        pan.active = true;
+        scroller.scrollLeft = pan.scrollLeft - moveX;
+        scroller.scrollTop = pan.scrollTop - moveY;
       }
     };
 
@@ -220,6 +230,10 @@ export function useBoardWorkspaceDrag({
           latestRef.current.raiseBoardItems(selectedIds);
         }
       }
+      const pan = panStateRef.current;
+      if (pan && !pan.active) {
+        latestRef.current.clearBoardSelection();
+      }
       panStateRef.current = null;
       setIsPanning(false);
     };
@@ -238,7 +252,7 @@ export function useBoardWorkspaceDrag({
     if (!scroller) return;
     if (!isSpaceDown && isInteractiveTarget(event.target)) return;
     event.preventDefault();
-    if (!isSpaceDown) {
+    if (!isSpaceDown && isMarqueeSelectionGesture(event)) {
       const start = latestRef.current.resolveBoardPoint(event.clientX, event.clientY);
       marqueeStateRef.current = { start, current: start, active: false };
       setMarqueeRect(null);
@@ -249,6 +263,7 @@ export function useBoardWorkspaceDrag({
       startClientY: event.clientY,
       scrollLeft: scroller.scrollLeft,
       scrollTop: scroller.scrollTop,
+      active: false,
     };
     setIsPanning(true);
   };
