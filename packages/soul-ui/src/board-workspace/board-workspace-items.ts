@@ -1,5 +1,10 @@
 import type { CatalogBoardItem, CatalogFolder, CatalogState, SessionSummary } from "../shared/types";
 import {
+  BOARD_FRAME_COLLAPSED_HEIGHT,
+  BOARD_FRAME_COLLAPSED_WIDTH,
+  getBoardFrameMetadata,
+} from "./board-frames";
+import {
   buildBoardSessionRelations,
   getSessionChildStack,
   getSessionParentRef,
@@ -93,17 +98,35 @@ export interface AssetBoardWorkspaceItem {
   height: number;
 }
 
+export interface FrameBoardWorkspaceItem {
+  type: "frame";
+  id: string;
+  boardItemId: string;
+  folderId: string;
+  title: string;
+  collapsed: boolean;
+  childItemIds: string[];
+  childCount: number;
+  hasRunningChild: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export type BoardWorkspaceItem =
   | FolderBoardWorkspaceItem
   | SessionBoardWorkspaceItem
   | MarkdownBoardWorkspaceItem
-  | AssetBoardWorkspaceItem;
+  | AssetBoardWorkspaceItem
+  | FrameBoardWorkspaceItem;
 
 export interface BuildBoardWorkspaceItemsParams {
   catalog: CatalogState;
   selectedFolderId: string | null;
   sessions: readonly SessionSummary[];
   relationIndex?: BoardSessionRelationIndex;
+  includeCollapsedFrameChildren?: boolean;
 }
 
 function parseTimeMs(value: string | undefined | null): number {
@@ -311,6 +334,7 @@ function buildPositionedItems({
   selectedFolderId,
   sessions,
   relationIndex,
+  includeCollapsedFrameChildren = false,
 }: BuildBoardWorkspaceItemsParams): BoardWorkspaceItem[] {
   const folderById = new Map(catalog.folders.map((folder) => [folder.id, folder]));
   const relations = relationIndex ?? buildBoardSessionRelations({ catalog, sessions });
@@ -384,6 +408,25 @@ function buildPositionedItems({
         width: BOARD_TILE_WIDTH,
         height: BOARD_ASSET_TILE_HEIGHT,
       });
+      continue;
+    }
+    if (boardItem.itemType === "frame") {
+      const metadata = getBoardFrameMetadata(boardItem);
+      items.push({
+        type: "frame",
+        id: boardItem.itemId,
+        boardItemId: boardItem.id,
+        folderId: boardItem.folderId,
+        title: metadata.title,
+        collapsed: metadata.collapsed,
+        childItemIds: metadata.childItemIds,
+        childCount: metadata.childItemIds.length,
+        hasRunningChild: false,
+        x: boardItem.x,
+        y: boardItem.y,
+        width: metadata.width,
+        height: metadata.height,
+      });
     }
   }
 
@@ -449,7 +492,33 @@ function buildPositionedItems({
     placeGeneratedSession(session.agentSessionId);
   }
 
-  return items.sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
+  const summarized = applyFrameSummaries(items)
+    .sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
+  return includeCollapsedFrameChildren ? summarized : getVisibleBoardWorkspaceItems(summarized);
+}
+
+function applyFrameSummaries(items: readonly BoardWorkspaceItem[]): BoardWorkspaceItem[] {
+  const itemById = new Map(items.map((item) => [item.boardItemId, item]));
+  return items.map((item) => {
+    if (item.type !== "frame") return item;
+    const children = item.childItemIds
+      .map((childId) => itemById.get(childId))
+      .filter((child): child is BoardWorkspaceItem => Boolean(child));
+    return {
+      ...item,
+      childCount: item.childItemIds.length,
+      hasRunningChild: children.some((child) => child.type === "session" && child.session.status === "running"),
+    };
+  });
+}
+
+export function getVisibleBoardWorkspaceItems(items: readonly BoardWorkspaceItem[]): BoardWorkspaceItem[] {
+  const hiddenChildIds = new Set<string>();
+  for (const item of items) {
+    if (item.type !== "frame" || !item.collapsed) continue;
+    for (const childId of item.childItemIds) hiddenChildIds.add(childId);
+  }
+  return items.filter((item) => !hiddenChildIds.has(item.boardItemId));
 }
 
 export function buildBoardWorkspaceItems({
@@ -512,10 +581,12 @@ export function findFirstOpenBoardPosition(items: readonly BoardWorkspaceItem[])
 }
 
 export function getBoardItemWidth(item: BoardWorkspaceItem): number {
+  if (item.type === "frame" && item.collapsed) return BOARD_FRAME_COLLAPSED_WIDTH;
   return "width" in item ? item.width : BOARD_TILE_WIDTH;
 }
 
 export function getBoardItemHeight(item: BoardWorkspaceItem): number {
+  if (item.type === "frame" && item.collapsed) return BOARD_FRAME_COLLAPSED_HEIGHT;
   return "height" in item ? item.height : BOARD_TILE_HEIGHT;
 }
 

@@ -11,6 +11,11 @@ import {
   getSessionBoardTitle,
   snapBoardPosition,
 } from "./board-workspace-items";
+import {
+  buildFrameMembershipUpdates,
+  buildFrameMoveUpdates,
+  getBoardFrameMetadata,
+} from "./board-frames";
 
 const catalog: CatalogState = {
   folders: [
@@ -143,6 +148,128 @@ describe("board workspace item helpers", () => {
       title: "Board note",
       preview: "Short markdown preview",
     });
+  });
+
+  it("builds frame items and hides children while collapsed without changing child coordinates", () => {
+    const frameCatalog: CatalogState = {
+      ...catalog,
+      boardItems: [
+        ...(catalog.boardItems ?? []),
+        {
+          id: "frame:launch",
+          folderId: "root",
+          itemType: "frame",
+          itemId: "frame:launch",
+          x: -20,
+          y: -20,
+          metadata: {
+            title: "Launch",
+            width: 640,
+            height: 420,
+            childItemIds: ["session:session-b"],
+          },
+        },
+      ],
+    };
+
+    const expanded = buildBoardWorkspaceItems({
+      catalog: frameCatalog,
+      selectedFolderId: "root",
+      sessions,
+    });
+
+    const frame = expanded.find((item) => item.type === "frame");
+    expect(frame).toMatchObject({
+      type: "frame",
+      id: "frame:launch",
+      title: "Launch",
+      childCount: 1,
+      collapsed: false,
+      x: -20,
+      y: -20,
+      width: 640,
+      height: 420,
+    });
+    expect(expanded.map((item) => item.boardItemId)).toContain("session:session-b");
+
+    const collapsed = buildBoardWorkspaceItems({
+      catalog: {
+        ...frameCatalog,
+        boardItems: frameCatalog.boardItems?.map((item) =>
+          item.id === "frame:launch"
+            ? { ...item, metadata: { ...(item.metadata ?? {}), collapsed: true } }
+            : item
+        ),
+      },
+      selectedFolderId: "root",
+      sessions,
+    });
+
+    expect(collapsed.map((item) => item.boardItemId)).toContain("frame:launch");
+    expect(collapsed.map((item) => item.boardItemId)).not.toContain("session:session-b");
+    expect(getBoardFrameMetadata(frameCatalog.boardItems!.at(-1)!).childItemIds).toEqual(["session:session-b"]);
+  });
+
+  it("moves frame children with the frame and updates membership without allowing nested frames", () => {
+    const frameCatalog: CatalogState = {
+      ...catalog,
+      boardItems: [
+        ...(catalog.boardItems ?? []),
+        {
+          id: "frame:launch",
+          folderId: "root",
+          itemType: "frame",
+          itemId: "frame:launch",
+          x: 0,
+          y: 0,
+          metadata: {
+            title: "Launch",
+            width: 640,
+            height: 420,
+            childItemIds: ["session:session-b"],
+          },
+        },
+        {
+          id: "frame:other",
+          folderId: "root",
+          itemType: "frame",
+          itemId: "frame:other",
+          x: 700,
+          y: 0,
+          metadata: {
+            title: "Other",
+            width: 320,
+            height: 240,
+          },
+        },
+      ],
+    };
+    const items = buildBoardWorkspaceItems({
+      catalog: frameCatalog,
+      selectedFolderId: "root",
+      sessions,
+    });
+
+    expect(buildFrameMoveUpdates(items, { boardItemId: "frame:launch", x: 100, y: 80 }))
+      .toEqual(expect.arrayContaining([
+        { boardItemId: "frame:launch", x: 100, y: 80 },
+        { boardItemId: "session:session-b", x: 100, y: 80 },
+      ]));
+
+    const movedItems = items.map((item) =>
+      item.boardItemId === "session:session-a" ? { ...item, x: 120, y: 120 } : item
+    );
+    const membership = buildFrameMembershipUpdates(movedItems, ["session:session-a", "frame:other"]);
+    expect(membership.find((item) => item.id === "frame:launch")?.metadata?.childItemIds)
+      .toEqual(["session:session-b", "session:session-a"]);
+    expect(membership.find((item) => item.id === "frame:other")).toBeUndefined();
+
+    const collapsedItems = items.map((item) => {
+      if (item.boardItemId === "frame:launch") return { ...item, collapsed: true };
+      if (item.boardItemId === "session:session-a") return { ...item, x: 360, y: 220 };
+      return item;
+    });
+    expect(buildFrameMembershipUpdates(collapsedItems, ["session:session-a"])).toEqual([]);
   });
 
   it("ignores stale session board items whose session assignment moved to another folder", () => {

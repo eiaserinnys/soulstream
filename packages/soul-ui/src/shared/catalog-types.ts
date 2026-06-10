@@ -46,7 +46,7 @@ export interface CatalogAssignment {
   displayName: string | null;
 }
 
-export type CatalogBoardItemType = "session" | "markdown" | "subfolder" | "asset";
+export type CatalogBoardItemType = "session" | "markdown" | "subfolder" | "asset" | "frame";
 
 export interface CatalogBoardItem {
   id: string;

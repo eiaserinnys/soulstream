@@ -46,6 +46,44 @@ describe("board-yjs-client", () => {
     });
   });
 
+  it("frame board item type과 metadata를 Yjs roundtrip으로 보존한다", () => {
+    const doc = new Y.Doc();
+    seedBoardYDocFromCatalog(doc, "folder-a", {
+      folders: [],
+      sessions: {},
+      boardItems: [{
+        id: "frame:launch",
+        folderId: "folder-a",
+        itemType: "frame",
+        itemId: "frame:launch",
+        x: 20,
+        y: 40,
+        metadata: {
+          title: "Launch",
+          collapsed: true,
+          childItemIds: ["session:a"],
+          width: 640,
+          height: 420,
+        },
+      }],
+    });
+
+    expect(catalogBoardItemsFromYDoc("folder-a", doc)).toEqual([
+      expect.objectContaining({
+        id: "frame:launch",
+        itemType: "frame",
+        itemId: "frame:launch",
+        x: 20,
+        y: 40,
+        metadata: expect.objectContaining({
+          title: "Launch",
+          collapsed: true,
+          childItemIds: ["session:a"],
+        }),
+      }),
+    ]);
+  });
+
   it("Yjs update 적용으로 두 doc 사이 board position이 동기화", () => {
     const a = new Y.Doc();
     const b = new Y.Doc();

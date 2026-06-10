@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS file_assets (
 CREATE TABLE IF NOT EXISTS board_items (
     id          TEXT PRIMARY KEY,
     folder_id   TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
-    item_type   TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset')),
+    item_type   TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame')),
     item_id     TEXT NOT NULL,
     x           DOUBLE PRECISION NOT NULL DEFAULT 0,
     y           DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -165,7 +165,7 @@ ALTER TABLE board_items ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT
 ALTER TABLE board_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_item_type_check;
 ALTER TABLE board_items ADD CONSTRAINT board_items_item_type_check
-    CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset'));
+    CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame'));
 
 CREATE TABLE IF NOT EXISTS board_yjs_documents (
     name        TEXT PRIMARY KEY,

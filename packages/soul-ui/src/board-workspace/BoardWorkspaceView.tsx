@@ -1,3 +1,5 @@
+// Size exception: this legacy coordinator still owns board sync, drag, upload,
+// creation, and view wiring. New frame domain logic is kept in board-frames.ts.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
@@ -14,10 +16,20 @@ import {
   BOARD_ASSET_TILE_HEIGHT,
   BOARD_TILE_WIDTH,
   buildBoardWorkspaceItems,
+  getVisibleBoardWorkspaceItems,
   snapBoardPosition,
   type AssetBoardWorkspaceItem,
   type BoardWorkspaceItem,
+  type FrameBoardWorkspaceItem,
 } from "./board-workspace-items";
+import {
+  applyBoardItemPositionUpdates,
+  buildFrameMembershipUpdates,
+  createFrameBoardItem,
+  expandFramePositionUpdates,
+  frameItemToCatalogBoardItem,
+  getFrameCreationRect,
+} from "./board-frames";
 import { isBoardTileTarget } from "./board-workspace-dom";
 import { getFolderBreadcrumbs } from "./board-workspace-helpers";
 import { BoardWorkspaceHeader } from "./BoardWorkspaceHeader";
@@ -105,6 +117,9 @@ function boardWorkspaceItemToCatalogBoardItem(
       y,
     };
   }
+  if (item.type === "frame") {
+    return frameItemToCatalogBoardItem(item, { x, y });
+  }
   return null;
 }
 
@@ -119,6 +134,11 @@ function hasDraggedFiles(dataTransfer: DataTransfer | null): boolean {
 function createUploadPlaceholderId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return `upload:${crypto.randomUUID()}`;
   return `upload:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function createFrameId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return `frame:${crypto.randomUUID()}`;
+  return `frame:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function createObjectUrl(file: File): string | undefined {
@@ -208,6 +228,7 @@ export function BoardWorkspaceView({
   const addBoardItem = useDashboardStore((s) => s.addBoardItem);
   const setBoardItemsForFolder = useDashboardStore((s) => s.setBoardItemsForFolder);
   const updateBoardItemPosition = useDashboardStore((s) => s.updateBoardItemPosition);
+  const removeBoardItem = useDashboardStore((s) => s.removeBoardItem);
   const isMobile = useIsMobile();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createFolderPosition, setCreateFolderPosition] = useState<{ x: number; y: number } | null>(null);
@@ -312,21 +333,30 @@ export function BoardWorkspaceView({
     [folders, selectedFolderId],
   );
 
-  const persistedBoardItems = useMemo(() => {
+  const allPersistedBoardItems = useMemo(() => {
     if (!effectiveCatalog) return [];
     return buildBoardWorkspaceItems({
       catalog: effectiveCatalog,
       selectedFolderId,
       sessions: displaySessions,
       ...(relationIndex ? { relationIndex } : {}),
+      includeCollapsedFrameChildren: true,
     });
   }, [effectiveCatalog, selectedFolderId, displaySessions, relationIndex]);
+  const persistedBoardItems = useMemo(
+    () => getVisibleBoardWorkspaceItems(allPersistedBoardItems),
+    [allPersistedBoardItems],
+  );
   const boardItems = useMemo(
     () => [...persistedBoardItems, ...assetPlaceholders].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)),
     [assetPlaceholders, persistedBoardItems],
   );
+  const allBoardItems = useMemo(
+    () => [...allPersistedBoardItems, ...assetPlaceholders].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)),
+    [allPersistedBoardItems, assetPlaceholders],
+  );
   const yjsUpdateBoardItemPosition = useCallback((boardItemId: string, x: number, y: number) => {
-    const existingItem = boardItems.find((item) => item.boardItemId === boardItemId);
+    const existingItem = allBoardItems.find((item) => item.boardItemId === boardItemId);
     const boardItem = existingItem
       ? boardWorkspaceItemToCatalogBoardItem(existingItem, selectedFolderId, x, y)
       : null;
@@ -337,7 +367,7 @@ export function BoardWorkspaceView({
       boardSync.runtime?.updateBoardItemPosition(boardItemId, x, y);
     }
     updateBoardItemPosition(boardItemId, x, y);
-  }, [addBoardItem, boardItems, boardSync.runtime, selectedFolderId, updateBoardItemPosition]);
+  }, [addBoardItem, allBoardItems, boardSync.runtime, selectedFolderId, updateBoardItemPosition]);
   const childStack = useBoardChildStackState({
     boardItems,
     relationIndex,
@@ -345,10 +375,17 @@ export function BoardWorkspaceView({
     selectFolder,
   });
   const yjsUpdateBoardItemPositions = useCallback((updates: BoardItemPositionUpdate[]) => {
-    for (const update of updates) {
+    const expandedUpdates = expandFramePositionUpdates(allBoardItems, updates);
+    for (const update of expandedUpdates) {
       yjsUpdateBoardItemPosition(update.boardItemId, update.x, update.y);
     }
-  }, [yjsUpdateBoardItemPosition]);
+    const nextItems = applyBoardItemPositionUpdates(allBoardItems, expandedUpdates);
+    const frameUpdates = buildFrameMembershipUpdates(nextItems, updates.map((update) => update.boardItemId));
+    for (const frameUpdate of frameUpdates) {
+      boardSync.runtime?.upsertBoardItem(frameUpdate);
+      addBoardItem(frameUpdate);
+    }
+  }, [addBoardItem, allBoardItems, boardSync.runtime, yjsUpdateBoardItemPosition]);
   const handleDeclutterBoard = useCallback(() => {
     const declutterUpdates = declutterBoardItems(boardItems);
     if (declutterUpdates.length === 0) return;
@@ -440,6 +477,64 @@ export function BoardWorkspaceView({
       console.error("Markdown document creation failed:", err);
     }
   }, [addBoardItem, boardSync.runtime, isMobile, resolveSpawnPosition, selectedFolderId, setActiveBoardDocument, setActiveTab]);
+
+  const createFrameAt = useCallback((position?: { x: number; y: number }) => {
+    if (!selectedFolderId || !boardSync.runtime) return;
+    const resolved = position ?? resolveSpawnPosition();
+    const snapped = snapBoardPosition(resolved.x, resolved.y);
+    const selectedItems = boardItems.filter((item) =>
+      selectedBoardItemIds.has(item.boardItemId) && item.type !== "frame"
+    );
+    const rect = getFrameCreationRect(selectedItems, snapped);
+    const framePosition = snapBoardPosition(rect.x, rect.y);
+    const boardItem = createFrameBoardItem({
+      folderId: selectedFolderId,
+      frameId: createFrameId(),
+      x: framePosition.x,
+      y: framePosition.y,
+      width: rect.width,
+      height: rect.height,
+      childItemIds: rect.childItemIds,
+    });
+    boardSync.runtime.upsertBoardItem(boardItem);
+    addBoardItem(boardItem);
+    selectSingleBoardItem(boardItem.id);
+    raiseBoardItems([boardItem.id]);
+    setNewMenuOpen(false);
+    setContextMenu(null);
+  }, [
+    addBoardItem,
+    boardItems,
+    boardSync.runtime,
+    raiseBoardItems,
+    resolveSpawnPosition,
+    selectSingleBoardItem,
+    selectedBoardItemIds,
+    selectedFolderId,
+  ]);
+
+  const upsertFrame = useCallback((
+    frame: FrameBoardWorkspaceItem,
+    overrides: Parameters<typeof frameItemToCatalogBoardItem>[1],
+  ) => {
+    const boardItem = frameItemToCatalogBoardItem(frame, overrides);
+    boardSync.runtime?.upsertBoardItem(boardItem);
+    addBoardItem(boardItem);
+  }, [addBoardItem, boardSync.runtime]);
+
+  const renameFrame = useCallback((frame: FrameBoardWorkspaceItem, title: string) => {
+    upsertFrame(frame, { title });
+  }, [upsertFrame]);
+
+  const toggleFrameCollapsed = useCallback((frame: FrameBoardWorkspaceItem) => {
+    upsertFrame(frame, { collapsed: !frame.collapsed });
+  }, [upsertFrame]);
+
+  const deleteFrame = useCallback((frame: FrameBoardWorkspaceItem) => {
+    boardSync.runtime?.deleteBoardItem(frame.boardItemId);
+    removeBoardItem(frame.boardItemId);
+    clearBoardSelection();
+  }, [boardSync.runtime, clearBoardSelection, removeBoardItem]);
 
   useEffect(() => {
     if (!boardSync.connectionError) return;
@@ -728,6 +823,7 @@ export function BoardWorkspaceView({
                 onToggleChildStack={childStack.toggleChildStack}
                 onNavigateToParent={childStack.navigateToParent}
                 onOpenChildRef={openChildRef}
+                onToggleFrameCollapsed={toggleFrameCollapsed}
                 onOpenSession={openSession}
                 onOpenFolder={(item, folderId) => {
                   selectSingleBoardItem(item.boardItemId);
@@ -755,6 +851,10 @@ export function BoardWorkspaceView({
             onOpenCreateFolder={openCreateFolderDialog}
             onOpenNewSession={openNewSessionAt}
             onCreateMarkdown={createMarkdownAt}
+            onCreateFrame={createFrameAt}
+            onRenameFrame={renameFrame}
+            onToggleFrameCollapsed={toggleFrameCollapsed}
+            onDeleteFrame={deleteFrame}
             onMoveSessions={onMoveSessions}
             onRenameSession={onRenameSession}
             onDeleteSessions={onDeleteSessions}

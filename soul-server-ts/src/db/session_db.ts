@@ -100,7 +100,7 @@ export interface CatalogFolderRow {
   createdAt?: string;
 }
 
-export type BoardItemType = "session" | "markdown" | "subfolder" | "asset";
+export type BoardItemType = "session" | "markdown" | "subfolder" | "asset" | "frame";
 
 export interface CatalogBoardItemRow {
   id: string;
@@ -2119,7 +2119,8 @@ function isBoardItemType(value: unknown): value is BoardItemType {
   return value === "session" ||
     value === "markdown" ||
     value === "subfolder" ||
-    value === "asset";
+    value === "asset" ||
+    value === "frame";
 }
 
 function toMarkdownDocumentRow(row: {
