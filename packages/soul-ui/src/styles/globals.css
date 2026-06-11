@@ -454,11 +454,11 @@
   --glass-border: rgb(255 255 255 / 72%);
   --glass-highlight: rgb(255 255 255 / 86%);
   --glass-specular-edge: rgb(255 255 255 / 70%);
-  --glass-chrome-surface-strong: rgb(255 255 255 / 70%);
+  --glass-chrome-surface-strong: rgb(255 255 255 / 62%);
   --glass-ambient-base: rgb(250 252 255);
-  --glass-ambient-blue: rgb(108 167 255 / 42%);
-  --glass-ambient-violet: rgb(178 139 255 / 34%);
-  --glass-ambient-cyan: rgb(108 216 255 / 24%);
+  --glass-ambient-blue: rgb(96 158 255 / 52%);
+  --glass-ambient-violet: rgb(170 130 255 / 40%);
+  --glass-ambient-cyan: rgb(96 208 255 / 30%);
   --glass-blur: 20px;
   --glass-saturate: 180%;
 }
@@ -550,11 +550,11 @@
   --glass-border: rgb(245 245 245 / 16%);
   --glass-highlight: rgb(245 245 245 / 18%);
   --glass-specular-edge: rgb(245 245 245 / 16%);
-  --glass-chrome-surface-strong: rgb(18 20 29 / 58%);
+  --glass-chrome-surface-strong: rgb(18 20 29 / 46%);
   --glass-ambient-base: rgb(7 9 15);
-  --glass-ambient-blue: rgb(44 95 180 / 28%);
-  --glass-ambient-violet: rgb(109 70 190 / 24%);
-  --glass-ambient-cyan: rgb(32 138 174 / 14%);
+  --glass-ambient-blue: rgb(56 118 220 / 38%);
+  --glass-ambient-violet: rgb(124 82 214 / 32%);
+  --glass-ambient-cyan: rgb(40 158 196 / 20%);
   --glass-blur: 20px;
   --glass-saturate: 180%;
 }

@@ -106,7 +106,7 @@ export interface DashboardShellProps {
  */
 function DefaultMobileChatHeader({ onBack }: { onBack: () => void }) {
   return (
-    <div className="flex items-center gap-2 px-2 h-[44px] border border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0">
+    <div className="flex items-center gap-2 px-2 h-[44px] border-b border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0">
       <Button
         variant="ghost"
         size="icon"
@@ -313,7 +313,7 @@ export function DashboardShell({
       <div aria-hidden="true" className="dashboard-ambient pointer-events-none fixed inset-0 z-0" />
       {/* Top bar */}
       <header
-        className="relative z-20 flex items-center justify-between px-4 border border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0"
+        className="relative z-20 flex items-center justify-between px-4 border-b border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0"
         style={{ height: 'calc(44px + env(safe-area-inset-top, 0px))', paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
         <div className="flex items-center gap-3">
@@ -405,7 +405,7 @@ export function DashboardShell({
           {/* Left panel */}
           <aside
             data-testid="session-panel"
-            className="relative overflow-hidden border border-glass-border glass-strong glass-chrome glass-shadow-xs transition-[width] duration-150 ease-out"
+            className="relative overflow-hidden border-e border-glass-border glass-strong glass-chrome glass-shadow-xs transition-[width] duration-150 ease-out"
             style={{ width: isLeftSidebarCollapsed ? 44 : `${leftPercent}%` }}
           >
             {isLeftSidebarCollapsed ? (
