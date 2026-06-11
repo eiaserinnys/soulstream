@@ -133,6 +133,30 @@ describe("TaskInitialMessagePublisher", () => {
     expect(userEvent.context).toBeUndefined();
   });
 
+  it("uses task contextItems for user_message context when prepared context is absent", async () => {
+    const task = makeTask({
+      contextItems: [{ key: "handover", label: "Handover", content: "done" }],
+    });
+    const { publisher, persistEvent, emitEventEnvelope } = makeSubject();
+
+    await publisher.publishInitialMessages(task);
+
+    expect(persistEvent).toHaveBeenCalledWith(
+      "sess-initial",
+      expect.objectContaining({
+        type: "user_message",
+        context: [{ key: "handover", label: "Handover", content: "done" }],
+      }),
+    );
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "sess-initial",
+      expect.objectContaining({
+        type: "user_message",
+        context: [{ key: "handover", label: "Handover", content: "done" }],
+      }),
+    );
+  });
+
   it("isolates system_message persistence failure and still publishes user_message", async () => {
     const task = makeTask();
     const {

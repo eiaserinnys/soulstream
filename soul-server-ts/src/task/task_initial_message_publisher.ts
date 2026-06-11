@@ -115,6 +115,7 @@ export class TaskInitialMessagePublisher {
     task: Task,
     ctx?: PreparedContext,
   ): Record<string, unknown> {
+    const contextItems = ctx ? ctx.combinedContextItems : (task.contextItems ?? []);
     const event: Record<string, unknown> = {
       type: "user_message",
       user: task.callerInfo?.display_name ?? task.callerInfo?.user_id ?? "unknown",
@@ -127,8 +128,8 @@ export class TaskInitialMessagePublisher {
     if (task.attachmentPaths && task.attachmentPaths.length > 0) {
       event.attachments = task.attachmentPaths;
     }
-    if (ctx && ctx.combinedContextItems.length > 0) {
-      event.context = ctx.combinedContextItems;
+    if (contextItems.length > 0) {
+      event.context = contextItems;
     }
     return event;
   }
