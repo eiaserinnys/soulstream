@@ -24,7 +24,7 @@ export function MobileChatHeader({
     "No session";
 
   return (
-    <div className="flex items-center gap-2 px-2 h-10 border-b border-border bg-popover shrink-0">
+    <div className="flex items-center gap-2 px-2 h-10 border border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0">
       <Button
         variant="ghost"
         size="icon"

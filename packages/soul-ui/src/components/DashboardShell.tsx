@@ -106,7 +106,7 @@ export interface DashboardShellProps {
  */
 function DefaultMobileChatHeader({ onBack }: { onBack: () => void }) {
   return (
-    <div className="flex items-center gap-2 px-2 h-[44px] border-b border-border bg-popover shrink-0">
+    <div className="flex items-center gap-2 px-2 h-[44px] border border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0">
       <Button
         variant="ghost"
         size="icon"
@@ -308,11 +308,12 @@ export function DashboardShell({
   return (
     <div
       data-testid="dashboard-layout"
-      className="flex flex-col w-screen h-dvh bg-background text-foreground font-sans overflow-hidden"
+      className="dashboard-shell relative isolate flex flex-col w-screen h-dvh text-foreground font-sans overflow-hidden"
     >
+      <div aria-hidden="true" className="dashboard-ambient pointer-events-none fixed inset-0 z-0" />
       {/* Top bar */}
       <header
-        className="flex items-center justify-between px-4 border-b border-border bg-popover shrink-0"
+        className="relative z-20 flex items-center justify-between px-4 border border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0"
         style={{ height: 'calc(44px + env(safe-area-inset-top, 0px))', paddingTop: 'env(safe-area-inset-top, 0px)' }}
       >
         <div className="flex items-center gap-3">
@@ -334,7 +335,7 @@ export function DashboardShell({
       </header>
 
       {/* Banner */}
-      {banner}
+      {banner ? <div className="relative z-20 shrink-0">{banner}</div> : null}
 
       {isMobile ? (
         /**
@@ -346,9 +347,9 @@ export function DashboardShell({
         <Tabs
           value={activeTab}
           onValueChange={handleMobileTabChange}
-          className="mobile-tabs flex flex-col flex-1 overflow-hidden gap-0"
+          className="mobile-tabs relative z-10 flex flex-col flex-1 overflow-hidden gap-0"
         >
-          <main data-testid="mobile-main" className="flex-1 overflow-hidden relative">
+          <main data-testid="mobile-main" className="flex-1 overflow-hidden relative bg-background">
             {/* 피드 탭 */}
             <TabsPanel value="feed" keepMounted className="h-full">
               {mobileSessionsView ?? centerPanel}
@@ -400,11 +401,11 @@ export function DashboardShell({
         </Tabs>
       ) : (
         /* 데스크탑: 3-Panel content */
-        <div className="flex flex-1 overflow-hidden">
+        <div className="relative z-10 flex flex-1 overflow-hidden">
           {/* Left panel */}
           <aside
             data-testid="session-panel"
-            className="relative overflow-hidden transition-[width] duration-150 ease-out"
+            className="relative overflow-hidden border border-glass-border glass-strong glass-chrome glass-shadow-xs transition-[width] duration-150 ease-out"
             style={{ width: isLeftSidebarCollapsed ? 44 : `${leftPercent}%` }}
           >
             {isLeftSidebarCollapsed ? (
@@ -445,7 +446,7 @@ export function DashboardShell({
           {/* Center panel */}
           <main
             data-testid="graph-panel"
-            className="overflow-hidden flex flex-col"
+            className="overflow-hidden flex flex-col bg-background"
             style={isLeftSidebarCollapsed ? { flex: "1 1 auto" } : { width: `${centerPercent}%` }}
           >
             {centerPanel}
@@ -457,7 +458,7 @@ export function DashboardShell({
           {/* Right panel */}
           <aside
             data-testid="detail-panel"
-            className="overflow-hidden"
+            className="overflow-hidden bg-background"
             style={{ width: `${rightPercent}%` }}
           >
             {rightPanel}
