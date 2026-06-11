@@ -390,10 +390,10 @@ export function ChatView({
           onClick={toggleFollow}
           className={cn(
             "absolute bottom-[15px] right-[15px] z-10 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-            "border glass glass-shadow-xs",
+            "border glass-shadow-xs",
             isFollowing
               ? "border-accent-blue/30 bg-accent-blue/15 text-accent-blue hover:bg-accent-blue/25"
-              : "border-glass-border text-muted-foreground hover:text-foreground",
+              : "border-glass-border glass text-muted-foreground hover:text-foreground",
           )}
         >
           {"\u2193"} Follow
