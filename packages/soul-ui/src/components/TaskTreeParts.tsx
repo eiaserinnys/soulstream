@@ -113,7 +113,7 @@ export function TaskContextMenu({
         onClick={onClose}
       />
       <div
-        className="fixed z-40 w-56 rounded-md border border-border bg-popover p-1 shadow-lg"
+        className="fixed z-40 w-56 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
         style={{ left: x, top: y }}
       >
         <MenuButton icon={<Copy className="h-4 w-4" />} onClick={onCopy}>

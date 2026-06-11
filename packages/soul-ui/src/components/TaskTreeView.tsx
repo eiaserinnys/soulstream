@@ -351,7 +351,7 @@ export function TaskTreeView({ sessions = [], onNewSession }: TaskTreeViewProps)
             <Settings className="h-4 w-4" />
           </Button>
           {settingsOpen && (
-            <div className="absolute right-0 top-10 z-20 w-56 rounded-md border border-border bg-popover p-2 shadow-lg">
+            <div className="absolute right-0 top-10 z-20 w-56 rounded-md border border-glass-border glass-strong glass-shadow-lg p-2">
               <label className="flex items-center gap-2 rounded px-2 py-1.5 text-sm">
                 <input
                   type="checkbox"

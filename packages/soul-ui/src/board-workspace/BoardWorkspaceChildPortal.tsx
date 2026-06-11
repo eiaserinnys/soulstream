@@ -37,7 +37,7 @@ export function BoardWorkspaceChildPortal({
   return (
     <div
       data-testid="board-child-portal"
-      className="absolute z-40 flex max-h-[360px] flex-col gap-2 overflow-auto rounded-md border border-border bg-popover p-2 shadow-lg"
+      className="absolute z-40 flex max-h-[360px] flex-col gap-2 overflow-auto rounded-md border border-glass-border glass-strong glass-shadow-lg p-2"
       style={{
         ...boardToCanvasStyle({
           x: parentItem.x + BOARD_TILE_WIDTH + 24,

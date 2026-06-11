@@ -68,7 +68,7 @@ export function BoardWorkspaceCanvasContent({
   return (
     <>
       {isLoading && (
-        <div className="absolute left-3 top-3 z-30 rounded-md border border-border bg-background/90 p-2 shadow-sm">
+        <div className="absolute left-3 top-3 z-30 rounded-md border border-glass-border glass glass-shadow-xs p-2">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
           <span className="sr-only">Loading board sync</span>
         </div>

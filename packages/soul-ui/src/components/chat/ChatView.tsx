@@ -377,7 +377,7 @@ export function ChatView({
         <div className="relative">
           <button
             onClick={scrollToBottom}
-            className="absolute bottom-[var(--panel-inset)] left-1/2 -translate-x-1/2 text-xs text-muted-foreground bg-popover/90 border border-border rounded-full px-3 py-1 hover:text-foreground hover:bg-popover transition-colors shadow-sm z-10"
+            className="absolute bottom-[var(--panel-inset)] left-1/2 z-10 -translate-x-1/2 rounded-full border border-glass-border glass glass-shadow-xs px-3 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             {"\u2193"} New Messages
           </button>
@@ -389,11 +389,11 @@ export function ChatView({
         <button
           onClick={toggleFollow}
           className={cn(
-            "absolute bottom-[15px] right-[15px] flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors",
-            "border shadow-md z-10",
+            "absolute bottom-[15px] right-[15px] z-10 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+            "border glass glass-shadow-xs",
             isFollowing
-              ? "bg-accent-blue/15 border-accent-blue/30 text-accent-blue hover:bg-accent-blue/25"
-              : "bg-popover border-border text-muted-foreground hover:bg-input",
+              ? "border-accent-blue/30 bg-accent-blue/15 text-accent-blue hover:bg-accent-blue/25"
+              : "border-glass-border text-muted-foreground hover:text-foreground",
           )}
         >
           {"\u2193"} Follow

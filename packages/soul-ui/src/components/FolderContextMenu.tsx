@@ -79,7 +79,7 @@ export function FolderContextMenu({
 
   return (
     <div
-      className="fixed z-50 min-w-[140px] rounded-md border border-border bg-popover shadow-md py-1"
+      className="fixed z-50 min-w-[140px] rounded-md border border-glass-border glass-strong glass-shadow-md py-1"
       style={{ top: target.y, left: target.x }}
       onMouseLeave={onClose}
     >

@@ -192,7 +192,7 @@ export function BoardWorkspaceContextMenus({
     <>
       {contextMenu && (
         <div
-          className="fixed z-30 w-44 rounded-md border border-border bg-popover p-1 shadow-lg"
+          className="fixed z-30 w-44 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
           style={{ left: contextMenu.screenX, top: contextMenu.screenY }}
         >
           <button
@@ -269,7 +269,7 @@ export function BoardWorkspaceContextMenus({
 
       {markdownContextMenu && (
         <div
-          className="fixed z-30 w-40 rounded-md border border-border bg-popover p-1 shadow-lg"
+          className="fixed z-30 w-40 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
           style={{ left: markdownContextMenu.screenX, top: markdownContextMenu.screenY }}
         >
           <button
@@ -302,7 +302,7 @@ export function BoardWorkspaceContextMenus({
 
       {frameContextMenu && (
         <div
-          className="fixed z-30 w-40 rounded-md border border-border bg-popover p-1 shadow-lg"
+          className="fixed z-30 w-40 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
           style={{ left: frameContextMenu.screenX, top: frameContextMenu.screenY }}
         >
           <button
@@ -366,7 +366,7 @@ export function BoardWorkspaceContextMenus({
       {renameMarkdownTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60">
           <form
-            className="w-80 rounded-md border border-border bg-popover p-3 shadow-lg"
+            className="w-80 rounded-md border border-glass-border glass-strong glass-shadow-lg p-3"
             onSubmit={(event) => {
               event.preventDefault();
               void handleRenameMarkdown();
@@ -397,7 +397,7 @@ export function BoardWorkspaceContextMenus({
       {renameFolderTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60">
           <form
-            className="w-80 rounded-md border border-border bg-popover p-3 shadow-lg"
+            className="w-80 rounded-md border border-glass-border glass-strong glass-shadow-lg p-3"
             onSubmit={(event) => {
               event.preventDefault();
               void handleRenameFolder();
@@ -427,7 +427,7 @@ export function BoardWorkspaceContextMenus({
       {renameFrameTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60">
           <form
-            className="w-80 rounded-md border border-border bg-popover p-3 shadow-lg"
+            className="w-80 rounded-md border border-glass-border glass-strong glass-shadow-lg p-3"
             onSubmit={(event) => {
               event.preventDefault();
               handleRenameFrame();

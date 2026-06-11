@@ -125,7 +125,7 @@ export function BoardWorkspaceHeader({
             New
           </Button>
           {newMenuOpen && (
-            <div className="absolute right-0 top-full z-20 mt-1 w-36 rounded-md border border-border bg-popover p-1 shadow-lg">
+            <div className="absolute right-0 top-full z-20 mt-1 w-36 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1">
               <button
                 type="button"
                 className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"

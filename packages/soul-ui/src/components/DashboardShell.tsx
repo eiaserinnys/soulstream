@@ -428,7 +428,7 @@ export function DashboardShell({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="absolute right-1 top-1 z-20 h-7 w-7 bg-popover/80"
+                  className="absolute right-1 top-1 z-20 h-7 w-7 border-glass-border glass glass-shadow-xs"
                   data-testid="left-sidebar-toggle"
                   title="Collapse sidebar"
                   onClick={toggleLeftSidebarCollapsed}

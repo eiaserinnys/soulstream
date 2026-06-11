@@ -93,7 +93,7 @@ export function BoardWorkspaceMinimap({
 
   if (collapsed) {
     return (
-      <div className="pointer-events-auto absolute bottom-3 right-3 z-40 flex items-center gap-2 rounded-md border border-border bg-popover/95 px-2 py-1 shadow-sm backdrop-blur">
+      <div className="pointer-events-auto absolute bottom-3 right-3 z-40 flex items-center gap-2 rounded-md border border-glass-border glass glass-shadow-xs px-2 py-1">
         <span data-testid="board-zoom-indicator" className="min-w-11 text-center text-xs font-medium text-muted-foreground">
           {formatBoardZoom(zoom)}
         </span>
@@ -113,7 +113,7 @@ export function BoardWorkspaceMinimap({
   }
 
   return (
-    <div className="pointer-events-auto absolute bottom-3 right-3 z-40 rounded-md border border-border bg-popover/95 p-2 shadow-sm backdrop-blur">
+    <div className="pointer-events-auto absolute bottom-3 right-3 z-40 rounded-md border border-glass-border glass-strong glass-shadow-md p-2">
       <div className="mb-1 flex items-center justify-between gap-2">
         <span data-testid="board-zoom-indicator" className="text-xs font-medium text-muted-foreground">
           {formatBoardZoom(zoom)}
