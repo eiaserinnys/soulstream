@@ -19,6 +19,7 @@ const TEST_PASSWORD = "apply_schema_secret";
 
 const tempDirs: string[] = [];
 const containers: string[] = [];
+const itWithDocker = hasDockerBinary() ? it : it.skip;
 
 afterEach(() => {
   for (const dir of tempDirs.splice(0)) {
@@ -30,7 +31,7 @@ afterEach(() => {
 });
 
 describe("apply-schema.mjs", () => {
-  it("applies schema idempotently to an already-applied database", async () => {
+  itWithDocker("applies schema idempotently to an already-applied database", async () => {
     const { url } = await startPostgres();
     const cwd = writeEnv(url);
 
@@ -131,6 +132,11 @@ describe("apply-schema.mjs", () => {
     expect(envConfig.keys.map((entry) => entry.key)).toContain("DATABASE_URL");
   });
 });
+
+function hasDockerBinary(): boolean {
+  const result = spawnSync("docker", ["--version"], { stdio: "ignore" });
+  return result.status === 0;
+}
 
 interface HanielSoulServerTsExample {
   services: {

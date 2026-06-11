@@ -7,6 +7,7 @@ import {
   type TaskInitialMessagePublisherPort,
   TaskTurnInputBuilder,
 } from "../../src/task/task_turn_input_builder.js";
+import { TaskInitialMessagePublisher } from "../../src/task/task_initial_message_publisher.js";
 import type { Task } from "../../src/task/task_models.js";
 
 const claudeAgent: AgentProfile = {
@@ -137,7 +138,7 @@ describe("TaskTurnInputBuilder", () => {
     );
   });
 
-  it("prepares an auto-resume Claude turn without republishing first-turn context", async () => {
+  it("prepares an auto-resume Claude turn without rebuilding first-turn context", async () => {
     const task = makeTask({
       codexThreadId: "claude-session-1",
       lastInjectedClaudeSessionId: "claude-session-1",
@@ -167,7 +168,10 @@ describe("TaskTurnInputBuilder", () => {
         previousCallerInfo: { source: "browser", display_name: "Alice" },
       }),
     );
-    expect(initialMessagePublisher.publishInitialMessages).not.toHaveBeenCalled();
+    expect(initialMessagePublisher.publishInitialMessages).toHaveBeenCalledWith(
+      task,
+      undefined,
+    );
     expect(input.systemPrompt).toBeUndefined();
     expect(input.imageAttachmentPaths).toEqual(["/tmp/incoming/sess/a.png"]);
     expect(input.prompt).toContain("<prior>");
@@ -182,6 +186,97 @@ describe("TaskTurnInputBuilder", () => {
     expect(input.prompt).toContain("<running_sessions>");
     expect(input.prompt.endsWith("</context>")).toBe(true);
     expect(task.interventionQueue.map((item) => item.text)).toEqual(["later"]);
+  });
+
+  it("persists and broadcasts auto-resume queued intervention as user_message without rebuilding full context", async () => {
+    const callerInfo = {
+      source: "agent",
+      display_name: "서소영",
+      agent_id: "seosoyoung",
+    };
+    const context = [{ key: "handover", label: "Handover", content: "done" }];
+    const intervention = {
+      text: "후속 확인",
+      user: "seosoyoung",
+      callerInfo,
+      attachmentPaths: ["/tmp/incoming/sess/screen.png"],
+      context,
+    };
+    const task = makeTask({
+      prompt: intervention.text,
+      clientId: intervention.user,
+      callerInfo,
+      attachmentPaths: intervention.attachmentPaths,
+      contextItems: context,
+      codexThreadId: "claude-session-1",
+      lastInjectedClaudeSessionId: "claude-session-1",
+      interventionQueue: [intervention],
+    });
+    const persistEvent = vi.fn().mockResolvedValue(88);
+    const handleSideEffects = vi.fn().mockResolvedValue(undefined);
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const logger = { warn: vi.fn() } as unknown as Logger;
+    const initialMessagePublisher = new TaskInitialMessagePublisher({
+      broadcaster: { emitEventEnvelope } as never,
+      logger,
+      persistence: { persistEvent, handleSideEffects } as never,
+    });
+    const contextBuilder = {
+      build: vi.fn().mockResolvedValue(makeContext()),
+      buildSystemPrompt: vi.fn().mockResolvedValue("resume system instructions"),
+      buildFollowupContext: vi.fn().mockResolvedValue({
+        contextItems: [],
+      }),
+    };
+    const builder = new TaskTurnInputBuilder({
+      contextBuilder: contextBuilder as unknown as ExecutionContextBuilder,
+      initialMessagePublisher,
+      logger,
+    });
+
+    const input = await builder.prepareInitialTurnInput(task, claudeAgent);
+
+    expect(contextBuilder.build).not.toHaveBeenCalled();
+    expect(contextBuilder.buildSystemPrompt).not.toHaveBeenCalled();
+    expect(contextBuilder.buildFollowupContext).toHaveBeenCalledWith(
+      task,
+      claudeAgent,
+      expect.objectContaining({
+        includeFullContext: false,
+        includeClaudeSessionIdUpdate: false,
+        currentCallerInfo: callerInfo,
+      }),
+    );
+    expect(input.systemPrompt).toBeUndefined();
+    expect(input.prompt).toContain("후속 확인");
+    expect(persistEvent).toHaveBeenCalledTimes(1);
+    expect(persistEvent).toHaveBeenCalledWith(
+      "sess-turn-input",
+      expect.objectContaining({
+        type: "user_message",
+        user: "서소영",
+        text: "후속 확인",
+        caller_info: callerInfo,
+        attachments: ["/tmp/incoming/sess/screen.png"],
+        context,
+        _event_id: 88,
+      }),
+    );
+    expect(emitEventEnvelope).toHaveBeenCalledWith(
+      "sess-turn-input",
+      expect.objectContaining({
+        type: "user_message",
+        text: "후속 확인",
+        _event_id: 88,
+      }),
+    );
+    expect(handleSideEffects).toHaveBeenCalledWith(
+      "sess-turn-input",
+      expect.objectContaining({ type: "user_message", _event_id: 88 }),
+      task,
+    );
+    expect(task.lastEventId).toBe(88);
+    expect(task.interventionQueue).toEqual([]);
   });
 
   it("prepares an auto-resume Codex turn without systemPrompt option", async () => {

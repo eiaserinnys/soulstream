@@ -36,6 +36,7 @@ export class TaskTurnInputBuilder {
   async prepareInitialTurnInput(task: Task, agent: AgentProfile): Promise<TaskTurnInput> {
     if (task.interventionQueue.length > 0) {
       const intervention = task.interventionQueue.shift()!;
+      await this.deps.initialMessagePublisher.publishInitialMessages(task, undefined);
       return this.prepareFollowupTurnInput(task, agent, intervention);
     }
 

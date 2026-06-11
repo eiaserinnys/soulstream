@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -11,7 +11,11 @@ const TEST_DB_NAME = "session_db_supervisor_test";
 const TEST_USER = "session_db_supervisor_test";
 const TEST_PASSWORD = "session_db_supervisor_secret";
 
-describe("SessionDB supervisor PostgreSQL integration", () => {
+const hasPostgresTestBackend =
+  Boolean(process.env.TEST_DATABASE_URL?.trim()) || hasDockerBinary();
+const describePostgres = hasPostgresTestBackend ? describe : describe.skip;
+
+describePostgres("SessionDB supervisor PostgreSQL integration", () => {
   let harness: PostgresHarness | undefined;
   let db: SessionDB;
 
@@ -87,6 +91,11 @@ describe("SessionDB supervisor PostgreSQL integration", () => {
     });
   });
 });
+
+function hasDockerBinary(): boolean {
+  const result = spawnSync("docker", ["--version"], { stdio: "ignore" });
+  return result.status === 0;
+}
 
 interface PostgresHarness {
   sql: SqlClient;

@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+
 import pino from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,7 +16,11 @@ import {
 
 const logger = pino({ level: "silent" });
 
-describe("Soulstream schedule repository PostgreSQL integration", () => {
+const hasPostgresTestBackend =
+  Boolean(process.env.TEST_DATABASE_URL?.trim()) || hasDockerBinary();
+const describePostgres = hasPostgresTestBackend ? describe : describe.skip;
+
+describePostgres("Soulstream schedule repository PostgreSQL integration", () => {
   let harness: PostgresTestHarness | undefined;
   let sql: SqlClient;
   let repo: SoulstreamScheduleRepository;
@@ -298,6 +304,11 @@ function makeService(repo: SoulstreamScheduleRepository): SoulstreamScheduleServ
     { persistEvent: vi.fn(async () => 1) } as never,
     logger,
   );
+}
+
+function hasDockerBinary(): boolean {
+  const result = spawnSync("docker", ["--version"], { stdio: "ignore" });
+  return result.status === 0;
 }
 
 async function insertSession(sql: SqlClient, sessionId: string, nodeId: string): Promise<void> {
