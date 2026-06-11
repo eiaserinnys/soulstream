@@ -61,7 +61,7 @@ function MenuPopup({
       >
         <MenuPrimitive.Popup
           className={cn(
-            "relative flex origin-(--transform-origin) rounded-lg glass glass-shadow-lg outline-none focus:outline-none",
+            "relative flex origin-(--transform-origin) rounded-lg border border-glass-border glass glass-shadow-lg outline-none focus:outline-none",
             !hasExplicitWidth && "min-w-32",
             className,
           )}

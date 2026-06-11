@@ -334,7 +334,6 @@
 
 @utility glass {
   background: var(--glass-surface);
-  border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow, inset 0 1px 0 var(--glass-highlight));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
@@ -342,7 +341,6 @@
 
 @utility glass-strong {
   background: var(--glass-surface-strong);
-  border: 1px solid var(--glass-border);
   box-shadow: var(--glass-shadow, inset 0 1px 0 var(--glass-highlight));
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));

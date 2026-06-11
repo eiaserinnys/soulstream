@@ -142,7 +142,7 @@ function SelectPopup({
           >
             <ChevronUpIcon className="relative size-4.5 sm:size-4" />
           </SelectPrimitive.ScrollUpArrow>
-          <div className="relative h-full min-w-(--anchor-width) rounded-lg glass glass-shadow-lg">
+          <div className="relative h-full min-w-(--anchor-width) rounded-lg border border-glass-border glass glass-shadow-lg">
             <SelectPrimitive.List
               className={cn(
                 "max-h-(--available-height) overflow-y-auto p-1",
