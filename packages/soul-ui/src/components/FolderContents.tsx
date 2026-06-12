@@ -140,7 +140,7 @@ export function FolderContents({
   const virtualizer = useVirtualizer({
     count: displaySessions.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 56,
+    estimateSize: () => 118,
     overscan: 5,
   });
 
@@ -206,7 +206,11 @@ export function FolderContents({
                     transform: `translateY(${virtualItem.start}px)`,
                   }}
                 >
-                  <div ref={getItemRef(session.agentSessionId)} style={{ width: "100%", height: "100%" }}>
+                  <div
+                    ref={getItemRef(session.agentSessionId)}
+                    className="px-2 py-1"
+                    style={{ width: "100%", height: "100%" }}
+                  >
                     <SessionItem
                       session={session}
                       isActive={activeSessionKey === session.agentSessionId}

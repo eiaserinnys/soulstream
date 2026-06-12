@@ -375,7 +375,7 @@ export function DashboardShell({
           onValueChange={handleMobileTabChange}
           className="mobile-tabs relative z-10 flex flex-col flex-1 overflow-hidden gap-0"
         >
-          <main data-testid="mobile-main" className="flex-1 overflow-hidden relative bg-background">
+          <main data-testid="mobile-main" className="flex-1 overflow-hidden relative bg-transparent">
             <TabsPanel value="feed" keepMounted className="h-full">
               {mobileSessionsView ?? centerPanel}
             </TabsPanel>

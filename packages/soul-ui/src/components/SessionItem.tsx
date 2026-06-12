@@ -19,26 +19,42 @@ import type { SessionSummary, SessionStatus } from "../shared/types";
 export interface StatusConfig {
   dotClass: string;
   animate: boolean;
+  label: string;
+  chipClass: string;
 }
 
 export const STATUS_CONFIG: Record<SessionStatus, StatusConfig> = {
-  running:      { dotClass: "bg-success",          animate: true  },
-  completed:    { dotClass: "bg-muted-foreground",  animate: false },
-  error:        { dotClass: "bg-accent-red",        animate: false },
-  interrupted:  { dotClass: "bg-accent-amber",      animate: false },
-  unknown:      { dotClass: "bg-muted-foreground",  animate: false },
+  running:      { dotClass: "bg-success",          animate: true,  label: "실행 중", chipClass: "bg-success/10 text-success" },
+  completed:    { dotClass: "bg-muted-foreground",  animate: false, label: "완료", chipClass: "bg-muted text-muted-foreground" },
+  error:        { dotClass: "bg-accent-red",        animate: false, label: "오류", chipClass: "bg-accent-red/10 text-accent-red" },
+  interrupted:  { dotClass: "bg-accent-amber",      animate: false, label: "중단", chipClass: "bg-accent-amber/10 text-accent-amber" },
+  unknown:      { dotClass: "bg-muted-foreground",  animate: false, label: "대기", chipClass: "bg-accent-amber/10 text-accent-amber" },
 };
 
 // === Portrait ===
 
-function SessionPortrait({ url }: { url: string }) {
+function getInitials(name: string | null | undefined): string {
+  const source = name?.trim();
+  if (!source) return "?";
+  const words = source.split(/\s+/).filter(Boolean);
+  if (words.length >= 2) return `${words[0][0]}${words[1][0]}`.toUpperCase();
+  return source.slice(0, 2).toUpperCase();
+}
+
+function SessionPortrait({ url, name }: { url?: string | null; name?: string | null }) {
   const [error, setError] = useState(false);
-  if (error) return null;
+  if (!url || error) {
+    return (
+      <span className="flex h-[25px] w-[25px] shrink-0 items-center justify-center rounded-full border border-white/20 bg-muted text-[10px] font-semibold text-muted-foreground">
+        {getInitials(name)}
+      </span>
+    );
+  }
   return (
-    <div className="h-10 w-10 shrink-0 rounded-full overflow-hidden">
+    <div className="h-[25px] w-[25px] shrink-0 overflow-hidden rounded-full shadow-[0_0_0_1px_rgb(255_255_255_/_18%)]">
       <img
         src={url}
-        alt=""
+        alt={name ?? ""}
         className="w-full h-full object-cover"
         onError={() => setError(true)}
       />
@@ -82,10 +98,16 @@ export const SessionItem = memo(function SessionItem({
   const isReadCompleted = session.status === "completed" && !isUnread;
 
   const displayText = session.displayName
-    ? `📌 ${session.displayName}`
+    ? session.displayName
     : session.lastMessage?.preview
-      ? `🗨️ ${session.lastMessage.preview}`
+      ? session.lastMessage.preview
       : session.prompt || session.agentSessionId;
+  const previewText =
+    session.lastMessage?.preview && session.lastMessage.preview !== displayText
+      ? session.lastMessage.preview
+      : session.prompt && session.prompt !== displayText
+        ? session.prompt
+        : null;
 
   const displayTime = session.lastMessage?.timestamp ?? session.updatedAt ?? session.createdAt;
   const timeStr = displayTime
@@ -104,9 +126,10 @@ export const SessionItem = memo(function SessionItem({
       {...listeners}
       data-testid="draggable-session"
       className={cn(
-        "flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-accent/50 border-b border-border/50 select-none transition-[background-color] duration-200 ease-out",
-        isActive && "bg-accent text-accent-foreground",
-        isSelected && !isActive && "bg-primary/10",
+        "group flex h-full cursor-pointer select-none flex-col gap-2 rounded-[18px] border border-white/8 bg-[var(--lg-card)] px-4 py-[13px] text-sm shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)] transition-[border-color,box-shadow,opacity,transform] duration-200 ease-out",
+        "hover:border-accent-blue/35 hover:shadow-[0_12px_32px_-18px_rgb(10_30_70_/_50%)]",
+        isActive && "border-accent-blue/55 ring-1 ring-accent-blue/50",
+        isSelected && !isActive && "border-accent-blue/35 ring-1 ring-accent-blue/25",
         isReadCompleted && "opacity-50",
         isDragging && "opacity-50",
       )}
@@ -114,53 +137,66 @@ export const SessionItem = memo(function SessionItem({
       onContextMenu={onContextMenu}
       data-session-id={session.agentSessionId}
     >
-      <span
-        className={cn(
-          "w-2 h-2 rounded-full shrink-0",
-          config.dotClass,
-          config.animate && "animate-[pulse_2s_infinite]",
-        )}
-      />
-      {session.agentPortraitUrl && (
-        <SessionPortrait url={session.agentPortraitUrl} />
-      )}
-      <div className="flex-1 min-w-0">
-        {isEditing ? (
-          <input
-            autoFocus
-            className="w-full bg-transparent border-b border-primary outline-none text-sm"
-            defaultValue={session.displayName ?? ""}
-            onBlur={(e) => onEditSubmit(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") onEditSubmit((e.target as HTMLInputElement).value);
-              if (e.key === "Escape") onEditCancel();
-            }}
-          />
-        ) : (
-          <div className={cn("truncate", isUnread ? "text-foreground font-semibold" : isReadCompleted ? "text-muted-foreground" : "text-foreground")}>
-            {displayText}
-          </div>
-        )}
-        <div className="text-xs text-muted-foreground truncate flex items-center gap-1">
-          {session.agentName && (
-            <>
-              <span className="shrink-0 text-xs opacity-70">{session.agentName}</span>
-              <span className="shrink-0 opacity-50">·</span>
-            </>
+      <div className="flex min-w-0 items-start gap-3">
+        <div className="min-w-0 flex-1">
+          {isEditing ? (
+            <input
+              autoFocus
+              className="w-full border-b border-primary bg-transparent text-sm outline-none"
+              defaultValue={session.displayName ?? ""}
+              onBlur={(e) => onEditSubmit(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onEditSubmit((e.target as HTMLInputElement).value);
+                if (e.key === "Escape") onEditCancel();
+              }}
+            />
+          ) : (
+            <div
+              className={cn(
+                "truncate text-[13.5px] font-semibold leading-[1.45]",
+                isUnread ? "text-foreground" : isReadCompleted ? "text-muted-foreground" : "text-foreground/90",
+              )}
+            >
+              {displayText}
+            </div>
           )}
-          <span>{timeStr}</span>
+          {previewText && (
+            <div className="mt-1 line-clamp-2 text-xs leading-[1.55] text-muted-foreground">
+              {previewText}
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <span className={cn("rounded-full px-2.5 py-1 text-[10.5px] font-semibold leading-none", config.chipClass)}>
+            <span
+              className={cn(
+                "mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-[1px]",
+                config.dotClass,
+                config.animate && "animate-[pulse_1.6s_infinite]",
+              )}
+            />
+            {config.label}
+          </span>
+          <span className="font-mono text-[10.5px] text-muted-foreground/70">{timeStr}</span>
         </div>
       </div>
-      <div className="flex items-center gap-1 shrink-0">
-        {session.backend && (
-          <BackendBadge backend={session.backend} className="shrink-0" />
-        )}
-        {session.nodeId && <NodeBadge nodeId={session.nodeId} className="shrink-0" />}
-        {session.eventCount > 0 && (
-          <Badge variant="outline" size="sm" className="shrink-0">
-            {session.eventCount}
-          </Badge>
-        )}
+
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1">
+          {session.backend && (
+            <BackendBadge backend={session.backend} className="shrink-0" />
+          )}
+          {session.nodeId && <NodeBadge nodeId={session.nodeId} className="shrink-0" />}
+          {session.eventCount > 0 && (
+            <Badge variant="outline" size="sm" className="shrink-0">
+              {session.eventCount}
+            </Badge>
+          )}
+        </div>
+        <div className="ml-auto flex min-w-0 items-center gap-1.5 text-[11.5px] text-muted-foreground">
+          <SessionPortrait url={session.agentPortraitUrl} name={session.agentName} />
+          <span className="max-w-28 truncate">{session.agentName ?? session.agentId ?? "Agent"}</span>
+        </div>
       </div>
     </div>
   );

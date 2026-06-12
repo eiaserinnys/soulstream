@@ -1,9 +1,10 @@
-import { ChevronRight, FolderPlus, List, Plus, RefreshCw, Sparkles, SquarePen, Undo2, Wifi, WifiOff } from "lucide-react";
+import { ChevronRight, FolderPlus, Plus, RefreshCw, Sparkles, SquarePen, Undo2, Wifi, WifiOff } from "lucide-react";
 
 import type { CatalogFolder } from "../shared/types";
 import { Button } from "../components/ui/button";
 import type { FolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 import type { BoardYjsConnectionStatus } from "./board-yjs-client";
+import { cn } from "../lib/cn";
 
 interface BoardWorkspaceHeaderProps {
   breadcrumbs: CatalogFolder[];
@@ -47,30 +48,59 @@ export function BoardWorkspaceHeader({
   const syncStatus = getSyncStatusMeta(connectionStatus);
   const SyncIcon = syncStatus.icon;
   return (
-    <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-1.5">
-      <div className="flex min-w-0 items-center gap-1">
-        {breadcrumbs.map((folder, index) => (
-          <div key={folder.id} className="flex min-w-0 items-center gap-1">
-            {index > 0 && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
-            <button
-              type="button"
-              className={`truncate text-sm font-medium hover:text-foreground ${
-                folder.id === selectedFolderId ? "text-foreground" : "text-muted-foreground"
-              }`}
-              aria-current={folder.id === selectedFolderId ? "page" : undefined}
-              onClick={() => onSelectFolder(folder.id)}
-            >
-              {folder.name}
-            </button>
-          </div>
-        ))}
-        {breadcrumbs.length === 0 && (
-          <span className="truncate text-sm font-semibold">
-            {selectedFolder?.name ?? "Folder"}
+    <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3">
+      <div className="flex min-w-0 flex-col gap-1">
+        <nav className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground/80">
+          <span className={cn("min-w-0 truncate", !selectedFolderId && "font-semibold text-muted-foreground")}>
+            워크스페이스
           </span>
-        )}
+          {breadcrumbs.map((folder) => (
+            <div key={folder.id} className="flex min-w-0 items-center gap-1.5">
+              <ChevronRight className="h-3 w-3 shrink-0 opacity-60" aria-hidden="true" />
+              <button
+                type="button"
+                className={cn(
+                  "truncate hover:text-foreground",
+                  folder.id === selectedFolderId ? "font-semibold text-muted-foreground" : "text-muted-foreground/80",
+                )}
+                aria-current={folder.id === selectedFolderId ? "page" : undefined}
+                onClick={() => onSelectFolder(folder.id)}
+              >
+                {folder.name}
+              </button>
+            </div>
+          ))}
+        </nav>
+        <div className="flex min-w-0 items-center gap-2">
+          <h1 className="truncate text-[22px] font-bold leading-tight text-foreground">
+            {selectedFolder?.name ?? "워크스페이스"}
+          </h1>
+        </div>
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        {workspaceViewMode && onWorkspaceViewModeChange && (
+          <div className="relative mr-1 flex h-[38px] shrink-0 gap-1 rounded-full border border-glass-border glass-strong glass-shadow-xs p-1">
+            {([
+              ["list", "폴더"],
+              ["board", "보드"],
+            ] as const).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                className={cn(
+                  "flex h-[30px] items-center rounded-full px-4 text-xs font-semibold transition-colors",
+                  workspaceViewMode === mode
+                    ? "bg-accent-blue/20 text-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_16%)]"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                aria-pressed={workspaceViewMode === mode}
+                onClick={() => onWorkspaceViewModeChange(mode)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <span
           data-testid="board-sync-status"
           title={connectionError ?? syncStatus.title}
@@ -82,17 +112,6 @@ export function BoardWorkspaceHeader({
           />
           <span className="truncate">{syncStatus.label}</span>
         </span>
-        {workspaceViewMode && onWorkspaceViewModeChange && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onWorkspaceViewModeChange("list")}
-            title="List view"
-          >
-            <List className="mr-1 h-3.5 w-3.5" />
-            리스트
-          </Button>
-        )}
         <Button
           variant="ghost"
           size="sm"

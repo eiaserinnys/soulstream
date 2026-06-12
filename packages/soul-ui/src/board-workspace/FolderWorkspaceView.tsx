@@ -1,5 +1,7 @@
 import type { CatalogFolder, FolderSettings, SessionSummary } from "../shared/types";
+import { useMemo, useState } from "react";
 import { FolderContents } from "../components/FolderContents";
+import { FolderSettingsDialog } from "../components/FolderSettingsDialog";
 import { SessionsTopBar } from "../components/SessionsTopBar";
 import type { LoadMoreCallback } from "../components/load-more-guard";
 import { useDashboardStore } from "../stores/dashboard-store";
@@ -9,6 +11,7 @@ import {
   type CreateMarkdownDocumentInput,
   type CreateMarkdownDocumentResult,
 } from "./BoardWorkspaceView";
+import { getChildFolders, getFolderDirectChildCount } from "./board-workspace-helpers";
 import { useFolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 
 export interface FolderWorkspaceViewProps {
@@ -49,8 +52,19 @@ export function FolderWorkspaceView({
   hasMore,
 }: FolderWorkspaceViewProps) {
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const catalog = useDashboardStore((s) => s.catalog);
+  const selectFolder = useDashboardStore((s) => s.selectFolder);
   const [workspaceViewMode, setWorkspaceViewMode] =
     useFolderWorkspaceViewMode(selectedFolderId);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const folders = catalog?.folders ?? [];
+  const selectedFolder = selectedFolderId
+    ? folders.find((folder) => folder.id === selectedFolderId) ?? null
+    : null;
+  const childFolders = useMemo(
+    () => getChildFolders(folders, selectedFolderId),
+    [folders, selectedFolderId],
+  );
 
   if (workspaceViewMode === "board") {
     return (
@@ -77,20 +91,60 @@ export function FolderWorkspaceView({
   }
 
   return (
-    <>
+    <div className="flex h-full min-h-0 flex-col">
       <SessionsTopBar
         workspaceViewMode={workspaceViewMode}
         onWorkspaceViewModeChange={setWorkspaceViewMode}
+        onOpenFolderSettings={selectedFolder && onUpdateFolderSettings ? () => setSettingsOpen(true) : undefined}
       />
-      <FolderContents
-        sessions={sessions}
-        onMoveSessions={onMoveSessions}
-        onRenameSession={onRenameSession}
-        onContinueSession={onContinueSession}
-        getContinueSessionDisabledReason={getContinueSessionDisabledReason}
-        onLoadMore={onLoadMore}
-        hasMore={hasMore}
+      {childFolders.length > 0 && (
+        <section className="shrink-0 px-4 pb-3">
+          <div className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
+            하위 폴더
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {childFolders.map((folder) => (
+              <button
+                key={folder.id}
+                type="button"
+                className="rounded-2xl border border-white/8 bg-[var(--lg-card)] px-3.5 py-3 text-left text-[12.5px] font-semibold shadow-[0_6px_22px_-16px_rgb(20_26_40_/_40%)] transition-[border-color,box-shadow] hover:border-accent-blue/35 hover:shadow-[0_12px_28px_-18px_rgb(10_30_70_/_50%)]"
+                onClick={() => selectFolder(folder.id)}
+              >
+                <span className="block truncate text-foreground">{folder.name}</span>
+                <small className="mt-1 block text-[11px] font-normal text-muted-foreground/75">
+                  {catalog ? `${getFolderDirectChildCount(catalog, folder.id)}개 항목` : "항목 없음"}
+                </small>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      <section className="flex min-h-0 flex-1 flex-col">
+        <div className="shrink-0 px-5 pb-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
+          세션
+        </div>
+        <div className="min-h-0 flex-1">
+          <FolderContents
+            sessions={sessions}
+            onMoveSessions={onMoveSessions}
+            onRenameSession={onRenameSession}
+            onContinueSession={onContinueSession}
+            getContinueSessionDisabledReason={getContinueSessionDisabledReason}
+            onLoadMore={onLoadMore}
+            hasMore={hasMore}
+          />
+        </div>
+      </section>
+      <FolderSettingsDialog
+        folder={selectedFolder}
+        folders={folders}
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onConfirm={(settings) => {
+          if (selectedFolder) void onUpdateFolderSettings?.(selectedFolder.id, settings);
+          setSettingsOpen(false);
+        }}
       />
-    </>
+    </div>
   );
 }
