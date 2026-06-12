@@ -22,6 +22,7 @@ import type {
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
 import type { ClaudeRuntimeView } from "./claude-runtime-state";
+import type { WallpaperMode, WallpaperSettings } from "../lib/wallpaper-settings";
 
 // === Dashboard Config ===
 
@@ -81,6 +82,8 @@ export type MobileTab = "feed" | "folder" | "tasks" | "chat" | "settings";
 // === Desktop Left Navigation ===
 
 export type LeftNavigationMode = "folders" | "feed";
+
+export type { WallpaperMode, WallpaperSettings };
 
 // === ProcessEventsResult ===
 
@@ -205,6 +208,9 @@ export interface DashboardState {
 
   /** 데스크톱 좌측 탐색 패널 모드 */
   leftNavigationMode: LeftNavigationMode;
+
+  /** 대시보드 배경 설정. 정본 localStorage 키: soul-wallpaper */
+  wallpaper: WallpaperSettings;
 
   /** 오른쪽 Chat 슬롯에 표시 중인 보드 마크다운 문서 */
   activeBoardDocumentId: string | null;
@@ -349,6 +355,11 @@ export interface DashboardActions {
 
   // 데스크톱 좌측 탐색 패널 전환
   setLeftNavigationMode: (mode: LeftNavigationMode) => void;
+
+  // 배경 설정
+  setWallpaper: (settings: WallpaperSettings) => void;
+  setWallpaperMode: (mode: WallpaperMode) => void;
+  setWallpaperCustomImage: (file: File) => Promise<void>;
 
   // 활성 세션 해제 (selectedFolderId를 유지하면서 세션만 해제)
   clearActiveSession: () => void;

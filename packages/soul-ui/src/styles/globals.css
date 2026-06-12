@@ -182,6 +182,12 @@
   animation: caret-blink 1s steps(2, end) infinite;
 }
 
+@keyframes wallpaper-drift {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(var(--dx), calc(var(--dy) * -0.6)) scale(1.08); }
+  100% { transform: translate(calc(var(--dx) * -0.7), var(--dy)) scale(0.94); }
+}
+
 .chat-message-selectable {
   -webkit-user-select: text;
   user-select: text;
@@ -229,6 +235,7 @@
   .mobile-tabs [data-slot="tabs-content"] { transition: none; }
   .folder-stack { transition: none; }
   .mobile-tabs [data-slot="tab-indicator"] { transition: none; }
+  .wallpaper-bokeh i { animation: none; }
 }
 
 /* Feed card: running state (Style E: Breathing + Shimmer + Border Glow) */
@@ -321,6 +328,9 @@
   }
 }
 
+/* Establish layer order before custom utilities are declared. */
+@layer components {}
+
 /* Utility layer — same priority as Tailwind utilities */
 @layer utilities {
   .line-clamp-2 {
@@ -332,51 +342,168 @@
   }
 }
 
-@utility glass {
-  background:
-    linear-gradient(to bottom, var(--glass-specular-edge), transparent 24px),
-    var(--glass-surface);
-  box-shadow: var(--glass-shadow, inset 0 1px 0 var(--glass-highlight), inset 0 10px 18px -18px var(--glass-highlight));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-}
+@layer components {
+  .wallpaper-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+    background: var(--lg-wallpaper-plain);
+  }
 
-@utility glass-strong {
-  background:
-    linear-gradient(to bottom, var(--glass-specular-edge), transparent 24px),
-    var(--glass-surface-strong);
-  box-shadow: var(--glass-shadow, inset 0 1px 0 var(--glass-highlight), inset 0 10px 18px -18px var(--glass-highlight));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  .wallpaper-wall {
+    position: absolute;
+    inset: 0;
+    transition: opacity 0.5s ease;
+  }
+
+  .wallpaper-wall-light {
+    background:
+      radial-gradient(ellipse 100rem 64rem at 18% -16%, #DEE6F2 0%, transparent 58%),
+      radial-gradient(ellipse 80rem 56rem at 88% 112%, #EAE6DE 0%, transparent 52%),
+      linear-gradient(180deg, #F4F5F8, #EEF0F4);
+  }
+
+  .wallpaper-wall-dark {
+    opacity: 0;
+    background:
+      radial-gradient(ellipse 96rem 66rem at 16% -18%, #1B2334 0%, transparent 60%),
+      radial-gradient(ellipse 78rem 54rem at 90% 114%, #251F22 0%, transparent 52%),
+      linear-gradient(180deg, #0D0F15, #0B0D12);
+  }
+
+  .dark .wallpaper-wall-light {
+    opacity: 0;
+  }
+
+  .dark .wallpaper-wall-dark {
+    opacity: 1;
+  }
+
+  .wallpaper-layer[data-wallpaper-mode="metal"] .wallpaper-wall-light {
+    background:
+      radial-gradient(ellipse 120rem 80rem at 50% -30%, rgb(255 255 255 / 70%), transparent 60%),
+      repeating-linear-gradient(92deg, #E9EAEC 0 1px, #E2E4E7 1px 3px, #E7E8EB 3px 4px),
+      linear-gradient(180deg, #ECEDEF, #E4E6E9);
+  }
+
+  .wallpaper-layer[data-wallpaper-mode="metal"] .wallpaper-wall-dark {
+    background:
+      radial-gradient(ellipse 120rem 80rem at 50% -30%, rgb(150 160 180 / 10%), transparent 60%),
+      repeating-linear-gradient(92deg, #15171C 0 1px, #101218 1px 3px, #13151A 3px 4px),
+      linear-gradient(180deg, #121419, #0E1014);
+  }
+
+  .wallpaper-layer[data-wallpaper-mode="photo"] .wallpaper-wall-light,
+  .wallpaper-layer[data-wallpaper-mode="photo"] .wallpaper-wall-dark {
+    background-color: #0E1014;
+    background-image:
+      linear-gradient(rgb(10 12 18 / 28%), rgb(10 12 18 / 40%)),
+      var(--wallpaper-photo-url);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  .wallpaper-layer[data-wallpaper-mode="photo"] .wallpaper-wall-light {
+    opacity: 0;
+  }
+
+  .wallpaper-layer[data-wallpaper-mode="photo"] .wallpaper-wall-dark {
+    opacity: 1;
+  }
+
+  .wallpaper-layer[data-wallpaper-mode="plain"] .wallpaper-wall-light {
+    background: #F4F5F8;
+  }
+
+  .wallpaper-layer[data-wallpaper-mode="plain"] .wallpaper-wall-dark {
+    background: #0D0F15;
+  }
+
+  .wallpaper-bokeh {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .wallpaper-layer:not([data-wallpaper-mode="bokeh"]) .wallpaper-bokeh {
+    display: none;
+  }
+
+  .wallpaper-bokeh i {
+    position: absolute;
+    display: block;
+    width: var(--s);
+    height: var(--s);
+    left: var(--x);
+    top: var(--y);
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--lg-bokeh-c1) 0%, var(--lg-bokeh-c2) 45%, transparent 70%);
+    animation: wallpaper-drift var(--d) ease-in-out var(--del) infinite alternate;
+    will-change: transform;
+  }
+
+  .glass,
+  .glass-strong {
+    position: relative;
+    background: var(--glass-surface);
+    box-shadow: var(--glass-shadow, var(--lg-shadow), inset 0 1px 1px rgb(255 255 255 / 12%));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  }
+
+  .glass-strong {
+    background: var(--glass-surface-strong);
+  }
+
+  .lg-rim::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1.25px;
+    pointer-events: none;
+    background: linear-gradient(
+      165deg,
+      var(--lg-rim-hi),
+      var(--lg-rim-lo) 28%,
+      transparent 46%,
+      var(--lg-rim-lo) 68%,
+      var(--lg-rim-hi) 100%
+    );
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
 }
 
 @utility glass-chrome {
-  --glass-blur: 16px;
   --glass-surface-strong: var(--glass-chrome-surface-strong);
 }
 
 @utility glass-shadow-xs {
-  --glass-shadow: 0 1px 2px 0 rgb(0 0 0 / 5%), inset 0 1px 0 var(--glass-highlight), inset 0 10px 18px -18px var(--glass-highlight);
+  --glass-shadow: 0 1px 2px 0 rgb(0 0 0 / 5%), var(--lg-shadow), inset 0 1px 1px rgb(255 255 255 / 12%);
 }
 
 @utility glass-shadow-md {
-  --glass-shadow: 0 4px 6px -1px rgb(0 0 0 / 5%), 0 2px 4px -2px rgb(0 0 0 / 5%), inset 0 1px 0 var(--glass-highlight), inset 0 10px 18px -18px var(--glass-highlight);
+  --glass-shadow: 0 4px 6px -1px rgb(0 0 0 / 5%), 0 2px 4px -2px rgb(0 0 0 / 5%), var(--lg-shadow), inset 0 1px 1px rgb(255 255 255 / 12%);
 }
 
 @utility glass-shadow-lg {
-  --glass-shadow: 0 10px 15px -3px rgb(0 0 0 / 5%), 0 4px 6px -4px rgb(0 0 0 / 5%), inset 0 1px 0 var(--glass-highlight), inset 0 10px 18px -18px var(--glass-highlight);
+  --glass-shadow: 0 10px 15px -3px rgb(0 0 0 / 5%), 0 4px 6px -4px rgb(0 0 0 / 5%), var(--lg-shadow), inset 0 1px 1px rgb(255 255 255 / 12%);
 }
 
 .dashboard-shell {
-  background: var(--glass-ambient-base);
+  background: transparent;
 }
 
 .dashboard-ambient {
   background:
     radial-gradient(circle at 16% 10%, var(--glass-ambient-blue), transparent 34rem),
     radial-gradient(circle at 78% 6%, var(--glass-ambient-violet), transparent 30rem),
-    radial-gradient(circle at 55% 92%, var(--glass-ambient-cyan), transparent 36rem),
-    var(--glass-ambient-base);
+    radial-gradient(circle at 55% 92%, var(--glass-ambient-cyan), transparent 36rem);
   transform: translateZ(0);
 }
 
@@ -386,6 +513,15 @@
   }
 
   .dashboard-ambient {
+    display: none;
+  }
+
+  .wallpaper-layer {
+    background: var(--background);
+  }
+
+  .wallpaper-wall,
+  .wallpaper-bokeh {
     display: none;
   }
 
@@ -448,19 +584,31 @@
   --warning: var(--color-amber-500);
   --warning-foreground: var(--color-amber-700);
 
-  /* Liquid Glass tokens (light) */
-  --glass-surface: rgb(255 255 255 / 64%);
-  --glass-surface-strong: rgb(255 255 255 / 82%);
-  --glass-border: rgb(255 255 255 / 72%);
-  --glass-highlight: rgb(255 255 255 / 86%);
-  --glass-specular-edge: rgb(255 255 255 / 70%);
-  --glass-chrome-surface-strong: rgb(255 255 255 / 62%);
-  --glass-ambient-base: rgb(250 252 255);
-  --glass-ambient-blue: rgb(96 158 255 / 52%);
-  --glass-ambient-violet: rgb(170 130 255 / 40%);
-  --glass-ambient-cyan: rgb(96 208 255 / 30%);
-  --glass-blur: 20px;
-  --glass-saturate: 180%;
+  /* Liquid Glass v2.2 tokens (light) */
+  --lg-tint: rgb(255 255 255 / 34%);
+  --lg-tint-deep: rgb(255 255 255 / 50%);
+  --lg-rim-hi: rgb(255 255 255 / 90%);
+  --lg-rim-lo: rgb(255 255 255 / 28%);
+  --lg-card: rgb(255 255 255 / 80%);
+  --lg-line: rgb(32 35 43 / 12%);
+  --lg-shadow: 0 18px 50px -18px rgb(30 36 50 / 38%);
+  --lg-bokeh-c1: rgb(255 255 255 / 75%);
+  --lg-bokeh-c2: rgb(220 228 240 / 35%);
+  --lg-wallpaper-plain: #F4F5F8;
+
+  /* Backward-compatible glass tokens */
+  --glass-surface: var(--lg-tint);
+  --glass-surface-strong: var(--lg-tint-deep);
+  --glass-border: var(--lg-rim-lo);
+  --glass-highlight: var(--lg-rim-hi);
+  --glass-specular-edge: var(--lg-rim-hi);
+  --glass-chrome-surface-strong: var(--lg-tint-deep);
+  --glass-ambient-base: transparent;
+  --glass-ambient-blue: rgb(96 158 255 / 18%);
+  --glass-ambient-violet: rgb(170 130 255 / 12%);
+  --glass-ambient-cyan: rgb(96 208 255 / 10%);
+  --glass-blur: 3px;
+  --glass-saturate: 160%;
 }
 
 /* ============================================================
@@ -544,17 +692,29 @@
   --warning: var(--color-amber-500);
   --warning-foreground: var(--color-amber-400);
 
-  /* Liquid Glass tokens (dark) */
-  --glass-surface: rgb(23 23 23 / 52%);
-  --glass-surface-strong: rgb(23 23 23 / 72%);
-  --glass-border: rgb(245 245 245 / 16%);
-  --glass-highlight: rgb(245 245 245 / 18%);
-  --glass-specular-edge: rgb(245 245 245 / 16%);
-  --glass-chrome-surface-strong: rgb(18 20 29 / 46%);
-  --glass-ambient-base: rgb(7 9 15);
-  --glass-ambient-blue: rgb(56 118 220 / 38%);
-  --glass-ambient-violet: rgb(124 82 214 / 32%);
-  --glass-ambient-cyan: rgb(40 158 196 / 20%);
-  --glass-blur: 20px;
-  --glass-saturate: 180%;
+  /* Liquid Glass v2.2 tokens (dark) */
+  --lg-tint: rgb(22 26 36 / 30%);
+  --lg-tint-deep: rgb(18 22 32 / 50%);
+  --lg-rim-hi: rgb(255 255 255 / 45%);
+  --lg-rim-lo: rgb(255 255 255 / 9%);
+  --lg-card: rgb(26 30 42 / 76%);
+  --lg-line: rgb(237 239 243 / 10%);
+  --lg-shadow: 0 20px 60px -20px rgb(0 0 0 / 65%);
+  --lg-bokeh-c1: rgb(190 205 230 / 16%);
+  --lg-bokeh-c2: rgb(170 190 220 / 7%);
+  --lg-wallpaper-plain: #0D0F15;
+
+  /* Backward-compatible glass tokens */
+  --glass-surface: var(--lg-tint);
+  --glass-surface-strong: var(--lg-tint-deep);
+  --glass-border: var(--lg-rim-lo);
+  --glass-highlight: var(--lg-rim-hi);
+  --glass-specular-edge: var(--lg-rim-hi);
+  --glass-chrome-surface-strong: var(--lg-tint-deep);
+  --glass-ambient-base: transparent;
+  --glass-ambient-blue: rgb(56 118 220 / 14%);
+  --glass-ambient-violet: rgb(124 82 214 / 10%);
+  --glass-ambient-cyan: rgb(40 158 196 / 8%);
+  --glass-blur: 3px;
+  --glass-saturate: 160%;
 }

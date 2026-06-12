@@ -37,6 +37,7 @@ export { SessionInfoView } from "./SessionInfoView";
 export { AskQuestionBanner } from "./AskQuestionBanner";
 export { ProfileAvatar } from "./ProfileAvatar";
 export { ContextContentRenderer } from "./ContextContentRenderer";
+export { WallpaperLayer } from "./WallpaperLayer";
 
 // === Dashboard Components (extracted from soul-dashboard) ===
 export { SessionsTopBar } from "./SessionsTopBar";

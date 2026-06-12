@@ -32,6 +32,28 @@ export { createMoveSessionsOperations } from "./move-sessions";
 export type { MoveSessionsApiConfig, MoveSessionsOperations } from "./move-sessions";
 export { shouldLoadMoreAfterSessionMove } from "./session-move-load-more";
 export type { SessionMoveLoadMoreState } from "./session-move-load-more";
+export {
+  applyLiquidLens,
+  calculateLiquidLensMapSize,
+  cleanupLiquidLens,
+  encodeLiquidLensVector,
+  isChromiumLensRuntime,
+  isChromiumUserAgent,
+  sampleLiquidLensVector,
+  useLiquidLens,
+} from "./liquid-lens";
+export type { LiquidLensMapMetrics, LiquidLensMapSize, LiquidLensOptions } from "./liquid-lens";
+export {
+  DEFAULT_WALLPAPER_PHOTO_URL,
+  DEFAULT_WALLPAPER_SETTINGS,
+  MAX_WALLPAPER_DATA_URL_BYTES,
+  WALLPAPER_STORAGE_KEY,
+  fileToWallpaperDataUrl,
+  normalizeWallpaperSettings,
+  readWallpaperSettings,
+  writeWallpaperSettings,
+} from "./wallpaper-settings";
+export type { WallpaperMode, WallpaperSettings } from "./wallpaper-settings";
 
 // === Rename Session ===
 export { renameSessionOptimistic, createRenameSessionOperation } from "./rename-session";

@@ -16,6 +16,7 @@ import { ConnectionBadge, type ConnectionStatus } from "./ConnectionBadge";
 import { VerticalSplitPane } from "./VerticalSplitPane";
 import { Tabs, TabsPanel } from "./ui/tabs";
 import { FolderStack } from "./dashboard/FolderStack";
+import { WallpaperLayer } from "./WallpaperLayer";
 import { useIsMobile } from "../hooks/use-mobile";
 import { useDashboardStore, type MobileTab } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
@@ -310,6 +311,7 @@ export function DashboardShell({
       data-testid="dashboard-layout"
       className="dashboard-shell relative isolate flex flex-col w-screen h-dvh text-foreground font-sans overflow-hidden"
     >
+      <WallpaperLayer />
       <div aria-hidden="true" className="dashboard-ambient pointer-events-none fixed inset-0 z-0" />
       {/* Top bar */}
       <header

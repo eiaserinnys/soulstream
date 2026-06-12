@@ -32,6 +32,7 @@ import { createSessionSlice } from "./slices/session-slice";
 import { createEventProcessingSlice } from "./slices/event-processing-slice";
 import { createOptimisticSessionSlice } from "./slices/optimistic-session-slice";
 import { createPromptSuggestionSlice } from "./slices/prompt-suggestion-slice";
+import { createWallpaperSlice } from "./slices/wallpaper-slice";
 
 // === Re-exports for backward compatibility ===
 
@@ -43,6 +44,8 @@ export type {
   FolderSortMode,
   MobileTab,
   LeftNavigationMode,
+  WallpaperMode,
+  WallpaperSettings,
   ProcessEventsResult,
   DashboardState,
   DashboardActions,
@@ -97,6 +100,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         ...createEventProcessingSlice(set, get, store),
         ...createOptimisticSessionSlice(set, get, store),
         ...createPromptSuggestionSlice(set, get, store),
+        ...createWallpaperSlice(set, get, store),
       };
 
       // 초기 state 스냅샷 (모든 slice의 초기 필드 값) — reset의 정본.
@@ -120,6 +124,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
       name: "soul-dashboard-storage",
       storage: createJSONStorage(getDashboardPersistStorage),
       // 입력창 draft + 폴더 정렬 영속화 (세션 데이터는 제외)
+      // wallpaper는 요구사항상 별도 localStorage 키(soul-wallpaper)를 사용한다.
       partialize: (state) => ({
         drafts: state.drafts,
         folderSortMode: state.folderSortMode,
