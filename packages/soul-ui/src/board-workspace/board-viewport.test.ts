@@ -23,10 +23,11 @@ describe("board-viewport", () => {
   });
 
   it("keeps grid dot density stable while softening low zoom noise", () => {
-    expect(getBoardGridStyle(1).backgroundSize).toBe("20px 20px");
-    expect(getBoardGridStyle(0.5).backgroundSize).toBe("40px 40px");
-    expect(getBoardGridStyle(2).backgroundSize).toBe("10px 10px");
-    expect(getBoardGridStyle(1).backgroundColor).toContain("var(--background) 96%");
+    expect(getBoardGridStyle(1).backgroundSize).toBe("22px 22px");
+    expect(getBoardGridStyle(0.5).backgroundSize).toBe("44px 44px");
+    expect(getBoardGridStyle(2).backgroundSize).toBe("11px 11px");
+    expect(getBoardGridStyle(1).backgroundPosition).toBe("11px 11px");
+    expect(getBoardGridStyle(1).backgroundColor).toBe("var(--lg-card)");
     expect(getBoardGridStyle(0.25).backgroundImage).toContain("16%");
   });
 

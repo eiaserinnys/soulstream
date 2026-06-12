@@ -376,7 +376,7 @@ describe("BoardWorkspaceView", () => {
     });
   });
 
-  it("renders fixed 280x160 positioned tiles on a 20px dotted infinite canvas", () => {
+  it("renders fixed 280x160 positioned tiles on a 22px dotted infinite canvas", () => {
     ({ container, root } = renderBoard());
 
     const canvas = container.querySelector<HTMLElement>('[data-testid="board-workspace-canvas"]');
@@ -384,18 +384,18 @@ describe("BoardWorkspaceView", () => {
     const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
     const markdownTile = container.querySelector<HTMLElement>('[data-testid="board-markdown-tile"]');
 
-    expect(canvas?.style.backgroundSize).toBe("20px 20px");
+    expect(canvas?.style.backgroundSize).toBe("22px 22px");
     expect(canvas?.style.width).toBe("100000px");
     expect(canvas?.style.height).toBe("100000px");
 
     expect(folderTile?.className).toContain("h-[160px]");
     expect(folderTile?.className).toContain("w-[280px]");
-    expect(folderTile?.className).toContain("rounded-md");
+    expect(folderTile?.className).toContain("rounded-[18px]");
     expect(folderTile?.style.left).toBe("50040px");
     expect(folderTile?.style.top).toBe("50080px");
     expect(sessionTile?.className).toContain("h-[160px]");
     expect(sessionTile?.className).toContain("w-[280px]");
-    expect(sessionTile?.className).toContain("rounded-md");
+    expect(sessionTile?.className).toContain("rounded-[18px]");
     expect(sessionTile?.style.left).toBe("50200px");
     expect(sessionTile?.style.top).toBe("50040px");
     expect(markdownTile?.style.left).toBe("50360px");
@@ -1091,9 +1091,9 @@ describe("BoardWorkspaceView", () => {
       sessionTile!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(sessionTile?.className).toContain("ring-2");
-    expect(sessionTile?.className).toContain("ring-primary");
-    expect(sessionTile?.className).toContain("bg-card");
+    expect(sessionTile?.className).toContain("outline-2");
+    expect(sessionTile?.className).toContain("outline-accent-blue");
+    expect(sessionTile?.className).toContain("bg-[var(--lg-card)]");
     expect(sessionTile?.className).not.toContain("hover:bg-accent/50");
     expect(sessionTile?.className.split(/\s+/)).not.toContain("bg-accent");
     expect(useDashboardStore.getState().activeSessionKey).toBe("session-a");

@@ -5,13 +5,13 @@ import {
   BOARD_CANVAS_ORIGIN_X,
   BOARD_CANVAS_ORIGIN_Y,
   BOARD_CANVAS_WIDTH,
-  BOARD_GRID_SIZE,
 } from "./board-workspace-items";
 import type { BoardPoint, BoardRect } from "./board-selection";
 
 export const MIN_BOARD_ZOOM = 0.25;
 export const MAX_BOARD_ZOOM = 2;
 export const DEFAULT_BOARD_ZOOM = 1;
+const BOARD_DOT_GRID_SIZE = 22;
 
 export interface BoardViewport {
   scrollLeft: number;
@@ -31,14 +31,15 @@ export function formatBoardZoom(zoom: number): string {
 
 export function getBoardGridStyle(zoom: number): CSSProperties {
   const safeZoom = clampBoardZoom(zoom);
-  const scaledGridSize = BOARD_GRID_SIZE / safeZoom;
+  const scaledGridSize = BOARD_DOT_GRID_SIZE / safeZoom;
   const alpha = zoom < 0.5 ? 0.16 : zoom < 0.75 ? 0.22 : zoom > 1.4 ? 0.26 : 0.32;
   const dotColor = `color-mix(in srgb, var(--muted-foreground) ${Math.round(alpha * 100)}%, transparent)`;
+  const dotOffset = scaledGridSize / 2;
   return {
-    backgroundColor: "color-mix(in srgb, var(--background) 96%, var(--foreground) 4%)",
-    backgroundImage: `radial-gradient(circle, ${dotColor} 1px, transparent 1px)`,
+    backgroundColor: "var(--lg-card)",
+    backgroundImage: `radial-gradient(circle, ${dotColor} 1px, transparent 1.4px)`,
     backgroundSize: `${scaledGridSize}px ${scaledGridSize}px`,
-    backgroundPosition: `${BOARD_CANVAS_ORIGIN_X % scaledGridSize}px ${BOARD_CANVAS_ORIGIN_Y % scaledGridSize}px`,
+    backgroundPosition: `${dotOffset}px ${dotOffset}px`,
   };
 }
 

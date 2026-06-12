@@ -41,6 +41,7 @@ import {
 } from "./BoardWorkspaceContextMenus";
 import { useBoardYjsRuntime } from "./board-yjs-client";
 import { BoardWorkspaceMinimap } from "./BoardWorkspaceMinimap";
+import { BoardWorkspaceZoomControls } from "./BoardWorkspaceZoomControls";
 import type { BoardItemPositionUpdate } from "./board-selection";
 import { useBoardSelectionState } from "./useBoardSelectionState";
 import { useBoardCanvasViewport } from "./useBoardCanvasViewport";
@@ -418,6 +419,8 @@ export function BoardWorkspaceView({
     setMinimapCollapsed,
     resolveBoardPoint,
     handleMinimapMoveViewport,
+    handleZoomIn,
+    handleZoomOut,
     dragPreviewByItemId,
     planeStyle,
     canvasStyle,
@@ -798,7 +801,7 @@ export function BoardWorkspaceView({
           ref={scrollRef}
           data-testid="board-workspace-scroll"
           className={cn(
-            "h-full min-h-0 overflow-auto",
+            "relative h-full min-h-0 overflow-auto rounded-[18px] border border-white/8 bg-[var(--lg-card)] shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)]",
             isSpaceDown && "cursor-grab",
             isPanning && "cursor-grabbing",
           )}
@@ -886,6 +889,11 @@ export function BoardWorkspaceView({
             onUpdateFolderSettings={onUpdateFolderSettings}
           />
         </div>
+        <BoardWorkspaceZoomControls
+          zoom={zoom}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+        />
         <BoardWorkspaceMinimap
           boardItems={boardItems}
           zoom={zoom}

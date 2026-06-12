@@ -15,6 +15,7 @@ import {
   getBoardGridStyle,
   getCanvasBoardPoint,
   getScaledCanvasSize,
+  getViewportBoardRect,
   readBoardViewport,
   setScrollerZoomAroundClientPoint,
   type BoardViewport,
@@ -81,6 +82,38 @@ export function useBoardCanvasViewport({
     refreshViewport();
   }, [refreshViewport]);
 
+  const setZoomAroundViewportCenter = useCallback((value: number) => {
+    const nextZoom = clampBoardZoom(value);
+    const currentZoom = zoomRef.current;
+    if (nextZoom === currentZoom) return;
+
+    const scroller = scrollRef.current;
+    if (!scroller) {
+      zoomRef.current = nextZoom;
+      setZoom(nextZoom);
+      return;
+    }
+
+    const currentViewport = readBoardViewport(scroller);
+    const viewportRect = getViewportBoardRect(currentViewport, currentZoom);
+    const viewportCenter = {
+      x: viewportRect.x + viewportRect.width / 2,
+      y: viewportRect.y + viewportRect.height / 2,
+    };
+    zoomRef.current = nextZoom;
+    setZoom(nextZoom);
+    centerBoardPointInScroller(scroller, viewportCenter, nextZoom);
+    refreshViewport();
+  }, [refreshViewport]);
+
+  const handleZoomIn = useCallback(() => {
+    setZoomAroundViewportCenter(zoomRef.current + 0.1);
+  }, [setZoomAroundViewportCenter]);
+
+  const handleZoomOut = useCallback(() => {
+    setZoomAroundViewportCenter(zoomRef.current - 0.1);
+  }, [setZoomAroundViewportCenter]);
+
   const dragControls = useBoardWorkspaceDrag({
     scrollRef,
     zoom,
@@ -145,6 +178,8 @@ export function useBoardCanvasViewport({
     setMinimapCollapsed,
     resolveBoardPoint,
     handleMinimapMoveViewport,
+    handleZoomIn,
+    handleZoomOut,
     dragPreviewByItemId,
     planeStyle,
     canvasStyle,

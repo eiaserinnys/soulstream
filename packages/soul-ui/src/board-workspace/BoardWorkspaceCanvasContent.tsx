@@ -68,7 +68,7 @@ export function BoardWorkspaceCanvasContent({
   return (
     <>
       {isLoading && (
-        <div className="absolute left-3 top-3 z-30 rounded-md border border-glass-border glass glass-shadow-xs p-2">
+        <div className="absolute left-3 top-3 z-30 rounded-full border border-[var(--lg-line)] bg-[var(--lg-card)] p-2 shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)]">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" aria-hidden="true" />
           <span className="sr-only">Loading board sync</span>
         </div>
@@ -115,7 +115,7 @@ export function BoardWorkspaceCanvasContent({
       {dragPreviews[0] && (
         <div
           data-testid="board-drag-ghost"
-          className="pointer-events-none absolute z-20 h-[160px] w-[280px] rounded-md border-2 border-dashed border-primary/70 bg-primary/10 opacity-50"
+          className="pointer-events-none absolute z-20 h-[160px] w-[280px] rounded-[18px] border-2 border-dashed border-accent-blue/70 bg-accent-blue/10 opacity-50"
           style={boardToCanvasStyle(snapBoardPosition(dragPreviews[0].x, dragPreviews[0].y))}
         />
       )}
@@ -123,7 +123,7 @@ export function BoardWorkspaceCanvasContent({
       {marqueeRect && (
         <div
           data-testid="board-marquee"
-          className="pointer-events-none absolute z-30 rounded-sm border border-primary bg-primary/10"
+          className="pointer-events-none absolute z-30 rounded border border-accent-blue bg-accent-blue/10"
           style={{
             left: BOARD_CANVAS_ORIGIN_X + marqueeRect.x,
             top: BOARD_CANVAS_ORIGIN_Y + marqueeRect.y,

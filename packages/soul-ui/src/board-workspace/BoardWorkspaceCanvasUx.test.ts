@@ -313,6 +313,23 @@ describe("BoardWorkspaceView canvas UX", () => {
     expect(canvas!.style.willChange).toBe("transform");
     expect(container.querySelector('[data-testid="board-zoom-indicator"]')?.textContent).toBe("110%");
 
+    const zoomOut = container.querySelector<HTMLButtonElement>('[data-testid="board-zoom-out"]');
+    const zoomIn = container.querySelector<HTMLButtonElement>('[data-testid="board-zoom-in"]');
+    expect(zoomOut).not.toBeNull();
+    expect(zoomIn).not.toBeNull();
+
+    flushSync(() => {
+      zoomOut!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(canvas!.style.transform).toBe("scale(1)");
+    expect(container.querySelector('[data-testid="board-zoom-indicator"]')?.textContent).toBe("100%");
+
+    flushSync(() => {
+      zoomIn!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(canvas!.style.transform).toBe("scale(1.1)");
+    expect(container.querySelector('[data-testid="board-zoom-indicator"]')?.textContent).toBe("110%");
+
     const toggle = container.querySelector<HTMLButtonElement>('[data-testid="board-minimap-toggle"]');
     expect(container.querySelector('[data-testid="board-minimap"]')).not.toBeNull();
     flushSync(() => {

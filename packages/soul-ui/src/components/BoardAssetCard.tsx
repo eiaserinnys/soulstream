@@ -33,10 +33,10 @@ function assetKind(mimeType: string): "image" | "audio" | "video" | "file" {
 }
 
 function KindIcon({ kind }: { kind: ReturnType<typeof assetKind> }) {
-  if (kind === "image") return <ImageIcon className="h-4 w-4 shrink-0 text-primary" />;
-  if (kind === "audio") return <Music className="h-4 w-4 shrink-0 text-primary" />;
-  if (kind === "video") return <Video className="h-4 w-4 shrink-0 text-primary" />;
-  return <File className="h-4 w-4 shrink-0 text-primary" />;
+  if (kind === "image") return <ImageIcon className="h-4 w-4 shrink-0 text-accent-blue" />;
+  if (kind === "audio") return <Music className="h-4 w-4 shrink-0 text-accent-blue" />;
+  if (kind === "video") return <Video className="h-4 w-4 shrink-0 text-accent-blue" />;
+  return <File className="h-4 w-4 shrink-0 text-accent-blue" />;
 }
 
 export function BoardAssetCard({
@@ -56,7 +56,7 @@ export function BoardAssetCard({
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
-      <div className="flex min-w-0 items-center gap-2 border-b border-border/60 pb-2">
+      <div className="flex min-w-0 items-center gap-2 border-b border-[var(--lg-line)] pb-2">
         <KindIcon kind={kind} />
         <div className="min-w-0 flex-1">
           <div data-testid="board-asset-title" className="truncate text-sm font-medium">
@@ -71,7 +71,7 @@ export function BoardAssetCard({
             href={signedUrl}
             download={fileName}
             title="Download"
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--lg-line)] text-muted-foreground transition-colors hover:bg-accent-blue/15 hover:text-foreground"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
           >
@@ -81,7 +81,7 @@ export function BoardAssetCard({
         )}
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded border border-border/70 bg-muted/40">
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded-[13px] border border-[var(--lg-line)] bg-muted/40">
         {kind === "image" && mediaUrl && (
           <img
             data-testid="board-asset-image"
@@ -115,7 +115,7 @@ export function BoardAssetCard({
         )}
         {uploadState && (
           <div className={cn(
-            "absolute inset-x-2 bottom-2 rounded border border-border bg-background/95 p-2 shadow-sm",
+            "absolute inset-x-2 bottom-2 rounded-[13px] border border-[var(--lg-line)] bg-[var(--lg-card)] p-2 shadow-sm",
             uploadState === "error" && "border-destructive/50",
           )}>
             <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
@@ -123,8 +123,8 @@ export function BoardAssetCard({
               {uploadState === "uploading" && <span>{Math.round(progress)}%</span>}
             </div>
             {uploadState === "uploading" ? (
-              <div className="h-1.5 overflow-hidden rounded bg-muted">
-                <div className="h-full bg-primary transition-all" style={{ width: `${progress}%` }} />
+              <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                <div className="h-full bg-accent-blue transition-all" style={{ width: `${progress}%` }} />
               </div>
             ) : (
               <div className="line-clamp-2 text-[11px] text-destructive">{errorMessage}</div>

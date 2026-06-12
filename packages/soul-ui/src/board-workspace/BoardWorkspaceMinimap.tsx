@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/cn";
+import { useLiquidLens } from "../lib/liquid-lens";
 import {
   getBoardItemHeight,
   getBoardItemWidth,
@@ -77,9 +78,11 @@ export function BoardWorkspaceMinimap({
   onCollapsedChange,
   onMoveViewport,
 }: BoardWorkspaceMinimapProps) {
+  const capsuleRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
   const projection = useMemo(() => buildProjection(boardItems, viewport, zoom), [boardItems, viewport, zoom]);
   const viewportMiniRect = projectRect(projection.viewportRect, projection);
+  useLiquidLens(capsuleRef, { scale: 18 });
 
   const moveFromPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -93,7 +96,10 @@ export function BoardWorkspaceMinimap({
 
   if (collapsed) {
     return (
-      <div className="pointer-events-auto absolute bottom-3 right-3 z-40 flex items-center gap-2 rounded-md border border-glass-border glass glass-shadow-xs px-2 py-1">
+      <div
+        ref={capsuleRef}
+        className="pointer-events-auto absolute bottom-3 right-3 z-40 flex items-center gap-2 rounded-full border border-glass-border glass-strong glass-shadow-xs lg-rim px-2 py-1"
+      >
         <span data-testid="board-zoom-indicator" className="min-w-11 text-center text-xs font-medium text-muted-foreground">
           {formatBoardZoom(zoom)}
         </span>
@@ -113,7 +119,10 @@ export function BoardWorkspaceMinimap({
   }
 
   return (
-    <div className="pointer-events-auto absolute bottom-3 right-3 z-40 rounded-md border border-glass-border glass-strong glass-shadow-md p-2">
+    <div
+      ref={capsuleRef}
+      className="pointer-events-auto absolute bottom-3 right-3 z-40 rounded-[14px] border border-glass-border glass-strong glass-shadow-md lg-rim p-2"
+    >
       <div className="mb-1 flex items-center justify-between gap-2">
         <span data-testid="board-zoom-indicator" className="text-xs font-medium text-muted-foreground">
           {formatBoardZoom(zoom)}
@@ -133,7 +142,7 @@ export function BoardWorkspaceMinimap({
       <div
         data-testid="board-minimap"
         className={cn(
-          "relative overflow-hidden rounded border border-border/70 bg-muted/60",
+          "relative overflow-hidden rounded-[10px] border border-[var(--lg-line)] bg-muted/40",
           dragging && "cursor-grabbing",
           !dragging && "cursor-crosshair",
         )}
@@ -160,7 +169,7 @@ export function BoardWorkspaceMinimap({
           return (
             <div
               key={item.boardItemId}
-              className="absolute rounded-sm bg-muted-foreground/40"
+              className="absolute rounded-[2.5px] bg-muted-foreground/40"
               style={{
                 left: rect.x,
                 top: rect.y,
@@ -172,7 +181,7 @@ export function BoardWorkspaceMinimap({
         })}
         <div
           data-testid="board-minimap-viewport"
-          className="absolute rounded-sm border border-primary bg-primary/15"
+          className="absolute rounded border-[1.5px] border-accent-blue bg-accent-blue/8"
           style={{
             left: viewportMiniRect.x,
             top: viewportMiniRect.y,

@@ -19,7 +19,7 @@ import {
 } from "./board-workspace-items";
 
 const BOARD_TILE_CLASS =
-  "absolute z-10 flex h-[160px] w-[280px] touch-none select-none flex-col overflow-hidden rounded-md border border-border bg-card px-3 py-2 text-left shadow-sm transition-shadow hover:ring-1 hover:ring-ring/50 hover:ring-offset-1 hover:ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "absolute z-10 flex h-[160px] w-[280px] touch-none select-none flex-col overflow-hidden rounded-[18px] border border-white/8 bg-[var(--lg-card)] px-4 py-[13px] text-left text-sm shadow-[0_10px_30px_-14px_rgb(10_16_30_/_50%)] transition-[border-color,box-shadow,opacity,outline-color] duration-200 ease-out hover:border-accent-blue/35 hover:shadow-[0_12px_32px_-18px_rgb(10_30_70_/_50%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/50";
 
 function getSessionAgentLabel(session: SessionSummary): string {
   return session.agentName?.trim() || session.agentId?.trim() || "—";
@@ -74,11 +74,11 @@ export function BoardWorkspaceTile({
   onToggleFrameCollapsed,
 }: BoardWorkspaceTileProps) {
   const selectionClassName = cn(
-    isSelected && "ring-2 ring-primary ring-offset-2 ring-offset-background",
-    remoteSelectionColor && !isSelected && "ring-2 ring-[var(--board-remote-ring)] ring-offset-2 ring-offset-background",
+    isSelected && "outline outline-2 outline-offset-[1px] outline-accent-blue",
+    remoteSelectionColor && !isSelected && "outline outline-2 outline-offset-[1px] outline-[var(--board-remote-ring)]",
   );
   const pulsingClassName =
-    isPulsing && "animate-pulse ring-2 ring-primary ring-offset-2 ring-offset-background";
+    isPulsing && "animate-pulse outline outline-2 outline-offset-[1px] outline-accent-blue";
   const tileClassName = cn(
     BOARD_TILE_CLASS,
     selectionClassName,
@@ -106,13 +106,13 @@ export function BoardWorkspaceTile({
         }}
       >
         <div className="relative flex h-[60%] items-center justify-center">
-          <Folder className="h-12 w-12 shrink-0 text-primary" />
-          <Badge variant="secondary" className="absolute right-0 top-0 min-w-5 justify-center px-1 text-[10px]">
+          <Folder className="h-12 w-12 shrink-0 text-accent-blue" />
+          <Badge variant="secondary" className="absolute right-0 top-0 min-w-5 justify-center rounded-full px-1 text-[10px]">
             {item.childCount}
           </Badge>
         </div>
-        <div className="flex h-[40%] min-w-0 flex-col justify-end border-t border-border/60 pt-2">
-          <div data-testid="board-folder-title" className="truncate text-sm font-medium">
+        <div className="flex h-[40%] min-w-0 flex-col justify-end border-t border-[var(--lg-line)] pt-2">
+          <div data-testid="board-folder-title" className="truncate text-[13.5px] font-semibold leading-[1.45]">
             {item.folder.name}
           </div>
         </div>
@@ -136,13 +136,13 @@ export function BoardWorkspaceTile({
           onOpenMarkdown(item.documentId);
         }}
       >
-        <div className="flex items-center gap-2 border-b border-border/60 pb-2">
-          <FileText className="h-5 w-5 shrink-0 text-primary" />
-          <span data-testid="board-markdown-title" className="line-clamp-2 text-sm font-medium leading-snug">
+        <div className="flex items-center gap-2 border-b border-[var(--lg-line)] pb-2">
+          <FileText className="h-5 w-5 shrink-0 text-accent-blue" />
+          <span data-testid="board-markdown-title" className="line-clamp-2 text-[13.5px] font-semibold leading-snug">
             {item.title}
           </span>
         </div>
-        <div data-testid="board-markdown-preview" className="mt-2 line-clamp-3 text-xs leading-snug text-muted-foreground">
+        <div data-testid="board-markdown-preview" className="mt-2 line-clamp-3 text-xs leading-[1.55] text-muted-foreground">
           {item.preview || "Empty document"}
         </div>
       </button>
@@ -197,13 +197,13 @@ export function BoardWorkspaceTile({
             onToggleFrameCollapsed?.(item);
           }}
         >
-          <div className="flex items-center gap-2 border-b border-border/60 pb-2">
-            <Frame className="h-5 w-5 shrink-0 text-primary" />
+          <div className="flex items-center gap-2 border-b border-[var(--lg-line)] pb-2">
+            <Frame className="h-5 w-5 shrink-0 text-accent-blue" />
             <span data-testid="board-frame-title" className="line-clamp-2 text-sm font-medium leading-snug">
               {item.title}
             </span>
           </div>
-          <div className="mt-auto flex items-center justify-between border-t border-border/60 pt-2 text-xs text-muted-foreground">
+          <div className="mt-auto flex items-center justify-between border-t border-[var(--lg-line)] pt-2 text-xs text-muted-foreground">
             <span data-testid="board-frame-summary">{item.childCount} cards</span>
             {item.hasRunningChild && (
               <Badge variant="secondary" className="border-success text-success">
@@ -223,7 +223,7 @@ export function BoardWorkspaceTile({
         data-testid="board-frame-region"
         data-board-tile="true"
         className={cn(
-          "absolute z-0 flex touch-none select-none flex-col rounded-md border-2 border-dashed border-primary/50 bg-primary/[0.04] text-left shadow-sm transition-shadow hover:border-primary/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "absolute z-0 flex touch-none select-none flex-col rounded-[18px] border border-dashed border-accent-blue/45 bg-accent-blue/[0.04] text-left shadow-[0_10px_30px_-18px_rgb(10_30_70_/_45%)] transition-[border-color,box-shadow] hover:border-accent-blue/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/50",
           selectionClassName,
           pulsingClassName,
         )}
@@ -231,7 +231,7 @@ export function BoardWorkspaceTile({
         onPointerDown={(event) => onTilePointerDown(event, item)}
         onContextMenu={(event) => onTileContextMenu(event, item)}
       >
-        <div className="flex h-8 min-w-0 items-center gap-2 rounded-t bg-background/90 px-2 text-xs font-medium text-primary shadow-sm">
+        <div className="flex h-8 min-w-0 items-center gap-2 rounded-t-[17px] bg-[var(--lg-card)] px-2 text-xs font-medium text-accent-blue shadow-sm">
           <Frame className="h-4 w-4 shrink-0" />
           <span data-testid="board-frame-title" className="truncate">{item.title}</span>
           <Badge variant="secondary" className="ml-auto h-5 px-1 text-[10px]">
@@ -267,9 +267,9 @@ export function BoardWorkspaceTile({
           !isSelected &&
           !remoteSelectionColor &&
           !isSessionRunning &&
-          "ring-1 ring-ring ring-offset-2 ring-offset-background",
+          "outline outline-1 outline-offset-[1px] outline-accent-blue/50",
         stackStatus === "error" &&
-          "ring-2 ring-accent-red ring-offset-2 ring-offset-background shadow-md",
+          "outline outline-2 outline-offset-[1px] outline-accent-red shadow-md",
       )}
       style={tileStyle}
       onPointerDown={(event) => onTilePointerDown(event, item)}
@@ -286,8 +286,8 @@ export function BoardWorkspaceTile({
             tabIndex={0}
             data-testid="board-session-child-stack-badge"
             className={cn(
-              "absolute right-0 top-0 z-10 inline-flex h-5 min-w-8 items-center justify-center gap-0.5 overflow-hidden rounded border border-border bg-card px-1 text-[10px] font-semibold text-muted-foreground shadow-sm transition-[border-color,box-shadow,color,opacity] duration-200",
-              isStackExpanded && "border-primary text-primary ring-1 ring-primary",
+              "absolute right-0 top-0 z-10 inline-flex h-5 min-w-8 items-center justify-center gap-0.5 overflow-hidden rounded-full border border-[var(--lg-line)] bg-muted/40 px-1 text-[10px] font-semibold text-muted-foreground shadow-sm transition-[border-color,box-shadow,color,opacity] duration-200",
+              isStackExpanded && "border-accent-blue text-accent-blue ring-1 ring-accent-blue",
               stackStatus === "running" &&
                 "card-running-base card-running border-success text-success ring-1 ring-success",
               stackStatus === "error" &&
@@ -315,9 +315,9 @@ export function BoardWorkspaceTile({
             tabIndex={item.parentRef.parentAvailable ? 0 : undefined}
             data-testid="board-session-parent-ref-badge"
             className={cn(
-              "absolute left-0 top-0 z-10 inline-flex h-5 max-w-32 items-center gap-0.5 rounded border border-border bg-card px-1 text-[10px] font-medium shadow-sm",
+              "absolute left-0 top-0 z-10 inline-flex h-5 max-w-32 items-center gap-0.5 rounded-full border border-[var(--lg-line)] bg-muted/40 px-1 text-[10px] font-medium shadow-sm",
               item.parentRef.parentAvailable
-                ? "text-muted-foreground hover:border-primary hover:text-primary"
+                ? "text-muted-foreground hover:border-accent-blue hover:text-accent-blue"
                 : "cursor-not-allowed text-muted-foreground/50",
             )}
             onClick={(event) => {
@@ -361,7 +361,7 @@ export function BoardWorkspaceTile({
         >
           {getSessionBoardTitle(item.session)}
         </div>
-        <div className="mt-auto min-w-0 border-t border-border/60 pt-2">
+        <div className="mt-auto min-w-0 border-t border-[var(--lg-line)] pt-2">
           <div
             data-testid="board-session-agent"
             className="mb-1 flex min-w-0 items-center gap-1.5 text-[11px] text-muted-foreground"
@@ -371,12 +371,12 @@ export function BoardWorkspaceTile({
                 data-testid="board-session-agent-avatar"
                 src={item.session.agentPortraitUrl}
                 alt={getSessionAgentLabel(item.session)}
-                className="h-5 w-5 shrink-0 rounded-sm object-cover"
+                className="h-5 w-5 shrink-0 rounded-full object-cover"
               />
             ) : (
               <span
                 data-testid="board-session-agent-avatar"
-                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm border border-border bg-muted text-[9px]"
+                className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-[var(--lg-line)] bg-muted/40 text-[9px]"
               >
                 {getAgentInitial(getSessionAgentLabel(item.session))}
               </span>
