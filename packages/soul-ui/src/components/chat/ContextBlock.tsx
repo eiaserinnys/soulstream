@@ -19,7 +19,7 @@ export const ContextBlock = memo(function ContextBlock({ items }: { items: Conte
         <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
         <span>{"\u{1F4CB}"}</span>
         <span className="font-medium">Context ({items.length})</span>
-        <span className="text-[11px] leading-4 rounded bg-input px-1.5 text-muted-foreground">
+        <span className="text-xs leading-4 rounded bg-input px-1.5 text-muted-foreground">
           {formatPromptTokenCount(metrics.totalTokens)} prompt
         </span>
       </button>

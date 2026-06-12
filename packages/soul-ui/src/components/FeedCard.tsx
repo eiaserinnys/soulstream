@@ -98,7 +98,7 @@ export const FeedCard = memo(function FeedCard({
       {...attributes}
       {...listeners}
       className={cn(
-        "relative flex h-full cursor-pointer items-start gap-3 overflow-hidden px-4 py-3 text-[13px] transition-[border-color,box-shadow,opacity] duration-200 ease-out",
+        "relative flex h-full cursor-pointer items-center gap-3 overflow-hidden px-4 py-3 text-sm transition-[border-color,box-shadow,opacity] duration-200 ease-out",
         variant === "card"
           ? "rounded-[18px] border border-white/8 bg-[var(--lg-card)] shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)]"
           : "rounded-none border-0 bg-transparent shadow-none",
@@ -125,22 +125,23 @@ export const FeedCard = memo(function FeedCard({
         <div className="flex min-w-0 items-center gap-2">
           <div className={cn(
             "min-w-0 flex-1 truncate font-semibold leading-[1.5]",
+            "text-[14.5px]",
             isUnread ? "text-foreground" : "text-foreground/90",
           )}>
             {title}
           </div>
           {folderName && (
-            <span className="max-w-28 shrink-0 truncate rounded-full bg-muted px-2.5 py-0.5 text-[10.5px] text-muted-foreground">
+            <span className="max-w-28 shrink-0 truncate rounded-full bg-muted px-2.5 py-0.5 text-xs text-muted-foreground">
               {folderName}
             </span>
           )}
           {timeStr && (
-            <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/70">
+            <span className="shrink-0 font-mono text-xs text-muted-foreground/70">
               {timeStr}
             </span>
           )}
         </div>
-        <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11.5px] text-muted-foreground">
+        <div className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           <span className="truncate">{actorName}</span>
           <span className="opacity-50">·</span>
           <span className="flex shrink-0 items-center gap-1">
@@ -157,7 +158,7 @@ export const FeedCard = memo(function FeedCard({
           {session.nodeId && <NodeBadge nodeId={session.nodeId} />}
         </div>
         {preview && (
-          <div className="mt-1 line-clamp-1 text-[12px] leading-[1.5] text-muted-foreground">
+          <div className="mt-1 line-clamp-1 text-sm leading-[1.5] text-muted-foreground">
             {preview}
           </div>
         )}

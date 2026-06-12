@@ -37,11 +37,11 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
       />
       <div className="max-w-[86%] rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]">
         <div className="mb-1 flex items-baseline gap-1.5">
-          <span className="text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {displayName}
           </span>
           {displayId && (
-            <span className="text-[10.5px] text-muted-foreground/70">
+            <span className="text-xs text-muted-foreground/70">
               {displayId}
             </span>
           )}

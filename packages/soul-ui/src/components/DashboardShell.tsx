@@ -153,10 +153,12 @@ export function DashboardShell({
   const searchCapsuleRef = useRef<HTMLButtonElement>(null);
   const statusCapsuleRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
-  useLiquidLens(brandCapsuleRef, { scale: 30 });
-  useLiquidLens(searchCapsuleRef, { scale: 30 });
-  useLiquidLens(statusCapsuleRef, { scale: 30 });
-  useLiquidLens(sidebarRef, { scale: 34 });
+  const rightPanelRef = useRef<HTMLElement>(null);
+  useLiquidLens(brandCapsuleRef, { scale: 48 });
+  useLiquidLens(searchCapsuleRef, { scale: 48 });
+  useLiquidLens(statusCapsuleRef, { scale: 48 });
+  useLiquidLens(sidebarRef, { scale: 64 });
+  useLiquidLens(rightPanelRef, { scale: 64 });
 
   const handleRightDrag = useCallback(
     (delta: number) => {
@@ -366,7 +368,7 @@ export function DashboardShell({
         <header className="dashboard-floating-toolbar">
           <div
             ref={brandCapsuleRef}
-            className="dashboard-toolbar-cap border border-glass-border glass-strong glass-chrome lg-rim"
+            className="dashboard-toolbar-cap dashboard-toolbar-brand border border-glass-border glass-strong glass-chrome lg-rim"
           >
             <span aria-hidden="true" className="dashboard-brand-orb" />
             <span className="font-semibold text-foreground">Soulstream</span>
@@ -531,8 +533,9 @@ export function DashboardShell({
             <DragHandle onDrag={handleRightDrag} />
 
             <aside
+              ref={rightPanelRef}
               data-testid="detail-panel"
-              className="overflow-hidden bg-transparent"
+              className="dashboard-chat-panel overflow-hidden border border-glass-border glass-strong glass-chrome lg-rim"
               style={{ width: `${rightPercent}%` }}
             >
               {rightPanel}

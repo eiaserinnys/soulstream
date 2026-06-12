@@ -2,9 +2,9 @@ import { useEffect, type RefObject } from "react";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const MAX_MAP_SIDE = 400;
-const DEFAULT_LENS_SCALE = 30;
+const DEFAULT_LENS_SCALE = 48;
 const EDGE_EXPONENT = 1.7;
-const INTERIOR_REFRACTION = 0.16;
+const INTERIOR_REFRACTION = 0.3;
 const RESIZE_DEBOUNCE_MS = 120;
 const REDUCED_TRANSPARENCY_QUERY = "(prefers-reduced-transparency: reduce)";
 
@@ -220,7 +220,7 @@ export function applyLiquidLens(element: HTMLElement, options: LiquidLensOptions
     Number.parseFloat(styles.borderRadius) || 0,
     Math.min(width, height) / 2,
   );
-  const band = Math.max(14, Math.min(38, Math.min(width, height) * 0.38));
+  const band = Math.max(16, Math.min(56, Math.min(width, height) * 0.55));
   const id = getElementLensId(element);
   removeFilter(id);
 
@@ -255,7 +255,7 @@ export function applyLiquidLens(element: HTMLElement, options: LiquidLensOptions
   filter.append(image, displacement);
   defs.appendChild(filter);
 
-  const filterValue = `url(#${id}) blur(1.6px) saturate(165%)`;
+  const filterValue = `url(#${id}) blur(0.9px) saturate(165%)`;
   element.style.backdropFilter = filterValue;
   element.style.setProperty("-webkit-backdrop-filter", filterValue);
   return true;

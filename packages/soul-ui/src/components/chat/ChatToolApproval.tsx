@@ -33,10 +33,10 @@ export const ChatToolApproval = memo(function ChatToolApproval({
   return (
     <div className="px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
       <div className="flex flex-col gap-2 rounded-[18px] border border-glass-border glass-strong glass-shadow-md px-4 py-3">
-        <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           Approval
         </div>
-        <div className="text-[12.5px] font-semibold leading-[1.5] text-foreground">{msg.toolName}</div>
+        <div className="text-sm font-semibold leading-[1.5] text-foreground">{msg.toolName}</div>
         {msg.toolResult && (
           <div className="text-xs text-muted-foreground">{msg.toolResult}</div>
         )}

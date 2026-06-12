@@ -45,7 +45,7 @@ function SessionPortrait({ url, name }: { url?: string | null; name?: string | n
   const [error, setError] = useState(false);
   if (!url || error) {
     return (
-      <span className="flex h-[25px] w-[25px] shrink-0 items-center justify-center rounded-full border border-white/20 bg-muted text-[10px] font-semibold text-muted-foreground">
+      <span className="flex h-[25px] w-[25px] shrink-0 items-center justify-center rounded-full border border-white/20 bg-muted text-xs font-semibold text-muted-foreground">
         {getInitials(name)}
       </span>
     );
@@ -153,7 +153,7 @@ export const SessionItem = memo(function SessionItem({
           ) : (
             <div
               className={cn(
-                "truncate text-[13.5px] font-semibold leading-[1.45]",
+                "truncate text-[14.5px] font-semibold leading-[1.45]",
                 isUnread ? "text-foreground" : isReadCompleted ? "text-muted-foreground" : "text-foreground/90",
               )}
             >
@@ -161,13 +161,13 @@ export const SessionItem = memo(function SessionItem({
             </div>
           )}
           {previewText && (
-            <div className="mt-1 line-clamp-2 text-xs leading-[1.55] text-muted-foreground">
+            <div className="mt-1 line-clamp-2 text-sm leading-[1.55] text-muted-foreground">
               {previewText}
             </div>
           )}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
-          <span className={cn("rounded-full px-2.5 py-1 text-[10.5px] font-semibold leading-none", config.chipClass)}>
+          <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold leading-none", config.chipClass)}>
             <span
               className={cn(
                 "mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-[1px]",
@@ -177,7 +177,7 @@ export const SessionItem = memo(function SessionItem({
             />
             {config.label}
           </span>
-          <span className="font-mono text-[10.5px] text-muted-foreground/70">{timeStr}</span>
+          <span className="font-mono text-xs text-muted-foreground/70">{timeStr}</span>
         </div>
       </div>
 
@@ -193,7 +193,7 @@ export const SessionItem = memo(function SessionItem({
             </Badge>
           )}
         </div>
-        <div className="ml-auto flex min-w-0 items-center gap-1.5 text-[11.5px] text-muted-foreground">
+        <div className="ml-auto flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
           <SessionPortrait url={session.agentPortraitUrl} name={session.agentName} />
           <span className="max-w-28 truncate">{session.agentName ?? session.agentId ?? "Agent"}</span>
         </div>

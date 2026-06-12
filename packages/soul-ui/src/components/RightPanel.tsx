@@ -53,9 +53,9 @@ export function RightPanel({
           variant="default"
           className="mx-3 mt-3 mb-2 h-[38px] w-fit shrink-0 rounded-full border border-glass-border glass-strong glass-shadow-xs p-1"
         >
-          <TabsTab value={0} className="h-[30px] rounded-full px-4 text-xs font-semibold">Chat</TabsTab>
-          <TabsTab value={1} className="h-[30px] rounded-full px-4 text-xs font-semibold">Detail</TabsTab>
-          <TabsTab value={2} className="h-[30px] rounded-full px-4 text-xs font-semibold">Session Info</TabsTab>
+          <TabsTab value={0} className="h-[30px] rounded-full px-4 text-sm font-semibold">Chat</TabsTab>
+          <TabsTab value={1} className="h-[30px] rounded-full px-4 text-sm font-semibold">Detail</TabsTab>
+          <TabsTab value={2} className="h-[30px] rounded-full px-4 text-sm font-semibold">Session Info</TabsTab>
         </TabsList>
 
         <TabsPanel value={0} className="flex-1 overflow-hidden" keepMounted>

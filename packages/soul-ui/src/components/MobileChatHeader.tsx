@@ -49,7 +49,7 @@ export function MobileChatHeader({
           <div className="truncate text-sm font-medium">
             {displayText}
           </div>
-          <div className={cn("mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold", statusConfig.chipClass)}>
+          <div className={cn("mt-0.5 flex items-center gap-1 text-xs font-semibold", statusConfig.chipClass)}>
             <span
               className={cn(
                 "h-1.5 w-1.5 rounded-full",

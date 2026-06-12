@@ -43,13 +43,13 @@ export const ChatInputRequest = memo(function ChatInputRequest({
   return (
     <div className="px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
       <div className="flex flex-col gap-2 rounded-[18px] border border-glass-border glass-strong glass-shadow-md px-4 py-3">
-        <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           Question
         </div>
         {question.header && (
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{question.header}</div>
         )}
-        <div className="text-[12.5px] font-semibold leading-[1.5] text-foreground">{question.question}</div>
+        <div className="text-sm font-semibold leading-[1.5] text-foreground">{question.question}</div>
         {isTimedOut ? (
           <div className="text-xs text-muted-foreground">⏱️ 시간 초과</div>
         ) : isDone ? (
@@ -63,7 +63,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
                   onClick={() => handleSelect(opt.label)}
                   disabled={isDisabled}
                   className={cn(
-                    "rounded-[13px] border border-[var(--lg-line)] bg-muted/40 px-3 py-2.5 text-left text-[12.5px] transition-colors",
+                    "rounded-[13px] border border-[var(--lg-line)] bg-muted/40 px-3 py-2.5 text-left text-sm transition-colors",
                     selectedAnswer === opt.label
                       ? "border-accent-blue/55 bg-accent-blue/15"
                       : "hover:border-accent-blue/50",
@@ -72,7 +72,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
                 >
                   <b className="font-semibold">{opt.label}</b>
                   {opt.description && (
-                    <small className="mt-0.5 block text-[11.5px] leading-[1.45] text-muted-foreground">
+                    <small className="mt-0.5 block text-xs leading-[1.45] text-muted-foreground">
                       {opt.description}
                     </small>
                   )}
@@ -92,7 +92,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
                 onChange={(event) => setCustomAnswer(event.target.value)}
                 disabled={isDisabled}
                 placeholder="직접 입력"
-                className="min-w-0 flex-1 rounded-[13px] border border-[var(--lg-line)] bg-muted/40 px-3 py-2 text-xs outline-none transition-colors focus:border-accent-blue/55"
+                className="min-w-0 flex-1 rounded-[13px] border border-[var(--lg-line)] bg-muted/40 px-3 py-2 text-sm outline-none transition-colors focus:border-accent-blue/55"
               />
               <button
                 type="submit"

@@ -36,11 +36,11 @@ export const InterventionMessage = memo(function InterventionMessage({ msg }: { 
     <div className="flex justify-end gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
       <div className="max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]">
         <div className="mb-1 flex items-baseline justify-end gap-1.5">
-          <span className="text-[10.5px] font-semibold uppercase tracking-wide text-white/75">
+          <span className="text-xs font-semibold uppercase tracking-wide text-white/75">
             {display.displayName}
           </span>
           {display.displayId && (
-            <span className="text-[10.5px] text-white/55">
+            <span className="text-xs text-white/55">
               {display.displayId}
             </span>
           )}

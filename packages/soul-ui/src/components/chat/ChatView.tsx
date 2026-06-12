@@ -249,12 +249,12 @@ export function ChatView({
     () => (
       <>
         {history.loading && (
-          <div className="p-2 text-center text-muted-foreground text-xs">
+          <div className="p-2 text-center text-muted-foreground text-sm">
             Loading earlier messages...
           </div>
         )}
         {history.reachedTop && (
-          <div className="py-2 px-3 text-center text-muted-foreground text-xs opacity-60">
+          <div className="py-2 px-3 text-center text-muted-foreground text-sm opacity-60">
             {"\u2014"} Beginning of conversation {"\u2014"}
           </div>
         )}
@@ -294,10 +294,10 @@ export function ChatView({
             portraitUrl={activeSessionSummary?.agentPortraitUrl}
           />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-xs font-semibold text-foreground">
+            <div className="truncate text-sm font-semibold text-foreground">
               {chatTitle}
             </div>
-            <div className={cn("mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold", chatStatusConfig.chipClass)}>
+            <div className={cn("mt-0.5 flex items-center gap-1 text-xs font-semibold", chatStatusConfig.chipClass)}>
               <span
                 className={cn(
                   "h-1.5 w-1.5 rounded-full",
@@ -317,7 +317,7 @@ export function ChatView({
       )}
       {/* 빈 세션의 초기 로딩만 외부에 표시한다. 메시지가 있으면 header를 Virtuoso 안에 둔다. */}
       {messages.length === 0 && history.loading && (
-        <div className="p-2 text-center text-muted-foreground text-xs">
+        <div className="p-2 text-center text-muted-foreground text-sm">
           Loading earlier messages...
         </div>
       )}
