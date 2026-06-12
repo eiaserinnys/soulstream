@@ -22,8 +22,8 @@ import {
   type LoadMoreCallback,
 } from "./load-more-guard";
 
-const CARD_HEIGHT = 220;
-const CARD_GAP = 12;
+const CARD_HEIGHT = 88;
+const CARD_GAP = 8;
 const ESTIMATED_SIZE = CARD_HEIGHT + CARD_GAP;
 
 export interface FeedViewProps {

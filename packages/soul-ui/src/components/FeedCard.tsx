@@ -1,7 +1,7 @@
 /**
  * FeedCard - 피드 뷰 세션 카드
  *
- * 고정 높이 카드. 3단 구조: 제목 / 메타 정보 / 메시지 미리보기.
+ * 고정 높이 피드 행. 액터 / 세션 제목 / 폴더 칩 / 최신 메시지 미리보기를 표시한다.
  * FolderContents의 SessionItem과 동일한 스타일 토큰을 재사용한다.
  */
 
@@ -14,7 +14,6 @@ import { isSessionUnread } from "../stores/dashboard-store";
 import { STATUS_CONFIG } from "./FolderContents";
 import { NodeBadge } from "./NodeBadge";
 import { BackendBadge } from "./BackendBadge";
-import { MarkdownContent } from "./MarkdownContent";
 import { ProfileAvatar } from "./ProfileAvatar";
 import { cn } from "../lib/cn";
 
@@ -55,6 +54,11 @@ export const FeedCard = memo(function FeedCard({
   const profileConfig = (dashboardConfig?.user != null ? dashboardConfig : null) ?? DEFAULT_PROFILE;
   const userPortraitUrl =
     session.userPortraitUrl ?? profileConfig.user.portraitUrl ?? undefined;
+  const actorIsUser = session.lastMessage?.type === "user";
+  const actorName = actorIsUser
+    ? (session.userName ?? profileConfig.user.name)
+    : (session.agentName ?? "Assistant");
+  const actorPortraitUrl = actorIsUser ? userPortraitUrl : session.agentPortraitUrl;
 
   const handleClick = useCallback(
     () => onCardClick(session.agentSessionId),
@@ -69,14 +73,13 @@ export const FeedCard = memo(function FeedCard({
     [onCardContextMenu, session.agentSessionId],
   );
 
-  // --- 제목 ---
   const title = session.displayName
-    ? `📌 ${session.displayName}`
+    ? session.displayName
     : session.lastMessage?.preview
-      ? `🗨️ ${session.lastMessage.preview}`
+      ? session.lastMessage.preview
       : session.prompt || session.agentSessionId;
+  const preview = session.lastMessage?.preview ?? session.prompt ?? "";
 
-  // --- 시간 ---
   const displayTime = session.lastMessage?.timestamp ?? session.updatedAt ?? session.createdAt;
   const timeStr = displayTime
     ? new Date(displayTime).toLocaleString("ko-KR", {
@@ -93,132 +96,65 @@ export const FeedCard = memo(function FeedCard({
       {...attributes}
       {...listeners}
       className={cn(
-        "h-[220px] rounded-lg border relative p-4 cursor-pointer transition-[background-color,box-shadow,border-color] duration-200 ease-out overflow-hidden flex flex-col gap-2",
+        "relative flex h-full cursor-pointer items-start gap-3 overflow-hidden rounded-[18px] border border-white/8 bg-[var(--lg-card)] px-4 py-3 text-[13px] shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)] transition-[border-color,box-shadow,opacity] duration-200 ease-out",
         isDragging && "opacity-50",
-        isRunning
-          ? [
-              // 배경과 테두리는 animation keyframe(box-shadow)에서 처리
-              // unread: 왼쪽 테두리만 초록으로 유지, 나머지는 너비 0으로 제거
-              isUnread
-                ? "border-t-0 border-r-0 border-b-0 border-l-[3px] border-l-success"
-                : "border-transparent",
-              // running variant CSS class (::before shimmer + background animation)
-              isActive ? "card-running-base card-running-active"
-                : isUnread ? "card-running-base card-running-unread"
-                : "card-running-base card-running",
-            ]
-          : isUnread
-            ? [
-                "border-l-[3px] border-t border-r border-b border-border",
-                isError
-                  ? "border-l-accent-red bg-accent-red/[0.06]"
-                  : "border-l-info bg-info/[0.04]",
-              ]
-            : [
-                "border-border",
-                isActive && (
-                  isError
-                    ? "ring-[1.5px] ring-accent-red/80 bg-accent-red/[0.06]"
-                    : "ring-1 ring-accent-blue bg-accent-blue/[0.06]"
-                ),
-                !isActive && isError && "bg-accent-red/[0.06]",
-              ],
-        !isActive && !isRunning && "hover:bg-accent/30",
+        isActive && "border-accent-blue/55 ring-1 ring-accent-blue/50",
+        isUnread && !isActive && "border-l-[3px] border-l-info",
+        isRunning && "card-running-base",
+        isError && !isActive && "border-l-[3px] border-l-accent-red",
+        !isActive && "hover:border-accent-blue/35 hover:shadow-[0_12px_32px_-18px_rgb(10_30_70_/_50%)]",
       )}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
       data-session-id={session.agentSessionId}
     >
-      {/* 제목 */}
-      <div className={cn(
-        "text-base font-semibold truncate",
-        isUnread ? "text-foreground" : "text-foreground/80",
-      )}>
-        {title}
-      </div>
-
-      {/* 메타 정보 */}
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
-        {folderName && (
-          <>
-            <span className="truncate max-w-[100px]">{folderName}</span>
-            <span>·</span>
-          </>
-        )}
-        {session.agentName && (
-          <>
-            <span className="truncate max-w-[100px] opacity-70">{session.agentName}</span>
-            <span>·</span>
-          </>
-        )}
-        {timeStr && <span>{timeStr}</span>}
-        {session.backend && (
-          <>
-            <span>·</span>
-            <BackendBadge backend={session.backend} />
-          </>
-        )}
-        {session.nodeId && (
-          <>
-            <span>·</span>
-            <NodeBadge nodeId={session.nodeId} />
-          </>
-        )}
-        <span>·</span>
-        <span className="flex items-center gap-1">
-          <span
-            className={cn(
-              "w-1.5 h-1.5 rounded-full inline-block",
-              statusConfig.dotClass,
-              statusConfig.animate && "animate-[pulse_2s_infinite]",
-            )}
-          />
-          {session.status}
-        </span>
-      </div>
-
-      {/* 메시지 미리보기 */}
-      <div className="flex-1 overflow-hidden flex flex-col gap-1.5 text-sm">
-        {session.prompt && (
-          <div className="flex items-start gap-1.5 overflow-hidden">
-            <ProfileAvatar
-              role="user"
-              hasPortrait={!!userPortraitUrl}
-              portraitUrl={userPortraitUrl}
-              fallbackEmoji="👤"
+      <ProfileAvatar
+        role={actorIsUser ? "user" : "assistant"}
+        hasPortrait={!!actorPortraitUrl}
+        fallbackEmoji={actorIsUser ? "👤" : "🤖"}
+        portraitUrl={actorPortraitUrl}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className={cn(
+            "min-w-0 flex-1 truncate font-semibold leading-[1.5]",
+            isUnread ? "text-foreground" : "text-foreground/90",
+          )}>
+            {title}
+          </div>
+          {folderName && (
+            <span className="max-w-28 shrink-0 truncate rounded-full bg-muted px-2.5 py-0.5 text-[10.5px] text-muted-foreground">
+              {folderName}
+            </span>
+          )}
+          {timeStr && (
+            <span className="shrink-0 font-mono text-[10.5px] text-muted-foreground/70">
+              {timeStr}
+            </span>
+          )}
+        </div>
+        <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11.5px] text-muted-foreground">
+          <span className="truncate">{actorName}</span>
+          <span className="opacity-50">·</span>
+          <span className="flex shrink-0 items-center gap-1">
+            <span
+              className={cn(
+                "inline-block h-1.5 w-1.5 rounded-full",
+                statusConfig.dotClass,
+                statusConfig.animate && "animate-[pulse_2s_infinite]",
+              )}
             />
-            <div className="flex-1 min-w-0 overflow-hidden">
-              <span className="text-xs font-medium shrink-0">{session.userName ?? profileConfig.user.name}</span>
-              <span className="text-muted-foreground text-xs mx-1 shrink-0">|</span>
-              <div className="text-foreground/70 overflow-hidden mt-0.5 line-clamp-2">
-                <MarkdownContent content={session.prompt} compact />
-              </div>
-            </div>
+            {statusConfig.label}
+          </span>
+          {session.backend && <BackendBadge backend={session.backend} />}
+          {session.nodeId && <NodeBadge nodeId={session.nodeId} />}
+        </div>
+        {preview && (
+          <div className="mt-1 line-clamp-1 text-[12px] leading-[1.5] text-muted-foreground">
+            {preview}
           </div>
         )}
-        {session.lastMessage?.preview && session.lastMessage.preview !== session.prompt && (() => {
-          const isUser = session.lastMessage.type === "user";
-          return (
-            <div className="flex items-start gap-1.5 overflow-hidden">
-              <ProfileAvatar
-                role={isUser ? "user" : "assistant"}
-                hasPortrait={isUser ? !!userPortraitUrl : !!session.agentPortraitUrl}
-                fallbackEmoji={isUser ? "👤" : "🤖"}
-                portraitUrl={isUser ? userPortraitUrl : session.agentPortraitUrl}
-              />
-              <div className="flex-1 min-w-0 overflow-hidden">
-                <span className="text-xs font-medium shrink-0">
-                  {isUser ? (session.userName ?? profileConfig.user.name) : (session.agentName ?? "Assistant")}
-                </span>
-                <span className="text-muted-foreground text-xs mx-1 shrink-0">|</span>
-                <div className="text-foreground/70 overflow-hidden mt-0.5 line-clamp-2">
-                  <MarkdownContent content={session.lastMessage.preview} compact />
-                </div>
-              </div>
-            </div>
-          );
-        })()}
       </div>
     </div>
   );
