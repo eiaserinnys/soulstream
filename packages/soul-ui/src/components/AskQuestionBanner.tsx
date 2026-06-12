@@ -70,27 +70,27 @@ function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; se
   };
 
   return (
-    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1000] bg-background border border-border rounded-xl p-4 min-w-80 max-w-[520px] shadow-lg">
-      <div className="mb-2 text-xs text-muted-foreground">도구 승인이 필요합니다</div>
-      <div className="mb-1 font-medium text-foreground">{node.toolName}</div>
+    <div className="fixed left-1/2 top-6 z-[1000] flex min-w-80 max-w-[520px] -translate-x-1/2 flex-col gap-2 rounded-[18px] border border-glass-border glass-strong glass-shadow-lg px-4 py-3">
+      <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Approval</div>
+      <div className="font-medium text-foreground">{node.toolName}</div>
       {node.agentName && (
-        <div className="mb-2 text-xs text-muted-foreground">{node.agentName}</div>
+        <div className="text-xs text-muted-foreground">{node.agentName}</div>
       )}
-      <pre className="mb-3 max-h-32 overflow-auto rounded border border-border bg-muted/30 p-2 text-xs text-muted-foreground">
+      <pre className="max-h-32 overflow-auto rounded-[13px] border border-[var(--lg-line)] bg-muted/40 p-2 text-xs text-muted-foreground">
         {JSON.stringify(node.toolInput, null, 2)}
       </pre>
       <div className="flex justify-end gap-2">
         <button
           onClick={() => handleDecision("rejected")}
           disabled={!!selectedAnswer}
-          className="px-3.5 py-1.5 rounded border border-border bg-popover text-xs text-foreground hover:bg-muted/50 disabled:opacity-50 disabled:cursor-default"
+          className="rounded-full border border-[var(--lg-line)] bg-muted/40 px-3.5 py-1.5 text-xs text-foreground hover:border-accent-red/50 disabled:cursor-default disabled:opacity-50"
         >
           거부
         </button>
         <button
           onClick={() => handleDecision("approved")}
           disabled={!!selectedAnswer}
-          className="px-3.5 py-1.5 rounded border border-success bg-success text-xs text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-default"
+          className="rounded-full border border-success bg-success px-3.5 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:cursor-default disabled:opacity-50"
         >
           승인
         </button>
@@ -103,6 +103,7 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
   const expireInputRequest = useDashboardStore((s: DashboardState & DashboardActions) => s.expireInputRequest);
   const { remainingSec, isExpired } = useInputRequestTimer(node.receivedAt, node.timeoutSec ?? 300);
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  const [customAnswer, setCustomAnswer] = useState("");
 
   // 두 만료 경로 통합: 클라이언트 타이머(isExpired) 또는 서버 이벤트(serverExpiredAt)
   const isEffectivelyExpired = isExpired || !!node.serverExpiredAt;
@@ -137,42 +138,67 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
   };
 
   return (
-    <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[1000] bg-background border border-border rounded-xl p-4 min-w-80 max-w-[500px] shadow-lg">
+    <div className="fixed left-1/2 top-6 z-[1000] flex min-w-80 max-w-[500px] -translate-x-1/2 flex-col gap-2 rounded-[18px] border border-glass-border glass-strong glass-shadow-lg px-4 py-3">
       {isEffectivelyExpired ? (
-        <div className="text-center text-muted-foreground">⏱️ 시간 초과</div>
+        <div className="text-center text-muted-foreground">시간 초과</div>
       ) : (
         <>
-          <div className="mb-2 text-xs text-muted-foreground">🔔 Claude가 질문합니다</div>
+          <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Question</div>
           {question.header && (
-            <div className="mb-1 text-xs text-muted-foreground uppercase tracking-wide">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {question.header}
             </div>
           )}
-          <div className="mb-3 font-medium text-foreground">{question.question}</div>
-          <div className="flex flex-wrap gap-2 mb-2">
+          <div className="text-[12.5px] font-semibold leading-[1.5] text-foreground">{question.question}</div>
+          <div className="flex flex-col gap-2">
             {question.options?.map((opt) => (
               <button
                 key={opt.label}
                 onClick={() => handleSelect(opt.label)}
                 disabled={!!selectedAnswer}
                 className={cn(
-                  "px-3.5 py-1.5 rounded border text-xs transition-colors",
+                  "rounded-[13px] border px-3 py-2.5 text-left text-[12.5px] transition-colors",
                   selectedAnswer === opt.label
-                    ? "bg-success border-success text-white"
-                    : "border-border bg-popover text-foreground hover:bg-muted/50",
+                    ? "border-accent-blue/55 bg-accent-blue/15 text-foreground"
+                    : "border-[var(--lg-line)] bg-muted/40 text-foreground hover:border-accent-blue/50",
                   "disabled:opacity-50 disabled:cursor-default",
                 )}
               >
-                {opt.label}
+                <b className="font-semibold">{opt.label}</b>
                 {opt.description && (
-                  <span className="ml-1 opacity-60 text-xs">— {opt.description}</span>
+                  <small className="mt-0.5 block text-[11.5px] leading-[1.45] text-muted-foreground">
+                    {opt.description}
+                  </small>
                 )}
               </button>
             ))}
           </div>
+          <form
+            className="flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const answer = customAnswer.trim();
+              if (answer) void handleSelect(answer);
+            }}
+          >
+            <input
+              value={customAnswer}
+              onChange={(event) => setCustomAnswer(event.target.value)}
+              disabled={!!selectedAnswer}
+              placeholder="직접 입력"
+              className="min-w-0 flex-1 rounded-[13px] border border-[var(--lg-line)] bg-muted/40 px-3 py-2 text-xs outline-none transition-colors focus:border-accent-blue/55"
+            />
+            <button
+              type="submit"
+              disabled={!!selectedAnswer || !customAnswer.trim()}
+              className="rounded-full bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              전송
+            </button>
+          </form>
           {!isEffectivelyExpired && (
             <div className="text-xs text-muted-foreground text-right">
-              ⏱️ {formatTime(remainingSec)}
+              {formatTime(remainingSec)}
             </div>
           )}
         </>

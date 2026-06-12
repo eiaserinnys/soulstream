@@ -8,6 +8,7 @@
  */
 
 import { forwardRef } from "react";
+import { SendHorizontal } from "lucide-react";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 
@@ -51,19 +52,14 @@ export const ChatInputEditor = forwardRef<HTMLTextAreaElement, ChatInputEditorPr
     };
     return (
       <>
-        {/* Left column: labels + textarea */}
-        <div className="flex-1 flex flex-col gap-1">
-          {/* Labels row */}
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground uppercase tracking-wide font-semibold">
-              <span className="text-xs">{modeIcon}</span>
-              {modeLabel}
-            </div>
-            <div className="text-xs text-muted-foreground/60">
-              Ctrl+Enter to send
-            </div>
-          </div>
-          {/* Textarea */}
+        <div className="flex min-w-0 flex-1 items-end gap-2">
+          <span
+            className="mb-2 flex h-5 min-w-5 shrink-0 items-center justify-center text-xs text-muted-foreground"
+            title={modeLabel}
+            aria-hidden="true"
+          >
+            {modeIcon}
+          </span>
           <textarea
             ref={ref}
             value={text}
@@ -73,22 +69,24 @@ export const ChatInputEditor = forwardRef<HTMLTextAreaElement, ChatInputEditorPr
             disabled={textareaDisabled}
             rows={1}
             className={cn(
-              "w-full bg-input border border-border rounded-md py-1.5 px-2.5",
-              "text-base text-foreground font-sans resize-none outline-none",
-              "h-9 sm:h-8 max-h-[120px] leading-snug transition-colors duration-150",
+              "min-h-9 w-full resize-none border-0 bg-transparent px-0 py-2",
+              "font-sans text-base leading-snug text-foreground outline-none placeholder:text-muted-foreground/55",
+              "max-h-[120px] transition-colors duration-150 sm:min-h-8",
               borderColor,
             )}
           />
         </div>
-        {/* Right: button aligned to textarea bottom, matching textarea height (h-9 = 36px) */}
         <Button
           data-testid="send-button"
           onClick={onSend}
           disabled={disabled}
-          size="sm"
-          className={cn("self-end h-9 sm:h-8 text-base sm:text-sm", buttonColor)}
+          size="icon"
+          aria-label={buttonLabel}
+          title={buttonLabel}
+          data-button-color={buttonColor}
+          className="h-9 w-9 shrink-0 self-end rounded-full bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] text-white shadow-[0_8px_20px_-8px_rgb(10_132_255_/_60%)] hover:from-[#2E96FF] hover:to-[#0A84FF] hover:opacity-95 sm:h-8 sm:w-8"
         >
-          {buttonLabel}
+          <SendHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>
       </>
     );

@@ -239,6 +239,7 @@ export function DashboardLayout() {
         <ChatView
           chatInputDisabled={isOtherNode}
           fileUploadUrl={chatFileUploadUrl}
+          showHeader={false}
         />
       }
       mobileSettingsContent={

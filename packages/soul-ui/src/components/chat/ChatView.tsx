@@ -38,21 +38,26 @@ import {
   shouldScrollToBottomOnTreeChange,
 } from "./ChatView.follow-helpers";
 import { ChatRuntimeCompactStrips } from "./ChatRuntimeCompactStrips";
+import { ProfileAvatar } from "../ProfileAvatar";
+import { STATUS_CONFIG } from "../SessionItem";
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
   isOtherNodeSession?: boolean;
   fileUploadUrl?: string;
+  showHeader?: boolean;
 }
 
 export function ChatView({
   chatInputDisabled = false,
   isOtherNodeSession = false,
   fileUploadUrl,
+  showHeader = true,
 }: ChatViewProps = {}) {
   const tree = useDashboardStore((s) => s.tree);
   const treeVersion = useDashboardStore((s) => s.treeVersion);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
+  const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
   const focusEventId = useDashboardStore((s) => s.focusEventId);
   const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
   /**
@@ -270,8 +275,41 @@ export function ChatView({
     );
   }
 
+  const chatTitle =
+    activeSessionSummary?.displayName ||
+    activeSessionSummary?.lastMessage?.preview ||
+    activeSessionSummary?.prompt ||
+    activeSessionKey;
+  const chatStatus = activeSessionSummary?.status ?? "unknown";
+  const chatStatusConfig = STATUS_CONFIG[chatStatus] ?? STATUS_CONFIG.unknown;
+
   return (
-    <div className="flex flex-col h-full min-h-0 overflow-hidden">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3">
+      {showHeader && (
+        <div className="relative mb-3 flex h-[50px] shrink-0 items-center gap-2.5 rounded-full border border-glass-border glass-strong glass-shadow-xs px-4">
+          <ProfileAvatar
+            role="assistant"
+            hasPortrait={!!activeSessionSummary?.agentPortraitUrl}
+            fallbackEmoji="🤖"
+            portraitUrl={activeSessionSummary?.agentPortraitUrl}
+          />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-xs font-semibold text-foreground">
+              {chatTitle}
+            </div>
+            <div className={cn("mt-0.5 flex items-center gap-1 text-[10.5px] font-semibold", chatStatusConfig.chipClass)}>
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  chatStatusConfig.dotClass,
+                  chatStatusConfig.animate && "animate-[pulse_1.6s_infinite]",
+                )}
+              />
+              {chatStatusConfig.label}
+            </div>
+          </div>
+        </div>
+      )}
       {messages.length === 0 && !history.loading && (
         <div className="p-5 text-center text-muted-foreground text-sm">
           Waiting for events...
@@ -385,11 +423,11 @@ export function ChatView({
       )}
 
       {/* Follow toggle button */}
-      <div className="relative">
+      <div className="flex shrink-0 justify-end pb-2 pr-3">
         <button
           onClick={toggleFollow}
           className={cn(
-            "absolute bottom-[15px] right-[15px] z-10 flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+            "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
             "border glass-shadow-xs",
             isFollowing
               ? "border-accent-blue/30 bg-accent-blue/15 text-accent-blue hover:bg-accent-blue/25"

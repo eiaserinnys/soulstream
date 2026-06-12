@@ -33,25 +33,19 @@ export const InterventionMessage = memo(function InterventionMessage({ msg }: { 
   const display = computeInterventionDisplay(msg, callerAvatarUrl, userConfig);
 
   return (
-    <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
-      <ProfileAvatar
-        role="user"
-        hasPortrait={display.hasPortrait}
-        fallbackEmoji={display.fallbackEmoji}
-        portraitUrl={display.portraitUrl}
-      />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-1.5 mb-0.5">
-          <span className="text-base font-bold text-accent-orange uppercase tracking-wide">
+    <div className="flex justify-end gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
+      <div className="max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]">
+        <div className="mb-1 flex items-baseline justify-end gap-1.5">
+          <span className="text-[10.5px] font-semibold uppercase tracking-wide text-white/75">
             {display.displayName}
           </span>
           {display.displayId && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-[10.5px] text-white/55">
               {display.displayId}
             </span>
           )}
         </div>
-        <div className="text-base leading-snug text-foreground whitespace-pre-wrap break-words">{msg.content}</div>
+        <div className="whitespace-pre-wrap break-words text-base leading-snug text-white">{msg.content}</div>
         {/* Phase A context 정본 (Y-9, atom d7a1ad86 차단): UserMessage.tsx:82-84와 대칭으로
             wire의 context_items를 ContextBlock으로 표시 — 첫 턴/auto-resume/running intervention
             세 경로 모두 동일 UX 표면. */}
@@ -59,6 +53,12 @@ export const InterventionMessage = memo(function InterventionMessage({ msg }: { 
           <ContextBlock items={msg.contextItems} />
         )}
       </div>
+      <ProfileAvatar
+        role="user"
+        hasPortrait={display.hasPortrait}
+        fallbackEmoji={display.fallbackEmoji}
+        portraitUrl={display.portraitUrl}
+      />
     </div>
   );
 });

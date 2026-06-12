@@ -58,31 +58,31 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg:
   const hasPortrait = isAgent ? !!agentPortraitUrl : isLlm ? false : !!userPortraitUrl;
 
   return (
-    <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
-      <ProfileAvatar
-        role="user"
-        hasPortrait={hasPortrait}
-        fallbackEmoji={isAgent ? "\u{1F916}" : "\u{1F464}"}
-        portraitUrl={isAgent ? agentPortraitUrl : userPortraitUrl}
-      />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-baseline gap-1.5 mb-0.5">
-          <span className="text-base font-bold text-accent-blue uppercase tracking-wide">
+    <div className="flex justify-end gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
+      <div className="max-w-[86%] rounded-[17px] rounded-br-[7px] bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3.5 py-2.5 text-white shadow-[0_8px_22px_-10px_rgb(10_132_255_/_55%)]">
+        <div className="mb-1 flex items-baseline justify-end gap-1.5">
+          <span className="text-[10.5px] font-semibold uppercase tracking-wide text-white/75">
             {displayName}
           </span>
           {displayId && (
-            <span className="text-xs text-muted-foreground">
+            <span className="text-[10.5px] text-white/55">
               {displayId}
             </span>
           )}
         </div>
-        <div className="chat-message-selectable text-base leading-snug text-foreground break-words">
+        <div className="chat-message-selectable break-words text-base leading-snug text-white [&_code]:bg-white/15 [&_code]:text-white">
           <MarkdownContent content={msg.content} />
         </div>
         {msg.contextItems && msg.contextItems.length > 0 && (
           <ContextBlock items={msg.contextItems} />
         )}
       </div>
+      <ProfileAvatar
+        role="user"
+        hasPortrait={hasPortrait}
+        fallbackEmoji={isAgent ? "\u{1F916}" : "\u{1F464}"}
+        portraitUrl={isAgent ? agentPortraitUrl : userPortraitUrl}
+      />
     </div>
   );
 });

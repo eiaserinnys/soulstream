@@ -181,7 +181,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
   return (
     <div
       data-testid="chat-input"
-      className="border-t border-border p-[var(--panel-inset)] shrink-0"
+      className="shrink-0 pt-2"
     >
       {/* 첨부 파일 목록 (fileUploadUrl이 있고 파일이 있을 때만) */}
       {effectiveFileUploadUrl && files.length > 0 && (
@@ -215,7 +215,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
         />
       )}
 
-      <div className="flex gap-2">
+      <div className="relative flex items-end gap-2 rounded-[25px] border border-glass-border glass-strong glass-shadow-md px-2 py-2">
         {showInterrupt && (
           <button
             type="button"
@@ -223,7 +223,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
             disabled={interruptDisabled}
             title="Stop running conversation"
             aria-label="Stop running conversation"
-            className="self-end h-9 sm:h-8 w-9 sm:w-8 flex items-center justify-center rounded border border-accent-red/60 text-accent-red hover:bg-accent-red/10 disabled:opacity-50 disabled:hover:bg-transparent transition-colors shrink-0"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-accent-red/60 text-accent-red transition-colors hover:bg-accent-red/10 disabled:opacity-50 disabled:hover:bg-transparent sm:h-8 sm:w-8"
           >
             {interrupting ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

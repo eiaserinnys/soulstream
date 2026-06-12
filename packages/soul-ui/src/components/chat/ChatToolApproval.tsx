@@ -31,16 +31,17 @@ export const ChatToolApproval = memo(function ChatToolApproval({
   const finalDecision = selected ?? msg.approvalDecision;
 
   return (
-    <div className="flex gap-2 px-3 py-1" data-tree-node-id={msg.treeNodeId}>
-      <span className="w-8 shrink-0 text-center">⚠️</span>
-      <div className="flex-1 min-w-0">
-        <div className="text-xs text-muted-foreground mb-1">도구 승인이 필요합니다</div>
-        <div className="text-base font-medium text-foreground mb-1">{msg.toolName}</div>
+    <div className="px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
+      <div className="flex flex-col gap-2 rounded-[18px] border border-glass-border glass-strong glass-shadow-md px-4 py-3">
+        <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          Approval
+        </div>
+        <div className="text-[12.5px] font-semibold leading-[1.5] text-foreground">{msg.toolName}</div>
         {msg.toolResult && (
-          <div className="text-xs text-muted-foreground mb-1">{msg.toolResult}</div>
+          <div className="text-xs text-muted-foreground">{msg.toolResult}</div>
         )}
         {msg.toolInput && (
-          <pre className="mb-2 max-h-32 overflow-auto rounded border border-border bg-muted/30 p-2 text-xs text-muted-foreground">
+          <pre className="max-h-32 overflow-auto rounded-[13px] border border-[var(--lg-line)] bg-muted/40 p-2 text-xs text-muted-foreground">
             {JSON.stringify(msg.toolInput, null, 2)}
           </pre>
         )}
@@ -53,16 +54,16 @@ export const ChatToolApproval = memo(function ChatToolApproval({
             {msg.approvalMessage ? ` — ${msg.approvalMessage}` : ""}
           </div>
         ) : (
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap justify-end gap-2">
             <button
               onClick={() => handleDecision("rejected")}
-              className="px-3 py-1 rounded text-xs border border-border bg-input text-foreground hover:bg-muted/50"
+              className="rounded-full border border-[var(--lg-line)] bg-muted/40 px-3.5 py-1.5 text-xs text-foreground hover:border-accent-red/50"
             >
               거부
             </button>
             <button
               onClick={() => handleDecision("approved")}
-              className="px-3 py-1 rounded text-xs border border-success bg-success text-white hover:opacity-90"
+              className="rounded-full border border-success bg-success px-3.5 py-1.5 text-xs font-semibold text-white hover:opacity-90"
             >
               승인
             </button>

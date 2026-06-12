@@ -237,6 +237,7 @@ export function OrchestratorDashboardLayout() {
         <ChatView
           chatInputDisabled={isChatInputDisabled}
           fileUploadUrl={chatFileUploadUrl}
+          showHeader={false}
         />
       }
       mobileSettingsContent={
