@@ -43,19 +43,19 @@ export function RightPanel({
   );
 
   return (
-    <div data-testid="detail-panel-tabs" className="flex flex-col h-full overflow-hidden">
+    <div data-testid="detail-panel-tabs" className="flex h-full flex-col overflow-hidden">
       <Tabs
         value={TAB_VALUES[activeRightTab]}
         onValueChange={handleTabChange}
         className="flex flex-col h-full gap-0"
       >
         <TabsList
-          variant="underline"
-          className="shrink-0 px-2 border-b border-border w-full"
+          variant="default"
+          className="mx-3 mt-3 mb-2 h-[38px] w-fit shrink-0 rounded-full border border-glass-border glass-strong glass-shadow-xs p-1"
         >
-          <TabsTab value={0} className="text-sm h-8 px-3">Chat</TabsTab>
-          <TabsTab value={1} className="text-sm h-8 px-3">Detail</TabsTab>
-          <TabsTab value={2} className="text-sm h-8 px-3">Session Info</TabsTab>
+          <TabsTab value={0} className="h-[30px] rounded-full px-4 text-xs font-semibold">Chat</TabsTab>
+          <TabsTab value={1} className="h-[30px] rounded-full px-4 text-xs font-semibold">Detail</TabsTab>
+          <TabsTab value={2} className="h-[30px] rounded-full px-4 text-xs font-semibold">Session Info</TabsTab>
         </TabsList>
 
         <TabsPanel value={0} className="flex-1 overflow-hidden" keepMounted>

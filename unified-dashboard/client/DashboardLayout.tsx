@@ -94,12 +94,6 @@ export function DashboardLayout() {
   // URL ↔ 스토어 동기화 (/{sessionId} 라우팅)
   useUrlSync();
 
-  useEffect(() => {
-    if (viewMode === "feed") {
-      useDashboardStore.getState().setViewMode("folder");
-    }
-  }, [viewMode]);
-
   // 대시보드 프로필 설정 로드
   useDashboardConfig();
 
@@ -185,6 +179,14 @@ export function DashboardLayout() {
           <TaskTreeView
             sessions={sessions}
             onNewSession={(task, defaults) => openNewSessionModal("feed", task ?? null, defaults ?? null)}
+          />
+        ) : viewMode === "feed" ? (
+          <FeedView
+            placement="main"
+            onNewSession={() => openNewSessionModal("feed")}
+            onLoadMore={loadMoreFeed}
+            hasMore={feedHasMore}
+            sessions={feedSessions}
           />
         ) : (
           <FolderWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />

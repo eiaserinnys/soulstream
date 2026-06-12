@@ -27,6 +27,7 @@ export interface FeedCardProps {
   isActive: boolean;
   folderName?: string;
   dashboardConfig?: DashboardConfig | null;
+  variant?: "card" | "row";
   onCardClick: (sessionId: string) => void;
   onCardDoubleClick: (sessionId: string) => void;
   onCardContextMenu?: (sessionId: string, e: React.MouseEvent) => void;
@@ -37,6 +38,7 @@ export const FeedCard = memo(function FeedCard({
   isActive,
   folderName,
   dashboardConfig,
+  variant = "card",
   onCardClick,
   onCardDoubleClick,
   onCardContextMenu,
@@ -96,13 +98,17 @@ export const FeedCard = memo(function FeedCard({
       {...attributes}
       {...listeners}
       className={cn(
-        "relative flex h-full cursor-pointer items-start gap-3 overflow-hidden rounded-[18px] border border-white/8 bg-[var(--lg-card)] px-4 py-3 text-[13px] shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)] transition-[border-color,box-shadow,opacity] duration-200 ease-out",
+        "relative flex h-full cursor-pointer items-start gap-3 overflow-hidden px-4 py-3 text-[13px] transition-[border-color,box-shadow,opacity] duration-200 ease-out",
+        variant === "card"
+          ? "rounded-[18px] border border-white/8 bg-[var(--lg-card)] shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)]"
+          : "rounded-none border-0 bg-transparent shadow-none",
         isDragging && "opacity-50",
         isActive && "border-accent-blue/55 ring-1 ring-accent-blue/50",
         isUnread && !isActive && "border-l-[3px] border-l-info",
         isRunning && "card-running-base",
         isError && !isActive && "border-l-[3px] border-l-accent-red",
-        !isActive && "hover:border-accent-blue/35 hover:shadow-[0_12px_32px_-18px_rgb(10_30_70_/_50%)]",
+        !isActive && variant === "card" && "hover:border-accent-blue/35 hover:shadow-[0_12px_32px_-18px_rgb(10_30_70_/_50%)]",
+        !isActive && variant === "row" && "hover:bg-muted/40",
       )}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}

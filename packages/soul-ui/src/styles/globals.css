@@ -345,7 +345,7 @@
 @layer components {
   .dashboard-floating-toolbar {
     position: fixed;
-    top: 22px;
+    top: 16px;
     left: 22px;
     right: 22px;
     z-index: 30;

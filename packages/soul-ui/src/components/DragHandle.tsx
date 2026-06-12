@@ -66,14 +66,14 @@ export function DragHandle({ onDrag }: DragHandleProps) {
         }}
         onMouseLeave={() => {
           if (lineRef.current) {
-            lineRef.current.style.backgroundColor = "var(--border)";
+            lineRef.current.style.backgroundColor = "transparent";
             lineRef.current.style.opacity = "1";
           }
         }}
       >
         <div
           ref={lineRef}
-          className="absolute inset-y-0 left-[3px] w-px transition-colors duration-150 bg-border"
+          className="absolute inset-y-0 left-[3px] w-px bg-transparent transition-colors duration-150"
         />
       </div>
     </div>

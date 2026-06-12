@@ -8,7 +8,7 @@
  * 모바일: base-ui Tabs(keepMounted) + BottomTabBar. inactive 패널은 DOM을 유지한 채 페이드 전환된다.
  */
 
-import { useState, useCallback, useRef, useEffect, type ReactNode } from "react";
+import { useState, useCallback, useRef, useEffect, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight, FolderTree, MessageSquare, Newspaper, Search } from "lucide-react";
 import { DragHandle } from "./DragHandle";
 import { BottomTabBar } from "./BottomTabBar";
@@ -23,14 +23,18 @@ import { cn } from "../lib/cn";
 import { useLiquidLens } from "../lib/liquid-lens";
 import { Button } from "../components/ui/button";
 import {
+  clampDashboardLeftSidebarWidth,
+  DASHBOARD_LEFT_SIDEBAR_DEFAULT_WIDTH,
   isDashboardSidebarToggleShortcut,
   isEditableShortcutTarget,
   readDashboardLeftSidebarCollapsed,
+  readDashboardLeftSidebarWidth,
   writeDashboardLeftSidebarCollapsed,
+  writeDashboardLeftSidebarWidth,
 } from "./dashboard-sidebar-collapse";
 
 /** 패널 기본 비율 (%) */
-const DEFAULT_RIGHT = 40;
+const DEFAULT_RIGHT = 34.5;
 
 /** 패널 최소/최대 비율 (%) */
 const MIN_PANEL = 10;
@@ -175,7 +179,13 @@ export function DashboardShell({
   const leftNavigationMode = useDashboardStore((s) => s.leftNavigationMode);
   const setLeftNavigationMode = useDashboardStore((s) => s.setLeftNavigationMode);
   const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(() => readDashboardLeftSidebarCollapsed());
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(() => readDashboardLeftSidebarWidth());
+  const leftSidebarWidthRef = useRef(leftSidebarWidth);
   const hasLeftFeedPanel = leftFeedPanel != null;
+
+  useEffect(() => {
+    leftSidebarWidthRef.current = leftSidebarWidth;
+  }, [leftSidebarWidth]);
 
   const toggleLeftSidebarCollapsed = useCallback(() => {
     setIsLeftSidebarCollapsed((previous) => {
@@ -183,6 +193,33 @@ export function DashboardShell({
       writeDashboardLeftSidebarCollapsed(next);
       return next;
     });
+  }, []);
+
+  const handleLeftSidebarResizeStart = useCallback((event: ReactMouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startX = event.clientX;
+    const startWidth = leftSidebarWidthRef.current;
+    let lastWidth = startWidth;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      lastWidth = clampDashboardLeftSidebarWidth(startWidth + moveEvent.clientX - startX);
+      setLeftSidebarWidth(lastWidth);
+    };
+
+    const handleMouseUp = () => {
+      writeDashboardLeftSidebarWidth(lastWidth);
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
   }, []);
 
   // 채팅 탭 뒤로가기 시 돌아갈 이전 탭 추적
@@ -240,8 +277,10 @@ export function DashboardShell({
 
   const centerPercent = Math.max(MIN_CENTER, 100 - rightPercent);
   const showLeftNavigationToggle = hasLeftFeedPanel;
-  const selectedLeftPanel =
-    showLeftNavigationToggle && leftNavigationMode === "feed" ? leftFeedPanel : leftPanel;
+  const selectedLeftPanel = leftPanel;
+  const visibleLeftSidebarWidth = isLeftSidebarCollapsed
+    ? 44
+    : leftSidebarWidth || DASHBOARD_LEFT_SIDEBAR_DEFAULT_WIDTH;
   const showConnectionStatus =
     Boolean(activeSessionKey) && connectionStatus != null && connectionStatus !== "connected";
   const leftNavigationPanel = showLeftNavigationToggle ? (
@@ -255,7 +294,10 @@ export function DashboardShell({
           )}
           data-testid="left-navigation-feed"
           aria-pressed={leftNavigationMode === "feed"}
-          onClick={() => setLeftNavigationMode("feed")}
+          onClick={() => {
+            setLeftNavigationMode("feed");
+            setViewMode("feed");
+          }}
         >
           <Newspaper className="h-3.5 w-3.5" />
           <span className="truncate">최근 활동</span>
@@ -268,7 +310,10 @@ export function DashboardShell({
           )}
           data-testid="left-navigation-folders"
           aria-pressed={leftNavigationMode === "folders"}
-          onClick={() => setLeftNavigationMode("folders")}
+          onClick={() => {
+            setLeftNavigationMode("folders");
+            setViewMode("folder");
+          }}
         >
           <FolderTree className="h-3.5 w-3.5" />
           <span className="truncate">Folders</span>
@@ -427,7 +472,7 @@ export function DashboardShell({
             data-testid="session-panel"
             data-collapsed={isLeftSidebarCollapsed ? "true" : "false"}
             className="dashboard-floating-sidebar border border-glass-border glass-strong glass-chrome lg-rim"
-            style={{ width: isLeftSidebarCollapsed ? 44 : 264 }}
+            style={{ width: visibleLeftSidebarWidth }}
           >
             {isLeftSidebarCollapsed ? (
               <div className="flex h-full items-start justify-center pt-1">
@@ -457,6 +502,13 @@ export function DashboardShell({
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-y-0 right-0 z-30 w-3 cursor-col-resize"
+                  onMouseDown={handleLeftSidebarResizeStart}
+                >
+                  <div className="absolute inset-y-5 right-0 w-px bg-transparent transition-colors hover:bg-accent-blue/50" />
+                </div>
               </>
             )}
           </aside>
@@ -465,7 +517,7 @@ export function DashboardShell({
             className="fixed bottom-[22px] right-[22px] z-10 flex overflow-hidden"
             style={{
               top: banner ? 112 : 76,
-              left: 22 + (isLeftSidebarCollapsed ? 44 : 264) + 22,
+              left: 22 + visibleLeftSidebarWidth + 22,
             }}
           >
             <main

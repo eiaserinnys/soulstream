@@ -9,7 +9,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useDashboardStore } from "../stores/dashboard-store";
 import { DashboardShell } from "./DashboardShell";
-import { DASHBOARD_LEFT_SIDEBAR_COLLAPSED_STORAGE_KEY } from "./dashboard-sidebar-collapse";
+import {
+  DASHBOARD_LEFT_SIDEBAR_COLLAPSED_STORAGE_KEY,
+  DASHBOARD_LEFT_SIDEBAR_WIDTH_STORAGE_KEY,
+} from "./dashboard-sidebar-collapse";
 
 function renderShell() {
   const container = document.createElement("div");
@@ -87,7 +90,7 @@ describe("DashboardShell", () => {
     expect(container.textContent).toContain("right");
   });
 
-  it("toggles the desktop left sidebar between folders and feed", () => {
+  it("switches desktop navigation to the center feed while keeping folders in the sidebar", () => {
     ({ container, root } = renderShell());
 
     expect(container.querySelector('[data-testid="folders-panel"]')).not.toBeNull();
@@ -100,9 +103,30 @@ describe("DashboardShell", () => {
       feedToggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(container.querySelector('[data-testid="folders-panel"]')).toBeNull();
-    expect(container.querySelector('[data-testid="feed-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="folders-panel"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="feed-panel"]')).toBeNull();
     expect(useDashboardStore.getState().leftNavigationMode).toBe("feed");
+    expect(useDashboardStore.getState().viewMode).toBe("feed");
     expect(window.localStorage.getItem("soul-dashboard-storage")).toContain('"leftNavigationMode":"feed"');
+  });
+
+  it("resizes and persists the desktop left sidebar width", () => {
+    ({ container, root } = renderShell());
+
+    const sidebar = container.querySelector<HTMLElement>('[data-testid="session-panel"]');
+    const resizeHandle = sidebar?.querySelector<HTMLElement>(".cursor-col-resize");
+    expect(sidebar?.style.width).toBe("264px");
+    expect(resizeHandle).not.toBeNull();
+
+    flushSync(() => {
+      resizeHandle!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, clientX: 264 }));
+    });
+    flushSync(() => {
+      document.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, clientX: 344 }));
+      document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, clientX: 344 }));
+    });
+
+    expect(sidebar?.style.width).toBe("344px");
+    expect(window.localStorage.getItem(DASHBOARD_LEFT_SIDEBAR_WIDTH_STORAGE_KEY)).toBe("344");
   });
 });

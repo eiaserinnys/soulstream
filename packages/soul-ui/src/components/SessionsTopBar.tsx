@@ -112,7 +112,7 @@ export function SessionsTopBar({
           className="ml-auto h-[38px] rounded-full bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-4 text-white shadow-[0_8px_20px_-8px_rgb(10_132_255_/_60%)] hover:from-[#2E96FF] hover:to-[#0A84FF] hover:opacity-95"
         >
           <Plus className="h-3.5 w-3.5" />
-          New
+          새 세션
         </Button>
       </div>
     </div>

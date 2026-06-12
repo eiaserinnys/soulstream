@@ -16,6 +16,7 @@ import { SessionContextMenu } from "./SessionContextMenu";
 import { useFlipAnimation } from "../hooks/useFlipAnimation";
 import { useFeedSessions } from "../hooks/useFeedSessions";
 import { filterFeedSessions } from "../hooks/session-stream-helpers";
+import { cn } from "../lib/cn";
 import {
   runGuardedLoadMore,
   shouldLoadMoreFromVirtualItems,
@@ -24,7 +25,7 @@ import {
 
 const CARD_HEIGHT = 88;
 const CARD_GAP = 8;
-const ESTIMATED_SIZE = CARD_HEIGHT + CARD_GAP;
+const ROW_HEIGHT = 96;
 
 export interface FeedViewProps {
   onNewSession?: () => void;
@@ -64,6 +65,8 @@ export function FeedView({
   const setFeedScrollOffset = useDashboardStore((s) => s.setFeedScrollOffset);
   const dashboardConfig = useDashboardStore((s) => s.dashboardConfig);
   const isSidebarPlacement = placement === "sidebar";
+  const itemHeight = isSidebarPlacement ? CARD_HEIGHT : ROW_HEIGHT;
+  const itemGap = isSidebarPlacement ? CARD_GAP : 0;
 
   // useFeedSessions: Zustand sessions + catalog 구독 → filterFeedSessions로 반응형 계산
   const cachedFeedSessions = useFeedSessions();
@@ -119,7 +122,7 @@ export function FeedView({
   const virtualizer = useVirtualizer({
     count: feedSessions.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => ESTIMATED_SIZE,
+    estimateSize: () => itemHeight + itemGap,
     overscan: 3,
   });
 
@@ -230,7 +233,7 @@ export function FeedView({
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      <FeedTopBar onNewSession={onNewSession} />
+      <FeedTopBar onNewSession={onNewSession} placement={placement} />
       {feedSessions.length === 0 ? (
         <div className="flex items-center justify-center flex-1 text-muted-foreground text-sm">
           표시할 세션이 없습니다
@@ -238,10 +241,16 @@ export function FeedView({
       ) : (
         <div
           ref={parentRef}
-          className="flex-1 overflow-y-auto px-4 py-3"
+          className={cn(
+            "flex-1 overflow-y-auto",
+            isSidebarPlacement ? "px-4 py-3" : "px-4 pb-4",
+          )}
           onScroll={handleScroll}
         >
           <div
+            className={cn(
+              !isSidebarPlacement && "overflow-hidden rounded-[18px] border border-white/8 bg-[var(--lg-card)] shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)]",
+            )}
             style={{
               height: virtualizer.getTotalSize(),
               width: "100%",
@@ -259,9 +268,10 @@ export function FeedView({
                     top: 0,
                     left: 0,
                     width: "100%",
-                    height: CARD_HEIGHT,
+                    height: itemHeight,
                     transform: `translateY(${virtualItem.start}px)`,
                   }}
+                  className={cn(!isSidebarPlacement && "border-b border-[var(--lg-line)] last:border-b-0")}
                 >
                   <div
                     ref={getItemRef(session.agentSessionId)}
@@ -272,6 +282,7 @@ export function FeedView({
                       isActive={session.agentSessionId === activeSessionKey}
                       folderName={getFolderName(session.agentSessionId)}
                       dashboardConfig={dashboardConfig}
+                      variant={isSidebarPlacement ? "card" : "row"}
                       onCardClick={handleCardClick}
                       onCardDoubleClick={handleCardDoubleClick}
                       onCardContextMenu={handleContextMenu}

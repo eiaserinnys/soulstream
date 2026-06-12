@@ -67,12 +67,6 @@ export function OrchestratorDashboardLayout() {
   // URL ↔ 스토어 동기화
   useUrlSync();
 
-  useEffect(() => {
-    if (viewMode === "feed") {
-      useDashboardStore.getState().setViewMode("folder");
-    }
-  }, [viewMode]);
-
   // 읽음 위치 동기화
   useReadPositionSync();
 
@@ -185,6 +179,14 @@ export function OrchestratorDashboardLayout() {
           <TaskTreeView
             sessions={sessions}
             onNewSession={(task, defaults) => openNewSessionModal("feed", task ?? null, defaults ?? null)}
+          />
+        ) : viewMode === "feed" ? (
+          <FeedView
+            placement="main"
+            onNewSession={() => openNewSessionModal("feed")}
+            onLoadMore={loadMoreFeed}
+            hasMore={feedHasMore}
+            sessions={feedSessions}
           />
         ) : (
           <FolderWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />

@@ -183,6 +183,45 @@ export function FolderContents({
         <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
           No sessions in this folder
         </div>
+      ) : !isMobile ? (
+        <div
+          ref={parentRef}
+          className="h-full overflow-y-auto px-1 py-1 outline-none"
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          onClick={() => setContextMenu(null)}
+        >
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            {displaySessions.map((session) => (
+              <div
+                key={session.agentSessionId}
+                className="min-h-[112px]"
+              >
+                <SessionItem
+                  session={session}
+                  isActive={activeSessionKey === session.agentSessionId}
+                  isSelected={selectedSessionIds.has(session.agentSessionId)}
+                  isEditing={onRenameSession ? editingSessionId === session.agentSessionId : false}
+                  dragSessionIds={
+                    selectedSessionIds.has(session.agentSessionId)
+                      ? Array.from(selectedSessionIds)
+                      : [session.agentSessionId]
+                  }
+                  onClick={(e) => handleSessionClick(session, e)}
+                  onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
+                  onEditSubmit={(name) => handleEditSubmit(session.agentSessionId, name)}
+                  onEditCancel={() => setEditingSession(null)}
+                />
+              </div>
+            ))}
+          </div>
+
+          {hasMore && (
+            <div ref={sentinelRef} className="flex items-center justify-center py-2 text-xs text-muted-foreground">
+              Loading...
+            </div>
+          )}
+        </div>
       ) : (
         <div
           ref={parentRef}
