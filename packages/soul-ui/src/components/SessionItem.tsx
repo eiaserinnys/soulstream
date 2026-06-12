@@ -24,11 +24,11 @@ export interface StatusConfig {
 }
 
 export const STATUS_CONFIG: Record<SessionStatus, StatusConfig> = {
-  running:      { dotClass: "bg-success",          animate: true,  label: "실행 중", chipClass: "bg-success/10 text-success" },
+  running:      { dotClass: "bg-success",          animate: true,  label: "실행 중", chipClass: "bg-success/13 text-success" },
   completed:    { dotClass: "bg-muted-foreground",  animate: false, label: "완료", chipClass: "bg-muted text-muted-foreground" },
   error:        { dotClass: "bg-accent-red",        animate: false, label: "오류", chipClass: "bg-accent-red/10 text-accent-red" },
-  interrupted:  { dotClass: "bg-accent-amber",      animate: false, label: "중단", chipClass: "bg-accent-amber/10 text-accent-amber" },
-  unknown:      { dotClass: "bg-muted-foreground",  animate: false, label: "대기", chipClass: "bg-accent-amber/10 text-accent-amber" },
+  interrupted:  { dotClass: "bg-accent-amber",      animate: false, label: "중단", chipClass: "bg-accent-amber/14 text-accent-amber" },
+  unknown:      { dotClass: "bg-muted-foreground",  animate: false, label: "대기", chipClass: "bg-accent-amber/14 text-accent-amber" },
 };
 
 // === Portrait ===
@@ -172,7 +172,7 @@ export const SessionItem = memo(function SessionItem({
               className={cn(
                 "mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-[1px]",
                 config.dotClass,
-                config.animate && "animate-[pulse_1.6s_infinite]",
+                config.animate && "animate-[lg-pulse_1.6s_infinite]",
               )}
             />
             {config.label}

@@ -302,7 +302,7 @@ export function ChatView({
                 className={cn(
                   "h-1.5 w-1.5 rounded-full",
                   chatStatusConfig.dotClass,
-                  chatStatusConfig.animate && "animate-[pulse_1.6s_infinite]",
+                  chatStatusConfig.animate && "animate-[lg-pulse_1.6s_infinite]",
                 )}
               />
               {chatStatusConfig.label}

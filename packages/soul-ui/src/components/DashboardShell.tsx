@@ -149,10 +149,10 @@ export function DashboardShell({
   const searchCapsuleRef = useRef<HTMLButtonElement>(null);
   const statusCapsuleRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
-  useLiquidLens(brandCapsuleRef, { scale: 24 });
-  useLiquidLens(searchCapsuleRef, { scale: 26 });
-  useLiquidLens(statusCapsuleRef, { scale: 22 });
-  useLiquidLens(sidebarRef, { scale: 28 });
+  useLiquidLens(brandCapsuleRef, { scale: 30 });
+  useLiquidLens(searchCapsuleRef, { scale: 30 });
+  useLiquidLens(statusCapsuleRef, { scale: 30 });
+  useLiquidLens(sidebarRef, { scale: 34 });
 
   const handleRightDrag = useCallback(
     (delta: number) => {

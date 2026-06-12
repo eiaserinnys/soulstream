@@ -142,7 +142,7 @@ export const FeedCard = memo(function FeedCard({
               className={cn(
                 "inline-block h-1.5 w-1.5 rounded-full",
                 statusConfig.dotClass,
-                statusConfig.animate && "animate-[pulse_2s_infinite]",
+                statusConfig.animate && "animate-[lg-pulse_1.6s_infinite]",
               )}
             />
             {statusConfig.label}
