@@ -13,7 +13,6 @@ import { useDroppable } from "@dnd-kit/core";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "../lib/cn";
-import { Badge } from "./ui/badge";
 import { Spinner } from "./ui/spinner";
 import { ChevronDown, ChevronRight, GripVertical } from "lucide-react";
 import type { FolderDragData } from "../providers/folder-dnd";
@@ -121,9 +120,8 @@ export const FolderItem = memo(function FolderItem({
       style={style}
       data-testid={isDraggableFolder ? "draggable-folder" : undefined}
       className={cn(
-        "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50 group select-none",
-        "relative",
-        isSelected && "bg-accent text-accent-foreground",
+        "dashboard-sidebar-row group relative select-none",
+        isSelected && "dashboard-sidebar-row-active",
         (isOver || dragOverId === folder.id) && "ring-2 ring-primary",
         isDraggableFolder && isSortableDragging && "opacity-50",
       )}
@@ -187,13 +185,13 @@ export const FolderItem = memo(function FolderItem({
         </div>
       )}
       {unreadCount > 0 ? (
-        <Badge variant="destructive" className="ml-2 text-xs font-bold">
+        <span className="dashboard-sidebar-count dashboard-sidebar-count-alert">
           {unreadCount}
-        </Badge>
+        </span>
       ) : (
-        <Badge variant="secondary" className="ml-2 text-xs">
+        <span className="dashboard-sidebar-count">
           {sessionCount}
-        </Badge>
+        </span>
       )}
     </div>
   );

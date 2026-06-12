@@ -35,6 +35,7 @@ export default defineConfig({
   ],
   root: ".",
   resolve: {
+    dedupe: ["react", "react-dom"],
     alias: {
       "@shared": resolve(__dirname, "../packages/soul-ui/src/shared"),
       "@seosoyoung/soul-ui": resolve(__dirname, "../packages/soul-ui/src"),

@@ -5,9 +5,20 @@
  * ThemeToggle과 동일한 스타일 패턴. 헤더 우상단 배치용.
  */
 
-import { cn } from "@seosoyoung/soul-ui";
+import { useRef } from "react";
+import { cn, useLiquidLens } from "@seosoyoung/soul-ui";
 
-export function ConfigButton({ onClick }: { onClick: () => void }) {
+export function ConfigButton({
+  onClick,
+  variant = "default",
+}: {
+  onClick: () => void;
+  variant?: "default" | "chrome";
+}) {
+  if (variant === "chrome") {
+    return <ChromeConfigButton onClick={onClick} />;
+  }
+
   return (
     <button
       data-testid="config-button"
@@ -22,6 +33,24 @@ export function ConfigButton({ onClick }: { onClick: () => void }) {
     >
       <span className="text-xs">⚙️</span>
       <span>Config</span>
+    </button>
+  );
+}
+
+function ChromeConfigButton({ onClick }: { onClick: () => void }) {
+  const ref = useRef<HTMLButtonElement>(null);
+  useLiquidLens(ref, { scale: 22 });
+
+  return (
+    <button
+      ref={ref}
+      data-testid="config-button"
+      onClick={onClick}
+      className="dashboard-icon-cap border border-glass-border glass-strong glass-chrome lg-rim"
+      title="서버 설정"
+      aria-label="Open server configuration"
+    >
+      <span aria-hidden="true" className="text-base leading-none">⚙</span>
     </button>
   );
 }

@@ -19,7 +19,6 @@ import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable"
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useSortedFolders } from "../hooks/useSortedFolders";
 import { useFolderSessionStats } from "../hooks/useFolderSessionStats";
-import { Button } from "./ui/button";
 import { isSystemFolderId } from "../shared/constants";
 import { Plus } from "lucide-react";
 import { getChildFolders } from "../board-workspace/board-workspace-helpers";
@@ -209,21 +208,18 @@ export function FolderTree({
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
-        <span className="text-sm font-semibold">Folders</span>
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center justify-between px-3 pb-2 pt-1">
+        <span className="dashboard-sidebar-label">Folders</span>
         <div className="flex items-center gap-0.5">
           <FolderSortButton />
-          <Button variant="ghost" size="icon" onClick={() => setCreateDialogOpen(true)} title="New folder">
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="dashboard-sidebar-scroll flex-1 py-1">
         <TasksItem />
 
-        <div className="border-t border-border my-1 mx-3" />
+        <div className="my-1 mx-3 border-t border-glass-border/60" />
 
         {/* 일반 폴더 — SortableContext로 재정렬 가능 */}
         <SortableContext items={sortedNormalFolderIds} strategy={verticalListSortingStrategy}>
@@ -232,11 +228,23 @@ export function FolderTree({
 
         {/* 구분선 (일반 폴더가 1개 이상일 때만) */}
         {sortedNormalFolders.length > 0 && (
-          <div className="border-t border-border my-1 mx-3" />
+          <div className="my-1 mx-3 border-t border-glass-border/60" />
         )}
 
         {/* 시스템 폴더 */}
         {systemFolders.map((folder) => renderFolderItem(folder, 0))}
+      </div>
+
+      <div className="dashboard-sidebar-foot">
+        <button
+          type="button"
+          className="dashboard-sidebar-row w-full font-semibold"
+          onClick={() => setCreateDialogOpen(true)}
+          title="New folder"
+        >
+          <Plus className="h-3.5 w-3.5" />
+          <span>새 폴더</span>
+        </button>
       </div>
 
       <FolderDialog

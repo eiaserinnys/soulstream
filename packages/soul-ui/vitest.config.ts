@@ -18,6 +18,7 @@ export default defineConfig({
     alias: {
       "@shared": `${PROJECT_ROOT}/packages/soul-ui/src/shared`,
       "@seosoyoung/soul-ui": `${PROJECT_ROOT}/packages/soul-ui/src`,
+      "zod": `${PROJECT_ROOT}/packages/soul-ui/node_modules/zod`,
     },
     server: {
       deps: {
@@ -26,7 +27,7 @@ export default defineConfig({
           `${PROJECT_ROOT}/packages/soul-ui/node_modules`,
           "node_modules",
         ],
-        inline: [/zustand/],
+        inline: [/zustand/, /@hookform\/resolvers/, /zod/],
       },
     },
   },

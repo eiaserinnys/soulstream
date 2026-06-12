@@ -67,7 +67,7 @@ describe("DashboardShell", () => {
 
     const sidebar = container.querySelector<HTMLElement>('[data-testid="session-panel"]');
     const toggle = container.querySelector<HTMLButtonElement>('[data-testid="left-sidebar-toggle"]');
-    expect(sidebar?.style.width).toBe("20%");
+    expect(sidebar?.style.width).toBe("264px");
 
     flushSync(() => {
       toggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));

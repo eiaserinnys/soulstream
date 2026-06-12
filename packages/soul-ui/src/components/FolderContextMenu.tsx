@@ -10,6 +10,7 @@
 import { useIsMobile } from "../hooks/use-mobile";
 import { isSystemFolderId } from "../shared/constants";
 import { Dialog, DialogPopup } from "./ui/dialog";
+import { createPortal } from "react-dom";
 
 export interface FolderContextMenuTarget {
   x: number;
@@ -77,7 +78,9 @@ export function FolderContextMenu({
     );
   }
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       className="fixed z-50 min-w-[140px] rounded-md border border-glass-border glass-strong glass-shadow-md py-1"
       style={{ top: target.y, left: target.x }}
@@ -105,6 +108,7 @@ export function FolderContextMenu({
           삭제
         </button>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }

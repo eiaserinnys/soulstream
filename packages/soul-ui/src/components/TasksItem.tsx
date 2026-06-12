@@ -15,8 +15,8 @@ export function TasksItem() {
   return (
     <div
       className={cn(
-        "flex items-center justify-between px-3 py-1.5 cursor-pointer text-sm hover:bg-accent/50",
-        viewMode === "tasks" && "bg-accent text-accent-foreground",
+        "dashboard-sidebar-row",
+        viewMode === "tasks" && "dashboard-sidebar-row-active",
       )}
       onClick={() => setViewMode("tasks")}
     >

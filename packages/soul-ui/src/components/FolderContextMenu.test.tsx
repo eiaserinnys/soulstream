@@ -59,8 +59,8 @@ describe("FolderContextMenu", () => {
   it("hides rename and delete actions for system folders by id", () => {
     ({ container, root } = renderMenu({ id: "claude", name: "이름이 바뀐 클로드 폴더" }));
 
-    expect(container.textContent).toContain("설정");
-    expect(container.textContent).not.toContain("이름 변경");
-    expect(container.textContent).not.toContain("삭제");
+    expect(document.body.textContent).toContain("설정");
+    expect(document.body.textContent).not.toContain("이름 변경");
+    expect(document.body.textContent).not.toContain("삭제");
   });
 });

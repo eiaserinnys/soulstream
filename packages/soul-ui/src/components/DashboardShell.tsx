@@ -4,7 +4,7 @@
  * slot props로 내용물을 주입받습니다.
  * 레이아웃 구조만 제공하며, 앱 레벨 훅이나 구체적 컴포넌트는 포함하지 않습니다.
  *
- * 데스크탑: left navigation(Folders/Feeds) | DragHandle | centerPanel | DragHandle | rightPanel
+ * 데스크탑: floating toolbar + floating left navigation | centerPanel | DragHandle | rightPanel
  * 모바일: base-ui Tabs(keepMounted) + BottomTabBar. inactive 패널은 DOM을 유지한 채 페이드 전환된다.
  */
 
@@ -20,6 +20,7 @@ import { WallpaperLayer } from "./WallpaperLayer";
 import { useIsMobile } from "../hooks/use-mobile";
 import { useDashboardStore, type MobileTab } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
+import { useLiquidLens } from "../lib/liquid-lens";
 import { Button } from "../components/ui/button";
 import {
   isDashboardSidebarToggleShortcut,
@@ -29,7 +30,6 @@ import {
 } from "./dashboard-sidebar-collapse";
 
 /** 패널 기본 비율 (%) */
-const DEFAULT_LEFT = 20;
 const DEFAULT_RIGHT = 40;
 
 /** 패널 최소/최대 비율 (%) */
@@ -60,7 +60,7 @@ export interface DashboardShellProps {
   /** 레이아웃 밖에 렌더링할 모달 */
   modals?: ReactNode;
 
-  /** 왼쪽 패널 기본 비율 (%). 기본 20 */
+  /** @deprecated 데스크톱 사이드바는 Liquid Glass v2.2에서 264px 고정 폭을 사용한다. */
   defaultLeftPercent?: number;
   /** 오른쪽 패널 기본 비율 (%). 기본 30 */
   defaultRightPercent?: number;
@@ -131,7 +131,6 @@ export function DashboardShell({
   connectionStatus,
   banner,
   modals,
-  defaultLeftPercent = DEFAULT_LEFT,
   defaultRightPercent = DEFAULT_RIGHT,
   leftBottomRatio = 0,
   leftSplitStorageKey,
@@ -145,29 +144,20 @@ export function DashboardShell({
   onNewSession,
 }: DashboardShellProps) {
   // 패널 비율 상태 (%)
-  const [leftPercent, setLeftPercent] = useState(defaultLeftPercent);
   const [rightPercent, setRightPercent] = useState(defaultRightPercent);
-
-  // 드래그 중 최신 값을 참조하기 위한 refs (stale closure 방지)
-  const leftRef = useRef(leftPercent);
-  leftRef.current = leftPercent;
-  const rightRef = useRef(rightPercent);
-  rightRef.current = rightPercent;
-
-  const handleLeftDrag = useCallback(
-    (delta: number) => {
-      setLeftPercent((prev) => {
-        const maxLeft = 100 - rightRef.current - MIN_CENTER;
-        return Math.max(MIN_PANEL, Math.min(maxLeft, prev + delta));
-      });
-    },
-    [],
-  );
+  const brandCapsuleRef = useRef<HTMLDivElement>(null);
+  const searchCapsuleRef = useRef<HTMLButtonElement>(null);
+  const statusCapsuleRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  useLiquidLens(brandCapsuleRef, { scale: 24 });
+  useLiquidLens(searchCapsuleRef, { scale: 26 });
+  useLiquidLens(statusCapsuleRef, { scale: 22 });
+  useLiquidLens(sidebarRef, { scale: 28 });
 
   const handleRightDrag = useCallback(
     (delta: number) => {
       setRightPercent((prev) => {
-        const maxRight = 100 - leftRef.current - MIN_CENTER;
+        const maxRight = 100 - MIN_CENTER;
         return Math.max(MIN_PANEL, Math.min(maxRight, prev - delta));
       });
     },
@@ -248,37 +238,41 @@ export function DashboardShell({
     }
   }, [setActiveTab, clearSelectedFolder, setViewMode]);
 
-  const centerPercent = Math.max(MIN_CENTER, 100 - leftPercent - rightPercent);
+  const centerPercent = Math.max(MIN_CENTER, 100 - rightPercent);
   const showLeftNavigationToggle = hasLeftFeedPanel;
   const selectedLeftPanel =
     showLeftNavigationToggle && leftNavigationMode === "feed" ? leftFeedPanel : leftPanel;
+  const showConnectionStatus =
+    Boolean(activeSessionKey) && connectionStatus != null && connectionStatus !== "connected";
   const leftNavigationPanel = showLeftNavigationToggle ? (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-1 border-b border-border p-1">
-        <Button
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <div className="flex shrink-0 flex-col gap-1 px-1 pt-1">
+        <button
           type="button"
-          variant={leftNavigationMode === "folders" ? "secondary" : "ghost"}
-          size="sm"
-          className="h-7 min-w-0 flex-1 gap-1.5 px-2 text-xs"
+          className={cn(
+            "dashboard-sidebar-row w-full",
+            leftNavigationMode === "feed" && "dashboard-sidebar-row-active",
+          )}
+          data-testid="left-navigation-feed"
+          aria-pressed={leftNavigationMode === "feed"}
+          onClick={() => setLeftNavigationMode("feed")}
+        >
+          <Newspaper className="h-3.5 w-3.5" />
+          <span className="truncate">최근 활동</span>
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "dashboard-sidebar-row w-full",
+            leftNavigationMode === "folders" && "dashboard-sidebar-row-active",
+          )}
           data-testid="left-navigation-folders"
           aria-pressed={leftNavigationMode === "folders"}
           onClick={() => setLeftNavigationMode("folders")}
         >
           <FolderTree className="h-3.5 w-3.5" />
           <span className="truncate">Folders</span>
-        </Button>
-        <Button
-          type="button"
-          variant={leftNavigationMode === "feed" ? "secondary" : "ghost"}
-          size="sm"
-          className="h-7 min-w-0 flex-1 gap-1.5 px-2 text-xs"
-          data-testid="left-navigation-feed"
-          aria-pressed={leftNavigationMode === "feed"}
-          onClick={() => setLeftNavigationMode("feed")}
-        >
-          <Newspaper className="h-3.5 w-3.5" />
-          <span className="truncate">Feed</span>
-        </Button>
+        </button>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         {selectedLeftPanel}
@@ -312,32 +306,62 @@ export function DashboardShell({
       className="dashboard-shell relative isolate flex flex-col w-screen h-dvh text-foreground font-sans overflow-hidden"
     >
       <WallpaperLayer />
-      <div aria-hidden="true" className="dashboard-ambient pointer-events-none fixed inset-0 z-0" />
-      {/* Top bar */}
-      <header
-        className="relative z-20 flex items-center justify-between px-4 border-b border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0"
-        style={{ height: 'calc(44px + env(safe-area-inset-top, 0px))', paddingTop: 'env(safe-area-inset-top, 0px)' }}
-      >
-        <div className="flex items-center gap-3">
-          <span className="text-base font-semibold text-muted-foreground">
-            {title}
-          </span>
-        </div>
-        {!isMobile && (
-          <div className="flex items-center gap-2">
-            {onSearchClick && (
-              <Button variant="ghost" size="icon" onClick={onSearchClick}>
-                <Search className="h-4 w-4" />
-              </Button>
-            )}
-            {headerRight}
-            {connectionStatus && <ConnectionBadge status={connectionStatus} />}
+      {isMobile ? (
+        <header
+          className="relative z-20 flex items-center justify-between px-4 border-b border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0"
+          style={{ height: 'calc(44px + env(safe-area-inset-top, 0px))', paddingTop: 'env(safe-area-inset-top, 0px)' }}
+        >
+          <div className="flex items-center gap-3">
+            <span className="text-base font-semibold text-muted-foreground">
+              {title}
+            </span>
           </div>
-        )}
-      </header>
+        </header>
+      ) : (
+        <header className="dashboard-floating-toolbar">
+          <div
+            ref={brandCapsuleRef}
+            className="dashboard-toolbar-cap border border-glass-border glass-strong glass-chrome lg-rim"
+          >
+            <span aria-hidden="true" className="dashboard-brand-orb" />
+            <span className="font-semibold text-foreground">Soulstream</span>
+          </div>
+          <button
+            ref={searchCapsuleRef}
+            type="button"
+            className="dashboard-toolbar-cap dashboard-toolbar-search border border-glass-border glass-strong glass-chrome lg-rim"
+            onClick={onSearchClick}
+            disabled={!onSearchClick}
+            aria-label="Open session search"
+          >
+            <Search className="h-4 w-4 shrink-0" />
+            <span className="truncate">Search sessions</span>
+            <kbd>⌘K</kbd>
+          </button>
+          <div className="dashboard-toolbar-actions">
+            {headerRight}
+            {showConnectionStatus && (
+              <div
+                ref={statusCapsuleRef}
+                className="dashboard-toolbar-cap border border-glass-border glass-strong glass-chrome lg-rim"
+              >
+                <ConnectionBadge status={connectionStatus} />
+              </div>
+            )}
+          </div>
+        </header>
+      )}
 
-      {/* Banner */}
-      {banner ? <div className="relative z-20 shrink-0">{banner}</div> : null}
+      {banner ? (
+        <div
+          className={cn(
+            "z-20 shrink-0",
+            !isMobile && "fixed left-[308px] right-[22px] top-[76px]",
+          )}
+        >
+          {banner}
+        </div>
+      ) : null}
 
       {isMobile ? (
         /**
@@ -352,12 +376,10 @@ export function DashboardShell({
           className="mobile-tabs relative z-10 flex flex-col flex-1 overflow-hidden gap-0"
         >
           <main data-testid="mobile-main" className="flex-1 overflow-hidden relative bg-background">
-            {/* 피드 탭 */}
             <TabsPanel value="feed" keepMounted className="h-full">
               {mobileSessionsView ?? centerPanel}
             </TabsPanel>
 
-            {/* 폴더 탭 — 2단계 네비게이션(폴더 목록 ↔ 폴더 내용)은 FolderStack이 슬라이드로 처리 */}
             <TabsPanel value="folder" keepMounted className="h-full">
               <FolderStack
                 selectedFolderId={selectedFolderId}
@@ -373,7 +395,6 @@ export function DashboardShell({
               {mobileTasksView ?? centerPanel}
             </TabsPanel>
 
-            {/* 채팅 탭 */}
             <TabsPanel value="chat" keepMounted className="h-full flex flex-col">
               {activeSessionKey ? (
                 <>
@@ -392,23 +413,21 @@ export function DashboardShell({
               )}
             </TabsPanel>
 
-            {/* 설정 탭 */}
             <TabsPanel value="settings" keepMounted className="h-full overflow-y-auto">
               {mobileSettingsContent}
             </TabsPanel>
           </main>
 
-          {/* 하단 탭바 — Tabs 컨텍스트 내부에 두어야 TabsTrigger가 동작한다 */}
           <BottomTabBar />
         </Tabs>
       ) : (
-        /* 데스크탑: 3-Panel content */
-        <div className="relative z-10 flex flex-1 overflow-hidden">
-          {/* Left panel */}
+        <>
           <aside
+            ref={sidebarRef}
             data-testid="session-panel"
-            className="relative overflow-hidden border-e border-glass-border glass-strong glass-chrome glass-shadow-xs transition-[width] duration-150 ease-out"
-            style={{ width: isLeftSidebarCollapsed ? 44 : `${leftPercent}%` }}
+            data-collapsed={isLeftSidebarCollapsed ? "true" : "false"}
+            className="dashboard-floating-sidebar border border-glass-border glass-strong glass-chrome lg-rim"
+            style={{ width: isLeftSidebarCollapsed ? 44 : 264 }}
           >
             {isLeftSidebarCollapsed ? (
               <div className="flex h-full items-start justify-center pt-1">
@@ -416,7 +435,7 @@ export function DashboardShell({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8"
+                  className="h-8 w-8 rounded-full"
                   data-testid="left-sidebar-toggle"
                   title="Expand sidebar"
                   onClick={toggleLeftSidebarCollapsed}
@@ -431,7 +450,7 @@ export function DashboardShell({
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="absolute right-1 top-1 z-20 h-7 w-7 border-glass-border glass glass-shadow-xs"
+                  className="absolute right-2 top-2 z-20 h-7 w-7 rounded-full text-muted-foreground"
                   data-testid="left-sidebar-toggle"
                   title="Collapse sidebar"
                   onClick={toggleLeftSidebarCollapsed}
@@ -442,33 +461,33 @@ export function DashboardShell({
             )}
           </aside>
 
-          {/* Left drag handle */}
-          {!isLeftSidebarCollapsed && <DragHandle onDrag={handleLeftDrag} />}
-
-          {/* Center panel */}
-          <main
-            data-testid="graph-panel"
-            className="overflow-hidden flex flex-col bg-background"
-            style={isLeftSidebarCollapsed ? { flex: "1 1 auto" } : { width: `${centerPercent}%` }}
+          <div
+            className="fixed bottom-[22px] right-[22px] z-10 flex overflow-hidden"
+            style={{
+              top: banner ? 112 : 76,
+              left: 22 + (isLeftSidebarCollapsed ? 44 : 264) + 22,
+            }}
           >
-            {centerPanel}
-          </main>
+            <main
+              data-testid="graph-panel"
+              className="overflow-hidden flex flex-col bg-transparent"
+              style={{ width: `${centerPercent}%` }}
+            >
+              {centerPanel}
+            </main>
 
-          {/* Right drag handle */}
-          <DragHandle onDrag={handleRightDrag} />
+            <DragHandle onDrag={handleRightDrag} />
 
-          {/* Right panel */}
-          <aside
-            data-testid="detail-panel"
-            className="overflow-hidden bg-background"
-            style={{ width: `${rightPercent}%` }}
-          >
-            {rightPanel}
-          </aside>
-        </div>
+            <aside
+              data-testid="detail-panel"
+              className="overflow-hidden bg-transparent"
+              style={{ width: `${rightPercent}%` }}
+            >
+              {rightPanel}
+            </aside>
+          </div>
+        </>
       )}
-
-      {/* Modals */}
       {modals}
     </div>
   );

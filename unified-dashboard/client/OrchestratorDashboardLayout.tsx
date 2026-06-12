@@ -210,8 +210,8 @@ export function OrchestratorDashboardLayout() {
       }
       headerRight={
         <>
-          <ThemeToggle />
-          <ConfigButton onClick={() => setConfigOpen(true)} />
+          <ConfigButton variant="chrome" onClick={() => setConfigOpen(true)} />
+          <ThemeToggle variant="chrome" />
         </>
       }
       mobileSessionsView={
