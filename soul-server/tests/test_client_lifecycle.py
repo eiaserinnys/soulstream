@@ -53,3 +53,41 @@ def test_compute_options_fingerprint_order_independent():
         disallowed_tools=None,
     )
     assert compute_options_fingerprint(opts1) == compute_options_fingerprint(opts2)
+
+
+def test_compute_options_fingerprint_different_env():
+    """env가 다르면 pre-warm client를 재사용하지 않도록 fingerprint가 달라진다."""
+    opts1 = SimpleNamespace(
+        setting_sources=["project"],
+        allowed_tools=["Read"],
+        disallowed_tools=None,
+        env={"CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "1"},
+    )
+    opts2 = SimpleNamespace(
+        setting_sources=["project"],
+        allowed_tools=["Read"],
+        disallowed_tools=None,
+        env={
+            "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "1",
+            "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+            "ANTHROPIC_API_KEY": "kimi-secret",
+        },
+    )
+    assert compute_options_fingerprint(opts1) != compute_options_fingerprint(opts2)
+
+
+def test_compute_options_fingerprint_env_order_independent():
+    """env dict 삽입 순서가 달라도 동일 fingerprint를 반환한다."""
+    opts1 = SimpleNamespace(
+        setting_sources=["project"],
+        allowed_tools=["Read"],
+        disallowed_tools=None,
+        env={"A": "1", "B": "2"},
+    )
+    opts2 = SimpleNamespace(
+        setting_sources=["project"],
+        allowed_tools=["Read"],
+        disallowed_tools=None,
+        env={"B": "2", "A": "1"},
+    )
+    assert compute_options_fingerprint(opts1) == compute_options_fingerprint(opts2)

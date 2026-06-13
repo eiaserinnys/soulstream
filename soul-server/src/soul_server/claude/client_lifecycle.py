@@ -80,7 +80,7 @@ async def _client_lifecycle_task(
 def compute_options_fingerprint(options) -> Optional[str]:
     """options의 핵심 설정을 해싱하여 fingerprint를 생성.
 
-    setting_sources, allowed_tools, disallowed_tools의 조합으로
+    setting_sources, allowed_tools, disallowed_tools, env의 조합으로
     클라이언트 설정 불일치를 감지한다.
     """
     if options is None:
@@ -89,6 +89,7 @@ def compute_options_fingerprint(options) -> Optional[str]:
         str(getattr(options, "setting_sources", None)),
         str(sorted(getattr(options, "allowed_tools", None) or [])),
         str(sorted(getattr(options, "disallowed_tools", None) or [])),
+        str(sorted((getattr(options, "env", None) or {}).items())),
     )
     return hashlib.md5("|".join(key_parts).encode()).hexdigest()[:8]
 
@@ -443,7 +444,6 @@ class ClientLifecycle:
 
         if pid:
             self._force_kill_fn(pid, self.runner_id)
-
     def detach(self) -> Optional["ClaudeSDKClient"]:
         """풀이 runner를 회수할 때 client/pid를 안전하게 분리한다.
 

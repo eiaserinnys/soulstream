@@ -4,6 +4,7 @@
 TaskExecutor._prepare_context로부터 추출 (260505 분해 시리즈 3단계).
 """
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
@@ -18,6 +19,47 @@ if TYPE_CHECKING:
     from soul_server.service.agent_registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_profile_env_value(env_key: str, raw_value: str) -> str:
+    """`${VAR}` 형식이면 환경변수를 엄격히 해석하고, 아니면 literal로 둔다."""
+    if raw_value.startswith("${") and raw_value.endswith("}"):
+        source_key = raw_value[2:-1]
+        if not source_key:
+            raise RuntimeError(f"agents.yaml env '{env_key}' has an empty variable reference")
+        if source_key not in os.environ or os.environ[source_key] == "":
+            raise RuntimeError(
+                f"agents.yaml env '{env_key}' references missing environment variable "
+                f"'{source_key}'"
+            )
+        return os.environ[source_key]
+    return raw_value
+
+
+def _validate_profile_env_auth_bundle(env: dict[str, str]) -> None:
+    """Anthropic-compatible API key env는 base URL과 OAuth 혼합 여부를 검증한다."""
+    has_api_key = "ANTHROPIC_API_KEY" in env
+    has_base_url = "ANTHROPIC_BASE_URL" in env
+    if has_api_key != has_base_url:
+        raise RuntimeError(
+            "agents.yaml env must set ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL together"
+        )
+    if has_api_key and "CLAUDE_CODE_OAUTH_TOKEN" in env:
+        raise RuntimeError(
+            "agents.yaml env cannot mix ANTHROPIC_API_KEY with CLAUDE_CODE_OAUTH_TOKEN"
+        )
+
+
+def _resolve_profile_env(raw_env: Optional[dict[str, str]]) -> Optional[dict[str, str]]:
+    """AgentProfile.env를 Claude Code subprocess extra_env로 해석한다."""
+    if not raw_env:
+        return None
+    env = {
+        key: _resolve_profile_env_value(key, value)
+        for key, value in raw_env.items()
+    }
+    _validate_profile_env_auth_bundle(env)
+    return env
 
 
 @dataclass
@@ -57,7 +99,9 @@ class ExecutionContextBuilder:
         """4 메서드를 결합하여 _PreparedContext를 반환한다."""
         folder_name, folder_prompt, folder_settings = await self._resolve_folder(task)
         atom_md = await self._fetch_atom_context(task, folder_settings)
-        working_dir, max_turns, override_tools, override_disallowed = self._resolve_profile(task)
+        working_dir, max_turns, override_tools, override_disallowed, profile_env = (
+            self._resolve_profile(task)
+        )
         return self._assemble_context(
             task=task,
             claude_runner=claude_runner,
@@ -68,6 +112,7 @@ class ExecutionContextBuilder:
             max_turns=max_turns,
             override_tools=override_tools,
             override_disallowed=override_disallowed,
+            profile_env=profile_env,
         )
 
     async def _resolve_folder(
@@ -121,18 +166,26 @@ class ExecutionContextBuilder:
 
     def _resolve_profile(
         self, task: Task
-    ) -> tuple[Optional[Path], Optional[int], Optional[list], Optional[list]]:
-        """profile_id로 registry 조회 → working_dir, max_turns, allowed_tools, disallowed_tools."""
+    ) -> tuple[
+        Optional[Path],
+        Optional[int],
+        Optional[list],
+        Optional[list],
+        Optional[dict[str, str]],
+    ]:
+        """profile_id로 registry 조회 → 실행 옵션과 env override."""
         if task.profile_id and self._registry:
             profile = self._registry.get(task.profile_id)
             if profile:
+                profile_env = profile.env if isinstance(profile.env, dict) else None
                 return (
                     profile.workspace_dir,
                     profile.max_turns,
                     profile.allowed_tools,
                     profile.disallowed_tools,
+                    profile_env,
                 )
-        return None, None, None, None
+        return None, None, None, None, None
 
     def _assemble_context(
         self,
@@ -146,6 +199,7 @@ class ExecutionContextBuilder:
         max_turns: Optional[int],
         override_tools: Optional[list],
         override_disallowed: Optional[list],
+        profile_env: Optional[dict[str, str]],
     ) -> _PreparedContext:
         """폴더 프롬프트 prepend, soulstream_item 빌드, items 합산, tools 병합, extra_env, assemble_prompt."""
         # 폴더 프롬프트를 system_prompt에 합산 (새 세션에서만)
@@ -182,10 +236,12 @@ class ExecutionContextBuilder:
         effective_allowed_tools = task.allowed_tools if task.allowed_tools is not None else override_tools
         effective_disallowed_tools = task.disallowed_tools if task.disallowed_tools is not None else override_disallowed
 
-        # CLAUDE_CODE_OAUTH_TOKEN 주입
-        extra_env: Optional[dict] = None
-        if task.oauth_token:
-            extra_env = {"CLAUDE_CODE_OAUTH_TOKEN": task.oauth_token}
+        # 프로필 env override + per-task OAuth token 병합.
+        # Anthropic-compatible API key 프로필은 OAuth 토큰과 섞지 않는다.
+        resolved_profile_env = _resolve_profile_env(profile_env)
+        extra_env: dict[str, str] = dict(resolved_profile_env or {})
+        if task.oauth_token and "ANTHROPIC_API_KEY" not in extra_env:
+            extra_env["CLAUDE_CODE_OAUTH_TOKEN"] = task.oauth_token
 
         assembled_prompt = assemble_prompt(task.prompt, task.context)
 
@@ -197,6 +253,6 @@ class ExecutionContextBuilder:
             max_turns=max_turns,
             effective_allowed_tools=effective_allowed_tools,
             effective_disallowed_tools=effective_disallowed_tools,
-            extra_env=extra_env,
+            extra_env=extra_env or None,
             assembled_prompt=assembled_prompt,
         )

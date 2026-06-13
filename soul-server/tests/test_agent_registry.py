@@ -58,6 +58,60 @@ agents:
         assert ariella is not None
         assert ariella.max_turns == 1
 
+    def test_load_env_override_yaml(self, tmp_path):
+        yaml_content = """
+agents:
+  - id: roselin_kimi
+    name: 로젤린 (Kimi)
+    workspace_dir: /tmp/roselin
+    backend: claude
+    env:
+      ANTHROPIC_BASE_URL: https://api.kimi.com/coding/
+      ANTHROPIC_API_KEY: ${KIMI_API_KEY}
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144"
+"""
+        config_file = tmp_path / "agents.yaml"
+        config_file.write_text(yaml_content, encoding="utf-8")
+        registry = load_agent_registry(str(config_file))
+
+        profile = registry.get("roselin_kimi")
+        assert profile is not None
+        assert profile.env == {
+            "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+            "ANTHROPIC_API_KEY": "${KIMI_API_KEY}",
+            "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "262144",
+        }
+
+    def test_env_override_must_be_mapping(self, tmp_path):
+        yaml_content = """
+agents:
+  - id: roselin_kimi
+    name: 로젤린 (Kimi)
+    workspace_dir: /tmp/roselin
+    env:
+      - ANTHROPIC_API_KEY
+"""
+        config_file = tmp_path / "agents.yaml"
+        config_file.write_text(yaml_content, encoding="utf-8")
+
+        with pytest.raises(RuntimeError, match="agents.yaml 파싱 오류"):
+            load_agent_registry(str(config_file))
+
+    def test_env_override_values_must_be_strings(self, tmp_path):
+        yaml_content = """
+agents:
+  - id: roselin_kimi
+    name: 로젤린 (Kimi)
+    workspace_dir: /tmp/roselin
+    env:
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: 262144
+"""
+        config_file = tmp_path / "agents.yaml"
+        config_file.write_text(yaml_content, encoding="utf-8")
+
+        with pytest.raises(RuntimeError, match="agents.yaml 파싱 오류"):
+            load_agent_registry(str(config_file))
+
     def test_load_unknown_key_raises_runtime_error(self, tmp_path):
         yaml_content = """
 agents:

@@ -18,6 +18,7 @@ class AgentProfile:
     allowed_tools: Optional[list[str]] = None
     disallowed_tools: Optional[list[str]] = None
     backend: str = "claude"
+    env: Optional[dict[str, str]] = None
 
 
 class AgentRegistry:
@@ -44,7 +45,24 @@ def load_agent_registry(config_path: str) -> AgentRegistry:
     with open(config_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}  # 빈 파일이나 주석만 있는 경우 None → 빈 dict
     try:
-        profiles = [AgentProfile(**agent) for agent in data.get("agents", [])]
+        profiles = [
+            AgentProfile(**_validate_agent_config(agent))
+            for agent in data.get("agents", [])
+        ]
     except (TypeError, KeyError) as e:
         raise RuntimeError(f"agents.yaml 파싱 오류: {e}") from e
     return AgentRegistry(profiles)
+
+
+def _validate_agent_config(agent: dict) -> dict:
+    """agents.yaml의 구조만 검증한다. env 참조 해석은 실행 시점에 한다."""
+    if not isinstance(agent, dict):
+        raise TypeError("agent entry must be a mapping")
+    env = agent.get("env")
+    if env is None:
+        return agent
+    if not isinstance(env, dict):
+        raise TypeError("agent.env must be a mapping")
+    if not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
+        raise TypeError("agent.env keys and values must be strings")
+    return agent
