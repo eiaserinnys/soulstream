@@ -111,8 +111,9 @@ describe("FolderTree", () => {
 
     const draggableFolders = container.querySelectorAll('[data-testid="draggable-folder"]');
     expect(draggableFolders).toHaveLength(4);
-    expect((draggableFolders[0] as HTMLElement).className).toContain("liquid-glass-card");
-    expect((draggableFolders[0] as HTMLElement).dataset.liquidGlassEnhanced).toBe("false");
+    expect((draggableFolders[0] as HTMLElement).className).toContain("dashboard-sidebar-row");
+    expect((draggableFolders[0] as HTMLElement).className).not.toContain("liquid-glass-card");
+    expect((draggableFolders[0] as HTMLElement).dataset.liquidGlassEnhanced).toBeUndefined();
 
     const guideLines = container.querySelectorAll('[data-testid="folder-tree-guide-line"]');
     expect(guideLines).toHaveLength(2);
@@ -122,6 +123,24 @@ describe("FolderTree", () => {
     const grandchildRow = draggableFolders[2] as HTMLElement;
     expect(childRow.style.paddingLeft).toBe("30px");
     expect(grandchildRow.style.paddingLeft).toBe("48px");
+  });
+
+  it("keeps dense sidebar folder lists free of per-row liquid glass surfaces", () => {
+    const denseCatalog: CatalogState = {
+      folders: Array.from({ length: 16 }, (_, index) => ({
+        id: `folder-${index}`,
+        name: `Folder ${index}`,
+        sortOrder: index,
+        parentFolderId: null,
+      })),
+      sessions: {},
+    };
+
+    ({ container, root } = renderFolderTree(denseCatalog));
+
+    expect(container.querySelectorAll('[data-testid="draggable-folder"]')).toHaveLength(16);
+    expect(container.querySelectorAll(".liquid-glass-card")).toHaveLength(0);
+    expect(container.querySelectorAll(".liquid-glass-card__layer")).toHaveLength(0);
   });
 
   it("restores expanded folders from localStorage", () => {

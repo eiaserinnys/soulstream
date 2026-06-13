@@ -56,4 +56,36 @@ describe("LiquidGlassCard", () => {
     expect(card!.textContent).toBe("Card body");
     expect(card!.querySelector(".liquid-glass-card__layer")).toBeNull();
   });
+
+  it("anchors the enhanced layer to the full card bounds", () => {
+    vi.stubGlobal("CSS", { supports: vi.fn(() => true) });
+
+    flushSync(() => {
+      root!.render(
+        createElement(
+          LiquidGlassCard,
+          {
+            className: "custom-card",
+            cornerRadius: 18,
+            "data-testid": "glass-card",
+          },
+          "Card body",
+        ),
+      );
+    });
+
+    const card = container!.querySelector<HTMLElement>('[data-testid="glass-card"]');
+    const layer = card!.querySelector<HTMLElement>(".liquid-glass-card__layer");
+    const effect = card!.querySelector<HTMLElement>(".liquid-glass-card__effect");
+
+    expect(card!.dataset.liquidGlassEnhanced).toBe("true");
+    expect(layer).not.toBeNull();
+    expect(effect).not.toBeNull();
+    expect(effect!.style.position).toBe("absolute");
+    expect(effect!.style.top).toBe("50%");
+    expect(effect!.style.left).toBe("50%");
+    expect(effect!.style.width).toBe("100%");
+    expect(effect!.style.height).toBe("100%");
+    expect(effect!.style.transform).toContain("-50%");
+  });
 });
