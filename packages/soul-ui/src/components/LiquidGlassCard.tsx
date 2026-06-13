@@ -3,6 +3,9 @@ import LiquidGlass from "liquid-glass-react";
 
 import { cn } from "../lib/cn";
 
+const STATIC_GLASS_MOUSE_POSITION = { x: 0, y: 0 };
+const STATIC_GLASS_MOUSE_OFFSET = { x: 0, y: 0 };
+
 export interface LiquidGlassCardProps extends HTMLAttributes<HTMLDivElement> {
   cornerRadius?: number;
 }
@@ -62,12 +65,14 @@ export function LiquidGlassLayer({
         elasticity={0.03}
         cornerRadius={cornerRadius}
         padding="0"
+        globalMousePos={STATIC_GLASS_MOUSE_POSITION}
+        mouseOffset={STATIC_GLASS_MOUSE_OFFSET}
         style={{
           position: "absolute",
-          inset: 0,
+          top: "50%",
+          left: "50%",
           width: "100%",
           height: "100%",
-          transform: "none",
         }}
       >
         <span className="liquid-glass-card__fill" />
