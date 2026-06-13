@@ -68,6 +68,50 @@ describe("AgentProfileSchema", () => {
     expect(parsed.model).toBe("gpt-5.3-codex-spark");
   });
 
+  it("env override mapping은 문자열 key/value로 파싱한다", () => {
+    const parsed = AgentProfileSchema.parse({
+      id: "roselin-kimi",
+      name: "Roselin Kimi",
+      backend: "claude",
+      workspace_dir: "/tmp/roselin-kimi",
+      env: {
+        ANTHROPIC_API_KEY: "${KIMI_API_KEY}",
+        ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+      },
+    });
+
+    expect(parsed.env).toEqual({
+      ANTHROPIC_API_KEY: "${KIMI_API_KEY}",
+      ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+    });
+  });
+
+  it("env override는 mapping이 아니면 거부한다", () => {
+    expect(() =>
+      AgentProfileSchema.parse({
+        id: "roselin-kimi",
+        name: "Roselin Kimi",
+        backend: "claude",
+        workspace_dir: "/tmp/roselin-kimi",
+        env: ["ANTHROPIC_API_KEY"],
+      }),
+    ).toThrow(ZodError);
+  });
+
+  it("env override value는 문자열이 아니면 거부한다", () => {
+    expect(() =>
+      AgentProfileSchema.parse({
+        id: "roselin-kimi",
+        name: "Roselin Kimi",
+        backend: "claude",
+        workspace_dir: "/tmp/roselin-kimi",
+        env: {
+          ANTHROPIC_API_KEY: 123,
+        },
+      }),
+    ).toThrow(ZodError);
+  });
+
   it("model 빈 문자열은 거부한다", () => {
     expect(() =>
       AgentProfileSchema.parse({
@@ -388,6 +432,26 @@ agents:
       expect(a?.max_turns).toBe(50);
       expect(a?.model).toBe("gpt-5.3-codex-spark");
       expect(a?.allowed_tools).toEqual(["bash", "read"]);
+    });
+  });
+
+  it("env override 로딩", () => {
+    const yaml = `
+agents:
+  - id: roselin-kimi
+    name: Roselin Kimi
+    backend: claude
+    workspace_dir: /tmp/roselin-kimi
+    env:
+      ANTHROPIC_API_KEY: \${KIMI_API_KEY}
+      ANTHROPIC_BASE_URL: https://api.moonshot.cn/anthropic
+`;
+    withTempYaml(yaml, (p) => {
+      const r = loadAgentRegistry(p);
+      expect(r.get("roselin-kimi")?.env).toEqual({
+        ANTHROPIC_API_KEY: "${KIMI_API_KEY}",
+        ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+      });
     });
   });
 

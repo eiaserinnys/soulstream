@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type {
@@ -20,6 +20,14 @@ const agent: AgentProfile = {
   claude_permission_mode: "acceptEdits",
   max_turns: 25,
 };
+
+const TEST_ENV_KEYS = [
+  "SOULSTREAM_TEST_KIMI_API_KEY",
+  "SOULSTREAM_TEST_RESUME_API_KEY",
+] as const;
+const ORIGINAL_TEST_ENV = new Map(
+  TEST_ENV_KEYS.map((key) => [key, process.env[key]]),
+);
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -67,6 +75,17 @@ async function drain(iterable: AsyncIterable<SSEEventPayload>): Promise<SSEEvent
 }
 
 describe("TaskEngineTurnRunner", () => {
+  afterEach(() => {
+    for (const key of TEST_ENV_KEYS) {
+      const original = ORIGINAL_TEST_ENV.get(key);
+      if (original === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = original;
+      }
+    }
+  });
+
   it("assembles one engine turn from task runtime policy and turn input", async () => {
     const task = makeTask({
       codexThreadId: "claude-sess-1",
@@ -196,12 +215,163 @@ describe("TaskEngineTurnRunner", () => {
 
     await drain(runner.executeTurn({
       task,
-      agent: { ...agent, backend: "codex" },
+      agent: {
+        ...agent,
+        backend: "codex",
+        env: {
+          ANTHROPIC_API_KEY: "kimi-secret",
+          ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+        },
+      } as AgentProfile,
       engine,
       input: { prompt: "turn prompt" },
     }));
 
     expect(captured?.extraEnv).toBeUndefined();
+  });
+
+  it("resolves profile env refs and skips task OAuth for Anthropic API key auth", async () => {
+    process.env.SOULSTREAM_TEST_KIMI_API_KEY = "kimi-secret";
+    const task = makeTask({ oauthToken: "oauth-token" });
+    let captured: EngineExecuteParams | undefined;
+    const engine = makeEngine((params) => {
+      captured = params;
+    });
+    const { runner } = makeSubject();
+
+    await drain(runner.executeTurn({
+      task,
+      agent: {
+        ...agent,
+        env: {
+          ANTHROPIC_API_KEY: "${SOULSTREAM_TEST_KIMI_API_KEY}",
+          ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+        },
+      } as AgentProfile,
+      engine,
+      input: { prompt: "turn prompt" },
+    }));
+
+    expect(captured?.extraEnv).toEqual({
+      ANTHROPIC_API_KEY: "kimi-secret",
+      ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+    });
+    expect(captured?.extraEnv).not.toHaveProperty(CLAUDE_OAUTH_TOKEN_ENV);
+  });
+
+  it("applies profile env on resumed turns", async () => {
+    process.env.SOULSTREAM_TEST_RESUME_API_KEY = "resume-kimi-secret";
+    const task = makeTask({
+      codexThreadId: "claude-sess-1",
+      oauthToken: "oauth-token",
+    });
+    let captured: EngineExecuteParams | undefined;
+    const engine = makeEngine((params) => {
+      captured = params;
+    });
+    const { runner } = makeSubject();
+
+    await drain(runner.executeTurn({
+      task,
+      agent: {
+        ...agent,
+        env: {
+          ANTHROPIC_API_KEY: "${SOULSTREAM_TEST_RESUME_API_KEY}",
+          ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+        },
+      } as AgentProfile,
+      engine,
+      input: { prompt: "resume prompt" },
+    }));
+
+    expect(captured?.resumeSessionId).toBe("claude-sess-1");
+    expect(captured?.extraEnv).toEqual({
+      ANTHROPIC_API_KEY: "resume-kimi-secret",
+      ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+    });
+  });
+
+  it("fails clearly when a profile env reference is missing", () => {
+    const task = makeTask();
+    const engine = makeEngine(() => undefined);
+    const { runner } = makeSubject();
+
+    expect(() =>
+      runner.executeTurn({
+        task,
+        agent: {
+          ...agent,
+          env: {
+            ANTHROPIC_API_KEY: "${SOULSTREAM_TEST_MISSING_API_KEY}",
+            ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+          },
+        } as AgentProfile,
+        engine,
+        input: { prompt: "turn prompt" },
+      }),
+    ).toThrow(/SOULSTREAM_TEST_MISSING_API_KEY/);
+  });
+
+  it("rejects Anthropic API key without matching base URL", () => {
+    const task = makeTask();
+    const engine = makeEngine(() => undefined);
+    const { runner } = makeSubject();
+
+    expect(() =>
+      runner.executeTurn({
+        task,
+        agent: {
+          ...agent,
+          env: {
+            ANTHROPIC_API_KEY: "kimi-secret",
+          },
+        } as AgentProfile,
+        engine,
+        input: { prompt: "turn prompt" },
+      }),
+    ).toThrow(/ANTHROPIC_API_KEY.*ANTHROPIC_BASE_URL/);
+  });
+
+  it("rejects Anthropic base URL without matching API key", () => {
+    const task = makeTask();
+    const engine = makeEngine(() => undefined);
+    const { runner } = makeSubject();
+
+    expect(() =>
+      runner.executeTurn({
+        task,
+        agent: {
+          ...agent,
+          env: {
+            ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+          },
+        } as AgentProfile,
+        engine,
+        input: { prompt: "turn prompt" },
+      }),
+    ).toThrow(/ANTHROPIC_API_KEY.*ANTHROPIC_BASE_URL/);
+  });
+
+  it("rejects profile env that mixes Anthropic API key with Claude OAuth token", () => {
+    const task = makeTask();
+    const engine = makeEngine(() => undefined);
+    const { runner } = makeSubject();
+
+    expect(() =>
+      runner.executeTurn({
+        task,
+        agent: {
+          ...agent,
+          env: {
+            ANTHROPIC_API_KEY: "kimi-secret",
+            ANTHROPIC_BASE_URL: "https://api.moonshot.cn/anthropic",
+            [CLAUDE_OAUTH_TOKEN_ENV]: "oauth-token",
+          },
+        } as AgentProfile,
+        engine,
+        input: { prompt: "turn prompt" },
+      }),
+    ).toThrow(/CLAUDE_CODE_OAUTH_TOKEN/);
   });
 
   it("consumes a queued tool approval exactly once before the engine turn starts", () => {
