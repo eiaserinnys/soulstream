@@ -6,7 +6,13 @@ import type {
 } from "../stores/claude-runtime-state";
 import type { ClaudeRuntimeSignalsView } from "./claude-runtime-signals";
 
-export function ClaudeRuntimeSignalRows({ signals }: { signals: ClaudeRuntimeSignalsView }) {
+export function ClaudeRuntimeSignalRows({
+  signals,
+  tone = "default",
+}: {
+  signals: ClaudeRuntimeSignalsView;
+  tone?: "default" | "calm";
+}) {
   return (
     <div className="space-y-2">
       {signals.notifications.map((notification) => (
@@ -18,11 +24,19 @@ export function ClaudeRuntimeSignalRows({ signals }: { signals: ClaudeRuntimeSig
       {signals.mirror ? (
         <div
           data-testid="runtime-signals-mirror-error"
-          className="rounded-md border border-destructive/40 bg-destructive/5 p-2"
+          className={`rounded-md border p-2 ${
+            tone === "calm"
+              ? "chat-tone-danger-panel"
+              : "border-destructive/40 bg-destructive/5"
+          }`}
         >
           <div className="flex min-w-0 items-center gap-2">
-            <DatabaseZap className="size-3.5 shrink-0 text-destructive" />
-            <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
+            <DatabaseZap className={`size-3.5 shrink-0 ${
+              tone === "calm" ? "chat-tone-danger-text" : "text-destructive"
+            }`} />
+            <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+              tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
+            }`}>
               mirror
             </span>
             <span className="truncate text-xs text-muted-foreground">
@@ -36,7 +50,9 @@ export function ClaudeRuntimeSignalRows({ signals }: { signals: ClaudeRuntimeSig
             </span>
           </div>
           {signals.mirror.lastError ? (
-            <div className="mt-1 line-clamp-2 text-xs text-destructive">
+            <div className={`mt-1 line-clamp-2 text-xs ${
+              tone === "calm" ? "chat-tone-danger-text" : "text-destructive"
+            }`}>
               {signals.mirror.lastError}
             </div>
           ) : null}

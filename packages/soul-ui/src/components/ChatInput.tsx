@@ -21,6 +21,7 @@ import { ChatInputEditor } from "./chat/ChatInputEditor";
 import { useChatInputSend } from "./chat/useChatInputSend";
 import { useTextareaAutoHeight } from "./chat/useTextareaAutoHeight";
 import { SuggestionChip } from "./SuggestionChip";
+import { Button } from "./ui/button";
 
 interface ChatInputProps {
   /** 외부에서 주입하는 추가 비활성화 조건 (예: 오케스트레이터에서 노드 dead 상태) */
@@ -217,20 +218,21 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
 
       <div className="relative flex items-end gap-2 rounded-[25px] border border-glass-border glass-strong glass-shadow-md px-2 py-2">
         {showInterrupt && (
-          <button
-            type="button"
+          <Button
+            variant="destructive-outline"
+            size="icon"
             onClick={() => void interruptSession()}
             disabled={interruptDisabled}
             title="Stop running conversation"
             aria-label="Stop running conversation"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-accent-red/60 text-accent-red transition-colors hover:bg-accent-red/10 disabled:opacity-50 disabled:hover:bg-transparent sm:h-8 sm:w-8"
+            className="h-9 w-9 shrink-0 rounded-full sm:h-8 sm:w-8"
           >
             {interrupting ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
             ) : (
               <Square className="h-4 w-4 fill-current" aria-hidden="true" />
             )}
-          </button>
+          </Button>
         )}
         {effectiveFileUploadUrl && <PaperclipButton onClick={() => fileInputRef.current?.click()} />}
         <ChatInputEditor
@@ -243,7 +245,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
           modeIcon={mode.modeIcon}
           modeLabel={mode.modeLabel}
           borderColor={mode.borderColor}
-          buttonColor={mode.buttonColor}
+          buttonVariant={mode.buttonVariant}
           disabled={isDisabled}
           textareaDisabled={textareaDisabled}
         />
@@ -256,7 +258,7 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
       )}
 
       {(error || interruptError) && (
-        <div className="text-xs text-accent-red py-1 px-2 rounded bg-accent-red/8">
+        <div className="chat-tone-danger rounded px-2 py-1 text-xs">
           {error || interruptError}
         </div>
       )}

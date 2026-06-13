@@ -31,26 +31,39 @@ const buttonVariants = cva(
       },
       variant: {
         default:
-          "not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-primary bg-primary text-primary-foreground shadow-primary/24 shadow-xs hover:bg-primary/90 data-pressed:bg-primary/90 [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none",
+          "not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-accent-blue bg-gradient-to-b from-accent-blue/90 to-accent-blue text-white shadow-[0_8px_20px_-8px_rgb(10_132_255_/_60%)] hover:from-accent-blue/95 hover:to-accent-blue hover:opacity-95 data-pressed:from-accent-blue data-pressed:to-accent-blue [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none",
         destructive:
           "not-disabled:inset-shadow-[0_1px_--theme(--color-white/16%)] border-destructive bg-destructive text-white shadow-destructive/24 shadow-xs hover:bg-destructive/90 data-pressed:bg-destructive/90 [:active,[data-pressed]]:inset-shadow-[0_1px_--theme(--color-black/8%)] [:disabled,:active,[data-pressed]]:shadow-none",
         "destructive-outline":
           "border-input bg-popover not-dark:bg-clip-padding text-destructive-foreground shadow-xs/5 not-disabled:not-active:not-data-pressed:before:shadow-[0_1px_--theme(--color-black/4%)] hover:border-destructive/32 hover:bg-destructive/4 data-pressed:border-destructive/32 data-pressed:bg-destructive/4 dark:bg-input/32 dark:not-disabled:before:shadow-[0_-1px_--theme(--color-white/2%)] dark:not-disabled:not-active:not-data-pressed:before:shadow-[0_-1px_--theme(--color-white/6%)] [:disabled,:active,[data-pressed]]:shadow-none",
         ghost:
           "border-transparent text-foreground hover:bg-accent data-pressed:bg-accent",
+        glass:
+          "border-glass-border glass glass-shadow-xs text-foreground hover:border-accent-blue/35 hover:text-foreground data-pressed:bg-accent/40",
         link: "border-transparent underline-offset-4 hover:underline data-pressed:underline",
+        menu:
+          "w-full justify-start rounded px-2 py-1.5 text-left text-sm border-transparent text-foreground hover:bg-accent data-pressed:bg-accent data-[danger=true]:text-destructive",
         outline:
           "border-input bg-popover not-dark:bg-clip-padding text-foreground shadow-xs/5 not-disabled:not-active:not-data-pressed:before:shadow-[0_1px_--theme(--color-black/4%)] hover:bg-accent/50 data-pressed:bg-accent/50 dark:bg-input/32 dark:data-pressed:bg-input/64 dark:hover:bg-input/64 dark:not-disabled:before:shadow-[0_-1px_--theme(--color-white/2%)] dark:not-disabled:not-active:not-data-pressed:before:shadow-[0_-1px_--theme(--color-white/6%)] [:disabled,:active,[data-pressed]]:shadow-none",
         secondary:
           "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/90 data-pressed:bg-secondary/90 [:active,[data-pressed]]:bg-secondary/80",
+        success:
+          "border-success/40 bg-[color-mix(in_srgb,var(--success)_76%,var(--card))] text-white hover:bg-[color-mix(in_srgb,var(--success)_84%,var(--card))] data-pressed:bg-[color-mix(in_srgb,var(--success)_84%,var(--card))]",
+        warning:
+          "border-accent-orange/40 bg-[color-mix(in_srgb,var(--color-accent-orange)_70%,var(--card))] text-white hover:bg-[color-mix(in_srgb,var(--color-accent-orange)_78%,var(--card))] data-pressed:bg-[color-mix(in_srgb,var(--color-accent-orange)_78%,var(--card))]",
+        choice:
+          "h-auto justify-start whitespace-normal rounded-[13px] border-[var(--lg-line)] bg-muted/40 text-left text-foreground hover:border-accent-blue/50 data-[selected=true]:border-accent-blue/55 data-[selected=true]:bg-accent-blue/15",
       },
     },
   },
 );
 
+type ButtonVariant = VariantProps<typeof buttonVariants>["variant"];
+type ButtonSize = VariantProps<typeof buttonVariants>["size"];
+
 interface ButtonProps extends useRender.ComponentProps<"button"> {
-  variant?: VariantProps<typeof buttonVariants>["variant"];
-  size?: VariantProps<typeof buttonVariants>["size"];
+  variant?: ButtonVariant;
+  size?: ButtonSize;
 }
 
 function Button({ className, variant, size, render, ...props }: ButtonProps) {
@@ -71,3 +84,4 @@ function Button({ className, variant, size, render, ...props }: ButtonProps) {
 }
 
 export { Button, buttonVariants };
+export type { ButtonSize, ButtonVariant };

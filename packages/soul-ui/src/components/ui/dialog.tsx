@@ -2,7 +2,13 @@
 
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
+import type { CSSProperties } from "react";
 import { cn } from "../../lib/cn";
+import {
+  LiquidGlassLayer,
+  liquidGlassStyle,
+  supportsLiquidGlassEnhancement,
+} from "../LiquidGlassCard";
 import { Button } from "./button";
 import { ScrollArea } from "./scroll-area";
 
@@ -61,12 +67,16 @@ function DialogPopup({
   showCloseButton = true,
   bottomStickOnMobile = true,
   closeProps,
+  style,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean;
   bottomStickOnMobile?: boolean;
   closeProps?: DialogPrimitive.Close.Props;
 }) {
+  const enhanced = supportsLiquidGlassEnhancement();
+  const popupStyle = liquidGlassStyle(26, style as CSSProperties | undefined);
+
   return (
     <DialogPortal>
       <DialogBackdrop />
@@ -78,14 +88,17 @@ function DialogPopup({
       >
         <DialogPrimitive.Popup
           className={cn(
-            "-translate-y-[calc(1.25rem*var(--nested-dialogs))] relative row-start-2 flex max-h-full min-h-0 w-full min-w-0 max-w-lg scale-[calc(1-0.1*var(--nested-dialogs))] flex-col rounded-[26px] border border-glass-border glass-strong glass-shadow-lg text-popover-foreground opacity-[calc(1-0.1*var(--nested-dialogs))] transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
+            "liquid-glass-card -translate-y-[calc(1.25rem*var(--nested-dialogs))] relative row-start-2 flex max-h-full min-h-0 w-full min-w-0 max-w-lg scale-[calc(1-0.1*var(--nested-dialogs))] flex-col rounded-[26px] border border-glass-border glass-shadow-lg text-popover-foreground opacity-[calc(1-0.1*var(--nested-dialogs))] transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
             bottomStickOnMobile &&
               "max-sm:max-w-none max-sm:rounded-none max-sm:border-x-0 max-sm:border-t max-sm:border-b-0 max-sm:opacity-[calc(1-min(var(--nested-dialogs),1))] max-sm:data-ending-style:translate-y-4 max-sm:data-starting-style:translate-y-4",
             className,
           )}
+          data-liquid-glass-enhanced={enhanced ? "true" : "false"}
           data-slot="dialog-popup"
+          style={popupStyle}
           {...props}
         >
+          <LiquidGlassLayer cornerRadius={26} enhanced={enhanced} />
           {children}
           {showCloseButton && (
             <DialogPrimitive.Close

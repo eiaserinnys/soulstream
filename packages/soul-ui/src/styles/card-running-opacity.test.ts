@@ -45,4 +45,12 @@ describe("card running glow CSS", () => {
       }
     }
   });
+
+  it("keeps the running shimmer below card content and non-interactive", () => {
+    const globalsCss = readFileSync(new URL("./globals.css", import.meta.url), "utf8");
+    const shimmerBlock = extractCssBlock(globalsCss, ".card-running-base::before");
+
+    expect(shimmerBlock).toContain("z-index: 1;");
+    expect(shimmerBlock).toContain("pointer-events: none;");
+  });
 });

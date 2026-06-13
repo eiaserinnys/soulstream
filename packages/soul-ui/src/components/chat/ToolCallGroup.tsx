@@ -27,7 +27,7 @@ const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
         onClick={toggleExpanded}
         className={cn(
           "text-xs font-mono flex items-center gap-1",
-          msg.isError ? "text-accent-red" : "text-muted-foreground",
+          msg.isError ? "chat-tone-danger-text" : "text-muted-foreground",
           "hover:text-foreground",
         )}
       >
@@ -44,7 +44,7 @@ const ToolCallItem = memo(function ToolCallItem({ msg }: { msg: ChatMessage }) {
         <div className="ml-5 mt-0.5">
           <pre className={cn(
             "text-xs bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-40 font-mono",
-            msg.isError ? "text-accent-red/80" : "text-muted-foreground",
+            msg.isError ? "chat-tone-danger-text" : "text-muted-foreground",
           )}>
             {resultContent}
           </pre>
@@ -92,8 +92,8 @@ export const ToolCallGroup = memo(function ToolCallGroup({ messages }: { message
           <span className="text-xs">{expanded ? "\u25BC" : "\u25B6"}</span>
           <span>{"\u{1F527}"}</span>
           <span className="font-medium">Tool Calls ({messages.length})</span>
-          {hasError && <span className="text-accent-red text-xs">{"\u25CF"} error</span>}
-          {!hasError && allDone && <span className="text-success text-xs">{"\u25CF"} done</span>}
+          {hasError && <span className="chat-tone-danger-text text-xs">{"\u25CF"} error</span>}
+          {!hasError && allDone && <span className="chat-tone-success-text text-xs">{"\u25CF"} done</span>}
         </button>
         {expanded && (
           <div className="ml-4 mt-1 space-y-0.5">

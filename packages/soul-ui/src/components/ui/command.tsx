@@ -2,8 +2,14 @@
 
 import { Dialog as CommandDialogPrimitive } from "@base-ui/react/dialog";
 import { SearchIcon } from "lucide-react";
+import type { CSSProperties } from "react";
 import type * as React from "react";
 import { cn } from "../../lib/cn";
+import {
+  LiquidGlassLayer,
+  liquidGlassStyle,
+  supportsLiquidGlassEnhancement,
+} from "../LiquidGlassCard";
 import {
   Autocomplete,
   AutocompleteCollection,
@@ -66,20 +72,27 @@ function CommandDialogViewport({
 function CommandDialogPopup({
   className,
   children,
+  style,
   ...props
 }: CommandDialogPrimitive.Popup.Props) {
+  const enhanced = supportsLiquidGlassEnhancement();
+  const popupStyle = liquidGlassStyle(24, style as CSSProperties | undefined);
+
   return (
     <CommandDialogPortal>
       <CommandDialogBackdrop />
       <CommandDialogViewport>
         <CommandDialogPrimitive.Popup
           className={cn(
-            "-translate-y-[calc(1.25rem*var(--nested-dialogs))] relative row-start-2 flex max-h-105 min-h-0 w-full min-w-0 max-w-xl scale-[calc(1-0.1*var(--nested-dialogs))] flex-col rounded-2xl border border-glass-border glass-strong glass-shadow-lg text-popover-foreground opacity-[calc(1-0.1*var(--nested-dialogs))] outline-none transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 **:data-[slot=scroll-area-viewport]:data-has-overflow-y:pe-1",
+            "liquid-glass-card -translate-y-[calc(1.25rem*var(--nested-dialogs))] relative row-start-2 flex max-h-105 min-h-0 w-full min-w-0 max-w-xl scale-[calc(1-0.1*var(--nested-dialogs))] flex-col rounded-2xl border border-glass-border glass-shadow-lg text-popover-foreground opacity-[calc(1-0.1*var(--nested-dialogs))] outline-none transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0 **:data-[slot=scroll-area-viewport]:data-has-overflow-y:pe-1",
             className,
           )}
+          data-liquid-glass-enhanced={enhanced ? "true" : "false"}
           data-slot="command-dialog-popup"
+          style={popupStyle}
           {...props}
         >
+          <LiquidGlassLayer cornerRadius={24} enhanced={enhanced} />
           {children}
         </CommandDialogPrimitive.Popup>
       </CommandDialogViewport>

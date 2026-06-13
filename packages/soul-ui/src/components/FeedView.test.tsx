@@ -77,6 +77,7 @@ describe("FeedView sidebar placement", () => {
       removeListener: vi.fn(),
       dispatchEvent: vi.fn(),
     }));
+    vi.stubGlobal("CSS", { supports: vi.fn(() => false) });
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
       callback(0);
       return 0;
@@ -129,6 +130,8 @@ describe("FeedView sidebar placement", () => {
 
     const card = container.querySelector<HTMLElement>('[data-session-id="in-folder"]');
     expect(card).not.toBeNull();
+    expect(card!.className).toContain("liquid-glass-card");
+    expect(card!.dataset.liquidGlassEnhanced).toBe("false");
 
     flushSync(() => {
       card!.dispatchEvent(new MouseEvent("click", { bubbles: true }));

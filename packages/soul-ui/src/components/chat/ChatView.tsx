@@ -39,7 +39,7 @@ import {
 } from "./ChatView.follow-helpers";
 import { ChatRuntimeCompactStrips } from "./ChatRuntimeCompactStrips";
 import { ProfileAvatar } from "../ProfileAvatar";
-import { STATUS_CONFIG } from "../SessionItem";
+import { CHAT_STATUS_TONE_CONFIG } from "./chat-tone-config";
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
@@ -281,7 +281,7 @@ export function ChatView({
     activeSessionSummary?.prompt ||
     activeSessionKey;
   const chatStatus = activeSessionSummary?.status ?? "unknown";
-  const chatStatusConfig = STATUS_CONFIG[chatStatus] ?? STATUS_CONFIG.unknown;
+  const chatStatusConfig = CHAT_STATUS_TONE_CONFIG[chatStatus] ?? CHAT_STATUS_TONE_CONFIG.unknown;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3">
@@ -400,9 +400,9 @@ export function ChatView({
             ) as HTMLElement | null;
             if (!el) return;
             handledFocusRef.current = focusEventId;
-            el.classList.add("ring-2", "ring-accent-amber", "rounded");
+            el.classList.add("chat-focus-ring");
             window.setTimeout(() => {
-              el.classList.remove("ring-2", "ring-accent-amber", "rounded");
+              el.classList.remove("chat-focus-ring");
               setFocusEventId(null);
             }, 2000);
           }}

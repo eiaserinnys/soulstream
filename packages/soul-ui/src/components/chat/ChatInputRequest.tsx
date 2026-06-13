@@ -4,7 +4,7 @@ import type { ChatMessage } from "../../lib/flatten-tree";
 import { submitInputResponse } from "../../lib/input-request-actions";
 import { useInputRequestTimer } from "../../hooks/useInputRequestTimer";
 import { formatTime } from "../../lib/input-request-utils";
-import { cn } from "../../lib/cn";
+import { Button } from "../ui/button";
 
 export const ChatInputRequest = memo(function ChatInputRequest({
   msg,
@@ -53,22 +53,18 @@ export const ChatInputRequest = memo(function ChatInputRequest({
         {isTimedOut ? (
           <div className="text-xs text-muted-foreground">⏱️ 시간 초과</div>
         ) : isDone ? (
-          <div className="text-xs text-success">✅ {selectedAnswer || '응답 완료'}</div>
+          <div className="text-xs chat-tone-success-text">✅ {selectedAnswer || '응답 완료'}</div>
         ) : (
           <>
             <div className="flex flex-col gap-2">
               {question.options?.map((opt) => (
-                <button
+                <Button
                   key={opt.label}
+                  variant="choice"
                   onClick={() => handleSelect(opt.label)}
                   disabled={isDisabled}
-                  className={cn(
-                    "rounded-[13px] border border-[var(--lg-line)] bg-muted/40 px-3 py-2.5 text-left text-sm transition-colors",
-                    selectedAnswer === opt.label
-                      ? "border-accent-blue/55 bg-accent-blue/15"
-                      : "hover:border-accent-blue/50",
-                    "disabled:cursor-default disabled:opacity-50",
-                  )}
+                  data-selected={selectedAnswer === opt.label ? "true" : undefined}
+                  className="w-full px-3 py-2.5 text-sm disabled:cursor-default"
                 >
                   <b className="font-semibold">{opt.label}</b>
                   {opt.description && (
@@ -76,7 +72,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
                       {opt.description}
                     </small>
                   )}
-                </button>
+                </Button>
               ))}
             </div>
             <form
@@ -94,13 +90,14 @@ export const ChatInputRequest = memo(function ChatInputRequest({
                 placeholder="직접 입력"
                 className="min-w-0 flex-1 rounded-[13px] border border-[var(--lg-line)] bg-muted/40 px-3 py-2 text-sm outline-none transition-colors focus:border-accent-blue/55"
               />
-              <button
+              <Button
                 type="submit"
+                size="xs"
                 disabled={isDisabled || !customAnswer.trim()}
-                className="rounded-full bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3 text-xs font-semibold text-white disabled:opacity-50"
+                className="h-auto self-stretch rounded-full px-3 text-xs font-semibold"
               >
                 전송
-              </button>
+              </Button>
             </form>
             <div className="text-right text-xs text-muted-foreground">⏱️ {formatTime(remainingSec)}</div>
           </>

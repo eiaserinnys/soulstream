@@ -15,6 +15,7 @@ import { STATUS_CONFIG } from "./FolderContents";
 import { NodeBadge } from "./NodeBadge";
 import { BackendBadge } from "./BackendBadge";
 import { ProfileAvatar } from "./ProfileAvatar";
+import { LiquidGlassCard } from "./LiquidGlassCard";
 import { cn } from "../lib/cn";
 
 const DEFAULT_PROFILE: DashboardConfig = {
@@ -92,29 +93,22 @@ export const FeedCard = memo(function FeedCard({
       })
     : "";
 
-  return (
-    <div
-      ref={setNodeRef}
-      {...attributes}
-      {...listeners}
-      className={cn(
-        "relative flex h-full cursor-pointer items-center gap-3 overflow-hidden px-4 py-3 text-sm transition-[border-color,box-shadow,opacity] duration-200 ease-out",
-        variant === "card"
-          ? "rounded-[18px] border border-white/8 bg-[var(--lg-card)] shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)]"
-          : "rounded-none border-0 bg-transparent shadow-none",
-        isDragging && "opacity-50",
-        isActive && "border-accent-blue/55 ring-1 ring-accent-blue/50",
-        isUnread && !isActive && "border-l-[3px] border-l-info",
-        isRunning && "card-running-base",
-        isError && !isActive && "border-l-[3px] border-l-accent-red",
-        !isActive && variant === "card" && "hover:border-accent-blue/35 hover:shadow-[0_12px_32px_-18px_rgb(10_30_70_/_50%)]",
-        !isActive && variant === "row" && "hover:bg-muted/40",
-      )}
-      onClick={handleClick}
-      onDoubleClick={handleDoubleClick}
-      onContextMenu={handleContextMenu}
-      data-session-id={session.agentSessionId}
-    >
+  const rootClassName = cn(
+    "relative flex h-full cursor-pointer items-center gap-3 overflow-hidden px-4 py-3 text-sm transition-[border-color,box-shadow,opacity] duration-200 ease-out",
+    variant === "card"
+      ? "rounded-[18px] border border-white/8 shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)]"
+      : "rounded-none border-0 bg-transparent shadow-none",
+    isDragging && "opacity-50",
+    isActive && "border-accent-blue/55 ring-1 ring-accent-blue/50",
+    isUnread && !isActive && "border-l-[3px] border-l-info",
+    isRunning && "card-running-base",
+    isError && !isActive && "border-l-[3px] border-l-accent-red",
+    !isActive && variant === "card" && "hover:border-accent-blue/35 hover:shadow-[0_12px_32px_-18px_rgb(10_30_70_/_50%)]",
+    !isActive && variant === "row" && "hover:bg-muted/40",
+  );
+
+  const content = (
+    <>
       <ProfileAvatar
         role={actorIsUser ? "user" : "assistant"}
         hasPortrait={!!actorPortraitUrl}
@@ -163,6 +157,38 @@ export const FeedCard = memo(function FeedCard({
           </div>
         )}
       </div>
+    </>
+  );
+
+  if (variant === "card") {
+    return (
+      <LiquidGlassCard
+        ref={setNodeRef}
+        {...attributes}
+        {...listeners}
+        className={rootClassName}
+        onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
+        onContextMenu={handleContextMenu}
+        data-session-id={session.agentSessionId}
+      >
+        {content}
+      </LiquidGlassCard>
+    );
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      className={rootClassName}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
+      onContextMenu={handleContextMenu}
+      data-session-id={session.agentSessionId}
+    >
+      {content}
     </div>
   );
 });

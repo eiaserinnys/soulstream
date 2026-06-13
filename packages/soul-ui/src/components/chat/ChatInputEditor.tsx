@@ -7,10 +7,10 @@
  * 상태를 소유하지 않는 프레젠테이션 컴포넌트 — 모든 값은 props로 전달받는다.
  */
 
-import { forwardRef } from "react";
+import { forwardRef, type KeyboardEvent } from "react";
 import { SendHorizontal } from "lucide-react";
 import { cn } from "../../lib/cn";
-import { Button } from "../ui/button";
+import { Button, type ButtonVariant } from "../ui/button";
 
 interface ChatInputEditorProps {
   text: string;
@@ -21,7 +21,7 @@ interface ChatInputEditorProps {
   modeIcon: string;
   modeLabel: string;
   borderColor: string;
-  buttonColor: string;
+  buttonVariant: Extract<ButtonVariant, "default" | "success" | "warning">;
   disabled: boolean; // 버튼 disabled
   textareaDisabled: boolean; // textarea disabled
 }
@@ -37,14 +37,14 @@ export const ChatInputEditor = forwardRef<HTMLTextAreaElement, ChatInputEditorPr
       modeIcon,
       modeLabel,
       borderColor,
-      buttonColor,
+      buttonVariant,
       disabled,
       textareaDisabled,
     },
     ref,
   ) {
     // Ctrl+Enter / Cmd+Enter로 전송
-    const handleKeyDown = (e: React.KeyboardEvent) => {
+    const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
         e.preventDefault();
         onSend();
@@ -81,10 +81,11 @@ export const ChatInputEditor = forwardRef<HTMLTextAreaElement, ChatInputEditorPr
           onClick={onSend}
           disabled={disabled}
           size="icon"
+          variant={buttonVariant}
           aria-label={buttonLabel}
           title={buttonLabel}
-          data-button-color={buttonColor}
-          className="h-9 w-9 shrink-0 self-end rounded-full bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] text-white shadow-[0_8px_20px_-8px_rgb(10_132_255_/_60%)] hover:from-[#2E96FF] hover:to-[#0A84FF] hover:opacity-95 sm:h-8 sm:w-8"
+          data-button-variant={buttonVariant}
+          className="h-9 w-9 shrink-0 self-end rounded-full sm:h-8 sm:w-8"
         >
           <SendHorizontal className="h-4 w-4" aria-hidden="true" />
         </Button>

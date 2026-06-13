@@ -27,7 +27,7 @@ export const ShowFullContentButton = memo(function ShowFullContentButton({
         )}
       </button>
       {error && (
-        <span className="text-xs text-accent-red">{error}</span>
+        <span className="text-xs chat-tone-danger-text">{error}</span>
       )}
     </div>
   );

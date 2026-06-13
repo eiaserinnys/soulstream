@@ -20,6 +20,7 @@ import { Button } from "./ui/button";
 interface ClaudeRuntimeTasksPanelProps {
   sessionId: string;
   runtime: ClaudeRuntimeView | null;
+  tone?: "default" | "calm";
 }
 
 const TERMINAL_STATUSES = new Set<ClaudeRuntimeTaskStatus>([
@@ -32,6 +33,7 @@ const TERMINAL_STATUSES = new Set<ClaudeRuntimeTaskStatus>([
 export function ClaudeRuntimeTasksPanel({
   sessionId,
   runtime,
+  tone = "default",
 }: ClaudeRuntimeTasksPanelProps) {
   const [fetchedTasks, setFetchedTasks] = useState<ClaudeRuntimeTaskView[]>([]);
   const [fetchedModes, setFetchedModes] = useState<{
@@ -124,12 +126,18 @@ export function ClaudeRuntimeTasksPanel({
             {tasks.length}
           </span>
           {runningCount > 0 ? (
-            <span className="rounded bg-amber-500/12 px-1.5 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+            <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${
+              tone === "calm"
+                ? "chat-tone-warning"
+                : "bg-amber-500/12 text-amber-700 dark:text-amber-300"
+            }`}>
               {runningCount} active
             </span>
           ) : null}
           {errorCount > 0 ? (
-            <span className="ml-auto rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
+            <span className={`ml-auto rounded px-1.5 py-0.5 text-[11px] font-medium ${
+              tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
+            }`}>
               {errorCount} error
             </span>
           ) : null}
@@ -147,7 +155,11 @@ export function ClaudeRuntimeTasksPanel({
 
       {expanded ? (
         <div className={runtimePanelScrollClass("space-y-2")}>
-          {error ? <div className="text-xs text-destructive">{error}</div> : null}
+          {error ? (
+            <div className={`text-xs ${tone === "calm" ? "chat-tone-danger-text" : "text-destructive"}`}>
+              {error}
+            </div>
+          ) : null}
 
           {hasModeState ? (
             <div className="flex flex-wrap gap-1.5">
@@ -156,6 +168,7 @@ export function ClaudeRuntimeTasksPanel({
                   icon={<ListChecks className="size-3" />}
                   label={planMode.active ? "Plan mode" : "Plan off"}
                   active={planMode.active}
+                  tone={tone}
                 />
               ) : null}
               {worktreeMode ? (
@@ -163,6 +176,7 @@ export function ClaudeRuntimeTasksPanel({
                   icon={<GitBranch className="size-3" />}
                   label={worktreeLabel(worktreeMode)}
                   active={worktreeMode.active}
+                  tone={tone}
                 />
               ) : null}
             </div>
@@ -180,7 +194,7 @@ export function ClaudeRuntimeTasksPanel({
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className={statusClassName(task.status)}>{task.status}</span>
+                      <span className={statusClassName(task.status, tone)}>{task.status}</span>
                       <span className="rounded bg-background px-1.5 py-0.5 text-[11px] text-muted-foreground">
                         {taskKindLabel(task)}
                       </span>
@@ -231,16 +245,20 @@ function ModeBadge({
   icon,
   label,
   active,
+  tone,
 }: {
   icon: ReactNode;
   label: string;
   active: boolean;
+  tone: "default" | "calm";
 }) {
   return (
     <span
       className={`inline-flex min-w-0 max-w-full items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium ${
         active
-          ? "bg-amber-500/12 text-amber-700 dark:text-amber-300"
+          ? tone === "calm"
+            ? "chat-tone-warning"
+            : "bg-amber-500/12 text-amber-700 dark:text-amber-300"
           : "bg-muted text-muted-foreground"
       }`}
     >
@@ -266,15 +284,17 @@ function taskKindLabel(task: ClaudeRuntimeTaskView): string {
   return task.taskType ?? "Task";
 }
 
-function statusClassName(status: ClaudeRuntimeTaskStatus): string {
+function statusClassName(status: ClaudeRuntimeTaskStatus, tone: "default" | "calm"): string {
   const base = "rounded px-1.5 py-0.5 text-[11px] font-medium";
   if (status === "running" || status === "pending") {
+    if (tone === "calm") return `${base} chat-tone-success`;
     return `${base} bg-emerald-500/12 text-emerald-700 dark:text-emerald-300`;
   }
   if (status === "completed") {
     return `${base} bg-blue-500/12 text-blue-700 dark:text-blue-300`;
   }
   if (status === "failed" || status === "killed") {
+    if (tone === "calm") return `${base} chat-tone-danger`;
     return `${base} bg-destructive/12 text-destructive`;
   }
   return `${base} bg-muted text-muted-foreground`;

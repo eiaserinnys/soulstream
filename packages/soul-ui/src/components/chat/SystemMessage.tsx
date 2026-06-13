@@ -27,9 +27,9 @@ export const SystemMessage = memo(function SystemMessage({ msg }: { msg: ChatMes
       <div className={cn(
         "flex-1 min-w-0 text-xs px-2 py-1 rounded text-center",
         isError
-          ? "text-accent-red bg-accent-red/8"
+          ? "chat-tone-danger"
           : isResult
-            ? "text-success bg-success/8"
+            ? "chat-tone-success"
             : "text-muted-foreground bg-input",
       )}>
         {msg.content}

@@ -5,23 +5,21 @@
  * 헤더 우상단 배치용.
  */
 
-import { cn } from "../lib/cn";
+import { Button } from "./ui/button";
 
 export function ConfigButton({ onClick }: { onClick: () => void }) {
   return (
-    <button
+    <Button
+      variant="outline"
+      size="xs"
       data-testid="config-button"
       onClick={onClick}
-      className={cn(
-        "flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium",
-        "border border-border text-muted-foreground hover:bg-input",
-        "transition-colors cursor-pointer",
-      )}
+      className="h-auto gap-1.5 px-2 py-0.5 text-xs"
       title="서버 설정"
       aria-label="Open server configuration"
     >
       <span className="text-xs">⚙️</span>
       <span>Config</span>
-    </button>
+    </Button>
   );
 }
