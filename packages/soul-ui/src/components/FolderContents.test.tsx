@@ -11,16 +11,31 @@ import type { CatalogState, SessionSummary } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { FolderContents } from "./FolderContents";
 
+const virtualizerMockState = vi.hoisted(() => ({
+  startIndex: 0,
+  visibleCount: Number.POSITIVE_INFINITY,
+}));
+
 vi.mock("@tanstack/react-virtual", () => ({
-  useVirtualizer: ({ count }: { count: number }) => ({
-    getVirtualItems: () =>
-      Array.from({ length: count }, (_, index) => ({
-        index,
-        key: index,
-        size: 56,
-        start: index * 56,
-      })),
-    getTotalSize: () => count * 56,
+  useVirtualizer: ({ count, estimateSize }: { count: number; estimateSize: () => number }) => ({
+    getVirtualItems: () => {
+      const size = estimateSize();
+      const startIndex = count === 0 ? 0 : Math.min(virtualizerMockState.startIndex, count - 1);
+      const visibleCount = Number.isFinite(virtualizerMockState.visibleCount)
+        ? virtualizerMockState.visibleCount
+        : count;
+      const itemCount = Math.max(0, Math.min(count - startIndex, visibleCount));
+      return Array.from({ length: itemCount }, (_, offset) => {
+        const index = startIndex + offset;
+        return {
+          index,
+          key: index,
+          size,
+          start: index * size,
+        };
+      });
+    },
+    getTotalSize: () => count * estimateSize(),
   }),
 }));
 
@@ -47,6 +62,31 @@ const sessions: SessionSummary[] = [{
   prompt: "Visible session",
   updatedAt: "2026-06-10T00:00:00.000Z",
 }];
+
+function createSessions(count: number): SessionSummary[] {
+  return Array.from({ length: count }, (_, index) => ({
+    agentSessionId: `session-${index}`,
+    status: "running",
+    eventCount: index,
+    agentId: "roselin_codex",
+    agentName: "Roselin",
+    folderId: "folder-a",
+    prompt: `Session ${index}`,
+    updatedAt: "2026-06-10T00:00:00.000Z",
+  }));
+}
+
+function createCatalogForSessions(sessionList: SessionSummary[]): CatalogState {
+  return {
+    ...catalog,
+    sessions: Object.fromEntries(
+      sessionList.map((session) => [
+        session.agentSessionId,
+        { folderId: "folder-a", displayName: null },
+      ]),
+    ),
+  };
+}
 
 class MockIntersectionObserver {
   readonly observe = vi.fn();
@@ -84,13 +124,14 @@ function renderFolderContents(props: Partial<React.ComponentProps<typeof FolderC
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
+  const sessionList = props.sessions ?? sessions;
 
   useDashboardStore.getState().reset();
-  useDashboardStore.getState().setCatalog(catalog);
+  useDashboardStore.getState().setCatalog(createCatalogForSessions(sessionList));
   useDashboardStore.getState().selectFolder("folder-a");
 
   flushSync(() => {
-    root.render(createElement(FolderContents, { sessions, ...props }));
+    root.render(createElement(FolderContents, { sessions: sessionList, ...props }));
   });
 
   return { container, root };
@@ -107,6 +148,8 @@ describe("FolderContents", () => {
     originalIntersectionObserver = globalThis.IntersectionObserver;
     originalResizeObserver = globalThis.ResizeObserver;
     originalMatchMedia = window.matchMedia;
+    virtualizerMockState.startIndex = 0;
+    virtualizerMockState.visibleCount = Number.POSITIVE_INFINITY;
     globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver;
     globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
     vi.stubGlobal("CSS", { supports: vi.fn(() => false) });
@@ -159,5 +202,33 @@ describe("FolderContents", () => {
     });
 
     expect(document.body.textContent).toContain("이 세션을 이어서 시작하기");
+  });
+
+  it("virtualizes the desktop session grid so off-screen cards do not mount glass surfaces", () => {
+    const manySessions = createSessions(100);
+    virtualizerMockState.visibleCount = 3;
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: query === "(min-width: 1280px)",
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+
+    ({ container, root } = renderFolderContents({ sessions: manySessions }));
+
+    const mountedSessions = container.querySelectorAll("[data-testid='draggable-session']");
+    expect(mountedSessions).toHaveLength(6);
+    expect(container.querySelectorAll(".liquid-glass-card")).toHaveLength(6);
+    expect(container.querySelectorAll("[data-testid='folder-session-virtual-row']")).toHaveLength(3);
+    expect(container.querySelector<HTMLElement>("[data-testid='folder-session-virtual-grid']")?.style.height)
+      .toBe("6200px");
+    expect(container.textContent).toContain("Session 0");
+    expect(container.textContent).toContain("Session 5");
+    expect(container.textContent).not.toContain("Session 6");
+    expect(container.textContent).not.toContain("Session 99");
   });
 });

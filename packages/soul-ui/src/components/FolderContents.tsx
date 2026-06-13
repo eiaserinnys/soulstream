@@ -24,6 +24,10 @@ export { STATUS_CONFIG } from "./SessionItem";
 export type { StatusConfig } from "./SessionItem";
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
+const DESKTOP_SESSION_CARD_HEIGHT = 112;
+const DESKTOP_SESSION_GRID_GAP = 12;
+const DESKTOP_SESSION_GRID_ROW_HEIGHT = DESKTOP_SESSION_CARD_HEIGHT + DESKTOP_SESSION_GRID_GAP;
+const DESKTOP_SESSION_GRID_XL_QUERY = "(min-width: 1280px)";
 
 export interface FolderContentsProps {
   /**
@@ -43,6 +47,32 @@ export interface FolderContentsProps {
   onLoadMore?: LoadMoreCallback;
   /** 추가 로드 가능 여부 */
   hasMore?: boolean;
+}
+
+function readDesktopSessionGridColumnCount(): 1 | 2 {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return 1;
+  }
+  return window.matchMedia(DESKTOP_SESSION_GRID_XL_QUERY).matches ? 2 : 1;
+}
+
+function useDesktopSessionGridColumnCount(): 1 | 2 {
+  const [columnCount, setColumnCount] = useState<1 | 2>(readDesktopSessionGridColumnCount);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+    const mediaQuery = window.matchMedia(DESKTOP_SESSION_GRID_XL_QUERY);
+    const updateColumnCount = () => {
+      setColumnCount(mediaQuery.matches ? 2 : 1);
+    };
+    updateColumnCount();
+    mediaQuery.addEventListener("change", updateColumnCount);
+    return () => mediaQuery.removeEventListener("change", updateColumnCount);
+  }, []);
+
+  return columnCount;
 }
 
 export function FolderContents({
@@ -67,6 +97,7 @@ export function FolderContents({
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const catalog = useDashboardStore((s) => s.catalog);
   const isMobile = useIsMobile();
+  const desktopColumnCount = useDesktopSessionGridColumnCount();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
 
   const displaySessions = useMemo(() => {
@@ -137,15 +168,24 @@ export function FolderContents({
     return () => observer.disconnect();
   }, [onLoadMore, hasMore]);
 
-  const virtualizer = useVirtualizer({
+  const desktopRowCount = Math.ceil(displaySessions.length / desktopColumnCount);
+  const desktopVirtualizer = useVirtualizer({
+    count: desktopRowCount,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => DESKTOP_SESSION_GRID_ROW_HEIGHT,
+    overscan: 4,
+  });
+
+  const mobileVirtualizer = useVirtualizer({
     count: displaySessions.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 118,
     overscan: 5,
   });
 
-  const virtualItems = virtualizer.getVirtualItems();
-  const { getItemRef } = useFlipAnimation(displaySessions, virtualItems);
+  const desktopVirtualRows = desktopVirtualizer.getVirtualItems();
+  const mobileVirtualItems = mobileVirtualizer.getVirtualItems();
+  const { getItemRef } = useFlipAnimation(displaySessions, mobileVirtualItems);
 
   const handleContextMenu = useCallback((sessionId: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -177,6 +217,36 @@ export function FolderContents({
     [activeSessionKey, setEditingSession, onRenameSession],
   );
 
+  const renderSessionItem = useCallback(
+    (session: SessionSummary) => (
+      <SessionItem
+        session={session}
+        isActive={activeSessionKey === session.agentSessionId}
+        isSelected={selectedSessionIds.has(session.agentSessionId)}
+        isEditing={onRenameSession ? editingSessionId === session.agentSessionId : false}
+        dragSessionIds={
+          selectedSessionIds.has(session.agentSessionId)
+            ? Array.from(selectedSessionIds)
+            : [session.agentSessionId]
+        }
+        onClick={(e) => handleSessionClick(session, e)}
+        onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
+        onEditSubmit={(name) => handleEditSubmit(session.agentSessionId, name)}
+        onEditCancel={() => setEditingSession(null)}
+      />
+    ),
+    [
+      activeSessionKey,
+      editingSessionId,
+      handleContextMenu,
+      handleEditSubmit,
+      handleSessionClick,
+      onRenameSession,
+      selectedSessionIds,
+      setEditingSession,
+    ],
+  );
+
   return (
     <>
       {displaySessions.length === 0 ? (
@@ -191,29 +261,39 @@ export function FolderContents({
           onKeyDown={handleKeyDown}
           onClick={() => setContextMenu(null)}
         >
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-            {displaySessions.map((session) => (
-              <div
-                key={session.agentSessionId}
-                className="min-h-[112px]"
-              >
-                <SessionItem
-                  session={session}
-                  isActive={activeSessionKey === session.agentSessionId}
-                  isSelected={selectedSessionIds.has(session.agentSessionId)}
-                  isEditing={onRenameSession ? editingSessionId === session.agentSessionId : false}
-                  dragSessionIds={
-                    selectedSessionIds.has(session.agentSessionId)
-                      ? Array.from(selectedSessionIds)
-                      : [session.agentSessionId]
-                  }
-                  onClick={(e) => handleSessionClick(session, e)}
-                  onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
-                  onEditSubmit={(name) => handleEditSubmit(session.agentSessionId, name)}
-                  onEditCancel={() => setEditingSession(null)}
-                />
-              </div>
-            ))}
+          <div
+            data-testid="folder-session-virtual-grid"
+            style={{ height: `${desktopVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}
+          >
+            {desktopVirtualRows.map((virtualRow) => {
+              const rowStartIndex = virtualRow.index * desktopColumnCount;
+              const rowSessions = displaySessions.slice(rowStartIndex, rowStartIndex + desktopColumnCount);
+              return (
+                <div
+                  key={virtualRow.key}
+                  data-testid="folder-session-virtual-row"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                    {rowSessions.map((session) => (
+                      <div
+                        key={session.agentSessionId}
+                        className="min-h-[112px]"
+                      >
+                        {renderSessionItem(session)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           {hasMore && (
@@ -230,8 +310,8 @@ export function FolderContents({
           onKeyDown={handleKeyDown}
           onClick={() => setContextMenu(null)}
         >
-          <div style={{ height: `${virtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
-            {virtualItems.map((virtualItem) => {
+          <div style={{ height: `${mobileVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
+            {mobileVirtualItems.map((virtualItem) => {
               const session = displaySessions[virtualItem.index];
               return (
                 <div
@@ -250,21 +330,7 @@ export function FolderContents({
                     className="px-2 py-1"
                     style={{ width: "100%", height: "100%" }}
                   >
-                    <SessionItem
-                      session={session}
-                      isActive={activeSessionKey === session.agentSessionId}
-                      isSelected={selectedSessionIds.has(session.agentSessionId)}
-                      isEditing={onRenameSession ? editingSessionId === session.agentSessionId : false}
-                      dragSessionIds={
-                        selectedSessionIds.has(session.agentSessionId)
-                          ? Array.from(selectedSessionIds)
-                          : [session.agentSessionId]
-                      }
-                      onClick={(e) => handleSessionClick(session, e)}
-                      onContextMenu={(e) => handleContextMenu(session.agentSessionId, e)}
-                      onEditSubmit={(name) => handleEditSubmit(session.agentSessionId, name)}
-                      onEditCancel={() => setEditingSession(null)}
-                    />
+                    {renderSessionItem(session)}
                   </div>
                 </div>
               );
