@@ -216,6 +216,7 @@ export const AgentProfileSchema = z.object({
   allowed_tools: z.array(z.string()).optional(),
   disallowed_tools: z.array(z.string()).optional(),
   claude_permission_mode: z.enum(CLAUDE_PERMISSION_MODES).optional(),
+  env: z.record(z.string(), z.string()).optional(),
   mcp_profile: z.string().min(1).optional(),
   portrait_path: z.string().optional(),
   /**
