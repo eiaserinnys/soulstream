@@ -16,6 +16,7 @@ import { cn } from "../lib/cn";
 import { Spinner } from "./ui/spinner";
 import { ChevronDown, ChevronRight, GripVertical } from "lucide-react";
 import type { FolderDragData } from "../providers/folder-dnd";
+import { LiquidGlassCard } from "./LiquidGlassCard";
 
 export interface FolderItemProps {
   folder: { id: string; name: string; sortOrder: number; parentFolderId?: string | null; createdAt?: string };
@@ -115,10 +116,11 @@ export const FolderItem = memo(function FolderItem({
   };
 
   return (
-    <div
+    <LiquidGlassCard
       ref={setRef}
       style={style}
       data-testid={isDraggableFolder ? "draggable-folder" : undefined}
+      cornerRadius={14}
       className={cn(
         "dashboard-sidebar-row group relative select-none",
         isSelected && "dashboard-sidebar-row-active",
@@ -193,6 +195,6 @@ export const FolderItem = memo(function FolderItem({
           {sessionCount}
         </span>
       )}
-    </div>
+    </LiquidGlassCard>
   );
 });

@@ -109,6 +109,7 @@ describe("FolderContents", () => {
     originalMatchMedia = window.matchMedia;
     globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver;
     globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
+    vi.stubGlobal("CSS", { supports: vi.fn(() => false) });
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
       matches: false,
       media: query,
@@ -132,6 +133,7 @@ describe("FolderContents", () => {
     globalThis.IntersectionObserver = originalIntersectionObserver as typeof IntersectionObserver;
     globalThis.ResizeObserver = originalResizeObserver as typeof ResizeObserver;
     window.matchMedia = originalMatchMedia as typeof window.matchMedia;
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -144,6 +146,8 @@ describe("FolderContents", () => {
 
     const row = container.querySelector<HTMLElement>("[data-testid='draggable-session']");
     expect(row).not.toBeNull();
+    expect(row!.className).toContain("liquid-glass-card");
+    expect(row!.dataset.liquidGlassEnhanced).toBe("false");
 
     flushSync(() => {
       row!.dispatchEvent(new MouseEvent("contextmenu", {

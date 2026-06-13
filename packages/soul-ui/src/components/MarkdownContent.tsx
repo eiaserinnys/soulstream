@@ -16,7 +16,27 @@ import "highlight.js/styles/github-dark.css";
 interface MarkdownContentProps {
   content: string;
   compact?: boolean;
+  linkTone?: "default" | "onUserBubble";
 }
+
+const defaultAnchorClass = "text-accent-blue hover:underline";
+const userBubbleAnchorClass =
+  "text-white underline decoration-white/70 underline-offset-2 hover:decoration-white";
+
+const createAnchorComponent = (className: string): NonNullable<Components["a"]> =>
+  ({ children, ...props }) => (
+    <a
+      className={className}
+      target="_blank"
+      rel="noopener noreferrer"
+      {...props}
+    >
+      {children}
+    </a>
+  );
+
+const defaultAnchor = createAnchorComponent(defaultAnchorClass);
+const userBubbleAnchor = createAnchorComponent(userBubbleAnchorClass);
 
 const components: Components = {
   // 블록 요소
@@ -92,16 +112,7 @@ const components: Components = {
   },
 
   // 인라인 요소
-  a: ({ children, ...props }) => (
-    <a
-      className="text-accent-blue hover:underline"
-      target="_blank"
-      rel="noopener noreferrer"
-      {...props}
-    >
-      {children}
-    </a>
-  ),
+  a: defaultAnchor,
   strong: ({ children }) => <strong className="font-bold">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   del: ({ children }) => (
@@ -172,11 +183,7 @@ const compactComponents: Components = {
       </code>
     );
   },
-  a: ({ children, ...props }) => (
-    <a className="text-accent-blue hover:underline" target="_blank" rel="noopener noreferrer" {...props}>
-      {children}
-    </a>
-  ),
+  a: defaultAnchor,
   strong: ({ children }) => <strong className="font-bold">{children}</strong>,
   em: ({ children }) => <em className="italic">{children}</em>,
   blockquote: ({ children }) => (
@@ -201,12 +208,28 @@ const compactComponents: Components = {
   ),
 };
 
-export function MarkdownContent({ content, compact = false }: MarkdownContentProps) {
+const userBubbleComponents: Components = { ...components, a: userBubbleAnchor };
+const compactUserBubbleComponents: Components = { ...compactComponents, a: userBubbleAnchor };
+
+export function MarkdownContent({
+  content,
+  compact = false,
+  linkTone = "default",
+}: MarkdownContentProps) {
+  const selectedComponents =
+    linkTone === "onUserBubble"
+      ? compact
+        ? compactUserBubbleComponents
+        : userBubbleComponents
+      : compact
+        ? compactComponents
+        : components;
+
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkBreaks]}
       rehypePlugins={[rehypeHighlight]}
-      components={compact ? compactComponents : components}
+      components={selectedComponents}
     >
       {content}
     </ReactMarkdown>

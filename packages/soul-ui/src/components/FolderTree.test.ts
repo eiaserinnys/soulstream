@@ -51,6 +51,7 @@ describe("FolderTree", () => {
 
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ atom_enabled: false }), { status: 200 })));
+    vi.stubGlobal("CSS", { supports: vi.fn(() => false) });
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
       matches: false,
       media: query,
@@ -110,6 +111,8 @@ describe("FolderTree", () => {
 
     const draggableFolders = container.querySelectorAll('[data-testid="draggable-folder"]');
     expect(draggableFolders).toHaveLength(4);
+    expect((draggableFolders[0] as HTMLElement).className).toContain("liquid-glass-card");
+    expect((draggableFolders[0] as HTMLElement).dataset.liquidGlassEnhanced).toBe("false");
 
     const guideLines = container.querySelectorAll('[data-testid="folder-tree-guide-line"]');
     expect(guideLines).toHaveLength(2);

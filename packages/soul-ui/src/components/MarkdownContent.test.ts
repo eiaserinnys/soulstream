@@ -14,6 +14,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
+import { MarkdownContent } from "./MarkdownContent";
 
 const render = (markdown: string): string =>
   renderToStaticMarkup(
@@ -23,6 +24,12 @@ const render = (markdown: string): string =>
       markdown,
     ),
   );
+
+const renderMarkdownContent = (
+  markdown: string,
+  props: Partial<Parameters<typeof MarkdownContent>[0]> = {},
+): string =>
+  renderToStaticMarkup(createElement(MarkdownContent, { content: markdown, ...props }));
 
 describe("MarkdownContent — remark-breaks plugin", () => {
   test("case 1: single \\n is rendered as <br>", () => {
@@ -49,5 +56,22 @@ describe("MarkdownContent — remark-breaks plugin", () => {
 
   test("case 4: empty string renders without error", () => {
     expect(() => render("")).not.toThrow();
+  });
+
+  test("case 5: default links keep the existing accent-blue tone", () => {
+    const html = renderMarkdownContent("[docs](https://example.com)");
+
+    expect(html).toContain("text-accent-blue hover:underline");
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noopener noreferrer"');
+  });
+
+  test("case 6: user bubble links use white underlined text", () => {
+    const html = renderMarkdownContent("[docs](https://example.com)", {
+      linkTone: "onUserBubble",
+    });
+
+    expect(html).toContain("text-white underline decoration-white/70 underline-offset-2");
+    expect(html).not.toContain("text-accent-blue hover:underline");
   });
 });

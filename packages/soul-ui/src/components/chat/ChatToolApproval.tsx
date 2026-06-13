@@ -2,6 +2,7 @@ import { memo, useState } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { submitToolApproval } from "../../lib/input-request-actions";
 import { cn } from "../../lib/cn";
+import { Button } from "../ui/button";
 
 export const ChatToolApproval = memo(function ChatToolApproval({
   msg,
@@ -48,25 +49,29 @@ export const ChatToolApproval = memo(function ChatToolApproval({
         {isResolved ? (
           <div className={cn(
             "text-xs",
-            finalDecision === "approved" ? "text-success" : "text-destructive",
+            finalDecision === "approved" ? "chat-tone-success-text" : "chat-tone-danger-text",
           )}>
             {finalDecision === "approved" ? "승인됨" : "거부됨"}
             {msg.approvalMessage ? ` — ${msg.approvalMessage}` : ""}
           </div>
         ) : (
           <div className="flex flex-wrap justify-end gap-2">
-            <button
+            <Button
+              variant="destructive-outline"
+              size="xs"
               onClick={() => handleDecision("rejected")}
-              className="rounded-full border border-[var(--lg-line)] bg-muted/40 px-3.5 py-1.5 text-xs text-foreground hover:border-accent-red/50"
+              className="h-auto rounded-full px-3.5 py-1.5 text-xs font-normal"
             >
               거부
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="success"
+              size="xs"
               onClick={() => handleDecision("approved")}
-              className="rounded-full border border-success bg-success px-3.5 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+              className="h-auto rounded-full px-3.5 py-1.5 text-xs font-semibold"
             >
               승인
-            </button>
+            </Button>
           </div>
         )}
       </div>

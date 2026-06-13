@@ -8,10 +8,12 @@ import { Button } from "./ui/button";
 
 interface ClaudeRuntimeNotificationsPanelProps {
   sessionId: string;
+  tone?: "default" | "calm";
 }
 
 export function ClaudeRuntimeNotificationsPanel({
   sessionId,
+  tone = "default",
 }: ClaudeRuntimeNotificationsPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const { signals, loading, error, refresh } = useClaudeRuntimeSignals(sessionId);
@@ -43,7 +45,9 @@ export function ClaudeRuntimeNotificationsPanel({
             {signals.visibleCount}
           </span>
           {signals.hasError ? (
-            <span className="ml-auto rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
+            <span className={`ml-auto rounded px-1.5 py-0.5 text-[11px] font-medium ${
+              tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
+            }`}>
               {signals.errorCount} error
             </span>
           ) : null}
@@ -59,10 +63,14 @@ export function ClaudeRuntimeNotificationsPanel({
         </Button>
       </div>
 
-      {expanded && error ? <div className="mt-2 text-xs text-destructive">{error}</div> : null}
+      {expanded && error ? (
+        <div className={`mt-2 text-xs ${tone === "calm" ? "chat-tone-danger-text" : "text-destructive"}`}>
+          {error}
+        </div>
+      ) : null}
       {expanded ? (
         <div className={runtimePanelScrollClass()}>
-          <ClaudeRuntimeSignalRows signals={signals} />
+          <ClaudeRuntimeSignalRows signals={signals} tone={tone} />
         </div>
       ) : null}
     </section>

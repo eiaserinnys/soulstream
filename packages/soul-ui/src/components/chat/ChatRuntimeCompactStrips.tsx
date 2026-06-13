@@ -16,9 +16,9 @@ export function ChatRuntimeCompactStrips({ sessionId }: ChatRuntimeCompactStrips
 
   return (
     <div className="shrink-0">
-      <ClaudeRuntimeTasksPanel sessionId={sessionId} runtime={runtime} />
-      <ClaudeRuntimeSchedulesPanel sessionId={sessionId} runtime={runtime} />
-      <ClaudeRuntimeNotificationsPanel sessionId={sessionId} />
+      <ClaudeRuntimeTasksPanel sessionId={sessionId} runtime={runtime} tone="calm" />
+      <ClaudeRuntimeSchedulesPanel sessionId={sessionId} runtime={runtime} tone="calm" />
+      <ClaudeRuntimeNotificationsPanel sessionId={sessionId} tone="calm" />
     </div>
   );
 }

@@ -10,7 +10,7 @@ export const ToolMessage = memo(function ToolMessage({ msg }: { msg: ChatMessage
       <div className={cn(
         "flex-1 min-w-0 flex items-center gap-1",
         "text-xs font-mono truncate",
-        msg.isError ? "text-accent-red" : "text-muted-foreground",
+        msg.isError ? "chat-tone-danger-text" : "text-muted-foreground",
       )}>
         <span>{"\u{1F527}"}</span>
         <span className="truncate">{msg.content}</span>

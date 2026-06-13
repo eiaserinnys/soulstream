@@ -11,8 +11,9 @@ import { useDashboardStore, type DashboardState, type DashboardActions } from '.
 import { submitInputResponse, submitToolApproval } from '../lib/input-request-actions';
 import { useInputRequestTimer } from '../hooks/useInputRequestTimer';
 import { formatTime } from '../lib/input-request-utils';
-import { cn } from '../lib/cn';
 import type { EventTreeNode, InputRequestNodeDef, InputRequestQuestion, ToolApprovalNodeDef } from '@shared/types';
+import { LiquidGlassCard } from './LiquidGlassCard';
+import { Button } from './ui/button';
 
 type PendingPromptNode = InputRequestNodeDef | ToolApprovalNodeDef;
 
@@ -70,7 +71,7 @@ function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; se
   };
 
   return (
-    <div className="fixed left-1/2 top-6 z-[1000] flex min-w-80 max-w-[520px] -translate-x-1/2 flex-col gap-2 rounded-[18px] border border-glass-border glass-strong glass-shadow-lg px-4 py-3">
+    <LiquidGlassCard className="fixed left-1/2 top-6 z-[1000] flex min-w-80 max-w-[520px] -translate-x-1/2 flex-col gap-2 rounded-[18px] border border-glass-border glass-shadow-lg px-4 py-3">
       <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Approval</div>
       <div className="font-medium text-foreground">{node.toolName}</div>
       {node.agentName && (
@@ -80,22 +81,26 @@ function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; se
         {JSON.stringify(node.toolInput, null, 2)}
       </pre>
       <div className="flex justify-end gap-2">
-        <button
+        <Button
+          variant="destructive-outline"
+          size="xs"
           onClick={() => handleDecision("rejected")}
           disabled={!!selectedAnswer}
-          className="rounded-full border border-[var(--lg-line)] bg-muted/40 px-3.5 py-1.5 text-xs text-foreground hover:border-accent-red/50 disabled:cursor-default disabled:opacity-50"
+          className="h-auto rounded-full px-3.5 py-1.5 text-xs font-normal disabled:cursor-default"
         >
           거부
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="success"
+          size="xs"
           onClick={() => handleDecision("approved")}
           disabled={!!selectedAnswer}
-          className="rounded-full border border-success bg-success px-3.5 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:cursor-default disabled:opacity-50"
+          className="h-auto rounded-full px-3.5 py-1.5 text-xs font-semibold disabled:cursor-default"
         >
           승인
-        </button>
+        </Button>
       </div>
-    </div>
+    </LiquidGlassCard>
   );
 }
 
@@ -138,7 +143,7 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
   };
 
   return (
-    <div className="fixed left-1/2 top-6 z-[1000] flex min-w-80 max-w-[500px] -translate-x-1/2 flex-col gap-2 rounded-[18px] border border-glass-border glass-strong glass-shadow-lg px-4 py-3">
+    <LiquidGlassCard className="fixed left-1/2 top-6 z-[1000] flex min-w-80 max-w-[500px] -translate-x-1/2 flex-col gap-2 rounded-[18px] border border-glass-border glass-shadow-lg px-4 py-3">
       {isEffectivelyExpired ? (
         <div className="text-center text-muted-foreground">시간 초과</div>
       ) : (
@@ -152,17 +157,13 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
           <div className="text-[12.5px] font-semibold leading-[1.5] text-foreground">{question.question}</div>
           <div className="flex flex-col gap-2">
             {question.options?.map((opt) => (
-              <button
+              <Button
                 key={opt.label}
+                variant="choice"
                 onClick={() => handleSelect(opt.label)}
                 disabled={!!selectedAnswer}
-                className={cn(
-                  "rounded-[13px] border px-3 py-2.5 text-left text-[12.5px] transition-colors",
-                  selectedAnswer === opt.label
-                    ? "border-accent-blue/55 bg-accent-blue/15 text-foreground"
-                    : "border-[var(--lg-line)] bg-muted/40 text-foreground hover:border-accent-blue/50",
-                  "disabled:opacity-50 disabled:cursor-default",
-                )}
+                data-selected={selectedAnswer === opt.label ? "true" : undefined}
+                className="w-full px-3 py-2.5 text-[12.5px] disabled:cursor-default"
               >
                 <b className="font-semibold">{opt.label}</b>
                 {opt.description && (
@@ -170,7 +171,7 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
                     {opt.description}
                   </small>
                 )}
-              </button>
+              </Button>
             ))}
           </div>
           <form
@@ -188,13 +189,14 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
               placeholder="직접 입력"
               className="min-w-0 flex-1 rounded-[13px] border border-[var(--lg-line)] bg-muted/40 px-3 py-2 text-xs outline-none transition-colors focus:border-accent-blue/55"
             />
-            <button
+            <Button
               type="submit"
+              size="xs"
               disabled={!!selectedAnswer || !customAnswer.trim()}
-              className="rounded-full bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3 text-xs font-semibold text-white disabled:opacity-50"
+              className="h-auto self-stretch rounded-full px-3 text-xs font-semibold"
             >
               전송
-            </button>
+            </Button>
           </form>
           {!isEffectivelyExpired && (
             <div className="text-xs text-muted-foreground text-right">
@@ -203,7 +205,7 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
           )}
         </>
       )}
-    </div>
+    </LiquidGlassCard>
   );
 }
 

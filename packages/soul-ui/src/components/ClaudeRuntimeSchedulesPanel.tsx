@@ -16,6 +16,7 @@ import { Button } from "./ui/button";
 interface ClaudeRuntimeSchedulesPanelProps {
   sessionId: string;
   runtime: ClaudeRuntimeView | null;
+  tone?: "default" | "calm";
 }
 
 const TERMINAL_STATUSES = new Set<ClaudeRuntimeScheduleStatus>([
@@ -31,6 +32,7 @@ export function canDeleteClaudeRuntimeSchedule(status: ClaudeRuntimeScheduleStat
 export function ClaudeRuntimeSchedulesPanel({
   sessionId,
   runtime,
+  tone = "default",
 }: ClaudeRuntimeSchedulesPanelProps) {
   const [fetchedSchedules, setFetchedSchedules] = useState<ClaudeRuntimeScheduleView[]>([]);
   const [deletedScheduleIds, setDeletedScheduleIds] = useState<Set<string>>(() => new Set());
@@ -113,7 +115,9 @@ export function ClaudeRuntimeSchedulesPanel({
             </span>
           ) : null}
           {errorCount > 0 ? (
-            <span className="ml-auto rounded bg-destructive/10 px-1.5 py-0.5 text-[11px] font-medium text-destructive">
+            <span className={`ml-auto rounded px-1.5 py-0.5 text-[11px] font-medium ${
+              tone === "calm" ? "chat-tone-danger" : "bg-destructive/10 text-destructive"
+            }`}>
               {errorCount} error
             </span>
           ) : null}
@@ -131,7 +135,11 @@ export function ClaudeRuntimeSchedulesPanel({
 
       {expanded ? (
         <div className={runtimePanelScrollClass("space-y-2")}>
-          {error ? <div className="text-xs text-destructive">{error}</div> : null}
+          {error ? (
+            <div className={`text-xs ${tone === "calm" ? "chat-tone-danger-text" : "text-destructive"}`}>
+              {error}
+            </div>
+          ) : null}
 
           {schedules.map((schedule) => {
             const canDelete = canDeleteClaudeRuntimeSchedule(schedule.status);
@@ -144,7 +152,7 @@ export function ClaudeRuntimeSchedulesPanel({
                 <div className="flex items-start gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center gap-2">
-                      <span className={statusClassName(schedule.status)}>
+                      <span className={statusClassName(schedule.status, tone)}>
                         {schedule.status}
                       </span>
                       <span className="font-mono text-xs text-muted-foreground">
@@ -200,15 +208,18 @@ function formatDateTime(value: string): string {
   return date.toLocaleString();
 }
 
-function statusClassName(status: ClaudeRuntimeScheduleStatus): string {
+function statusClassName(status: ClaudeRuntimeScheduleStatus, tone: "default" | "calm"): string {
   const base = "rounded px-1.5 py-0.5 text-[11px] font-medium";
   if (status === "active") {
+    if (tone === "calm") return `${base} chat-tone-success`;
     return `${base} bg-emerald-500/12 text-emerald-700 dark:text-emerald-300`;
   }
   if (status === "dispatching" || status === "firing") {
+    if (tone === "calm") return `${base} chat-tone-warning`;
     return `${base} bg-amber-500/12 text-amber-700 dark:text-amber-300`;
   }
   if (status === "failed" || status === "orphaned") {
+    if (tone === "calm") return `${base} chat-tone-danger`;
     return `${base} bg-destructive/12 text-destructive`;
   }
   return `${base} bg-muted text-muted-foreground`;

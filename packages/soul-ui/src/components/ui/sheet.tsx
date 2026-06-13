@@ -2,7 +2,13 @@
 
 import { Dialog as SheetPrimitive } from "@base-ui/react/dialog";
 import { XIcon } from "lucide-react";
+import type { CSSProperties } from "react";
 import { cn } from "../../lib/cn";
+import {
+  LiquidGlassLayer,
+  liquidGlassStyle,
+  supportsLiquidGlassEnhancement,
+} from "../LiquidGlassCard";
 import { Button } from "./button";
 import { ScrollArea } from "./scroll-area";
 
@@ -63,6 +69,7 @@ function SheetPopup({
   side = "right",
   variant = "default",
   closeProps,
+  style,
   ...props
 }: SheetPrimitive.Popup.Props & {
   showCloseButton?: boolean;
@@ -70,13 +77,16 @@ function SheetPopup({
   variant?: "default" | "inset";
   closeProps?: SheetPrimitive.Close.Props;
 }) {
+  const enhanced = supportsLiquidGlassEnhancement();
+  const popupStyle = liquidGlassStyle(24, style as CSSProperties | undefined);
+
   return (
     <SheetPortal>
       <SheetBackdrop />
       <SheetViewport side={side} variant={variant}>
         <SheetPrimitive.Popup
           className={cn(
-            "relative flex max-h-full min-h-0 w-full min-w-0 flex-col border border-glass-border glass-strong glass-shadow-lg text-popover-foreground transition-[opacity,translate] duration-200 ease-in-out will-change-transform data-ending-style:opacity-0 data-starting-style:opacity-0",
+            "liquid-glass-card relative flex max-h-full min-h-0 w-full min-w-0 flex-col border border-glass-border glass-shadow-lg text-popover-foreground transition-[opacity,translate] duration-200 ease-in-out will-change-transform data-ending-style:opacity-0 data-starting-style:opacity-0",
             side === "bottom" &&
               "row-start-2 data-ending-style:translate-y-8 data-starting-style:translate-y-8",
             side === "top" &&
@@ -101,9 +111,12 @@ function SheetPopup({
               "sm:rounded-2xl sm:border sm:**:data-[slot=sheet-footer]:rounded-b-[calc(var(--radius-2xl)-1px)]",
             className,
           )}
+          data-liquid-glass-enhanced={enhanced ? "true" : "false"}
           data-slot="sheet-popup"
+          style={popupStyle}
           {...props}
         >
+          <LiquidGlassLayer cornerRadius={24} enhanced={enhanced} />
           {children}
           {showCloseButton && (
             <SheetPrimitive.Close

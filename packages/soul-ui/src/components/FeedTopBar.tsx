@@ -29,7 +29,7 @@ export function FeedTopBar({ onNewSession, placement = "main" }: FeedTopBarProps
             size="sm"
             onClick={onNewSession}
             title="New session"
-            className="h-8 rounded-full bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-3 text-white shadow-[0_8px_20px_-8px_rgb(10_132_255_/_60%)] hover:from-[#2E96FF] hover:to-[#0A84FF] hover:opacity-95"
+            className="h-8 rounded-full px-3"
           >
             <Plus className="h-3.5 w-3.5" />
             New
@@ -57,7 +57,7 @@ export function FeedTopBar({ onNewSession, placement = "main" }: FeedTopBarProps
           size="sm"
           onClick={onNewSession}
           title="New session"
-          className="ml-auto h-[38px] rounded-full bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-4 text-white shadow-[0_8px_20px_-8px_rgb(10_132_255_/_60%)] hover:from-[#2E96FF] hover:to-[#0A84FF] hover:opacity-95"
+          className="ml-auto h-[38px] rounded-full px-4"
         >
           <Plus className="h-3.5 w-3.5" />
           새 세션

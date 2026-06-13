@@ -12,6 +12,7 @@ import { cn } from "../lib/cn";
 import { Badge } from "./ui/badge";
 import { NodeBadge } from "./NodeBadge";
 import { BackendBadge } from "./BackendBadge";
+import { LiquidGlassCard } from "./LiquidGlassCard";
 import type { SessionSummary, SessionStatus } from "../shared/types";
 
 // === Status Config ===
@@ -120,13 +121,13 @@ export const SessionItem = memo(function SessionItem({
     : "...";
 
   return (
-    <div
+    <LiquidGlassCard
       ref={setNodeRef}
       {...attributes}
       {...listeners}
       data-testid="draggable-session"
       className={cn(
-        "group flex h-full cursor-pointer select-none flex-col gap-2 rounded-[18px] border border-white/8 bg-[var(--lg-card)] px-4 py-[13px] text-sm shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)] transition-[border-color,box-shadow,opacity,transform] duration-200 ease-out",
+        "group flex h-full cursor-pointer select-none flex-col gap-2 rounded-[18px] border border-white/8 px-4 py-[13px] text-sm shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)] transition-[border-color,box-shadow,opacity,transform] duration-200 ease-out",
         "hover:border-accent-blue/35 hover:shadow-[0_12px_32px_-18px_rgb(10_30_70_/_50%)]",
         isActive && "border-accent-blue/55 ring-1 ring-accent-blue/50",
         isSelected && !isActive && "border-accent-blue/35 ring-1 ring-accent-blue/25",
@@ -198,6 +199,6 @@ export const SessionItem = memo(function SessionItem({
           <span className="max-w-28 truncate">{session.agentName ?? session.agentId ?? "Agent"}</span>
         </div>
       </div>
-    </div>
+    </LiquidGlassCard>
   );
 });

@@ -72,15 +72,16 @@ export function SessionsTopBar({
           {currentName}
         </h1>
         {selectedFolder && onOpenFolderSettings && (
-          <button
-            type="button"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 rounded-full"
             aria-label={`${selectedFolder.name} 폴더 설정`}
             title="폴더 설정"
             onClick={onOpenFolderSettings}
           >
             <Settings className="h-4 w-4" />
-          </button>
+          </Button>
         )}
         {canToggleWorkspace && (
           <div className="relative flex h-[38px] shrink-0 gap-1 rounded-full border border-glass-border glass-strong glass-shadow-xs p-1">
@@ -109,7 +110,7 @@ export function SessionsTopBar({
           size="sm"
           onClick={() => openNewSessionModal('folder')}
           title="New session"
-          className="ml-auto h-[38px] rounded-full bg-gradient-to-b from-[#2E96FF] to-[#0A84FF] px-4 text-white shadow-[0_8px_20px_-8px_rgb(10_132_255_/_60%)] hover:from-[#2E96FF] hover:to-[#0A84FF] hover:opacity-95"
+          className="ml-auto h-[38px] rounded-full px-4"
         >
           <Plus className="h-3.5 w-3.5" />
           새 세션
