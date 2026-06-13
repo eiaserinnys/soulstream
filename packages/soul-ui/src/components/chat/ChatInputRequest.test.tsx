@@ -3,7 +3,7 @@
  */
 
 import { createElement } from "react";
-import { act } from "react";
+import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -59,7 +59,7 @@ describe("ChatInputRequest", () => {
   });
 
   afterEach(() => {
-    act(() => {
+    flushSync(() => {
       root.unmount();
     });
     container.remove();
@@ -67,7 +67,7 @@ describe("ChatInputRequest", () => {
   });
 
   function render(message = makeMessage()) {
-    act(() => {
+    flushSync(() => {
       root.render(createElement(ChatInputRequest, { msg: message, sessionId: "session-1" }));
     });
   }
@@ -75,9 +75,10 @@ describe("ChatInputRequest", () => {
   it("submits the selected option as an AskUserQuestion response", async () => {
     render();
 
-    await act(async () => {
+    flushSync(() => {
       findButton(container, "진행").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
+    await Promise.resolve();
 
     expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session-1/respond", {
       method: "POST",
@@ -98,14 +99,15 @@ describe("ChatInputRequest", () => {
     const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
     expect(valueSetter).toBeTruthy();
 
-    await act(async () => {
+    flushSync(() => {
       valueSetter!.call(input, "직접 답변");
       input!.dispatchEvent(new Event("input", { bubbles: true }));
     });
 
-    await act(async () => {
+    flushSync(() => {
       findButton(container, "전송").dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
+    await Promise.resolve();
 
     expect(fetchMock).toHaveBeenCalledWith("/api/sessions/session-1/respond", {
       method: "POST",
