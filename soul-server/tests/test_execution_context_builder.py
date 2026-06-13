@@ -26,6 +26,7 @@ from soul_server.service.execution_context_builder import (
     ExecutionContextBuilder,
     _PreparedContext,
 )
+from soul_server.service.agent_registry import AgentProfile, AgentRegistry
 from soul_server.service.task_models import Task
 
 
@@ -245,6 +246,7 @@ class TestResolveProfile:
         # task.allowed_tools=None이므로 profile 설정 반영
         assert ctx.effective_allowed_tools == ["Read", "Edit"]
         assert ctx.effective_disallowed_tools == ["Bash"]
+        assert ctx.extra_env is None
 
     @pytest.mark.asyncio
     async def test_task_tools_override_profile_tools(self):
@@ -288,6 +290,122 @@ class TestExtraEnvAndPrompt:
         task = _make_task(oauth_token=None)
         ctx = await builder.build(task, _make_runner())
         assert ctx.extra_env is None
+
+    @pytest.mark.asyncio
+    async def test_profile_env_resolves_env_refs_and_skips_oauth(self, monkeypatch):
+        """ANTHROPIC_API_KEY profile env는 OAuth 토큰과 섞지 않는다."""
+        monkeypatch.setenv("KIMI_API_KEY", "kimi-secret")
+        registry = AgentRegistry([
+            AgentProfile(
+                id="roselin_kimi",
+                name="로젤린 (Kimi)",
+                workspace_dir="/tmp/kimi",
+                env={
+                    "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+                    "ANTHROPIC_API_KEY": "${KIMI_API_KEY}",
+                    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "262144",
+                },
+            )
+        ])
+        builder = ExecutionContextBuilder(session_db=None, agent_registry=registry)
+        task = _make_task(profile_id="roselin_kimi", oauth_token="oauth-token")
+        ctx = await builder.build(task, _make_runner())
+
+        assert ctx.extra_env == {
+            "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+            "ANTHROPIC_API_KEY": "kimi-secret",
+            "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "262144",
+        }
+        assert "CLAUDE_CODE_OAUTH_TOKEN" not in ctx.extra_env
+
+    @pytest.mark.asyncio
+    async def test_profile_env_applies_on_resume(self, monkeypatch):
+        """resume 경로도 같은 ExecutionContextBuilder env를 사용한다."""
+        monkeypatch.setenv("KIMI_API_KEY", "resume-kimi-secret")
+        registry = AgentRegistry([
+            AgentProfile(
+                id="roselin_kimi",
+                name="로젤린 (Kimi)",
+                workspace_dir="/tmp/kimi",
+                env={
+                    "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+                    "ANTHROPIC_API_KEY": "${KIMI_API_KEY}",
+                },
+            )
+        ])
+        builder = ExecutionContextBuilder(session_db=None, agent_registry=registry)
+        task = _make_task(
+            profile_id="roselin_kimi",
+            resume_session_id="claude-prev",
+            oauth_token="oauth-token",
+        )
+        ctx = await builder.build(task, _make_runner())
+
+        assert ctx.extra_env == {
+            "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+            "ANTHROPIC_API_KEY": "resume-kimi-secret",
+        }
+
+    @pytest.mark.asyncio
+    async def test_missing_env_reference_raises_clear_error(self, monkeypatch):
+        """${KIMI_API_KEY}가 없으면 해당 프로필 실행 시점에 실패한다."""
+        monkeypatch.delenv("KIMI_API_KEY", raising=False)
+        registry = AgentRegistry([
+            AgentProfile(
+                id="roselin_kimi",
+                name="로젤린 (Kimi)",
+                workspace_dir="/tmp/kimi",
+                env={
+                    "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+                    "ANTHROPIC_API_KEY": "${KIMI_API_KEY}",
+                },
+            )
+        ])
+        builder = ExecutionContextBuilder(session_db=None, agent_registry=registry)
+        task = _make_task(profile_id="roselin_kimi")
+
+        with pytest.raises(RuntimeError, match="KIMI_API_KEY"):
+            await builder.build(task, _make_runner())
+
+    @pytest.mark.asyncio
+    async def test_anthropic_key_requires_base_url(self, monkeypatch):
+        """API key만 주입되는 profile env는 Anthropic 기본 엔드포인트 유출 위험이므로 실패."""
+        monkeypatch.setenv("KIMI_API_KEY", "kimi-secret")
+        registry = AgentRegistry([
+            AgentProfile(
+                id="broken_kimi",
+                name="Broken Kimi",
+                workspace_dir="/tmp/kimi",
+                env={"ANTHROPIC_API_KEY": "${KIMI_API_KEY}"},
+            )
+        ])
+        builder = ExecutionContextBuilder(session_db=None, agent_registry=registry)
+        task = _make_task(profile_id="broken_kimi")
+
+        with pytest.raises(RuntimeError, match="ANTHROPIC_BASE_URL"):
+            await builder.build(task, _make_runner())
+
+    @pytest.mark.asyncio
+    async def test_anthropic_auth_bundle_rejects_oauth_token_env(self, monkeypatch):
+        """profile env 자체가 API key와 OAuth token을 함께 선언하면 실패한다."""
+        monkeypatch.setenv("KIMI_API_KEY", "kimi-secret")
+        registry = AgentRegistry([
+            AgentProfile(
+                id="mixed_auth",
+                name="Mixed Auth",
+                workspace_dir="/tmp/kimi",
+                env={
+                    "ANTHROPIC_BASE_URL": "https://api.kimi.com/coding/",
+                    "ANTHROPIC_API_KEY": "${KIMI_API_KEY}",
+                    "CLAUDE_CODE_OAUTH_TOKEN": "oauth-token",
+                },
+            )
+        ])
+        builder = ExecutionContextBuilder(session_db=None, agent_registry=registry)
+        task = _make_task(profile_id="mixed_auth")
+
+        with pytest.raises(RuntimeError, match="CLAUDE_CODE_OAUTH_TOKEN"):
+            await builder.build(task, _make_runner())
 
     @pytest.mark.asyncio
     async def test_assembled_prompt_uses_task_prompt_and_context(self, monkeypatch):
