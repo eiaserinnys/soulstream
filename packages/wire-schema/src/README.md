@@ -4,8 +4,8 @@
 
 ## 정본
 
-- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 104개 (`$defs`).
-  - wire 메시지 49종
+- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 106개 (`$defs`).
+  - wire 메시지 51종
   - SSE event payload 55종 (`event` 메시지의 `event` 키 안에 packed — wire-schema generated SSE types + Agents SDK events)
 
 ## 생성물 (직접 편집 금지)
@@ -30,6 +30,6 @@ CI가 `scripts/verify.sh`로 schema ↔ generated 정합을 검증한다.
 
 - 단일 schema 파일 (wire 메시지가 평탄하므로 분리 가치 0)
 - discriminator union (`type` 필드)
-- Python TypedDict 출력 (기존 `soul-server/upstream/protocol.py`와 호환)
+- Python TypedDict 출력
 - TS interface + discriminated union 출력
 - `NodeRegister.supported_backends` 신규 top-level 필드 (옵션 D — Codex 백엔드 라우팅 준비)

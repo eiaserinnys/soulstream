@@ -88,7 +88,7 @@ export const EnvSchema = z
      */
     CLAUDE_AUTH_TOKEN_PATH: z.string().min(1).optional(),
     /**
-     * B-6 context_builder: atom MCP HTTP API 설정. Python `soul_server.config.atom_*` 정합.
+     * context_builder: atom MCP HTTP API 설정.
      * 모두 optional — 미설정 시 atom 호출 skip (graceful, turn 진행에 영향 없음).
      */
     ATOM_ENABLED: z

@@ -43,7 +43,7 @@ const AUTH_COOKIE_NAME = "soul_dashboard_auth";
 
 async function generateAuthToken(): Promise<string> {
   // Python subprocess로 실제 JWT 생성
-  // 필요한 환경변수: TEST_JWT_SECRET (soul-server/.env의 JWT_SECRET 값)
+  // 필요한 환경변수: TEST_JWT_SECRET (dashboard API 서버의 JWT_SECRET 값)
   // 설정 방법: unified-dashboard/.env.test.local.example 참조
   const jwtSecret = process.env.TEST_JWT_SECRET;
   if (!jwtSecret)

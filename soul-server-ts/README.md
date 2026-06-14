@@ -1,17 +1,13 @@
 # @soulstream/soul-server-ts
 
-옵션 D 비대칭 모델 단계 1 — Codex 전담 노드 MVP. Python `soul-server`(Claude 전담)의 자매 노드로서 같은 orch에 등록된다.
+Soulstream TypeScript execution worker. Orchestrator WebSocket에 등록하고, Claude/Codex/OpenAI Agents 백엔드 실행과 PostgreSQL 영속화를 담당한다.
 
-## B-1 (본 패키지의 현 단계)
+## 역할
 
-골격만 — 다음을 구현:
-- WS reverse adapter (orch에 등록 + 재연결)
-- `node_register` 발행 (`supported_backends: ["codex"]`)
-- `health_check` 명령 수신·응답
-- 그 외 명령은 `error: "Not implemented in soul-server-ts B-1"` fallback
-- fastify `GET /health` 엔드포인트
-
-세션 실행 능력, Codex 어댑터, DB 영속은 **본 패키지의 후속 단계(B-2/B-3)**에서 추가.
+- `node_register`/health/check command 등 upstream wire 처리
+- task lifecycle, session/event persistence, intervention delivery
+- Fastify `GET /health`와 Streamable HTTP MCP surface
+- schema application helper: `scripts/apply-schema.mjs`
 
 ## 운영
 
@@ -27,12 +23,13 @@ cwd는 `./services/soulstream` (모노레포 루트 기준 `src/soulstream/soul-
 
 ### 환경 변수
 
-`.env.soul-server-ts` (Python `soul-server`의 `.env`와 *분리* — 같은 키 `SOULSTREAM_NODE_ID` 다른 값 충돌 회피).
+`.env.soul-server-ts`가 정본이다. Haniel cwd가 모노레포 루트이므로 파일도 repo root에 둔다.
 
 | 키 | 필수 | 설명 |
 |---|---|---|
 | `SOULSTREAM_NODE_ID` | ✅ | 노드 식별자 (예: `eias-shopping-ts`) |
 | `SOULSTREAM_UPSTREAM_URL` | ✅ | orch WS URL (예: `ws://eiaserinnys.me:5200/ws/node`) |
+| `DATABASE_URL` | ✅ | PostgreSQL connection URL |
 | `AUTH_BEARER_TOKEN` | ✅(production) | orch 인증 토큰 |
 | `HOST` | ❌ (default 127.0.0.1) | fastify HTTP bind |
 | `PORT` | ❌ (default 4205) | fastify HTTP 포트 |
@@ -49,8 +46,9 @@ pnpm --filter @soulstream/soul-server-ts test
 pnpm --filter @soulstream/soul-server-ts dev   # tsx로 즉시 실행
 ```
 
+root의 `.env.soul-server-ts.example`에 로컬 실행 예시가 있다.
+
 ## 디자인 참조
 
-- Python 정본: `soul-server/src/soul_server/upstream/{adapter,reconnect,command_handler,protocol}.py`
-- wire 정본: `packages/wire-schema/generated/typescript/index.ts` (NodeRegister, HealthCheck, HealthStatus, ErrorMessage)
-- 분석 캐시: `roselin/.local/artifacts/analysis/20260517-0030-phase-b1-soul-server-ts-skeleton.md`
+- wire 정본: `packages/wire-schema/generated/typescript/index.ts`
+- schema 정본: `packages/db-schema/sql/schema.sql`

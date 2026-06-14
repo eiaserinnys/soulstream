@@ -4,8 +4,7 @@
 #   ./services/soulstream/config/agents.yaml
 # (운영 cwd 기준 상대 경로. AGENTS_CONFIG_PATH env로 override 가능.)
 #
-# Python `soul-server/data/agents.yaml`과 키 호환 — 운영자가 두 서비스를
-# 같은 양식으로 관리 가능.
+# AgentProfile.env와 키 호환 — 운영자가 같은 양식으로 관리 가능.
 #
 # 필수 필드: id, name, backend (claude|codex|openai-agents), workspace_dir
 # 선택 필드: model, max_turns, allowed_tools, disallowed_tools, portrait_path

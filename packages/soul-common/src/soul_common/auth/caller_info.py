@@ -137,8 +137,8 @@ def extract_caller_info_from_metadata(metadata) -> Optional[dict]:
     호출 위치 (4 곳, §9 대칭):
     - orch-server/api/session_serializer.py: REST /api/sessions 응답 직렬화
     - orch-server/api/sessions.py: REST /api/sessions sessionList
-    - soul-server/service/session_query_service.py: soul-server 자체 대시보드 REST
-    - soul-server/service/session_eviction_manager.py: evicted task on-demand 복원
+    - soul-server-ts session query/list paths
+    - soul-server-ts evicted task on-demand restore paths
 
     Args:
         metadata: 세션 DB row의 metadata 컬럼(list[dict] 또는 None).
@@ -321,15 +321,15 @@ def resolve_caller_info_or_system(
 
     호출자 (4 진입점 §9 대칭):
         - orch-server/api/sessions.py:create_session, intervene
-        - soul-server/dashboard/routes/sessions/_lifecycle.py:api_create_session, api_intervene
+        - node worker create/intervene command paths
 
     Args:
         body_caller_info: request body의 caller_info 필드 (Optional). truthy면 그대로 forward.
         request: FastAPI Request 객체. HTTP 메타·cookie·Bearer 헤더 모두 본 객체에서.
         jwt_secret: JWT 서명 키. 빈 문자열이면 decode_dashboard_jwt_user가 즉시 None 반환.
         system_node_id: system 분류 시 build_system_caller_info에 전달할 노드 ID.
-            orch: body.nodeId(create) or node.node_id(intervene). soul-server:
-            settings.soulstream_node_id. 빈 문자열도 graceful (system source는
+            orch: body.nodeId(create) or node.node_id(intervene). node worker:
+            configured node id. 빈 문자열도 graceful (system source는
             user_id/node_id 식별과 무관 — build_system_caller_info docstring 정합).
         cookie_name: JWT 쿠키 이름 (기본 COOKIE_NAME).
 
@@ -347,7 +347,7 @@ def resolve_caller_info_or_system(
 #: caller_info.source 중 *발신자 정체성을 자기 자신으로 명시한* source 집합.
 #:
 #: 이 source의 caller_info는 신원 필드(display_name/avatar_url)가 비어 있어도 정체성을 보존
-#: — orch/soul-server enrichment 헬퍼는 owner/dash_user_*로 덮지 않으며, task_factory의
+#: — orch/node enrichment 헬퍼는 owner/dash_user_*로 덮지 않으며, task creation의
 #: `_has_identity`는 True를 반환한다.
 #:
 #: R-2 (2026-05-10): agent/system/slack/soul-app 4 원소 — atom 0499ee7b 정본.
@@ -357,8 +357,8 @@ def resolve_caller_info_or_system(
 #:
 #: 사용 위치 (3 곳, §9 대칭):
 #: - orch-server/.../api/session_serializer.py:apply_user_profile_enrichment
-#: - soul-server/.../dashboard/user_profile.py:apply_dash_user_profile_enrichment
-#: - soul-server/.../service/task_factory.py:_has_identity
+#: - node worker user-profile enrichment
+#: - node worker task caller identity checks
 IDENTITY_BEARING_SOURCES: frozenset[str] = frozenset({
     "agent",
     "system",

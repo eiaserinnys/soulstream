@@ -4,20 +4,22 @@
 #   irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.ps1 | iex
 #
 # What this does:
-#   1. Checks prerequisites (Python 3.11+, Node.js 18+)
+#   1. Checks prerequisites (Python 3.11+ for Haniel, Node.js 20+)
 #   2. Installs Claude Code CLI if missing
 #   3. Installs Haniel if missing
 #   4. Installs pnpm if missing
-#   5. Prompts for install path, workspace path, and port
+#   5. Prompts for install path, workspace path, port, and PostgreSQL URL
 #   6. Generates a haniel.yaml from the template
-#   7. Runs haniel install (clones repo, creates venv, sets up .env)
-#   8. Starts the service
-#   9. Builds the dashboard
+#   7. Runs haniel install (clones repo and sets up .env.soul-server-ts)
+#   8. Builds the TypeScript soul server and dashboard
+#   9. Starts the service
 
 param(
     [string]$InstallDir      = "",
     [string]$WorkspaceDir    = "",
     [int]$Port               = 0,
+    [string]$DatabaseUrl      = "",
+    [string]$AuthBearerToken  = "",
     [switch]$Force,
     [switch]$NonInteractive,
     [switch]$SkipDashboard
@@ -31,7 +33,7 @@ $ErrorActionPreference = "Stop"
 
 $TEMPLATE_URL = "https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/haniel-standalone.yaml.template"
 $HANIEL_INSTALL_URL = "https://raw.githubusercontent.com/eiaserinnys/haniel/main/install-haniel.ps1"
-$PNPM_VERSION = "9.15.9"
+$PNPM_VERSION = "10.32.1"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -131,16 +133,16 @@ if ($null -eq $pythonCmd) {
 }
 Write-Ok "Python found ($((& $pythonCmd --version 2>&1)))"
 
-# Node.js 18+
+# Node.js 20+
 if (-not (Test-CommandExists "node")) {
-    Write-Fail "Node.js 18+ is required but not found."
+    Write-Fail "Node.js 20+ is required but not found."
     Write-Host "    Download: https://nodejs.org/" -ForegroundColor DarkGray
     exit 1
 }
 $nodeVer = (node --version) -replace "v", ""
 $nodeMajor = [int]($nodeVer -split "\.")[0]
-if ($nodeMajor -lt 18) {
-    Write-Fail "Node.js 18+ required, found v$nodeVer."
+if ($nodeMajor -lt 20) {
+    Write-Fail "Node.js 20+ required, found v$nodeVer."
     Write-Host "    Download: https://nodejs.org/" -ForegroundColor DarkGray
     exit 1
 }
@@ -210,7 +212,7 @@ if ($null -eq $pnpmMajor) {
         exit 1
     }
     Write-Ok "pnpm@$PNPM_VERSION installed."
-} elseif ($pnpmMajor -ne 9) {
+} elseif ($pnpmMajor -ne 10) {
     Write-Warn "pnpm major version $pnpmMajor found. Installing supported pnpm@$PNPM_VERSION..."
     npm install -g "pnpm@$PNPM_VERSION"
     if ($LASTEXITCODE -ne 0) {
@@ -262,10 +264,25 @@ if ($portInUse) {
     $port = $defaultPort
 }
 
+if ($NonInteractive) {
+    if ([string]::IsNullOrWhiteSpace($DatabaseUrl)) {
+        Write-Fail "-DatabaseUrl is required in non-interactive mode."
+        Write-Host "    Example: -DatabaseUrl `"postgresql://user:pass@127.0.0.1:5432/soulstream_test`"" -ForegroundColor DarkGray
+        exit 1
+    }
+    $databaseUrl = $DatabaseUrl
+} else {
+    $databaseUrl = $DatabaseUrl
+    while ([string]::IsNullOrWhiteSpace($databaseUrl)) {
+        $databaseUrl = Read-Host "  PostgreSQL URL (DATABASE_URL)"
+    }
+}
+
 Write-Host ""
 Write-Host "  Install path : $installDir" -ForegroundColor DarkGray
 Write-Host "  Workspace    : $workspaceDir" -ForegroundColor DarkGray
 Write-Host "  Port         : $port" -ForegroundColor DarkGray
+Write-Host "  Database     : configured" -ForegroundColor DarkGray
 Write-Host ""
 
 # ── step 5: existing install detection ───────────────────────────────────────
@@ -304,10 +321,11 @@ if (Test-Path $localTemplate) {
 $installDirFwd  = $installDir  -replace "\\", "/"
 $workspaceDirFwd = $workspaceDir -replace "\\", "/"
 
-$hanielYaml = $template `
-    -replace "__INSTALL_DIR__",   $installDirFwd `
-    -replace "__WORKSPACE_DIR__", $workspaceDirFwd `
-    -replace "__PORT__",          $port
+$hanielYaml = $template.Replace("__INSTALL_DIR__", $installDirFwd)
+$hanielYaml = $hanielYaml.Replace("__WORKSPACE_DIR__", $workspaceDirFwd)
+$hanielYaml = $hanielYaml.Replace("__PORT__", [string]$port)
+$hanielYaml = $hanielYaml.Replace("__DATABASE_URL__", $databaseUrl)
+$hanielYaml = $hanielYaml.Replace("__AUTH_BEARER_TOKEN__", $AuthBearerToken)
 
 $hanielYamlPath = Join-Path $installDir "haniel.yaml"
 [System.IO.File]::WriteAllText($hanielYamlPath, $hanielYaml, [System.Text.UTF8Encoding]::new($false))
@@ -316,8 +334,8 @@ Write-Ok "haniel.yaml written to $hanielYamlPath"
 # ── step 7: haniel install ───────────────────────────────────────────────────
 
 Write-Step "Running haniel install (this may take a few minutes)..."
-Write-Host "    Haniel will clone soulstream, create a Python venv, and" -ForegroundColor DarkGray
-Write-Host "    prompt you for .env settings (node ID, auth token, etc.)" -ForegroundColor DarkGray
+Write-Host "    Haniel will clone soulstream and prepare .env.soul-server-ts." -ForegroundColor DarkGray
+Write-Host "    Node dependencies and TypeScript build run after clone." -ForegroundColor DarkGray
 Write-Host ""
 
 # Ensure Python subprocesses use UTF-8 stdout (haniel prints unicode checkmarks)
@@ -333,6 +351,55 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 Write-Ok "haniel install completed."
+
+$monoRepoDir  = Join-Path $installDir "soulstream"
+$serverTsDir  = Join-Path $monoRepoDir "soul-server-ts"
+$dashboardDir = Join-Path $monoRepoDir "unified-dashboard"
+
+Write-Step "Preparing soul-server-ts configuration..."
+
+$configDir = Join-Path $monoRepoDir "config"
+New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+$agentsConfigPath = Join-Path $configDir "agents.yaml"
+if (-not (Test-Path $agentsConfigPath)) {
+    [System.IO.File]::WriteAllText($agentsConfigPath, "agents: []`n", [System.Text.UTF8Encoding]::new($false))
+    Write-Ok "Minimal agents.yaml written."
+} else {
+    Write-Ok "agents.yaml already exists."
+}
+
+Write-Step "Building soul-server-ts..."
+
+Write-Host "    Installing Node.js dependencies..." -ForegroundColor DarkGray
+pnpm --dir $monoRepoDir install --frozen-lockfile --config.strict-dep-builds=false
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "pnpm install failed."
+    exit 1
+}
+
+Write-Host "    Building TypeScript server..." -ForegroundColor DarkGray
+pnpm --dir $serverTsDir build
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "soul-server-ts build failed."
+    exit 1
+}
+Write-Ok "soul-server-ts built."
+
+Write-Step "Building dashboard..."
+
+if ($SkipDashboard) {
+    Write-Warn "Dashboard build skipped (-SkipDashboard)."
+} elseif (-not (Test-Path $dashboardDir)) {
+    Write-Warn "Dashboard directory not found at $dashboardDir — skipping build."
+} else {
+    Write-Host "    Building dashboard (this may take a minute)..." -ForegroundColor DarkGray
+    pnpm --dir $dashboardDir build
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Dashboard build failed."
+        exit 1
+    }
+    Write-Ok "Dashboard built."
+}
 
 # ── step 7.5: start service ───────────────────────────────────────────────────
 
@@ -375,34 +442,6 @@ if ($LASTEXITCODE -ne 0) {
     Write-Ok "Soulstream Windows service started."
 }
 
-# ── step 8: dashboard build ───────────────────────────────────────────────────
-
-Write-Step "Building dashboard..."
-
-$monoRepoDir  = Join-Path $installDir "soulstream"
-$dashboardDir = Join-Path $monoRepoDir "unified-dashboard"
-
-if ($SkipDashboard) {
-    Write-Warn "Dashboard build skipped (-SkipDashboard)."
-} elseif (-not (Test-Path $dashboardDir)) {
-    Write-Warn "Dashboard directory not found at $dashboardDir — skipping build."
-} else {
-    Write-Host "    Installing Node.js dependencies..." -ForegroundColor DarkGray
-    pnpm --dir $monoRepoDir install --frozen-lockfile --config.strict-dep-builds=false
-    if ($LASTEXITCODE -ne 0) {
-        Write-Fail "pnpm install failed."
-        exit 1
-    }
-
-    Write-Host "    Building (this may take a minute)..." -ForegroundColor DarkGray
-    pnpm --dir $dashboardDir build
-    if ($LASTEXITCODE -ne 0) {
-        Write-Fail "Dashboard build failed."
-        exit 1
-    }
-    Write-Ok "Dashboard built."
-}
-
 # ── step 9: done ─────────────────────────────────────────────────────────────
 
 Write-Host ""
@@ -411,8 +450,7 @@ Write-Host "║          ✅  Installation Complete!       ║" -ForegroundColor
 Write-Host "╚══════════════════════════════════════════╝" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Soulstream is running at:" -ForegroundColor White
-Write-Host "    http://localhost:$port" -ForegroundColor Cyan
-Write-Host "    http://localhost:$port/docs  (API docs)" -ForegroundColor Cyan
+Write-Host "    http://localhost:$port/health" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Service management:" -ForegroundColor White
 Write-Host "    sc start soulstream     start service" -ForegroundColor DarkGray

@@ -2438,8 +2438,7 @@ describe("ClaudeSdkClient", () => {
   it("drains a prompt_suggestion that arrives after the result message (Python receive_loop._drain_after_result parity)", async () => {
     // SDK 0.2.x typedef: "prompt_suggestion arrives after the result message. Consumers
     // must keep iterating the stream after result to receive it."
-    // Python soul-server/claude/receive_loop.py:308-317 drains 1 message for
-    // PROMPT_SUGGESTION_DRAIN_TIMEOUT (2s).
+    // Legacy drain contract drains 1 message for PROMPT_SUGGESTION_DRAIN_TIMEOUT (2s).
     const client = new ClaudeSdkClient(
       {
         query: () =>

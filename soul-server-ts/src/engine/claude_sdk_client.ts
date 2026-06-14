@@ -39,8 +39,8 @@ const COMPACT_SYSTEM_REMINDER_HEADER = [
 /**
  * Result 도착 후 SDK가 발행하는 `prompt_suggestion` 메시지를 받기 위한 short drain 시간.
  *
- * Python `soul-server/src/soul_server/claude/receive_loop.py:33 PROMPT_SUGGESTION_DRAIN_TIMEOUT`
- * 2초 정본 정합. SDK 0.2.x 타입 정의 (sdk.d.ts) 명시:
+ * Legacy prompt_suggestion drain timeout 2초 정본 정합.
+ * SDK 0.2.x 타입 정의 (sdk.d.ts) 명시:
  * "prompt_suggestion arrives after the result message. Consumers must keep iterating the
  *  stream after result to receive it."
  *

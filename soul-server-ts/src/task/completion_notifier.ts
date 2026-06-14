@@ -1,8 +1,8 @@
 /**
  * CompletionNotifier — 피위임 자식 완료 시 부모 세션 회송 (B-7).
  *
- * Python `soul-server/src/soul_server/service/task_manager.py::_notify_caller_completion`
- * (L446-519) 정본의 codex 적응판. TS는 `addIntervention` 내부에 auto-resume 책임이
+ * Legacy caller-completion notification contract의 codex 적응판.
+ * TS는 `addIntervention` 내부에 auto-resume 책임이
  * 캡슐화되어 있어(L526 `onResume(task)`) Python처럼 별도 start_execution 분기를
  * 두지 않는다 — 표면이 더 좁고 깊은 모듈 (design-principles §1).
  *
