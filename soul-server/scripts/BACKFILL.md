@@ -13,7 +13,7 @@
 반드시 다음 순서를 **엄격히** 지킨다 (🔵 에지 #9).
 
 1. **단계 1 — DDL 적용**
-   - `soul-server/sql/schema.sql`의 멱등 DDL 재실행.
+   - `packages/db-schema/sql/schema.sql`의 멱등 DDL 재실행.
    - 이 단계에서 추가되는 것:
      - `events.parent_event_id INTEGER` + FK `events_parent_fk` (session_id, parent_event_id) → events(session_id, id) ON DELETE CASCADE
      - `events.subtree_height INTEGER NOT NULL DEFAULT 1`
@@ -23,7 +23,7 @@
    적용 방법 (PostgreSQL):
 
    ```bash
-   psql "$DATABASE_URL" -f soul-server/sql/schema.sql
+   psql "$DATABASE_URL" -f packages/db-schema/sql/schema.sql
    ```
 
    모든 ALTER/CREATE는 `IF NOT EXISTS` 또는 `pg_constraint` 확인 패턴으로 멱등하다.

@@ -159,7 +159,13 @@ async def test_db():
     ensure_test_db_url(url)
 
     pool = await asyncpg.create_pool(url)
-    schema_path = Path(__file__).resolve().parent.parent / "sql" / "schema.sql"
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "packages"
+        / "db-schema"
+        / "sql"
+        / "schema.sql"
+    )
     schema_sql = schema_path.read_text(encoding="utf-8")
     await pool.execute(schema_sql)
 

@@ -1,7 +1,7 @@
 -- Migration 024: session_get_all 안정 정렬 tie-break 추가
 --
 -- 배포 메커니즘: soul-server-ts Haniel pre_start가 apply-schema.mjs를 실행하고,
--- apply-schema.mjs는 soul-server/sql/schema.sql 전체를 적용한다.
+-- apply-schema.mjs는 packages/db-schema/sql/schema.sql 전체를 적용한다.
 -- 이 파일은 변경 이력 문서화 목적이며 DB에 직접 실행하지 않는다.
 
 CREATE OR REPLACE FUNCTION session_get_all(

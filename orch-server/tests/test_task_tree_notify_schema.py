@@ -6,7 +6,8 @@ from pathlib import Path
 def test_task_tree_schema_notifies_on_item_and_operation_changes():
     schema = (
         Path(__file__).resolve().parents[2]
-        / "soul-server"
+        / "packages"
+        / "db-schema"
         / "sql"
         / "schema.sql"
     ).read_text(encoding="utf-8")

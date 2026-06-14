@@ -1257,11 +1257,11 @@ describe("SessionDB lifecycle", () => {
 describe("session_delete SQL", () => {
   it("세션 삭제 전 transcript mirror row를 agent/Claude session id 기준으로 정리한다", () => {
     const schema = readFileSync(
-      new URL("../../../soul-server/sql/schema.sql", import.meta.url),
+      new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
     );
     const migration = readFileSync(
-      new URL("../../../soul-server/sql/migrations/015_claude_transcript_store.sql", import.meta.url),
+      new URL("../../../packages/db-schema/sql/migrations/015_claude_transcript_store.sql", import.meta.url),
       "utf8",
     );
 
@@ -1283,11 +1283,11 @@ describe("session_delete SQL", () => {
 describe("board_seed_items SQL", () => {
   it("serializes board_items writes and ignores every unique conflict", () => {
     const schema = readFileSync(
-      new URL("../../../soul-server/sql/schema.sql", import.meta.url),
+      new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
     );
     const migration = readFileSync(
-      new URL("../../../soul-server/sql/migrations/018_board_file_assets.sql", import.meta.url),
+      new URL("../../../packages/db-schema/sql/migrations/018_board_file_assets.sql", import.meta.url),
       "utf8",
     );
 
@@ -1308,12 +1308,12 @@ describe("board_seed_items SQL", () => {
 describe("claude_transcript_append SQL", () => {
   it("normalizes JSONB batch shape before jsonb_array_elements", () => {
     const schema = readFileSync(
-      new URL("../../../soul-server/sql/schema.sql", import.meta.url),
+      new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
     );
     const migration = readFileSync(
       new URL(
-        "../../../soul-server/sql/migrations/016_claude_transcript_append_jsonb_shape_guard.sql",
+        "../../../packages/db-schema/sql/migrations/016_claude_transcript_append_jsonb_shape_guard.sql",
         import.meta.url,
       ),
       "utf8",

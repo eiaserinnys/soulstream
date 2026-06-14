@@ -1,7 +1,7 @@
 /**
  * SessionDB — postgres.js 기반 stored procedure 호출자 (Phase B-3).
  *
- * design-principles §3 정본 하나: Stored procedure DDL은 legacy `soul-server/sql/schema.sql`.
+ * design-principles §3 정본 하나: Stored procedure DDL은 `packages/db-schema/sql/schema.sql`.
  * TS 서버가 실제로 쓰는 증분 DDL은 본 클래스의 명시적 ensure 메서드가 소유한다.
  *
  * Python `soul_common.db.PostgresSessionDB`의 *최소 동작 등가*만 구현:
