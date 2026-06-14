@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 
@@ -25,9 +25,98 @@ describePostgres("SessionDB supervisor PostgreSQL integration", () => {
     db = new SessionDB(harness.sql);
   }, 45_000);
 
+  beforeEach(async () => {
+    if (!harness) return;
+    await harness.sql`DROP INDEX CONCURRENTLY IF EXISTS idx_sessions_updated_at_session_id`;
+    await harness.sql`DELETE FROM sessions`;
+  }, 15_000);
+
   afterAll(async () => {
     if (harness) await harness.cleanup();
   }, 15_000);
+
+  it("keeps session_get_all pagination stable for sessions with identical updated_at", async () => {
+    const tiedUpdatedAt = new Date("2026-06-14T01:00:00Z");
+    const oldUpdatedAt = new Date("2026-06-13T01:00:00Z");
+    await harness!.sql`
+      INSERT INTO sessions (session_id, updated_at, session_type, status)
+      VALUES
+        ('sess-a', ${tiedUpdatedAt}, 'claude', 'completed'),
+        ('sess-c', ${tiedUpdatedAt}, 'claude', 'completed'),
+        ('sess-b', ${tiedUpdatedAt}, 'claude', 'completed'),
+        ('sess-old', ${oldUpdatedAt}, 'claude', 'completed')
+    `;
+
+    await applySupervisorSchema(harness!.sql);
+
+    const firstPage = await harness!.sql<Array<{ session_id: string }>>`
+      SELECT session_id FROM session_get_all(NULL, 2, 0)
+    `;
+    const secondPage = await harness!.sql<Array<{ session_id: string }>>`
+      SELECT session_id FROM session_get_all(NULL, 2, 2)
+    `;
+
+    expect(firstPage.map((row) => row.session_id)).toEqual(["sess-c", "sess-b"]);
+    expect(secondPage.map((row) => row.session_id)).toEqual(["sess-a", "sess-old"]);
+    expect(new Set([...firstPage, ...secondPage].map((row) => row.session_id)).size).toBe(4);
+  }, 45_000);
+
+  it("creates the stable session order index as a valid concurrent index", async () => {
+    await db.ensureStableSessionOrderIndex();
+
+    const rows = await harness!.sql<
+      Array<{ indisvalid: boolean; indisready: boolean; definition: string }>
+    >`
+      SELECT i.indisvalid, i.indisready, pg_get_indexdef(c.oid) AS definition
+      FROM pg_class c
+      JOIN pg_index i ON i.indexrelid = c.oid
+      WHERE c.oid = to_regclass('idx_sessions_updated_at_session_id')
+    `;
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ indisvalid: true, indisready: true });
+    expect(rows[0].definition).toContain("(updated_at DESC, session_id DESC)");
+  }, 30_000);
+
+  it("drops an invalid concurrent index remnant and recreates a valid one", async () => {
+    const duplicateUpdatedAt = new Date("2026-06-14T00:00:00Z");
+    await harness!.sql`
+      INSERT INTO sessions (session_id, updated_at)
+      VALUES ('invalid-a', ${duplicateUpdatedAt}), ('invalid-b', ${duplicateUpdatedAt})
+    `;
+
+    await expect(
+      harness!.sql`
+        CREATE UNIQUE INDEX CONCURRENTLY idx_sessions_updated_at_session_id
+        ON sessions (updated_at)
+      `,
+    ).rejects.toThrow();
+
+    const invalidRows = await harness!.sql<Array<{ indisvalid: boolean }>>`
+      SELECT i.indisvalid
+      FROM pg_class c
+      JOIN pg_index i ON i.indexrelid = c.oid
+      WHERE c.oid = to_regclass('idx_sessions_updated_at_session_id')
+    `;
+    expect(invalidRows).toHaveLength(1);
+    expect(invalidRows[0].indisvalid).toBe(false);
+
+    await db.ensureStableSessionOrderIndex();
+
+    const repairedRows = await harness!.sql<
+      Array<{ indisvalid: boolean; indisready: boolean; definition: string }>
+    >`
+      SELECT i.indisvalid, i.indisready, pg_get_indexdef(c.oid) AS definition
+      FROM pg_class c
+      JOIN pg_index i ON i.indexrelid = c.oid
+      WHERE c.oid = to_regclass('idx_sessions_updated_at_session_id')
+    `;
+    expect(repairedRows).toHaveLength(1);
+    expect(repairedRows[0]).toMatchObject({ indisvalid: true, indisready: true });
+    expect(repairedRows[0].definition).toContain(
+      "USING btree (updated_at DESC, session_id DESC)",
+    );
+  }, 45_000);
 
   it("reads supervisor event head offset and related supervisor state on live PostgreSQL", async () => {
     const now = new Date("2026-06-09T00:00:00Z");

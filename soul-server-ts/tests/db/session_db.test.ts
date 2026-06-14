@@ -57,13 +57,43 @@ describe("SessionDB.ensureStableSessionOrderIndex", () => {
 
     await new SessionDB(sql).ensureStableSessionOrderIndex();
 
-    expect(calls).toHaveLength(1);
-    const query = calls[0].fragments.join("?");
+    expect(calls).toHaveLength(2);
+    const stateQuery = calls[0].fragments.join("?");
+    expect(stateQuery).toContain("FROM pg_class c");
+    expect(stateQuery).toContain("JOIN pg_index i ON i.indexrelid = c.oid");
+    expect(stateQuery).toContain("idx_sessions_updated_at_session_id");
+    expect(calls[0].inTransaction).toBe(false);
+
+    const query = calls[1].fragments.join("?");
     expect(query).toContain(
       "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_updated_at_session_id",
     );
     expect(query).toContain("ON sessions (updated_at DESC, session_id DESC)");
-    expect(calls[0].inTransaction).toBe(false);
+    expect(calls[1].inTransaction).toBe(false);
+  });
+
+  it("drops an invalid stable session order index before recreating it", async () => {
+    const { sql, calls } = createMockSql((call) => {
+      const query = call.fragments.join("?");
+      if (query.includes("FROM pg_class c")) {
+        return [{ indisvalid: false, indisready: false }];
+      }
+      return [];
+    });
+
+    await new SessionDB(sql).ensureStableSessionOrderIndex();
+
+    expect(calls).toHaveLength(3);
+    const dropQuery = calls[1].fragments.join("?");
+    expect(dropQuery).toContain(
+      "DROP INDEX CONCURRENTLY idx_sessions_updated_at_session_id",
+    );
+    expect(calls.every((call) => !call.inTransaction)).toBe(true);
+
+    const createQuery = calls[2].fragments.join("?");
+    expect(createQuery).toContain(
+      "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_updated_at_session_id",
+    );
   });
 });
 
