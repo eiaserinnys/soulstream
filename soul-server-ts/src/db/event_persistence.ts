@@ -266,7 +266,7 @@ export function sanitizeJsonText(value: string): string {
 
 /**
  * 이벤트의 timestamp 필드를 Date로 변환. 없으면 undefined.
- * 모든 SSE event payload는 `timestamp: number` (Unix epoch sec) — Python `models/schemas.py` 정본.
+ * 모든 SSE event payload는 wire-schema 기준 `timestamp: number` (Unix epoch sec)를 사용한다.
  */
 export function extractTimestamp(event: SSEEventPayload): Date | undefined {
   const ts = (event as { timestamp?: unknown }).timestamp;

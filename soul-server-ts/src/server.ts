@@ -40,7 +40,7 @@ export type ServerInstance = FastifyInstance & {
 };
 
 /**
- * fastify HTTP 서버 빌드. 본 B-1은 단일 엔드포인트만:
+ * fastify HTTP 서버 빌드. `/health`는 초기 TS worker 이행기부터 유지된 엔드포인트다:
  * - `GET /health` → 노드 헬스 응답 (Haniel `ready: port:4205` 점검용)
  *
  * 외부 API(create_session 등)는 *없음* — 모든 통신은 orch WS reverse 채널을 통해 이루어진다.

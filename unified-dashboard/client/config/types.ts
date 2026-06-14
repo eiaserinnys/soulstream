@@ -1,7 +1,7 @@
 /**
  * AppConfig — /api/config 응답 타입
  *
- * soul-server(single-node)와 soulstream-server(orchestrator) 양쪽이
+ * soul-server-ts worker(single-node)와 orchestrator 양쪽이
  * 동일한 형태로 응답한다. mode 필드로 모드를 구분한다.
  */
 export interface AppConfig {
@@ -13,9 +13,9 @@ export interface AppConfig {
     provider?: "google";
   };
   features: {
-    /** ConfigModal 표시 여부 (soul-server: true, soulstream-server: true) */
+    /** ConfigModal 표시 여부 (worker: true, orchestrator: true) */
     configModal: boolean;
-    /** SearchModal 표시 여부 (soul-server: true, soulstream-server: true) */
+    /** SearchModal 표시 여부 (worker: true, orchestrator: true) */
     searchModal: boolean;
     /** NodePanel 표시 여부 (single: false, orchestrator: true) */
     nodePanel: boolean;

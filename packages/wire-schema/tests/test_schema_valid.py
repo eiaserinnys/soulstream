@@ -10,10 +10,22 @@ from pathlib import Path
 import jsonschema
 
 SCHEMA_PATH = Path(__file__).parent.parent / "src" / "upstream.schema.json"
+README_PATH = Path(__file__).parent.parent / "src" / "README.md"
+GENERATED_TS_PATH = (
+    Path(__file__).parent.parent / "generated" / "typescript" / "index.ts"
+)
+GENERATED_PY_PATH = Path(__file__).parent.parent / "generated" / "python" / "upstream.py"
 
 
 def _load_schema() -> dict:
     return json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+
+
+def _message_inventory_summary(schema: dict) -> str:
+    defs_count = len(schema["$defs"])
+    wire_count = len(schema["oneOf"])
+    sse_count = defs_count - wire_count
+    return f"{defs_count}개 $defs (wire {wire_count} + SSE event {sse_count})"
 
 
 def test_schema_is_valid_draft_2020_12() -> None:
@@ -153,6 +165,15 @@ def test_schema_has_all_message_types() -> None:
     expected = wire_types | sse_types
     missing = expected - set(defs.keys())
     assert not missing, f"Missing $defs: {sorted(missing)}"
+
+
+def test_documented_message_inventory_counts_match_schema() -> None:
+    schema = _load_schema()
+    expected = _message_inventory_summary(schema)
+
+    assert expected in README_PATH.read_text(encoding="utf-8")
+    assert expected in GENERATED_TS_PATH.read_text(encoding="utf-8")
+    assert expected in GENERATED_PY_PATH.read_text(encoding="utf-8")
 
 
 def test_node_register_has_supported_backends() -> None:

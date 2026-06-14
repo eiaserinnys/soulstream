@@ -10,9 +10,9 @@
  */
 
 /**
- * 활성 세션이 다른 soul-server 노드에 속한 세션인지 판별한다.
+ * 활성 세션이 다른 worker 노드에 속한 세션인지 판별한다.
  *
- * @param currentNodeId - 현재 접속한 soul-server의 node_id (fetch 실패 시 undefined)
+ * @param currentNodeId - 현재 접속한 worker의 node_id (fetch 실패 시 undefined)
  * @param sessionNodeId - 활성 세션의 node_id (없으면 null | undefined)
  * @returns true면 다른 노드 세션 → ChatInput 비활성화
  *

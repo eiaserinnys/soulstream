@@ -2,14 +2,14 @@
  * Soul Dashboard - SSE 이벤트 타입 정의
  *
  * Soul SSE 이벤트의 페이로드 타입과 유니온, 그리고 대시보드 SSE 래퍼.
- * Python Soul 서버의 schemas.py와 동기화를 유지합니다.
+ * wire-schema 정본과 TS worker SSE payload shape를 따른다.
  */
 
 import type { SessionStatus } from "./session-types";
 
 // === SSE Event Types ===
 
-/** Soul SSE 이벤트 타입 (Python SSEEventType과 동기화) */
+/** Soul SSE 이벤트 타입 (wire-schema SSE event payload와 동기화) */
 export type SSEEventType =
   // 제어 이벤트
   | "init"
@@ -113,7 +113,7 @@ export interface InterventionSentEvent {
   caller_info?: CallerInfo;
   /**
    * Phase A context 정본 (atom d7a1ad86 정본 둘 안티패턴 차단):
-   * Python `on_intervention_sent`가 event/intervention_msg dict 통합 후 wire에 박는 context_items.
+   * intervention_sent builder가 event/intervention_msg dict 통합 후 wire에 박는 context_items.
    * UserMessageEvent.context와 동일 의미 — InterventionMessage가 ContextBlock 렌더링.
    */
   context?: ContextItem[];
@@ -128,7 +128,7 @@ export interface ContextItem {
 /**
  * caller_info 통합 v1 (atom ed3a216d) — 발신자 신원 wire 정본.
  *
- * soul-server `task_factory.py`와 `task_executor.py`가 user_message 이벤트와 세션
+ * TS worker가 user_message 이벤트와 세션
  * metadata에 같은 dict를 첨부한다. 클라이언트는 메시지 단위(user_message.caller_info)와
  * 세션 단위(SessionSummary.metadata의 caller_info entry) 양쪽에서 동일 형상을 본다.
  *

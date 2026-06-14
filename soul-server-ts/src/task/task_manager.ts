@@ -99,9 +99,8 @@ export class TaskManager {
     private readonly broadcaster: SessionBroadcaster,
     private readonly logger: Logger,
     /**
-     * B-5: intervention_sent 영속화에 사용 (Python `task_executor.py:352-389
-     * on_intervention_sent` 정본 정합). undefined일 때 영속화는 skip (legacy
-     * 호출자·테스트 환경 호환 — broadcast만 발행).
+     * intervention_sent 영속화에 사용. undefined일 때 영속화는 skip
+     * (legacy 호출자·테스트 환경 호환 — broadcast만 발행).
      */
     persistence?: EventPersistence,
     /**

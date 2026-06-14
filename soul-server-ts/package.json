@@ -2,7 +2,7 @@
   "name": "@soulstream/soul-server-ts",
   "version": "0.0.1",
   "private": true,
-  "description": "Soulstream soul-server (TS) — Codex 전담 노드 MVP. 옵션 D 비대칭 모델 단계 1.",
+  "description": "Soulstream TypeScript execution worker for Claude, Codex, OpenAI Agents, MCP, and realtime services.",
   "type": "module",
   "main": "dist/main.js",
   "scripts": {

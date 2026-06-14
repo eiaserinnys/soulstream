@@ -2,7 +2,7 @@
 
 Soulstream exposes a built-in MCP server that Claude Code, Codex, and other MCP clients can connect to. Through this server, a running session can inspect the service itself, query session history, search past conversations, manage folders, and reflect on what capabilities the server provides.
 
-The current reflection source of truth is the TypeScript `soul-server-ts` MCP server. The legacy Python `soul-server` MCP surface is deprecated for new reflection design and should not be used as the implementation reference.
+The current reflection source of truth is the TypeScript `soul-server-ts` MCP server.
 
 ## Connecting
 

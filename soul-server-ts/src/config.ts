@@ -47,7 +47,7 @@ export const EnvSchema = z
     /**
      * Codex API 키 (Phase B-2). optional — 미설정 시 Codex SDK가 ~/.codex/auth.json
      * (ChatGPT 구독 OAuth) fallback. production strict 미요구 — credential default
-     * 박지 않음 (B-1 leak 사고 회로 차단). 실제 turn 실행 시 인증 부재면 Codex SDK가 오류 반환.
+     * 박지 않음 (credential leak 사고 회로 차단). 실제 turn 실행 시 인증 부재면 Codex SDK가 오류 반환.
      */
     CODEX_API_KEY: z.string().optional(),
     /**
@@ -61,7 +61,7 @@ export const EnvSchema = z
      */
     CODEX_ADAPTER_MODE: z.enum(["sdk", "app-server"]).default("sdk"),
     /**
-     * PostgreSQL 연결 URL (Phase B-3). Python soul-server와 같은 키 정합.
+     * PostgreSQL 연결 URL. worker와 schema helper가 같은 키를 사용한다.
      * design-principles §4 명시 실패 — default 없음. production·development 모두 필수.
      */
     DATABASE_URL: z

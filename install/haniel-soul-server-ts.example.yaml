@@ -28,7 +28,7 @@ services:
     hooks:
       post_pull: pnpm --dir src/soulstream install --frozen-lockfile && pnpm --dir src/soulstream/soul-server-ts run build
       pre_start: node src/soulstream/soul-server-ts/scripts/apply-schema.mjs
-    reflect: false  # B-1은 cogito reflection 미구현. B-2 또는 후속에서 활성화 검토.
+    reflect: false  # cogito reflection은 TS MCP 자체 구현을 사용하므로 Haniel reflect hook은 비활성.
 
 install:
   configs:
