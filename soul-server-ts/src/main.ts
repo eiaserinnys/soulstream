@@ -11,6 +11,7 @@ import { FileAttachmentStore } from "./attachments/file_manager.js";
 import { CatalogService } from "./catalog/catalog_service.js";
 import { BoardYjsService } from "./collaboration/board_yjs_service.js";
 import { parseEnv } from "./config.js";
+import { ensureStableSessionOrderIndexInBackground } from "./db/session_index_ensure.js";
 import { SessionDB, type SupervisorEventRow } from "./db/session_db.js";
 import { EventPersistence } from "./db/event_persistence.js";
 import { ClaudeEngineAdapter } from "./engine/claude_adapter.js";
@@ -188,6 +189,7 @@ async function main(): Promise<void> {
 
   // DB 초기화 (postgres.js)
   const db = new SessionDB(env.DATABASE_URL);
+  ensureStableSessionOrderIndexInBackground(db, logger);
   const claudeSessionStore = new DbClaudeSessionStore(db);
   const interruptedOnStartup = await db.interruptRunningSessionsForNode(
     env.SOULSTREAM_NODE_ID,

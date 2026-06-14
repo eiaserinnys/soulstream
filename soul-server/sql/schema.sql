@@ -814,7 +814,7 @@ BEGIN
         q := q || ' AND COALESCE(session_type, ''claude'') != ''llm''';
     END IF;
 
-    q := q || ' ORDER BY s.updated_at DESC';
+    q := q || ' ORDER BY s.updated_at DESC, s.session_id DESC';
 
     IF p_limit IS NOT NULL THEN
         q := q || ' LIMIT ' || p_limit;

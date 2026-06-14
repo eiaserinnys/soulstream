@@ -1,9 +1,8 @@
 /**
  * SessionDB — postgres.js 기반 stored procedure 호출자 (Phase B-3).
  *
- * design-principles §3 정본 하나: Schema DDL 정본은 Python `soul-server/sql/schema.sql`.
- * TS는 *호출만* — DDL 발행 안 함, schema 변경 안 함. 운영 시 Python 서비스가 먼저
- * startup하며 schema apply → TS는 ready 후 connect.
+ * design-principles §3 정본 하나: Stored procedure DDL은 legacy `soul-server/sql/schema.sql`.
+ * TS 서버가 실제로 쓰는 증분 DDL은 본 클래스의 명시적 ensure 메서드가 소유한다.
  *
  * Python `soul_common.db.PostgresSessionDB`의 *최소 동작 등가*만 구현:
  *   - session_register (불변 필드 박기)
@@ -444,6 +443,26 @@ export class SessionDB {
   /** Lightweight liveness probe for runtime reflection. */
   async ping(): Promise<void> {
     await this.sql`SELECT 1`;
+  }
+
+  async ensureStableSessionOrderIndex(): Promise<void> {
+    const existing = await this.sql<Array<{ indisvalid: boolean; indisready: boolean }>>`
+      SELECT i.indisvalid, i.indisready
+      FROM pg_class c
+      JOIN pg_index i ON i.indexrelid = c.oid
+      WHERE c.oid = to_regclass('idx_sessions_updated_at_session_id')
+    `;
+    const state = existing[0];
+    if (state && (!state.indisvalid || !state.indisready)) {
+      await this.sql`
+        DROP INDEX CONCURRENTLY idx_sessions_updated_at_session_id
+      `;
+    }
+
+    await this.sql`
+      CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_updated_at_session_id
+      ON sessions (updated_at DESC, session_id DESC)
+    `;
   }
 
   taskTree(): TaskTreeRepository {
@@ -1253,7 +1272,7 @@ export class SessionDB {
   /**
    * Context builder용 running 세션 경량 조회.
    *
-   * 클러스터 공유 sessions 테이블을 updated_at DESC로 읽는다. cross-node HTTP wire에
+   * 클러스터 공유 sessions 테이블을 updated_at DESC, session_id DESC로 읽는다. cross-node HTTP wire에
    * 의존하지 않으므로 노드 간 wire 실패가 context 조립 전체로 번지지 않는다.
    */
   async listRunningSessionsSummary(params: {
@@ -1289,10 +1308,10 @@ export class SessionDB {
             ${params.excludeSessionId ?? null}::text IS NULL
             OR s.session_id <> ${params.excludeSessionId ?? null}
           )
-        ORDER BY s.updated_at DESC
       )
       SELECT f.*, (SELECT COUNT(*) FROM filtered)::BIGINT AS total_count
       FROM filtered f
+      ORDER BY f.updated_at DESC, f.session_id DESC
       LIMIT ${params.limit}
     `;
     const total = rows.length > 0 && rows[0] ? Number(rows[0].total_count) : 0;

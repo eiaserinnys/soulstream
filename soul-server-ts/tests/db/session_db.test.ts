@@ -51,6 +51,52 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
   return { sql: fn as unknown as SqlClient, calls, begin: fn.begin };
 }
 
+describe("SessionDB.ensureStableSessionOrderIndex", () => {
+  it("runs the stable session order index concurrently outside a transaction", async () => {
+    const { sql, calls } = createMockSql();
+
+    await new SessionDB(sql).ensureStableSessionOrderIndex();
+
+    expect(calls).toHaveLength(2);
+    const stateQuery = calls[0].fragments.join("?");
+    expect(stateQuery).toContain("FROM pg_class c");
+    expect(stateQuery).toContain("JOIN pg_index i ON i.indexrelid = c.oid");
+    expect(stateQuery).toContain("idx_sessions_updated_at_session_id");
+    expect(calls[0].inTransaction).toBe(false);
+
+    const query = calls[1].fragments.join("?");
+    expect(query).toContain(
+      "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_updated_at_session_id",
+    );
+    expect(query).toContain("ON sessions (updated_at DESC, session_id DESC)");
+    expect(calls[1].inTransaction).toBe(false);
+  });
+
+  it("drops an invalid stable session order index before recreating it", async () => {
+    const { sql, calls } = createMockSql((call) => {
+      const query = call.fragments.join("?");
+      if (query.includes("FROM pg_class c")) {
+        return [{ indisvalid: false, indisready: false }];
+      }
+      return [];
+    });
+
+    await new SessionDB(sql).ensureStableSessionOrderIndex();
+
+    expect(calls).toHaveLength(3);
+    const dropQuery = calls[1].fragments.join("?");
+    expect(dropQuery).toContain(
+      "DROP INDEX CONCURRENTLY idx_sessions_updated_at_session_id",
+    );
+    expect(calls.every((call) => !call.inTransaction)).toBe(true);
+
+    const createQuery = calls[2].fragments.join("?");
+    expect(createQuery).toContain(
+      "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_updated_at_session_id",
+    );
+  });
+});
+
 describe("SessionDB.registerSession", () => {
   it("11개 인자가 순서대로 stored proc에 전달됨", async () => {
     const { sql, calls } = createMockSql();
@@ -1039,7 +1085,7 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
     expect(query).toContain("s.status = 'running'");
     expect(query).toContain("LEFT JOIN folders f ON f.id = s.folder_id");
     expect(query).toContain("s.session_id <>");
-    expect(query).toContain("ORDER BY s.updated_at DESC");
+    expect(query).toContain("ORDER BY f.updated_at DESC, f.session_id DESC");
     expect(calls[0].values).toEqual(["current-session", "current-session", 15]);
   });
 
