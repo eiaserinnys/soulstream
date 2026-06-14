@@ -3,8 +3,9 @@
  */
 
 // === Theme ===
-export { useTheme, initTheme, setTheme } from "./useTheme";
-export type { Theme } from "./useTheme";
+export { useTheme, useAppearancePreference, initTheme, setTheme, setAppearancePreference } from "./useTheme";
+export type { Appearance, Theme } from "./useTheme";
+export { useUserPreferencesSync } from "./useUserPreferencesSync";
 
 // === Input Request / Mobile ===
 export { useInputRequestTimer } from "./useInputRequestTimer";

@@ -175,6 +175,7 @@ const WALLPAPER_OPTIONS: Array<{ mode: WallpaperMode; label: string }> = [
 
 function WallpaperPicker() {
   const wallpaper = useDashboardStore((s) => s.wallpaper);
+  const setWallpaper = useDashboardStore((s) => s.setWallpaper);
   const setWallpaperMode = useDashboardStore((s) => s.setWallpaperMode);
   const setWallpaperCustomImage = useDashboardStore((s) => s.setWallpaperCustomImage);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -239,6 +240,17 @@ function WallpaperPicker() {
         <div className="mt-2 rounded-[13px] bg-accent-red/10 px-3 py-2 text-xs text-accent-red">
           {error}
         </div>
+      )}
+      {wallpaper.customImage && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="mt-2 rounded-full px-0 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => setWallpaper({ mode: "bokeh" })}
+        >
+          기본값 복원
+        </Button>
       )}
       <input
         ref={fileInputRef}
