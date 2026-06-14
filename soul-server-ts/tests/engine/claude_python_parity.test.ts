@@ -1,7 +1,7 @@
 /**
  * Cross-language parity: TS `mapClaudeClientEvent` output ↔ Python `EngineEvent.to_sse()` wire shape.
  *
- * 본 fixture는 Python `soul-server/src/soul_server/models/schemas.py`의 BaseModel 필드 목록을 reference로,
+ * 본 fixture는 legacy SSE BaseModel 필드 목록을 reference로,
  * TS mapper output의 wire payload가 *같은 키 이름·optional 의미*를 갖는지 단언한다.
  * Python schemas.py 라인은 본 파일 주석에 인용 — 정본이 갱신되면 본 fixture도 같이 갱신.
  *
@@ -20,7 +20,7 @@ import {
 
 /**
  * Python BaseModel이 *없는* TS-only event types. ClaudeClientEvent → wire 변환은 존재하나
- * Python `soul-server/src/soul_server/models/schemas.py`에 동등 BaseModel이 없어 본 parity 단언에서 *명시 skip*.
+ * legacy SSE schema에 동등 BaseModel이 없어 본 parity 단언에서 *명시 skip*.
  *
  * - `session`: Python은 `InitSSEEvent(type="init", agent_session_id)`로 발행 — TS와 wire 이름 자체가 다름
  *   (이는 별 카드의 wire 이름 정합 작업 책임).

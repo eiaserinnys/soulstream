@@ -19,7 +19,7 @@ venv/
 node_modules/
 
 # Local data
-soul-server/.local/
+.env.soul-server-ts
 
 # Test
 .pytest_cache/

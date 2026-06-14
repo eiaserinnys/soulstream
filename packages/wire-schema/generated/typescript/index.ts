@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 106개 $defs (wire 51 + SSE event 55). 출처: soul-server/upstream/protocol.py · adapter.py · event_relay.py · command_handler.py · claude_auth_handlers.py / wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 106개 $defs (wire 51 + SSE event 55). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -57,7 +57,7 @@ export type SoulstreamUpstreamProtocol =
   | ClaudeAuthGetProfile;
 
 /**
- * 노드→orch: 등록. soul-server/upstream/adapter.py:_build_registration_msg L197-247.
+ * 노드→orch: 등록. soul-server-ts/src/upstream/registration.ts.
  */
 export interface NodeRegister {
   type: "node_register";
@@ -114,7 +114,7 @@ export interface AppHeartbeatPong {
   [k: string]: unknown;
 }
 /**
- * 노드→orch: 세션 생성 응답 또는 broadcast. command_handler.py L220-228 + event_relay.py L119-133.
+ * 노드→orch: 세션 생성 응답 또는 broadcast. soul-server-ts task creation and session broadcaster wire.
  */
 export interface SessionCreated {
   type: "session_created";
@@ -136,7 +136,7 @@ export interface SessionCreated {
   [k: string]: unknown;
 }
 /**
- * 노드→orch: SSE 이벤트 wrapper. event_relay.py:relay_events L175-179. event.event 안에 SSEEvent* 중 하나가 packed.
+ * 노드→orch: SSE 이벤트 wrapper. event.event 안에 SSEEvent* 중 하나가 packed.
  */
 export interface SessionEventEnvelope {
   type: "event";
@@ -146,7 +146,7 @@ export interface SessionEventEnvelope {
    */
   session_id?: string;
   /**
-   * SSE event payload. KNOWN_SSE_EVENT_TYPES 중 하나 (orch-server/constants.py L59-69).
+   * SSE event payload. orch-server KNOWN_SSE_EVENT_TYPES 중 하나.
    */
   event:
     | SSEEventInit
@@ -263,7 +263,7 @@ export interface SSEEventAssistantMessage {
   [k: string]: unknown;
 }
 /**
- * SSE: AskUserQuestion 요청. 별도 wire 메시지로도 forwarding (constants.py EVT_INPUT_REQUEST L41).
+ * SSE: AskUserQuestion 요청. 별도 wire 메시지로도 forwarding.
  */
 export interface SSEEventInputRequest {
   type: "input_request";
@@ -726,7 +726,7 @@ export interface SSEEventMetadataUpdated {
   [k: string]: unknown;
 }
 /**
- * SSE: AssistantMessage.error 별 이벤트 — authentication_failed/billing_error/rate_limit 등 API 수준 에러를 dashboard가 분기 표시. Python `AssistantErrorEngineEvent` (soul-server/src/soul_server/engine/types.py:329-349) 정합.
+ * SSE: AssistantMessage.error 별 이벤트 — authentication_failed/billing_error/rate_limit 등 API 수준 에러를 dashboard가 분기 표시.
  */
 export interface SSEEventAssistantError {
   type: "assistant_error";
@@ -736,7 +736,7 @@ export interface SSEEventAssistantError {
   [k: string]: unknown;
 }
 /**
- * SSE: Claude CLI가 세션 복귀 시 발행하는 요약. Python `AwaySummaryEngineEvent` (soul-server/src/soul_server/engine/types.py:188-204) 정합.
+ * SSE: Claude CLI가 세션 복귀 시 발행하는 요약.
  */
 export interface SSEEventAwaySummary {
   type: "away_summary";
@@ -744,7 +744,7 @@ export interface SSEEventAwaySummary {
   [k: string]: unknown;
 }
 /**
- * 노드→orch: 전체 세션 목록 dump. adapter.py:_send_initial_sessions L313-325, command_handler.py:_handle_list_sessions L299-307.
+ * 노드→orch: 전체 세션 목록 dump. soul-server-ts/src/upstream/session_list_commands.ts.
  */
 export interface SessionsUpdate {
   type: "sessions_update";
@@ -756,7 +756,7 @@ export interface SessionsUpdate {
   [k: string]: unknown;
 }
 /**
- * 노드→orch: 헬스 응답. command_handler.py:_handle_health_check L309-317.
+ * 노드→orch: 헬스 응답. soul-server-ts/src/upstream/dispatcher.ts.
  */
 export interface HealthStatus {
   type: "health_status";
@@ -768,7 +768,7 @@ export interface HealthStatus {
   [k: string]: unknown;
 }
 /**
- * 노드→orch: 세션 상태 변경 broadcast. event_relay.py:_dispatch_broadcast_event L134-138. broadcaster 이벤트 dict가 그대로 spread되므로 페이로드는 inline 확장 가능.
+ * 노드→orch: 세션 상태 변경 broadcast. soul-server-ts/src/upstream/session_broadcaster.ts.
  */
 export interface SessionUpdated {
   type: "session_updated";
@@ -777,7 +777,7 @@ export interface SessionUpdated {
   [k: string]: unknown;
 }
 /**
- * 노드→orch: 세션 삭제 broadcast. event_relay.py L139-143.
+ * 노드→orch: 세션 삭제 broadcast. soul-server-ts/src/upstream/session_broadcaster.ts.
  */
 export interface SessionDeleted {
   type: "session_deleted";
@@ -786,7 +786,7 @@ export interface SessionDeleted {
   [k: string]: unknown;
 }
 /**
- * 노드→orch: 에러 응답. adapter.py:_send_error L334-346.
+ * 노드→orch: 에러 응답. soul-server-ts/src/upstream/dispatcher.ts.
  */
 export interface ErrorMessage {
   type: "error";
@@ -800,7 +800,7 @@ export interface ErrorMessage {
   [k: string]: unknown;
 }
 /**
- * 노드→orch: intervene 명령 ACK. command_handler.py:_handle_intervene L249-254. orch _send_command Future 매칭에 사용.
+ * 노드→orch: intervene 명령 ACK. soul-server-ts/src/task/task_intervention_route.ts. orch _send_command Future 매칭에 사용.
  */
 export interface InterveneAck {
   type: "intervene_ack";
@@ -809,7 +809,7 @@ export interface InterveneAck {
   [k: string]: unknown;
 }
 /**
- * 노드→orch: interrupt_session 명령 ACK. command_handler.py:_handle_interrupt_session + TS dispatcher.handleInterruptSession.
+ * 노드→orch: interrupt_session 명령 ACK. soul-server-ts dispatcher.handleInterruptSession.
  */
 export interface InterruptSessionAck {
   type: "interrupt_session_ack";
@@ -966,7 +966,7 @@ export interface DownloadAttachmentResult {
   [k: string]: unknown;
 }
 /**
- * orch→노드: 세션 생성. protocol.py:CreateSessionCmd L15-27 + 실측 caller_info 키.
+ * orch→노드: 세션 생성 명령. soul-server-ts dispatcher create_session wire + 실측 caller_info 키.
  */
 export interface CreateSession {
   type: "create_session";
@@ -1002,7 +1002,7 @@ export interface CreateSession {
   [k: string]: unknown;
 }
 /**
- * orch→노드: 개입 명령. protocol.py:InterveneCmd L30-34 + command_handler.py L237-243 attachment_paths/caller_info.
+ * orch→노드: 개입 명령. attachment_paths/caller_info 포함.
  */
 export interface Intervene {
   type: "intervene";
@@ -1041,7 +1041,7 @@ export interface InterruptSession {
   [k: string]: unknown;
 }
 /**
- * orch→노드: AskUserQuestion 응답. protocol.py:RespondCmd L37-48 + command_handler.py L271-297.
+ * orch→노드: AskUserQuestion 응답.
  */
 export interface Respond {
   type: "respond";
@@ -1153,7 +1153,7 @@ export interface RealtimeResolveToolApproval {
   [k: string]: unknown;
 }
 /**
- * orch→노드: 세션 목록 조회. protocol.py:ListSessionsCmd L51-53.
+ * orch→노드: 세션 목록 조회 명령.
  */
 export interface ListSessions {
   type: "list_sessions";
@@ -1534,7 +1534,7 @@ export interface RollbackAgentsConfig {
   [k: string]: unknown;
 }
 /**
- * orch→노드: 헬스체크. protocol.py:HealthCheckCmd L56-58.
+ * orch→노드: 헬스체크 명령.
  */
 export interface HealthCheck {
   type: "health_check";
@@ -1543,7 +1543,7 @@ export interface HealthCheck {
   [k: string]: unknown;
 }
 /**
- * orch→노드: 라이브 이벤트 구독. protocol.py:SubscribeEventsCmd L61-65 + command_handler.py L319-333.
+ * orch→노드: 라이브 이벤트 구독.
  */
 export interface SubscribeEvents {
   type: "subscribe_events";
@@ -1556,7 +1556,7 @@ export interface SubscribeEvents {
   [k: string]: unknown;
 }
 /**
- * orch→노드: Claude OAuth 토큰 존재 여부 조회. claude_auth_handlers.py:handle_auth_status L26-33. 응답도 동일 type, has_token 추가.
+ * orch→노드: Claude OAuth 토큰 존재 여부 조회. 응답도 동일 type, has_token 추가.
  */
 export interface ClaudeAuthStatus {
   type: "claude_auth_status";
@@ -1568,7 +1568,7 @@ export interface ClaudeAuthStatus {
   [k: string]: unknown;
 }
 /**
- * orch→노드: Claude OAuth 토큰 설정. claude_auth_handlers.py:handle_auth_set_token L36-65.
+ * orch→노드: Claude OAuth 토큰 설정.
  */
 export interface ClaudeAuthSetToken {
   type: "claude_auth_set_token";
@@ -1584,7 +1584,7 @@ export interface ClaudeAuthSetToken {
   [k: string]: unknown;
 }
 /**
- * orch→노드: Claude OAuth 토큰 삭제. claude_auth_handlers.py:handle_auth_delete_token L68-76.
+ * orch→노드: Claude OAuth 토큰 삭제.
  */
 export interface ClaudeAuthDeleteToken {
   type: "claude_auth_delete_token";
@@ -1596,7 +1596,7 @@ export interface ClaudeAuthDeleteToken {
   [k: string]: unknown;
 }
 /**
- * orch→노드: Anthropic OAuth usage 조회. claude_auth_handlers.py:handle_auth_api_request L79-119 (URL=ANTHROPIC_USAGE_URL).
+ * orch→노드: Anthropic OAuth usage 조회.
  */
 export interface ClaudeAuthGetUsage {
   type: "claude_auth_get_usage";
@@ -1618,7 +1618,7 @@ export interface ClaudeAuthGetUsage {
   [k: string]: unknown;
 }
 /**
- * orch→노드: Anthropic OAuth profile 조회. claude_auth_handlers.py:handle_auth_api_request L79-119 (URL=ANTHROPIC_PROFILE_URL).
+ * orch→노드: Anthropic OAuth profile 조회.
  */
 export interface ClaudeAuthGetProfile {
   type: "claude_auth_get_profile";

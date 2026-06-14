@@ -1,4 +1,4 @@
-# Haniel 통합 — soul-server-ts (옵션 D Phase B-1)
+# Haniel 통합 — soul-server-ts live execution worker
 #
 # 이 파일은 *참조용 yaml 조각*이다. 운영자(작가님)의 실제 `haniel.yaml`(예:
 # `/home/eias/haniel-root/haniel.yaml`)에 아래 조각을 복사·붙여넣기하여 적용한다.
@@ -9,8 +9,8 @@
 #   시 본 파일을 갱신하여 추적한다.
 #
 # 가정:
-# - `repos.soulstream-server-src` 이미 운영 `haniel.yaml`에 정의됨 (Python soul-server와 공유)
-# - cwd 경로는 `./services/soulstream` (Python soul-server와 동일)
+# - `repos.soulstream-server-src` 이미 운영 `haniel.yaml`에 정의됨
+# - cwd 경로는 `./services/soulstream`
 # - 모노레포 루트는 `cwd` 기준 `src/soulstream/`
 #
 # 본 노드 ID 패턴: `{기존 노드 ID}-ts` — 예: 노드가 `eias-shopping`이면 `eias-shopping-ts`.
@@ -22,7 +22,7 @@ services:
     cwd: ./services/soulstream
     repo: soulstream-server-src
     restart_delay: 3
-    after: []  # Python soul-server 의존 없음 — 독립 노드로 orch에 직접 등록
+    after: []  # 독립 노드로 orch에 직접 등록
     ready: port:4205
     enabled: true
     hooks:
@@ -36,8 +36,7 @@ install:
     soul-server-ts-env:
       path: ./services/soulstream/.env.soul-server-ts
       keys:
-        # 노드 ID — Python soul-server의 SOULSTREAM_NODE_ID와 다른 값
-        # (TS 노드는 *별도 노드*로 orch에 등록되어야 하므로 `-ts` 접미사)
+        # 노드 ID — orch에 등록될 고유 노드 이름
         - key: SOULSTREAM_NODE_ID
           prompt: "TS 노드 ID (예: eias-shopping-ts)"
           default: eias-shopping-ts

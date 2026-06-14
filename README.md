@@ -27,10 +27,12 @@ Agent definitions live in the server config. Each agent gets:
 
 ```
 soulstream/
-├── soul-server/          # FastAPI execution server (Python)
+├── soul-server-ts/       # TypeScript execution worker
 ├── unified-dashboard/    # React dashboard (TypeScript)
 ├── packages/
-│   └── soul-ui/          # Shared UI component library
+│   ├── db-schema/        # Canonical PostgreSQL schema
+│   ├── soul-ui/          # Shared UI component library
+│   └── wire-schema/      # Wire contract schemas
 └── install/              # Standalone installer
     ├── install.ps1                       # One-liner Windows installer
     └── haniel-standalone.yaml.template   # Haniel config template
@@ -52,7 +54,7 @@ irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/instal
 & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.ps1'))) -NonInteractive
 ```
 
-The installer checks prerequisites, installs [Haniel](https://github.com/eiaserinnys/haniel) as the process manager, clones this repo, sets up a Python venv, builds the dashboard, and registers a Windows service — all in one pass.
+The installer checks prerequisites, installs [Haniel](https://github.com/eiaserinnys/haniel) as the process manager, clones this repo, builds `soul-server-ts`, applies the PostgreSQL schema, builds the dashboard, and registers a Windows service — all in one pass.
 
 **Parameters**
 
@@ -61,6 +63,8 @@ The installer checks prerequisites, installs [Haniel](https://github.com/eiaseri
 | `-InstallDir` | `%USERPROFILE%\soulstream` | Installation directory |
 | `-WorkspaceDir` | `%USERPROFILE%\workspace` | Claude Code workspace directory |
 | `-Port` | `3105` | Server port |
+| `-DatabaseUrl` | *(required in non-interactive mode)* | PostgreSQL connection URL |
+| `-AuthBearerToken` | *(empty)* | Orchestrator bearer token |
 | `-NonInteractive` | — | Skip all prompts, use defaults |
 | `-Force` | — | Overwrite existing installation without confirmation |
 | `-SkipDashboard` | — | Skip dashboard build step |
@@ -69,22 +73,22 @@ The installer checks prerequisites, installs [Haniel](https://github.com/eiaseri
 
 | Service | URL | Notes |
 |---------|-----|-------|
-| Soulstream | `http://localhost:3105` | API + dashboard |
+| Soulstream worker | `http://localhost:3105/health` | Local health endpoint |
 | Haniel | `http://localhost:3200` | Process manager dashboard |
 
 Auto-update is **disabled by default**. When new commits arrive in the soulstream repo, Haniel detects the change and shows it in the dashboard — but will not pull or restart automatically. Use the Haniel dashboard at `http://localhost:3200` to manually apply updates.
 
 ### Manual setup
 
-**soul-server**
+**soul-server-ts**
 
 ```bash
-cd soul-server
-python -m venv .venv
-source .venv/bin/activate   # Linux/macOS
-# .venv\Scripts\activate    # Windows
-pip install -e ../packages/soul-common -e .
-python -m soul_server.main
+pnpm --dir . install
+pnpm --dir soul-server-ts build
+DATABASE_URL=postgresql://user:pass@localhost:5432/soulstream_test \
+SOULSTREAM_NODE_ID=standalone-ts \
+SOULSTREAM_UPSTREAM_URL=ws://localhost:5200/ws/node \
+node soul-server-ts/dist/main.js
 ```
 
 **unified-dashboard**
@@ -99,21 +103,20 @@ pnpm run dev
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `WORKSPACE_DIR` | *(required)* | Claude Code working directory |
-| `SOULSTREAM_NODE_ID` | `standalone` ¹ | Unique node identifier |
-| `SOUL_DASHBOARD_CACHE_DIR` | *(required)* | Dashboard session cache directory |
-| `PORT` | `3105` | Server port |
-| `HOST` | `0.0.0.0` | Server host |
+| `SOULSTREAM_NODE_ID` | `standalone-ts` ¹ | Unique node identifier |
+| `SOULSTREAM_UPSTREAM_URL` | *(required)* | Orchestrator WebSocket URL |
+| `DATABASE_URL` | *(required)* | PostgreSQL URL |
+| `AGENTS_CONFIG_PATH` | `config/agents.yaml` | Agent registry YAML path |
+| `PORT` | `3105` | Local health/MCP port |
+| `HOST` | `127.0.0.1` | Server host |
 | `ENVIRONMENT` | `development` | `development` or `production` |
-| `AUTH_BEARER_TOKEN` | *(empty — auth disabled)* | API bearer token |
-| `SOUL_DASHBOARD_DIR` | `dist/client` ² | Path to built dashboard files |
-| `DATABASE_URL` | *(empty — SQLite used)* | PostgreSQL URL |
-| `MAX_CONCURRENT_SESSIONS` | `3` | Maximum parallel Claude Code sessions |
+| `AUTH_BEARER_TOKEN` | *(empty in development)* | Orchestrator bearer token; required in production |
+| `LOG_LEVEL` | `info` | Server log level |
+| `INCOMING_FILE_DIR` | `.local/incoming` | Incoming attachment directory |
 
 ¹ Standalone installer default. Without the installer, this variable is required.  
-² Standalone installer sets this to `<install-dir>/soulstream/unified-dashboard/dist`.
 
-See `soul-server/.env.example` for the full list.
+See `.env.soul-server-ts.example` for the common local keys.
 
 ## Building a bot client
 

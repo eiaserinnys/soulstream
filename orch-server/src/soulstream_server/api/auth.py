@@ -1,10 +1,10 @@
 """
 Authentication — Bearer 토큰 + JWT 쿠키 이중 인증
 
-soul-server의 Bearer 전용 `verify_token`을 그대로 복제하고,
-orch-server 전용으로 Bearer OR JWT 이중 인증 결합 함수 `verify_auth`를 제공한다.
+soulstream 노드 공통 Bearer 검증 로직과,
+orch-server 전용 Bearer OR JWT 이중 인증 결합 함수 `verify_auth`를 제공한다.
 
-- verify_token: soul-server `soul_server.api.auth.verify_token` L1–L91 복제. import 경로만 변경.
+- verify_token: Bearer 토큰 형식과 상수 시간 비교를 담당하는 서비스 토큰 검증.
 - verify_auth: Bearer 시도 → 실패 시 JWT 쿠키 시도. 둘 다 실패 시 401.
 """
 

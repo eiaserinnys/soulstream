@@ -88,8 +88,7 @@ export class TaskExecutor {
      * B-7 피위임 완료 회송. undefined일 때 통지 skip — legacy 호출자·테스트 환경 호환.
      * 운영 흐름(main.ts)에서는 항상 주입하여 child finalize 후 parent에게 결과 텍스트 송신.
      *
-     * Python `soul-server/src/soul_server/service/task_manager.py:439-442
-     * _notify_caller_completion` 정본의 codex 적응판 (분석 캐시
+     * Legacy caller completion notification 정본의 codex 적응판 (분석 캐시
      * `roselin/.local/artifacts/analysis/20260518-2125-ts-delegation-return.md` §3-2).
      */
     completionNotifier?: CompletionNotifier,

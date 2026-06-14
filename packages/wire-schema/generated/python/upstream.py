@@ -17,7 +17,7 @@ class Agent(TypedDict):
 
 class NodeRegister(TypedDict):
     """
-    노드→orch: 등록. soul-server/upstream/adapter.py:_build_registration_msg L197-247.
+    노드→orch: 등록. soul-server-ts/src/upstream/registration.ts.
     """
 
     type: Literal['node_register']
@@ -50,7 +50,7 @@ class AppHeartbeatPong(TypedDict):
 
 class SessionCreated(TypedDict):
     """
-    노드→orch: 세션 생성 응답 또는 broadcast. command_handler.py L220-228 + event_relay.py L119-133.
+    노드→orch: 세션 생성 응답 또는 broadcast. soul-server-ts task creation and session broadcaster wire.
     """
 
     type: Literal['session_created']
@@ -63,7 +63,7 @@ class SessionCreated(TypedDict):
 
 class SessionsUpdate(TypedDict):
     """
-    노드→orch: 전체 세션 목록 dump. adapter.py:_send_initial_sessions L313-325, command_handler.py:_handle_list_sessions L299-307.
+    노드→orch: 전체 세션 목록 dump. soul-server-ts/src/upstream/session_list_commands.ts.
     """
 
     type: Literal['sessions_update']
@@ -74,7 +74,7 @@ class SessionsUpdate(TypedDict):
 
 class HealthStatus(TypedDict):
     """
-    노드→orch: 헬스 응답. command_handler.py:_handle_health_check L309-317.
+    노드→orch: 헬스 응답. soul-server-ts/src/upstream/dispatcher.ts.
     """
 
     type: Literal['health_status']
@@ -85,7 +85,7 @@ class HealthStatus(TypedDict):
 
 class SessionUpdated(TypedDict):
     """
-    노드→orch: 세션 상태 변경 broadcast. event_relay.py:_dispatch_broadcast_event L134-138. broadcaster 이벤트 dict가 그대로 spread되므로 페이로드는 inline 확장 가능.
+    노드→orch: 세션 상태 변경 broadcast. soul-server-ts/src/upstream/session_broadcaster.ts.
     """
 
     type: Literal['session_updated']
@@ -95,7 +95,7 @@ class SessionUpdated(TypedDict):
 
 class SessionDeleted(TypedDict):
     """
-    노드→orch: 세션 삭제 broadcast. event_relay.py L139-143.
+    노드→orch: 세션 삭제 broadcast. soul-server-ts/src/upstream/session_broadcaster.ts.
     """
 
     type: Literal['session_deleted']
@@ -105,7 +105,7 @@ class SessionDeleted(TypedDict):
 
 class ErrorMessage(TypedDict):
     """
-    노드→orch: 에러 응답. adapter.py:_send_error L334-346.
+    노드→orch: 에러 응답. soul-server-ts/src/upstream/dispatcher.ts.
     """
 
     type: Literal['error']
@@ -117,7 +117,7 @@ class ErrorMessage(TypedDict):
 
 class InterveneAck(TypedDict):
     """
-    노드→orch: intervene 명령 ACK. command_handler.py:_handle_intervene L249-254. orch _send_command Future 매칭에 사용.
+    노드→orch: intervene 명령 ACK. soul-server-ts/src/task/task_intervention_route.ts. orch _send_command Future 매칭에 사용.
     """
 
     type: Literal['intervene_ack']
@@ -127,7 +127,7 @@ class InterveneAck(TypedDict):
 
 class InterruptSessionAck(TypedDict):
     """
-    노드→orch: interrupt_session 명령 ACK. command_handler.py:_handle_interrupt_session + TS dispatcher.handleInterruptSession.
+    노드→orch: interrupt_session 명령 ACK. soul-server-ts dispatcher.handleInterruptSession.
     """
 
     type: Literal['interrupt_session_ack']
@@ -294,7 +294,7 @@ class DownloadAttachmentResult(TypedDict):
 
 class CreateSession(TypedDict):
     """
-    orch→노드: 세션 생성. protocol.py:CreateSessionCmd L15-27 + 실측 caller_info 키.
+    orch→노드: 세션 생성 명령. soul-server-ts dispatcher create_session wire + 실측 caller_info 키.
     """
 
     type: Literal['create_session']
@@ -321,7 +321,7 @@ class CreateSession(TypedDict):
 
 class Intervene(TypedDict):
     """
-    orch→노드: 개입 명령. protocol.py:InterveneCmd L30-34 + command_handler.py L237-243 attachment_paths/caller_info.
+    orch→노드: 개입 명령. attachment_paths/caller_info 포함.
     """
 
     type: Literal['intervene']
@@ -349,7 +349,7 @@ class InterruptSession(TypedDict):
 
 class Respond(TypedDict):
     """
-    orch→노드: AskUserQuestion 응답. protocol.py:RespondCmd L37-48 + command_handler.py L271-297.
+    orch→노드: AskUserQuestion 응답.
     """
 
     type: Literal['respond']
@@ -445,7 +445,7 @@ class RealtimeResolveToolApproval(TypedDict):
 
 class ListSessions(TypedDict):
     """
-    orch→노드: 세션 목록 조회. protocol.py:ListSessionsCmd L51-53.
+    orch→노드: 세션 목록 조회 명령.
     """
 
     type: Literal['list_sessions']
@@ -665,7 +665,7 @@ class RollbackAgentsConfig(TypedDict):
 
 class HealthCheck(TypedDict):
     """
-    orch→노드: 헬스체크. protocol.py:HealthCheckCmd L56-58.
+    orch→노드: 헬스체크 명령.
     """
 
     type: Literal['health_check']
@@ -675,7 +675,7 @@ class HealthCheck(TypedDict):
 
 class SubscribeEvents(TypedDict):
     """
-    orch→노드: 라이브 이벤트 구독. protocol.py:SubscribeEventsCmd L61-65 + command_handler.py L319-333.
+    orch→노드: 라이브 이벤트 구독.
     """
 
     type: Literal['subscribe_events']
@@ -689,7 +689,7 @@ class SubscribeEvents(TypedDict):
 
 class ClaudeAuthStatus(TypedDict):
     """
-    orch→노드: Claude OAuth 토큰 존재 여부 조회. claude_auth_handlers.py:handle_auth_status L26-33. 응답도 동일 type, has_token 추가.
+    orch→노드: Claude OAuth 토큰 존재 여부 조회. 응답도 동일 type, has_token 추가.
     """
 
     type: Literal['claude_auth_status']
@@ -699,7 +699,7 @@ class ClaudeAuthStatus(TypedDict):
 
 class ClaudeAuthSetToken(TypedDict):
     """
-    orch→노드: Claude OAuth 토큰 설정. claude_auth_handlers.py:handle_auth_set_token L36-65.
+    orch→노드: Claude OAuth 토큰 설정.
     """
 
     type: Literal['claude_auth_set_token']
@@ -713,7 +713,7 @@ class ClaudeAuthSetToken(TypedDict):
 
 class ClaudeAuthDeleteToken(TypedDict):
     """
-    orch→노드: Claude OAuth 토큰 삭제. claude_auth_handlers.py:handle_auth_delete_token L68-76.
+    orch→노드: Claude OAuth 토큰 삭제.
     """
 
     type: Literal['claude_auth_delete_token']
@@ -723,7 +723,7 @@ class ClaudeAuthDeleteToken(TypedDict):
 
 class ClaudeAuthGetUsage(TypedDict):
     """
-    orch→노드: Anthropic OAuth usage 조회. claude_auth_handlers.py:handle_auth_api_request L79-119 (URL=ANTHROPIC_USAGE_URL).
+    orch→노드: Anthropic OAuth usage 조회.
     """
 
     type: Literal['claude_auth_get_usage']
@@ -735,7 +735,7 @@ class ClaudeAuthGetUsage(TypedDict):
 
 class ClaudeAuthGetProfile(TypedDict):
     """
-    orch→노드: Anthropic OAuth profile 조회. claude_auth_handlers.py:handle_auth_api_request L79-119 (URL=ANTHROPIC_PROFILE_URL).
+    orch→노드: Anthropic OAuth profile 조회.
     """
 
     type: Literal['claude_auth_get_profile']
@@ -811,7 +811,7 @@ class SSEEventAssistantMessage(TypedDict):
 
 class SSEEventInputRequest(TypedDict):
     """
-    SSE: AskUserQuestion 요청. 별도 wire 메시지로도 forwarding (constants.py EVT_INPUT_REQUEST L41).
+    SSE: AskUserQuestion 요청. 별도 wire 메시지로도 forwarding.
     """
 
     type: Literal['input_request']
@@ -1332,7 +1332,7 @@ class SSEEventMetadataUpdated(TypedDict):
 
 class SSEEventAssistantError(TypedDict):
     """
-    SSE: AssistantMessage.error 별 이벤트 — authentication_failed/billing_error/rate_limit 등 API 수준 에러를 dashboard가 분기 표시. Python `AssistantErrorEngineEvent` (soul-server/src/soul_server/engine/types.py:329-349) 정합.
+    SSE: AssistantMessage.error 별 이벤트 — authentication_failed/billing_error/rate_limit 등 API 수준 에러를 dashboard가 분기 표시.
     """
 
     type: Literal['assistant_error']
@@ -1343,7 +1343,7 @@ class SSEEventAssistantError(TypedDict):
 
 class SSEEventAwaySummary(TypedDict):
     """
-    SSE: Claude CLI가 세션 복귀 시 발행하는 요약. Python `AwaySummaryEngineEvent` (soul-server/src/soul_server/engine/types.py:188-204) 정합.
+    SSE: Claude CLI가 세션 복귀 시 발행하는 요약.
     """
 
     type: Literal['away_summary']
@@ -1352,7 +1352,7 @@ class SSEEventAwaySummary(TypedDict):
 
 class SessionEventEnvelope(TypedDict):
     """
-    노드→orch: SSE 이벤트 wrapper. event_relay.py:relay_events L175-179. event.event 안에 SSEEvent* 중 하나가 packed.
+    노드→orch: SSE 이벤트 wrapper. event.event 안에 SSEEvent* 중 하나가 packed.
     """
 
     type: Literal['event']

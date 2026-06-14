@@ -17,8 +17,8 @@
  * 따라서 item.completed에서 완료 말풍선의 durable 정본인 assistant_message를 발행한다.
  * text_start/text_delta/text_end는 생성 중 live transport에서만 쓰며 DB history에는 저장하지 않는다.
  *
- * Python wire 정본: `soul-server/src/soul_server/models/schemas.py` L155-174.
- * 모든 payload에 `timestamp: Date.now()/1000` (Unix epoch sec, Python 정합).
+ * Legacy SSE wire 정본과 키 호환.
+ * 모든 payload에 `timestamp: Date.now()/1000` (Unix epoch sec).
  */
 
 import type { ThreadEvent, ThreadItem } from "@openai/codex-sdk";
