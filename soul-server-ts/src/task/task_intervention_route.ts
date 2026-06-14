@@ -10,7 +10,8 @@ import type {
 /**
  * `addIntervention` 결과. Python `task_manager.add_intervention` L590-595 정본 형상.
  *
- * - running 세션 → `{delivered: true}` if live engine delivery succeeds; otherwise queue/defer.
+ * - running 세션 → live engine delivery면 `{delivered: true}`, steer interrupt면 `{steered: true}`,
+ *   otherwise queue/defer.
  * - completed/error/interrupted → `{autoResumed: true}` — task_executor.startExecution이
  *   resumeSessionId(task.codexThreadId)로 다음 turn 자동 시작.
  */

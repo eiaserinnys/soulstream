@@ -242,6 +242,11 @@ export interface SupportsLiveTurnSteering {
   steerActiveTurn(
     input: EngineUserInput,
   ): Promise<LiveTurnSteerResult> | LiveTurnSteerResult;
+  /**
+   * 현재 turn을 깨끗하게 중단하고, 호출자가 이미 durable queue에 넣은 steer
+   * 메시지를 다음 turn에서 소비하게 한다. Claude CLI live steering 복제 경로.
+   */
+  interruptForSteer?(): Promise<boolean>;
 }
 
 /**

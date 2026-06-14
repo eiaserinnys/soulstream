@@ -15,6 +15,7 @@ import { composeInterventionTurnPrompt } from "./task_turn_loop_transition.js";
 
 export type RunningInterventionResult =
   | { delivered: true }
+  | { steered: true; queuePosition: number }
   | { queued: true; queuePosition: number }
   | { deferred: true };
 
@@ -40,6 +41,11 @@ export class RunningInterventionTransition {
     message: InterventionMessage,
     options: { queueIfUndelivered?: boolean } = {},
   ): Promise<RunningInterventionResult> {
+    const steerInterruptResult = await this.tryInterruptForSteer(task, message);
+    if (steerInterruptResult) {
+      return steerInterruptResult;
+    }
+
     const liveResult = await this.tryDeliverLive(task, message);
     if (liveResult.status === "delivered") {
       await publishInterventionSent(task, message, this.deps);
@@ -66,6 +72,37 @@ export class RunningInterventionTransition {
       queued: true,
       queuePosition: task.interventionQueue.length,
     };
+  }
+
+  private async tryInterruptForSteer(
+    task: Task,
+    message: InterventionMessage,
+  ): Promise<RunningInterventionResult | null> {
+    const engine = task.engine;
+    if (!isSteerInterruptEngine(engine)) {
+      return null;
+    }
+
+    task.interventionQueue.push(message);
+    const queuePosition = task.interventionQueue.length;
+
+    try {
+      const interrupted = await engine.interruptForSteer();
+      if (interrupted) {
+        return { steered: true, queuePosition };
+      }
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "running intervention steer interrupt failed",
+      );
+    }
+
+    this.deps.logger.debug?.(
+      { sessionId: task.agentSessionId },
+      "running intervention queued after steer interrupt race",
+    );
+    return { queued: true, queuePosition };
   }
 
   private async retryTransientBoundary(
@@ -126,6 +163,16 @@ function isLiveTurnSteeringEngine(
 ): engine is Task["engine"] & SupportsLiveTurnSteering {
   return Boolean(
     engine && typeof (engine as Partial<SupportsLiveTurnSteering>).steerActiveTurn === "function",
+  );
+}
+
+function isSteerInterruptEngine(
+  engine: Task["engine"],
+): engine is Task["engine"] &
+  SupportsLiveTurnSteering &
+  Required<Pick<SupportsLiveTurnSteering, "interruptForSteer">> {
+  return Boolean(
+    engine && typeof (engine as Partial<SupportsLiveTurnSteering>).interruptForSteer === "function",
   );
 }
 

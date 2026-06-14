@@ -2039,8 +2039,10 @@ describe("ClaudeSdkClient", () => {
     expect(captured[0]?.options?.hooks).not.toHaveProperty("SessionStart");
   });
 
-  it("streams initial prompt and mid-turn interventions through the open SDK input", async () => {
+  it("interruptActiveTurnForSteer calls query.interrupt and lets aborted_streaming success complete", async () => {
     const streamedMessages: SDKUserMessage[] = [];
+    const interrupt = vi.fn().mockResolvedValue(undefined);
+    const release = deferred<void>();
     const client = new ClaudeSdkClient(
       {
         query: (params) => {
@@ -2052,17 +2054,20 @@ describe("ClaudeSdkClient", () => {
               if (!first.done) streamedMessages.push(first.value);
               yield sdkSystemInit("claude-sess-stream");
 
-              const intervention = await iterator.next();
-              if (!intervention.done) streamedMessages.push(intervention.value);
+              await release.promise;
               yield {
                 type: "assistant",
-                message: { content: [{ type: "text", text: "saw intervention" }] },
+                message: { content: [{ type: "text", text: "partial before interrupt" }] },
                 parent_tool_use_id: null,
                 uuid: "assistant-stream",
                 session_id: "claude-sess-stream",
               } as unknown as SDKMessage;
-              yield sdkSuccessResult("claude-sess-stream", "done");
+              yield sdkSuccessResult("claude-sess-stream", "partial before interrupt", {
+                stop_reason: null,
+                terminal_reason: "aborted_streaming",
+              });
             })(),
+            { interrupt },
           );
         },
         postResultDrainMs: 10,
@@ -2082,28 +2087,31 @@ describe("ClaudeSdkClient", () => {
     await expect(iterator.next()).resolves.toMatchObject({
       value: { type: "session", sessionId: "claude-sess-stream" },
     });
-    await expect(client.steerActiveTurn({ prompt: "mid-turn intervention" })).resolves.toEqual({
-      status: "delivered",
-    });
+    await expect(client.interruptActiveTurnForSteer()).resolves.toBe(true);
+    expect(interrupt).toHaveBeenCalledTimes(1);
+    release.resolve();
     const events = await collectIterator(iterator);
 
     expect(streamedMessages.map((message) => message.message.content)).toEqual([
       "first",
-      "mid-turn intervention",
     ]);
     expect(events).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: "text", text: "saw intervention" }),
-        expect.objectContaining({ type: "complete", result: "done" }),
+        expect.objectContaining({ type: "text", text: "partial before interrupt" }),
+        expect.objectContaining({
+          type: "result",
+          stopReason: null,
+          terminalReason: "aborted_streaming",
+        }),
+        expect.objectContaining({ type: "complete", result: "partial before interrupt" }),
       ]),
     );
     await expect(client.steerActiveTurn({ prompt: "late" })).resolves.toMatchObject({
-      status: "no_active_turn",
+      status: "not_supported",
     });
   });
 
-  it("does not emit fatal error when SDK echoes a mid-turn intervention as user before null stop result", async () => {
-    const streamedMessages: SDKUserMessage[] = [];
+  it("maps ede diagnostic user-terminal errors as recoverable so queued steer can drain", async () => {
     const client = new ClaudeSdkClient(
       {
         query: (params) =>
@@ -2111,22 +2119,23 @@ describe("ClaudeSdkClient", () => {
             (async function* () {
               const input = params.prompt as AsyncIterable<SDKUserMessage>;
               const iterator = input[Symbol.asyncIterator]();
-              const first = await iterator.next();
-              if (!first.done) streamedMessages.push(first.value);
+              await iterator.next();
               yield sdkSystemInit("claude-sess-user-result");
-
-              const intervention = await iterator.next();
-              if (!intervention.done) streamedMessages.push(intervention.value);
               yield {
-                type: "user",
-                message: { role: "user", content: [] },
-                parent_tool_use_id: null,
-                uuid: "user-empty-after-intervention",
+                type: "result",
+                subtype: "error_during_execution",
+                is_error: true,
+                result: "",
+                errors: [
+                  "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null",
+                ],
                 session_id: "claude-sess-user-result",
-              } as unknown as SDKMessage;
-              yield sdkSuccessResult("claude-sess-user-result", "", {
+                usage: { input_tokens: 1, output_tokens: 1 },
+                total_cost_usd: 0.01,
                 stop_reason: null,
-              });
+                modelUsage: {},
+                permission_denials: [],
+              } as unknown as SDKMessage;
             })(),
           ),
         postResultDrainMs: 10,
@@ -2146,20 +2155,16 @@ describe("ClaudeSdkClient", () => {
     await expect(iterator.next()).resolves.toMatchObject({
       value: { type: "session", sessionId: "claude-sess-user-result" },
     });
-    await expect(client.steerActiveTurn({ prompt: "mid-turn intervention" })).resolves.toEqual({
-      status: "delivered",
-    });
     const events = await collectIterator(iterator);
 
-    expect(streamedMessages.map((message) => message.message.content)).toEqual([
-      "first",
-      "mid-turn intervention",
-    ]);
-    expect(events.find((event) => event.type === "error")).toBeUndefined();
     expect(events).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: "result", stopReason: null, output: "" }),
-        expect.objectContaining({ type: "complete", result: "" }),
+        expect.objectContaining({ type: "result", success: false, stopReason: null }),
+        expect.objectContaining({
+          type: "error",
+          fatal: false,
+          errorCode: "error_during_execution",
+        }),
       ]),
     );
   });

@@ -888,6 +888,48 @@ describe("TaskManager.addIntervention (B-4)", () => {
     ).toHaveLength(1);
   });
 
+  it("running Claude task queues and interrupts for live steering without immediate intervention_sent", async () => {
+    const { db, broadcaster, emitEventEnvelope } = makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "s-claude-steer",
+      prompt: "p",
+      profileId: "claude-default",
+    });
+    const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
+    const interruptForSteer = vi.fn().mockResolvedValue(true);
+    task.engine = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude",
+      async *execute(): AsyncIterable<never> {},
+      async interrupt() { return true; },
+      async close() {},
+      steerActiveTurn,
+      interruptForSteer,
+    } as unknown as EnginePort;
+
+    const result = await tm.addIntervention(
+      {
+        agentSessionId: "s-claude-steer",
+        text: "stop and change direction",
+        user: "alice",
+      },
+      vi.fn(),
+    );
+
+    expect(result).toEqual({ steered: true, queuePosition: 1 });
+    expect(interruptForSteer).toHaveBeenCalledTimes(1);
+    expect(steerActiveTurn).not.toHaveBeenCalled();
+    expect(task.interventionQueue).toEqual([
+      { text: "stop and change direction", user: "alice" },
+    ]);
+    expect(
+      emitEventEnvelope.mock.calls.filter(
+        (c) => (c[1] as { type: string }).type === "intervention_sent",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("running task → queue push only; intervention_sent is emitted when executor dequeues", async () => {
     const { db, broadcaster, emitEventEnvelope } = makeMocks();
     const tm = new TaskManager("n", db, broadcaster, silentLogger);

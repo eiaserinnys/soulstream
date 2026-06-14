@@ -347,31 +347,25 @@ export class ClaudeSdkClient implements ClaudeClient {
     return true;
   }
 
-  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
-    const activeInput = this.activeInput;
-    if (!activeInput) {
-      return {
-        status: "no_active_turn",
-        message: "No active Claude SDK input stream",
-      };
-    }
-
+  async interruptActiveTurnForSteer(): Promise<boolean> {
+    const query = this.activeQuery;
+    if (!query) return false;
     try {
-      const accepted = activeInput.push(
-        makeUserMessage(input.prompt, input.imageAttachmentPaths),
-      );
-      return accepted
-        ? { status: "delivered" }
-        : {
-            status: "not_accepting_input",
-            message: "Claude SDK input stream is closed",
-          };
+      await query.interrupt();
     } catch (err) {
-      return {
-        status: "failed",
-        message: err instanceof Error ? err.message : String(err),
-      };
+      this.logger.warn({ err }, "Claude SDK steer interrupt failed");
+      return false;
     }
+    this.abortPendingInputRequests();
+    return true;
+  }
+
+  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
+    void input;
+    return {
+      status: "not_supported",
+      message: "Claude live steering uses interruptActiveTurnForSteer",
+    };
   }
 
   async close(): Promise<void> {
@@ -1671,6 +1665,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       usage: message.usage,
       totalCostUsd: asNumber(message.total_cost_usd) ?? null,
       stopReason: asNullableString(message.stop_reason),
+      terminalReason: asNullableString(message.terminal_reason),
       errors: asStringArray(message.errors),
       modelUsage: asRecord(message.modelUsage),
       permissionDenials: permissionDenialsToStrings(message.permission_denials),
@@ -1678,15 +1673,16 @@ export class ClaudeSdkClient implements ClaudeClient {
     const contextUsageEvent = makeContextUsageEvent(message.usage);
 
     if (!success) {
+      const errorEvent: ClaudeClientEvent = {
+        type: "error",
+        message: output || "Claude SDK result indicated failure",
+        fatal: !isRecoverableExecutionDiagnostic(message),
+        errorCode: resultErrorCode(message),
+      };
       return [
         resultEvent,
         ...(contextUsageEvent ? [contextUsageEvent] : []),
-        {
-          type: "error",
-          message: output || "Claude SDK result indicated failure",
-          fatal: true,
-          errorCode: resultErrorCode(message),
-        },
+        errorEvent,
       ];
     }
 
@@ -2089,6 +2085,16 @@ function resultErrorCode(message: Record<string, unknown>): string {
     return "claude_sdk_result_error";
   }
   return subtype ?? "claude_sdk_result_error";
+}
+
+function isRecoverableExecutionDiagnostic(message: Record<string, unknown>): boolean {
+  if (message.subtype !== "error_during_execution") return false;
+  const firstError = firstString(asArray(message.errors));
+  if (!firstError?.startsWith("[ede_diagnostic]")) return false;
+  return (
+    firstError.includes("result_type=user") &&
+    firstError.includes("stop_reason=null")
+  );
 }
 
 function asNumber(value: unknown): number | undefined {

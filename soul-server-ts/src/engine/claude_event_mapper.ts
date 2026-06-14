@@ -46,6 +46,7 @@ export type ClaudeClientEvent =
       usage?: unknown;
       totalCostUsd?: number | null;
       stopReason?: string | null;
+      terminalReason?: string | null;
       errors?: string[] | null;
       modelUsage?: Record<string, unknown> | null;
       permissionDenials?: string[] | null;
@@ -389,6 +390,7 @@ export function mapClaudeClientEvent(
           ...(event.usage !== undefined ? { usage: event.usage } : {}),
           ...(event.totalCostUsd !== undefined ? { total_cost_usd: event.totalCostUsd } : {}),
           ...(event.stopReason !== undefined ? { stop_reason: event.stopReason } : {}),
+          ...(event.terminalReason !== undefined ? { terminal_reason: event.terminalReason } : {}),
           ...(event.errors !== undefined ? { errors: event.errors } : {}),
           ...(event.modelUsage !== undefined ? { model_usage: event.modelUsage } : {}),
           ...(event.permissionDenials !== undefined

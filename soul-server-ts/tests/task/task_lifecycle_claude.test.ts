@@ -313,7 +313,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     });
     await expect(
       transition.deliver(task, { text: "second at 80ms", user: "alice" }),
-    ).resolves.toEqual({ queued: true, queuePosition: 1 });
+    ).resolves.toEqual({ steered: true, queuePosition: 1 });
     expect(task.interventionQueue.map((item) => item.text)).toEqual([
       "second at 80ms",
     ]);
@@ -332,9 +332,10 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
     expect(task.status).toBe("completed");
   });
 
-  it("처리 중 Continue trailer intervention은 열린 SDK input으로 전달되어 같은 query에서 처리된다", async () => {
+  it("처리 중 Continue trailer intervention은 현재 query를 interrupt하고 다음 SDK query로 resume된다", async () => {
     const mocks = makeMocks();
     const readyForIntervention = deferred<void>();
+    const interrupted = deferred<void>();
     const capturedPrompts: string[] = [];
     const capturedResumeSessionIds: Array<string | undefined> = [];
     let queryCalls = 0;
@@ -344,27 +345,40 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
         (async function* () {
           queryCalls += 1;
           capturedResumeSessionIds.push(params.options?.resume);
-          expect(typeof params.prompt).not.toBe("string");
-          const promptIterator = (params.prompt as AsyncIterable<SDKUserMessage>)[Symbol.asyncIterator]();
-          capturedPrompts.push(await readUserPromptFromIterator(promptIterator));
+          capturedPrompts.push(await readUserPrompt(params.prompt));
 
           if (queryCalls === 1) {
             yield sdkSystemInit("claude-sess-empty-live");
             readyForIntervention.resolve();
-            capturedPrompts.push(await readUserPromptFromIterator(promptIterator));
+            await interrupted.promise;
             yield {
               type: "assistant",
-              message: { content: [{ type: "text", text: "handled on retry" }] },
+              message: { content: [{ type: "text", text: "partial before steer" }] },
               parent_tool_use_id: null,
               uuid: "assistant-retry",
               session_id: "claude-sess-empty-live",
             } as unknown as SDKMessage;
-            yield sdkSuccessResult("claude-sess-empty-live", "handled on retry");
+            yield sdkSuccessResult("claude-sess-empty-live", "partial before steer", {
+              stop_reason: null,
+              terminal_reason: "aborted_streaming",
+            });
             return;
           }
 
-          throw new Error("Continue trailer should be handled by the open SDK input stream");
+          yield {
+            type: "assistant",
+            message: { content: [{ type: "text", text: "handled after steer" }] },
+            parent_tool_use_id: null,
+            uuid: "assistant-steered",
+            session_id: "claude-sess-empty-live",
+          } as unknown as SDKMessage;
+          yield sdkSuccessResult("claude-sess-empty-live", "handled after steer");
         })(),
+        {
+          interrupt: vi.fn(async () => {
+            interrupted.resolve();
+          }),
+        },
       );
     const client = new ClaudeSdkClient(
       { query, postResultDrainMs: 10 },
@@ -395,11 +409,11 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
         text: "Continue from where you left off.",
         user: "dashboard",
       }),
-    ).resolves.toEqual({ delivered: true });
+    ).resolves.toEqual({ steered: true, queuePosition: 1 });
     await task.executionPromise;
 
-    expect(queryCalls).toBe(1);
-    expect(capturedResumeSessionIds).toEqual([undefined]);
+    expect(queryCalls).toBe(2);
+    expect(capturedResumeSessionIds).toEqual([undefined, "claude-sess-empty-live"]);
     expect(capturedPrompts).toEqual([
       "첫 발화",
       "Continue from where you left off.",
@@ -409,7 +423,7 @@ describe("Claude lifecycle: full integration (Phase C parity 회귀)", () => {
       "sess-lc",
       expect.objectContaining({
         type: "assistant_message",
-        content: "handled on retry",
+        content: "handled after steer",
       }),
     );
     expect(task.status).toBe("completed");

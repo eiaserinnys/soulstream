@@ -80,6 +80,7 @@ export interface ClaudeClient {
   steerActiveTurn?(
     input: EngineUserInput,
   ): Promise<LiveTurnSteerResult> | LiveTurnSteerResult;
+  interruptActiveTurnForSteer?(): Promise<boolean>;
   interrupt?(): Promise<boolean>;
   close?(): Promise<void>;
 }
@@ -198,20 +199,25 @@ export class ClaudeEngineAdapter
     return true;
   }
 
-  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
+  async interruptForSteer(): Promise<boolean> {
     if (!this.currentTurn) {
-      return {
-        status: "no_active_turn",
-        message: "No active Claude turn",
-      };
+      return false;
     }
-    if (!this.client.steerActiveTurn) {
-      return {
-        status: "not_supported",
-        message: "Claude client does not support active-turn steering",
-      };
+    if (this.client.interruptActiveTurnForSteer) {
+      return await this.client.interruptActiveTurnForSteer();
     }
-    return await this.client.steerActiveTurn(input);
+    if (this.client.interrupt) {
+      return await this.client.interrupt();
+    }
+    return false;
+  }
+
+  async steerActiveTurn(input: EngineUserInput): Promise<LiveTurnSteerResult> {
+    void input;
+    return {
+      status: "not_supported",
+      message: "Claude live steering uses interruptForSteer",
+    };
   }
 
   async compact(sessionId: string): Promise<void> {

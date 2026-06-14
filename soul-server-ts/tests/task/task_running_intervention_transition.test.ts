@@ -28,6 +28,72 @@ function makeBroadcaster(
 }
 
 describe("RunningInterventionTransition", () => {
+  it("queues first and interrupts a steer-interrupt engine without publishing intervention_sent", async () => {
+    const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
+    const interruptForSteer = vi.fn().mockResolvedValue(true);
+    const task = makeRunningTask({
+      engine: {
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        steerActiveTurn,
+        interruptForSteer,
+      } as unknown as Task["engine"],
+    });
+    const emitEventEnvelope = vi.fn().mockResolvedValue(undefined);
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(emitEventEnvelope),
+      logger: silentLogger,
+    });
+
+    await expect(
+      transition.deliver(task, {
+        text: "redirect the active turn",
+        user: "alice",
+        attachmentPaths: ["/tmp/a.png"],
+      }),
+    ).resolves.toEqual({ steered: true, queuePosition: 1 });
+
+    expect(interruptForSteer).toHaveBeenCalledTimes(1);
+    expect(steerActiveTurn).not.toHaveBeenCalled();
+    expect(emitEventEnvelope).not.toHaveBeenCalled();
+    expect(task.interventionQueue).toEqual([
+      {
+        text: "redirect the active turn",
+        user: "alice",
+        attachmentPaths: ["/tmp/a.png"],
+      },
+    ]);
+  });
+
+  it("keeps the queued steer message when steer interrupt races with turn completion", async () => {
+    const interruptForSteer = vi.fn().mockResolvedValue(false);
+    const task = makeRunningTask({
+      engine: {
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        steerActiveTurn: vi.fn(),
+        interruptForSteer,
+      } as unknown as Task["engine"],
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+    });
+
+    await expect(
+      transition.deliver(task, { text: "race-safe steer", user: "alice" }),
+    ).resolves.toEqual({ queued: true, queuePosition: 1 });
+
+    expect(interruptForSteer).toHaveBeenCalledTimes(1);
+    expect(task.interventionQueue).toEqual([{ text: "race-safe steer", user: "alice" }]);
+  });
+
   it("delivers running interventions to a live engine and publishes intervention_sent immediately", async () => {
     const steerActiveTurn = vi.fn().mockResolvedValue({ status: "delivered" });
     const task = makeRunningTask({

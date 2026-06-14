@@ -298,6 +298,21 @@ describe("TaskRuntimeCommands ACK builders", () => {
 
     expect(
       buildInterveneAck({
+        requestId: "req-steered",
+        agentSessionId: "sess-1",
+        result: { steered: true, queuePosition: 2 },
+      }),
+    ).toEqual({
+      type: "intervene_ack",
+      requestId: "req-steered",
+      status: "ok",
+      outcome: "steered",
+      queuePosition: 2,
+      agentSessionId: "sess-1",
+    });
+
+    expect(
+      buildInterveneAck({
         requestId: "req-deferred",
         agentSessionId: "sess-1",
         result: { deferred: true },
