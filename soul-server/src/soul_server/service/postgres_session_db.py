@@ -13,8 +13,14 @@ from soul_common.db.session_db_base import SessionDBBase  # noqa: F401
 from soul_common.db.session_db import PostgresSessionDB  # noqa: F401
 from soul_common.db.sqlite_session_db import SqliteSessionDB  # noqa: F401
 
-# soul-server 전용: PostgreSQL schema.sql 경로
-_PG_SCHEMA_PATH = Path(__file__).resolve().parent.parent.parent.parent / "sql" / "schema.sql"
+# Canonical PostgreSQL schema shared with the live TypeScript soul server.
+_PG_SCHEMA_PATH = (
+    Path(__file__).resolve().parents[4]
+    / "packages"
+    / "db-schema"
+    / "sql"
+    / "schema.sql"
+)
 
 # soul_common.db.__file__ 이 db/__init__.py 이므로 parent가 db/ 디렉토리
 # → 올바른 경로: .../soul_common/db/sqlite_schema.sql
@@ -26,7 +32,7 @@ AnySessionDB = SessionDBBase
 def create_soul_server_session_db(database_url: str, node_id: str) -> PostgresSessionDB:
     """soul-server용 PostgresSessionDB를 생성한다.
 
-    schema_path를 soul-server/sql/schema.sql로 자동 설정한다.
+    schema_path를 packages/db-schema/sql/schema.sql로 자동 설정한다.
     """
     return PostgresSessionDB(
         database_url=database_url,

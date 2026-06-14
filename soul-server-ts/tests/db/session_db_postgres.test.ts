@@ -247,13 +247,13 @@ async function connect(url: string, containerId: string | undefined): Promise<Po
 
 async function applySupervisorSchema(sql: SqlClient): Promise<void> {
   const schemaSql = readFileSync(
-    fileURLToPath(new URL("../../../soul-server/sql/schema.sql", import.meta.url)),
+    fileURLToPath(new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url)),
     "utf8",
   );
   const migration022Sql = readFileSync(
     fileURLToPath(
       new URL(
-        "../../../soul-server/sql/migrations/022_supervisor_wake_dispatch_state.sql",
+        "../../../packages/db-schema/sql/migrations/022_supervisor_wake_dispatch_state.sql",
         import.meta.url,
       ),
     ),

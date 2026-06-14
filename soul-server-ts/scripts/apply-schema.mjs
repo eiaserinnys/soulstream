@@ -11,7 +11,7 @@ const LOCK_NAMESPACE = 260529;
 const LOCK_ID = 1410;
 
 export function resolveSchemaPath(scriptUrl = import.meta.url) {
-  return resolve(dirname(fileURLToPath(scriptUrl)), "../../soul-server/sql/schema.sql");
+  return resolve(dirname(fileURLToPath(scriptUrl)), "../../packages/db-schema/sql/schema.sql");
 }
 
 export function readDatabaseUrl(env = process.env) {

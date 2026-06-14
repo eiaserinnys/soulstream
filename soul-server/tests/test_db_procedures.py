@@ -543,7 +543,13 @@ async def test_supervisor_consumer_cursor_registry_and_schema_reapply(test_db):
     assert touched["role"] == "cluster"
     assert touched["last_seen_at"] == now
 
-    schema_path = Path(__file__).resolve().parent.parent / "sql" / "schema.sql"
+    schema_path = (
+        Path(__file__).resolve().parents[2]
+        / "packages"
+        / "db-schema"
+        / "sql"
+        / "schema.sql"
+    )
     await test_db.execute(schema_path.read_text(encoding="utf-8"))
 
     recovered = await test_db.fetch("SELECT * FROM supervisor_event_read_after($1, $2)", 0, 10)

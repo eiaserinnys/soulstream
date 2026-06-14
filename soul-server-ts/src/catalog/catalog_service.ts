@@ -9,7 +9,7 @@
  *   - SessionDB — folders/sessions 테이블 mutation
  *   - SessionBroadcaster — catalog_updated / session_deleted wire emit
  *
- * 본 PR은 stored procedure 호출만 — schema DDL 정본은 Python `sql/schema.sql`.
+ * 본 PR은 stored procedure 호출만 — schema DDL 정본은 `packages/db-schema/sql/schema.sql`.
  */
 
 import { randomUUID } from "node:crypto";
