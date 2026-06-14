@@ -10,233 +10,58 @@ import {
   FileAttachmentStore,
   type AttachmentStore,
 } from "../attachments/file_manager.js";
-import type { ContextItem } from "../context/prompt_assembler.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
-import type { CallerInfo, Task } from "../task/task_models.js";
-import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { SupervisorDirectTargetGuard } from "../supervisor/direct_target_guard.js";
 import {
-  AgentConfigCommandError,
   AgentConfigCommands,
   type AgentConfigCommandHandler,
 } from "./agent_config_commands.js";
+import { createAgentConfigCommandFamily } from "./agent_config_command_family.js";
+import { AttachmentCommands } from "./attachment_commands.js";
+import { createAttachmentCommandFamily } from "./attachment_command_family.js";
+import { ClaudeAuthCommands } from "./claude_auth_commands.js";
+import { createAuthCommandFamily } from "./auth_command_family.js";
 import {
-  AttachmentCommandError,
-  AttachmentCommands,
-} from "./attachment_commands.js";
-import {
-  ClaudeAuthCommandError,
-  ClaudeAuthCommands,
-  type ClaudeAuthCommand,
-} from "./claude_auth_commands.js";
-import {
-  ClaudeRuntimeCommandError,
   ClaudeRuntimeCommands,
-  type ClaudeRuntimeBackgroundTasksCommand,
-  type ClaudeRuntimeDeleteScheduleCommand,
-  type ClaudeRuntimeListTasksCommand,
-  type ClaudeRuntimeListSchedulesCommand,
   type ClaudeRuntimeScheduleCommands,
-  type ClaudeRuntimeStopTaskCommand,
-  type ClaudeRuntimeTaskOutputCommand,
 } from "./claude_runtime_commands.js";
+import { createClaudeRuntimeCommandFamily } from "./claude_runtime_command_family.js";
 import {
-  DeliveryCommandError,
-  DeliveryCommands,
-  type RespondCommand,
-  type ToolApprovalCommand,
-} from "./delivery_commands.js";
+  CommandDispatchError,
+  type CommandHandlerMap,
+  type CommandLike,
+  type SendFn,
+} from "./command_family.js";
+import { DeliveryCommands } from "./delivery_commands.js";
+import { createHealthCommandFamily } from "./health_command_family.js";
+import { createInterventionCommandFamily } from "./intervention_command_family.js";
+import { ProviderUsageCommands } from "./provider_usage_commands.js";
 import {
   buildRealtimeAckError,
   type RealtimeAckType,
 } from "./realtime_ack.js";
+import { RealtimeCommands } from "./realtime_commands.js";
 import {
-  ProviderUsageCommandError,
-  ProviderUsageCommands,
-  type ProviderUsageCommand,
-} from "./provider_usage_commands.js";
-import {
-  RealtimeCommandError,
-  RealtimeCommands,
-  type RealtimeCommandAck,
-  type RealtimeCreateCallCommand,
-  type RealtimeEventCommand,
-  type RealtimeResolveToolApprovalCommand,
-} from "./realtime_commands.js";
-import {
-  ReflectionCommandError,
-  ReflectionCommands,
-} from "./reflection_commands.js";
-import {
-  SessionListCommandError,
-  SessionListCommands,
-} from "./session_list_commands.js";
-import {
-  TaskRuntimeCommands,
-  UnknownAgentProfileError,
-  buildInterveneAck,
-  buildSessionCreatedAck,
-} from "./task_runtime_commands.js";
+  RealtimeCommandDispatchError,
+  createRealtimeCommandFamily,
+} from "./realtime_command_family.js";
+import { ReflectionCommands } from "./reflection_commands.js";
+import { createReflectionCommandFamily } from "./reflection_command_family.js";
+import { SessionListCommands } from "./session_list_commands.js";
+import { createSessionCommandFamily } from "./session_command_family.js";
+import { TaskRuntimeCommands } from "./task_runtime_commands.js";
 
-export type SendFn = (data: unknown) => Promise<void>;
-
-interface CommandLike {
-  type?: string;
-  requestId?: string;
-  request_id?: string;
-}
-
-interface CreateSessionCmd extends CommandLike {
-  type: "create_session";
-  agentSessionId: string;
-  prompt: string;
-  profile?: string;
-  caller_session_id?: string | null;
-  caller_info?: CallerInfo;
-  attachment_paths?: string[];
-  extra_context_items?: ContextItem[];
-  model?: string | null;
-  oauth_token?: string | null;
-  allowed_tools?: string[];
-  disallowed_tools?: string[];
-  use_mcp?: boolean;
-  claude_permission_mode?: ClaudePermissionMode;
-  allowedTools?: string[];
-  disallowedTools?: string[];
-  useMcp?: boolean;
-  claudePermissionMode?: ClaudePermissionMode;
-  reasoningEffort?: ReasoningEffort;
-  folderId?: string | null;
-  /**
-   * Python parity: upstream `systemPrompt` forwards into the session's
-   * system_prompt without renaming on the wire.
-   */
-  systemPrompt?: string;
-}
-
-interface IntervenCmd extends CommandLike {
-  type: "intervene";
-  agentSessionId?: string;
-  session_id?: string;
-  text: string;
-  user?: string;
-  caller_info?: CallerInfo;
-  attachment_paths?: string[];
-  extra_context_items?: ContextItem[];
-}
-
-interface SupervisorInterveneCmd extends CommandLike {
-  type: "supervisor_intervene";
-  role?: string;
-  expected_epoch?: number;
-  expectedEpoch?: number;
-  text: string;
-  user?: string;
-  caller_info?: CallerInfo;
-  attachment_paths?: string[];
-  extra_context_items?: ContextItem[];
-}
-
-interface InterruptSessionCmd extends CommandLike {
-  type: "interrupt_session";
-  agentSessionId?: string;
-  session_id?: string;
-}
-
-interface SubscribeEventsCmd extends CommandLike {
-  type: "subscribe_events";
-  agentSessionId?: string;
-  session_id?: string;
-  subscribeId?: string;
-}
-
-interface UploadAttachmentCmd extends CommandLike {
-  type: "upload_attachment";
-  session_id?: string;
-  filename?: string;
-  content_type?: string;
-  content_b64?: string;
-}
-
-interface UploadAttachmentStartCmd extends CommandLike {
-  type: "upload_attachment_start";
-  upload_id?: string;
-  session_id?: string;
-  filename?: string;
-  content_type?: string;
-  expected_size?: number;
-}
-
-interface UploadAttachmentChunkCmd extends CommandLike {
-  type: "upload_attachment_chunk";
-  upload_id?: string;
-  chunk_index?: number;
-  content_b64?: string;
-}
-
-interface UploadAttachmentFinishCmd extends CommandLike {
-  type: "upload_attachment_finish";
-  upload_id?: string;
-}
-
-interface UploadAttachmentAbortCmd extends CommandLike {
-  type: "upload_attachment_abort";
-  upload_id?: string;
-}
-
-interface DeleteSessionAttachmentsCmd extends CommandLike {
-  type: "delete_session_attachments";
-  session_id?: string;
-}
-
-interface DownloadAttachmentCmd extends CommandLike {
-  type: "download_attachment";
-  path?: string;
-}
-
-type ListSessionsCmd = CommandLike & { type: "list_sessions" };
-type ReflectBriefCmd = CommandLike & { type: "reflect_brief" };
-type PlanAgentProfileUpdateCmd = CommandLike & {
-  type: "plan_agent_profile_update";
-  profile?: unknown;
-  create_if_missing?: boolean;
-  createIfMissing?: boolean;
-  include_text_diff?: boolean;
-  includeTextDiff?: boolean;
-};
-type ApplyAgentProfileUpdateCmd = CommandLike & {
-  type: "apply_agent_profile_update";
-  profile?: unknown;
-  create_if_missing?: boolean;
-  createIfMissing?: boolean;
-  include_text_diff?: boolean;
-  includeTextDiff?: boolean;
-  expected_config_checksum?: string | null;
-  expectedConfigChecksum?: string | null;
-};
-type ListAgentsConfigSnapshotsCmd = CommandLike & {
-  type: "list_agents_config_snapshots";
-};
-type RollbackAgentsConfigCmd = CommandLike & {
-  type: "rollback_agents_config";
-  snapshot_path?: string;
-  snapshotPath?: string;
-  snapshot_id?: string;
-  snapshotId?: string;
-  include_text_diff?: boolean;
-  includeTextDiff?: boolean;
-};
+export type { SendFn } from "./command_family.js";
 
 /**
  * orch → 노드 명령 디스패처.
  *
- * `handlers` is the command inventory. Keep route-specific policy in the
- * boundary collaborators; this class owns raw command routing, send gating,
- * and generic error envelopes.
+ * `handlers` is the command inventory. Command-specific adaptation lives in
+ * family modules; this class owns raw command routing and error envelopes.
  *
  * Cross-runtime parity to preserve here:
  * - command ACK correlation uses `requestId`, not `request_id`
@@ -246,27 +71,16 @@ type RollbackAgentsConfigCmd = CommandLike & {
  *   relay loop for its different event-channel shape
  */
 export class CommandDispatcher {
-  private readonly handlers: Record<string, (cmd: CommandLike) => Promise<void>>;
-  private readonly taskRuntimeCommands: TaskRuntimeCommands;
-  private readonly attachmentCommands: AttachmentCommands;
-  private readonly sessionListCommands: SessionListCommands;
-  private readonly claudeAuthCommands: ClaudeAuthCommands;
-  private readonly providerUsageCommands: ProviderUsageCommands;
-  private readonly deliveryCommands: DeliveryCommands;
-  private readonly claudeRuntimeCommands: ClaudeRuntimeCommands;
-  private readonly realtimeCommands: RealtimeCommands;
-  private readonly agentConfigCommands: AgentConfigCommands;
-  private readonly reflectionCommands: ReflectionCommands;
-  private readonly supervisorDirectTargetGuard?: SupervisorDirectTargetGuard;
+  private readonly handlers: CommandHandlerMap;
 
   constructor(
     private readonly send: SendFn,
     private readonly logger: Logger,
-    private readonly nodeId: string,
-    private readonly agentRegistry: AgentRegistry,
-    private readonly taskManager: TaskManager,
-    private readonly taskExecutor: TaskExecutor,
-    private readonly attachmentStore: AttachmentStore = new FileAttachmentStore(".local/incoming", logger),
+    nodeId: string,
+    agentRegistry: AgentRegistry,
+    taskManager: TaskManager,
+    taskExecutor: TaskExecutor,
+    attachmentStore: AttachmentStore = new FileAttachmentStore(".local/incoming", logger),
     claudeAuth?: ClaudeAuthCommandHandler,
     /**
      * `list_sessions` needs SessionDB. Keep it optional at construction so
@@ -280,95 +94,63 @@ export class CommandDispatcher {
     reflectionRuntime?: McpRuntime,
     scheduleCommands?: ClaudeRuntimeScheduleCommands,
   ) {
-    this.taskRuntimeCommands = new TaskRuntimeCommands({
+    const taskRuntimeCommands = new TaskRuntimeCommands({
       agentRegistry,
       taskManager,
       taskExecutor,
       logger,
     });
-    this.supervisorDirectTargetGuard = sessionDb
+    const supervisorDirectTargetGuard = sessionDb
       ? new SupervisorDirectTargetGuard({ db: sessionDb, taskManager })
       : undefined;
-    this.attachmentCommands = new AttachmentCommands(attachmentStore);
-    this.sessionListCommands = new SessionListCommands(sessionDb, nodeId);
-    this.claudeAuthCommands = new ClaudeAuthCommands({ agentRegistry, claudeAuth });
-    this.providerUsageCommands = new ProviderUsageCommands({
+    const attachmentCommands = new AttachmentCommands(attachmentStore);
+    const sessionListCommands = new SessionListCommands(sessionDb, nodeId);
+    const claudeAuthCommands = new ClaudeAuthCommands({ agentRegistry, claudeAuth });
+    const providerUsageCommands = new ProviderUsageCommands({
       providerUsage: providerUsage ?? new ProviderUsageService({ claudeAuth }),
     });
-    this.deliveryCommands = new DeliveryCommands({
+    const deliveryCommands = new DeliveryCommands({
       agentRegistry,
       taskManager,
       taskExecutor,
       logger,
     });
-    this.claudeRuntimeCommands = new ClaudeRuntimeCommands(taskManager, scheduleCommands);
-    this.realtimeCommands = new RealtimeCommands(realtimeBroker);
-    this.agentConfigCommands = new AgentConfigCommands(
+    const claudeRuntimeCommands = new ClaudeRuntimeCommands(
+      taskManager,
+      scheduleCommands,
+    );
+    const realtimeCommands = new RealtimeCommands(realtimeBroker);
+    const agentConfigCommands = new AgentConfigCommands(
       agentConfigService,
       agentRegistry,
     );
-    this.reflectionCommands = new ReflectionCommands(reflectionRuntime);
-    // This table is the route inventory. Add new command types here, then put
-    // command-specific adaptation behind a tested boundary when it has depth.
+    const reflectionCommands = new ReflectionCommands(reflectionRuntime);
+
     this.handlers = {
-      health_check: (cmd) => this.handleHealthCheck(cmd),
-      create_session: (cmd) => this.handleCreateSession(cmd as CreateSessionCmd),
-      intervene: (cmd) => this.handleIntervene(cmd as IntervenCmd),
-      supervisor_intervene: (cmd) =>
-        this.handleSupervisorIntervene(cmd as SupervisorInterveneCmd),
-      interrupt_session: (cmd) => this.handleInterruptSession(cmd as InterruptSessionCmd),
-      respond: (cmd) => this.handleRespond(cmd as RespondCommand),
-      approve_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCommand),
-      reject_tool: (cmd) => this.handleToolApproval(cmd as ToolApprovalCommand),
-      claude_runtime_list_tasks: (cmd) =>
-        this.handleClaudeRuntimeListTasks(cmd as ClaudeRuntimeListTasksCommand),
-      claude_runtime_task_output: (cmd) =>
-        this.handleClaudeRuntimeTaskOutput(cmd as ClaudeRuntimeTaskOutputCommand),
-      claude_runtime_stop_task: (cmd) =>
-        this.handleClaudeRuntimeStopTask(cmd as ClaudeRuntimeStopTaskCommand),
-      claude_runtime_background_tasks: (cmd) =>
-        this.handleClaudeRuntimeBackgroundTasks(cmd as ClaudeRuntimeBackgroundTasksCommand),
-      claude_runtime_list_schedules: (cmd) =>
-        this.handleClaudeRuntimeListSchedules(cmd as ClaudeRuntimeListSchedulesCommand),
-      claude_runtime_delete_schedule: (cmd) =>
-        this.handleClaudeRuntimeDeleteSchedule(cmd as ClaudeRuntimeDeleteScheduleCommand),
-      realtime_create_call: (cmd) =>
-        this.handleRealtimeCreateCall(cmd as RealtimeCreateCallCommand),
-      realtime_event: (cmd) =>
-        this.handleRealtimeEvent(cmd as RealtimeEventCommand),
-      realtime_resolve_tool_approval: (cmd) =>
-        this.handleRealtimeResolveToolApproval(cmd as RealtimeResolveToolApprovalCommand),
-      subscribe_events: (cmd) => this.handleSubscribeEvents(cmd as SubscribeEventsCmd),
-      list_sessions: (cmd) => this.handleListSessions(cmd as ListSessionsCmd),
-      upload_attachment: (cmd) => this.handleUploadAttachment(cmd as UploadAttachmentCmd),
-      upload_attachment_start: (cmd) =>
-        this.handleUploadAttachmentStart(cmd as UploadAttachmentStartCmd),
-      upload_attachment_chunk: (cmd) =>
-        this.handleUploadAttachmentChunk(cmd as UploadAttachmentChunkCmd),
-      upload_attachment_finish: (cmd) =>
-        this.handleUploadAttachmentFinish(cmd as UploadAttachmentFinishCmd),
-      upload_attachment_abort: (cmd) =>
-        this.handleUploadAttachmentAbort(cmd as UploadAttachmentAbortCmd),
-      delete_session_attachments: (cmd) =>
-        this.handleDeleteSessionAttachments(cmd as DeleteSessionAttachmentsCmd),
-      download_attachment: (cmd) =>
-        this.handleDownloadAttachment(cmd as DownloadAttachmentCmd),
-      claude_auth_status: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
-      claude_auth_set_token: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
-      claude_auth_delete_token: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
-      claude_auth_get_usage: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
-      claude_auth_get_profile: (cmd) => this.handleClaudeAuth(cmd as ClaudeAuthCommand),
-      provider_usage_get: (cmd) =>
-        this.handleProviderUsage(cmd as ProviderUsageCommand),
-      reflect_brief: (cmd) => this.handleReflectBrief(cmd as ReflectBriefCmd),
-      plan_agent_profile_update: (cmd) =>
-        this.handlePlanAgentProfileUpdate(cmd as PlanAgentProfileUpdateCmd),
-      apply_agent_profile_update: (cmd) =>
-        this.handleApplyAgentProfileUpdate(cmd as ApplyAgentProfileUpdateCmd),
-      list_agents_config_snapshots: (cmd) =>
-        this.handleListAgentsConfigSnapshots(cmd as ListAgentsConfigSnapshotsCmd),
-      rollback_agents_config: (cmd) =>
-        this.handleRollbackAgentsConfig(cmd as RollbackAgentsConfigCmd),
+      ...createHealthCommandFamily({ send, nodeId, agentRegistry, taskManager }),
+      ...createSessionCommandFamily({
+        send,
+        logger,
+        taskManager,
+        taskRuntimeCommands,
+        sessionListCommands,
+      }),
+      ...createInterventionCommandFamily({
+        send,
+        deliveryCommands,
+        taskRuntimeCommands,
+        supervisorDirectTargetGuard,
+      }),
+      ...createClaudeRuntimeCommandFamily({ send, claudeRuntimeCommands }),
+      ...createRealtimeCommandFamily({ send, realtimeCommands }),
+      ...createAttachmentCommandFamily({ send, attachmentCommands }),
+      ...createAuthCommandFamily({
+        send,
+        claudeAuthCommands,
+        providerUsageCommands,
+      }),
+      ...createReflectionCommandFamily({ send, reflectionCommands }),
+      ...createAgentConfigCommandFamily({ send, agentConfigCommands }),
     };
   }
 
@@ -383,6 +165,19 @@ export class CommandDispatcher {
       try {
         await handler(cmd);
       } catch (err) {
+        if (err instanceof CommandDispatchError) {
+          await this.sendError(cmd, err.message);
+          return;
+        }
+        if (err instanceof RealtimeCommandDispatchError) {
+          await this.sendRealtimeAckError(
+            err.ackType,
+            err.requestId,
+            err.agentSessionId,
+            err.message,
+          );
+          return;
+        }
         this.logger.error({ err, cmdType: cmd.type }, "Handler threw");
         await this.sendError(cmd, `Handler error: ${stringifyError(err)}`);
       }
@@ -394,149 +189,14 @@ export class CommandDispatcher {
     }
   }
 
-  /**
-   * `respond` 명령 — Claude AskUserQuestion/input_request 응답.
-   *
-   * wire에는 두 ID가 공존한다:
-   * - requestId: orch command ACK 매칭용 ID
-   * - inputRequestId/request_id: Claude pending input request ID
-   *
-   * DeliveryCommands owns validation and ACK shape. Dispatcher only sends the
-   * returned ACK or maps boundary validation failures to the generic error wire.
-   */
-  private async handleRespond(cmd: RespondCommand): Promise<void> {
-    try {
-      const ack = await this.deliveryCommands.respond(cmd);
-      if (ack) {
-        await this.send(ack);
-      }
-    } catch (err) {
-      if (err instanceof DeliveryCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  /**
-   * `approve_tool` / `reject_tool` 명령 — OpenAI Agents SDK RunToolApprovalItem 응답.
-   *
-   * Approval uses a separate command because `respond` is reserved for Claude
-   * AskUserQuestion. DeliveryCommands owns delivery semantics and ACK shape.
-   */
-  private async handleToolApproval(cmd: ToolApprovalCommand): Promise<void> {
-    try {
-      const ack = await this.deliveryCommands.toolApproval(cmd);
-      if (ack) {
-        await this.send(ack);
-      }
-    } catch (err) {
-      if (err instanceof DeliveryCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleClaudeRuntimeListTasks(
-    cmd: ClaudeRuntimeListTasksCommand,
-  ): Promise<void> {
-    await this.sendClaudeRuntimeCommand(() => this.claudeRuntimeCommands.listTasks(cmd), cmd);
-  }
-
-  private async handleClaudeRuntimeTaskOutput(
-    cmd: ClaudeRuntimeTaskOutputCommand,
-  ): Promise<void> {
-    await this.sendClaudeRuntimeCommand(() => this.claudeRuntimeCommands.taskOutput(cmd), cmd);
-  }
-
-  private async handleClaudeRuntimeStopTask(
-    cmd: ClaudeRuntimeStopTaskCommand,
-  ): Promise<void> {
-    await this.sendClaudeRuntimeCommand(() => this.claudeRuntimeCommands.stopTask(cmd), cmd);
-  }
-
-  private async handleClaudeRuntimeBackgroundTasks(
-    cmd: ClaudeRuntimeBackgroundTasksCommand,
-  ): Promise<void> {
-    await this.sendClaudeRuntimeCommand(
-      () => this.claudeRuntimeCommands.backgroundTasks(cmd),
-      cmd,
-    );
-  }
-
-  private async handleClaudeRuntimeListSchedules(
-    cmd: ClaudeRuntimeListSchedulesCommand,
-  ): Promise<void> {
-    await this.sendClaudeRuntimeCommand(
-      () => this.claudeRuntimeCommands.listSchedules(cmd),
-      cmd,
-    );
-  }
-
-  private async handleClaudeRuntimeDeleteSchedule(
-    cmd: ClaudeRuntimeDeleteScheduleCommand,
-  ): Promise<void> {
-    await this.sendClaudeRuntimeCommand(
-      () => this.claudeRuntimeCommands.deleteSchedule(cmd),
-      cmd,
-    );
-  }
-
-  private async sendClaudeRuntimeCommand(
-    buildAck: () => Promise<Record<string, unknown> | null>,
-    cmd: CommandLike,
-  ): Promise<void> {
-    try {
-      const ack = await buildAck();
-      if (ack) await this.send(ack);
-    } catch (err) {
-      if (err instanceof ClaudeRuntimeCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleRealtimeCreateCall(cmd: RealtimeCreateCallCommand): Promise<void> {
-    await this.sendRealtimeCommand(() => this.realtimeCommands.createCall(cmd));
-  }
-
-  private async handleRealtimeEvent(cmd: RealtimeEventCommand): Promise<void> {
-    await this.sendRealtimeCommand(() => this.realtimeCommands.relayEvent(cmd));
-  }
-
-  private async handleRealtimeResolveToolApproval(
-    cmd: RealtimeResolveToolApprovalCommand,
-  ): Promise<void> {
-    await this.sendRealtimeCommand(() =>
-      this.realtimeCommands.resolveToolApproval(cmd),
-    );
-  }
-
-  private async sendRealtimeCommand(
-    buildAck: () => Promise<RealtimeCommandAck | null>,
-  ): Promise<void> {
-    try {
-      const ack = await buildAck();
-      if (ack) {
-        await this.send(ack);
-      }
-    } catch (err) {
-      if (err instanceof RealtimeCommandError) {
-        await this.sendRealtimeAckError(
-          err.ackType,
-          err.requestId,
-          err.agentSessionId,
-          err.message,
-        );
-        return;
-      }
-      throw err;
-    }
+  private async sendError(cmd: CommandLike, message: string): Promise<void> {
+    await this.send({
+      type: "error",
+      message,
+      requestId: cmd.requestId ?? cmd.request_id ?? "",
+      command_type: cmd.type ?? "",
+    });
+    this.logger.warn({ cmd, message }, "Sent error to upstream");
   }
 
   private async sendRealtimeAckError(
@@ -555,517 +215,9 @@ export class CommandDispatcher {
       }),
     );
   }
-
-  private async handleHealthCheck(cmd: CommandLike): Promise<void> {
-    const agents = this.agentRegistry.list();
-    await this.send({
-      type: "health_status",
-      runners: {
-        max_concurrent: agents.length,
-        active: this.taskManager.listTasks().filter((t) => t.status === "running").length,
-      },
-      node_id: this.nodeId,
-      requestId: cmd.requestId ?? cmd.request_id ?? "",
-    });
-  }
-
-  /**
-   * `create_session` 명령.
-   *
-   * TaskRuntimeCommands owns profile lookup, task creation, attachment context,
-   * backend-specific OAuth forwarding, and startExecution. Dispatcher keeps the
-   * minimal wire guard and requestId-gated `session_created` ACK.
-   */
-  private async handleCreateSession(cmd: CreateSessionCmd): Promise<void> {
-    if (!cmd.agentSessionId || !cmd.prompt) {
-      await this.sendError(cmd, "create_session requires agentSessionId and prompt");
-      return;
-    }
-    const profileId = cmd.profile;
-    if (!profileId) {
-      await this.sendError(cmd, "create_session requires profile (agent id)");
-      return;
-    }
-    let task: Task;
-    try {
-      task = await this.taskRuntimeCommands.createSession({
-        agentSessionId: cmd.agentSessionId,
-        prompt: cmd.prompt,
-        profileId,
-        callerSessionId: cmd.caller_session_id ?? null,
-        callerInfo: cmd.caller_info,
-        model: cmd.model,
-        oauthToken: cmd.oauth_token,
-        reasoningEffort: cmd.reasoningEffort,
-        allowedTools: cmd.allowed_tools ?? cmd.allowedTools,
-        disallowedTools: cmd.disallowed_tools ?? cmd.disallowedTools,
-        useMcp: cmd.use_mcp ?? cmd.useMcp,
-        claudePermissionMode: cmd.claude_permission_mode ?? cmd.claudePermissionMode,
-        folderId: cmd.folderId ?? null,
-        systemPrompt: cmd.systemPrompt,
-        extraContextItems: cmd.extra_context_items,
-        attachmentPaths: cmd.attachment_paths,
-      });
-    } catch (err) {
-      if (err instanceof UnknownAgentProfileError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-
-    // session_created wire는 *두 경로*가 같은 type을 사용 — orch는 payload 키로 구분:
-    //   1. dispatcher ACK (여기): {type, agentSessionId, requestId}  — *requestId 있을 때만*
-    //   2. SessionBroadcaster.emitSessionCreated: {type, session, folder_id, caller_source}
-    // Python `command_handler.py` L222-227 / `session_broadcaster.py` L67-77 정본 패턴.
-    // requestId 없으면 ACK 발행 안 함 (atom c13f7826 빈 string ACK 금지).
-    const requestId = cmd.requestId ?? cmd.request_id ?? "";
-    if (requestId) {
-      await this.send(
-        buildSessionCreatedAck({
-          requestId,
-          agentSessionId: task.agentSessionId,
-        }),
-      );
-    }
-  }
-
-  /**
-   * `intervene` 명령.
-   *
-   * TaskRuntimeCommands owns delivery, queueing, and auto-resume. Dispatcher
-   * validates the wire minimum, maps runtime failures to the generic error wire,
-   * and emits the requestId-gated `intervene_ack`.
-   */
-  private async handleIntervene(cmd: IntervenCmd): Promise<void> {
-    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
-    if (!sessionId || !cmd.text) {
-      await this.sendError(cmd, "intervene requires agentSessionId and text");
-      return;
-    }
-
-    let result;
-    try {
-      await this.supervisorDirectTargetGuard?.assertCanTarget(sessionId);
-      result = await this.taskRuntimeCommands.intervene({
-        agentSessionId: sessionId,
-        text: cmd.text,
-        user: cmd.user,
-        callerInfo: cmd.caller_info,
-        attachmentPaths: cmd.attachment_paths,
-        extraContextItems: cmd.extra_context_items,
-      });
-    } catch (err) {
-      await this.sendError(cmd, err instanceof Error ? err.message : String(err));
-      return;
-    }
-
-    const requestId = cmd.requestId ?? cmd.request_id ?? "";
-    if (!requestId) {
-      // ACK 발행 안 함 (atom c13f7826 빈 string ACK 금지) — orch _send_command 미사용 경로.
-      return;
-    }
-    await this.send(buildInterveneAck({ requestId, agentSessionId: sessionId, result }));
-  }
-
-  private async handleSupervisorIntervene(cmd: SupervisorInterveneCmd): Promise<void> {
-    if (!cmd.role || !cmd.text) {
-      await this.sendError(cmd, "supervisor_intervene requires role and text");
-      return;
-    }
-    if (!this.supervisorDirectTargetGuard) {
-      await this.sendError(cmd, "supervisor_intervene requires SessionDB");
-      return;
-    }
-
-    let sessionId;
-    try {
-      sessionId = await this.supervisorDirectTargetGuard.resolveActiveSession({
-        role: cmd.role,
-        expectedEpoch: cmd.expectedEpoch ?? cmd.expected_epoch,
-      });
-    } catch (err) {
-      await this.sendError(cmd, err instanceof Error ? err.message : String(err));
-      return;
-    }
-
-    let result;
-    try {
-      result = await this.taskRuntimeCommands.intervene({
-        agentSessionId: sessionId,
-        text: cmd.text,
-        user: cmd.user ?? "supervisor",
-        callerInfo: cmd.caller_info,
-        attachmentPaths: cmd.attachment_paths,
-        extraContextItems: cmd.extra_context_items,
-      });
-    } catch (err) {
-      await this.sendError(cmd, err instanceof Error ? err.message : String(err));
-      return;
-    }
-
-    const requestId = cmd.requestId ?? cmd.request_id ?? "";
-    if (!requestId) return;
-    await this.send(buildInterveneAck({ requestId, agentSessionId: sessionId, result }));
-  }
-
-  private async handleInterruptSession(cmd: InterruptSessionCmd): Promise<void> {
-    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
-    if (!sessionId) {
-      await this.sendError(cmd, "interrupt_session requires agentSessionId");
-      return;
-    }
-
-    const interrupted = await this.taskManager.cancelTask(sessionId);
-    const requestId = cmd.requestId ?? cmd.request_id ?? "";
-    if (!requestId) return;
-    await this.send({
-      type: "interrupt_session_ack",
-      requestId,
-      status: "ok",
-      interrupted,
-      agentSessionId: sessionId,
-    });
-  }
-
-  /**
-   * `subscribe_events` 명령.
-   *
-   * TS task execution already emits each task event through
-   * broadcaster.emitEventEnvelope, so there is no separate relay loop to start.
-   * The orch caller sends this command fire-and-forget, and Python also emits no
-   * ACK for this command.
-   */
-  private async handleSubscribeEvents(cmd: SubscribeEventsCmd): Promise<void> {
-    const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
-    this.logger.info(
-      { sessionId, subscribeId: cmd.subscribeId },
-      "subscribe_events received — NOOP 수락 (broadcaster가 EVT_EVENT 직접 emit)",
-    );
-    // NOOP — ACK 없이 silent 수락.
-  }
-
-  /**
-   * `list_sessions` 명령 — Python `_handle_list_sessions` 정합.
-   *
-   * 응답 wire: `{type:"sessions_update", sessions, total, requestId}`.
-   *
-   * 응답 dict richness 한계: Python은 `get_all_sessions`로 `_build_session_dict` enrich된 dict를
-   * 반환하지만 TS는 현재 `listSessionsSummary` (경량 summary)만 노출. wire 소비자(orch
-   * `_on_sessions_update`)는 dict를 그대로 저장하므로 키 일관성만 유지하면 동작.
-   *
-   * SessionListCommands가 hard limit, default offset, sessionDb 의존성 검증, payload 조립을 소유한다.
-   */
-  private async handleListSessions(cmd: ListSessionsCmd): Promise<void> {
-    try {
-      await this.send(
-        await this.sessionListCommands.listSessions({
-          requestId: commandRequestId(cmd),
-        }),
-      );
-    } catch (err) {
-      if (err instanceof SessionListCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleClaudeAuth(cmd: ClaudeAuthCommand): Promise<void> {
-    try {
-      const response = await this.claudeAuthCommands.handle(cmd);
-      if (response) {
-        await this.send(response);
-      }
-    } catch (err) {
-      if (err instanceof ClaudeAuthCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleProviderUsage(cmd: ProviderUsageCommand): Promise<void> {
-    try {
-      await this.send(await this.providerUsageCommands.handle(cmd));
-    } catch (err) {
-      if (err instanceof ProviderUsageCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handlePlanAgentProfileUpdate(
-    cmd: PlanAgentProfileUpdateCmd,
-  ): Promise<void> {
-    try {
-      await this.send(
-        await this.agentConfigCommands.planProfileUpdate({
-          requestId: commandRequestId(cmd),
-          profile: cmd.profile,
-          createIfMissing: cmd.create_if_missing ?? cmd.createIfMissing,
-          includeTextDiff: cmd.include_text_diff ?? cmd.includeTextDiff,
-        }),
-      );
-    } catch (err) {
-      if (err instanceof AgentConfigCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleReflectBrief(cmd: ReflectBriefCmd): Promise<void> {
-    try {
-      await this.send(
-        await this.reflectionCommands.reflectBrief({
-          requestId: commandRequestId(cmd),
-        }),
-      );
-    } catch (err) {
-      if (err instanceof ReflectionCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleApplyAgentProfileUpdate(
-    cmd: ApplyAgentProfileUpdateCmd,
-  ): Promise<void> {
-    try {
-      await this.send(
-        await this.agentConfigCommands.applyProfileUpdate({
-          requestId: commandRequestId(cmd),
-          profile: cmd.profile,
-          createIfMissing: cmd.create_if_missing ?? cmd.createIfMissing,
-          includeTextDiff: cmd.include_text_diff ?? cmd.includeTextDiff,
-          expectedConfigChecksum:
-            cmd.expected_config_checksum ?? cmd.expectedConfigChecksum,
-        }),
-      );
-    } catch (err) {
-      if (err instanceof AgentConfigCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleListAgentsConfigSnapshots(
-    cmd: ListAgentsConfigSnapshotsCmd,
-  ): Promise<void> {
-    try {
-      await this.send(
-        await this.agentConfigCommands.listSnapshots({
-          requestId: commandRequestId(cmd),
-        }),
-      );
-    } catch (err) {
-      if (err instanceof AgentConfigCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleRollbackAgentsConfig(
-    cmd: RollbackAgentsConfigCmd,
-  ): Promise<void> {
-    try {
-      await this.send(
-        await this.agentConfigCommands.rollback({
-          requestId: commandRequestId(cmd),
-          snapshotPath: cmd.snapshot_path ?? cmd.snapshotPath,
-          snapshotId: cmd.snapshot_id ?? cmd.snapshotId,
-          includeTextDiff: cmd.include_text_diff ?? cmd.includeTextDiff,
-        }),
-      );
-    } catch (err) {
-      if (err instanceof AgentConfigCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleUploadAttachment(cmd: UploadAttachmentCmd): Promise<void> {
-    const requestId = commandRequestId(cmd);
-    try {
-      const ack = await this.attachmentCommands.upload({
-        requestId,
-        sessionId: cmd.session_id,
-        filename: cmd.filename,
-        contentType: cmd.content_type,
-        contentB64: cmd.content_b64,
-      });
-      if (requestId) {
-        await this.send(ack);
-      }
-    } catch (err) {
-      if (err instanceof AttachmentCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleUploadAttachmentStart(
-    cmd: UploadAttachmentStartCmd,
-  ): Promise<void> {
-    const requestId = commandRequestId(cmd);
-    try {
-      const ack = await this.attachmentCommands.startUpload({
-        requestId,
-        uploadId: cmd.upload_id,
-        sessionId: cmd.session_id,
-        filename: cmd.filename,
-        contentType: cmd.content_type,
-        expectedSize: cmd.expected_size,
-      });
-      if (requestId) {
-        await this.send(ack);
-      }
-    } catch (err) {
-      if (err instanceof AttachmentCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleUploadAttachmentChunk(
-    cmd: UploadAttachmentChunkCmd,
-  ): Promise<void> {
-    const requestId = commandRequestId(cmd);
-    try {
-      const ack = await this.attachmentCommands.appendUploadChunk({
-        requestId,
-        uploadId: cmd.upload_id,
-        chunkIndex: cmd.chunk_index,
-        contentB64: cmd.content_b64,
-      });
-      if (requestId) {
-        await this.send(ack);
-      }
-    } catch (err) {
-      if (err instanceof AttachmentCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleUploadAttachmentFinish(
-    cmd: UploadAttachmentFinishCmd,
-  ): Promise<void> {
-    const requestId = commandRequestId(cmd);
-    try {
-      const ack = await this.attachmentCommands.finishUpload({
-        requestId,
-        uploadId: cmd.upload_id,
-      });
-      if (requestId) {
-        await this.send(ack);
-      }
-    } catch (err) {
-      if (err instanceof AttachmentCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleUploadAttachmentAbort(
-    cmd: UploadAttachmentAbortCmd,
-  ): Promise<void> {
-    const requestId = commandRequestId(cmd);
-    try {
-      const ack = await this.attachmentCommands.abortUpload({
-        requestId,
-        uploadId: cmd.upload_id,
-      });
-      if (requestId) {
-        await this.send(ack);
-      }
-    } catch (err) {
-      if (err instanceof AttachmentCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleDeleteSessionAttachments(
-    cmd: DeleteSessionAttachmentsCmd,
-  ): Promise<void> {
-    const requestId = commandRequestId(cmd);
-    try {
-      const ack = await this.attachmentCommands.deleteSessionAttachments({
-        requestId,
-        sessionId: cmd.session_id,
-      });
-      if (requestId) {
-        await this.send(ack);
-      }
-    } catch (err) {
-      if (err instanceof AttachmentCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async handleDownloadAttachment(cmd: DownloadAttachmentCmd): Promise<void> {
-    const requestId = commandRequestId(cmd);
-    try {
-      const ack = await this.attachmentCommands.download({
-        requestId,
-        path: cmd.path,
-      });
-      if (requestId) {
-        await this.send(ack);
-      }
-    } catch (err) {
-      if (err instanceof AttachmentCommandError) {
-        await this.sendError(cmd, err.message);
-        return;
-      }
-      throw err;
-    }
-  }
-
-  private async sendError(cmd: CommandLike, message: string): Promise<void> {
-    await this.send({
-      type: "error",
-      message,
-      requestId: cmd.requestId ?? cmd.request_id ?? "",
-      command_type: cmd.type ?? "",
-    });
-    this.logger.warn({ cmd, message }, "Sent error to upstream");
-  }
 }
 
 function stringifyError(err: unknown): string {
   if (err instanceof Error) return err.message;
   return String(err);
-}
-
-function commandRequestId(cmd: CommandLike): string {
-  return cmd.requestId ?? cmd.request_id ?? "";
 }
