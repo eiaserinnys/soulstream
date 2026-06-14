@@ -204,6 +204,7 @@ export function OrchestratorDashboardLayout() {
       }
       connectionStatus={connectionStatus ?? sseStatus}
       onSearchClick={() => setSearchOpen(true)}
+      bannerPlacement="viewport-top"
       banner={
         isDraining ? (
           <div

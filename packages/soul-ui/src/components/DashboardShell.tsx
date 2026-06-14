@@ -61,6 +61,8 @@ export interface DashboardShellProps {
 
   /** 헤더와 메인 영역 사이에 표시할 배너 */
   banner?: ReactNode;
+  /** 배너 배치. 기본값은 기존 헤더 아래 content 위치다. */
+  bannerPlacement?: "content" | "viewport-top";
   /** 레이아웃 밖에 렌더링할 모달 */
   modals?: ReactNode;
 
@@ -134,6 +136,7 @@ export function DashboardShell({
   headerRight,
   connectionStatus,
   banner,
+  bannerPlacement = "content",
   modals,
   defaultRightPercent = DEFAULT_RIGHT,
   leftBottomRatio = 0,
@@ -402,8 +405,13 @@ export function DashboardShell({
       {banner ? (
         <div
           className={cn(
-            "z-20 shrink-0",
-            !isMobile && "fixed left-[308px] right-[22px] top-[76px]",
+            "shrink-0",
+            bannerPlacement === "viewport-top"
+              ? "fixed inset-x-0 top-0 z-50"
+              : "z-20",
+            bannerPlacement === "content"
+              && !isMobile
+              && "fixed left-[308px] right-[22px] top-[76px]",
           )}
         >
           {banner}
