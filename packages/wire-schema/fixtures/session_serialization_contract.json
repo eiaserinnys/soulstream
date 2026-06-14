@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "name": "agent_caller_claude_summary",
+      "nodeId": "node-contract",
+      "folderId": "folder-contract",
+      "orchAgentProfile": {
+        "name": "Codex Contract",
+        "backend": "codex",
+        "portrait_url": null
+      },
+      "nodeAgentProfile": {
+        "id": "codex-contract",
+        "name": "Codex Contract",
+        "backend": "codex",
+        "workspace_dir": "/tmp/codex-contract"
+      },
+      "orchDbRow": {
+        "session_id": "sess-contract-1",
+        "status": "running",
+        "prompt": "계약 테스트 프롬프트",
+        "created_at": "2026-06-14T10:00:00.000Z",
+        "updated_at": "2026-06-14T10:00:00.000Z",
+        "session_type": "claude",
+        "last_message": {
+          "type": "assistant_message",
+          "preview": "마지막 응답",
+          "timestamp": "2026-06-14T10:02:00.000Z"
+        },
+        "client_id": "client-contract",
+        "metadata": [
+          {
+            "type": "caller_info",
+            "value": {
+              "source": "agent",
+              "display_name": "서소영",
+              "avatar_url": "/api/nodes/node-parent/agents/seosoyoung/portrait",
+              "agent_node": "node-parent",
+              "agent_id": "seosoyoung-opus",
+              "agent_name": "서소영"
+            }
+          }
+        ],
+        "display_name": "Contract Display",
+        "node_id": "node-contract",
+        "folder_id": "folder-contract",
+        "last_event_id": 12,
+        "last_read_event_id": 7,
+        "caller_session_id": "sess-parent-1",
+        "agent_id": "codex-contract"
+      },
+      "nodeTask": {
+        "agentSessionId": "sess-contract-1",
+        "prompt": "계약 테스트 프롬프트",
+        "status": "running",
+        "createdAt": "2026-06-14T10:00:00.000Z",
+        "lastEventId": 12,
+        "lastReadEventId": 7,
+        "profileId": "codex-contract",
+        "callerSessionId": "sess-parent-1",
+        "metadata": [
+          {
+            "type": "caller_info",
+            "value": {
+              "source": "agent",
+              "display_name": "서소영",
+              "avatar_url": "/api/nodes/node-parent/agents/seosoyoung/portrait",
+              "agent_node": "node-parent",
+              "agent_id": "seosoyoung-opus",
+              "agent_name": "서소영"
+            }
+          }
+        ],
+        "callerInfo": {
+          "source": "agent",
+          "display_name": "서소영",
+          "avatar_url": "/api/nodes/node-parent/agents/seosoyoung/portrait",
+          "agent_node": "node-parent",
+          "agent_id": "seosoyoung-opus",
+          "agent_name": "서소영"
+        }
+      },
+      "expectedOrchResponse": {
+        "agentSessionId": "sess-contract-1",
+        "status": "running",
+        "prompt": "계약 테스트 프롬프트",
+        "createdAt": "2026-06-14T10:00:00.000Z",
+        "updatedAt": "2026-06-14T10:00:00.000Z",
+        "sessionType": "claude",
+        "lastMessage": {
+          "type": "assistant_message",
+          "preview": "마지막 응답",
+          "timestamp": "2026-06-14T10:02:00.000Z"
+        },
+        "clientId": "client-contract",
+        "metadata": [
+          {
+            "type": "caller_info",
+            "value": {
+              "source": "agent",
+              "display_name": "서소영",
+              "avatar_url": "/api/nodes/node-parent/agents/seosoyoung/portrait",
+              "agent_node": "node-parent",
+              "agent_id": "seosoyoung-opus",
+              "agent_name": "서소영"
+            }
+          }
+        ],
+        "displayName": "Contract Display",
+        "nodeId": "node-contract",
+        "folderId": "folder-contract",
+        "lastEventId": 12,
+        "lastReadEventId": 7,
+        "callerSessionId": "sess-parent-1",
+        "agentId": "codex-contract",
+        "agentName": "Codex Contract",
+        "agentPortraitUrl": null,
+        "backend": "codex",
+        "userName": "서소영",
+        "userPortraitUrl": "/api/nodes/node-parent/agents/seosoyoung/portrait"
+      },
+      "expectedNodeSessionInfo": {
+        "agent_session_id": "sess-contract-1",
+        "status": "running",
+        "prompt": "계약 테스트 프롬프트",
+        "created_at": "2026-06-14T10:00:00.000Z",
+        "updated_at": "2026-06-14T10:00:00.000Z",
+        "pid": null,
+        "session_type": "claude",
+        "caller_session_id": "sess-parent-1",
+        "metadata": [
+          {
+            "type": "caller_info",
+            "value": {
+              "source": "agent",
+              "display_name": "서소영",
+              "avatar_url": "/api/nodes/node-parent/agents/seosoyoung/portrait",
+              "agent_node": "node-parent",
+              "agent_id": "seosoyoung-opus",
+              "agent_name": "서소영"
+            }
+          }
+        ],
+        "last_event_id": 12,
+        "last_read_event_id": 7,
+        "node_id": "node-contract",
+        "termination_reason": null,
+        "terminationReason": null,
+        "termination_detail": null,
+        "terminationDetail": null,
+        "agentId": "codex-contract",
+        "agentName": "Codex Contract",
+        "agentPortraitUrl": null,
+        "backend": "codex",
+        "userName": "서소영",
+        "userPortraitUrl": "/api/nodes/node-parent/agents/seosoyoung/portrait",
+        "folder_id": "folder-contract",
+        "folderId": "folder-contract"
+      },
+      "expectedCanonicalSummary": {
+        "agentSessionId": "sess-contract-1",
+        "status": "running",
+        "eventCount": 0,
+        "createdAt": "2026-06-14T10:00:00.000Z",
+        "updatedAt": "2026-06-14T10:00:00.000Z",
+        "prompt": "계약 테스트 프롬프트",
+        "sessionType": "claude",
+        "metadata": [
+          {
+            "type": "caller_info",
+            "value": {
+              "source": "agent",
+              "display_name": "서소영",
+              "avatar_url": "/api/nodes/node-parent/agents/seosoyoung/portrait",
+              "agent_node": "node-parent",
+              "agent_id": "seosoyoung-opus",
+              "agent_name": "서소영"
+            }
+          }
+        ],
+        "lastEventId": 12,
+        "lastReadEventId": 7,
+        "nodeId": "node-contract",
+        "folderId": "folder-contract",
+        "agentId": "codex-contract",
+        "agentName": "Codex Contract",
+        "agentPortraitUrl": null,
+        "backend": "codex",
+        "userName": "서소영",
+        "userPortraitUrl": "/api/nodes/node-parent/agents/seosoyoung/portrait",
+        "callerSessionId": "sess-parent-1"
+      },
+      "expectedSoulUiSummaryFromOrch": {
+        "agentSessionId": "sess-contract-1",
+        "status": "running",
+        "eventCount": 0,
+        "createdAt": "2026-06-14T10:00:00.000Z",
+        "updatedAt": "2026-06-14T10:00:00.000Z",
+        "prompt": "계약 테스트 프롬프트",
+        "sessionType": "claude",
+        "clientId": "client-contract",
+        "lastMessage": {
+          "type": "assistant_message",
+          "preview": "마지막 응답",
+          "timestamp": "2026-06-14T10:02:00.000Z"
+        },
+        "metadata": [
+          {
+            "type": "caller_info",
+            "value": {
+              "source": "agent",
+              "display_name": "서소영",
+              "avatar_url": "/api/nodes/node-parent/agents/seosoyoung/portrait",
+              "agent_node": "node-parent",
+              "agent_id": "seosoyoung-opus",
+              "agent_name": "서소영"
+            }
+          }
+        ],
+        "lastEventId": 12,
+        "lastReadEventId": 7,
+        "displayName": "Contract Display",
+        "nodeId": "node-contract",
+        "folderId": "folder-contract",
+        "agentId": "codex-contract",
+        "agentName": "Codex Contract",
+        "agentPortraitUrl": null,
+        "backend": "codex",
+        "userName": "서소영",
+        "userPortraitUrl": "/api/nodes/node-parent/agents/seosoyoung/portrait",
+        "callerSessionId": "sess-parent-1"
+      },
+      "expectedUnifiedDashboardSession": {
+        "agentSessionId": "sess-contract-1",
+        "status": "running",
+        "sessionType": "claude",
+        "eventCount": 0,
+        "createdAt": "2026-06-14T10:00:00.000Z",
+        "updatedAt": "2026-06-14T10:00:00.000Z",
+        "nodeId": "node-contract",
+        "folderId": "folder-contract",
+        "displayName": "Contract Display",
+        "lastMessage": {
+          "type": "assistant_message",
+          "preview": "마지막 응답",
+          "timestamp": "2026-06-14T10:02:00.000Z"
+        },
+        "lastEventId": 12,
+        "lastReadEventId": 7,
+        "prompt": "계약 테스트 프롬프트",
+        "agentId": "codex-contract",
+        "agentName": "Codex Contract",
+        "backend": "codex",
+        "userName": "서소영",
+        "userPortraitUrl": "/api/nodes/node-parent/agents/seosoyoung/portrait",
+        "callerSessionId": "sess-parent-1"
+      }
+    }
+  ]
+}

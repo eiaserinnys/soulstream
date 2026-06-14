@@ -16,98 +16,23 @@ import type {
   FetchSessionsOptions,
   EventTreeNode,
   SoulSSEEvent,
-  SessionStatus,
+  SessionSummary,
 } from "@seosoyoung/soul-ui";
-import { buildFetchSessionsUrl, createSSESubscribe } from "@seosoyoung/soul-ui";
+import { buildFetchSessionsUrl, createSSESubscribe, toSessionSummary } from "@seosoyoung/soul-ui";
 
 export class OrchestratorSessionProvider implements SessionStorageProvider {
   async fetchSessions(options?: FetchSessionsOptions): Promise<SessionListResult> {
     const res = await fetch(buildFetchSessionsUrl("/api/sessions", options));
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    // Phase A-bis(2026-05-16): session list wire가 _session_to_response 정본
-    // helper로 통일됨 — 응답 키는 camelCase.
     const data: {
-      sessions?: Array<{
-        agentSessionId: string;
-        status: string;
-        prompt?: string | null;
-        createdAt: string;
-        updatedAt: string | null;
-        sessionType: string | null;
-        lastMessage: {
-          preview: string;
-          timestamp: string;
-          type: string;
-        } | null;
-        clientId?: string | null;
-        metadata?: unknown;
-        displayName: string | null;
-        nodeId: string;
-        folderId: string | null;
-        lastEventId: number | null;
-        lastReadEventId: number | null;
-        callerSessionId?: string | null;
-        agentId?: string | null;
-        agentName?: string | null;
-        agentPortraitUrl?: string | null;
-        backend?: string | null;
-        userName?: string | null;
-        userPortraitUrl?: string | null;
-      }>;
-      sessionList?: Array<{
-        agentSessionId: string;
-        status: string;
-        prompt?: string | null;
-        createdAt: string;
-        updatedAt: string | null;
-        sessionType: string | null;
-        lastMessage: {
-          preview: string;
-          timestamp: string;
-          type: string;
-        } | null;
-        clientId?: string | null;
-        metadata?: unknown;
-        displayName: string | null;
-        nodeId: string;
-        folderId: string | null;
-        lastEventId: number | null;
-        lastReadEventId: number | null;
-        callerSessionId?: string | null;
-        agentId?: string | null;
-        agentName?: string | null;
-        agentPortraitUrl?: string | null;
-        backend?: string | null;
-        userName?: string | null;
-        userPortraitUrl?: string | null;
-      }>;
+      sessions?: Array<Record<string, unknown>>;
+      sessionList?: Array<Record<string, unknown>>;
       total: number;
     } = await res.json();
 
     const rows = data.sessions ?? data.sessionList ?? [];
-    const sessions = rows.map((s) => ({
-      agentSessionId: s.agentSessionId,
-      status: mapStatus(s.status),
-      sessionType: (s.sessionType ?? "claude") as "claude" | "llm",
-      eventCount: 0,
-      createdAt: s.createdAt,
-      updatedAt: s.updatedAt ?? undefined,
-      nodeId: s.nodeId,
-      folderId: s.folderId,
-      displayName: s.displayName,
-      lastMessage: s.lastMessage ?? undefined,
-      lastEventId: s.lastEventId ?? 0,
-      lastReadEventId: s.lastReadEventId ?? 0,
-      prompt: s.prompt ?? undefined,
-      agentId: s.agentId ?? undefined,
-      agentName: s.agentName ?? undefined,
-      agentPortraitUrl: s.agentPortraitUrl ?? undefined,
-      backend: s.backend ?? undefined,
-      userName: s.userName ?? undefined,
-      userPortraitUrl: s.userPortraitUrl ?? undefined,
-      callerSessionId: s.callerSessionId ?? undefined,
-    }));
+    const sessions = rows.map(toOrchestratorSessionSummary);
 
     const total = data.total ?? sessions.length;
     const loadedCount = (options?.offset ?? 0) + sessions.length;
@@ -152,15 +77,30 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
   }
 }
 
-function mapStatus(status: string): SessionStatus {
-  switch (status) {
-    case "running": return "running";
-    case "completed": return "completed";
-    case "error": return "error";
-    case "interrupted": return "interrupted";
-    case "idle": return "running";
-    default: return "unknown";
-  }
+function toOrchestratorSessionSummary(raw: Record<string, unknown>): SessionSummary {
+  const summary = toSessionSummary(raw);
+  return {
+    agentSessionId: summary.agentSessionId,
+    status: summary.status,
+    sessionType: (summary.sessionType ?? "claude") as "claude" | "llm",
+    eventCount: 0,
+    createdAt: summary.createdAt,
+    updatedAt: summary.updatedAt ?? undefined,
+    nodeId: summary.nodeId,
+    folderId: summary.folderId ?? null,
+    displayName: summary.displayName ?? null,
+    lastMessage: summary.lastMessage,
+    lastEventId: summary.lastEventId ?? 0,
+    lastReadEventId: summary.lastReadEventId ?? 0,
+    prompt: summary.prompt ?? undefined,
+    agentId: summary.agentId ?? undefined,
+    agentName: summary.agentName ?? undefined,
+    agentPortraitUrl: summary.agentPortraitUrl ?? undefined,
+    backend: summary.backend ?? undefined,
+    userName: summary.userName ?? undefined,
+    userPortraitUrl: summary.userPortraitUrl ?? undefined,
+    callerSessionId: summary.callerSessionId ?? undefined,
+  };
 }
 
 /** OrchestratorSessionProvider 싱글톤 */
