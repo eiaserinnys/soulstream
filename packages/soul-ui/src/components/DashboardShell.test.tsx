@@ -8,13 +8,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useDashboardStore } from "../stores/dashboard-store";
-import { DashboardShell } from "./DashboardShell";
+import { DashboardShell, type DashboardShellProps } from "./DashboardShell";
 import {
   DASHBOARD_LEFT_SIDEBAR_COLLAPSED_STORAGE_KEY,
   DASHBOARD_LEFT_SIDEBAR_WIDTH_STORAGE_KEY,
 } from "./dashboard-sidebar-collapse";
 
-function renderShell() {
+function renderShell(props: Partial<DashboardShellProps> = {}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -26,6 +26,7 @@ function renderShell() {
       leftFeedPanel: createElement("div", { "data-testid": "feed-panel" }, "feed"),
       centerPanel: createElement("div", null, "center"),
       rightPanel: createElement("div", null, "right"),
+      ...props,
     }));
   });
   return { container, root };
@@ -128,5 +129,35 @@ describe("DashboardShell", () => {
 
     expect(sidebar?.style.width).toBe("344px");
     expect(window.localStorage.getItem(DASHBOARD_LEFT_SIDEBAR_WIDTH_STORAGE_KEY)).toBe("344");
+  });
+
+  it("keeps banner in the existing content position by default", () => {
+    ({ container, root } = renderShell({
+      banner: createElement("div", { "data-testid": "restart-banner" }, "Restarting"),
+    }));
+
+    const banner = container.querySelector<HTMLElement>('[data-testid="restart-banner"]');
+    const wrapper = banner?.parentElement;
+    expect(wrapper?.className).toContain("left-[308px]");
+    expect(wrapper?.className).toContain("right-[22px]");
+    expect(wrapper?.className).toContain("top-[76px]");
+    expect(wrapper?.className).not.toContain("inset-x-0");
+    expect(wrapper?.className).not.toContain("top-0");
+  });
+
+  it("can render the banner at the viewport top", () => {
+    ({ container, root } = renderShell({
+      banner: createElement("div", { "data-testid": "restart-banner" }, "Restarting"),
+      bannerPlacement: "viewport-top",
+    }));
+
+    const banner = container.querySelector<HTMLElement>('[data-testid="restart-banner"]');
+    const wrapper = banner?.parentElement;
+    expect(wrapper?.className).toContain("fixed");
+    expect(wrapper?.className).toContain("inset-x-0");
+    expect(wrapper?.className).toContain("top-0");
+    expect(wrapper?.className).toContain("z-50");
+    expect(wrapper?.className).not.toContain("left-[308px]");
+    expect(wrapper?.className).not.toContain("top-[76px]");
   });
 });
