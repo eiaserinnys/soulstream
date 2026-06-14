@@ -188,6 +188,7 @@ async function main(): Promise<void> {
 
   // DB 초기화 (postgres.js)
   const db = new SessionDB(env.DATABASE_URL);
+  await db.ensureStableSessionOrderIndex();
   const claudeSessionStore = new DbClaudeSessionStore(db);
   const interruptedOnStartup = await db.interruptRunningSessionsForNode(
     env.SOULSTREAM_NODE_ID,

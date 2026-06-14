@@ -51,6 +51,22 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
   return { sql: fn as unknown as SqlClient, calls, begin: fn.begin };
 }
 
+describe("SessionDB.ensureStableSessionOrderIndex", () => {
+  it("runs the stable session order index concurrently outside a transaction", async () => {
+    const { sql, calls } = createMockSql();
+
+    await new SessionDB(sql).ensureStableSessionOrderIndex();
+
+    expect(calls).toHaveLength(1);
+    const query = calls[0].fragments.join("?");
+    expect(query).toContain(
+      "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_updated_at_session_id",
+    );
+    expect(query).toContain("ON sessions (updated_at DESC, session_id DESC)");
+    expect(calls[0].inTransaction).toBe(false);
+  });
+});
+
 describe("SessionDB.registerSession", () => {
   it("11개 인자가 순서대로 stored proc에 전달됨", async () => {
     const { sql, calls } = createMockSql();
@@ -1039,7 +1055,7 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
     expect(query).toContain("s.status = 'running'");
     expect(query).toContain("LEFT JOIN folders f ON f.id = s.folder_id");
     expect(query).toContain("s.session_id <>");
-    expect(query).toContain("ORDER BY s.updated_at DESC");
+    expect(query).toContain("ORDER BY f.updated_at DESC, f.session_id DESC");
     expect(calls[0].values).toEqual(["current-session", "current-session", 15]);
   });
 
