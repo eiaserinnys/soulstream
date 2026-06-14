@@ -47,7 +47,7 @@ export function createRenameSessionOperation(config: RenameSessionApiConfig): Re
   return { renameSessionOptimistic };
 }
 
-// soul-dashboard 전용 기본 인스턴스 (soul-server API 경로)
+// soul-dashboard 전용 기본 인스턴스 (worker API 경로)
 export async function renameSessionOptimistic(
   sessionId: string,
   displayName: string | null,

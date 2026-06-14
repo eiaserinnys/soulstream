@@ -12,12 +12,12 @@ Soulstream TypeScript execution worker. Orchestrator WebSocket에 등록하고, 
 ## 운영
 
 Haniel `haniel.yaml`의 `services.soul-server-ts` 항목으로 자동 시작·재시작.
-cwd는 `./services/soulstream` (모노레포 루트 기준 `src/soulstream/soul-server-ts/`).
+운영 cwd는 `./services/soulstream`이고, Haniel repo checkout 기준 모노레포 루트는 `src/soulstream/`이다.
 
 ### Haniel 통합 적용
 
 운영 `haniel.yaml`(`/home/eias/haniel-root/haniel.yaml`)에 적용할 yaml 조각의 *정본*은
-**`install/haniel-soul-server-ts.example.yaml`** 에 보관된다. 본 PR 머지 후 운영자는 본 파일의
+**`install/haniel-soul-server-ts.example.yaml`** 에 보관된다. 운영자는 본 파일의
 `services.soul-server-ts` + `install.configs.soul-server-ts-env` 두 항목을 운영 `haniel.yaml`에
 추가하고 `haniel reload`(또는 service restart)하면 된다.
 
@@ -32,7 +32,7 @@ cwd는 `./services/soulstream` (모노레포 루트 기준 `src/soulstream/soul-
 | `DATABASE_URL` | ✅ | PostgreSQL connection URL |
 | `AUTH_BEARER_TOKEN` | ✅(production) | orch 인증 토큰 |
 | `HOST` | ❌ (default 127.0.0.1) | fastify HTTP bind |
-| `PORT` | ❌ (default 4205) | fastify HTTP 포트 |
+| `PORT` | ❌ (code default 4205; standalone `.env.soul-server-ts.example` sets 3105) | fastify HTTP 포트 |
 | `ENVIRONMENT` | ❌ (default development) | `production` 시 AUTH_BEARER_TOKEN 강제 |
 | `LOG_LEVEL` | ❌ (default info) | pino 레벨 |
 | `DASH_USER_NAME` | ❌ | 노드 광고용 user.name |

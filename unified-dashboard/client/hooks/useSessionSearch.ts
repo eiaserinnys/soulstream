@@ -4,7 +4,7 @@
  * /cogito/search 엔드포인트를 호출하여 세션 이벤트를 검색합니다.
  * soul-dashboard의 useSessionSearch.ts에서 포팅.
  * 경로 변경: /api/cogito/search → /cogito/search
- * (soul-server에서 cogito 라우터는 /api 프리픽스 없이 마운트됨. BFF 없음)
+ * (worker에서 cogito 라우터는 /api 프리픽스 없이 마운트됨. BFF 없음)
  */
 
 import { useState, useCallback, useRef } from "react";

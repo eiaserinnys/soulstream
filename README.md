@@ -2,15 +2,15 @@
 
 ![Soulstream](assets/soulstream.jpg)
 
-**Run Claude Code as a service.** Point your Slack bot, Discord bot, or any HTTP client
+**Run coding agents as a service.** Point your Slack bot, Discord bot, or any HTTP client
 at Soulstream and it handles the rest — session lifecycle, SSE streaming, multi-turn
 conversations, credential rotation, and a built-in dashboard.
 
-No Claude SDK in your bot. No process management. Just HTTP.
+No backend SDK in your bot. No process management. Just HTTP.
 
 ## Multi-agent
 
-Define multiple agents, each with its own workspace and `CLAUDE.md` instructions.
+Define multiple agents, each with its own workspace and instruction files.
 Route requests to a specific agent by name — your Slack bot talks to one agent,
 your Discord bot to another, each operating in a fully isolated environment.
 
@@ -19,14 +19,15 @@ your Discord bot to another, each operating in a fully isolated environment.
 ```
 
 Agent definitions live in the server config. Each agent gets:
-- Its own `workspace_dir` (Claude Code's working directory)
-- Its own `CLAUDE.md` (instructions, tools, persona)
-- Its own credential profile (independent Claude account / API key)
+- Its own `workspace_dir` (agent working directory)
+- Its own instructions, tools, and persona context
+- Its own credential profile for the selected backend
 
 ## Repository layout
 
 ```
 soulstream/
+├── orch-server/          # Orchestrator server
 ├── soul-server-ts/       # TypeScript execution worker
 ├── unified-dashboard/    # React dashboard (TypeScript)
 ├── packages/
@@ -94,9 +95,7 @@ node soul-server-ts/dist/main.js
 **unified-dashboard**
 
 ```bash
-cd unified-dashboard
-pnpm install
-pnpm run dev
+VITE_API_BASE=http://localhost:3105 pnpm --dir unified-dashboard run dev
 ```
 
 ## Environment variables
@@ -107,7 +106,7 @@ pnpm run dev
 | `SOULSTREAM_UPSTREAM_URL` | *(required)* | Orchestrator WebSocket URL |
 | `DATABASE_URL` | *(required)* | PostgreSQL URL |
 | `AGENTS_CONFIG_PATH` | `config/agents.yaml` | Agent registry YAML path |
-| `PORT` | `3105` | Local health/MCP port |
+| `PORT` | `3105` in the standalone example; code default `4205` if unset | Local health/MCP port |
 | `HOST` | `127.0.0.1` | Server host |
 | `ENVIRONMENT` | `development` | `development` or `production` |
 | `AUTH_BEARER_TOKEN` | *(empty in development)* | Orchestrator bearer token; required in production |

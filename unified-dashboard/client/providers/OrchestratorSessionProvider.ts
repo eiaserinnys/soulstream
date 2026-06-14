@@ -7,7 +7,7 @@
  * - fetchSessions: /api/sessions 에서 세션 목록 조회 (orchestrator BFF 경로)
  * - fetchCards: SSE 이벤트로 카드를 구성하므로 빈 배열 반환
  * - subscribe: /api/sessions/:key/events SSE 스트림 구독 (히스토리 포함)
- *   → soul-server EventStore가 히스토리 스트리밍을 처리하므로 SessionCache 불필요
+ *   → worker EventStore가 히스토리 스트리밍을 처리하므로 SessionCache 불필요
  */
 
 import type {
@@ -52,7 +52,7 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
 
   async fetchCards(_sessionKey: string): Promise<EventTreeNode[]> {
     // SSE 이벤트로 카드를 구성하므로 초기값은 빈 배열
-    // 히스토리는 /api/sessions/:key/events SSE 스트림에서 수신 (soul-server EventStore)
+    // 히스토리는 /api/sessions/:key/events SSE 스트림에서 수신 (worker EventStore)
     return [];
   }
 

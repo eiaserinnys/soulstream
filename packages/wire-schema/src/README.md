@@ -4,7 +4,7 @@
 
 ## 정본
 
-- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 106개 (`$defs`).
+- `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 106개 $defs (wire 51 + SSE event 55).
   - wire 메시지 51종
   - SSE event payload 55종 (`event` 메시지의 `event` 키 안에 packed — wire-schema generated SSE types + Agents SDK events)
 

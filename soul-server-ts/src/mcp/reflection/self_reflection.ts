@@ -31,7 +31,7 @@ export async function buildBriefSnapshot(runtime: McpRuntime): Promise<Reflectio
     kind: "compact_aggregate",
     status: serviceBrief.status,
     summary:
-      "Compact live aggregate of TS soul-server reflection; use reflect_service for drilldown.",
+      "Compact live aggregate of soul-server-ts reflection; use reflect_service for drilldown.",
     services: [
       {
         name: SELF_IDENTITY.name,

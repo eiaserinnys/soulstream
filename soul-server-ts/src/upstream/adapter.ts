@@ -51,15 +51,14 @@ export interface UpstreamDependencies {
 }
 
 /**
- * orch에 역방향 WebSocket 연결. Python `upstream/adapter.py`의 *최소* 등가.
+ * orch에 역방향 WebSocket 연결.
  *
  * 책임:
  * 1. 연결 (Bearer auth)
  * 2. node_register 발행
  * 3. 명령 수신 → dispatcher 전달
  * 4. 자동 재연결 (ReconnectPolicy)
- *
- * B-1에서 *미구현*: EventRelay, intervene/respond/list_sessions 핸들러.
+ * 명령별 처리 범위는 CommandDispatcher와 command family 모듈이 정본이다.
  */
 export class UpstreamAdapter {
   private ws: WebSocket | null = null;
