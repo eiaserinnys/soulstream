@@ -43,7 +43,9 @@ import {
   RightPanel,
   ChatView,
   initTheme,
+  useAuth,
   useDashboardStore,
+  useUserPreferencesSync,
   ConnectionBadge,
   useSessionListProvider,
   shouldLoadMoreAfterSessionMove,
@@ -63,6 +65,8 @@ export function OrchestratorDashboardLayout() {
 
   // 테마 초기화
   useEffect(() => { initTheme(); }, []);
+  const { user } = useAuth();
+  useUserPreferencesSync(user?.email ?? null);
 
   // URL ↔ 스토어 동기화
   useUrlSync();

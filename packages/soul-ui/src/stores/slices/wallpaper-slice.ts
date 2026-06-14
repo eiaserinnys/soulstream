@@ -28,7 +28,9 @@ export const createWallpaperSlice: StateCreator<
 
   setWallpaperMode: (mode: WallpaperMode) => {
     const current = get().wallpaper;
-    const next = normalizeWallpaperSettings({ ...current, mode });
+    const next = normalizeWallpaperSettings(
+      mode === "photo" ? { ...current, mode } : { mode },
+    );
     writeWallpaperSettings(next);
     set({ wallpaper: next });
   },

@@ -41,7 +41,9 @@ import {
   RightPanel,
   ChatView,
   initTheme,
+  useAuth,
   useDashboardStore,
+  useUserPreferencesSync,
   ConnectionBadge,
   useSessionListProvider,
   shouldLoadMoreAfterSessionMove,
@@ -84,6 +86,8 @@ export function DashboardLayout() {
 
   // 테마 초기화 (localStorage → OS 설정 → dark 기본)
   useEffect(() => { initTheme(); }, []);
+  const { user } = useAuth();
+  useUserPreferencesSync(user?.email ?? null);
 
   // 읽음 상태 동기화 (세션 선택 시 즉시 + 활성 세션 이벤트 도착 시 debounce)
   useReadPositionSync();

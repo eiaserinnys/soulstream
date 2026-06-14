@@ -20,10 +20,19 @@ export function normalizeWallpaperSettings(value: unknown): WallpaperSettings {
   const mode = WALLPAPER_MODES.has(source.mode as WallpaperMode)
     ? source.mode as WallpaperMode
     : "bokeh";
-  const customImage = typeof source.customImage === "string" && source.customImage.startsWith("data:image/")
+  const customImage = typeof source.customImage === "string" && isAllowedWallpaperImage(source.customImage)
     ? source.customImage
     : undefined;
   return customImage ? { mode, customImage } : { mode };
+}
+
+function isAllowedWallpaperImage(value: string): boolean {
+  return (
+    value.startsWith("data:image/")
+    || value.startsWith("/api/user/background")
+    || value.startsWith("https://")
+    || value.startsWith("http://")
+  );
 }
 
 export function readWallpaperSettings(storage: Storage | undefined = getLocalStorage()): WallpaperSettings {

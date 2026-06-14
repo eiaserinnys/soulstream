@@ -38,6 +38,7 @@ from soulstream_server.api.push import create_push_router
 from soulstream_server.api.sessions import create_sessions_router
 from soulstream_server.api.system_portraits import create_system_portraits_router
 from soulstream_server.api.tasks import create_tasks_router
+from soulstream_server.api.user_preferences import create_user_preferences_router
 from soulstream_server.push import ExpoPushProvider, PushNotifier, PushRepository
 from soulstream_server.config import Settings, get_settings
 from soulstream_server.dashboard.auth import create_auth_router
@@ -50,6 +51,7 @@ from soulstream_server.service.supervisor_ingest import SupervisorIngestService
 from soulstream_server.service.task_broadcaster import TaskBroadcaster
 from soulstream_server.service.task_change_listener import TaskChangeListener
 from soulstream_server.users import DashboardUserService
+from soulstream_server.user_preferences import PostgresUserPreferencesRepository
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +267,7 @@ def _mount_api_routers(
     settings: Settings,
     push_repo: PushRepository | None = None,
     user_service: DashboardUserService | None = None,
+    user_preferences_repo: PostgresUserPreferencesRepository | None = None,
 ) -> None:
     """API 라우터들을 `dependencies=[Depends(verify_auth)]`와 함께 앱에 마운트한다.
 
@@ -295,6 +298,8 @@ def _mount_api_routers(
     app.include_router(create_folders_router(catalog_service, dependencies=api_deps))
     app.include_router(create_catalog_router(catalog_service, dependencies=api_deps))
     app.include_router(create_attachments_router(node_manager, db, dependencies=api_deps))
+    if user_preferences_repo is not None:
+        app.include_router(create_user_preferences_router(user_preferences_repo, dependencies=api_deps))
     app.include_router(create_cogito_router(node_manager, db, catalog_service, dependencies=api_deps))
     app.include_router(create_atom_router(dependencies=api_deps))
     app.include_router(
@@ -365,6 +370,8 @@ async def lifespan(app: FastAPI):
     await db.ensure_default_folders()
     user_service = DashboardUserService.postgres(db.pool)
     await user_service.initialize()
+    user_preferences_repo = PostgresUserPreferencesRepository(db.pool)
+    await user_preferences_repo.ensure_schema()
     if not user_service.cache.has_users():
         logger.warning(
             "No dashboard users initialized; run `python -m soulstream_server.init_admin`"
@@ -430,6 +437,7 @@ async def lifespan(app: FastAPI):
     app.state.session_router = session_router
     app.state.catalog_service = catalog_service
     app.state.user_service = user_service
+    app.state.user_preferences_repo = user_preferences_repo
     app.state.push_repo = push_repo
     app.state.push_notifier = push_notifier
     app.state.supervisor_ingest = supervisor_ingest
@@ -446,6 +454,7 @@ async def lifespan(app: FastAPI):
         settings=settings,
         push_repo=push_repo,
         user_service=user_service,
+        user_preferences_repo=user_preferences_repo,
     )
 
     logger.info(

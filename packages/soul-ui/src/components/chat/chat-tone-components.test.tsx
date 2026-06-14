@@ -10,9 +10,10 @@ import { ToolMessage } from "./ToolMessage";
 function makeMessage(overrides: Partial<ChatMessage>): ChatMessage {
   return {
     id: "msg-1",
-    type: "system",
+    role: "system",
     content: "message",
     treeNodeId: "root-msg-1",
+    treeNodeType: "system",
     ...overrides,
   } as ChatMessage;
 }
@@ -36,13 +37,13 @@ describe("chat tone component classes", () => {
 
   it("uses calm tone classes for tool done and error states", () => {
     const toolError = makeMessage({
-      type: "tool",
+      role: "tool",
       isError: true,
       content: "tool failed",
     });
     const toolDone = makeMessage({
       id: "msg-2",
-      type: "tool",
+      role: "tool",
       content: "tool done",
       toolResult: "ok",
       treeNodeId: "root-msg-2",

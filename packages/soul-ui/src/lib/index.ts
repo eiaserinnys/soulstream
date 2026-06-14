@@ -44,6 +44,19 @@ export {
 } from "./liquid-lens";
 export type { LiquidLensMapMetrics, LiquidLensMapSize, LiquidLensOptions } from "./liquid-lens";
 export {
+  DEFAULT_USER_PREFERENCES,
+  dataUrlToBlob,
+  deleteUserBackground,
+  fetchUserPreferences,
+  normalizeUserPreferences,
+  normalizeUserPreferencesResponse,
+  readCachedUserPreferences,
+  saveUserPreferences,
+  uploadUserBackground,
+  writeCachedUserPreferences,
+} from "./user-preferences";
+export type { UserPreferencesResponse, UserPreferencesSnapshot } from "./user-preferences";
+export {
   DEFAULT_WALLPAPER_PHOTO_URL,
   DEFAULT_WALLPAPER_SETTINGS,
   MAX_WALLPAPER_DATA_URL_BYTES,

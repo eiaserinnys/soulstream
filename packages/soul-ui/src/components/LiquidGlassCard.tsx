@@ -8,6 +8,7 @@ const STATIC_GLASS_MOUSE_OFFSET = { x: 0, y: 0 };
 
 export interface LiquidGlassCardProps extends HTMLAttributes<HTMLDivElement> {
   cornerRadius?: number;
+  [dataAttribute: `data-${string}`]: string | undefined;
 }
 
 export function liquidGlassStyle(
