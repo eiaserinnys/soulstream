@@ -2169,6 +2169,112 @@ describe("ClaudeSdkClient", () => {
     );
   });
 
+  it("maps ede diagnostic tool_use execution errors as recoverable", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: (params) =>
+          makeQuery(
+            (async function* () {
+              const input = params.prompt as AsyncIterable<SDKUserMessage>;
+              const iterator = input[Symbol.asyncIterator]();
+              await iterator.next();
+              yield sdkSystemInit("claude-sess-tool-use-diagnostic");
+              yield {
+                type: "result",
+                subtype: "error_during_execution",
+                is_error: true,
+                result: "",
+                errors: [
+                  "[ede_diagnostic] result_type=user last_content_type=n/a stop_reason=tool_use",
+                ],
+                session_id: "claude-sess-tool-use-diagnostic",
+                usage: { input_tokens: 1, output_tokens: 1 },
+                total_cost_usd: 0.01,
+                stop_reason: "tool_use",
+                modelUsage: {},
+                permission_denials: [],
+              } as unknown as SDKMessage;
+            })(),
+          ),
+        postResultDrainMs: 10,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "first", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "result",
+          success: false,
+          stopReason: "tool_use",
+        }),
+        expect.objectContaining({
+          type: "error",
+          fatal: false,
+          errorCode: "error_during_execution",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps non-ede execution diagnostic and max-turn results fatal", async () => {
+    for (const resultMessage of [
+      {
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        result: "",
+        errors: ["tool failed without diagnostic"],
+        session_id: "claude-sess-non-ede",
+        usage: { input_tokens: 1, output_tokens: 1 },
+        total_cost_usd: 0.01,
+        stop_reason: "tool_use",
+        modelUsage: {},
+        permission_denials: [],
+      },
+      {
+        type: "result",
+        subtype: "error_max_turns",
+        is_error: true,
+        result: "",
+        errors: ["maximum turns reached"],
+        session_id: "claude-sess-max-turns",
+        usage: { input_tokens: 1, output_tokens: 1 },
+        total_cost_usd: 0.01,
+        stop_reason: null,
+        modelUsage: {},
+        permission_denials: [],
+      },
+    ]) {
+      const client = new ClaudeSdkClient(
+        {
+          query: () => makeQuery(sdkMessages([resultMessage])),
+          postResultDrainMs: 10,
+        },
+        silentLogger,
+      );
+
+      const events = await collect(
+        client.run(
+          { prompt: "first", workspaceDir: "/tmp/claude-work", env: {} },
+          new AbortController().signal,
+        ),
+      );
+
+      expect(events.find((event) => event.type === "error")).toMatchObject({
+        type: "error",
+        fatal: true,
+      });
+    }
+  });
+
   it("keeps tool_result continuation output-only with no live input stream", async () => {
     const promptKinds: string[] = [];
     const client = new ClaudeSdkClient(
@@ -3209,6 +3315,46 @@ describe("ClaudeSdkClient", () => {
         message: "Claude SDK post-result drain failed: drain exploded",
       }),
     ]);
+  });
+
+  it("maps ede diagnostic post-result drain errors as recoverable", async () => {
+    const client = new ClaudeSdkClient(
+      {
+        query: () =>
+          makeQuery(
+            (async function* () {
+              yield sdkSuccessResult("claude-sess-ede-drain-error", "done");
+              throw new Error(
+                "Claude Code returned an error result: [ede_diagnostic] result_type=user last_content_type=n/a stop_reason=tool_use",
+              );
+            })(),
+          ),
+        postResultDrainMs: 200,
+      },
+      silentLogger,
+    );
+
+    const events = await collect(
+      client.run(
+        { prompt: "hi", workspaceDir: "/tmp/claude-work", env: {} },
+        new AbortController().signal,
+      ),
+    );
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "complete",
+          result: "done",
+        }),
+        expect.objectContaining({
+          type: "error",
+          fatal: false,
+          errorCode: "claude_sdk_drain_error",
+          message: expect.stringContaining("[ede_diagnostic]"),
+        }),
+      ]),
+    );
   });
 
   it("SystemMessage subtype=notification emits debug event even without hook callback execution", async () => {

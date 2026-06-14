@@ -232,6 +232,36 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     expect(seen[0]).toMatchObject({ type: "error", message: "boom", fatal: true });
   });
 
+  it("client recoverable error event를 전달하되 throw하지 않는다", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-work",
+        client: makeClient(
+          [
+            { type: "error", message: "[ede_diagnostic] recovered", fatal: false },
+            { type: "complete", result: "done" },
+          ],
+          captured,
+        ),
+        processEnv: {},
+      },
+      silentLogger,
+    );
+    const seen: SSEEventPayload[] = [];
+
+    for await (const event of engine.execute({ prompt: "hi" })) {
+      seen.push(event);
+    }
+
+    expect(seen.map((event) => event.type)).toEqual(["error", "complete"]);
+    expect(seen[0]).toMatchObject({
+      type: "error",
+      message: "[ede_diagnostic] recovered",
+      fatal: false,
+    });
+  });
+
   it("fake client의 Claude parity 이벤트를 mapper 출력 그대로 yield한다", async () => {
     const captured: ClaudeRunOptions[] = [];
     const engine = new ClaudeEngineAdapter(

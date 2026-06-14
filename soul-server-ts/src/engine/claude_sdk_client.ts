@@ -1159,11 +1159,12 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   private makeDrainErrorEvent(err: unknown): ClaudeClientEvent {
+    const message = errorMessage(err);
     return {
       type: "error",
-      fatal: true,
+      fatal: !isEdeDiagnosticErrorText(message),
       errorCode: "claude_sdk_drain_error",
-      message: `Claude SDK post-result drain failed: ${errorMessage(err)}`,
+      message: `Claude SDK post-result drain failed: ${message}`,
     };
   }
 
@@ -2087,14 +2088,22 @@ function resultErrorCode(message: Record<string, unknown>): string {
   return subtype ?? "claude_sdk_result_error";
 }
 
+const EDE_DIAGNOSTIC_MARKER = "[ede_diagnostic]";
+
+function isEdeDiagnosticErrorText(
+  text: string | undefined,
+  options: { requirePrefix?: boolean } = {},
+): boolean {
+  if (!text) return false;
+  return options.requirePrefix
+    ? text.startsWith(EDE_DIAGNOSTIC_MARKER)
+    : text.includes(EDE_DIAGNOSTIC_MARKER);
+}
+
 function isRecoverableExecutionDiagnostic(message: Record<string, unknown>): boolean {
   if (message.subtype !== "error_during_execution") return false;
   const firstError = firstString(asArray(message.errors));
-  if (!firstError?.startsWith("[ede_diagnostic]")) return false;
-  return (
-    firstError.includes("result_type=user") &&
-    firstError.includes("stop_reason=null")
-  );
+  return isEdeDiagnosticErrorText(firstError, { requirePrefix: true });
 }
 
 function asNumber(value: unknown): number | undefined {
