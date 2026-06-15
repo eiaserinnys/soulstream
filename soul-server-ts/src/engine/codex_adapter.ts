@@ -22,6 +22,7 @@ import type { Logger } from "pino";
 
 import { sanitizeCodexEnv } from "./codex_env.js";
 import { mapThreadEvent } from "./codex_event_mapper.js";
+import { withScratchWorkspaceEnv } from "./scratch_workspace_env.js";
 import type {
   BackendId,
   EngineExecuteParams,
@@ -53,6 +54,7 @@ export function resolveCodexModelReasoningEffort(
 
 export interface CodexAdapterConfig {
   workspaceDir: string;
+  agentId?: string;
   /**
    * Codex API 키. undefined·빈 문자열이면 SDK가 sanitize된 env의 CODEX_API_KEY 또는
    * `~/.codex/auth.json`(ChatGPT OAuth) fallback.
@@ -108,7 +110,10 @@ export class CodexEngineAdapter implements EnginePort {
       baseUrl: config.baseUrl,
       // env를 명시 전달하면 SDK가 process.env를 상속하지 않는다 — pm2 god 셸의 빈
       // OPENAI_API_KEY/CODEX_API_KEY 누수를 어댑터 경계에서 차단 (design-principles §1·§6).
-      env: sanitizeCodexEnv(config.processEnv ?? process.env),
+      env: withScratchWorkspaceEnv(
+        sanitizeCodexEnv(config.processEnv ?? process.env),
+        { workspaceDir: config.workspaceDir, agentId: config.agentId },
+      ),
     });
     this.logger = logger;
     this.codexPathOverride = config.codexPathOverride;

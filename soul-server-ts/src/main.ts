@@ -19,6 +19,7 @@ import { DbClaudeSessionStore } from "./engine/claude_session_store.js";
 import { CodexEngineAdapter } from "./engine/codex_adapter.js";
 import { CodexAppServerEngineAdapter } from "./engine/codex_app_server/index.js";
 import { resolveCodexCliPath } from "./engine/codex_cli_path.js";
+import { writeScratchAgentMarker } from "./engine/scratch_workspace_env.js";
 import { AgentsEngineAdapter } from "./engine/agents_adapter.js";
 import { AnthropicAdapter, OpenAIAdapter } from "./llm/adapters.js";
 import { LlmExecutor } from "./llm/executor.js";
@@ -270,11 +271,16 @@ async function main(): Promise<void> {
 
   // EngineFactory — backend별 분기. Claude auth env는 ClaudeEngineAdapter가 SDK client로 전달한다.
   const engineFactory: EngineFactory = (agent) => {
+    writeScratchAgentMarker({
+      workspaceDir: agent.workspace_dir,
+      agentId: agent.id,
+    });
     if (agent.backend === "codex") {
       if (env.CODEX_ADAPTER_MODE === "app-server") {
         return new CodexAppServerEngineAdapter(
           {
             workspaceDir: agent.workspace_dir,
+            agentId: agent.id,
             apiKey: env.CODEX_API_KEY,
             codexPathOverride: codexCliPath?.path,
             processEnv: process.env,
@@ -285,6 +291,7 @@ async function main(): Promise<void> {
       return new CodexEngineAdapter(
         {
           workspaceDir: agent.workspace_dir,
+          agentId: agent.id,
           apiKey: env.CODEX_API_KEY,
           // process.env 명시 전달 — 어댑터가 빈 OPENAI_API_KEY/CODEX_API_KEY를 sanitize한 뒤
           // SDK의 envOverride로 넘겨 codex CLI 자식의 ~/.codex/auth.json OAuth fallback을 보호한다
@@ -299,6 +306,7 @@ async function main(): Promise<void> {
       return new ClaudeEngineAdapter(
         {
           workspaceDir: agent.workspace_dir,
+          agentId: agent.id,
           processEnv: claudeAuth.buildProcessEnv(process.env),
           sessionStore: claudeSessionStore,
           sessionStoreFlush: "batched",

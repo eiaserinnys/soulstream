@@ -29,6 +29,7 @@ import {
   normalizeClaudeModel,
 } from "./claude_options.js";
 import { ClaudeSdkClient } from "./claude_sdk_client.js";
+import { withScratchWorkspaceEnv } from "./scratch_workspace_env.js";
 
 export {
   CLAUDE_OAUTH_TOKEN_ENV,
@@ -87,6 +88,7 @@ export interface ClaudeClient {
 
 export interface ClaudeAdapterConfig {
   workspaceDir: string;
+  agentId?: string;
   client?: ClaudeClient;
   processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
   sessionStore?: SessionStore;
@@ -107,6 +109,7 @@ export class ClaudeEngineAdapter
 
   private readonly client: ClaudeClient;
   private readonly logger: Logger;
+  private readonly agentId?: string;
   private readonly processEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>;
   private readonly sessionStore?: SessionStore;
   private readonly sessionStoreFlush?: SessionStoreFlush;
@@ -117,6 +120,7 @@ export class ClaudeEngineAdapter
 
   constructor(config: ClaudeAdapterConfig, logger: Logger) {
     this.workspaceDir = config.workspaceDir;
+    this.agentId = config.agentId;
     this.client = config.client ?? new ClaudeSdkClient({}, logger);
     this.processEnv = config.processEnv;
     this.sessionStore = config.sessionStore;
@@ -294,10 +298,13 @@ export class ClaudeEngineAdapter
 
   private buildRunOptions(params: EngineExecuteParams): ClaudeRunOptions {
     const model = normalizeClaudeModel(params.model);
-    const env = buildClaudeEnvironment({
-      processEnv: this.processEnv,
-      extraEnv: params.extraEnv,
-    });
+    const env = withScratchWorkspaceEnv(
+      buildClaudeEnvironment({
+        processEnv: this.processEnv,
+        extraEnv: params.extraEnv,
+      }),
+      { workspaceDir: this.workspaceDir, agentId: this.agentId },
+    );
     return {
       prompt: params.prompt,
       ...(params.agentSessionId ? { agentSessionId: params.agentSessionId } : {}),
@@ -315,7 +322,7 @@ export class ClaudeEngineAdapter
       ...(params.claudePermissionMode !== undefined
         ? { claudePermissionMode: params.claudePermissionMode }
         : {}),
-      ...(env !== undefined ? { env } : {}),
+      env,
       ...(params.onScheduleToolUse !== undefined
         ? { onScheduleToolUse: params.onScheduleToolUse }
         : {}),

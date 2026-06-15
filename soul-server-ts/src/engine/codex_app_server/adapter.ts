@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import { sanitizeCodexEnv } from "../codex_env.js";
+import { withScratchWorkspaceEnv } from "../scratch_workspace_env.js";
 import type {
   BackendId,
   EngineExecuteParams,
@@ -66,6 +67,7 @@ export interface CodexAppServerClientPort {
 
 export interface CodexAppServerAdapterConfig {
   workspaceDir: string;
+  agentId?: string;
   apiKey?: string;
   codexPathOverride?: string;
   processEnv?: NodeJS.ProcessEnv;
@@ -291,7 +293,10 @@ export class CodexAppServerEngineAdapter
     config: CodexAppServerAdapterConfig,
     logger: Logger,
   ): CodexAppServerClientPort {
-    const env = sanitizeCodexEnv(config.processEnv ?? process.env);
+    const env = withScratchWorkspaceEnv(
+      sanitizeCodexEnv(config.processEnv ?? process.env),
+      { workspaceDir: config.workspaceDir, agentId: config.agentId },
+    );
     if (config.apiKey && config.apiKey.trim()) {
       env.CODEX_API_KEY = config.apiKey;
     }
