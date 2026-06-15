@@ -14,6 +14,7 @@ import { formatTime } from '../lib/input-request-utils';
 import type { EventTreeNode, InputRequestNodeDef, InputRequestQuestion, ToolApprovalNodeDef } from '@shared/types';
 import { LiquidGlassCard } from './LiquidGlassCard';
 import { Button } from './ui/button';
+import { InputRequestOptionContent } from './InputRequestOptionContent';
 
 type PendingPromptNode = InputRequestNodeDef | ToolApprovalNodeDef;
 
@@ -174,12 +175,7 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
                 data-selected={selectedAnswer === opt.label ? "true" : undefined}
                 className="w-full px-3 py-2.5 text-[12.5px] disabled:cursor-default"
               >
-                <b className="font-semibold">{opt.label}</b>
-                {opt.description && (
-                  <small className="mt-0.5 block text-[11.5px] leading-[1.45] text-muted-foreground">
-                    {opt.description}
-                  </small>
-                )}
+                <InputRequestOptionContent option={opt} descriptionClassName="text-[11.5px]" />
               </Button>
             ))}
           </div>

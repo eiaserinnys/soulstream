@@ -41,7 +41,7 @@ function makeInputRequest(): InputRequestNodeDef {
         question: "설정 창처럼 긴 선택지를 읽을 수 있게 충분한 폭으로 보여줄까요?",
         options: [
           {
-            label: "넓게 표시",
+            label: "피드와 동일 / (평면 카드)",
             description: "긴 설명이 여러 줄로 과도하게 꺾이지 않도록 배너 폭을 넓힙니다.",
           },
         ],
@@ -113,6 +113,27 @@ describe("AskQuestionBanner layout", () => {
     expect(banner?.className).toContain("max-w-3xl");
     expect(banner?.className).not.toContain("max-w-[500px]");
     expect(banner?.className).not.toContain("min-w-80");
+  });
+
+  it("keeps option labels in a stable column before the description", () => {
+    ({ container, root } = renderBanner(makeInputRequest()));
+
+    const optionContent = document.body.querySelector<HTMLElement>(
+      '[data-testid="input-request-option-content"]',
+    );
+    expect(optionContent).not.toBeNull();
+    expect(optionContent?.className).toContain(
+      "grid-cols-[minmax(11rem,0.85fr)_minmax(0,1.35fr)]",
+    );
+    expect(optionContent?.className).toContain("max-[560px]:grid-cols-1");
+
+    const optionLabel = document.body.querySelector<HTMLElement>(
+      '[data-testid="input-request-option-label"]',
+    );
+    expect(optionLabel).not.toBeNull();
+    expect(optionLabel?.textContent).toBe("피드와 동일 / (평면 카드)");
+    expect(optionLabel?.className).toContain("break-keep");
+    expect(optionLabel?.className).toContain("[overflow-wrap:anywhere]");
   });
 
   it("uses the same wider layout for tool approval prompts", () => {

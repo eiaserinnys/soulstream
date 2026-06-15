@@ -118,4 +118,36 @@ describe("ChatInputRequest", () => {
       }),
     });
   });
+
+  it("uses the same stable label and description grid as the banner", () => {
+    render(makeMessage({
+      questions: [
+        {
+          question: "글래스 최적화",
+          options: [
+            {
+              label: "스크롤 중에만 / 효과 정지",
+              description: "스크롤 중에는 무거운 효과를 잠시 멈추고 멈추면 다시 켭니다.",
+            },
+          ],
+        },
+      ],
+    }));
+
+    const optionContent = container.querySelector<HTMLElement>(
+      '[data-testid="input-request-option-content"]',
+    );
+    expect(optionContent).not.toBeNull();
+    expect(optionContent?.className).toContain(
+      "grid-cols-[minmax(11rem,0.85fr)_minmax(0,1.35fr)]",
+    );
+
+    const optionLabel = container.querySelector<HTMLElement>(
+      '[data-testid="input-request-option-label"]',
+    );
+    expect(optionLabel).not.toBeNull();
+    expect(optionLabel?.textContent).toBe("스크롤 중에만 / 효과 정지");
+    expect(optionLabel?.className).toContain("break-keep");
+    expect(optionLabel?.className).toContain("[overflow-wrap:anywhere]");
+  });
 });
