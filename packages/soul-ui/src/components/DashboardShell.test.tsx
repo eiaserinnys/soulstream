@@ -91,6 +91,15 @@ describe("DashboardShell", () => {
     expect(container.textContent).toContain("right");
   });
 
+  it("renders the desktop folder navigation label in Korean", () => {
+    ({ container, root } = renderShell());
+
+    const foldersToggle = container.querySelector<HTMLButtonElement>('[data-testid="left-navigation-folders"]');
+    expect(foldersToggle).not.toBeNull();
+    expect(foldersToggle?.textContent).toContain("폴더");
+    expect(foldersToggle?.textContent).not.toContain("Folders");
+  });
+
   it("switches desktop navigation to the center feed while keeping folders in the sidebar", () => {
     ({ container, root } = renderShell());
 
@@ -109,6 +118,29 @@ describe("DashboardShell", () => {
     expect(useDashboardStore.getState().leftNavigationMode).toBe("feed");
     expect(useDashboardStore.getState().viewMode).toBe("feed");
     expect(window.localStorage.getItem("soul-dashboard-storage")).toContain('"leftNavigationMode":"feed"');
+  });
+
+  it("syncs desktop navigation back to folders when folder selection changes the center surface", () => {
+    ({ container, root } = renderShell());
+
+    const feedToggle = container.querySelector<HTMLButtonElement>('[data-testid="left-navigation-feed"]');
+    const foldersToggle = container.querySelector<HTMLButtonElement>('[data-testid="left-navigation-folders"]');
+    expect(feedToggle).not.toBeNull();
+    expect(foldersToggle).not.toBeNull();
+
+    flushSync(() => {
+      feedToggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(feedToggle?.getAttribute("aria-pressed")).toBe("true");
+
+    flushSync(() => {
+      useDashboardStore.getState().selectFolder("folder-a");
+    });
+
+    expect(useDashboardStore.getState().viewMode).toBe("folder");
+    expect(useDashboardStore.getState().leftNavigationMode).toBe("folders");
+    expect(feedToggle?.getAttribute("aria-pressed")).toBe("false");
+    expect(foldersToggle?.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("resizes and persists the desktop left sidebar width", () => {

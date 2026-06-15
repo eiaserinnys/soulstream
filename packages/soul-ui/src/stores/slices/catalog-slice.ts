@@ -2,7 +2,7 @@
  * Catalog Slice
  *
  * 폴더 카탈로그, 선택된 폴더, 정렬 모드 관련 상태와 액션.
- * selectFolder/clearSelectedFolder는 viewMode를 함께 변경하므로 full store 타입 필요.
+ * selectFolder/clearSelectedFolder는 viewMode와 데스크톱 좌측 네비 상태를 함께 변경하므로 full store 타입 필요.
  */
 
 import type { StateCreator } from "zustand";
@@ -162,8 +162,9 @@ export const createCatalogSlice: StateCreator<
   },
 
   selectFolder: (folderId) => {
-    set({ selectedFolderId: folderId, viewMode: "folder" });
+    set({ selectedFolderId: folderId, viewMode: "folder", leftNavigationMode: "folders" });
   },
 
-  clearSelectedFolder: () => set({ selectedFolderId: null, viewMode: "feed" }),
+  clearSelectedFolder: () =>
+    set({ selectedFolderId: null, viewMode: "feed", leftNavigationMode: "feed" }),
 });

@@ -210,7 +210,7 @@ export function FolderTree({
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center justify-between px-3 pb-2 pt-1">
-        <span className="dashboard-sidebar-label">Folders</span>
+        <span className="dashboard-sidebar-label">폴더</span>
         <div className="flex items-center gap-0.5">
           <FolderSortButton />
         </div>

@@ -184,8 +184,11 @@ export function UserManagementTab() {
         </div>
       )}
 
-      <div className="overflow-hidden rounded border border-border">
-        <Table>
+      <div
+        data-testid="user-management-table-scroll"
+        className="overflow-x-auto rounded border border-border"
+      >
+        <Table className="min-w-[720px]">
           <TableHeader>
             <TableRow>
               <TableHead>이메일</TableHead>

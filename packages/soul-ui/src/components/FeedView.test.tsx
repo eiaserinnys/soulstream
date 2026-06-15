@@ -142,7 +142,7 @@ describe("FeedView sidebar placement", () => {
     expect(state.selectedFolderId).toBe("folder-a");
     expect(state.activeSessionKey).toBe("in-folder");
     expect(state.activeSessionSummary?.agentSessionId).toBe("in-folder");
-    expect(state.leftNavigationMode).toBe("feed");
+    expect(state.leftNavigationMode).toBe("folders");
     expect(container.querySelector('[data-session-id="in-folder"]')).not.toBeNull();
     expect(container.querySelector('[data-session-id="orphan"]')).not.toBeNull();
   });
@@ -177,14 +177,14 @@ describe("FeedView sidebar placement", () => {
     const state = useDashboardStore.getState();
     expect(state.viewMode).toBe("folder");
     expect(state.selectedFolderId).toBe("folder-a");
-    expect(state.leftNavigationMode).toBe("feed");
+    expect(state.leftNavigationMode).toBe("folders");
     expect(container.querySelector('[data-session-id="in-folder"]')).not.toBeNull();
     expect(container.querySelector('[data-session-id="orphan"]')).not.toBeNull();
   });
 
   it("keeps the current folder surface when a sidebar feed card has no folder assignment", async () => {
     useDashboardStore.getState().selectFolder("folder-a");
-    useDashboardStore.getState().setLeftNavigationMode("feed");
+    useDashboardStore.getState().setLeftNavigationMode("folders");
     renderFeed();
     await Promise.resolve();
 
@@ -200,6 +200,6 @@ describe("FeedView sidebar placement", () => {
     expect(state.selectedFolderId).toBe("folder-a");
     expect(state.activeSessionKey).toBe("orphan");
     expect(state.activeSessionSummary?.agentSessionId).toBe("orphan");
-    expect(state.leftNavigationMode).toBe("feed");
+    expect(state.leftNavigationMode).toBe("folders");
   });
 });

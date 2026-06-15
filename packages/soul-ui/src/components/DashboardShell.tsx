@@ -321,7 +321,7 @@ export function DashboardShell({
           }}
         >
           <FolderTree className="h-3.5 w-3.5" />
-          <span className="truncate">Folders</span>
+          <span className="truncate">폴더</span>
         </button>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">

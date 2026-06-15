@@ -27,7 +27,8 @@ export function ConfigCategoryNav({
   return (
     <div
       role="tablist"
-      className="flex flex-wrap gap-1 mb-4 border-b border-border pb-2"
+      data-testid="config-category-nav"
+      className="mb-4 flex gap-1 overflow-x-auto border-b border-border pb-2 [scrollbar-width:thin]"
     >
       {all.map((cat) => (
         <button
@@ -37,7 +38,7 @@ export function ConfigCategoryNav({
           aria-selected={activeCategory === cat.name}
           onClick={() => onSelect(cat.name)}
           className={cn(
-            "px-3 py-1.5 text-xs rounded-t transition-colors",
+            "shrink-0 px-3 py-1.5 text-xs rounded-t transition-colors",
             activeCategory === cat.name
               ? "bg-muted text-foreground border-b-2 border-primary"
               : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
