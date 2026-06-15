@@ -91,7 +91,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogPopup className="max-w-2xl">
+      <DialogPopup className="w-[min(960px,calc(100vw-2rem))] max-w-5xl">
         <DialogHeader>
           <DialogTitle>⚙️ 서버 설정</DialogTitle>
           <DialogDescription>
@@ -99,7 +99,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <DialogPanel>
+        <DialogPanel className="min-h-0">
           <WallpaperPicker />
           {loading && (
             <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">

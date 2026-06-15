@@ -949,6 +949,7 @@ describe("dashboard-store", () => {
       const state = useDashboardStore.getState();
       expect(state.selectedFolderId).toBe("folder-1");
       expect(state.viewMode).toBe("folder");
+      expect(state.leftNavigationMode).toBe("folders");
     });
 
     it("should switch selectedFolderId to null when folderId is null (uncategorized)", () => {
@@ -962,6 +963,7 @@ describe("dashboard-store", () => {
       const state = useDashboardStore.getState();
       expect(state.selectedFolderId).toBeNull();
       expect(state.viewMode).toBe("folder");
+      expect(state.leftNavigationMode).toBe("folders");
     });
 
     it("should not change selectedFolderId when folderId is undefined", () => {
@@ -2234,6 +2236,7 @@ describe("dashboard-store", () => {
       const state = useDashboardStore.getState();
       expect(state.viewMode).toBe("folder");
       expect(state.selectedFolderId).toBe("folder-1");
+      expect(state.leftNavigationMode).toBe("folders");
     });
 
     it("selectFolder 후 selectFeed 호출 시 viewMode가 'feed'로 변경되고 selectedFolderId는 이전 값을 유지한다", () => {

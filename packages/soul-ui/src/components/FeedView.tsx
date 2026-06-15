@@ -58,7 +58,6 @@ export function FeedView({
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
-  const setLeftNavigationMode = useDashboardStore((s) => s.setLeftNavigationMode);
   const clearActiveSession = useDashboardStore((s) => s.clearActiveSession);
   const selectFolder = useDashboardStore((s) => s.selectFolder);
   const feedScrollOffset = useDashboardStore((s) => s.feedScrollOffset);
@@ -178,7 +177,6 @@ export function FeedView({
       const session = feedSessions.find((s) => s.agentSessionId === sessionId);
       if (session) setActiveSessionSummary(session);
       if (isSidebarPlacement) {
-        setLeftNavigationMode("feed");
         const assignment = catalog?.sessions?.[sessionId];
         if (assignment) selectFolder(assignment.folderId ?? null);
         return;
@@ -193,7 +191,6 @@ export function FeedView({
       setActiveSession,
       setActiveSessionSummary,
       setActiveTab,
-      setLeftNavigationMode,
     ],
   );
 

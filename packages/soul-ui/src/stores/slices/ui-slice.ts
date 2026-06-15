@@ -75,10 +75,15 @@ export const createUISlice: StateCreator<
 
   setDashboardConfig: (dashboardConfig) => set({ dashboardConfig }),
 
-  setViewMode: (mode) => set({ viewMode: mode }),
+  setViewMode: (mode) =>
+    set((state) => ({
+      viewMode: mode,
+      leftNavigationMode:
+        mode === "feed" ? "feed" : mode === "folder" ? "folders" : state.leftNavigationMode,
+    })),
 
   selectFeed: () => {
-    set({ viewMode: "feed" });
+    set({ viewMode: "feed", leftNavigationMode: "feed" });
     // URL은 useUrlSync의 effect가 viewMode 변경을 감지하여 자동 반영
   },
 

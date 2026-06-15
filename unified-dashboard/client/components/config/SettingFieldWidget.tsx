@@ -131,7 +131,7 @@ function FieldInput({
       disabled={disabled}
       step={field.value_type === "float" ? "0.1" : undefined}
       className={cn(
-        "w-full rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground",
+        "w-full min-w-0 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground",
         "focus:outline-none focus:ring-1 focus:ring-ring",
         disabled && "opacity-50 cursor-not-allowed",
       )}
@@ -150,8 +150,9 @@ export function SettingFieldWidget({
 }) {
   return (
     <div
+      data-testid="config-field-row"
       className={cn(
-        "grid grid-cols-[1fr_1.2fr] gap-2 items-start px-1 py-1.5 rounded",
+        "grid grid-cols-1 gap-2 items-start px-1 py-1.5 rounded sm:grid-cols-[minmax(0,1fr)_minmax(16rem,1.2fr)]",
         field.read_only && "opacity-60",
       )}
     >
