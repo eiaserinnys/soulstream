@@ -9,6 +9,10 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import pino from "pino";
 
 import type { ThreadEvent } from "@openai/codex-sdk";
+import {
+  SCRATCH_WORKSPACE_DIR_ENV,
+  SOULSTREAM_AGENT_ID_ENV,
+} from "../../src/engine/scratch_workspace_env.js";
 
 // vi.hoisted로 mock 함수들을 hoist하여 vi.mock factory에서 접근 가능하게 함.
 const { mockStartThread, mockResumeThread, mockRunStreamed, mockCodexCtor } = vi.hoisted(
@@ -76,6 +80,7 @@ describe("CodexEngineAdapter — 기본 lifecycle", () => {
       env: {
         HOME: "/home/test",
         PATH: "/usr/bin",
+        [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/work",
       },
     });
   });
@@ -182,6 +187,24 @@ describe("CodexEngineAdapter — reasoning effort", () => {
 });
 
 describe("CodexEngineAdapter — env sanitize (OAuth fallback 보호)", () => {
+  it("SCRATCH_WORKSPACE_DIR는 processEnv보다 workspaceDir가 우선한다", async () => {
+    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+    new CodexEngineAdapter(
+      {
+        workspaceDir: "/tmp/right-work",
+        agentId: "codex-agent",
+        processEnv: {
+          [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/wrong-work",
+          [SOULSTREAM_AGENT_ID_ENV]: "wrong-agent",
+        },
+      },
+      silentLogger(),
+    );
+    const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
+    expect(passedEnv[SCRATCH_WORKSPACE_DIR_ENV]).toBe("/tmp/right-work");
+    expect(passedEnv[SOULSTREAM_AGENT_ID_ENV]).toBe("codex-agent");
+  });
+
   it("빈 문자열 OPENAI_API_KEY는 SDK env에 포함되지 않는다", async () => {
     const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
     new CodexEngineAdapter(

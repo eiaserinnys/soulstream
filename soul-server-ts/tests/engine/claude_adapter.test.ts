@@ -11,6 +11,10 @@ import {
   type ClaudeClientEvent,
   type ClaudeRunOptions,
 } from "../../src/engine/claude_adapter.js";
+import {
+  SCRATCH_WORKSPACE_DIR_ENV,
+  SOULSTREAM_AGENT_ID_ENV,
+} from "../../src/engine/scratch_workspace_env.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -169,6 +173,34 @@ describe("ClaudeEngineAdapter options parity", () => {
 
   it("processEnv와 extraEnv가 모두 없으면 SDK 기본 env 동작을 보존한다", () => {
     expect(buildClaudeEnvironment()).toBeUndefined();
+  });
+
+  it("어댑터가 SCRATCH_WORKSPACE_DIR를 extraEnv보다 마지막에 덮어쓴다", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/right-claude-work",
+        agentId: "claude-agent",
+        client: makeClient([], captured),
+        processEnv: {},
+      },
+      silentLogger,
+    );
+
+    for await (const _ of engine.execute({
+      prompt: "hi",
+      extraEnv: {
+        [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/wrong-claude-work",
+        [SOULSTREAM_AGENT_ID_ENV]: "wrong-agent",
+      },
+    })) {
+      // drain
+    }
+
+    expect(captured[0].env).toMatchObject({
+      [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/right-claude-work",
+      [SOULSTREAM_AGENT_ID_ENV]: "claude-agent",
+    });
   });
 
 });
