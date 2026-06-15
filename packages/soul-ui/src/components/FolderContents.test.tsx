@@ -14,29 +14,40 @@ import { FolderContents } from "./FolderContents";
 const virtualizerMockState = vi.hoisted(() => ({
   startIndex: 0,
   visibleCount: Number.POSITIVE_INFINITY,
+  calls: [] as Array<{ count: number; estimatedSize: number }>,
+}));
+
+const intersectionObserverMockState = vi.hoisted(() => ({
+  options: [] as Array<IntersectionObserverInit | undefined>,
+  observedTargets: [] as Element[],
+  disconnectCount: 0,
 }));
 
 vi.mock("@tanstack/react-virtual", () => ({
-  useVirtualizer: ({ count, estimateSize }: { count: number; estimateSize: () => number }) => ({
-    getVirtualItems: () => {
-      const size = estimateSize();
-      const startIndex = count === 0 ? 0 : Math.min(virtualizerMockState.startIndex, count - 1);
-      const visibleCount = Number.isFinite(virtualizerMockState.visibleCount)
-        ? virtualizerMockState.visibleCount
-        : count;
-      const itemCount = Math.max(0, Math.min(count - startIndex, visibleCount));
-      return Array.from({ length: itemCount }, (_, offset) => {
-        const index = startIndex + offset;
-        return {
-          index,
-          key: index,
-          size,
-          start: index * size,
-        };
-      });
-    },
-    getTotalSize: () => count * estimateSize(),
-  }),
+  useVirtualizer: ({ count, estimateSize }: { count: number; estimateSize: () => number }) => {
+    const estimatedSize = estimateSize();
+    virtualizerMockState.calls.push({ count, estimatedSize });
+    return {
+      getVirtualItems: () => {
+        const size = estimateSize();
+        const startIndex = count === 0 ? 0 : Math.min(virtualizerMockState.startIndex, count - 1);
+        const visibleCount = Number.isFinite(virtualizerMockState.visibleCount)
+          ? virtualizerMockState.visibleCount
+          : count;
+        const itemCount = Math.max(0, Math.min(count - startIndex, visibleCount));
+        return Array.from({ length: itemCount }, (_, offset) => {
+          const index = startIndex + offset;
+          return {
+            index,
+            key: index,
+            size,
+            start: index * size,
+          };
+        });
+      },
+      getTotalSize: () => count * estimateSize(),
+    };
+  },
 }));
 
 const catalog: CatalogState = {
@@ -89,8 +100,21 @@ function createCatalogForSessions(sessionList: SessionSummary[]): CatalogState {
 }
 
 class MockIntersectionObserver {
-  readonly observe = vi.fn();
-  readonly disconnect = vi.fn();
+  constructor(
+    private readonly callback: IntersectionObserverCallback,
+    options?: IntersectionObserverInit,
+  ) {
+    void this.callback;
+    intersectionObserverMockState.options.push(options);
+  }
+
+  observe(target: Element) {
+    intersectionObserverMockState.observedTargets.push(target);
+  }
+
+  disconnect() {
+    intersectionObserverMockState.disconnectCount += 1;
+  }
 }
 
 class MockResizeObserver {
@@ -150,6 +174,10 @@ describe("FolderContents", () => {
     originalMatchMedia = window.matchMedia;
     virtualizerMockState.startIndex = 0;
     virtualizerMockState.visibleCount = Number.POSITIVE_INFINITY;
+    virtualizerMockState.calls = [];
+    intersectionObserverMockState.options = [];
+    intersectionObserverMockState.observedTargets = [];
+    intersectionObserverMockState.disconnectCount = 0;
     globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver;
     globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
     vi.stubGlobal("CSS", { supports: vi.fn(() => false) });
@@ -204,8 +232,9 @@ describe("FolderContents", () => {
     expect(document.body.textContent).toContain("이 세션을 이어서 시작하기");
   });
 
-  it("virtualizes the desktop session grid so off-screen cards do not mount glass surfaces", () => {
+  it("virtualizes the desktop session grid so off-screen cards do not mount glass surfaces", async () => {
     const manySessions = createSessions(100);
+    const onLoadMore = vi.fn().mockResolvedValue(undefined);
     virtualizerMockState.visibleCount = 3;
     window.matchMedia = vi.fn().mockImplementation((query: string) => ({
       matches: query === "(min-width: 1280px)",
@@ -218,14 +247,34 @@ describe("FolderContents", () => {
       dispatchEvent: vi.fn(),
     }));
 
-    ({ container, root } = renderFolderContents({ sessions: manySessions }));
+    ({ container, root } = renderFolderContents({
+      sessions: manySessions,
+      hasMore: true,
+      onLoadMore,
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     const mountedSessions = container.querySelectorAll("[data-testid='draggable-session']");
     expect(mountedSessions).toHaveLength(6);
     expect(container.querySelectorAll(".liquid-glass-card")).toHaveLength(6);
     expect(container.querySelectorAll("[data-testid='folder-session-virtual-row']")).toHaveLength(3);
+    expect(virtualizerMockState.calls.some((call) => call.estimatedSize === 118)).toBe(false);
+    expect(virtualizerMockState.calls.some((call) => call.estimatedSize === 144)).toBe(true);
     expect(container.querySelector<HTMLElement>("[data-testid='folder-session-virtual-grid']")?.style.height)
-      .toBe("6200px");
+      .toBe("7200px");
+    const cardFrames = container.querySelectorAll<HTMLElement>("[data-testid='folder-session-card-frame']");
+    expect(cardFrames).toHaveLength(6);
+    cardFrames.forEach((frame) => {
+      expect(frame.style.height).toBe("132px");
+    });
+    const scrollRoot = container.querySelector<HTMLElement>("[data-testid='folder-session-virtual-grid']")?.parentElement;
+    expect(intersectionObserverMockState.options).toHaveLength(1);
+    expect(intersectionObserverMockState.options[0]?.root).toBe(scrollRoot);
+    expect(intersectionObserverMockState.options[0]?.rootMargin).toBe("120px 0px");
+    expect(intersectionObserverMockState.options[0]?.threshold).toBe(0.1);
+    expect(intersectionObserverMockState.observedTargets).toHaveLength(1);
+    expect(intersectionObserverMockState.observedTargets[0].textContent).toBe("Loading...");
+    expect(scrollRoot?.contains(intersectionObserverMockState.observedTargets[0])).toBe(true);
     expect(container.textContent).toContain("Session 0");
     expect(container.textContent).toContain("Session 5");
     expect(container.textContent).not.toContain("Session 6");

@@ -6,6 +6,7 @@
  * 세션 행 렌더링은 SessionItem 컴포넌트에 위임한다.
  */
 
+import type React from "react";
 import { useMemo, useRef, useState, useEffect, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useDashboardStore } from "../stores/dashboard-store";
@@ -24,7 +25,7 @@ export { STATUS_CONFIG } from "./SessionItem";
 export type { StatusConfig } from "./SessionItem";
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
-const DESKTOP_SESSION_CARD_HEIGHT = 112;
+const DESKTOP_SESSION_CARD_HEIGHT = 132;
 const DESKTOP_SESSION_GRID_GAP = 12;
 const DESKTOP_SESSION_GRID_ROW_HEIGHT = DESKTOP_SESSION_CARD_HEIGHT + DESKTOP_SESSION_GRID_GAP;
 const DESKTOP_SESSION_GRID_XL_QUERY = "(min-width: 1280px)";
@@ -75,6 +76,157 @@ function useDesktopSessionGridColumnCount(): 1 | 2 {
   return columnCount;
 }
 
+type RenderSessionItem = (session: SessionSummary) => React.ReactNode;
+
+interface FolderSessionListSurfaceProps {
+  displaySessions: SessionSummary[];
+  parentRef: React.RefObject<HTMLDivElement | null>;
+  sentinelRef: React.RefObject<HTMLDivElement | null>;
+  hasMore?: boolean;
+  onKeyDown: (e: React.KeyboardEvent) => void;
+  onContainerClick: () => void;
+  renderSessionItem: RenderSessionItem;
+}
+
+function LoadMoreSentinel({
+  hasMore,
+  sentinelRef,
+}: Pick<FolderSessionListSurfaceProps, "hasMore" | "sentinelRef">) {
+  if (!hasMore) return null;
+  return (
+    <div ref={sentinelRef} className="flex items-center justify-center py-2 text-xs text-muted-foreground">
+      Loading...
+    </div>
+  );
+}
+
+function DesktopFolderSessionGrid({
+  displaySessions,
+  parentRef,
+  sentinelRef,
+  hasMore,
+  onKeyDown,
+  onContainerClick,
+  renderSessionItem,
+}: FolderSessionListSurfaceProps) {
+  const desktopColumnCount = useDesktopSessionGridColumnCount();
+  const desktopRowCount = Math.ceil(displaySessions.length / desktopColumnCount);
+  const desktopVirtualizer = useVirtualizer({
+    count: desktopRowCount,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => DESKTOP_SESSION_GRID_ROW_HEIGHT,
+    overscan: 4,
+  });
+  const desktopVirtualRows = desktopVirtualizer.getVirtualItems();
+
+  return (
+    <div
+      ref={parentRef}
+      className="h-full overflow-y-auto px-1 py-1 outline-none"
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      onClick={onContainerClick}
+    >
+      <div
+        data-testid="folder-session-virtual-grid"
+        style={{ height: `${desktopVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}
+      >
+        {desktopVirtualRows.map((virtualRow) => {
+          const rowStartIndex = virtualRow.index * desktopColumnCount;
+          const rowSessions = displaySessions.slice(rowStartIndex, rowStartIndex + desktopColumnCount);
+          return (
+            <div
+              key={virtualRow.key}
+              data-testid="folder-session-virtual-row"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: `${virtualRow.size}px`,
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
+              <div className="grid h-full grid-cols-1 gap-3 xl:grid-cols-2">
+                {rowSessions.map((session) => (
+                  <div
+                    key={session.agentSessionId}
+                    data-testid="folder-session-card-frame"
+                    className="min-h-0"
+                    style={{ height: DESKTOP_SESSION_CARD_HEIGHT }}
+                  >
+                    {renderSessionItem(session)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <LoadMoreSentinel hasMore={hasMore} sentinelRef={sentinelRef} />
+    </div>
+  );
+}
+
+function MobileFolderSessionList({
+  displaySessions,
+  parentRef,
+  sentinelRef,
+  hasMore,
+  onKeyDown,
+  onContainerClick,
+  renderSessionItem,
+}: FolderSessionListSurfaceProps) {
+  const mobileVirtualizer = useVirtualizer({
+    count: displaySessions.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 118,
+    overscan: 5,
+  });
+  const mobileVirtualItems = mobileVirtualizer.getVirtualItems();
+  const { getItemRef } = useFlipAnimation(displaySessions, mobileVirtualItems);
+
+  return (
+    <div
+      ref={parentRef}
+      className="h-full overflow-y-auto outline-none"
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      onClick={onContainerClick}
+    >
+      <div style={{ height: `${mobileVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
+        {mobileVirtualItems.map((virtualItem) => {
+          const session = displaySessions[virtualItem.index];
+          return (
+            <div
+              key={session.agentSessionId}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: `${virtualItem.size}px`,
+                transform: `translateY(${virtualItem.start}px)`,
+              }}
+            >
+              <div
+                ref={getItemRef(session.agentSessionId)}
+                className="px-2 py-1"
+                style={{ width: "100%", height: "100%" }}
+              >
+                {renderSessionItem(session)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <LoadMoreSentinel hasMore={hasMore} sentinelRef={sentinelRef} />
+    </div>
+  );
+}
+
 export function FolderContents({
   sessions: sessionsProp = EMPTY_SESSIONS,
   onMoveSessions,
@@ -97,7 +249,6 @@ export function FolderContents({
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const catalog = useDashboardStore((s) => s.catalog);
   const isMobile = useIsMobile();
-  const desktopColumnCount = useDesktopSessionGridColumnCount();
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; sessionId: string } | null>(null);
 
   const displaySessions = useMemo(() => {
@@ -157,35 +308,17 @@ export function FolderContents({
   useEffect(() => {
     if (!onLoadMore || !hasMore) return;
     const sentinel = sentinelRef.current;
-    if (!sentinel) return;
+    const scrollRoot = parentRef.current;
+    if (!sentinel || !scrollRoot) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) runGuardedLoadMore(loadMoreGateRef, onLoadMore);
       },
-      { threshold: 0.1 },
+      { root: scrollRoot, rootMargin: "120px 0px", threshold: 0.1 },
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [onLoadMore, hasMore]);
-
-  const desktopRowCount = Math.ceil(displaySessions.length / desktopColumnCount);
-  const desktopVirtualizer = useVirtualizer({
-    count: desktopRowCount,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => DESKTOP_SESSION_GRID_ROW_HEIGHT,
-    overscan: 4,
-  });
-
-  const mobileVirtualizer = useVirtualizer({
-    count: displaySessions.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 118,
-    overscan: 5,
-  });
-
-  const desktopVirtualRows = desktopVirtualizer.getVirtualItems();
-  const mobileVirtualItems = mobileVirtualizer.getVirtualItems();
-  const { getItemRef } = useFlipAnimation(displaySessions, mobileVirtualItems);
+  }, [onLoadMore, hasMore, isMobile]);
 
   const handleContextMenu = useCallback((sessionId: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -254,95 +387,25 @@ export function FolderContents({
           No sessions in this folder
         </div>
       ) : !isMobile ? (
-        <div
-          ref={parentRef}
-          className="h-full overflow-y-auto px-1 py-1 outline-none"
-          tabIndex={0}
+        <DesktopFolderSessionGrid
+          displaySessions={displaySessions}
+          parentRef={parentRef}
+          sentinelRef={sentinelRef}
+          hasMore={hasMore}
           onKeyDown={handleKeyDown}
-          onClick={() => setContextMenu(null)}
-        >
-          <div
-            data-testid="folder-session-virtual-grid"
-            style={{ height: `${desktopVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}
-          >
-            {desktopVirtualRows.map((virtualRow) => {
-              const rowStartIndex = virtualRow.index * desktopColumnCount;
-              const rowSessions = displaySessions.slice(rowStartIndex, rowStartIndex + desktopColumnCount);
-              return (
-                <div
-                  key={virtualRow.key}
-                  data-testid="folder-session-virtual-row"
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: `${virtualRow.size}px`,
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                >
-                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-                    {rowSessions.map((session) => (
-                      <div
-                        key={session.agentSessionId}
-                        className="min-h-[112px]"
-                      >
-                        {renderSessionItem(session)}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {hasMore && (
-            <div ref={sentinelRef} className="flex items-center justify-center py-2 text-xs text-muted-foreground">
-              Loading...
-            </div>
-          )}
-        </div>
+          onContainerClick={() => setContextMenu(null)}
+          renderSessionItem={renderSessionItem}
+        />
       ) : (
-        <div
-          ref={parentRef}
-          className="h-full overflow-y-auto outline-none"
-          tabIndex={0}
+        <MobileFolderSessionList
+          displaySessions={displaySessions}
+          parentRef={parentRef}
+          sentinelRef={sentinelRef}
+          hasMore={hasMore}
           onKeyDown={handleKeyDown}
-          onClick={() => setContextMenu(null)}
-        >
-          <div style={{ height: `${mobileVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
-            {mobileVirtualItems.map((virtualItem) => {
-              const session = displaySessions[virtualItem.index];
-              return (
-                <div
-                  key={session.agentSessionId}
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: `${virtualItem.size}px`,
-                    transform: `translateY(${virtualItem.start}px)`,
-                  }}
-                >
-                  <div
-                    ref={getItemRef(session.agentSessionId)}
-                    className="px-2 py-1"
-                    style={{ width: "100%", height: "100%" }}
-                  >
-                    {renderSessionItem(session)}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {hasMore && (
-            <div ref={sentinelRef} className="flex items-center justify-center py-2 text-xs text-muted-foreground">
-              Loading...
-            </div>
-          )}
-        </div>
+          onContainerClick={() => setContextMenu(null)}
+          renderSessionItem={renderSessionItem}
+        />
       )}
 
       <SessionContextMenu
