@@ -10,6 +10,7 @@ import pino from "pino";
 
 import type { ThreadEvent } from "@openai/codex-sdk";
 import {
+  AGENT_COMMON_FILES_DIR_ENV,
   SCRATCH_WORKSPACE_DIR_ENV,
   SOULSTREAM_AGENT_ID_ENV,
 } from "../../src/engine/scratch_workspace_env.js";
@@ -51,6 +52,28 @@ function silentLogger() {
   return pino({ level: "silent" });
 }
 
+async function withProcessEnvValue(
+  key: string,
+  value: string | undefined,
+  fn: () => Promise<void> | void,
+): Promise<void> {
+  const previous = process.env[key];
+  try {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+    await fn();
+  } finally {
+    if (previous === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = previous;
+    }
+  }
+}
+
 beforeEach(() => {
   mockStartThread.mockReset();
   mockResumeThread.mockReset();
@@ -60,28 +83,30 @@ beforeEach(() => {
 
 describe("CodexEngineAdapter — 기본 lifecycle", () => {
   it("constructor가 Codex SDK에 apiKey·codexPathOverride·sanitize된 env를 전달한다", async () => {
-    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
-    new CodexEngineAdapter(
-      {
-        workspaceDir: "/tmp/work",
+    await withProcessEnvValue(AGENT_COMMON_FILES_DIR_ENV, undefined, async () => {
+      const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+      new CodexEngineAdapter(
+        {
+          workspaceDir: "/tmp/work",
+          apiKey: "test-api-key",
+          codexPathOverride: "/usr/local/bin/codex",
+          processEnv: {
+            HOME: "/home/test",
+            PATH: "/usr/bin",
+          },
+        },
+        silentLogger(),
+      );
+      expect(mockCodexCtor).toHaveBeenCalledWith({
         apiKey: "test-api-key",
         codexPathOverride: "/usr/local/bin/codex",
-        processEnv: {
+        baseUrl: undefined,
+        env: {
           HOME: "/home/test",
           PATH: "/usr/bin",
+          [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/work",
         },
-      },
-      silentLogger(),
-    );
-    expect(mockCodexCtor).toHaveBeenCalledWith({
-      apiKey: "test-api-key",
-      codexPathOverride: "/usr/local/bin/codex",
-      baseUrl: undefined,
-      env: {
-        HOME: "/home/test",
-        PATH: "/usr/bin",
-        [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/work",
-      },
+      });
     });
   });
 
@@ -188,21 +213,25 @@ describe("CodexEngineAdapter — reasoning effort", () => {
 
 describe("CodexEngineAdapter — env sanitize (OAuth fallback 보호)", () => {
   it("SCRATCH_WORKSPACE_DIR는 processEnv보다 workspaceDir가 우선한다", async () => {
-    const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
-    new CodexEngineAdapter(
-      {
-        workspaceDir: "/tmp/right-work",
-        agentId: "codex-agent",
-        processEnv: {
-          [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/wrong-work",
-          [SOULSTREAM_AGENT_ID_ENV]: "wrong-agent",
+    await withProcessEnvValue(AGENT_COMMON_FILES_DIR_ENV, "/srv/agent-common", async () => {
+      const { CodexEngineAdapter } = await import("../../src/engine/codex_adapter.js");
+      new CodexEngineAdapter(
+        {
+          workspaceDir: "/tmp/right-work",
+          agentId: "codex-agent",
+          processEnv: {
+            [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/wrong-work",
+            [SOULSTREAM_AGENT_ID_ENV]: "wrong-agent",
+            [AGENT_COMMON_FILES_DIR_ENV]: "/tmp/wrong-common",
+          },
         },
-      },
-      silentLogger(),
-    );
-    const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
-    expect(passedEnv[SCRATCH_WORKSPACE_DIR_ENV]).toBe("/tmp/right-work");
-    expect(passedEnv[SOULSTREAM_AGENT_ID_ENV]).toBe("codex-agent");
+        silentLogger(),
+      );
+      const passedEnv = mockCodexCtor.mock.calls[0][0].env as Record<string, string>;
+      expect(passedEnv[SCRATCH_WORKSPACE_DIR_ENV]).toBe("/tmp/right-work");
+      expect(passedEnv[SOULSTREAM_AGENT_ID_ENV]).toBe("codex-agent");
+      expect(passedEnv[AGENT_COMMON_FILES_DIR_ENV]).toBe("/srv/agent-common");
+    });
   });
 
   it("빈 문자열 OPENAI_API_KEY는 SDK env에 포함되지 않는다", async () => {
