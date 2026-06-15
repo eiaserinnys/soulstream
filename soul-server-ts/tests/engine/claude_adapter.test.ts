@@ -12,12 +12,35 @@ import {
   type ClaudeRunOptions,
 } from "../../src/engine/claude_adapter.js";
 import {
+  AGENT_COMMON_FILES_DIR_ENV,
   SCRATCH_WORKSPACE_DIR_ENV,
   SOULSTREAM_AGENT_ID_ENV,
 } from "../../src/engine/scratch_workspace_env.js";
 import type { SSEEventPayload } from "../../src/engine/protocol.js";
 
 const silentLogger = pino({ level: "silent" });
+
+async function withProcessEnvValue(
+  key: string,
+  value: string | undefined,
+  fn: () => Promise<void> | void,
+): Promise<void> {
+  const previous = process.env[key];
+  try {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+    await fn();
+  } finally {
+    if (previous === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = previous;
+    }
+  }
+}
 
 async function* clientEvents(events: ClaudeClientEvent[]): AsyncGenerator<ClaudeClientEvent> {
   for (const event of events) {
@@ -176,30 +199,34 @@ describe("ClaudeEngineAdapter options parity", () => {
   });
 
   it("어댑터가 SCRATCH_WORKSPACE_DIR를 extraEnv보다 마지막에 덮어쓴다", async () => {
-    const captured: ClaudeRunOptions[] = [];
-    const engine = new ClaudeEngineAdapter(
-      {
-        workspaceDir: "/tmp/right-claude-work",
-        agentId: "claude-agent",
-        client: makeClient([], captured),
-        processEnv: {},
-      },
-      silentLogger,
-    );
+    await withProcessEnvValue(AGENT_COMMON_FILES_DIR_ENV, "/srv/agent-common", async () => {
+      const captured: ClaudeRunOptions[] = [];
+      const engine = new ClaudeEngineAdapter(
+        {
+          workspaceDir: "/tmp/right-claude-work",
+          agentId: "claude-agent",
+          client: makeClient([], captured),
+          processEnv: {},
+        },
+        silentLogger,
+      );
 
-    for await (const _ of engine.execute({
-      prompt: "hi",
-      extraEnv: {
-        [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/wrong-claude-work",
-        [SOULSTREAM_AGENT_ID_ENV]: "wrong-agent",
-      },
-    })) {
-      // drain
-    }
+      for await (const _ of engine.execute({
+        prompt: "hi",
+        extraEnv: {
+          [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/wrong-claude-work",
+          [SOULSTREAM_AGENT_ID_ENV]: "wrong-agent",
+          [AGENT_COMMON_FILES_DIR_ENV]: "/tmp/wrong-common",
+        },
+      })) {
+        // drain
+      }
 
-    expect(captured[0].env).toMatchObject({
-      [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/right-claude-work",
-      [SOULSTREAM_AGENT_ID_ENV]: "claude-agent",
+      expect(captured[0].env).toMatchObject({
+        [SCRATCH_WORKSPACE_DIR_ENV]: "/tmp/right-claude-work",
+        [SOULSTREAM_AGENT_ID_ENV]: "claude-agent",
+        [AGENT_COMMON_FILES_DIR_ENV]: "/srv/agent-common",
+      });
     });
   });
 
