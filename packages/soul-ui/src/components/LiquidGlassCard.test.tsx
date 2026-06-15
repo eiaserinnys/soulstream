@@ -25,9 +25,11 @@ describe("LiquidGlassCard", () => {
       flushSync(() => root?.unmount());
     }
     container?.remove();
+    document.querySelectorAll('[data-liquid-glass-shared-resource="true"]').forEach((node) => node.remove());
     root = undefined;
     container = undefined;
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("keeps the fallback surface as the root element in unsupported environments", () => {
@@ -87,5 +89,41 @@ describe("LiquidGlassCard", () => {
     expect(effect!.style.width).toBe("100%");
     expect(effect!.style.height).toBe("100%");
     expect(effect!.style.transform).toContain("-50%");
+  });
+
+  it("shares one enhanced filter resource across many card surfaces", () => {
+    vi.stubGlobal("CSS", { supports: vi.fn(() => true) });
+    const createElementSpy = vi.spyOn(document, "createElement");
+
+    flushSync(() => {
+      root!.render(
+        createElement(
+          "div",
+          null,
+          createElement(LiquidGlassCard, { "data-testid": "glass-a" }, "A"),
+          createElement(LiquidGlassCard, { "data-testid": "glass-b" }, "B"),
+          createElement(LiquidGlassCard, { "data-testid": "glass-c" }, "C"),
+        ),
+      );
+    });
+
+    expect(container!.querySelectorAll(".liquid-glass-card__effect")).toHaveLength(3);
+    expect(document.querySelectorAll('[data-liquid-glass-shared-resource="true"]')).toHaveLength(1);
+    expect(document.querySelectorAll("filter#liquid-glass-card-shared-filter-standard")).toHaveLength(1);
+    expect(
+      document
+        .querySelector("filter#liquid-glass-card-shared-filter-standard feImage")
+        ?.getAttribute("href"),
+    ).toMatch(/^data:image\/jpeg;base64,/);
+    expect(
+      createElementSpy.mock.calls.filter(([tagName]) => tagName === "canvas"),
+    ).toHaveLength(0);
+
+    const warps = container!.querySelectorAll<HTMLElement>(".glass__warp");
+    expect(warps).toHaveLength(3);
+    warps.forEach((warp) => {
+      expect(warp.style.filter).toBe("url(#liquid-glass-card-shared-filter-standard)");
+      expect(warp.style.backdropFilter).toBe("blur(4.64px) saturate(125%)");
+    });
   });
 });
