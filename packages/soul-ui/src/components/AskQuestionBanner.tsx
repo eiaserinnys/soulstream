@@ -17,6 +17,9 @@ import { Button } from './ui/button';
 
 type PendingPromptNode = InputRequestNodeDef | ToolApprovalNodeDef;
 
+const PROMPT_BANNER_FRAME_CLASS =
+  "fixed left-1/2 top-6 z-[1000] flex w-[min(720px,calc(100vw-2rem))] max-w-3xl -translate-x-1/2 flex-col gap-2 rounded-[18px] border border-glass-border glass-shadow-lg px-4 py-3";
+
 /** 트리를 재귀 순회하여 미응답·미만료 input_request 노드를 반환 */
 function findPendingPrompt(nodes: EventTreeNode[]): PendingPromptNode | null {
   for (const node of nodes) {
@@ -71,7 +74,10 @@ function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; se
   };
 
   return (
-    <LiquidGlassCard className="fixed left-1/2 top-6 z-[1000] flex min-w-80 max-w-[520px] -translate-x-1/2 flex-col gap-2 rounded-[18px] border border-glass-border glass-shadow-lg px-4 py-3">
+    <LiquidGlassCard
+      data-testid="tool-approval-banner"
+      className={PROMPT_BANNER_FRAME_CLASS}
+    >
       <div className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Approval</div>
       <div className="font-medium text-foreground">{node.toolName}</div>
       {node.agentName && (
@@ -143,7 +149,10 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
   };
 
   return (
-    <LiquidGlassCard className="fixed left-1/2 top-6 z-[1000] flex min-w-80 max-w-[500px] -translate-x-1/2 flex-col gap-2 rounded-[18px] border border-glass-border glass-shadow-lg px-4 py-3">
+    <LiquidGlassCard
+      data-testid="ask-question-banner"
+      className={PROMPT_BANNER_FRAME_CLASS}
+    >
       {isEffectivelyExpired ? (
         <div className="text-center text-muted-foreground">시간 초과</div>
       ) : (
