@@ -5,6 +5,7 @@ import { submitInputResponse } from "../../lib/input-request-actions";
 import { useInputRequestTimer } from "../../hooks/useInputRequestTimer";
 import { formatTime } from "../../lib/input-request-utils";
 import { Button } from "../ui/button";
+import { InputRequestOptionContent } from "../InputRequestOptionContent";
 
 export const ChatInputRequest = memo(function ChatInputRequest({
   msg,
@@ -66,12 +67,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
                   data-selected={selectedAnswer === opt.label ? "true" : undefined}
                   className="w-full px-3 py-2.5 text-sm disabled:cursor-default"
                 >
-                  <b className="font-semibold">{opt.label}</b>
-                  {opt.description && (
-                    <small className="mt-0.5 block text-xs leading-[1.45] text-muted-foreground">
-                      {opt.description}
-                    </small>
-                  )}
+                  <InputRequestOptionContent option={opt} descriptionClassName="text-xs" />
                 </Button>
               ))}
             </div>

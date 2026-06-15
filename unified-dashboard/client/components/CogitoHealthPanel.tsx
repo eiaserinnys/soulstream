@@ -60,7 +60,7 @@ export function CogitoHealthPanelContent({
   return (
     <section
       data-testid="cogito-health-panel"
-      className="shrink-0 border-b border-border bg-muted/10 max-h-72 overflow-y-auto"
+      className="shrink-0 overflow-hidden rounded-[13px] border border-border bg-muted/10"
     >
       <div className="flex items-center gap-2 px-3 py-1.5">
         <span className="text-sm font-semibold text-foreground">Cogito</span>

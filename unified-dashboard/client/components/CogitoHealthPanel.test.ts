@@ -119,4 +119,35 @@ describe("CogitoHealthPanelContent", () => {
     expect(html).toContain("Timeout");
     expect(html).toContain("node_timeout");
   });
+
+  it("renders as a bounded card without owning a nested scroll surface", () => {
+    const html = render({
+      kind: "ready",
+      summary: {
+        status: "ok",
+        checkedAt: "2026-05-25T12:00:00.000Z",
+        nodeCount: 1,
+        nodes: [
+          {
+            nodeId: "eiaserinnys",
+            status: "ok",
+            serviceStatus: "ok",
+            capabilityCount: 0,
+            capabilities: [],
+            omittedCapabilities: 0,
+            runtime: {
+              status: "ok",
+              tasksByStatus: {},
+              dependencies: [],
+            },
+            warnings: [],
+          },
+        ],
+      },
+    });
+
+    expect(html).toContain("rounded-[13px]");
+    expect(html).not.toContain("max-h-72");
+    expect(html).not.toContain("overflow-y-auto");
+  });
 });
