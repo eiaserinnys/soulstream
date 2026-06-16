@@ -60,6 +60,7 @@ export type SSEEventType =
   | "claude_runtime_mode_state"
   | "claude_runtime_schedule_updated"
   | "claude_runtime_schedule_deleted"
+  | "runbook_updated"
   // 대시보드 내부 이벤트
   | "context_usage"
   | "compact"
@@ -648,6 +649,12 @@ export interface ClaudeRuntimeScheduleDeletedEvent {
   timestamp: number;
 }
 
+export interface RunbookUpdatedEvent {
+  type: "runbook_updated";
+  runbookId: string;
+  boardItemId: string;
+}
+
 export interface ReconnectEvent {
   type: "reconnect";
   last_event_id?: number;
@@ -784,6 +791,7 @@ export type SoulSSEEvent =
   | ClaudeRuntimeModeStateEvent
   | ClaudeRuntimeScheduleUpdatedEvent
   | ClaudeRuntimeScheduleDeletedEvent
+  | RunbookUpdatedEvent
   | ReconnectEvent
   | InputRequestEvent
   | InputRequestExpiredEvent

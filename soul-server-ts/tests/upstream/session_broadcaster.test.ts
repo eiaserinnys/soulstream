@@ -279,6 +279,25 @@ describe("emitEventEnvelope", () => {
   });
 });
 
+describe("emitRunbookUpdated", () => {
+  it("SessionEventEnvelope로 runbook_updated payload를 운반한다", async () => {
+    const send = vi.fn().mockResolvedValue(undefined);
+    const b = new SessionBroadcaster(send, makeRegistry(), "eias-shopping-ts");
+
+    await b.emitRunbookUpdated("sess-1", "rb-1", "board-1");
+
+    expect(send).toHaveBeenCalledWith({
+      type: "event",
+      agentSessionId: "sess-1",
+      event: {
+        type: "runbook_updated",
+        runbookId: "rb-1",
+        boardItemId: "board-1",
+      },
+    });
+  });
+});
+
 describe("SessionBroadcaster.emitCatalogUpdated (B-5)", () => {
   it("catalog_updated wire envelope 정합 (Python `task_manager.py:312-316` 정본)", async () => {
     const send = vi.fn().mockResolvedValue(undefined);

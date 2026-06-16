@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import { RunbookVersionConflict } from "../../src/runbook/runbook_models.js";
@@ -17,16 +17,27 @@ describePostgres("RunbookService PostgreSQL integration", () => {
   let harness: RunbookPostgresHarness | undefined;
   let db: SessionDB;
   let service: RunbookService;
+  let emitRunbookUpdated: ReturnType<typeof vi.fn>;
+  const observedOperationCounts: number[] = [];
 
   beforeAll(async () => {
     harness = await createRunbookPostgresHarness();
     db = new SessionDB(harness.sql);
-    service = new RunbookService(db);
+    emitRunbookUpdated = vi.fn(async (actorSessionId: string, runbookId: string) => {
+      if (actorSessionId === "sess-actor") {
+        observedOperationCounts.push(
+          (await db.runbooks().listOperations(runbookId)).length,
+        );
+      }
+    });
+    service = new RunbookService(db, { emitRunbookUpdated });
   }, 45_000);
 
   beforeEach(async () => {
     if (!harness) return;
     await resetRunbookData(harness.sql);
+    emitRunbookUpdated.mockClear();
+    observedOperationCounts.length = 0;
   }, 15_000);
 
   afterAll(async () => {
@@ -86,6 +97,35 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     expect(second.snapshot.sections.map((section) => section.title)).toEqual([
       "Original",
     ]);
+  });
+
+  it("emits runbook_updated after a committed mutation and skips idempotent replay", async () => {
+    await seedRunbook();
+    emitRunbookUpdated.mockClear();
+    observedOperationCounts.length = 0;
+
+    await service.createSection({
+      runbookId: "rb-1",
+      sectionId: "sec-broadcast",
+      title: "Broadcast",
+      actorSessionId: "sess-actor",
+      idempotencyKey: "runbook:rb-1:section:create:broadcast",
+    });
+    await service.createSection({
+      runbookId: "rb-1",
+      sectionId: "sec-broadcast-retry",
+      title: "Retry",
+      actorSessionId: "sess-actor",
+      idempotencyKey: "runbook:rb-1:section:create:broadcast",
+    });
+
+    expect(emitRunbookUpdated).toHaveBeenCalledTimes(1);
+    expect(emitRunbookUpdated).toHaveBeenCalledWith(
+      "sess-actor",
+      "rb-1",
+      "board-rb-1",
+    );
+    expect(observedOperationCounts).toEqual([2]);
   });
 
   it("rejects mismatched runbook ownership before recording an operation", async () => {
@@ -215,6 +255,44 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     expect(ordered.map((item) => item.title)).toEqual(["A", "B", "C"]);
     expect(ordered[0]!.position_key < ordered[1]!.position_key).toBe(true);
     expect(ordered[1]!.position_key < ordered[2]!.position_key).toBe(true);
+  });
+
+  it("moves items across sections with CAS and records move_runbook_item", async () => {
+    await seedRunbook();
+    await service.createSection({
+      runbookId: "rb-1",
+      sectionId: "sec-a",
+      title: "A",
+      actorSessionId: "sess-actor",
+    });
+    await service.createSection({
+      runbookId: "rb-1",
+      sectionId: "sec-b",
+      title: "B",
+      actorSessionId: "sess-actor",
+    });
+    await service.createItem({
+      runbookId: "rb-1",
+      sectionId: "sec-a",
+      itemId: "item-move",
+      title: "Move me",
+      actorSessionId: "sess-actor",
+    });
+
+    const result = await service.moveItem({
+      runbookId: "rb-1",
+      itemId: "item-move",
+      expectedVersion: 1,
+      sectionId: "sec-b",
+      actorSessionId: "sess-actor",
+      idempotencyKey: "runbook:rb-1:item:move:item-move",
+    });
+
+    expect(result.operation.operation_type).toBe("move_runbook_item");
+    expect(result.snapshot.items.find((item) => item.id === "item-move")).toMatchObject({
+      section_id: "sec-b",
+      version: 2,
+    });
   });
 
   it("records cancelled as a semantic status without completion provenance", async () => {

@@ -61,6 +61,16 @@ export class RunbookRepository {
     return rows[0] ?? null;
   }
 
+  async getItemForUpdateTx(
+    sql: RepositorySql,
+    itemId: string,
+  ): Promise<RunbookItemRow> {
+    const rows = await sql<RunbookItemRow[]>`
+      SELECT * FROM runbook_items WHERE id = ${itemId} FOR UPDATE
+    `;
+    return requireOne(rows, "getItemForUpdateTx");
+  }
+
   async getRunbookIdForItemTx(
     sql: RepositorySql,
     itemId: string,

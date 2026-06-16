@@ -511,6 +511,7 @@ export function applyUpdate(
     case "claude_runtime_mode_state":
     case "claude_runtime_schedule_updated":
     case "claude_runtime_schedule_deleted":
+    case "runbook_updated":
       return false;
 
     default:
