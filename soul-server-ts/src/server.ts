@@ -8,6 +8,10 @@ import {
   registerBoardYjsRoutes,
   type BoardYjsRouteConfig,
 } from "./collaboration/board_yjs_route.js";
+import {
+  registerRunbookHttpRoutes,
+  type RunbookHttpRouteConfig,
+} from "./runbook/runbook_http_route.js";
 
 export interface ServerParams {
   host: string;
@@ -32,6 +36,8 @@ export interface ServerParams {
   llm?: LlmRouteConfig;
   /** Board workspace Yjs collaboration route 설정. */
   boardYjs?: BoardYjsRouteConfig;
+  /** Runbook dashboard write routes. */
+  runbook?: RunbookHttpRouteConfig;
 }
 
 export type ServerInstance = FastifyInstance & {
@@ -75,6 +81,9 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
   }
   if (params.boardYjs) {
     await registerBoardYjsRoutes(fastify, params.boardYjs);
+  }
+  if (params.runbook) {
+    registerRunbookHttpRoutes(fastify, params.runbook);
   }
 
   return fastify;

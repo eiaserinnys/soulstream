@@ -309,7 +309,12 @@ def _mount_api_routers(
     app.include_router(create_claude_auth_router(node_manager, dependencies=api_deps))
     app.include_router(create_provider_usage_router(node_manager, dependencies=api_deps))
     app.include_router(create_folders_router(catalog_service, dependencies=api_deps))
-    app.include_router(create_catalog_router(catalog_service, db=db, dependencies=api_deps))
+    app.include_router(create_catalog_router(
+        catalog_service,
+        db=db,
+        node_manager=node_manager,
+        dependencies=api_deps,
+    ))
     app.include_router(create_attachments_router(node_manager, db, dependencies=api_deps))
     if user_preferences_repo is not None:
         app.include_router(create_user_preferences_router(user_preferences_repo, dependencies=api_deps))

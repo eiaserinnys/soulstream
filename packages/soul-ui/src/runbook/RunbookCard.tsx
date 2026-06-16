@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent, type PointerEvent } from "react";
 import {
   Bot,
   BookOpen,
@@ -20,6 +20,7 @@ import {
   type RunbookAssigneeKind,
   type RunbookItemRow,
   type RunbookItemStatus,
+  type RunbookRow,
   type RunbookSectionRow,
   useRunbookStore,
 } from "../stores/runbook-store";
@@ -96,6 +97,38 @@ function isHumanTurn(assignee: EffectiveAssignee, item: RunbookItemRow): boolean
     !item.archived &&
     item.status !== "completed" &&
     item.status !== "cancelled";
+}
+
+function isHumanWritable(assignee: EffectiveAssignee, item: RunbookItemRow): boolean {
+  return assignee.kind === "human" &&
+    !item.archived &&
+    item.status !== "cancelled";
+}
+
+function resolveActorSessionId(
+  runbook: RunbookRow,
+  section: RunbookSectionRow,
+  item: RunbookItemRow,
+  assignee: EffectiveAssignee,
+): string | null {
+  return assignee.sessionId ||
+    item.updated_session_id ||
+    item.created_session_id ||
+    section.updated_session_id ||
+    section.created_session_id ||
+    runbook.created_session_id ||
+    null;
+}
+
+function createStatusIdempotencyKey(
+  runbookId: string,
+  itemId: string,
+  status: Extract<RunbookItemStatus, "pending" | "completed" | "cancelled">,
+  expectedVersion: number,
+): string {
+  const randomId = globalThis.crypto?.randomUUID?.() ??
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `runbook:${runbookId}:item:${itemId}:status:${status}:v${expectedVersion}:${randomId}`;
 }
 
 function assigneeLabel(assignee: EffectiveAssignee): string {
@@ -192,8 +225,11 @@ function sortSections(sections: readonly RunbookSectionRow[]): RunbookSectionRow
 export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
   const projection = useRunbookStore((s) => s.byId[runbookId]);
   const loadRunbook = useRunbookStore((s) => s.loadRunbook);
+  const setItemStatus = useRunbookStore((s) => s.setItemStatus);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [openItems, setOpenItems] = useState<Record<string, boolean>>({});
+  const [pendingItems, setPendingItems] = useState<Record<string, boolean>>({});
+  const [itemErrors, setItemErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const controller = new AbortController();
@@ -218,6 +254,48 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
   const loading = (projection?.status ?? "idle") === "loading";
   const refreshing = Boolean(projection?.isRefreshing);
   const error = projection?.error ?? null;
+
+  const handleStatusChange = async (
+    section: RunbookSectionRow,
+    item: RunbookItemRow,
+    assignee: EffectiveAssignee,
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    if (!snapshot) return;
+    const actorSessionId = resolveActorSessionId(snapshot.runbook, section, item, assignee);
+    if (!actorSessionId) return;
+    const nextStatus: Extract<RunbookItemStatus, "pending" | "completed" | "cancelled"> =
+      event.currentTarget.checked ? "completed" : "pending";
+    setPendingItems((prev) => ({ ...prev, [item.id]: true }));
+    setItemErrors((prev) => {
+      const next = { ...prev };
+      delete next[item.id];
+      return next;
+    });
+    try {
+      await setItemStatus({
+        runbookId: snapshot.runbook.id,
+        itemId: item.id,
+        expectedVersion: item.version,
+        status: nextStatus,
+        idempotencyKey: createStatusIdempotencyKey(
+          snapshot.runbook.id,
+          item.id,
+          nextStatus,
+          item.version,
+        ),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setItemErrors((prev) => ({ ...prev, [item.id]: message }));
+    } finally {
+      setPendingItems((prev) => {
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
+    }
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[var(--lg-card)] text-left">
@@ -293,6 +371,12 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                   {sectionItems.map((item) => {
                     const assignee = resolveAssignee(section, item);
                     const myTurn = isHumanTurn(assignee, item);
+                    const writable = snapshot
+                      ? isHumanWritable(assignee, item) &&
+                        Boolean(resolveActorSessionId(snapshot.runbook, section, item, assignee))
+                      : false;
+                    const pending = Boolean(pendingItems[item.id]);
+                    const itemError = itemErrors[item.id];
                     const itemOpen = openItems[item.id] ?? itemDefaultOpen(section, item);
                     const hasHowTo = item.how_to.trim().length > 0;
                     return (
@@ -309,10 +393,12 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                           <input
                             type="checkbox"
                             checked={item.status === "completed"}
-                            disabled
-                            title="PR-3b 대기"
+                            disabled={!writable || pending}
+                            title={item.status === "completed" ? "완료 해제" : "완료 표시"}
                             className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-accent-blue"
-                            readOnly
+                            onPointerDown={stopTileDrag}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={(event) => void handleStatusChange(section, item, assignee, event)}
                           />
                           <div className="min-w-0 flex-1">
                             <div className="flex min-w-0 items-center gap-1.5">
@@ -342,9 +428,6 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                                 <AssigneeIcon assignee={assignee} />
                                 <span className="max-w-[96px] truncate">{assigneeLabel(assignee)}</span>
                               </span>
-                              {assignee.kind === "human" && !isTerminal(item.status) && (
-                                <span>PR-3b 대기</span>
-                              )}
                               {hasHowTo && (
                                 <button
                                   type="button"
@@ -369,6 +452,11 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                                 className="mt-2 rounded-sm border border-[var(--lg-line)] bg-background/50 px-2 py-1.5 text-xs leading-relaxed text-foreground"
                               >
                                 <MarkdownContent content={item.how_to} compact />
+                              </div>
+                            )}
+                            {itemError && (
+                              <div className="mt-1 text-[10px] leading-4 text-accent-red">
+                                {itemError}
                               </div>
                             )}
                           </div>

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   DASHBOARD_AUTH_COOKIE_NAME,
   authenticateBoardYjsConnection,
+  authenticateDashboardHttpRequest,
 } from "../../src/collaboration/board_yjs_auth.js";
 
 describe("board_yjs_auth", () => {
@@ -79,6 +80,25 @@ describe("board_yjs_auth", () => {
         dashboardAuthEnabled: true,
       },
     })).rejects.toThrow(/JWT_SECRET is required/);
+  });
+
+  it("dashboard HTTP auth도 쿠키 JWT subject를 인증 사용자로 반환", async () => {
+    const token = signJwt(
+      { sub: "operator@example.com", exp: Math.floor(Date.now() / 1000) + 60 },
+      "jwt-secret",
+    );
+
+    await expect(authenticateDashboardHttpRequest({
+      requestHeaders: {
+        cookie: `${DASHBOARD_AUTH_COOKIE_NAME}=${encodeURIComponent(token)}`,
+      },
+      config: {
+        authBearerToken: "",
+        environment: "production",
+        dashboardAuthEnabled: true,
+        jwtSecret: "jwt-secret",
+      },
+    })).resolves.toEqual({ source: "cookie", subject: "operator@example.com" });
   });
 });
 
