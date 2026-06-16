@@ -5,6 +5,7 @@ import {
   buildThreadStartParams,
   buildTurnStartParams,
 } from "../../../src/engine/codex_app_server/params.js";
+import { SOULSTREAM_AGENT_SESSION_HEADER } from "../../../src/mcp/request_context.js";
 
 describe("Codex app-server parameter builders", () => {
   it("builds thread/start params with current wire defaults", () => {
@@ -72,6 +73,45 @@ describe("Codex app-server parameter builders", () => {
       personality: null,
       excludeTurns: false,
       persistExtendedHistory: false,
+    });
+  });
+
+  it("adds current agent session id header to Codex app-server thread config", () => {
+    expect(
+      buildThreadStartParams(
+        {
+          prompt: "hello",
+          agentSessionId: "  sess-agent-1  ",
+        },
+        "/work",
+      ).config,
+    ).toEqual({
+      mcp_servers: {
+        soulstream: {
+          http_headers: {
+            [SOULSTREAM_AGENT_SESSION_HEADER]: "sess-agent-1",
+          },
+        },
+      },
+    });
+
+    expect(
+      buildThreadResumeParams(
+        {
+          prompt: "resume",
+          resumeSessionId: "thread-existing",
+          agentSessionId: "sess-agent-2",
+        },
+        "/work",
+      ).config,
+    ).toEqual({
+      mcp_servers: {
+        soulstream: {
+          http_headers: {
+            [SOULSTREAM_AGENT_SESSION_HEADER]: "sess-agent-2",
+          },
+        },
+      },
     });
   });
 
