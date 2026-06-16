@@ -82,6 +82,15 @@ export interface MetadataUpdatedStreamEvent {
   lastEventId?: string;
 }
 
+/** 런북 상태 변경 이벤트 — 클라이언트는 서버 snapshot을 다시 읽는다. */
+export interface RunbookUpdatedStreamEvent {
+  type: "runbook_updated";
+  runbookId: string;
+  boardItemId: string;
+  /** broadcaster가 부여한 SSE event_id */
+  lastEventId?: string;
+}
+
 /**
  * 스트림 메타 이벤트 (구독 시 최초 1회, SSE id 미부착)
  *
@@ -116,5 +125,6 @@ export type SessionStreamEvent =
   | SessionDeletedStreamEvent
   | CatalogUpdatedStreamEvent
   | MetadataUpdatedStreamEvent
+  | RunbookUpdatedStreamEvent
   | StreamMetaStreamEvent
   | ReplayGapStreamEvent;

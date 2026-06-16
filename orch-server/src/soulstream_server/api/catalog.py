@@ -79,6 +79,7 @@ def _board_asset_error(exc: Exception) -> HTTPException:
 
 def create_catalog_router(
     catalog_service: CatalogService,
+    db: object | None = None,
     dependencies: list | None = None,
 ) -> APIRouter:
     router = APIRouter(
@@ -134,6 +135,19 @@ def create_catalog_router(
         folders = await catalog_service.list_folders()
         require_folder_allowed(access_for_request(request), folders, folder_id)
         return document
+
+    @router.get("/runbooks/{runbook_id}")
+    async def get_runbook(runbook_id: str, request: Request) -> dict:
+        loader = getattr(db, "get_runbook_snapshot", None)
+        if loader is None:
+            raise HTTPException(status_code=503, detail="Runbook storage is not configured")
+        snapshot = await loader(runbook_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="Runbook not found")
+        folder_id = (snapshot.get("runbook") or {}).get("folder_id")
+        folders = await catalog_service.list_folders()
+        require_folder_allowed(access_for_request(request), folders, folder_id)
+        return snapshot
 
     @router.put("/markdown-documents/{document_id}")
     async def update_markdown_document(

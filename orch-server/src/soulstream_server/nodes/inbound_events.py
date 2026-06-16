@@ -248,6 +248,9 @@ class NodeInboundEvents:
         if signal:
             await self._notify_session_change("input_request", signal)
 
+        if event.get("type") == "runbook_updated":
+            await self._notify_session_change("runbook_updated", event)
+
     async def _on_sessions_update(self, data: dict) -> None:
         sessions = data.get("sessions", [])
         self._sessions.clear()

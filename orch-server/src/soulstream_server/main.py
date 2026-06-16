@@ -246,6 +246,19 @@ async def _on_node_change(
                 "[broadcast] session_deleted SKIPPED: no session_id from node=%s data_keys=%s",
                 node_id, list((data or {}).keys()),
             )
+    elif event_type == "node_session_runbook_updated":
+        broadcast_data = {
+            **(data or {}),
+            "type": "runbook_updated",
+            "nodeId": node_id,
+        }
+        recipient_count = await broadcaster.broadcast(broadcast_data)
+        logger.info(
+            "[broadcast] runbook_updated runbook=%s node=%s recipients=%d",
+            broadcast_data.get("runbookId"),
+            node_id,
+            recipient_count,
+        )
 
     # 노드 상태 변경은 기존대로 broadcast_node_change로 전달 (node graph 등에서 사용).
     await broadcaster.broadcast_node_change({
@@ -296,7 +309,7 @@ def _mount_api_routers(
     app.include_router(create_claude_auth_router(node_manager, dependencies=api_deps))
     app.include_router(create_provider_usage_router(node_manager, dependencies=api_deps))
     app.include_router(create_folders_router(catalog_service, dependencies=api_deps))
-    app.include_router(create_catalog_router(catalog_service, dependencies=api_deps))
+    app.include_router(create_catalog_router(catalog_service, db=db, dependencies=api_deps))
     app.include_router(create_attachments_router(node_manager, db, dependencies=api_deps))
     if user_preferences_repo is not None:
         app.include_router(create_user_preferences_router(user_preferences_repo, dependencies=api_deps))

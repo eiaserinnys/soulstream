@@ -3,13 +3,14 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { BookOpen, FileText, Folder, Frame } from "lucide-react";
+import { FileText, Folder, Frame } from "lucide-react";
 
 import type { SessionSummary } from "../shared/types";
 import { Badge } from "../components/ui/badge";
 import { BoardAssetCard } from "../components/BoardAssetCard";
 import { STATUS_CONFIG } from "../components/SessionItem";
 import { cn } from "../lib/cn";
+import { RunbookCard } from "../runbook/RunbookCard";
 import type { SessionParentRef } from "./board-session-relations";
 import {
   formatBoardWorkspaceTime,
@@ -246,22 +247,16 @@ export function BoardWorkspaceTile({
     return (
       <div
         key={item.id}
-        role="button"
+        role="group"
         tabIndex={0}
         data-testid="board-runbook-tile"
         data-board-tile="true"
-        className={cn(BOARD_TILE_CLASS, selectionClassName, pulsingClassName)}
+        className={cn(BOARD_TILE_CLASS, "h-[360px] w-[360px] p-0", selectionClassName, pulsingClassName)}
         style={tileStyle}
         onPointerDown={(event) => onTilePointerDown(event, item)}
         onContextMenu={(event) => onTileContextMenu(event, item)}
       >
-        <div className="flex items-center gap-2 text-xs font-medium text-accent-blue">
-          <BookOpen className="h-4 w-4 shrink-0" />
-          <span>Runbook</span>
-        </div>
-        <div data-testid="board-runbook-title" className="mt-3 line-clamp-3 text-sm font-semibold leading-snug">
-          {item.title}
-        </div>
+        <RunbookCard runbookId={item.runbookId} fallbackTitle={item.title} />
       </div>
     );
   }

@@ -209,6 +209,32 @@ async def test_session_deleted_with_none_session_id_skips_broadcast(mock_broadca
     mock_broadcaster.broadcast_node_change.assert_awaited_once()
 
 
+@pytest.mark.asyncio
+async def test_runbook_updated_broadcasts_runbook_event(mock_broadcaster, mock_node_manager):
+    """node_session_runbook_updated → broadcast(runbook_updated) + broadcast_node_change."""
+    data = {
+        "type": "runbook_updated",
+        "runbookId": "rb-1",
+        "boardItemId": "runbook:rb-1",
+    }
+    await _on_node_change(
+        mock_broadcaster, mock_node_manager,
+        "node_session_runbook_updated", "node-1", data,
+    )
+
+    mock_broadcaster.broadcast.assert_awaited_once_with({
+        "type": "runbook_updated",
+        "runbookId": "rb-1",
+        "boardItemId": "runbook:rb-1",
+        "nodeId": "node-1",
+    })
+    mock_broadcaster.broadcast_node_change.assert_awaited_once_with({
+        "type": "node_session_runbook_updated",
+        "nodeId": "node-1",
+        "data": data,
+    })
+
+
 # ===== F-B(2026-05-17): broadcast INFO/WARN 로그 검증 =====
 # 회귀 진단 시 "broadcast 발사 자체"가 로그에 결정적으로 남는지 확인.
 # 분석 캐시 §7.1 "broadcaster.broadcast 발사 자체 확정 불가" 한계 회피용.
