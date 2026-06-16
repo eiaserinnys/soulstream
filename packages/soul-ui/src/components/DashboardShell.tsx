@@ -17,6 +17,7 @@ import { VerticalSplitPane } from "./VerticalSplitPane";
 import { Tabs, TabsPanel } from "./ui/tabs";
 import { FolderStack } from "./dashboard/FolderStack";
 import { WallpaperLayer } from "./WallpaperLayer";
+import { LiquidGlassProvider } from "./LiquidGlassProvider";
 import { useIsMobile } from "../hooks/use-mobile";
 import { useDashboardStore, type MobileTab } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
@@ -356,51 +357,52 @@ export function DashboardShell({
       className="dashboard-shell relative isolate flex flex-col w-screen h-dvh text-foreground font-sans overflow-hidden"
     >
       <WallpaperLayer />
-      {isMobile ? (
-        <header
-          className="relative z-20 flex items-center justify-between px-4 border-b border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0"
-          style={{ height: 'calc(44px + env(safe-area-inset-top, 0px))', paddingTop: 'env(safe-area-inset-top, 0px)' }}
-        >
-          <div className="flex items-center gap-3">
-            <span className="text-base font-semibold text-muted-foreground">
-              {title}
-            </span>
-          </div>
-        </header>
-      ) : (
-        <header className="dashboard-floating-toolbar">
-          <div
-            ref={brandCapsuleRef}
-            className="dashboard-toolbar-cap dashboard-toolbar-brand border border-glass-border glass-strong glass-chrome lg-rim"
+      <LiquidGlassProvider>
+        {isMobile ? (
+          <header
+            className="relative z-20 flex items-center justify-between px-4 border-b border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0"
+            style={{ height: 'calc(44px + env(safe-area-inset-top, 0px))', paddingTop: 'env(safe-area-inset-top, 0px)' }}
           >
-            <span aria-hidden="true" className="dashboard-brand-orb" />
-            <span className="font-semibold text-foreground">Soulstream</span>
-          </div>
-          <button
-            ref={searchCapsuleRef}
-            type="button"
-            className="dashboard-toolbar-cap dashboard-toolbar-search border border-glass-border glass-strong glass-chrome lg-rim"
-            onClick={onSearchClick}
-            disabled={!onSearchClick}
-            aria-label="Open session search"
-          >
-            <Search className="h-4 w-4 shrink-0" />
-            <span className="truncate">Search sessions</span>
-            <kbd>⌘K</kbd>
-          </button>
-          <div className="dashboard-toolbar-actions">
-            {headerRight}
-            {showConnectionStatus && (
-              <div
-                ref={statusCapsuleRef}
-                className="dashboard-toolbar-cap border border-glass-border glass-strong glass-chrome lg-rim"
-              >
-                <ConnectionBadge status={connectionStatus} />
-              </div>
-            )}
-          </div>
-        </header>
-      )}
+            <div className="flex items-center gap-3">
+              <span className="text-base font-semibold text-muted-foreground">
+                {title}
+              </span>
+            </div>
+          </header>
+        ) : (
+          <header className="dashboard-floating-toolbar">
+            <div
+              ref={brandCapsuleRef}
+              className="dashboard-toolbar-cap dashboard-toolbar-brand border border-glass-border glass-strong glass-chrome lg-rim"
+            >
+              <span aria-hidden="true" className="dashboard-brand-orb" />
+              <span className="font-semibold text-foreground">Soulstream</span>
+            </div>
+            <button
+              ref={searchCapsuleRef}
+              type="button"
+              className="dashboard-toolbar-cap dashboard-toolbar-search border border-glass-border glass-strong glass-chrome lg-rim"
+              onClick={onSearchClick}
+              disabled={!onSearchClick}
+              aria-label="Open session search"
+            >
+              <Search className="h-4 w-4 shrink-0" />
+              <span className="truncate">Search sessions</span>
+              <kbd>⌘K</kbd>
+            </button>
+            <div className="dashboard-toolbar-actions">
+              {headerRight}
+              {showConnectionStatus && (
+                <div
+                  ref={statusCapsuleRef}
+                  className="dashboard-toolbar-cap border border-glass-border glass-strong glass-chrome lg-rim"
+                >
+                  <ConnectionBadge status={connectionStatus} />
+                </div>
+              )}
+            </div>
+          </header>
+        )}
 
       {banner ? (
         <div
@@ -551,7 +553,8 @@ export function DashboardShell({
           </div>
         </>
       )}
-      {modals}
+        {modals}
+      </LiquidGlassProvider>
     </div>
   );
 }

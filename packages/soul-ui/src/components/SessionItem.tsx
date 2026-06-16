@@ -125,6 +125,7 @@ export const SessionItem = memo(function SessionItem({
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      webglSurface
       data-testid="draggable-session"
       className={cn(
         "group flex h-full cursor-pointer select-none flex-col gap-2 rounded-[18px] border border-white/8 px-4 py-[13px] text-sm shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)] transition-[border-color,box-shadow,opacity,transform] duration-200 ease-out",

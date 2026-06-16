@@ -1,6 +1,15 @@
-import { forwardRef, useLayoutEffect, type CSSProperties, type HTMLAttributes } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  type CSSProperties,
+  type ForwardedRef,
+  type HTMLAttributes,
+} from "react";
 
 import { cn } from "../lib/cn";
+import { useGlassSurface } from "./LiquidGlassProvider";
 
 const SHARED_GLASS_FILTER_ID = "liquid-glass-card-shared-filter-standard";
 const SHARED_GLASS_RESOURCE_SELECTOR = '[data-liquid-glass-shared-resource="true"]';
@@ -17,6 +26,7 @@ const SHARED_DISPLACEMENT_MAP =
 
 export interface LiquidGlassCardProps extends HTMLAttributes<HTMLDivElement> {
   cornerRadius?: number;
+  webglSurface?: boolean;
   [dataAttribute: `data-${string}`]: string | undefined;
 }
 
@@ -325,22 +335,39 @@ export function LiquidGlassLayer({
 
 export const LiquidGlassCard = forwardRef<HTMLDivElement, LiquidGlassCardProps>(
   function LiquidGlassCard(
-    { children, className, cornerRadius = 18, style, ...props },
+    { children, className, cornerRadius = 18, style, webglSurface = false, ...props },
     ref,
   ) {
     const enhanced = supportsLiquidGlassEnhancement();
+    const rootRef = useRef<HTMLDivElement | null>(null);
+    const setRefs = useCallback((node: HTMLDivElement | null) => {
+      rootRef.current = node;
+      assignForwardedRef(ref, node);
+    }, [ref]);
+    const webglActive = useGlassSurface(rootRef, { enabled: webglSurface });
 
     return (
       <div
-        ref={ref}
+        ref={setRefs}
         {...props}
         data-liquid-glass-enhanced={enhanced ? "true" : "false"}
+        data-liquid-glass-webgl={webglActive ? "true" : undefined}
         className={cn("liquid-glass-card", className)}
         style={liquidGlassStyle(cornerRadius, style)}
       >
-        <LiquidGlassLayer cornerRadius={cornerRadius} enhanced={enhanced} />
+        <LiquidGlassLayer cornerRadius={cornerRadius} enhanced={enhanced && !webglActive} />
         {children}
       </div>
     );
   },
 );
+
+function assignForwardedRef<T>(ref: ForwardedRef<T>, value: T | null): void {
+  if (typeof ref === "function") {
+    ref(value);
+    return;
+  }
+  if (ref) {
+    ref.current = value;
+  }
+}
