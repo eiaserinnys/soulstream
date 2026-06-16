@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
+import { RunbookHandoffNotifier } from "../../src/runbook/runbook_handoff_notifier.js";
 import { RunbookVersionConflict } from "../../src/runbook/runbook_models.js";
 import { RunbookService } from "../../src/runbook/runbook_service.js";
 import {
@@ -18,6 +19,7 @@ describePostgres("RunbookService PostgreSQL integration", () => {
   let db: SessionDB;
   let service: RunbookService;
   let emitRunbookUpdated: ReturnType<typeof vi.fn>;
+  let notifyHumanHandoff: ReturnType<typeof vi.fn>;
   const observedOperationCounts: number[] = [];
 
   beforeAll(async () => {
@@ -30,13 +32,15 @@ describePostgres("RunbookService PostgreSQL integration", () => {
         );
       }
     });
-    service = new RunbookService(db, { emitRunbookUpdated });
+    notifyHumanHandoff = vi.fn();
+    service = new RunbookService(db, { emitRunbookUpdated }, { notifyHumanHandoff });
   }, 45_000);
 
   beforeEach(async () => {
     if (!harness) return;
     await resetRunbookData(harness.sql);
     emitRunbookUpdated.mockClear();
+    notifyHumanHandoff.mockClear();
     observedOperationCounts.length = 0;
   }, 15_000);
 
@@ -423,6 +427,138 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     expect(emitRunbookUpdated).toHaveBeenCalledTimes(1);
   });
 
+  it("notifies handoff only when a user moves an item to a terminal status", async () => {
+    await seedRunbookWithItem();
+
+    await service.setItemStatus({
+      itemId: "item-1",
+      expectedVersion: 1,
+      status: "completed",
+      actorKind: "user",
+      actorSessionId: "sess-actor",
+      actorUserId: "operator@example.com",
+    });
+
+    expect(notifyHumanHandoff).toHaveBeenCalledTimes(1);
+    expect(notifyHumanHandoff).toHaveBeenCalledWith({
+      runbookId: "rb-1",
+      runbookTitle: "Runbook",
+      boardItemId: "runbook:rb-1",
+      itemId: "item-1",
+      itemTitle: "Deploy",
+      status: "completed",
+      operationId: expect.any(String),
+      eventId: expect.any(Number),
+    });
+  });
+
+  it("sends handoff messages through the derived subscriber list after user completion", async () => {
+    await seedRunbookWithItem();
+    const sender = {
+      send: vi.fn(async () => ({ ok: true, detail: { queued: true } })),
+    };
+    const serviceWithNotifier = new RunbookService(
+      db,
+      { emitRunbookUpdated },
+      new RunbookHandoffNotifier(
+        db.runbooks(),
+        sender as never,
+        createSilentLogger() as never,
+      ),
+    );
+
+    await serviceWithNotifier.setItemStatus({
+      itemId: "item-1",
+      expectedVersion: 1,
+      status: "completed",
+      actorKind: "user",
+      actorSessionId: "sess-actor",
+      actorUserId: "operator@example.com",
+    });
+    await waitForMockCall(sender.send);
+
+    expect(sender.send).toHaveBeenCalledWith({
+      targetSessionId: "sess-actor",
+      message: expect.stringContaining("런북 'Runbook'의 'Deploy' 완료됨, 이어서 진행"),
+    });
+  });
+
+  it("does not fail the status mutation when handoff delivery fails", async () => {
+    await seedRunbookWithItem();
+    const sender = {
+      send: vi.fn(async () => {
+        throw new Error("delivery failed");
+      }),
+    };
+    const serviceWithNotifier = new RunbookService(
+      db,
+      { emitRunbookUpdated },
+      new RunbookHandoffNotifier(
+        db.runbooks(),
+        sender as never,
+        createSilentLogger() as never,
+      ),
+    );
+
+    const result = await serviceWithNotifier.setItemStatus({
+      itemId: "item-1",
+      expectedVersion: 1,
+      status: "completed",
+      actorKind: "user",
+      actorSessionId: "sess-actor",
+      actorUserId: "operator@example.com",
+    });
+    await waitForMockCall(sender.send);
+
+    expect(result.snapshot.items.find((item) => item.id === "item-1")).toMatchObject({
+      status: "completed",
+      version: 2,
+    });
+    expect(sender.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not notify handoff for agent item status changes", async () => {
+    await seedRunbookWithItem();
+
+    await service.setItemStatus({
+      itemId: "item-1",
+      expectedVersion: 1,
+      status: "completed",
+      actorKind: "agent",
+      actorSessionId: "sess-actor",
+    });
+
+    expect(notifyHumanHandoff).not.toHaveBeenCalled();
+  });
+
+  it("derives distinct agent subscribers from runbook operation provenance", async () => {
+    await seedRunbookWithItem();
+    await harness!.sql`
+      INSERT INTO sessions (session_id, node_id, status, session_type)
+      VALUES ('sess-agent-2', 'node-1', 'completed', 'claude')
+    `;
+    await service.createSection({
+      runbookId: "rb-1",
+      sectionId: "sec-agent-2",
+      title: "Second agent",
+      actorKind: "agent",
+      actorSessionId: "sess-agent-2",
+    });
+    await service.setItemStatus({
+      itemId: "item-1",
+      expectedVersion: 1,
+      status: "cancelled",
+      actorKind: "user",
+      actorSessionId: "sess-actor",
+      actorUserId: "operator@example.com",
+    });
+
+    await expect(db.runbooks().listAgentSubscriberSessionIds("rb-1")).resolves.toEqual([
+      "sess-actor",
+      "sess-agent-2",
+    ]);
+  });
+
   it("derives human-turn items through item own assignee or section inheritance", async () => {
     await seedRunbook();
     await service.createSection({
@@ -481,3 +617,22 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     });
   }
 });
+
+function createSilentLogger() {
+  return {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+    trace: vi.fn(),
+    fatal: vi.fn(),
+    child: () => createSilentLogger(),
+  };
+}
+
+async function waitForMockCall(mock: ReturnType<typeof vi.fn>): Promise<void> {
+  const startedAt = Date.now();
+  while (mock.mock.calls.length === 0 && Date.now() - startedAt < 500) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}

@@ -212,6 +212,18 @@ export class RunbookRepository {
     ).map(normalizeOperation);
   }
 
+  async listAgentSubscriberSessionIds(runbookId: string): Promise<string[]> {
+    const rows = await this.sql<Array<{ actor_session_id: string }>>`
+      SELECT DISTINCT actor_session_id
+      FROM runbook_operations
+      WHERE runbook_id = ${runbookId}
+        AND actor_kind = 'agent'
+        AND actor_session_id IS NOT NULL
+      ORDER BY actor_session_id ASC
+    `;
+    return rows.map((row) => row.actor_session_id);
+  }
+
   async createRunbookTx(
     sql: RepositorySql,
     params: {

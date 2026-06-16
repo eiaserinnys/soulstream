@@ -1,6 +1,7 @@
 import type { AppendEventParams } from "../db/session_db.js";
 import type { RepositorySql } from "../db/repositories/repository_helpers.js";
 import type {
+  RunbookItemStatus,
   RunbookOperationActorKind,
   RunbookOperationRow,
   RunbookSnapshot,
@@ -34,4 +35,19 @@ export interface RunbookActorParams {
   actorKind?: RunbookOperationActorKind;
   actorSessionId: string;
   actorUserId?: string | null;
+}
+
+export interface RunbookHandoffEvent {
+  runbookId: string;
+  runbookTitle: string;
+  boardItemId: string;
+  itemId: string;
+  itemTitle: string;
+  status: Extract<RunbookItemStatus, "completed" | "cancelled">;
+  operationId: string;
+  eventId: number;
+}
+
+export interface RunbookHandoffNotifierPort {
+  notifyHumanHandoff(event: RunbookHandoffEvent): void;
 }
