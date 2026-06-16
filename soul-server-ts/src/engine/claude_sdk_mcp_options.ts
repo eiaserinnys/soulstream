@@ -14,7 +14,12 @@ import {
 } from "./claude_sdk_helpers.js";
 import { SOULSTREAM_AGENT_SESSION_HEADER } from "../mcp/request_context.js";
 
-const MCP_CONFIG_FILE = "mcp_config.json";
+const MCP_CONFIG_FILES = ["mcp_config.json", ".mcp.json"] as const;
+const SOULSTREAM_MCP_SERVER_NAMES = new Set([
+  "soulstream",
+  "soulstream-cogito",
+  "soul-server-ts",
+]);
 
 export function buildMcpOptions(
   options: ClaudeRunOptions,
@@ -35,8 +40,10 @@ function loadMcpServers(
   workspaceDir: string,
   logger: Logger,
 ): Record<string, McpServerConfig> | undefined {
-  const configPath = join(workspaceDir, MCP_CONFIG_FILE);
-  if (!existsSync(configPath)) return undefined;
+  const configPath = MCP_CONFIG_FILES
+    .map((fileName) => join(workspaceDir, fileName))
+    .find((candidate) => existsSync(candidate));
+  if (!configPath) return undefined;
 
   let parsed: unknown;
   try {
@@ -71,12 +78,15 @@ function injectAgentSessionHeaderIntoMcpServers(
 
   const patched: Record<string, McpServerConfig> = {};
   for (const [name, config] of Object.entries(servers)) {
-    patched[name] = injectAgentSessionHeaderIntoMcpServer(
-      config,
-      callerSessionId,
-    );
+    patched[name] = shouldInjectAgentSessionHeader(name)
+      ? injectAgentSessionHeaderIntoMcpServer(config, callerSessionId)
+      : config;
   }
   return patched;
+}
+
+function shouldInjectAgentSessionHeader(serverName: string): boolean {
+  return SOULSTREAM_MCP_SERVER_NAMES.has(serverName);
 }
 
 function injectAgentSessionHeaderIntoMcpServer(
