@@ -112,6 +112,7 @@ def mock_db():
     db.delete_folder = AsyncMock()
     db.get_catalog = AsyncMock(return_value={"folders": [], "sessions": {}})
     db.get_runbook_snapshot = AsyncMock(return_value=None)
+    db.get_runbook_overview = AsyncMock(return_value={"my_turn_items": [], "runbooks": []})
     return db
 
 

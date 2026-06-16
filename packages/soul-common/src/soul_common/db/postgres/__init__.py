@@ -1,10 +1,11 @@
 """PostgreSQL SessionDB mixin 패키지.
 
-5개 도메인 mixin:
+6개 도메인 mixin:
 - PostgresSessionCRUDMixin: 세션 CRUD + 읽음 상태 + 셧다운
 - PostgresEventMixin: 이벤트 CRUD
 - PostgresViewportMixin: 뷰포트 API
 - PostgresFolderMixin: 폴더 CRUD + 카탈로그
+- PostgresRunbookMixin: 런북 조회 투영
 - PostgresSearchMixin: 경량 세션 목록 + 전문검색
 """
 
@@ -12,6 +13,7 @@ from soul_common.db.postgres.session_crud import PostgresSessionCRUDMixin
 from soul_common.db.postgres.events import PostgresEventMixin, _event_to_dict
 from soul_common.db.postgres.viewport import PostgresViewportMixin
 from soul_common.db.postgres.folders import PostgresFolderMixin
+from soul_common.db.postgres.runbooks import PostgresRunbookMixin
 from soul_common.db.postgres.search import PostgresSearchMixin
 
 __all__ = [
@@ -19,6 +21,7 @@ __all__ = [
     "PostgresEventMixin",
     "PostgresViewportMixin",
     "PostgresFolderMixin",
+    "PostgresRunbookMixin",
     "PostgresSearchMixin",
     "_event_to_dict",
 ]

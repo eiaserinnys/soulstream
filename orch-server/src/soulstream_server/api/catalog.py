@@ -17,7 +17,13 @@ from soul_common.catalog.catalog_service import (
     CatalogService,
     MarkdownDocumentVersionConflictError,
 )
-from soulstream_server.dashboard_access import access_for_request, require_folder_allowed
+from soul_common.auth.caller_info import decode_dashboard_jwt_user
+from soulstream_server.config import get_settings
+from soulstream_server.dashboard_access import (
+    access_for_request,
+    require_folder_allowed,
+    visible_folder_ids,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +72,46 @@ def _field_supplied(model: BaseModel, field_name: str) -> bool:
     if fields is None:
         fields = getattr(model, "__fields_set__", set())
     return field_name in fields
+
+
+def _dashboard_user_id_for_request(request: Request) -> str | None:
+    auth_user = getattr(request.state, "auth_user", None)
+    if not isinstance(auth_user, dict):
+        auth_user = decode_dashboard_jwt_user(request, get_settings().jwt_secret or "")
+    if not isinstance(auth_user, dict):
+        return None
+    user_id = auth_user.get("email") or auth_user.get("sub")
+    return user_id if isinstance(user_id, str) and user_id else None
+
+
+def _filter_runbook_overview_for_access(
+    overview: dict,
+    allowed_folder_ids: set[str] | None,
+) -> dict:
+    if allowed_folder_ids is None:
+        return overview
+
+    def allowed(entry: dict) -> bool:
+        folder_id = entry.get("folder_id")
+        return isinstance(folder_id, str) and folder_id in allowed_folder_ids
+
+    return {
+        "my_turn_items": [
+            item for item in overview.get("my_turn_items", [])
+            if isinstance(item, dict) and allowed(item)
+        ],
+        "runbooks": [
+            {
+                **group,
+                "items": [
+                    item for item in group.get("items", [])
+                    if isinstance(item, dict) and allowed(item)
+                ],
+            }
+            for group in overview.get("runbooks", [])
+            if isinstance(group, dict) and allowed(group)
+        ],
+    }
 
 
 def _board_asset_error(exc: Exception) -> HTTPException:
@@ -135,6 +181,16 @@ def create_catalog_router(
         folders = await catalog_service.list_folders()
         require_folder_allowed(access_for_request(request), folders, folder_id)
         return document
+
+    @router.get("/runbooks/my-turn")
+    async def get_runbook_my_turn(request: Request, limit: int = Query(100, ge=1, le=500)) -> dict:
+        loader = getattr(db, "get_runbook_overview", None)
+        if loader is None:
+            raise HTTPException(status_code=503, detail="Runbook storage is not configured")
+        folders = await catalog_service.list_folders()
+        overview = await loader(user_id=_dashboard_user_id_for_request(request), limit=limit)
+        allowed_ids = visible_folder_ids(access_for_request(request), folders)
+        return _filter_runbook_overview_for_access(overview, allowed_ids)
 
     @router.get("/runbooks/{runbook_id}")
     async def get_runbook(runbook_id: str, request: Request) -> dict:

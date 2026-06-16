@@ -181,7 +181,40 @@ class TestBoardItems:
 
 
 class TestRunbooks:
-    """GET /api/runbooks/{runbook_id} tests."""
+    """Runbook read API tests."""
+
+    async def test_get_runbook_my_turn_overview(self, client, mock_db, mock_catalog_service):
+        overview = {
+            "my_turn_items": [
+                {
+                    "runbook_id": "rb-1",
+                    "runbook_title": "Launch",
+                    "board_item_id": "runbook:rb-1",
+                    "folder_id": "f1",
+                    "section_id": "sec-1",
+                    "section_title": "Release",
+                    "item_id": "item-1",
+                    "item_title": "Operator approval",
+                    "how_to": "",
+                    "status": "pending",
+                    "item_version": 1,
+                    "effective_assignee_kind": "human",
+                    "effective_assignee_agent_id": None,
+                    "effective_assignee_session_id": None,
+                    "effective_assignee_user_id": None,
+                }
+            ],
+            "runbooks": [],
+        }
+        mock_db.get_runbook_overview.return_value = overview
+
+        resp = await client.get("/api/runbooks/my-turn")
+
+        assert resp.status_code == 200
+        assert resp.json() == overview
+        mock_db.get_runbook_overview.assert_called_once_with(user_id=None, limit=100)
+        mock_db.get_runbook_snapshot.assert_not_called()
+        mock_catalog_service.list_folders.assert_called_once()
 
     async def test_get_runbook_snapshot(self, client, mock_db, mock_catalog_service):
         snapshot = {

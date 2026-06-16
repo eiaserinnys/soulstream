@@ -143,6 +143,21 @@ describe("DashboardShell", () => {
     expect(foldersToggle?.getAttribute("aria-pressed")).toBe("true");
   });
 
+  it("adds runbooks as a desktop navigation surface without removing tasks", () => {
+    ({ container, root } = renderShell());
+
+    const runbooksToggle = container.querySelector<HTMLButtonElement>('[data-testid="left-navigation-runbooks"]');
+    expect(runbooksToggle).not.toBeNull();
+    expect(runbooksToggle?.textContent).toContain("런북");
+
+    flushSync(() => {
+      runbooksToggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(useDashboardStore.getState().viewMode).toBe("runbooks");
+    expect(runbooksToggle?.getAttribute("aria-pressed")).toBe("true");
+  });
+
   it("resizes and persists the desktop left sidebar width", () => {
     ({ container, root } = renderShell());
 
