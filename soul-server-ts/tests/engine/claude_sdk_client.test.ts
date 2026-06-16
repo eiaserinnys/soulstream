@@ -139,16 +139,27 @@ describe("ClaudeSdkClient", () => {
       toolName: "Read",
       toolInput: { file_path: "a.ts" },
       toolUseId: "toolu_1",
+      sdkDedupeKey: "claude-sdk:assistant:assistant-1:2",
     });
     expect(events[4]).toMatchObject({
       type: "tool_result",
       toolName: "Read",
       result: "file",
       toolUseId: "toolu_1",
+      sdkDedupeKey: "claude-sdk:user:user-1:0",
     });
     expect(events[5]).toMatchObject({
       type: "prompt_suggestion",
       text: "next?",
+      sdkDedupeKey: "claude-sdk:prompt_suggestion:suggestion-1:0",
+    });
+    expect(events[1]).toMatchObject({
+      type: "text",
+      sdkDedupeKey: "claude-sdk:assistant:assistant-1:0",
+    });
+    expect(events[2]).toMatchObject({
+      type: "thinking",
+      sdkDedupeKey: "claude-sdk:assistant:assistant-1:1",
     });
     expect(events[7]).toMatchObject({
       type: "context_usage",

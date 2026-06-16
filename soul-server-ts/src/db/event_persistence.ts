@@ -19,6 +19,12 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import type { SessionDB } from "./session_db.js";
 
 const LAST_MESSAGE_PREVIEW_LIMIT = 200;
+const INTERNAL_DEDUPE_KEY = "_dedupe_key";
+
+export interface PersistEventResult {
+  eventId: number;
+  inserted: boolean;
+}
 
 /**
  * 이벤트 타입별 last_message preview 텍스트 추출 필드.
@@ -58,21 +64,39 @@ export class EventPersistence {
     sessionId: string,
     event: SSEEventPayload,
   ): Promise<number> {
+    return (await this.persistEventWithResult(sessionId, event)).eventId;
+  }
+
+  async persistEventWithResult(
+    sessionId: string,
+    event: SSEEventPayload,
+  ): Promise<PersistEventResult> {
     if (!shouldPersistEvent(event)) {
       throw new Error("transient live events must not be persisted");
     }
-    const safeEvent = sanitizeJsonValue(event) as SSEEventPayload;
+    const dedupeKey = extractInternalDedupeKey(event);
+    if (dedupeKey) {
+      const existingEventId = await this.db.findEventIdByDedupeKey(sessionId, dedupeKey);
+      if (existingEventId !== null) {
+        return { eventId: existingEventId, inserted: false };
+      }
+    }
+    const safeEvent = stripInternalPersistenceFields(
+      sanitizeJsonValue(event),
+    ) as SSEEventPayload;
     const eventType = (safeEvent as { type: string }).type;
     const payload = JSON.stringify(safeEvent);
     const searchable = extractSearchableText(safeEvent);
     const createdAt = extractTimestamp(event) ?? new Date();
-    return await this.db.appendEvent({
+    const eventId = await this.db.appendEvent({
       sessionId,
       eventType,
       payload,
       searchableText: searchable,
       createdAt,
+      dedupeKey,
     });
+    return { eventId, inserted: true };
   }
 
   /**
@@ -181,6 +205,26 @@ export function isTransientTextEvent(event: SSEEventPayload): boolean {
 
 export function shouldPersistEvent(event: SSEEventPayload): boolean {
   return !isLiveOnlyEvent(event) && !isTransientTextEvent(event);
+}
+
+export function clearEventPersistenceInternals(event: SSEEventPayload): void {
+  delete (event as Record<string, unknown>)[INTERNAL_DEDUPE_KEY];
+}
+
+function extractInternalDedupeKey(event: SSEEventPayload): string | null {
+  const value = (event as Record<string, unknown>)[INTERNAL_DEDUPE_KEY];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function stripInternalPersistenceFields(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const record = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(record)) {
+    if (key === INTERNAL_DEDUPE_KEY) continue;
+    result[key] = item;
+  }
+  return result;
 }
 
 /**

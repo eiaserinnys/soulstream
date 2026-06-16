@@ -73,22 +73,27 @@ export class ClaudeSdkEventMapper {
     const msg = asRecord(message);
     if (!msg) return [];
 
+    let events: ClaudeClientEvent[];
     switch (msg.type) {
       case "system":
         return this.mapSystemMessage(msg);
       case "assistant":
-        return this.mapAssistantMessage(msg);
+        events = this.mapAssistantMessage(msg);
+        break;
       case "user":
-        return this.mapUserMessage(msg);
+        events = this.mapUserMessage(msg);
+        break;
       case "result":
         return this.mapResultMessage(msg);
       case "prompt_suggestion":
-        return this.mapPromptSuggestion(msg);
+        events = this.mapPromptSuggestion(msg);
+        break;
       case "rate_limit_event":
         return this.mapRateLimit(msg);
       default:
         return [];
     }
+    return this.withSdkMessageDedupe(events, msg);
   }
 
   mapSystemMessage(message: Record<string, unknown>): ClaudeClientEvent[] {
@@ -227,11 +232,11 @@ export class ClaudeSdkEventMapper {
         fatal: !isRecoverableExecutionDiagnostic(message),
         errorCode: resultErrorCode(message),
       };
-      return [
+      return this.withSdkMessageDedupe([
         resultEvent,
         ...(contextUsageEvent ? [contextUsageEvent] : []),
         errorEvent,
-      ];
+      ], message);
     }
 
     const completeEvent: ClaudeClientEvent = {
@@ -243,11 +248,11 @@ export class ClaudeSdkEventMapper {
         ? { totalCostUsd: asNumber(message.total_cost_usd) }
         : {}),
     };
-    return [
+    return this.withSdkMessageDedupe([
       resultEvent,
       ...(contextUsageEvent ? [contextUsageEvent] : []),
       completeEvent,
-    ];
+    ], message);
   }
 
   mapPromptSuggestion(message: Record<string, unknown>): ClaudeClientEvent[] {
@@ -378,5 +383,21 @@ export class ClaudeSdkEventMapper {
     if (index === -1) return false;
     this.pendingCompactHookTriggers.splice(index, 1);
     return true;
+  }
+
+  private withSdkMessageDedupe(
+    events: ClaudeClientEvent[],
+    message: Record<string, unknown>,
+  ): ClaudeClientEvent[] {
+    const uuid =
+      asString(message.uuid) ??
+      asString(message.message_id) ??
+      asString(asRecord(message.message)?.id);
+    if (!uuid) return events;
+    const messageType = asString(message.type) ?? "message";
+    return events.map((event, index) => ({
+      ...event,
+      sdkDedupeKey: `claude-sdk:${messageType}:${uuid}:${index}`,
+    }) as unknown as ClaudeClientEvent);
   }
 }

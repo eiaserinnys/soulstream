@@ -381,6 +381,13 @@ export class SessionDB {
     return await this.eventRepository.appendEvent(params);
   }
 
+  async findEventIdByDedupeKey(
+    sessionId: string,
+    dedupeKey: string,
+  ): Promise<number | null> {
+    return await this.eventRepository.findEventIdByDedupeKey(sessionId, dedupeKey);
+  }
+
   async appendSupervisorEvent(
     params: AppendSupervisorEventParams,
   ): Promise<SupervisorAppendResult> {

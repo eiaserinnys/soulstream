@@ -1,7 +1,9 @@
 import type { Logger } from "pino";
 
 import {
+  clearEventPersistenceInternals,
   extractTimestamp,
+  type PersistEventResult,
   shouldPersistEvent,
   type EventPersistence,
 } from "../db/event_persistence.js";
@@ -57,12 +59,19 @@ export class TaskEngineEventPublisher {
     this.captureCompactReinjectionNeed(task, eventType);
     this.captureTerminationHint(task, event, eventType);
     this.captureFatalEngineError(task, event, eventType);
-    const persistedEventId = await this.persistEventIfNeeded(task, event, eventType);
+    const persistedEvent = await this.persistEventIfNeeded(task, event, eventType);
     await this.broadcastEvent(task, event, eventType);
-    await this.appendSupervisorEventIfNeeded(task, event, eventType, persistedEventId);
-    const usageRecorded = await this.recordSupervisorUsageDelta(task, event, eventType);
-    await this.touchSupervisorHeartbeatIfNeeded(task, eventType, usageRecorded);
-    await this.handleSideEffects(task, event, eventType);
+    await this.appendSupervisorEventIfNeeded(task, event, eventType, persistedEvent);
+    const usageRecorded = persistedEvent?.inserted === false
+      ? false
+      : await this.recordSupervisorUsageDelta(task, event, eventType);
+    await this.touchSupervisorHeartbeatIfNeeded(
+      task,
+      eventType,
+      usageRecorded,
+      persistedEvent,
+    );
+    await this.handleSideEffects(task, event, eventType, persistedEvent);
   }
 
   private captureClaudeRuntimeState(task: Task, event: SSEEventPayload): void {
@@ -136,26 +145,41 @@ export class TaskEngineEventPublisher {
     task: Task,
     event: SSEEventPayload,
     eventType: string,
-  ): Promise<number | null> {
+  ): Promise<PersistEventResult | null> {
     // `_live_only` chunks are generation-time wire events. Persisting them would
     // duplicate the final assistant_message in DB history.
-    if (!shouldPersistEvent(event)) return null;
+    if (!shouldPersistEvent(event)) {
+      clearEventPersistenceInternals(event);
+      return null;
+    }
 
     try {
-      const eventId = await this.deps.persistence.persistEvent(
-        task.agentSessionId,
-        event,
-      );
-      task.lastEventId = eventId;
+      const persistence = this.deps.persistence as EventPersistence & {
+        persistEventWithResult?: (
+          sessionId: string,
+          event: SSEEventPayload,
+        ) => Promise<PersistEventResult>;
+      };
+      const persisted = persistence.persistEventWithResult
+        ? await persistence.persistEventWithResult(task.agentSessionId, event)
+        : {
+            eventId: await persistence.persistEvent(task.agentSessionId, event),
+            inserted: true,
+          };
+      if (persisted.inserted) {
+        task.lastEventId = persisted.eventId;
+      }
       // Ride-along contract: orch SSE extracts event._event_id as the wire id.
-      (event as Record<string, unknown>)._event_id = eventId;
-      return eventId;
+      (event as Record<string, unknown>)._event_id = persisted.eventId;
+      return persisted;
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId, eventType },
         "persistEvent failed",
       );
       return null;
+    } finally {
+      clearEventPersistenceInternals(event);
     }
   }
 
@@ -188,7 +212,9 @@ export class TaskEngineEventPublisher {
     task: Task,
     event: SSEEventPayload,
     eventType: string,
+    persistedEvent: PersistEventResult | null,
   ): Promise<void> {
+    if (persistedEvent?.inserted === false) return;
     try {
       await this.deps.persistence.handleSideEffects(
         task.agentSessionId,
@@ -207,8 +233,9 @@ export class TaskEngineEventPublisher {
     task: Task,
     event: SSEEventPayload,
     eventType: string,
-    eventId: number | null,
+    persistedEvent: PersistEventResult | null,
   ): Promise<void> {
+    const eventId = persistedEvent?.inserted === true ? persistedEvent.eventId : null;
     if (!eventId || !this.deps.sourceNode) return;
     try {
       await this.deps.db.appendSupervisorEvent({
@@ -264,7 +291,9 @@ export class TaskEngineEventPublisher {
     task: Task,
     eventType: string,
     usageRecorded: boolean,
+    persistedEvent: PersistEventResult | null,
   ): Promise<void> {
+    if (persistedEvent?.inserted === false) return;
     if (usageRecorded) return;
     if (!task.profileId) return;
 

@@ -23,10 +23,13 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 }
 
 function makePublisherDeps() {
-  const persistEvent = vi.fn(async () => 42);
+  const persistEventWithResult = vi.fn(async () => ({
+    eventId: 42,
+    inserted: true,
+  }));
   const handleSideEffects = vi.fn(async () => undefined);
   const persistence = {
-    persistEvent,
+    persistEventWithResult,
     handleSideEffects,
   } as unknown as EventPersistence;
 
@@ -71,7 +74,7 @@ function makePublisherDeps() {
     emitEventEnvelope,
     handleSideEffects,
     logger,
-    persistEvent,
+    persistEventWithResult,
     persistence,
     getSupervisorRegistry,
     appendSupervisorEvent,
@@ -96,12 +99,12 @@ describe("TaskEngineEventPublisher", () => {
 
     await publisher.publishEngineEvent(task, event);
 
-    expect(deps.persistEvent).toHaveBeenCalledWith("sess-1", event);
+    expect(deps.persistEventWithResult).toHaveBeenCalledWith("sess-1", event);
     expect(task.lastEventId).toBe(42);
     expect((event as Record<string, unknown>)._event_id).toBe(42);
     expect(deps.emitEventEnvelope).toHaveBeenCalledWith("sess-1", event);
     expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
-    expect(deps.persistEvent.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(deps.persistEventWithResult.mock.invocationCallOrder[0]).toBeLessThan(
       deps.emitEventEnvelope.mock.invocationCallOrder[0],
     );
     expect(deps.emitEventEnvelope.mock.invocationCallOrder[0]).toBeLessThan(
@@ -144,6 +147,37 @@ describe("TaskEngineEventPublisher", () => {
     expect(deps.supervisorWakeScheduler.ingest).toHaveBeenCalledWith(
       "assistant_message",
     );
+  });
+
+  it("broadcasts duplicate engine events with the existing event id without repeating side effects", async () => {
+    const deps = makePublisherDeps();
+    deps.persistEventWithResult.mockResolvedValueOnce({
+      eventId: 12,
+      inserted: false,
+    });
+    const publisher = new TaskEngineEventPublisher({
+      ...deps,
+      sourceNode: "node-1",
+      supervisorWakeScheduler: deps.supervisorWakeScheduler,
+    });
+    const task = makeTask({ lastEventId: 99, profileId: "ariela_codex" });
+    const event = {
+      type: "assistant_message",
+      content: "resume replay",
+      timestamp: 1,
+      _dedupe_key: "claude-sdk:assistant:msg-1:0",
+    } as unknown as SSEEventPayload;
+
+    await publisher.publishEngineEvent(task, event);
+
+    expect(task.lastEventId).toBe(99);
+    expect((event as Record<string, unknown>)._event_id).toBe(12);
+    expect((event as Record<string, unknown>)._dedupe_key).toBeUndefined();
+    expect(deps.emitEventEnvelope).toHaveBeenCalledWith("sess-1", event);
+    expect(deps.appendSupervisorEvent).not.toHaveBeenCalled();
+    expect(deps.recordSupervisorUsageDelta).not.toHaveBeenCalled();
+    expect(deps.touchSupervisorRegistry).not.toHaveBeenCalled();
+    expect(deps.handleSideEffects).not.toHaveBeenCalled();
   });
 
   it("touches supervisor heartbeat for non-usage activity events", async () => {
@@ -220,9 +254,9 @@ describe("TaskEngineEventPublisher", () => {
 
   it("captures only the first session id and still publishes every session event", async () => {
     const deps = makePublisherDeps();
-    deps.persistEvent
-      .mockResolvedValueOnce(8)
-      .mockResolvedValueOnce(9);
+    deps.persistEventWithResult
+      .mockResolvedValueOnce({ eventId: 8, inserted: true })
+      .mockResolvedValueOnce({ eventId: 9, inserted: true });
     const publisher = new TaskEngineEventPublisher(deps);
     const task = makeTask();
 
@@ -238,7 +272,7 @@ describe("TaskEngineEventPublisher", () => {
     expect(task.codexThreadId).toBe("thr-first");
     expect(deps.setClaudeSessionId).toHaveBeenCalledTimes(1);
     expect(deps.setClaudeSessionId).toHaveBeenCalledWith("sess-1", "thr-first");
-    expect(deps.persistEvent).toHaveBeenCalledTimes(2);
+    expect(deps.persistEventWithResult).toHaveBeenCalledTimes(2);
     expect(deps.emitEventEnvelope).toHaveBeenCalledTimes(2);
     expect(deps.handleSideEffects).toHaveBeenCalledTimes(2);
     expect(task.lastEventId).toBe(9);
@@ -257,7 +291,7 @@ describe("TaskEngineEventPublisher", () => {
     await publisher.publishEngineEvent(task, event);
 
     expect(task.codexThreadId).toBe("thr-first");
-    expect(deps.persistEvent).toHaveBeenCalledWith("sess-1", event);
+    expect(deps.persistEventWithResult).toHaveBeenCalledWith("sess-1", event);
     expect(deps.emitEventEnvelope).toHaveBeenCalledWith("sess-1", event);
     expect(deps.handleSideEffects).toHaveBeenCalledWith("sess-1", event, task);
     expect(deps.logger.warn).toHaveBeenCalledWith(
@@ -283,7 +317,7 @@ describe("TaskEngineEventPublisher", () => {
 
     await publisher.publishEngineEvent(task, event);
 
-    expect(deps.persistEvent).not.toHaveBeenCalled();
+    expect(deps.persistEventWithResult).not.toHaveBeenCalled();
     expect(task.lastEventId).toBe(99);
     expect((event as Record<string, unknown>)._event_id).toBeUndefined();
     expect(deps.emitEventEnvelope).toHaveBeenCalledWith("sess-1", event);
@@ -292,7 +326,7 @@ describe("TaskEngineEventPublisher", () => {
 
   it("isolates persistence failure and broadcasts without _event_id", async () => {
     const deps = makePublisherDeps();
-    deps.persistEvent.mockRejectedValueOnce(new Error("events db down"));
+    deps.persistEventWithResult.mockRejectedValueOnce(new Error("events db down"));
     const publisher = new TaskEngineEventPublisher(deps);
     const task = makeTask({ lastEventId: 10 });
     const event = {
@@ -790,7 +824,7 @@ describe("TaskEngineEventPublisher", () => {
         subpath: "subagents/agent-a",
       },
     });
-    expect(deps.persistEvent).toHaveBeenCalledTimes(10);
+    expect(deps.persistEventWithResult).toHaveBeenCalledTimes(10);
     expect(deps.emitEventEnvelope).toHaveBeenCalledTimes(10);
   });
 });

@@ -149,6 +149,7 @@ export interface AppendEventParams {
   payload: string;
   searchableText: string;
   createdAt: Date;
+  dedupeKey?: string | null;
 }
 
 export interface AppendSupervisorEventParams {
