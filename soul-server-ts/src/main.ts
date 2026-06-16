@@ -29,8 +29,10 @@ import { buildOrchProxyConfig } from "./mcp/orch_proxy.js";
 import type { McpRuntime } from "./mcp/runtime.js";
 import { buildServer, startServer } from "./server.js";
 import { RealtimeBroker } from "./realtime/realtime_broker.js";
+import { RunbookHandoffNotifier } from "./runbook/runbook_handoff_notifier.js";
 import { RunbookService } from "./runbook/runbook_service.js";
 import { TaskCompletionNotifier } from "./task/completion_notifier.js";
+import { sendMessageToSession } from "./task/session_message_sender.js";
 import { ClaudeRuntimeTaskFollowupController } from "./task/claude_runtime_task_followup.js";
 import { TaskExecutor, type EngineFactory } from "./task/task_executor.js";
 import {
@@ -625,7 +627,18 @@ async function main(): Promise<void> {
   // 본 카드(soul-server-ts Streamable HTTP MCP) 신설. dashboard 진입점이 같은 service를
   // 경유하면 정책 정본 단일 (design-principles §3).
   const catalogService = new CatalogService(db, broadcaster, boardYjsService);
-  const runbookService = new RunbookService(db, broadcaster);
+  const runbookHandoffNotifier = new RunbookHandoffNotifier(
+    db.runbooks(),
+    {
+      send: (params) =>
+        sendMessageToSession(
+          { taskManager, onResume, logger, orch: orchProxyConfig },
+          params,
+        ),
+    },
+    logger,
+  );
+  const runbookService = new RunbookService(db, broadcaster, runbookHandoffNotifier);
   const llmAdapters = {
     ...(env.LLM_OPENAI_API_KEY
       ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) }

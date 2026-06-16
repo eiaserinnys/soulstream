@@ -17,6 +17,7 @@ import type {
   RunbookActorParams,
   RunbookBroadcasterPort,
   RunbookDbPort,
+  RunbookHandoffNotifierPort,
   RunbookMutationResult,
 } from "./runbook_service_models.js";
 
@@ -42,6 +43,7 @@ export class RunbookMutationCore {
     private readonly db: RunbookDbPort,
     private readonly repo: RunbookRepository,
     private readonly broadcaster?: RunbookBroadcasterPort,
+    private readonly handoffNotifier?: RunbookHandoffNotifierPort,
   ) {}
 
   async mutate(params: RunbookMutateParams): Promise<RunbookMutationResult> {
@@ -93,9 +95,23 @@ export class RunbookMutationCore {
     let runbookId = "";
     let operation!: RunbookOperationRow;
     let eventId = 0;
+    let shouldNotifyHandoff = false;
     await this.repo.transaction(async (sql) => {
       runbookId = await this.repo.getRunbookIdForItemTx(sql, params.itemId);
-      await this.repo.assertItemVersionTx(sql, params.itemId, params.expectedVersion);
+      const item = await this.repo.getItemForUpdateTx(sql, params.itemId);
+      const actualVersion = Number(item.version);
+      if (actualVersion !== params.expectedVersion) {
+        throw new RunbookVersionConflict(
+          "item",
+          params.itemId,
+          params.expectedVersion,
+          actualVersion,
+        );
+      }
+      shouldNotifyHandoff =
+        params.actorKind === "user" &&
+        isTerminalHandoffStatus(params.status) &&
+        item.status !== params.status;
       const opId = randomUUID();
       eventId = await this.appendRunbookEvent(sql, {
         operationId: opId,
@@ -139,6 +155,9 @@ export class RunbookMutationCore {
       eventId,
     };
     await this.broadcastMutation(params.actorSessionId, result);
+    if (shouldNotifyHandoff) {
+      this.notifyHumanHandoff(result);
+    }
     return result;
   }
 
@@ -251,4 +270,32 @@ export class RunbookMutationCore {
       result.snapshot.runbook.board_item_id,
     );
   }
+
+  private notifyHumanHandoff(result: RunbookMutationResult): void {
+    if (!this.handoffNotifier) return;
+    const item = result.snapshot.items.find(
+      (candidate) => candidate.id === result.operation.target_id,
+    );
+    if (!item || !isTerminalHandoffStatus(item.status)) return;
+    try {
+      this.handoffNotifier.notifyHumanHandoff({
+        runbookId: result.snapshot.runbook.id,
+        runbookTitle: result.snapshot.runbook.title,
+        boardItemId: result.snapshot.runbook.board_item_id,
+        itemId: item.id,
+        itemTitle: item.title,
+        status: item.status,
+        operationId: result.operation.id,
+        eventId: result.eventId,
+      });
+    } catch {
+      // The concrete notifier owns logging. A handoff wake must never fail the mutation.
+    }
+  }
+}
+
+function isTerminalHandoffStatus(
+  status: RunbookItemStatus,
+): status is Extract<RunbookItemStatus, "completed" | "cancelled"> {
+  return status === "completed" || status === "cancelled";
 }

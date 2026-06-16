@@ -15,6 +15,7 @@ import type {
   RunbookActorParams,
   RunbookBroadcasterPort,
   RunbookDbPort,
+  RunbookHandoffNotifierPort,
   RunbookMutationResult,
 } from "./runbook_service_models.js";
 
@@ -32,9 +33,10 @@ export class RunbookService {
   constructor(
     private readonly db: RunbookDbPort,
     private readonly broadcaster?: RunbookBroadcasterPort,
+    handoffNotifier?: RunbookHandoffNotifierPort,
   ) {
     this.repo = db.runbooks();
-    this.core = new RunbookMutationCore(db, this.repo, broadcaster);
+    this.core = new RunbookMutationCore(db, this.repo, broadcaster, handoffNotifier);
   }
 
   async getRunbook(runbookId: string): Promise<RunbookSnapshot | null> {
