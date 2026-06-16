@@ -77,7 +77,15 @@ export type FolderSortMode =
 
 // === Mobile Tab ===
 
-export type MobileTab = "feed" | "folder" | "tasks" | "chat" | "settings";
+export type DashboardViewMode = "feed" | "folder" | "tasks" | "runbooks";
+
+export type MobileTab = "feed" | "folder" | "runbooks" | "tasks" | "chat" | "settings";
+
+export interface BoardItemFocusRequest {
+  boardItemId: string;
+  folderId: string | null;
+  requestId: number;
+}
 
 // === Desktop Left Navigation ===
 
@@ -95,8 +103,8 @@ export interface ProcessEventsResult {
 // === State Interface ===
 
 export interface DashboardState {
-  /** 뷰 모드 — URL 해시에서 파생. tasks는 Task Tree center view */
-  viewMode: "feed" | "folder" | "tasks";
+  /** 뷰 모드 — URL 해시에서 파생. tasks는 Task Tree, runbooks는 런북 모아보기 */
+  viewMode: DashboardViewMode;
 
   /** 피드 스크롤 오프셋 (뷰 전환 시 위치 복원용) */
   feedScrollOffset: number;
@@ -215,6 +223,9 @@ export interface DashboardState {
   /** 오른쪽 Chat 슬롯에 표시 중인 보드 마크다운 문서 */
   activeBoardDocumentId: string | null;
 
+  /** 외부 표면에서 board item으로 이동할 때 BoardWorkspaceView가 소비하는 일회성 요청 */
+  focusedBoardItem: BoardItemFocusRequest | null;
+
   /** 폴더 카탈로그 상태 */
   catalog: CatalogState | null;
 
@@ -323,9 +334,11 @@ export interface DashboardActions {
   setFocusEventId: (eventId: number | null) => void;
 
   // 뷰 모드 (URL 동기화 전용)
-  setViewMode: (mode: "feed" | "folder" | "tasks") => void;
+  setViewMode: (mode: DashboardViewMode) => void;
   selectFeed: () => void;
   setFeedScrollOffset: (offset: number) => void;
+  focusBoardItem: (boardItemId: string, folderId: string | null) => void;
+  clearFocusedBoardItem: (requestId: number) => void;
 
   // 카탈로그
   setCatalog: (catalog: CatalogState) => void;

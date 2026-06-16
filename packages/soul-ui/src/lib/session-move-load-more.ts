@@ -1,7 +1,8 @@
 import type { CatalogState } from "../shared/types";
+import type { DashboardViewMode } from "../stores/dashboard-store-types";
 
 export interface SessionMoveLoadMoreState {
-  viewMode: "feed" | "folder" | "tasks";
+  viewMode: DashboardViewMode;
   selectedFolderId: string | null;
   catalog: CatalogState | null;
   sessionIds: readonly string[];
@@ -32,7 +33,7 @@ export function shouldLoadMoreAfterSessionMove({
   targetFolderId,
 }: SessionMoveLoadMoreState): boolean {
   if (sessionIds.length === 0) return false;
-  if (viewMode === "tasks") return false;
+  if (viewMode === "tasks" || viewMode === "runbooks") return false;
 
   if (!catalog) {
     if (viewMode === "folder") return targetFolderId !== selectedFolderId;

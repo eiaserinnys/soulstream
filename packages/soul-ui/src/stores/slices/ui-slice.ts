@@ -18,6 +18,7 @@ export type UISlice = Pick<
   | "newSessionDefaults"
   | "activeRightTab"
   | "activeBoardDocumentId"
+  | "focusedBoardItem"
   | "dashboardConfig"
   | "activeTab"
   | "leftNavigationMode"
@@ -29,6 +30,8 @@ export type UISlice = Pick<
     | "closeNewSessionModal"
     | "setActiveRightTab"
     | "setActiveBoardDocument"
+    | "focusBoardItem"
+    | "clearFocusedBoardItem"
     | "setDashboardConfig"
     | "setViewMode"
     | "selectFeed"
@@ -52,6 +55,7 @@ export const createUISlice: StateCreator<
   newSessionDefaults: null,
   activeRightTab: "chat",
   activeBoardDocumentId: null,
+  focusedBoardItem: null,
   dashboardConfig: null,
   activeTab: "feed",
   leftNavigationMode: "folders",
@@ -72,6 +76,26 @@ export const createUISlice: StateCreator<
 
   setActiveBoardDocument: (activeBoardDocumentId) =>
     set({ activeBoardDocumentId, activeRightTab: "chat" }),
+
+  focusBoardItem: (boardItemId, folderId) =>
+    set((state) => ({
+      focusedBoardItem: {
+        boardItemId,
+        folderId,
+        requestId: (state.focusedBoardItem?.requestId ?? 0) + 1,
+      },
+      selectedFolderId: folderId,
+      viewMode: "folder",
+      leftNavigationMode: "folders",
+      activeTab: "folder",
+    })),
+
+  clearFocusedBoardItem: (requestId) =>
+    set((state) => (
+      state.focusedBoardItem?.requestId === requestId
+        ? { focusedBoardItem: null }
+        : {}
+    )),
 
   setDashboardConfig: (dashboardConfig) => set({ dashboardConfig }),
 

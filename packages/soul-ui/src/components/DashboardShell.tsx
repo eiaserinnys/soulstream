@@ -1,5 +1,6 @@
 /**
  * DashboardShell - 3패널 리사이즈 + 모바일 반응형 레이아웃 셸
+ * Size exception: legacy layout shell owns desktop chrome, mobile tabs, and pane persistence.
  *
  * slot props로 내용물을 주입받습니다.
  * 레이아웃 구조만 제공하며, 앱 레벨 훅이나 구체적 컴포넌트는 포함하지 않습니다.
@@ -9,7 +10,7 @@
  */
 
 import { useState, useCallback, useRef, useEffect, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, FolderTree, MessageSquare, Newspaper, Search } from "lucide-react";
+import { ArrowLeft, BookOpenCheck, ChevronLeft, ChevronRight, FolderTree, MessageSquare, Newspaper, Search } from "lucide-react";
 import { DragHandle } from "./DragHandle";
 import { BottomTabBar } from "./BottomTabBar";
 import { ConnectionBadge, type ConnectionStatus } from "./ConnectionBadge";
@@ -90,6 +91,8 @@ export interface DashboardShellProps {
   mobileFolderContents?: ReactNode;
   /** 모바일 Tasks 탭 내용물 */
   mobileTasksView?: ReactNode;
+  /** 모바일 Runbooks 탭 내용물 */
+  mobileRunbooksView?: ReactNode;
   /** 모바일 채팅 뷰 내용물. 미지정 시 rightPanel 사용 */
   mobileChatView?: ReactNode;
   /**
@@ -145,6 +148,7 @@ export function DashboardShell({
   mobileSessionsView,
   mobileFolderContents,
   mobileTasksView,
+  mobileRunbooksView,
   mobileChatView,
   mobileChatHeader,
   mobileSettingsContent,
@@ -179,6 +183,7 @@ export function DashboardShell({
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const viewMode = useDashboardStore((s) => s.viewMode);
   const catalog = useDashboardStore((s) => s.catalog);
   const clearSelectedFolder = useDashboardStore((s) => s.clearSelectedFolder);
   const setViewMode = useDashboardStore((s) => s.setViewMode);
@@ -276,6 +281,8 @@ export function DashboardShell({
     } else if (tabId === "folder") {
       // 폴더 탭: 항상 폴더 리스트에서 시작. viewMode는 건드리지 않아 세션 쿼리가 꼬이지 않게 한다 (기존 BottomTabBar L33-36 동작)
       useDashboardStore.setState({ selectedFolderId: null });
+    } else if (tabId === "runbooks") {
+      setViewMode("runbooks");
     } else if (tabId === "tasks") {
       setViewMode("tasks");
     }
@@ -296,10 +303,10 @@ export function DashboardShell({
           type="button"
           className={cn(
             "dashboard-sidebar-row w-full",
-            leftNavigationMode === "feed" && "dashboard-sidebar-row-active",
+            viewMode === "feed" && "dashboard-sidebar-row-active",
           )}
           data-testid="left-navigation-feed"
-          aria-pressed={leftNavigationMode === "feed"}
+          aria-pressed={viewMode === "feed"}
           onClick={() => {
             setLeftNavigationMode("feed");
             setViewMode("feed");
@@ -312,10 +319,23 @@ export function DashboardShell({
           type="button"
           className={cn(
             "dashboard-sidebar-row w-full",
-            leftNavigationMode === "folders" && "dashboard-sidebar-row-active",
+            viewMode === "runbooks" && "dashboard-sidebar-row-active",
+          )}
+          data-testid="left-navigation-runbooks"
+          aria-pressed={viewMode === "runbooks"}
+          onClick={() => setViewMode("runbooks")}
+        >
+          <BookOpenCheck className="h-3.5 w-3.5" />
+          <span className="truncate">런북</span>
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "dashboard-sidebar-row w-full",
+            viewMode === "folder" && leftNavigationMode === "folders" && "dashboard-sidebar-row-active",
           )}
           data-testid="left-navigation-folders"
-          aria-pressed={leftNavigationMode === "folders"}
+          aria-pressed={viewMode === "folder" && leftNavigationMode === "folders"}
           onClick={() => {
             setLeftNavigationMode("folders");
             setViewMode("folder");
@@ -446,6 +466,10 @@ export function DashboardShell({
                 onBack={() => clearSelectedFolder()}
                 onNewSession={onNewSession}
               />
+            </TabsPanel>
+
+            <TabsPanel value="runbooks" keepMounted className="h-full">
+              {mobileRunbooksView ?? centerPanel}
             </TabsPanel>
 
             <TabsPanel value="tasks" keepMounted className="h-full">

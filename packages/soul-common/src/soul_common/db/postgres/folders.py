@@ -1,4 +1,8 @@
-"""PostgresFolderMixin — 폴더 CRUD + 카탈로그 (PostgreSQL)"""
+"""PostgresFolderMixin — 폴더 CRUD + 카탈로그 (PostgreSQL)
+
+Size exception: legacy mixin still owns folders, board items, markdown documents,
+and file assets. New runbook overview reads live in postgres/runbooks.py.
+"""
 
 from __future__ import annotations
 

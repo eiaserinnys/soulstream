@@ -8,6 +8,8 @@
  *   /#/feed/{agentSessionId} → 피드 뷰 + 해당 세션 선택
  *   /#/tasks                 → Task Tree 뷰
  *   /#/tasks/{agentSessionId}→ Task Tree 뷰 + 해당 세션 선택
+ *   /#/runbooks              → 런북 모아보기
+ *   /#/runbooks/{agentSessionId}→ 런북 모아보기 + 해당 세션 선택
  *   /#/{agentSessionId}      → 폴더 뷰 + 해당 세션 선택
  *   /#/ 또는 /               → 피드 뷰 (초기 진입)
  *
@@ -16,10 +18,11 @@
 
 import { useEffect, useRef } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
+import type { DashboardViewMode } from "../stores/dashboard-store-types";
 import { useIsMobile } from "./use-mobile";
 
 interface ParsedHash {
-  viewMode: "feed" | "folder" | "tasks";
+  viewMode: DashboardViewMode;
   sessionId: string | null;
 }
 
@@ -40,16 +43,25 @@ function parseHash(hash: string): ParsedHash {
   if (path.startsWith("tasks/")) {
     return { viewMode: "tasks", sessionId: path.slice(6) || null };
   }
+  if (path === "runbooks") {
+    return { viewMode: "runbooks", sessionId: null };
+  }
+  if (path.startsWith("runbooks/")) {
+    return { viewMode: "runbooks", sessionId: path.slice(9) || null };
+  }
   return { viewMode: "folder", sessionId: path };
 }
 
 /** viewMode + sessionId로 해시 문자열을 생성한다 */
-function buildHash(viewMode: "feed" | "folder" | "tasks", sessionId: string | null): string {
+function buildHash(viewMode: DashboardViewMode, sessionId: string | null): string {
   if (viewMode === "feed") {
     return sessionId ? `#feed/${sessionId}` : "#feed";
   }
   if (viewMode === "tasks") {
     return sessionId ? `#tasks/${sessionId}` : "#tasks";
+  }
+  if (viewMode === "runbooks") {
+    return sessionId ? `#runbooks/${sessionId}` : "#runbooks";
   }
   return sessionId ? `#${sessionId}` : "";
 }

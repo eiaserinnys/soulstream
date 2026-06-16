@@ -48,6 +48,7 @@ import {
   useSessionListProvider,
   shouldLoadMoreAfterSessionMove,
   TaskTreeView,
+  RunbookOverview,
 } from "@seosoyoung/soul-ui";
 import { FeedView } from "./components/FeedView";
 import { getSessionProvider } from "./providers";
@@ -179,7 +180,9 @@ export function DashboardLayout() {
         />
       }
       centerPanel={
-        viewMode === "tasks" ? (
+        viewMode === "runbooks" ? (
+          <RunbookOverview />
+        ) : viewMode === "tasks" ? (
           <TaskTreeView
             sessions={sessions}
             onNewSession={(task, defaults) => openNewSessionModal("feed", task ?? null, defaults ?? null)}
@@ -239,6 +242,7 @@ export function DashboardLayout() {
           onNewSession={(task, defaults) => openNewSessionModal("feed", task ?? null, defaults ?? null)}
         />
       }
+      mobileRunbooksView={<RunbookOverview />}
       onNewSession={() => openNewSessionModal("folder")}
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={
