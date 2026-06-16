@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS events (
     payload         JSONB,
     searchable_text TEXT,
     search_vector   TSVECTOR,
+    dedupe_key      TEXT,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (session_id, id)
 );
@@ -419,6 +420,7 @@ CREATE TABLE IF NOT EXISTS claude_transcript_entries (
 
 -- 뷰포트 가상화 지원: parent_event_id 컬럼 승격 (payload → 정본 컬럼)
 ALTER TABLE events ADD COLUMN IF NOT EXISTS parent_event_id INTEGER;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
 
 -- FK 제약은 IF NOT EXISTS를 지원하지 않으므로 pg_constraint 확인 후 추가 (멱등)
 DO $$
@@ -441,6 +443,9 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS subtree_height INTEGER NOT NULL DEFA
 -- ============================================================
 
 CREATE INDEX IF NOT EXISTS idx_events_session_id_id ON events (session_id, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_session_dedupe_key
+    ON events (session_id, dedupe_key)
+    WHERE dedupe_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_events_search_vector ON events USING GIN (search_vector);
 CREATE INDEX IF NOT EXISTS idx_event_search_terms_term ON event_search_terms (term);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions (updated_at DESC);
@@ -1020,12 +1025,15 @@ $$;
 -- 이벤트 도메인 ---------------------------------------------------
 
 -- 16. event_append
+DROP FUNCTION IF EXISTS event_append(TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ);
+
 CREATE OR REPLACE FUNCTION event_append(
     p_session_id      TEXT,
     p_event_type      TEXT,
     p_payload         TEXT,
     p_searchable_text TEXT,
-    p_created_at      TIMESTAMPTZ
+    p_created_at      TIMESTAMPTZ,
+    p_dedupe_key      TEXT DEFAULT NULL
 ) RETURNS INTEGER LANGUAGE plpgsql AS $$
 DECLARE
     v_event_id INTEGER;
@@ -1056,12 +1064,27 @@ BEGIN
     -- 행 잠금으로 동시 append 직렬화
     PERFORM session_id FROM sessions WHERE session_id = p_session_id FOR UPDATE;
 
+    IF p_dedupe_key IS NOT NULL THEN
+        SELECT e.id INTO v_event_id
+        FROM events e
+        WHERE e.session_id = p_session_id
+          AND e.dedupe_key = p_dedupe_key
+        LIMIT 1;
+
+        IF v_event_id IS NOT NULL THEN
+            UPDATE sessions
+            SET last_event_id = GREATEST(COALESCE(last_event_id, 0), v_event_id)
+            WHERE session_id = p_session_id;
+            RETURN v_event_id;
+        END IF;
+    END IF;
+
     INSERT INTO events (id, session_id, event_type, payload, searchable_text,
-                        created_at, parent_event_id)
+                        created_at, parent_event_id, dedupe_key)
     VALUES (
         (SELECT COALESCE(MAX(id), 0) + 1 FROM events WHERE session_id = p_session_id),
         p_session_id, p_event_type, v_payload, p_searchable_text,
-        p_created_at, v_parent
+        p_created_at, v_parent, p_dedupe_key
     ) RETURNING id INTO v_event_id;
 
     UPDATE sessions SET last_event_id = v_event_id WHERE session_id = p_session_id;

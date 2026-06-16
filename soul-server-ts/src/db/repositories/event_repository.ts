@@ -215,7 +215,8 @@ export class EventRepository {
         ${params.eventType},
         ${params.payload},
         ${params.searchableText},
-        ${params.createdAt}
+        ${params.createdAt},
+        ${params.dedupeKey ?? null}
       ) AS event_append
     `;
     const id = rows[0]?.event_append;
@@ -225,5 +226,20 @@ export class EventRepository {
       );
     }
     return id;
+  }
+
+  async findEventIdByDedupeKey(
+    sessionId: string,
+    dedupeKey: string,
+  ): Promise<number | null> {
+    const rows = await this.sql<Array<{ id: string | number }>>`
+      SELECT id
+      FROM events
+      WHERE session_id = ${sessionId}
+        AND dedupe_key = ${dedupeKey}
+      LIMIT 1
+    `;
+    const id = rows[0]?.id;
+    return id === undefined ? null : Number(id);
   }
 }

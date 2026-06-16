@@ -27,10 +27,12 @@ function makeTask(overrides: Partial<Task> = {}): Task {
 
 function makeMockDB() {
   const appendEvent = vi.fn().mockResolvedValue(42);
+  const findEventIdByDedupeKey = vi.fn().mockResolvedValue(null);
   const updateLastMessage = vi.fn().mockResolvedValue(undefined);
   return {
-    db: { appendEvent, updateLastMessage } as unknown as SessionDB,
+    db: { appendEvent, findEventIdByDedupeKey, updateLastMessage } as unknown as SessionDB,
     appendEvent,
+    findEventIdByDedupeKey,
     updateLastMessage,
   };
 }
@@ -195,6 +197,48 @@ describe("EventPersistence.persistEvent", () => {
     await ep.persistEvent("sess-1", { type: "tool_start" } as SSEEventPayload);
     const arg = appendEvent.mock.calls[0][0];
     expect(arg.createdAt).toBeInstanceOf(Date);
+  });
+  it("uses internal dedupe key for append but strips it from the stored payload", async () => {
+    const { db, appendEvent, findEventIdByDedupeKey } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const event = {
+      type: "assistant_message",
+      content: "hi",
+      _dedupe_key: "claude-sdk:assistant:msg-1:0",
+    } as unknown as SSEEventPayload;
+
+    const result = await ep.persistEventWithResult("sess-1", event);
+
+    expect(result).toEqual({ eventId: 42, inserted: true });
+    expect(findEventIdByDedupeKey).toHaveBeenCalledWith(
+      "sess-1",
+      "claude-sdk:assistant:msg-1:0",
+    );
+    const arg = appendEvent.mock.calls[0][0];
+    expect(arg.dedupeKey).toBe("claude-sdk:assistant:msg-1:0");
+    expect(JSON.parse(arg.payload)).toEqual({
+      type: "assistant_message",
+      content: "hi",
+    });
+  });
+
+  it("returns existing event id for duplicate dedupe keys without appending", async () => {
+    const { db, appendEvent, findEventIdByDedupeKey } = makeMockDB();
+    findEventIdByDedupeKey.mockResolvedValue(17);
+    const { broadcaster } = makeMockBroadcaster();
+    const ep = new EventPersistence(db, broadcaster, silentLogger);
+    const event = {
+      type: "assistant_message",
+      content: "hi",
+      _dedupe_key: "claude-sdk:assistant:msg-1:0",
+    } as unknown as SSEEventPayload;
+
+    await expect(ep.persistEventWithResult("sess-1", event)).resolves.toEqual({
+      eventId: 17,
+      inserted: false,
+    });
+    expect(appendEvent).not.toHaveBeenCalled();
   });
 });
 

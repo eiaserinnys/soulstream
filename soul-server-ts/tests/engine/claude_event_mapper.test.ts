@@ -45,6 +45,20 @@ describe("Claude event mapper semantic history contract", () => {
     });
   });
 
+  it("carries SDK dedupe key as an internal persistence field", () => {
+    const events = mapClaudeClientEvent({
+      type: "text",
+      text: "Hello Claude",
+      timestamp: 123,
+      sdkDedupeKey: "claude-sdk:assistant:msg-1:0",
+    } as ClaudeClientEvent);
+
+    expect(events[0]).toMatchObject({
+      type: "assistant_message",
+      _dedupe_key: "claude-sdk:assistant:msg-1:0",
+    });
+  });
+
   it("thinking preserves thinking text and signature", () => {
     expect(
       mapClaudeClientEvent({

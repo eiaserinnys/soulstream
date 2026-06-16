@@ -504,16 +504,42 @@ describe("SessionDB.updateLastMessage", () => {
 
 describe("SessionDB.appendEvent", () => {
   it("반환 event_id를 number로 파싱", async () => {
-    const { sql } = createMockSql(() => [{ event_append: 7 }]);
+    const { sql, calls } = createMockSql(() => [{ event_append: 7 }]);
     const db = new SessionDB(sql);
+    const createdAt = new Date();
     const id = await db.appendEvent({
       sessionId: "sess-1",
       eventType: "text_delta",
       payload: '{"type":"text_delta"}',
       searchableText: "hi",
-      createdAt: new Date(),
+      createdAt,
+      dedupeKey: "claude-sdk:assistant:msg-1:0",
     });
     expect(id).toBe(7);
+    expect(calls[0].values).toEqual([
+      "sess-1",
+      "text_delta",
+      '{"type":"text_delta"}',
+      "hi",
+      createdAt,
+      "claude-sdk:assistant:msg-1:0",
+    ]);
+  });
+
+  it("dedupe key로 기존 event id를 조회", async () => {
+    const { sql, calls } = createMockSql(() => [{ id: "17" }]);
+    const db = new SessionDB(sql);
+    const id = await db.findEventIdByDedupeKey(
+      "sess-1",
+      "claude-sdk:assistant:msg-1:0",
+    );
+
+    expect(id).toBe(17);
+    expect(calls[0].fragments.join("?")).toContain("dedupe_key");
+    expect(calls[0].values).toEqual([
+      "sess-1",
+      "claude-sdk:assistant:msg-1:0",
+    ]);
   });
 
   it("반환에 event_append 키 없으면 throw", async () => {

@@ -303,7 +303,8 @@ export function mapClaudeClientEvent(
   event: ClaudeClientEvent,
   options: ClaudeEventMapperOptions = {},
 ): SSEEventPayload[] {
-  switch (event.type) {
+  const payloads: SSEEventPayload[] = (() => {
+    switch (event.type) {
     case "session":
       return [
         asSSE({
@@ -748,7 +749,9 @@ export function mapClaudeClientEvent(
           ...parentField(event.parentEventId),
         }),
       ];
-  }
+    }
+  })();
+  return attachInternalDedupeKey(payloads, event);
 }
 
 function nowEpochSec(): number {
@@ -774,4 +777,17 @@ function stringifyToolResult(result: unknown): string {
 
 function asSSE(payload: Record<string, unknown>): SSEEventPayload {
   return payload as unknown as SSEEventPayload;
+}
+
+function attachInternalDedupeKey(
+  payloads: SSEEventPayload[],
+  event: ClaudeClientEvent,
+): SSEEventPayload[] {
+  const sdkDedupeKey = (event as ClaudeClientEvent & { sdkDedupeKey?: unknown }).sdkDedupeKey;
+  if (typeof sdkDedupeKey !== "string" || sdkDedupeKey.length === 0) {
+    return payloads;
+  }
+  return payloads.map((payload) =>
+    asSSE({ ...(payload as unknown as Record<string, unknown>), _dedupe_key: sdkDedupeKey }),
+  );
 }
