@@ -166,6 +166,7 @@ export const FeedCard = memo(function FeedCard({
         ref={setNodeRef}
         {...attributes}
         {...listeners}
+        webglSurface
         className={rootClassName}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}

@@ -38,6 +38,7 @@ export { AskQuestionBanner } from "./AskQuestionBanner";
 export { ProfileAvatar } from "./ProfileAvatar";
 export { ContextContentRenderer } from "./ContextContentRenderer";
 export { WallpaperLayer } from "./WallpaperLayer";
+export { LiquidGlassProvider, useGlassSurface } from "./LiquidGlassProvider";
 
 // === Dashboard Components (extracted from soul-dashboard) ===
 export { SessionsTopBar } from "./SessionsTopBar";

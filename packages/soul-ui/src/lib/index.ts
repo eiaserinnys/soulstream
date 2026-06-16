@@ -44,6 +44,25 @@ export {
 } from "./liquid-lens";
 export type { LiquidLensMapMetrics, LiquidLensMapSize, LiquidLensOptions } from "./liquid-lens";
 export {
+  MAX_WEBGL_GLASS_CARDS,
+  WEBGL_GLASS_CHANGE_EVENT,
+  WEBGL_GLASS_STORAGE_KEY,
+  calculateBackingDpr,
+  createGlassSurfaceBuffer,
+  dispatchWebglGlassChange,
+  isWebglGlassStorageValueEnabled,
+  packVisibleGlassSurfaces,
+  readWebglGlassEnabled,
+  writeWebglGlassEnabled,
+} from "./webgl-glass";
+export type {
+  GlassSurfaceRef,
+  GlassSurfaceRegistration,
+  GlassViewport,
+  PackedGlassSurfaces,
+  WebglGlassStats,
+} from "./webgl-glass";
+export {
   DEFAULT_USER_PREFERENCES,
   dataUrlToBlob,
   deleteUserBackground,
