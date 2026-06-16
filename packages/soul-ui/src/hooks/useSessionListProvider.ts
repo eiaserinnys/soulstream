@@ -15,6 +15,7 @@
 import { useCallback, useRef, useState, useMemo } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useDashboardStore } from "../stores/dashboard-store";
+import { useRunbookStore } from "../stores/runbook-store";
 import type { DashboardState } from "../stores/dashboard-store-types";
 import type { SessionSummary } from "../shared/types";
 import type { SessionStorageProvider } from "../providers/types";
@@ -84,6 +85,7 @@ export function useSessionListProvider(
   } = options;
 
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
+  const handleRunbookUpdated = useRunbookStore((s) => s.handleRunbookUpdated);
 
   // 필터 상태
   const sessionTypeFilter = useDashboardStore((s) => s.sessionTypeFilter);
@@ -215,6 +217,7 @@ export function useSessionListProvider(
       lastEventIdRef.current = update.nextLastEventId;
       if (update.shouldRefetch) queryRefetch();
     },
+    onRunbookUpdated: handleRunbookUpdated,
   });
 
   return {

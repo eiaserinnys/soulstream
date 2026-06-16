@@ -180,6 +180,44 @@ class TestBoardItems:
         mock_catalog_service.update_board_item_position.assert_called_once_with("session:s1", 59, 101)
 
 
+class TestRunbooks:
+    """GET /api/runbooks/{runbook_id} tests."""
+
+    async def test_get_runbook_snapshot(self, client, mock_db, mock_catalog_service):
+        snapshot = {
+            "runbook": {
+                "id": "rb-1",
+                "board_item_id": "runbook:rb-1",
+                "folder_id": "f1",
+                "title": "Launch",
+                "archived": False,
+                "version": 1,
+                "created_session_id": None,
+                "created_event_id": None,
+                "created_at": "2026-06-16T00:00:00+00:00",
+                "updated_at": "2026-06-16T00:00:00+00:00",
+            },
+            "sections": [],
+            "items": [],
+        }
+        mock_db.get_runbook_snapshot.return_value = snapshot
+
+        resp = await client.get("/api/runbooks/rb-1")
+
+        assert resp.status_code == 200
+        assert resp.json() == snapshot
+        mock_db.get_runbook_snapshot.assert_called_once_with("rb-1")
+        mock_catalog_service.list_folders.assert_called_once()
+
+    async def test_get_runbook_snapshot_404(self, client, mock_db):
+        mock_db.get_runbook_snapshot.return_value = None
+
+        resp = await client.get("/api/runbooks/missing")
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Runbook not found"
+
+
 class TestBoardAssets:
     """Board asset direct-upload routes."""
 

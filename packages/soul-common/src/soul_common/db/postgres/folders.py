@@ -78,6 +78,15 @@ def _normalize_markdown_document(row: dict) -> dict:
     }
 
 
+def _normalize_runbook_row(row: dict) -> dict:
+    result = dict(row)
+    for key in ("created_at", "updated_at", "completed_at"):
+        value = result.get(key)
+        if hasattr(value, "isoformat"):
+            result[key] = value.isoformat()
+    return result
+
+
 def _normalize_file_asset(row: dict) -> dict:
     created_at = row.get("created_at")
     updated_at = row.get("updated_at")
@@ -392,6 +401,44 @@ class PostgresFolderMixin:
             "DELETE FROM markdown_documents WHERE id = $1",
             document_id,
         )
+
+    async def get_runbook_snapshot(self, runbook_id: str) -> Optional[dict]:
+        runbook_row = await self._pool.fetchrow(
+            """
+            SELECT r.*, bi.folder_id
+            FROM runbooks r
+            JOIN board_items bi ON bi.id = r.board_item_id
+            WHERE r.id = $1
+            """,
+            runbook_id,
+        )
+        if runbook_row is None:
+            return None
+
+        sections = await self._pool.fetch(
+            """
+            SELECT *
+            FROM runbook_sections
+            WHERE runbook_id = $1
+            ORDER BY position_key ASC, created_at ASC
+            """,
+            runbook_id,
+        )
+        items = await self._pool.fetch(
+            """
+            SELECT i.*
+            FROM runbook_items i
+            JOIN runbook_sections s ON s.id = i.section_id
+            WHERE s.runbook_id = $1
+            ORDER BY s.position_key ASC, i.position_key ASC, i.created_at ASC
+            """,
+            runbook_id,
+        )
+        return {
+            "runbook": _normalize_runbook_row(dict(runbook_row)),
+            "sections": [_normalize_runbook_row(dict(row)) for row in sections],
+            "items": [_normalize_runbook_row(dict(row)) for row in items],
+        }
 
     async def create_pending_file_asset(
         self,

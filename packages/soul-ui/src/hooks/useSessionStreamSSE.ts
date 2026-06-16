@@ -21,6 +21,7 @@ import type {
   CatalogUpdatedStreamEvent,
   MetadataUpdatedStreamEvent,
   ReplayGapStreamEvent,
+  RunbookUpdatedStreamEvent,
   SessionCreatedStreamEvent,
   SessionDeletedStreamEvent,
   SessionListStreamEvent,
@@ -38,7 +39,7 @@ import {
  * Phase 2 (orch broadcaster Last-Event-ID resume):
  * - `stream_meta`: 구독 시 최초 1회 (instance_id + latest_id, SSE id 미부착)
  * - `replay_gap`: ring buffer 부족 신호 (latest_id 동기화용, SSE id 미부착)
- * 나머지 5종은 SSE id 부착.
+ * 나머지 id 부착 이벤트는 Last-Event-ID resume 대상.
  */
 const SESSION_STREAM_EVENT_TYPES = [
   "stream_meta",
@@ -48,6 +49,7 @@ const SESSION_STREAM_EVENT_TYPES = [
   "session_deleted",
   "catalog_updated",
   "metadata_updated",
+  "runbook_updated",
   "replay_gap",
 ] as const;
 
@@ -71,6 +73,7 @@ export interface UseSessionStreamSSEOptions {
   onSessionDeleted?: (event: SessionDeletedStreamEvent) => void;
   onCatalogUpdated?: (event: CatalogUpdatedStreamEvent) => void;
   onMetadataUpdated?: (event: MetadataUpdatedStreamEvent) => void;
+  onRunbookUpdated?: (event: RunbookUpdatedStreamEvent) => void;
   onStreamMeta?: (event: StreamMetaStreamEvent) => void;
   onReplayGap?: (event: ReplayGapStreamEvent) => void;
 }

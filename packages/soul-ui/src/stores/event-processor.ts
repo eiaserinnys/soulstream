@@ -96,7 +96,7 @@ export function processEventSingle(
   }
 
   // subtree_update / runbook_updated — 트리 변경 없음, dedup만 갱신.
-  // runbook_updated는 PR-5 runbook-store가 구독하기 전까지 채팅 타임라인에서는 no-op.
+  // 보드 RunbookCard live 갱신은 session stream의 runbook-store projection이 처리한다.
   if (event.type === "subtree_update" || event.type === "runbook_updated") {
     return {
       root,

@@ -18,6 +18,8 @@ export const BOARD_GRID_SIZE = 20;
 export const BOARD_TILE_WIDTH = 280;
 export const BOARD_TILE_HEIGHT = 160;
 export const BOARD_ASSET_TILE_HEIGHT = 200;
+export const BOARD_RUNBOOK_TILE_WIDTH = 360;
+export const BOARD_RUNBOOK_TILE_HEIGHT = 360;
 export const BOARD_CANVAS_BUFFER = 200;
 export const BOARD_CANVAS_WIDTH = 100000;
 export const BOARD_CANVAS_HEIGHT = 100000;
@@ -124,6 +126,8 @@ export interface RunbookBoardWorkspaceItem {
   title: string;
   x: number;
   y: number;
+  width: number;
+  height: number;
 }
 
 export type BoardWorkspaceItem =
@@ -507,6 +511,8 @@ function buildPositionedItems({
         title: metadataText(boardItem, "title") || "Runbook",
         x: boardItem.x,
         y: boardItem.y,
+        width: BOARD_RUNBOOK_TILE_WIDTH,
+        height: BOARD_RUNBOOK_TILE_HEIGHT,
       });
     }
   }
