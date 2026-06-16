@@ -18,6 +18,7 @@ import { applyCatalogDisplayNames } from "../hooks/session-stream-helpers";
 import { SessionItem } from "./SessionItem";
 import { useGlassSurface } from "./LiquidGlassProvider";
 import { resolveFolderActiveSessionDecision } from "./folder-active-session";
+import { FolderScrollHeader, useScrollHeaderMargin } from "./folder-scroll-header";
 import { runGuardedLoadMore, type LoadMoreCallback } from "./load-more-guard";
 
 // Re-exports for backward compatibility (FeedCard, soul-ui index 등이 참조)
@@ -49,6 +50,8 @@ export interface FolderContentsProps {
   onLoadMore?: LoadMoreCallback;
   /** 추가 로드 가능 여부 */
   hasMore?: boolean;
+  /** 같은 스크롤 루트 안에서 세션 리스트 위에 렌더할 폴더/라벨 영역 */
+  scrollHeader?: React.ReactNode;
 }
 
 function readDesktopSessionGridColumnCount(): 1 | 2 {
@@ -82,8 +85,11 @@ type RenderSessionItem = (session: SessionSummary) => React.ReactNode;
 interface FolderSessionListSurfaceProps {
   displaySessions: SessionSummary[];
   parentRef: React.RefObject<HTMLDivElement | null>;
+  scrollHeaderRef: React.RefObject<HTMLDivElement | null>;
   sentinelRef: React.RefObject<HTMLDivElement | null>;
   hasMore?: boolean;
+  scrollHeader?: React.ReactNode;
+  scrollMargin: number;
   onKeyDown: (e: React.KeyboardEvent) => void;
   onContainerClick: () => void;
   renderSessionItem: RenderSessionItem;
@@ -105,8 +111,11 @@ function LoadMoreSentinel({
 function DesktopFolderSessionGrid({
   displaySessions,
   parentRef,
+  scrollHeaderRef,
   sentinelRef,
   hasMore,
+  scrollHeader,
+  scrollMargin,
   onKeyDown,
   onContainerClick,
   renderSessionItem,
@@ -119,53 +128,59 @@ function DesktopFolderSessionGrid({
     getScrollElement: () => parentRef.current,
     estimateSize: () => DESKTOP_SESSION_GRID_ROW_HEIGHT,
     overscan: 4,
+    scrollMargin,
   });
   const desktopVirtualRows = desktopVirtualizer.getVirtualItems();
+  const virtualizerScrollMargin = desktopVirtualizer.options.scrollMargin ?? 0;
 
   return (
     <div
       ref={parentRef}
-      className="h-full overflow-y-auto px-1 py-1 outline-none"
+      className="h-full overflow-y-auto outline-none"
       data-liquid-glass-webgl={webglActive ? "true" : undefined}
+      data-testid="folder-session-scroll-root"
       tabIndex={0}
       onKeyDown={onKeyDown}
       onClick={onContainerClick}
     >
-      <div
-        data-testid="folder-session-virtual-grid"
-        style={{ height: `${desktopVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}
-      >
-        {desktopVirtualRows.map((virtualRow) => {
-          const rowStartIndex = virtualRow.index * desktopColumnCount;
-          const rowSessions = displaySessions.slice(rowStartIndex, rowStartIndex + desktopColumnCount);
-          return (
-            <div
-              key={virtualRow.key}
-              data-testid="folder-session-virtual-row"
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: `${virtualRow.size}px`,
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-            >
-              <div className="grid h-full grid-cols-1 gap-3 xl:grid-cols-2">
-                {rowSessions.map((session) => (
-                  <div
-                    key={session.agentSessionId}
-                    data-testid="folder-session-card-frame"
-                    className="min-h-0"
-                    style={{ height: DESKTOP_SESSION_CARD_HEIGHT }}
-                  >
-                    {renderSessionItem(session)}
-                  </div>
-                ))}
+      <FolderScrollHeader scrollHeader={scrollHeader} scrollHeaderRef={scrollHeaderRef} />
+      <div className="px-1 pb-1">
+        <div
+          data-testid="folder-session-virtual-grid"
+          style={{ height: `${desktopVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}
+        >
+          {desktopVirtualRows.map((virtualRow) => {
+            const rowStartIndex = virtualRow.index * desktopColumnCount;
+            const rowSessions = displaySessions.slice(rowStartIndex, rowStartIndex + desktopColumnCount);
+            return (
+              <div
+                key={virtualRow.key}
+                data-testid="folder-session-virtual-row"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start - virtualizerScrollMargin}px)`,
+                }}
+              >
+                <div className="grid h-full grid-cols-1 gap-3 xl:grid-cols-2">
+                  {rowSessions.map((session) => (
+                    <div
+                      key={session.agentSessionId}
+                      data-testid="folder-session-card-frame"
+                      className="min-h-0"
+                      style={{ height: DESKTOP_SESSION_CARD_HEIGHT }}
+                    >
+                      {renderSessionItem(session)}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
       <LoadMoreSentinel hasMore={hasMore} sentinelRef={sentinelRef} />
@@ -176,8 +191,11 @@ function DesktopFolderSessionGrid({
 function MobileFolderSessionList({
   displaySessions,
   parentRef,
+  scrollHeaderRef,
   sentinelRef,
   hasMore,
+  scrollHeader,
+  scrollMargin,
   onKeyDown,
   onContainerClick,
   renderSessionItem,
@@ -188,8 +206,10 @@ function MobileFolderSessionList({
     getScrollElement: () => parentRef.current,
     estimateSize: () => 118,
     overscan: 5,
+    scrollMargin,
   });
   const mobileVirtualItems = mobileVirtualizer.getVirtualItems();
+  const virtualizerScrollMargin = mobileVirtualizer.options.scrollMargin ?? 0;
   const { getItemRef } = useFlipAnimation(displaySessions, mobileVirtualItems);
 
   return (
@@ -197,23 +217,26 @@ function MobileFolderSessionList({
       ref={parentRef}
       className="h-full overflow-y-auto outline-none"
       data-liquid-glass-webgl={webglActive ? "true" : undefined}
+      data-testid="folder-session-scroll-root"
       tabIndex={0}
       onKeyDown={onKeyDown}
       onClick={onContainerClick}
     >
+      <FolderScrollHeader scrollHeader={scrollHeader} scrollHeaderRef={scrollHeaderRef} />
       <div style={{ height: `${mobileVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
         {mobileVirtualItems.map((virtualItem) => {
           const session = displaySessions[virtualItem.index];
           return (
             <div
               key={session.agentSessionId}
+              data-testid="folder-session-virtual-item"
               style={{
                 position: "absolute",
                 top: 0,
                 left: 0,
                 width: "100%",
                 height: `${virtualItem.size}px`,
-                transform: `translateY(${virtualItem.start}px)`,
+                transform: `translateY(${virtualItem.start - virtualizerScrollMargin}px)`,
               }}
             >
               <div
@@ -241,6 +264,7 @@ export function FolderContents({
   getContinueSessionDisabledReason,
   onLoadMore,
   hasMore,
+  scrollHeader,
 }: FolderContentsProps) {
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
@@ -263,6 +287,8 @@ export function FolderContents({
 
   const prevFolderIdRef = useRef<string | null | undefined>(undefined);
   const parentRef = useRef<HTMLDivElement>(null);
+  const scrollHeaderRef = useRef<HTMLDivElement>(null);
+  const scrollMargin = useScrollHeaderMargin(scrollHeaderRef, Boolean(scrollHeader));
   const listWebglActive = useGlassSurface(parentRef, { enabled: displaySessions.length > 0 });
   const keepActiveSessionWhenEmpty = useMemo(() => {
     if (!activeSessionKey || activeSessionSummary?.agentSessionId !== activeSessionKey) {
@@ -390,15 +416,28 @@ export function FolderContents({
   return (
     <>
       {displaySessions.length === 0 ? (
-        <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-          No sessions in this folder
+        <div
+          ref={parentRef}
+          className="h-full overflow-y-auto outline-none"
+          data-testid="folder-session-scroll-root"
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+          onClick={() => setContextMenu(null)}
+        >
+          <FolderScrollHeader scrollHeader={scrollHeader} scrollHeaderRef={scrollHeaderRef} />
+          <div className="flex min-h-[180px] items-center justify-center px-4 py-8 text-sm text-muted-foreground">
+            No sessions in this folder
+          </div>
         </div>
       ) : !isMobile ? (
         <DesktopFolderSessionGrid
           displaySessions={displaySessions}
           parentRef={parentRef}
+          scrollHeaderRef={scrollHeaderRef}
           sentinelRef={sentinelRef}
           hasMore={hasMore}
+          scrollHeader={scrollHeader}
+          scrollMargin={scrollMargin}
           onKeyDown={handleKeyDown}
           onContainerClick={() => setContextMenu(null)}
           renderSessionItem={renderSessionItem}
@@ -408,8 +447,11 @@ export function FolderContents({
         <MobileFolderSessionList
           displaySessions={displaySessions}
           parentRef={parentRef}
+          scrollHeaderRef={scrollHeaderRef}
           sentinelRef={sentinelRef}
           hasMore={hasMore}
+          scrollHeader={scrollHeader}
+          scrollMargin={scrollMargin}
           onKeyDown={handleKeyDown}
           onContainerClick={() => setContextMenu(null)}
           renderSessionItem={renderSessionItem}

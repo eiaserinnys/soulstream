@@ -14,7 +14,7 @@ import { FolderContents } from "./FolderContents";
 const virtualizerMockState = vi.hoisted(() => ({
   startIndex: 0,
   visibleCount: Number.POSITIVE_INFINITY,
-  calls: [] as Array<{ count: number; estimatedSize: number }>,
+  calls: [] as Array<{ count: number; estimatedSize: number; scrollMargin: number }>,
 }));
 
 const intersectionObserverMockState = vi.hoisted(() => ({
@@ -24,10 +24,19 @@ const intersectionObserverMockState = vi.hoisted(() => ({
 }));
 
 vi.mock("@tanstack/react-virtual", () => ({
-  useVirtualizer: ({ count, estimateSize }: { count: number; estimateSize: () => number }) => {
+  useVirtualizer: ({
+    count,
+    estimateSize,
+    scrollMargin = 0,
+  }: {
+    count: number;
+    estimateSize: () => number;
+    scrollMargin?: number;
+  }) => {
     const estimatedSize = estimateSize();
-    virtualizerMockState.calls.push({ count, estimatedSize });
+    virtualizerMockState.calls.push({ count, estimatedSize, scrollMargin });
     return {
+      options: { scrollMargin },
       getVirtualItems: () => {
         const size = estimateSize();
         const startIndex = count === 0 ? 0 : Math.min(virtualizerMockState.startIndex, count - 1);
@@ -41,7 +50,7 @@ vi.mock("@tanstack/react-virtual", () => ({
             index,
             key: index,
             size,
-            start: index * size,
+            start: scrollMargin + index * size,
           };
         });
       },
@@ -178,6 +187,7 @@ describe("FolderContents", () => {
     intersectionObserverMockState.options = [];
     intersectionObserverMockState.observedTargets = [];
     intersectionObserverMockState.disconnectCount = 0;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
     globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver;
     globalThis.ResizeObserver = MockResizeObserver as unknown as typeof ResizeObserver;
     vi.stubGlobal("CSS", { supports: vi.fn(() => false) });
@@ -260,6 +270,7 @@ describe("FolderContents", () => {
     expect(container.querySelectorAll("[data-testid='folder-session-virtual-row']")).toHaveLength(3);
     expect(virtualizerMockState.calls.some((call) => call.estimatedSize === 118)).toBe(false);
     expect(virtualizerMockState.calls.some((call) => call.estimatedSize === 144)).toBe(true);
+    expect(virtualizerMockState.calls.some((call) => call.scrollMargin === 0)).toBe(true);
     expect(container.querySelector<HTMLElement>("[data-testid='folder-session-virtual-grid']")?.style.height)
       .toBe("7200px");
     const cardFrames = container.querySelectorAll<HTMLElement>("[data-testid='folder-session-card-frame']");
@@ -267,7 +278,7 @@ describe("FolderContents", () => {
     cardFrames.forEach((frame) => {
       expect(frame.style.height).toBe("132px");
     });
-    const scrollRoot = container.querySelector<HTMLElement>("[data-testid='folder-session-virtual-grid']")?.parentElement;
+    const scrollRoot = container.querySelector<HTMLElement>("[data-testid='folder-session-scroll-root']");
     expect(intersectionObserverMockState.options).toHaveLength(1);
     expect(intersectionObserverMockState.options[0]?.root).toBe(scrollRoot);
     expect(intersectionObserverMockState.options[0]?.rootMargin).toBe("120px 0px");
@@ -279,5 +290,63 @@ describe("FolderContents", () => {
     expect(container.textContent).toContain("Session 5");
     expect(container.textContent).not.toContain("Session 6");
     expect(container.textContent).not.toContain("Session 99");
+  });
+
+  it("uses the scroll header height as virtualizer scrollMargin inside one scroll root", async () => {
+    const manySessions = createSessions(12);
+    virtualizerMockState.visibleCount = 2;
+
+    ({ container, root } = renderFolderContents({
+      sessions: manySessions,
+      hasMore: true,
+      onLoadMore: vi.fn().mockResolvedValue(undefined),
+      scrollHeader: (
+        <div data-testid="folder-test-scroll-header">
+          하위 폴더
+        </div>
+      ),
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const scrollRoot = container.querySelector<HTMLElement>("[data-testid='folder-session-scroll-root']");
+    const scrollHeader = container.querySelector<HTMLElement>("[data-testid='folder-session-scroll-header']");
+    const firstRow = container.querySelector<HTMLElement>("[data-testid='folder-session-virtual-row']");
+
+    expect(scrollRoot).not.toBeNull();
+    expect(scrollHeader).not.toBeNull();
+    expect(scrollRoot?.contains(scrollHeader)).toBe(true);
+    expect(scrollRoot?.contains(container.querySelector("[data-testid='folder-session-virtual-grid']"))).toBe(true);
+    expect(virtualizerMockState.calls.some((call) => call.scrollMargin === 560)).toBe(true);
+    expect(firstRow?.style.transform).toBe("translateY(0px)");
+    expect(intersectionObserverMockState.options[0]?.root).toBe(scrollRoot);
+    expect(scrollRoot?.contains(intersectionObserverMockState.observedTargets[0])).toBe(true);
+  });
+
+  it("applies the same scrollMargin contract to the mobile virtual list", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    const manySessions = createSessions(12);
+    virtualizerMockState.visibleCount = 2;
+
+    ({ container, root } = renderFolderContents({
+      sessions: manySessions,
+      hasMore: true,
+      onLoadMore: vi.fn().mockResolvedValue(undefined),
+      scrollHeader: (
+        <div data-testid="folder-test-scroll-header">
+          하위 폴더
+        </div>
+      ),
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const scrollRoot = container.querySelector<HTMLElement>("[data-testid='folder-session-scroll-root']");
+    const firstItem = container.querySelector<HTMLElement>("[data-testid='folder-session-virtual-item']");
+
+    expect(virtualizerMockState.calls.some((call) => (
+      call.estimatedSize === 118 && call.scrollMargin === 560
+    ))).toBe(true);
+    expect(firstItem?.style.transform).toBe("translateY(0px)");
+    expect(intersectionObserverMockState.options[0]?.root).toBe(scrollRoot);
+    expect(scrollRoot?.contains(intersectionObserverMockState.observedTargets[0])).toBe(true);
   });
 });
