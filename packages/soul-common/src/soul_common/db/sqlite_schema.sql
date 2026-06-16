@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS file_assets (
 CREATE TABLE IF NOT EXISTS board_items (
     id TEXT PRIMARY KEY,
     folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
-    item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame')),
+    item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook')),
     item_id TEXT NOT NULL,
     x REAL NOT NULL DEFAULT 0,
     y REAL NOT NULL DEFAULT 0,

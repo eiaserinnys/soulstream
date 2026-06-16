@@ -157,6 +157,38 @@ describe("runbook MCP tools", () => {
     });
   });
 
+  it("creates runbooks through folder-scoped board item input", async () => {
+    const service = fakeRunbookService();
+    const client = await createClient(
+      makeRuntime({ runbookEnabled: true, runbookService: service }),
+      { "x-soulstream-agent-session-id": "sess-caller" },
+    );
+
+    const result = await client.callTool({
+      name: "create_runbook",
+      arguments: {
+        folder_id: "folder-1",
+        title: "Launch runbook",
+        x: 120,
+        y: 240,
+        runbook_id: "rb-1",
+        idempotency_key: "idem-create-1",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(service.createRunbook).toHaveBeenCalledWith({
+      actorKind: "agent",
+      actorSessionId: "sess-caller",
+      folderId: "folder-1",
+      title: "Launch runbook",
+      x: 120,
+      y: 240,
+      runbookId: "rb-1",
+      idempotencyKey: "idem-create-1",
+    });
+  });
+
   it("rejects mutation calls without caller session header", async () => {
     const service = fakeRunbookService();
     const client = await createClient(
@@ -166,7 +198,7 @@ describe("runbook MCP tools", () => {
     const result = await client.callTool({
       name: "create_runbook",
       arguments: {
-        board_item_id: "board-1",
+        folder_id: "folder-1",
         title: "Runbook",
         idempotency_key: "idem-create-1",
       },
@@ -180,7 +212,7 @@ describe("runbook MCP tools", () => {
 function fakeRunbookService() {
   const mutationResult = {
     snapshot: {
-      runbook: { id: "rb-1", board_item_id: "board-1" },
+      runbook: { id: "rb-1", board_item_id: "runbook:rb-1" },
       sections: [],
       items: [],
     },

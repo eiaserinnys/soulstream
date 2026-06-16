@@ -39,10 +39,12 @@ export function registerRunbookTools(
     "create_runbook",
     {
       description:
-        "현재 MCP caller session을 actor로 하여 기존 session board item에 런북을 생성한다.",
+        "현재 MCP caller session을 actor로 하여 독립 runbook board item과 런북을 함께 생성한다.",
       inputSchema: {
-        board_item_id: z.string().min(1),
+        folder_id: z.string().min(1),
         title: z.string().default(""),
+        x: z.number().optional(),
+        y: z.number().optional(),
         runbook_id: z.string().min(1).optional(),
         idempotency_key: idempotencyKeySchema,
       },
@@ -52,8 +54,10 @@ export function registerRunbookTools(
         service.createRunbook({
           actorKind: "agent",
           actorSessionId,
-          boardItemId: input.board_item_id,
+          folderId: input.folder_id,
           title: input.title,
+          x: input.x,
+          y: input.y,
           runbookId: input.runbook_id,
           idempotencyKey: input.idempotency_key,
         }),

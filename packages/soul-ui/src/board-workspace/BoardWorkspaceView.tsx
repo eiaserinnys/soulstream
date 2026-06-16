@@ -121,6 +121,19 @@ function boardWorkspaceItemToCatalogBoardItem(
   if (item.type === "frame") {
     return frameItemToCatalogBoardItem(item, { x, y });
   }
+  if (item.type === "runbook") {
+    return {
+      id: item.boardItemId,
+      folderId,
+      itemType: "runbook",
+      itemId: item.runbookId,
+      x,
+      y,
+      metadata: {
+        title: item.title,
+      },
+    };
+  }
   return null;
 }
 

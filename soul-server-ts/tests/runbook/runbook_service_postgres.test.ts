@@ -44,6 +44,47 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     await harness?.cleanup();
   }, 15_000);
 
+  it("creates a first-class runbook board item and links it 1:1", async () => {
+    const result = await service.createRunbook({
+      runbookId: "rb-1",
+      folderId: "folder-1",
+      title: "Runbook",
+      x: 120,
+      y: 240,
+      actorSessionId: "sess-actor",
+    });
+
+    const rows = await harness!.sql<Array<{
+      board_item_id: string;
+      item_type: string;
+      item_id: string;
+      x: string | number;
+      y: string | number;
+      metadata_title: string | null;
+    }>>`
+      SELECT
+        r.board_item_id,
+        bi.item_type,
+        bi.item_id,
+        bi.x,
+        bi.y,
+        bi.metadata->>'title' AS metadata_title
+      FROM runbooks r
+      JOIN board_items bi ON bi.id = r.board_item_id
+      WHERE r.id = 'rb-1'
+    `;
+
+    expect(result.snapshot.runbook.board_item_id).toBe("runbook:rb-1");
+    expect(rows[0]).toMatchObject({
+      board_item_id: "runbook:rb-1",
+      item_type: "runbook",
+      item_id: "rb-1",
+      metadata_title: "Runbook",
+    });
+    expect(Number(rows[0]?.x)).toBe(120);
+    expect(Number(rows[0]?.y)).toBe(240);
+  });
+
   it("raises a 409-style RunbookVersionConflict before recording an event", async () => {
     await seedRunbook();
     await service.createSection({
@@ -123,7 +164,7 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     expect(emitRunbookUpdated).toHaveBeenCalledWith(
       "sess-actor",
       "rb-1",
-      "board-rb-1",
+      "runbook:rb-1",
     );
     expect(observedOperationCounts).toEqual([2]);
   });
@@ -132,7 +173,7 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     await seedRunbook();
     await service.createRunbook({
       runbookId: "rb-2",
-      boardItemId: "board-rb-2",
+      folderId: "folder-1",
       title: "Other",
       actorSessionId: "sess-actor",
     });
@@ -356,7 +397,7 @@ describePostgres("RunbookService PostgreSQL integration", () => {
   async function seedRunbook(): Promise<void> {
     await service.createRunbook({
       runbookId: "rb-1",
-      boardItemId: "board-rb-1",
+      folderId: "folder-1",
       title: "Runbook",
       actorSessionId: "sess-actor",
     });
