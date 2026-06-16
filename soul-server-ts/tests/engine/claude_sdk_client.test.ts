@@ -1149,32 +1149,24 @@ describe("ClaudeSdkClient", () => {
     }
   });
 
-  it("adds current agent session id header to HTTP MCP servers", async () => {
-    const workspaceDir = mkdtempSync(join(tmpdir(), "claude-mcp-session-"));
+  it("loads workspace .mcp.json and adds current agent session id header to soulstream MCP servers only", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "claude-mcp-json-session-"));
     try {
       writeFileSync(
-        join(workspaceDir, "mcp_config.json"),
+        join(workspaceDir, ".mcp.json"),
         JSON.stringify({
           mcpServers: {
-            soulstreamSse: {
+            soulstream: {
+              type: "http",
+              url: "http://127.0.0.1:3105/mcp",
+            },
+            atom: {
+              type: "http",
+              url: "http://localhost:4200/mcp",
+            },
+            trello: {
               type: "sse",
-              url: "http://localhost:3105/cogito-mcp/sse",
-              headers: {
-                authorization: "Bearer secret",
-                "x-soulstream-agent-session-id": "stale-session",
-              },
-            },
-            soulstreamHttp: {
-              type: "streamable_http",
-              url: "http://localhost:3105/mcp",
-              headers: {
-                "x-other": "kept",
-              },
-            },
-            localStdio: {
-              type: "stdio",
-              command: "node",
-              args: ["server.js"],
+              url: "http://localhost:8001/sse",
             },
           },
         }),
@@ -1203,15 +1195,84 @@ describe("ClaudeSdkClient", () => {
         type: string;
         headers?: Record<string, string>;
       }>;
-      expect(mcpServers.soulstreamSse?.headers).toEqual({
+      expect(mcpServers.soulstream?.headers).toEqual({
+        "x-soulstream-agent-session-id": "parent-sess-1",
+      });
+      expect(mcpServers.atom?.headers).toBeUndefined();
+      expect(mcpServers.trello?.headers).toBeUndefined();
+    } finally {
+      rmSync(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
+  it("adds current agent session id header to legacy soulstream HTTP MCP servers", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "claude-mcp-session-"));
+    try {
+      writeFileSync(
+        join(workspaceDir, "mcp_config.json"),
+        JSON.stringify({
+          mcpServers: {
+            soulstream: {
+              type: "sse",
+              url: "http://localhost:3105/cogito-mcp/sse",
+              headers: {
+                authorization: "Bearer secret",
+                "x-soulstream-agent-session-id": "stale-session",
+              },
+            },
+            "soulstream-cogito": {
+              type: "streamable_http",
+              url: "http://localhost:3105/mcp",
+              headers: {
+                "x-other": "kept",
+              },
+            },
+            localStdio: {
+              type: "stdio",
+              command: "node",
+              args: ["server.js"],
+            },
+            externalHttp: {
+              type: "http",
+              url: "https://example.invalid/mcp",
+            },
+          },
+        }),
+      );
+
+      const captured: ClaudeSdkQueryParams[] = [];
+      const client = new ClaudeSdkClient(
+        {
+          query: (params) => {
+            captured.push(params);
+            return makeQuery(sdkMessages([sdkSuccessResult("claude-sess-mcp", "done")]));
+          },
+          postResultDrainMs: 10,
+        },
+        silentLogger,
+      );
+
+      await collect(client.run({
+        prompt: "hi",
+        workspaceDir,
+        env: {},
+        agentSessionId: "parent-sess-1",
+      }, new AbortController().signal));
+
+      const mcpServers = captured[0]?.options?.mcpServers as Record<string, {
+        type: string;
+        headers?: Record<string, string>;
+      }>;
+      expect(mcpServers.soulstream?.headers).toEqual({
         authorization: "Bearer secret",
         "x-soulstream-agent-session-id": "parent-sess-1",
       });
-      expect(mcpServers.soulstreamHttp?.headers).toEqual({
+      expect(mcpServers["soulstream-cogito"]?.headers).toEqual({
         "x-other": "kept",
         "x-soulstream-agent-session-id": "parent-sess-1",
       });
       expect(mcpServers.localStdio?.headers).toBeUndefined();
+      expect(mcpServers.externalHttp?.headers).toBeUndefined();
     } finally {
       rmSync(workspaceDir, { recursive: true, force: true });
     }
