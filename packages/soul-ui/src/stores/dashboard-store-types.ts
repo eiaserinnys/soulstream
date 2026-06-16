@@ -78,9 +78,9 @@ export type FolderSortMode =
 
 // === Mobile Tab ===
 
-export type DashboardViewMode = "feed" | "folder" | "tasks" | "runbooks";
+export type DashboardViewMode = "feed" | "folder" | "runbooks";
 
-export type MobileTab = "feed" | "folder" | "runbooks" | "tasks" | "chat" | "settings";
+export type MobileTab = "feed" | "folder" | "runbooks" | "chat" | "settings";
 
 export interface BoardItemFocusRequest {
   boardItemId: string;
@@ -104,7 +104,7 @@ export interface ProcessEventsResult {
 // === State Interface ===
 
 export interface DashboardState {
-  /** 뷰 모드 — URL 해시에서 파생. tasks는 Task Tree, runbooks는 런북 모아보기 */
+  /** 뷰 모드 — URL 해시에서 파생. runbooks는 런북 모아보기 */
   viewMode: DashboardViewMode;
 
   /** 피드 스크롤 오프셋 (뷰 전환 시 위치 복원용) */

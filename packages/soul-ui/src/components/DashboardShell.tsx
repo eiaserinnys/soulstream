@@ -89,8 +89,6 @@ export interface DashboardShellProps {
   mobileSessionsView?: ReactNode;
   /** 모바일 폴더 탭에서 폴더 선택 후 표시할 세션 목록 뷰 */
   mobileFolderContents?: ReactNode;
-  /** 모바일 Tasks 탭 내용물 */
-  mobileTasksView?: ReactNode;
   /** 모바일 Runbooks 탭 내용물 */
   mobileRunbooksView?: ReactNode;
   /** 모바일 채팅 뷰 내용물. 미지정 시 rightPanel 사용 */
@@ -147,7 +145,6 @@ export function DashboardShell({
   leftSplitStorageKey,
   mobileSessionsView,
   mobileFolderContents,
-  mobileTasksView,
   mobileRunbooksView,
   mobileChatView,
   mobileChatHeader,
@@ -288,8 +285,6 @@ export function DashboardShell({
       useDashboardStore.setState({ selectedFolderId: null });
     } else if (tabId === "runbooks") {
       setViewMode("runbooks");
-    } else if (tabId === "tasks") {
-      setViewMode("tasks");
     }
   }, [setActiveTab, clearSelectedFolder, setViewMode]);
 
@@ -478,10 +473,6 @@ export function DashboardShell({
 
             <TabsPanel value="runbooks" keepMounted className="h-full">
               {mobileRunbooksView ?? centerPanel}
-            </TabsPanel>
-
-            <TabsPanel value="tasks" keepMounted className="h-full">
-              {mobileTasksView ?? centerPanel}
             </TabsPanel>
 
             <TabsPanel value="chat" keepMounted className="h-full flex flex-col">

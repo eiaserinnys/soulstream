@@ -143,7 +143,7 @@ describe("DashboardShell", () => {
     expect(foldersToggle?.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("adds runbooks as a desktop navigation surface without removing tasks", () => {
+  it("adds runbooks as a desktop navigation surface", () => {
     ({ container, root } = renderShell());
 
     const runbooksToggle = container.querySelector<HTMLButtonElement>('[data-testid="left-navigation-runbooks"]');
