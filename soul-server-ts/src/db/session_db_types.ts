@@ -245,6 +245,20 @@ export interface RunbookSnapshot {
   items: RunbookItemRow[];
 }
 
+export interface RunbookListRow {
+  id: string;
+  board_item_id: string;
+  folder_id: string;
+  title: string;
+  archived: boolean;
+  version: number;
+  x: number;
+  y: number;
+  metadata: Record<string, unknown>;
+  created_at: Date;
+  updated_at: Date;
+}
+
 export interface RunbookMyTurnItemRow {
   runbook_id: string;
   runbook_title: string;

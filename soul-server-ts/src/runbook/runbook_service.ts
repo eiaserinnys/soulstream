@@ -43,6 +43,14 @@ export class RunbookService {
     return await this.repo.getSnapshot(runbookId);
   }
 
+  async listRunbooks(params: {
+    folderId: string;
+    includeArchived?: boolean;
+    limit?: number;
+  }) {
+    return await this.repo.listRunbooks(params);
+  }
+
   async listMyTurnItems(params: { userId?: string | null; limit?: number } = {}) {
     return await this.repo.listMyTurnItems(params);
   }
@@ -111,7 +119,7 @@ export class RunbookService {
       runbookId: params.runbookId,
       targetKind: "runbook",
       targetId: params.runbookId,
-      operationType: params.archived ? "archive_runbook" : "update_runbook",
+      operationType: runbookPatchOperationType(params.archived),
       actor: params,
       idempotencyKey: params.idempotencyKey,
       reason: params.reason,
@@ -134,7 +142,7 @@ export class RunbookService {
         }
       },
     });
-    if (params.title !== undefined) {
+    if (params.title !== undefined || params.archived !== undefined) {
       await this.broadcastCatalog();
     }
     return result;
@@ -201,7 +209,7 @@ export class RunbookService {
       runbookId: params.runbookId,
       targetKind: "section",
       targetId: params.sectionId,
-      operationType: params.archived ? "archive_runbook_section" : "update_runbook_section",
+      operationType: sectionPatchOperationType(params.archived),
       actor: params,
       idempotencyKey: params.idempotencyKey,
       reason: params.reason,
@@ -219,6 +227,40 @@ export class RunbookService {
           sql,
           params.sectionId,
           { title: params.title, archived: params.archived, ...assigneeFields },
+          params.expectedVersion,
+          params.actorSessionId,
+          eventId,
+        );
+      },
+    });
+  }
+
+  async setSectionAssignee(params: RunbookActorParams & {
+    runbookId: string;
+    sectionId: string;
+    expectedVersion: number;
+    assignee?: RunbookAssigneeInput | null;
+    reason?: string | null;
+    idempotencyKey?: string | null;
+  }): Promise<RunbookMutationResult> {
+    return await this.core.mutate({
+      runbookId: params.runbookId,
+      targetKind: "section",
+      targetId: params.sectionId,
+      operationType: "set_runbook_section_assignee",
+      actor: params,
+      idempotencyKey: params.idempotencyKey,
+      reason: params.reason,
+      payload: { assignee: params.assignee ?? null },
+      preflight: async (sql) => {
+        await this.repo.assertSectionBelongsToRunbookTx(sql, params.sectionId, params.runbookId);
+        await this.repo.assertSectionVersionTx(sql, params.sectionId, params.expectedVersion);
+      },
+      apply: async (sql, eventId) => {
+        await this.repo.patchSectionTx(
+          sql,
+          params.sectionId,
+          assigneeToFields(params.assignee),
           params.expectedVersion,
           params.actorSessionId,
           eventId,
@@ -330,7 +372,7 @@ export class RunbookService {
       runbookId: params.runbookId,
       targetKind: "item",
       targetId: params.itemId,
-      operationType: params.archived ? "archive_runbook_item" : "update_runbook_item",
+      operationType: itemPatchOperationType(params.archived),
       actor: params,
       idempotencyKey: params.idempotencyKey,
       reason: params.reason,
@@ -349,6 +391,40 @@ export class RunbookService {
           sql,
           params.itemId,
           { title: params.title, how_to: params.howTo, archived: params.archived, ...assigneeFields },
+          params.expectedVersion,
+          params.actorSessionId,
+          eventId,
+        );
+      },
+    });
+  }
+
+  async setItemAssignee(params: RunbookActorParams & {
+    runbookId: string;
+    itemId: string;
+    expectedVersion: number;
+    assignee?: RunbookAssigneeInput | null;
+    reason?: string | null;
+    idempotencyKey?: string | null;
+  }): Promise<RunbookMutationResult> {
+    return await this.core.mutate({
+      runbookId: params.runbookId,
+      targetKind: "item",
+      targetId: params.itemId,
+      operationType: "set_runbook_item_assignee",
+      actor: params,
+      idempotencyKey: params.idempotencyKey,
+      reason: params.reason,
+      payload: { assignee: params.assignee ?? null },
+      preflight: async (sql) => {
+        await this.repo.assertItemBelongsToRunbookTx(sql, params.itemId, params.runbookId);
+        await this.repo.assertItemVersionTx(sql, params.itemId, params.expectedVersion);
+      },
+      apply: async (sql, eventId) => {
+        await this.repo.patchItemTx(
+          sql,
+          params.itemId,
+          assigneeToFields(params.assignee),
           params.expectedVersion,
           params.actorSessionId,
           eventId,
@@ -379,4 +455,22 @@ export class RunbookService {
   }): Promise<RunbookMutationResult> {
     return await this.core.setItemStatus(params);
   }
+}
+
+function runbookPatchOperationType(archived: boolean | undefined): string {
+  if (archived === true) return "archive_runbook";
+  if (archived === false) return "unarchive_runbook";
+  return "update_runbook";
+}
+
+function sectionPatchOperationType(archived: boolean | undefined): string {
+  if (archived === true) return "archive_runbook_section";
+  if (archived === false) return "unarchive_runbook_section";
+  return "update_runbook_section";
+}
+
+function itemPatchOperationType(archived: boolean | undefined): string {
+  if (archived === true) return "archive_runbook_item";
+  if (archived === false) return "unarchive_runbook_item";
+  return "update_runbook_item";
 }

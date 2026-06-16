@@ -89,6 +89,72 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     expect(Number(rows[0]?.y)).toBe(240);
   });
 
+  it("lists runbooks within a folder and filters archived rows by default", async () => {
+    await service.createRunbook({
+      runbookId: "rb-visible",
+      folderId: "folder-1",
+      title: "Visible",
+      x: 40,
+      y: 80,
+      actorSessionId: "sess-actor",
+    });
+    await service.createRunbook({
+      runbookId: "rb-archived",
+      folderId: "folder-1",
+      title: "Archived",
+      x: 20,
+      y: 20,
+      actorSessionId: "sess-actor",
+    });
+    await service.patchRunbook({
+      runbookId: "rb-archived",
+      expectedVersion: 1,
+      archived: true,
+      actorSessionId: "sess-actor",
+    });
+    await harness!.sql`INSERT INTO folders (id, name, sort_order) VALUES ('folder-2', 'Other', 2)`;
+    await service.createRunbook({
+      runbookId: "rb-other",
+      folderId: "folder-2",
+      title: "Other",
+      actorSessionId: "sess-actor",
+    });
+
+    await expect(service.listRunbooks({ folderId: "folder-1" })).resolves.toMatchObject([
+      { id: "rb-visible", folder_id: "folder-1", title: "Visible", archived: false },
+    ]);
+    await expect(service.listRunbooks({
+      folderId: "folder-1",
+      includeArchived: true,
+    })).resolves.toMatchObject([
+      { id: "rb-archived", archived: true },
+      { id: "rb-visible", archived: false },
+    ]);
+  });
+
+  it("records archive and unarchive as symmetric runbook operations", async () => {
+    await seedRunbook();
+
+    const archived = await service.patchRunbook({
+      runbookId: "rb-1",
+      expectedVersion: 1,
+      archived: true,
+      actorSessionId: "sess-actor",
+      idempotencyKey: "runbook:rb-1:archive",
+    });
+    const restored = await service.patchRunbook({
+      runbookId: "rb-1",
+      expectedVersion: 2,
+      archived: false,
+      actorSessionId: "sess-actor",
+      idempotencyKey: "runbook:rb-1:unarchive",
+    });
+
+    expect(archived.operation.operation_type).toBe("archive_runbook");
+    expect(restored.operation.operation_type).toBe("unarchive_runbook");
+    expect(restored.snapshot.runbook.archived).toBe(false);
+  });
+
   it("raises a 409-style RunbookVersionConflict before recording an event", async () => {
     await seedRunbook();
     await service.createSection({
@@ -580,7 +646,7 @@ describePostgres("RunbookService PostgreSQL integration", () => {
       "item-inherited",
     ]);
 
-    await service.patchItem({
+    const reassigned = await service.setItemAssignee({
       runbookId: "rb-1",
       itemId: "item-inherited",
       expectedVersion: 1,
@@ -588,7 +654,42 @@ describePostgres("RunbookService PostgreSQL integration", () => {
       assignee: { kind: "agent", agentId: "agent-1" },
     });
 
+    expect(reassigned.operation.operation_type).toBe("set_runbook_item_assignee");
     expect(await service.listMyTurnItems({ userId: "user-1" })).toEqual([]);
+  });
+
+  it("sets and clears section assignee through a first-class operation", async () => {
+    await seedRunbook();
+    await service.createSection({
+      runbookId: "rb-1",
+      sectionId: "sec-assign",
+      title: "Assign",
+      actorSessionId: "sess-actor",
+    });
+
+    const assigned = await service.setSectionAssignee({
+      runbookId: "rb-1",
+      sectionId: "sec-assign",
+      expectedVersion: 1,
+      actorSessionId: "sess-actor",
+      assignee: { kind: "session", sessionId: "sess-actor" },
+      idempotencyKey: "runbook:rb-1:section:sec-assign:assignee:sess",
+    });
+    const cleared = await service.setSectionAssignee({
+      runbookId: "rb-1",
+      sectionId: "sec-assign",
+      expectedVersion: 2,
+      actorSessionId: "sess-actor",
+      assignee: null,
+      idempotencyKey: "runbook:rb-1:section:sec-assign:assignee:null",
+    });
+
+    expect(assigned.operation.operation_type).toBe("set_runbook_section_assignee");
+    expect(cleared.snapshot.sections.find((section) => section.id === "sec-assign")).toMatchObject({
+      assignee_kind: null,
+      assignee_session_id: null,
+      version: 3,
+    });
   });
 
   async function seedRunbook(): Promise<void> {
