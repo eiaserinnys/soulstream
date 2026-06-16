@@ -106,6 +106,14 @@ export const EnvSchema = z
       .default("false")
       .transform((v) => v === "true"),
     /**
+     * Runbook backend surface. PR-2 keeps this disabled by default while the
+     * wire/MCP/UI layers land in later PRs.
+     */
+    RUNBOOK_ENABLED: z
+      .union([z.literal("true"), z.literal("false")])
+      .default("false")
+      .transform((v) => v === "true"),
+    /**
      * MCP HTTP 라우트 path. POST/GET/DELETE 모두 같은 경로 (Streamable HTTP 스펙).
      */
     MCP_PATH: z.string().default("/mcp"),
