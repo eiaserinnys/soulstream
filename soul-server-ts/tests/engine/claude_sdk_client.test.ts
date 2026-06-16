@@ -18,6 +18,8 @@ import {
   type ClaudeSdkQueryParams,
 } from "../../src/engine/claude_sdk_client.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_event_mapper.js";
+import { ClaudeSdkEventMapper } from "../../src/engine/claude_sdk_event_mapper.js";
+import { ClaudeRuntimeState } from "../../src/engine/claude_sdk_runtime_state.js";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -172,6 +174,31 @@ describe("ClaudeSdkClient", () => {
       result: "done",
       claudeSessionId: "claude-sess-1",
     });
+  });
+
+  it("dedupes uuid-less SDK messages by role and content hash", () => {
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+    const message = {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "same resumed message" }],
+      },
+      parent_tool_use_id: null,
+      session_id: "claude-sess-1",
+    } as unknown as SDKMessage;
+
+    const first = mapper.mapSdkMessage(message)[0] as ClaudeClientEvent & {
+      sdkDedupeKey?: string;
+    };
+    const second = mapper.mapSdkMessage(message)[0] as ClaudeClientEvent & {
+      sdkDedupeKey?: string;
+    };
+
+    expect(first.sdkDedupeKey).toMatch(
+      /^claude-sdk:assistant:content:assistant:[a-f0-9]{32}:0$/,
+    );
+    expect(second.sdkDedupeKey).toBe(first.sdkDedupeKey);
   });
 
   it("omits SDK env options when run options omit env so the SDK can default to process.env", async () => {

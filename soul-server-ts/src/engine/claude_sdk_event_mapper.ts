@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
@@ -389,15 +389,47 @@ export class ClaudeSdkEventMapper {
     events: ClaudeClientEvent[],
     message: Record<string, unknown>,
   ): ClaudeClientEvent[] {
-    const uuid =
+    const messageType = asString(message.type) ?? "message";
+    const identity =
       asString(message.uuid) ??
       asString(message.message_id) ??
-      asString(asRecord(message.message)?.id);
-    if (!uuid) return events;
-    const messageType = asString(message.type) ?? "message";
+      asString(asRecord(message.message)?.id) ??
+      fallbackSdkMessageIdentity(message);
     return events.map((event, index) => ({
       ...event,
-      sdkDedupeKey: `claude-sdk:${messageType}:${uuid}:${index}`,
+      sdkDedupeKey: `claude-sdk:${messageType}:${identity}:${index}`,
     }) as unknown as ClaudeClientEvent);
   }
+}
+
+function fallbackSdkMessageIdentity(message: Record<string, unknown>): string {
+  const nestedMessage = asRecord(message.message);
+  const role =
+    asString(nestedMessage?.role) ??
+    asString(message.role) ??
+    asString(message.type) ??
+    "message";
+  const content = nestedMessage?.content ?? message.content ?? message;
+  const hash = createHash("sha256")
+    .update(canonicalJson({ role, content }))
+    .digest("hex")
+    .slice(0, 32);
+  return `content:${role}:${hash}`;
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === undefined) {
+    return "undefined";
+  }
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value) ?? String(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  }
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+    .join(",")}}`;
 }
