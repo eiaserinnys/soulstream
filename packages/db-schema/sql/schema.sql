@@ -2545,8 +2545,7 @@ ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT
 -- Runbooks: collaborative checklist state and append-only provenance.
 CREATE TABLE IF NOT EXISTS runbooks (
     id                 TEXT PRIMARY KEY,
-    board_item_id      TEXT NOT NULL REFERENCES board_items(id) ON DELETE CASCADE,
-    session_id         TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    board_item_id      TEXT NOT NULL REFERENCES board_items(id) ON DELETE CASCADE, -- 자기 자신의 item_type='runbook' board_item 1:1
     title              TEXT NOT NULL DEFAULT '',
     archived           BOOLEAN NOT NULL DEFAULT FALSE,
     version            INTEGER NOT NULL DEFAULT 1,
@@ -2565,6 +2564,10 @@ CREATE TABLE IF NOT EXISTS runbook_sections (
     runbook_id         TEXT NOT NULL REFERENCES runbooks(id) ON DELETE CASCADE,
     position_key       TEXT NOT NULL,
     title              TEXT NOT NULL,
+    assignee_kind      TEXT CHECK (assignee_kind IN ('agent','human','session')),
+    assignee_agent_id  TEXT,
+    assignee_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    assignee_user_id   TEXT,
     archived           BOOLEAN NOT NULL DEFAULT FALSE,
     version            INTEGER NOT NULL DEFAULT 1,
     created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
@@ -2588,8 +2591,10 @@ CREATE TABLE IF NOT EXISTS runbook_items (
     position_key         TEXT NOT NULL,
     title                TEXT NOT NULL,
     how_to               TEXT NOT NULL DEFAULT '',
-    owner_kind           TEXT NOT NULL DEFAULT 'agent' CHECK (owner_kind IN ('agent','human')),
-    owner_agent_id       TEXT,
+    assignee_kind        TEXT CHECK (assignee_kind IN ('agent','human','session')),
+    assignee_agent_id    TEXT,
+    assignee_session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    assignee_user_id     TEXT,
     status               TEXT NOT NULL DEFAULT 'pending'
                            CHECK (status IN ('pending','in_progress','completed','cancelled')),
     archived             BOOLEAN NOT NULL DEFAULT FALSE,
@@ -2616,9 +2621,11 @@ CREATE TABLE IF NOT EXISTS runbook_items (
 CREATE INDEX IF NOT EXISTS idx_runbook_items_section
     ON runbook_items(section_id, position_key);
 
-CREATE INDEX IF NOT EXISTS idx_runbook_items_blocked_on_human
+-- "내 차례"는 유효 담당(항목 own, 없으면 섹션 상속)이 human이고 미완·미취소.
+-- 상속 케이스는 부분 인덱스로 못 잡으므로 조회 시 항목⨝섹션으로 해석한다.
+CREATE INDEX IF NOT EXISTS idx_runbook_items_human_self
     ON runbook_items(section_id)
-    WHERE owner_kind = 'human'
+    WHERE assignee_kind = 'human'
       AND status NOT IN ('completed','cancelled')
       AND archived = FALSE;
 
