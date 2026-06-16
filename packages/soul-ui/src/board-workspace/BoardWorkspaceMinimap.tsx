@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 
 import { Button } from "../components/ui/button";
+import { useGlassSurface } from "../components/LiquidGlassProvider";
 import { cn } from "../lib/cn";
 import { useLiquidLens } from "../lib/liquid-lens";
 import {
@@ -82,7 +83,8 @@ export function BoardWorkspaceMinimap({
   const [dragging, setDragging] = useState(false);
   const projection = useMemo(() => buildProjection(boardItems, viewport, zoom), [boardItems, viewport, zoom]);
   const viewportMiniRect = projectRect(projection.viewportRect, projection);
-  useLiquidLens(capsuleRef, { scale: 18 });
+  const webglActive = useGlassSurface(capsuleRef, { enabled: true });
+  useLiquidLens(capsuleRef, { scale: 18, enabled: !webglActive });
 
   const moveFromPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -99,6 +101,7 @@ export function BoardWorkspaceMinimap({
       <div
         ref={capsuleRef}
         className="pointer-events-auto absolute bottom-3 right-3 z-40 flex items-center gap-2 rounded-full border border-glass-border glass-strong glass-shadow-xs lg-rim px-2 py-1"
+        data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >
         <span data-testid="board-zoom-indicator" className="min-w-11 text-center text-xs font-medium text-muted-foreground">
           {formatBoardZoom(zoom)}
@@ -122,6 +125,7 @@ export function BoardWorkspaceMinimap({
     <div
       ref={capsuleRef}
       className="pointer-events-auto absolute bottom-3 right-3 z-40 rounded-[14px] border border-glass-border glass-strong glass-shadow-md lg-rim p-2"
+      data-liquid-glass-webgl={webglActive ? "true" : undefined}
     >
       <div className="mb-1 flex items-center justify-between gap-2">
         <span data-testid="board-zoom-indicator" className="text-xs font-medium text-muted-foreground">

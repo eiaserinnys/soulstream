@@ -116,6 +116,7 @@ function SheetPopup({
           style={popupStyle}
           {...props}
         >
+          {/* Overlay glass stays CSS/backdrop based: the shared WebGL canvas samples wallpaper only, not content behind modal z-layers. */}
           <LiquidGlassLayer cornerRadius={24} enhanced={enhanced} />
           {children}
           {showCloseButton && (

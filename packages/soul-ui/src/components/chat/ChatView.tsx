@@ -40,6 +40,7 @@ import {
 import { ChatRuntimeCompactStrips } from "./ChatRuntimeCompactStrips";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { CHAT_STATUS_TONE_CONFIG } from "./chat-tone-config";
+import { useGlassSurface } from "../LiquidGlassProvider";
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
@@ -101,6 +102,8 @@ export function ChatView({
 
   // === Follow mode ===
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const headerWebglActive = useGlassSurface(headerRef, { enabled: showHeader });
   /**
    * virtuoso 내부 스크롤러 DOM 레퍼런스. `itemsRendered` 콜백에서 포커스 타겟을
    * 찾을 때 `document.querySelector` 전역 쿼리 대신 이 범위로 한정한다.
@@ -286,7 +289,11 @@ export function ChatView({
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3">
       {showHeader && (
-        <div className="relative mb-3 flex h-[50px] shrink-0 items-center gap-2.5 rounded-full border border-glass-border glass-strong glass-shadow-xs px-4">
+        <div
+          ref={headerRef}
+          className="relative mb-3 flex h-[50px] shrink-0 items-center gap-2.5 rounded-full border border-glass-border glass-strong glass-shadow-xs px-4"
+          data-liquid-glass-webgl={headerWebglActive ? "true" : undefined}
+        >
           <ProfileAvatar
             role="assistant"
             hasPortrait={!!activeSessionSummary?.agentPortraitUrl}

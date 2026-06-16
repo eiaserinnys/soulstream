@@ -33,6 +33,7 @@ import { createEventProcessingSlice } from "./slices/event-processing-slice";
 import { createOptimisticSessionSlice } from "./slices/optimistic-session-slice";
 import { createPromptSuggestionSlice } from "./slices/prompt-suggestion-slice";
 import { createWallpaperSlice } from "./slices/wallpaper-slice";
+import { createLiquidGlassSlice } from "./slices/liquid-glass-slice";
 
 // === Re-exports for backward compatibility ===
 
@@ -101,6 +102,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         ...createOptimisticSessionSlice(set, get, store),
         ...createPromptSuggestionSlice(set, get, store),
         ...createWallpaperSlice(set, get, store),
+        ...createLiquidGlassSlice(set, get, store),
       };
 
       // 초기 state 스냅샷 (모든 slice의 초기 필드 값) — reset의 정본.

@@ -15,12 +15,13 @@ import { isChromiumLensRuntime } from "../lib/liquid-lens";
 import {
   createGlassSurfaceBuffer,
   packVisibleGlassSurfaces,
-  readWebglGlassEnabled,
+  readWebglGlassOverride,
   WEBGL_GLASS_CHANGE_EVENT,
   type GlassSurfaceRef,
   type GlassSurfaceRegistration,
   type WebglGlassStats,
 } from "../lib/webgl-glass";
+import { normalizeLiquidGlassSettings } from "../lib/glass-settings";
 import { createWebglGlassRenderer, type WebglGlassRenderer } from "../lib/webgl-glass-renderer";
 import {
   loadWallpaperPhotoImage,
@@ -30,6 +31,7 @@ import { useDashboardStore } from "../stores/dashboard-store";
 
 const REDUCED_TRANSPARENCY_QUERY = "(prefers-reduced-transparency: reduce)";
 const TOGGLE_POLL_MS = 700;
+const GLASS_TINT_CSS_VAR = "--liquid-glass-tint-strength";
 
 interface LiquidGlassRegistryContextValue {
   enabled: boolean;
@@ -52,16 +54,20 @@ export function LiquidGlassProvider({ children }: { children: ReactNode }) {
     overflowCount: 0,
     cappedAt: rectBufferRef.current.length / 4,
   });
-  const [preferenceEnabled, setPreferenceEnabled] = useState(() => readWebglGlassEnabled());
+  const [devOverride, setDevOverride] = useState<boolean | null>(() => readWebglGlassOverride());
   const [runtimeAvailable, setRuntimeAvailable] = useState(false);
   const [rendererReady, setRendererReady] = useState(false);
   const [theme] = useTheme();
   const wallpaper = useDashboardStore((state) => state.wallpaper);
+  const liquidGlass = useDashboardStore((state) => state.liquidGlass);
+  const glassSettings = useMemo(() => normalizeLiquidGlassSettings(liquidGlass), [liquidGlass]);
+  const glassSettingsRef = useRef(glassSettings);
+  const preferenceEnabled = devOverride ?? glassSettings.enabled;
   const shouldMountCanvas = preferenceEnabled && runtimeAvailable;
   const enabled = shouldMountCanvas && rendererReady;
 
   useEffect(() => {
-    const syncPreference = () => setPreferenceEnabled(readWebglGlassEnabled());
+    const syncPreference = () => setDevOverride(readWebglGlassOverride());
     const interval = window.setInterval(syncPreference, TOGGLE_POLL_MS);
     window.addEventListener("storage", syncPreference);
     window.addEventListener(WEBGL_GLASS_CHANGE_EVENT, syncPreference);
@@ -76,7 +82,6 @@ export function LiquidGlassProvider({ children }: { children: ReactNode }) {
     const media = getReducedTransparencyMatcher();
     const syncRuntime = () => {
       setRuntimeAvailable(
-        preferenceEnabled &&
         isChromiumLensRuntime() &&
         !isReducedTransparencyPreferred(media) &&
         hasWebgl2Context(),
@@ -85,7 +90,15 @@ export function LiquidGlassProvider({ children }: { children: ReactNode }) {
     syncRuntime();
     media?.addEventListener?.("change", syncRuntime);
     return () => media?.removeEventListener?.("change", syncRuntime);
-  }, [preferenceEnabled]);
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    document.documentElement.style.setProperty(GLASS_TINT_CSS_VAR, String(glassSettings.tint));
+    return () => {
+      document.documentElement.style.removeProperty(GLASS_TINT_CSS_VAR);
+    };
+  }, [glassSettings.tint]);
 
   const register = useCallback((ref: GlassSurfaceRef) => {
     const id = ++nextIdRef.current;
@@ -116,6 +129,7 @@ export function LiquidGlassProvider({ children }: { children: ReactNode }) {
       return undefined;
     }
     rendererRef.current = renderer;
+    renderer.updateSettings(glassSettingsRef.current);
     setRendererReady(true);
 
     let animationFrame = 0;
@@ -157,6 +171,11 @@ export function LiquidGlassProvider({ children }: { children: ReactNode }) {
       setRendererReady(false);
     };
   }, [shouldMountCanvas]);
+
+  useEffect(() => {
+    glassSettingsRef.current = glassSettings;
+    rendererRef.current?.updateSettings(glassSettings);
+  }, [glassSettings]);
 
   useEffect(() => {
     if (!rendererReady || !rendererRef.current) return undefined;

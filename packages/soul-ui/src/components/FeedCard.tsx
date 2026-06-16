@@ -160,29 +160,12 @@ export const FeedCard = memo(function FeedCard({
     </>
   );
 
-  if (variant === "card") {
-    return (
-      <LiquidGlassCard
-        ref={setNodeRef}
-        {...attributes}
-        {...listeners}
-        webglSurface
-        className={rootClassName}
-        onClick={handleClick}
-        onDoubleClick={handleDoubleClick}
-        onContextMenu={handleContextMenu}
-        data-session-id={session.agentSessionId}
-      >
-        {content}
-      </LiquidGlassCard>
-    );
-  }
-
   return (
-    <div
+    <LiquidGlassCard
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      webglSurface
       className={rootClassName}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
@@ -190,6 +173,6 @@ export const FeedCard = memo(function FeedCard({
       data-session-id={session.agentSessionId}
     >
       {content}
-    </div>
+    </LiquidGlassCard>
   );
 });

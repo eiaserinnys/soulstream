@@ -12,6 +12,21 @@ from soulstream_server.users import validate_user_email
 
 ALLOWED_APPEARANCES = frozenset({"system", "light", "dark"})
 ALLOWED_WALLPAPER_MODES = frozenset({"bokeh", "metal", "photo", "plain"})
+DEFAULT_GLASS_SETTINGS: dict[str, Any] = {
+    "enabled": True,
+    "refraction": 75,
+    "blur": 5,
+    "chromatic": 0.8,
+    "specular": 0.25,
+    "tint": 0.42,
+}
+GLASS_NUMERIC_LIMITS = {
+    "refraction": (0, 90),
+    "blur": (0, 8),
+    "chromatic": (0, 2.5),
+    "specular": (0, 1.5),
+    "tint": (0, 1),
+}
 ALLOWED_BACKGROUND_MIME_TYPES = frozenset({
     "image/png",
     "image/jpeg",
@@ -23,6 +38,7 @@ MAX_BACKGROUND_BYTES = 5 * 1024 * 1024
 DEFAULT_USER_PREFERENCES: dict[str, Any] = {
     "appearance": "system",
     "wallpaper": {"mode": "bokeh"},
+    "glass": DEFAULT_GLASS_SETTINGS,
 }
 
 USER_PREFERENCES_SCHEMA_SQL = """
@@ -38,6 +54,8 @@ ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS prefs JSONB NOT NULL DEFAU
 ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS background_blob BYTEA;
 ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS background_mime TEXT;
 ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+COMMENT ON COLUMN user_preferences.prefs IS
+    'Dashboard preferences JSON: appearance, wallpaper, and liquid glass settings.';
 """
 
 
@@ -98,6 +116,7 @@ def normalize_user_preferences(value: Any) -> dict[str, Any]:
     return {
         "appearance": appearance,
         "wallpaper": normalized_wallpaper,
+        "glass": _normalize_glass_settings(source.get("glass")),
     }
 
 
@@ -106,10 +125,36 @@ def preferences_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     nested = payload.get("prefs")
     if isinstance(nested, dict):
         prefs.update(nested)
-    for key in ("appearance", "wallpaper"):
+    for key in ("appearance", "wallpaper", "glass"):
         if key in payload:
             prefs[key] = payload[key]
     return normalize_user_preferences(prefs)
+
+
+def _normalize_glass_settings(value: Any) -> dict[str, Any]:
+    source = value if isinstance(value, dict) else {}
+    normalized = dict(DEFAULT_GLASS_SETTINGS)
+    enabled = source.get("enabled")
+    if isinstance(enabled, bool):
+        normalized["enabled"] = enabled
+    for key, (minimum, maximum) in GLASS_NUMERIC_LIMITS.items():
+        normalized[key] = _number_in_range(source.get(key), minimum, maximum, DEFAULT_GLASS_SETTINGS[key])
+    return normalized
+
+
+def _number_in_range(value: Any, minimum: float, maximum: float, fallback: float) -> float:
+    if isinstance(value, bool):
+        return fallback
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    if not numeric == numeric:
+        return fallback
+    clipped = min(maximum, max(minimum, numeric))
+    if isinstance(fallback, int) and clipped.is_integer():
+        return int(clipped)
+    return clipped
 
 
 def validate_background_mime(value: str | None) -> str:

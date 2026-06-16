@@ -1,12 +1,15 @@
-import { memo } from "react";
+import { memo, useRef } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { MarkdownContent } from "../MarkdownContent";
+import { useGlassSurface } from "../LiquidGlassProvider";
 import type { LlmContext } from "./hooks";
 
 /** text 노드: 일반 텍스트 표시 */
 export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext }: { msg: ChatMessage; llmContext?: LlmContext }) {
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const webglActive = useGlassSurface(bubbleRef, { enabled: true });
   const activeSession = useDashboardStore((s) => s.activeSessionSummary);
 
   // 세션에 바인딩된 에이전트 정보
@@ -35,7 +38,11 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
         fallbackEmoji={"\u{1F916}"}
         portraitUrl={agentPortraitUrl}
       />
-      <div className="max-w-[86%] rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]">
+      <div
+        ref={bubbleRef}
+        className="max-w-[86%] rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]"
+        data-liquid-glass-webgl={webglActive ? "true" : undefined}
+      >
         <div className="mb-1 flex items-baseline gap-1.5">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             {displayName}

@@ -13,6 +13,7 @@ let defsElement: SVGDefsElement | null = null;
 
 export interface LiquidLensOptions {
   scale?: number;
+  enabled?: boolean;
 }
 
 export interface LiquidLensMapSize {
@@ -274,7 +275,7 @@ export function useLiquidLens(
 
     const run = () => {
       timeout = null;
-      if (prefersReducedTransparency() || !isChromiumLensRuntime()) {
+      if (options.enabled === false || prefersReducedTransparency() || !isChromiumLensRuntime()) {
         cleanupLiquidLens(element);
         return;
       }
@@ -299,5 +300,5 @@ export function useLiquidLens(
       media?.removeEventListener?.("change", schedule);
       cleanupLiquidLens(element);
     };
-  }, [ref, options.scale]);
+  }, [ref, options.enabled, options.scale]);
 }

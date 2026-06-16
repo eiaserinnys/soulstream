@@ -32,9 +32,11 @@ import { SettingFieldWidget } from "./config/SettingFieldWidget";
 import { ConfigCategoryNav } from "./config/ConfigCategoryNav";
 import { ConfigResultMessage } from "./config/ConfigResultMessage";
 import { useConfigSettings } from "../hooks/useConfigSettings";
+import { LiquidGlassTab } from "./LiquidGlassTab";
 
 const CLAUDE_AUTH_TAB_NAME = "claude_auth";
 const CLAUDE_AUTH_TAB_LABEL = "Claude Code 인증";
+const LIQUID_GLASS_TAB_NAME = "liquid_glass";
 const NODES_TAB_NAME = "nodes";
 const USERS_TAB_NAME = "users";
 
@@ -63,15 +65,20 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
 
   const [selectedTab, setSelectedTab] = useState<string>("");
   const extraTabs = useMemo(() => {
+    const glassTab = { name: LIQUID_GLASS_TAB_NAME, label: "리퀴드 글래스" };
     if (config.mode === "orchestrator") {
       return [
+        glassTab,
         { name: NODES_TAB_NAME, label: "노드" },
         ...(user?.isAdmin ? [{ name: USERS_TAB_NAME, label: "사용자" }] : []),
       ];
     }
-    return showClaudeAuthTab
-      ? [{ name: CLAUDE_AUTH_TAB_NAME, label: CLAUDE_AUTH_TAB_LABEL }]
-      : [];
+    return [
+      glassTab,
+      ...(showClaudeAuthTab
+        ? [{ name: CLAUDE_AUTH_TAB_NAME, label: CLAUDE_AUTH_TAB_LABEL }]
+        : []),
+    ];
   }, [config.mode, showClaudeAuthTab, user?.isAdmin]);
 
   // 카테고리 로드 시 첫 탭 선택. 모달을 닫으면 다음 오픈 시 재선택되도록 리셋.
@@ -86,7 +93,10 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
   }, [open]);
 
   const activeCategory = categories.find((c) => c.name === selectedTab);
-  const isOperationalTab = selectedTab === NODES_TAB_NAME || selectedTab === USERS_TAB_NAME;
+  const isNonConfigTab =
+    selectedTab === LIQUID_GLASS_TAB_NAME ||
+    selectedTab === NODES_TAB_NAME ||
+    selectedTab === USERS_TAB_NAME;
   const hasTabs = categories.length > 0 || extraTabs.length > 0;
 
   return (
@@ -121,6 +131,8 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
               />
               {selectedTab === CLAUDE_AUTH_TAB_NAME ? (
                 <ClaudeAuthTab />
+              ) : selectedTab === LIQUID_GLASS_TAB_NAME ? (
+                <LiquidGlassTab />
               ) : selectedTab === NODES_TAB_NAME ? (
                 <div className="h-[420px] overflow-hidden rounded border border-border">
                   <NodePanel />
@@ -153,7 +165,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
               <Button
                 data-testid="config-save-button"
                 size="sm"
-                disabled={isOperationalTab || !hasChanges || saving}
+                disabled={isNonConfigTab || !hasChanges || saving}
                 onClick={save}
               >
                 {saving ? "저장 중..." : `저장${hasChanges ? ` (${changedKeys.length})` : ""}`}

@@ -1,4 +1,9 @@
 import { calculateBackingDpr, type PackedGlassSurfaces } from "./webgl-glass";
+import {
+  DEFAULT_LIQUID_GLASS_SETTINGS,
+  normalizeLiquidGlassSettings,
+  type LiquidGlassSettings,
+} from "./glass-settings";
 import { WEBGL_GLASS_FRAGMENT_SHADER, WEBGL_GLASS_VERTEX_SHADER } from "./webgl-glass-shaders";
 import {
   drawDashboardWallpaper,
@@ -6,10 +11,6 @@ import {
 } from "./webgl-glass-wallpaper";
 
 const DEFAULT_RADIUS = 22;
-const DEFAULT_SCALE = 75;
-const DEFAULT_BLUR = 5;
-const DEFAULT_AB = 0.8;
-const DEFAULT_RIM = 0.25;
 const MAX_TEXTURE_SIDE = 4096;
 
 interface Uniforms {
@@ -28,6 +29,7 @@ interface Uniforms {
 
 export interface WebglGlassRenderer {
   resize(): boolean;
+  updateSettings(settings: LiquidGlassSettings): void;
   updateWallpaper(input: Omit<WallpaperRenderInput, "width" | "height">): void;
   render(packed: PackedGlassSurfaces): void;
   destroy(): void;
@@ -54,6 +56,7 @@ export function createWebglGlassRenderer(canvas: HTMLCanvasElement): WebglGlassR
 
   let dpr = 1.5;
   let lastWallpaper: Omit<WallpaperRenderInput, "width" | "height"> | null = null;
+  let glassSettings = DEFAULT_LIQUID_GLASS_SETTINGS;
 
   const renderer: WebglGlassRenderer = {
     resize() {
@@ -69,6 +72,9 @@ export function createWebglGlassRenderer(canvas: HTMLCanvasElement): WebglGlassR
       if (lastWallpaper) uploadWallpaperTexture(gl, bgTexture, lastWallpaper, width, height);
       return true;
     },
+    updateSettings(settings) {
+      glassSettings = normalizeLiquidGlassSettings(settings);
+    },
     updateWallpaper(input) {
       lastWallpaper = input;
       uploadWallpaperTexture(gl, bgTexture, input, canvas.width || 1, canvas.height || 1);
@@ -83,10 +89,10 @@ export function createWebglGlassRenderer(canvas: HTMLCanvasElement): WebglGlassR
       gl.uniform1i(uniforms.uCount, packed.count);
       gl.uniform4fv(uniforms.uCards, packed.rects);
       gl.uniform1f(uniforms.uRadius, DEFAULT_RADIUS);
-      gl.uniform1f(uniforms.uScale, DEFAULT_SCALE);
-      gl.uniform1f(uniforms.uBlur, DEFAULT_BLUR);
-      gl.uniform1f(uniforms.uAb, DEFAULT_AB);
-      gl.uniform1f(uniforms.uRim, DEFAULT_RIM);
+      gl.uniform1f(uniforms.uScale, glassSettings.refraction);
+      gl.uniform1f(uniforms.uBlur, glassSettings.blur);
+      gl.uniform1f(uniforms.uAb, glassSettings.chromatic);
+      gl.uniform1f(uniforms.uRim, glassSettings.specular);
       gl.uniform1f(uniforms.uGlass, 1);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     },

@@ -3,11 +3,17 @@ import {
   normalizeWallpaperSettings,
   type WallpaperSettings,
 } from "./wallpaper-settings";
+import {
+  DEFAULT_LIQUID_GLASS_SETTINGS,
+  normalizeLiquidGlassSettings,
+  type LiquidGlassSettings,
+} from "./glass-settings";
 import type { Appearance } from "../hooks/useTheme";
 
 export interface UserPreferencesSnapshot {
   appearance: Appearance;
   wallpaper: WallpaperSettings;
+  glass: LiquidGlassSettings;
 }
 
 export interface UserPreferencesResponse extends UserPreferencesSnapshot {
@@ -21,6 +27,7 @@ export interface UserPreferencesResponse extends UserPreferencesSnapshot {
 export const DEFAULT_USER_PREFERENCES: UserPreferencesSnapshot = {
   appearance: "system",
   wallpaper: DEFAULT_WALLPAPER_SETTINGS,
+  glass: DEFAULT_LIQUID_GLASS_SETTINGS,
 };
 
 const CACHE_PREFIX = "soul-user-preferences:";
@@ -32,6 +39,7 @@ export function normalizeUserPreferences(value: unknown): UserPreferencesSnapsho
   return {
     appearance: APPEARANCES.has(source.appearance as Appearance) ? source.appearance as Appearance : "system",
     wallpaper: normalizeWallpaperSettings(source.wallpaper),
+    glass: normalizeLiquidGlassSettings(source.glass),
   };
 }
 
@@ -43,6 +51,7 @@ export function normalizeUserPreferencesResponse(value: unknown): UserPreference
     preferences,
     appearance: preferences.appearance,
     wallpaper: preferences.wallpaper,
+    glass: preferences.glass,
     hasBackground: Boolean(source.hasBackground),
     backgroundUrl: typeof source.backgroundUrl === "string" ? source.backgroundUrl : null,
     updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : null,

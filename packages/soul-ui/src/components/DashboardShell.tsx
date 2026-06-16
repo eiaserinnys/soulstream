@@ -17,7 +17,7 @@ import { VerticalSplitPane } from "./VerticalSplitPane";
 import { Tabs, TabsPanel } from "./ui/tabs";
 import { FolderStack } from "./dashboard/FolderStack";
 import { WallpaperLayer } from "./WallpaperLayer";
-import { LiquidGlassProvider } from "./LiquidGlassProvider";
+import { LiquidGlassProvider, useGlassSurface } from "./LiquidGlassProvider";
 import { useIsMobile } from "../hooks/use-mobile";
 import { useDashboardStore, type MobileTab } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
@@ -158,11 +158,16 @@ export function DashboardShell({
   const statusCapsuleRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const rightPanelRef = useRef<HTMLElement>(null);
-  useLiquidLens(brandCapsuleRef, { scale: 48 });
-  useLiquidLens(searchCapsuleRef, { scale: 48 });
-  useLiquidLens(statusCapsuleRef, { scale: 48 });
-  useLiquidLens(sidebarRef, { scale: 64 });
-  useLiquidLens(rightPanelRef, { scale: 64 });
+  const brandWebglActive = useGlassSurface(brandCapsuleRef, { enabled: true });
+  const searchWebglActive = useGlassSurface(searchCapsuleRef, { enabled: true });
+  const statusWebglActive = useGlassSurface(statusCapsuleRef, { enabled: true });
+  const sidebarWebglActive = useGlassSurface(sidebarRef, { enabled: true });
+  const rightPanelWebglActive = useGlassSurface(rightPanelRef, { enabled: true });
+  useLiquidLens(brandCapsuleRef, { scale: 48, enabled: !brandWebglActive });
+  useLiquidLens(searchCapsuleRef, { scale: 48, enabled: !searchWebglActive });
+  useLiquidLens(statusCapsuleRef, { scale: 48, enabled: !statusWebglActive });
+  useLiquidLens(sidebarRef, { scale: 64, enabled: !sidebarWebglActive });
+  useLiquidLens(rightPanelRef, { scale: 64, enabled: !rightPanelWebglActive });
 
   const handleRightDrag = useCallback(
     (delta: number) => {
@@ -374,6 +379,7 @@ export function DashboardShell({
             <div
               ref={brandCapsuleRef}
               className="dashboard-toolbar-cap dashboard-toolbar-brand border border-glass-border glass-strong glass-chrome lg-rim"
+              data-liquid-glass-webgl={brandWebglActive ? "true" : undefined}
             >
               <span aria-hidden="true" className="dashboard-brand-orb" />
               <span className="font-semibold text-foreground">Soulstream</span>
@@ -382,6 +388,7 @@ export function DashboardShell({
               ref={searchCapsuleRef}
               type="button"
               className="dashboard-toolbar-cap dashboard-toolbar-search border border-glass-border glass-strong glass-chrome lg-rim"
+              data-liquid-glass-webgl={searchWebglActive ? "true" : undefined}
               onClick={onSearchClick}
               disabled={!onSearchClick}
               aria-label="Open session search"
@@ -396,6 +403,7 @@ export function DashboardShell({
                 <div
                   ref={statusCapsuleRef}
                   className="dashboard-toolbar-cap border border-glass-border glass-strong glass-chrome lg-rim"
+                  data-liquid-glass-webgl={statusWebglActive ? "true" : undefined}
                 >
                   <ConnectionBadge status={connectionStatus} />
                 </div>
@@ -484,6 +492,7 @@ export function DashboardShell({
             data-testid="session-panel"
             data-collapsed={isLeftSidebarCollapsed ? "true" : "false"}
             className="dashboard-floating-sidebar border border-glass-border glass-strong glass-chrome lg-rim"
+            data-liquid-glass-webgl={sidebarWebglActive ? "true" : undefined}
             style={{ width: visibleLeftSidebarWidth }}
           >
             {isLeftSidebarCollapsed ? (
@@ -546,6 +555,7 @@ export function DashboardShell({
               ref={rightPanelRef}
               data-testid="detail-panel"
               className="dashboard-chat-panel overflow-hidden border border-glass-border glass-strong glass-chrome lg-rim"
+              data-liquid-glass-webgl={rightPanelWebglActive ? "true" : undefined}
               style={{ width: `${rightPercent}%` }}
             >
               {rightPanel}
