@@ -362,6 +362,67 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     });
   });
 
+  it("records user completion attribution and replays duplicate status idempotency keys", async () => {
+    await seedRunbookWithItem();
+    emitRunbookUpdated.mockClear();
+
+    const first = await service.setItemStatus({
+      itemId: "item-1",
+      expectedVersion: 1,
+      status: "completed",
+      actorKind: "user",
+      actorSessionId: "sess-actor",
+      actorUserId: "operator@example.com",
+      idempotencyKey: "runbook:rb-1:item:item-1:status:completed:v1:user",
+    });
+    const second = await service.setItemStatus({
+      itemId: "item-1",
+      expectedVersion: 1,
+      status: "completed",
+      actorKind: "user",
+      actorSessionId: "sess-actor",
+      actorUserId: "operator@example.com",
+      idempotencyKey: "runbook:rb-1:item:item-1:status:completed:v1:user",
+    });
+
+    const rows = await harness!.sql<Array<{
+      status: string;
+      completed_kind: string | null;
+      completed_session_id: string | null;
+      completed_event_id: number | null;
+      completed_user_id: string | null;
+      operation_count: string | number;
+    }>>`
+      SELECT
+        i.status,
+        i.completed_kind,
+        i.completed_session_id,
+        i.completed_event_id,
+        i.completed_user_id,
+        (
+          SELECT COUNT(*)
+          FROM runbook_operations
+          WHERE operation_type = 'set_item_status'
+        ) AS operation_count
+      FROM runbook_items i
+      WHERE i.id = 'item-1'
+    `;
+
+    expect(first.operation.operation_type).toBe("set_item_status");
+    expect(second.idempotent).toBe(true);
+    expect(second.operation.id).toBe(first.operation.id);
+    expect(second.eventId).toBe(first.eventId);
+    expect(rows[0]).toMatchObject({
+      status: "completed",
+      completed_kind: "user",
+      completed_session_id: "sess-actor",
+      completed_event_id: expect.any(Number),
+      completed_user_id: "operator@example.com",
+    });
+    expect(Number(rows[0]?.operation_count)).toBe(1);
+    expect(emitRunbookUpdated).toHaveBeenCalledTimes(1);
+  });
+
   it("derives human-turn items through item own assignee or section inheritance", async () => {
     await seedRunbook();
     await service.createSection({

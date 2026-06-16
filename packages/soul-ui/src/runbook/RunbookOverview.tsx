@@ -110,9 +110,6 @@ function MyTurnItemButton({
           <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
             {assigneeLabel(item)}
           </Badge>
-          <Badge variant="outline" size="sm" className="h-5 px-1.5 text-[10px]">
-            PR-3b 대기
-          </Badge>
         </span>
       </span>
       <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-accent-blue transition-transform group-hover:translate-x-0.5" />

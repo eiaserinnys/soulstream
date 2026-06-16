@@ -92,6 +92,39 @@ describe("runbook-store", () => {
     expect(useRunbookStore.getState().overview.snapshot?.my_turn_items).toHaveLength(1);
   });
 
+  it("posts item status mutations with credentials and stores the returned projection", async () => {
+    const nextSnapshot = snapshot("After status");
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({
+      ok: true,
+      snapshot: nextSnapshot,
+    }));
+    globalThis.fetch = fetchMock;
+
+    const result = await useRunbookStore.getState().setItemStatus({
+      runbookId: "rb-1",
+      itemId: "item-1",
+      expectedVersion: 3,
+      status: "completed",
+      idempotencyKey: "runbook:rb-1:item:item-1:status:completed:v3:test",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/runbooks/rb-1/items/item-1/status",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+      }),
+    );
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body).toEqual({
+      status: "completed",
+      expectedVersion: 3,
+      idempotencyKey: "runbook:rb-1:item:item-1:status:completed:v3:test",
+    });
+    expect(result?.runbook.title).toBe("After status");
+    expect(useRunbookStore.getState().byId["rb-1"].snapshot?.runbook.title).toBe("After status");
+  });
+
   it("reloads an observed runbook when runbook_updated arrives", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(okResponse(snapshot("Before")))

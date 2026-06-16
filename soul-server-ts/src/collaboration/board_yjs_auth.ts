@@ -21,6 +21,11 @@ export interface BoardYjsAuthResult {
   subject: string;
 }
 
+export interface DashboardHttpAuthInput {
+  requestHeaders: IncomingHttpHeaders;
+  config: BoardYjsAuthConfig;
+}
+
 export async function authenticateBoardYjsConnection({
   token,
   requestHeaders,
@@ -58,6 +63,37 @@ export async function authenticateBoardYjsConnection({
   }
 
   throw new Error("board workspace websocket authentication is not configured");
+}
+
+export async function authenticateDashboardHttpRequest({
+  requestHeaders,
+  config,
+}: DashboardHttpAuthInput): Promise<BoardYjsAuthResult> {
+  if (config.dashboardAuthEnabled) {
+    const cookieToken = parseCookieHeader(firstHeaderValue(requestHeaders.cookie) ?? "")[
+      DASHBOARD_AUTH_COOKIE_NAME
+    ];
+    if (!cookieToken) {
+      throw new Error("missing dashboard auth cookie");
+    }
+    const payload = verifyHs256Jwt(cookieToken, config.jwtSecret ?? "");
+    return {
+      source: "cookie",
+      subject: getJwtSubject(payload),
+    };
+  }
+
+  if (config.environment === "development") {
+    return { source: "development", subject: "development" };
+  }
+
+  const authorization = firstHeaderValue(requestHeaders.authorization);
+  const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1] ?? null;
+  if (config.authBearerToken && bearer && constantTimeEqual(bearer, config.authBearerToken)) {
+    return { source: "bearer", subject: "bearer" };
+  }
+
+  throw new Error("dashboard HTTP authentication is not configured");
 }
 
 function firstHeaderValue(value: string | string[] | undefined): string | null {

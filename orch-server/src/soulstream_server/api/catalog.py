@@ -8,11 +8,16 @@ workspace data under `/api/board-items` and `/api/markdown-documents`.
 """
 
 import logging
-from typing import Optional
+from typing import Literal, Optional
+from urllib.parse import quote
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse, Response
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
+from soulstream_server.api._proxy_utils import forward_auth_headers
+from soulstream_server.api.node_utils import find_session_node
 from soul_common.catalog.catalog_service import (
     CatalogService,
     MarkdownDocumentVersionConflictError,
@@ -45,6 +50,21 @@ class MarkdownDocumentUpdate(BaseModel):
     title: Optional[str] = None
     body: Optional[str] = None
     expected_version: int = Field(..., alias="expectedVersion")
+
+
+class RunbookItemStatusMutation(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    status: Literal["pending", "completed", "cancelled"]
+    expected_version: int = Field(
+        ...,
+        validation_alias=AliasChoices("expectedVersion", "expected_version"),
+    )
+    idempotency_key: str = Field(
+        ...,
+        validation_alias=AliasChoices("idempotencyKey", "idempotency_key"),
+    )
+    reason: Optional[str] = None
 
 
 class BoardAssetInit(BaseModel):
@@ -126,6 +146,7 @@ def _board_asset_error(exc: Exception) -> HTTPException:
 def create_catalog_router(
     catalog_service: CatalogService,
     db: object | None = None,
+    node_manager: object | None = None,
     dependencies: list | None = None,
 ) -> APIRouter:
     router = APIRouter(
@@ -191,6 +212,64 @@ def create_catalog_router(
         overview = await loader(user_id=_dashboard_user_id_for_request(request), limit=limit)
         allowed_ids = visible_folder_ids(access_for_request(request), folders)
         return _filter_runbook_overview_for_access(overview, allowed_ids)
+
+    @router.post("/runbooks/{runbook_id}/items/{item_id}/status")
+    async def proxy_runbook_item_status(
+        runbook_id: str,
+        item_id: str,
+        body: RunbookItemStatusMutation,
+        request: Request,
+    ):
+        loader = getattr(db, "get_runbook_snapshot", None)
+        if loader is None or node_manager is None:
+            raise HTTPException(status_code=503, detail="Runbook storage is not configured")
+
+        snapshot = await loader(runbook_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="Runbook not found")
+        folder_id = (snapshot.get("runbook") or {}).get("folder_id")
+        folders = await catalog_service.list_folders()
+        require_folder_allowed(access_for_request(request), folders, folder_id)
+
+        if not _snapshot_has_item(snapshot, item_id):
+            raise HTTPException(status_code=404, detail="Runbook item not found")
+
+        actor_session_id = _resolve_actor_session_id(snapshot, item_id)
+        if actor_session_id is None:
+            raise HTTPException(status_code=422, detail="Runbook item has no session provenance")
+
+        node = await find_session_node(actor_session_id, db, node_manager)
+        url = (
+            f"http://{node.host}:{node.port}"
+            f"/api/runbooks/{quote(runbook_id, safe='')}"
+            f"/items/{quote(item_id, safe='')}/status"
+        )
+        payload = {
+            "status": body.status,
+            "expectedVersion": body.expected_version,
+            "idempotencyKey": body.idempotency_key,
+        }
+        if body.reason is not None:
+            payload["reason"] = body.reason
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    url,
+                    json=payload,
+                    headers=forward_auth_headers(request),
+                )
+        except httpx.RequestError:
+            return Response(status_code=502)
+
+        content_type = resp.headers.get("content-type", "")
+        if "application/json" in content_type:
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type=content_type or None,
+        )
 
     @router.get("/runbooks/{runbook_id}")
     async def get_runbook(runbook_id: str, request: Request) -> dict:
@@ -282,3 +361,50 @@ def create_catalog_router(
             raise _board_asset_error(exc) from exc
 
     return router
+
+
+def _snapshot_has_item(snapshot: dict, item_id: str) -> bool:
+    items = snapshot.get("items")
+    if not isinstance(items, list):
+        return False
+    return any(isinstance(item, dict) and item.get("id") == item_id for item in items)
+
+
+def _resolve_actor_session_id(snapshot: dict, item_id: str) -> str | None:
+    item = _snapshot_item(snapshot, item_id)
+    if item is None:
+        return None
+    section = _snapshot_section(snapshot, item.get("section_id"))
+    for value in (
+        item.get("assignee_session_id"),
+        item.get("updated_session_id"),
+        item.get("created_session_id"),
+        (section or {}).get("updated_session_id"),
+        (section or {}).get("created_session_id"),
+        (snapshot.get("runbook") or {}).get("created_session_id"),
+    ):
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _snapshot_item(snapshot: dict, item_id: str) -> dict | None:
+    items = snapshot.get("items")
+    if not isinstance(items, list):
+        return None
+    for item in items:
+        if isinstance(item, dict) and item.get("id") == item_id:
+            return item
+    return None
+
+
+def _snapshot_section(snapshot: dict, section_id: object) -> dict | None:
+    if not isinstance(section_id, str):
+        return None
+    sections = snapshot.get("sections")
+    if not isinstance(sections, list):
+        return None
+    for section in sections:
+        if isinstance(section, dict) and section.get("id") == section_id:
+            return section
+    return None

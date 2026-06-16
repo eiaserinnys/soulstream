@@ -98,6 +98,7 @@ describe("RunbookOverview", () => {
     expect(container.textContent).toContain("Operator approval");
     expect(container.textContent).toContain("Deploy Runbook");
     expect(container.textContent).toContain("1/2");
+    expect(container.textContent).not.toContain("PR-3b 대기");
     expect(container.textContent).not.toContain("Agent verification");
 
     const toggle = container.querySelector<HTMLButtonElement>('[data-testid="runbook-overview-group-toggle"]');

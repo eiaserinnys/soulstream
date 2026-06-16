@@ -704,6 +704,16 @@ async function main(): Promise<void> {
     boardYjs: {
       service: boardYjsService,
     },
+    runbook: {
+      enabled: env.RUNBOOK_ENABLED,
+      service: runbookService,
+      auth: {
+        authBearerToken: env.AUTH_BEARER_TOKEN,
+        environment: env.ENVIRONMENT,
+        dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
+        jwtSecret: env.JWT_SECRET,
+      },
+    },
   });
   await startServer(server, env.HOST, env.PORT);
   logger.info(

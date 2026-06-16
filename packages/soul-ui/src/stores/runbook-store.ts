@@ -125,6 +125,20 @@ interface LoadOptions {
   signal?: AbortSignal;
 }
 
+export interface SetRunbookItemStatusInput {
+  runbookId: string;
+  itemId: string;
+  expectedVersion: number;
+  idempotencyKey: string;
+  status: Extract<RunbookItemStatus, "pending" | "completed" | "cancelled">;
+  reason?: string | null;
+}
+
+interface RunbookItemStatusResponse {
+  ok: boolean;
+  snapshot?: RunbookSnapshot;
+}
+
 interface RunbookStoreState {
   byId: Record<string, RunbookProjection>;
   overview: RunbookOverviewProjection;
@@ -133,6 +147,7 @@ interface RunbookStoreState {
     options?: LoadOptions,
   ) => Promise<RunbookSnapshot | null>;
   loadOverview: (options?: LoadOptions) => Promise<RunbookOverviewPayload>;
+  setItemStatus: (input: SetRunbookItemStatusInput) => Promise<RunbookSnapshot | null>;
   handleRunbookUpdated: (
     event: RunbookUpdatedStreamEvent,
   ) => Promise<unknown> | undefined;
@@ -192,6 +207,29 @@ async function fetchRunbookOverview(
     throw new Error(`Runbook overview fetch failed: ${response.status}`);
   }
   return await response.json() as RunbookOverviewPayload;
+}
+
+async function postRunbookItemStatus(
+  input: SetRunbookItemStatusInput,
+): Promise<RunbookItemStatusResponse> {
+  const response = await fetch(
+    `/api/runbooks/${encodeURIComponent(input.runbookId)}/items/${encodeURIComponent(input.itemId)}/status`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        status: input.status,
+        expectedVersion: input.expectedVersion,
+        idempotencyKey: input.idempotencyKey,
+        ...(input.reason ? { reason: input.reason } : {}),
+      }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Runbook status update failed: ${response.status}`);
+  }
+  return await response.json() as RunbookItemStatusResponse;
 }
 
 export const useRunbookStore = create<RunbookStoreState>((set, get) => ({
@@ -315,6 +353,25 @@ export const useRunbookStore = create<RunbookStoreState>((set, get) => ({
 
     overviewInflight = promise;
     return promise;
+  },
+
+  async setItemStatus(input) {
+    const result = await postRunbookItemStatus(input);
+    const snapshot = result.snapshot ?? null;
+    if (snapshot) {
+      set((state) => ({
+        byId: {
+          ...state.byId,
+          [input.runbookId]: {
+            snapshot,
+            status: "ready",
+            error: null,
+            isRefreshing: false,
+          },
+        },
+      }));
+    }
+    return snapshot;
   },
 
   handleRunbookUpdated(event) {
