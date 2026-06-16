@@ -118,7 +118,21 @@ describe("runbook MCP tools", () => {
 
     expect(names).toEqual(expect.arrayContaining([
       "create_runbook",
+      "list_runbooks",
+      "update_runbook",
+      "archive_runbook",
+      "unarchive_runbook",
       "create_runbook_section",
+      "update_runbook_section",
+      "set_runbook_section_assignee",
+      "archive_runbook_section",
+      "unarchive_runbook_section",
+      "move_runbook_section",
+      "create_runbook_item",
+      "update_runbook_item",
+      "set_runbook_item_assignee",
+      "archive_runbook_item",
+      "unarchive_runbook_item",
       "move_runbook_item",
       "set_runbook_item_status",
       "get_runbook",
@@ -189,6 +203,130 @@ describe("runbook MCP tools", () => {
     });
   });
 
+  it("lists runbooks by folder without requiring a caller session", async () => {
+    const service = fakeRunbookService();
+    const client = await createClient(
+      makeRuntime({ runbookEnabled: true, runbookService: service }),
+    );
+
+    const result = await client.callTool({
+      name: "list_runbooks",
+      arguments: {
+        folder_id: "folder-1",
+        include_archived: true,
+        limit: 25,
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(service.listRunbooks).toHaveBeenCalledWith({
+      folderId: "folder-1",
+      includeArchived: true,
+      limit: 25,
+    });
+  });
+
+  it("routes runbook archive symmetry through explicit tools", async () => {
+    const service = fakeRunbookService();
+    const client = await createClient(
+      makeRuntime({ runbookEnabled: true, runbookService: service }),
+      { "x-soulstream-agent-session-id": "sess-caller" },
+    );
+
+    await client.callTool({
+      name: "archive_runbook",
+      arguments: {
+        runbook_id: "rb-1",
+        expected_version: 2,
+        idempotency_key: "idem-archive-runbook",
+      },
+    });
+    await client.callTool({
+      name: "unarchive_runbook",
+      arguments: {
+        runbook_id: "rb-1",
+        expected_version: 3,
+        reason: "restore",
+        idempotency_key: "idem-unarchive-runbook",
+      },
+    });
+
+    expect(service.patchRunbook).toHaveBeenNthCalledWith(1, {
+      actorKind: "agent",
+      actorSessionId: "sess-caller",
+      runbookId: "rb-1",
+      expectedVersion: 2,
+      archived: true,
+      reason: undefined,
+      idempotencyKey: "idem-archive-runbook",
+    });
+    expect(service.patchRunbook).toHaveBeenNthCalledWith(2, {
+      actorKind: "agent",
+      actorSessionId: "sess-caller",
+      runbookId: "rb-1",
+      expectedVersion: 3,
+      archived: false,
+      reason: "restore",
+      idempotencyKey: "idem-unarchive-runbook",
+    });
+  });
+
+  it("routes assignee changes through dedicated section and item tools", async () => {
+    const service = fakeRunbookService();
+    const client = await createClient(
+      makeRuntime({ runbookEnabled: true, runbookService: service }),
+      { "x-soulstream-agent-session-id": "sess-caller" },
+    );
+
+    await client.callTool({
+      name: "set_runbook_section_assignee",
+      arguments: {
+        runbook_id: "rb-1",
+        section_id: "sec-1",
+        expected_version: 4,
+        assignee: { kind: "agent", agent_id: "roselin" },
+        idempotency_key: "idem-section-assignee",
+      },
+    });
+    await client.callTool({
+      name: "set_runbook_item_assignee",
+      arguments: {
+        runbook_id: "rb-1",
+        item_id: "item-1",
+        expected_version: 5,
+        assignee: null,
+        reason: "inherit section",
+        idempotency_key: "idem-item-assignee",
+      },
+    });
+
+    expect(service.setSectionAssignee).toHaveBeenCalledWith({
+      actorKind: "agent",
+      actorSessionId: "sess-caller",
+      runbookId: "rb-1",
+      sectionId: "sec-1",
+      expectedVersion: 4,
+      assignee: {
+        kind: "agent",
+        agentId: "roselin",
+        sessionId: undefined,
+        userId: undefined,
+      },
+      reason: undefined,
+      idempotencyKey: "idem-section-assignee",
+    });
+    expect(service.setItemAssignee).toHaveBeenCalledWith({
+      actorKind: "agent",
+      actorSessionId: "sess-caller",
+      runbookId: "rb-1",
+      itemId: "item-1",
+      expectedVersion: 5,
+      assignee: null,
+      reason: "inherit section",
+      idempotencyKey: "idem-item-assignee",
+    });
+  });
+
   it("rejects mutation calls without caller session header", async () => {
     const service = fakeRunbookService();
     const client = await createClient(
@@ -221,11 +359,15 @@ function fakeRunbookService() {
   };
   return {
     createRunbook: vi.fn(async () => mutationResult),
+    listRunbooks: vi.fn(async () => []),
+    patchRunbook: vi.fn(async () => mutationResult),
     createSection: vi.fn(async () => mutationResult),
     patchSection: vi.fn(async () => mutationResult),
+    setSectionAssignee: vi.fn(async () => mutationResult),
     moveSection: vi.fn(async () => mutationResult),
     createItem: vi.fn(async () => mutationResult),
     patchItem: vi.fn(async () => mutationResult),
+    setItemAssignee: vi.fn(async () => mutationResult),
     moveItem: vi.fn(async () => mutationResult),
     setItemStatus: vi.fn(async () => mutationResult),
     getRunbook: vi.fn(async () => mutationResult.snapshot),

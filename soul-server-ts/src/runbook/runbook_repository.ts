@@ -2,6 +2,7 @@ import type {
   RunbookAssigneeFields,
   RunbookItemRow,
   RunbookItemStatus,
+  RunbookListRow,
   RunbookMyTurnItemRow,
   RunbookOperationRow,
   RunbookOperationTargetKind,
@@ -12,6 +13,7 @@ import type {
 } from "../db/session_db_types.js";
 import {
   asPostgresJsonValue,
+  recordFromDb,
   type RepositorySql,
 } from "../db/repositories/repository_helpers.js";
 import type { RunbookOperationActorKind } from "../db/session_db_types.js";
@@ -120,6 +122,53 @@ export class RunbookRepository {
       this.listItems(runbookId, { includeArchived: true }),
     ]);
     return runbook ? { runbook, sections, items } : null;
+  }
+
+  async listRunbooks(params: {
+    folderId: string;
+    includeArchived?: boolean;
+    limit?: number;
+  }): Promise<RunbookListRow[]> {
+    const limit = Math.min(Math.max(params.limit ?? 100, 1), 500);
+    const rows = await this.sql<Array<{
+      id: string;
+      board_item_id: string;
+      folder_id: string;
+      title: string;
+      archived: boolean;
+      version: number;
+      x: string | number;
+      y: string | number;
+      metadata: unknown;
+      created_at: Date;
+      updated_at: Date;
+    }>>`
+      SELECT
+        r.id,
+        r.board_item_id,
+        bi.folder_id,
+        r.title,
+        r.archived,
+        r.version,
+        bi.x,
+        bi.y,
+        bi.metadata,
+        r.created_at,
+        r.updated_at
+      FROM runbooks r
+      JOIN board_items bi ON bi.id = r.board_item_id
+      WHERE bi.folder_id = ${params.folderId}
+        AND bi.item_type = 'runbook'
+        AND (${params.includeArchived ?? false} OR r.archived = FALSE)
+      ORDER BY bi.y ASC, bi.x ASC, r.updated_at DESC, r.id ASC
+      LIMIT ${limit}
+    `;
+    return rows.map((row) => ({
+      ...row,
+      x: Number(row.x),
+      y: Number(row.y),
+      metadata: recordFromDb(row.metadata),
+    }));
   }
 
   async listSections(
