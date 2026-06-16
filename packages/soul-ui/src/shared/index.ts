@@ -102,3 +102,6 @@ export type {
 // === Mappers ===
 export { toSessionSummary } from "./mappers";
 export { normalizeSessionStatus } from "./session-status";
+
+// === Position keys ===
+export { generateKeyBetween } from "./fractional-position";

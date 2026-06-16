@@ -2541,3 +2541,108 @@ ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS prefs JSONB NOT NULL DEFAU
 ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS background_blob BYTEA;
 ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS background_mime TEXT;
 ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+-- Runbooks: collaborative checklist state and append-only provenance.
+CREATE TABLE IF NOT EXISTS runbooks (
+    id                 TEXT PRIMARY KEY,
+    board_item_id      TEXT NOT NULL REFERENCES board_items(id) ON DELETE CASCADE,
+    session_id         TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    title              TEXT NOT NULL DEFAULT '',
+    archived           BOOLEAN NOT NULL DEFAULT FALSE,
+    version            INTEGER NOT NULL DEFAULT 1,
+    created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    created_event_id   INTEGER,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (created_session_id, created_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_runbooks_board_item ON runbooks(board_item_id);
+
+CREATE TABLE IF NOT EXISTS runbook_sections (
+    id                 TEXT PRIMARY KEY,
+    runbook_id         TEXT NOT NULL REFERENCES runbooks(id) ON DELETE CASCADE,
+    position_key       TEXT NOT NULL,
+    title              TEXT NOT NULL,
+    archived           BOOLEAN NOT NULL DEFAULT FALSE,
+    version            INTEGER NOT NULL DEFAULT 1,
+    created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    created_event_id   INTEGER,
+    updated_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    updated_event_id   INTEGER,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (created_session_id, created_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_session_id, updated_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_runbook_sections_runbook
+    ON runbook_sections(runbook_id, position_key);
+
+CREATE TABLE IF NOT EXISTS runbook_items (
+    id                   TEXT PRIMARY KEY,
+    section_id           TEXT NOT NULL REFERENCES runbook_sections(id) ON DELETE CASCADE,
+    position_key         TEXT NOT NULL,
+    title                TEXT NOT NULL,
+    how_to               TEXT NOT NULL DEFAULT '',
+    owner_kind           TEXT NOT NULL DEFAULT 'agent' CHECK (owner_kind IN ('agent','human')),
+    owner_agent_id       TEXT,
+    status               TEXT NOT NULL DEFAULT 'pending'
+                           CHECK (status IN ('pending','in_progress','completed','cancelled')),
+    archived             BOOLEAN NOT NULL DEFAULT FALSE,
+    version              INTEGER NOT NULL DEFAULT 1,
+    created_session_id   TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    created_event_id     INTEGER,
+    updated_session_id   TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    updated_event_id     INTEGER,
+    completed_kind       TEXT CHECK (completed_kind IN ('agent','user')),
+    completed_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    completed_event_id   INTEGER,
+    completed_user_id    TEXT,
+    completed_at         TIMESTAMPTZ,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (created_session_id, created_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_session_id, updated_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL,
+    FOREIGN KEY (completed_session_id, completed_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_runbook_items_section
+    ON runbook_items(section_id, position_key);
+
+CREATE INDEX IF NOT EXISTS idx_runbook_items_blocked_on_human
+    ON runbook_items(section_id)
+    WHERE owner_kind = 'human'
+      AND status NOT IN ('completed','cancelled')
+      AND archived = FALSE;
+
+CREATE TABLE IF NOT EXISTS runbook_operations (
+    id               TEXT PRIMARY KEY,
+    runbook_id       TEXT REFERENCES runbooks(id) ON DELETE CASCADE,
+    target_kind      TEXT NOT NULL CHECK (target_kind IN ('runbook','section','item')),
+    target_id        TEXT NOT NULL,
+    operation_type   TEXT NOT NULL,
+    actor_kind       TEXT NOT NULL DEFAULT 'agent' CHECK (actor_kind IN ('agent','user','system')),
+    actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    actor_event_id   INTEGER,
+    actor_user_id    TEXT,
+    idempotency_key  TEXT,
+    payload_json     JSONB NOT NULL DEFAULT '{}'::JSONB,
+    reason           TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (actor_session_id, actor_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_runbook_ops_idem
+    ON runbook_operations(idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_runbook_ops_target
+    ON runbook_operations(target_kind, target_id, created_at);
