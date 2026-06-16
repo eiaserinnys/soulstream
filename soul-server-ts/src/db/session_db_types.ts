@@ -152,6 +152,110 @@ export interface AppendEventParams {
   dedupeKey?: string | null;
 }
 
+export type RunbookAssigneeKind = "agent" | "human" | "session";
+export type RunbookItemStatus =
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "cancelled";
+export type RunbookOperationTargetKind = "runbook" | "section" | "item";
+export type RunbookOperationActorKind = "agent" | "user" | "system";
+
+export interface RunbookAssigneeFields {
+  assignee_kind: RunbookAssigneeKind | null;
+  assignee_agent_id: string | null;
+  assignee_session_id: string | null;
+  assignee_user_id: string | null;
+}
+
+export interface RunbookRow {
+  id: string;
+  board_item_id: string;
+  title: string;
+  archived: boolean;
+  version: number;
+  created_session_id: string | null;
+  created_event_id: number | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface RunbookSectionRow extends RunbookAssigneeFields {
+  id: string;
+  runbook_id: string;
+  position_key: string;
+  title: string;
+  archived: boolean;
+  version: number;
+  created_session_id: string | null;
+  created_event_id: number | null;
+  updated_session_id: string | null;
+  updated_event_id: number | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface RunbookItemRow extends RunbookAssigneeFields {
+  id: string;
+  section_id: string;
+  position_key: string;
+  title: string;
+  how_to: string;
+  status: RunbookItemStatus;
+  archived: boolean;
+  version: number;
+  created_session_id: string | null;
+  created_event_id: number | null;
+  updated_session_id: string | null;
+  updated_event_id: number | null;
+  completed_kind: "agent" | "user" | null;
+  completed_session_id: string | null;
+  completed_event_id: number | null;
+  completed_user_id: string | null;
+  completed_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface RunbookOperationRow {
+  id: string;
+  runbook_id: string | null;
+  target_kind: RunbookOperationTargetKind;
+  target_id: string;
+  operation_type: string;
+  actor_kind: RunbookOperationActorKind;
+  actor_session_id: string | null;
+  actor_event_id: number | null;
+  actor_user_id: string | null;
+  idempotency_key: string | null;
+  payload_json: Record<string, unknown>;
+  reason: string | null;
+  created_at: Date;
+}
+
+export interface RunbookSnapshot {
+  runbook: RunbookRow;
+  sections: RunbookSectionRow[];
+  items: RunbookItemRow[];
+}
+
+export interface RunbookMyTurnItemRow {
+  runbook_id: string;
+  runbook_title: string;
+  board_item_id: string;
+  section_id: string;
+  section_title: string;
+  item_id: string;
+  item_title: string;
+  how_to: string;
+  status: RunbookItemStatus;
+  item_version: number;
+  effective_assignee_kind: RunbookAssigneeKind | null;
+  effective_assignee_agent_id: string | null;
+  effective_assignee_session_id: string | null;
+  effective_assignee_user_id: string | null;
+}
+
 export interface AppendSupervisorEventParams {
   sourceNode: string;
   sourceSessionId: string;

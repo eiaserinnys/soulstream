@@ -6,6 +6,7 @@
 import postgres from "postgres";
 
 import { DEFAULT_FOLDERS as SYSTEM_DEFAULT_FOLDERS } from "../system_folders.js";
+import { RunbookRepository } from "../runbook/runbook_repository.js";
 import { SoulstreamScheduleRepository } from "../schedule/schedule_repository.js";
 import { TaskTreeRepository } from "../task_tree/task_tree_repository.js";
 import { BoardRepository } from "./repositories/board_repository.js";
@@ -27,6 +28,7 @@ export const DEFAULT_FOLDERS = SYSTEM_DEFAULT_FOLDERS;
 export class SessionDB {
   private readonly sql: SqlClient;
   private readonly ownsSql: boolean;
+  private runbookRepository?: RunbookRepository;
   private taskTreeRepository?: TaskTreeRepository;
   private scheduleRepository?: SoulstreamScheduleRepository;
   private readonly sessionRepository: SessionRepository;
@@ -77,6 +79,11 @@ export class SessionDB {
   taskTree(): TaskTreeRepository {
     this.taskTreeRepository ??= new TaskTreeRepository(this.sql);
     return this.taskTreeRepository;
+  }
+
+  runbooks(): RunbookRepository {
+    this.runbookRepository ??= new RunbookRepository(this.sql);
+    return this.runbookRepository;
   }
 
   schedules(): SoulstreamScheduleRepository {
