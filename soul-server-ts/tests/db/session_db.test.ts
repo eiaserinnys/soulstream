@@ -555,6 +555,36 @@ describe("SessionDB.appendEvent", () => {
       }),
     ).rejects.toThrow(/event_append returned non-number/);
   });
+
+  it("appendEventTx는 전달받은 tx scope sql로 event_append를 호출", async () => {
+    const { sql, calls } = createMockSql(() => [{ event_append: 11 }]);
+    const db = new SessionDB(sql);
+    const createdAt = new Date("2026-06-16T10:00:00Z");
+
+    let eventId = 0;
+    await sql.begin(async (txSql) => {
+      eventId = await db.appendEventTx(txSql, {
+        sessionId: "sess-runbook",
+        eventType: "runbook_operation",
+        payload: '{"type":"runbook_operation"}',
+        searchableText: "runbook operation",
+        createdAt,
+        dedupeKey: "runbook:op-1",
+      });
+    });
+
+    expect(eventId).toBe(11);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].inTransaction).toBe(true);
+    expect(calls[0].values).toEqual([
+      "sess-runbook",
+      "runbook_operation",
+      '{"type":"runbook_operation"}',
+      "runbook operation",
+      createdAt,
+      "runbook:op-1",
+    ]);
+  });
 });
 
 describe("SessionDB supervisor data layer", () => {

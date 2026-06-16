@@ -16,6 +16,7 @@ import { EventRepository } from "./repositories/event_repository.js";
 import { MarkdownDocumentRepository } from "./repositories/markdown_document_repository.js";
 import { SessionRepository } from "./repositories/session_repository.js";
 import { SupervisorRepository } from "./repositories/supervisor_repository.js";
+import type { RepositorySql } from "./repositories/repository_helpers.js";
 import type { AppendEventParams, AppendSupervisorEventParams, BoardYjsReplica, BoardYjsSeed, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, SupervisorAppendResult, SupervisorEventRow, SupervisorRegistryRow, SupervisorRegistryUpsertParams, SupervisorSourceCursorRow, SupervisorWakeDispatchStateParams } from "./session_db_types.js";
 
 export type * from "./session_db_types.js";
@@ -379,6 +380,13 @@ export class SessionDB {
 
   async appendEvent(params: AppendEventParams): Promise<number> {
     return await this.eventRepository.appendEvent(params);
+  }
+
+  async appendEventTx(
+    sql: RepositorySql,
+    params: AppendEventParams,
+  ): Promise<number> {
+    return await this.eventRepository.appendEventTx(sql, params);
   }
 
   async findEventIdByDedupeKey(
