@@ -43,6 +43,16 @@ export const MUTATION_MCP_TOOLS = [
   "pin_task_item",
   "unpin_task_item",
   "hold_task_item",
+  "create_runbook",
+  "create_runbook_section",
+  "update_runbook_section",
+  "archive_runbook_section",
+  "move_runbook_section",
+  "create_runbook_item",
+  "update_runbook_item",
+  "archive_runbook_item",
+  "move_runbook_item",
+  "set_runbook_item_status",
 ] as const;
 
 const MUTATION_TOOL_SET = new Set<string>(MUTATION_MCP_TOOLS);

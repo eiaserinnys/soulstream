@@ -95,9 +95,9 @@ export function processEventSingle(
     return { root, updated: false, statusUpdate: null, notify: false, newLastEventId: lastEventId, isHistorySync: false };
   }
 
-  // subtree_update — Phase 2-A 평탄화: 트리 변경 없음, dedup만 갱신.
-  // 백엔드는 계속 송출하지만 FE는 무시한다 (Phase 2-B 후속 카드).
-  if (event.type === "subtree_update") {
+  // subtree_update / runbook_updated — 트리 변경 없음, dedup만 갱신.
+  // runbook_updated는 PR-5 runbook-store가 구독하기 전까지 채팅 타임라인에서는 no-op.
+  if (event.type === "subtree_update" || event.type === "runbook_updated") {
     return {
       root,
       updated: false,
@@ -235,8 +235,8 @@ export function processEventsBatch(
     if (!skipDedup && eventId > 0 && eventId <= lastEventId) continue;
     if (eventId > maxEventId) maxEventId = eventId;
 
-    // subtree_update — Phase 2-A 평탄화: 트리 변경 없음, dedup만 갱신.
-    if (event.type === "subtree_update") {
+    // subtree_update / runbook_updated — 트리 변경 없음, dedup만 갱신.
+    if (event.type === "subtree_update" || event.type === "runbook_updated") {
       continue;
     }
 

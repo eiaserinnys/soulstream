@@ -30,6 +30,7 @@ describe("MCP tool access profiles", () => {
         "delegate_task_item",
         "set_task_status",
         "background_claude_tasks",
+        "set_runbook_item_status",
       ]),
     );
     expect(isMutationMcpTool("list_sessions")).toBe(false);
@@ -47,11 +48,13 @@ describe("MCP tool access profiles", () => {
 
     guarded.registerTool("send_message_to_session", { inputSchema: {} }, vi.fn());
     guarded.registerTool("download_session_history", { inputSchema: {} }, vi.fn());
+    guarded.registerTool("set_runbook_item_status", { inputSchema: {} }, vi.fn());
     guarded.registerTool("list_sessions", { inputSchema: {} }, vi.fn());
 
     expect(registerTool).toHaveBeenCalledTimes(1);
     expect(registered.has("send_message_to_session")).toBe(false);
     expect(registered.has("download_session_history")).toBe(false);
+    expect(registered.has("set_runbook_item_status")).toBe(false);
     expect(registered.has("list_sessions")).toBe(true);
   });
 

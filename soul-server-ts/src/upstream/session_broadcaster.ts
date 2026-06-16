@@ -137,6 +137,25 @@ export class SessionBroadcaster {
   }
 
   /**
+   * Runbook mutation 갱신 wire.
+   *
+   * SessionEventEnvelope 경로를 사용한다. 런북은 board item에 붙은 공유 상태지만,
+   * MCP mutation의 actor session을 envelope owner로 삼아 기존 orch subscribe_events
+   * 릴레이를 그대로 탄다.
+   */
+  async emitRunbookUpdated(
+    agentSessionId: string,
+    runbookId: string,
+    boardItemId: string,
+  ): Promise<void> {
+    await this.emitEventEnvelope(agentSessionId, {
+      type: "runbook_updated",
+      runbookId,
+      boardItemId,
+    });
+  }
+
+  /**
    * SSE 이벤트 envelope wire. Python `event_relay.py` L175-179 정본:
    *   {type: "event", agentSessionId, event: SSEEventPayload}
    *

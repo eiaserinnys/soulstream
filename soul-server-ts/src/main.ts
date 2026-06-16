@@ -29,6 +29,7 @@ import { buildOrchProxyConfig } from "./mcp/orch_proxy.js";
 import type { McpRuntime } from "./mcp/runtime.js";
 import { buildServer, startServer } from "./server.js";
 import { RealtimeBroker } from "./realtime/realtime_broker.js";
+import { RunbookService } from "./runbook/runbook_service.js";
 import { TaskCompletionNotifier } from "./task/completion_notifier.js";
 import { ClaudeRuntimeTaskFollowupController } from "./task/claude_runtime_task_followup.js";
 import { TaskExecutor, type EngineFactory } from "./task/task_executor.js";
@@ -624,6 +625,7 @@ async function main(): Promise<void> {
   // 본 카드(soul-server-ts Streamable HTTP MCP) 신설. dashboard 진입점이 같은 service를
   // 경유하면 정책 정본 단일 (design-principles §3).
   const catalogService = new CatalogService(db, broadcaster, boardYjsService);
+  const runbookService = new RunbookService(db, broadcaster);
   const llmAdapters = {
     ...(env.LLM_OPENAI_API_KEY
       ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) }
@@ -663,6 +665,8 @@ async function main(): Promise<void> {
     agentConfigService,
     mcpConfigService,
     catalogService,
+    runbookEnabled: env.RUNBOOK_ENABLED,
+    runbookService,
     logger,
     mcpToolProfile: env.MCP_TOOL_PROFILE,
     // Completion relay and MCP multi-node tools share the same upstream HTTP config.

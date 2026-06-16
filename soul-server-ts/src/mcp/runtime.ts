@@ -11,6 +11,7 @@ import type { AgentRegistry } from "../agent_registry.js";
 import type { CatalogService } from "../catalog/catalog_service.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpConfigService } from "../mcp_config_service.js";
+import type { RunbookService } from "../runbook/runbook_service.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { McpToolProfile } from "./tool_access.js";
@@ -32,6 +33,8 @@ export interface McpRuntime {
   agentConfigService?: AgentConfigService;
   mcpConfigService?: McpConfigService;
   catalogService: CatalogService;
+  runbookEnabled?: boolean;
+  runbookService?: RunbookService;
   logger: Logger;
   /** default = full tool surface. supervisor_readonly hides and blocks mutation tools. */
   mcpToolProfile?: McpToolProfile;
