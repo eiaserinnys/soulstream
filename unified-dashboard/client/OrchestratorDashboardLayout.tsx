@@ -49,7 +49,6 @@ import {
   ConnectionBadge,
   useSessionListProvider,
   shouldLoadMoreAfterSessionMove,
-  TaskTreeView,
   RunbookOverview,
 } from "@seosoyoung/soul-ui";
 import { FeedView } from "./components/FeedView";
@@ -182,11 +181,6 @@ export function OrchestratorDashboardLayout() {
       centerPanel={
         viewMode === "runbooks" ? (
           <RunbookOverview />
-        ) : viewMode === "tasks" ? (
-          <TaskTreeView
-            sessions={sessions}
-            onNewSession={(task, defaults) => openNewSessionModal("feed", task ?? null, defaults ?? null)}
-          />
         ) : viewMode === "feed" ? (
           <FeedView
             placement="main"
@@ -234,12 +228,6 @@ export function OrchestratorDashboardLayout() {
       }
       mobileFolderContents={
         <FolderWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
-      }
-      mobileTasksView={
-        <TaskTreeView
-          sessions={sessions}
-          onNewSession={(task, defaults) => openNewSessionModal("feed", task ?? null, defaults ?? null)}
-        />
       }
       mobileRunbooksView={<RunbookOverview />}
       onNewSession={() => openNewSessionModal("folder")}

@@ -20,8 +20,6 @@ export type { FeedCardProps } from "./FeedCard";
 export { NodeBadge } from "./NodeBadge";
 export type { NodeBadgeProps } from "./NodeBadge";
 export { FeedView } from "./FeedView";
-export { TaskTreeView } from "./TaskTreeView";
-export { TasksItem } from "./TasksItem";
 export { FeedTopBar } from "./FeedTopBar";
 export type { FeedTopBarProps } from "./FeedTopBar";
 export { FolderDialog } from "./FolderDialog";
