@@ -25,6 +25,39 @@ from soulstream_server.nodes.node_manager import NodeManager
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
 
 
+def _query_bool(value: object) -> bool:
+    return isinstance(value, str) and value.lower() in {"1", "true", "yes", "on"}
+
+
+def _folder_excludes_feed(folders: list[dict], folder_id: object) -> bool:
+    if not isinstance(folder_id, str):
+        return False
+    folder = next((item for item in folders if item.get("id") == folder_id), None)
+    settings = folder.get("settings") if isinstance(folder, dict) else None
+    return isinstance(settings, dict) and settings.get("excludeFromFeed") is True
+
+
+def _session_type_excludes_feed(session_type: object) -> bool:
+    return session_type == "llm"
+
+
+def _assignment_folder_id(assignment: object) -> object:
+    if not isinstance(assignment, dict):
+        return None
+    return assignment.get("folderId") or assignment.get("folder_id")
+
+
+def _filter_feed_session_assignments(
+    folders: list[dict],
+    sessions: dict,
+) -> dict:
+    return {
+        session_id: assignment
+        for session_id, assignment in sessions.items()
+        if not _folder_excludes_feed(folders, _assignment_folder_id(assignment))
+    }
+
+
 async def create_session_stream_response(
     request: Request,
     db: PostgresSessionDB,
@@ -79,6 +112,7 @@ async def create_session_stream_response(
             last_event_id = int(last_event_id_str)
         except ValueError:
             last_event_id = None
+    feed_only = _query_bool(request.query_params.get("feed_only"))
 
     async def event_generator():
         async def get_folders() -> list[dict]:
@@ -98,7 +132,7 @@ async def create_session_stream_response(
 
         async def filter_event(event: dict) -> dict | None:
             access = access_for_request(request)
-            if not access.restricted:
+            if not access.restricted and not feed_only:
                 return event
             event_type = event.get("type")
             folders = await get_folders()
@@ -106,12 +140,27 @@ async def create_session_stream_response(
                 catalog = event.get("catalog") if isinstance(event.get("catalog"), dict) else {}
                 catalog_folders = catalog.get("folders") if isinstance(catalog.get("folders"), list) else folders
                 sessions = catalog.get("sessions") if isinstance(catalog.get("sessions"), dict) else {}
+                scoped_folders = (
+                    filter_folders(access, catalog_folders)
+                    if access.restricted
+                    else catalog_folders
+                )
+                scoped_sessions = (
+                    filter_session_assignments(access, catalog_folders, sessions)
+                    if access.restricted
+                    else sessions
+                )
+                if feed_only:
+                    scoped_sessions = _filter_feed_session_assignments(
+                        catalog_folders,
+                        scoped_sessions,
+                    )
                 return {
                     **event,
                     "catalog": {
                         **catalog,
-                        "folders": filter_folders(access, catalog_folders),
-                        "sessions": filter_session_assignments(access, catalog_folders, sessions),
+                        "folders": scoped_folders,
+                        "sessions": scoped_sessions,
                     },
                 }
             if event_type in {"session_created", "session_updated"}:
@@ -122,26 +171,53 @@ async def create_session_stream_response(
                     or session.get("folder_id")
                     or session.get("folderId")
                 )
+                session_type = (
+                    event.get("session_type")
+                    or event.get("sessionType")
+                    or session.get("session_type")
+                    or session.get("sessionType")
+                )
                 session_id = (
                     event.get("agent_session_id")
                     or event.get("agentSessionId")
                     or session.get("agent_session_id")
                     or session.get("agentSessionId")
                 )
-                if folder_id is None and isinstance(session_id, str):
+                if (
+                    isinstance(session_id, str)
+                    and (
+                        (access.restricted and folder_id is None)
+                        or (feed_only and (folder_id is None or session_type is None))
+                    )
+                ):
                     row = await db.get_session(session_id)
                     if row:
                         folder_id = row.get("folder_id") or row.get("folderId")
-                return event if is_folder_allowed(access, folders, folder_id) else None
+                        session_type = row.get("session_type") or row.get("sessionType")
+                if access.restricted and not is_folder_allowed(access, folders, folder_id):
+                    return None
+                if feed_only and (
+                    _folder_excludes_feed(folders, folder_id)
+                    or _session_type_excludes_feed(session_type)
+                ):
+                    return None
+                return event
             if event_type == "session_deleted":
                 session_id = event.get("agent_session_id") or event.get("agentSessionId")
                 if not isinstance(session_id, str):
                     return None
                 row = await db.get_session(session_id)
                 if not row:
-                    return None
+                    return None if access.restricted else event
                 folder_id = row.get("folder_id") or row.get("folderId")
-                return event if is_folder_allowed(access, folders, folder_id) else None
+                if access.restricted and not is_folder_allowed(access, folders, folder_id):
+                    return None
+                if feed_only and (
+                    _folder_excludes_feed(folders, folder_id)
+                    or _session_type_excludes_feed(row.get("session_type") or row.get("sessionType"))
+                ):
+                    return None
+                return event
             return event
 
         # broadcaster=None: stream_meta 송출 생략. 빈 instance_id 송출은
@@ -180,13 +256,20 @@ async def create_session_stream_response(
                     if folder_id is None:
                         sessions, total = [], 0
                     else:
-                        sessions, total = await db.get_all_sessions(
-                            offset=0,
-                            limit=200,
-                            folder_id=folder_id,
-                        )
+                        query_kwargs = {
+                            "offset": 0,
+                            "limit": 200,
+                            "folder_id": folder_id,
+                        }
+                        if feed_only:
+                            query_kwargs["feed_only"] = True
+                        sessions, total = await db.get_all_sessions(**query_kwargs)
                 else:
-                    sessions, total = await db.get_all_sessions(offset=0, limit=200)
+                    sessions, total = await db.get_all_sessions(
+                        offset=0,
+                        limit=200,
+                        **({"feed_only": True} if feed_only else {}),
+                    )
                 result = [
                     _session_to_response(s, node_manager=node_manager)
                     for s in sessions

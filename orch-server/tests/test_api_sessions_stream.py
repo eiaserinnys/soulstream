@@ -245,6 +245,137 @@ class TestSessionStreamReplay:
         assert events[0].get("id") is None
         assert events[1].get("id") is None
 
+    async def test_first_connect_feed_only_passes_feed_scope_to_db(
+        self, mock_db, node_manager, session_router, mock_catalog_service,
+    ):
+        """feed_only=true initial session_list uses the feed-scoped DB query."""
+        broadcaster = SessionBroadcaster()
+        mock_db.get_all_sessions = AsyncMock(return_value=([], 0))
+
+        router = create_sessions_router(
+            db=mock_db,
+            node_manager=node_manager,
+            session_router=session_router,
+            broadcaster=broadcaster,
+            catalog_service=mock_catalog_service,
+        )
+        route = _get_stream_route(router)
+
+        request = _make_request_mock(query={"feed_only": "true"})
+        request.is_disconnected = self._disconnect_after_n_calls(1)
+        response = await route.endpoint(request=request)
+        events = await _collect_n_events(response.body_iterator, n=4)
+
+        assert [e.get("event") for e in events][:2] == ["stream_meta", "session_list"]
+        mock_db.get_all_sessions.assert_awaited_once_with(
+            offset=0,
+            limit=200,
+            feed_only=True,
+        )
+
+    async def test_feed_only_replay_filters_excluded_folder_session_events(
+        self, mock_db, node_manager, session_router, mock_catalog_service,
+    ):
+        """feed_only replay skips session events assigned to excludeFromFeed folders."""
+        broadcaster = SessionBroadcaster()
+        hidden_folder = {
+            "id": "hidden",
+            "name": "Hidden",
+            "settings": {"excludeFromFeed": True},
+        }
+        visible_folder = {
+            "id": "visible",
+            "name": "Visible",
+            "settings": {"excludeFromFeed": False},
+        }
+        mock_catalog_service.list_folders = AsyncMock(
+            return_value=[hidden_folder, visible_folder]
+        )
+        await broadcaster.broadcast({
+            "type": "session_created",
+            "session": {
+                "agentSessionId": "hidden-session",
+                "folderId": "hidden",
+                "sessionType": "claude",
+            },
+        })
+        await broadcaster.broadcast({
+            "type": "session_created",
+            "session": {
+                "agentSessionId": "visible-session",
+                "folderId": "visible",
+                "sessionType": "claude",
+            },
+        })
+
+        router = create_sessions_router(
+            db=mock_db,
+            node_manager=node_manager,
+            session_router=session_router,
+            broadcaster=broadcaster,
+            catalog_service=mock_catalog_service,
+        )
+        route = _get_stream_route(router)
+
+        request = _make_request_mock(query={"lastEventId": "0", "feed_only": "true"})
+        request.is_disconnected = self._disconnect_after_n_calls(1)
+        response = await route.endpoint(request=request)
+        events = await _collect_n_events(response.body_iterator, n=4)
+
+        payloads = [
+            json.loads(e["data"])
+            for e in events
+            if e.get("event") == "session_created"
+        ]
+        assert [p["session"]["agentSessionId"] for p in payloads] == ["visible-session"]
+
+    async def test_feed_only_replay_filters_catalog_session_assignments(
+        self, mock_db, node_manager, session_router, mock_catalog_service,
+    ):
+        """feed_only catalog_updated omits assignment rows in excluded folders."""
+        broadcaster = SessionBroadcaster()
+        hidden_folder = {
+            "id": "hidden",
+            "name": "Hidden",
+            "settings": {"excludeFromFeed": True},
+        }
+        visible_folder = {
+            "id": "visible",
+            "name": "Visible",
+            "settings": {"excludeFromFeed": False},
+        }
+        await broadcaster.broadcast({
+            "type": "catalog_updated",
+            "catalog": {
+                "folders": [hidden_folder, visible_folder],
+                "sessions": {
+                    "hidden-session": {"folderId": "hidden", "displayName": "Hidden"},
+                    "visible-session": {"folderId": "visible", "displayName": "Visible"},
+                },
+            },
+        })
+
+        router = create_sessions_router(
+            db=mock_db,
+            node_manager=node_manager,
+            session_router=session_router,
+            broadcaster=broadcaster,
+            catalog_service=mock_catalog_service,
+        )
+        route = _get_stream_route(router)
+
+        request = _make_request_mock(query={"lastEventId": "0", "feed_only": "true"})
+        request.is_disconnected = self._disconnect_after_n_calls(1)
+        response = await route.endpoint(request=request)
+        events = await _collect_n_events(response.body_iterator, n=3)
+
+        catalog_events = [
+            json.loads(e["data"])
+            for e in events
+            if e.get("event") == "catalog_updated"
+        ]
+        assert list(catalog_events[0]["catalog"]["sessions"].keys()) == ["visible-session"]
+
     async def test_reconnect_with_last_event_id_yields_replay(
         self, mock_db, node_manager, session_router, mock_catalog_service,
     ):

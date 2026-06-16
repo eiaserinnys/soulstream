@@ -189,6 +189,16 @@ class TestListSessions:
             offset=0, limit=50, folder_id="folder-abc"
         )
 
+    async def test_feed_only_passes_feed_scope_to_db(self, client, mock_db):
+        """feed_only=true delegates excludeFromFeed filtering to the DB query."""
+        mock_db.get_all_sessions.return_value = ([], 0)
+
+        await client.get("/api/sessions?feed_only=true")
+
+        mock_db.get_all_sessions.assert_called_once_with(
+            offset=0, limit=50, feed_only=True
+        )
+
 
 class TestCreateSession:
     """POST /api/sessions tests."""
