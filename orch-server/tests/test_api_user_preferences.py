@@ -34,6 +34,14 @@ def test_get_preferences_returns_default_for_authenticated_user():
     assert body["email"] == "user@example.com"
     assert body["appearance"] == "system"
     assert body["wallpaper"] == {"mode": "bokeh"}
+    assert body["preferences"]["glass"] == {
+        "enabled": True,
+        "refraction": 75,
+        "blur": 5,
+        "chromatic": 0.8,
+        "specular": 0.25,
+        "tint": 0.42,
+    }
     assert body["hasBackground"] is False
     assert body["updatedAt"] is None
 
@@ -43,18 +51,66 @@ def test_put_preferences_persists_appearance_and_wallpaper():
 
     response = client.put(
         "/api/user/preferences",
-        json={"appearance": "dark", "wallpaper": {"mode": "metal"}},
+        json={
+            "appearance": "dark",
+            "wallpaper": {"mode": "metal"},
+            "glass": {
+                "enabled": False,
+                "refraction": 60,
+                "blur": 3.5,
+                "chromatic": 1.1,
+                "specular": 0.9,
+                "tint": 0.25,
+            },
+        },
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["appearance"] == "dark"
     assert body["wallpaper"] == {"mode": "metal"}
+    assert body["preferences"]["glass"] == {
+        "enabled": False,
+        "refraction": 60,
+        "blur": 3.5,
+        "chromatic": 1.1,
+        "specular": 0.9,
+        "tint": 0.25,
+    }
     assert body["updatedAt"]
 
     stored = client.get("/api/user/preferences").json()
     assert stored["appearance"] == "dark"
     assert stored["wallpaper"] == {"mode": "metal"}
+    assert stored["preferences"]["glass"]["enabled"] is False
+
+
+def test_put_preferences_normalizes_glass_ranges():
+    client = _make_client()
+
+    response = client.put(
+        "/api/user/preferences",
+        json={
+            "glass": {
+                "enabled": True,
+                "refraction": 999,
+                "blur": -1,
+                "chromatic": "2.25",
+                "specular": None,
+                "tint": 2,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["preferences"]["glass"] == {
+        "enabled": True,
+        "refraction": 90,
+        "blur": 0,
+        "chromatic": 2.25,
+        "specular": 0.25,
+        "tint": 1,
+    }
 
 
 def test_upload_background_stores_blob_and_serves_image():

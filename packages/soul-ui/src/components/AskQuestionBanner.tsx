@@ -21,6 +21,8 @@ type PendingPromptNode = InputRequestNodeDef | ToolApprovalNodeDef;
 const PROMPT_BANNER_FRAME_CLASS =
   "fixed left-1/2 top-6 z-[1000] flex w-[min(720px,calc(100vw-2rem))] max-w-3xl -translate-x-1/2 flex-col gap-2 rounded-[18px] border border-glass-border glass-shadow-lg px-4 py-3";
 
+// Fixed prompt overlays stay CSS/backdrop based: the shared WebGL glass canvas samples wallpaper only, not content behind overlay z-layers.
+
 /** 트리를 재귀 순회하여 미응답·미만료 input_request 노드를 반환 */
 function findPendingPrompt(nodes: EventTreeNode[]): PendingPromptNode | null {
   for (const node of nodes) {

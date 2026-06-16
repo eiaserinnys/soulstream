@@ -6,7 +6,7 @@
  */
 
 import { useRef } from "react";
-import { cn, useLiquidLens } from "@seosoyoung/soul-ui";
+import { cn, useGlassSurface, useLiquidLens } from "@seosoyoung/soul-ui";
 
 export function ConfigButton({
   onClick,
@@ -39,7 +39,8 @@ export function ConfigButton({
 
 function ChromeConfigButton({ onClick }: { onClick: () => void }) {
   const ref = useRef<HTMLButtonElement>(null);
-  useLiquidLens(ref, { scale: 22 });
+  const webglActive = useGlassSurface(ref, { enabled: true });
+  useLiquidLens(ref, { scale: 22, enabled: !webglActive });
 
   return (
     <button
@@ -47,6 +48,7 @@ function ChromeConfigButton({ onClick }: { onClick: () => void }) {
       data-testid="config-button"
       onClick={onClick}
       className="dashboard-icon-cap border border-glass-border glass-strong glass-chrome lg-rim"
+      data-liquid-glass-webgl={webglActive ? "true" : undefined}
       title="서버 설정"
       aria-label="Open server configuration"
     >

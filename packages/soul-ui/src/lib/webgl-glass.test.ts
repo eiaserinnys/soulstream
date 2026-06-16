@@ -4,31 +4,43 @@ import {
   MAX_WEBGL_GLASS_CARDS,
   WEBGL_GLASS_STORAGE_KEY,
   calculateBackingDpr,
+  clearWebglGlassOverride,
   createGlassSurfaceBuffer,
+  isWebglGlassStorageValueDisabled,
   isWebglGlassStorageValueEnabled,
   packVisibleGlassSurfaces,
   readWebglGlassEnabled,
+  readWebglGlassOverride,
   writeWebglGlassEnabled,
   type GlassSurfaceRegistration,
 } from "./webgl-glass";
 
 describe("webgl glass registry utilities", () => {
-  it("keeps the localStorage toggle default-off and explicit", () => {
+  it("keeps the localStorage toggle as a development override over default-on account settings", () => {
     const storage = new MemoryStorage();
 
-    expect(readWebglGlassEnabled(storage)).toBe(false);
+    expect(readWebglGlassOverride(storage)).toBeNull();
+    expect(readWebglGlassEnabled(storage)).toBe(true);
     expect(isWebglGlassStorageValueEnabled("1")).toBe(true);
     expect(isWebglGlassStorageValueEnabled("true")).toBe(true);
     expect(isWebglGlassStorageValueEnabled("enabled")).toBe(true);
+    expect(isWebglGlassStorageValueDisabled("0")).toBe(true);
+    expect(isWebglGlassStorageValueDisabled("off")).toBe(true);
     expect(isWebglGlassStorageValueEnabled("0")).toBe(false);
 
     writeWebglGlassEnabled(true, storage);
     expect(storage.getItem(WEBGL_GLASS_STORAGE_KEY)).toBe("1");
+    expect(readWebglGlassOverride(storage)).toBe(true);
     expect(readWebglGlassEnabled(storage)).toBe(true);
 
     writeWebglGlassEnabled(false, storage);
-    expect(storage.getItem(WEBGL_GLASS_STORAGE_KEY)).toBeNull();
+    expect(storage.getItem(WEBGL_GLASS_STORAGE_KEY)).toBe("0");
+    expect(readWebglGlassOverride(storage)).toBe(false);
     expect(readWebglGlassEnabled(storage)).toBe(false);
+
+    clearWebglGlassOverride(storage);
+    expect(storage.getItem(WEBGL_GLASS_STORAGE_KEY)).toBeNull();
+    expect(readWebglGlassOverride(storage)).toBeNull();
   });
 
   it("packs visible rects in viewport order and culls offscreen cards", () => {

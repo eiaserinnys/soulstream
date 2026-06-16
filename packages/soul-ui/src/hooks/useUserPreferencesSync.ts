@@ -23,7 +23,9 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
   const accountKey = useMemo(() => normalizeEmail(email), [email]);
   const [appearance] = useAppearancePreference();
   const wallpaper = useDashboardStore((state) => state.wallpaper);
+  const liquidGlass = useDashboardStore((state) => state.liquidGlass);
   const setWallpaper = useDashboardStore((state) => state.setWallpaper);
+  const setLiquidGlass = useDashboardStore((state) => state.setLiquidGlass);
   const hydratedAccountRef = useRef<string | null>(null);
   const appliedSnapshotKeyRef = useRef<string | null>(null);
   const hasServerBackgroundRef = useRef(false);
@@ -38,7 +40,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     let cancelled = false;
     const cached = readCachedUserPreferences(accountKey);
     if (cached) {
-      applySnapshot(cached, setWallpaper, appliedSnapshotKeyRef);
+      applySnapshot(cached, setWallpaper, setLiquidGlass, appliedSnapshotKeyRef);
       hydratedAccountRef.current = accountKey;
     }
 
@@ -46,7 +48,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
       .then((response) => {
         if (cancelled) return;
         hasServerBackgroundRef.current = response.hasBackground;
-        applySnapshot(response.preferences, setWallpaper, appliedSnapshotKeyRef);
+        applySnapshot(response.preferences, setWallpaper, setLiquidGlass, appliedSnapshotKeyRef);
         writeCachedUserPreferences(accountKey, response.preferences);
         hydratedAccountRef.current = accountKey;
       })
@@ -59,7 +61,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     return () => {
       cancelled = true;
     };
-  }, [accountKey, setWallpaper]);
+  }, [accountKey, setLiquidGlass, setWallpaper]);
 
   useEffect(() => {
     if (!accountKey || hydratedAccountRef.current !== accountKey) return;
@@ -67,6 +69,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     const snapshot = normalizeUserPreferences({
       appearance,
       wallpaper: wallpaperForServer(wallpaper),
+      glass: liquidGlass,
     });
     const snapshotKey = stableSnapshotKey(snapshot);
     if (appliedSnapshotKeyRef.current === snapshotKey) return;
@@ -79,7 +82,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
         .then((response) => {
           if (saveSeqRef.current !== saveSeq) return;
           hasServerBackgroundRef.current = response.hasBackground;
-          applySnapshot(response.preferences, setWallpaper, appliedSnapshotKeyRef);
+          applySnapshot(response.preferences, setWallpaper, setLiquidGlass, appliedSnapshotKeyRef);
           writeCachedUserPreferences(accountKey, response.preferences);
         })
         .catch(() => {
@@ -88,7 +91,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [accountKey, appearance, wallpaper, setWallpaper]);
+  }, [accountKey, appearance, liquidGlass, wallpaper, setLiquidGlass, setWallpaper]);
 }
 
 async function persistSnapshot(
@@ -100,6 +103,7 @@ async function persistSnapshot(
     const uploaded = await uploadUserBackground(await dataUrlToBlob(customImage));
     return saveUserPreferences({
       appearance: snapshot.appearance,
+      glass: snapshot.glass,
       wallpaper: uploaded.wallpaper,
     });
   }
@@ -112,12 +116,14 @@ async function persistSnapshot(
 function applySnapshot(
   snapshot: UserPreferencesSnapshot,
   setWallpaper: (settings: WallpaperSettings) => void,
+  setLiquidGlass: (settings: UserPreferencesSnapshot["glass"]) => void,
   appliedSnapshotKeyRef: { current: string | null },
 ) {
   const normalized = normalizeUserPreferences(snapshot);
   appliedSnapshotKeyRef.current = stableSnapshotKey(normalized);
   setAppearancePreference(normalized.appearance);
   setWallpaper(normalized.wallpaper);
+  setLiquidGlass(normalized.glass);
 }
 
 function wallpaperForServer(wallpaper: WallpaperSettings): WallpaperSettings {

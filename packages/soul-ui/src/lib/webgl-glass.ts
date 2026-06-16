@@ -4,6 +4,7 @@ export const MAX_WEBGL_GLASS_CARDS = 48;
 export const WEBGL_GLASS_OVERSCAN_PX = 40;
 
 const ENABLED_VALUES = new Set(["1", "true", "on", "enabled", "yes"]);
+const DISABLED_VALUES = new Set(["0", "false", "off", "disabled", "no"]);
 
 export interface GlassSurfaceRef {
   current: Element | null;
@@ -40,13 +41,26 @@ export function isWebglGlassStorageValueEnabled(value: string | null): boolean {
   return value != null && ENABLED_VALUES.has(value.trim().toLowerCase());
 }
 
-export function readWebglGlassEnabled(storage: Storage | undefined = getLocalStorage()): boolean {
-  if (!storage) return false;
+export function isWebglGlassStorageValueDisabled(value: string | null): boolean {
+  return value != null && DISABLED_VALUES.has(value.trim().toLowerCase());
+}
+
+export function readWebglGlassOverride(
+  storage: Storage | undefined = getLocalStorage(),
+): boolean | null {
+  if (!storage) return null;
   try {
-    return isWebglGlassStorageValueEnabled(storage.getItem(WEBGL_GLASS_STORAGE_KEY));
+    const value = storage.getItem(WEBGL_GLASS_STORAGE_KEY);
+    if (isWebglGlassStorageValueEnabled(value)) return true;
+    if (isWebglGlassStorageValueDisabled(value)) return false;
+    return null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+export function readWebglGlassEnabled(storage: Storage | undefined = getLocalStorage()): boolean {
+  return readWebglGlassOverride(storage) ?? true;
 }
 
 export function writeWebglGlassEnabled(
@@ -58,8 +72,20 @@ export function writeWebglGlassEnabled(
     if (enabled) {
       storage.setItem(WEBGL_GLASS_STORAGE_KEY, "1");
     } else {
-      storage.removeItem(WEBGL_GLASS_STORAGE_KEY);
+      storage.setItem(WEBGL_GLASS_STORAGE_KEY, "0");
     }
+  } catch {
+    return;
+  }
+  dispatchWebglGlassChange();
+}
+
+export function clearWebglGlassOverride(
+  storage: Storage | undefined = getLocalStorage(),
+): void {
+  if (!storage) return;
+  try {
+    storage.removeItem(WEBGL_GLASS_STORAGE_KEY);
   } catch {
     return;
   }

@@ -9,6 +9,7 @@ import { useCallback, useRef } from "react";
 import { useTheme } from "../hooks/useTheme";
 import { cn } from "../lib/cn";
 import { useLiquidLens } from "../lib/liquid-lens";
+import { useGlassSurface } from "./LiquidGlassProvider";
 
 /** 컴팩트 테마 토글 — 헤더 우상단 배치용 */
 export function ThemeToggle({ variant = "default" }: { variant?: "default" | "chrome" }) {
@@ -43,7 +44,8 @@ export function ThemeToggle({ variant = "default" }: { variant?: "default" | "ch
 
 function ChromeThemeToggle({ isDark, onToggle }: { isDark: boolean; onToggle: () => void }) {
   const ref = useRef<HTMLButtonElement>(null);
-  useLiquidLens(ref, { scale: 22 });
+  const webglActive = useGlassSurface(ref, { enabled: true });
+  useLiquidLens(ref, { scale: 22, enabled: !webglActive });
 
   return (
     <button
@@ -51,6 +53,7 @@ function ChromeThemeToggle({ isDark, onToggle }: { isDark: boolean; onToggle: ()
       type="button"
       onClick={onToggle}
       className="dashboard-icon-cap border border-glass-border glass-strong glass-chrome lg-rim"
+      data-liquid-glass-webgl={webglActive ? "true" : undefined}
       title={isDark ? "라이트 모드로 전환" : "다크 모드로 전환"}
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
     >

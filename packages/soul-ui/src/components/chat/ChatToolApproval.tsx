@@ -1,8 +1,9 @@
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { submitToolApproval } from "../../lib/input-request-actions";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
+import { useGlassSurface } from "../LiquidGlassProvider";
 
 export const ChatToolApproval = memo(function ChatToolApproval({
   msg,
@@ -12,6 +13,8 @@ export const ChatToolApproval = memo(function ChatToolApproval({
   sessionId: string;
 }) {
   const [selected, setSelected] = useState<"approved" | "rejected" | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const webglActive = useGlassSurface(cardRef, { enabled: true });
   const isResolved = !!msg.approvalResolved || !!selected;
 
   const handleDecision = async (decision: "approved" | "rejected") => {
@@ -33,7 +36,11 @@ export const ChatToolApproval = memo(function ChatToolApproval({
 
   return (
     <div className="px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
-      <div className="flex flex-col gap-2 rounded-[18px] border border-glass-border glass-strong glass-shadow-md px-4 py-3">
+      <div
+        ref={cardRef}
+        className="flex flex-col gap-2 rounded-[18px] border border-glass-border glass-strong glass-shadow-md px-4 py-3"
+        data-liquid-glass-webgl={webglActive ? "true" : undefined}
+      >
         <div className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           Approval
         </div>

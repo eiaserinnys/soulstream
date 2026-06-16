@@ -5,17 +5,21 @@
  */
 
 import { ArrowLeft } from "lucide-react";
+import { useRef } from "react";
 import { Button } from "./ui/button";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { ProfileAvatar } from "./ProfileAvatar";
 import { STATUS_CONFIG } from "./SessionItem";
 import { cn } from "../lib/cn";
+import { useGlassSurface } from "./LiquidGlassProvider";
 
 export function MobileChatHeader({
   onBack,
 }: {
   onBack: () => void;
 }) {
+  const headerRef = useRef<HTMLDivElement>(null);
+  const webglActive = useGlassSurface(headerRef, { enabled: true });
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const activeSession = useDashboardStore((s) => s.activeSessionSummary);
   const statusConfig = STATUS_CONFIG[activeSession?.status ?? "unknown"] ?? STATUS_CONFIG.unknown;
@@ -29,7 +33,11 @@ export function MobileChatHeader({
 
   return (
     <div className="shrink-0 px-3 py-2">
-      <div className="flex h-[50px] items-center gap-2 rounded-full border border-glass-border glass-strong glass-shadow-xs px-2">
+      <div
+        ref={headerRef}
+        className="flex h-[50px] items-center gap-2 rounded-full border border-glass-border glass-strong glass-shadow-xs px-2"
+        data-liquid-glass-webgl={webglActive ? "true" : undefined}
+      >
         <Button
           variant="ghost"
           size="icon"

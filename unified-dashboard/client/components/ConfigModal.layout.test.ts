@@ -172,6 +172,20 @@ describe("ConfigModal layout", () => {
     expect(fieldRow?.className).toContain("sm:grid-cols-[minmax(0,1fr)_minmax(16rem,1.2fr)]");
   });
 
+  it("renders liquid glass account controls as a separate tab", async () => {
+    ({ container, root } = renderModal());
+    await settleConfigModal();
+
+    clickConfigTab("리퀴드 글래스");
+    await settleConfigModal();
+
+    expect(document.body.textContent).toContain("굴절");
+    expect(document.body.textContent).toContain("색수차");
+    expect(document.body.textContent).toContain("틴트");
+    const saveButton = document.body.querySelector<HTMLButtonElement>('[data-testid="config-save-button"]');
+    expect(saveButton?.disabled).toBe(true);
+  });
+
   it("keeps the user table inside a horizontal scroll container", async () => {
     ({ container, root } = renderModal());
     await settleConfigModal();

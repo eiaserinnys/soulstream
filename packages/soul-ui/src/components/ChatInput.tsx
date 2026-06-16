@@ -22,6 +22,7 @@ import { useChatInputSend } from "./chat/useChatInputSend";
 import { useTextareaAutoHeight } from "./chat/useTextareaAutoHeight";
 import { SuggestionChip } from "./SuggestionChip";
 import { Button } from "./ui/button";
+import { useGlassSurface } from "./LiquidGlassProvider";
 
 interface ChatInputProps {
   /** 외부에서 주입하는 추가 비활성화 조건 (예: 오케스트레이터에서 노드 dead 상태) */
@@ -71,6 +72,8 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
   const [interruptError, setInterruptError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  const composerWebglActive = useGlassSurface(composerRef, { enabled: true });
 
   // 파일 업로드 훅 — activeSessionKey를 sessionId로 사용 (fileUploadUrl 없으면 noop)
   const { files, isUploading, addFiles, removeFile, resetLocal, uploadedPaths } = useFileUpload({
@@ -216,7 +219,11 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
         />
       )}
 
-      <div className="relative flex items-end gap-2 rounded-[25px] border border-glass-border glass-strong glass-shadow-md px-2 py-2">
+      <div
+        ref={composerRef}
+        className="relative flex items-end gap-2 rounded-[25px] border border-glass-border glass-strong glass-shadow-md px-2 py-2"
+        data-liquid-glass-webgl={composerWebglActive ? "true" : undefined}
+      >
         {showInterrupt && (
           <Button
             variant="destructive-outline"

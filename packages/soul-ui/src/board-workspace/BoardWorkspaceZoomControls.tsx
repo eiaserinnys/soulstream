@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { Minus, Plus } from "lucide-react";
 
+import { useGlassSurface } from "../components/LiquidGlassProvider";
 import { useLiquidLens } from "../lib/liquid-lens";
 import { formatBoardZoom } from "./board-viewport";
 
@@ -16,12 +17,14 @@ export function BoardWorkspaceZoomControls({
   onZoomOut,
 }: BoardWorkspaceZoomControlsProps) {
   const ref = useRef<HTMLDivElement>(null);
-  useLiquidLens(ref, { scale: 18 });
+  const webglActive = useGlassSurface(ref, { enabled: true });
+  useLiquidLens(ref, { scale: 18, enabled: !webglActive });
 
   return (
     <div
       ref={ref}
       className="pointer-events-auto absolute bottom-3 left-3 z-40 flex h-[38px] items-center gap-1 rounded-full border border-glass-border glass-strong glass-shadow-xs lg-rim px-1.5 text-xs font-semibold text-muted-foreground"
+      data-liquid-glass-webgl={webglActive ? "true" : undefined}
       data-testid="board-zoom-controls"
     >
       <button
