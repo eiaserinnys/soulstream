@@ -45,7 +45,13 @@ export interface CatalogFolderRow {
   createdAt?: string;
 }
 
-export type BoardItemType = "session" | "markdown" | "subfolder" | "asset" | "frame";
+export type BoardItemType =
+  | "session"
+  | "markdown"
+  | "subfolder"
+  | "asset"
+  | "frame"
+  | "runbook";
 
 export interface CatalogBoardItemRow {
   id: string;

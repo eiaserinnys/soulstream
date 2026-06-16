@@ -3,7 +3,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { FileText, Folder, Frame } from "lucide-react";
+import { BookOpen, FileText, Folder, Frame } from "lucide-react";
 
 import type { SessionSummary } from "../shared/types";
 import { Badge } from "../components/ui/badge";
@@ -242,6 +242,34 @@ export function BoardWorkspaceTile({
     );
   }
 
+  if (item.type === "runbook") {
+    return (
+      <div
+        key={item.id}
+        role="button"
+        tabIndex={0}
+        data-testid="board-runbook-tile"
+        data-board-tile="true"
+        className={cn(BOARD_TILE_CLASS, selectionClassName, pulsingClassName)}
+        style={tileStyle}
+        onPointerDown={(event) => onTilePointerDown(event, item)}
+        onContextMenu={(event) => onTileContextMenu(event, item)}
+      >
+        <div className="flex items-center gap-2 text-xs font-medium text-accent-blue">
+          <BookOpen className="h-4 w-4 shrink-0" />
+          <span>Runbook</span>
+        </div>
+        <div data-testid="board-runbook-title" className="mt-3 line-clamp-3 text-sm font-semibold leading-snug">
+          {item.title}
+        </div>
+      </div>
+    );
+  }
+
+  if (item.type !== "session") {
+    return assertNever(item);
+  }
+
   const config = STATUS_CONFIG[item.session.status] ?? STATUS_CONFIG.unknown;
   const activityTime =
     item.session.lastMessage?.timestamp ?? item.session.updatedAt ?? item.session.createdAt;
@@ -395,4 +423,8 @@ export function BoardWorkspaceTile({
       </div>
     </button>
   );
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled board workspace item: ${JSON.stringify(value)}`);
 }

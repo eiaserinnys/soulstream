@@ -29,7 +29,10 @@ export class RunbookService {
   private readonly repo: RunbookRepository;
   private readonly core: RunbookMutationCore;
 
-  constructor(db: RunbookDbPort, broadcaster?: RunbookBroadcasterPort) {
+  constructor(
+    private readonly db: RunbookDbPort,
+    private readonly broadcaster?: RunbookBroadcasterPort,
+  ) {
     this.repo = db.runbooks();
     this.core = new RunbookMutationCore(db, this.repo, broadcaster);
   }
@@ -48,12 +51,17 @@ export class RunbookService {
 
   async createRunbook(params: RunbookActorParams & {
     runbookId?: string;
-    boardItemId: string;
+    folderId: string;
     title: string;
+    x?: number;
+    y?: number;
     idempotencyKey?: string | null;
   }): Promise<RunbookMutationResult> {
     const runbookId = params.runbookId ?? randomUUID();
-    return await this.core.mutate({
+    const boardItemId = `runbook:${runbookId}`;
+    const x = params.x ?? 0;
+    const y = params.y ?? 0;
+    const result = await this.core.mutate({
       runbookId,
       targetKind: "runbook",
       targetId: runbookId,
@@ -61,19 +69,32 @@ export class RunbookService {
       actor: params,
       idempotencyKey: params.idempotencyKey,
       payload: {
-        board_item_id: params.boardItemId,
+        board_item_id: boardItemId,
+        folder_id: params.folderId,
         title: params.title,
+        x,
+        y,
       },
       apply: async (sql, eventId) => {
+        await this.repo.createRunbookBoardItemTx(sql, {
+          id: boardItemId,
+          folderId: params.folderId,
+          itemId: runbookId,
+          title: params.title,
+          x,
+          y,
+        });
         await this.repo.createRunbookTx(sql, {
           id: runbookId,
-          boardItemId: params.boardItemId,
+          boardItemId,
           title: params.title,
           createdSessionId: params.actorSessionId,
           createdEventId: eventId,
         });
       },
     });
+    await this.broadcastCatalog();
+    return result;
   }
 
   async patchRunbook(params: RunbookActorParams & {
@@ -84,7 +105,7 @@ export class RunbookService {
     reason?: string | null;
     idempotencyKey?: string | null;
   }): Promise<RunbookMutationResult> {
-    return await this.core.mutate({
+    const result = await this.core.mutate({
       runbookId: params.runbookId,
       targetKind: "runbook",
       targetId: params.runbookId,
@@ -102,8 +123,24 @@ export class RunbookService {
           { title: params.title, archived: params.archived },
           params.expectedVersion,
         );
+        if (params.title !== undefined) {
+          await this.repo.patchRunbookBoardItemTitleTx(
+            sql,
+            params.runbookId,
+            params.title,
+          );
+        }
       },
     });
+    if (params.title !== undefined) {
+      await this.broadcastCatalog();
+    }
+    return result;
+  }
+
+  private async broadcastCatalog(): Promise<void> {
+    if (!this.broadcaster?.emitCatalogUpdated) return;
+    await this.broadcaster.emitCatalogUpdated(await this.db.getCatalog());
   }
 
   async createSection(params: RunbookActorParams & {

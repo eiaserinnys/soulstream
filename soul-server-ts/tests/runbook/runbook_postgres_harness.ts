@@ -53,7 +53,7 @@ export async function createRunbookPostgresHarness(): Promise<RunbookPostgresHar
 export async function resetRunbookData(sql: SqlClient): Promise<void> {
   await sql`
     TRUNCATE runbook_operations, runbook_items, runbook_sections, runbooks,
-      board_items, folders, events, sessions
+      board_yjs_catalog_cache, board_items, folders, events, sessions
     RESTART IDENTITY CASCADE
   `;
   await sql`
@@ -61,12 +61,6 @@ export async function resetRunbookData(sql: SqlClient): Promise<void> {
     VALUES ('sess-actor', 'node-1', 'running', 'claude')
   `;
   await sql`INSERT INTO folders (id, name, sort_order) VALUES ('folder-1', 'Folder', 1)`;
-  await sql`
-    INSERT INTO board_items (id, folder_id, item_type, item_id)
-    VALUES
-      ('board-rb-1', 'folder-1', 'markdown', 'runbook-anchor'),
-      ('board-rb-2', 'folder-1', 'markdown', 'runbook-anchor-2')
-  `;
 }
 
 async function connect(
@@ -170,7 +164,7 @@ async function createRunbookSchema(sql: SqlClient): Promise<void> {
     CREATE TABLE board_items (
       id TEXT PRIMARY KEY,
       folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
-      item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame')),
+      item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook')),
       item_id TEXT NOT NULL,
       x DOUBLE PRECISION NOT NULL DEFAULT 0,
       y DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -178,6 +172,14 @@ async function createRunbookSchema(sql: SqlClient): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (folder_id, item_id)
+    )
+  `;
+  await sql`
+    CREATE TABLE board_yjs_catalog_cache (
+      folder_id TEXT PRIMARY KEY REFERENCES folders(id) ON DELETE CASCADE,
+      board_items JSONB NOT NULL DEFAULT '[]'::JSONB,
+      markdown_documents JSONB NOT NULL DEFAULT '[]'::JSONB,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
   await createRunbookTables(sql);

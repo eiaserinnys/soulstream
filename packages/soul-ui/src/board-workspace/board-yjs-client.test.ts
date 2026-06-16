@@ -84,6 +84,38 @@ describe("board-yjs-client", () => {
     ]);
   });
 
+  it("runbook board item type과 metadata를 Yjs roundtrip으로 보존한다", () => {
+    const doc = new Y.Doc();
+    seedBoardYDocFromCatalog(doc, "folder-a", {
+      folders: [],
+      sessions: {},
+      boardItems: [{
+        id: "runbook:rb-1",
+        folderId: "folder-a",
+        itemType: "runbook",
+        itemId: "rb-1",
+        x: 60,
+        y: 80,
+        metadata: {
+          title: "Launch runbook",
+        },
+      }],
+    });
+
+    expect(catalogBoardItemsFromYDoc("folder-a", doc)).toEqual([
+      expect.objectContaining({
+        id: "runbook:rb-1",
+        itemType: "runbook",
+        itemId: "rb-1",
+        x: 60,
+        y: 80,
+        metadata: expect.objectContaining({
+          title: "Launch runbook",
+        }),
+      }),
+    ]);
+  });
+
   it("Yjs update 적용으로 두 doc 사이 board position이 동기화", () => {
     const a = new Y.Doc();
     const b = new Y.Doc();

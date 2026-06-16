@@ -11,6 +11,7 @@ import type { RunbookRepository } from "./runbook_repository.js";
 export interface RunbookDbPort {
   runbooks(): RunbookRepository;
   appendEventTx(sql: RepositorySql, params: AppendEventParams): Promise<number>;
+  getCatalog(): Promise<unknown>;
 }
 
 export interface RunbookBroadcasterPort {
@@ -19,6 +20,7 @@ export interface RunbookBroadcasterPort {
     runbookId: string,
     boardItemId: string,
   ): Promise<void>;
+  emitCatalogUpdated?(catalog: unknown): Promise<void>;
 }
 
 export interface RunbookMutationResult {

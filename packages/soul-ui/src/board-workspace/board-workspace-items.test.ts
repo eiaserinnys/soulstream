@@ -150,6 +150,39 @@ describe("board workspace item helpers", () => {
     });
   });
 
+  it("builds runbook board items as first-class board objects", () => {
+    const items = buildBoardWorkspaceItems({
+      catalog: {
+        ...catalog,
+        boardItems: [
+          ...(catalog.boardItems ?? []),
+          {
+            id: "runbook:rb-1",
+            folderId: "root",
+            itemType: "runbook",
+            itemId: "rb-1",
+            x: 400,
+            y: 200,
+            metadata: {
+              title: "Launch runbook",
+            },
+          },
+        ],
+      },
+      selectedFolderId: "root",
+      sessions,
+    });
+
+    expect(items.find((item) => item.boardItemId === "runbook:rb-1")).toMatchObject({
+      type: "runbook",
+      id: "rb-1",
+      runbookId: "rb-1",
+      title: "Launch runbook",
+      x: 400,
+      y: 200,
+    });
+  });
+
   it("builds frame items and hides children while collapsed without changing child coordinates", () => {
     const frameCatalog: CatalogState = {
       ...catalog,

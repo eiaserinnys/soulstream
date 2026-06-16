@@ -116,12 +116,23 @@ export interface FrameBoardWorkspaceItem {
   height: number;
 }
 
+export interface RunbookBoardWorkspaceItem {
+  type: "runbook";
+  id: string;
+  boardItemId: string;
+  runbookId: string;
+  title: string;
+  x: number;
+  y: number;
+}
+
 export type BoardWorkspaceItem =
   | FolderBoardWorkspaceItem
   | SessionBoardWorkspaceItem
   | MarkdownBoardWorkspaceItem
   | AssetBoardWorkspaceItem
-  | FrameBoardWorkspaceItem;
+  | FrameBoardWorkspaceItem
+  | RunbookBoardWorkspaceItem;
 
 export interface BuildBoardWorkspaceItemsParams {
   catalog: CatalogState;
@@ -484,6 +495,18 @@ function buildPositionedItems({
         y: boardItem.y,
         width: metadata.width,
         height: metadata.height,
+      });
+      continue;
+    }
+    if (boardItem.itemType === "runbook") {
+      items.push({
+        type: "runbook",
+        id: boardItem.itemId,
+        boardItemId: boardItem.id,
+        runbookId: boardItem.itemId,
+        title: metadataText(boardItem, "title") || "Runbook",
+        x: boardItem.x,
+        y: boardItem.y,
       });
     }
   }

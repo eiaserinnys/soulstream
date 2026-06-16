@@ -48,6 +48,35 @@ describe("board_yjs_model", () => {
     expect(replica.markdownDocuments).toEqual([{ id: "d1", title: "Note", body: "hello", version: 1 }]);
   });
 
+  it("runbook board item type을 폴더 Y-doc snapshot으로 round-trip", () => {
+    const snapshot = createBoardYDocSnapshot({
+      folderId: "folder-1",
+      boardItems: [{
+        id: "runbook:rb-1",
+        folderId: "folder-1",
+        itemType: "runbook",
+        itemId: "rb-1",
+        x: 60,
+        y: 80,
+        metadata: { title: "Launch runbook" },
+      }],
+      markdownDocuments: [],
+    });
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, snapshot);
+
+    const replica = readBoardYDocReplica("folder-1", doc);
+
+    expect(replica.boardItems).toEqual([
+      expect.objectContaining({
+        id: "runbook:rb-1",
+        itemType: "runbook",
+        itemId: "rb-1",
+        metadata: expect.objectContaining({ title: "Launch runbook" }),
+      }),
+    ]);
+  });
+
   it("snapshot과 누적 update에서 catalog replica를 derive", () => {
     const snapshot = createBoardYDocSnapshot({
       folderId: "folder-1",

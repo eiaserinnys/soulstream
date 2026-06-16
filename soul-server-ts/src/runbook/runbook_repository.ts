@@ -236,6 +236,61 @@ export class RunbookRepository {
     return requireOne(rows, "createRunbookTx");
   }
 
+  async createRunbookBoardItemTx(
+    sql: RepositorySql,
+    params: {
+      id: string;
+      folderId: string;
+      itemId: string;
+      title: string;
+      x: number;
+      y: number;
+    },
+  ): Promise<void> {
+    await sql`
+      INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata)
+      VALUES (
+        ${params.id},
+        ${params.folderId},
+        'runbook',
+        ${params.itemId},
+        ${params.x},
+        ${params.y},
+        ${sql.json(asPostgresJsonValue({ title: params.title }))}::jsonb
+      )
+    `;
+    await sql`
+      DELETE FROM board_yjs_catalog_cache
+      WHERE folder_id = ${params.folderId}
+    `;
+  }
+
+  async patchRunbookBoardItemTitleTx(
+    sql: RepositorySql,
+    runbookId: string,
+    title: string,
+  ): Promise<void> {
+    await sql`
+      UPDATE board_items
+      SET metadata = jsonb_set(metadata, '{title}', to_jsonb(${title}::text), true),
+          updated_at = NOW()
+      WHERE id = (
+        SELECT board_item_id
+        FROM runbooks
+        WHERE id = ${runbookId}
+      )
+    `;
+    await sql`
+      DELETE FROM board_yjs_catalog_cache
+      WHERE folder_id IN (
+        SELECT bi.folder_id
+        FROM board_items bi
+        JOIN runbooks r ON r.board_item_id = bi.id
+        WHERE r.id = ${runbookId}
+      )
+    `;
+  }
+
   async patchRunbookTx(
     sql: RepositorySql,
     runbookId: string,
