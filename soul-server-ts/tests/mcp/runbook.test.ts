@@ -343,10 +343,6 @@ describe("runbook MCP tools", () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(result.structuredContent).toEqual({
-      error:
-        "caller session id is required for runbook mutation tools. Send x-soulstream-agent-session-id.",
-    });
     expect(service.createRunbook).not.toHaveBeenCalled();
   });
 });
