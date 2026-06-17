@@ -132,6 +132,144 @@ describe("CatalogService.listChildFolders", () => {
   });
 });
 
+describe("CatalogService.browseFolder", () => {
+  it("직접 자식 폴더, 세션 페이지, 문서/파일 보드 항목을 한 번에 반환", async () => {
+    const { sql, calls } = createMockSql((call) => {
+      const text = call.fragments.join("|");
+      if (text.includes("folder_get_all")) {
+        return [
+          { id: "root", name: "Root", sort_order: 0, settings: {}, parent_folder_id: null },
+          { id: "child", name: "Child", sort_order: 1, settings: {}, parent_folder_id: "root" },
+          { id: "grand", name: "Grand", sort_order: 2, settings: {}, parent_folder_id: "child" },
+        ];
+      }
+      if (text.includes("catalog_get_sessions")) {
+        return [
+          { session_id: "sess-a", folder_id: "root", display_name: "Session A" },
+          { session_id: "sess-b", folder_id: "root", display_name: "Session B" },
+        ];
+      }
+      if (text.includes("board_yjs_catalog_cache")) return [];
+      if (text.includes("FROM board_items")) {
+        return [
+          {
+            id: "markdown:doc-1",
+            folder_id: "root",
+            item_type: "markdown",
+            item_id: "doc-1",
+            x: 0,
+            y: 0,
+            metadata: { title: "Spec", preview: "Short spec", version: 1 },
+            created_at: null,
+            updated_at: null,
+          },
+          {
+            id: "asset:asset-1",
+            folder_id: "root",
+            item_type: "asset",
+            item_id: "asset-1",
+            x: 280,
+            y: 0,
+            metadata: {
+              assetId: "asset-1",
+              originalName: "image.png",
+              mimeType: "image/png",
+              byteSize: 1234,
+            },
+            created_at: null,
+            updated_at: null,
+          },
+          {
+            id: "markdown:doc-child",
+            folder_id: "child",
+            item_type: "markdown",
+            item_id: "doc-child",
+            x: 0,
+            y: 0,
+            metadata: { title: "Child doc" },
+            created_at: null,
+            updated_at: null,
+          },
+        ];
+      }
+      if (text.includes("session_list_summary")) {
+        return [
+          {
+            session_id: "sess-a",
+            display_name: "Session A",
+            status: "running",
+            session_type: "claude",
+            created_at: new Date("2026-06-17T00:00:00.000Z"),
+            updated_at: new Date("2026-06-17T01:00:00.000Z"),
+            event_count: "5",
+            away_summary: null,
+            caller_session_id: null,
+            last_event_id: "50",
+            last_read_event_id: "40",
+            node_id: "node-a",
+            total_count: "2",
+          },
+        ];
+      }
+      return [];
+    });
+    const db = new SessionDB(sql);
+    const { broadcaster } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    const result = await svc.browseFolder({
+      folderId: "root",
+      sessionCursor: 0,
+      sessionLimit: 1,
+    });
+
+    expect(result.folder.id).toBe("root");
+    expect(result.childFolders.map((folder) => folder.id)).toEqual(["child"]);
+    expect(result.sessions).toEqual([
+      expect.objectContaining({
+        sessionId: "sess-a",
+        title: "Session A",
+        status: "running",
+        eventCount: 5,
+        nodeId: "node-a",
+      }),
+    ]);
+    expect(result.sessionsPage).toEqual({
+      cursor: 0,
+      limit: 1,
+      total: 2,
+      nextCursor: 1,
+    });
+    expect(result.boardItems.map((item) => item.itemId)).toEqual(["doc-1", "asset-1"]);
+    expect(result.counts).toEqual({
+      childFolders: 1,
+      sessions: 2,
+      boardItems: 2,
+      documents: 1,
+      assets: 1,
+    });
+
+    const sessionListCall = calls.find((call) =>
+      call.fragments.join("|").includes("session_list_summary"),
+    );
+    expect(sessionListCall?.values).toEqual([null, null, 1, 0, "root", null]);
+  });
+
+  it("없는 폴더는 명시적으로 거부", async () => {
+    const { sql } = createMockSql((call) => {
+      if (call.fragments.join("|").includes("folder_get_all")) return [];
+      return [];
+    });
+    const db = new SessionDB(sql);
+    const { broadcaster } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster);
+
+    await expect(svc.browseFolder({ folderId: "missing" })).rejects.toThrow(
+      "folder not found: missing",
+    );
+  });
+});
+
 describe("CatalogService.setFolderParent", () => {
   it("parent_folder_id 갱신 + null 루트 복귀 후 broadcast", async () => {
     const { sql, calls } = createMockSql((call) => {

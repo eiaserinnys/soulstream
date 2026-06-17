@@ -45,6 +45,7 @@ const EXPECTED_TOOLS = [
   // catalog
   "list_folders",
   "list_child_folders",
+  "browse_folder",
   "create_folder",
   "move_folder",
   "rename_folder",
@@ -112,7 +113,62 @@ function createMockSql() {
       ]);
     }
     if (text.includes("catalog_get_sessions")) {
+      return Promise.resolve([
+        { session_id: "sess-root", folder_id: "root", display_name: "Root Session" },
+      ]);
+    }
+    if (text.includes("board_yjs_catalog_cache")) {
       return Promise.resolve([]);
+    }
+    if (text.includes("FROM board_items")) {
+      return Promise.resolve([
+        {
+          id: "markdown:doc-1",
+          folder_id: "root",
+          item_type: "markdown",
+          item_id: "doc-1",
+          x: 0,
+          y: 0,
+          metadata: { title: "Spec", preview: "Short spec", version: 1 },
+          created_at: null,
+          updated_at: null,
+        },
+        {
+          id: "asset:asset-1",
+          folder_id: "root",
+          item_type: "asset",
+          item_id: "asset-1",
+          x: 280,
+          y: 0,
+          metadata: {
+            assetId: "asset-1",
+            originalName: "image.png",
+            mimeType: "image/png",
+            byteSize: 1234,
+          },
+          created_at: null,
+          updated_at: null,
+        },
+      ]);
+    }
+    if (text.includes("session_list_summary")) {
+      return Promise.resolve([
+        {
+          session_id: "sess-root",
+          display_name: "Root Session",
+          status: "running",
+          session_type: "claude",
+          created_at: new Date("2026-06-17T00:00:00.000Z"),
+          updated_at: new Date("2026-06-17T01:00:00.000Z"),
+          event_count: "3",
+          away_summary: null,
+          caller_session_id: null,
+          last_event_id: "30",
+          last_read_event_id: "20",
+          node_id: "test-node",
+          total_count: "1",
+        },
+      ]);
     }
     return Promise.resolve([]);
   }) as unknown as SqlClient & {
@@ -371,6 +427,58 @@ describe("MCP SDK client smoke", () => {
     expect(structured.agents).toHaveLength(1);
     expect(structured.agents[0]?.id).toBe("codex-default");
     expect(structured.agents[0]?.max_turns).toBe(50);
+  });
+
+  it("callTool('browse_folder') → 하위 폴더, 세션, 문서/이미지 보드 항목을 함께 반환", async () => {
+    const result = await client.callTool({
+      name: "browse_folder",
+      arguments: { folder_id: "root", session_limit: 10 },
+    });
+    expect(result.isError).not.toBe(true);
+    const structured = result.structuredContent as {
+      folder_id: string;
+      child_folders: Array<{ id: string; name: string }>;
+      sessions: Array<{ sessionId: string; title: string; status: string | null }>;
+      sessions_page: { total: number; nextCursor: number | null };
+      board_items: Array<{ itemType: string; itemId: string; metadata: Record<string, unknown> }>;
+      counts: { childFolders: number; sessions: number; boardItems: number; documents: number; assets: number };
+    };
+    expect(structured.folder_id).toBe("root");
+    expect(structured.child_folders).toEqual([
+      expect.objectContaining({ id: "child", name: "Child" }),
+    ]);
+    expect(structured.sessions).toEqual([
+      expect.objectContaining({
+        sessionId: "sess-root",
+        title: "Root Session",
+        status: "running",
+      }),
+    ]);
+    expect(structured.sessions_page).toEqual({
+      cursor: 0,
+      limit: 10,
+      total: 1,
+      nextCursor: null,
+    });
+    expect(structured.board_items).toEqual([
+      expect.objectContaining({
+        itemType: "markdown",
+        itemId: "doc-1",
+        metadata: expect.objectContaining({ title: "Spec" }),
+      }),
+      expect.objectContaining({
+        itemType: "asset",
+        itemId: "asset-1",
+        metadata: expect.objectContaining({ originalName: "image.png" }),
+      }),
+    ]);
+    expect(structured.counts).toEqual({
+      childFolders: 1,
+      sessions: 1,
+      boardItems: 2,
+      documents: 1,
+      assets: 1,
+    });
   });
 
   it("callTool('move_folder') → 부모 이동, 루트 복귀, 순환 거부", async () => {

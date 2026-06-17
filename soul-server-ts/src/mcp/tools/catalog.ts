@@ -37,6 +37,39 @@ export function registerCatalogTools(
   );
 
   server.registerTool(
+    "browse_folder",
+    {
+      description:
+        "폴더 내부를 한 번에 브라우즈한다. 직접 자식 폴더, 세션 페이지, 문서/이미지/파일 보드 항목을 함께 반환.",
+      inputSchema: {
+        folder_id: z.string().min(1),
+        session_cursor: z.number().int().min(0).default(0),
+        session_limit: z.number().int().min(1).max(100).default(20),
+      },
+    },
+    async ({ folder_id, session_cursor, session_limit }) => {
+      try {
+        const result = await runtime.catalogService.browseFolder({
+          folderId: folder_id,
+          sessionCursor: session_cursor ?? 0,
+          sessionLimit: session_limit ?? 20,
+        });
+        return jsonResult({
+          folder_id,
+          folder: result.folder,
+          child_folders: result.childFolders,
+          sessions: result.sessions,
+          sessions_page: result.sessionsPage,
+          board_items: result.boardItems,
+          counts: result.counts,
+        });
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
     "create_folder",
     {
       description: "새 폴더 생성.",

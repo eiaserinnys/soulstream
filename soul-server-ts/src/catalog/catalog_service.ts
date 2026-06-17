@@ -15,7 +15,11 @@
 import { randomUUID } from "node:crypto";
 
 import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
-import type { SessionDB } from "../db/session_db.js";
+import type {
+  CatalogBoardItemRow,
+  ListSessionSummaryRow,
+  SessionDB,
+} from "../db/session_db.js";
 import { assertMutableFolder } from "../system_folders.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
@@ -31,6 +35,43 @@ export interface CatalogFolderDto {
   settings: Record<string, unknown>;
   parentFolderId: string | null;
   createdAt?: string;
+}
+
+export interface BrowseFolderSessionDto {
+  sessionId: string;
+  title: string;
+  displayName: string | null;
+  status: string | null;
+  sessionType: string | null;
+  createdAt: string;
+  updatedAt: string;
+  eventCount: number;
+  awaySummary: string | null;
+  callerSessionId: string | null;
+  nodeId: string | null;
+  lastEventId: number | null;
+  lastReadEventId: number | null;
+}
+
+export interface BrowseFolderResult {
+  folderId: string;
+  folder: CatalogFolderDto;
+  childFolders: CatalogFolderDto[];
+  sessions: BrowseFolderSessionDto[];
+  sessionsPage: {
+    cursor: number;
+    limit: number;
+    total: number;
+    nextCursor: number | null;
+  };
+  boardItems: CatalogBoardItemRow[];
+  counts: {
+    childFolders: number;
+    sessions: number;
+    boardItems: number;
+    documents: number;
+    assets: number;
+  };
 }
 
 /**
@@ -69,6 +110,63 @@ export class CatalogService {
   async listChildFolders(folderId: string | null): Promise<CatalogFolderDto[]> {
     const folders = await this.listFolders();
     return folders.filter((folder) => folder.parentFolderId === folderId);
+  }
+
+  /**
+   * MCP browse용 읽기 스냅샷.
+   *
+   * "폴더 안에 무엇이 있나"는 folders, sessions, board_items 세 정본을 함께 봐야 한다.
+   * 이 메서드는 mutation 없이 직접 자식 폴더, 세션 페이지, 문서/파일 보드 항목을 한 번에
+   * 반환하여 MCP 호출자가 여러 도구를 조합하다가 누락을 만들지 않게 한다.
+   */
+  async browseFolder(params: {
+    folderId: string;
+    sessionCursor?: number;
+    sessionLimit?: number;
+  }): Promise<BrowseFolderResult> {
+    const cursor = Math.max(0, Math.trunc(params.sessionCursor ?? 0));
+    const limit = Math.min(
+      100,
+      Math.max(1, Math.trunc(params.sessionLimit ?? 20)),
+    );
+    const catalog = await this.db.getCatalog();
+    const folder = catalog.folders.find((candidate) => candidate.id === params.folderId);
+    if (!folder) {
+      throw new Error(`folder not found: ${params.folderId}`);
+    }
+    const childFolders = catalog.folders.filter(
+      (candidate) => candidate.parentFolderId === params.folderId,
+    );
+    const boardItems = catalog.boardItems.filter(
+      (item) => item.folderId === params.folderId,
+    );
+    const { sessions, total } = await this.db.listSessionsSummary({
+      search: null,
+      limit,
+      offset: cursor,
+      folderId: params.folderId,
+      nodeId: null,
+    });
+    return {
+      folderId: params.folderId,
+      folder,
+      childFolders,
+      sessions: sessions.map(toBrowseFolderSession),
+      sessionsPage: {
+        cursor,
+        limit,
+        total,
+        nextCursor: cursor + limit < total ? cursor + limit : null,
+      },
+      boardItems,
+      counts: {
+        childFolders: childFolders.length,
+        sessions: total,
+        boardItems: boardItems.length,
+        documents: boardItems.filter((item) => item.itemType === "markdown").length,
+        assets: boardItems.filter((item) => item.itemType === "asset").length,
+      },
+    };
   }
 
   /**
@@ -365,4 +463,28 @@ export class CatalogService {
 
 function snapBoardPosition(value: number): number {
   return Math.round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE;
+}
+
+function toBrowseFolderSession(row: ListSessionSummaryRow): BrowseFolderSessionDto {
+  return {
+    sessionId: row.session_id,
+    title: row.display_name ?? row.session_id,
+    displayName: row.display_name,
+    status: row.status,
+    sessionType: row.session_type,
+    createdAt: serializeDate(row.created_at),
+    updatedAt: serializeDate(row.updated_at),
+    eventCount: row.event_count,
+    awaySummary: row.away_summary,
+    callerSessionId: row.caller_session_id,
+    nodeId: row.node_id,
+    lastEventId: row.last_event_id,
+    lastReadEventId: row.last_read_event_id,
+  };
+}
+
+function serializeDate(value: Date | string): string {
+  if (value instanceof Date) return value.toISOString();
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : value;
 }
