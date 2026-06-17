@@ -21,8 +21,8 @@ import { resolveFolderActiveSessionDecision } from "./folder-active-session";
 import { FolderScrollHeader, useScrollHeaderMargin } from "./folder-scroll-header";
 import { runGuardedLoadMore, type LoadMoreCallback } from "./load-more-guard";
 import {
-  DASHBOARD_ITEM_GAP_PX,
-  DASHBOARD_PANEL_INSET_PX,
+  DASHBOARD_CARD_GAP_PX,
+  DASHBOARD_LIST_INSET_PX,
   DASHBOARD_SESSION_CARD_HEIGHT_PX,
   DASHBOARD_SESSION_ROW_HEIGHT_PX,
 } from "./dashboard-spacing";
@@ -149,8 +149,9 @@ function DesktopFolderSessionGrid({
       <FolderScrollHeader scrollHeader={scrollHeader} scrollHeaderRef={scrollHeaderRef} />
       <div
         style={{
-          paddingInline: DASHBOARD_PANEL_INSET_PX,
-          paddingBottom: DASHBOARD_PANEL_INSET_PX,
+          paddingInline: DASHBOARD_LIST_INSET_PX,
+          paddingTop: DASHBOARD_LIST_INSET_PX,
+          paddingBottom: DASHBOARD_LIST_INSET_PX,
         }}
       >
         <div
@@ -176,7 +177,7 @@ function DesktopFolderSessionGrid({
                 <div
                   data-testid="folder-session-row-grid"
                   className="grid h-full grid-cols-1 xl:grid-cols-2"
-                  style={{ gap: DASHBOARD_ITEM_GAP_PX }}
+                  style={{ gap: DASHBOARD_CARD_GAP_PX }}
                 >
                   {rowSessions.map((session) => (
                     <div
@@ -235,7 +236,13 @@ function MobileFolderSessionList({
       onClick={onContainerClick}
     >
       <FolderScrollHeader scrollHeader={scrollHeader} scrollHeaderRef={scrollHeaderRef} />
-      <div style={{ height: `${mobileVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
+      <div
+        style={{
+          paddingTop: DASHBOARD_LIST_INSET_PX,
+          paddingBottom: DASHBOARD_LIST_INSET_PX,
+        }}
+      >
+        <div style={{ height: `${mobileVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
         {mobileVirtualItems.map((virtualItem) => {
           const session = displaySessions[virtualItem.index];
           return (
@@ -256,7 +263,7 @@ function MobileFolderSessionList({
                 style={{
                   width: "100%",
                   height: DASHBOARD_SESSION_CARD_HEIGHT_PX,
-                  paddingInline: DASHBOARD_PANEL_INSET_PX,
+                  paddingInline: DASHBOARD_LIST_INSET_PX,
                 }}
               >
                 {renderSessionItem(session)}
@@ -264,6 +271,7 @@ function MobileFolderSessionList({
             </div>
           );
         })}
+        </div>
       </div>
 
       <LoadMoreSentinel hasMore={hasMore} sentinelRef={sentinelRef} />

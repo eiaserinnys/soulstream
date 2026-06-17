@@ -27,6 +27,7 @@ export interface PackedGlassSurfaces {
   overflowCount: number;
   rects: Float32Array;
   clips: Float32Array;
+  clipRadii: Float32Array;
 }
 
 export interface WebglGlassStats {
@@ -107,11 +108,16 @@ export function createGlassSurfaceBuffer(maxCards = MAX_WEBGL_GLASS_CARDS): Floa
   return new Float32Array(maxCards * 4);
 }
 
-export type GlassSurfaceClipAncestorCache = WeakMap<Element, Element | null>;
+export function createGlassSurfaceScalarBuffer(maxCards = MAX_WEBGL_GLASS_CARDS): Float32Array {
+  return new Float32Array(maxCards);
+}
+
+export type GlassSurfaceClipAncestorCache = WeakMap<Element, Element[]>;
 
 export interface GlassSurfacePackingOptions {
   rects?: Float32Array;
   clips?: Float32Array;
+  clipRadii?: Float32Array;
   maxCards?: number;
   clipAncestorCache?: GlassSurfaceClipAncestorCache;
 }
@@ -126,6 +132,7 @@ export function packVisibleGlassSurfaces(
   const maxCards = maxCardsOverride ?? options.maxCards ?? MAX_WEBGL_GLASS_CARDS;
   const rects = options.rects ?? createGlassSurfaceBuffer(maxCards);
   const clips = options.clips ?? createGlassSurfaceBuffer(maxCards);
+  const clipRadii = options.clipRadii ?? createGlassSurfaceScalarBuffer(maxCards);
   const overscan = viewport.overscan ?? WEBGL_GLASS_OVERSCAN_PX;
   const viewportClip = {
     left: -overscan,
@@ -134,6 +141,7 @@ export function packVisibleGlassSurfaces(
     bottom: viewport.height + overscan,
     width: viewport.width + overscan * 2,
     height: viewport.height + overscan * 2,
+    radius: 0,
   };
   let count = 0;
   let visibleCount = 0;
@@ -161,46 +169,61 @@ export function packVisibleGlassSurfaces(
     clips[offset + 1] = clipRect.top;
     clips[offset + 2] = clipRect.width;
     clips[offset + 3] = clipRect.height;
+    clipRadii[count] = clipRect.radius;
     count += 1;
   }
 
   if (count < maxCards) {
     rects.fill(0, count * 4, maxCards * 4);
     clips.fill(0, count * 4, maxCards * 4);
+    clipRadii.fill(0, count, maxCards);
   }
 
-  return { count, visibleCount, overflowCount, rects, clips };
+  return { count, visibleCount, overflowCount, rects, clips, clipRadii };
 }
 
 function getSurfaceClipRect(
   element: Element,
-  viewportClip: RectLike,
+  viewportClip: ClipRect,
   clipAncestorCache?: GlassSurfaceClipAncestorCache,
-): RectLike | null {
-  const clipAncestor = getNearestClipAncestor(element, clipAncestorCache);
-  if (!clipAncestor) return viewportClip;
-  return intersectRects(viewportClip, clipAncestor.getBoundingClientRect());
+): ClipRect | null {
+  const clipAncestors = getClipAncestors(element, clipAncestorCache);
+  let clipRect: ClipRect = viewportClip;
+  for (const ancestor of clipAncestors) {
+    const ancestorRect = toRectLike(ancestor.getBoundingClientRect());
+    if (!ancestorRect) continue;
+    const nextRect = intersectRects(clipRect, ancestorRect);
+    if (!nextRect) return null;
+    clipRect = {
+      ...nextRect,
+      radius: Math.max(
+        clipRect.radius,
+        readMaxBorderRadius(ancestor, ancestorRect),
+      ),
+    };
+  }
+  return clipRect;
 }
 
-function getNearestClipAncestor(
+function getClipAncestors(
   element: Element,
   clipAncestorCache?: GlassSurfaceClipAncestorCache,
-): Element | null {
+): Element[] {
   if (clipAncestorCache?.has(element)) {
-    return clipAncestorCache.get(element) ?? null;
+    return clipAncestorCache.get(element) ?? [];
   }
 
+  const ancestors: Element[] = [];
   let ancestor = element.parentElement;
   while (ancestor) {
     if (isOverflowClipElement(ancestor)) {
-      clipAncestorCache?.set(element, ancestor);
-      return ancestor;
+      ancestors.push(ancestor);
     }
     ancestor = ancestor.parentElement;
   }
 
-  clipAncestorCache?.set(element, null);
-  return null;
+  clipAncestorCache?.set(element, ancestors);
+  return ancestors;
 }
 
 function isOverflowClipElement(element: Element): boolean {
@@ -236,6 +259,17 @@ interface RectLike {
   height: number;
 }
 
+interface ClipRect extends RectLike {
+  radius: number;
+}
+
+function toRectLike(
+  rect: DOMRect | { left: number; right: number; top: number; bottom: number; width: number; height: number },
+): RectLike | null {
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  return rect;
+}
+
 function intersectRects(a: RectLike, b: RectLike): RectLike | null {
   const left = Math.max(a.left, b.left);
   const top = Math.max(a.top, b.top);
@@ -245,6 +279,29 @@ function intersectRects(a: RectLike, b: RectLike): RectLike | null {
   const height = bottom - top;
   if (width <= 0 || height <= 0) return null;
   return { left, top, right, bottom, width, height };
+}
+
+function readMaxBorderRadius(element: Element, bounds: RectLike): number {
+  const style = getComputedStyleForElement(element);
+  if (!style) return 0;
+  return Math.max(
+    parseBorderRadius(style.borderTopLeftRadius, bounds),
+    parseBorderRadius(style.borderTopRightRadius, bounds),
+    parseBorderRadius(style.borderBottomRightRadius, bounds),
+    parseBorderRadius(style.borderBottomLeftRadius, bounds),
+    parseBorderRadius(style.borderRadius, bounds),
+  );
+}
+
+function parseBorderRadius(value: string, bounds: RectLike): number {
+  const firstRadius = value.trim().split(/\s+/)[0] ?? "";
+  if (!firstRadius) return 0;
+  const numeric = Number.parseFloat(firstRadius);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  if (firstRadius.endsWith("%")) {
+    return Math.min(bounds.width, bounds.height) * numeric / 100;
+  }
+  return numeric;
 }
 
 function getLocalStorage(): Storage | undefined {

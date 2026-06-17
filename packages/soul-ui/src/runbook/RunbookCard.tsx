@@ -298,8 +298,11 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[var(--lg-card)] text-left">
-      <header className="shrink-0 border-b border-[var(--lg-line)] px-3 py-2.5">
+    <div
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] bg-[var(--lg-card)] text-left"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <header className="shrink-0 border-b border-[var(--lg-line)] px-4 py-3">
         <div className="flex min-w-0 items-start gap-2">
           <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-accent-blue" />
           <div className="min-w-0 flex-1">
@@ -316,7 +319,7 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {loading && !snapshot && (
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             불러오는 중
@@ -324,19 +327,19 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
         )}
 
         {error && !snapshot && (
-          <div className="rounded-sm border border-accent-red/30 bg-accent-red/10 px-2 py-2 text-xs text-accent-red">
+          <div className="rounded-[12px] border border-accent-red/30 bg-accent-red/10 px-3 py-2 text-xs text-accent-red">
             {error}
           </div>
         )}
 
         {!loading && !error && snapshot === null && (
-          <div className="rounded-sm border border-[var(--lg-line)] px-2 py-2 text-xs text-muted-foreground">
+          <div className="rounded-[12px] border border-[var(--lg-line)] px-3 py-2 text-xs text-muted-foreground">
             런북을 찾을 수 없음
           </div>
         )}
 
         {snapshot && sections.length === 0 && (
-          <div className="rounded-sm border border-[var(--lg-line)] px-2 py-2 text-xs text-muted-foreground">
+          <div className="rounded-[12px] border border-[var(--lg-line)] px-3 py-2 text-xs text-muted-foreground">
             항목 없음
           </div>
         )}
@@ -349,7 +352,7 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
               <button
                 type="button"
                 data-testid="runbook-section-toggle"
-                className="flex w-full items-center gap-1.5 rounded-sm px-1.5 py-1 text-left text-xs font-semibold text-foreground transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/60"
+                className="flex w-full items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-left text-xs font-semibold text-foreground transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/60"
                 onPointerDown={stopTileDrag}
                 onClick={() =>
                   setOpenSections((prev) => ({ ...prev, [section.id]: !open }))
@@ -367,7 +370,7 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
               </button>
 
               {open && (
-                <div className="mt-1 space-y-1">
+                <div className="mt-2 space-y-2">
                   {sectionItems.map((item) => {
                     const assignee = resolveAssignee(section, item);
                     const myTurn = isHumanTurn(assignee, item);
@@ -384,7 +387,7 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                         key={item.id}
                         data-testid="runbook-item-row"
                         className={cn(
-                          "rounded-sm border border-[var(--lg-line)] bg-muted/[0.12] px-2 py-1.5",
+                          "rounded-[12px] border border-white/8 bg-background/25 px-2.5 py-2 shadow-[0_6px_18px_-18px_rgb(20_26_40_/_45%)]",
                           myTurn && "border-accent-blue/70 bg-accent-blue/[0.14] shadow-[0_0_0_1px_rgb(73_146_255_/_28%)]",
                           item.status === "cancelled" && "opacity-70",
                         )}
@@ -420,7 +423,7 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                               <StatusChip status={item.status} />
                               <span
                                 className={cn(
-                                  "inline-flex h-5 min-w-0 items-center gap-1 rounded-sm border border-[var(--lg-line)] px-1.5",
+                                  "inline-flex h-5 min-w-0 items-center gap-1 rounded-full border border-[var(--lg-line)] px-1.5",
                                   myTurn && "border-accent-blue/40 text-accent-blue",
                                 )}
                                 title={assigneeLabel(assignee)}
@@ -431,7 +434,7 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                               {hasHowTo && (
                                 <button
                                   type="button"
-                                  className="ml-auto inline-flex h-5 items-center gap-0.5 rounded-sm px-1 text-[10px] text-accent-blue hover:bg-accent-blue/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/60"
+                                  className="ml-auto inline-flex h-5 items-center gap-0.5 rounded-full px-1.5 text-[10px] text-accent-blue hover:bg-accent-blue/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/60"
                                   onPointerDown={stopTileDrag}
                                   onClick={() =>
                                     setOpenItems((prev) => ({ ...prev, [item.id]: !itemOpen }))
@@ -449,7 +452,7 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                             {hasHowTo && itemOpen && (
                               <div
                                 data-testid="runbook-how-to"
-                                className="mt-2 rounded-sm border border-[var(--lg-line)] bg-background/50 px-2 py-1.5 text-xs leading-relaxed text-foreground"
+                                className="mt-2 rounded-[10px] border border-[var(--lg-line)] bg-background/40 px-2.5 py-2 text-xs leading-relaxed text-foreground"
                               >
                                 <MarkdownContent content={item.how_to} compact />
                               </div>

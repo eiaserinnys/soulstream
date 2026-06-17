@@ -14,6 +14,7 @@ import { useTheme } from "../hooks/useTheme";
 import { isChromiumLensRuntime } from "../lib/liquid-lens";
 import {
   createGlassSurfaceBuffer,
+  createGlassSurfaceScalarBuffer,
   packVisibleGlassSurfaces,
   readWebglGlassOverride,
   WEBGL_GLASS_CHANGE_EVENT,
@@ -36,18 +37,27 @@ const GLASS_TINT_CSS_VAR = "--liquid-glass-tint-strength";
 
 interface LiquidGlassRegistryContextValue {
   enabled: boolean;
+  shouldMountCanvas: boolean;
+  setCanvasElement: (element: HTMLCanvasElement | null) => void;
   register: (ref: GlassSurfaceRef) => () => void;
 }
 
 const LiquidGlassRegistryContext = createContext<LiquidGlassRegistryContextValue | null>(null);
 
-export function LiquidGlassProvider({ children }: { children: ReactNode }) {
+export function LiquidGlassProvider({
+  children,
+  renderDefaultCanvas = true,
+}: {
+  children: ReactNode;
+  renderDefaultCanvas?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const rendererRef = useRef<WebglGlassRenderer | null>(null);
   const registrationsRef = useRef(new Map<number, GlassSurfaceRegistration>());
   const nextIdRef = useRef(0);
   const rectBufferRef = useRef(createGlassSurfaceBuffer());
   const clipBufferRef = useRef(createGlassSurfaceBuffer());
+  const clipRadiusBufferRef = useRef(createGlassSurfaceScalarBuffer());
   const clipAncestorCacheRef = useRef<GlassSurfaceClipAncestorCache>(new WeakMap());
   const statsRef = useRef<WebglGlassStats>({
     fps: 0,
@@ -111,9 +121,13 @@ export function LiquidGlassProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const setCanvasElement = useCallback((element: HTMLCanvasElement | null) => {
+    canvasRef.current = element;
+  }, []);
+
   const contextValue = useMemo<LiquidGlassRegistryContextValue>(
-    () => ({ enabled, register }),
-    [enabled, register],
+    () => ({ enabled, shouldMountCanvas, setCanvasElement, register }),
+    [enabled, shouldMountCanvas, setCanvasElement, register],
   );
 
   useEffect(() => {
@@ -148,6 +162,7 @@ export function LiquidGlassProvider({ children }: { children: ReactNode }) {
         {
           rects: rectBufferRef.current,
           clips: clipBufferRef.current,
+          clipRadii: clipRadiusBufferRef.current,
           clipAncestorCache: clipAncestorCacheRef.current,
         },
       );
@@ -206,16 +221,22 @@ export function LiquidGlassProvider({ children }: { children: ReactNode }) {
 
   return (
     <LiquidGlassRegistryContext.Provider value={contextValue}>
-      {shouldMountCanvas ? (
-        <canvas
-          ref={canvasRef}
-          aria-hidden="true"
-          className="liquid-glass-webgl-canvas"
-          data-liquid-glass-webgl-provider="true"
-        />
-      ) : null}
+      {renderDefaultCanvas ? <LiquidGlassCanvas /> : null}
       {children}
     </LiquidGlassRegistryContext.Provider>
+  );
+}
+
+export function LiquidGlassCanvas() {
+  const context = useContext(LiquidGlassRegistryContext);
+  if (!context?.shouldMountCanvas) return null;
+  return (
+    <canvas
+      ref={context.setCanvasElement}
+      aria-hidden="true"
+      className="liquid-glass-webgl-canvas"
+      data-liquid-glass-webgl-provider="true"
+    />
   );
 }
 

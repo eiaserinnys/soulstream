@@ -22,11 +22,10 @@ import {
   shouldLoadMoreFromVirtualItems,
   type LoadMoreCallback,
 } from "./load-more-guard";
-import { DASHBOARD_ITEM_GAP_PX, DASHBOARD_PANEL_INSET_PX } from "./dashboard-spacing";
+import { DASHBOARD_CARD_GAP_PX, DASHBOARD_LIST_INSET_PX } from "./dashboard-spacing";
 
 const CARD_HEIGHT = 88;
-const CARD_GAP = DASHBOARD_ITEM_GAP_PX;
-const ROW_HEIGHT = 96;
+const CARD_GAP = DASHBOARD_CARD_GAP_PX;
 
 export interface FeedViewProps {
   onNewSession?: () => void;
@@ -65,8 +64,8 @@ export function FeedView({
   const setFeedScrollOffset = useDashboardStore((s) => s.setFeedScrollOffset);
   const dashboardConfig = useDashboardStore((s) => s.dashboardConfig);
   const isSidebarPlacement = placement === "sidebar";
-  const itemHeight = isSidebarPlacement ? CARD_HEIGHT : ROW_HEIGHT;
-  const itemGap = isSidebarPlacement ? CARD_GAP : 0;
+  const itemHeight = CARD_HEIGHT;
+  const itemGap = CARD_GAP;
 
   // useFeedSessions: Zustand sessions + catalog 구독 → filterFeedSessions로 반응형 계산
   const cachedFeedSessions = useFeedSessions();
@@ -241,16 +240,14 @@ export function FeedView({
           ref={parentRef}
           className="flex-1 overflow-y-auto"
           style={{
-            paddingInline: DASHBOARD_PANEL_INSET_PX,
-            paddingTop: isSidebarPlacement ? DASHBOARD_PANEL_INSET_PX : 0,
-            paddingBottom: DASHBOARD_PANEL_INSET_PX,
+            paddingInline: DASHBOARD_LIST_INSET_PX,
+            paddingTop: DASHBOARD_LIST_INSET_PX,
+            paddingBottom: DASHBOARD_LIST_INSET_PX,
           }}
           onScroll={handleScroll}
         >
           <div
-            className={cn(
-              !isSidebarPlacement && "overflow-hidden rounded-[18px] border border-white/8 bg-[var(--lg-card)] shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)]",
-            )}
+            className={cn(isSidebarPlacement && "max-w-full")}
             style={{
               height: virtualizer.getTotalSize(),
               width: "100%",
@@ -271,7 +268,6 @@ export function FeedView({
                     height: itemHeight,
                     transform: `translateY(${virtualItem.start}px)`,
                   }}
-                  className={cn(!isSidebarPlacement && "border-b border-[var(--lg-line)] last:border-b-0")}
                 >
                   <div
                     ref={getItemRef(session.agentSessionId)}
@@ -282,7 +278,7 @@ export function FeedView({
                       isActive={session.agentSessionId === activeSessionKey}
                       folderName={getFolderName(session.agentSessionId)}
                       dashboardConfig={dashboardConfig}
-                      variant={isSidebarPlacement ? "card" : "row"}
+                      variant="card"
                       onCardClick={handleCardClick}
                       onCardDoubleClick={handleCardDoubleClick}
                       onCardContextMenu={handleContextMenu}

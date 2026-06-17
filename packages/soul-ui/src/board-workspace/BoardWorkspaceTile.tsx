@@ -255,6 +255,7 @@ export function BoardWorkspaceTile({
         style={tileStyle}
         onPointerDown={(event) => onTilePointerDown(event, item)}
         onContextMenu={(event) => onTileContextMenu(event, item)}
+        onClick={(event) => event.stopPropagation()}
       >
         <RunbookCard runbookId={item.runbookId} fallbackTitle={item.title} />
       </div>

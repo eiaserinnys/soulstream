@@ -14,13 +14,13 @@ import {
 
 import { Badge } from "../components/ui/badge";
 import { cn } from "../lib/cn";
-import { useDashboardStore } from "../stores/dashboard-store";
 import {
   type RunbookItemStatus,
   type RunbookOverviewGroup,
   type RunbookOverviewItem,
   useRunbookStore,
 } from "../stores/runbook-store";
+import { MarkdownContent } from "../components/MarkdownContent";
 
 const statusConfig: Record<RunbookItemStatus, {
   label: string;
@@ -83,17 +83,22 @@ function progressText(group: RunbookOverviewGroup): string {
 
 function MyTurnItemButton({
   item,
-  onNavigate,
+  selected,
+  onSelect,
 }: {
   item: RunbookOverviewItem;
-  onNavigate: (item: RunbookOverviewItem) => void;
+  selected: boolean;
+  onSelect: (item: RunbookOverviewItem) => void;
 }) {
   return (
     <button
       type="button"
       data-testid="runbook-overview-my-turn-item"
-      className="group flex w-full min-w-0 items-start gap-3 rounded-md border border-accent-blue/55 bg-accent-blue/[0.14] px-3 py-2.5 text-left shadow-[0_0_0_1px_rgb(73_146_255_/_22%)] transition-colors hover:bg-accent-blue/[0.20] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/55"
-      onClick={() => onNavigate(item)}
+      className={cn(
+        "group flex w-full min-w-0 items-start gap-3 rounded-[14px] border border-accent-blue/45 bg-accent-blue/[0.12] px-3 py-2.5 text-left shadow-[0_8px_22px_-18px_rgb(30_84_160_/_55%)] transition-colors hover:bg-accent-blue/[0.18] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/55",
+        selected && "border-accent-blue/70 bg-accent-blue/[0.18] ring-1 ring-accent-blue/35",
+      )}
+      onClick={() => onSelect(item)}
     >
       <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-blue/18 text-accent-blue">
         <UserRound className="h-4 w-4" />
@@ -119,20 +124,23 @@ function MyTurnItemButton({
 
 function GroupItemButton({
   item,
-  onNavigate,
+  selected,
+  onSelect,
 }: {
   item: RunbookOverviewItem;
-  onNavigate: (item: RunbookOverviewItem) => void;
+  selected: boolean;
+  onSelect: (item: RunbookOverviewItem) => void;
 }) {
   return (
     <button
       type="button"
       data-testid="runbook-overview-group-item"
       className={cn(
-        "flex w-full min-w-0 items-start gap-2 rounded-md border border-[var(--lg-line)] bg-muted/[0.10] px-2.5 py-2 text-left transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/50",
+        "flex w-full min-w-0 items-start gap-2 rounded-[12px] border border-white/8 bg-background/25 px-2.5 py-2 text-left shadow-[0_6px_18px_-18px_rgb(20_26_40_/_45%)] transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/50",
+        selected && "border-accent-blue/55 bg-accent-blue/[0.12] ring-1 ring-accent-blue/30",
         isDone(item) && "opacity-70",
       )}
-      onClick={() => onNavigate(item)}
+      onClick={() => onSelect(item)}
     >
       <span className="mt-0.5 shrink-0">
         <StatusChip status={item.status} />
@@ -157,23 +165,48 @@ function GroupItemButton({
   );
 }
 
+function runbookItemKey(item: RunbookOverviewItem): string {
+  return `${item.runbook_id}:${item.item_id}`;
+}
+
+function RunbookItemDetails({ item }: { item: RunbookOverviewItem }) {
+  return (
+    <div
+      data-testid="runbook-overview-item-detail"
+      className="mt-2 rounded-[14px] border border-white/8 bg-background/30 px-3 py-2.5 text-xs leading-relaxed text-foreground shadow-[0_8px_22px_-20px_rgb(20_26_40_/_50%)]"
+    >
+      <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5">
+        <StatusChip status={item.status} />
+        <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
+          {assigneeLabel(item)}
+        </Badge>
+      </div>
+      {item.how_to.trim().length > 0 ? (
+        <MarkdownContent content={item.how_to} compact />
+      ) : (
+        <p className="text-muted-foreground">상세 절차 없음</p>
+      )}
+    </div>
+  );
+}
+
 function RunbookGroup({
   group,
   open,
   onToggle,
-  onNavigateRunbook,
-  onNavigateItem,
+  selectedItemKey,
+  onSelectItem,
 }: {
   group: RunbookOverviewGroup;
   open: boolean;
   onToggle: () => void;
-  onNavigateRunbook: (group: RunbookOverviewGroup) => void;
-  onNavigateItem: (item: RunbookOverviewItem) => void;
+  selectedItemKey: string | null;
+  onSelectItem: (item: RunbookOverviewItem) => void;
 }) {
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
-    <section className="rounded-md border border-[var(--lg-line)] bg-[var(--lg-card)]">
-      <div className="flex min-w-0 items-center gap-1.5 px-2 py-2">
+    <section className="rounded-[18px] border border-white/8 bg-[var(--lg-card)] shadow-[0_10px_30px_-22px_rgb(20_26_40_/_55%)]">
+      <div className="flex min-w-0 items-center gap-1.5 px-3 py-2.5">
         <button
           type="button"
           data-testid="runbook-overview-group-toggle"
@@ -186,8 +219,8 @@ function RunbookGroup({
         <button
           type="button"
           data-testid="runbook-overview-group-link"
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-sm px-1.5 py-1 text-left transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/50"
-          onClick={() => onNavigateRunbook(group)}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-[10px] px-1.5 py-1 text-left transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/50"
+          onClick={onToggle}
         >
           <BookOpenCheck className="h-4 w-4 shrink-0 text-accent-blue" />
           <span className="min-w-0 flex-1">
@@ -204,17 +237,22 @@ function RunbookGroup({
         </button>
       </div>
       {open ? (
-        <div className="space-y-1.5 border-t border-[var(--lg-line)] px-2 py-2">
+        <div className="space-y-2 border-t border-[var(--lg-line)] px-3 py-3">
           {group.items.length > 0 ? (
             group.items.map((item) => (
-              <GroupItemButton
-                key={item.item_id}
-                item={item}
-                onNavigate={onNavigateItem}
-              />
+              <div key={item.item_id} className="min-w-0">
+                <GroupItemButton
+                  item={item}
+                  selected={selectedItemKey === runbookItemKey(item)}
+                  onSelect={onSelectItem}
+                />
+                {selectedItemKey === runbookItemKey(item) ? (
+                  <RunbookItemDetails item={item} />
+                ) : null}
+              </div>
             ))
           ) : (
-            <div className="rounded-sm border border-dashed border-[var(--lg-line)] px-2 py-2 text-xs text-muted-foreground">
+            <div className="rounded-[12px] border border-dashed border-[var(--lg-line)] px-3 py-3 text-xs text-muted-foreground">
               표시할 항목 없음
             </div>
           )}
@@ -227,8 +265,8 @@ function RunbookGroup({
 export function RunbookOverview() {
   const projection = useRunbookStore((s) => s.overview);
   const loadOverview = useRunbookStore((s) => s.loadOverview);
-  const focusBoardItem = useDashboardStore((s) => s.focusBoardItem);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
+  const [selectedItemKey, setSelectedItemKey] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -246,16 +284,14 @@ export function RunbookOverview() {
   const refreshing = projection.isRefreshing;
   const error = projection.error;
 
-  const navigateItem = (item: RunbookOverviewItem) => {
-    focusBoardItem(item.board_item_id, item.folder_id ?? null);
-  };
-  const navigateRunbook = (group: RunbookOverviewGroup) => {
-    focusBoardItem(group.board_item_id, group.folder_id ?? null);
+  const selectItem = (item: RunbookOverviewItem) => {
+    const key = runbookItemKey(item);
+    setSelectedItemKey((current) => (current === key ? null : key));
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background/35">
-      <header className="shrink-0 border-b border-[var(--lg-line)] bg-[var(--lg-card)] px-5 py-4">
+    <div className="flex h-full min-h-0 flex-col bg-transparent">
+      <header className="shrink-0 border-b border-[var(--lg-line)] bg-[var(--lg-card)]/80 px-5 py-4">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent-blue/14 text-accent-blue">
             <BookOpenCheck className="h-5 w-5" />
@@ -292,7 +328,7 @@ export function RunbookOverview() {
           <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
             <section
               data-testid="runbook-overview-my-turn"
-              className="rounded-md border border-accent-blue/60 bg-[var(--lg-card)] p-3 shadow-[0_0_0_1px_rgb(73_146_255_/_18%)]"
+              className="rounded-[18px] border border-accent-blue/45 bg-[var(--lg-card)] p-4 shadow-[0_12px_32px_-22px_rgb(30_84_160_/_55%)]"
             >
               <div className="mb-3 flex min-w-0 items-center gap-2">
                 <UserRound className="h-4 w-4 shrink-0 text-accent-blue" />
@@ -302,17 +338,22 @@ export function RunbookOverview() {
                 </Badge>
               </div>
               {myTurnItems.length > 0 ? (
-                <div className="grid gap-2 lg:grid-cols-2">
+                <div className="grid gap-3 lg:grid-cols-2">
                   {myTurnItems.map((item) => (
-                    <MyTurnItemButton
-                      key={`${item.runbook_id}:${item.item_id}`}
-                      item={item}
-                      onNavigate={navigateItem}
-                    />
+                    <div key={`${item.runbook_id}:${item.item_id}`} className="min-w-0">
+                      <MyTurnItemButton
+                        item={item}
+                        selected={selectedItemKey === runbookItemKey(item)}
+                        onSelect={selectItem}
+                      />
+                      {selectedItemKey === runbookItemKey(item) ? (
+                        <RunbookItemDetails item={item} />
+                      ) : null}
+                    </div>
                   ))}
                 </div>
               ) : (
-                <div className="rounded-md border border-dashed border-accent-blue/30 px-3 py-6 text-center text-sm text-muted-foreground">
+                <div className="rounded-[14px] border border-dashed border-accent-blue/30 px-3 py-6 text-center text-sm text-muted-foreground">
                   지금 사람이 이어받을 항목이 없음
                 </div>
               )}
@@ -324,7 +365,7 @@ export function RunbookOverview() {
                 <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">런북별 진행</h2>
               </div>
               {groups.length > 0 ? (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {groups.map((group) => {
                     const open = openGroups[group.runbook_id] ?? false;
                     return (
@@ -338,14 +379,14 @@ export function RunbookOverview() {
                             [group.runbook_id]: !open,
                           }))
                         }
-                        onNavigateRunbook={navigateRunbook}
-                        onNavigateItem={navigateItem}
+                        selectedItemKey={selectedItemKey}
+                        onSelectItem={selectItem}
                       />
                     );
                   })}
                 </div>
               ) : (
-                <div className="rounded-md border border-dashed border-[var(--lg-line)] bg-[var(--lg-card)] px-3 py-6 text-center text-sm text-muted-foreground">
+                <div className="rounded-[18px] border border-dashed border-[var(--lg-line)] bg-[var(--lg-card)] px-3 py-6 text-center text-sm text-muted-foreground">
                   표시할 런북이 없음
                 </div>
               )}

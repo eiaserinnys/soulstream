@@ -18,7 +18,7 @@ import { VerticalSplitPane } from "./VerticalSplitPane";
 import { Tabs, TabsPanel } from "./ui/tabs";
 import { FolderStack } from "./dashboard/FolderStack";
 import { WallpaperLayer } from "./WallpaperLayer";
-import { LiquidGlassProvider, useGlassSurface } from "./LiquidGlassProvider";
+import { LiquidGlassCanvas, LiquidGlassProvider, useGlassSurface } from "./LiquidGlassProvider";
 import { useIsMobile } from "../hooks/use-mobile";
 import { useDashboardStore, type MobileTab } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
@@ -34,6 +34,7 @@ import {
   writeDashboardLeftSidebarCollapsed,
   writeDashboardLeftSidebarWidth,
 } from "./dashboard-sidebar-collapse";
+import { DASHBOARD_PANEL_GAP_PX } from "./dashboard-spacing";
 
 /** 패널 기본 비율 (%) */
 const DEFAULT_RIGHT = 34.5;
@@ -130,7 +131,7 @@ function DefaultMobileChatHeader({ onBack }: { onBack: () => void }) {
 
 export function DashboardShell(props: DashboardShellProps) {
   return (
-    <LiquidGlassProvider>
+    <LiquidGlassProvider renderDefaultCanvas={false}>
       <DashboardShellContent {...props} />
     </LiquidGlassProvider>
   );
@@ -300,6 +301,8 @@ function DashboardShellContent({
   }, [setActiveTab, clearSelectedFolder, setViewMode]);
 
   const centerPercent = Math.max(MIN_CENTER, 100 - rightPercent);
+  const centerPanelWidth = `calc((100% - ${DASHBOARD_PANEL_GAP_PX}px) * ${centerPercent / 100})`;
+  const rightPanelWidth = `calc((100% - ${DASHBOARD_PANEL_GAP_PX}px) * ${rightPercent / 100})`;
   const showLeftNavigationToggle = hasLeftFeedPanel;
   const selectedLeftPanel = leftPanel;
   const visibleLeftSidebarWidth = isLeftSidebarCollapsed
@@ -309,7 +312,7 @@ function DashboardShellContent({
     Boolean(activeSessionKey) && connectionStatus != null && connectionStatus !== "connected";
   const leftNavigationPanel = showLeftNavigationToggle ? (
     <div className="flex h-full min-h-0 flex-col gap-2">
-      <div className="flex shrink-0 flex-col gap-1 px-1 pt-1">
+      <div className="flex shrink-0 flex-col gap-1 px-1 pt-9">
         <button
           type="button"
           className={cn(
@@ -388,6 +391,7 @@ function DashboardShellContent({
       className="dashboard-shell relative isolate flex flex-col w-screen h-dvh text-foreground font-sans overflow-hidden"
     >
       <WallpaperLayer />
+      <LiquidGlassCanvas />
         {isMobile ? (
           <header
             className="relative z-20 flex items-center justify-between px-4 border-b border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0"
@@ -569,21 +573,21 @@ function DashboardShellContent({
             <main
               ref={centerPanelRef}
               data-testid="graph-panel"
-              className="dashboard-center-panel overflow-hidden flex flex-col border border-glass-border glass-strong glass-chrome lg-rim"
+              className="dashboard-center-panel shrink-0 overflow-hidden flex flex-col border border-glass-border glass-strong glass-chrome lg-rim"
               data-liquid-glass-webgl={centerPanelWebglActive ? "true" : undefined}
-              style={{ width: `${centerPercent}%` }}
+              style={{ width: centerPanelWidth }}
             >
               {centerPanel}
             </main>
 
-            <DragHandle onDrag={handleRightDrag} />
+            <DragHandle onDrag={handleRightDrag} widthPx={DASHBOARD_PANEL_GAP_PX} />
 
             <aside
               ref={rightPanelRef}
               data-testid="detail-panel"
-              className="dashboard-chat-panel overflow-hidden border border-glass-border glass-strong glass-chrome lg-rim"
+              className="dashboard-chat-panel shrink-0 overflow-hidden border border-glass-border glass-strong glass-chrome lg-rim"
               data-liquid-glass-webgl={rightPanelWebglActive ? "true" : undefined}
-              style={{ width: `${rightPercent}%` }}
+              style={{ width: rightPanelWidth }}
             >
               {rightPanel}
             </aside>

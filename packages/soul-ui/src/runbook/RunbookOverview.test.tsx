@@ -24,7 +24,7 @@ function sampleOverview(): RunbookOverviewPayload {
     section_title: "Release",
     item_id: "item-1",
     item_title: "Operator approval",
-    how_to: "",
+    how_to: "Approve the deployment window.",
     status: "pending" as const,
     item_version: 1,
     effective_assignee_kind: "human" as const,
@@ -80,7 +80,7 @@ describe("RunbookOverview", () => {
     useRunbookStore.getState().reset();
   });
 
-  it("renders the global my-turn list, collapsed runbook groups, and navigation focus request", () => {
+  it("renders the global my-turn list, collapsed runbook groups, and keeps item clicks in runbooks", () => {
     useRunbookStore.setState({
       overview: {
         snapshot: sampleOverview(),
@@ -114,11 +114,9 @@ describe("RunbookOverview", () => {
       myTurn!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(useDashboardStore.getState().focusedBoardItem).toMatchObject({
-      boardItemId: "runbook:rb-1",
-      folderId: "f1",
-    });
-    expect(useDashboardStore.getState().viewMode).toBe("folder");
-    expect(useDashboardStore.getState().activeTab).toBe("folder");
+    expect(container.textContent).toContain("Approve the deployment window.");
+    expect(useDashboardStore.getState().focusedBoardItem).toBeNull();
+    expect(useDashboardStore.getState().viewMode).toBe("feed");
+    expect(useDashboardStore.getState().activeTab).toBe("feed");
   });
 });

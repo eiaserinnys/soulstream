@@ -90,6 +90,52 @@ describe("webgl glass registry utilities", () => {
     expect(packed.visibleCount).toBe(1);
     expect(Array.from(rects.slice(0, 4))).toEqual([12, 80, 200, 132]);
     expect(Array.from(clips.slice(0, 4))).toEqual([0, 100, 320, 400]);
+    expect(Array.from(packed.clipRadii.slice(0, 1))).toEqual([0]);
+  });
+
+  it("uses the viewport as the clip fallback when a surface has no overflow ancestor", () => {
+    const surface = document.createElement("div");
+    mockBounds(surface, rect(24, 28, 220, 44));
+
+    const clips = createGlassSurfaceBuffer();
+    const packed = packVisibleGlassSurfaces(
+      [registrationElement(1, surface)],
+      { width: 800, height: 600, overscan: 40 },
+      { rects: createGlassSurfaceBuffer(), clips },
+    );
+
+    expect(packed.count).toBe(1);
+    expect(packed.visibleCount).toBe(1);
+    expect(Array.from(clips.slice(0, 4))).toEqual([-40, -40, 880, 680]);
+    expect(Array.from(packed.clipRadii.slice(0, 1))).toEqual([0]);
+  });
+
+  it("preserves a rounded clipping ancestor radius for shader clipping", () => {
+    const panel = document.createElement("div");
+    panel.style.overflow = "hidden";
+    panel.style.borderRadius = "24px";
+    mockBounds(panel, rect(0, 0, 500, 500));
+
+    const scrollRoot = document.createElement("div");
+    scrollRoot.style.overflowY = "auto";
+    mockBounds(scrollRoot, rect(0, 100, 320, 400));
+
+    const card = document.createElement("div");
+    mockBounds(card, rect(12, 120, 200, 132));
+
+    panel.appendChild(scrollRoot);
+    scrollRoot.appendChild(card);
+
+    const clips = createGlassSurfaceBuffer();
+    const packed = packVisibleGlassSurfaces(
+      [registrationElement(1, card)],
+      { width: 800, height: 600, overscan: 40 },
+      { rects: createGlassSurfaceBuffer(), clips },
+    );
+
+    expect(packed.count).toBe(1);
+    expect(Array.from(clips.slice(0, 4))).toEqual([0, 100, 320, 400]);
+    expect(Array.from(packed.clipRadii.slice(0, 1))).toEqual([24]);
   });
 
   it("excludes WebGL cards fully outside their overflow ancestor", () => {

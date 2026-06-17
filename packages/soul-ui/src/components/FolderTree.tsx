@@ -34,7 +34,7 @@ import {
   readFolderTreeExpandedState,
   writeFolderTreeExpandedState,
 } from "./folder-tree-expansion";
-import { DASHBOARD_ITEM_GAP_PX, DASHBOARD_PANEL_INSET_PX } from "./dashboard-spacing";
+import { DASHBOARD_SIDEBAR_ITEM_GAP_PX, DASHBOARD_SIDEBAR_LIST_INSET_PX } from "./dashboard-spacing";
 
 export interface FolderTreeProps {
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => void;
@@ -172,7 +172,7 @@ export function FolderTree({
     return (
       <div
         key={folder.id}
-        style={{ display: "flex", flexDirection: "column", gap: DASHBOARD_ITEM_GAP_PX }}
+        style={{ display: "flex", flexDirection: "column", gap: DASHBOARD_SIDEBAR_ITEM_GAP_PX }}
       >
         <FolderItem
           folder={folder}
@@ -222,7 +222,7 @@ export function FolderTree({
       <div
         className="dashboard-sidebar-scroll flex flex-1 flex-col"
         data-testid="folder-tree-scroll"
-        style={{ gap: DASHBOARD_ITEM_GAP_PX, paddingBlock: DASHBOARD_PANEL_INSET_PX }}
+        style={{ gap: DASHBOARD_SIDEBAR_ITEM_GAP_PX, paddingBlock: DASHBOARD_SIDEBAR_LIST_INSET_PX }}
       >
         {/* 일반 폴더 — SortableContext로 재정렬 가능 */}
         <SortableContext items={sortedNormalFolderIds} strategy={verticalListSortingStrategy}>
@@ -233,7 +233,7 @@ export function FolderTree({
         {sortedNormalFolders.length > 0 && (
           <div
             className="border-t border-glass-border/60"
-            style={{ marginInline: DASHBOARD_PANEL_INSET_PX }}
+            style={{ marginInline: DASHBOARD_SIDEBAR_LIST_INSET_PX }}
           />
         )}
 

@@ -14,6 +14,7 @@ uniform sampler2D uBg;
 uniform int uCount;
 uniform vec4 uCards[${MAX_WEBGL_GLASS_CARDS}];
 uniform vec4 uClips[${MAX_WEBGL_GLASS_CARDS}];
+uniform float uClipRadii[${MAX_WEBGL_GLASS_CARDS}];
 uniform float uRadius, uDpr, uScale, uBlur, uAb, uRim, uGlass;
 float sdRound(vec2 p, vec2 b, float r){ vec2 q=abs(p)-b+r; return min(max(q.x,q.y),0.0)+length(max(q,0.0))-r; }
 float fCurve(float x){ return 1.0 - 2.3*pow(5.2*2.71828182845, -6.9*x - 0.7); }
@@ -36,6 +37,12 @@ void main(){
       vec4 cd=uCards[i]; vec2 center=cd.xy+cd.zw*0.5; vec2 hsz=cd.zw*0.5;
       vec4 cl=uClips[i];
       if(fragPx.x<cl.x || fragPx.y<cl.y || fragPx.x>cl.x+cl.z || fragPx.y>cl.y+cl.w) continue;
+      float clipRadius=min(uClipRadii[i], min(cl.z, cl.w)*0.5);
+      if(clipRadius>0.0){
+        vec2 clipCenter=cl.xy+cl.zw*0.5;
+        vec2 clipHalf=cl.zw*0.5;
+        if(sdRound(fragPx-clipCenter, clipHalf, clipRadius)>0.0) continue;
+      }
       vec2 lp=fragPx-center;
       if(abs(lp.x)>hsz.x || abs(lp.y)>hsz.y) continue;
       float R=min(uRadius, min(hsz.x,hsz.y));

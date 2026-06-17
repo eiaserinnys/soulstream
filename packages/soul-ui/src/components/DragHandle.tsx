@@ -9,9 +9,10 @@ import { useCallback, useRef } from "react";
 
 export interface DragHandleProps {
   onDrag: (deltaPercent: number) => void;
+  widthPx?: number;
 }
 
-export function DragHandle({ onDrag }: DragHandleProps) {
+export function DragHandle({ onDrag, widthPx = 4 }: DragHandleProps) {
   const dragging = useRef(false);
   const lastX = useRef(0);
   const onDragRef = useRef(onDrag);
@@ -54,10 +55,11 @@ export function DragHandle({ onDrag }: DragHandleProps) {
   return (
     <div
       onMouseDown={onMouseDown}
-      className="w-1 cursor-col-resize bg-transparent shrink-0 relative z-10"
+      className="cursor-col-resize bg-transparent shrink-0 relative z-10"
+      style={{ width: widthPx }}
     >
       <div
-        className="absolute inset-y-0 -left-[3px] -right-[3px]"
+        className="absolute inset-y-0 left-0 right-0"
         onMouseEnter={() => {
           if (lineRef.current) {
             lineRef.current.style.backgroundColor = "var(--node-user)";
@@ -73,7 +75,7 @@ export function DragHandle({ onDrag }: DragHandleProps) {
       >
         <div
           ref={lineRef}
-          className="absolute inset-y-0 left-[3px] w-px bg-transparent transition-colors duration-150"
+          className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors duration-150"
         />
       </div>
     </div>
