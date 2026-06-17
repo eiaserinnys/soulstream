@@ -40,6 +40,7 @@ export const SELF_IDENTITY = {
       tools: [
         "list_folders",
         "list_child_folders",
+        "browse_folder",
         "create_folder",
         "move_folder",
         "rename_folder",

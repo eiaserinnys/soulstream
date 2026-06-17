@@ -109,6 +109,8 @@ belongs to the orchestrator-backed `reflect_cluster_brief()` path.
 | Tool | Description |
 |------|-------------|
 | `list_folders()` | List all folders |
+| `list_child_folders(folder_id)` | List direct child folders under a folder |
+| `browse_folder(folder_id, session_cursor, session_limit)` | Browse one folder: direct child folders, paginated sessions, and board items such as markdown documents and image/file assets |
 | `create_folder(name)` | Create a new folder |
 | `rename_folder(folder_id, name)` | Rename a folder |
 | `delete_folder(folder_id)` | Delete a folder |
