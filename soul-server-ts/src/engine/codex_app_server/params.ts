@@ -1,15 +1,11 @@
 import { resolveCodexModelReasoningEffort } from "../codex_adapter.js";
 import type { EngineExecuteParams } from "../protocol.js";
-import { SOULSTREAM_AGENT_SESSION_HEADER } from "../../mcp/request_context.js";
 import type {
-  JsonObject,
   ThreadResumeParams,
   ThreadStartParams,
   TurnStartParams,
 } from "./protocol.js";
 import { toCodexUserInput } from "./protocol.js";
-
-const SOULSTREAM_MCP_SERVER_NAME = "soulstream";
 
 export function buildThreadStartParams(
   params: EngineExecuteParams,
@@ -26,7 +22,7 @@ export function buildThreadStartParams(
     approvalsReviewer: null,
     sandbox: "danger-full-access",
     permissions: null,
-    config: buildCodexMcpCallerSessionConfig(params.agentSessionId),
+    config: null,
     serviceName: "soul-server-ts",
     baseInstructions: params.systemPrompt ?? null,
     developerInstructions: null,
@@ -59,7 +55,7 @@ export function buildThreadResumeParams(
     approvalsReviewer: null,
     sandbox: "danger-full-access",
     permissions: null,
-    config: buildCodexMcpCallerSessionConfig(params.agentSessionId),
+    config: null,
     baseInstructions: params.systemPrompt ?? null,
     developerInstructions: null,
     personality: null,
@@ -102,20 +98,4 @@ function normalizedModel(model: string | null | undefined): string | null {
   if (!model) return null;
   const trimmed = model.trim();
   return trimmed ? trimmed : null;
-}
-
-function buildCodexMcpCallerSessionConfig(
-  agentSessionId: string | undefined,
-): JsonObject | null {
-  const callerSessionId = agentSessionId?.trim();
-  if (!callerSessionId) return null;
-  return {
-    mcp_servers: {
-      [SOULSTREAM_MCP_SERVER_NAME]: {
-        http_headers: {
-          [SOULSTREAM_AGENT_SESSION_HEADER]: callerSessionId,
-        },
-      },
-    },
-  };
 }
