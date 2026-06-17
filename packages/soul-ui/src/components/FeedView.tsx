@@ -22,9 +22,10 @@ import {
   shouldLoadMoreFromVirtualItems,
   type LoadMoreCallback,
 } from "./load-more-guard";
+import { DASHBOARD_ITEM_GAP_PX, DASHBOARD_PANEL_INSET_PX } from "./dashboard-spacing";
 
 const CARD_HEIGHT = 88;
-const CARD_GAP = 8;
+const CARD_GAP = DASHBOARD_ITEM_GAP_PX;
 const ROW_HEIGHT = 96;
 
 export interface FeedViewProps {
@@ -238,10 +239,12 @@ export function FeedView({
       ) : (
         <div
           ref={parentRef}
-          className={cn(
-            "flex-1 overflow-y-auto",
-            isSidebarPlacement ? "px-4 py-3" : "px-4 pb-4",
-          )}
+          className="flex-1 overflow-y-auto"
+          style={{
+            paddingInline: DASHBOARD_PANEL_INSET_PX,
+            paddingTop: isSidebarPlacement ? DASHBOARD_PANEL_INSET_PX : 0,
+            paddingBottom: DASHBOARD_PANEL_INSET_PX,
+          }}
           onScroll={handleScroll}
         >
           <div

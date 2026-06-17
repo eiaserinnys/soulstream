@@ -20,6 +20,12 @@ import { useGlassSurface } from "./LiquidGlassProvider";
 import { resolveFolderActiveSessionDecision } from "./folder-active-session";
 import { FolderScrollHeader, useScrollHeaderMargin } from "./folder-scroll-header";
 import { runGuardedLoadMore, type LoadMoreCallback } from "./load-more-guard";
+import {
+  DASHBOARD_ITEM_GAP_PX,
+  DASHBOARD_PANEL_INSET_PX,
+  DASHBOARD_SESSION_CARD_HEIGHT_PX,
+  DASHBOARD_SESSION_ROW_HEIGHT_PX,
+} from "./dashboard-spacing";
 
 // Re-exports for backward compatibility (FeedCard, soul-ui index 등이 참조)
 export { nodeIdToHue } from "../lib/nodeColors";
@@ -27,9 +33,6 @@ export { STATUS_CONFIG } from "./SessionItem";
 export type { StatusConfig } from "./SessionItem";
 
 const EMPTY_SESSIONS: SessionSummary[] = [];
-const DESKTOP_SESSION_CARD_HEIGHT = 132;
-const DESKTOP_SESSION_GRID_GAP = 12;
-const DESKTOP_SESSION_GRID_ROW_HEIGHT = DESKTOP_SESSION_CARD_HEIGHT + DESKTOP_SESSION_GRID_GAP;
 const DESKTOP_SESSION_GRID_XL_QUERY = "(min-width: 1280px)";
 
 export interface FolderContentsProps {
@@ -126,7 +129,7 @@ function DesktopFolderSessionGrid({
   const desktopVirtualizer = useVirtualizer({
     count: desktopRowCount,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => DESKTOP_SESSION_GRID_ROW_HEIGHT,
+    estimateSize: () => DASHBOARD_SESSION_ROW_HEIGHT_PX,
     overscan: 4,
     scrollMargin,
   });
@@ -144,7 +147,12 @@ function DesktopFolderSessionGrid({
       onClick={onContainerClick}
     >
       <FolderScrollHeader scrollHeader={scrollHeader} scrollHeaderRef={scrollHeaderRef} />
-      <div className="px-1 pb-1">
+      <div
+        style={{
+          paddingInline: DASHBOARD_PANEL_INSET_PX,
+          paddingBottom: DASHBOARD_PANEL_INSET_PX,
+        }}
+      >
         <div
           data-testid="folder-session-virtual-grid"
           style={{ height: `${desktopVirtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}
@@ -165,13 +173,17 @@ function DesktopFolderSessionGrid({
                   transform: `translateY(${virtualRow.start - virtualizerScrollMargin}px)`,
                 }}
               >
-                <div className="grid h-full grid-cols-1 gap-3 xl:grid-cols-2">
+                <div
+                  data-testid="folder-session-row-grid"
+                  className="grid h-full grid-cols-1 xl:grid-cols-2"
+                  style={{ gap: DASHBOARD_ITEM_GAP_PX }}
+                >
                   {rowSessions.map((session) => (
                     <div
                       key={session.agentSessionId}
                       data-testid="folder-session-card-frame"
                       className="min-h-0"
-                      style={{ height: DESKTOP_SESSION_CARD_HEIGHT }}
+                      style={{ height: DASHBOARD_SESSION_CARD_HEIGHT_PX }}
                     >
                       {renderSessionItem(session)}
                     </div>
@@ -204,7 +216,7 @@ function MobileFolderSessionList({
   const mobileVirtualizer = useVirtualizer({
     count: displaySessions.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 118,
+    estimateSize: () => DASHBOARD_SESSION_ROW_HEIGHT_PX,
     overscan: 5,
     scrollMargin,
   });
@@ -241,8 +253,11 @@ function MobileFolderSessionList({
             >
               <div
                 ref={getItemRef(session.agentSessionId)}
-                className="px-2 py-1"
-                style={{ width: "100%", height: "100%" }}
+                style={{
+                  width: "100%",
+                  height: DASHBOARD_SESSION_CARD_HEIGHT_PX,
+                  paddingInline: DASHBOARD_PANEL_INSET_PX,
+                }}
               >
                 {renderSessionItem(session)}
               </div>

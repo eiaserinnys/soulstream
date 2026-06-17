@@ -143,6 +143,15 @@ describe("FolderTree", () => {
     expect(container.querySelectorAll(".liquid-glass-card__layer")).toHaveLength(0);
   });
 
+  it("uses the shared dashboard spacing unit for folder row gaps", () => {
+    ({ container, root } = renderFolderTree());
+
+    const scrollRoot = container.querySelector<HTMLElement>('[data-testid="folder-tree-scroll"]');
+    expect(scrollRoot).not.toBeNull();
+    expect(scrollRoot?.style.gap).toBe("8px");
+    expect(scrollRoot?.style.paddingBlock).toBe("8px");
+  });
+
   it("restores expanded folders from localStorage", () => {
     localStorage.setItem("soulstream:folder-tree:expanded:v1:root-a", "true");
 

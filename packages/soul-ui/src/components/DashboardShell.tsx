@@ -128,7 +128,15 @@ function DefaultMobileChatHeader({ onBack }: { onBack: () => void }) {
   );
 }
 
-export function DashboardShell({
+export function DashboardShell(props: DashboardShellProps) {
+  return (
+    <LiquidGlassProvider>
+      <DashboardShellContent {...props} />
+    </LiquidGlassProvider>
+  );
+}
+
+function DashboardShellContent({
   leftPanel,
   leftFeedPanel,
   leftPanelBottom,
@@ -158,16 +166,19 @@ export function DashboardShell({
   const searchCapsuleRef = useRef<HTMLButtonElement>(null);
   const statusCapsuleRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
+  const centerPanelRef = useRef<HTMLElement>(null);
   const rightPanelRef = useRef<HTMLElement>(null);
   const brandWebglActive = useGlassSurface(brandCapsuleRef, { enabled: true });
   const searchWebglActive = useGlassSurface(searchCapsuleRef, { enabled: true });
   const statusWebglActive = useGlassSurface(statusCapsuleRef, { enabled: true });
   const sidebarWebglActive = useGlassSurface(sidebarRef, { enabled: true });
+  const centerPanelWebglActive = useGlassSurface(centerPanelRef, { enabled: true });
   const rightPanelWebglActive = useGlassSurface(rightPanelRef, { enabled: true });
   useLiquidLens(brandCapsuleRef, { scale: 48, enabled: !brandWebglActive });
   useLiquidLens(searchCapsuleRef, { scale: 48, enabled: !searchWebglActive });
   useLiquidLens(statusCapsuleRef, { scale: 48, enabled: !statusWebglActive });
   useLiquidLens(sidebarRef, { scale: 64, enabled: !sidebarWebglActive });
+  useLiquidLens(centerPanelRef, { scale: 64, enabled: !centerPanelWebglActive });
   useLiquidLens(rightPanelRef, { scale: 64, enabled: !rightPanelWebglActive });
 
   const handleRightDrag = useCallback(
@@ -377,7 +388,6 @@ export function DashboardShell({
       className="dashboard-shell relative isolate flex flex-col w-screen h-dvh text-foreground font-sans overflow-hidden"
     >
       <WallpaperLayer />
-      <LiquidGlassProvider>
         {isMobile ? (
           <header
             className="relative z-20 flex items-center justify-between px-4 border-b border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0"
@@ -557,8 +567,10 @@ export function DashboardShell({
             }}
           >
             <main
+              ref={centerPanelRef}
               data-testid="graph-panel"
-              className="overflow-hidden flex flex-col bg-transparent"
+              className="dashboard-center-panel overflow-hidden flex flex-col border border-glass-border glass-strong glass-chrome lg-rim"
+              data-liquid-glass-webgl={centerPanelWebglActive ? "true" : undefined}
               style={{ width: `${centerPercent}%` }}
             >
               {centerPanel}
@@ -579,7 +591,6 @@ export function DashboardShell({
         </>
       )}
         {modals}
-      </LiquidGlassProvider>
     </div>
   );
 }

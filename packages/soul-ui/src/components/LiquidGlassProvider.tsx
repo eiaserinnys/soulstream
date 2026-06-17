@@ -17,6 +17,7 @@ import {
   packVisibleGlassSurfaces,
   readWebglGlassOverride,
   WEBGL_GLASS_CHANGE_EVENT,
+  type GlassSurfaceClipAncestorCache,
   type GlassSurfaceRef,
   type GlassSurfaceRegistration,
   type WebglGlassStats,
@@ -46,6 +47,8 @@ export function LiquidGlassProvider({ children }: { children: ReactNode }) {
   const registrationsRef = useRef(new Map<number, GlassSurfaceRegistration>());
   const nextIdRef = useRef(0);
   const rectBufferRef = useRef(createGlassSurfaceBuffer());
+  const clipBufferRef = useRef(createGlassSurfaceBuffer());
+  const clipAncestorCacheRef = useRef<GlassSurfaceClipAncestorCache>(new WeakMap());
   const statsRef = useRef<WebglGlassStats>({
     fps: 0,
     registeredCount: 0,
@@ -142,7 +145,11 @@ export function LiquidGlassProvider({ children }: { children: ReactNode }) {
       const packed = packVisibleGlassSurfaces(
         registrationsRef.current.values(),
         { width: window.innerWidth, height: window.innerHeight },
-        rectBufferRef.current,
+        {
+          rects: rectBufferRef.current,
+          clips: clipBufferRef.current,
+          clipAncestorCache: clipAncestorCacheRef.current,
+        },
       );
       currentRenderer.render(packed);
 

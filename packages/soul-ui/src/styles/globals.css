@@ -502,7 +502,7 @@
     z-index: 0;
     pointer-events: none;
     background: color-mix(in srgb, var(--lg-card) 88%, var(--background));
-    opacity: var(--liquid-glass-tint-strength, 0.42);
+    opacity: var(--liquid-glass-tint-strength, 0.62);
   }
 
   .liquid-glass-card[data-liquid-glass-webgl="true"] .liquid-glass-card__layer {
@@ -690,6 +690,11 @@
     padding: 10px 8px 2px;
   }
 
+  .dashboard-center-panel {
+    border-radius: 24px;
+    box-shadow: var(--lg-shadow), inset 0 1px 1px rgb(255 255 255 / 12%);
+  }
+
   .dashboard-chat-panel {
     border-radius: 24px;
     --glass-chrome-surface-strong: var(--lg-chat-panel);
@@ -837,7 +842,7 @@
     border-radius: inherit;
     pointer-events: none;
     background: var(--glass-surface-strong);
-    opacity: var(--liquid-glass-tint-strength, 0.42);
+    opacity: var(--liquid-glass-tint-strength, 0.62);
   }
 
   .glass[data-liquid-glass-webgl="true"] > *,

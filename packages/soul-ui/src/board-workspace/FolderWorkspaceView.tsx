@@ -4,6 +4,7 @@ import { FolderContents } from "../components/FolderContents";
 import { FolderSettingsDialog } from "../components/FolderSettingsDialog";
 import { SessionsTopBar } from "../components/SessionsTopBar";
 import type { LoadMoreCallback } from "../components/load-more-guard";
+import { DASHBOARD_ITEM_GAP_PX, DASHBOARD_PANEL_INSET_PX } from "../components/dashboard-spacing";
 import { useDashboardStore } from "../stores/dashboard-store";
 import {
   BoardWorkspaceView,
@@ -68,11 +69,19 @@ export function FolderWorkspaceView({
   const scrollHeader = useMemo(() => (
     <>
       {childFolders.length > 0 && (
-        <section className="px-4 pb-3">
-          <div className="px-1 pb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
+        <section
+          style={{
+            paddingInline: DASHBOARD_PANEL_INSET_PX,
+            paddingBottom: DASHBOARD_ITEM_GAP_PX,
+          }}
+        >
+          <div className="pb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
             하위 폴더
           </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          <div
+            className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+            style={{ gap: DASHBOARD_ITEM_GAP_PX }}
+          >
             {childFolders.map((folder) => (
               <button
                 key={folder.id}
@@ -89,7 +98,10 @@ export function FolderWorkspaceView({
           </div>
         </section>
       )}
-      <div className="px-5 pb-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
+      <div
+        className="pb-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70"
+        style={{ paddingInline: DASHBOARD_PANEL_INSET_PX }}
+      >
         세션
       </div>
     </>

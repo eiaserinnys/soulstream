@@ -18,6 +18,7 @@ interface Uniforms {
   uBg: WebGLUniformLocation | null;
   uCount: WebGLUniformLocation | null;
   uCards: WebGLUniformLocation | null;
+  uClips: WebGLUniformLocation | null;
   uRadius: WebGLUniformLocation | null;
   uDpr: WebGLUniformLocation | null;
   uScale: WebGLUniformLocation | null;
@@ -88,6 +89,7 @@ export function createWebglGlassRenderer(canvas: HTMLCanvasElement): WebglGlassR
       gl.uniform1f(uniforms.uDpr, dpr);
       gl.uniform1i(uniforms.uCount, packed.count);
       gl.uniform4fv(uniforms.uCards, packed.rects);
+      gl.uniform4fv(uniforms.uClips, packed.clips);
       gl.uniform1f(uniforms.uRadius, DEFAULT_RADIUS);
       gl.uniform1f(uniforms.uScale, glassSettings.refraction);
       gl.uniform1f(uniforms.uBlur, glassSettings.blur);
@@ -167,6 +169,7 @@ function getUniforms(gl: WebGL2RenderingContext, program: WebGLProgram): Uniform
     uBg: gl.getUniformLocation(program, "uBg"),
     uCount: gl.getUniformLocation(program, "uCount"),
     uCards: gl.getUniformLocation(program, "uCards"),
+    uClips: gl.getUniformLocation(program, "uClips"),
     uRadius: gl.getUniformLocation(program, "uRadius"),
     uDpr: gl.getUniformLocation(program, "uDpr"),
     uScale: gl.getUniformLocation(program, "uScale"),

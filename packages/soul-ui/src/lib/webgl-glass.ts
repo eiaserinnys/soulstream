@@ -1,6 +1,6 @@
 export const WEBGL_GLASS_STORAGE_KEY = "ls.webglGlass";
 export const WEBGL_GLASS_CHANGE_EVENT = "ls.webglGlass:change";
-export const MAX_WEBGL_GLASS_CARDS = 48;
+export const MAX_WEBGL_GLASS_CARDS = 64;
 export const WEBGL_GLASS_OVERSCAN_PX = 40;
 
 const ENABLED_VALUES = new Set(["1", "true", "on", "enabled", "yes"]);
@@ -26,6 +26,7 @@ export interface PackedGlassSurfaces {
   visibleCount: number;
   overflowCount: number;
   rects: Float32Array;
+  clips: Float32Array;
 }
 
 export interface WebglGlassStats {
@@ -106,13 +107,34 @@ export function createGlassSurfaceBuffer(maxCards = MAX_WEBGL_GLASS_CARDS): Floa
   return new Float32Array(maxCards * 4);
 }
 
+export type GlassSurfaceClipAncestorCache = WeakMap<Element, Element | null>;
+
+export interface GlassSurfacePackingOptions {
+  rects?: Float32Array;
+  clips?: Float32Array;
+  maxCards?: number;
+  clipAncestorCache?: GlassSurfaceClipAncestorCache;
+}
+
 export function packVisibleGlassSurfaces(
   registrations: Iterable<GlassSurfaceRegistration>,
   viewport: GlassViewport,
-  rects: Float32Array = createGlassSurfaceBuffer(),
-  maxCards = MAX_WEBGL_GLASS_CARDS,
+  optionsOrRects: GlassSurfacePackingOptions | Float32Array = {},
+  maxCardsOverride?: number,
 ): PackedGlassSurfaces {
+  const options = optionsOrRects instanceof Float32Array ? { rects: optionsOrRects } : optionsOrRects;
+  const maxCards = maxCardsOverride ?? options.maxCards ?? MAX_WEBGL_GLASS_CARDS;
+  const rects = options.rects ?? createGlassSurfaceBuffer(maxCards);
+  const clips = options.clips ?? createGlassSurfaceBuffer(maxCards);
   const overscan = viewport.overscan ?? WEBGL_GLASS_OVERSCAN_PX;
+  const viewportClip = {
+    left: -overscan,
+    top: -overscan,
+    right: viewport.width + overscan,
+    bottom: viewport.height + overscan,
+    width: viewport.width + overscan * 2,
+    height: viewport.height + overscan * 2,
+  };
   let count = 0;
   let visibleCount = 0;
   let overflowCount = 0;
@@ -121,7 +143,10 @@ export function packVisibleGlassSurfaces(
     const element = registration.ref.current;
     if (!element) continue;
     const rect = element.getBoundingClientRect();
-    if (!isVisibleRect(rect, viewport.width, viewport.height, overscan)) continue;
+    const clipRect = getSurfaceClipRect(element, viewportClip, options.clipAncestorCache);
+    if (!clipRect) continue;
+    const visibleRect = intersectRects(rect, clipRect);
+    if (!visibleRect) continue;
     visibleCount += 1;
     if (count >= maxCards) {
       overflowCount += 1;
@@ -132,30 +157,94 @@ export function packVisibleGlassSurfaces(
     rects[offset + 1] = rect.top;
     rects[offset + 2] = rect.width;
     rects[offset + 3] = rect.height;
+    clips[offset] = clipRect.left;
+    clips[offset + 1] = clipRect.top;
+    clips[offset + 2] = clipRect.width;
+    clips[offset + 3] = clipRect.height;
     count += 1;
   }
 
   if (count < maxCards) {
     rects.fill(0, count * 4, maxCards * 4);
+    clips.fill(0, count * 4, maxCards * 4);
   }
 
-  return { count, visibleCount, overflowCount, rects };
+  return { count, visibleCount, overflowCount, rects, clips };
 }
 
-function isVisibleRect(
-  rect: DOMRect | { left: number; right: number; top: number; bottom: number; width: number; height: number },
-  viewportWidth: number,
-  viewportHeight: number,
-  overscan: number,
-): boolean {
+function getSurfaceClipRect(
+  element: Element,
+  viewportClip: RectLike,
+  clipAncestorCache?: GlassSurfaceClipAncestorCache,
+): RectLike | null {
+  const clipAncestor = getNearestClipAncestor(element, clipAncestorCache);
+  if (!clipAncestor) return viewportClip;
+  return intersectRects(viewportClip, clipAncestor.getBoundingClientRect());
+}
+
+function getNearestClipAncestor(
+  element: Element,
+  clipAncestorCache?: GlassSurfaceClipAncestorCache,
+): Element | null {
+  if (clipAncestorCache?.has(element)) {
+    return clipAncestorCache.get(element) ?? null;
+  }
+
+  let ancestor = element.parentElement;
+  while (ancestor) {
+    if (isOverflowClipElement(ancestor)) {
+      clipAncestorCache?.set(element, ancestor);
+      return ancestor;
+    }
+    ancestor = ancestor.parentElement;
+  }
+
+  clipAncestorCache?.set(element, null);
+  return null;
+}
+
+function isOverflowClipElement(element: Element): boolean {
+  const style = getComputedStyleForElement(element);
+  if (!style) return false;
   return (
-    rect.width > 0 &&
-    rect.height > 0 &&
-    rect.right >= -overscan &&
-    rect.left <= viewportWidth + overscan &&
-    rect.bottom >= -overscan &&
-    rect.top <= viewportHeight + overscan
+    isClipOverflowValue(style.overflow) ||
+    isClipOverflowValue(style.overflowX) ||
+    isClipOverflowValue(style.overflowY)
   );
+}
+
+function isClipOverflowValue(value: string): boolean {
+  return value === "auto" || value === "scroll" || value === "hidden" || value === "clip" || value === "overlay";
+}
+
+function getComputedStyleForElement(element: Element): CSSStyleDeclaration | null {
+  const view = element.ownerDocument?.defaultView ?? (typeof window === "undefined" ? undefined : window);
+  if (!view) return null;
+  try {
+    return view.getComputedStyle(element);
+  } catch {
+    return null;
+  }
+}
+
+interface RectLike {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+function intersectRects(a: RectLike, b: RectLike): RectLike | null {
+  const left = Math.max(a.left, b.left);
+  const top = Math.max(a.top, b.top);
+  const right = Math.min(a.right, b.right);
+  const bottom = Math.min(a.bottom, b.bottom);
+  const width = right - left;
+  const height = bottom - top;
+  if (width <= 0 || height <= 0) return null;
+  return { left, top, right, bottom, width, height };
 }
 
 function getLocalStorage(): Storage | undefined {

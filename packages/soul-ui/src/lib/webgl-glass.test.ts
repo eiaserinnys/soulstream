@@ -1,3 +1,7 @@
+/**
+ * @vitest-environment jsdom
+ */
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -65,6 +69,48 @@ describe("webgl glass registry utilities", () => {
     expect(Array.from(rects.slice(4, 8))).toEqual([0, 0, 0, 0]);
   });
 
+  it("clips WebGL card rendering to the nearest overflow ancestor", () => {
+    const scrollRoot = document.createElement("div");
+    scrollRoot.style.overflowY = "auto";
+    mockBounds(scrollRoot, rect(0, 100, 320, 400));
+
+    const card = document.createElement("div");
+    mockBounds(card, rect(12, 80, 200, 132));
+    scrollRoot.appendChild(card);
+
+    const rects = createGlassSurfaceBuffer();
+    const clips = createGlassSurfaceBuffer();
+    const packed = packVisibleGlassSurfaces(
+      [registrationElement(1, card)],
+      { width: 800, height: 600, overscan: 40 },
+      { rects, clips },
+    );
+
+    expect(packed.count).toBe(1);
+    expect(packed.visibleCount).toBe(1);
+    expect(Array.from(rects.slice(0, 4))).toEqual([12, 80, 200, 132]);
+    expect(Array.from(clips.slice(0, 4))).toEqual([0, 100, 320, 400]);
+  });
+
+  it("excludes WebGL cards fully outside their overflow ancestor", () => {
+    const scrollRoot = document.createElement("div");
+    scrollRoot.style.overflowY = "auto";
+    mockBounds(scrollRoot, rect(0, 100, 320, 400));
+
+    const card = document.createElement("div");
+    mockBounds(card, rect(12, 30, 200, 40));
+    scrollRoot.appendChild(card);
+
+    const packed = packVisibleGlassSurfaces(
+      [registrationElement(1, card)],
+      { width: 800, height: 600, overscan: 40 },
+      { rects: createGlassSurfaceBuffer(), clips: createGlassSurfaceBuffer() },
+    );
+
+    expect(packed.count).toBe(0);
+    expect(packed.visibleCount).toBe(0);
+  });
+
   it("caps packed uniforms at the shader limit while reporting overflow", () => {
     const registrations = Array.from({ length: MAX_WEBGL_GLASS_CARDS + 3 }, (_, index) =>
       registration(index, rect(0, index * 2, 120, 80)),
@@ -100,6 +146,15 @@ function registration(id: number, bounds: ReturnType<typeof rect>): GlassSurface
   };
 }
 
+function registrationElement(id: number, element: Element): GlassSurfaceRegistration {
+  return {
+    id,
+    ref: {
+      current: element,
+    },
+  };
+}
+
 function rect(left: number, top: number, width: number, height: number) {
   return {
     left,
@@ -109,6 +164,13 @@ function rect(left: number, top: number, width: number, height: number) {
     right: left + width,
     bottom: top + height,
   };
+}
+
+function mockBounds(element: Element, bounds: ReturnType<typeof rect>) {
+  Object.defineProperty(element, "getBoundingClientRect", {
+    configurable: true,
+    value: () => bounds,
+  });
 }
 
 class MemoryStorage implements Storage {

@@ -21,7 +21,7 @@ export const DEFAULT_LIQUID_GLASS_SETTINGS: LiquidGlassSettings = {
   blur: 5,
   chromatic: 0.8,
   specular: 0.25,
-  tint: 0.42,
+  tint: 0.62,
 };
 
 export function normalizeLiquidGlassSettings(value: unknown): LiquidGlassSettings {

@@ -91,6 +91,17 @@ describe("DashboardShell", () => {
     expect(container.textContent).toContain("right");
   });
 
+  it("renders the desktop center panel as a glass surface", () => {
+    ({ container, root } = renderShell());
+
+    const centerPanel = container.querySelector<HTMLElement>('[data-testid="graph-panel"]');
+    expect(centerPanel).not.toBeNull();
+    expect(centerPanel?.className).toContain("dashboard-center-panel");
+    expect(centerPanel?.className).toContain("glass-strong");
+    expect(centerPanel?.className).toContain("glass-chrome");
+    expect(centerPanel?.className).not.toContain("bg-transparent");
+  });
+
   it("renders the desktop folder navigation label in Korean", () => {
     ({ container, root } = renderShell());
 
