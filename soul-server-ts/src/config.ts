@@ -145,10 +145,18 @@ export const EnvSchema = z
           .filter(Boolean),
       ),
     /**
-     * Supervisor activation. false면 durable event ingest는 유지하되 supervisor session
-     * boot/wake/watchdog consumption은 시작하지 않는다.
+     * Supervisor activation. true면 durable event ingest, supervisor session boot,
+     * wake/watchdog consumption을 함께 시작한다.
      */
     SUPERVISOR_ENABLED: z
+      .union([z.literal("true"), z.literal("false")])
+      .default("false")
+      .transform((v) => v === "true"),
+    /**
+     * Supervisor durable event ingest만 별도 활성화한다. supervisor가 꺼진 동안에도
+     * backlog를 쌓아 두고 싶을 때만 opt-in한다.
+     */
+    SUPERVISOR_EVENT_INGEST_ENABLED: z
       .union([z.literal("true"), z.literal("false")])
       .default("false")
       .transform((v) => v === "true"),

@@ -479,6 +479,10 @@ async function main(): Promise<void> {
       { debounceMs: env.SUPERVISOR_WAKE_DEBOUNCE_MS },
     )
     : undefined;
+  const supervisorEventSourceNode =
+    env.SUPERVISOR_ENABLED || env.SUPERVISOR_EVENT_INGEST_ENABLED
+      ? env.SOULSTREAM_NODE_ID
+      : undefined;
   const runningSupervisorHandovers = new Set<string>();
   const lastSupervisorHandoverAt = new Map<string, number>();
   const supervisorHandoverRunner = {
@@ -578,7 +582,7 @@ async function main(): Promise<void> {
     scheduleService.makeToolHandler(),
     claudeRuntimeTaskFollowup,
     supervisorWakeScheduler,
-    env.SOULSTREAM_NODE_ID,
+    supervisorEventSourceNode,
     env.SUPERVISOR_ENABLED ? supervisorHandoverRunner : undefined,
     {
       softTokenThreshold: env.SUPERVISOR_SOFT_TOKEN_THRESHOLD,

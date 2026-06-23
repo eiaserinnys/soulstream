@@ -27,6 +27,7 @@ describe("parseEnv", () => {
     expect(env.RUNBOOK_ENABLED).toBe(false);
     expect(env.MCP_TOOL_PROFILE).toBe("default");
     expect(env.SUPERVISOR_ENABLED).toBe(false);
+    expect(env.SUPERVISOR_EVENT_INGEST_ENABLED).toBe(false);
     expect(env.SUPERVISOR_ROLES).toEqual([]);
     expect(env.SUPERVISOR_WAKE_DEBOUNCE_MS).toBe(250);
     expect(env.SUPERVISOR_WAKE_BATCH_LIMIT).toBe(100);
@@ -277,6 +278,7 @@ describe("parseEnv", () => {
       const env = parseEnv({
         ...minimal,
         SUPERVISOR_ENABLED: "true",
+        SUPERVISOR_EVENT_INGEST_ENABLED: "true",
         SUPERVISOR_ROLES: "ariella-ashwood-codex, backup-supervisor",
         SUPERVISOR_FOLDER_ID: "fa1a7018-6262-4452-b1e3-1f7e9c61d7d0",
         SUPERVISOR_WAKE_DEBOUNCE_MS: "500",
@@ -291,6 +293,7 @@ describe("parseEnv", () => {
       });
 
       expect(env.SUPERVISOR_ENABLED).toBe(true);
+      expect(env.SUPERVISOR_EVENT_INGEST_ENABLED).toBe(true);
       expect(env.SUPERVISOR_ROLES).toEqual([
         "ariella-ashwood-codex",
         "backup-supervisor",
@@ -319,6 +322,17 @@ describe("parseEnv", () => {
           SUPERVISOR_HARD_TOKEN_THRESHOLD: "99",
         }),
       ).toThrow(ZodError);
+    });
+
+    it("allows supervisor event ingest without supervisor activation", () => {
+      const env = parseEnv({
+        ...minimal,
+        SUPERVISOR_EVENT_INGEST_ENABLED: "true",
+      });
+
+      expect(env.SUPERVISOR_ENABLED).toBe(false);
+      expect(env.SUPERVISOR_EVENT_INGEST_ENABLED).toBe(true);
+      expect(env.SUPERVISOR_ROLES).toEqual([]);
     });
   });
 
