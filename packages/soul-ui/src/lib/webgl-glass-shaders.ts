@@ -65,7 +65,8 @@ void main(){
         vec2 normal=roundNormal(lp,hsz,R);
         float factor=pow(fCurve(distN), max(0.2, uScale*0.08));
         vec2 ipx=uDpr/uRes; float edgeAmt=1.0-factor;
-        vec2 uvG=(fragPx-normal*(edgeAmt*edgeBand))*uDpr/uRes;
+        float refractionGain=1.0+sat(uScale/90.0)*1.35;
+        vec2 uvG=(fragPx-normal*(edgeAmt*edgeBand*refractionGain))*uDpr/uRes;
         vec3 refr=blurRGB(uBg, uvG, uBlur*1.7, ipx);
         vec2 chrom=normal*(uAb*edgeAmt*14.0)*ipx; float fl=min(uBlur,4.0);
         refr.r=mix(refr.r, textureLod(uBg,uvG+chrom,fl).r, 0.75);
