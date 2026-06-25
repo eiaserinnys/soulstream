@@ -17,6 +17,17 @@ uniform vec4 uClips[${MAX_WEBGL_GLASS_CARDS}];
 uniform float uClipRadii[${MAX_WEBGL_GLASS_CARDS}];
 uniform float uRadius, uDpr, uScale, uBlur, uAb, uRim, uGlass;
 float sdRound(vec2 p, vec2 b, float r){ vec2 q=abs(p)-b+r; return min(max(q.x,q.y),0.0)+length(max(q,0.0))-r; }
+vec2 roundNormal(vec2 p, vec2 b, float r){
+  vec2 s=sign(p);
+  vec2 q=abs(p)-b+r;
+  if(q.x>0.0 && q.y>0.0){
+    vec2 n=q*s;
+    float len=max(length(n),0.0001);
+    return n/len;
+  }
+  if(q.x>q.y) return vec2(s.x,0.0);
+  return vec2(0.0,s.y);
+}
 float fCurve(float x){ return 1.0 - 2.3*pow(5.2*2.71828182845, -6.9*x - 0.7); }
 float rand2(vec2 c){ return fract(sin(dot(c, vec2(12.9898,78.233)))*43758.5453); }
 float sat(float x){ return clamp(x,0.0,1.0); }
@@ -48,22 +59,24 @@ void main(){
       float R=min(uRadius, min(hsz.x,hsz.y));
       float d=sdRound(lp,hsz,R);
       if(d<0.0){
-        float inside=-d; float distN=sat(inside/min(hsz.x,hsz.y));
-        vec2 pn=lp/hsz;
+        float inside=-d;
+        float edgeBand=min(min(hsz.x,hsz.y), max(48.0, R*3.0));
+        float distN=sat(inside/edgeBand);
+        vec2 normal=roundNormal(lp,hsz,R);
         float factor=pow(fCurve(distN), max(0.2, uScale*0.08));
         vec2 ipx=uDpr/uRes; float edgeAmt=1.0-factor;
-        vec2 uvG=(center+pn*factor*hsz)*uDpr/uRes;
+        vec2 uvG=(fragPx-normal*(edgeAmt*edgeBand))*uDpr/uRes;
         vec3 refr=blurRGB(uBg, uvG, uBlur*1.7, ipx);
-        vec2 chrom=pn*(uAb*edgeAmt*14.0)*ipx; float fl=min(uBlur,4.0);
+        vec2 chrom=normal*(uAb*edgeAmt*14.0)*ipx; float fl=min(uBlur,4.0);
         refr.r=mix(refr.r, textureLod(uBg,uvG+chrom,fl).r, 0.75);
         refr.b=mix(refr.b, textureLod(uBg,uvG-chrom,fl).b, 0.75);
         refr += (rand2(fragPx*0.7)-0.5)*0.02;
         float luma=dot(refr,vec3(0.2126,0.7152,0.0722));
         refr=clamp(mix(vec3(luma),refr,1.4),0.0,1.0);
         float litEdge=smoothstep(0.30,0.0,distN);
-        float lightFace=sat(dot(normalize(pn+1e-4),normalize(vec2(-0.6,-0.8))));
+        float lightFace=sat(dot(normal,normalize(vec2(-0.6,-0.8))));
         refr += uRim*(litEdge*pow(lightFace,1.5))*0.6;
-        refr += uRim*pow(sat(-pn.x*0.5-pn.y*0.5),3.0)*0.08;
+        refr += uRim*pow(sat(dot(normal,normalize(vec2(-0.5,-0.5)))),3.0)*0.08;
         float aa=smoothstep(0.0, max(fwidth(d),1.0), -d);
         col=mix(col,refr,aa);
       }
