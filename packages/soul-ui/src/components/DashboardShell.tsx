@@ -166,11 +166,17 @@ function DashboardShellContent({
   const brandCapsuleRef = useRef<HTMLDivElement>(null);
   const searchCapsuleRef = useRef<HTMLButtonElement>(null);
   const statusCapsuleRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const centerPanelRef = useRef<HTMLElement>(null);
+  const rightPanelRef = useRef<HTMLElement>(null);
   const brandWebglActive = useGlassSurface(brandCapsuleRef, { enabled: true });
   const searchWebglActive = useGlassSurface(searchCapsuleRef, { enabled: true });
   const statusWebglActive = useGlassSurface(statusCapsuleRef, { enabled: true });
-  // Distortion effects are only stable on compact capsules. Large panels keep
-  // the normal CSS glass surface to avoid center-pull artifacts on rounded edges.
+  const sidebarWebglActive = useGlassSurface(sidebarRef, { enabled: true });
+  const centerPanelWebglActive = useGlassSurface(centerPanelRef, { enabled: true });
+  const rightPanelWebglActive = useGlassSurface(rightPanelRef, { enabled: true });
+  // The SVG lens fallback is tuned for compact capsules. Large panels keep the
+  // normal CSS glass fallback to avoid center-pull distortion on wide surfaces.
   useLiquidLens(brandCapsuleRef, { scale: 48, enabled: !brandWebglActive });
   useLiquidLens(searchCapsuleRef, { scale: 48, enabled: !searchWebglActive });
   useLiquidLens(statusCapsuleRef, { scale: 48, enabled: !statusWebglActive });
@@ -510,9 +516,11 @@ function DashboardShellContent({
       ) : (
         <>
           <aside
+            ref={sidebarRef}
             data-testid="session-panel"
             data-collapsed={isLeftSidebarCollapsed ? "true" : "false"}
             className="dashboard-floating-sidebar border border-glass-border glass-strong glass-chrome lg-rim"
+            data-liquid-glass-webgl={sidebarWebglActive ? "true" : undefined}
             style={{ width: visibleLeftSidebarWidth }}
           >
             {isLeftSidebarCollapsed ? (
@@ -562,8 +570,10 @@ function DashboardShellContent({
             }}
           >
             <main
+              ref={centerPanelRef}
               data-testid="graph-panel"
               className="dashboard-center-panel shrink-0 overflow-hidden flex flex-col border border-glass-border glass-strong glass-chrome lg-rim"
+              data-liquid-glass-webgl={centerPanelWebglActive ? "true" : undefined}
               style={{ width: centerPanelWidth }}
             >
               {centerPanel}
@@ -572,8 +582,10 @@ function DashboardShellContent({
             <DragHandle onDrag={handleRightDrag} widthPx={DASHBOARD_PANEL_GAP_PX} />
 
             <aside
+              ref={rightPanelRef}
               data-testid="detail-panel"
               className="dashboard-chat-panel shrink-0 overflow-hidden border border-glass-border glass-strong glass-chrome lg-rim"
+              data-liquid-glass-webgl={rightPanelWebglActive ? "true" : undefined}
               style={{ width: rightPanelWidth }}
             >
               {rightPanel}
