@@ -402,6 +402,17 @@ describe("BoardWorkspaceView", () => {
     expect(markdownTile?.style.top).toBe("50080px");
   });
 
+  it("keeps the board canvas inset from the surrounding center panel", () => {
+    ({ container, root } = renderBoard());
+
+    const scrollRoot = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
+    const scrollInset = scrollRoot?.parentElement;
+
+    expect(scrollRoot).not.toBeNull();
+    expect(scrollInset?.className).toContain("px-3");
+    expect(scrollInset?.className).toContain("pb-3");
+  });
+
   it("declutters overlapping board cards through the header action", async () => {
     const declutterCatalog: CatalogState = {
       ...catalog,

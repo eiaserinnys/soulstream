@@ -840,7 +840,7 @@ export function BoardWorkspaceView({
         onUndoDeclutter={handleUndoDeclutter}
       />
 
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1 px-3 pb-3">
         <div
           ref={scrollRef}
           data-testid="board-workspace-scroll"

@@ -7,6 +7,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import dashboardShellSource from "./DashboardShell.tsx?raw";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { DashboardShell, type DashboardShellProps } from "./DashboardShell";
 import {
@@ -100,6 +101,13 @@ describe("DashboardShell", () => {
     expect(centerPanel?.className).toContain("glass-strong");
     expect(centerPanel?.className).toContain("glass-chrome");
     expect(centerPanel?.className).not.toContain("bg-transparent");
+  });
+
+  it("does not apply SVG liquid lens fallback to large desktop panels", () => {
+    expect(dashboardShellSource).not.toContain("useLiquidLens(sidebarRef");
+    expect(dashboardShellSource).not.toContain("useLiquidLens(centerPanelRef");
+    expect(dashboardShellSource).not.toContain("useLiquidLens(rightPanelRef");
+    expect(dashboardShellSource).toContain("useLiquidLens(brandCapsuleRef");
   });
 
   it("renders the desktop folder navigation label in Korean", () => {

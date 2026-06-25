@@ -16,7 +16,6 @@ import { SessionContextMenu } from "./SessionContextMenu";
 import { useFlipAnimation } from "../hooks/useFlipAnimation";
 import { applyCatalogDisplayNames } from "../hooks/session-stream-helpers";
 import { SessionItem } from "./SessionItem";
-import { useGlassSurface } from "./LiquidGlassProvider";
 import { resolveFolderActiveSessionDecision } from "./folder-active-session";
 import { FolderScrollHeader, useScrollHeaderMargin } from "./folder-scroll-header";
 import { runGuardedLoadMore, type LoadMoreCallback } from "./load-more-guard";
@@ -96,7 +95,6 @@ interface FolderSessionListSurfaceProps {
   onKeyDown: (e: React.KeyboardEvent) => void;
   onContainerClick: () => void;
   renderSessionItem: RenderSessionItem;
-  webglActive: boolean;
 }
 
 function LoadMoreSentinel({
@@ -122,7 +120,6 @@ function DesktopFolderSessionGrid({
   onKeyDown,
   onContainerClick,
   renderSessionItem,
-  webglActive,
 }: FolderSessionListSurfaceProps) {
   const desktopColumnCount = useDesktopSessionGridColumnCount();
   const desktopRowCount = Math.ceil(displaySessions.length / desktopColumnCount);
@@ -140,7 +137,6 @@ function DesktopFolderSessionGrid({
     <div
       ref={parentRef}
       className="h-full overflow-y-auto outline-none"
-      data-liquid-glass-webgl={webglActive ? "true" : undefined}
       data-testid="folder-session-scroll-root"
       tabIndex={0}
       onKeyDown={onKeyDown}
@@ -212,7 +208,6 @@ function MobileFolderSessionList({
   onKeyDown,
   onContainerClick,
   renderSessionItem,
-  webglActive,
 }: FolderSessionListSurfaceProps) {
   const mobileVirtualizer = useVirtualizer({
     count: displaySessions.length,
@@ -229,7 +224,6 @@ function MobileFolderSessionList({
     <div
       ref={parentRef}
       className="h-full overflow-y-auto outline-none"
-      data-liquid-glass-webgl={webglActive ? "true" : undefined}
       data-testid="folder-session-scroll-root"
       tabIndex={0}
       onKeyDown={onKeyDown}
@@ -312,7 +306,6 @@ export function FolderContents({
   const parentRef = useRef<HTMLDivElement>(null);
   const scrollHeaderRef = useRef<HTMLDivElement>(null);
   const scrollMargin = useScrollHeaderMargin(scrollHeaderRef, Boolean(scrollHeader));
-  const listWebglActive = useGlassSurface(parentRef, { enabled: displaySessions.length > 0 });
   const keepActiveSessionWhenEmpty = useMemo(() => {
     if (!activeSessionKey || activeSessionSummary?.agentSessionId !== activeSessionKey) {
       return false;
@@ -464,7 +457,6 @@ export function FolderContents({
           onKeyDown={handleKeyDown}
           onContainerClick={() => setContextMenu(null)}
           renderSessionItem={renderSessionItem}
-          webglActive={listWebglActive}
         />
       ) : (
         <MobileFolderSessionList
@@ -478,7 +470,6 @@ export function FolderContents({
           onKeyDown={handleKeyDown}
           onContainerClick={() => setContextMenu(null)}
           renderSessionItem={renderSessionItem}
-          webglActive={listWebglActive}
         />
       )}
 

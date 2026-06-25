@@ -175,12 +175,11 @@ function DashboardShellContent({
   const sidebarWebglActive = useGlassSurface(sidebarRef, { enabled: true });
   const centerPanelWebglActive = useGlassSurface(centerPanelRef, { enabled: true });
   const rightPanelWebglActive = useGlassSurface(rightPanelRef, { enabled: true });
+  // The SVG lens fallback is tuned for compact capsules. Large panels keep the
+  // normal CSS glass fallback to avoid center-pull distortion on wide surfaces.
   useLiquidLens(brandCapsuleRef, { scale: 48, enabled: !brandWebglActive });
   useLiquidLens(searchCapsuleRef, { scale: 48, enabled: !searchWebglActive });
   useLiquidLens(statusCapsuleRef, { scale: 48, enabled: !statusWebglActive });
-  useLiquidLens(sidebarRef, { scale: 64, enabled: !sidebarWebglActive });
-  useLiquidLens(centerPanelRef, { scale: 64, enabled: !centerPanelWebglActive });
-  useLiquidLens(rightPanelRef, { scale: 64, enabled: !rightPanelWebglActive });
 
   const handleRightDrag = useCallback(
     (delta: number) => {

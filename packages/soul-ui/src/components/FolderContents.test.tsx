@@ -7,6 +7,7 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import folderContentsSource from "./FolderContents.tsx?raw";
 import type { CatalogState, SessionSummary } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { FolderContents } from "./FolderContents";
@@ -216,6 +217,12 @@ describe("FolderContents", () => {
     window.matchMedia = originalMatchMedia as typeof window.matchMedia;
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("keeps WebGL glass registration on session cards, not the whole scroll root", () => {
+    expect(folderContentsSource).not.toContain("useGlassSurface(parentRef");
+    expect(folderContentsSource).not.toContain("data-liquid-glass-webgl={webglActive");
+    expect(folderContentsSource).toContain("<SessionItem");
   });
 
   it("shows continue-session action from a folder session row context menu", async () => {
