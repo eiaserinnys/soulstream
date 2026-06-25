@@ -103,10 +103,16 @@ describe("DashboardShell", () => {
     expect(centerPanel?.className).not.toContain("bg-transparent");
   });
 
-  it("does not apply SVG liquid lens fallback to large desktop panels", () => {
+  it("does not apply distortion effects to large desktop panels", () => {
     expect(dashboardShellSource).not.toContain("useLiquidLens(sidebarRef");
     expect(dashboardShellSource).not.toContain("useLiquidLens(centerPanelRef");
     expect(dashboardShellSource).not.toContain("useLiquidLens(rightPanelRef");
+    expect(dashboardShellSource).not.toContain("useGlassSurface(sidebarRef");
+    expect(dashboardShellSource).not.toContain("useGlassSurface(centerPanelRef");
+    expect(dashboardShellSource).not.toContain("useGlassSurface(rightPanelRef");
+    expect(dashboardShellSource).not.toContain("sidebarWebglActive");
+    expect(dashboardShellSource).not.toContain("centerPanelWebglActive");
+    expect(dashboardShellSource).not.toContain("rightPanelWebglActive");
     expect(dashboardShellSource).toContain("useLiquidLens(brandCapsuleRef");
   });
 

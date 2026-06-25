@@ -1,6 +1,6 @@
 export const DASHBOARD_PANEL_GAP_PX = 22;
 export const DASHBOARD_LIST_INSET_PX = 16;
-export const DASHBOARD_CARD_GAP_PX = 16;
+export const DASHBOARD_CARD_GAP_PX = 12;
 export const DASHBOARD_SIDEBAR_LIST_INSET_PX = 8;
 export const DASHBOARD_SIDEBAR_ITEM_GAP_PX = 8;
 
