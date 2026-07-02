@@ -138,6 +138,40 @@ describe("runbook-store", () => {
     expect(useRunbookStore.getState().byId["rb-1"].snapshot?.runbook.title).toBe("After status");
   });
 
+  it("posts runbook status mutations with credentials and stores the returned projection", async () => {
+    const nextSnapshot = snapshot("Completed runbook");
+    nextSnapshot.runbook.status = "completed";
+    nextSnapshot.runbook.version = 4;
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({
+      ok: true,
+      snapshot: nextSnapshot,
+    }));
+    globalThis.fetch = fetchMock;
+
+    const result = await useRunbookStore.getState().setRunbookStatus({
+      runbookId: "rb-1",
+      expectedVersion: 3,
+      status: "completed",
+      idempotencyKey: "runbook:rb-1:status:completed:v3:test",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/runbooks/rb-1/status",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+      }),
+    );
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body).toEqual({
+      status: "completed",
+      expectedVersion: 3,
+      idempotencyKey: "runbook:rb-1:status:completed:v3:test",
+    });
+    expect(result?.runbook.status).toBe("completed");
+    expect(useRunbookStore.getState().byId["rb-1"].snapshot?.runbook.version).toBe(4);
+  });
+
   it("uses the server detail error message for failed item status mutations", async () => {
     const fetchMock = vi.fn().mockResolvedValue(errorResponse(409, {
       detail: {

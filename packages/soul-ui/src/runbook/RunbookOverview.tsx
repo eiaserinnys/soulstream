@@ -1,13 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  BookOpenCheck,
-  ChevronDown,
-  ChevronRight,
-  ExternalLink,
-  ListChecks,
-  RefreshCw,
-  UserRound,
-} from "lucide-react";
+import { BookOpenCheck, ChevronDown, ChevronRight, ExternalLink, ListChecks, RefreshCw, UserRound } from "lucide-react";
 
 import { Badge } from "../components/ui/badge";
 import { LiquidGlassCard } from "../components/LiquidGlassCard";
@@ -19,7 +11,6 @@ import {
   useRunbookStore,
 } from "../stores/runbook-store";
 import { MarkdownContent } from "../components/MarkdownContent";
-import { RunbookStatusChip } from "./RunbookStatusChip";
 import {
   RunbookItemStatusToggle,
   isRunbookItemTerminal,
@@ -29,6 +20,8 @@ import {
   type RunbookStatusToggleRunbook,
   type RunbookStatusToggleSection,
 } from "./RunbookItemStatusToggle";
+import { RunbookCompletionAction, isRunbookCompleted } from "./RunbookCompletionAction";
+import { RunbookOverviewRunningSessions } from "./RunbookOverviewRunningSessions";
 
 function toOverviewAssignee(item: RunbookOverviewItem): RunbookStatusToggleAssignee {
   return {
@@ -106,14 +99,10 @@ function OpenBoardButton({
 
 function MyTurnItemRow({
   item,
-  selected,
-  onSelect,
   onOpenBoard,
   onStatusChanged,
 }: {
   item: RunbookOverviewItem;
-  selected: boolean;
-  onSelect: (item: RunbookOverviewItem) => void;
   onOpenBoard: (item: RunbookOverviewItem) => void;
   onStatusChanged: () => Promise<void>;
 }) {
@@ -122,53 +111,56 @@ function MyTurnItemRow({
     <div
       data-testid="runbook-overview-my-turn-item"
       className={cn(
-        "group flex w-full min-w-0 items-start gap-3 rounded-[14px] border border-accent-blue/45 glass px-3 py-2.5 text-left glass-shadow-xs transition-colors hover:border-accent-blue/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/55",
-        selected && "border-accent-blue/70 glass-strong ring-1 ring-accent-blue/35",
+        "group flex w-full min-w-0 flex-col gap-3 rounded-[14px] border border-accent-blue/45 glass px-3 py-3 text-left glass-shadow-xs",
+        "transition-colors hover:border-accent-blue/65 focus-within:ring-1 focus-within:ring-accent-blue/35",
       )}
     >
-      <RunbookItemStatusToggle
-        runbook={toOverviewRunbook(item)}
-        section={toOverviewSection(item)}
-        item={toOverviewItem(item)}
-        assignee={assignee}
-        className="shrink-0"
-        controlClassName="border-accent-blue/35 text-accent-blue"
-        captionClassName="max-w-32"
-        onStatusChanged={onStatusChanged}
-      />
-      <button
-        type="button"
-        data-testid="runbook-overview-my-turn-item-detail-toggle"
-        className="min-w-0 flex-1 text-left focus-visible:outline-none"
-        onClick={() => onSelect(item)}
+      <div className="flex min-w-0 items-start gap-3">
+        <RunbookItemStatusToggle
+          runbook={toOverviewRunbook(item)}
+          section={toOverviewSection(item)}
+          item={toOverviewItem(item)}
+          assignee={assignee}
+          className="shrink-0"
+          controlClassName="border-accent-blue/35 text-accent-blue"
+          captionClassName="max-w-32"
+          onStatusChanged={onStatusChanged}
+        />
+        <div className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold leading-5 text-foreground">
+            {item.item_title}
+          </span>
+          <span className="mt-1 block truncate text-xs text-muted-foreground">
+            {itemSubtitle(item)}
+          </span>
+          <span className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+            <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
+              {assigneeLabel(item)}
+            </Badge>
+          </span>
+        </div>
+        <OpenBoardButton item={item} onOpenBoard={onOpenBoard} />
+      </div>
+      <div
+        data-testid="runbook-overview-item-how-to"
+        className="rounded-[12px] border border-glass-border glass px-3 py-2.5 text-xs leading-relaxed text-foreground glass-shadow-xs"
       >
-        <span className="block truncate text-sm font-semibold leading-5 text-foreground">
-          {item.item_title}
-        </span>
-        <span className="mt-1 block truncate text-xs text-muted-foreground">
-          {itemSubtitle(item)}
-        </span>
-        <span className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-          <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
-            {assigneeLabel(item)}
-          </Badge>
-        </span>
-      </button>
-      <OpenBoardButton item={item} onOpenBoard={onOpenBoard} />
+        {item.how_to.trim().length > 0 ? (
+          <MarkdownContent content={item.how_to} compact />
+        ) : (
+          <p className="text-muted-foreground">상세 절차 없음</p>
+        )}
+      </div>
     </div>
   );
 }
 
 function GroupItemRow({
   item,
-  selected,
-  onSelect,
   onOpenBoard,
   onStatusChanged,
 }: {
   item: RunbookOverviewItem;
-  selected: boolean;
-  onSelect: (item: RunbookOverviewItem) => void;
   onOpenBoard: (item: RunbookOverviewItem) => void;
   onStatusChanged: () => Promise<void>;
 }) {
@@ -178,7 +170,6 @@ function GroupItemRow({
       data-testid="runbook-overview-group-item"
       className={cn(
         "flex w-full min-w-0 items-start gap-2 rounded-[12px] border border-glass-border glass px-2.5 py-2 text-left glass-shadow-xs transition-colors hover:border-accent-blue/35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/50",
-        selected && "border-accent-blue/55 glass-strong ring-1 ring-accent-blue/30",
         isDone(item) && "opacity-70",
       )}
     >
@@ -194,12 +185,7 @@ function GroupItemRow({
         showCaption={item.effective_assignee_kind === "human"}
         onStatusChanged={onStatusChanged}
       />
-      <button
-        type="button"
-        data-testid="runbook-overview-group-item-detail-toggle"
-        className="min-w-0 flex-1 text-left focus-visible:outline-none"
-        onClick={() => onSelect(item)}
-      >
+      <div className="min-w-0 flex-1 text-left">
         <span className={cn(
           "block truncate text-xs font-medium leading-5 text-foreground",
           isDone(item) && "line-through",
@@ -209,7 +195,7 @@ function GroupItemRow({
         <span className="block truncate text-[11px] text-muted-foreground">
           {item.section_title}
         </span>
-      </button>
+      </div>
       {item.effective_assignee_kind === "human" && !isDone(item) ? (
         <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
           사람
@@ -220,45 +206,16 @@ function GroupItemRow({
   );
 }
 
-function runbookItemKey(item: RunbookOverviewItem): string {
-  return `${item.runbook_id}:${item.item_id}`;
-}
-
-function RunbookItemDetails({ item }: { item: RunbookOverviewItem }) {
-  return (
-    <div
-      data-testid="runbook-overview-item-detail"
-      className="mt-2 rounded-[14px] border border-glass-border glass px-3 py-2.5 text-xs leading-relaxed text-foreground glass-shadow-xs"
-    >
-      <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5">
-        <RunbookStatusChip status={item.status} />
-        <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
-          {assigneeLabel(item)}
-        </Badge>
-      </div>
-      {item.how_to.trim().length > 0 ? (
-        <MarkdownContent content={item.how_to} compact />
-      ) : (
-        <p className="text-muted-foreground">상세 절차 없음</p>
-      )}
-    </div>
-  );
-}
-
 function RunbookGroup({
   group,
   open,
   onToggle,
-  selectedItemKey,
-  onSelectItem,
   onOpenBoard,
   onStatusChanged,
 }: {
   group: RunbookOverviewGroup;
   open: boolean;
   onToggle: () => void;
-  selectedItemKey: string | null;
-  onSelectItem: (item: RunbookOverviewItem) => void;
   onOpenBoard: (item: RunbookOverviewItem) => void;
   onStatusChanged: () => Promise<void>;
 }) {
@@ -298,23 +255,27 @@ function RunbookGroup({
             {progressText(group)}
           </Badge>
         </button>
+        <RunbookCompletionAction
+          runbook={{
+            id: group.runbook_id,
+            title: group.runbook_title,
+            status: group.status,
+            version: group.runbook_version ?? null,
+          }}
+          buttonClassName="px-2 text-[11px]"
+          onStatusChanged={onStatusChanged}
+        />
       </div>
       {open ? (
         <div className="space-y-2 border-t border-[var(--lg-line)] px-3 py-3">
           {group.items.length > 0 ? (
             group.items.map((item) => (
-              <div key={item.item_id} className="min-w-0">
-                <GroupItemRow
-                  item={item}
-                  selected={selectedItemKey === runbookItemKey(item)}
-                  onSelect={onSelectItem}
-                  onOpenBoard={onOpenBoard}
-                  onStatusChanged={onStatusChanged}
-                />
-                {selectedItemKey === runbookItemKey(item) ? (
-                  <RunbookItemDetails item={item} />
-                ) : null}
-              </div>
+              <GroupItemRow
+                key={item.item_id}
+                item={item}
+                onOpenBoard={onOpenBoard}
+                onStatusChanged={onStatusChanged}
+              />
             ))
           ) : (
             <div className="rounded-[12px] border border-dashed border-[var(--lg-line)] px-3 py-3 text-xs text-muted-foreground">
@@ -332,7 +293,7 @@ export function RunbookOverview() {
   const loadOverview = useRunbookStore((s) => s.loadOverview);
   const focusBoardItem = useDashboardStore((s) => s.focusBoardItem);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
-  const [selectedItemKey, setSelectedItemKey] = useState<string | null>(null);
+  const [completedGroupsOpen, setCompletedGroupsOpen] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -346,14 +307,17 @@ export function RunbookOverview() {
     () => (snapshot?.runbooks ?? []).filter((group) => group.total_count > 0),
     [snapshot?.runbooks],
   );
+  const activeGroups = useMemo(
+    () => groups.filter((group) => !isRunbookCompleted(group.status)),
+    [groups],
+  );
+  const completedGroups = useMemo(
+    () => groups.filter((group) => isRunbookCompleted(group.status)),
+    [groups],
+  );
   const loading = projection.status === "loading";
   const refreshing = projection.isRefreshing;
   const error = projection.error;
-
-  const selectItem = (item: RunbookOverviewItem) => {
-    const key = runbookItemKey(item);
-    setSelectedItemKey((current) => (current === key ? null : key));
-  };
 
   const openBoardItem = (item: RunbookOverviewItem) => {
     focusBoardItem(item.board_item_id, item.folder_id);
@@ -373,7 +337,7 @@ export function RunbookOverview() {
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-base font-semibold leading-6">런북</h1>
             <p className="truncate text-xs text-muted-foreground">
-              내 차례 {myTurnItems.length}개 · 런북 {groups.length}개
+              확인 {myTurnItems.length}개 · 진행 {activeGroups.length}개 · 완료 {completedGroups.length}개
             </p>
           </div>
           {refreshing ? (
@@ -402,38 +366,42 @@ export function RunbookOverview() {
           <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
             <LiquidGlassCard
               webglSurface
-              data-testid="runbook-overview-my-turn"
-              className="rounded-[18px] border border-accent-blue/45 p-4 shadow-[0_12px_32px_-22px_rgb(30_84_160_/_55%)]"
+              data-testid="runbook-overview-dashboard"
+              className="rounded-[18px] border border-accent-blue/35 p-4 shadow-[0_12px_32px_-22px_rgb(30_84_160_/_55%)]"
             >
-              <div className="mb-3 flex min-w-0 items-center gap-2">
-                <UserRound className="h-4 w-4 shrink-0 text-accent-blue" />
-                <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">내 차례</h2>
-                <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
-                  {myTurnItems.length}
-                </Badge>
+              <div className="mb-4 flex min-w-0 items-center gap-2">
+                <BookOpenCheck className="h-4 w-4 shrink-0 text-accent-blue" />
+                <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">현황판</h2>
               </div>
-              {myTurnItems.length > 0 ? (
-                <div className="grid gap-3 lg:grid-cols-2">
-                  {myTurnItems.map((item) => (
-                    <div key={`${item.runbook_id}:${item.item_id}`} className="min-w-0">
+              <div className="grid gap-5">
+                <RunbookOverviewRunningSessions />
+
+                <section data-testid="runbook-overview-my-turn" className="min-w-0">
+                  <div className="mb-3 flex min-w-0 items-center gap-2">
+                    <UserRound className="h-4 w-4 shrink-0 text-accent-blue" />
+                    <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">내가 확인할 체크리스트</h2>
+                    <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
+                      {myTurnItems.length}
+                    </Badge>
+                  </div>
+                  {myTurnItems.length > 0 ? (
+                    <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(22rem,100%),1fr))]">
+                      {myTurnItems.map((item) => (
                       <MyTurnItemRow
+                        key={`${item.runbook_id}:${item.item_id}`}
                         item={item}
-                        selected={selectedItemKey === runbookItemKey(item)}
-                        onSelect={selectItem}
                         onOpenBoard={openBoardItem}
                         onStatusChanged={refreshOverview}
                       />
-                      {selectedItemKey === runbookItemKey(item) ? (
-                        <RunbookItemDetails item={item} />
-                      ) : null}
+                      ))}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-[14px] border border-dashed border-accent-blue/30 px-3 py-6 text-center text-sm text-muted-foreground">
-                  지금 사람이 이어받을 항목이 없음
-                </div>
-              )}
+                  ) : (
+                    <div className="rounded-[14px] border border-dashed border-accent-blue/30 px-3 py-6 text-center text-sm text-muted-foreground">
+                      지금 사람이 이어받을 항목이 없음
+                    </div>
+                  )}
+                </section>
+              </div>
             </LiquidGlassCard>
 
             <section className="flex min-h-0 flex-col gap-2">
@@ -441,9 +409,9 @@ export function RunbookOverview() {
                 <ListChecks className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">런북별 진행</h2>
               </div>
-              {groups.length > 0 ? (
+              {activeGroups.length > 0 ? (
                 <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(22rem,100%),1fr))]">
-                  {groups.map((group) => {
+                  {activeGroups.map((group) => {
                     const open = openGroups[group.runbook_id] ?? false;
                     return (
                       <RunbookGroup
@@ -456,8 +424,6 @@ export function RunbookOverview() {
                             [group.runbook_id]: !open,
                           }))
                         }
-                        selectedItemKey={selectedItemKey}
-                        onSelectItem={selectItem}
                         onOpenBoard={openBoardItem}
                         onStatusChanged={refreshOverview}
                       />
@@ -469,9 +435,55 @@ export function RunbookOverview() {
                   webglSurface
                   className="rounded-[18px] border border-dashed border-[var(--lg-line)] px-3 py-6 text-center text-sm text-muted-foreground"
                 >
-                  표시할 런북이 없음
+                  진행 중인 런북 없음
                 </LiquidGlassCard>
               )}
+
+              {completedGroups.length > 0 ? (
+                <LiquidGlassCard
+                  webglSurface
+                  data-testid="runbook-overview-completed-groups"
+                  className="rounded-[18px] border border-white/8 shadow-[0_10px_30px_-22px_rgb(20_26_40_/_55%)]"
+                >
+                  <button
+                    type="button"
+                    className="flex w-full min-w-0 items-center gap-2 px-3 py-2.5 text-left"
+                    onClick={() => setCompletedGroupsOpen((value) => !value)}
+                  >
+                    {completedGroupsOpen ? (
+                      <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-sm font-semibold">완료됨</span>
+                    <Badge variant="success" size="sm" className="h-5 px-1.5 text-[10px]">
+                      {completedGroups.length}
+                    </Badge>
+                  </button>
+                  {completedGroupsOpen ? (
+                    <div className="grid gap-3 border-t border-[var(--lg-line)] px-3 py-3 [grid-template-columns:repeat(auto-fill,minmax(min(22rem,100%),1fr))]">
+                      {completedGroups.map((group) => {
+                        const open = openGroups[group.runbook_id] ?? false;
+                        return (
+                          <RunbookGroup
+                            key={group.runbook_id}
+                            group={group}
+                            open={open}
+                            onToggle={() =>
+                              setOpenGroups((prev) => ({
+                                ...prev,
+                                [group.runbook_id]: !open,
+                              }))
+                            }
+                            onOpenBoard={openBoardItem}
+                            onStatusChanged={refreshOverview}
+                          />
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </LiquidGlassCard>
+              ) : null}
             </section>
           </div>
         ) : null}

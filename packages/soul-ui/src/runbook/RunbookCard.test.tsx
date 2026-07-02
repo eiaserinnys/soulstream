@@ -174,6 +174,11 @@ async function flushPromises() {
   await Promise.resolve();
 }
 
+function findButtonByText(root: ParentNode, text: string): HTMLButtonElement | undefined {
+  return Array.from(root.querySelectorAll<HTMLButtonElement>("button"))
+    .find((button) => button.textContent?.includes(text));
+}
+
 describe("RunbookCard", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -334,6 +339,71 @@ describe("RunbookCard", () => {
     expect(useRunbookStore.getState().byId["rb-1"].snapshot?.items[0]?.completed_user_id).toBe(
       "operator@example.com",
     );
+  });
+
+  it("posts authenticated runbook completion updates from the card header", async () => {
+    const nextSnapshot = sampleSnapshot();
+    nextSnapshot.runbook = {
+      ...nextSnapshot.runbook,
+      status: "completed",
+      version: 3,
+      completed_kind: "user",
+      completed_session_id: "sess-actor",
+      completed_at: "2026-06-16T00:03:00+00:00",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({
+      ok: true,
+      snapshot: nextSnapshot,
+    }));
+    globalThis.fetch = fetchMock;
+
+    useRunbookStore.setState({
+      byId: {
+        "rb-1": {
+          snapshot: sampleSnapshot(),
+          status: "ready",
+          error: null,
+          isRefreshing: false,
+        },
+      },
+    });
+
+    flushSync(() => {
+      root.render(createElement(RunbookCard, {
+        runbookId: "rb-1",
+        fallbackTitle: "Fallback",
+      }));
+    });
+
+    const openDialog = findButtonByText(container, "런북 완료");
+    expect(openDialog).not.toBeUndefined();
+    flushSync(() => {
+      openDialog!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const confirm = Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
+      .filter((button) => button.textContent?.includes("런북 완료"))
+      .at(-1);
+    expect(confirm).not.toBeUndefined();
+    flushSync(() => {
+      confirm!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/runbooks/rb-1/status",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        body: expect.any(String),
+      }),
+    );
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body).toMatchObject({
+      status: "completed",
+      expectedVersion: 2,
+    });
+    expect(body.idempotencyKey).toMatch(/^runbook:rb-1:status:completed:v2:/);
+    expect(useRunbookStore.getState().byId["rb-1"].snapshot?.runbook.status).toBe("completed");
   });
 
   it("shows the server error message when a status update fails", async () => {
