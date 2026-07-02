@@ -185,6 +185,52 @@ function isAbortError(error: unknown): boolean {
     (error as { name?: string }).name === "AbortError";
 }
 
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function extractRunbookErrorMessage(payload: unknown): string | null {
+  if (typeof payload === "string") return nonEmptyString(payload);
+  if (typeof payload !== "object" || payload === null) return null;
+
+  const record = payload as Record<string, unknown>;
+  const detail = record.detail;
+  if (typeof detail === "object" && detail !== null) {
+    const detailRecord = detail as Record<string, unknown>;
+    const error = detailRecord.error;
+    if (typeof error === "object" && error !== null) {
+      const message = nonEmptyString((error as Record<string, unknown>).message);
+      if (message) return message;
+    }
+    const detailMessage = nonEmptyString(detailRecord.message);
+    if (detailMessage) return detailMessage;
+  }
+  const detailMessage = nonEmptyString(detail);
+  if (detailMessage) return detailMessage;
+
+  const error = record.error;
+  if (typeof error === "object" && error !== null) {
+    const message = nonEmptyString((error as Record<string, unknown>).message);
+    if (message) return message;
+  }
+  const errorMessage = nonEmptyString(error);
+  if (errorMessage) return errorMessage;
+
+  return nonEmptyString(record.message);
+}
+
+async function readRunbookErrorMessage(
+  response: Response,
+  fallback: string,
+): Promise<string> {
+  try {
+    const payload = await response.json();
+    return extractRunbookErrorMessage(payload) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 async function fetchRunbookSnapshot(
   runbookId: string,
   signal?: AbortSignal,
@@ -194,7 +240,10 @@ async function fetchRunbookSnapshot(
   });
   if (response.status === 404) return null;
   if (!response.ok) {
-    throw new Error(`Runbook fetch failed: ${response.status}`);
+    throw new Error(await readRunbookErrorMessage(
+      response,
+      `Runbook fetch failed: ${response.status}`,
+    ));
   }
   return await response.json() as RunbookSnapshot;
 }
@@ -204,7 +253,10 @@ async function fetchRunbookOverview(
 ): Promise<RunbookOverviewPayload> {
   const response = await fetch("/api/runbooks/my-turn", { signal });
   if (!response.ok) {
-    throw new Error(`Runbook overview fetch failed: ${response.status}`);
+    throw new Error(await readRunbookErrorMessage(
+      response,
+      `Runbook overview fetch failed: ${response.status}`,
+    ));
   }
   return await response.json() as RunbookOverviewPayload;
 }
@@ -227,7 +279,10 @@ async function postRunbookItemStatus(
     },
   );
   if (!response.ok) {
-    throw new Error(`Runbook status update failed: ${response.status}`);
+    throw new Error(await readRunbookErrorMessage(
+      response,
+      `Runbook status update failed: ${response.status}`,
+    ));
   }
   return await response.json() as RunbookItemStatusResponse;
 }

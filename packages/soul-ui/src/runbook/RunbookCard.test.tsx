@@ -159,8 +159,18 @@ function okResponse(body: unknown): Response {
   } as unknown as Response;
 }
 
+function errorResponse(status: number, body: unknown): Response {
+  return {
+    ok: false,
+    status,
+    json: vi.fn().mockResolvedValue(body),
+  } as unknown as Response;
+}
+
 async function flushPromises() {
   await Promise.resolve();
+  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
   await Promise.resolve();
 }
 
@@ -223,6 +233,38 @@ describe("RunbookCard", () => {
     expect(checkbox!.disabled).toBe(false);
   });
 
+  it("shows the reason when a human checkbox has no session provenance", () => {
+    const noSessionSnapshot = sampleSnapshot();
+    noSessionSnapshot.runbook = {
+      ...noSessionSnapshot.runbook,
+      created_session_id: null,
+    };
+    useRunbookStore.setState({
+      byId: {
+        "rb-1": {
+          snapshot: noSessionSnapshot,
+          status: "ready",
+          error: null,
+          isRefreshing: false,
+        },
+      },
+    });
+
+    flushSync(() => {
+      root.render(createElement(RunbookCard, {
+        runbookId: "rb-1",
+        fallbackTitle: "Fallback",
+      }));
+    });
+
+    const checkbox = container.querySelector<HTMLInputElement>("input[type='checkbox']");
+    expect(checkbox).not.toBeNull();
+    expect(checkbox!.disabled).toBe(true);
+    expect(checkbox!.title).toBe("세션 정보 없음");
+    expect(container.querySelector("[data-testid='runbook-checkbox-disabled-reason']")?.textContent)
+      .toBe("세션 정보 없음");
+  });
+
   it("posts authenticated human item status updates through the runbook store", async () => {
     const nextSnapshot = sampleSnapshot();
     nextSnapshot.items[0] = {
@@ -280,5 +322,41 @@ describe("RunbookCard", () => {
     expect(useRunbookStore.getState().byId["rb-1"].snapshot?.items[0]?.completed_user_id).toBe(
       "operator@example.com",
     );
+  });
+
+  it("shows the server error message when a status update fails", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(errorResponse(409, {
+      detail: {
+        error: {
+          message: "항목 버전이 오래되었습니다. 새로고침 후 다시 시도하세요.",
+        },
+      },
+    }));
+    globalThis.fetch = fetchMock;
+
+    useRunbookStore.setState({
+      byId: {
+        "rb-1": {
+          snapshot: sampleSnapshot(),
+          status: "ready",
+          error: null,
+          isRefreshing: false,
+        },
+      },
+    });
+
+    flushSync(() => {
+      root.render(createElement(RunbookCard, {
+        runbookId: "rb-1",
+        fallbackTitle: "Fallback",
+      }));
+    });
+
+    const checkbox = container.querySelector<HTMLInputElement>("input[type='checkbox']");
+    expect(checkbox).not.toBeNull();
+    checkbox!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPromises();
+
+    expect(container.textContent).toContain("항목 버전이 오래되었습니다. 새로고침 후 다시 시도하세요.");
   });
 });

@@ -121,6 +121,21 @@ function resolveActorSessionId(
     null;
 }
 
+function checkboxDisabledReason(
+  runbook: RunbookRow,
+  section: RunbookSectionRow,
+  item: RunbookItemRow,
+  assignee: EffectiveAssignee,
+  pending: boolean,
+): string | null {
+  if (pending) return "상태 변경 중";
+  if (item.archived) return "보관된 항목";
+  if (item.status === "cancelled") return "취소된 항목";
+  if (assignee.kind !== "human") return "사람 담당 항목만 직접 변경할 수 있음";
+  if (!resolveActorSessionId(runbook, section, item, assignee)) return "세션 정보 없음";
+  return null;
+}
+
 function createStatusIdempotencyKey(
   runbookId: string,
   itemId: string,
@@ -263,8 +278,11 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
     event: ChangeEvent<HTMLInputElement>,
   ) => {
     if (!snapshot) return;
-    const actorSessionId = resolveActorSessionId(snapshot.runbook, section, item, assignee);
-    if (!actorSessionId) return;
+    const disabledReason = checkboxDisabledReason(snapshot.runbook, section, item, assignee, false);
+    if (disabledReason) {
+      setItemErrors((prev) => ({ ...prev, [item.id]: disabledReason }));
+      return;
+    }
     const nextStatus: Extract<RunbookItemStatus, "pending" | "completed" | "cancelled"> =
       event.currentTarget.checked ? "completed" : "pending";
     setPendingItems((prev) => ({ ...prev, [item.id]: true }));
@@ -377,14 +395,17 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                   {sectionItems.map((item) => {
                     const assignee = resolveAssignee(section, item);
                     const myTurn = isHumanTurn(assignee, item);
-                    const writable = snapshot
-                      ? isHumanWritable(assignee, item) &&
-                        Boolean(resolveActorSessionId(snapshot.runbook, section, item, assignee))
-                      : false;
                     const pending = Boolean(pendingItems[item.id]);
+                    const disabledReason = snapshot
+                      ? checkboxDisabledReason(snapshot.runbook, section, item, assignee, pending)
+                      : "런북 정보 없음";
+                    const writable = isHumanWritable(assignee, item) && !disabledReason;
                     const itemError = itemErrors[item.id];
                     const itemOpen = openItems[item.id] ?? itemDefaultOpen(section, item);
                     const hasHowTo = item.how_to.trim().length > 0;
+                    const checkboxHelpId = disabledReason
+                      ? `runbook-checkbox-disabled-${item.id}`
+                      : undefined;
                     return (
                       <div
                         key={item.id}
@@ -399,8 +420,9 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                           <input
                             type="checkbox"
                             checked={item.status === "completed"}
-                            disabled={!writable || pending}
-                            title={item.status === "completed" ? "완료 해제" : "완료 표시"}
+                            disabled={!writable}
+                            title={disabledReason ?? (item.status === "completed" ? "완료 해제" : "완료 표시")}
+                            aria-describedby={checkboxHelpId}
                             className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-accent-blue"
                             onPointerDown={stopTileDrag}
                             onClick={(event) => event.stopPropagation()}
@@ -452,6 +474,15 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                                 </button>
                               )}
                             </div>
+                            {disabledReason && (
+                              <div
+                                id={checkboxHelpId}
+                                data-testid="runbook-checkbox-disabled-reason"
+                                className="mt-1 text-[10px] leading-4 text-muted-foreground"
+                              >
+                                {disabledReason}
+                              </div>
+                            )}
                             {hasHowTo && itemOpen && (
                               <div
                                 data-testid="runbook-how-to"
