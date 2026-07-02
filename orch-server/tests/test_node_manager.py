@@ -276,6 +276,43 @@ class TestAgentProfileRegistration:
             await manager.register_node(mock_ws, make_registration("n1"))
             mock_fetch.assert_called_once()
 
+    async def test_reannounce_node_register_replaces_agent_catalog(self, manager, mock_ws):
+        """연결 중 node_register 재공지 → 해당 노드의 agent catalog가 최신 상태로 덮인다."""
+        events = []
+
+        async def listener(event_type, node_id, data):
+            events.append((event_type, node_id, data))
+
+        manager.add_change_listener(listener)
+        reg = make_registration("n1")
+        reg["supported_backends"] = ["codex"]
+        reg["agents"] = [
+            {"id": "old-agent", "name": "Old Agent", "backend": "codex"},
+        ]
+        node = await manager.register_node(mock_ws, reg)
+        assert set(node.agent_profiles) == {"old-agent"}
+
+        await manager.refresh_node_registration("n1", {
+            "type": "node_register",
+            "node_id": "n1",
+            "host": "10.0.0.2",
+            "port": 4305,
+            "capabilities": {"max_concurrent": 2, "app_heartbeat_v1": True},
+            "supported_backends": ["codex", "claude"],
+            "agents": [
+                {"id": "new-agent", "name": "New Agent", "backend": "codex"},
+                {"id": "claude-agent", "name": "Claude Agent", "backend": "claude"},
+            ],
+        })
+
+        assert set(node.agent_profiles) == {"new-agent", "claude-agent"}
+        assert node.host == "10.0.0.2"
+        assert node.port == 4305
+        assert node.supported_backends == ["codex", "claude"]
+        assert node.capabilities["max_concurrent"] == 2
+        assert events[-1][0] == "node_updated"
+        assert events[-1][1] == "n1"
+
 
 class TestFindAgentProfile:
     """find_agent_profile 테스트."""

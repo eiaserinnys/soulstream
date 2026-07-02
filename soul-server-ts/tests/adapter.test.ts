@@ -189,6 +189,56 @@ describe("UpstreamAdapter", () => {
     await adapter.shutdown();
   });
 
+  it("registry 변경 후 같은 WebSocket으로 node_register를 재공지한다", async () => {
+    const deps = makeDeps();
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      silentLogger,
+      deps,
+    );
+
+    void adapter.run();
+    await waitFor(() => orch.receivedMessages.length >= 1);
+
+    deps.agentRegistry.replace([
+      codexAgent,
+      {
+        id: "fable",
+        name: "서소영 Fable",
+        backend: "codex",
+        workspace_dir: "/tmp/fable",
+      },
+    ]);
+    await adapter.reannounceAgentCatalog();
+    await waitFor(
+      () =>
+        orch.receivedMessages.filter(
+          (msg) => (msg as Record<string, unknown>).type === "node_register",
+        ).length >= 2,
+    );
+
+    const registerMessages = orch.receivedMessages.filter(
+      (msg) => (msg as Record<string, unknown>).type === "node_register",
+    ) as Array<Record<string, unknown>>;
+    const latest = registerMessages.at(-1) as Record<string, unknown>;
+    expect((latest.agents as Array<Record<string, unknown>>).map((a) => a.id)).toEqual([
+      "codex-default",
+      "fable",
+    ]);
+    expect(latest.capabilities).toMatchObject({ max_concurrent: 2 });
+
+    await adapter.shutdown();
+  });
+
   it("sessionDb가 있으면 node_register 직후 현재 세션 dump를 sessions_update로 보낸다", async () => {
     const sessionDb = {
       listSessionsSummary: vi.fn(async () => ({

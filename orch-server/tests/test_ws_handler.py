@@ -132,6 +132,36 @@ class TestMessageLoop:
 
         # The handler processed messages without error
 
+    async def test_message_loop_routes_node_register_reannounce_to_manager(self, ws, manager):
+        """등록 이후 node_register 재수신은 node catalog refresh로 라우팅된다."""
+        from fastapi import WebSocketDisconnect
+
+        reannounce = {
+            "type": EVT_NODE_REGISTER,
+            "node_id": "msg-node",
+            "agents": [{"id": "new-agent", "name": "New Agent", "backend": "codex"}],
+            "supported_backends": ["codex"],
+        }
+        manager.refresh_node_registration = AsyncMock(
+            wraps=manager.refresh_node_registration
+        )
+
+        ws.receive_text.side_effect = [
+            json.dumps({
+                "type": EVT_NODE_REGISTER,
+                "node_id": "msg-node",
+            }),
+            json.dumps(reannounce),
+            WebSocketDisconnect(1000),
+        ]
+
+        await handle_node_ws(ws, manager)
+
+        manager.refresh_node_registration.assert_awaited_once_with(
+            "msg-node",
+            reannounce,
+        )
+
     async def test_invalid_json_in_loop_is_skipped(self, ws, manager):
         """Invalid JSON during message loop is skipped, not fatal."""
         from fastapi import WebSocketDisconnect

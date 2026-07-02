@@ -110,23 +110,9 @@ class NodeManager:
 
         # 에이전트 정보: 등록 메시지에 포함된 경우 우선 사용, 없으면 HTTP 조회
         if agents_from_registration is not None:
-            profiles = {}
-            portrait_cache: dict[str, bytes] = {}
-            for a in agents_from_registration:
-                agent_id = a["id"]
-                profiles[agent_id] = {
-                    "id": agent_id,
-                    "name": a.get("name", ""),
-                    "portrait_url": a.get("portrait_url", ""),
-                    "max_turns": a.get("max_turns"),
-                    # 옵션 D Phase A: agent의 백엔드 ("claude" | "codex" 등). SessionRouter._resolve_backend가 조회.
-                    "backend": a.get("backend", "claude"),
-                }
-                if a.get("portrait_b64"):
-                    try:
-                        portrait_cache[agent_id] = base64.b64decode(a["portrait_b64"])
-                    except Exception:
-                        logger.warning("portrait_b64 디코딩 실패 (agent=%s)", agent_id)
+            profiles, portrait_cache = self._agent_data_from_registration(
+                agents_from_registration
+            )
             node.set_agent_data(profiles, portrait_cache)
             logger.info(
                 "에이전트 프로필 등록 메시지에서 로드: node=%s, count=%d",
@@ -150,6 +136,86 @@ class NodeManager:
         await self._sync_supervisor_sessions(node_id, registration.get("sessions"))
         await self._emit_change("node_registered", node_id, node.to_info())
         return node
+
+    async def refresh_node_registration(
+        self, node_id: str, registration: dict
+    ) -> None:
+        """연결 유지 중 재수신한 node_register payload로 노드 catalog를 갱신한다."""
+        node = self._nodes.get(node_id)
+        if node is None:
+            logger.warning("node_register 재공지 대상 노드 없음: %s", node_id)
+            return
+
+        incoming_node_id = registration.get("node_id")
+        if incoming_node_id and incoming_node_id != node_id:
+            logger.warning(
+                "node_register 재공지 node_id 불일치: current=%s incoming=%s",
+                node_id,
+                incoming_node_id,
+            )
+            return
+
+        if "host" in registration:
+            node.host = registration.get("host", "")
+        if "port" in registration:
+            node.port = registration.get("port", 0)
+        if "capabilities" in registration:
+            node.capabilities = registration.get("capabilities") or {}
+
+        if "supported_backends" in registration:
+            supported_backends = (
+                registration["supported_backends"]
+                if registration.get("supported_backends") is not None
+                else ["claude"]
+            )
+            node.supported_backends = supported_backends
+        else:
+            supported_backends = node.supported_backends
+
+        agents_from_registration = registration.get("agents")
+        self._validate_agent_backends(node_id, supported_backends, agents_from_registration)
+        if agents_from_registration is not None:
+            profiles, portrait_cache = self._agent_data_from_registration(
+                agents_from_registration
+            )
+            node.set_agent_data(profiles, portrait_cache)
+        else:
+            profiles = node.agent_profiles
+
+        user_info = registration.get("user", {})
+        if user_info:
+            node.set_user_info(self._with_email_fallback(user_info))
+
+        logger.info(
+            "노드 등록 재공지 반영: node=%s, agents=%d, backends=%s",
+            node_id,
+            len(profiles),
+            node.supported_backends,
+        )
+        await self._emit_change("node_updated", node_id, node.to_info())
+
+    @staticmethod
+    def _agent_data_from_registration(
+        agents_from_registration: list[dict],
+    ) -> tuple[dict, dict[str, bytes]]:
+        profiles = {}
+        portrait_cache: dict[str, bytes] = {}
+        for a in agents_from_registration:
+            agent_id = a["id"]
+            profiles[agent_id] = {
+                "id": agent_id,
+                "name": a.get("name", ""),
+                "portrait_url": a.get("portrait_url", ""),
+                "max_turns": a.get("max_turns"),
+                # 옵션 D Phase A: agent의 백엔드 ("claude" | "codex" 등). SessionRouter._resolve_backend가 조회.
+                "backend": a.get("backend", "claude"),
+            }
+            if a.get("portrait_b64"):
+                try:
+                    portrait_cache[agent_id] = base64.b64decode(a["portrait_b64"])
+                except Exception:
+                    logger.warning("portrait_b64 디코딩 실패 (agent=%s)", agent_id)
+        return profiles, portrait_cache
 
     async def _fetch_user_info(self, node: "NodeConnection", host: str, port: int) -> None:
         """soul-server /api/dashboard/config에서 사용자 정보 조회.

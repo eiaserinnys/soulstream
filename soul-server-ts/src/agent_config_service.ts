@@ -14,11 +14,14 @@ import {
   type ConfigSnapshotInfo,
 } from "./config_store.js";
 
+type MaybePromise<T> = T | Promise<T>;
+
 export interface AgentConfigServiceOptions {
   configPath: string;
   snapshotRoot?: string;
   agentRegistry?: Pick<AgentRegistry, "replace">;
   profileResolver?: (profiles: AgentProfile[]) => AgentProfile[];
+  onAfterRegistryReplace?: () => MaybePromise<void>;
 }
 
 export interface AgentConfigPlanOptions {
@@ -101,8 +104,9 @@ export class AgentConfigService {
       snapshotRoot: options.snapshotRoot,
       parse: parseAgentsConfigRaw,
       stringify: stringifyAgentsConfig,
-      onAfterApply: (config) => {
+      onAfterApply: async (config) => {
         options.agentRegistry?.replace(this.resolveProfiles(config.agents));
+        await options.onAfterRegistryReplace?.();
       },
     });
   }

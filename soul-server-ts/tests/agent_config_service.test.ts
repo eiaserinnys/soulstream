@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentRegistry } from "../src/agent_registry.js";
 import { AgentConfigService } from "../src/agent_config_service.js";
@@ -77,6 +77,46 @@ describe("AgentConfigService", () => {
     expect(registry.get("codex-default")?.name).toBe("Codex Updated");
     expect(registry.get("codex-default")?.max_turns).toBe(25);
     expect(registry.get("codex-default")?.model).toBe("gpt-5.3-codex-spark");
+  });
+
+  it("notifies after registry reload when a profile apply changes config", async () => {
+    const onAfterRegistryReplace = vi.fn(() => {
+      expect(registry.get("codex-default")?.name).toBe("Codex Callback");
+    });
+    service = new AgentConfigService({
+      configPath,
+      snapshotRoot,
+      agentRegistry: registry,
+      onAfterRegistryReplace,
+    });
+
+    await service.replaceProfile({
+      id: "codex-default",
+      name: "Codex Callback",
+      backend: "codex",
+      workspace_dir: "/tmp/codex",
+    });
+
+    expect(onAfterRegistryReplace).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not notify when a profile apply is a no-op", async () => {
+    const onAfterRegistryReplace = vi.fn();
+    service = new AgentConfigService({
+      configPath,
+      snapshotRoot,
+      agentRegistry: registry,
+      onAfterRegistryReplace,
+    });
+
+    await service.replaceProfile({
+      id: "codex-default",
+      name: "Codex",
+      backend: "codex",
+      workspace_dir: "/tmp/codex",
+    });
+
+    expect(onAfterRegistryReplace).not.toHaveBeenCalled();
   });
 
   it("plans an add profile as a semantic change without default text diff", async () => {

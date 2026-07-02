@@ -28,13 +28,18 @@ from soulstream_server.nodes.node_manager import NodeManager
 logger = logging.getLogger(__name__)
 
 
-async def _node_message_loop(ws: WebSocket, node_id: str, node) -> None:
+async def _node_message_loop(
+    ws: WebSocket, node_id: str, node, node_manager: NodeManager
+) -> None:
     while True:
         raw = await ws.receive_text()
         try:
             msg = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
             logger.warning("Invalid JSON from node %s", node_id)
+            continue
+        if msg.get("type") == EVT_NODE_REGISTER:
+            await node_manager.refresh_node_registration(node_id, msg)
             continue
         await node.handle_message(msg)
 
@@ -107,7 +112,7 @@ async def handle_node_ws(ws: WebSocket, node_manager: NodeManager) -> None:
     node = await node_manager.register_node(ws, data)
 
     tasks: set[asyncio.Task] = {
-        asyncio.create_task(_node_message_loop(ws, node_id, node)),
+        asyncio.create_task(_node_message_loop(ws, node_id, node, node_manager)),
     }
     if node.supports_app_heartbeat:
         tasks.add(asyncio.create_task(node.run_heartbeat()))

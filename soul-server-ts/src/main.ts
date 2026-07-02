@@ -178,10 +178,21 @@ async function main(): Promise<void> {
     }
   }
 
+  let upstreamAdapter: UpstreamAdapter | null = null;
   const agentConfigService = new AgentConfigService({
     configPath: env.AGENTS_CONFIG_PATH,
     agentRegistry,
     profileResolver: (profiles) => mcpConfigService.resolveProfiles(profiles),
+    onAfterRegistryReplace: async () => {
+      if (!upstreamAdapter) {
+        logger.warn(
+          { nodeId: env.SOULSTREAM_NODE_ID },
+          "Agent catalog reannounce skipped — UpstreamAdapter not ready",
+        );
+        return;
+      }
+      await upstreamAdapter.reannounceAgentCatalog();
+    },
   });
 
   const claudeAuth = new ClaudeAuthService(
@@ -208,7 +219,6 @@ async function main(): Promise<void> {
   // === wiring (HTTP 서버 시작 *전*에 runtime 의존성 구축) ===
   // SessionBroadcaster는 send 함수가 필요한데 UpstreamAdapter가 그것을 제공.
   // 순환 의존 회피: 두 단계로 구성 — late-bound send를 SessionBroadcaster에 주입.
-  let upstreamAdapter: UpstreamAdapter | null = null;
   const send = async (data: unknown): Promise<void> => {
     if (!upstreamAdapter) {
       logger.warn({ data }, "broadcast send called before UpstreamAdapter ready");
