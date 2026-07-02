@@ -111,7 +111,6 @@ async function createServer(service: ReturnType<typeof fakeRunbookService>): Pro
     nodeId: "test-node",
     logger: createSilentLogger(),
     runbook: {
-      enabled: true,
       service: service as unknown as RunbookService,
       auth: {
         authBearerToken: "",

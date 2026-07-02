@@ -24,7 +24,6 @@ describe("parseEnv", () => {
     expect(env.LLM_ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.CODEX_CLI_PATH).toBeUndefined();
     expect(env.CODEX_ADAPTER_MODE).toBe("sdk");
-    expect(env.RUNBOOK_ENABLED).toBe(false);
     expect(env.MCP_TOOL_PROFILE).toBe("default");
     expect(env.SUPERVISOR_ENABLED).toBe(false);
     expect(env.SUPERVISOR_EVENT_INGEST_ENABLED).toBe(false);
@@ -333,16 +332,6 @@ describe("parseEnv", () => {
       expect(env.SUPERVISOR_ENABLED).toBe(false);
       expect(env.SUPERVISOR_EVENT_INGEST_ENABLED).toBe(true);
       expect(env.SUPERVISOR_ROLES).toEqual([]);
-    });
-  });
-
-  describe("Runbook env", () => {
-    it("RUNBOOK_ENABLED default false", () => {
-      expect(parseEnv(minimal).RUNBOOK_ENABLED).toBe(false);
-    });
-
-    it('RUNBOOK_ENABLED "true" 문자열 → true', () => {
-      expect(parseEnv({ ...minimal, RUNBOOK_ENABLED: "true" }).RUNBOOK_ENABLED).toBe(true);
     });
   });
 });
