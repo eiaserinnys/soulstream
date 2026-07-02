@@ -12,23 +12,10 @@ import { z } from "zod";
 
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
+import { searchSessionEvents } from "../../search/session_search.js";
 
 const DEFAULT_DOWNLOAD_DIR = "/tmp/soulstream_sessions";
 const TOOL_TRUNCATE_DEFAULT = 500;
-const SEARCH_PREVIEW_RADIUS = 100;
-const DEFAULT_READABLE_SEARCH_EVENT_TYPES = [
-  "user_message",
-  "assistant_message",
-  "user_text",
-  "assistant_text",
-  "text_delta",
-  "result",
-  "complete",
-  "error",
-  "away_summary",
-  "intervention_sent",
-  "realtime_transcript",
-];
 
 export function registerSessionQueryTools(
   server: McpServer,
@@ -229,45 +216,14 @@ export function registerSessionQueryTools(
     },
     async ({ query, session_ids, event_types, search_session_id, top_k }) => {
       try {
-        const limit = top_k ?? 10;
-        const types = resolveSearchEventTypes(event_types);
-        const matches: Awaited<ReturnType<typeof runtime.db.searchEvents>> = [];
-        const seen = new Set<string>();
-        for (const match of await runtime.db.searchEvents(
+        const results = await searchSessionEvents(runtime.db, {
           query,
-          session_ids ?? null,
-          limit,
-          types,
-        )) {
-          if (!isReadableSearchMatch(match, types)) continue;
-          const key = `${match.session_id}:${match.id}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          matches.push(match);
-        }
-        if (search_session_id) {
-          for (const match of await runtime.db.searchEventsBySessionId(
-            query,
-            types,
-            limit,
-          )) {
-            if (!isReadableSearchMatch(match, types)) continue;
-            const key = `${match.session_id}:${match.id}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            matches.push(match);
-          }
-        }
-        matches.sort((a, b) => b.score - a.score);
-        return jsonResult({
-          results: matches.slice(0, limit).map((m) => ({
-            session_id: m.session_id,
-            event_id: m.id,
-            score: m.score,
-            preview: buildPreview(m.searchable_text, query),
-            event_type: m.event_type,
-          })),
+          sessionIds: session_ids ?? null,
+          eventTypes: event_types,
+          searchSessionId: search_session_id,
+          limit: top_k ?? 10,
         });
+        return jsonResult({ results });
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return errorResult(msg);
@@ -323,19 +279,6 @@ export function registerSessionQueryTools(
   );
 }
 
-function resolveSearchEventTypes(eventTypes?: string[] | null): string[] {
-  return eventTypes && eventTypes.length > 0
-    ? eventTypes
-    : [...DEFAULT_READABLE_SEARCH_EVENT_TYPES];
-}
-
-function isReadableSearchMatch(
-  match: { event_type: string; searchable_text: string },
-  eventTypes: string[],
-): boolean {
-  return eventTypes.includes(match.event_type) && match.searchable_text.trim().length > 0;
-}
-
 function serializeDate(d: Date | null | undefined): string | null {
   if (!d) return null;
   return d.toISOString();
@@ -366,20 +309,6 @@ function applyToolContentPolicy(
     event: payload,
     created_at: ev.created_at instanceof Date ? ev.created_at.toISOString() : ev.created_at,
   };
-}
-
-function buildPreview(text: string, query: string): string {
-  if (!text) return "";
-  const lower = text.toLowerCase();
-  const idx = lower.indexOf(query.toLowerCase());
-  if (idx < 0) {
-    return text.slice(0, SEARCH_PREVIEW_RADIUS * 2);
-  }
-  const start = Math.max(0, idx - SEARCH_PREVIEW_RADIUS);
-  const end = Math.min(text.length, idx + query.length + SEARCH_PREVIEW_RADIUS);
-  const prefix = start > 0 ? "…" : "";
-  const suffix = end < text.length ? "…" : "";
-  return `${prefix}${text.slice(start, end)}${suffix}`;
 }
 
 function extractTextFromPayload(payload: Record<string, unknown>): string {
