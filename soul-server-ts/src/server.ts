@@ -3,6 +3,10 @@ import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import type { McpAuthConfig } from "./mcp/auth.js";
 import type { McpRuntime } from "./mcp/runtime.js";
 import { registerMcpRoutes } from "./mcp/transport.js";
+import {
+  registerCogitoSearchRoute,
+  type CogitoSearchRouteConfig,
+} from "./cogito/search_route.js";
 import { registerLlmRoutes, type LlmRouteConfig } from "./llm/router.js";
 import {
   registerBoardYjsRoutes,
@@ -32,6 +36,8 @@ export interface ServerParams {
     path: string;
     auth: McpAuthConfig;
   };
+  /** Node-local cogito HTTP search route used by orchestrator fan-out. */
+  cogito?: CogitoSearchRouteConfig;
   /** LLM proxy route 설정. 미지정 시 `/llm/completions` 미등록. */
   llm?: LlmRouteConfig;
   /** Board workspace Yjs collaboration route 설정. */
@@ -75,6 +81,9 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
       path: params.mcp.path,
       auth: params.mcp.auth,
     });
+  }
+  if (params.cogito) {
+    registerCogitoSearchRoute(fastify, params.cogito);
   }
   if (params.llm) {
     registerLlmRoutes(fastify, params.llm);

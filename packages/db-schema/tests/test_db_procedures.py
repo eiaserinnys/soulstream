@@ -62,6 +62,12 @@ async def test_runbook_status_migration_is_mirrored_in_schema_sql():
     assert migration_sql in _schema_sql()
 
 
+async def test_event_search_substring_migration_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("030_event_search_substring_fallback.sql").strip()
+
+    assert migration_sql in _schema_sql()
+
+
 async def test_schema_reapply_upgrades_pre_status_runbooks_table(test_db):
     """schema.sql만 재실행해도 029 이전 runbooks 테이블이 최신 형태가 된다."""
 
@@ -991,6 +997,61 @@ async def test_event_search_uses_bm25_terms(test_db):
     )
     assert [r["id"] for r in rows[:2]] == [1, 2]
     assert rows[0]["score"] > rows[1]["score"]
+
+
+async def test_event_search_matches_korean_substrings_inside_long_tokens(test_db):
+    await _create_session(test_db, "ev-ko-substring")
+    now = _utc_now()
+
+    await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-ko-substring", "text_delta", '{"text":"가라앉은다"}',
+        "가라앉은다", now,
+    )
+    await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-ko-substring", "text_delta", '{"text":"무관한 문장"}',
+        "무관한 문장", now,
+    )
+
+    rows = await test_db.fetch(
+        "SELECT * FROM event_search($1, $2, $3, $4)",
+        "가라앉은", ["ev-ko-substring"], 10, ["text_delta"],
+    )
+
+    assert [r["id"] for r in rows] == [1]
+    assert rows[0]["searchable_text"] == "가라앉은다"
+    assert rows[0]["score"] > 0
+
+    inflected_rows = await test_db.fetch(
+        "SELECT * FROM event_search($1, $2, $3, $4)",
+        "가라앉았다", ["ev-ko-substring"], 10, ["text_delta"],
+    )
+
+    assert [r["id"] for r in inflected_rows] == [1]
+
+
+async def test_event_search_handles_short_and_symbol_queries(test_db):
+    await _create_session(test_db, "ev-short-symbol")
+    now = _utc_now()
+
+    await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-short-symbol", "user_message", '{"text":"x 100% 완료"}',
+        "x 100% 완료", now,
+    )
+
+    short_rows = await test_db.fetch(
+        "SELECT * FROM event_search($1, $2, $3, $4)",
+        "x", ["ev-short-symbol"], 10, ["user_message"],
+    )
+    symbol_rows = await test_db.fetch(
+        "SELECT * FROM event_search($1, $2, $3, $4)",
+        "100%", ["ev-short-symbol"], 10, ["user_message"],
+    )
+
+    assert [r["id"] for r in short_rows] == [1]
+    assert [r["id"] for r in symbol_rows] == [1]
 
 
 # === 폴더 CRUD ===

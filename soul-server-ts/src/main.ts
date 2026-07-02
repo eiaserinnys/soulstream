@@ -719,6 +719,9 @@ async function main(): Promise<void> {
           },
         }
       : undefined,
+    cogito: {
+      runtime: mcpRuntime,
+    },
     llm: llmExecutor
       ? {
           executor: llmExecutor,
