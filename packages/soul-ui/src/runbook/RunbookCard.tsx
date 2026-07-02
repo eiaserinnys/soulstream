@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useState, type PointerEvent } from "react";
 import {
   Bot,
   BookOpen,
@@ -17,11 +17,17 @@ import {
   type RunbookAssigneeKind,
   type RunbookItemRow,
   type RunbookItemStatus,
-  type RunbookRow,
   type RunbookSectionRow,
   useRunbookStore,
 } from "../stores/runbook-store";
-import { RunbookStatusChip } from "./RunbookStatusChip";
+import {
+  RunbookItemStatusToggle,
+  isRunbookItemHumanTurn,
+  runbookAssigneeLabel,
+  type RunbookStatusToggleItem,
+  type RunbookStatusToggleRunbook,
+  type RunbookStatusToggleSection,
+} from "./RunbookItemStatusToggle";
 
 interface RunbookCardProps {
   runbookId: string;
@@ -61,67 +67,6 @@ function resolveAssignee(
     sessionId: section.assignee_session_id,
     userId: section.assignee_user_id,
   };
-}
-
-function isHumanTurn(assignee: EffectiveAssignee, item: RunbookItemRow): boolean {
-  return assignee.kind === "human" &&
-    !item.archived &&
-    item.status !== "completed" &&
-    item.status !== "cancelled";
-}
-
-function isHumanWritable(assignee: EffectiveAssignee, item: RunbookItemRow): boolean {
-  return assignee.kind === "human" &&
-    !item.archived &&
-    item.status !== "cancelled";
-}
-
-function resolveActorSessionId(
-  runbook: RunbookRow,
-  section: RunbookSectionRow,
-  item: RunbookItemRow,
-  assignee: EffectiveAssignee,
-): string | null {
-  return assignee.sessionId ||
-    item.updated_session_id ||
-    item.created_session_id ||
-    section.updated_session_id ||
-    section.created_session_id ||
-    runbook.created_session_id ||
-    null;
-}
-
-function checkboxDisabledReason(
-  runbook: RunbookRow,
-  section: RunbookSectionRow,
-  item: RunbookItemRow,
-  assignee: EffectiveAssignee,
-  pending: boolean,
-): string | null {
-  if (pending) return "상태 변경 중";
-  if (item.archived) return "보관된 항목";
-  if (item.status === "cancelled") return "취소된 항목";
-  if (assignee.kind !== "human") return "사람 담당 항목만 직접 변경할 수 있음";
-  if (!resolveActorSessionId(runbook, section, item, assignee)) return "세션 정보 없음";
-  return null;
-}
-
-function createStatusIdempotencyKey(
-  runbookId: string,
-  itemId: string,
-  status: Extract<RunbookItemStatus, "pending" | "completed" | "cancelled">,
-  expectedVersion: number,
-): string {
-  const randomId = globalThis.crypto?.randomUUID?.() ??
-    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return `runbook:${runbookId}:item:${itemId}:status:${status}:v${expectedVersion}:${randomId}`;
-}
-
-function assigneeLabel(assignee: EffectiveAssignee): string {
-  if (assignee.kind === "human") return assignee.userId || "사람";
-  if (assignee.kind === "agent") return assignee.agentId || "에이전트";
-  if (assignee.kind === "session") return assignee.sessionId || "세션";
-  return "미지정";
 }
 
 function AssigneeIcon({ assignee }: { assignee: EffectiveAssignee }) {
@@ -178,7 +123,32 @@ function itemDefaultOpen(
   section: RunbookSectionRow,
   item: RunbookItemRow,
 ): boolean {
-  return isHumanTurn(resolveAssignee(section, item), item);
+  return isRunbookItemHumanTurn(resolveAssignee(section, item), toToggleItem(item));
+}
+
+function toToggleRunbook(runbookId: string, createdSessionId: string | null): RunbookStatusToggleRunbook {
+  return {
+    id: runbookId,
+    createdSessionId,
+  };
+}
+
+function toToggleSection(section: RunbookSectionRow): RunbookStatusToggleSection {
+  return {
+    createdSessionId: section.created_session_id,
+    updatedSessionId: section.updated_session_id,
+  };
+}
+
+function toToggleItem(item: RunbookItemRow): RunbookStatusToggleItem {
+  return {
+    id: item.id,
+    status: item.status,
+    archived: item.archived,
+    version: item.version,
+    createdSessionId: item.created_session_id,
+    updatedSessionId: item.updated_session_id,
+  };
 }
 
 function sortSections(sections: readonly RunbookSectionRow[]): RunbookSectionRow[] {
@@ -195,11 +165,8 @@ function sortSections(sections: readonly RunbookSectionRow[]): RunbookSectionRow
 export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
   const projection = useRunbookStore((s) => s.byId[runbookId]);
   const loadRunbook = useRunbookStore((s) => s.loadRunbook);
-  const setItemStatus = useRunbookStore((s) => s.setItemStatus);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [openItems, setOpenItems] = useState<Record<string, boolean>>({});
-  const [pendingItems, setPendingItems] = useState<Record<string, boolean>>({});
-  const [itemErrors, setItemErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     const controller = new AbortController();
@@ -224,51 +191,6 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
   const loading = (projection?.status ?? "idle") === "loading";
   const refreshing = Boolean(projection?.isRefreshing);
   const error = projection?.error ?? null;
-
-  const handleStatusChange = async (
-    section: RunbookSectionRow,
-    item: RunbookItemRow,
-    assignee: EffectiveAssignee,
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
-    if (!snapshot) return;
-    const disabledReason = checkboxDisabledReason(snapshot.runbook, section, item, assignee, false);
-    if (disabledReason) {
-      setItemErrors((prev) => ({ ...prev, [item.id]: disabledReason }));
-      return;
-    }
-    const nextStatus: Extract<RunbookItemStatus, "pending" | "completed" | "cancelled"> =
-      event.currentTarget.checked ? "completed" : "pending";
-    setPendingItems((prev) => ({ ...prev, [item.id]: true }));
-    setItemErrors((prev) => {
-      const next = { ...prev };
-      delete next[item.id];
-      return next;
-    });
-    try {
-      await setItemStatus({
-        runbookId: snapshot.runbook.id,
-        itemId: item.id,
-        expectedVersion: item.version,
-        status: nextStatus,
-        idempotencyKey: createStatusIdempotencyKey(
-          snapshot.runbook.id,
-          item.id,
-          nextStatus,
-          item.version,
-        ),
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setItemErrors((prev) => ({ ...prev, [item.id]: message }));
-    } finally {
-      setPendingItems((prev) => {
-        const next = { ...prev };
-        delete next[item.id];
-        return next;
-      });
-    }
-  };
 
   return (
     <LiquidGlassCard
@@ -348,18 +270,10 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                 <div className="mt-2 space-y-2">
                   {sectionItems.map((item) => {
                     const assignee = resolveAssignee(section, item);
-                    const myTurn = isHumanTurn(assignee, item);
-                    const pending = Boolean(pendingItems[item.id]);
-                    const disabledReason = snapshot
-                      ? checkboxDisabledReason(snapshot.runbook, section, item, assignee, pending)
-                      : "런북 정보 없음";
-                    const writable = isHumanWritable(assignee, item) && !disabledReason;
-                    const itemError = itemErrors[item.id];
+                    const toggleItem = toToggleItem(item);
+                    const myTurn = isRunbookItemHumanTurn(assignee, toggleItem);
                     const itemOpen = openItems[item.id] ?? itemDefaultOpen(section, item);
                     const hasHowTo = item.how_to.trim().length > 0;
-                    const checkboxHelpId = disabledReason
-                      ? `runbook-checkbox-disabled-${item.id}`
-                      : undefined;
                     return (
                       <div
                         key={item.id}
@@ -371,34 +285,14 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                         )}
                       >
                         <div className="flex min-w-0 items-start gap-2">
-                          <label
-                            data-testid="runbook-status-toggle"
-                            aria-disabled={!writable}
-                            title={disabledReason ?? (item.status === "completed" ? "완료 해제" : "완료 표시")}
-                            className={cn(
-                              "flex min-h-10 shrink-0 cursor-pointer items-center gap-2 rounded-[10px] border border-glass-border glass px-2 py-1 text-[11px] font-semibold text-muted-foreground glass-shadow-xs transition-colors",
-                              "hover:border-accent-blue/45 hover:text-accent-blue",
-                              item.status === "completed" && "text-success",
-                              myTurn && "border-accent-blue/45 text-accent-blue",
-                              !writable && "cursor-not-allowed opacity-60 hover:border-glass-border hover:text-muted-foreground",
-                            )}
+                          <RunbookItemStatusToggle
+                            runbook={toToggleRunbook(snapshot.runbook.id, snapshot.runbook.created_session_id)}
+                            section={toToggleSection(section)}
+                            item={toggleItem}
+                            assignee={assignee}
+                            controlClassName={cn(myTurn && "border-accent-blue/45 text-accent-blue")}
                             onPointerDown={stopTileDrag}
-                            onClick={(event) => event.stopPropagation()}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={item.status === "completed"}
-                              disabled={!writable}
-                              title={disabledReason ?? (item.status === "completed" ? "완료 해제" : "완료 표시")}
-                              aria-describedby={checkboxHelpId}
-                              className="h-5 w-5 shrink-0 accent-accent-blue"
-                              onChange={(event) => void handleStatusChange(section, item, assignee, event)}
-                            />
-                            <RunbookStatusChip
-                              status={item.status}
-                              className="pointer-events-none h-6 px-2 text-[11px]"
-                            />
-                          </label>
+                          />
                           <div className="min-w-0 flex-1">
                             <div className="flex min-w-0 items-center gap-1.5">
                               <span
@@ -421,10 +315,10 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                                   "inline-flex h-5 min-w-0 items-center gap-1 rounded-full border border-glass-border glass px-1.5",
                                   myTurn && "border-accent-blue/40 text-accent-blue",
                                 )}
-                                title={assigneeLabel(assignee)}
+                                title={runbookAssigneeLabel(assignee)}
                               >
                                 <AssigneeIcon assignee={assignee} />
-                                <span className="max-w-[96px] truncate">{assigneeLabel(assignee)}</span>
+                                <span className="max-w-[96px] truncate">{runbookAssigneeLabel(assignee)}</span>
                               </span>
                               {hasHowTo && (
                                 <button
@@ -444,26 +338,12 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                                 </button>
                               )}
                             </div>
-                            {disabledReason && (
-                              <div
-                                id={checkboxHelpId}
-                                data-testid="runbook-checkbox-disabled-reason"
-                                className="mt-1 text-[10px] leading-4 text-muted-foreground"
-                              >
-                                {disabledReason}
-                              </div>
-                            )}
                             {hasHowTo && itemOpen && (
                               <div
                                 data-testid="runbook-how-to"
                                 className="mt-2 rounded-[10px] border border-glass-border glass px-2.5 py-2 text-xs leading-relaxed text-foreground glass-shadow-xs"
                               >
                                 <MarkdownContent content={item.how_to} compact />
-                              </div>
-                            )}
-                            {itemError && (
-                              <div className="mt-1 text-[10px] leading-4 text-accent-red">
-                                {itemError}
                               </div>
                             )}
                           </div>

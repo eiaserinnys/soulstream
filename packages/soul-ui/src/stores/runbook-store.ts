@@ -84,6 +84,11 @@ export interface RunbookOverviewItem {
   how_to: string;
   status: RunbookItemStatus;
   item_version: number;
+  runbook_created_session_id: string | null;
+  section_created_session_id: string | null;
+  section_updated_session_id: string | null;
+  item_created_session_id: string | null;
+  item_updated_session_id: string | null;
   effective_assignee_kind: RunbookAssigneeKind | null;
   effective_assignee_agent_id: string | null;
   effective_assignee_session_id: string | null;
