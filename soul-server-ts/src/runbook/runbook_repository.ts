@@ -9,6 +9,7 @@ import type {
   RunbookRow,
   RunbookSectionRow,
   RunbookSnapshot,
+  RunbookStatus,
   SqlClient,
 } from "../db/session_db_types.js";
 import {
@@ -47,6 +48,16 @@ export class RunbookRepository {
       SELECT * FROM runbooks WHERE id = ${runbookId}
     `;
     return rows[0] ?? null;
+  }
+
+  async getRunbookForUpdateTx(
+    sql: RepositorySql,
+    runbookId: string,
+  ): Promise<RunbookRow> {
+    const rows = await sql<RunbookRow[]>`
+      SELECT * FROM runbooks WHERE id = ${runbookId} FOR UPDATE
+    `;
+    return requireOne(rows, "getRunbookForUpdateTx");
   }
 
   async getSection(sectionId: string): Promise<RunbookSectionRow | null> {
@@ -135,11 +146,17 @@ export class RunbookRepository {
       board_item_id: string;
       folder_id: string;
       title: string;
+      status: RunbookStatus;
       archived: boolean;
       version: number;
       x: string | number;
       y: string | number;
       metadata: unknown;
+      completed_kind: RunbookRow["completed_kind"];
+      completed_session_id: string | null;
+      completed_event_id: number | null;
+      completed_user_id: string | null;
+      completed_at: Date | null;
       created_at: Date;
       updated_at: Date;
     }>>`
@@ -148,11 +165,17 @@ export class RunbookRepository {
         r.board_item_id,
         bi.folder_id,
         r.title,
+        r.status,
         r.archived,
         r.version,
         bi.x,
         bi.y,
         bi.metadata,
+        r.completed_kind,
+        r.completed_session_id,
+        r.completed_event_id,
+        r.completed_user_id,
+        r.completed_at,
         r.created_at,
         r.updated_at
       FROM runbooks r
@@ -207,7 +230,13 @@ export class RunbookRepository {
       SELECT
         r.id AS runbook_id,
         r.title AS runbook_title,
+        r.status AS runbook_status,
         r.board_item_id,
+        r.completed_kind AS runbook_completed_kind,
+        r.completed_session_id AS runbook_completed_session_id,
+        r.completed_event_id AS runbook_completed_event_id,
+        r.completed_user_id AS runbook_completed_user_id,
+        r.completed_at AS runbook_completed_at,
         s.id AS section_id,
         s.title AS section_title,
         i.id AS item_id,
@@ -223,6 +252,7 @@ export class RunbookRepository {
       JOIN runbook_sections s ON s.id = i.section_id
       JOIN runbooks r ON r.id = s.runbook_id
       WHERE r.archived = FALSE
+        AND r.status <> 'completed'
         AND s.archived = FALSE
         AND i.archived = FALSE
         AND i.status NOT IN ('completed', 'cancelled')
@@ -369,6 +399,39 @@ export class RunbookRepository {
       RETURNING *
     `;
     return requireOne(rows, "patchRunbookTx");
+  }
+
+  async setRunbookStatusTx(
+    sql: RepositorySql,
+    params: {
+      runbookId: string;
+      status: RunbookStatus;
+      expectedVersion: number;
+      actorKind: RunbookOperationActorKind;
+      actorSessionId: string | null;
+      actorUserId: string | null;
+      eventId: number;
+    },
+  ): Promise<RunbookRow> {
+    await this.assertVersionTx(sql, "runbook", params.runbookId, params.expectedVersion);
+    const completedKind =
+      params.status === "completed" && params.actorKind !== "system"
+        ? params.actorKind
+        : null;
+    const rows = await sql<RunbookRow[]>`
+      UPDATE runbooks
+      SET status = ${params.status},
+          completed_kind = ${completedKind},
+          completed_session_id = ${params.status === "completed" ? params.actorSessionId : null},
+          completed_event_id = ${params.status === "completed" ? params.eventId : null},
+          completed_user_id = ${params.status === "completed" ? params.actorUserId : null},
+          completed_at = ${params.status === "completed" ? new Date() : null},
+          updated_at = NOW(),
+          version = version + 1
+      WHERE id = ${params.runbookId}
+      RETURNING *
+    `;
+    return requireOne(rows, "setRunbookStatusTx");
   }
 
   async createSectionTx(

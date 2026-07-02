@@ -67,6 +67,21 @@ class RunbookItemStatusMutation(BaseModel):
     reason: Optional[str] = None
 
 
+class RunbookStatusMutation(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    status: Literal["open", "completed"]
+    expected_version: int = Field(
+        ...,
+        validation_alias=AliasChoices("expectedVersion", "expected_version"),
+    )
+    idempotency_key: str = Field(
+        ...,
+        validation_alias=AliasChoices("idempotencyKey", "idempotency_key"),
+    )
+    reason: Optional[str] = None
+
+
 class BoardAssetInit(BaseModel):
     name: str
     mime: str
@@ -271,6 +286,59 @@ def create_catalog_router(
             media_type=content_type or None,
         )
 
+    @router.post("/runbooks/{runbook_id}/status")
+    async def proxy_runbook_status(
+        runbook_id: str,
+        body: RunbookStatusMutation,
+        request: Request,
+    ):
+        loader = getattr(db, "get_runbook_snapshot", None)
+        if loader is None or node_manager is None:
+            raise HTTPException(status_code=503, detail="Runbook storage is not configured")
+
+        snapshot = await loader(runbook_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="Runbook not found")
+        folder_id = (snapshot.get("runbook") or {}).get("folder_id")
+        folders = await catalog_service.list_folders()
+        require_folder_allowed(access_for_request(request), folders, folder_id)
+
+        actor_session_id = _resolve_runbook_actor_session_id(snapshot)
+        if actor_session_id is None:
+            raise HTTPException(status_code=422, detail="Runbook has no session provenance")
+
+        node = await _resolve_runbook_mutation_node(actor_session_id, db, node_manager)
+        url = (
+            f"http://{node.host}:{node.port}"
+            f"/api/runbooks/{quote(runbook_id, safe='')}/status"
+        )
+        payload = {
+            "status": body.status,
+            "expectedVersion": body.expected_version,
+            "idempotencyKey": body.idempotency_key,
+        }
+        if body.reason is not None:
+            payload["reason"] = body.reason
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    url,
+                    json=payload,
+                    headers=forward_auth_headers(request),
+                )
+        except httpx.RequestError:
+            return Response(status_code=502)
+
+        content_type = resp.headers.get("content-type", "")
+        if "application/json" in content_type:
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type=content_type or None,
+        )
+
     @router.get("/runbooks/{runbook_id}")
     async def get_runbook(runbook_id: str, request: Request) -> dict:
         loader = getattr(db, "get_runbook_snapshot", None)
@@ -368,6 +436,19 @@ def _snapshot_has_item(snapshot: dict, item_id: str) -> bool:
     if not isinstance(items, list):
         return False
     return any(isinstance(item, dict) and item.get("id") == item_id for item in items)
+
+
+def _resolve_runbook_actor_session_id(snapshot: dict) -> str | None:
+    runbook = snapshot.get("runbook") or {}
+    if not isinstance(runbook, dict):
+        return None
+    for value in (
+        runbook.get("completed_session_id"),
+        runbook.get("created_session_id"),
+    ):
+        if isinstance(value, str) and value:
+            return value
+    return None
 
 
 def _resolve_actor_session_id(snapshot: dict, item_id: str) -> str | None:

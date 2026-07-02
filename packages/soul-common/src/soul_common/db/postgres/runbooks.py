@@ -26,6 +26,8 @@ def _normalize_runbook_overview_item(row: dict) -> dict:
 
 def _normalize_runbook_overview_group(row: dict, items: list[dict]) -> dict:
     result = _normalize_runbook_row(row)
+    if "runbook_version" in result:
+        result["runbook_version"] = int(result["runbook_version"])
     result["completed_count"] = int(result.get("completed_count") or 0)
     result["total_count"] = int(result.get("total_count") or 0)
     result["items"] = items
@@ -51,8 +53,14 @@ class PostgresRunbookMixin:
             SELECT
                 r.id AS runbook_id,
                 r.title AS runbook_title,
+                r.status AS runbook_status,
                 r.board_item_id,
                 bi.folder_id,
+                r.completed_kind AS runbook_completed_kind,
+                r.completed_session_id AS runbook_completed_session_id,
+                r.completed_event_id AS runbook_completed_event_id,
+                r.completed_user_id AS runbook_completed_user_id,
+                r.completed_at AS runbook_completed_at,
                 s.id AS section_id,
                 s.title AS section_title,
                 i.id AS item_id,
@@ -74,6 +82,7 @@ class PostgresRunbookMixin:
             JOIN runbooks r ON r.id = s.runbook_id
             JOIN board_items bi ON bi.id = r.board_item_id
             WHERE r.archived = FALSE
+              AND r.status <> 'completed'
               AND s.archived = FALSE
               AND i.archived = FALSE
               AND i.status NOT IN ('completed', 'cancelled')
@@ -106,13 +115,21 @@ class PostgresRunbookMixin:
             SELECT
                 r.id AS runbook_id,
                 r.title AS runbook_title,
+                r.version AS runbook_version,
+                r.status AS runbook_status,
                 r.board_item_id,
                 bi.folder_id,
+                r.completed_kind AS runbook_completed_kind,
+                r.completed_session_id AS runbook_completed_session_id,
+                r.completed_event_id AS runbook_completed_event_id,
+                r.completed_user_id AS runbook_completed_user_id,
+                r.completed_at AS runbook_completed_at,
                 r.updated_at,
                 COUNT(*) FILTER (WHERE i.status = 'completed') AS completed_count,
                 COUNT(*) AS total_count,
                 COUNT(*) FILTER (
                     WHERE i.status <> 'completed'
+                      AND r.status <> 'completed'
                       AND COALESCE(i.assignee_kind, s.assignee_kind) = 'human'
                       AND (
                         $1::text IS NULL
@@ -129,7 +146,19 @@ class PostgresRunbookMixin:
               AND s.archived = FALSE
               AND i.archived = FALSE
               AND i.status <> 'cancelled'
-            GROUP BY r.id, r.title, r.board_item_id, bi.folder_id, r.updated_at
+            GROUP BY
+                r.id,
+                r.title,
+                r.version,
+                r.status,
+                r.board_item_id,
+                bi.folder_id,
+                r.completed_kind,
+                r.completed_session_id,
+                r.completed_event_id,
+                r.completed_user_id,
+                r.completed_at,
+                r.updated_at
             ORDER BY my_turn_count DESC, in_progress_count DESC, r.updated_at DESC
             """,
             user_id,
@@ -139,8 +168,14 @@ class PostgresRunbookMixin:
             SELECT
                 r.id AS runbook_id,
                 r.title AS runbook_title,
+                r.status AS runbook_status,
                 r.board_item_id,
                 bi.folder_id,
+                r.completed_kind AS runbook_completed_kind,
+                r.completed_session_id AS runbook_completed_session_id,
+                r.completed_event_id AS runbook_completed_event_id,
+                r.completed_user_id AS runbook_completed_user_id,
+                r.completed_at AS runbook_completed_at,
                 s.id AS section_id,
                 s.title AS section_title,
                 i.id AS item_id,

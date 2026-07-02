@@ -394,6 +394,79 @@ class TestRunbooks:
         )
         assert called_kwargs["json"]["status"] == "completed"
 
+    async def test_proxy_runbook_status_to_owner_node_with_auth_headers(
+        self,
+        client,
+        mock_db,
+        mock_catalog_service,
+        node_manager,
+    ):
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(
+            ws,
+            {
+                "node_id": "node-runbook",
+                "host": "localhost",
+                "port": 4105,
+                "agents": [],
+            },
+        )
+        snapshot = {
+            "runbook": {
+                "id": "rb-1",
+                "board_item_id": "runbook:rb-1",
+                "folder_id": "f1",
+                "title": "Launch",
+                "status": "open",
+                "archived": False,
+                "version": 1,
+                "created_session_id": "sess-actor",
+                "created_event_id": 1,
+                "completed_session_id": None,
+                "created_at": "2026-06-16T00:00:00+00:00",
+                "updated_at": "2026-06-16T00:00:00+00:00",
+            },
+            "sections": [],
+            "items": [],
+        }
+        mock_db.get_runbook_snapshot.return_value = snapshot
+        mock_db.get_session.return_value = {
+            "session_id": "sess-actor",
+            "node_id": node.node_id,
+        }
+        mock_resp = _make_response(200, {"ok": True, "snapshot": snapshot})
+
+        with patch("soulstream_server.api.catalog.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.post(
+                "/api/runbooks/rb-1/status",
+                json={
+                    "status": "completed",
+                    "expectedVersion": 1,
+                    "idempotencyKey": "runbook:rb-1:status:completed:v1:test",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        called_url, called_kwargs = mock_client.post.call_args
+        assert called_url[0] == (
+            f"http://{node.host}:{node.port}"
+            "/api/runbooks/rb-1/status"
+        )
+        assert called_kwargs["headers"]["authorization"] == f"Bearer {TEST_AUTH_TOKEN}"
+        assert called_kwargs["json"] == {
+            "status": "completed",
+            "expectedVersion": 1,
+            "idempotencyKey": "runbook:rb-1:status:completed:v1:test",
+        }
+        mock_catalog_service.list_folders.assert_called()
+
 
 class TestBoardAssets:
     """Board asset direct-upload routes."""

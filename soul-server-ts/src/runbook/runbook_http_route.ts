@@ -9,6 +9,7 @@ import type {
   RunbookItemStatus,
   RunbookRow,
   RunbookSectionRow,
+  RunbookStatus,
 } from "../db/session_db_types.js";
 
 import { RunbookVersionConflict } from "./runbook_models.js";
@@ -23,10 +24,15 @@ type MutableRunbookItemStatus = Extract<
   RunbookItemStatus,
   "pending" | "completed" | "cancelled"
 >;
+type MutableRunbookStatus = Extract<RunbookStatus, "open" | "completed">;
 
-interface StatusRouteParams {
+interface RunbookItemStatusRouteParams {
   runbookId: string;
   itemId: string;
+}
+
+interface RunbookStatusRouteParams {
+  runbookId: string;
 }
 
 interface StatusRequestBody {
@@ -43,7 +49,113 @@ export function registerRunbookHttpRoutes(
   config: RunbookHttpRouteConfig,
 ): void {
   fastify.post<{
-    Params: StatusRouteParams;
+    Params: RunbookStatusRouteParams;
+    Body: StatusRequestBody;
+  }>("/api/runbooks/:runbookId/status", async (request, reply) => {
+    let userId: string;
+    try {
+      userId = (await authenticateDashboardHttpRequest({
+        requestHeaders: request.headers,
+        config: config.auth,
+      })).subject;
+    } catch (err) {
+      return reply.status(401).send({
+        detail: {
+          error: {
+            code: "UNAUTHORIZED",
+            message: err instanceof Error ? err.message : "Authentication failed",
+          },
+        },
+      });
+    }
+
+    const body = request.body ?? {};
+    const parsed = parseRunbookStatusBody(body);
+    if (!parsed.ok) {
+      return reply.status(422).send({
+        detail: {
+          error: {
+            code: "INVALID_RUNBOOK_STATUS_REQUEST",
+            message: parsed.error,
+          },
+        },
+      });
+    }
+
+    const snapshot = await config.service.getRunbook(request.params.runbookId);
+    if (!snapshot) {
+      return reply.status(404).send({
+        detail: {
+          error: {
+            code: "RUNBOOK_NOT_FOUND",
+            message: "Runbook not found",
+          },
+        },
+      });
+    }
+    const actorSessionId = resolveRunbookActorSessionId(snapshot.runbook);
+    if (!actorSessionId) {
+      return reply.status(422).send({
+        detail: {
+          error: {
+            code: "RUNBOOK_HAS_NO_SESSION_PROVENANCE",
+            message: "Runbook has no session provenance",
+          },
+        },
+      });
+    }
+
+    try {
+      const result = await config.service.setRunbookStatus({
+        actorKind: "user",
+        actorSessionId,
+        actorUserId: userId,
+        runbookId: request.params.runbookId,
+        expectedVersion: parsed.value.expectedVersion,
+        status: parsed.value.status,
+        reason: parsed.value.reason,
+        idempotencyKey: parsed.value.idempotencyKey,
+      });
+
+      return {
+        ok: true,
+        runbookId: result.snapshot.runbook.id,
+        eventId: result.eventId,
+        idempotent: Boolean(result.idempotent),
+        operation: result.operation,
+        snapshot: result.snapshot,
+      };
+    } catch (err) {
+      if (err instanceof RunbookVersionConflict) {
+        return reply.status(409).send({
+          detail: {
+            error: {
+              code: "RUNBOOK_VERSION_CONFLICT",
+              message: err.message,
+              details: {
+                targetKind: err.targetKind,
+                targetId: err.targetId,
+                expectedVersion: err.expectedVersion,
+                actualVersion: err.actualVersion,
+              },
+            },
+          },
+        });
+      }
+      request.log.error({ err }, "Runbook status update failed");
+      return reply.status(500).send({
+        detail: {
+          error: {
+            code: "RUNBOOK_STATUS_UPDATE_FAILED",
+            message: err instanceof Error ? err.message : "Runbook status update failed",
+          },
+        },
+      });
+    }
+  });
+
+  fastify.post<{
+    Params: RunbookItemStatusRouteParams;
     Body: StatusRequestBody;
   }>("/api/runbooks/:runbookId/items/:itemId/status", async (request, reply) => {
     let userId: string;
@@ -162,6 +274,32 @@ export function registerRunbookHttpRoutes(
   });
 }
 
+function parseRunbookStatusBody(body: StatusRequestBody): {
+  ok: true;
+  value: {
+    status: MutableRunbookStatus;
+    expectedVersion: number;
+    idempotencyKey: string;
+    reason: string | null;
+  };
+} | { ok: false; error: string } {
+  const status = readRunbookStatus(body.status);
+  if (!status) {
+    return { ok: false, error: "status must be open or completed" };
+  }
+
+  const rest = parseVersionedMutationBody(body);
+  if (!rest.ok) return rest;
+
+  return {
+    ok: true,
+    value: {
+      status,
+      ...rest.value,
+    },
+  };
+}
+
 function parseStatusBody(body: StatusRequestBody): {
   ok: true;
   value: {
@@ -176,6 +314,26 @@ function parseStatusBody(body: StatusRequestBody): {
     return { ok: false, error: "status must be pending, completed, or cancelled" };
   }
 
+  const rest = parseVersionedMutationBody(body);
+  if (!rest.ok) return rest;
+
+  return {
+    ok: true,
+    value: {
+      status,
+      ...rest.value,
+    },
+  };
+}
+
+function parseVersionedMutationBody(body: StatusRequestBody): {
+  ok: true;
+  value: {
+    expectedVersion: number;
+    idempotencyKey: string;
+    reason: string | null;
+  };
+} | { ok: false; error: string } {
   const expectedVersion = readInteger(body.expectedVersion ?? body.expected_version);
   if (expectedVersion === null) {
     return { ok: false, error: "expectedVersion must be an integer" };
@@ -197,12 +355,18 @@ function parseStatusBody(body: StatusRequestBody): {
   return {
     ok: true,
     value: {
-      status,
       expectedVersion,
       idempotencyKey,
       reason,
     },
   };
+}
+
+function readRunbookStatus(value: unknown): MutableRunbookStatus | null {
+  if (value === "open" || value === "completed") {
+    return value;
+  }
+  return null;
 }
 
 function readMutableStatus(value: unknown): MutableRunbookItemStatus | null {
@@ -221,6 +385,12 @@ function readNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
+}
+
+function resolveRunbookActorSessionId(runbook: RunbookRow): string | null {
+  return runbook.completed_session_id ||
+    runbook.created_session_id ||
+    null;
 }
 
 function resolveActorSessionId(

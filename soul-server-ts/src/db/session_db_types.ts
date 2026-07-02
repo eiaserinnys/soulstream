@@ -164,8 +164,10 @@ export type RunbookItemStatus =
   | "in_progress"
   | "completed"
   | "cancelled";
+export type RunbookStatus = "open" | "completed";
 export type RunbookOperationTargetKind = "runbook" | "section" | "item";
 export type RunbookOperationActorKind = "agent" | "user" | "system";
+export type RunbookCompletionKind = Exclude<RunbookOperationActorKind, "system">;
 
 export interface RunbookAssigneeFields {
   assignee_kind: RunbookAssigneeKind | null;
@@ -178,10 +180,16 @@ export interface RunbookRow {
   id: string;
   board_item_id: string;
   title: string;
+  status: RunbookStatus;
   archived: boolean;
   version: number;
   created_session_id: string | null;
   created_event_id: number | null;
+  completed_kind: RunbookCompletionKind | null;
+  completed_session_id: string | null;
+  completed_event_id: number | null;
+  completed_user_id: string | null;
+  completed_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -250,11 +258,17 @@ export interface RunbookListRow {
   board_item_id: string;
   folder_id: string;
   title: string;
+  status: RunbookStatus;
   archived: boolean;
   version: number;
   x: number;
   y: number;
   metadata: Record<string, unknown>;
+  completed_kind: RunbookCompletionKind | null;
+  completed_session_id: string | null;
+  completed_event_id: number | null;
+  completed_user_id: string | null;
+  completed_at: Date | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -262,7 +276,13 @@ export interface RunbookListRow {
 export interface RunbookMyTurnItemRow {
   runbook_id: string;
   runbook_title: string;
+  runbook_status: RunbookStatus;
   board_item_id: string;
+  runbook_completed_kind: RunbookCompletionKind | null;
+  runbook_completed_session_id: string | null;
+  runbook_completed_event_id: number | null;
+  runbook_completed_user_id: string | null;
+  runbook_completed_at: Date | null;
   section_id: string;
   section_title: string;
   item_id: string;

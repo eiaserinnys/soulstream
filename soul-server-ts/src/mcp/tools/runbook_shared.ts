@@ -14,6 +14,7 @@ export const runbookItemStatusSchema = z.enum([
   "completed",
   "cancelled",
 ]);
+export const runbookStatusSchema = z.enum(["open", "completed"]);
 
 export const assigneeValueSchema = z
   .object({

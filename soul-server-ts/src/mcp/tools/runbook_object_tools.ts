@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import type { RunbookStatus } from "../../db/session_db_types.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
@@ -11,6 +12,7 @@ import {
   idempotencyKeySchema,
   mutation,
   optionalReasonSchema,
+  runbookStatusSchema,
 } from "./runbook_shared.js";
 
 export function registerRunbookObjectTools(
@@ -110,6 +112,33 @@ export function registerRunbookObjectTools(
     description:
       "현재 MCP caller session을 actor_kind='agent'로 하여 archived 런북을 복구한다.",
   });
+
+  server.registerTool(
+    "set_runbook_status",
+    {
+      description:
+        "현재 MCP caller session을 actor_kind='agent'로 하여 런북 자체의 open/completed 상태를 설정한다.",
+      inputSchema: {
+        runbook_id: z.string().min(1),
+        status: runbookStatusSchema,
+        expected_version: expectedVersionSchema,
+        reason: optionalReasonSchema,
+        idempotency_key: idempotencyKeySchema,
+      },
+    },
+    async (input) =>
+      mutation(runtime, (service, actorSessionId) =>
+        service.setRunbookStatus({
+          actorKind: "agent",
+          actorSessionId,
+          runbookId: input.runbook_id,
+          status: input.status as RunbookStatus,
+          expectedVersion: input.expected_version,
+          reason: input.reason,
+          idempotencyKey: input.idempotency_key,
+        }),
+      ),
+  );
 
   server.registerTool(
     "get_runbook",
