@@ -2548,24 +2548,56 @@ CREATE TABLE IF NOT EXISTS runbooks (
     id                 TEXT PRIMARY KEY,
     board_item_id      TEXT NOT NULL REFERENCES board_items(id) ON DELETE CASCADE, -- 자기 자신의 item_type='runbook' board_item 1:1
     title              TEXT NOT NULL DEFAULT '',
-    status             TEXT NOT NULL DEFAULT 'open'
-                           CHECK (status IN ('open','completed')),
+    status             TEXT NOT NULL DEFAULT 'open',
     archived           BOOLEAN NOT NULL DEFAULT FALSE,
     version            INTEGER NOT NULL DEFAULT 1,
     created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     created_event_id   INTEGER,
-    completed_kind     TEXT CHECK (completed_kind IN ('agent','user')),
-    completed_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    completed_kind     TEXT,
+    completed_session_id TEXT,
     completed_event_id INTEGER,
     completed_user_id  TEXT,
     completed_at       TIMESTAMPTZ,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT runbooks_status_check
+        CHECK (status IN ('open','completed')),
+    CONSTRAINT runbooks_completed_kind_check
+        CHECK (completed_kind IN ('agent','user')),
     FOREIGN KEY (created_session_id, created_event_id)
         REFERENCES events(session_id, id) ON DELETE SET NULL,
-    FOREIGN KEY (completed_session_id, completed_event_id)
+    CONSTRAINT runbooks_completed_session_id_fkey
+        FOREIGN KEY (completed_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL,
+    CONSTRAINT runbooks_completed_event_fkey
+        FOREIGN KEY (completed_session_id, completed_event_id)
         REFERENCES events(session_id, id) ON DELETE SET NULL
 );
+
+ALTER TABLE runbooks DROP CONSTRAINT IF EXISTS runbooks_completed_session_id_completed_event_id_fkey;
+
+ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open';
+ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS completed_kind TEXT;
+ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS completed_session_id TEXT;
+ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS completed_event_id INTEGER;
+ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS completed_user_id TEXT;
+ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+
+ALTER TABLE runbooks DROP CONSTRAINT IF EXISTS runbooks_status_check;
+ALTER TABLE runbooks ADD CONSTRAINT runbooks_status_check
+    CHECK (status IN ('open','completed'));
+
+ALTER TABLE runbooks DROP CONSTRAINT IF EXISTS runbooks_completed_kind_check;
+ALTER TABLE runbooks ADD CONSTRAINT runbooks_completed_kind_check
+    CHECK (completed_kind IN ('agent','user'));
+
+ALTER TABLE runbooks DROP CONSTRAINT IF EXISTS runbooks_completed_session_id_fkey;
+ALTER TABLE runbooks ADD CONSTRAINT runbooks_completed_session_id_fkey
+    FOREIGN KEY (completed_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
+
+ALTER TABLE runbooks DROP CONSTRAINT IF EXISTS runbooks_completed_event_fkey;
+ALTER TABLE runbooks ADD CONSTRAINT runbooks_completed_event_fkey
+    FOREIGN KEY (completed_session_id, completed_event_id)
+    REFERENCES events(session_id, id) ON DELETE SET NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_runbooks_board_item ON runbooks(board_item_id);
 
