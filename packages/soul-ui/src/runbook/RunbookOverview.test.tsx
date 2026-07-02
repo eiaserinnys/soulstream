@@ -64,6 +64,7 @@ function sampleOverview(): RunbookOverviewPayload {
         runbook_title: "Deploy Runbook",
         board_item_id: "runbook:rb-1",
         folder_id: "f1",
+        runbook_status: "open",
         completed_count: 1,
         total_count: 2,
         updated_at: "2026-06-16T00:00:00+00:00",
@@ -141,6 +142,8 @@ describe("RunbookOverview", () => {
     expect(container.querySelector('[data-testid="runbook-overview-dashboard"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="runbook-overview-running-sessions"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="runbook-overview-my-turn"]')).not.toBeNull();
+    expect(container.querySelector("main")?.style.scrollbarGutter).toBe("stable");
+    expect(container.querySelector("main")?.style.paddingInline).toBe("16px");
     expect(container.querySelector('[data-testid="runbook-overview-group"]')?.className)
       .toContain("liquid-glass-card");
     expect(container.textContent).toContain("Operator approval");
@@ -289,13 +292,13 @@ describe("RunbookOverview", () => {
     expect(useDashboardStore.getState().activeTab).toBe("chat");
   });
 
-  it("separates completed runbooks into a collapsed completed section", () => {
+  it("separates completed runbooks by the orch runbook_status payload field", () => {
     const payload = sampleOverview();
     payload.runbooks.push({
       ...payload.runbooks[0]!,
       runbook_id: "rb-done",
       runbook_title: "Completed Runbook",
-      status: "completed",
+      runbook_status: "completed",
       runbook_version: 4,
       completed_count: 2,
       total_count: 2,

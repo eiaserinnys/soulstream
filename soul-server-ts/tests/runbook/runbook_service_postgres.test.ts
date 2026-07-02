@@ -252,7 +252,7 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     });
   });
 
-  it("notifies handoff when a user completes a runbook", async () => {
+  it("does not notify handoff when a user completes a runbook", async () => {
     await seedRunbook();
 
     await service.setRunbookStatus({
@@ -264,15 +264,7 @@ describePostgres("RunbookService PostgreSQL integration", () => {
       actorUserId: "operator@example.com",
     });
 
-    expect(notifyHumanHandoff).toHaveBeenCalledTimes(1);
-    expect(notifyHumanHandoff).toHaveBeenCalledWith({
-      runbookId: "rb-1",
-      runbookTitle: "Runbook",
-      boardItemId: "runbook:rb-1",
-      status: "completed",
-      operationId: expect.any(String),
-      eventId: expect.any(Number),
-    });
+    expect(notifyHumanHandoff).not.toHaveBeenCalled();
   });
 
   it("does not notify handoff for agent runbook status changes", async () => {

@@ -71,17 +71,6 @@ export class RunbookHandoffNotifier implements RunbookHandoffNotifierPort {
 
 function buildRunbookHandoffMessage(event: RunbookHandoffEvent): string {
   const statusText = event.status === "completed" ? "완료" : "취소";
-  if (!event.itemId || !event.itemTitle) {
-    return [
-      `런북 '${event.runbookTitle}' ${statusText}됨, 이어서 진행`,
-      "",
-      `runbook_id: ${event.runbookId}`,
-      `board_item_id: ${event.boardItemId}`,
-      `status: ${event.status}`,
-      `operation_id: ${event.operationId}`,
-      `event_id: ${event.eventId}`,
-    ].join("\n");
-  }
   return [
     `런북 '${event.runbookTitle}'의 '${event.itemTitle}' ${statusText}됨, 이어서 진행`,
     "",

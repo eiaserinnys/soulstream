@@ -5,7 +5,6 @@ import type {
   RunbookOperationActorKind,
   RunbookOperationRow,
   RunbookSnapshot,
-  RunbookStatus,
 } from "../db/session_db_types.js";
 
 import type { RunbookRepository } from "./runbook_repository.js";
@@ -42,11 +41,9 @@ export interface RunbookHandoffEvent {
   runbookId: string;
   runbookTitle: string;
   boardItemId: string;
-  itemId?: string;
-  itemTitle?: string;
-  status:
-    | Extract<RunbookItemStatus, "completed" | "cancelled">
-    | Extract<RunbookStatus, "completed">;
+  itemId: string;
+  itemTitle: string;
+  status: Extract<RunbookItemStatus, "completed" | "cancelled">;
   operationId: string;
   eventId: number;
 }

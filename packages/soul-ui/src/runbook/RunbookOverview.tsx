@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { BookOpenCheck, ChevronDown, ChevronRight, ExternalLink, ListChecks, RefreshCw, UserRound } from "lucide-react";
 
 import { Badge } from "../components/ui/badge";
+import { DASHBOARD_LIST_INSET_PX } from "../components/dashboard-spacing";
 import { LiquidGlassCard } from "../components/LiquidGlassCard";
 import { cn } from "../lib/cn";
 import { useDashboardStore } from "../stores/dashboard-store";
@@ -259,7 +260,7 @@ function RunbookGroup({
           runbook={{
             id: group.runbook_id,
             title: group.runbook_title,
-            status: group.status,
+            status: group.runbook_status,
             version: group.runbook_version ?? null,
           }}
           buttonClassName="px-2 text-[11px]"
@@ -308,11 +309,11 @@ export function RunbookOverview() {
     [snapshot?.runbooks],
   );
   const activeGroups = useMemo(
-    () => groups.filter((group) => !isRunbookCompleted(group.status)),
+    () => groups.filter((group) => !isRunbookCompleted(group.runbook_status)),
     [groups],
   );
   const completedGroups = useMemo(
-    () => groups.filter((group) => isRunbookCompleted(group.status)),
+    () => groups.filter((group) => isRunbookCompleted(group.runbook_status)),
     [groups],
   );
   const loading = projection.status === "loading";
@@ -329,7 +330,10 @@ export function RunbookOverview() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-transparent">
-      <header className="shrink-0 border-b border-glass-border glass-strong glass-chrome glass-shadow-xs px-5 py-4">
+      <header
+        className="shrink-0 border-b border-glass-border glass-strong glass-chrome glass-shadow-xs py-4"
+        style={{ paddingInline: DASHBOARD_LIST_INSET_PX }}
+      >
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-accent-blue/30 glass text-accent-blue">
             <BookOpenCheck className="h-5 w-5" />
@@ -349,7 +353,14 @@ export function RunbookOverview() {
         </div>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+      <main
+        className="min-h-0 flex-1 overflow-y-auto"
+        style={{
+          paddingInline: DASHBOARD_LIST_INSET_PX,
+          paddingBlock: DASHBOARD_LIST_INSET_PX,
+          scrollbarGutter: "stable",
+        }}
+      >
         {loading && !snapshot ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
             불러오는 중
@@ -363,7 +374,7 @@ export function RunbookOverview() {
         ) : null}
 
         {snapshot ? (
-          <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
+          <div className="flex w-full flex-col gap-4">
             <LiquidGlassCard
               webglSurface
               data-testid="runbook-overview-dashboard"
