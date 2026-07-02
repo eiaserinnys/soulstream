@@ -23,6 +23,16 @@ def _decode_jsonb(value):
     return json.loads(value) if isinstance(value, str) else value
 
 
+def _schema_sql() -> str:
+    schema_path = Path(__file__).resolve().parents[1] / "sql" / "schema.sql"
+    return schema_path.read_text(encoding="utf-8")
+
+
+def _migration_sql(name: str) -> str:
+    migration_path = Path(__file__).resolve().parents[1] / "sql" / "migrations" / name
+    return migration_path.read_text(encoding="utf-8")
+
+
 # === Helper ===
 
 async def _create_folder(db, folder_id="test-folder", name="Test Folder", sort_order=0):
@@ -42,6 +52,124 @@ async def _create_session(db, session_id="test-session", **overrides):
         "SELECT session_upsert($1, $2, $3, $4, $5)",
         session_id, columns, values, now, now,
     )
+
+
+# === schema.sql 적용 계약 ===
+
+async def test_runbook_status_migration_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("029_runbook_status.sql").strip()
+
+    assert migration_sql in _schema_sql()
+
+
+async def test_schema_reapply_upgrades_pre_status_runbooks_table(test_db):
+    """schema.sql만 재실행해도 029 이전 runbooks 테이블이 최신 형태가 된다."""
+
+    await test_db.execute(
+        """
+        DROP TABLE IF EXISTS runbook_operations CASCADE;
+        DROP TABLE IF EXISTS runbook_items CASCADE;
+        DROP TABLE IF EXISTS runbook_sections CASCADE;
+        DROP TABLE IF EXISTS runbooks CASCADE;
+        """
+    )
+    await test_db.execute(
+        """
+        CREATE TABLE runbooks (
+            id                 TEXT PRIMARY KEY,
+            board_item_id      TEXT NOT NULL REFERENCES board_items(id) ON DELETE CASCADE,
+            title              TEXT NOT NULL DEFAULT '',
+            archived           BOOLEAN NOT NULL DEFAULT FALSE,
+            version            INTEGER NOT NULL DEFAULT 1,
+            created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+            created_event_id   INTEGER,
+            created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            FOREIGN KEY (created_session_id, created_event_id)
+                REFERENCES events(session_id, id) ON DELETE SET NULL
+        );
+        CREATE UNIQUE INDEX uq_runbooks_board_item ON runbooks(board_item_id);
+        """
+    )
+
+    await _create_folder(test_db, "legacy-runbook-folder", "Legacy Runbook Folder")
+    await test_db.execute(
+        """
+        INSERT INTO board_items (id, folder_id, item_type, item_id)
+        VALUES ($1, $2, 'runbook', $3)
+        """,
+        "legacy-runbook-board-item",
+        "legacy-runbook-folder",
+        "legacy-runbook",
+    )
+    await test_db.execute(
+        """
+        INSERT INTO runbooks (id, board_item_id, title)
+        VALUES ($1, $2, $3)
+        """,
+        "legacy-runbook",
+        "legacy-runbook-board-item",
+        "Legacy Runbook",
+    )
+
+    await test_db.execute(_schema_sql())
+    await test_db.execute(_schema_sql())
+
+    row = await test_db.fetchrow(
+        """
+        SELECT status, completed_kind, completed_session_id, completed_event_id,
+               completed_user_id, completed_at
+        FROM runbooks
+        WHERE id = $1
+        """,
+        "legacy-runbook",
+    )
+    assert row["status"] == "open"
+    assert row["completed_kind"] is None
+    assert row["completed_session_id"] is None
+    assert row["completed_event_id"] is None
+    assert row["completed_user_id"] is None
+    assert row["completed_at"] is None
+
+    constraint_names = {
+        row["conname"]
+        for row in await test_db.fetch(
+            """
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = 'runbooks'::regclass
+            """
+        )
+    }
+    assert {
+        "runbooks_status_check",
+        "runbooks_completed_kind_check",
+        "runbooks_completed_session_id_fkey",
+        "runbooks_completed_event_fkey",
+    } <= constraint_names
+
+    with pytest.raises(Exception):
+        await test_db.execute("UPDATE runbooks SET status = 'invalid'")
+    with pytest.raises(Exception):
+        await test_db.execute("UPDATE runbooks SET completed_kind = 'system'")
+    with pytest.raises(Exception):
+        await test_db.execute("UPDATE runbooks SET completed_session_id = 'missing-session'")
+
+
+async def test_fresh_schema_uses_runbook_status_canonical_constraint_names(test_db):
+    constraint_names = {
+        row["conname"]
+        for row in await test_db.fetch(
+            """
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = 'runbooks'::regclass
+            """
+        )
+    }
+
+    assert "runbooks_completed_event_fkey" in constraint_names
+    assert "runbooks_completed_session_id_completed_event_id_fkey" not in constraint_names
 
 
 # === 세션 CRUD ===
