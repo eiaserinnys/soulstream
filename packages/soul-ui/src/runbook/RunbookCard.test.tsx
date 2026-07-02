@@ -229,8 +229,17 @@ describe("RunbookCard", () => {
     expect(html).not.toContain("Archived item");
 
     const checkbox = container.querySelector<HTMLInputElement>("input[type='checkbox']");
+    const statusToggle = container.querySelector<HTMLElement>('[data-testid="runbook-status-toggle"]');
+    const itemRow = container.querySelector<HTMLElement>('[data-testid="runbook-item-row"]');
     expect(checkbox).not.toBeNull();
+    expect(statusToggle).not.toBeNull();
+    expect(itemRow).not.toBeNull();
     expect(checkbox!.disabled).toBe(false);
+    expect(checkbox!.className).toContain("h-5");
+    expect(checkbox!.className).toContain("w-5");
+    expect(statusToggle!.className).toContain("min-h-10");
+    expect(statusToggle!.textContent).toContain("대기");
+    expect(itemRow!.className).toContain("glass");
   });
 
   it("shows the reason when a human checkbox has no session provenance", () => {
@@ -258,9 +267,12 @@ describe("RunbookCard", () => {
     });
 
     const checkbox = container.querySelector<HTMLInputElement>("input[type='checkbox']");
+    const statusToggle = container.querySelector<HTMLElement>('[data-testid="runbook-status-toggle"]');
     expect(checkbox).not.toBeNull();
+    expect(statusToggle).not.toBeNull();
     expect(checkbox!.disabled).toBe(true);
     expect(checkbox!.title).toBe("세션 정보 없음");
+    expect(statusToggle!.getAttribute("aria-disabled")).toBe("true");
     expect(container.querySelector("[data-testid='runbook-checkbox-disabled-reason']")?.textContent)
       .toBe("세션 정보 없음");
   });

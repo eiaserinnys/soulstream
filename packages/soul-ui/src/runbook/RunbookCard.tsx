@@ -2,15 +2,11 @@ import { useEffect, useMemo, useState, type ChangeEvent, type PointerEvent } fro
 import {
   Bot,
   BookOpen,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Circle,
-  Clock3,
   MessageSquare,
   UserRound,
-  XCircle,
-  type LucideIcon,
 } from "lucide-react";
 
 import { MarkdownContent } from "../components/MarkdownContent";
@@ -25,6 +21,7 @@ import {
   type RunbookSectionRow,
   useRunbookStore,
 } from "../stores/runbook-store";
+import { RunbookStatusChip } from "./RunbookStatusChip";
 
 interface RunbookCardProps {
   runbookId: string;
@@ -37,33 +34,6 @@ interface EffectiveAssignee {
   sessionId: string | null;
   userId: string | null;
 }
-
-const statusConfig: Record<RunbookItemStatus, {
-  label: string;
-  icon: LucideIcon;
-  className: string;
-}> = {
-  pending: {
-    label: "대기",
-    icon: Circle,
-    className: "border-muted-foreground/30 text-muted-foreground",
-  },
-  in_progress: {
-    label: "진행",
-    icon: Clock3,
-    className: "border-accent-blue/35 bg-accent-blue/10 text-accent-blue",
-  },
-  completed: {
-    label: "완료",
-    icon: CheckCircle2,
-    className: "border-success/30 bg-success/10 text-success",
-  },
-  cancelled: {
-    label: "취소",
-    icon: XCircle,
-    className: "border-muted-foreground/25 text-muted-foreground",
-  },
-};
 
 function stopTileDrag(event: PointerEvent<HTMLElement>) {
   event.stopPropagation();
@@ -160,22 +130,6 @@ function AssigneeIcon({ assignee }: { assignee: EffectiveAssignee }) {
   if (assignee.kind === "agent") return <Bot className={className} aria-label="agent" />;
   if (assignee.kind === "session") return <MessageSquare className={className} aria-label="session" />;
   return <Circle className={className} aria-label="unassigned" />;
-}
-
-function StatusChip({ status }: { status: RunbookItemStatus }) {
-  const config = statusConfig[status];
-  const Icon = config.icon;
-  return (
-    <span
-      className={cn(
-        "inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border px-1.5 text-[10px] font-semibold",
-        config.className,
-      )}
-    >
-      <Icon className="h-3 w-3" />
-      {config.label}
-    </span>
-  );
 }
 
 function buildSectionItems(
@@ -411,23 +365,40 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                         key={item.id}
                         data-testid="runbook-item-row"
                         className={cn(
-                          "rounded-[12px] border border-white/8 bg-background/25 px-2.5 py-2 shadow-[0_6px_18px_-18px_rgb(20_26_40_/_45%)]",
-                          myTurn && "border-accent-blue/70 bg-accent-blue/[0.14] shadow-[0_0_0_1px_rgb(73_146_255_/_28%)]",
+                          "rounded-[12px] border border-glass-border glass glass-shadow-xs px-2.5 py-2",
+                          myTurn && "border-accent-blue/60 glass-strong shadow-[0_0_0_1px_rgb(73_146_255_/_28%)]",
                           item.status === "cancelled" && "opacity-70",
                         )}
                       >
                         <div className="flex min-w-0 items-start gap-2">
-                          <input
-                            type="checkbox"
-                            checked={item.status === "completed"}
-                            disabled={!writable}
+                          <label
+                            data-testid="runbook-status-toggle"
+                            aria-disabled={!writable}
                             title={disabledReason ?? (item.status === "completed" ? "완료 해제" : "완료 표시")}
-                            aria-describedby={checkboxHelpId}
-                            className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-accent-blue"
+                            className={cn(
+                              "flex min-h-10 shrink-0 cursor-pointer items-center gap-2 rounded-[10px] border border-glass-border glass px-2 py-1 text-[11px] font-semibold text-muted-foreground glass-shadow-xs transition-colors",
+                              "hover:border-accent-blue/45 hover:text-accent-blue",
+                              item.status === "completed" && "text-success",
+                              myTurn && "border-accent-blue/45 text-accent-blue",
+                              !writable && "cursor-not-allowed opacity-60 hover:border-glass-border hover:text-muted-foreground",
+                            )}
                             onPointerDown={stopTileDrag}
                             onClick={(event) => event.stopPropagation()}
-                            onChange={(event) => void handleStatusChange(section, item, assignee, event)}
-                          />
+                          >
+                            <input
+                              type="checkbox"
+                              checked={item.status === "completed"}
+                              disabled={!writable}
+                              title={disabledReason ?? (item.status === "completed" ? "완료 해제" : "완료 표시")}
+                              aria-describedby={checkboxHelpId}
+                              className="h-5 w-5 shrink-0 accent-accent-blue"
+                              onChange={(event) => void handleStatusChange(section, item, assignee, event)}
+                            />
+                            <RunbookStatusChip
+                              status={item.status}
+                              className="pointer-events-none h-6 px-2 text-[11px]"
+                            />
+                          </label>
                           <div className="min-w-0 flex-1">
                             <div className="flex min-w-0 items-center gap-1.5">
                               <span
@@ -445,10 +416,9 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                               )}
                             </div>
                             <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
-                              <StatusChip status={item.status} />
                               <span
                                 className={cn(
-                                  "inline-flex h-5 min-w-0 items-center gap-1 rounded-full border border-[var(--lg-line)] px-1.5",
+                                  "inline-flex h-5 min-w-0 items-center gap-1 rounded-full border border-glass-border glass px-1.5",
                                   myTurn && "border-accent-blue/40 text-accent-blue",
                                 )}
                                 title={assigneeLabel(assignee)}
@@ -486,7 +456,7 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
                             {hasHowTo && itemOpen && (
                               <div
                                 data-testid="runbook-how-to"
-                                className="mt-2 rounded-[10px] border border-[var(--lg-line)] bg-background/40 px-2.5 py-2 text-xs leading-relaxed text-foreground"
+                                className="mt-2 rounded-[10px] border border-glass-border glass px-2.5 py-2 text-xs leading-relaxed text-foreground glass-shadow-xs"
                               >
                                 <MarkdownContent content={item.how_to} compact />
                               </div>

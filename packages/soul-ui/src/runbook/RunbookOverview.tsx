@@ -1,70 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BookOpenCheck,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
-  Circle,
-  Clock3,
   ListChecks,
   RefreshCw,
   UserRound,
-  type LucideIcon,
 } from "lucide-react";
 
 import { Badge } from "../components/ui/badge";
 import { LiquidGlassCard } from "../components/LiquidGlassCard";
 import { cn } from "../lib/cn";
 import {
-  type RunbookItemStatus,
   type RunbookOverviewGroup,
   type RunbookOverviewItem,
   useRunbookStore,
 } from "../stores/runbook-store";
 import { MarkdownContent } from "../components/MarkdownContent";
-
-const statusConfig: Record<RunbookItemStatus, {
-  label: string;
-  icon: LucideIcon;
-  className: string;
-}> = {
-  pending: {
-    label: "대기",
-    icon: Circle,
-    className: "border-muted-foreground/30 text-muted-foreground",
-  },
-  in_progress: {
-    label: "진행",
-    icon: Clock3,
-    className: "border-accent-blue/35 bg-accent-blue/10 text-accent-blue",
-  },
-  completed: {
-    label: "완료",
-    icon: CheckCircle2,
-    className: "border-success/30 bg-success/10 text-success",
-  },
-  cancelled: {
-    label: "취소",
-    icon: Circle,
-    className: "border-muted-foreground/25 text-muted-foreground",
-  },
-};
-
-function StatusChip({ status }: { status: RunbookItemStatus }) {
-  const config = statusConfig[status];
-  const Icon = config.icon;
-  return (
-    <span
-      className={cn(
-        "inline-flex h-5 shrink-0 items-center gap-1 rounded-sm border px-1.5 text-[10px] font-semibold",
-        config.className,
-      )}
-    >
-      <Icon className="h-3 w-3" />
-      {config.label}
-    </span>
-  );
-}
+import { RunbookStatusChip } from "./RunbookStatusChip";
 
 function assigneeLabel(item: RunbookOverviewItem): string {
   return item.effective_assignee_user_id || "사람";
@@ -96,12 +49,12 @@ function MyTurnItemButton({
       type="button"
       data-testid="runbook-overview-my-turn-item"
       className={cn(
-        "group flex w-full min-w-0 items-start gap-3 rounded-[14px] border border-accent-blue/45 bg-accent-blue/[0.12] px-3 py-2.5 text-left shadow-[0_8px_22px_-18px_rgb(30_84_160_/_55%)] transition-colors hover:bg-accent-blue/[0.18] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/55",
-        selected && "border-accent-blue/70 bg-accent-blue/[0.18] ring-1 ring-accent-blue/35",
+        "group flex w-full min-w-0 items-start gap-3 rounded-[14px] border border-accent-blue/45 glass px-3 py-2.5 text-left glass-shadow-xs transition-colors hover:border-accent-blue/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/55",
+        selected && "border-accent-blue/70 glass-strong ring-1 ring-accent-blue/35",
       )}
       onClick={() => onSelect(item)}
     >
-      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-blue/18 text-accent-blue">
+      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-accent-blue/35 glass text-accent-blue">
         <UserRound className="h-4 w-4" />
       </span>
       <span className="min-w-0 flex-1">
@@ -112,7 +65,7 @@ function MyTurnItemButton({
           {itemSubtitle(item)}
         </span>
         <span className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-          <StatusChip status={item.status} />
+          <RunbookStatusChip status={item.status} />
           <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
             {assigneeLabel(item)}
           </Badge>
@@ -137,14 +90,14 @@ function GroupItemButton({
       type="button"
       data-testid="runbook-overview-group-item"
       className={cn(
-        "flex w-full min-w-0 items-start gap-2 rounded-[12px] border border-white/8 bg-background/25 px-2.5 py-2 text-left shadow-[0_6px_18px_-18px_rgb(20_26_40_/_45%)] transition-colors hover:bg-muted/25 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/50",
-        selected && "border-accent-blue/55 bg-accent-blue/[0.12] ring-1 ring-accent-blue/30",
+        "flex w-full min-w-0 items-start gap-2 rounded-[12px] border border-glass-border glass px-2.5 py-2 text-left glass-shadow-xs transition-colors hover:border-accent-blue/35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/50",
+        selected && "border-accent-blue/55 glass-strong ring-1 ring-accent-blue/30",
         isDone(item) && "opacity-70",
       )}
       onClick={() => onSelect(item)}
     >
       <span className="mt-0.5 shrink-0">
-        <StatusChip status={item.status} />
+        <RunbookStatusChip status={item.status} />
       </span>
       <span className="min-w-0 flex-1">
         <span className={cn(
@@ -174,10 +127,10 @@ function RunbookItemDetails({ item }: { item: RunbookOverviewItem }) {
   return (
     <div
       data-testid="runbook-overview-item-detail"
-      className="mt-2 rounded-[14px] border border-white/8 bg-background/30 px-3 py-2.5 text-xs leading-relaxed text-foreground shadow-[0_8px_22px_-20px_rgb(20_26_40_/_50%)]"
+      className="mt-2 rounded-[14px] border border-glass-border glass px-3 py-2.5 text-xs leading-relaxed text-foreground glass-shadow-xs"
     >
       <div className="mb-2 flex min-w-0 flex-wrap items-center gap-1.5">
-        <StatusChip status={item.status} />
+        <RunbookStatusChip status={item.status} />
         <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
           {assigneeLabel(item)}
         </Badge>
@@ -298,7 +251,7 @@ export function RunbookOverview() {
     <div className="flex h-full min-h-0 flex-col bg-transparent">
       <header className="shrink-0 border-b border-glass-border glass-strong glass-chrome glass-shadow-xs px-5 py-4">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent-blue/14 text-accent-blue">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-accent-blue/30 glass text-accent-blue">
             <BookOpenCheck className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">

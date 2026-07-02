@@ -114,11 +114,14 @@ describe("RunbookOverview", () => {
 
     const myTurn = container.querySelector<HTMLButtonElement>('[data-testid="runbook-overview-my-turn-item"]');
     expect(myTurn).not.toBeNull();
+    expect(myTurn!.className).toContain("glass");
     flushSync(() => {
       myTurn!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     expect(container.textContent).toContain("Approve the deployment window.");
+    expect(container.querySelector('[data-testid="runbook-overview-item-detail"]')?.className)
+      .toContain("glass");
     expect(useDashboardStore.getState().focusedBoardItem).toBeNull();
     expect(useDashboardStore.getState().viewMode).toBe("feed");
     expect(useDashboardStore.getState().activeTab).toBe("feed");
