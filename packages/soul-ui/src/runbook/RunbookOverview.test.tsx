@@ -5,8 +5,11 @@
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider, type InfiniteData } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { SessionPage } from "../hooks/session-stream-helpers";
+import type { SessionSummary } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
 import {
   type RunbookOverviewPayload,
@@ -83,11 +86,13 @@ function sampleOverview(): RunbookOverviewPayload {
 describe("RunbookOverview", () => {
   let container: HTMLDivElement;
   let root: Root;
+  let queryClient: QueryClient;
 
   beforeEach(() => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     useDashboardStore.getState().reset();
     useRunbookStore.getState().reset();
   });
@@ -97,13 +102,29 @@ describe("RunbookOverview", () => {
       root.unmount();
     });
     container.remove();
+    queryClient.clear();
     useDashboardStore.getState().reset();
     useRunbookStore.getState().reset();
     globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
 
-  it("renders the global my-turn list, collapsed runbook groups, and keeps item clicks in runbooks", () => {
+  function renderOverview() {
+    root.render(createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      createElement(RunbookOverview),
+    ));
+  }
+
+  function seedSessions(sessions: SessionSummary[]) {
+    queryClient.setQueryData<InfiniteData<SessionPage>>(["sessions", "all", "feed", null], {
+      pages: [{ sessions, total: sessions.length }],
+      pageParams: [0],
+    });
+  }
+
+  it("renders the dashboard sections, expanded my-turn cards, and collapsed runbook groups", () => {
     useRunbookStore.setState({
       overview: {
         snapshot: sampleOverview(),
@@ -114,17 +135,19 @@ describe("RunbookOverview", () => {
     });
 
     flushSync(() => {
-      root.render(createElement(RunbookOverview));
+      renderOverview();
     });
 
+    expect(container.querySelector('[data-testid="runbook-overview-dashboard"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="runbook-overview-running-sessions"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="runbook-overview-my-turn"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="runbook-overview-my-turn"]')?.className)
-      .toContain("liquid-glass-card");
     expect(container.querySelector('[data-testid="runbook-overview-group"]')?.className)
       .toContain("liquid-glass-card");
     expect(container.textContent).toContain("Operator approval");
     expect(container.textContent).toContain("Deploy Runbook");
     expect(container.textContent).toContain("1/2");
+    expect(container.textContent).toContain("실행 중인 세션 없음");
+    expect(container.textContent).toContain("Approve the deployment window.");
     expect(container.textContent).not.toContain("PR-3b 대기");
     expect(container.textContent).not.toContain("Agent verification");
 
@@ -138,16 +161,7 @@ describe("RunbookOverview", () => {
     const myTurn = container.querySelector<HTMLElement>('[data-testid="runbook-overview-my-turn-item"]');
     expect(myTurn).not.toBeNull();
     expect(myTurn!.className).toContain("glass");
-    const detailToggle = container.querySelector<HTMLButtonElement>(
-      '[data-testid="runbook-overview-my-turn-item-detail-toggle"]',
-    );
-    expect(detailToggle).not.toBeNull();
-    flushSync(() => {
-      detailToggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
-
-    expect(container.textContent).toContain("Approve the deployment window.");
-    expect(container.querySelector('[data-testid="runbook-overview-item-detail"]')?.className)
+    expect(container.querySelector('[data-testid="runbook-overview-item-how-to"]')?.className)
       .toContain("glass");
     expect(useDashboardStore.getState().focusedBoardItem).toBeNull();
     expect(useDashboardStore.getState().viewMode).toBe("feed");
@@ -169,7 +183,7 @@ describe("RunbookOverview", () => {
     });
 
     flushSync(() => {
-      root.render(createElement(RunbookOverview));
+      renderOverview();
     });
 
     const checkbox = container.querySelector<HTMLInputElement>(
@@ -212,7 +226,7 @@ describe("RunbookOverview", () => {
     });
 
     flushSync(() => {
-      root.render(createElement(RunbookOverview));
+      renderOverview();
     });
 
     const openBoard = container.querySelector<HTMLButtonElement>(
@@ -223,12 +237,101 @@ describe("RunbookOverview", () => {
       openBoard!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(container.textContent).not.toContain("Approve the deployment window.");
     expect(useDashboardStore.getState().focusedBoardItem).toMatchObject({
       boardItemId: "runbook:rb-1",
       folderId: "f1",
     });
     expect(useDashboardStore.getState().viewMode).toBe("folder");
     expect(useDashboardStore.getState().activeTab).toBe("folder");
+  });
+
+  it("renders running sessions with SessionItem and selects the clicked session", () => {
+    seedSessions([
+      {
+        agentSessionId: "sess-running",
+        status: "running",
+        eventCount: 3,
+        prompt: "Investigate deploy",
+        agentName: "Roselin",
+        createdAt: "2026-06-16T00:00:00+00:00",
+      },
+      {
+        agentSessionId: "sess-done",
+        status: "completed",
+        eventCount: 1,
+        prompt: "Finished",
+        createdAt: "2026-06-15T00:00:00+00:00",
+      },
+    ]);
+    useRunbookStore.setState({
+      overview: {
+        snapshot: sampleOverview(),
+        status: "ready",
+        error: null,
+        isRefreshing: false,
+      },
+    });
+
+    flushSync(() => {
+      renderOverview();
+    });
+
+    expect(container.textContent).toContain("Investigate deploy");
+    expect(container.textContent).not.toContain("Finished");
+    const sessionCard = container.querySelector<HTMLElement>('[data-session-id="sess-running"]');
+    expect(sessionCard).not.toBeNull();
+    flushSync(() => {
+      sessionCard!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(useDashboardStore.getState().activeSessionKey).toBe("sess-running");
+    expect(useDashboardStore.getState().activeSessionSummary?.agentSessionId).toBe("sess-running");
+    expect(useDashboardStore.getState().activeTab).toBe("chat");
+  });
+
+  it("separates completed runbooks into a collapsed completed section", () => {
+    const payload = sampleOverview();
+    payload.runbooks.push({
+      ...payload.runbooks[0]!,
+      runbook_id: "rb-done",
+      runbook_title: "Completed Runbook",
+      status: "completed",
+      runbook_version: 4,
+      completed_count: 2,
+      total_count: 2,
+      items: [{
+        ...payload.runbooks[0]!.items[0]!,
+        runbook_id: "rb-done",
+        item_id: "done-item",
+        item_title: "Done item",
+        status: "completed",
+      }],
+    });
+    useRunbookStore.setState({
+      overview: {
+        snapshot: payload,
+        status: "ready",
+        error: null,
+        isRefreshing: false,
+      },
+    });
+
+    flushSync(() => {
+      renderOverview();
+    });
+
+    expect(container.querySelector('[data-testid="runbook-overview-completed-groups"]')).not.toBeNull();
+    expect(container.textContent).toContain("완료됨");
+    expect(container.textContent).not.toContain("Completed Runbook");
+
+    const completedToggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="runbook-overview-completed-groups"] button',
+    );
+    expect(completedToggle).not.toBeNull();
+    flushSync(() => {
+      completedToggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).toContain("Completed Runbook");
   });
 });

@@ -1,6 +1,12 @@
 import { create } from "zustand";
 
 import type { RunbookUpdatedStreamEvent } from "../shared/stream-events";
+import {
+  fetchRunbookOverview,
+  fetchRunbookSnapshot,
+  postRunbookItemStatus,
+  postRunbookStatus,
+} from "./runbook-api";
 
 export type RunbookAssigneeKind = "agent" | "human" | "session";
 export type RunbookItemStatus =
@@ -8,6 +14,7 @@ export type RunbookItemStatus =
   | "in_progress"
   | "completed"
   | "cancelled";
+export type RunbookStatus = "open" | "completed";
 
 export interface RunbookAssigneeFields {
   assignee_kind: RunbookAssigneeKind | null;
@@ -21,10 +28,16 @@ export interface RunbookRow {
   board_item_id: string;
   folder_id?: string | null;
   title: string;
+  status?: RunbookStatus | null;
   archived: boolean;
   version: number;
   created_session_id: string | null;
   created_event_id: number | null;
+  completed_kind?: "agent" | "user" | null;
+  completed_session_id?: string | null;
+  completed_event_id?: number | null;
+  completed_user_id?: string | null;
+  completed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -100,6 +113,13 @@ export interface RunbookOverviewGroup {
   runbook_title: string;
   board_item_id: string;
   folder_id: string | null;
+  status?: RunbookStatus | null;
+  runbook_version?: number | null;
+  completed_kind?: "agent" | "user" | null;
+  completed_session_id?: string | null;
+  completed_event_id?: number | null;
+  completed_user_id?: string | null;
+  completed_at?: string | null;
   completed_count: number;
   total_count: number;
   updated_at: string;
@@ -139,9 +159,12 @@ export interface SetRunbookItemStatusInput {
   reason?: string | null;
 }
 
-interface RunbookItemStatusResponse {
-  ok: boolean;
-  snapshot?: RunbookSnapshot;
+export interface SetRunbookStatusInput {
+  runbookId: string;
+  expectedVersion: number;
+  idempotencyKey: string;
+  status: RunbookStatus;
+  reason?: string | null;
 }
 
 interface RunbookStoreState {
@@ -153,6 +176,7 @@ interface RunbookStoreState {
   ) => Promise<RunbookSnapshot | null>;
   loadOverview: (options?: LoadOptions) => Promise<RunbookOverviewPayload>;
   setItemStatus: (input: SetRunbookItemStatusInput) => Promise<RunbookSnapshot | null>;
+  setRunbookStatus: (input: SetRunbookStatusInput) => Promise<RunbookSnapshot | null>;
   handleRunbookUpdated: (
     event: RunbookUpdatedStreamEvent,
   ) => Promise<unknown> | undefined;
@@ -188,108 +212,6 @@ function isAbortError(error: unknown): boolean {
     error !== null &&
     "name" in error &&
     (error as { name?: string }).name === "AbortError";
-}
-
-function nonEmptyString(value: unknown): string | null {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
-}
-
-function extractRunbookErrorMessage(payload: unknown): string | null {
-  if (typeof payload === "string") return nonEmptyString(payload);
-  if (typeof payload !== "object" || payload === null) return null;
-
-  const record = payload as Record<string, unknown>;
-  const detail = record.detail;
-  if (typeof detail === "object" && detail !== null) {
-    const detailRecord = detail as Record<string, unknown>;
-    const error = detailRecord.error;
-    if (typeof error === "object" && error !== null) {
-      const message = nonEmptyString((error as Record<string, unknown>).message);
-      if (message) return message;
-    }
-    const detailMessage = nonEmptyString(detailRecord.message);
-    if (detailMessage) return detailMessage;
-  }
-  const detailMessage = nonEmptyString(detail);
-  if (detailMessage) return detailMessage;
-
-  const error = record.error;
-  if (typeof error === "object" && error !== null) {
-    const message = nonEmptyString((error as Record<string, unknown>).message);
-    if (message) return message;
-  }
-  const errorMessage = nonEmptyString(error);
-  if (errorMessage) return errorMessage;
-
-  return nonEmptyString(record.message);
-}
-
-async function readRunbookErrorMessage(
-  response: Response,
-  fallback: string,
-): Promise<string> {
-  try {
-    const payload = await response.json();
-    return extractRunbookErrorMessage(payload) ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-async function fetchRunbookSnapshot(
-  runbookId: string,
-  signal?: AbortSignal,
-): Promise<RunbookSnapshot | null> {
-  const response = await fetch(`/api/runbooks/${encodeURIComponent(runbookId)}`, {
-    signal,
-  });
-  if (response.status === 404) return null;
-  if (!response.ok) {
-    throw new Error(await readRunbookErrorMessage(
-      response,
-      `Runbook fetch failed: ${response.status}`,
-    ));
-  }
-  return await response.json() as RunbookSnapshot;
-}
-
-async function fetchRunbookOverview(
-  signal?: AbortSignal,
-): Promise<RunbookOverviewPayload> {
-  const response = await fetch("/api/runbooks/my-turn", { signal });
-  if (!response.ok) {
-    throw new Error(await readRunbookErrorMessage(
-      response,
-      `Runbook overview fetch failed: ${response.status}`,
-    ));
-  }
-  return await response.json() as RunbookOverviewPayload;
-}
-
-async function postRunbookItemStatus(
-  input: SetRunbookItemStatusInput,
-): Promise<RunbookItemStatusResponse> {
-  const response = await fetch(
-    `/api/runbooks/${encodeURIComponent(input.runbookId)}/items/${encodeURIComponent(input.itemId)}/status`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({
-        status: input.status,
-        expectedVersion: input.expectedVersion,
-        idempotencyKey: input.idempotencyKey,
-        ...(input.reason ? { reason: input.reason } : {}),
-      }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(await readRunbookErrorMessage(
-      response,
-      `Runbook status update failed: ${response.status}`,
-    ));
-  }
-  return await response.json() as RunbookItemStatusResponse;
 }
 
 export const useRunbookStore = create<RunbookStoreState>((set, get) => ({
@@ -417,6 +339,25 @@ export const useRunbookStore = create<RunbookStoreState>((set, get) => ({
 
   async setItemStatus(input) {
     const result = await postRunbookItemStatus(input);
+    const snapshot = result.snapshot ?? null;
+    if (snapshot) {
+      set((state) => ({
+        byId: {
+          ...state.byId,
+          [input.runbookId]: {
+            snapshot,
+            status: "ready",
+            error: null,
+            isRefreshing: false,
+          },
+        },
+      }));
+    }
+    return snapshot;
+  },
+
+  async setRunbookStatus(input) {
+    const result = await postRunbookStatus(input);
     const snapshot = result.snapshot ?? null;
     if (snapshot) {
       set((state) => ({

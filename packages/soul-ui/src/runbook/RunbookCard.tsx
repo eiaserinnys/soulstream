@@ -28,6 +28,7 @@ import {
   type RunbookStatusToggleRunbook,
   type RunbookStatusToggleSection,
 } from "./RunbookItemStatusToggle";
+import { RunbookCompletionAction } from "./RunbookCompletionAction";
 
 interface RunbookCardProps {
   runbookId: string;
@@ -213,6 +214,17 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
               {refreshing && <span>동기화 중</span>}
             </div>
           </div>
+          {snapshot ? (
+            <RunbookCompletionAction
+              runbook={{
+                id: snapshot.runbook.id,
+                title,
+                status: snapshot.runbook.status,
+                version: snapshot.runbook.version,
+              }}
+              buttonClassName="px-2 text-[11px]"
+            />
+          ) : null}
         </div>
       </header>
 
