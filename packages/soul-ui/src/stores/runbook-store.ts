@@ -113,7 +113,7 @@ export interface RunbookOverviewGroup {
   runbook_title: string;
   board_item_id: string;
   folder_id: string | null;
-  status?: RunbookStatus | null;
+  runbook_status: RunbookStatus | null;
   runbook_version?: number | null;
   completed_kind?: "agent" | "user" | null;
   completed_session_id?: string | null;

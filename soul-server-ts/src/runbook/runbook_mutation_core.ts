@@ -174,7 +174,6 @@ export class RunbookMutationCore {
 
     let operation!: RunbookOperationRow;
     let eventId = 0;
-    let shouldNotifyHandoff = false;
     await this.repo.transaction(async (sql) => {
       const runbook = await this.repo.getRunbookForUpdateTx(sql, params.runbookId);
       const actualVersion = Number(runbook.version);
@@ -186,10 +185,6 @@ export class RunbookMutationCore {
           actualVersion,
         );
       }
-      shouldNotifyHandoff =
-        params.actorKind === "user" &&
-        params.status === "completed" &&
-        runbook.status !== "completed";
       const opId = randomUUID();
       eventId = await this.appendRunbookEvent(sql, {
         operationId: opId,
@@ -233,9 +228,6 @@ export class RunbookMutationCore {
       eventId,
     };
     await this.broadcastMutation(params.actorSessionId, result);
-    if (shouldNotifyHandoff) {
-      this.notifyRunbookHandoff(result);
-    }
     return result;
   }
 
@@ -371,22 +363,6 @@ export class RunbookMutationCore {
     }
   }
 
-  private notifyRunbookHandoff(result: RunbookMutationResult): void {
-    if (!this.handoffNotifier) return;
-    if (result.snapshot.runbook.status !== "completed") return;
-    try {
-      this.handoffNotifier.notifyHumanHandoff({
-        runbookId: result.snapshot.runbook.id,
-        runbookTitle: result.snapshot.runbook.title,
-        boardItemId: result.snapshot.runbook.board_item_id,
-        status: "completed",
-        operationId: result.operation.id,
-        eventId: result.eventId,
-      });
-    } catch {
-      // The concrete notifier owns logging. A handoff wake must never fail the mutation.
-    }
-  }
 }
 
 function isTerminalHandoffStatus(
