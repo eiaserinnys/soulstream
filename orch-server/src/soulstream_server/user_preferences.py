@@ -151,7 +151,7 @@ def _number_in_range(value: Any, minimum: float, maximum: float, fallback: float
         return fallback
     if not numeric == numeric:
         return fallback
-    clipped = min(maximum, max(minimum, numeric))
+    clipped = float(min(maximum, max(minimum, numeric)))
     if isinstance(fallback, int) and clipped.is_integer():
         return int(clipped)
     return clipped

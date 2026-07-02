@@ -135,6 +135,48 @@ export class UpstreamAdapter {
     await this.send(data);
   }
 
+  /**
+   * agents.yaml hot reload 후 현재 AgentRegistry 전체를 orch에 다시 광고한다.
+   * 별도 wire를 추가하지 않고 초기 등록과 같은 node_register payload를 재사용한다.
+   */
+  async reannounceAgentCatalog(): Promise<void> {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      this.logger.warn(
+        { nodeId: this.config.nodeId },
+        "Agent catalog reannounce skipped — upstream WebSocket not open",
+      );
+      return;
+    }
+
+    const msg = buildRegistrationMsg({
+      nodeId: this.config.nodeId,
+      host: this.config.host,
+      port: this.config.port,
+      userName: this.config.userName,
+      userPortraitPath: this.config.userPortraitPath,
+      agentRegistry: this.deps.agentRegistry,
+      logger: this.logger,
+    });
+
+    try {
+      await this.sendOnSocket(ws, msg);
+      this.logger.info(
+        {
+          nodeId: this.config.nodeId,
+          agentCount: msg.agents?.length ?? 0,
+          supportedBackends: msg.supported_backends ?? [],
+        },
+        "Agent catalog reannounced to upstream",
+      );
+    } catch (err) {
+      this.logger.warn(
+        { err, nodeId: this.config.nodeId },
+        "Agent catalog reannounce failed",
+      );
+    }
+  }
+
   private async connectAndServe(): Promise<void> {
     this.logger.info({ url: this.config.url }, "Connecting to upstream");
 
