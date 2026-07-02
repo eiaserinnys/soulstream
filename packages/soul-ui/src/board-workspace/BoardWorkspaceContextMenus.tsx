@@ -12,6 +12,9 @@ import { SessionContextMenu } from "../components/SessionContextMenu";
 import type { BoardWorkspaceItem } from "./board-workspace-items";
 import type { BoardYjsRuntime } from "./board-yjs-client";
 
+const BOARD_MODAL_BACKDROP_CLASS =
+  "fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-[6px] backdrop-saturate-[1.2]";
+
 export interface BoardContextMenuState {
   screenX: number;
   screenY: number;
@@ -364,7 +367,7 @@ export function BoardWorkspaceContextMenus({
         }}
       />
       {renameMarkdownTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60">
+        <div className={BOARD_MODAL_BACKDROP_CLASS}>
           <form
             className="w-80 rounded-md border border-glass-border glass-strong glass-shadow-lg p-3"
             onSubmit={(event) => {
@@ -395,7 +398,7 @@ export function BoardWorkspaceContextMenus({
         </div>
       )}
       {renameFolderTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60">
+        <div className={BOARD_MODAL_BACKDROP_CLASS}>
           <form
             className="w-80 rounded-md border border-glass-border glass-strong glass-shadow-lg p-3"
             onSubmit={(event) => {
@@ -425,7 +428,7 @@ export function BoardWorkspaceContextMenus({
         </div>
       )}
       {renameFrameTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/60">
+        <div className={BOARD_MODAL_BACKDROP_CLASS}>
           <form
             className="w-80 rounded-md border border-glass-border glass-strong glass-shadow-lg p-3"
             onSubmit={(event) => {

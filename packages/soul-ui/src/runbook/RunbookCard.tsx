@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 import { MarkdownContent } from "../components/MarkdownContent";
+import { LiquidGlassCard } from "../components/LiquidGlassCard";
 import { Badge } from "../components/ui/badge";
 import { cn } from "../lib/cn";
 import {
@@ -298,8 +299,10 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
   };
 
   return (
-    <div
-      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] bg-[var(--lg-card)] text-left"
+    <LiquidGlassCard
+      webglSurface
+      data-testid="runbook-card"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-white/8 text-left shadow-[0_10px_30px_-18px_rgb(10_16_30_/_50%)]"
       onClick={(event) => event.stopPropagation()}
     >
       <header className="shrink-0 border-b border-[var(--lg-line)] px-4 py-3">
@@ -473,6 +476,6 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
           );
         })}
       </div>
-    </div>
+    </LiquidGlassCard>
   );
 }

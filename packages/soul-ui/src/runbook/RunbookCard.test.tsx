@@ -203,7 +203,9 @@ describe("RunbookCard", () => {
     });
 
     const html = container.innerHTML;
+    const card = container.querySelector<HTMLElement>('[data-testid="runbook-card"]');
 
+    expect(card?.className).toContain("liquid-glass-card");
     expect(html).toContain("Deploy Runbook");
     expect(html).toContain("1/2");
     expect(html).toContain("내 차례");
