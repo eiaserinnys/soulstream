@@ -60,6 +60,14 @@ function okResponse(body: unknown): Response {
   } as unknown as Response;
 }
 
+function errorResponse(status: number, body: unknown): Response {
+  return {
+    ok: false,
+    status,
+    json: vi.fn().mockResolvedValue(body),
+  } as unknown as Response;
+}
+
 describe("runbook-store", () => {
   beforeEach(() => {
     useRunbookStore.getState().reset();
@@ -123,6 +131,25 @@ describe("runbook-store", () => {
     });
     expect(result?.runbook.title).toBe("After status");
     expect(useRunbookStore.getState().byId["rb-1"].snapshot?.runbook.title).toBe("After status");
+  });
+
+  it("uses the server detail error message for failed item status mutations", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(errorResponse(409, {
+      detail: {
+        error: {
+          message: "항목 버전이 오래되었습니다. 새로고침 후 다시 시도하세요.",
+        },
+      },
+    }));
+    globalThis.fetch = fetchMock;
+
+    await expect(useRunbookStore.getState().setItemStatus({
+      runbookId: "rb-1",
+      itemId: "item-1",
+      expectedVersion: 3,
+      status: "completed",
+      idempotencyKey: "runbook:rb-1:item:item-1:status:completed:v3:test",
+    })).rejects.toThrow("항목 버전이 오래되었습니다. 새로고침 후 다시 시도하세요.");
   });
 
   it("reloads an observed runbook when runbook_updated arrives", async () => {

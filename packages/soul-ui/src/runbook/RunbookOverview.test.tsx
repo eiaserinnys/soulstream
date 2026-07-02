@@ -95,6 +95,10 @@ describe("RunbookOverview", () => {
     });
 
     expect(container.querySelector('[data-testid="runbook-overview-my-turn"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="runbook-overview-my-turn"]')?.className)
+      .toContain("liquid-glass-card");
+    expect(container.querySelector('[data-testid="runbook-overview-group"]')?.className)
+      .toContain("liquid-glass-card");
     expect(container.textContent).toContain("Operator approval");
     expect(container.textContent).toContain("Deploy Runbook");
     expect(container.textContent).toContain("1/2");

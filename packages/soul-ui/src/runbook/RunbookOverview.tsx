@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "../components/ui/badge";
+import { LiquidGlassCard } from "../components/LiquidGlassCard";
 import { cn } from "../lib/cn";
 import {
   type RunbookItemStatus,
@@ -205,7 +206,11 @@ function RunbookGroup({
 }) {
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
-    <section className="rounded-[18px] border border-white/8 bg-[var(--lg-card)] shadow-[0_10px_30px_-22px_rgb(20_26_40_/_55%)]">
+    <LiquidGlassCard
+      webglSurface
+      data-testid="runbook-overview-group"
+      className="rounded-[18px] border border-white/8 shadow-[0_10px_30px_-22px_rgb(20_26_40_/_55%)]"
+    >
       <div className="flex min-w-0 items-center gap-1.5 px-3 py-2.5">
         <button
           type="button"
@@ -258,7 +263,7 @@ function RunbookGroup({
           )}
         </div>
       ) : null}
-    </section>
+    </LiquidGlassCard>
   );
 }
 
@@ -291,7 +296,7 @@ export function RunbookOverview() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-transparent">
-      <header className="shrink-0 border-b border-[var(--lg-line)] bg-[var(--lg-card)]/80 px-5 py-4">
+      <header className="shrink-0 border-b border-glass-border glass-strong glass-chrome glass-shadow-xs px-5 py-4">
         <div className="flex min-w-0 items-center gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-accent-blue/14 text-accent-blue">
             <BookOpenCheck className="h-5 w-5" />
@@ -325,10 +330,11 @@ export function RunbookOverview() {
         ) : null}
 
         {snapshot ? (
-          <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-            <section
+          <div className="mx-auto flex w-full max-w-6xl flex-col gap-4">
+            <LiquidGlassCard
+              webglSurface
               data-testid="runbook-overview-my-turn"
-              className="rounded-[18px] border border-accent-blue/45 bg-[var(--lg-card)] p-4 shadow-[0_12px_32px_-22px_rgb(30_84_160_/_55%)]"
+              className="rounded-[18px] border border-accent-blue/45 p-4 shadow-[0_12px_32px_-22px_rgb(30_84_160_/_55%)]"
             >
               <div className="mb-3 flex min-w-0 items-center gap-2">
                 <UserRound className="h-4 w-4 shrink-0 text-accent-blue" />
@@ -357,7 +363,7 @@ export function RunbookOverview() {
                   지금 사람이 이어받을 항목이 없음
                 </div>
               )}
-            </section>
+            </LiquidGlassCard>
 
             <section className="flex min-h-0 flex-col gap-2">
               <div className="flex min-w-0 items-center gap-2 px-1">
@@ -365,7 +371,7 @@ export function RunbookOverview() {
                 <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">런북별 진행</h2>
               </div>
               {groups.length > 0 ? (
-                <div className="space-y-3">
+                <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(22rem,100%),1fr))]">
                   {groups.map((group) => {
                     const open = openGroups[group.runbook_id] ?? false;
                     return (
@@ -386,9 +392,12 @@ export function RunbookOverview() {
                   })}
                 </div>
               ) : (
-                <div className="rounded-[18px] border border-dashed border-[var(--lg-line)] bg-[var(--lg-card)] px-3 py-6 text-center text-sm text-muted-foreground">
+                <LiquidGlassCard
+                  webglSurface
+                  className="rounded-[18px] border border-dashed border-[var(--lg-line)] px-3 py-6 text-center text-sm text-muted-foreground"
+                >
                   표시할 런북이 없음
-                </div>
+                </LiquidGlassCard>
               )}
             </section>
           </div>

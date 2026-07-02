@@ -276,15 +276,15 @@ describe("FolderContents", () => {
     expect(container.querySelectorAll(".liquid-glass-card")).toHaveLength(6);
     expect(container.querySelectorAll("[data-testid='folder-session-virtual-row']")).toHaveLength(3);
     expect(virtualizerMockState.calls.some((call) => call.estimatedSize === 118)).toBe(false);
-    expect(virtualizerMockState.calls.some((call) => call.estimatedSize === 148)).toBe(true);
+    expect(virtualizerMockState.calls.some((call) => call.estimatedSize === 140)).toBe(true);
     expect(virtualizerMockState.calls.some((call) => call.scrollMargin === 0)).toBe(true);
     expect(container.querySelector<HTMLElement>("[data-testid='folder-session-virtual-grid']")?.style.height)
-      .toBe("7400px");
+      .toBe("7000px");
     const gridInset = container.querySelector<HTMLElement>("[data-testid='folder-session-virtual-grid']")?.parentElement;
     expect(gridInset?.style.paddingInline).toBe("16px");
     expect(gridInset?.style.paddingTop).toBe("16px");
     expect(gridInset?.style.paddingBottom).toBe("16px");
-    expect(container.querySelector<HTMLElement>("[data-testid='folder-session-row-grid']")?.style.gap).toBe("16px");
+    expect(container.querySelector<HTMLElement>("[data-testid='folder-session-row-grid']")?.style.gap).toBe("8px");
     const cardFrames = container.querySelectorAll<HTMLElement>("[data-testid='folder-session-card-frame']");
     expect(cardFrames).toHaveLength(6);
     cardFrames.forEach((frame) => {
@@ -355,7 +355,7 @@ describe("FolderContents", () => {
     const firstItem = container.querySelector<HTMLElement>("[data-testid='folder-session-virtual-item']");
 
     expect(virtualizerMockState.calls.some((call) => (
-      call.estimatedSize === 148 && call.scrollMargin === 560
+      call.estimatedSize === 140 && call.scrollMargin === 560
     ))).toBe(true);
     expect(firstItem?.style.transform).toBe("translateY(0px)");
     expect(intersectionObserverMockState.options[0]?.root).toBe(scrollRoot);
