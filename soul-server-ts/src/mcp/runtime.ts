@@ -33,7 +33,6 @@ export interface McpRuntime {
   agentConfigService?: AgentConfigService;
   mcpConfigService?: McpConfigService;
   catalogService: CatalogService;
-  runbookEnabled?: boolean;
   runbookService?: RunbookService;
   logger: Logger;
   /** default = full tool surface. supervisor_readonly hides and blocks mutation tools. */

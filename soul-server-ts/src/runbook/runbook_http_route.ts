@@ -15,7 +15,6 @@ import { RunbookVersionConflict } from "./runbook_models.js";
 import type { RunbookService } from "./runbook_service.js";
 
 export interface RunbookHttpRouteConfig {
-  enabled: boolean;
   service: RunbookService;
   auth: BoardYjsAuthConfig;
 }
@@ -47,17 +46,6 @@ export function registerRunbookHttpRoutes(
     Params: StatusRouteParams;
     Body: StatusRequestBody;
   }>("/api/runbooks/:runbookId/items/:itemId/status", async (request, reply) => {
-    if (!config.enabled) {
-      return reply.status(503).send({
-        detail: {
-          error: {
-            code: "RUNBOOK_DISABLED",
-            message: "Runbook is disabled on this node",
-          },
-        },
-      });
-    }
-
     let userId: string;
     try {
       userId = (await authenticateDashboardHttpRequest({

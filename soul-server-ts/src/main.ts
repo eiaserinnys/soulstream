@@ -692,7 +692,6 @@ async function main(): Promise<void> {
     agentConfigService,
     mcpConfigService,
     catalogService,
-    runbookEnabled: env.RUNBOOK_ENABLED,
     runbookService,
     logger,
     mcpToolProfile: env.MCP_TOOL_PROFILE,
@@ -732,7 +731,6 @@ async function main(): Promise<void> {
       service: boardYjsService,
     },
     runbook: {
-      enabled: env.RUNBOOK_ENABLED,
       service: runbookService,
       auth: {
         authBearerToken: env.AUTH_BEARER_TOKEN,

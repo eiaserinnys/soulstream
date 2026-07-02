@@ -238,7 +238,7 @@ def create_catalog_router(
         if actor_session_id is None:
             raise HTTPException(status_code=422, detail="Runbook item has no session provenance")
 
-        node = await find_session_node(actor_session_id, db, node_manager)
+        node = await _resolve_runbook_mutation_node(actor_session_id, db, node_manager)
         url = (
             f"http://{node.host}:{node.port}"
             f"/api/runbooks/{quote(runbook_id, safe='')}"
@@ -386,6 +386,28 @@ def _resolve_actor_session_id(snapshot: dict, item_id: str) -> str | None:
         if isinstance(value, str) and value:
             return value
     return None
+
+
+async def _resolve_runbook_mutation_node(actor_session_id: str, db, node_manager):
+    try:
+        return await find_session_node(actor_session_id, db, node_manager)
+    except HTTPException as exc:
+        if exc.status_code not in {404, 503}:
+            raise
+        connected_nodes = node_manager.get_connected_nodes()
+        if not connected_nodes:
+            raise HTTPException(
+                status_code=503,
+                detail="No connected soul-server node available for runbook mutation",
+            ) from exc
+        fallback = connected_nodes[0]
+        logger.info(
+            "Runbook actor session %s is not routable (%s); forwarding to connected node %s",
+            actor_session_id,
+            exc.detail,
+            fallback.node_id,
+        )
+        return fallback
 
 
 def _snapshot_item(snapshot: dict, item_id: str) -> dict | None:

@@ -29,7 +29,6 @@ function createSilentLogger() {
 }
 
 function makeRuntime(params: {
-  runbookEnabled?: boolean;
   runbookService?: Record<string, unknown>;
 } = {}): McpRuntime {
   return {
@@ -43,7 +42,6 @@ function makeRuntime(params: {
     taskExecutor: {} as TaskExecutor,
     agentRegistry: new AgentRegistry([]),
     catalogService: {} as CatalogService,
-    runbookEnabled: params.runbookEnabled ?? false,
     runbookService: params.runbookService as never,
     logger: createSilentLogger(),
   };
@@ -100,17 +98,9 @@ afterEach(async () => {
 });
 
 describe("runbook MCP tools", () => {
-  it("hides runbook tools while RUNBOOK_ENABLED is false", async () => {
-    const client = await createClient(makeRuntime());
-
-    const tools = await client.listTools();
-
-    expect(tools.tools.map((tool) => tool.name)).not.toContain("create_runbook");
-  });
-
-  it("exposes runbook tools while RUNBOOK_ENABLED is true", async () => {
+  it("exposes runbook tools", async () => {
     const client = await createClient(
-      makeRuntime({ runbookEnabled: true, runbookService: fakeRunbookService() }),
+      makeRuntime({ runbookService: fakeRunbookService() }),
     );
 
     const tools = await client.listTools();
@@ -144,7 +134,7 @@ describe("runbook MCP tools", () => {
   it("uses caller session header as actor_kind='agent' for mutations", async () => {
     const service = fakeRunbookService();
     const client = await createClient(
-      makeRuntime({ runbookEnabled: true, runbookService: service }),
+      makeRuntime({ runbookService: service }),
       { "x-soulstream-agent-session-id": "sess-caller" },
     );
 
@@ -174,7 +164,7 @@ describe("runbook MCP tools", () => {
   it("creates runbooks through folder-scoped board item input", async () => {
     const service = fakeRunbookService();
     const client = await createClient(
-      makeRuntime({ runbookEnabled: true, runbookService: service }),
+      makeRuntime({ runbookService: service }),
       { "x-soulstream-agent-session-id": "sess-caller" },
     );
 
@@ -206,7 +196,7 @@ describe("runbook MCP tools", () => {
   it("lists runbooks by folder without requiring a caller session", async () => {
     const service = fakeRunbookService();
     const client = await createClient(
-      makeRuntime({ runbookEnabled: true, runbookService: service }),
+      makeRuntime({ runbookService: service }),
     );
 
     const result = await client.callTool({
@@ -229,7 +219,7 @@ describe("runbook MCP tools", () => {
   it("routes runbook archive symmetry through explicit tools", async () => {
     const service = fakeRunbookService();
     const client = await createClient(
-      makeRuntime({ runbookEnabled: true, runbookService: service }),
+      makeRuntime({ runbookService: service }),
       { "x-soulstream-agent-session-id": "sess-caller" },
     );
 
@@ -274,7 +264,7 @@ describe("runbook MCP tools", () => {
   it("routes assignee changes through dedicated section and item tools", async () => {
     const service = fakeRunbookService();
     const client = await createClient(
-      makeRuntime({ runbookEnabled: true, runbookService: service }),
+      makeRuntime({ runbookService: service }),
       { "x-soulstream-agent-session-id": "sess-caller" },
     );
 
@@ -330,7 +320,7 @@ describe("runbook MCP tools", () => {
   it("rejects mutation calls without caller session header", async () => {
     const service = fakeRunbookService();
     const client = await createClient(
-      makeRuntime({ runbookEnabled: true, runbookService: service }),
+      makeRuntime({ runbookService: service }),
     );
 
     const result = await client.callTool({

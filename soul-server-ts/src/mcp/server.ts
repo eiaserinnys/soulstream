@@ -32,8 +32,6 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
   registerAgentConfigTools(guardedServer, runtime);
   registerMultiNodeTools(guardedServer, runtime);
   registerTaskTreeTools(guardedServer, runtime);
-  if (runtime.runbookEnabled) {
-    registerRunbookTools(guardedServer, runtime);
-  }
+  registerRunbookTools(guardedServer, runtime);
   return server;
 }
