@@ -66,7 +66,9 @@ function isBoardTileTarget(target: EventTarget | null): boolean {
 
 function isInteractiveTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
-  return Boolean(target.closest("button, a, input, textarea, select, [contenteditable='true'], [role='menu'], [role='menuitem']"));
+  const interactive = target.closest("button, a, label, input, textarea, select, [contenteditable='true'], [role='menu'], [role='menuitem']");
+  if (!(interactive instanceof HTMLElement)) return false;
+  return interactive !== target.closest("[data-board-tile='true']");
 }
 
 function isMarqueeSelectionGesture(event: ReactPointerEvent<HTMLDivElement>): boolean {
@@ -270,6 +272,7 @@ export function useBoardWorkspaceDrag({
 
   const handleTilePointerDown = (event: ReactPointerEvent<HTMLElement>, item: BoardWorkspaceItem) => {
     if (event.button !== 0 || isSpaceDown) return;
+    if (isInteractiveTarget(event.target)) return;
     event.stopPropagation();
     if (isBoardSelectionToggle(event)) {
       event.preventDefault();
