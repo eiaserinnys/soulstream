@@ -110,6 +110,7 @@ describe("runbook MCP tools", () => {
       "create_runbook",
       "list_runbooks",
       "update_runbook",
+      "set_runbook_status",
       "archive_runbook",
       "unarchive_runbook",
       "create_runbook_section",
@@ -158,6 +159,36 @@ describe("runbook MCP tools", () => {
       expectedVersion: 3,
       reason: "done",
       idempotencyKey: "idem-status-1",
+    });
+  });
+
+  it("routes runbook-level status changes through the dedicated object tool", async () => {
+    const service = fakeRunbookService();
+    const client = await createClient(
+      makeRuntime({ runbookService: service }),
+      { "x-soulstream-agent-session-id": "sess-caller" },
+    );
+
+    const result = await client.callTool({
+      name: "set_runbook_status",
+      arguments: {
+        runbook_id: "rb-1",
+        status: "completed",
+        expected_version: 7,
+        idempotency_key: "idem-runbook-status-1",
+        reason: "done",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(service.setRunbookStatus).toHaveBeenCalledWith({
+      actorKind: "agent",
+      actorSessionId: "sess-caller",
+      runbookId: "rb-1",
+      status: "completed",
+      expectedVersion: 7,
+      reason: "done",
+      idempotencyKey: "idem-runbook-status-1",
     });
   });
 
@@ -351,6 +382,7 @@ function fakeRunbookService() {
     createRunbook: vi.fn(async () => mutationResult),
     listRunbooks: vi.fn(async () => []),
     patchRunbook: vi.fn(async () => mutationResult),
+    setRunbookStatus: vi.fn(async () => mutationResult),
     createSection: vi.fn(async () => mutationResult),
     patchSection: vi.fn(async () => mutationResult),
     setSectionAssignee: vi.fn(async () => mutationResult),

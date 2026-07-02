@@ -155,6 +155,140 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     expect(restored.snapshot.runbook.archived).toBe(false);
   });
 
+  it("records user runbook completion attribution and replays duplicate status idempotency keys", async () => {
+    await seedRunbookWithItem();
+    emitRunbookUpdated.mockClear();
+
+    const first = await service.setRunbookStatus({
+      runbookId: "rb-1",
+      expectedVersion: 1,
+      status: "completed",
+      actorKind: "user",
+      actorSessionId: "sess-actor",
+      actorUserId: "operator@example.com",
+      idempotencyKey: "runbook:rb-1:status:completed:v1:user",
+    });
+    const second = await service.setRunbookStatus({
+      runbookId: "rb-1",
+      expectedVersion: 1,
+      status: "completed",
+      actorKind: "user",
+      actorSessionId: "sess-actor",
+      actorUserId: "operator@example.com",
+      idempotencyKey: "runbook:rb-1:status:completed:v1:user",
+    });
+
+    const rows = await harness!.sql<Array<{
+      status: string;
+      completed_kind: string | null;
+      completed_session_id: string | null;
+      completed_event_id: number | null;
+      completed_user_id: string | null;
+      operation_count: string | number;
+    }>>`
+      SELECT
+        r.status,
+        r.completed_kind,
+        r.completed_session_id,
+        r.completed_event_id,
+        r.completed_user_id,
+        (
+          SELECT COUNT(*)
+          FROM runbook_operations
+          WHERE operation_type = 'set_runbook_status'
+        ) AS operation_count
+      FROM runbooks r
+      WHERE r.id = 'rb-1'
+    `;
+
+    expect(first.operation.operation_type).toBe("set_runbook_status");
+    expect(first.snapshot.runbook).toMatchObject({ status: "completed", version: 2 });
+    expect(second.idempotent).toBe(true);
+    expect(second.operation.id).toBe(first.operation.id);
+    expect(second.eventId).toBe(first.eventId);
+    expect(rows[0]).toMatchObject({
+      status: "completed",
+      completed_kind: "user",
+      completed_session_id: "sess-actor",
+      completed_event_id: expect.any(Number),
+      completed_user_id: "operator@example.com",
+    });
+    expect(Number(rows[0]?.operation_count)).toBe(1);
+    expect(emitRunbookUpdated).toHaveBeenCalledTimes(1);
+  });
+
+  it("reopens a completed runbook and clears completion provenance", async () => {
+    await seedRunbook();
+
+    await service.setRunbookStatus({
+      runbookId: "rb-1",
+      expectedVersion: 1,
+      status: "completed",
+      actorKind: "agent",
+      actorSessionId: "sess-actor",
+    });
+    const reopened = await service.setRunbookStatus({
+      runbookId: "rb-1",
+      expectedVersion: 2,
+      status: "open",
+      actorKind: "user",
+      actorSessionId: "sess-actor",
+      actorUserId: "operator@example.com",
+      reason: "more work",
+    });
+
+    expect(reopened.operation).toMatchObject({
+      operation_type: "set_runbook_status",
+      reason: "more work",
+    });
+    expect(reopened.snapshot.runbook).toMatchObject({
+      status: "open",
+      version: 3,
+      completed_kind: null,
+      completed_session_id: null,
+      completed_event_id: null,
+      completed_user_id: null,
+      completed_at: null,
+    });
+  });
+
+  it("notifies handoff when a user completes a runbook", async () => {
+    await seedRunbook();
+
+    await service.setRunbookStatus({
+      runbookId: "rb-1",
+      expectedVersion: 1,
+      status: "completed",
+      actorKind: "user",
+      actorSessionId: "sess-actor",
+      actorUserId: "operator@example.com",
+    });
+
+    expect(notifyHumanHandoff).toHaveBeenCalledTimes(1);
+    expect(notifyHumanHandoff).toHaveBeenCalledWith({
+      runbookId: "rb-1",
+      runbookTitle: "Runbook",
+      boardItemId: "runbook:rb-1",
+      status: "completed",
+      operationId: expect.any(String),
+      eventId: expect.any(Number),
+    });
+  });
+
+  it("does not notify handoff for agent runbook status changes", async () => {
+    await seedRunbook();
+
+    await service.setRunbookStatus({
+      runbookId: "rb-1",
+      expectedVersion: 1,
+      status: "completed",
+      actorKind: "agent",
+      actorSessionId: "sess-actor",
+    });
+
+    expect(notifyHumanHandoff).not.toHaveBeenCalled();
+  });
+
   it("raises a 409-style RunbookVersionConflict before recording an event", async () => {
     await seedRunbook();
     await service.createSection({
@@ -656,6 +790,43 @@ describePostgres("RunbookService PostgreSQL integration", () => {
 
     expect(reassigned.operation.operation_type).toBe("set_runbook_item_assignee");
     expect(await service.listMyTurnItems({ userId: "user-1" })).toEqual([]);
+  });
+
+  it("excludes completed runbooks from my-turn items while leaving the runbook readable", async () => {
+    await seedRunbook();
+    await service.createSection({
+      runbookId: "rb-1",
+      sectionId: "sec-human",
+      title: "Human section",
+      actorSessionId: "sess-actor",
+      assignee: { kind: "human", userId: "user-1" },
+    });
+    await service.createItem({
+      runbookId: "rb-1",
+      sectionId: "sec-human",
+      itemId: "item-human",
+      title: "Human task",
+      actorSessionId: "sess-actor",
+    });
+
+    expect((await service.listMyTurnItems({ userId: "user-1" })).map((row) => row.item_id)).toEqual([
+      "item-human",
+    ]);
+
+    const completed = await service.setRunbookStatus({
+      runbookId: "rb-1",
+      expectedVersion: 1,
+      status: "completed",
+      actorKind: "user",
+      actorSessionId: "sess-actor",
+      actorUserId: "operator@example.com",
+    });
+
+    expect(completed.snapshot.runbook.status).toBe("completed");
+    expect(await service.listMyTurnItems({ userId: "user-1" })).toEqual([]);
+    await expect(service.getRunbook("rb-1")).resolves.toMatchObject({
+      runbook: { status: "completed" },
+    });
   });
 
   it("sets and clears section assignee through a first-class operation", async () => {

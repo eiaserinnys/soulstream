@@ -27,6 +27,81 @@ afterEach(async () => {
 });
 
 describe("runbook HTTP write route", () => {
+  it("authenticates dashboard cookies and writes runbook-level user attribution", async () => {
+    const service = fakeRunbookService();
+    const server = await createServer(service);
+    const token = signJwt(
+      { sub: "operator@example.com", exp: Math.floor(Date.now() / 1000) + 60 },
+      "jwt-secret",
+    );
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/runbooks/rb-1/status",
+      headers: {
+        cookie: `${DASHBOARD_AUTH_COOKIE_NAME}=${encodeURIComponent(token)}`,
+      },
+      payload: {
+        status: "completed",
+        expectedVersion: 1,
+        idempotencyKey: "runbook:rb-1:status:completed:v1:test",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(service.setRunbookStatus).toHaveBeenCalledWith({
+      actorKind: "user",
+      actorSessionId: "sess-actor",
+      actorUserId: "operator@example.com",
+      runbookId: "rb-1",
+      expectedVersion: 1,
+      status: "completed",
+      reason: null,
+      idempotencyKey: "runbook:rb-1:status:completed:v1:test",
+    });
+    expect(response.json()).toMatchObject({
+      ok: true,
+      runbookId: "rb-1",
+      idempotent: false,
+    });
+  });
+
+  it("returns 409 when RunbookService rejects a stale runbook-level version", async () => {
+    const service = fakeRunbookService();
+    service.setRunbookStatus.mockRejectedValueOnce(
+      new RunbookVersionConflict("runbook", "rb-1", 1, 2),
+    );
+    const server = await createServer(service);
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/runbooks/rb-1/status",
+      headers: {
+        cookie: `${DASHBOARD_AUTH_COOKIE_NAME}=${encodeURIComponent(signJwt({ sub: "user-1" }, "jwt-secret"))}`,
+      },
+      payload: {
+        status: "open",
+        expectedVersion: 1,
+        idempotencyKey: "runbook:rb-1:status:open:v1:test",
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      detail: {
+        error: {
+          code: "RUNBOOK_VERSION_CONFLICT",
+          details: {
+            targetKind: "runbook",
+            targetId: "rb-1",
+            expectedVersion: 1,
+            actualVersion: 2,
+          },
+        },
+      },
+    });
+  });
+
   it("authenticates dashboard cookies and writes user attribution through RunbookService", async () => {
     const service = fakeRunbookService();
     const server = await createServer(service);
@@ -131,10 +206,16 @@ function fakeRunbookService() {
       board_item_id: "runbook:rb-1",
       folder_id: "f1",
       title: "Launch",
+      status: "open",
       archived: false,
       version: 1,
       created_session_id: "sess-actor",
       created_event_id: 1,
+      completed_kind: null,
+      completed_session_id: null,
+      completed_event_id: null,
+      completed_user_id: null,
+      completed_at: null,
       created_at: "2026-06-16T00:00:00+00:00",
       updated_at: "2026-06-16T00:00:00+00:00",
     },
@@ -154,6 +235,15 @@ function fakeRunbookService() {
   };
   return {
     getRunbook: vi.fn(async () => snapshot),
+    setRunbookStatus: vi.fn(async () => ({
+      eventId: 11,
+      idempotent: false,
+      operation: {
+        id: "op-runbook-status",
+        operation_type: "set_runbook_status",
+      },
+      snapshot,
+    })),
     setItemStatus: vi.fn(async () => ({
       eventId: 12,
       idempotent: false,

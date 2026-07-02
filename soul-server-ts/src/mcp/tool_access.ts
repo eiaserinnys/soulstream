@@ -45,6 +45,7 @@ export const MUTATION_MCP_TOOLS = [
   "hold_task_item",
   "create_runbook",
   "update_runbook",
+  "set_runbook_status",
   "archive_runbook",
   "unarchive_runbook",
   "create_runbook_section",

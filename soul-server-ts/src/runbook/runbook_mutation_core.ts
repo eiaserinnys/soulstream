@@ -8,6 +8,7 @@ import type {
   RunbookOperationRow,
   RunbookOperationTargetKind,
   RunbookSnapshot,
+  RunbookStatus,
 } from "../db/session_db_types.js";
 
 import { RunbookVersionConflict } from "./runbook_models.js";
@@ -161,6 +162,83 @@ export class RunbookMutationCore {
     return result;
   }
 
+  async setRunbookStatus(params: RunbookActorParams & {
+    runbookId: string;
+    expectedVersion: number;
+    status: RunbookStatus;
+    reason?: string | null;
+    idempotencyKey?: string | null;
+  }): Promise<RunbookMutationResult> {
+    const idempotent = await this.resolveIdempotent(params.idempotencyKey);
+    if (idempotent) return idempotent;
+
+    let operation!: RunbookOperationRow;
+    let eventId = 0;
+    let shouldNotifyHandoff = false;
+    await this.repo.transaction(async (sql) => {
+      const runbook = await this.repo.getRunbookForUpdateTx(sql, params.runbookId);
+      const actualVersion = Number(runbook.version);
+      if (actualVersion !== params.expectedVersion) {
+        throw new RunbookVersionConflict(
+          "runbook",
+          params.runbookId,
+          params.expectedVersion,
+          actualVersion,
+        );
+      }
+      shouldNotifyHandoff =
+        params.actorKind === "user" &&
+        params.status === "completed" &&
+        runbook.status !== "completed";
+      const opId = randomUUID();
+      eventId = await this.appendRunbookEvent(sql, {
+        operationId: opId,
+        runbookId: params.runbookId,
+        operationType: "set_runbook_status",
+        targetKind: "runbook",
+        targetId: params.runbookId,
+        actor: params,
+        payload: { status: params.status },
+        reason: params.reason,
+        idempotencyKey: params.idempotencyKey,
+      });
+      await this.repo.setRunbookStatusTx(sql, {
+        runbookId: params.runbookId,
+        status: params.status,
+        expectedVersion: params.expectedVersion,
+        actorKind: params.actorKind ?? "agent",
+        actorSessionId: params.actorSessionId,
+        actorUserId: params.actorUserId ?? null,
+        eventId,
+      });
+      operation = await this.repo.appendOperationTx(sql, {
+        id: opId,
+        runbookId: params.runbookId,
+        targetKind: "runbook",
+        targetId: params.runbookId,
+        operationType: "set_runbook_status",
+        actorKind: params.actorKind ?? "agent",
+        actorSessionId: params.actorSessionId,
+        actorEventId: eventId,
+        actorUserId: params.actorUserId ?? null,
+        idempotencyKey: params.idempotencyKey,
+        payload: { status: params.status },
+        reason: params.reason,
+      });
+    });
+
+    const result = {
+      snapshot: await this.requireSnapshot(params.runbookId),
+      operation,
+      eventId,
+    };
+    await this.broadcastMutation(params.actorSessionId, result);
+    if (shouldNotifyHandoff) {
+      this.notifyRunbookHandoff(result);
+    }
+    return result;
+  }
+
   async moveItem(params: RunbookActorParams & {
     runbookId: string;
     itemId: string;
@@ -285,6 +363,23 @@ export class RunbookMutationCore {
         itemId: item.id,
         itemTitle: item.title,
         status: item.status,
+        operationId: result.operation.id,
+        eventId: result.eventId,
+      });
+    } catch {
+      // The concrete notifier owns logging. A handoff wake must never fail the mutation.
+    }
+  }
+
+  private notifyRunbookHandoff(result: RunbookMutationResult): void {
+    if (!this.handoffNotifier) return;
+    if (result.snapshot.runbook.status !== "completed") return;
+    try {
+      this.handoffNotifier.notifyHumanHandoff({
+        runbookId: result.snapshot.runbook.id,
+        runbookTitle: result.snapshot.runbook.title,
+        boardItemId: result.snapshot.runbook.board_item_id,
+        status: "completed",
         operationId: result.operation.id,
         eventId: result.eventId,
       });

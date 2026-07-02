@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 
 import { generateKeyBetween } from "@soulstream/fractional-position";
 
-import type { RunbookItemStatus, RunbookSnapshot } from "../db/session_db_types.js";
+import type {
+  RunbookItemStatus,
+  RunbookSnapshot,
+  RunbookStatus,
+} from "../db/session_db_types.js";
 
 import { assigneeToFields, type RunbookAssigneeInput } from "./runbook_models.js";
 import { RunbookMutationCore } from "./runbook_mutation_core.js";
@@ -146,6 +150,16 @@ export class RunbookService {
       await this.broadcastCatalog();
     }
     return result;
+  }
+
+  async setRunbookStatus(params: RunbookActorParams & {
+    runbookId: string;
+    expectedVersion: number;
+    status: RunbookStatus;
+    reason?: string | null;
+    idempotencyKey?: string | null;
+  }): Promise<RunbookMutationResult> {
+    return await this.core.setRunbookStatus(params);
   }
 
   private async broadcastCatalog(): Promise<void> {

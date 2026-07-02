@@ -191,13 +191,21 @@ async function createRunbookTables(sql: SqlClient): Promise<void> {
       id TEXT PRIMARY KEY,
       board_item_id TEXT NOT NULL REFERENCES board_items(id) ON DELETE CASCADE,
       title TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','completed')),
       archived BOOLEAN NOT NULL DEFAULT FALSE,
       version INTEGER NOT NULL DEFAULT 1,
       created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
       created_event_id INTEGER,
+      completed_kind TEXT CHECK (completed_kind IN ('agent','user')),
+      completed_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      completed_event_id INTEGER,
+      completed_user_id TEXT,
+      completed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       FOREIGN KEY (created_session_id, created_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL,
+      FOREIGN KEY (completed_session_id, completed_event_id)
         REFERENCES events(session_id, id) ON DELETE SET NULL
     )
   `;

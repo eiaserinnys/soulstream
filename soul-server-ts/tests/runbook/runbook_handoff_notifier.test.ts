@@ -62,6 +62,33 @@ describe("RunbookHandoffNotifier", () => {
     expect(sender.send).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalled();
   });
+
+  it("formats runbook-level completion without item fields", async () => {
+    const query: RunbookHandoffSubscriberQuery = {
+      listAgentSubscriberSessionIds: vi.fn(async () => ["sess-agent-1"]),
+    };
+    const sender = {
+      send: vi.fn(async () => ({ ok: true })),
+    };
+    const notifier = new RunbookHandoffNotifier(
+      query,
+      sender as never,
+      createSilentLogger() as never,
+    );
+
+    notifier.notifyHumanHandoff(makeEvent({
+      itemId: undefined,
+      itemTitle: undefined,
+      status: "completed",
+    }));
+    await flushAsync();
+
+    expect(sender.send).toHaveBeenCalledWith({
+      targetSessionId: "sess-agent-1",
+      message: expect.stringContaining("런북 'Launch' 완료됨, 이어서 진행"),
+    });
+    expect(sender.send.mock.calls[0]?.[0].message).not.toContain("\nitem_id:");
+  });
 });
 
 function makeEvent(
