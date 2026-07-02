@@ -3,6 +3,7 @@ import {
   BookOpenCheck,
   ChevronDown,
   ChevronRight,
+  ExternalLink,
   ListChecks,
   RefreshCw,
   UserRound,
@@ -11,6 +12,7 @@ import {
 import { Badge } from "../components/ui/badge";
 import { LiquidGlassCard } from "../components/LiquidGlassCard";
 import { cn } from "../lib/cn";
+import { useDashboardStore } from "../stores/dashboard-store";
 import {
   type RunbookOverviewGroup,
   type RunbookOverviewItem,
@@ -18,9 +20,52 @@ import {
 } from "../stores/runbook-store";
 import { MarkdownContent } from "../components/MarkdownContent";
 import { RunbookStatusChip } from "./RunbookStatusChip";
+import {
+  RunbookItemStatusToggle,
+  isRunbookItemTerminal,
+  runbookAssigneeLabel,
+  type RunbookStatusToggleAssignee,
+  type RunbookStatusToggleItem,
+  type RunbookStatusToggleRunbook,
+  type RunbookStatusToggleSection,
+} from "./RunbookItemStatusToggle";
+
+function toOverviewAssignee(item: RunbookOverviewItem): RunbookStatusToggleAssignee {
+  return {
+    kind: item.effective_assignee_kind,
+    agentId: item.effective_assignee_agent_id,
+    sessionId: item.effective_assignee_session_id,
+    userId: item.effective_assignee_user_id,
+  };
+}
+
+function toOverviewRunbook(item: RunbookOverviewItem): RunbookStatusToggleRunbook {
+  return {
+    id: item.runbook_id,
+    createdSessionId: item.runbook_created_session_id,
+  };
+}
+
+function toOverviewSection(item: RunbookOverviewItem): RunbookStatusToggleSection {
+  return {
+    createdSessionId: item.section_created_session_id,
+    updatedSessionId: item.section_updated_session_id,
+  };
+}
+
+function toOverviewItem(item: RunbookOverviewItem): RunbookStatusToggleItem {
+  return {
+    id: item.item_id,
+    status: item.status,
+    archived: false,
+    version: item.item_version,
+    createdSessionId: item.item_created_session_id,
+    updatedSessionId: item.item_updated_session_id,
+  };
+}
 
 function assigneeLabel(item: RunbookOverviewItem): string {
-  return item.effective_assignee_user_id || "사람";
+  return runbookAssigneeLabel(toOverviewAssignee(item));
 }
 
 function itemSubtitle(item: RunbookOverviewItem): string {
@@ -28,36 +73,75 @@ function itemSubtitle(item: RunbookOverviewItem): string {
 }
 
 function isDone(item: RunbookOverviewItem): boolean {
-  return item.status === "completed" || item.status === "cancelled";
+  return isRunbookItemTerminal(item.status);
 }
 
 function progressText(group: RunbookOverviewGroup): string {
   return `${group.completed_count}/${group.total_count}`;
 }
 
-function MyTurnItemButton({
+function OpenBoardButton({
   item,
-  selected,
-  onSelect,
+  onOpenBoard,
 }: {
   item: RunbookOverviewItem;
-  selected: boolean;
-  onSelect: (item: RunbookOverviewItem) => void;
+  onOpenBoard: (item: RunbookOverviewItem) => void;
 }) {
   return (
     <button
       type="button"
+      data-testid="runbook-overview-open-board"
+      className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent-blue/10 hover:text-accent-blue focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/55"
+      title="보드에서 열기"
+      aria-label={`${item.item_title} 보드에서 열기`}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpenBoard(item);
+      }}
+    >
+      <ExternalLink className="h-4 w-4" />
+    </button>
+  );
+}
+
+function MyTurnItemRow({
+  item,
+  selected,
+  onSelect,
+  onOpenBoard,
+  onStatusChanged,
+}: {
+  item: RunbookOverviewItem;
+  selected: boolean;
+  onSelect: (item: RunbookOverviewItem) => void;
+  onOpenBoard: (item: RunbookOverviewItem) => void;
+  onStatusChanged: () => Promise<void>;
+}) {
+  const assignee = toOverviewAssignee(item);
+  return (
+    <div
       data-testid="runbook-overview-my-turn-item"
       className={cn(
         "group flex w-full min-w-0 items-start gap-3 rounded-[14px] border border-accent-blue/45 glass px-3 py-2.5 text-left glass-shadow-xs transition-colors hover:border-accent-blue/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/55",
         selected && "border-accent-blue/70 glass-strong ring-1 ring-accent-blue/35",
       )}
-      onClick={() => onSelect(item)}
     >
-      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-accent-blue/35 glass text-accent-blue">
-        <UserRound className="h-4 w-4" />
-      </span>
-      <span className="min-w-0 flex-1">
+      <RunbookItemStatusToggle
+        runbook={toOverviewRunbook(item)}
+        section={toOverviewSection(item)}
+        item={toOverviewItem(item)}
+        assignee={assignee}
+        className="shrink-0"
+        controlClassName="border-accent-blue/35 text-accent-blue"
+        captionClassName="max-w-32"
+        onStatusChanged={onStatusChanged}
+      />
+      <button
+        type="button"
+        data-testid="runbook-overview-my-turn-item-detail-toggle"
+        className="min-w-0 flex-1 text-left focus-visible:outline-none"
+        onClick={() => onSelect(item)}
+      >
         <span className="block truncate text-sm font-semibold leading-5 text-foreground">
           {item.item_title}
         </span>
@@ -65,41 +149,57 @@ function MyTurnItemButton({
           {itemSubtitle(item)}
         </span>
         <span className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-          <RunbookStatusChip status={item.status} />
           <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
             {assigneeLabel(item)}
           </Badge>
         </span>
-      </span>
-      <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-accent-blue transition-transform group-hover:translate-x-0.5" />
-    </button>
+      </button>
+      <OpenBoardButton item={item} onOpenBoard={onOpenBoard} />
+    </div>
   );
 }
 
-function GroupItemButton({
+function GroupItemRow({
   item,
   selected,
   onSelect,
+  onOpenBoard,
+  onStatusChanged,
 }: {
   item: RunbookOverviewItem;
   selected: boolean;
   onSelect: (item: RunbookOverviewItem) => void;
+  onOpenBoard: (item: RunbookOverviewItem) => void;
+  onStatusChanged: () => Promise<void>;
 }) {
+  const assignee = toOverviewAssignee(item);
   return (
-    <button
-      type="button"
+    <div
       data-testid="runbook-overview-group-item"
       className={cn(
         "flex w-full min-w-0 items-start gap-2 rounded-[12px] border border-glass-border glass px-2.5 py-2 text-left glass-shadow-xs transition-colors hover:border-accent-blue/35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/50",
         selected && "border-accent-blue/55 glass-strong ring-1 ring-accent-blue/30",
         isDone(item) && "opacity-70",
       )}
-      onClick={() => onSelect(item)}
     >
-      <span className="mt-0.5 shrink-0">
-        <RunbookStatusChip status={item.status} />
-      </span>
-      <span className="min-w-0 flex-1">
+      <RunbookItemStatusToggle
+        runbook={toOverviewRunbook(item)}
+        section={toOverviewSection(item)}
+        item={toOverviewItem(item)}
+        assignee={assignee}
+        className="shrink-0"
+        controlClassName="min-h-9 gap-1.5 px-1.5"
+        chipClassName="h-5 px-1.5 text-[10px]"
+        captionClassName="max-w-28"
+        showCaption={item.effective_assignee_kind === "human"}
+        onStatusChanged={onStatusChanged}
+      />
+      <button
+        type="button"
+        data-testid="runbook-overview-group-item-detail-toggle"
+        className="min-w-0 flex-1 text-left focus-visible:outline-none"
+        onClick={() => onSelect(item)}
+      >
         <span className={cn(
           "block truncate text-xs font-medium leading-5 text-foreground",
           isDone(item) && "line-through",
@@ -109,13 +209,14 @@ function GroupItemButton({
         <span className="block truncate text-[11px] text-muted-foreground">
           {item.section_title}
         </span>
-      </span>
+      </button>
       {item.effective_assignee_kind === "human" && !isDone(item) ? (
         <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
           사람
         </Badge>
       ) : null}
-    </button>
+      <OpenBoardButton item={item} onOpenBoard={onOpenBoard} />
+    </div>
   );
 }
 
@@ -150,12 +251,16 @@ function RunbookGroup({
   onToggle,
   selectedItemKey,
   onSelectItem,
+  onOpenBoard,
+  onStatusChanged,
 }: {
   group: RunbookOverviewGroup;
   open: boolean;
   onToggle: () => void;
   selectedItemKey: string | null;
   onSelectItem: (item: RunbookOverviewItem) => void;
+  onOpenBoard: (item: RunbookOverviewItem) => void;
+  onStatusChanged: () => Promise<void>;
 }) {
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
@@ -199,10 +304,12 @@ function RunbookGroup({
           {group.items.length > 0 ? (
             group.items.map((item) => (
               <div key={item.item_id} className="min-w-0">
-                <GroupItemButton
+                <GroupItemRow
                   item={item}
                   selected={selectedItemKey === runbookItemKey(item)}
                   onSelect={onSelectItem}
+                  onOpenBoard={onOpenBoard}
+                  onStatusChanged={onStatusChanged}
                 />
                 {selectedItemKey === runbookItemKey(item) ? (
                   <RunbookItemDetails item={item} />
@@ -223,6 +330,7 @@ function RunbookGroup({
 export function RunbookOverview() {
   const projection = useRunbookStore((s) => s.overview);
   const loadOverview = useRunbookStore((s) => s.loadOverview);
+  const focusBoardItem = useDashboardStore((s) => s.focusBoardItem);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [selectedItemKey, setSelectedItemKey] = useState<string | null>(null);
 
@@ -245,6 +353,14 @@ export function RunbookOverview() {
   const selectItem = (item: RunbookOverviewItem) => {
     const key = runbookItemKey(item);
     setSelectedItemKey((current) => (current === key ? null : key));
+  };
+
+  const openBoardItem = (item: RunbookOverviewItem) => {
+    focusBoardItem(item.board_item_id, item.folder_id);
+  };
+
+  const refreshOverview = async () => {
+    await loadOverview({ force: true });
   };
 
   return (
@@ -300,10 +416,12 @@ export function RunbookOverview() {
                 <div className="grid gap-3 lg:grid-cols-2">
                   {myTurnItems.map((item) => (
                     <div key={`${item.runbook_id}:${item.item_id}`} className="min-w-0">
-                      <MyTurnItemButton
+                      <MyTurnItemRow
                         item={item}
                         selected={selectedItemKey === runbookItemKey(item)}
                         onSelect={selectItem}
+                        onOpenBoard={openBoardItem}
+                        onStatusChanged={refreshOverview}
                       />
                       {selectedItemKey === runbookItemKey(item) ? (
                         <RunbookItemDetails item={item} />
@@ -340,6 +458,8 @@ export function RunbookOverview() {
                         }
                         selectedItemKey={selectedItemKey}
                         onSelectItem={selectItem}
+                        onOpenBoard={openBoardItem}
+                        onStatusChanged={refreshOverview}
                       />
                     );
                   })}

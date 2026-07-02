@@ -5,7 +5,7 @@
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useDashboardStore } from "../stores/dashboard-store";
 import {
@@ -13,6 +13,22 @@ import {
   useRunbookStore,
 } from "../stores/runbook-store";
 import { RunbookOverview } from "./RunbookOverview";
+
+const originalFetch = globalThis.fetch;
+
+function okResponse(body: unknown): Response {
+  return {
+    ok: true,
+    status: 200,
+    json: vi.fn().mockResolvedValue(body),
+  } as unknown as Response;
+}
+
+async function flushPromises() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
 
 function sampleOverview(): RunbookOverviewPayload {
   const myTurnItem = {
@@ -27,6 +43,11 @@ function sampleOverview(): RunbookOverviewPayload {
     how_to: "Approve the deployment window.",
     status: "pending" as const,
     item_version: 1,
+    runbook_created_session_id: "sess-runbook",
+    section_created_session_id: "sess-section",
+    section_updated_session_id: null,
+    item_created_session_id: "sess-item",
+    item_updated_session_id: null,
     effective_assignee_kind: "human" as const,
     effective_assignee_agent_id: null,
     effective_assignee_session_id: null,
@@ -78,6 +99,8 @@ describe("RunbookOverview", () => {
     container.remove();
     useDashboardStore.getState().reset();
     useRunbookStore.getState().reset();
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
   });
 
   it("renders the global my-turn list, collapsed runbook groups, and keeps item clicks in runbooks", () => {
@@ -112,11 +135,15 @@ describe("RunbookOverview", () => {
     });
     expect(container.textContent).toContain("Agent verification");
 
-    const myTurn = container.querySelector<HTMLButtonElement>('[data-testid="runbook-overview-my-turn-item"]');
+    const myTurn = container.querySelector<HTMLElement>('[data-testid="runbook-overview-my-turn-item"]');
     expect(myTurn).not.toBeNull();
     expect(myTurn!.className).toContain("glass");
+    const detailToggle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="runbook-overview-my-turn-item-detail-toggle"]',
+    );
+    expect(detailToggle).not.toBeNull();
     flushSync(() => {
-      myTurn!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      detailToggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     expect(container.textContent).toContain("Approve the deployment window.");
@@ -125,5 +152,83 @@ describe("RunbookOverview", () => {
     expect(useDashboardStore.getState().focusedBoardItem).toBeNull();
     expect(useDashboardStore.getState().viewMode).toBe("feed");
     expect(useDashboardStore.getState().activeTab).toBe("feed");
+  });
+
+  it("posts a my-turn checkbox status mutation and reloads the overview", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okResponse({ ok: true }))
+      .mockResolvedValueOnce(okResponse(sampleOverview()));
+    globalThis.fetch = fetchMock;
+    useRunbookStore.setState({
+      overview: {
+        snapshot: sampleOverview(),
+        status: "ready",
+        error: null,
+        isRefreshing: false,
+      },
+    });
+
+    flushSync(() => {
+      root.render(createElement(RunbookOverview));
+    });
+
+    const checkbox = container.querySelector<HTMLInputElement>(
+      '[data-testid="runbook-overview-my-turn-item"] input[type="checkbox"]',
+    );
+    expect(checkbox).not.toBeNull();
+    checkbox!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPromises();
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "/api/runbooks/rb-1/items/item-1/status",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        body: expect.any(String),
+      }),
+    );
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body).toMatchObject({
+      status: "completed",
+      expectedVersion: 1,
+    });
+    expect(body.idempotencyKey).toMatch(/^runbook:rb-1:item:item-1:status:completed:v1:/);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/runbooks/my-turn",
+      expect.any(Object),
+    );
+  });
+
+  it("opens the runbook board card without toggling item details", () => {
+    useRunbookStore.setState({
+      overview: {
+        snapshot: sampleOverview(),
+        status: "ready",
+        error: null,
+        isRefreshing: false,
+      },
+    });
+
+    flushSync(() => {
+      root.render(createElement(RunbookOverview));
+    });
+
+    const openBoard = container.querySelector<HTMLButtonElement>(
+      '[data-testid="runbook-overview-open-board"]',
+    );
+    expect(openBoard).not.toBeNull();
+    flushSync(() => {
+      openBoard!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(container.textContent).not.toContain("Approve the deployment window.");
+    expect(useDashboardStore.getState().focusedBoardItem).toMatchObject({
+      boardItemId: "runbook:rb-1",
+      folderId: "f1",
+    });
+    expect(useDashboardStore.getState().viewMode).toBe("folder");
+    expect(useDashboardStore.getState().activeTab).toBe("folder");
   });
 });
