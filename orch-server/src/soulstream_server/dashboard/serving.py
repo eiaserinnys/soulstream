@@ -7,9 +7,22 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
+from starlette.responses import Response
 from starlette.staticfiles import StaticFiles
 
 logger = logging.getLogger(__name__)
+
+INDEX_CACHE_CONTROL = "no-cache"
+ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+
+def _with_cache_control(response: Response, cache_control: str) -> Response:
+    response.headers["Cache-Control"] = cache_control
+    return response
+
+
+def _dashboard_file_response(path: Path, cache_control: str) -> Response:
+    return _with_cache_control(FileResponse(str(path)), cache_control)
 
 
 def mount_dashboard(app: FastAPI, dashboard_dir: str) -> None:
@@ -41,24 +54,30 @@ def mount_dashboard(app: FastAPI, dashboard_dir: str) -> None:
     @app.middleware("http")
     async def spa_fallback(request: Request, call_next):
         response = await call_next(request)
+        request_path = request.url.path
+
+        if request_path.startswith("/assets/") and response.status_code < 400:
+            return _with_cache_control(response, ASSET_CACHE_CONTROL)
 
         # 404인 GET 요청이고 API/WS 경로가 아니면 정적 파일 또는 index.html 반환
         if (
             response.status_code == 404
             and request.method == "GET"
-            and not request.url.path.startswith("/api/")
-            and not request.url.path.startswith("/ws/")
-            and not request.url.path.startswith("/assets/")
+            and not request_path.startswith("/api/")
+            and not request_path.startswith("/ws/")
+            and not request_path.startswith("/assets/")
         ):
             # dist 루트의 정적 파일(PWA: registerSW.js, manifest.webmanifest, sw.js 등) 직접 서빙
             # dashboard_path는 mount_dashboard 함수 스코프의 변수 (L21: dashboard_path = Path(dashboard_dir))
-            relative_path = request.url.path.lstrip("/")
+            relative_path = request_path.lstrip("/")
             if relative_path:
                 static_file = dashboard_path / relative_path
                 if static_file.exists() and static_file.is_file():
+                    if static_file == index_html:
+                        return _dashboard_file_response(static_file, INDEX_CACHE_CONTROL)
                     return FileResponse(str(static_file))
             # 실제 파일이 없으면 SPA fallback
-            return FileResponse(str(index_html))
+            return _dashboard_file_response(index_html, INDEX_CACHE_CONTROL)
 
         return response
 
