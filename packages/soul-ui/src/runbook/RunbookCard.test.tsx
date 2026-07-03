@@ -179,6 +179,14 @@ function findButtonByText(root: ParentNode, text: string): HTMLButtonElement | u
     .find((button) => button.textContent?.includes(text));
 }
 
+async function waitForText(root: ParentNode, text: string) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (root.textContent?.includes(text)) return;
+    await flushPromises();
+  }
+  expect(root.textContent).toContain(text);
+}
+
 describe("RunbookCard", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -437,8 +445,7 @@ describe("RunbookCard", () => {
     const checkbox = container.querySelector<HTMLInputElement>("input[type='checkbox']");
     expect(checkbox).not.toBeNull();
     checkbox!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    await flushPromises();
 
-    expect(container.textContent).toContain("항목 버전이 오래되었습니다. 새로고침 후 다시 시도하세요.");
+    await waitForText(container, "항목 버전이 오래되었습니다. 새로고침 후 다시 시도하세요.");
   });
 });

@@ -88,8 +88,21 @@ describe("RunbookOverview", () => {
   let container: HTMLDivElement;
   let root: Root;
   let queryClient: QueryClient;
+  let originalMatchMedia: typeof window.matchMedia | undefined;
 
   beforeEach(() => {
+    originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -107,6 +120,7 @@ describe("RunbookOverview", () => {
     useDashboardStore.getState().reset();
     useRunbookStore.getState().reset();
     globalThis.fetch = originalFetch;
+    window.matchMedia = originalMatchMedia as typeof window.matchMedia;
     vi.restoreAllMocks();
   });
 
@@ -142,6 +156,10 @@ describe("RunbookOverview", () => {
     expect(container.querySelector('[data-testid="runbook-overview-dashboard"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="runbook-overview-running-sessions"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="runbook-overview-my-turn"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="runbook-overview-my-turn-rail"]')?.className)
+      .toContain("overflow-x-auto");
+    expect(container.querySelector('[data-testid="runbook-overview-my-turn-todo-label"]')?.textContent)
+      .toContain("할 일");
     expect(container.querySelector("main")?.style.scrollbarGutter).toBe("stable");
     expect(container.querySelector("main")?.style.paddingInline).toBe("16px");
     expect(container.querySelector('[data-testid="runbook-overview-group"]')?.className)
@@ -249,6 +267,67 @@ describe("RunbookOverview", () => {
     );
   });
 
+  it("separates review items and lets people complete them regardless of assignee kind", async () => {
+    const payload = sampleOverview();
+    const reviewItem = {
+      ...payload.my_turn_items[0]!,
+      item_id: "item-review",
+      item_title: "Director review",
+      status: "review" as const,
+      item_version: 5,
+      effective_assignee_kind: "agent" as const,
+      effective_assignee_agent_id: "roselin",
+      effective_assignee_user_id: null,
+    };
+    payload.my_turn_items.push(reviewItem);
+    payload.runbooks[0] = {
+      ...payload.runbooks[0]!,
+      items: [
+        ...payload.runbooks[0]!.items,
+        reviewItem,
+      ],
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(okResponse({ ok: true }))
+      .mockResolvedValueOnce(okResponse(payload));
+    globalThis.fetch = fetchMock;
+    useRunbookStore.setState({
+      overview: {
+        snapshot: payload,
+        status: "ready",
+        error: null,
+        isRefreshing: false,
+      },
+    });
+
+    flushSync(() => {
+      renderOverview();
+    });
+
+    expect(container.querySelector('[data-testid="runbook-overview-my-turn-review-label"]')?.textContent)
+      .toContain("확인 대기");
+    expect(container.textContent).toContain("Director review");
+    expect(container.textContent).toContain("확인 대기");
+
+    const reviewRow = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-testid="runbook-overview-my-turn-item"]'),
+    ).find((row) => row.textContent?.includes("Director review"));
+    expect(reviewRow).not.toBeUndefined();
+    const checkbox = reviewRow!.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    expect(checkbox).not.toBeNull();
+    expect(checkbox!.disabled).toBe(false);
+
+    checkbox!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushPromises();
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body).toMatchObject({
+      status: "completed",
+      expectedVersion: 5,
+    });
+    expect(body.idempotencyKey).toMatch(/^runbook:rb-1:item:item-review:status:completed:v5:/);
+  });
+
   it("opens the runbook board card without toggling item details", () => {
     useRunbookStore.setState({
       overview: {
@@ -280,6 +359,7 @@ describe("RunbookOverview", () => {
   });
 
   it("renders running sessions with SessionItem and selects the clicked session", () => {
+    useDashboardStore.getState().setViewMode("runbooks");
     seedSessions([
       {
         agentSessionId: "sess-running",
@@ -312,6 +392,8 @@ describe("RunbookOverview", () => {
 
     expect(container.textContent).toContain("Investigate deploy");
     expect(container.textContent).not.toContain("Finished");
+    expect(container.querySelector('[data-testid="runbook-overview-running-sessions-rail"]')?.className)
+      .toContain("overflow-x-auto");
     const sessionCard = container.querySelector<HTMLElement>('[data-session-id="sess-running"]');
     expect(sessionCard).not.toBeNull();
     flushSync(() => {
@@ -320,7 +402,8 @@ describe("RunbookOverview", () => {
 
     expect(useDashboardStore.getState().activeSessionKey).toBe("sess-running");
     expect(useDashboardStore.getState().activeSessionSummary?.agentSessionId).toBe("sess-running");
-    expect(useDashboardStore.getState().activeTab).toBe("chat");
+    expect(useDashboardStore.getState().viewMode).toBe("runbooks");
+    expect(useDashboardStore.getState().activeTab).toBe("feed");
   });
 
   it("separates completed runbooks by the orch runbook_status payload field", () => {

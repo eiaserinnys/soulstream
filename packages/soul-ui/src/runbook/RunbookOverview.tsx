@@ -28,6 +28,7 @@ import {
 import { MarkdownContent } from "../components/MarkdownContent";
 import {
   RunbookItemStatusToggle,
+  isRunbookItemReview,
   isRunbookItemTerminal,
   runbookAssigneeLabel,
   type RunbookStatusToggleAssignee,
@@ -85,6 +86,11 @@ function itemSubtitle(item: RunbookOverviewItem): string {
 
 function isDone(item: RunbookOverviewItem): boolean {
   return isRunbookItemTerminal(item.status);
+}
+
+function isTodoItem(item: RunbookOverviewItem): boolean {
+  return item.effective_assignee_kind === "human" &&
+    (item.status === "pending" || item.status === "in_progress");
 }
 
 function progressText(group: RunbookOverviewGroup): string {
@@ -159,20 +165,26 @@ function RunbookHowToPreview({
 
 function MyTurnItemRow({
   item,
+  tone,
   onOpenBoard,
   onStatusChanged,
 }: {
   item: RunbookOverviewItem;
+  tone: "todo" | "review";
   onOpenBoard: (item: RunbookOverviewItem) => void;
   onStatusChanged: () => Promise<void>;
 }) {
   const assignee = toOverviewAssignee(item);
+  const review = tone === "review";
   return (
     <div
       data-testid="runbook-overview-my-turn-item"
       className={cn(
-        "group flex w-full min-w-0 flex-col gap-3 rounded-[14px] border border-accent-blue/45 glass px-3 py-3 text-left glass-shadow-xs",
-        "transition-colors hover:border-accent-blue/65 focus-within:ring-1 focus-within:ring-accent-blue/35",
+        "group flex h-full w-[22rem] max-w-[calc(100vw-4rem)] flex-none snap-start flex-col gap-3 overflow-hidden rounded-[14px] border glass px-3 py-3 text-left glass-shadow-xs",
+        "transition-colors focus-within:ring-1",
+        review
+          ? "border-warning/45 hover:border-warning/65 focus-within:ring-warning/35"
+          : "border-accent-blue/45 hover:border-accent-blue/65 focus-within:ring-accent-blue/35",
       )}
     >
       <div className="flex min-w-0 items-start gap-3">
@@ -182,7 +194,11 @@ function MyTurnItemRow({
           item={toOverviewItem(item)}
           assignee={assignee}
           className="shrink-0"
-          controlClassName="border-accent-blue/35 text-accent-blue"
+          controlClassName={
+            review
+              ? "border-warning/35 text-warning-foreground"
+              : "border-accent-blue/35 text-accent-blue"
+          }
           captionClassName="max-w-32"
           onStatusChanged={onStatusChanged}
         />
@@ -197,6 +213,13 @@ function MyTurnItemRow({
             {itemSubtitle(item)}
           </span>
           <span className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+            <Badge
+              variant={review ? "warning" : "info"}
+              size="sm"
+              className="h-5 px-1.5 text-[10px]"
+            >
+              {review ? "확인 대기" : "할 일"}
+            </Badge>
             <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
               {assigneeLabel(item)}
             </Badge>
@@ -204,6 +227,38 @@ function MyTurnItemRow({
         </div>
         <OpenBoardButton item={item} onOpenBoard={onOpenBoard} />
       </div>
+    </div>
+  );
+}
+
+function MyTurnRailLabel({
+  tone,
+  count,
+}: {
+  tone: "todo" | "review";
+  count: number;
+}) {
+  const review = tone === "review";
+  return (
+    <div
+      data-testid={`runbook-overview-my-turn-${tone}-label`}
+      className={cn(
+        "flex h-full w-24 flex-none snap-start flex-col justify-between rounded-[14px] border glass px-3 py-3 text-left glass-shadow-xs",
+        review
+          ? "border-warning/35 text-warning-foreground"
+          : "border-accent-blue/35 text-accent-blue",
+      )}
+    >
+      <span className="text-xs font-semibold leading-5">
+        {review ? "확인 대기" : "할 일"}
+      </span>
+      <Badge
+        variant={review ? "warning" : "info"}
+        size="sm"
+        className="h-5 self-start px-1.5 text-[10px]"
+      >
+        {count}
+      </Badge>
     </div>
   );
 }
@@ -361,6 +416,15 @@ export function RunbookOverview() {
 
   const snapshot = projection.snapshot;
   const myTurnItems = snapshot?.my_turn_items ?? [];
+  const todoItems = useMemo(
+    () => myTurnItems.filter(isTodoItem),
+    [myTurnItems],
+  );
+  const reviewItems = useMemo(
+    () => myTurnItems.filter((item) => isRunbookItemReview(item.status)),
+    [myTurnItems],
+  );
+  const myTurnDisplayCount = todoItems.length + reviewItems.length;
   const groups = useMemo(
     () => (snapshot?.runbooks ?? []).filter((group) => group.total_count > 0),
     [snapshot?.runbooks],
@@ -398,7 +462,7 @@ export function RunbookOverview() {
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-base font-semibold leading-6">런북</h1>
             <p className="truncate text-xs text-muted-foreground">
-              확인 {myTurnItems.length}개 · 진행 {activeGroups.length}개 · 완료 {completedGroups.length}개
+              확인 {myTurnDisplayCount}개 · 진행 {activeGroups.length}개 · 완료 {completedGroups.length}개
             </p>
           </div>
           {refreshing ? (
@@ -449,18 +513,37 @@ export function RunbookOverview() {
                     <UserRound className="h-4 w-4 shrink-0 text-accent-blue" />
                     <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">내가 확인할 체크리스트</h2>
                     <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
-                      {myTurnItems.length}
+                      {myTurnDisplayCount}
                     </Badge>
                   </div>
-                  {myTurnItems.length > 0 ? (
-                    <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(22rem,100%),1fr))]">
-                      {myTurnItems.map((item) => (
-                      <MyTurnItemRow
-                        key={`${item.runbook_id}:${item.item_id}`}
-                        item={item}
-                        onOpenBoard={openBoardItem}
-                        onStatusChanged={refreshOverview}
-                      />
+                  {myTurnDisplayCount > 0 ? (
+                    <div
+                      data-testid="runbook-overview-my-turn-rail"
+                      className="flex h-[12.75rem] min-w-0 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden pb-2 [scrollbar-gutter:stable]"
+                    >
+                      {todoItems.length > 0 ? (
+                        <MyTurnRailLabel tone="todo" count={todoItems.length} />
+                      ) : null}
+                      {todoItems.map((item) => (
+                        <MyTurnItemRow
+                          key={`${item.runbook_id}:${item.item_id}`}
+                          item={item}
+                          tone="todo"
+                          onOpenBoard={openBoardItem}
+                          onStatusChanged={refreshOverview}
+                        />
+                      ))}
+                      {reviewItems.length > 0 ? (
+                        <MyTurnRailLabel tone="review" count={reviewItems.length} />
+                      ) : null}
+                      {reviewItems.map((item) => (
+                        <MyTurnItemRow
+                          key={`${item.runbook_id}:${item.item_id}`}
+                          item={item}
+                          tone="review"
+                          onOpenBoard={openBoardItem}
+                          onStatusChanged={refreshOverview}
+                        />
                       ))}
                     </div>
                   ) : (

@@ -51,11 +51,15 @@ export function isRunbookItemTerminal(status: RunbookItemStatus): boolean {
   return status === "completed" || status === "cancelled";
 }
 
+export function isRunbookItemReview(status: RunbookItemStatus): boolean {
+  return status === "review";
+}
+
 export function isRunbookItemHumanTurn(
   assignee: RunbookStatusToggleAssignee,
   item: Pick<RunbookStatusToggleItem, "archived" | "status">,
 ): boolean {
-  return assignee.kind === "human" &&
+  return (assignee.kind === "human" || isRunbookItemReview(item.status)) &&
     !item.archived &&
     !isRunbookItemTerminal(item.status);
 }
@@ -64,7 +68,7 @@ export function isRunbookItemHumanWritable(
   assignee: RunbookStatusToggleAssignee,
   item: Pick<RunbookStatusToggleItem, "archived" | "status">,
 ): boolean {
-  return assignee.kind === "human" &&
+  return (assignee.kind === "human" || isRunbookItemReview(item.status)) &&
     !item.archived &&
     item.status !== "cancelled";
 }
@@ -94,7 +98,9 @@ export function runbookItemStatusDisabledReason(
   if (pending) return "상태 변경 중";
   if (item.archived) return "보관된 항목";
   if (item.status === "cancelled") return "취소된 항목";
-  if (assignee.kind !== "human") return "사람 담당 항목만 직접 변경할 수 있음";
+  if (assignee.kind !== "human" && !isRunbookItemReview(item.status)) {
+    return "사람 담당 항목만 직접 변경할 수 있음";
+  }
   if (!resolveRunbookItemActorSessionId(runbook, section, item, assignee)) return "세션 정보 없음";
   return null;
 }

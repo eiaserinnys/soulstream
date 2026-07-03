@@ -6,6 +6,7 @@ import { Badge } from "../components/ui/badge";
 import { SessionItem } from "../components/SessionItem";
 import { applyCatalogDisplayNames } from "../hooks/session-catalog-helpers";
 import type { SessionPage } from "../hooks/session-stream-helpers";
+import { useIsMobile } from "../hooks/use-mobile";
 import { type SessionSummary } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
 
@@ -62,10 +63,12 @@ function useRunningSessions(): SessionSummary[] {
 
 export function RunbookOverviewRunningSessions() {
   const runningSessions = useRunningSessions();
+  const isMobile = useIsMobile();
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const selectedSessionIds = useDashboardStore((s) => s.selectedSessionIds);
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const toggleSessionSelection = useDashboardStore((s) => s.toggleSessionSelection);
+  const setViewMode = useDashboardStore((s) => s.setViewMode);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
 
   const handleSessionClick = (session: SessionSummary, event: MouseEvent) => {
@@ -78,7 +81,8 @@ export function RunbookOverviewRunningSessions() {
       event.shiftKey,
       runningSessions,
     );
-    setActiveTab("chat");
+    setViewMode("runbooks");
+    if (isMobile) setActiveTab("chat");
   };
 
   return (
@@ -91,24 +95,31 @@ export function RunbookOverviewRunningSessions() {
         </Badge>
       </div>
       {runningSessions.length > 0 ? (
-        <div className="grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(min(18rem,100%),1fr))]">
+        <div
+          data-testid="runbook-overview-running-sessions-rail"
+          className="flex h-[11.75rem] min-w-0 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden pb-2 [scrollbar-gutter:stable]"
+        >
           {runningSessions.map((session) => (
-            <SessionItem
+            <div
               key={session.agentSessionId}
-              session={session}
-              isActive={activeSessionKey === session.agentSessionId}
-              isSelected={selectedSessionIds.has(session.agentSessionId)}
-              isEditing={false}
-              dragSessionIds={
-                selectedSessionIds.has(session.agentSessionId)
-                  ? Array.from(selectedSessionIds)
-                  : [session.agentSessionId]
-              }
-              onClick={(event) => handleSessionClick(session, event)}
-              onContextMenu={(event) => event.preventDefault()}
-              onEditSubmit={() => undefined}
-              onEditCancel={() => undefined}
-            />
+              className="h-full w-[18rem] max-w-[calc(100vw-4rem)] flex-none snap-start"
+            >
+              <SessionItem
+                session={session}
+                isActive={activeSessionKey === session.agentSessionId}
+                isSelected={selectedSessionIds.has(session.agentSessionId)}
+                isEditing={false}
+                dragSessionIds={
+                  selectedSessionIds.has(session.agentSessionId)
+                    ? Array.from(selectedSessionIds)
+                    : [session.agentSessionId]
+                }
+                onClick={(event) => handleSessionClick(session, event)}
+                onContextMenu={(event) => event.preventDefault()}
+                onEditSubmit={() => undefined}
+                onEditCancel={() => undefined}
+              />
+            </div>
           ))}
         </div>
       ) : (
