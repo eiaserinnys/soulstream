@@ -312,9 +312,9 @@ class TestRunbooks:
             resp = await client.post(
                 "/api/runbooks/rb-1/items/item-1/status",
                 json={
-                    "status": "completed",
+                    "status": "review",
                     "expectedVersion": 1,
-                    "idempotencyKey": "runbook:rb-1:item:item-1:status:completed:v1:test",
+                    "idempotencyKey": "runbook:rb-1:item:item-1:status:review:v1:test",
                 },
             )
 
@@ -327,9 +327,9 @@ class TestRunbooks:
         )
         assert called_kwargs["headers"]["authorization"] == f"Bearer {TEST_AUTH_TOKEN}"
         assert called_kwargs["json"] == {
-            "status": "completed",
+            "status": "review",
             "expectedVersion": 1,
-            "idempotencyKey": "runbook:rb-1:item:item-1:status:completed:v1:test",
+            "idempotencyKey": "runbook:rb-1:item:item-1:status:review:v1:test",
         }
         mock_catalog_service.list_folders.assert_called()
 

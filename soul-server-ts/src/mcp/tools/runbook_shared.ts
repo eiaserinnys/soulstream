@@ -11,6 +11,7 @@ import { resolveEffectiveCallerSessionId } from "./caller_session.js";
 export const runbookItemStatusSchema = z.enum([
   "pending",
   "in_progress",
+  "review",
   "completed",
   "cancelled",
 ]);

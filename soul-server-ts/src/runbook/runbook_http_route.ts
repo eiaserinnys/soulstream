@@ -22,7 +22,7 @@ export interface RunbookHttpRouteConfig {
 
 type MutableRunbookItemStatus = Extract<
   RunbookItemStatus,
-  "pending" | "completed" | "cancelled"
+  "pending" | "review" | "completed" | "cancelled"
 >;
 type MutableRunbookStatus = Extract<RunbookStatus, "open" | "completed">;
 
@@ -311,7 +311,7 @@ function parseStatusBody(body: StatusRequestBody): {
 } | { ok: false; error: string } {
   const status = readMutableStatus(body.status);
   if (!status) {
-    return { ok: false, error: "status must be pending, completed, or cancelled" };
+    return { ok: false, error: "status must be pending, review, completed, or cancelled" };
   }
 
   const rest = parseVersionedMutationBody(body);
@@ -370,7 +370,12 @@ function readRunbookStatus(value: unknown): MutableRunbookStatus | null {
 }
 
 function readMutableStatus(value: unknown): MutableRunbookItemStatus | null {
-  if (value === "pending" || value === "completed" || value === "cancelled") {
+  if (
+    value === "pending" ||
+    value === "review" ||
+    value === "completed" ||
+    value === "cancelled"
+  ) {
     return value;
   }
   return null;

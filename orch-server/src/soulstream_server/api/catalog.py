@@ -55,7 +55,7 @@ class MarkdownDocumentUpdate(BaseModel):
 class RunbookItemStatusMutation(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    status: Literal["pending", "completed", "cancelled"]
+    status: Literal["pending", "review", "completed", "cancelled"]
     expected_version: int = Field(
         ...,
         validation_alias=AliasChoices("expectedVersion", "expected_version"),

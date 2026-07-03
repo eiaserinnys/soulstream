@@ -558,6 +558,34 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     });
   });
 
+  it("records review as a non-terminal status without completion provenance or handoff", async () => {
+    await seedRunbookWithItem();
+
+    const result = await service.setItemStatus({
+      itemId: "item-1",
+      expectedVersion: 1,
+      status: "review",
+      reason: "ready for human review",
+      actorKind: "agent",
+      actorSessionId: "sess-actor",
+    });
+
+    const item = result.snapshot.items.find((candidate) => candidate.id === "item-1");
+    expect(item).toMatchObject({
+      status: "review",
+      version: 2,
+      completed_kind: null,
+      completed_event_id: null,
+      completed_user_id: null,
+    });
+    expect(result.operation).toMatchObject({
+      operation_type: "set_item_status",
+      payload_json: { status: "review" },
+      reason: "ready for human review",
+    });
+    expect(notifyHumanHandoff).not.toHaveBeenCalled();
+  });
+
   it("records user completion attribution and replays duplicate status idempotency keys", async () => {
     await seedRunbookWithItem();
     emitRunbookUpdated.mockClear();
@@ -782,6 +810,41 @@ describePostgres("RunbookService PostgreSQL integration", () => {
 
     expect(reassigned.operation.operation_type).toBe("set_runbook_item_assignee");
     expect(await service.listMyTurnItems({ userId: "user-1" })).toEqual([]);
+  });
+
+  it("includes review items in my-turn regardless of effective assignee", async () => {
+    await seedRunbook();
+    await service.createSection({
+      runbookId: "rb-1",
+      sectionId: "sec-agent",
+      title: "Agent section",
+      actorSessionId: "sess-actor",
+      assignee: { kind: "agent", agentId: "roselin_codex" },
+    });
+    await service.createItem({
+      runbookId: "rb-1",
+      sectionId: "sec-agent",
+      itemId: "item-review",
+      title: "Ready for review",
+      actorSessionId: "sess-actor",
+    });
+    await service.setItemStatus({
+      itemId: "item-review",
+      expectedVersion: 1,
+      status: "review",
+      actorKind: "agent",
+      actorSessionId: "sess-actor",
+    });
+
+    const rows = await service.listMyTurnItems({ userId: "user-1" });
+    expect(rows).toMatchObject([
+      {
+        item_id: "item-review",
+        status: "review",
+        effective_assignee_kind: "agent",
+        effective_assignee_agent_id: "roselin_codex",
+      },
+    ]);
   });
 
   it("excludes completed runbooks from my-turn items while leaving the runbook readable", async () => {
