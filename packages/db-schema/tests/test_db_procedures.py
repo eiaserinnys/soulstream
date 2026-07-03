@@ -33,6 +33,12 @@ def _migration_sql(name: str) -> str:
     return migration_path.read_text(encoding="utf-8")
 
 
+def _function_sql(sql: str, signature: str) -> str:
+    start = sql.index(signature)
+    end = sql.index("$$;", start) + len("$$;")
+    return sql[start:end].strip()
+
+
 # === Helper ===
 
 async def _create_folder(db, folder_id="test-folder", name="Test Folder", sort_order=0):
@@ -54,6 +60,21 @@ async def _create_session(db, session_id="test-session", **overrides):
     )
 
 
+DASHBOARD_SEARCH_EVENT_TYPES = [
+    "user_message",
+    "assistant_message",
+    "user_text",
+    "assistant_text",
+    "text_delta",
+    "result",
+    "complete",
+    "error",
+    "away_summary",
+    "intervention_sent",
+    "realtime_transcript",
+]
+
+
 # === schema.sql 적용 계약 ===
 
 async def test_runbook_status_migration_is_mirrored_in_schema_sql():
@@ -62,10 +83,23 @@ async def test_runbook_status_migration_is_mirrored_in_schema_sql():
     assert migration_sql in _schema_sql()
 
 
-async def test_event_search_substring_migration_is_mirrored_in_schema_sql():
-    migration_sql = _migration_sql("030_event_search_substring_fallback.sql").strip()
+async def test_event_search_prefix_fallback_migration_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("031_event_search_prefix_fallback.sql").strip()
+    schema_sql = _schema_sql()
 
-    assert migration_sql in _schema_sql()
+    for required in [
+        "CREATE TABLE IF NOT EXISTS event_search_corpus_stats",
+        "CREATE OR REPLACE FUNCTION event_search_adjust_corpus_stats",
+        "CREATE OR REPLACE FUNCTION refresh_event_search_terms",
+        "CREATE OR REPLACE FUNCTION decrement_event_search_corpus_stats",
+        "CREATE TRIGGER trg_event_search_corpus_stats_delete",
+    ]:
+        assert required in migration_sql
+        assert required in schema_sql
+
+    assert _function_sql(
+        migration_sql, "CREATE OR REPLACE FUNCTION event_search("
+    ) in schema_sql
 
 
 async def test_runbook_item_review_status_migration_is_mirrored_in_schema_sql():
@@ -1064,24 +1098,24 @@ async def test_event_search_uses_bm25_terms(test_db):
     assert rows[0]["score"] > rows[1]["score"]
 
 
-async def test_event_search_matches_korean_substrings_inside_long_tokens(test_db):
-    await _create_session(test_db, "ev-ko-substring")
+async def test_event_search_matches_korean_prefix_inflections(test_db):
+    await _create_session(test_db, "ev-ko-prefix")
     now = _utc_now()
 
     await test_db.fetchval(
         "SELECT event_append($1, $2, $3, $4, $5)",
-        "ev-ko-substring", "text_delta", '{"text":"가라앉은다"}',
+        "ev-ko-prefix", "text_delta", '{"text":"가라앉은다"}',
         "가라앉은다", now,
     )
     await test_db.fetchval(
         "SELECT event_append($1, $2, $3, $4, $5)",
-        "ev-ko-substring", "text_delta", '{"text":"무관한 문장"}',
+        "ev-ko-prefix", "text_delta", '{"text":"무관한 문장"}',
         "무관한 문장", now,
     )
 
     rows = await test_db.fetch(
         "SELECT * FROM event_search($1, $2, $3, $4)",
-        "가라앉은", ["ev-ko-substring"], 10, ["text_delta"],
+        "가라앉은", ["ev-ko-prefix"], 10, ["text_delta"],
     )
 
     assert [r["id"] for r in rows] == [1]
@@ -1090,10 +1124,127 @@ async def test_event_search_matches_korean_substrings_inside_long_tokens(test_db
 
     inflected_rows = await test_db.fetch(
         "SELECT * FROM event_search($1, $2, $3, $4)",
-        "가라앉았다", ["ev-ko-substring"], 10, ["text_delta"],
+        "가라앉았다", ["ev-ko-prefix"], 10, ["text_delta"],
     )
 
     assert [r["id"] for r in inflected_rows] == [1]
+
+
+async def test_event_search_corpus_stats_track_event_lifecycle(test_db):
+    await _create_session(test_db, "ev-search-stats")
+    now = _utc_now()
+
+    event_id = await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-search-stats", "text_delta", '{"text":"alpha beta beta"}',
+        "alpha beta beta", now,
+    )
+    stats = await test_db.fetchrow(
+        "SELECT total_docs, total_doc_len FROM event_search_corpus_stats WHERE id = TRUE"
+    )
+    assert dict(stats) == {"total_docs": 1, "total_doc_len": 3}
+
+    await test_db.execute(
+        """
+        UPDATE events
+        SET searchable_text = $1
+        WHERE session_id = $2 AND id = $3
+        """,
+        "alpha beta gamma delta", "ev-search-stats", event_id,
+    )
+    stats = await test_db.fetchrow(
+        "SELECT total_docs, total_doc_len FROM event_search_corpus_stats WHERE id = TRUE"
+    )
+    assert dict(stats) == {"total_docs": 1, "total_doc_len": 4}
+
+    await test_db.execute(
+        "DELETE FROM events WHERE session_id = $1 AND id = $2",
+        "ev-search-stats", event_id,
+    )
+    stats = await test_db.fetchrow(
+        "SELECT total_docs, total_doc_len FROM event_search_corpus_stats WHERE id = TRUE"
+    )
+    assert dict(stats) == {"total_docs": 0, "total_doc_len": 0}
+
+
+async def test_event_search_dashboard_path_uses_cached_corpus_with_large_term_table(test_db):
+    await _create_session(test_db, "ev-ko-prefix-perf")
+    now = _utc_now()
+
+    await test_db.execute(
+        """
+        INSERT INTO events (session_id, id, event_type, payload, searchable_text, created_at)
+        SELECT $1, gs, 'text_delta', '{}'::jsonb, '', $2
+        FROM generate_series(1, 10000) AS gs
+        """,
+        "ev-ko-prefix-perf", now,
+    )
+    await test_db.execute(
+        """
+        INSERT INTO event_search_terms (session_id, event_id, term, term_freq, doc_len)
+        SELECT $1, event_id, 'zz_noise_' || event_id::TEXT || '_' || term_no::TEXT, 1, 20
+        FROM generate_series(1, 10000) AS event_id
+        CROSS JOIN generate_series(1, 20) AS term_no
+        """,
+        "ev-ko-prefix-perf",
+    )
+    await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-ko-prefix-perf", "text_delta", '{"text":"가라앉은다"}',
+        "가라앉은다", now,
+    )
+    await test_db.execute(
+        """
+        UPDATE event_search_terms
+        SET doc_len = 20
+        WHERE session_id = $1 AND event_id = 10001
+        """,
+        "ev-ko-prefix-perf",
+    )
+    await test_db.execute(
+        """
+        INSERT INTO event_search_terms (session_id, event_id, term, term_freq, doc_len)
+        SELECT $1, 10001, 'match_noise_' || term_no::TEXT, 1, 20
+        FROM generate_series(1, 19) AS term_no
+        """,
+        "ev-ko-prefix-perf",
+    )
+    await test_db.execute(
+        """
+        INSERT INTO event_search_corpus_stats (id, total_docs, total_doc_len, updated_at)
+        SELECT
+            TRUE,
+            COUNT(*)::BIGINT,
+            COALESCE(SUM(doc_len), 0)::BIGINT,
+            NOW()
+        FROM (
+            SELECT DISTINCT session_id, event_id, doc_len
+            FROM event_search_terms
+        ) docs
+        ON CONFLICT (id) DO UPDATE
+        SET total_docs = EXCLUDED.total_docs,
+            total_doc_len = EXCLUDED.total_doc_len,
+            updated_at = NOW()
+        """
+    )
+    await test_db.execute("ANALYZE events")
+    await test_db.execute("ANALYZE event_search_terms")
+
+    await test_db.execute("SET statement_timeout = '1000ms'")
+    try:
+        exact_rows = await test_db.fetch(
+            "SELECT * FROM event_search($1, $2, $3, $4)",
+            "가라앉은다", None, 5, DASHBOARD_SEARCH_EVENT_TYPES,
+        )
+        prefix_rows = await test_db.fetch(
+            "SELECT * FROM event_search($1, $2, $3, $4)",
+            "가라앉았다", None, 5, DASHBOARD_SEARCH_EVENT_TYPES,
+        )
+    finally:
+        await test_db.execute("RESET statement_timeout")
+
+    assert [r["id"] for r in exact_rows] == [10001]
+    assert [r["id"] for r in prefix_rows] == [10001]
 
 
 async def test_event_search_handles_short_and_symbol_queries(test_db):
