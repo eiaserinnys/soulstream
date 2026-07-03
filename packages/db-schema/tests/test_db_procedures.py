@@ -68,6 +68,12 @@ async def test_event_search_substring_migration_is_mirrored_in_schema_sql():
     assert migration_sql in _schema_sql()
 
 
+async def test_runbook_item_review_status_migration_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("031_runbook_item_review_status.sql").strip()
+
+    assert migration_sql in _schema_sql()
+
+
 async def test_schema_reapply_upgrades_pre_status_runbooks_table(test_db):
     """schema.sql만 재실행해도 029 이전 runbooks 테이블이 최신 형태가 된다."""
 
@@ -176,6 +182,65 @@ async def test_fresh_schema_uses_runbook_status_canonical_constraint_names(test_
 
     assert "runbooks_completed_event_fkey" in constraint_names
     assert "runbooks_completed_session_id_completed_event_id_fkey" not in constraint_names
+
+
+async def test_schema_reapply_upgrades_runbook_item_review_status_check(test_db):
+    """schema.sql만 재실행해도 기존 runbook_items CHECK가 review를 허용한다."""
+
+    await test_db.execute(
+        """
+        ALTER TABLE runbook_items DROP CONSTRAINT IF EXISTS runbook_items_status_check;
+        ALTER TABLE runbook_items ADD CONSTRAINT runbook_items_status_check
+            CHECK (status IN ('pending','in_progress','completed','cancelled'));
+        """
+    )
+
+    await test_db.execute(_schema_sql())
+    await _create_folder(test_db, "review-runbook-folder", "Review Runbook Folder")
+    await test_db.execute(
+        """
+        INSERT INTO board_items (id, folder_id, item_type, item_id)
+        VALUES ($1, $2, 'runbook', $3)
+        """,
+        "review-runbook-board-item",
+        "review-runbook-folder",
+        "review-runbook",
+    )
+    await test_db.execute(
+        """
+        INSERT INTO runbooks (id, board_item_id, title)
+        VALUES ($1, $2, $3)
+        """,
+        "review-runbook",
+        "review-runbook-board-item",
+        "Review Runbook",
+    )
+    await test_db.execute(
+        """
+        INSERT INTO runbook_sections (id, runbook_id, position_key, title)
+        VALUES ($1, $2, $3, $4)
+        """,
+        "review-section",
+        "review-runbook",
+        "a",
+        "Review Section",
+    )
+    await test_db.execute(
+        """
+        INSERT INTO runbook_items (id, section_id, position_key, title, status)
+        VALUES ($1, $2, $3, $4, 'review')
+        """,
+        "review-item",
+        "review-section",
+        "a",
+        "Ready",
+    )
+
+    status = await test_db.fetchval(
+        "SELECT status FROM runbook_items WHERE id = $1",
+        "review-item",
+    )
+    assert status == "review"
 
 
 # === 세션 CRUD ===

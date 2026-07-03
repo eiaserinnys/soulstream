@@ -40,6 +40,8 @@ async def test_runbook_overview_groups_include_runbook_version_for_cas():
 
     overview = await projection.get_runbook_overview(user_id=None, limit=100)
 
+    assert "i.status = 'review'" in projection._pool.queries[0]
+    assert "i.status = 'review'" in projection._pool.queries[1]
     assert "r.version AS runbook_version" in projection._pool.queries[1]
     assert overview["runbooks"] == [
         {

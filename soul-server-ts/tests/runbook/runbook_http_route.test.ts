@@ -142,6 +142,41 @@ describe("runbook HTTP write route", () => {
     });
   });
 
+  it("accepts review as a dashboard item status mutation", async () => {
+    const service = fakeRunbookService();
+    const server = await createServer(service);
+    const token = signJwt(
+      { sub: "operator@example.com", exp: Math.floor(Date.now() / 1000) + 60 },
+      "jwt-secret",
+    );
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/runbooks/rb-1/items/item-1/status",
+      headers: {
+        cookie: `${DASHBOARD_AUTH_COOKIE_NAME}=${encodeURIComponent(token)}`,
+      },
+      payload: {
+        status: "review",
+        expectedVersion: 1,
+        idempotencyKey: "runbook:rb-1:item:item-1:status:review:v1:test",
+        reason: "ready for review",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(service.setItemStatus).toHaveBeenCalledWith({
+      actorKind: "user",
+      actorSessionId: "sess-actor",
+      actorUserId: "operator@example.com",
+      itemId: "item-1",
+      expectedVersion: 1,
+      status: "review",
+      reason: "ready for review",
+      idempotencyKey: "runbook:rb-1:item:item-1:status:review:v1:test",
+    });
+  });
+
   it("returns 409 when RunbookService rejects a stale version", async () => {
     const service = fakeRunbookService();
     service.setItemStatus.mockRejectedValueOnce(

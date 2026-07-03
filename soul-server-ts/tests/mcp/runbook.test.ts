@@ -162,6 +162,36 @@ describe("runbook MCP tools", () => {
     });
   });
 
+  it("accepts review as an item status through MCP", async () => {
+    const service = fakeRunbookService();
+    const client = await createClient(
+      makeRuntime({ runbookService: service }),
+      { "x-soulstream-agent-session-id": "sess-caller" },
+    );
+
+    const result = await client.callTool({
+      name: "set_runbook_item_status",
+      arguments: {
+        item_id: "item-1",
+        status: "review",
+        expected_version: 3,
+        idempotency_key: "idem-status-review-1",
+        reason: "ready for review",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(service.setItemStatus).toHaveBeenCalledWith({
+      actorKind: "agent",
+      actorSessionId: "sess-caller",
+      itemId: "item-1",
+      status: "review",
+      expectedVersion: 3,
+      reason: "ready for review",
+      idempotencyKey: "idem-status-review-1",
+    });
+  });
+
   it("routes runbook-level status changes through the dedicated object tool", async () => {
     const service = fakeRunbookService();
     const client = await createClient(

@@ -255,14 +255,27 @@ export class RunbookRepository {
         AND r.status <> 'completed'
         AND s.archived = FALSE
         AND i.archived = FALSE
-        AND i.status NOT IN ('completed', 'cancelled')
-        AND COALESCE(i.assignee_kind, s.assignee_kind) = 'human'
         AND (
-          ${params.userId ?? null}::text IS NULL
-          OR (CASE WHEN i.assignee_kind IS NULL THEN s.assignee_user_id ELSE i.assignee_user_id END) IS NULL
-          OR (CASE WHEN i.assignee_kind IS NULL THEN s.assignee_user_id ELSE i.assignee_user_id END) = ${params.userId ?? null}
+          i.status = 'review'
+          OR (
+            i.status NOT IN ('completed', 'cancelled')
+            AND COALESCE(i.assignee_kind, s.assignee_kind) = 'human'
+            AND (
+              ${params.userId ?? null}::text IS NULL
+              OR (CASE WHEN i.assignee_kind IS NULL THEN s.assignee_user_id ELSE i.assignee_user_id END) IS NULL
+              OR (CASE WHEN i.assignee_kind IS NULL THEN s.assignee_user_id ELSE i.assignee_user_id END) = ${params.userId ?? null}
+            )
+          )
         )
-      ORDER BY r.updated_at DESC, s.position_key ASC, i.position_key ASC
+      ORDER BY
+        CASE
+          WHEN i.status = 'review' THEN 0
+          WHEN i.status = 'in_progress' THEN 1
+          ELSE 2
+        END,
+        r.updated_at DESC,
+        s.position_key ASC,
+        i.position_key ASC
       LIMIT ${limit}
     `;
   }

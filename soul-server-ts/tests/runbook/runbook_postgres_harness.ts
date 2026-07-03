@@ -242,7 +242,7 @@ async function createRunbookTables(sql: SqlClient): Promise<void> {
       assignee_agent_id TEXT,
       assignee_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
       assignee_user_id TEXT,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','in_progress','completed','cancelled')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','in_progress','review','completed','cancelled')),
       archived BOOLEAN NOT NULL DEFAULT FALSE,
       version INTEGER NOT NULL DEFAULT 1,
       created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,

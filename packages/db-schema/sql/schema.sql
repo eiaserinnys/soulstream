@@ -2687,7 +2687,7 @@ CREATE TABLE IF NOT EXISTS runbook_items (
     assignee_session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     assignee_user_id     TEXT,
     status               TEXT NOT NULL DEFAULT 'pending'
-                           CHECK (status IN ('pending','in_progress','completed','cancelled')),
+                           CHECK (status IN ('pending','in_progress','review','completed','cancelled')),
     archived             BOOLEAN NOT NULL DEFAULT FALSE,
     version              INTEGER NOT NULL DEFAULT 1,
     created_session_id   TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
@@ -2712,7 +2712,11 @@ CREATE TABLE IF NOT EXISTS runbook_items (
 CREATE INDEX IF NOT EXISTS idx_runbook_items_section
     ON runbook_items(section_id, position_key);
 
--- "내 차례"는 유효 담당(항목 own, 없으면 섹션 상속)이 human이고 미완·미취소.
+ALTER TABLE runbook_items DROP CONSTRAINT IF EXISTS runbook_items_status_check;
+ALTER TABLE runbook_items ADD CONSTRAINT runbook_items_status_check
+    CHECK (status IN ('pending','in_progress','review','completed','cancelled'));
+
+-- "내 차례"는 review이거나, 유효 담당(항목 own, 없으면 섹션 상속)이 human이고 미완·미취소.
 -- 상속 케이스는 부분 인덱스로 못 잡으므로 조회 시 항목⨝섹션으로 해석한다.
 CREATE INDEX IF NOT EXISTS idx_runbook_items_human_self
     ON runbook_items(section_id)

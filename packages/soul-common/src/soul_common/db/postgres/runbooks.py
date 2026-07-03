@@ -85,15 +85,24 @@ class PostgresRunbookMixin:
               AND r.status <> 'completed'
               AND s.archived = FALSE
               AND i.archived = FALSE
-              AND i.status NOT IN ('completed', 'cancelled')
-              AND COALESCE(i.assignee_kind, s.assignee_kind) = 'human'
               AND (
-                $1::text IS NULL
-                OR (CASE WHEN i.assignee_kind IS NULL THEN s.assignee_user_id ELSE i.assignee_user_id END) IS NULL
-                OR (CASE WHEN i.assignee_kind IS NULL THEN s.assignee_user_id ELSE i.assignee_user_id END) = $1
+                i.status = 'review'
+                OR (
+                  i.status NOT IN ('completed', 'cancelled')
+                  AND COALESCE(i.assignee_kind, s.assignee_kind) = 'human'
+                  AND (
+                    $1::text IS NULL
+                    OR (CASE WHEN i.assignee_kind IS NULL THEN s.assignee_user_id ELSE i.assignee_user_id END) IS NULL
+                    OR (CASE WHEN i.assignee_kind IS NULL THEN s.assignee_user_id ELSE i.assignee_user_id END) = $1
+                  )
+                )
               )
             ORDER BY
-                CASE WHEN i.status = 'in_progress' THEN 0 ELSE 1 END,
+                CASE
+                  WHEN i.status = 'review' THEN 0
+                  WHEN i.status = 'in_progress' THEN 1
+                  ELSE 2
+                END,
                 r.updated_at DESC,
                 s.position_key ASC,
                 i.position_key ASC
@@ -128,13 +137,18 @@ class PostgresRunbookMixin:
                 COUNT(*) FILTER (WHERE i.status = 'completed') AS completed_count,
                 COUNT(*) AS total_count,
                 COUNT(*) FILTER (
-                    WHERE i.status <> 'completed'
-                      AND r.status <> 'completed'
-                      AND COALESCE(i.assignee_kind, s.assignee_kind) = 'human'
+                    WHERE r.status <> 'completed'
                       AND (
-                        $1::text IS NULL
-                        OR (CASE WHEN i.assignee_kind IS NULL THEN s.assignee_user_id ELSE i.assignee_user_id END) IS NULL
-                        OR (CASE WHEN i.assignee_kind IS NULL THEN s.assignee_user_id ELSE i.assignee_user_id END) = $1
+                        i.status = 'review'
+                        OR (
+                          i.status <> 'completed'
+                          AND COALESCE(i.assignee_kind, s.assignee_kind) = 'human'
+                          AND (
+                            $1::text IS NULL
+                            OR (CASE WHEN i.assignee_kind IS NULL THEN s.assignee_user_id ELSE i.assignee_user_id END) IS NULL
+                            OR (CASE WHEN i.assignee_kind IS NULL THEN s.assignee_user_id ELSE i.assignee_user_id END) = $1
+                          )
+                        )
                       )
                 ) AS my_turn_count,
                 COUNT(*) FILTER (WHERE i.status = 'in_progress') AS in_progress_count
@@ -203,10 +217,11 @@ class PostgresRunbookMixin:
             ORDER BY
                 r.updated_at DESC,
                 CASE i.status
-                    WHEN 'in_progress' THEN 0
-                    WHEN 'pending' THEN 1
-                    WHEN 'completed' THEN 2
-                    ELSE 3
+                    WHEN 'review' THEN 0
+                    WHEN 'in_progress' THEN 1
+                    WHEN 'pending' THEN 2
+                    WHEN 'completed' THEN 3
+                    ELSE 4
                 END,
                 s.position_key ASC,
                 i.position_key ASC
