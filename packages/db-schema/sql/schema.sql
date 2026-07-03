@@ -1855,6 +1855,12 @@ CREATE OR REPLACE FUNCTION event_search(
         SELECT DISTINCT term
         FROM unnest(event_search_tokenize(p_query)) AS token(term)
     ),
+    korean_prefix_terms AS (
+        SELECT DISTINCT term, left(term, 3) AS prefix
+        FROM query_terms
+        WHERE term ~ '[가-힣]'
+          AND length(term) >= 3
+    ),
     filtered_events AS (
         SELECT e.*
         FROM events e
@@ -1915,7 +1921,7 @@ CREATE OR REPLACE FUNCTION event_search(
             e.id, e.session_id, e.event_type, e.payload,
             e.searchable_text, e.created_at
     ),
-    substring_scored AS (
+    prefix_scored AS (
         SELECT
             e.id,
             e.session_id,
@@ -1931,22 +1937,15 @@ CREATE OR REPLACE FUNCTION event_search(
                     1.0
                 ) * 0.000001
             )::FLOAT AS score
-        FROM event_search_terms t
+        FROM korean_prefix_terms q
+        JOIN event_search_terms t
+          ON t.term >= q.prefix
+         AND t.term < q.prefix || U&'\FFFF'
         JOIN filtered_events e
           ON e.session_id = t.session_id
          AND e.id = t.event_id
-        CROSS JOIN query_terms q
-        WHERE length(q.term) >= 2
-          AND (
-              POSITION(q.term IN t.term) > 0
-              OR (
-                  q.term ~ '[가-힣]'
-                  AND t.term ~ '[가-힣]'
-                  AND length(q.term) >= 3
-                  AND length(t.term) >= 3
-                  AND left(q.term, 3) = left(t.term, 3)
-              )
-          )
+        WHERE t.term ~ '[가-힣]'
+          AND (p_limit IS NULL OR (SELECT COUNT(*) FROM scored) < p_limit)
           AND NOT EXISTS (
               SELECT 1
               FROM scored s
@@ -1962,7 +1961,7 @@ CREATE OR REPLACE FUNCTION event_search(
         FROM scored
         UNION ALL
         SELECT id, session_id, event_type, payload, searchable_text, created_at, score
-        FROM substring_scored
+        FROM prefix_scored
     )
     SELECT id, session_id, event_type, payload, searchable_text, created_at, score
     FROM combined

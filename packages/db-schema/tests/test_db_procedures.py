@@ -62,8 +62,8 @@ async def test_runbook_status_migration_is_mirrored_in_schema_sql():
     assert migration_sql in _schema_sql()
 
 
-async def test_event_search_substring_migration_is_mirrored_in_schema_sql():
-    migration_sql = _migration_sql("030_event_search_substring_fallback.sql").strip()
+async def test_event_search_prefix_fallback_migration_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("031_event_search_prefix_fallback.sql").strip()
 
     assert migration_sql in _schema_sql()
 
@@ -999,24 +999,24 @@ async def test_event_search_uses_bm25_terms(test_db):
     assert rows[0]["score"] > rows[1]["score"]
 
 
-async def test_event_search_matches_korean_substrings_inside_long_tokens(test_db):
-    await _create_session(test_db, "ev-ko-substring")
+async def test_event_search_matches_korean_prefix_inflections(test_db):
+    await _create_session(test_db, "ev-ko-prefix")
     now = _utc_now()
 
     await test_db.fetchval(
         "SELECT event_append($1, $2, $3, $4, $5)",
-        "ev-ko-substring", "text_delta", '{"text":"가라앉은다"}',
+        "ev-ko-prefix", "text_delta", '{"text":"가라앉은다"}',
         "가라앉은다", now,
     )
     await test_db.fetchval(
         "SELECT event_append($1, $2, $3, $4, $5)",
-        "ev-ko-substring", "text_delta", '{"text":"무관한 문장"}',
+        "ev-ko-prefix", "text_delta", '{"text":"무관한 문장"}',
         "무관한 문장", now,
     )
 
     rows = await test_db.fetch(
         "SELECT * FROM event_search($1, $2, $3, $4)",
-        "가라앉은", ["ev-ko-substring"], 10, ["text_delta"],
+        "가라앉은", ["ev-ko-prefix"], 10, ["text_delta"],
     )
 
     assert [r["id"] for r in rows] == [1]
@@ -1025,10 +1025,50 @@ async def test_event_search_matches_korean_substrings_inside_long_tokens(test_db
 
     inflected_rows = await test_db.fetch(
         "SELECT * FROM event_search($1, $2, $3, $4)",
-        "가라앉았다", ["ev-ko-substring"], 10, ["text_delta"],
+        "가라앉았다", ["ev-ko-prefix"], 10, ["text_delta"],
     )
 
     assert [r["id"] for r in inflected_rows] == [1]
+
+
+async def test_event_search_korean_prefix_fallback_does_not_scan_large_term_table(test_db):
+    await _create_session(test_db, "ev-ko-prefix-perf")
+    now = _utc_now()
+
+    await test_db.execute(
+        """
+        INSERT INTO events (session_id, id, event_type, payload, searchable_text, created_at)
+        SELECT $1, gs, 'text_delta', '{}'::jsonb, '', $2
+        FROM generate_series(1, 150000) AS gs
+        """,
+        "ev-ko-prefix-perf", now,
+    )
+    await test_db.execute(
+        """
+        INSERT INTO event_search_terms (session_id, event_id, term, term_freq, doc_len)
+        SELECT $1, gs, 'zz_noise_' || gs::TEXT, 1, 1
+        FROM generate_series(1, 150000) AS gs
+        """,
+        "ev-ko-prefix-perf",
+    )
+    await test_db.fetchval(
+        "SELECT event_append($1, $2, $3, $4, $5)",
+        "ev-ko-prefix-perf", "text_delta", '{"text":"가라앉은다"}',
+        "가라앉은다", now,
+    )
+    await test_db.execute("ANALYZE events")
+    await test_db.execute("ANALYZE event_search_terms")
+
+    await test_db.execute("SET statement_timeout = '1000ms'")
+    try:
+        rows = await test_db.fetch(
+            "SELECT * FROM event_search($1, $2, $3, $4)",
+            "가라앉았다", ["ev-ko-prefix-perf"], 5, ["text_delta"],
+        )
+    finally:
+        await test_db.execute("RESET statement_timeout")
+
+    assert [r["id"] for r in rows] == [150001]
 
 
 async def test_event_search_handles_short_and_symbol_queries(test_db):
