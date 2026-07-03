@@ -12,6 +12,7 @@ export type RunbookAssigneeKind = "agent" | "human" | "session";
 export type RunbookItemStatus =
   | "pending"
   | "in_progress"
+  | "review"
   | "completed"
   | "cancelled";
 export type RunbookStatus = "open" | "completed";

@@ -2,6 +2,7 @@ import {
   CheckCircle2,
   Circle,
   Clock3,
+  Eye,
   XCircle,
   type LucideIcon,
 } from "lucide-react";
@@ -23,6 +24,11 @@ const statusConfig: Record<RunbookItemStatus, {
     label: "진행",
     icon: Clock3,
     className: "border-accent-blue/35 glass text-accent-blue",
+  },
+  review: {
+    label: "확인 대기",
+    icon: Eye,
+    className: "border-warning/35 glass text-warning-foreground",
   },
   completed: {
     label: "완료",
