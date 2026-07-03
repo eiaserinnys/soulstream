@@ -125,7 +125,7 @@ describe("RunbookOverview", () => {
     });
   }
 
-  it("renders the dashboard sections, expanded my-turn cards, and collapsed runbook groups", () => {
+  it("renders the dashboard sections, compact my-turn cards, and collapsed runbook groups", () => {
     useRunbookStore.setState({
       overview: {
         snapshot: sampleOverview(),
@@ -150,9 +150,10 @@ describe("RunbookOverview", () => {
     expect(container.textContent).toContain("Deploy Runbook");
     expect(container.textContent).toContain("1/2");
     expect(container.textContent).toContain("실행 중인 세션 없음");
-    expect(container.textContent).toContain("Approve the deployment window.");
+    expect(container.textContent).not.toContain("Approve the deployment window.");
     expect(container.textContent).not.toContain("PR-3b 대기");
     expect(container.textContent).not.toContain("Agent verification");
+    expect(container.querySelector('[data-testid="runbook-overview-item-how-to"]')).toBeNull();
 
     const toggle = container.querySelector<HTMLButtonElement>('[data-testid="runbook-overview-group-toggle"]');
     expect(toggle).not.toBeNull();
@@ -164,11 +165,41 @@ describe("RunbookOverview", () => {
     const myTurn = container.querySelector<HTMLElement>('[data-testid="runbook-overview-my-turn-item"]');
     expect(myTurn).not.toBeNull();
     expect(myTurn!.className).toContain("glass");
-    expect(container.querySelector('[data-testid="runbook-overview-item-how-to"]')?.className)
-      .toContain("glass");
+    expect(container.querySelectorAll('[data-testid="runbook-overview-item-how-to-trigger"]').length)
+      .toBeGreaterThanOrEqual(3);
     expect(useDashboardStore.getState().focusedBoardItem).toBeNull();
     expect(useDashboardStore.getState().viewMode).toBe("feed");
     expect(useDashboardStore.getState().activeTab).toBe("feed");
+  });
+
+  it("omits the how-to hover trigger when an item has no how_to", () => {
+    const payload = sampleOverview();
+    payload.my_turn_items[0] = {
+      ...payload.my_turn_items[0]!,
+      how_to: "",
+    };
+    payload.runbooks[0] = {
+      ...payload.runbooks[0]!,
+      items: [{
+        ...payload.runbooks[0]!.items[0]!,
+        how_to: "",
+      }],
+    };
+    useRunbookStore.setState({
+      overview: {
+        snapshot: payload,
+        status: "ready",
+        error: null,
+        isRefreshing: false,
+      },
+    });
+
+    flushSync(() => {
+      renderOverview();
+    });
+
+    expect(container.querySelector('[data-testid="runbook-overview-item-how-to-trigger"]')).toBeNull();
+    expect(container.textContent).not.toContain("상세 절차 없음");
   });
 
   it("posts a my-turn checkbox status mutation and reloads the overview", async () => {
