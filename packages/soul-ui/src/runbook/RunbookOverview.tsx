@@ -1,9 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
-import { BookOpenCheck, ChevronDown, ChevronRight, ExternalLink, ListChecks, RefreshCw, UserRound } from "lucide-react";
+import {
+  BookOpenCheck,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Info,
+  ListChecks,
+  RefreshCw,
+  UserRound,
+} from "lucide-react";
 
 import { Badge } from "../components/ui/badge";
 import { DASHBOARD_LIST_INSET_PX } from "../components/dashboard-spacing";
 import { LiquidGlassCard } from "../components/LiquidGlassCard";
+import {
+  PreviewCard,
+  PreviewCardPopup,
+  PreviewCardTrigger,
+} from "../components/ui/preview-card";
 import { cn } from "../lib/cn";
 import { useDashboardStore } from "../stores/dashboard-store";
 import {
@@ -21,7 +35,10 @@ import {
   type RunbookStatusToggleRunbook,
   type RunbookStatusToggleSection,
 } from "./RunbookItemStatusToggle";
-import { RunbookCompletionAction, isRunbookCompleted } from "./RunbookCompletionAction";
+import {
+  RunbookCompletionAction,
+  isRunbookCompleted,
+} from "./RunbookCompletionAction";
 import { RunbookOverviewRunningSessions } from "./RunbookOverviewRunningSessions";
 
 function toOverviewAssignee(item: RunbookOverviewItem): RunbookStatusToggleAssignee {
@@ -98,6 +115,48 @@ function OpenBoardButton({
   );
 }
 
+function RunbookHowToPreview({
+  item,
+  className,
+}: {
+  item: RunbookOverviewItem;
+  className?: string;
+}) {
+  const howTo = item.how_to.trim();
+  if (!howTo) {
+    return null;
+  }
+
+  return (
+    <PreviewCard>
+      <PreviewCardTrigger
+        render={<button type="button" />}
+        data-testid="runbook-overview-item-how-to-trigger"
+        className={cn(
+          "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent-blue/10 hover:text-accent-blue focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/50",
+          className,
+        )}
+        aria-label={`${item.item_title} 상세 절차`}
+        delay={250}
+        closeDelay={150}
+        onClick={(event) => {
+          event.stopPropagation();
+        }}
+      >
+        <Info className="h-3.5 w-3.5" aria-hidden="true" />
+      </PreviewCardTrigger>
+      <PreviewCardPopup
+        data-testid="runbook-overview-item-how-to"
+        align="start"
+        sideOffset={8}
+        className="max-h-[min(28rem,calc(100vh-6rem))] w-[min(28rem,calc(100vw-2rem))] overflow-y-auto rounded-[12px] p-3 text-xs leading-relaxed"
+      >
+        <MarkdownContent content={howTo} compact />
+      </PreviewCardPopup>
+    </PreviewCard>
+  );
+}
+
 function MyTurnItemRow({
   item,
   onOpenBoard,
@@ -128,8 +187,11 @@ function MyTurnItemRow({
           onStatusChanged={onStatusChanged}
         />
         <div className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold leading-5 text-foreground">
-            {item.item_title}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="block min-w-0 flex-1 truncate text-sm font-semibold leading-5 text-foreground">
+              {item.item_title}
+            </span>
+            <RunbookHowToPreview item={item} />
           </span>
           <span className="mt-1 block truncate text-xs text-muted-foreground">
             {itemSubtitle(item)}
@@ -141,16 +203,6 @@ function MyTurnItemRow({
           </span>
         </div>
         <OpenBoardButton item={item} onOpenBoard={onOpenBoard} />
-      </div>
-      <div
-        data-testid="runbook-overview-item-how-to"
-        className="rounded-[12px] border border-glass-border glass px-3 py-2.5 text-xs leading-relaxed text-foreground glass-shadow-xs"
-      >
-        {item.how_to.trim().length > 0 ? (
-          <MarkdownContent content={item.how_to} compact />
-        ) : (
-          <p className="text-muted-foreground">상세 절차 없음</p>
-        )}
       </div>
     </div>
   );
@@ -187,11 +239,16 @@ function GroupItemRow({
         onStatusChanged={onStatusChanged}
       />
       <div className="min-w-0 flex-1 text-left">
-        <span className={cn(
-          "block truncate text-xs font-medium leading-5 text-foreground",
-          isDone(item) && "line-through",
-        )}>
-          {item.item_title}
+        <span className="flex min-w-0 items-center gap-1">
+          <span
+            className={cn(
+              "block min-w-0 flex-1 truncate text-xs font-medium leading-5 text-foreground",
+              isDone(item) && "line-through",
+            )}
+          >
+            {item.item_title}
+          </span>
+          <RunbookHowToPreview item={item} className="h-5 w-5" />
         </span>
         <span className="block truncate text-[11px] text-muted-foreground">
           {item.section_title}
