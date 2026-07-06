@@ -183,13 +183,15 @@ export function BoardWorkspaceTile({
   }
 
   if (item.type === "custom_view") {
+    // 커스텀 뷰는 풀블리드 위젯 — 타일 크롬(패딩·헤더) 없이 캔버스 전체를
+    // 에이전트 저작 HTML이 쓴다. 타이틀·revision은 호버 오버레이로만.
     return (
       <button
         key={item.id}
         type="button"
         data-testid="board-custom-view-tile"
         data-board-tile="true"
-        className={tileClassName}
+        className={cn(tileClassName, "group p-0")}
         style={tileStyle}
         onPointerDown={(event) => onTilePointerDown(event, item)}
         onContextMenu={(event) => onTileContextMenu(event, item)}
@@ -198,20 +200,20 @@ export function BoardWorkspaceTile({
           onOpenCustomView(item.customViewId);
         }}
       >
-        <div className="flex items-center gap-2 border-b border-[var(--lg-line)] pb-2">
-          <Code2 className="h-5 w-5 shrink-0 text-accent-blue" />
-          <span data-testid="board-custom-view-title" className="line-clamp-2 min-w-0 flex-1 text-left text-[13.5px] font-semibold leading-snug">
+        <CustomViewTileBody
+          customViewId={item.customViewId}
+          title={item.title}
+          fallbackPreview={item.preview}
+        />
+        <div className="pointer-events-none absolute inset-x-0 top-0 flex items-center gap-2 bg-gradient-to-b from-black/45 to-transparent px-3 pb-4 pt-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <Code2 className="h-4 w-4 shrink-0 text-white/85" />
+          <span data-testid="board-custom-view-title" className="min-w-0 flex-1 truncate text-left text-[12.5px] font-semibold text-white/90">
             {item.title}
           </span>
           <Badge variant="secondary" className="h-5 shrink-0 px-1.5 text-[10px]">
             r{item.revision}
           </Badge>
         </div>
-        <CustomViewTileBody
-          customViewId={item.customViewId}
-          title={item.title}
-          fallbackPreview={item.preview}
-        />
       </button>
     );
   }
