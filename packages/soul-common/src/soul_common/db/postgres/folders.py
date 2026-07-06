@@ -342,7 +342,11 @@ class PostgresFolderMixin:
         body: str,
         x: float,
         y: float,
+        *,
+        container_kind: str = "folder",
+        container_id: Optional[str] = None,
     ) -> dict:
+        resolved_container_id = container_id or folder_id
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 doc_row = await conn.fetchrow(
@@ -355,11 +359,20 @@ class PostgresFolderMixin:
                 )
                 item_row = await conn.fetchrow(
                     """
-                    INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata)
-                    VALUES ($1, $2, 'markdown', $3, $4, $5, '{}'::jsonb)
+                    INSERT INTO board_items (
+                        id, folder_id, container_kind, container_id, membership_kind,
+                        item_type, item_id, x, y, metadata
+                    )
+                    VALUES ($1, $2, $3, $4, 'primary', 'markdown', $5, $6, $7, '{}'::jsonb)
                     RETURNING *
                     """,
-                    f"markdown:{document_id}", folder_id, document_id, x, y,
+                    f"markdown:{document_id}",
+                    folder_id,
+                    container_kind,
+                    resolved_container_id,
+                    document_id,
+                    x,
+                    y,
                 )
         assert doc_row is not None
         assert item_row is not None
@@ -527,7 +540,11 @@ class PostgresFolderMixin:
         width: Optional[int] = None,
         height: Optional[int] = None,
         duration_seconds: Optional[float] = None,
+        *,
+        container_kind: str = "folder",
+        container_id: Optional[str] = None,
     ) -> dict:
+        resolved_container_id = container_id or folder_id
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 asset_row = await conn.fetchrow(
@@ -559,10 +576,16 @@ class PostgresFolderMixin:
                 }
                 item_row = await conn.fetchrow(
                     """
-                    INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata)
-                    VALUES ($1, $2, 'asset', $3, $4, $5, $6::jsonb)
+                    INSERT INTO board_items (
+                        id, folder_id, container_kind, container_id, membership_kind,
+                        item_type, item_id, x, y, metadata
+                    )
+                    VALUES ($1, $2, $3, $4, 'primary', 'asset', $5, $6, $7, $8::jsonb)
                     ON CONFLICT (id) DO UPDATE
                     SET folder_id = EXCLUDED.folder_id,
+                        container_kind = EXCLUDED.container_kind,
+                        container_id = EXCLUDED.container_id,
+                        membership_kind = EXCLUDED.membership_kind,
                         x = EXCLUDED.x,
                         y = EXCLUDED.y,
                         metadata = EXCLUDED.metadata,
@@ -571,6 +594,8 @@ class PostgresFolderMixin:
                     """,
                     f"asset:{asset_id}",
                     folder_id,
+                    container_kind,
+                    resolved_container_id,
                     asset_id,
                     x,
                     y,

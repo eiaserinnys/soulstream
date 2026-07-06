@@ -7,6 +7,11 @@ import { z } from "zod";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
+const boardContainerSchema = z.object({
+  kind: z.enum(["folder", "runbook"]),
+  id: z.string().min(1),
+});
+
 export function registerCatalogTools(
   server: McpServer,
   runtime: McpRuntime,
@@ -190,17 +195,33 @@ export function registerCatalogTools(
     {
       description: "현재 보드 폴더에 마크다운 문서와 보드 카드를 생성.",
       inputSchema: {
-        folder_id: z.string().min(1),
+        folder_id: z.string().min(1).optional(),
+        container: boardContainerSchema.optional(),
         title: z.string().min(1),
         body: z.string().default(""),
         x: z.number().optional(),
         y: z.number().optional(),
       },
     },
-    async ({ folder_id, title, body, x, y }) => {
+    async ({ folder_id, container, title, body, x, y }) => {
       try {
+        const resolvedFolderId = folder_id
+          ?? (container?.kind === "folder"
+            ? container.id
+            : (container
+                ? (await runtime.db.resolveBoardYjsContainerScope({
+                    containerKind: container.kind,
+                    containerId: container.id,
+                  }))?.folderId
+                : undefined));
+        if (!resolvedFolderId) {
+          return errorResult("folder_id or resolvable container is required");
+        }
         const result = await runtime.catalogService.createMarkdownDocument({
-          folderId: folder_id,
+          folderId: resolvedFolderId,
+          ...(container
+            ? { container: { containerKind: container.kind, containerId: container.id } }
+            : {}),
           title,
           body: body ?? "",
           x,

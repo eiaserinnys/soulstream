@@ -191,6 +191,7 @@ export class SessionDB {
   async createMarkdownDocument(params: {
     documentId: string;
     folderId: string;
+    container?: BoardYjsContainerRef | null;
     title: string;
     body: string;
     x: number;

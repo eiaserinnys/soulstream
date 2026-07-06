@@ -37,6 +37,18 @@ def _safe_storage_name(name: str) -> str:
     return base or "file"
 
 
+def _asset_storage_key(
+    folder_id: str,
+    container_kind: str,
+    container_id: str,
+    asset_id: str,
+    safe_name: str,
+) -> str:
+    if container_kind == "folder" and container_id == folder_id:
+        return f"folders/{folder_id}/assets/{asset_id}/{safe_name}"
+    return f"containers/{container_kind}/{container_id}/assets/{asset_id}/{safe_name}"
+
+
 @runtime_checkable
 class SessionBroadcasterProtocol(Protocol):
     """세션 목록 변경 브로드캐스터 인터페이스.
@@ -78,14 +90,21 @@ class CatalogService:
     def _snap_position(self, value: float) -> float:
         return float(round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE)
 
-    async def _next_board_position(self, folder_id: str) -> tuple[float, float]:
+    async def _next_board_position(
+        self,
+        folder_id: str,
+        *,
+        container_kind: str = "folder",
+        container_id: Optional[str] = None,
+    ) -> tuple[float, float]:
         # Legacy REST/MCP markdown placement. Board catalog reads are Yjs-derived.
+        resolved_container_id = container_id or folder_id
         await self._db.ensure_board_items()
         items = [
             item for item in await self._db.get_board_items()
             if item.get("folderId") == folder_id
-            and item.get("containerKind", "folder") == "folder"
-            and item.get("containerId", item.get("folderId")) == folder_id
+            and item.get("containerKind", "folder") == container_kind
+            and item.get("containerId", item.get("folderId")) == resolved_container_id
         ]
         occupied = {
             (int(item.get("x", 0)), int(item.get("y", 0)))
@@ -290,13 +309,20 @@ class CatalogService:
         body: str = "",
         x: Optional[float] = None,
         y: Optional[float] = None,
+        container_kind: str = "folder",
+        container_id: Optional[str] = None,
     ) -> dict:
         """마크다운 문서를 만들고 같은 폴더의 board item으로 배치한다."""
+        resolved_container_id = container_id or folder_id
         document_id = str(uuid.uuid4())
         resolved_x, resolved_y = (
             (self._snap_position(x), self._snap_position(y))
             if x is not None and y is not None
-            else await self._next_board_position(folder_id)
+            else await self._next_board_position(
+                folder_id,
+                container_kind=container_kind,
+                container_id=resolved_container_id,
+            )
         )
         result = await self._db.create_markdown_document(
             document_id,
@@ -305,6 +331,8 @@ class CatalogService:
             body,
             resolved_x,
             resolved_y,
+            container_kind=container_kind,
+            container_id=resolved_container_id,
         )
         await self._broadcast_catalog()
         return result
@@ -316,6 +344,8 @@ class CatalogService:
         name: str,
         mime_type: str,
         byte_size: int,
+        container_kind: str = "folder",
+        container_id: Optional[str] = None,
     ) -> dict:
         if self._asset_storage is None:
             raise RuntimeError("board asset storage is not configured")
@@ -329,7 +359,14 @@ class CatalogService:
 
         asset_id = str(uuid.uuid4())
         safe_name = _safe_storage_name(name)
-        storage_key = f"folders/{folder_id}/assets/{asset_id}/{safe_name}"
+        resolved_container_id = container_id or folder_id
+        storage_key = _asset_storage_key(
+            folder_id,
+            container_kind,
+            resolved_container_id,
+            asset_id,
+            safe_name,
+        )
         upload_mode = (
             "multipart"
             if byte_size > BOARD_ASSET_MULTIPART_THRESHOLD_BYTES
@@ -390,6 +427,8 @@ class CatalogService:
         height: Optional[int] = None,
         duration_seconds: Optional[float] = None,
         parts: list[dict] | None = None,
+        container_kind: str = "folder",
+        container_id: Optional[str] = None,
     ) -> dict:
         if self._asset_storage is None:
             raise RuntimeError("board asset storage is not configured")
@@ -423,6 +462,8 @@ class CatalogService:
             width=width,
             height=height,
             duration_seconds=duration_seconds,
+            container_kind=container_kind,
+            container_id=container_id or folder_id,
         )
         result["boardItem"] = self._with_asset_urls([result["boardItem"]])[0]
         await self._broadcast_catalog()

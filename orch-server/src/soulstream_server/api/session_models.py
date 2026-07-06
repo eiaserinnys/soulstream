@@ -29,6 +29,11 @@ class CreateSessionRequest(BaseModel):
     prompt: str = ""
     nodeId: Optional[str] = None
     folderId: Optional[str] = None
+    container: Optional[dict] = None
+    sourceRunbookItemId: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("sourceRunbookItemId", "source_runbook_item_id"),
+    )
     profile: Optional[str] = Field(
         default=None,
         validation_alias=AliasChoices("profile", "agentId"),

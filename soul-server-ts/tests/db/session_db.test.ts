@@ -1508,13 +1508,13 @@ describe("session_delete SQL", () => {
 });
 
 describe("board_seed_items SQL", () => {
-  it("serializes board_items writes and ignores every unique conflict", () => {
+  it("serializes board_items writes, ignores unique conflicts, and excludes sessions with primary membership elsewhere", () => {
     const schema = readFileSync(
       new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
       "utf8",
     );
     const migration = readFileSync(
-      new URL("../../../packages/db-schema/sql/migrations/018_board_file_assets.sql", import.meta.url),
+      new URL("../../../packages/db-schema/sql/migrations/033_board_seed_primary_membership_guard.sql", import.meta.url),
       "utf8",
     );
 
@@ -1528,6 +1528,9 @@ describe("board_seed_items SQL", () => {
       expect(body).toContain("hashtext('soulstream:board_items')::bigint");
       expect(body).toContain("ON CONFLICT DO NOTHING");
       expect(body).not.toContain("ON CONFLICT (id) DO NOTHING");
+      expect(body).toContain("existing_primary.item_type = 'session'");
+      expect(body).toContain("existing_primary.item_id = s.session_id");
+      expect(body).toContain("existing_primary.membership_kind = 'primary'");
     }
   });
 });

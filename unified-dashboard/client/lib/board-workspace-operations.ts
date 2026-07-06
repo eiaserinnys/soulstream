@@ -7,7 +7,10 @@ export const {
 } = createBoardWorkspaceOperations({
   updateBoardItemPositionUrl: (id) => `/api/board-items/${id}/position`,
   createMarkdownDocumentUrl: "/api/markdown-documents",
-  initBoardAssetUrl: (folderId) => `/api/board/${encodeURIComponent(folderId)}/assets/init`,
-  commitBoardAssetUrl: (folderId, assetId) =>
-    `/api/board/${encodeURIComponent(folderId)}/assets/${encodeURIComponent(assetId)}/commit`,
+  initBoardAssetUrl: (target) => target.container.kind === "folder"
+    ? `/api/board/${encodeURIComponent(target.folderId)}/assets/init`
+    : `/api/board-containers/${encodeURIComponent(target.container.kind)}/${encodeURIComponent(target.container.id)}/assets/init`,
+  commitBoardAssetUrl: (target, assetId) => target.container.kind === "folder"
+    ? `/api/board/${encodeURIComponent(target.folderId)}/assets/${encodeURIComponent(assetId)}/commit`
+    : `/api/board-containers/${encodeURIComponent(target.container.kind)}/${encodeURIComponent(target.container.id)}/assets/${encodeURIComponent(assetId)}/commit`,
 });

@@ -122,6 +122,38 @@ async def test_board_asset_init_and_commit_uses_r2_head_before_board_item(db: Sq
 
 
 @pytest.mark.asyncio
+async def test_runbook_board_asset_uses_container_storage_key_and_board_membership(db: SqliteSessionDB):
+    storage = FakeBoardAssetStorage()
+    service = CatalogService(db, FakeBroadcaster(), asset_storage=storage)
+
+    init = await service.init_file_asset(
+        folder_id="f1",
+        container_kind="runbook",
+        container_id="rb-1",
+        name="photo.png",
+        mime_type="image/png",
+        byte_size=123,
+    )
+
+    assert init["storageKey"].startswith("containers/runbook/rb-1/assets/")
+    assert storage.put_urls[0][0] == init["storageKey"]
+    storage.heads[init["storageKey"]] = ObjectHead(byte_size=123, mime_type="image/png")
+
+    committed = await service.commit_file_asset(
+        folder_id="f1",
+        container_kind="runbook",
+        container_id="rb-1",
+        asset_id=init["assetId"],
+        x=41,
+        y=79,
+    )
+
+    assert committed["boardItem"]["containerKind"] == "runbook"
+    assert committed["boardItem"]["containerId"] == "rb-1"
+    assert committed["boardItem"]["metadata"]["storageKey"] == init["storageKey"]
+
+
+@pytest.mark.asyncio
 async def test_board_asset_multipart_commit_forwards_parts(db: SqliteSessionDB):
     storage = FakeBoardAssetStorage()
     service = CatalogService(db, FakeBroadcaster(), asset_storage=storage)

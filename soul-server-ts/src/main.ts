@@ -238,6 +238,16 @@ async function main(): Promise<void> {
     processEnv: process.env,
   });
   const orchProxyConfig = buildOrchProxyConfig(env);
+  const boardYjsService = new BoardYjsService({
+    db,
+    logger,
+    auth: {
+      authBearerToken: env.AUTH_BEARER_TOKEN,
+      environment: env.ENVIRONMENT,
+      dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
+      jwtSecret: env.JWT_SECRET,
+    },
+  });
 
   // B-6 context_builder: 신규 task 첫 turn 진입 시 folder_prompt + atom_context +
   // cogito_context + soulstream_item을 합성한 prompt를 codex에 전달.
@@ -274,6 +284,7 @@ async function main(): Promise<void> {
     // Phase A context 정본 진입점: _addInterventionAutoResume이 user_message wire에 context 박음.
     contextBuilder,
     agentRegistry,
+    boardYjsService,
   );
   const scheduleService = new SoulstreamScheduleService(
     db.schedules(),
@@ -625,17 +636,6 @@ async function main(): Promise<void> {
       })();
     }, env.SUPERVISOR_WATCHDOG_INTERVAL_MS)
     : undefined;
-
-  const boardYjsService = new BoardYjsService({
-    db,
-    logger,
-    auth: {
-      authBearerToken: env.AUTH_BEARER_TOKEN,
-      environment: env.ENVIRONMENT,
-      dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
-      jwtSecret: env.JWT_SECRET,
-    },
-  });
 
   // CatalogService — MCP catalog 도구·set_session_name이 경유.
   // 본 카드(soul-server-ts Streamable HTTP MCP) 신설. dashboard 진입점이 같은 service를

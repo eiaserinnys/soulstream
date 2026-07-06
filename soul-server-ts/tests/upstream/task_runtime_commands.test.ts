@@ -114,6 +114,8 @@ describe("TaskRuntimeCommands.createSession", () => {
       useMcp: false,
       claudePermissionMode: "default",
       folderId: "folder-1",
+      container: null,
+      sourceRunbookItemId: null,
       systemPrompt: "system override",
       contextItems,
       attachmentPaths: ["/tmp/a.png", "/tmp/b.txt"],

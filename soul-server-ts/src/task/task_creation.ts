@@ -1,7 +1,8 @@
 import type { Logger } from "pino";
 
+import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
-import type { SessionDB } from "../db/session_db.js";
+import type { BoardYjsContainerRef, CatalogBoardItemRow, SessionDB } from "../db/session_db.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -39,6 +40,8 @@ export interface CreateTaskParams {
   /** 요청별 Claude Agent SDK permission mode override. */
   claudePermissionMode?: ClaudePermissionMode;
   folderId?: string | null;
+  container?: BoardYjsContainerRef | null;
+  sourceRunbookItemId?: string | null;
   /** B-6 context_builder: 사용자/위임자 system_prompt. folder_prompt와 합성됨. */
   systemPrompt?: string;
   /** 첫 turn prompt와 user_message.context에 함께 박을 외부 context items. */
@@ -50,6 +53,7 @@ export interface CreateTaskParams {
 export interface TaskCreationDeps {
   nodeId: string;
   db: SessionDB;
+  boardYjsService?: Pick<BoardYjsService, "upsertSessionBoardItem">;
   broadcaster: SessionBroadcaster;
   logger: Logger;
   hasTask(sessionId: string): boolean;
@@ -75,6 +79,9 @@ export class TaskCreation {
   async createTask(params: CreateTaskParams): Promise<Task> {
     if (this.deps.hasTask(params.agentSessionId)) {
       throw new Error(`Task already exists: ${params.agentSessionId}`);
+    }
+    if (params.container?.containerKind === "runbook" && !this.deps.boardYjsService) {
+      throw new Error("Board Yjs service is required for runbook session placement");
     }
 
     const now = new Date();
@@ -147,6 +154,8 @@ export class TaskCreation {
       task.agentSessionId,
       sessionType,
       params.folderId ?? null,
+      params.container ?? null,
+      params.sourceRunbookItemId ?? null,
     );
 
     // broadcast session_created — 실패해도 task는 메모리에 살아있음 (orch 재연결 시 동기 가능).
@@ -181,10 +190,28 @@ export class TaskCreation {
     sessionId: string,
     sessionType: string,
     folderId: string | null,
+    container: BoardYjsContainerRef | null,
+    sourceRunbookItemId: string | null,
   ): Promise<string | null> {
     let assigned: string | null = null;
     try {
-      if (folderId !== null) {
+      if (container?.containerKind === "runbook") {
+        const scope = await this.deps.db.resolveBoardYjsContainerScope(container);
+        if (!scope) {
+          throw new Error(`board container not found: ${container.containerKind}:${container.containerId}`);
+        }
+        await this.deps.db.assignSessionToFolder(sessionId, scope.folderId);
+        assigned = scope.folderId;
+        const [x, y] = await this.nextRunbookSessionPosition(container);
+        await this.deps.boardYjsService?.upsertSessionBoardItem({
+          folderId: scope.folderId,
+          container,
+          sessionId,
+          sourceRunbookItemId,
+          x,
+          y,
+        });
+      } else if (folderId !== null) {
         await this.deps.db.assignSessionToFolder(sessionId, folderId);
         assigned = folderId;
       } else {
@@ -215,5 +242,17 @@ export class TaskCreation {
     }
 
     return assigned;
+  }
+
+  private async nextRunbookSessionPosition(container: BoardYjsContainerRef): Promise<[number, number]> {
+    const seed = await this.deps.db.loadBoardYjsSeed(container);
+    const occupied = new Set(seed.boardItems.map((item: CatalogBoardItemRow) => `${item.x}:${item.y}`));
+    let index = 4;
+    while (true) {
+      const x = (index % 4) * 280;
+      const y = Math.floor(index / 4) * 160;
+      if (!occupied.has(`${x}:${y}`)) return [x, y];
+      index += 1;
+    }
   }
 }

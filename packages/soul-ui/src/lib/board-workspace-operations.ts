@@ -1,14 +1,20 @@
-import type { CatalogBoardItem, MarkdownDocument } from "../shared/types";
+import type { BoardContainerRef, CatalogBoardItem, MarkdownDocument } from "../shared/types";
 
 export interface BoardWorkspaceApiConfig {
   updateBoardItemPositionUrl: (id: string) => string;
   createMarkdownDocumentUrl: string;
-  initBoardAssetUrl: (folderId: string) => string;
-  commitBoardAssetUrl: (folderId: string, assetId: string) => string;
+  initBoardAssetUrl: (target: BoardAssetUrlTarget) => string;
+  commitBoardAssetUrl: (target: BoardAssetUrlTarget, assetId: string) => string;
+}
+
+export interface BoardAssetUrlTarget {
+  folderId: string;
+  container: BoardContainerRef;
 }
 
 export interface CreateMarkdownDocumentRequest {
   folderId: string;
+  container?: BoardContainerRef | null;
   title: string;
   body: string;
   x: number;
@@ -22,6 +28,7 @@ export interface CreateMarkdownDocumentResponse {
 
 export interface UploadBoardAssetInput {
   folderId: string;
+  container?: BoardContainerRef | null;
   file: File;
   x: number;
   y: number;
@@ -125,7 +132,7 @@ export function createBoardWorkspaceOperations(
   }
 
   async function initBoardAsset(input: UploadBoardAssetInput): Promise<BoardAssetInitResponse> {
-    const res = await fetch(config.initBoardAssetUrl(input.folderId), {
+    const res = await fetch(config.initBoardAssetUrl(resolveBoardAssetUrlTarget(input)), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -179,7 +186,7 @@ export function createBoardWorkspaceOperations(
     assetId: string,
     parts: UploadedPart[],
   ): Promise<BoardAssetCommitResponse> {
-    const res = await fetch(config.commitBoardAssetUrl(input.folderId, assetId), {
+    const res = await fetch(config.commitBoardAssetUrl(resolveBoardAssetUrlTarget(input), assetId), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -195,6 +202,13 @@ export function createBoardWorkspaceOperations(
       throw new Error(`Commit board asset upload failed: ${res.status}`);
     }
     return await res.json() as BoardAssetCommitResponse;
+  }
+
+  function resolveBoardAssetUrlTarget(input: UploadBoardAssetInput): BoardAssetUrlTarget {
+    return {
+      folderId: input.folderId,
+      container: input.container ?? { kind: "folder", id: input.folderId },
+    };
   }
 
   async function uploadBoardAsset(input: UploadBoardAssetInput): Promise<BoardAssetCommitResponse> {

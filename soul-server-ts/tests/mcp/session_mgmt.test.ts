@@ -41,6 +41,18 @@ function makeRuntime(
   orch?: OrchProxyConfig,
   agents?: AgentProfile[],
   callerFolderId: string | null = "caller-folder",
+  callerBoardItems: Array<{
+    id: string;
+    folderId: string;
+    containerKind?: "folder" | "runbook";
+    containerId?: string;
+    membershipKind?: "primary" | "reference";
+    itemType: "session";
+    itemId: string;
+    x: number;
+    y: number;
+    metadata?: Record<string, unknown>;
+  }> = [],
 ): McpRuntime & {
   addIntervention: ReturnType<typeof vi.fn>;
   createTask: ReturnType<typeof vi.fn>;
@@ -88,6 +100,21 @@ function makeRuntime(
     db: {
       getSession: vi.fn(async (sessionId: string) =>
         sessionId === "caller-sess-1" ? { folder_id: callerFolderId } : null,
+      ),
+      ensureBoardItems: vi.fn(async () => undefined),
+      getBoardItems: vi.fn(async () => callerBoardItems),
+      resolveBoardYjsContainerScope: vi.fn(async (container) =>
+        container.containerKind === "runbook"
+          ? {
+              folderId: callerFolderId ?? "root",
+              containerKind: container.containerKind,
+              containerId: container.containerId,
+            }
+          : {
+              folderId: container.containerId,
+              containerKind: "folder",
+              containerId: container.containerId,
+            },
       ),
     } as unknown as SessionDB,
     taskManager,
@@ -345,6 +372,46 @@ describe("agent profile backend boundary", () => {
           agent_node: "node-test",
           agent_id: "codex-default",
         }),
+      }),
+    );
+  });
+
+  it("create_agent_session은 caller의 runbook primary membership을 로컬 task container로 상속한다", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+      "root",
+      [{
+        id: "session:caller-sess-1",
+        folderId: "root",
+        containerKind: "runbook",
+        containerId: "rb-1",
+        membershipKind: "primary",
+        itemType: "session",
+        itemId: "caller-sess-1",
+        x: 0,
+        y: 160,
+        metadata: {},
+      }],
+    );
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "create_agent_session",
+      arguments: {
+        agent_id: "codex-default",
+        prompt: "child work",
+        caller_session_id: "caller-sess-1",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(runtime.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callerSessionId: "caller-sess-1",
+        folderId: "root",
+        container: { containerKind: "runbook", containerId: "rb-1" },
       }),
     );
   });
@@ -694,6 +761,56 @@ describe("create_remote_agent_session", () => {
       expect(result.isError).not.toBe(true);
       const body = JSON.parse(capture.requests[1]!.body);
       expect(body.folderId).toBe("caller-folder");
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("folder_id를 명시하지 않으면 caller의 runbook primary membership을 remote body에 상속한다", async () => {
+    const capture = await createOrchCapture(200, (req) => {
+      if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
+        return { body: { agents: [{ id: "roselin_codex", name: "로젤린", backend: "codex" }] } };
+      }
+      if (req.method === "POST" && req.url === "/api/sessions") {
+        return { body: { agentSessionId: "sess-child", nodeId: "node-remote" } };
+      }
+      return { status: 404, body: { error: "unexpected route" } };
+    });
+    try {
+      const runtime = makeRuntime(
+        { queued: true, queuePosition: 1 },
+        capture.orch,
+        undefined,
+        "root",
+        [{
+          id: "session:caller-sess-1",
+          folderId: "root",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          membershipKind: "primary",
+          itemType: "session",
+          itemId: "caller-sess-1",
+          x: 0,
+          y: 160,
+          metadata: {},
+        }],
+      );
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_remote_agent_session",
+        arguments: {
+          node_id: "node-remote",
+          agent_id: "roselin_codex",
+          prompt: "delegate",
+          caller_session_id: "caller-sess-1",
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      const body = JSON.parse(capture.requests[1]!.body);
+      expect(body.folderId).toBe("root");
+      expect(body.container).toEqual({ kind: "runbook", id: "rb-1" });
     } finally {
       await capture.close();
     }

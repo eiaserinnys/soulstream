@@ -80,6 +80,47 @@ describe("board_yjs_model", () => {
     ]);
   });
 
+  it("runbook session membership과 source runbook item id를 Y-doc snapshot으로 round-trip", () => {
+    const snapshot = createBoardYDocSnapshot({
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+      boardItems: [{
+        id: "session:s1",
+        folderId: "folder-1",
+        containerKind: "runbook",
+        containerId: "rb-1",
+        itemType: "session",
+        itemId: "s1",
+        membershipKind: "primary",
+        sourceRunbookItemId: "runbook-item-1",
+        x: 280,
+        y: 160,
+        metadata: {},
+      }],
+      markdownDocuments: [],
+    });
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, snapshot);
+
+    const replica = readBoardYDocReplica({
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+    }, doc);
+
+    expect(replica.boardItems).toEqual([
+      expect.objectContaining({
+        id: "session:s1",
+        folderId: "folder-1",
+        containerKind: "runbook",
+        containerId: "rb-1",
+        membershipKind: "primary",
+        sourceRunbookItemId: "runbook-item-1",
+      }),
+    ]);
+  });
+
   it("snapshot과 누적 update에서 catalog replica를 derive", () => {
     const snapshot = createBoardYDocSnapshot({
       folderId: "folder-1",
@@ -211,6 +252,42 @@ describe("board_yjs_model", () => {
       boardItems: [],
       markdownDocuments: [],
     });
+  });
+
+  it("markdown create helper는 runbook 컨테이너 board item을 생성한다", () => {
+    const doc = new Y.Doc();
+
+    const created = createMarkdownYjsDocument(doc, {
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+    }, {
+      documentId: "doc-1",
+      title: "Runbook note",
+      body: "body",
+      x: 40,
+      y: 80,
+    });
+
+    expect(created.boardItem).toMatchObject({
+      id: "markdown:doc-1",
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+      membershipKind: "primary",
+      sourceRunbookItemId: null,
+    });
+    expect(readBoardYDocReplica({
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+    }, doc).boardItems).toEqual([
+      expect.objectContaining({
+        id: "markdown:doc-1",
+        containerKind: "runbook",
+        containerId: "rb-1",
+      }),
+    ]);
   });
 
   it("document name은 folder id와 양방향 매핑", () => {

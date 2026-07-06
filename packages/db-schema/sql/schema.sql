@@ -2315,6 +2315,12 @@ BEGIN
             s.session_id AS tie_breaker
         FROM sessions s
         WHERE s.folder_id IS NOT NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM board_items existing_primary
+              WHERE existing_primary.item_type = 'session'
+                AND existing_primary.item_id = s.session_id
+                AND existing_primary.membership_kind = 'primary'
+          )
         UNION ALL
         SELECT
             f.parent_folder_id AS folder_id,

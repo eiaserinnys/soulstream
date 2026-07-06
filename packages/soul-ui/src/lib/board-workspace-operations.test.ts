@@ -48,8 +48,12 @@ function makeOperations() {
   return createBoardWorkspaceOperations({
     updateBoardItemPositionUrl: (id) => `/api/board-items/${id}/position`,
     createMarkdownDocumentUrl: "/api/markdown-documents",
-    initBoardAssetUrl: (folderId) => `/api/board/${folderId}/assets/init`,
-    commitBoardAssetUrl: (folderId, assetId) => `/api/board/${folderId}/assets/${assetId}/commit`,
+    initBoardAssetUrl: (target) => target.container.kind === "folder"
+      ? `/api/board/${target.folderId}/assets/init`
+      : `/api/board-containers/${target.container.kind}/${target.container.id}/assets/init`,
+    commitBoardAssetUrl: (target, assetId) => target.container.kind === "folder"
+      ? `/api/board/${target.folderId}/assets/${assetId}/commit`
+      : `/api/board-containers/${target.container.kind}/${target.container.id}/assets/${assetId}/commit`,
   });
 }
 
@@ -60,6 +64,45 @@ describe("createBoardWorkspaceOperations asset upload", () => {
     globalThis.XMLHttpRequest = originalXHR;
     MockXMLHttpRequest.requests = [];
     vi.restoreAllMocks();
+  });
+
+  it("forwards markdown creation container payloads", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      document: { id: "doc-1", title: "Runbook note", body: "body", version: 1 },
+      boardItem: {
+        id: "markdown:doc-1",
+        folderId: "root",
+        containerKind: "runbook",
+        containerId: "rb-1",
+        itemType: "markdown",
+        itemId: "doc-1",
+        x: 40,
+        y: 80,
+        metadata: {},
+      },
+    }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await makeOperations().createMarkdownDocument({
+      folderId: "root",
+      container: { kind: "runbook", id: "rb-1" },
+      title: "Runbook note",
+      body: "body",
+      x: 40,
+      y: 80,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/markdown-documents", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({
+        folderId: "root",
+        container: { kind: "runbook", id: "rb-1" },
+        title: "Runbook note",
+        body: "body",
+        x: 40,
+        y: 80,
+      }),
+    }));
   });
 
   it("runs init, direct PUT, then commit for single-file uploads", async () => {
@@ -95,6 +138,8 @@ describe("createBoardWorkspaceOperations asset upload", () => {
     });
 
     expect(result.boardItem.itemType).toBe("asset");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/board/f1/assets/init");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/board/f1/assets/asset-1/commit");
     expect(MockXMLHttpRequest.requests[0]?.url).toBe("https://r2.example/put");
     expect(MockXMLHttpRequest.requests[0]?.headers["Content-Type"]).toBe("image/png");
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
@@ -103,6 +148,43 @@ describe("createBoardWorkspaceOperations asset upload", () => {
       parts: [],
     });
     expect(progress.at(-1)).toBe(100);
+  });
+
+  it("uses container asset routes for runbook board uploads", async () => {
+    globalThis.XMLHttpRequest = MockXMLHttpRequest as unknown as typeof XMLHttpRequest;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        assetId: "asset-runbook",
+        uploadMode: "single",
+        uploadUrl: "https://r2.example/runbook-put",
+      }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        asset: { id: "asset-runbook" },
+        boardItem: {
+          id: "asset:asset-runbook",
+          folderId: "root",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          itemType: "asset",
+          itemId: "asset-runbook",
+          x: 120,
+          y: 160,
+          metadata: {},
+        },
+      }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await makeOperations().uploadBoardAsset({
+      folderId: "root",
+      container: { kind: "runbook", id: "rb-1" },
+      file: new File(["abc"], "artifact.png", { type: "image/png" }),
+      x: 120,
+      y: 160,
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/board-containers/runbook/rb-1/assets/init");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/board-containers/runbook/rb-1/assets/asset-runbook/commit");
+    expect(MockXMLHttpRequest.requests[0]?.url).toBe("https://r2.example/runbook-put");
   });
 
   it("uploads every multipart part and forwards ETags to commit", async () => {

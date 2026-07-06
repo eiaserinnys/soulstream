@@ -8,6 +8,10 @@ import { TASK_STATUSES } from "../../task_tree/task_tree_repository.js";
 
 const taskStatusSchema = z.enum(TASK_STATUSES);
 const verificationOwnerSchema = z.enum(["agent", "user", "both"]);
+const delegatedContainerSchema = z.object({
+  kind: z.enum(["folder", "runbook"]),
+  id: z.string().min(1),
+});
 
 export function registerTaskTreeTools(
   server: McpServer,
@@ -83,6 +87,8 @@ export function registerTaskTreeTools(
         verification_owner: verificationOwnerSchema.default("agent"),
         idempotency_key: z.string().nullable().optional(),
         folder_id: z.string().nullable().optional(),
+        container: delegatedContainerSchema.optional(),
+        source_runbook_item_id: z.string().nullable().optional(),
       },
     },
     async (input) => {
@@ -99,6 +105,8 @@ export function registerTaskTreeTools(
             verificationOwner: input.verification_owner,
             idempotencyKey: input.idempotency_key,
             folderId: input.folder_id,
+            container: input.container ?? null,
+            sourceRunbookItemId: input.source_runbook_item_id,
           }),
         );
       } catch (err) {

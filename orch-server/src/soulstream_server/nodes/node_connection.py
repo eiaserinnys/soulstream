@@ -391,6 +391,8 @@ class NodeConnection:
         caller_session_id: str | None = None,
         attachment_paths: list[str] | None = None,
         caller_info: dict | None = None,
+        container: dict | None = None,
+        source_runbook_item_id: str | None = None,
         model: str | None = None,
         reasoning_effort: str | None = None,
         extra_context_items: list[dict] | None = None,
@@ -418,6 +420,10 @@ class NodeConnection:
             payload["caller_session_id"] = caller_session_id
         if caller_info is not None:
             payload["caller_info"] = caller_info
+        if container is not None:
+            payload["container"] = container
+        if source_runbook_item_id is not None:
+            payload["sourceRunbookItemId"] = source_runbook_item_id
         context_items = list(extra_context_items or [])
         if attachment_paths:
             payload["attachment_paths"] = attachment_paths

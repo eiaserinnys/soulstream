@@ -53,7 +53,21 @@ function makeOperation(overrides: Partial<TaskOperationRow> = {}): TaskOperation
   };
 }
 
-function makeHarness(options: { callerFolderId?: string | null } = {}) {
+function makeHarness(options: {
+  callerFolderId?: string | null;
+  callerBoardItems?: Array<{
+    id: string;
+    folderId: string;
+    containerKind?: "folder" | "runbook";
+    containerId?: string;
+    membershipKind?: "primary" | "reference";
+    itemType: "session";
+    itemId: string;
+    x: number;
+    y: number;
+    metadata?: Record<string, unknown>;
+  }>;
+} = {}) {
   let currentTask = makeTask({
     linked_session_id: "child-session",
     linked_node_id: "node-child",
@@ -122,6 +136,21 @@ function makeHarness(options: { callerFolderId?: string | null } = {}) {
         sessionId === "parent-session"
           ? { folder_id: options.callerFolderId ?? null }
           : null,
+      ),
+      ensureBoardItems: vi.fn(async () => undefined),
+      getBoardItems: vi.fn(async () => options.callerBoardItems ?? []),
+      resolveBoardYjsContainerScope: vi.fn(async (container) =>
+        container.containerKind === "runbook"
+          ? {
+              folderId: options.callerFolderId ?? "root",
+              containerKind: container.containerKind,
+              containerId: container.containerId,
+            }
+          : {
+              folderId: container.containerId,
+              containerKind: "folder",
+              containerId: container.containerId,
+            },
       ),
     },
     agentRegistry: {
@@ -238,6 +267,41 @@ describe("TaskTreeService", () => {
 
     expect(h.createdSessions[0]).toEqual(
       expect.objectContaining({ folderId: "caller-folder" }),
+    );
+  });
+
+  it("inherits caller runbook primary membership when delegate folderId is omitted", async () => {
+    const h = makeHarness({
+      callerFolderId: "root",
+      callerBoardItems: [{
+        id: "session:parent-session",
+        folderId: "root",
+        containerKind: "runbook",
+        containerId: "rb-1",
+        membershipKind: "primary",
+        itemType: "session",
+        itemId: "parent-session",
+        x: 0,
+        y: 160,
+        metadata: {},
+      }],
+    });
+
+    await h.service.delegateTaskItem({
+      sessionId: "parent-session",
+      parentTaskId: "task-parent",
+      title: "Child task",
+      prompt: "Do the work",
+      agentId: "child-agent",
+      sourceRunbookItemId: "runbook-item-1",
+    });
+
+    expect(h.createdSessions[0]).toEqual(
+      expect.objectContaining({
+        folderId: "root",
+        container: { containerKind: "runbook", containerId: "rb-1" },
+        sourceRunbookItemId: "runbook-item-1",
+      }),
     );
   });
 

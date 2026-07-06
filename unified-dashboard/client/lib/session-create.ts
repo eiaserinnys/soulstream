@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import type {
+  BoardContainerRef,
   CreateSessionRequest,
   CreateSessionResponse,
   ReasoningEffort,
@@ -36,6 +37,8 @@ export interface CreateDashboardSessionInput {
   agent?: SessionAgentMetadata | null;
   reasoningEffort?: ReasoningEffort | null;
   oauthProfileName?: string | null;
+  container?: BoardContainerRef | null;
+  sourceRunbookItemId?: string | null;
   parentTaskId?: string;
   taskIdempotencyKey?: string;
   boardPosition?: { x: number; y: number } | null;
@@ -49,6 +52,10 @@ export async function createDashboardSession(
     ...(input.nodeId ? { nodeId: input.nodeId } : {}),
     ...(input.attachmentPaths?.length ? { attachmentPaths: input.attachmentPaths } : {}),
     ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
+    ...(input.container ? { container: input.container } : {}),
+    ...(input.sourceRunbookItemId !== undefined
+      ? { sourceRunbookItemId: input.sourceRunbookItemId }
+      : {}),
     ...(input.agentId ? { profile: input.agentId } : {}),
     ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
     ...(input.oauthProfileName ? { oauth_profile_name: input.oauthProfileName } : {}),
@@ -83,7 +90,7 @@ export async function createDashboardSession(
     input.agent?.name ?? null,
     input.agent?.portraitUrl ?? null,
     input.agent?.backend ?? null,
-    input.boardPosition ?? null,
+    input.container?.kind === "runbook" ? null : input.boardPosition ?? null,
   );
 
   return result;

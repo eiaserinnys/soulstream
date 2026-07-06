@@ -287,6 +287,9 @@ class FolderProtocol(Protocol):
         body: str,
         x: float,
         y: float,
+        *,
+        container_kind: str = "folder",
+        container_id: Optional[str] = None,
     ) -> dict: ...
 
     async def get_markdown_document(self, document_id: str) -> Optional[dict]: ...
@@ -330,6 +333,9 @@ class FolderProtocol(Protocol):
         width: Optional[int] = None,
         height: Optional[int] = None,
         duration_seconds: Optional[float] = None,
+        *,
+        container_kind: str = "folder",
+        container_id: Optional[str] = None,
     ) -> dict: ...
 
 
@@ -647,6 +653,9 @@ class SessionDBBase(ABC):
         body: str,
         x: float,
         y: float,
+        *,
+        container_kind: str = "folder",
+        container_id: Optional[str] = None,
     ) -> dict: ...
 
     @abstractmethod
@@ -698,6 +707,9 @@ class SessionDBBase(ABC):
         width: Optional[int] = None,
         height: Optional[int] = None,
         duration_seconds: Optional[float] = None,
+        *,
+        container_kind: str = "folder",
+        container_id: Optional[str] = None,
     ) -> dict: ...
 
     # ── 경량 세션 목록 ──

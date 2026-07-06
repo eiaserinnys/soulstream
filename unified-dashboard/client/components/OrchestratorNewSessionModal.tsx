@@ -195,6 +195,8 @@ export function OrchestratorNewSessionModal() {
         nodeId: selectedNodeId,
         attachmentPaths,
         folderId: selectedModalFolderId ?? undefined,
+        container: newSessionDefaults?.container ?? null,
+        sourceRunbookItemId: newSessionDefaults?.sourceRunbookItemId ?? null,
         agentId: selectedAgentId || null,
         agent: selectedAgent ?? null,
         reasoningEffort: submitReasoningEffort,
@@ -209,7 +211,7 @@ export function OrchestratorNewSessionModal() {
         boardPosition,
       });
       const { agentSessionId } = result;
-      if (boardPosition && selectedModalFolderId) {
+      if (boardPosition && selectedModalFolderId && newSessionDefaults?.container?.kind !== "runbook") {
         placeBoardSessionInYjs(selectedModalFolderId, agentSessionId, boardPosition);
       }
       clearDraft(draftKey);
@@ -220,7 +222,7 @@ export function OrchestratorNewSessionModal() {
       setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
       setSelectedOAuthProfile(null);
     },
-    [selectedNodeId, selectedModalFolderId, selectedAgentId, submitReasoningEffort, selectedOAuthProfile, newSessionParentTask, agents, clearDraft, draftKey, closeNewSessionModal, newSessionDefaults?.boardPosition],
+    [selectedNodeId, selectedModalFolderId, selectedAgentId, submitReasoningEffort, selectedOAuthProfile, newSessionParentTask, agents, clearDraft, draftKey, closeNewSessionModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceRunbookItemId],
   );
 
   const folderSelector = (

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { buildCallerInfoFromCallerSession } from "../caller_info.js";
 import type { McpRuntime } from "../mcp/runtime.js";
-import { resolveDelegatedFolderId } from "../session_folder_fallback.js";
+import { type DelegatedContainerRef, resolveDelegatedContainer } from "../session_folder_fallback.js";
 
 import type {
   TaskItemRow,
@@ -111,6 +111,8 @@ export class TaskTreeService {
     verificationOwner?: VerificationOwner;
     idempotencyKey?: string | null;
     folderId?: string | null;
+    container?: DelegatedContainerRef | null;
+    sourceRunbookItemId?: string | null;
   }): Promise<TaskMutationResult & { delegated_session_id?: string }> {
     const idempotent = await this.resolveIdempotent(params.idempotencyKey);
     if (idempotent) {
@@ -161,18 +163,22 @@ export class TaskTreeService {
         this.runtime,
         params.sessionId,
       );
+      const resolvedContainer = await resolveDelegatedContainer(this.runtime, {
+        callerSessionId: params.sessionId,
+        ...(Object.prototype.hasOwnProperty.call(params, "folderId")
+          ? { folderId: params.folderId }
+          : {}),
+        container: params.container ?? null,
+      });
       const childSession = await this.runtime.taskManager.createTask({
         agentSessionId: delegatedSessionId,
         prompt: params.prompt,
         profileId: resolvedAgentId,
         callerSessionId: params.sessionId,
         callerInfo,
-        folderId: await resolveDelegatedFolderId(this.runtime, {
-          callerSessionId: params.sessionId,
-          ...(Object.prototype.hasOwnProperty.call(params, "folderId")
-            ? { folderId: params.folderId }
-            : {}),
-        }),
+        folderId: resolvedContainer.folderId,
+        container: resolvedContainer.container,
+        sourceRunbookItemId: params.sourceRunbookItemId ?? null,
       });
       this.runtime.taskExecutor.startExecution(childSession, agent);
     } catch (err) {

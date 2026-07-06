@@ -173,10 +173,12 @@ export function BoardWorkspaceHeader({
         </Button>
         {canCreateBoardItems && (
           <>
-            <Button variant="ghost" size="sm" onClick={onCreateFolder} title="New folder">
-              <FolderPlus className="mr-1 h-3.5 w-3.5" />
-              Folder
-            </Button>
+            {!isRunbookBoard && (
+              <Button variant="ghost" size="sm" onClick={onCreateFolder} title="New folder">
+                <FolderPlus className="mr-1 h-3.5 w-3.5" />
+                Folder
+              </Button>
+            )}
             <div className="relative">
               <Button variant="ghost" size="sm" onClick={onToggleNewMenu} title="New">
                 <Plus className="mr-1 h-3.5 w-3.5" />

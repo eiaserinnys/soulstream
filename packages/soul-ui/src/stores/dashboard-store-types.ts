@@ -50,6 +50,8 @@ export interface DashboardConfig {
 
 export interface NewSessionDefaults {
   folderId?: string | null;
+  container?: BoardContainerRef | null;
+  sourceRunbookItemId?: string | null;
   nodeId?: string;
   agentId?: string | null;
   boardPosition?: { x: number; y: number };

@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import type { ContextItem } from "../context/prompt_assembler.js";
+import type { BoardYjsContainerRef } from "../db/session_db.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
@@ -42,6 +43,8 @@ interface CreateSessionCmd extends CommandLike {
   claudePermissionMode?: ClaudePermissionMode;
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
+  container?: { kind: BoardYjsContainerRef["containerKind"]; id: string } | null;
+  sourceRunbookItemId?: string | null;
   /**
    * Python parity: upstream `systemPrompt` forwards into the session's
    * system_prompt without renaming on the wire.
@@ -119,6 +122,10 @@ async function handleCreateSession(
       useMcp: cmd.use_mcp ?? cmd.useMcp,
       claudePermissionMode: cmd.claude_permission_mode ?? cmd.claudePermissionMode,
       folderId: cmd.folderId ?? null,
+      container: cmd.container
+        ? { containerKind: cmd.container.kind, containerId: cmd.container.id }
+        : null,
+      sourceRunbookItemId: cmd.sourceRunbookItemId ?? null,
       systemPrompt: cmd.systemPrompt,
       extraContextItems: cmd.extra_context_items,
       attachmentPaths: cmd.attachment_paths,

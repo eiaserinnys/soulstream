@@ -39,6 +39,8 @@ def _normalize_board_item(row: dict) -> dict:
         "folderId": row["folder_id"],
         "containerKind": row.get("container_kind") or "folder",
         "containerId": row.get("container_id") or row["folder_id"],
+        "membershipKind": row.get("membership_kind") or "primary",
+        "sourceRunbookItemId": row.get("source_runbook_item_id"),
         "itemType": row["item_type"],
         "itemId": row["item_id"],
         "x": float(row["x"]),
@@ -308,11 +310,13 @@ class SqliteFolderMixin:
             await self._conn.execute(
                 """
                 INSERT OR IGNORE INTO board_items
-                    (id, folder_id, item_type, item_id, x, y, metadata, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, '{}', ?, ?)
+                    (id, folder_id, container_kind, container_id, membership_kind,
+                     item_type, item_id, x, y, metadata, created_at, updated_at)
+                VALUES (?, ?, 'folder', ?, 'primary', ?, ?, ?, ?, '{}', ?, ?)
                 """,
                 (
                     row["board_item_id"],
+                    folder_id,
                     folder_id,
                     row["item_type"],
                     row["item_id"],
@@ -415,7 +419,11 @@ class SqliteFolderMixin:
         body: str,
         x: float,
         y: float,
+        *,
+        container_kind: str = "folder",
+        container_id: Optional[str] = None,
     ) -> dict:
+        resolved_container_id = container_id or folder_id
         now = _utc_now()
         await self._conn.execute(
             """
@@ -426,16 +434,33 @@ class SqliteFolderMixin:
         )
         await self._conn.execute(
             """
-            INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata, created_at, updated_at)
-            VALUES (?, ?, 'markdown', ?, ?, ?, '{}', ?, ?)
+            INSERT INTO board_items (
+                id, folder_id, container_kind, container_id, membership_kind,
+                item_type, item_id, x, y, metadata, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, 'primary', 'markdown', ?, ?, ?, '{}', ?, ?)
             """,
-            (f"markdown:{document_id}", folder_id, document_id, x, y, now, now),
+            (
+                f"markdown:{document_id}",
+                folder_id,
+                container_kind,
+                resolved_container_id,
+                document_id,
+                x,
+                y,
+                now,
+                now,
+            ),
         )
         await self._conn.commit()
         document = await self.get_markdown_document(document_id)
         board_item = {
             "id": f"markdown:{document_id}",
             "folderId": folder_id,
+            "containerKind": container_kind,
+            "containerId": resolved_container_id,
+            "membershipKind": "primary",
+            "sourceRunbookItemId": None,
             "itemType": "markdown",
             "itemId": document_id,
             "x": float(x),
@@ -573,7 +598,11 @@ class SqliteFolderMixin:
         width: Optional[int] = None,
         height: Optional[int] = None,
         duration_seconds: Optional[float] = None,
+        *,
+        container_kind: str = "folder",
+        container_id: Optional[str] = None,
     ) -> dict:
+        resolved_container_id = container_id or folder_id
         now = _utc_now()
         cursor = await self._conn.execute(
             """
@@ -606,10 +635,16 @@ class SqliteFolderMixin:
         }
         await self._conn.execute(
             """
-            INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata, created_at, updated_at)
-            VALUES (?, ?, 'asset', ?, ?, ?, ?, ?, ?)
+            INSERT INTO board_items (
+                id, folder_id, container_kind, container_id, membership_kind,
+                item_type, item_id, x, y, metadata, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, 'primary', 'asset', ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 folder_id = excluded.folder_id,
+                container_kind = excluded.container_kind,
+                container_id = excluded.container_id,
+                membership_kind = excluded.membership_kind,
                 x = excluded.x,
                 y = excluded.y,
                 metadata = excluded.metadata,
@@ -618,6 +653,8 @@ class SqliteFolderMixin:
             (
                 f"asset:{asset_id}",
                 folder_id,
+                container_kind,
+                resolved_container_id,
                 asset_id,
                 x,
                 y,
