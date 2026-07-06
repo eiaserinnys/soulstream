@@ -24,7 +24,7 @@ export function CustomViewTileBody({
     return (
       <div
         data-testid="board-custom-view-preview"
-        className="mt-2 line-clamp-3 text-xs leading-[1.55] text-muted-foreground"
+        className="line-clamp-4 px-4 py-3 text-xs leading-[1.55] text-muted-foreground"
       >
         {fallbackPreview || "Empty custom view"}
       </div>
@@ -32,12 +32,12 @@ export function CustomViewTileBody({
   }
 
   return (
-    <div className="mt-2 min-h-0 flex-1 overflow-hidden rounded-md">
+    <div className="absolute inset-0 overflow-hidden">
       <CustomViewIframe
         html={document.html}
         bindings={bindings}
         title={title}
-        className="pointer-events-none h-full w-full border-0 bg-white"
+        className="pointer-events-none h-full w-full border-0 bg-transparent"
       />
     </div>
   );
