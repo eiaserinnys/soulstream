@@ -139,7 +139,7 @@ describe("RunbookOverview", () => {
     });
   }
 
-  it("renders the dashboard sections, compact my-turn cards, and collapsed runbook groups", () => {
+  it("renders compact running sessions, split panes, runbook rows, and selected items", () => {
     useRunbookStore.setState({
       overview: {
         snapshot: sampleOverview(),
@@ -155,39 +155,77 @@ describe("RunbookOverview", () => {
 
     expect(container.querySelector('[data-testid="runbook-overview-dashboard"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="runbook-overview-running-sessions"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="runbook-overview-my-turn"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="runbook-overview-my-turn-rail"]')?.className)
-      .toContain("overflow-x-auto");
-    expect(container.querySelector('[data-testid="runbook-overview-my-turn-todo-label"]')?.textContent)
-      .toContain("할 일");
+    expect(container.querySelector('[data-testid="runbook-overview-my-turn"]')).toBeNull();
+    expect(container.querySelector('[data-testid="runbook-overview-my-turn-rail"]')).toBeNull();
+    expect(container.querySelector('[data-testid="runbook-overview-split-layout"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="runbook-overview-runbook-list-scroll"]')?.className).toContain("overflow-y-auto");
+    expect(container.querySelector('[data-testid="runbook-overview-selected-items-scroll"]')?.className).toContain("overflow-y-auto");
     expect(container.querySelector("main")?.style.scrollbarGutter).toBe("stable");
     expect(container.querySelector("main")?.style.paddingInline).toBe("16px");
-    expect(container.querySelector('[data-testid="runbook-overview-group"]')?.className)
-      .toContain("liquid-glass-card");
+    const row = container.querySelector<HTMLElement>('[data-testid="runbook-overview-runbook-row"]');
+    expect(row).not.toBeNull();
+    expect(row!.getAttribute("aria-selected")).toBe("true");
+    expect(row!.className).toContain("glass");
+    expect(container.querySelector('[data-testid="runbook-overview-runbook-attention"]')?.textContent).toBe("1");
     expect(container.textContent).toContain("Operator approval");
     expect(container.textContent).toContain("Deploy Runbook");
     expect(container.textContent).toContain("1/2");
     expect(container.textContent).toContain("실행 중인 세션 없음");
     expect(container.textContent).not.toContain("Approve the deployment window.");
     expect(container.textContent).not.toContain("PR-3b 대기");
-    expect(container.textContent).not.toContain("Agent verification");
-    expect(container.querySelector('[data-testid="runbook-overview-item-how-to"]')).toBeNull();
-
-    const toggle = container.querySelector<HTMLButtonElement>('[data-testid="runbook-overview-group-toggle"]');
-    expect(toggle).not.toBeNull();
-    flushSync(() => {
-      toggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    });
     expect(container.textContent).toContain("Agent verification");
-
-    const myTurn = container.querySelector<HTMLElement>('[data-testid="runbook-overview-my-turn-item"]');
-    expect(myTurn).not.toBeNull();
-    expect(myTurn!.className).toContain("glass");
-    expect(container.querySelectorAll('[data-testid="runbook-overview-item-how-to-trigger"]').length)
-      .toBeGreaterThanOrEqual(3);
+    expect(container.querySelector('[data-testid="runbook-overview-item-how-to"]')).toBeNull();
+    expect(container.querySelectorAll('[data-testid="runbook-overview-item-how-to-trigger"]').length).toBeGreaterThanOrEqual(1);
     expect(useDashboardStore.getState().focusedBoardItem).toBeNull();
     expect(useDashboardStore.getState().viewMode).toBe("feed");
     expect(useDashboardStore.getState().activeTab).toBe("feed");
+  });
+
+  it("marks only runbooks with current attention and switches the lower item pane on row selection", () => {
+    const payload = sampleOverview();
+    payload.runbooks.push({
+      ...payload.runbooks[0]!,
+      runbook_id: "rb-2",
+      runbook_title: "QA Runbook",
+      board_item_id: "runbook:rb-2",
+      completed_count: 0,
+      total_count: 1,
+      items: [{
+        ...payload.runbooks[0]!.items[0]!,
+        runbook_id: "rb-2",
+        item_id: "qa-item",
+        item_title: "Smoke tests",
+        status: "pending",
+      }],
+    });
+    useRunbookStore.setState({
+      overview: {
+        snapshot: payload,
+        status: "ready",
+        error: null,
+        isRefreshing: false,
+      },
+    });
+
+    flushSync(() => {
+      renderOverview();
+    });
+
+    expect(container.querySelectorAll('[data-testid="runbook-overview-runbook-attention"]')).toHaveLength(1);
+    expect(container.querySelector('[data-testid="runbook-overview-selected-items"]')?.textContent).toContain("Operator approval");
+    expect(container.querySelector('[data-testid="runbook-overview-selected-items"]')?.textContent).not.toContain("Smoke tests");
+
+    const qaRow = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-testid="runbook-overview-runbook-row"]'),
+    ).find((row) => row.textContent?.includes("QA Runbook"));
+    expect(qaRow).not.toBeUndefined();
+    flushSync(() => {
+      qaRow!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(qaRow!.getAttribute("aria-selected")).toBe("true");
+    expect(container.querySelector('[data-testid="runbook-overview-selected-items"]')?.textContent).toContain("Smoke tests");
+    expect(container.querySelector('[data-testid="runbook-overview-selected-items"]')?.textContent).not.toContain("Operator approval");
   });
 
   it("omits the how-to hover trigger when an item has no how_to", () => {
@@ -220,7 +258,7 @@ describe("RunbookOverview", () => {
     expect(container.textContent).not.toContain("상세 절차 없음");
   });
 
-  it("posts a my-turn checkbox status mutation and reloads the overview", async () => {
+  it("posts a selected item checkbox status mutation and reloads the overview", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(okResponse({ ok: true }))
       .mockResolvedValueOnce(okResponse(sampleOverview()));
@@ -239,7 +277,7 @@ describe("RunbookOverview", () => {
     });
 
     const checkbox = container.querySelector<HTMLInputElement>(
-      '[data-testid="runbook-overview-my-turn-item"] input[type="checkbox"]',
+      '[data-testid="runbook-overview-group-item"] input[type="checkbox"]',
     );
     expect(checkbox).not.toBeNull();
     checkbox!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -304,13 +342,12 @@ describe("RunbookOverview", () => {
       renderOverview();
     });
 
-    expect(container.querySelector('[data-testid="runbook-overview-my-turn-review-label"]')?.textContent)
-      .toContain("확인 대기");
     expect(container.textContent).toContain("Director review");
     expect(container.textContent).toContain("확인 대기");
+    expect(container.querySelector('[data-testid="runbook-overview-runbook-attention"]')?.textContent).toBe("2");
 
     const reviewRow = Array.from(
-      container.querySelectorAll<HTMLElement>('[data-testid="runbook-overview-my-turn-item"]'),
+      container.querySelectorAll<HTMLElement>('[data-testid="runbook-overview-group-item"]'),
     ).find((row) => row.textContent?.includes("Director review"));
     expect(reviewRow).not.toBeUndefined();
     const checkbox = reviewRow!.querySelector<HTMLInputElement>('input[type="checkbox"]');
@@ -328,7 +365,7 @@ describe("RunbookOverview", () => {
     expect(body.idempotencyKey).toMatch(/^runbook:rb-1:item:item-review:status:completed:v5:/);
   });
 
-  it("opens the runbook board card without toggling item details", () => {
+  it("opens the runbook board from a runbook row without changing selection", () => {
     useRunbookStore.setState({
       overview: {
         snapshot: sampleOverview(),
@@ -343,9 +380,12 @@ describe("RunbookOverview", () => {
     });
 
     const openBoard = container.querySelector<HTMLButtonElement>(
-      '[data-testid="runbook-overview-open-board"]',
+      '[data-testid="runbook-overview-row-open-board"]',
     );
     expect(openBoard).not.toBeNull();
+    const selectedBefore = container.querySelector<HTMLElement>(
+      '[data-testid="runbook-overview-runbook-row"][aria-selected="true"]',
+    )?.dataset.runbookId;
     flushSync(() => {
       openBoard!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
@@ -358,6 +398,9 @@ describe("RunbookOverview", () => {
     expect(useDashboardStore.getState().selectedFolderId).toBe("f1");
     expect(useDashboardStore.getState().viewMode).toBe("folder");
     expect(useDashboardStore.getState().activeTab).toBe("folder");
+    expect(container.querySelector<HTMLElement>(
+      '[data-testid="runbook-overview-runbook-row"][aria-selected="true"]',
+    )?.dataset.runbookId).toBe(selectedBefore);
   });
 
   it("renders running sessions with SessionItem and selects the clicked session", () => {
@@ -394,8 +437,8 @@ describe("RunbookOverview", () => {
 
     expect(container.textContent).toContain("Investigate deploy");
     expect(container.textContent).not.toContain("Finished");
-    expect(container.querySelector('[data-testid="runbook-overview-running-sessions-rail"]')?.className)
-      .toContain("overflow-x-auto");
+    expect(container.querySelector('[data-testid="runbook-overview-running-sessions-rail"]')?.className).toContain("overflow-x-auto");
+    expect(container.querySelector('[data-testid="runbook-overview-running-sessions-rail"]')?.className).toContain("h-[7.75rem]");
     const sessionCard = container.querySelector<HTMLElement>('[data-session-id="sess-running"]');
     expect(sessionCard).not.toBeNull();
     flushSync(() => {

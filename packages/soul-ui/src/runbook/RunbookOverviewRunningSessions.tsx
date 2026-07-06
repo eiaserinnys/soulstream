@@ -87,7 +87,7 @@ export function RunbookOverviewRunningSessions() {
 
   return (
     <section data-testid="runbook-overview-running-sessions" className="min-w-0">
-      <div className="mb-3 flex min-w-0 items-center gap-2">
+      <div className="mb-2 flex min-w-0 items-center gap-2">
         <Radio className="h-4 w-4 shrink-0 text-success" />
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">실행 중인 세션</h2>
         <Badge variant="success" size="sm" className="h-5 px-1.5 text-[10px]">
@@ -97,12 +97,12 @@ export function RunbookOverviewRunningSessions() {
       {runningSessions.length > 0 ? (
         <div
           data-testid="runbook-overview-running-sessions-rail"
-          className="flex h-[11.75rem] min-w-0 snap-x snap-mandatory gap-3 overflow-x-auto overflow-y-hidden pb-2 [scrollbar-gutter:stable]"
+          className="flex h-[7.75rem] min-w-0 snap-x snap-mandatory gap-2.5 overflow-x-auto overflow-y-hidden pb-2 [scrollbar-gutter:stable]"
         >
           {runningSessions.map((session) => (
             <div
               key={session.agentSessionId}
-              className="h-full w-[18rem] max-w-[calc(100vw-4rem)] flex-none snap-start"
+              className="h-full w-[15rem] max-w-[calc(100vw-4rem)] flex-none snap-start"
             >
               <SessionItem
                 session={session}
@@ -123,7 +123,7 @@ export function RunbookOverviewRunningSessions() {
           ))}
         </div>
       ) : (
-        <div className="rounded-[14px] border border-dashed border-success/30 px-3 py-6 text-center text-sm text-muted-foreground">
+        <div className="rounded-[14px] border border-dashed border-success/30 px-3 py-4 text-center text-sm text-muted-foreground">
           실행 중인 세션 없음
         </div>
       )}
