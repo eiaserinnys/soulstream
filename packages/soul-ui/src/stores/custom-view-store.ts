@@ -8,7 +8,7 @@ interface LoadOptions {
   signal?: AbortSignal;
 }
 
-interface CustomViewProjection {
+export interface CustomViewProjection {
   document: CustomViewDocument | null;
   status: "idle" | "loading" | "ready" | "error";
   error: string | null;
