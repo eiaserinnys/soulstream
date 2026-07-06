@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
-import type { CatalogBoardItem, CatalogState, SessionSummary } from "../shared/types";
+import type { BoardContainerRef, CatalogBoardItem, CatalogState, SessionSummary } from "../shared/types";
+import { useRunbookStore, type RunbookSnapshot } from "../stores/runbook-store";
 import { FolderDialog } from "../components/FolderDialog";
 import { runGuardedLoadMore } from "../components/load-more-guard";
 import { toastManager } from "../components/ui/toast";
@@ -58,6 +59,41 @@ import type { BoardWorkspaceViewProps } from "./BoardWorkspaceView.types";
 export type { BoardWorkspaceViewProps, CreateMarkdownDocumentInput, CreateMarkdownDocumentResult } from "./BoardWorkspaceView.types";
 const EMPTY_SESSIONS: SessionSummary[] = [];
 
+function boardContainerKey(container: BoardContainerRef | null): string | null {
+  return container ? `${container.kind}:${container.id}` : null;
+}
+
+function folderBoardContainer(folderId: string | null): BoardContainerRef | null {
+  return folderId ? { kind: "folder", id: folderId } : null;
+}
+
+function boardItemBelongsToContainer(
+  item: CatalogBoardItem,
+  container: BoardContainerRef,
+): boolean {
+  const itemContainerKind = item.containerKind ?? "folder";
+  const itemContainerId = item.containerId ?? item.folderId;
+  return itemContainerKind === container.kind && itemContainerId === container.id;
+}
+
+function boardItemsUrl(container: BoardContainerRef): string {
+  if (container.kind === "folder") {
+    return `/api/board-items?folder_id=${encodeURIComponent(container.id)}`;
+  }
+  return `/api/board-items?container_kind=${encodeURIComponent(container.kind)}&container_id=${encodeURIComponent(container.id)}`;
+}
+
+function runbookProgress(snapshot: RunbookSnapshot | null): { completed: number; total: number } {
+  let completed = 0;
+  let total = 0;
+  for (const item of snapshot?.items ?? []) {
+    if (item.archived || item.status === "cancelled") continue;
+    total += 1;
+    if (item.status === "completed") completed += 1;
+  }
+  return { completed, total };
+}
+
 function getBoardItemCenter(item: BoardWorkspaceItem): { x: number; y: number } {
   const width = "width" in item ? item.width : BOARD_TILE_WIDTH;
   const height = "height" in item ? item.height : BOARD_TILE_HEIGHT;
@@ -67,6 +103,7 @@ function getBoardItemCenter(item: BoardWorkspaceItem): { x: number; y: number } 
 export function resolveEffectiveBoardCatalog(params: {
   catalog: CatalogState | null;
   selectedFolderId: string | null;
+  boardContainer?: BoardContainerRef | null;
   yjsBoardItemsForSelectedFolder: CatalogBoardItem[] | null;
   isYjsLoading: boolean;
   hasYjsSynced: boolean;
@@ -75,13 +112,16 @@ export function resolveEffectiveBoardCatalog(params: {
   const {
     catalog,
     selectedFolderId,
+    boardContainer = folderBoardContainer(selectedFolderId),
     yjsBoardItemsForSelectedFolder,
     isYjsLoading,
     hasYjsSynced,
     assetSignedUrls,
   } = params;
   if (!catalog || !yjsBoardItemsForSelectedFolder || isYjsLoading || !hasYjsSynced) return catalog;
-  const otherFolderBoardItems = (catalog.boardItems ?? []).filter((item) => item.folderId !== selectedFolderId);
+  const otherFolderBoardItems = (catalog.boardItems ?? []).filter((item) =>
+    boardContainer ? !boardItemBelongsToContainer(item, boardContainer) : item.folderId !== selectedFolderId
+  );
   return {
     ...catalog,
     boardItems: [...otherFolderBoardItems, ...yjsBoardItemsForSelectedFolder.map((item) => {
@@ -101,38 +141,45 @@ export function resolveEffectiveBoardCatalog(params: {
 
 function boardWorkspaceItemToCatalogBoardItem(
   item: BoardWorkspaceItem,
-  folderId: string | null,
+  container: BoardContainerRef | null,
+  resolvedFolderId: string | null,
   x: number,
   y: number,
 ): CatalogBoardItem | null {
-  if (!folderId) return null;
+  if (!container || !resolvedFolderId) return null;
+  const withContainer = (boardItem: CatalogBoardItem): CatalogBoardItem => ({
+    ...boardItem,
+    folderId: resolvedFolderId,
+    containerKind: container.kind,
+    containerId: container.id,
+  });
   if (item.type === "session") {
-    return {
+    return withContainer({
       id: item.boardItemId,
-      folderId,
+      folderId: resolvedFolderId,
       itemType: "session",
       itemId: item.session.agentSessionId,
       x,
       y,
-    };
+    });
   }
   if (item.type === "folder") {
-    return {
+    return withContainer({
       id: item.boardItemId,
-      folderId,
+      folderId: resolvedFolderId,
       itemType: "subfolder",
       itemId: item.folder.id,
       x,
       y,
-    };
+    });
   }
   if (item.type === "frame") {
-    return frameItemToCatalogBoardItem(item, { x, y });
+    return withContainer(frameItemToCatalogBoardItem(item, { x, y }));
   }
   if (item.type === "runbook") {
-    return {
+    return withContainer({
       id: item.boardItemId,
-      folderId,
+      folderId: resolvedFolderId,
       itemType: "runbook",
       itemId: item.runbookId,
       x,
@@ -140,7 +187,7 @@ function boardWorkspaceItemToCatalogBoardItem(
       metadata: {
         title: item.title,
       },
-    };
+    });
   }
   return null;
 }
@@ -252,7 +299,9 @@ export function BoardWorkspaceView({
   const focusedBoardItem = useDashboardStore((s) => s.focusedBoardItem);
   const clearFocusedBoardItem = useDashboardStore((s) => s.clearFocusedBoardItem);
   const addBoardItem = useDashboardStore((s) => s.addBoardItem);
-  const setBoardItemsForFolder = useDashboardStore((s) => s.setBoardItemsForFolder);
+  const activeBoardContainer = useDashboardStore((s) => s.activeBoardContainer);
+  const openRunbookBoard = useDashboardStore((s) => s.openRunbookBoard);
+  const setBoardItemsForContainer = useDashboardStore((s) => s.setBoardItemsForContainer);
   const updateBoardItemPosition = useDashboardStore((s) => s.updateBoardItemPosition);
   const removeBoardItem = useDashboardStore((s) => s.removeBoardItem);
   const isMobile = useIsMobile();
@@ -280,12 +329,41 @@ export function BoardWorkspaceView({
   } = useBoardSelectionState();
   const folders = catalog?.folders ?? [];
   const selectedFolder = folders.find((folder) => folder.id === selectedFolderId) ?? null;
+  const boardContainer = useMemo(
+    () => activeBoardContainer ?? folderBoardContainer(selectedFolderId),
+    [activeBoardContainer, selectedFolderId],
+  );
+  const activeBoardContainerKey = boardContainerKey(boardContainer);
+  const resolvedBoardFolderId = boardContainer
+    ? boardContainer.kind === "folder"
+      ? boardContainer.id
+      : selectedFolderId ?? boardContainer.id
+    : null;
+  const isRunbookBoard = boardContainer?.kind === "runbook";
+  const runbookId = isRunbookBoard ? boardContainer.id : null;
+  const runbookProjection = useRunbookStore((s) => (runbookId ? s.byId[runbookId] : undefined));
+  const loadRunbook = useRunbookStore((s) => s.loadRunbook);
+  const runbookSnapshot = runbookProjection?.snapshot ?? null;
+  const runbookBoardProgress = useMemo(
+    () => runbookProgress(runbookSnapshot),
+    [runbookSnapshot],
+  );
   const displaySessions = useMemo(() => applyCatalogDisplayNames(sessions, catalog), [sessions, catalog]);
   const boardSync = useBoardYjsRuntime({
-    folderId: selectedFolderId,
+    container: boardContainer,
+    resolvedFolderId: resolvedBoardFolderId,
     catalog,
     selectionItemId: primarySelectedBoardItemId,
   });
+
+  useEffect(() => {
+    if (!runbookId) return;
+    const controller = new AbortController();
+    void loadRunbook(runbookId, { signal: controller.signal });
+    return () => {
+      controller.abort();
+    };
+  }, [loadRunbook, runbookId]);
 
   const rememberAssetSignedUrls = useCallback((items: CatalogBoardItem[]) => {
     setAssetSignedUrls((current) => {
@@ -304,9 +382,9 @@ export function BoardWorkspaceView({
   }, []);
 
   useEffect(() => {
-    if (!selectedFolderId) return;
+    if (!boardContainer) return;
     const controller = new AbortController();
-    fetch(`/api/board-items?folder_id=${encodeURIComponent(selectedFolderId)}`, {
+    fetch(boardItemsUrl(boardContainer), {
       signal: controller.signal,
     })
       .then((r) => {
@@ -316,7 +394,7 @@ export function BoardWorkspaceView({
       .then((data) => {
         if (Array.isArray(data?.boardItems)) {
           rememberAssetSignedUrls(data.boardItems);
-          setBoardItemsForFolder(selectedFolderId, data.boardItems);
+          setBoardItemsForContainer(boardContainer, data.boardItems);
         }
       })
       .catch((err) => {
@@ -325,22 +403,23 @@ export function BoardWorkspaceView({
     return () => {
       controller.abort();
     };
-  }, [rememberAssetSignedUrls, selectedFolderId, setBoardItemsForFolder]);
+  }, [activeBoardContainerKey, boardContainer, rememberAssetSignedUrls, setBoardItemsForContainer]);
 
   useEffect(() => {
     rememberAssetSignedUrls(catalog?.boardItems ?? []);
   }, [catalog?.boardItems, rememberAssetSignedUrls]);
 
   const yjsBoardItemsForSelectedFolder =
-    boardSync.runtime?.folderId === selectedFolderId ? boardSync.boardItems : null;
+    boardSync.runtime?.containerKey === activeBoardContainerKey ? boardSync.boardItems : null;
   const effectiveCatalog = useMemo(() => resolveEffectiveBoardCatalog({
     catalog,
     selectedFolderId,
+    boardContainer,
     yjsBoardItemsForSelectedFolder,
     isYjsLoading: boardSync.isLoading,
     hasYjsSynced: boardSync.hasSynced,
     assetSignedUrls,
-  }), [assetSignedUrls, boardSync.hasSynced, boardSync.isLoading, catalog, selectedFolderId, yjsBoardItemsForSelectedFolder]);
+  }), [assetSignedUrls, boardContainer, boardSync.hasSynced, boardSync.isLoading, catalog, selectedFolderId, yjsBoardItemsForSelectedFolder]);
   const relationIndex = useMemo(() => {
     if (!effectiveCatalog) return null;
     return buildBoardSessionRelations({
@@ -365,11 +444,12 @@ export function BoardWorkspaceView({
     return buildBoardWorkspaceItems({
       catalog: effectiveCatalog,
       selectedFolderId,
+      boardContainer,
       sessions: displaySessions,
       ...(relationIndex ? { relationIndex } : {}),
       includeCollapsedFrameChildren: true,
     });
-  }, [effectiveCatalog, selectedFolderId, displaySessions, relationIndex]);
+  }, [boardContainer, effectiveCatalog, selectedFolderId, displaySessions, relationIndex]);
   const persistedBoardItems = useMemo(
     () => getVisibleBoardWorkspaceItems(allPersistedBoardItems),
     [allPersistedBoardItems],
@@ -385,7 +465,7 @@ export function BoardWorkspaceView({
   const yjsUpdateBoardItemPosition = useCallback((boardItemId: string, x: number, y: number) => {
     const existingItem = allBoardItems.find((item) => item.boardItemId === boardItemId);
     const boardItem = existingItem
-      ? boardWorkspaceItemToCatalogBoardItem(existingItem, selectedFolderId, x, y)
+      ? boardWorkspaceItemToCatalogBoardItem(existingItem, boardContainer, resolvedBoardFolderId, x, y)
       : null;
     if (boardItem) {
       boardSync.runtime?.upsertBoardItem(boardItem);
@@ -394,7 +474,7 @@ export function BoardWorkspaceView({
       boardSync.runtime?.updateBoardItemPosition(boardItemId, x, y);
     }
     updateBoardItemPosition(boardItemId, x, y);
-  }, [addBoardItem, allBoardItems, boardSync.runtime, selectedFolderId, updateBoardItemPosition]);
+  }, [addBoardItem, allBoardItems, boardContainer, boardSync.runtime, resolvedBoardFolderId, updateBoardItemPosition]);
   const childStack = useBoardChildStackState({
     boardItems,
     relationIndex,
@@ -433,7 +513,7 @@ export function BoardWorkspaceView({
 
   useEffect(() => {
     setDeclutterUndoUpdates([]);
-  }, [selectedFolderId]);
+  }, [activeBoardContainerKey]);
   const {
     scrollRef,
     zoom,
@@ -455,7 +535,7 @@ export function BoardWorkspaceView({
     isSpaceDown,
     shouldSuppressTileClick,
   } = useBoardCanvasViewport({
-    selectedFolderId,
+    selectedFolderId: activeBoardContainerKey,
     boardItems,
     selectedBoardItemIds,
     selectBoardItems,
@@ -497,12 +577,15 @@ export function BoardWorkspaceView({
   }, [boardItems, viewport, zoom]);
 
   const handleCreateFolder = async (name: string) => {
+    if (!selectedFolderId || boardContainer?.kind !== "folder") return;
     const position = createFolderPosition ? snapBoardPosition(createFolderPosition.x, createFolderPosition.y) : null;
     const created = await onCreateFolder?.(name.trim(), selectedFolderId);
     if (created && position && selectedFolderId) {
       const boardItem: CatalogBoardItem = {
         id: `subfolder:${created.id}`,
         folderId: selectedFolderId,
+        containerKind: "folder",
+        containerId: selectedFolderId,
         itemType: "subfolder",
         itemId: created.id,
         x: position.x,
@@ -516,6 +599,7 @@ export function BoardWorkspaceView({
   };
 
   const openCreateFolderDialog = (position?: { x: number; y: number }) => {
+    if (boardContainer?.kind !== "folder") return;
     const resolved = position ?? resolveSpawnPosition();
     setCreateFolderPosition(snapBoardPosition(resolved.x, resolved.y));
     setCreateDialogOpen(true);
@@ -524,7 +608,7 @@ export function BoardWorkspaceView({
   };
 
   const createMarkdownAt = useCallback(async (position?: { x: number; y: number }) => {
-    if (!selectedFolderId || !boardSync.runtime) return;
+    if (!selectedFolderId || boardContainer?.kind !== "folder" || !boardSync.runtime) return;
     const resolved = position ?? resolveSpawnPosition();
     const snapped = snapBoardPosition(resolved.x, resolved.y);
     try {
@@ -542,10 +626,10 @@ export function BoardWorkspaceView({
     } catch (err) {
       console.error("Markdown document creation failed:", err);
     }
-  }, [addBoardItem, boardSync.runtime, isMobile, resolveSpawnPosition, selectedFolderId, setActiveBoardDocument, setActiveTab]);
+  }, [addBoardItem, boardContainer?.kind, boardSync.runtime, isMobile, resolveSpawnPosition, selectedFolderId, setActiveBoardDocument, setActiveTab]);
 
   const createFrameAt = useCallback((position?: { x: number; y: number }) => {
-    if (!selectedFolderId || !boardSync.runtime) return;
+    if (!selectedFolderId || boardContainer?.kind !== "folder" || !boardSync.runtime) return;
     const resolved = position ?? resolveSpawnPosition();
     const snapped = snapBoardPosition(resolved.x, resolved.y);
     const selectedItems = boardItems.filter((item) =>
@@ -570,6 +654,7 @@ export function BoardWorkspaceView({
     setContextMenu(null);
   }, [
     addBoardItem,
+    boardContainer?.kind,
     boardItems,
     boardSync.runtime,
     raiseBoardItems,
@@ -583,10 +668,13 @@ export function BoardWorkspaceView({
     frame: FrameBoardWorkspaceItem,
     overrides: Parameters<typeof frameItemToCatalogBoardItem>[1],
   ) => {
-    const boardItem = frameItemToCatalogBoardItem(frame, overrides);
+    const boardItem = {
+      ...frameItemToCatalogBoardItem(frame, overrides),
+      ...(boardContainer ? { containerKind: boardContainer.kind, containerId: boardContainer.id } : {}),
+    } satisfies CatalogBoardItem;
     boardSync.runtime?.upsertBoardItem(boardItem);
     addBoardItem(boardItem);
-  }, [addBoardItem, boardSync.runtime]);
+  }, [addBoardItem, boardContainer, boardSync.runtime]);
 
   const renameFrame = useCallback((frame: FrameBoardWorkspaceItem, title: string) => {
     upsertFrame(frame, { title });
@@ -627,6 +715,7 @@ export function BoardWorkspaceView({
   }, [boardSync.connectionStatus]);
 
   const openNewSessionAt = useCallback((position?: { x: number; y: number }) => {
+    if (boardContainer?.kind !== "folder") return;
     const resolved = position ?? resolveSpawnPosition();
     const boardPosition = snapBoardPosition(resolved.x, resolved.y);
     openNewSessionModal(
@@ -639,7 +728,7 @@ export function BoardWorkspaceView({
     );
     setContextMenu(null);
     setNewMenuOpen(false);
-  }, [openNewSessionModal, resolveSpawnPosition, selectedFolderId]);
+  }, [boardContainer?.kind, openNewSessionModal, resolveSpawnPosition, selectedFolderId]);
 
   useEffect(() => {
     if (!onLoadMore || !hasMore) return;
@@ -733,7 +822,7 @@ export function BoardWorkspaceView({
     event.stopPropagation();
     setContextMenu(null);
     setCardContextMenu(null);
-    if (!selectedFolderId || !onUploadBoardAsset) {
+    if (!selectedFolderId || boardContainer?.kind !== "folder" || !onUploadBoardAsset) {
       toastManager.add({
         title: "Board asset upload unavailable",
         description: "Asset upload is not configured for this board.",
@@ -802,6 +891,7 @@ export function BoardWorkspaceView({
     });
   }, [
     addBoardItem,
+    boardContainer?.kind,
     boardItems,
     boardSync.runtime,
     onUploadBoardAsset,
@@ -818,12 +908,20 @@ export function BoardWorkspaceView({
     assetObjectUrlsRef.current.clear();
   }, []);
 
+  const canCreateBoardItems = boardContainer?.kind === "folder";
+  const runbookTitle = runbookSnapshot?.runbook.title ?? null;
+  const runbookStatus = runbookSnapshot?.runbook.status ?? null;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <BoardWorkspaceHeader
         breadcrumbs={breadcrumbs}
         selectedFolder={selectedFolder}
         selectedFolderId={selectedFolderId}
+        boardContainer={boardContainer}
+        runbookTitle={runbookTitle}
+        runbookStatus={runbookStatus}
+        runbookProgress={runbookBoardProgress}
         workspaceViewMode={workspaceViewMode}
         connectionStatus={boardSync.connectionStatus}
         connectionError={boardSync.connectionError}
@@ -831,6 +929,7 @@ export function BoardWorkspaceView({
         newMenuOpen={newMenuOpen}
         onToggleNewMenu={() => setNewMenuOpen((open) => !open)}
         onSelectFolder={selectFolder}
+        canCreateBoardItems={canCreateBoardItems}
         onCreateFolder={() => openCreateFolderDialog()}
         onOpenNewSession={() => openNewSessionAt()}
         onCreateMarkdown={() => createMarkdownAt()}
@@ -898,12 +997,20 @@ export function BoardWorkspaceView({
                   raiseBoardItems([item.boardItemId]);
                   selectFolder(folderId);
                 }}
+                onOpenRunbookBoard={(runbookId) => {
+                  openRunbookBoard(runbookId, selectedFolderId);
+                }}
                 onOpenMarkdown={(item, documentId) => {
                   selectSingleBoardItem(item.boardItemId);
                   raiseBoardItems([item.boardItemId]);
                   setActiveBoardDocument(documentId);
                   if (isMobile) setActiveTab("chat");
                 }}
+                emptyMessage={
+                  isRunbookBoard
+                    ? "아직 이 런북 보드에 배치된 항목이 없음"
+                    : undefined
+                }
               />
             </div>
           </div>
@@ -915,6 +1022,7 @@ export function BoardWorkspaceView({
             folders={folders}
             activeBoardDocumentId={activeBoardDocumentId}
             boardYjsRuntime={boardSync.runtime}
+            canCreateBoardItems={canCreateBoardItems}
             onCloseCardContextMenu={closeCardContextMenu}
             onOpenCreateFolder={openCreateFolderDialog}
             onOpenNewSession={openNewSessionAt}

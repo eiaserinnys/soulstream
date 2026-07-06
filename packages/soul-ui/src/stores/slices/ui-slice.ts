@@ -32,6 +32,7 @@ export type UISlice = Pick<
     | "setActiveBoardDocument"
     | "focusBoardItem"
     | "clearFocusedBoardItem"
+    | "openRunbookBoard"
     | "setDashboardConfig"
     | "setViewMode"
     | "selectFeed"
@@ -85,6 +86,7 @@ export const createUISlice: StateCreator<
         requestId: (state.focusedBoardItem?.requestId ?? 0) + 1,
       },
       selectedFolderId: folderId,
+      activeBoardContainer: folderId ? { kind: "folder", id: folderId } : null,
       viewMode: "folder",
       leftNavigationMode: "folders",
       activeTab: "folder",
@@ -96,6 +98,16 @@ export const createUISlice: StateCreator<
         ? { focusedBoardItem: null }
         : {}
     )),
+
+  openRunbookBoard: (runbookId, parentFolderId = null) =>
+    set({
+      activeBoardContainer: { kind: "runbook", id: runbookId },
+      selectedFolderId: parentFolderId,
+      focusedBoardItem: null,
+      viewMode: "folder",
+      leftNavigationMode: "folders",
+      activeTab: "folder",
+    }),
 
   setDashboardConfig: (dashboardConfig) => set({ dashboardConfig }),
 

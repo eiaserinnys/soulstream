@@ -1,4 +1,4 @@
-import type { CatalogBoardItem, CatalogFolder, CatalogState, SessionSummary } from "../shared/types";
+import type { BoardContainerRef, CatalogBoardItem, CatalogFolder, CatalogState, SessionSummary } from "../shared/types";
 import {
   BOARD_FRAME_COLLAPSED_HEIGHT,
   BOARD_FRAME_COLLAPSED_WIDTH,
@@ -141,6 +141,7 @@ export type BoardWorkspaceItem =
 export interface BuildBoardWorkspaceItemsParams {
   catalog: CatalogState;
   selectedFolderId: string | null;
+  boardContainer?: BoardContainerRef | null;
   sessions: readonly SessionSummary[];
   relationIndex?: BoardSessionRelationIndex;
   includeCollapsedFrameChildren?: boolean;
@@ -255,6 +256,19 @@ function sessionBelongsToSelectedFolder(
   session?: SessionSummary,
 ): boolean {
   return getSessionFolderAssignment(catalog, sessionId, session) === selectedFolderId;
+}
+
+function folderBoardContainer(folderId: string | null): BoardContainerRef | null {
+  return folderId ? { kind: "folder", id: folderId } : null;
+}
+
+function boardItemBelongsToContainer(
+  item: CatalogBoardItem,
+  container: BoardContainerRef,
+): boolean {
+  const itemContainerKind = item.containerKind ?? "folder";
+  const itemContainerId = item.containerId ?? item.folderId;
+  return itemContainerKind === container.kind && itemContainerId === container.id;
 }
 
 function rectsOverlap(a: BoardRect, b: BoardRect): boolean {
@@ -395,6 +409,7 @@ function refreshSessionChildStacks(
 function buildPositionedItems({
   catalog,
   selectedFolderId,
+  boardContainer = folderBoardContainer(selectedFolderId),
   sessions,
   relationIndex,
   includeCollapsedFrameChildren = false,
@@ -402,17 +417,25 @@ function buildPositionedItems({
   const folderById = new Map(catalog.folders.map((folder) => [folder.id, folder]));
   const relations = relationIndex ?? buildBoardSessionRelations({ catalog, sessions });
   const sessionById = relations.sessionById;
-  const selectedId = selectedFolderId ?? "";
+  const selectedId = boardContainer?.kind === "folder" ? boardContainer.id : selectedFolderId ?? "";
+  const isFolderBoard = boardContainer?.kind === "folder";
   const persistedSessionIds = new Set(
     (catalog.boardItems ?? [])
-      .filter((item) => item.folderId === selectedId && item.itemType === "session")
+      .filter((item) =>
+        item.itemType === "session" &&
+        (boardContainer ? boardItemBelongsToContainer(item, boardContainer) : item.folderId === selectedId)
+      )
       .map((item) => item.itemId),
   );
   const items: BoardWorkspaceItem[] = [];
   const suppressedSessionIds = new Set<string>();
 
   for (const boardItem of catalog.boardItems ?? []) {
-    if (boardItem.folderId !== selectedId) continue;
+    if (boardContainer) {
+      if (!boardItemBelongsToContainer(boardItem, boardContainer)) continue;
+    } else if (boardItem.folderId !== selectedId) {
+      continue;
+    }
     if (boardItem.itemType === "subfolder") {
       const folder = folderById.get(boardItem.itemId);
       if (!folder) continue;
@@ -429,10 +452,10 @@ function buildPositionedItems({
     }
     if (boardItem.itemType === "session") {
       const knownSession = sessionById.get(boardItem.itemId);
-      if (!sessionBelongsToSelectedFolder(catalog, boardItem.itemId, selectedFolderId, knownSession)) {
+      if (isFolderBoard && !sessionBelongsToSelectedFolder(catalog, boardItem.itemId, selectedFolderId, knownSession)) {
         continue;
       }
-      if (hasPersistedStackParent(relations, boardItem.itemId, selectedFolderId, persistedSessionIds)) {
+      if (isFolderBoard && hasPersistedStackParent(relations, boardItem.itemId, selectedFolderId, persistedSessionIds)) {
         suppressedSessionIds.add(boardItem.itemId);
         continue;
       }
@@ -515,6 +538,12 @@ function buildPositionedItems({
         height: BOARD_RUNBOOK_TILE_HEIGHT,
       });
     }
+  }
+
+  if (!isFolderBoard) {
+    const summarized = applyFrameSummaries(items)
+      .sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
+    return includeCollapsedFrameChildren ? summarized : getVisibleBoardWorkspaceItems(summarized);
   }
 
   const existingSessionIds = new Set(
@@ -623,12 +652,25 @@ export function getVisibleBoardWorkspaceItems(items: readonly BoardWorkspaceItem
 export function buildBoardWorkspaceItems({
   catalog,
   selectedFolderId,
+  boardContainer = folderBoardContainer(selectedFolderId),
   sessions,
   relationIndex,
+  includeCollapsedFrameChildren,
 }: BuildBoardWorkspaceItemsParams): BoardWorkspaceItem[] {
   const relations = relationIndex ?? buildBoardSessionRelations({ catalog, sessions });
   if (catalog.boardItems) {
-    return buildPositionedItems({ catalog, selectedFolderId, sessions, relationIndex: relations });
+    return buildPositionedItems({
+      catalog,
+      selectedFolderId,
+      boardContainer,
+      sessions,
+      relationIndex: relations,
+      includeCollapsedFrameChildren,
+    });
+  }
+
+  if (boardContainer?.kind !== "folder") {
+    return [];
   }
 
   const folderItems: FolderBoardWorkspaceItem[] = catalog.folders

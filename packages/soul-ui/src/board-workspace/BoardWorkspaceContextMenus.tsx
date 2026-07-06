@@ -35,6 +35,7 @@ interface BoardWorkspaceContextMenusProps {
   folders: CatalogFolder[];
   activeBoardDocumentId: string | null;
   boardYjsRuntime: BoardYjsRuntime | null;
+  canCreateBoardItems?: boolean;
   onCloseCardContextMenu: () => void;
   onOpenCreateFolder: (position: { x: number; y: number }) => void;
   onOpenNewSession: (position: { x: number; y: number }) => void;
@@ -60,6 +61,7 @@ export function BoardWorkspaceContextMenus({
   folders,
   activeBoardDocumentId,
   boardYjsRuntime,
+  canCreateBoardItems = true,
   onCloseCardContextMenu,
   onOpenCreateFolder,
   onOpenNewSession,
@@ -193,7 +195,7 @@ export function BoardWorkspaceContextMenus({
 
   return (
     <>
-      {contextMenu && (
+      {contextMenu && canCreateBoardItems && (
         <div
           className="fixed z-30 w-44 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
           style={{ left: contextMenu.screenX, top: contextMenu.screenY }}

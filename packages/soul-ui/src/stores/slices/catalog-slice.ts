@@ -16,6 +16,7 @@ import {
   removeFolderFromCatalog,
   reorderFoldersInCatalog,
   addBoardItemToCatalog,
+  setBoardItemsForContainerInCatalog,
   setBoardItemsForFolderInCatalog,
   updateBoardItemPositionInCatalog,
   removeBoardItemFromCatalog,
@@ -23,7 +24,7 @@ import {
 
 export type CatalogSlice = Pick<
   DashboardState,
-  "catalog" | "selectedFolderId" | "catalogVersion" | "folderSortMode"
+  "catalog" | "selectedFolderId" | "activeBoardContainer" | "catalogVersion" | "folderSortMode"
 > &
   Pick<
     DashboardActions,
@@ -42,6 +43,7 @@ export type CatalogSlice = Pick<
     | "removeFolder"
     | "reorderFolders"
     | "setFolderSortMode"
+    | "setBoardItemsForContainer"
   >;
 
 export const createCatalogSlice: StateCreator<
@@ -52,6 +54,7 @@ export const createCatalogSlice: StateCreator<
 > = (set, get) => ({
   catalog: null,
   selectedFolderId: null,
+  activeBoardContainer: null,
   catalogVersion: 0,
   folderSortMode: "custom",
 
@@ -99,6 +102,15 @@ export const createCatalogSlice: StateCreator<
     if (!catalog) return;
     set((state) => ({
       catalog: setBoardItemsForFolderInCatalog(catalog, folderId, boardItems),
+      catalogVersion: state.catalogVersion + 1,
+    }));
+  },
+
+  setBoardItemsForContainer: (container, boardItems) => {
+    const { catalog } = get();
+    if (!catalog) return;
+    set((state) => ({
+      catalog: setBoardItemsForContainerInCatalog(catalog, container, boardItems),
       catalogVersion: state.catalogVersion + 1,
     }));
   },
@@ -162,9 +174,19 @@ export const createCatalogSlice: StateCreator<
   },
 
   selectFolder: (folderId) => {
-    set({ selectedFolderId: folderId, viewMode: "folder", leftNavigationMode: "folders" });
+    set({
+      selectedFolderId: folderId,
+      activeBoardContainer: folderId ? { kind: "folder", id: folderId } : null,
+      viewMode: "folder",
+      leftNavigationMode: "folders",
+    });
   },
 
   clearSelectedFolder: () =>
-    set({ selectedFolderId: null, viewMode: "feed", leftNavigationMode: "feed" }),
+    set({
+      selectedFolderId: null,
+      activeBoardContainer: null,
+      viewMode: "feed",
+      leftNavigationMode: "feed",
+    }),
 });

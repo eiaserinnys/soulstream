@@ -40,6 +40,7 @@ interface BoardWorkspaceTileProps {
     item: BoardWorkspaceItem,
   ) => void;
   onOpenFolder: (folderId: string) => void;
+  onOpenRunbookBoard: (runbookId: string) => void;
   onOpenMarkdown: (documentId: string) => void;
   onOpenSession: (session: SessionSummary) => void;
   shouldSuppressClick: () => boolean;
@@ -62,6 +63,7 @@ export function BoardWorkspaceTile({
   activeSessionKey,
   onTilePointerDown,
   onOpenFolder,
+  onOpenRunbookBoard,
   onOpenMarkdown,
   onOpenSession,
   shouldSuppressClick,
@@ -257,7 +259,11 @@ export function BoardWorkspaceTile({
         onContextMenu={(event) => onTileContextMenu(event, item)}
         onClick={(event) => event.stopPropagation()}
       >
-        <RunbookCard runbookId={item.runbookId} fallbackTitle={item.title} />
+        <RunbookCard
+          runbookId={item.runbookId}
+          fallbackTitle={item.title}
+          onOpenBoard={onOpenRunbookBoard}
+        />
       </div>
     );
   }

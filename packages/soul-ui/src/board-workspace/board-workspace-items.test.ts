@@ -183,6 +183,55 @@ describe("board workspace item helpers", () => {
     });
   });
 
+  it("builds runbook container items without folder board fallback entries", () => {
+    const items = buildBoardWorkspaceItems({
+      catalog: {
+        ...catalog,
+        boardItems: [
+          ...(catalog.boardItems ?? []),
+          {
+            id: "session:runbook-s1",
+            folderId: "root",
+            containerKind: "runbook",
+            containerId: "rb-1",
+            itemType: "session",
+            itemId: "runbook-s1",
+            x: -120,
+            y: 0,
+          },
+          {
+            id: "markdown:runbook-note",
+            folderId: "root",
+            containerKind: "runbook",
+            containerId: "rb-1",
+            itemType: "markdown",
+            itemId: "runbook-note",
+            x: 0,
+            y: 0,
+            metadata: { title: "Runbook note" },
+          },
+        ],
+      },
+      selectedFolderId: "root",
+      boardContainer: { kind: "runbook", id: "rb-1" },
+      sessions: [
+        ...sessions,
+        {
+          agentSessionId: "runbook-s1",
+          status: "running",
+          eventCount: 1,
+          prompt: "Runbook task",
+          folderId: "root",
+        },
+      ],
+    });
+
+    expect(items.map((item) => `${item.type}:${item.id}`)).toEqual([
+      "session:runbook-s1",
+      "markdown:runbook-note",
+    ]);
+  });
+
   it("builds frame items and hides children while collapsed without changing child coordinates", () => {
     const frameCatalog: CatalogState = {
       ...catalog,

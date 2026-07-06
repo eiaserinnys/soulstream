@@ -5,6 +5,7 @@ import {
   ChevronDown,
   ChevronRight,
   Circle,
+  ExternalLink,
   MessageSquare,
   UserRound,
 } from "lucide-react";
@@ -33,6 +34,7 @@ import { RunbookCompletionAction } from "./RunbookCompletionAction";
 interface RunbookCardProps {
   runbookId: string;
   fallbackTitle: string;
+  onOpenBoard?: (runbookId: string) => void;
 }
 
 interface EffectiveAssignee {
@@ -163,7 +165,7 @@ function sortSections(sections: readonly RunbookSectionRow[]): RunbookSectionRow
     );
 }
 
-export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
+export function RunbookCard({ runbookId, fallbackTitle, onOpenBoard }: RunbookCardProps) {
   const projection = useRunbookStore((s) => s.byId[runbookId]);
   const loadRunbook = useRunbookStore((s) => s.loadRunbook);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
@@ -224,6 +226,22 @@ export function RunbookCard({ runbookId, fallbackTitle }: RunbookCardProps) {
               }}
               buttonClassName="px-2 text-[11px]"
             />
+          ) : null}
+          {onOpenBoard ? (
+            <button
+              type="button"
+              data-testid="runbook-card-open-board"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent-blue/10 hover:text-accent-blue focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/55"
+              title="런북 보드 열기"
+              aria-label={`${title} 런북 보드 열기`}
+              onPointerDown={stopTileDrag}
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpenBoard(runbookId);
+              }}
+            >
+              <ExternalLink className="h-4 w-4" aria-hidden="true" />
+            </button>
           ) : null}
         </div>
       </header>

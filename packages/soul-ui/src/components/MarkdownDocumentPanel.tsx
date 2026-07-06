@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 
-import type { MarkdownDocument } from "../shared/types";
+import type { BoardContainerRef, MarkdownDocument } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
 import {
   getMarkdownPreview,
@@ -51,9 +51,14 @@ async function saveMarkdownDocument(
 export function MarkdownDocumentPanel() {
   const documentId = useDashboardStore((s) => s.activeBoardDocumentId);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
+  const activeBoardContainer = useDashboardStore((s) => s.activeBoardContainer);
   const setActiveBoardDocument = useDashboardStore((s) => s.setActiveBoardDocument);
   const removeBoardItem = useDashboardStore((s) => s.removeBoardItem);
-  const runtime = useBoardRuntime(selectedFolderId);
+  const boardContainer = useMemo<BoardContainerRef | null>(
+    () => activeBoardContainer ?? (selectedFolderId ? { kind: "folder", id: selectedFolderId } : null),
+    [activeBoardContainer, selectedFolderId],
+  );
+  const runtime = useBoardRuntime(boardContainer);
   const yText = useMemo(
     () => (documentId && runtime ? runtime.getMarkdownText(documentId) : null),
     [documentId, runtime],
@@ -314,14 +319,14 @@ export function MarkdownDocumentPanel() {
   );
 }
 
-function useBoardRuntime(folderId: string | null): BoardYjsRuntime | null {
-  const [runtime, setRuntime] = useState(() => getBoardYjsRuntime(folderId));
+function useBoardRuntime(container: BoardContainerRef | null): BoardYjsRuntime | null {
+  const [runtime, setRuntime] = useState(() => getBoardYjsRuntime(container));
   useEffect(() => {
-    setRuntime(getBoardYjsRuntime(folderId));
+    setRuntime(getBoardYjsRuntime(container));
     return subscribeBoardYjsRuntime(() => {
-      setRuntime(getBoardYjsRuntime(folderId));
+      setRuntime(getBoardYjsRuntime(container));
     });
-  }, [folderId]);
+  }, [container]);
   return runtime;
 }
 

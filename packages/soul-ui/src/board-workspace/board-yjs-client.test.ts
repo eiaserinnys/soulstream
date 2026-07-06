@@ -4,6 +4,7 @@ import * as Y from "yjs";
 
 import type { CatalogState } from "../shared/types";
 import {
+  buildBoardYjsUrl,
   catalogBoardItemsFromYDoc,
   createMarkdownYjsDocument,
   getBoardYjsDocumentName,
@@ -31,6 +32,59 @@ const catalog: CatalogState = {
 describe("board-yjs-client", () => {
   it("folder id를 Hocuspocus document name으로 변환", () => {
     expect(getBoardYjsDocumentName("f1")).toBe("board-folder:f1");
+  });
+
+  it("folder 컨테이너는 legacy 문서명과 legacy websocket route를 유지한다", () => {
+    const location = { protocol: "https:", host: "soul.example" } as Location;
+
+    expect(getBoardYjsDocumentName({ kind: "folder", id: "f1" })).toBe("board-folder:f1");
+    expect(buildBoardYjsUrl({ kind: "folder", id: "f1" }, location)).toBe("wss://soul.example/yjs/f1");
+  });
+
+  it("runbook 컨테이너는 container 문서명과 신규 websocket route를 사용한다", () => {
+    const location = { protocol: "https:", host: "soul.example" } as Location;
+
+    expect(getBoardYjsDocumentName({ kind: "runbook", id: "rb-1" })).toBe("board:runbook:rb-1");
+    expect(buildBoardYjsUrl({ kind: "runbook", id: "rb-1" }, location)).toBe("wss://soul.example/yjs/runbook/rb-1");
+  });
+
+  it("container seed는 같은 folderId 안에서도 containerKind/containerId로 필터링한다", () => {
+    const doc = new Y.Doc();
+    seedBoardYDocFromCatalog(doc, { kind: "runbook", id: "rb-1" }, {
+      folders: [],
+      sessions: {},
+      boardItems: [
+        {
+          id: "runbook-session:visible",
+          folderId: "f1",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          itemType: "session",
+          itemId: "visible",
+          x: 10,
+          y: 20,
+        },
+        {
+          id: "session:hidden",
+          folderId: "f1",
+          containerKind: "folder",
+          containerId: "f1",
+          itemType: "session",
+          itemId: "hidden",
+          x: 0,
+          y: 0,
+        },
+      ],
+    });
+
+    expect(catalogBoardItemsFromYDoc({ kind: "runbook", id: "rb-1" }, doc, "f1")).toEqual([
+      expect.objectContaining({
+        id: "runbook-session:visible",
+        folderId: "f1",
+        containerKind: "runbook",
+        containerId: "rb-1",
+      }),
+    ]);
   });
 
   it("catalog seed를 Y-doc boardItems map으로 로드하고 position을 즉시 갱신", () => {

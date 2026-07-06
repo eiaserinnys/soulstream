@@ -404,7 +404,7 @@ function RunbookGroup({
 export function RunbookOverview() {
   const projection = useRunbookStore((s) => s.overview);
   const loadOverview = useRunbookStore((s) => s.loadOverview);
-  const focusBoardItem = useDashboardStore((s) => s.focusBoardItem);
+  const openRunbookBoard = useDashboardStore((s) => s.openRunbookBoard);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
   const [completedGroupsOpen, setCompletedGroupsOpen] = useState(false);
 
@@ -442,7 +442,7 @@ export function RunbookOverview() {
   const error = projection.error;
 
   const openBoardItem = (item: RunbookOverviewItem) => {
-    focusBoardItem(item.board_item_id, item.folder_id);
+    openRunbookBoard(item.runbook_id, item.folder_id);
   };
 
   const refreshOverview = async () => {

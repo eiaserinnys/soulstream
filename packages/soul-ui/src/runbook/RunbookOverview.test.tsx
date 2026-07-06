@@ -350,10 +350,12 @@ describe("RunbookOverview", () => {
       openBoard!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(useDashboardStore.getState().focusedBoardItem).toMatchObject({
-      boardItemId: "runbook:rb-1",
-      folderId: "f1",
+    expect(useDashboardStore.getState().focusedBoardItem).toBeNull();
+    expect(useDashboardStore.getState().activeBoardContainer).toEqual({
+      kind: "runbook",
+      id: "rb-1",
     });
+    expect(useDashboardStore.getState().selectedFolderId).toBe("f1");
     expect(useDashboardStore.getState().viewMode).toBe("folder");
     expect(useDashboardStore.getState().activeTab).toBe("folder");
   });
