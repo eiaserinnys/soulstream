@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import type {
   CatalogUpdatedStreamEvent,
+  CustomViewUpdatedStreamEvent,
   MetadataUpdatedStreamEvent,
   ReplayGapStreamEvent,
   RunbookUpdatedStreamEvent,
@@ -50,6 +51,7 @@ const SESSION_STREAM_EVENT_TYPES = [
   "catalog_updated",
   "metadata_updated",
   "runbook_updated",
+  "custom_view_updated",
   "replay_gap",
 ] as const;
 
@@ -74,6 +76,7 @@ export interface UseSessionStreamSSEOptions {
   onCatalogUpdated?: (event: CatalogUpdatedStreamEvent) => void;
   onMetadataUpdated?: (event: MetadataUpdatedStreamEvent) => void;
   onRunbookUpdated?: (event: RunbookUpdatedStreamEvent) => void;
+  onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
   onStreamMeta?: (event: StreamMetaStreamEvent) => void;
   onReplayGap?: (event: ReplayGapStreamEvent) => void;
 }

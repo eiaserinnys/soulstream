@@ -18,6 +18,7 @@ export type UISlice = Pick<
   | "newSessionDefaults"
   | "activeRightTab"
   | "activeBoardDocumentId"
+  | "activeCustomViewId"
   | "focusedBoardItem"
   | "dashboardConfig"
   | "activeTab"
@@ -30,6 +31,7 @@ export type UISlice = Pick<
     | "closeNewSessionModal"
     | "setActiveRightTab"
     | "setActiveBoardDocument"
+    | "setActiveCustomView"
     | "focusBoardItem"
     | "clearFocusedBoardItem"
     | "openRunbookBoard"
@@ -56,6 +58,7 @@ export const createUISlice: StateCreator<
   newSessionDefaults: null,
   activeRightTab: "chat",
   activeBoardDocumentId: null,
+  activeCustomViewId: null,
   focusedBoardItem: null,
   dashboardConfig: null,
   activeTab: "feed",
@@ -76,7 +79,10 @@ export const createUISlice: StateCreator<
   setActiveRightTab: (activeRightTab) => set({ activeRightTab }),
 
   setActiveBoardDocument: (activeBoardDocumentId) =>
-    set({ activeBoardDocumentId, activeRightTab: "chat" }),
+    set({ activeBoardDocumentId, activeCustomViewId: null, activeRightTab: "chat" }),
+
+  setActiveCustomView: (activeCustomViewId) =>
+    set({ activeCustomViewId, activeBoardDocumentId: null, activeRightTab: "chat" }),
 
   focusBoardItem: (boardItemId, folderId) =>
     set((state) => ({

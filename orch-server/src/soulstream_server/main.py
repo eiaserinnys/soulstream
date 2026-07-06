@@ -259,6 +259,19 @@ async def _on_node_change(
             node_id,
             recipient_count,
         )
+    elif event_type == "node_session_custom_view_updated":
+        broadcast_data = {
+            **(data or {}),
+            "type": "custom_view_updated",
+            "nodeId": node_id,
+        }
+        recipient_count = await broadcaster.broadcast(broadcast_data)
+        logger.info(
+            "[broadcast] custom_view_updated customView=%s node=%s recipients=%d",
+            broadcast_data.get("customViewId"),
+            node_id,
+            recipient_count,
+        )
 
     # 노드 상태 변경은 기존대로 broadcast_node_change로 전달 (node graph 등에서 사용).
     await broadcaster.broadcast_node_change({

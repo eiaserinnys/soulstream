@@ -155,7 +155,7 @@ CREATE TABLE IF NOT EXISTS board_items (
     container_id           TEXT NOT NULL,
     membership_kind        TEXT NOT NULL DEFAULT 'primary',
     source_runbook_item_id TEXT,
-    item_type              TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook')),
+    item_type              TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook', 'custom_view')),
     item_id                TEXT NOT NULL,
     x                      DOUBLE PRECISION NOT NULL DEFAULT 0,
     y                      DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -184,7 +184,7 @@ ALTER TABLE board_items ALTER COLUMN container_id SET NOT NULL;
 ALTER TABLE board_items ALTER COLUMN membership_kind SET NOT NULL;
 ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_item_type_check;
 ALTER TABLE board_items ADD CONSTRAINT board_items_item_type_check
-    CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook'));
+    CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook', 'custom_view'));
 ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_container_kind_check;
 ALTER TABLE board_items ADD CONSTRAINT board_items_container_kind_check
     CHECK (container_kind IN ('folder','runbook'));
@@ -297,6 +297,67 @@ CREATE TABLE IF NOT EXISTS events (
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (session_id, id)
 );
+
+CREATE TABLE IF NOT EXISTS board_custom_views (
+    id                 TEXT PRIMARY KEY,
+    board_item_id      TEXT NOT NULL UNIQUE REFERENCES board_items(id) ON DELETE CASCADE,
+    title              TEXT,
+    html               TEXT NOT NULL DEFAULT '',
+    revision           INTEGER NOT NULL DEFAULT 1,
+    archived           BOOLEAN NOT NULL DEFAULT FALSE,
+    created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    created_event_id   INTEGER,
+    updated_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    updated_event_id   INTEGER,
+    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (created_session_id, created_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_session_id, updated_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL
+);
+
+ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS title TEXT;
+ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS html TEXT NOT NULL DEFAULT '';
+ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS created_session_id TEXT;
+ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS created_event_id INTEGER;
+ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS updated_session_id TEXT;
+ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS updated_event_id INTEGER;
+ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE board_custom_views ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+ALTER TABLE board_custom_views DROP CONSTRAINT IF EXISTS board_custom_views_created_session_id_fkey;
+ALTER TABLE board_custom_views ADD CONSTRAINT board_custom_views_created_session_id_fkey
+    FOREIGN KEY (created_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
+ALTER TABLE board_custom_views DROP CONSTRAINT IF EXISTS board_custom_views_updated_session_id_fkey;
+ALTER TABLE board_custom_views ADD CONSTRAINT board_custom_views_updated_session_id_fkey
+    FOREIGN KEY (updated_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
+ALTER TABLE board_custom_views DROP CONSTRAINT IF EXISTS board_custom_views_created_session_id_created_event_id_fkey;
+ALTER TABLE board_custom_views ADD CONSTRAINT board_custom_views_created_session_id_created_event_id_fkey
+    FOREIGN KEY (created_session_id, created_event_id)
+    REFERENCES events(session_id, id) ON DELETE SET NULL;
+ALTER TABLE board_custom_views DROP CONSTRAINT IF EXISTS board_custom_views_updated_session_id_updated_event_id_fkey;
+ALTER TABLE board_custom_views ADD CONSTRAINT board_custom_views_updated_session_id_updated_event_id_fkey
+    FOREIGN KEY (updated_session_id, updated_event_id)
+    REFERENCES events(session_id, id) ON DELETE SET NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_board_custom_views_board_item
+    ON board_custom_views(board_item_id);
+
+CREATE OR REPLACE FUNCTION board_delete_custom_view_refs()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    DELETE FROM board_items WHERE item_type = 'custom_view' AND item_id = OLD.id;
+    RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS board_delete_custom_view_refs_trigger ON board_custom_views;
+CREATE TRIGGER board_delete_custom_view_refs_trigger
+AFTER DELETE ON board_custom_views
+FOR EACH ROW EXECUTE FUNCTION board_delete_custom_view_refs();
 
 CREATE TABLE IF NOT EXISTS soulstream_schedules (
     schedule_id     TEXT PRIMARY KEY,
@@ -2308,6 +2369,13 @@ BEGIN
           WHERE fa.id = bi.item_id
       );
 
+    DELETE FROM board_items bi
+    WHERE bi.item_type = 'custom_view'
+      AND NOT EXISTS (
+          SELECT 1 FROM board_custom_views cv
+          WHERE cv.id = bi.item_id
+      );
+
     WITH candidates AS (
         SELECT
             s.folder_id AS folder_id,
@@ -2430,6 +2498,12 @@ RETURNS TABLE(
                     'height', fa.height,
                     'durationSeconds', fa.duration_seconds
                 )
+            WHEN bi.item_type = 'custom_view' THEN
+                bi.metadata || jsonb_build_object(
+                    'title', COALESCE(cv.title, ''),
+                    'preview', LEFT(regexp_replace(regexp_replace(cv.html, '<[^>]*>', ' ', 'g'), '[[:space:]]+', ' ', 'g'), 180),
+                    'revision', cv.revision
+                )
             ELSE bi.metadata
         END AS metadata,
         bi.created_at,
@@ -2441,6 +2515,9 @@ RETURNS TABLE(
     LEFT JOIN file_assets fa
       ON bi.item_type = 'asset'
      AND bi.item_id = fa.id
+    LEFT JOIN board_custom_views cv
+      ON bi.item_type = 'custom_view'
+     AND bi.item_id = cv.id
     ORDER BY bi.folder_id, bi.y, bi.x, bi.created_at;
 $$;
 
@@ -2457,6 +2534,8 @@ SELECT
             'folderId', bi.folder_id,
             'containerKind', bi.container_kind,
             'containerId', bi.container_id,
+            'membershipKind', bi.membership_kind,
+            'sourceRunbookItemId', bi.source_runbook_item_id,
             'itemType', bi.item_type,
             'itemId', bi.item_id,
             'x', bi.x,

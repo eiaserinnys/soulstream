@@ -3,7 +3,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { FileText, Folder, Frame } from "lucide-react";
+import { Code2, FileText, Folder, Frame } from "lucide-react";
 
 import type { SessionSummary } from "../shared/types";
 import { Badge } from "../components/ui/badge";
@@ -42,6 +42,7 @@ interface BoardWorkspaceTileProps {
   onOpenFolder: (folderId: string) => void;
   onOpenRunbookBoard: (runbookId: string) => void;
   onOpenMarkdown: (documentId: string) => void;
+  onOpenCustomView: (customViewId: string) => void;
   onOpenSession: (session: SessionSummary) => void;
   shouldSuppressClick: () => boolean;
   isSelected: boolean;
@@ -65,6 +66,7 @@ export function BoardWorkspaceTile({
   onOpenFolder,
   onOpenRunbookBoard,
   onOpenMarkdown,
+  onOpenCustomView,
   onOpenSession,
   shouldSuppressClick,
   isSelected,
@@ -176,6 +178,40 @@ export function BoardWorkspaceTile({
           errorMessage={item.errorMessage}
         />
       </div>
+    );
+  }
+
+  if (item.type === "custom_view") {
+    return (
+      <button
+        key={item.id}
+        type="button"
+        data-testid="board-custom-view-tile"
+        data-board-tile="true"
+        className={tileClassName}
+        style={tileStyle}
+        onPointerDown={(event) => onTilePointerDown(event, item)}
+        onContextMenu={(event) => onTileContextMenu(event, item)}
+        onClick={() => {
+          if (shouldSuppressClick()) return;
+          onOpenCustomView(item.customViewId);
+        }}
+      >
+        <div className="flex items-center gap-2 border-b border-[var(--lg-line)] pb-2">
+          <Code2 className="h-5 w-5 shrink-0 text-accent-blue" />
+          <span data-testid="board-custom-view-title" className="line-clamp-2 text-[13.5px] font-semibold leading-snug">
+            {item.title}
+          </span>
+        </div>
+        <div data-testid="board-custom-view-preview" className="mt-2 line-clamp-3 text-xs leading-[1.55] text-muted-foreground">
+          {item.preview || "Empty custom view"}
+        </div>
+        <div className="mt-auto flex items-center justify-end border-t border-[var(--lg-line)] pt-2">
+          <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+            r{item.revision}
+          </Badge>
+        </div>
+      </button>
     );
   }
 

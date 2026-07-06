@@ -11,6 +11,7 @@ import { createGuardedMcpServer } from "./tool_access.js";
 import { registerAgentConfigTools } from "./tools/agent_config.js";
 import { registerCatalogTools } from "./tools/catalog.js";
 import { registerClaudeRuntimeTools } from "./tools/claude_runtime.js";
+import { registerCustomViewTools } from "./tools/custom_view.js";
 import { registerMultiNodeTools } from "./tools/multi_node.js";
 import { registerReflectTools } from "./tools/reflect.js";
 import { registerRunbookTools } from "./tools/runbook.js";
@@ -33,5 +34,6 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
   registerMultiNodeTools(guardedServer, runtime);
   registerTaskTreeTools(guardedServer, runtime);
   registerRunbookTools(guardedServer, runtime);
+  registerCustomViewTools(guardedServer, runtime);
   return server;
 }

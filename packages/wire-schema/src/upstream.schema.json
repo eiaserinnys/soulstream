@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 107개 $defs (wire 51 + SSE event 56). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 108개 $defs (wire 51 + SSE event 57). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "$defs": {
     "NodeRegister": {
       "type": "object",
@@ -159,6 +159,7 @@
             { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleUpdated" },
             { "$ref": "#/$defs/SSEEventClaudeRuntimeScheduleDeleted" },
             { "$ref": "#/$defs/SSEEventRunbookUpdated" },
+            { "$ref": "#/$defs/SSEEventCustomViewUpdated" },
             { "$ref": "#/$defs/SSEEventContextUsage" },
             { "$ref": "#/$defs/SSEEventCompact" },
             { "$ref": "#/$defs/SSEEventReconnect" },
@@ -1684,6 +1685,18 @@
         "type": { "const": "runbook_updated" },
         "runbookId": { "type": "string" },
         "boardItemId": { "type": "string" }
+      }
+    },
+    "SSEEventCustomViewUpdated": {
+      "type": "object",
+      "description": "SSE: 커스텀 뷰 mutation 후 뷰 갱신 트리거. HTML 본문은 wire에 싣지 않는다.",
+      "required": ["type", "customViewId", "boardItemId", "revision"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "custom_view_updated" },
+        "customViewId": { "type": "string" },
+        "boardItemId": { "type": "string" },
+        "revision": { "type": "integer" }
       }
     },
     "SSEEventMetadataUpdated": {

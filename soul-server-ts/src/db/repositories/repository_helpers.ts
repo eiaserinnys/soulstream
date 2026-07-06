@@ -128,7 +128,8 @@ export function isBoardItemType(value: unknown): value is BoardItemType {
     value === "subfolder" ||
     value === "asset" ||
     value === "frame" ||
-    value === "runbook";
+    value === "runbook" ||
+    value === "custom_view";
 }
 
 export function toMarkdownDocumentRow(row: {

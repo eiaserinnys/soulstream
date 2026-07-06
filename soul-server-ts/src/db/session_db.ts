@@ -13,6 +13,7 @@ import { BoardRepository } from "./repositories/board_repository.js";
 import { BoardYjsRepository } from "./repositories/board_yjs_repository.js";
 import { CatalogRepository } from "./repositories/catalog_repository.js";
 import { ClaudeTranscriptRepository } from "./repositories/claude_transcript_repository.js";
+import { CustomViewRepository } from "./repositories/custom_view_repository.js";
 import { EventRepository } from "./repositories/event_repository.js";
 import { MarkdownDocumentRepository } from "./repositories/markdown_document_repository.js";
 import { SessionRepository } from "./repositories/session_repository.js";
@@ -29,6 +30,7 @@ export class SessionDB {
   private readonly sql: SqlClient;
   private readonly ownsSql: boolean;
   private runbookRepository?: RunbookRepository;
+  private customViewRepository?: CustomViewRepository;
   private taskTreeRepository?: TaskTreeRepository;
   private scheduleRepository?: SoulstreamScheduleRepository;
   private readonly sessionRepository: SessionRepository;
@@ -84,6 +86,11 @@ export class SessionDB {
   runbooks(): RunbookRepository {
     this.runbookRepository ??= new RunbookRepository(this.sql);
     return this.runbookRepository;
+  }
+
+  customViews(): CustomViewRepository {
+    this.customViewRepository ??= new CustomViewRepository(this.sql);
+    return this.customViewRepository;
   }
 
   schedules(): SoulstreamScheduleRepository {

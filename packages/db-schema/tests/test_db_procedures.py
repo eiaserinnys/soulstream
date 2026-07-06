@@ -288,6 +288,63 @@ async def test_board_items_container_insert_defaults_and_primary_uniqueness(test
         )
 
 
+async def test_custom_view_schema_enriches_board_item_metadata_and_cascades_refs(test_db):
+    await _create_folder(test_db, "custom-view-folder", "Custom View Folder")
+    await _create_session(test_db, "custom-view-session")
+    await test_db.execute(
+        """
+        INSERT INTO events (session_id, id, event_type, payload, searchable_text, created_at)
+        VALUES ($1, 1, 'custom_view_created', '{}'::jsonb, 'custom view created', NOW())
+        """,
+        "custom-view-session",
+    )
+    await test_db.execute(
+        """
+        INSERT INTO board_items (
+            id, folder_id, item_type, item_id, container_kind, container_id, x, y
+        )
+        VALUES (
+            'custom_view:cv-1', 'custom-view-folder', 'custom_view', 'cv-1',
+            'folder', 'custom-view-folder', 120, 240
+        )
+        """
+    )
+    await test_db.execute(
+        """
+        INSERT INTO board_custom_views (
+            id, board_item_id, title, html, revision,
+            created_session_id, created_event_id, updated_session_id, updated_event_id
+        )
+        VALUES (
+            'cv-1', 'custom_view:cv-1', 'Progress panel',
+            '<section><h1>Progress</h1><script>alert(1)</script></section>', 3,
+            'custom-view-session', 1, 'custom-view-session', 1
+        )
+        """
+    )
+
+    row = await test_db.fetchrow(
+        """
+        SELECT item_type, metadata
+        FROM board_item_get_all()
+        WHERE id = 'custom_view:cv-1'
+        """
+    )
+
+    metadata = _decode_jsonb(row["metadata"])
+    assert row["item_type"] == "custom_view"
+    assert metadata["title"] == "Progress panel"
+    assert metadata["revision"] == 3
+    assert "Progress" in metadata["preview"]
+    assert "<section>" not in metadata["preview"]
+
+    await test_db.execute("DELETE FROM board_custom_views WHERE id = 'cv-1'")
+    remaining = await test_db.fetchval(
+        "SELECT COUNT(*) FROM board_items WHERE id = 'custom_view:cv-1'"
+    )
+    assert remaining == 0
+
+
 async def test_board_yjs_persistence_container_schema_contract(test_db):
     """Yjs documents/cache expose synced marker and container cache key."""
 

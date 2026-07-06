@@ -11,6 +11,7 @@ import { FileAttachmentStore } from "./attachments/file_manager.js";
 import { CatalogService } from "./catalog/catalog_service.js";
 import { BoardYjsService } from "./collaboration/board_yjs_service.js";
 import { parseEnv } from "./config.js";
+import { CustomViewService } from "./custom_view/custom_view_service.js";
 import { ensureStableSessionOrderIndexInBackground } from "./db/session_index_ensure.js";
 import { SessionDB, type SupervisorEventRow } from "./db/session_db.js";
 import { EventPersistence } from "./db/event_persistence.js";
@@ -658,6 +659,11 @@ async function main(): Promise<void> {
     boardYjsService,
     runbookHandoffNotifier,
   );
+  const customViewService = new CustomViewService(
+    db,
+    boardYjsService,
+    broadcaster,
+  );
   const llmAdapters = {
     ...(env.LLM_OPENAI_API_KEY
       ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) }
@@ -698,6 +704,7 @@ async function main(): Promise<void> {
     mcpConfigService,
     catalogService,
     runbookService,
+    customViewService,
     logger,
     mcpToolProfile: env.MCP_TOOL_PROFILE,
     // Completion relay and MCP multi-node tools share the same upstream HTTP config.

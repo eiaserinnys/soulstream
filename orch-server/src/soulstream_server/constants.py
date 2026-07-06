@@ -120,6 +120,7 @@ KNOWN_SSE_EVENT_TYPES = frozenset({
     "claude_runtime_schedule_updated",
     "claude_runtime_schedule_deleted",
     "runbook_updated",
+    "custom_view_updated",
     "context_usage", "compact", "reconnect", "history_sync",
     "metadata_updated", "assistant_error", "away_summary",
 })

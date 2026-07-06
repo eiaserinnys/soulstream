@@ -23,6 +23,7 @@ import type {
 import type {
   CatalogUpdatedStreamEvent,
   MetadataUpdatedStreamEvent,
+  CustomViewUpdatedStreamEvent,
   ReplayGapStreamEvent,
   RunbookUpdatedStreamEvent,
   SessionCreatedStreamEvent,
@@ -74,6 +75,8 @@ export interface UseSessionStreamCacheSyncOptions {
   onReplayGap?: (event: ReplayGapStreamEvent) => void;
   /** runbook_updated 수신 시 호출 (런북 snapshot projection 갱신용). */
   onRunbookUpdated?: (event: RunbookUpdatedStreamEvent) => void;
+  /** custom_view_updated 수신 시 호출 (커스텀 뷰 projection 갱신용). */
+  onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
 }
 
 export function useSessionStreamCacheSync(
@@ -87,6 +90,7 @@ export function useSessionStreamCacheSync(
     onStreamMeta,
     onReplayGap,
     onRunbookUpdated: onRunbookUpdatedOption,
+    onCustomViewUpdated: onCustomViewUpdatedOption,
   } = options;
   const queryClient = useQueryClient();
   const setActiveSessionSummary = useDashboardStore(
@@ -276,6 +280,14 @@ export function useSessionStreamCacheSync(
     [onEventIdAdvance, onRunbookUpdatedOption],
   );
 
+  const onCustomViewUpdated = useCallback(
+    (event: CustomViewUpdatedStreamEvent) => {
+      if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
+      onCustomViewUpdatedOption?.(event);
+    },
+    [onCustomViewUpdatedOption, onEventIdAdvance],
+  );
+
   const onSessionList = useCallback(() => {
     // 무시: TanStack Query fetch로 대체
   }, []);
@@ -290,6 +302,7 @@ export function useSessionStreamCacheSync(
     onCatalogUpdated,
     onMetadataUpdated,
     onRunbookUpdated,
+    onCustomViewUpdated,
     onStreamMeta,
     onReplayGap,
   });

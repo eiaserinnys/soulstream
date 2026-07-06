@@ -296,6 +296,15 @@ def create_catalog_router(
         require_folder_allowed(access_for_request(request), folders, folder_id)
         return document
 
+    @router.get("/custom-views/{custom_view_id}")
+    async def get_custom_view(custom_view_id: str, request: Request) -> dict:
+        custom_view = await catalog_service.get_custom_view(custom_view_id)
+        if custom_view is None:
+            raise HTTPException(status_code=404, detail="Custom view not found")
+        folders = await catalog_service.list_folders()
+        require_folder_allowed(access_for_request(request), folders, custom_view.get("folderId"))
+        return custom_view
+
     @router.get("/runbooks/my-turn")
     async def get_runbook_my_turn(request: Request, limit: int = Query(100, ge=1, le=500)) -> dict:
         loader = getattr(db, "get_runbook_overview", None)

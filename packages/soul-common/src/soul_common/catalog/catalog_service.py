@@ -472,6 +472,12 @@ class CatalogService:
     async def get_markdown_document(self, document_id: str) -> Optional[dict]:
         return await self._db.get_markdown_document(document_id)
 
+    async def get_custom_view(self, custom_view_id: str) -> Optional[dict]:
+        getter = getattr(self._db, "get_custom_view", None)
+        if getter is None:
+            return None
+        return await getter(custom_view_id)
+
     async def update_markdown_document(
         self,
         document_id: str,

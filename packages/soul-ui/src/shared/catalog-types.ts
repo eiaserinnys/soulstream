@@ -52,7 +52,8 @@ export type CatalogBoardItemType =
   | "subfolder"
   | "asset"
   | "frame"
-  | "runbook";
+  | "runbook"
+  | "custom_view";
 
 export type BoardContainerKind = "folder" | "runbook";
 
@@ -82,6 +83,18 @@ export interface MarkdownDocument {
   title: string;
   body: string;
   version: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CustomViewDocument {
+  id: string;
+  boardItemId: string;
+  folderId: string;
+  title?: string | null;
+  html: string;
+  revision: number;
+  archived?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }

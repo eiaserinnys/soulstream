@@ -364,6 +364,43 @@ export function upsertRunbookYjsBoardItem(
   return boardItem;
 }
 
+export function upsertCustomViewYjsBoardItem(
+  doc: Y.Doc,
+  scopeInput: BoardYjsScopeInput,
+  input: {
+    boardItemId: string;
+    customViewId: string;
+    title: string;
+    html: string;
+    revision: number;
+    x: number;
+    y: number;
+    metadata?: Record<string, unknown>;
+  },
+): CatalogBoardItemRow {
+  const scope = typeof scopeInput === "string" ? boardYjsFolderScope(scopeInput) : scopeInput;
+  const boardItem: CatalogBoardItemRow = {
+    id: input.boardItemId,
+    folderId: scope.folderId,
+    containerKind: scope.containerKind,
+    containerId: scope.containerId,
+    membershipKind: "primary",
+    sourceRunbookItemId: null,
+    itemType: "custom_view",
+    itemId: input.customViewId,
+    x: input.x,
+    y: input.y,
+    metadata: {
+      ...(input.metadata ?? {}),
+      title: input.title,
+      preview: getHtmlPreview(input.html),
+      revision: input.revision,
+    },
+  };
+  upsertBoardYjsItem(doc, boardItem);
+  return boardItem;
+}
+
 export function deleteBoardYjsItem(doc: Y.Doc, boardItemId: string): void {
   doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP).delete(boardItemId);
 }
@@ -400,6 +437,10 @@ function normalizeMarkdownTitle(title: string): string {
 
 function getMarkdownPreview(body: string): string {
   return body.replace(/\s+/g, " ").trim().slice(0, 180);
+}
+
+function getHtmlPreview(html: string): string {
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
 }
 
 function isBoardContainerKind(value: string): value is BoardContainerKind {

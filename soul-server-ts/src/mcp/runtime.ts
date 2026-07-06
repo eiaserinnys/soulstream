@@ -9,6 +9,7 @@ import type { Logger } from "pino";
 import type { AgentConfigService } from "../agent_config_service.js";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { CatalogService } from "../catalog/catalog_service.js";
+import type { CustomViewService } from "../custom_view/custom_view_service.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import type { RunbookService } from "../runbook/runbook_service.js";
@@ -34,6 +35,7 @@ export interface McpRuntime {
   mcpConfigService?: McpConfigService;
   catalogService: CatalogService;
   runbookService?: RunbookService;
+  customViewService?: CustomViewService;
   logger: Logger;
   /** default = full tool surface. supervisor_readonly hides and blocks mutation tools. */
   mcpToolProfile?: McpToolProfile;

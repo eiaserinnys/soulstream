@@ -151,6 +151,7 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventClaudeRuntimeScheduleUpdated",
         "SSEEventClaudeRuntimeScheduleDeleted",
         "SSEEventRunbookUpdated",
+        "SSEEventCustomViewUpdated",
         "SSEEventContextUsage",
         "SSEEventCompact",
         "SSEEventReconnect",
@@ -159,8 +160,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventAssistantError",
         "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 56, (
-        "SSE event $defs 56종 (wire-schema 정본 + session_ended + runbook_updated)."
+    assert len(sse_types) == 57, (
+        "SSE event $defs 57종 (wire-schema 정본 + session_ended + runbook_updated + custom_view_updated)."
     )
 
     expected = wire_types | sse_types
@@ -360,6 +361,7 @@ def test_known_sse_event_types_completeness() -> None:
         "claude_runtime_schedule_updated",
         "claude_runtime_schedule_deleted",
         "runbook_updated",
+        "custom_view_updated",
         "context_usage",
         "compact",
         "reconnect",

@@ -91,6 +91,16 @@ export interface RunbookUpdatedStreamEvent {
   lastEventId?: string;
 }
 
+/** 커스텀 뷰 상태 변경 이벤트 — 클라이언트는 서버 snapshot을 다시 읽는다. */
+export interface CustomViewUpdatedStreamEvent {
+  type: "custom_view_updated";
+  customViewId: string;
+  boardItemId: string;
+  revision: number;
+  /** broadcaster가 부여한 SSE event_id */
+  lastEventId?: string;
+}
+
 /**
  * 스트림 메타 이벤트 (구독 시 최초 1회, SSE id 미부착)
  *
@@ -126,5 +136,6 @@ export type SessionStreamEvent =
   | CatalogUpdatedStreamEvent
   | MetadataUpdatedStreamEvent
   | RunbookUpdatedStreamEvent
+  | CustomViewUpdatedStreamEvent
   | StreamMetaStreamEvent
   | ReplayGapStreamEvent;

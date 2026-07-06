@@ -230,6 +230,9 @@ export interface DashboardState {
   /** 오른쪽 Chat 슬롯에 표시 중인 보드 마크다운 문서 */
   activeBoardDocumentId: string | null;
 
+  /** 오른쪽 Chat 슬롯에 표시 중인 커스텀 뷰 */
+  activeCustomViewId: string | null;
+
   /** 외부 표면에서 board item으로 이동할 때 BoardWorkspaceView가 소비하는 일회성 요청 */
   focusedBoardItem: BoardItemFocusRequest | null;
 
@@ -325,6 +328,7 @@ export interface DashboardActions {
   // 오른쪽 패널 탭
   setActiveRightTab: (tab: "detail" | "chat" | "info") => void;
   setActiveBoardDocument: (documentId: string | null) => void;
+  setActiveCustomView: (customViewId: string | null) => void;
 
   // 대시보드 프로필 설정
   setDashboardConfig: (config: DashboardConfig) => void;
