@@ -71,6 +71,10 @@ CREATE TABLE IF NOT EXISTS file_assets (
 CREATE TABLE IF NOT EXISTS board_items (
     id TEXT PRIMARY KEY,
     folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+    container_kind TEXT NOT NULL DEFAULT 'folder' CHECK (container_kind IN ('folder', 'runbook')),
+    container_id TEXT NOT NULL DEFAULT '',
+    membership_kind TEXT NOT NULL DEFAULT 'primary' CHECK (membership_kind IN ('primary', 'reference')),
+    source_runbook_item_id TEXT,
     item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook')),
     item_id TEXT NOT NULL,
     x REAL NOT NULL DEFAULT 0,
@@ -82,6 +86,7 @@ CREATE TABLE IF NOT EXISTS board_items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_board_items_folder ON board_items (folder_id, y, x);
+CREATE INDEX IF NOT EXISTS idx_board_items_container ON board_items (container_kind, container_id, y, x);
 CREATE INDEX IF NOT EXISTS idx_board_items_ref ON board_items (item_type, item_id);
 
 CREATE TRIGGER IF NOT EXISTS board_delete_folder_refs

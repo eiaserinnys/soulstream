@@ -16,6 +16,7 @@ import { randomUUID } from "node:crypto";
 
 import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
 import type {
+  BoardYjsContainerRef,
   CatalogBoardItemRow,
   ListSessionSummaryRow,
   SessionDB,
@@ -345,19 +346,25 @@ export class CatalogService {
 
   async createMarkdownDocument(params: {
     folderId: string;
+    container?: BoardYjsContainerRef | null;
     title: string;
     body?: string;
     x?: number;
     y?: number;
   }): Promise<Awaited<ReturnType<SessionDB["createMarkdownDocument"]>>> {
     const documentId = randomUUID();
+    const container = params.container ?? {
+      containerKind: "folder" as const,
+      containerId: params.folderId,
+    };
     const [x, y] = params.x !== undefined && params.y !== undefined
       ? [snapBoardPosition(params.x), snapBoardPosition(params.y)]
-      : await this.nextBoardPosition(params.folderId);
+      : await this.nextBoardPosition(params.folderId, container);
     if (this.boardYjsService) {
       const result = await this.boardYjsService.createMarkdownDocument({
         documentId,
         folderId: params.folderId,
+        container,
         title: params.title,
         body: params.body ?? "",
         x,
@@ -369,6 +376,7 @@ export class CatalogService {
     const result = await this.db.createMarkdownDocument({
       documentId,
       folderId: params.folderId,
+      container,
       title: params.title,
       body: params.body ?? "",
       x,
@@ -428,15 +436,18 @@ export class CatalogService {
     await this.broadcastCatalog();
   }
 
-  private async nextBoardPosition(folderId: string): Promise<[number, number]> {
+  private async nextBoardPosition(
+    folderId: string,
+    container: BoardYjsContainerRef,
+  ): Promise<[number, number]> {
     // Legacy REST/MCP markdown placement. Board catalog reads are Yjs-derived.
     await this.db.ensureBoardItems();
     const occupied = new Set(
       (await this.db.getBoardItems())
         .filter((item) =>
           item.folderId === folderId &&
-          (item.containerKind ?? "folder") === "folder" &&
-          (item.containerId ?? item.folderId) === folderId
+          (item.containerKind ?? "folder") === container.containerKind &&
+          (item.containerId ?? item.folderId) === container.containerId
         )
         .map((item) => `${item.x}:${item.y}`),
     );

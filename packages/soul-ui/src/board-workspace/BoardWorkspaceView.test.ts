@@ -273,6 +273,105 @@ function findButtonByText(scope: ParentNode, text: string): HTMLButtonElement | 
     .find((button) => button.textContent?.trim() === text);
 }
 
+function seedRunbookProjection(runbookId = "rb-1") {
+  useRunbookStore.setState({
+    byId: {
+      [runbookId]: {
+        snapshot: {
+          runbook: {
+            id: runbookId,
+            board_item_id: `runbook:${runbookId}`,
+            folder_id: "root",
+            title: "Deploy Runbook",
+            status: "open",
+            archived: false,
+            version: 3,
+            created_session_id: null,
+            created_event_id: null,
+            created_at: "2026-07-06T00:00:00.000Z",
+            updated_at: "2026-07-06T00:00:00.000Z",
+          },
+          sections: [
+            {
+              id: "sec-1",
+              runbook_id: runbookId,
+              position_key: "a",
+              title: "Checklist",
+              archived: false,
+              version: 1,
+              created_session_id: null,
+              created_event_id: null,
+              updated_session_id: null,
+              updated_event_id: null,
+              created_at: "2026-07-06T00:00:00.000Z",
+              updated_at: "2026-07-06T00:00:00.000Z",
+              assignee_kind: null,
+              assignee_agent_id: null,
+              assignee_session_id: null,
+              assignee_user_id: null,
+            },
+          ],
+          items: [
+            {
+              id: "item-1",
+              section_id: "sec-1",
+              position_key: "a",
+              title: "Done",
+              how_to: "",
+              status: "completed",
+              archived: false,
+              version: 1,
+              created_session_id: null,
+              created_event_id: null,
+              updated_session_id: null,
+              updated_event_id: null,
+              completed_kind: null,
+              completed_session_id: null,
+              completed_event_id: null,
+              completed_user_id: null,
+              completed_at: null,
+              created_at: "2026-07-06T00:00:00.000Z",
+              updated_at: "2026-07-06T00:00:00.000Z",
+              assignee_kind: null,
+              assignee_agent_id: null,
+              assignee_session_id: null,
+              assignee_user_id: null,
+            },
+            {
+              id: "item-2",
+              section_id: "sec-1",
+              position_key: "b",
+              title: "Pending",
+              how_to: "",
+              status: "pending",
+              archived: false,
+              version: 1,
+              created_session_id: null,
+              created_event_id: null,
+              updated_session_id: null,
+              updated_event_id: null,
+              completed_kind: null,
+              completed_session_id: null,
+              completed_event_id: null,
+              completed_user_id: null,
+              completed_at: null,
+              created_at: "2026-07-06T00:00:00.000Z",
+              updated_at: "2026-07-06T00:00:00.000Z",
+              assignee_kind: null,
+              assignee_agent_id: null,
+              assignee_session_id: null,
+              assignee_user_id: null,
+            },
+          ],
+        },
+        status: "ready",
+        error: null,
+        isRefreshing: false,
+      },
+    },
+  });
+}
+
 describe("BoardWorkspaceView", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
@@ -497,7 +596,7 @@ describe("BoardWorkspaceView", () => {
     expect(status?.title).toContain("websocket is unavailable");
   });
 
-  it("renders runbook board header and empty state from activeBoardContainer", () => {
+  it("renders runbook board header and fixed checklist card from activeBoardContainer", () => {
     useRunbookStore.setState({
       byId: {
         "rb-1": {
@@ -515,7 +614,26 @@ describe("BoardWorkspaceView", () => {
               created_at: "2026-07-06T00:00:00.000Z",
               updated_at: "2026-07-06T00:00:00.000Z",
             },
-            sections: [],
+            sections: [
+              {
+                id: "sec-1",
+                runbook_id: "rb-1",
+                position_key: "a",
+                title: "Checklist",
+                archived: false,
+                version: 1,
+                created_session_id: null,
+                created_event_id: null,
+                updated_session_id: null,
+                updated_event_id: null,
+                created_at: "2026-07-06T00:00:00.000Z",
+                updated_at: "2026-07-06T00:00:00.000Z",
+                assignee_kind: null,
+                assignee_agent_id: null,
+                assignee_session_id: null,
+                assignee_user_id: null,
+              },
+            ],
             items: [
               {
                 id: "item-1",
@@ -590,9 +708,95 @@ describe("BoardWorkspaceView", () => {
     expect(container.textContent).toContain("Deploy Runbook");
     expect(container.textContent).toContain("런북 보드");
     expect(container.textContent).toContain("1/2");
-    expect(container.textContent).toContain("아직 이 런북 보드에 배치된 항목이 없음");
+    expect(container.querySelector('[data-testid="runbook-board-fixed-card"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="runbook-card"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="runbook-card-title"]')?.textContent).toBe("Deploy Runbook");
+    expect(container.querySelector('[data-testid="runbook-card-progress"]')?.textContent).toBe("1/2");
+    expect(container.textContent).not.toContain("아직 이 런북 보드에 배치된 항목이 없음");
     expect(findButtonByText(container, "Folder")).toBeUndefined();
-    expect(findButtonByText(container, "New")).toBeUndefined();
+    expect(findButtonByText(container, "New")).not.toBeUndefined();
+  });
+
+  it("opens new sessions from a runbook board with runbook container defaults", () => {
+    seedRunbookProjection();
+    ({ container, root } = renderBoard({}, {
+      catalog: { ...catalog, boardItems: [] },
+      sessions: [],
+    }));
+
+    flushSync(() => {
+      useDashboardStore.getState().openRunbookBoard("rb-1", "root");
+    });
+
+    const newButton = findButtonByText(container, "New");
+    expect(newButton).not.toBeUndefined();
+    flushSync(() => {
+      newButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const sessionButton = findButtonByText(container, "Session");
+    expect(sessionButton).not.toBeUndefined();
+    flushSync(() => {
+      sessionButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(useDashboardStore.getState().isNewSessionModalOpen).toBe(true);
+    expect(useDashboardStore.getState().newSessionDefaults).toMatchObject({
+      folderId: "root",
+      container: { kind: "runbook", id: "rb-1" },
+      boardPosition: { x: 300, y: 240 },
+    });
+  });
+
+  it("uploads dropped files from a runbook board with the runbook container target", async () => {
+    seedRunbookProjection();
+    const onUploadBoardAsset = vi.fn(async (input) => ({
+      asset: { id: "asset-runbook" },
+      boardItem: {
+        id: "asset:asset-runbook",
+        folderId: input.folderId,
+        containerKind: "runbook" as const,
+        containerId: "rb-1",
+        itemType: "asset" as const,
+        itemId: "asset-runbook",
+        x: input.x,
+        y: input.y,
+        metadata: {
+          assetId: "asset-runbook",
+          storageKey: "containers/runbook/rb-1/assets/asset-runbook/report.pdf",
+          originalName: input.file.name,
+          mimeType: input.file.type,
+          byteSize: input.file.size,
+          signedUrl: "https://r2.example/runbook-report.pdf",
+        },
+      },
+    }));
+    ({ container, root } = renderBoard({ onUploadBoardAsset }, {
+      catalog: { ...catalog, boardItems: [] },
+      sessions: [],
+    }));
+
+    flushSync(() => {
+      useDashboardStore.getState().openRunbookBoard("rb-1", "root");
+    });
+    const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
+    expect(scroller).not.toBeNull();
+    const file = new File(["hello"], "report.pdf", { type: "application/pdf" });
+
+    dispatchFileDragEvent(scroller!, "drop", [file], {
+      clientX: 52000,
+      clientY: 52000,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(onUploadBoardAsset).toHaveBeenCalledTimes(1);
+    expect(onUploadBoardAsset.mock.calls[0]?.[0]).toMatchObject({
+      folderId: "root",
+      container: { kind: "runbook", id: "rb-1" },
+      file,
+      x: 2000,
+      y: 2000,
+    });
   });
 
   it("keeps folder names, session titles, markdown previews, and agent profiles bounded inside tiles", () => {

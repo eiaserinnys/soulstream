@@ -20,6 +20,7 @@ import {
   deleteBoardYjsItem,
   getBoardYjsContainerDocumentName,
   updateMarkdownYjsDocument,
+  upsertBoardYjsItem,
   upsertRunbookYjsBoardItem,
 } from "./board_yjs_model.js";
 import {
@@ -79,15 +80,49 @@ export class BoardYjsService {
 
   async createMarkdownDocument(input: {
     folderId: string;
+    container?: BoardYjsContainerRef;
     title: string;
     body: string;
     x: number;
     y: number;
     documentId: string;
   }): Promise<{ document: MarkdownDocumentRow; boardItem: CatalogBoardItemRow }> {
-    return await this.withDirectConnection(input.folderId, (doc) =>
-      createMarkdownYjsDocument(doc, input.folderId, input)
+    const scope = {
+      folderId: input.folderId,
+      containerKind: input.container?.containerKind ?? "folder",
+      containerId: input.container?.containerId ?? input.folderId,
+    };
+    return await this.withDirectContainerConnection(scope, (doc) =>
+      createMarkdownYjsDocument(doc, scope, input)
     );
+  }
+
+  async upsertSessionBoardItem(input: {
+    folderId: string;
+    container: BoardYjsContainerRef;
+    sessionId: string;
+    x: number;
+    y: number;
+    sourceRunbookItemId?: string | null;
+  }): Promise<CatalogBoardItemRow> {
+    const boardItem: CatalogBoardItemRow = {
+      id: `session:${input.sessionId}`,
+      folderId: input.folderId,
+      containerKind: input.container.containerKind,
+      containerId: input.container.containerId,
+      membershipKind: "primary",
+      sourceRunbookItemId: input.sourceRunbookItemId ?? null,
+      itemType: "session",
+      itemId: input.sessionId,
+      x: input.x,
+      y: input.y,
+      metadata: {},
+    };
+    await this.withDirectContainerConnection(input.container, (doc) => {
+      upsertBoardYjsItem(doc, boardItem);
+      return true;
+    });
+    return boardItem;
   }
 
   async upsertRunbookBoardItem(input: {

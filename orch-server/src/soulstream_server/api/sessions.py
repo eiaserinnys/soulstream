@@ -68,6 +68,37 @@ RESPOND_ACK_ERROR_HTTP_STATUS = {
     "INPUT_RESPONSE_NOT_SUPPORTED": 422,
 }
 
+
+async def _resolve_payload_folder_id(
+    catalog_service: CatalogService | None,
+    payload: dict[str, Any],
+) -> str | None:
+    requested_folder_id = payload.get("folderId")
+    if isinstance(requested_folder_id, str) or requested_folder_id is None:
+        folder_id = requested_folder_id
+    else:
+        folder_id = None
+    container = payload.get("container")
+    if not isinstance(container, dict):
+        return folder_id
+    kind = container.get("kind")
+    container_id = container.get("id")
+    if kind == "folder" and isinstance(container_id, str) and container_id:
+        return container_id
+    if kind != "runbook" or not isinstance(container_id, str) or not container_id:
+        return folder_id
+    if catalog_service is None:
+        return folder_id
+    catalog = await catalog_service.get_catalog()
+    board_items = catalog.get("boardItems") if isinstance(catalog.get("boardItems"), list) else []
+    for item in board_items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("itemType") == "runbook" and item.get("itemId") == container_id:
+            resolved = item.get("folderId")
+            return resolved if isinstance(resolved, str) and resolved else folder_id
+    raise HTTPException(status_code=404, detail="Runbook board container not found")
+
 TOOL_APPROVAL_ACK_ERROR_HTTP_STATUS = {
     "SESSION_NOT_FOUND": 404,
     "SESSION_NOT_RUNNING": 409,
@@ -221,7 +252,7 @@ def create_sessions_router(
         )
         if access.restricted:
             folders = await catalog_service.list_folders() if catalog_service else await db.get_all_folders()
-            requested_folder_id = payload.get("folderId")
+            requested_folder_id = await _resolve_payload_folder_id(catalog_service, payload)
             if requested_folder_id is None:
                 requested_folder_id = first_allowed_folder_id(access, folders)
                 if requested_folder_id is not None:

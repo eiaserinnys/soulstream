@@ -9,12 +9,16 @@ import { z } from "zod";
 
 import { AgentProfileSchema } from "../../agent_registry.js";
 import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
-import { getCallerSessionFolderId } from "../../session_folder_fallback.js";
+import { resolveDelegatedContainer } from "../../session_folder_fallback.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { requireRemoteCallerSessionId } from "./caller_session.js";
 
 const NOT_CONFIGURED_MSG = "multi-node not configured";
+const delegatedContainerSchema = z.object({
+  kind: z.enum(["folder", "runbook"]),
+  id: z.string().min(1),
+});
 
 export function registerMultiNodeTools(
   server: McpServer,
@@ -236,10 +240,12 @@ export function registerMultiNodeTools(
         prompt: z.string(),
         caller_session_id: z.string().optional(),
         folder_id: z.string().nullable().optional(),
+        container: delegatedContainerSchema.optional(),
+        source_runbook_item_id: z.string().optional(),
       },
     },
     async (input) => {
-      const { node_id, agent_id, prompt, caller_session_id, folder_id } = input;
+      const { node_id, agent_id, prompt, caller_session_id, folder_id, container, source_runbook_item_id } = input;
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
 
@@ -261,13 +267,22 @@ export function registerMultiNodeTools(
         nodeId: node_id,
       };
       if (agent_id !== undefined) body.profile = agent_id;
-      if (Object.prototype.hasOwnProperty.call(input, "folder_id") && folder_id !== undefined) {
-        body.folderId = folder_id;
-      } else {
-        body.folderId = await getCallerSessionFolderId(
-          runtime,
-          callerSession.callerSessionId,
-        );
+      const resolvedContainer = await resolveDelegatedContainer(runtime, {
+        callerSessionId: callerSession.callerSessionId,
+        ...(Object.prototype.hasOwnProperty.call(input, "folder_id") && folder_id !== undefined
+          ? { folderId: folder_id }
+          : {}),
+        container: container ?? null,
+      });
+      body.folderId = resolvedContainer.folderId;
+      if (resolvedContainer.container) {
+        body.container = {
+          kind: resolvedContainer.container.containerKind,
+          id: resolvedContainer.container.containerId,
+        };
+      }
+      if (source_runbook_item_id !== undefined) {
+        body.sourceRunbookItemId = source_runbook_item_id;
       }
       body.caller_session_id = callerSession.callerSessionId;
       body.caller_info = callerInfo;

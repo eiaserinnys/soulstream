@@ -66,7 +66,7 @@ export interface CatalogBoardItem {
   folderId: string;
   containerKind?: BoardContainerKind;
   containerId?: string;
-  membershipKind?: "primary";
+  membershipKind?: "primary" | "reference";
   sourceRunbookItemId?: string | null;
   itemType: CatalogBoardItemType;
   itemId: string;

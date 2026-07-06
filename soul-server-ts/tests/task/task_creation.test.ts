@@ -22,13 +22,38 @@ function makeHarness() {
       parent_folder_id: null,
     });
   const getCatalog = vi.fn().mockResolvedValue({ folders: [], sessions: {} });
+  const resolveBoardYjsContainerScope = vi.fn().mockResolvedValue({
+    folderId: "root",
+    containerKind: "runbook",
+    containerId: "rb-1",
+  });
+  const loadBoardYjsSeed = vi.fn().mockResolvedValue({
+    boardItems: [],
+    markdownDocuments: [],
+  });
   const db = {
     registerSession,
     appendMetadata,
     assignSessionToFolder,
     getFolderById,
     getCatalog,
+    resolveBoardYjsContainerScope,
+    loadBoardYjsSeed,
   } as unknown as SessionDB;
+
+  const upsertSessionBoardItem = vi.fn().mockResolvedValue({
+    id: "session:sess-runbook",
+    folderId: "root",
+    containerKind: "runbook",
+    containerId: "rb-1",
+    membershipKind: "primary",
+    sourceRunbookItemId: "runbook-item-1",
+    itemType: "session",
+    itemId: "sess-runbook",
+    x: 0,
+    y: 160,
+    metadata: {},
+  });
 
   const emitCatalogUpdated = vi.fn().mockResolvedValue(undefined);
   const emitSessionCreated = vi.fn().mockResolvedValue(undefined);
@@ -41,6 +66,7 @@ function makeHarness() {
   const creation = new TaskCreation({
     nodeId: "node-1",
     db,
+    boardYjsService: { upsertSessionBoardItem },
     broadcaster,
     logger: silentLogger,
     hasTask: (sessionId) => tasks.has(sessionId),
@@ -57,6 +83,9 @@ function makeHarness() {
     assignSessionToFolder,
     getFolderById,
     getCatalog,
+    resolveBoardYjsContainerScope,
+    loadBoardYjsSeed,
+    upsertSessionBoardItem,
     emitCatalogUpdated,
     emitSessionCreated,
   };
@@ -166,6 +195,71 @@ describe("TaskCreation", () => {
     expect(h.emitCatalogUpdated).not.toHaveBeenCalled();
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, null);
     expect(h.tasks.get("sess-no-folder")).toBe(task);
+  });
+
+  it("places delegated runbook sessions through the runbook board Y-doc before catalog broadcast", async () => {
+    const h = makeHarness();
+    h.loadBoardYjsSeed.mockResolvedValueOnce({
+      boardItems: [
+        {
+          id: "runbook:rb-1",
+          folderId: "root",
+          containerKind: "folder",
+          containerId: "root",
+          itemType: "runbook",
+          itemId: "rb-1",
+          x: 0,
+          y: 0,
+          metadata: {},
+        },
+        {
+          id: "markdown:doc-1",
+          folderId: "root",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          itemType: "markdown",
+          itemId: "doc-1",
+          x: 0,
+          y: 160,
+          metadata: {},
+        },
+      ],
+      markdownDocuments: [],
+    });
+
+    const task = await h.creation.createTask({
+      agentSessionId: "sess-runbook",
+      prompt: "runbook task",
+      profileId: "roselin_codex",
+      sessionType: "llm",
+      container: { containerKind: "runbook", containerId: "rb-1" },
+      sourceRunbookItemId: "runbook-item-1",
+    });
+
+    expect(h.resolveBoardYjsContainerScope).toHaveBeenCalledWith({
+      containerKind: "runbook",
+      containerId: "rb-1",
+    });
+    expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-runbook", "root");
+    expect(h.loadBoardYjsSeed).toHaveBeenCalledWith({
+      containerKind: "runbook",
+      containerId: "rb-1",
+    });
+    expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
+      folderId: "root",
+      container: { containerKind: "runbook", containerId: "rb-1" },
+      sessionId: "sess-runbook",
+      sourceRunbookItemId: "runbook-item-1",
+      x: 280,
+      y: 160,
+    });
+    expect(h.upsertSessionBoardItem.mock.invocationCallOrder[0]).toBeLessThan(
+      h.getCatalog.mock.invocationCallOrder[0],
+    );
+    expect(h.emitCatalogUpdated.mock.invocationCallOrder[0]).toBeLessThan(
+      h.emitSessionCreated.mock.invocationCallOrder[0],
+    );
+    expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "root");
   });
 
   it("isolates folder, catalog, and session_created broadcast failures after DB registration", async () => {

@@ -453,6 +453,7 @@ describe("CatalogService board items", () => {
 
     expect(boardYjsService.createMarkdownDocument).toHaveBeenCalledWith({
       folderId: "f1",
+      container: { containerKind: "folder", containerId: "f1" },
       title: "Note",
       body: "Body",
       x: 60,

@@ -149,6 +149,8 @@ class SessionRouter:
                 caller_session_id=request.get("caller_session_id"),
                 attachment_paths=request.get("attachmentPaths"),
                 caller_info=request.get("caller_info"),
+                container=request.get("container"),
+                source_runbook_item_id=request.get("sourceRunbookItemId"),
                 model=request.get("model"),
                 reasoning_effort=(
                     request.get("reasoningEffort") if effective_backend == "codex" else None

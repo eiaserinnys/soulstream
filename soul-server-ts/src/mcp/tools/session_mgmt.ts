@@ -7,10 +7,16 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
+import { resolveDelegatedContainer } from "../../session_folder_fallback.js";
 import { sendMessageToSession } from "../../task/session_message_sender.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveEffectiveCallerSessionId } from "./caller_session.js";
+
+const delegatedContainerSchema = z.object({
+  kind: z.enum(["folder", "runbook"]),
+  id: z.string().min(1),
+});
 
 export function registerSessionMgmtTools(
   server: McpServer,
@@ -44,9 +50,11 @@ export function registerSessionMgmtTools(
         prompt: z.string(),
         caller_session_id: z.string().optional(),
         folder_id: z.string().optional(),
+        container: delegatedContainerSchema.optional(),
+        source_runbook_item_id: z.string().optional(),
       },
     },
-    async ({ agent_id, prompt, caller_session_id, folder_id }) => {
+    async ({ agent_id, prompt, caller_session_id, folder_id, container, source_runbook_item_id }) => {
       // agent_id가 미지정이면 첫 번째 등록 agent를 default로.
       const agents = runtime.agentRegistry.list();
       if (agents.length === 0) {
@@ -68,6 +76,11 @@ export function registerSessionMgmtTools(
       const callerInfo = effectiveCallerSessionId
         ? buildCallerInfoFromCallerSession(runtime, effectiveCallerSessionId)
         : undefined;
+      const resolvedContainer = await resolveDelegatedContainer(runtime, {
+        callerSessionId: effectiveCallerSessionId,
+        ...(folder_id !== undefined ? { folderId: folder_id } : {}),
+        container: container ?? null,
+      });
 
       const sessionId = randomUUID();
       try {
@@ -77,7 +90,9 @@ export function registerSessionMgmtTools(
           profileId: resolvedAgentId,
           callerSessionId: effectiveCallerSessionId ?? null,
           callerInfo,
-          folderId: folder_id ?? null,
+          folderId: resolvedContainer.folderId,
+          container: resolvedContainer.container,
+          sourceRunbookItemId: source_runbook_item_id ?? null,
         });
         // fire-and-forget — 도구는 await 하지 않는다.
         runtime.taskExecutor.startExecution(task, agent);

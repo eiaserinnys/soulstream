@@ -2,6 +2,7 @@ import type { Logger } from "pino";
 
 import type { AgentProfile, AgentRegistry } from "../agent_registry.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
+import type { BoardYjsContainerRef } from "../db/session_db.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import { appendAttachmentPathNotes } from "../task/attachment_path_note.js";
 import type {
@@ -34,6 +35,8 @@ export interface CreateSessionRuntimeParams {
   claudePermissionMode?: ClaudePermissionMode;
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
+  container?: BoardYjsContainerRef | null;
+  sourceRunbookItemId?: string | null;
   systemPrompt?: string;
 }
 
@@ -129,6 +132,8 @@ export class TaskRuntimeCommands {
       useMcp: params.useMcp,
       claudePermissionMode: params.claudePermissionMode,
       folderId: params.folderId ?? null,
+      container: params.container ?? null,
+      sourceRunbookItemId: params.sourceRunbookItemId ?? null,
       systemPrompt: params.systemPrompt,
       contextItems: params.extraContextItems,
       attachmentPaths: params.attachmentPaths,

@@ -525,6 +525,36 @@ class TestBoardAssets:
             byte_size=123,
         )
 
+    async def test_init_runbook_board_asset_uses_container_route(self, client, mock_catalog_service):
+        mock_catalog_service.get_catalog.return_value = {
+            "folders": [{"id": "f1", "name": "Folder", "sortOrder": 0}],
+            "sessions": {},
+            "boardItems": [{
+                "id": "runbook:rb1",
+                "folderId": "f1",
+                "itemType": "runbook",
+                "itemId": "rb1",
+                "x": 0,
+                "y": 0,
+                "metadata": {},
+            }],
+        }
+
+        resp = await client.post(
+            "/api/board-containers/runbook/rb1/assets/init",
+            json={"name": "photo.png", "mime": "image/png", "size": 123},
+        )
+
+        assert resp.status_code == 201
+        mock_catalog_service.init_file_asset.assert_called_once_with(
+            folder_id="f1",
+            name="photo.png",
+            mime_type="image/png",
+            byte_size=123,
+            container_kind="runbook",
+            container_id="rb1",
+        )
+
     async def test_init_board_asset_size_rejection_is_413(self, client, mock_catalog_service):
         mock_catalog_service.init_file_asset.side_effect = ValueError("file size exceeds board asset limit")
 
@@ -568,8 +598,8 @@ class TestBoardAssets:
         mock_catalog_service.commit_file_asset.assert_called_once_with(
             folder_id="f1",
             asset_id="asset-1",
-            x=41,
-            y=79,
+            x=41.0,
+            y=79.0,
             width=640,
             height=480,
             duration_seconds=3.5,
@@ -577,6 +607,40 @@ class TestBoardAssets:
                 {"partNumber": 1, "etag": "etag-1"},
                 {"partNumber": 2, "etag": "etag-2"},
             ],
+        )
+
+    async def test_commit_runbook_board_asset_uses_container_route(self, client, mock_catalog_service):
+        mock_catalog_service.get_catalog.return_value = {
+            "folders": [{"id": "f1", "name": "Folder", "sortOrder": 0}],
+            "sessions": {},
+            "boardItems": [{
+                "id": "runbook:rb1",
+                "folderId": "f1",
+                "itemType": "runbook",
+                "itemId": "rb1",
+                "x": 0,
+                "y": 0,
+                "metadata": {},
+            }],
+        }
+
+        resp = await client.post(
+            "/api/board-containers/runbook/rb1/assets/asset-1/commit",
+            json={"x": 41, "y": 79, "parts": []},
+        )
+
+        assert resp.status_code == 200
+        mock_catalog_service.commit_file_asset.assert_called_once_with(
+            folder_id="f1",
+            asset_id="asset-1",
+            x=41,
+            y=79,
+            width=None,
+            height=None,
+            duration_seconds=None,
+            parts=[],
+            container_kind="runbook",
+            container_id="rb1",
         )
 
 
@@ -597,6 +661,45 @@ class TestMarkdownDocuments:
             body="Body",
             x=40,
             y=80,
+            container_kind="folder",
+            container_id="f1",
+        )
+
+    async def test_create_runbook_markdown_document(self, client, mock_catalog_service):
+        mock_catalog_service.get_catalog.return_value = {
+            "folders": [{"id": "f1", "name": "Folder", "sortOrder": 0}],
+            "sessions": {},
+            "boardItems": [{
+                "id": "runbook:rb1",
+                "folderId": "f1",
+                "itemType": "runbook",
+                "itemId": "rb1",
+                "x": 0,
+                "y": 0,
+                "metadata": {},
+            }],
+        }
+
+        resp = await client.post(
+            "/api/markdown-documents",
+            json={
+                "container": {"kind": "runbook", "id": "rb1"},
+                "title": "Note",
+                "body": "Body",
+                "x": 40,
+                "y": 80,
+            },
+        )
+
+        assert resp.status_code == 201
+        mock_catalog_service.create_markdown_document.assert_called_once_with(
+            folder_id="f1",
+            title="Note",
+            body="Body",
+            x=40,
+            y=80,
+            container_kind="runbook",
+            container_id="rb1",
         )
 
     async def test_get_markdown_document(self, client, mock_catalog_service):

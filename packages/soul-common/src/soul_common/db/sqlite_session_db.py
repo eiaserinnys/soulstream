@@ -141,6 +141,10 @@ class SqliteSessionDB(
             CREATE TABLE IF NOT EXISTS board_items (
                 id TEXT PRIMARY KEY,
                 folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+                container_kind TEXT NOT NULL DEFAULT 'folder' CHECK (container_kind IN ('folder', 'runbook')),
+                container_id TEXT NOT NULL DEFAULT '',
+                membership_kind TEXT NOT NULL DEFAULT 'primary' CHECK (membership_kind IN ('primary', 'reference')),
+                source_runbook_item_id TEXT,
                 item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook')),
                 item_id TEXT NOT NULL,
                 x REAL NOT NULL DEFAULT 0,
@@ -152,8 +156,30 @@ class SqliteSessionDB(
             )
             """
         )
+        for ddl in [
+            "ALTER TABLE board_items ADD COLUMN container_kind TEXT NOT NULL DEFAULT 'folder'",
+            "ALTER TABLE board_items ADD COLUMN container_id TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE board_items ADD COLUMN membership_kind TEXT NOT NULL DEFAULT 'primary'",
+            "ALTER TABLE board_items ADD COLUMN source_runbook_item_id TEXT",
+        ]:
+            try:
+                await self._conn.execute(ddl)
+                await self._conn.commit()
+            except Exception:
+                pass
+        await self._conn.execute(
+            """
+            UPDATE board_items
+            SET container_kind = COALESCE(NULLIF(container_kind, ''), 'folder'),
+                container_id = COALESCE(NULLIF(container_id, ''), folder_id),
+                membership_kind = COALESCE(NULLIF(membership_kind, ''), 'primary')
+            """
+        )
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_board_items_folder ON board_items (folder_id, y, x)"
+        )
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_board_items_container ON board_items (container_kind, container_id, y, x)"
         )
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_board_items_ref ON board_items (item_type, item_id)"

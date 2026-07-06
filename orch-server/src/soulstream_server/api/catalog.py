@@ -39,7 +39,8 @@ class BoardItemPositionUpdate(BaseModel):
 
 
 class MarkdownDocumentCreate(BaseModel):
-    folderId: str
+    folderId: Optional[str] = None
+    container: Optional[dict] = None
     title: str
     body: str = ""
     x: Optional[float] = None
@@ -177,6 +178,27 @@ async def _resolve_board_container_folder_id(
     raise HTTPException(status_code=404, detail="Runbook board container not found")
 
 
+async def _resolve_body_board_container(
+    catalog_service: CatalogService,
+    folder_id: Optional[str],
+    container: Optional[dict],
+) -> tuple[str, Literal["folder", "runbook"], str]:
+    if container is None:
+        if not folder_id:
+            raise HTTPException(status_code=400, detail="folderId or container is required")
+        return folder_id, "folder", folder_id
+    kind = container.get("kind")
+    container_id = container.get("id")
+    if kind not in ("folder", "runbook") or not isinstance(container_id, str) or not container_id:
+        raise HTTPException(status_code=400, detail="invalid board container")
+    resolved_folder_id = folder_id or await _resolve_board_container_folder_id(
+        catalog_service,
+        kind,
+        container_id,
+    )
+    return resolved_folder_id, kind, container_id
+
+
 def create_catalog_router(
     catalog_service: CatalogService,
     db: object | None = None,
@@ -247,14 +269,21 @@ def create_catalog_router(
 
     @router.post("/markdown-documents", status_code=201)
     async def create_markdown_document(body: MarkdownDocumentCreate, request: Request) -> dict:
+        folder_id, container_kind, container_id = await _resolve_body_board_container(
+            catalog_service,
+            body.folderId,
+            body.container,
+        )
         folders = await catalog_service.list_folders()
-        require_folder_allowed(access_for_request(request), folders, body.folderId)
+        require_folder_allowed(access_for_request(request), folders, folder_id)
         return await catalog_service.create_markdown_document(
-            folder_id=body.folderId,
+            folder_id=folder_id,
             title=body.title,
             body=body.body,
             x=body.x,
             y=body.y,
+            container_kind=container_kind,
+            container_id=container_id,
         )
 
     @router.get("/markdown-documents/{document_id}")
@@ -454,6 +483,32 @@ def create_catalog_router(
         except (RuntimeError, ValueError) as exc:
             raise _board_asset_error(exc) from exc
 
+    @router.post("/board-containers/{container_kind}/{container_id}/assets/init", status_code=201)
+    async def init_container_board_asset(
+        container_kind: Literal["folder", "runbook"],
+        container_id: str,
+        body: BoardAssetInit,
+        request: Request,
+    ) -> dict:
+        folder_id = await _resolve_board_container_folder_id(
+            catalog_service,
+            container_kind,
+            container_id,
+        )
+        folders = await catalog_service.list_folders()
+        require_folder_allowed(access_for_request(request), folders, folder_id)
+        try:
+            return await catalog_service.init_file_asset(
+                folder_id=folder_id,
+                name=body.name,
+                mime_type=body.mime,
+                byte_size=body.size,
+                container_kind=container_kind,
+                container_id=container_id,
+            )
+        except (RuntimeError, ValueError) as exc:
+            raise _board_asset_error(exc) from exc
+
     @router.post("/board/{folder_id}/assets/{asset_id}/commit")
     async def commit_board_asset(
         folder_id: str,
@@ -473,6 +528,37 @@ def create_catalog_router(
                 height=body.height,
                 duration_seconds=body.durationSeconds,
                 parts=[part.model_dump() for part in body.parts],
+            )
+        except (RuntimeError, ValueError) as exc:
+            raise _board_asset_error(exc) from exc
+
+    @router.post("/board-containers/{container_kind}/{container_id}/assets/{asset_id}/commit")
+    async def commit_container_board_asset(
+        container_kind: Literal["folder", "runbook"],
+        container_id: str,
+        asset_id: str,
+        body: BoardAssetCommit,
+        request: Request,
+    ) -> dict:
+        folder_id = await _resolve_board_container_folder_id(
+            catalog_service,
+            container_kind,
+            container_id,
+        )
+        folders = await catalog_service.list_folders()
+        require_folder_allowed(access_for_request(request), folders, folder_id)
+        try:
+            return await catalog_service.commit_file_asset(
+                folder_id=folder_id,
+                asset_id=asset_id,
+                x=body.x,
+                y=body.y,
+                width=body.width,
+                height=body.height,
+                duration_seconds=body.durationSeconds,
+                parts=[part.model_dump() for part in body.parts],
+                container_kind=container_kind,
+                container_id=container_id,
             )
         except (RuntimeError, ValueError) as exc:
             raise _board_asset_error(exc) from exc

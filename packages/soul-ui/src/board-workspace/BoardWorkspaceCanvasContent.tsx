@@ -2,6 +2,7 @@ import type { CSSProperties, MutableRefObject, MouseEvent as ReactMouseEvent, Po
 import { Loader2 } from "lucide-react";
 
 import type { SessionSummary } from "../shared/types";
+import { RunbookCard } from "../runbook/RunbookCard";
 import { BoardWorkspaceTile } from "./BoardWorkspaceTile";
 import { BoardWorkspaceChildPortal } from "./BoardWorkspaceChildPortal";
 import { BOARD_CANVAS_ORIGIN_X, BOARD_CANVAS_ORIGIN_Y, BOARD_CANVAS_WIDTH, snapBoardPosition, type BoardWorkspaceItem, type SessionBoardWorkspaceItem } from "./board-workspace-items";
@@ -37,6 +38,10 @@ interface BoardWorkspaceCanvasContentProps {
   onOpenChildRef: (child: DirectChildPortalItem) => void;
   onToggleFrameCollapsed: (item: Extract<BoardWorkspaceItem, { type: "frame" }>) => void;
   emptyMessage?: string;
+  fixedRunbookCard?: {
+    runbookId: string;
+    fallbackTitle: string;
+  } | null;
 }
 
 export function BoardWorkspaceCanvasContent({
@@ -68,6 +73,7 @@ export function BoardWorkspaceCanvasContent({
   onOpenChildRef,
   onToggleFrameCollapsed,
   emptyMessage = "No folders or sessions on this board",
+  fixedRunbookCard = null,
 }: BoardWorkspaceCanvasContentProps) {
   return (
     <>
@@ -78,9 +84,22 @@ export function BoardWorkspaceCanvasContent({
         </div>
       )}
 
-      {boardItems.length === 0 && !isLoading && (
+      {boardItems.length === 0 && !fixedRunbookCard && !isLoading && (
         <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
           {emptyMessage}
+        </div>
+      )}
+
+      {fixedRunbookCard && (
+        <div
+          data-testid="runbook-board-fixed-card"
+          className="absolute z-[1] h-[520px] w-[360px]"
+          style={boardToCanvasStyle({ x: 0, y: 0 })}
+        >
+          <RunbookCard
+            runbookId={fixedRunbookCard.runbookId}
+            fallbackTitle={fixedRunbookCard.fallbackTitle}
+          />
         </div>
       )}
 

@@ -42,6 +42,9 @@ export interface CreateSessionRequest {
   nodeId?: string;
   /** 세션을 배치할 폴더 ID. 미지정 시 session_type 기반 자동 배정. */
   folderId?: string | null;
+  /** 세션 board item을 배치할 컨테이너. 생략 시 folderId 폴더 보드. */
+  container?: { kind: "folder" | "runbook"; id: string };
+  sourceRunbookItemId?: string | null;
   /** 에이전트 프로필 ID. 지정 시 해당 에이전트로 세션 실행. */
   profile?: string;
   /** 세션 생성 전에 업로드한 첨부 파일 경로. */

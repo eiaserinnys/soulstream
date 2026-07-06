@@ -18,6 +18,7 @@
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
+import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
@@ -110,10 +111,12 @@ export class TaskManager {
      */
     contextBuilder?: ExecutionContextBuilder,
     private readonly agentRegistry?: AgentRegistry,
+    private readonly boardYjsService?: Pick<BoardYjsService, "upsertSessionBoardItem">,
   ) {
     this.taskCreation = new TaskCreation({
       nodeId: this.nodeId,
       db,
+      boardYjsService,
       broadcaster,
       logger,
       hasTask: (sessionId) => this.tasks.has(sessionId),

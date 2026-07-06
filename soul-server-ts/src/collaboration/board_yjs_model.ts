@@ -24,6 +24,8 @@ export interface BoardYjsItemValue {
   item_id: string;
   x: number;
   y: number;
+  membership_kind?: "primary" | "reference";
+  source_runbook_item_id?: string | null;
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -114,6 +116,10 @@ export function createBoardYDocSnapshot(params: {
         item_id: item.itemId,
         x: item.x,
         y: item.y,
+        ...(item.membershipKind ? { membership_kind: item.membershipKind } : {}),
+        ...(item.sourceRunbookItemId !== undefined
+          ? { source_runbook_item_id: item.sourceRunbookItemId }
+          : {}),
         metadata: markdown
           ? {
               ...metadata,
@@ -159,8 +165,8 @@ export function readBoardYDocReplicaForScope(
       folderId: scope.folderId,
       containerKind: scope.containerKind,
       containerId: scope.containerId,
-      membershipKind: "primary",
-      sourceRunbookItemId: null,
+      membershipKind: value.membership_kind ?? "primary",
+      sourceRunbookItemId: value.source_runbook_item_id ?? null,
       itemType: value.item_type,
       itemId: value.item_id,
       x: Number(value.x),
@@ -229,7 +235,7 @@ export function applyBoardYjsPosition(
 
 export function createMarkdownYjsDocument(
   doc: Y.Doc,
-  folderId: string,
+  scopeInput: BoardYjsScopeInput,
   input: {
     title: string;
     body: string;
@@ -238,6 +244,7 @@ export function createMarkdownYjsDocument(
     documentId: string;
   },
 ): { document: MarkdownDocumentRow; boardItem: CatalogBoardItemRow } {
+  const scope = typeof scopeInput === "string" ? boardYjsFolderScope(scopeInput) : scopeInput;
   const title = normalizeMarkdownTitle(input.title);
   const body = input.body;
   const text = getOrCreateMarkdownText(doc, input.documentId);
@@ -245,9 +252,9 @@ export function createMarkdownYjsDocument(
   text.insert(0, body);
   const boardItem: CatalogBoardItemRow = {
     id: `markdown:${input.documentId}`,
-    folderId,
-    containerKind: "folder",
-    containerId: folderId,
+    folderId: scope.folderId,
+    containerKind: scope.containerKind,
+    containerId: scope.containerId,
     membershipKind: "primary",
     sourceRunbookItemId: null,
     itemType: "markdown",
@@ -367,6 +374,10 @@ export function upsertBoardYjsItem(doc: Y.Doc, boardItem: CatalogBoardItemRow): 
     item_id: boardItem.itemId,
     x: boardItem.x,
     y: boardItem.y,
+    ...(boardItem.membershipKind ? { membership_kind: boardItem.membershipKind } : {}),
+    ...(boardItem.sourceRunbookItemId !== undefined
+      ? { source_runbook_item_id: boardItem.sourceRunbookItemId }
+      : {}),
     metadata: boardItem.metadata ?? {},
     ...(boardItem.createdAt ? { created_at: boardItem.createdAt } : {}),
     ...(boardItem.updatedAt ? { updated_at: boardItem.updatedAt } : {}),

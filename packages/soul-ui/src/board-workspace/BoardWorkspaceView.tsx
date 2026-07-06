@@ -608,7 +608,7 @@ export function BoardWorkspaceView({
   };
 
   const createMarkdownAt = useCallback(async (position?: { x: number; y: number }) => {
-    if (!selectedFolderId || boardContainer?.kind !== "folder" || !boardSync.runtime) return;
+    if (!resolvedBoardFolderId || !boardContainer || !boardSync.runtime) return;
     const resolved = position ?? resolveSpawnPosition();
     const snapped = snapBoardPosition(resolved.x, resolved.y);
     try {
@@ -626,7 +626,7 @@ export function BoardWorkspaceView({
     } catch (err) {
       console.error("Markdown document creation failed:", err);
     }
-  }, [addBoardItem, boardContainer?.kind, boardSync.runtime, isMobile, resolveSpawnPosition, selectedFolderId, setActiveBoardDocument, setActiveTab]);
+  }, [addBoardItem, boardContainer, boardSync.runtime, isMobile, resolveSpawnPosition, resolvedBoardFolderId, setActiveBoardDocument, setActiveTab]);
 
   const createFrameAt = useCallback((position?: { x: number; y: number }) => {
     if (!selectedFolderId || boardContainer?.kind !== "folder" || !boardSync.runtime) return;
@@ -715,20 +715,21 @@ export function BoardWorkspaceView({
   }, [boardSync.connectionStatus]);
 
   const openNewSessionAt = useCallback((position?: { x: number; y: number }) => {
-    if (boardContainer?.kind !== "folder") return;
+    if (!boardContainer || !resolvedBoardFolderId) return;
     const resolved = position ?? resolveSpawnPosition();
     const boardPosition = snapBoardPosition(resolved.x, resolved.y);
     openNewSessionModal(
       "folder",
       null,
       {
-        ...(selectedFolderId ? { folderId: selectedFolderId } : {}),
+        folderId: resolvedBoardFolderId,
+        ...(boardContainer.kind === "runbook" ? { container: boardContainer } : {}),
         ...(boardPosition ? { boardPosition } : {}),
       },
     );
     setContextMenu(null);
     setNewMenuOpen(false);
-  }, [boardContainer?.kind, openNewSessionModal, resolveSpawnPosition, selectedFolderId]);
+  }, [boardContainer, openNewSessionModal, resolveSpawnPosition, resolvedBoardFolderId]);
 
   useEffect(() => {
     if (!onLoadMore || !hasMore) return;
@@ -822,7 +823,7 @@ export function BoardWorkspaceView({
     event.stopPropagation();
     setContextMenu(null);
     setCardContextMenu(null);
-    if (!selectedFolderId || boardContainer?.kind !== "folder" || !onUploadBoardAsset) {
+    if (!resolvedBoardFolderId || !boardContainer || !onUploadBoardAsset) {
       toastManager.add({
         title: "Board asset upload unavailable",
         description: "Asset upload is not configured for this board.",
@@ -866,7 +867,8 @@ export function BoardWorkspaceView({
         try {
           const metadata = await extractMediaMetadata(file, sourceUrl);
           const result = await onUploadBoardAsset({
-            folderId: selectedFolderId,
+            folderId: resolvedBoardFolderId,
+            container: boardContainer,
             file,
             x: position.x,
             y: position.y,
@@ -899,7 +901,8 @@ export function BoardWorkspaceView({
     rememberAssetSignedUrls,
     resolveBoardPoint,
     selectSingleBoardItem,
-    selectedFolderId,
+    boardContainer,
+    resolvedBoardFolderId,
     updateAssetPlaceholder,
   ]);
 
@@ -908,7 +911,7 @@ export function BoardWorkspaceView({
     assetObjectUrlsRef.current.clear();
   }, []);
 
-  const canCreateBoardItems = boardContainer?.kind === "folder";
+  const canCreateBoardItems = Boolean(boardContainer);
   const runbookTitle = runbookSnapshot?.runbook.title ?? null;
   const runbookStatus = runbookSnapshot?.runbook.status ?? null;
 
@@ -1006,6 +1009,11 @@ export function BoardWorkspaceView({
                   setActiveBoardDocument(documentId);
                   if (isMobile) setActiveTab("chat");
                 }}
+                fixedRunbookCard={
+                  isRunbookBoard && runbookId
+                    ? { runbookId, fallbackTitle: runbookTitle ?? "런북 보드" }
+                    : null
+                }
                 emptyMessage={
                   isRunbookBoard
                     ? "아직 이 런북 보드에 배치된 항목이 없음"
@@ -1023,6 +1031,7 @@ export function BoardWorkspaceView({
             activeBoardDocumentId={activeBoardDocumentId}
             boardYjsRuntime={boardSync.runtime}
             canCreateBoardItems={canCreateBoardItems}
+            canCreateStructureItems={boardContainer?.kind === "folder"}
             onCloseCardContextMenu={closeCardContextMenu}
             onOpenCreateFolder={openCreateFolderDialog}
             onOpenNewSession={openNewSessionAt}

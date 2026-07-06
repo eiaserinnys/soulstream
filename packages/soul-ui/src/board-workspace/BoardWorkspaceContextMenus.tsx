@@ -36,6 +36,7 @@ interface BoardWorkspaceContextMenusProps {
   activeBoardDocumentId: string | null;
   boardYjsRuntime: BoardYjsRuntime | null;
   canCreateBoardItems?: boolean;
+  canCreateStructureItems?: boolean;
   onCloseCardContextMenu: () => void;
   onOpenCreateFolder: (position: { x: number; y: number }) => void;
   onOpenNewSession: (position: { x: number; y: number }) => void;
@@ -62,6 +63,7 @@ export function BoardWorkspaceContextMenus({
   activeBoardDocumentId,
   boardYjsRuntime,
   canCreateBoardItems = true,
+  canCreateStructureItems = true,
   onCloseCardContextMenu,
   onOpenCreateFolder,
   onOpenNewSession,
@@ -200,14 +202,16 @@ export function BoardWorkspaceContextMenus({
           className="fixed z-30 w-44 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
           style={{ left: contextMenu.screenX, top: contextMenu.screenY }}
         >
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-            onClick={() => onOpenCreateFolder({ x: contextMenu.boardX, y: contextMenu.boardY })}
-          >
-            <Folder className="h-4 w-4" />
-            폴더 추가
-          </button>
+          {canCreateStructureItems && (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+              onClick={() => onOpenCreateFolder({ x: contextMenu.boardX, y: contextMenu.boardY })}
+            >
+              <Folder className="h-4 w-4" />
+              폴더 추가
+            </button>
+          )}
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
@@ -224,14 +228,16 @@ export function BoardWorkspaceContextMenus({
             <SquarePen className="h-4 w-4" />
             새 문서
           </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-            onClick={() => onCreateFrame({ x: contextMenu.boardX, y: contextMenu.boardY })}
-          >
-            <Frame className="h-4 w-4" />
-            프레임 추가
-          </button>
+          {canCreateStructureItems && (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+              onClick={() => onCreateFrame({ x: contextMenu.boardX, y: contextMenu.boardY })}
+            >
+              <Frame className="h-4 w-4" />
+              프레임 추가
+            </button>
+          )}
         </div>
       )}
 

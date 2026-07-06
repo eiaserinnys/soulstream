@@ -1,5 +1,7 @@
 import { MarkdownDocumentVersionConflictError } from "../markdown_document_version.js";
 import type {
+  BoardContainerKind,
+  BoardYjsContainerRef,
   BoardItemType,
   CatalogBoardItemRow,
   MarkdownDocumentRow,
@@ -16,11 +18,14 @@ export class MarkdownDocumentRepository {
   async createMarkdownDocument(params: {
     documentId: string;
     folderId: string;
+    container?: BoardYjsContainerRef | null;
     title: string;
     body: string;
     x: number;
     y: number;
   }): Promise<{ document: MarkdownDocumentRow; boardItem: CatalogBoardItemRow }> {
+    const containerKind: BoardContainerKind = params.container?.containerKind ?? "folder";
+    const containerId = params.container?.containerId ?? params.folderId;
     const rows = await this.sql<
       Array<{
         doc_id: string;
@@ -31,6 +36,10 @@ export class MarkdownDocumentRepository {
         doc_updated_at: Date | string | null;
         item_id: string;
         item_folder_id: string;
+        item_container_kind: BoardContainerKind;
+        item_container_id: string;
+        item_membership_kind: "primary" | "reference";
+        item_source_runbook_item_id: string | null;
         item_type: BoardItemType;
         item_ref_id: string;
         item_x: string | number;
@@ -46,8 +55,28 @@ export class MarkdownDocumentRepository {
         RETURNING *
       ),
       item AS (
-        INSERT INTO board_items (id, folder_id, item_type, item_id, x, y)
-        VALUES (${"markdown:" + params.documentId}, ${params.folderId}, ${"markdown"}, ${params.documentId}, ${params.x}, ${params.y})
+        INSERT INTO board_items (
+          id,
+          folder_id,
+          container_kind,
+          container_id,
+          membership_kind,
+          item_type,
+          item_id,
+          x,
+          y
+        )
+        VALUES (
+          ${"markdown:" + params.documentId},
+          ${params.folderId},
+          ${containerKind},
+          ${containerId},
+          ${"primary"},
+          ${"markdown"},
+          ${params.documentId},
+          ${params.x},
+          ${params.y}
+        )
         RETURNING *
       )
       SELECT
@@ -59,6 +88,10 @@ export class MarkdownDocumentRepository {
         doc.updated_at AS doc_updated_at,
         item.id AS item_id,
         item.folder_id AS item_folder_id,
+        item.container_kind AS item_container_kind,
+        item.container_id AS item_container_id,
+        item.membership_kind AS item_membership_kind,
+        item.source_runbook_item_id AS item_source_runbook_item_id,
         item.item_type AS item_type,
         item.item_id AS item_ref_id,
         item.x AS item_x,
@@ -83,6 +116,10 @@ export class MarkdownDocumentRepository {
     const boardItem = toCatalogBoardItemRow({
       id: row.item_id,
       folder_id: row.item_folder_id,
+      container_kind: row.item_container_kind,
+      container_id: row.item_container_id,
+      membership_kind: row.item_membership_kind,
+      source_runbook_item_id: row.item_source_runbook_item_id,
       item_type: row.item_type,
       item_id: row.item_ref_id,
       x: row.item_x,

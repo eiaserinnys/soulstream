@@ -87,6 +87,7 @@ export type {
   FolderSettings,
   CatalogFolder,
   CatalogAssignment,
+  BoardContainerRef,
   CatalogState,
   CatalogUpdatedStreamEvent,
   MetadataEntry,
