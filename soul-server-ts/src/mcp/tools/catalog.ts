@@ -208,7 +208,7 @@ export function registerCatalogTools(
         if ((x === undefined) !== (y === undefined)) {
           return errorResult("x and y must be supplied together");
         }
-        const boardItem = await runtime.catalogService.moveBoardItemToContainer({
+        const result = await runtime.catalogService.moveBoardItemToContainer({
           boardItemId: board_item_id,
           target: {
             containerKind: container.kind,
@@ -219,7 +219,8 @@ export function registerCatalogTools(
         });
         return jsonResult({
           ok: true,
-          board_item: boardItem,
+          board_item: result.boardItem,
+          ...(result.enrolled ? { enrolled: true } : {}),
           idempotency_key,
         });
       } catch (err) {

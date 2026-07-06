@@ -138,17 +138,20 @@ describe("runbook MCP tools", () => {
   it("moves board items between board containers through the catalog MCP tool", async () => {
     const catalogService = {
       moveBoardItemToContainer: vi.fn(async () => ({
-        id: "markdown:doc-1",
-        folderId: "folder-1",
-        containerKind: "runbook",
-        containerId: "rb-1",
-        membershipKind: "primary",
-        sourceRunbookItemId: null,
-        itemType: "markdown",
-        itemId: "doc-1",
-        x: 120,
-        y: 240,
-        metadata: { title: "Note" },
+        boardItem: {
+          id: "markdown:doc-1",
+          folderId: "folder-1",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          membershipKind: "primary",
+          sourceRunbookItemId: null,
+          itemType: "markdown",
+          itemId: "doc-1",
+          x: 120,
+          y: 240,
+          metadata: { title: "Note" },
+        },
+        enrolled: false,
       })),
     };
     const client = await createClient(makeRuntime({ catalogService }));

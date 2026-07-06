@@ -426,6 +426,288 @@ describe("CatalogService.moveSessionsToFolder", () => {
 });
 
 describe("CatalogService board items", () => {
+  it("moveBoardItemToContainer는 미영속 세션 타일을 대상 runbook에 편입한다", async () => {
+    const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
+    const upsertSessionBoardItem = vi.fn().mockResolvedValue({
+      id: "session:s1",
+      folderId: "f1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+      membershipKind: "primary",
+      sourceRunbookItemId: null,
+      itemType: "session",
+      itemId: "s1",
+      x: 120,
+      y: 240,
+      metadata: {},
+    });
+    const db = {
+      ensureBoardItems: vi.fn().mockResolvedValue(undefined),
+      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
+        folderId: "f1",
+        containerKind: "runbook",
+        containerId: "rb-1",
+      }),
+      getBoardItemById: vi.fn().mockResolvedValue(null),
+      getSession: vi.fn().mockResolvedValue({ session_id: "s1", folder_id: "f1" }),
+      assignSessionToFolder,
+      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+    } as unknown as SessionDB;
+    const boardYjsService = {
+      upsertSessionBoardItem,
+    };
+    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster, boardYjsService as never);
+
+    const result = await svc.moveBoardItemToContainer({
+      boardItemId: "session:s1",
+      target: { containerKind: "runbook", containerId: "rb-1" },
+      position: { x: 121, y: 239 },
+      idempotencyKey: "move-1",
+    });
+
+    expect(result.enrolled).toBe(true);
+    expect(result.boardItem).toMatchObject({
+      id: "session:s1",
+      folderId: "f1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+      x: 120,
+      y: 240,
+    });
+    expect(assignSessionToFolder).toHaveBeenCalledWith("s1", "f1");
+    expect(upsertSessionBoardItem).toHaveBeenCalledWith({
+      folderId: "f1",
+      container: { containerKind: "runbook", containerId: "rb-1" },
+      sessionId: "s1",
+      sourceRunbookItemId: null,
+      x: 120,
+      y: 240,
+    });
+    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+  });
+
+  it("moveBoardItemToContainer는 DB-only stale 세션도 target folder 기준으로 편입한다", async () => {
+    const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
+    const moveBoardItemToContainer = vi.fn().mockRejectedValue(
+      new Error("board item not found in source Y.Doc: session:s1"),
+    );
+    const upsertSessionBoardItem = vi.fn().mockResolvedValue({
+      id: "session:s1",
+      folderId: "target-folder",
+      containerKind: "runbook",
+      containerId: "rb-1",
+      membershipKind: "primary",
+      sourceRunbookItemId: null,
+      itemType: "session",
+      itemId: "s1",
+      x: 280,
+      y: 0,
+      metadata: {},
+    });
+    const db = {
+      ensureBoardItems: vi.fn().mockResolvedValue(undefined),
+      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
+        folderId: "target-folder",
+        containerKind: "runbook",
+        containerId: "rb-1",
+      }),
+      getBoardItemById: vi.fn().mockResolvedValue({
+        id: "session:s1",
+        folderId: "source-folder",
+        containerKind: "folder",
+        containerId: "source-folder",
+        membershipKind: "primary",
+        sourceRunbookItemId: null,
+        itemType: "session",
+        itemId: "s1",
+        x: 0,
+        y: 0,
+        metadata: {},
+      }),
+      getSession: vi.fn().mockResolvedValue({ session_id: "s1", folder_id: "source-folder" }),
+      assignSessionToFolder,
+      getBoardItems: vi.fn().mockResolvedValue([
+        {
+          folderId: "target-folder",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          x: 0,
+          y: 0,
+        },
+      ]),
+      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+    } as unknown as SessionDB;
+    const boardYjsService = {
+      moveBoardItemToContainer,
+      upsertSessionBoardItem,
+    };
+    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster, boardYjsService as never);
+
+    const result = await svc.moveBoardItemToContainer({
+      boardItemId: "session:s1",
+      target: { containerKind: "runbook", containerId: "rb-1" },
+      idempotencyKey: "move-1",
+    });
+
+    expect(result.enrolled).toBe(true);
+    expect(assignSessionToFolder).toHaveBeenCalledWith("s1", "target-folder");
+    expect(assignSessionToFolder).not.toHaveBeenCalledWith("s1", "source-folder");
+    expect(upsertSessionBoardItem).toHaveBeenCalledWith({
+      folderId: "target-folder",
+      container: { containerKind: "runbook", containerId: "rb-1" },
+      sessionId: "s1",
+      sourceRunbookItemId: null,
+      x: 280,
+      y: 0,
+    });
+    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+  });
+
+  it("moveBoardItemToContainer의 미영속 세션 편입은 재시도해도 같은 대상에 upsert한다", async () => {
+    const upsertSessionBoardItem = vi.fn(async (input: {
+      folderId: string;
+      container: { containerKind: "runbook"; containerId: string };
+      sessionId: string;
+      x: number;
+      y: number;
+    }) => ({
+      id: `session:${input.sessionId}`,
+      folderId: input.folderId,
+      containerKind: input.container.containerKind,
+      containerId: input.container.containerId,
+      membershipKind: "primary" as const,
+      sourceRunbookItemId: null,
+      itemType: "session" as const,
+      itemId: input.sessionId,
+      x: input.x,
+      y: input.y,
+      metadata: {},
+    }));
+    const db = {
+      ensureBoardItems: vi.fn().mockResolvedValue(undefined),
+      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
+        folderId: "f1",
+        containerKind: "runbook",
+        containerId: "rb-1",
+      }),
+      getBoardItemById: vi.fn().mockResolvedValue(null),
+      getSession: vi.fn().mockResolvedValue({ session_id: "s1", folder_id: "f1" }),
+      assignSessionToFolder: vi.fn().mockResolvedValue(undefined),
+      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+    } as unknown as SessionDB;
+    const { broadcaster } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster, { upsertSessionBoardItem } as never);
+    const params = {
+      boardItemId: "session:s1",
+      target: { containerKind: "runbook" as const, containerId: "rb-1" },
+      position: { x: 120, y: 240 },
+      idempotencyKey: "move-1",
+    };
+
+    const first = await svc.moveBoardItemToContainer(params);
+    const second = await svc.moveBoardItemToContainer(params);
+
+    expect(first).toEqual(second);
+    expect(upsertSessionBoardItem).toHaveBeenCalledTimes(2);
+    expect(first.enrolled).toBe(true);
+  });
+
+  it("moveBoardItemToContainer는 실재하지 않는 세션 id를 여전히 거부한다", async () => {
+    const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
+    const upsertSessionBoardItem = vi.fn().mockResolvedValue(undefined);
+    const db = {
+      ensureBoardItems: vi.fn().mockResolvedValue(undefined),
+      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
+        folderId: "f1",
+        containerKind: "runbook",
+        containerId: "rb-1",
+      }),
+      getBoardItemById: vi.fn().mockResolvedValue(null),
+      getSession: vi.fn().mockResolvedValue(null),
+      assignSessionToFolder,
+      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+    } as unknown as SessionDB;
+    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster, { upsertSessionBoardItem } as never);
+
+    await expect(svc.moveBoardItemToContainer({
+      boardItemId: "session:missing",
+      target: { containerKind: "runbook", containerId: "rb-1" },
+      idempotencyKey: "move-1",
+    })).rejects.toThrow("board item not found: session:missing");
+
+    expect(assignSessionToFolder).not.toHaveBeenCalled();
+    expect(upsertSessionBoardItem).not.toHaveBeenCalled();
+    expect(emitCatalogUpdated).not.toHaveBeenCalled();
+  });
+
+  it("moveBoardItemToContainer의 기존 정상 이동은 BoardYjsService move 경로를 유지한다", async () => {
+    const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
+    const moveBoardItemToContainer = vi.fn().mockResolvedValue({
+      id: "session:s1",
+      folderId: "target-folder",
+      containerKind: "runbook",
+      containerId: "rb-1",
+      membershipKind: "primary",
+      sourceRunbookItemId: null,
+      itemType: "session",
+      itemId: "s1",
+      x: 120,
+      y: 240,
+      metadata: {},
+    });
+    const upsertSessionBoardItem = vi.fn().mockResolvedValue(undefined);
+    const db = {
+      ensureBoardItems: vi.fn().mockResolvedValue(undefined),
+      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
+        folderId: "target-folder",
+        containerKind: "runbook",
+        containerId: "rb-1",
+      }),
+      getBoardItemById: vi.fn().mockResolvedValue({
+        id: "session:s1",
+        folderId: "source-folder",
+        containerKind: "folder",
+        containerId: "source-folder",
+        membershipKind: "primary",
+        sourceRunbookItemId: null,
+        itemType: "session",
+        itemId: "s1",
+        x: 0,
+        y: 0,
+        metadata: {},
+      }),
+      getSession: vi.fn().mockResolvedValue({ session_id: "s1", folder_id: "source-folder" }),
+      assignSessionToFolder,
+      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+    } as unknown as SessionDB;
+    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
+    const svc = new CatalogService(
+      db,
+      broadcaster,
+      { moveBoardItemToContainer, upsertSessionBoardItem } as never,
+    );
+
+    const result = await svc.moveBoardItemToContainer({
+      boardItemId: "session:s1",
+      target: { containerKind: "runbook", containerId: "rb-1" },
+      position: { x: 121, y: 239 },
+      idempotencyKey: "move-1",
+    });
+
+    expect(result.enrolled).toBe(false);
+    expect(moveBoardItemToContainer).toHaveBeenCalledWith({
+      boardItem: expect.objectContaining({ id: "session:s1" }),
+      targetScope: { folderId: "target-folder", containerKind: "runbook", containerId: "rb-1" },
+      position: { x: 120, y: 240 },
+    });
+    expect(upsertSessionBoardItem).not.toHaveBeenCalled();
+    expect(assignSessionToFolder).toHaveBeenCalledWith("s1", "target-folder");
+    expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+  });
+
   it("createMarkdownDocument는 BoardYjsService 경로를 우선 사용하고 legacy DB create를 호출하지 않는다", async () => {
     const db = {
       createMarkdownDocument: vi.fn().mockResolvedValue({
