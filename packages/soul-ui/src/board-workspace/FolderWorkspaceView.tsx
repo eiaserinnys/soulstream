@@ -68,6 +68,11 @@ export function FolderWorkspaceView({
     setWorkspaceViewMode(mode);
   };
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // 런북 보드는 폴더의 리스트/보드 선호와 무관한 컨테이너 뷰다 — 런북 컨테이너가
+  // 활성인 동안은 항상 보드를 렌더한다 (오버뷰 "런북 보드 열기"가 리스트 선호
+  // 폴더에서 세션 리스트로 떨어지던 결함 수정).
+  const showBoard =
+    workspaceViewMode === "board" || activeBoardContainer?.kind === "runbook";
   const folders = catalog?.folders ?? [];
   const selectedFolder = selectedFolderId
     ? folders.find((folder) => folder.id === selectedFolderId) ?? null
@@ -117,7 +122,7 @@ export function FolderWorkspaceView({
     </>
   ), [catalog, childFolders, selectFolder]);
 
-  if (workspaceViewMode === "board") {
+  if (showBoard) {
     return (
       <BoardWorkspaceView
         sessions={sessions}
@@ -135,7 +140,7 @@ export function FolderWorkspaceView({
         onUploadBoardAsset={onUploadBoardAsset}
         onLoadMore={onLoadMore}
         hasMore={hasMore}
-        workspaceViewMode={workspaceViewMode}
+        workspaceViewMode="board"
         onWorkspaceViewModeChange={handleWorkspaceViewModeChange}
       />
     );
