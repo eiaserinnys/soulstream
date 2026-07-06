@@ -49,12 +49,23 @@ export async function applySchema({ env = process.env, cwd = process.cwd() } = {
   }
 }
 
+export function formatApplySchemaError(err, env = process.env) {
+  const text =
+    err instanceof Error ? err.stack || `${err.name}: ${err.message}` : String(err);
+  const databaseUrl = env.DATABASE_URL?.trim();
+  if (!databaseUrl) {
+    return text;
+  }
+  return text.split(databaseUrl).join("[redacted DATABASE_URL]");
+}
+
 async function main() {
   try {
     await applySchema();
     console.log("[apply-schema] schema applied");
   } catch (err) {
-    console.error("[apply-schema] failed:", err);
+    console.error("[apply-schema] failed");
+    console.error(formatApplySchemaError(err));
     process.exitCode = 1;
   }
 }

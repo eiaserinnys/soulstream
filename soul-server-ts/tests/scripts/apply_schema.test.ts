@@ -315,6 +315,8 @@ describe("apply-schema.mjs", () => {
 
     expect(result.status).not.toBe(0);
     expect(result.stderr).toContain("[apply-schema] failed");
+    expect(result.stderr).toMatch(/Error:|PostgresError:|AggregateError:/);
+    expect(result.stderr).toContain("at ");
     expectNoSecretLeak(result);
   });
 
