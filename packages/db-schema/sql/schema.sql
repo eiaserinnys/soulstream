@@ -2266,12 +2266,24 @@ RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
     PERFORM pg_advisory_xact_lock(hashtext('soulstream:board_items')::bigint);
 
+    -- 세션 타일 reconcile: folder 컨테이너 타일만 폴더 불일치로 삭제한다.
+    -- runbook 컨테이너 타일은 Y.Doc이 생명주기를 소유하므로 세션 자체가
+    -- 사라진 경우(고아)에만 정리한다.
     DELETE FROM board_items bi
     WHERE bi.item_type = 'session'
-      AND NOT EXISTS (
-          SELECT 1 FROM sessions s
-          WHERE s.session_id = bi.item_id
-            AND s.folder_id = bi.folder_id
+      AND (
+          NOT EXISTS (
+              SELECT 1 FROM sessions s
+              WHERE s.session_id = bi.item_id
+          )
+          OR (
+              bi.container_kind = 'folder'
+              AND NOT EXISTS (
+                  SELECT 1 FROM sessions s
+                  WHERE s.session_id = bi.item_id
+                    AND s.folder_id = bi.folder_id
+              )
+          )
       );
 
     DELETE FROM board_items bi
