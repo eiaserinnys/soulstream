@@ -550,13 +550,27 @@ function buildPositionedItems({
     items.filter((item): item is SessionBoardWorkspaceItem => item.type === "session").map((item) => item.id),
   );
 
+  // 런북 등 다른 컨테이너에 primary 타일이 있는 세션은 폴더 보드에서 합성하지
+  // 않는다 (서버 board_seed_items()의 primary membership 가드와 대칭 — #269).
+  const sessionIdsOwnedByOtherContainer = new Set(
+    (catalog.boardItems ?? [])
+      .filter(
+        (boardItem) =>
+          boardItem.itemType === "session" &&
+          (boardItem.containerKind ?? "folder") !== "folder",
+      )
+      .map((boardItem) => boardItem.itemId),
+  );
+
   const sessionCandidates = new Map<string, SessionSummary>();
   for (const session of relations.sessions) {
+    if (sessionIdsOwnedByOtherContainer.has(session.agentSessionId)) continue;
     const assignedFolderId = getSessionFolderAssignment(catalog, session.agentSessionId, session);
     if (assignedFolderId !== selectedFolderId) continue;
     sessionCandidates.set(session.agentSessionId, { ...session, folderId: assignedFolderId });
   }
   for (const [sessionId, assignment] of Object.entries(catalog.sessions)) {
+    if (sessionIdsOwnedByOtherContainer.has(sessionId)) continue;
     if ((assignment.folderId ?? null) !== selectedFolderId || sessionCandidates.has(sessionId)) continue;
     sessionCandidates.set(
       sessionId,

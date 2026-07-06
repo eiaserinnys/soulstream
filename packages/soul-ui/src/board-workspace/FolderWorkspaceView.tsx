@@ -55,8 +55,18 @@ export function FolderWorkspaceView({
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
   const selectFolder = useDashboardStore((s) => s.selectFolder);
+  const activeBoardContainer = useDashboardStore((s) => s.activeBoardContainer);
   const [workspaceViewMode, setWorkspaceViewMode] =
     useFolderWorkspaceViewMode(selectedFolderId);
+  // 폴더의 리스트↔보드 토글은 항상 "폴더 보드"를 대상으로 한다. 런북 보드를
+  // 열었던 흔적(activeBoardContainer=runbook)이 남아 있으면 폴더 컨테이너로
+  // 되돌린다 — 런북 보드 재진입은 명시적 경로(오버뷰·런북 타일)만 사용.
+  const handleWorkspaceViewModeChange = (mode: Parameters<typeof setWorkspaceViewMode>[0]) => {
+    if (activeBoardContainer?.kind === "runbook" && selectedFolderId) {
+      selectFolder(selectedFolderId);
+    }
+    setWorkspaceViewMode(mode);
+  };
   const [settingsOpen, setSettingsOpen] = useState(false);
   const folders = catalog?.folders ?? [];
   const selectedFolder = selectedFolderId
@@ -126,7 +136,7 @@ export function FolderWorkspaceView({
         onLoadMore={onLoadMore}
         hasMore={hasMore}
         workspaceViewMode={workspaceViewMode}
-        onWorkspaceViewModeChange={setWorkspaceViewMode}
+        onWorkspaceViewModeChange={handleWorkspaceViewModeChange}
       />
     );
   }
@@ -135,7 +145,7 @@ export function FolderWorkspaceView({
     <div className="flex h-full min-h-0 flex-col">
       <SessionsTopBar
         workspaceViewMode={workspaceViewMode}
-        onWorkspaceViewModeChange={setWorkspaceViewMode}
+        onWorkspaceViewModeChange={handleWorkspaceViewModeChange}
         onOpenFolderSettings={selectedFolder && onUpdateFolderSettings ? () => setSettingsOpen(true) : undefined}
       />
       <div className="min-h-0 flex-1">
