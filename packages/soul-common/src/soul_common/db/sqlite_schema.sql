@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS board_items (
     container_id TEXT NOT NULL DEFAULT '',
     membership_kind TEXT NOT NULL DEFAULT 'primary' CHECK (membership_kind IN ('primary', 'reference')),
     source_runbook_item_id TEXT,
-    item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook')),
+    item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook', 'custom_view')),
     item_id TEXT NOT NULL,
     x REAL NOT NULL DEFAULT 0,
     y REAL NOT NULL DEFAULT 0,
@@ -83,6 +83,25 @@ CREATE TABLE IF NOT EXISTS board_items (
     created_at TEXT,
     updated_at TEXT,
     UNIQUE (folder_id, item_id)
+);
+
+CREATE TABLE IF NOT EXISTS board_custom_views (
+    id TEXT PRIMARY KEY,
+    board_item_id TEXT NOT NULL UNIQUE REFERENCES board_items(id) ON DELETE CASCADE,
+    title TEXT,
+    html TEXT NOT NULL DEFAULT '',
+    revision INTEGER NOT NULL DEFAULT 1,
+    archived INTEGER NOT NULL DEFAULT 0,
+    created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    created_event_id INTEGER,
+    updated_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    updated_event_id INTEGER,
+    created_at TEXT,
+    updated_at TEXT,
+    FOREIGN KEY (created_session_id, created_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_session_id, updated_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_board_items_folder ON board_items (folder_id, y, x);
@@ -111,6 +130,12 @@ CREATE TRIGGER IF NOT EXISTS board_delete_asset_refs
 AFTER DELETE ON file_assets
 BEGIN
     DELETE FROM board_items WHERE item_type = 'asset' AND item_id = OLD.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS board_delete_custom_view_refs
+AFTER DELETE ON board_custom_views
+BEGIN
+    DELETE FROM board_items WHERE item_type = 'custom_view' AND item_id = OLD.id;
 END;
 
 CREATE TRIGGER IF NOT EXISTS folders_prevent_cycle_insert

@@ -32,6 +32,7 @@ interface BoardWorkspaceCanvasContentProps {
   onOpenFolder: (item: BoardWorkspaceItem, folderId: string) => void;
   onOpenRunbookBoard: (runbookId: string) => void;
   onOpenMarkdown: (item: BoardWorkspaceItem, documentId: string) => void;
+  onOpenCustomView: (item: BoardWorkspaceItem, customViewId: string) => void;
   onOpenSession: (session: SessionSummary, item?: BoardWorkspaceItem) => void;
   onToggleChildStack: (item: SessionBoardWorkspaceItem) => void;
   onNavigateToParent: (parentRef: SessionParentRef) => void;
@@ -67,6 +68,7 @@ export function BoardWorkspaceCanvasContent({
   onOpenFolder,
   onOpenRunbookBoard,
   onOpenMarkdown,
+  onOpenCustomView,
   onOpenSession,
   onToggleChildStack,
   onNavigateToParent,
@@ -122,6 +124,7 @@ export function BoardWorkspaceCanvasContent({
           onOpenFolder={(folderId) => onOpenFolder(item, folderId)}
           onOpenRunbookBoard={onOpenRunbookBoard}
           onOpenMarkdown={(documentId) => onOpenMarkdown(item, documentId)}
+          onOpenCustomView={(customViewId) => onOpenCustomView(item, customViewId)}
           onOpenSession={(session) => onOpenSession(session, item)}
         />
       ))}

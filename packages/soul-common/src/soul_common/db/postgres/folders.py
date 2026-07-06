@@ -93,6 +93,26 @@ def _normalize_runbook_row(row: dict) -> dict:
     return result
 
 
+def _normalize_custom_view(row: dict) -> dict:
+    created_at = row.get("created_at")
+    updated_at = row.get("updated_at")
+    if hasattr(created_at, "isoformat"):
+        created_at = created_at.isoformat()
+    if hasattr(updated_at, "isoformat"):
+        updated_at = updated_at.isoformat()
+    return {
+        "id": row["id"],
+        "boardItemId": row["board_item_id"],
+        "folderId": row["folder_id"],
+        "title": row.get("title"),
+        "html": row.get("html") or "",
+        "revision": int(row.get("revision") or 1),
+        "archived": bool(row.get("archived")),
+        "createdAt": created_at,
+        "updatedAt": updated_at,
+    }
+
+
 def _normalize_file_asset(row: dict) -> dict:
     created_at = row.get("created_at")
     updated_at = row.get("updated_at")
@@ -393,6 +413,18 @@ class PostgresFolderMixin:
             document_id,
         )
         return _normalize_markdown_document(dict(row)) if row else None
+
+    async def get_custom_view(self, custom_view_id: str) -> Optional[dict]:
+        row = await self._pool.fetchrow(
+            """
+            SELECT cv.*, bi.folder_id
+            FROM board_custom_views cv
+            JOIN board_items bi ON bi.id = cv.board_item_id
+            WHERE cv.id = $1
+            """,
+            custom_view_id,
+        )
+        return _normalize_custom_view(dict(row)) if row else None
 
     async def update_markdown_document(
         self,

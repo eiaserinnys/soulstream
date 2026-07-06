@@ -72,6 +72,7 @@ export const SSE_EVENT_TYPES = [
   "claude_runtime_schedule_updated",
   "claude_runtime_schedule_deleted",
   "runbook_updated",
+  "custom_view_updated",
   "context_usage",
   "compact",
   "assistant_error",

@@ -30,6 +30,7 @@ function createSilentLogger() {
 
 function makeRuntime(params: {
   runbookService?: Record<string, unknown>;
+  customViewService?: Record<string, unknown>;
 } = {}): McpRuntime {
   return {
     nodeId: "node-test",
@@ -43,6 +44,7 @@ function makeRuntime(params: {
     agentRegistry: new AgentRegistry([]),
     catalogService: {} as CatalogService,
     runbookService: params.runbookService as never,
+    customViewService: params.customViewService as never,
     logger: createSilentLogger(),
   };
 }
@@ -398,6 +400,103 @@ describe("runbook MCP tools", () => {
   });
 });
 
+describe("custom view MCP tools", () => {
+  it("exposes custom view tools", async () => {
+    const client = await createClient(
+      makeRuntime({ customViewService: fakeCustomViewService() }),
+    );
+
+    const tools = await client.listTools();
+    const names = tools.tools.map((tool) => tool.name);
+
+    expect(names).toEqual(expect.arrayContaining([
+      "create_custom_view",
+      "patch_custom_view",
+      "get_custom_view",
+      "list_custom_views",
+    ]));
+  });
+
+  it("creates custom views with container input and caller session actor", async () => {
+    const service = fakeCustomViewService();
+    const client = await createClient(
+      makeRuntime({ customViewService: service }),
+      { "x-soulstream-agent-session-id": "sess-caller" },
+    );
+
+    const result = await client.callTool({
+      name: "create_custom_view",
+      arguments: {
+        container: { kind: "runbook", id: "rb-1" },
+        title: "Progress panel",
+        html: "<section></section>",
+        x: 120,
+        y: 240,
+        idempotency_key: "idem-custom-create",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(service.createCustomView).toHaveBeenCalledWith({
+      actorSessionId: "sess-caller",
+      container: { containerKind: "runbook", containerId: "rb-1" },
+      title: "Progress panel",
+      html: "<section></section>",
+      x: 120,
+      y: 240,
+      idempotencyKey: "idem-custom-create",
+    });
+  });
+
+  it("patches custom views with revision CAS input", async () => {
+    const service = fakeCustomViewService();
+    const client = await createClient(
+      makeRuntime({ customViewService: service }),
+      { "x-soulstream-agent-session-id": "sess-caller" },
+    );
+
+    const result = await client.callTool({
+      name: "patch_custom_view",
+      arguments: {
+        custom_view_id: "cv-1",
+        expected_revision: 3,
+        title: "Progress panel v2",
+        html: "<main></main>",
+        idempotency_key: "idem-custom-patch",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(service.patchCustomView).toHaveBeenCalledWith({
+      actorSessionId: "sess-caller",
+      customViewId: "cv-1",
+      expectedRevision: 3,
+      title: "Progress panel v2",
+      html: "<main></main>",
+      idempotencyKey: "idem-custom-patch",
+    });
+  });
+
+  it("rejects custom view mutations without caller session header", async () => {
+    const service = fakeCustomViewService();
+    const client = await createClient(
+      makeRuntime({ customViewService: service }),
+    );
+
+    const result = await client.callTool({
+      name: "create_custom_view",
+      arguments: {
+        container: { kind: "folder", id: "folder-1" },
+        html: "<section></section>",
+        idempotency_key: "idem-custom-create",
+      },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(service.createCustomView).not.toHaveBeenCalled();
+  });
+});
+
 function fakeRunbookService() {
   const mutationResult = {
     snapshot: {
@@ -425,5 +524,32 @@ function fakeRunbookService() {
     getRunbook: vi.fn(async () => mutationResult.snapshot),
     listMyTurnItems: vi.fn(async () => []),
     listOperations: vi.fn(async () => []),
+  };
+}
+
+function fakeCustomViewService() {
+  const result = {
+    customView: {
+      id: "cv-1",
+      boardItemId: "custom_view:cv-1",
+      title: "Progress panel",
+      html: "<section></section>",
+      revision: 1,
+    },
+    boardItem: {
+      id: "custom_view:cv-1",
+      folderId: "folder-1",
+      itemType: "custom_view",
+      itemId: "cv-1",
+      x: 120,
+      y: 240,
+      metadata: {},
+    },
+  };
+  return {
+    createCustomView: vi.fn(async () => result),
+    patchCustomView: vi.fn(async () => ({ ...result, customView: { ...result.customView, revision: 4 } })),
+    getCustomView: vi.fn(async () => result),
+    listCustomViews: vi.fn(async () => [result]),
   };
 }

@@ -189,6 +189,21 @@ function boardWorkspaceItemToCatalogBoardItem(
       },
     });
   }
+  if (item.type === "custom_view") {
+    return withContainer({
+      id: item.boardItemId,
+      folderId: resolvedFolderId,
+      itemType: "custom_view",
+      itemId: item.customViewId,
+      x,
+      y,
+      metadata: {
+        title: item.title,
+        preview: item.preview,
+        revision: item.revision,
+      },
+    });
+  }
   return null;
 }
 
@@ -292,6 +307,7 @@ export function BoardWorkspaceView({
   const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const setActiveBoardDocument = useDashboardStore((s) => s.setActiveBoardDocument);
+  const setActiveCustomView = useDashboardStore((s) => s.setActiveCustomView);
   const openNewSessionModal = useDashboardStore((s) => s.openNewSessionModal);
   const toggleSessionSelection = useDashboardStore((s) => s.toggleSessionSelection);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
@@ -1007,6 +1023,12 @@ export function BoardWorkspaceView({
                   selectSingleBoardItem(item.boardItemId);
                   raiseBoardItems([item.boardItemId]);
                   setActiveBoardDocument(documentId);
+                  if (isMobile) setActiveTab("chat");
+                }}
+                onOpenCustomView={(item, customViewId) => {
+                  selectSingleBoardItem(item.boardItemId);
+                  raiseBoardItems([item.boardItemId]);
+                  setActiveCustomView(customViewId);
                   if (isMobile) setActiveTab("chat");
                 }}
                 fixedRunbookCard={

@@ -20,6 +20,8 @@ export const BOARD_TILE_HEIGHT = 160;
 export const BOARD_ASSET_TILE_HEIGHT = 200;
 export const BOARD_RUNBOOK_TILE_WIDTH = 360;
 export const BOARD_RUNBOOK_TILE_HEIGHT = 360;
+export const BOARD_CUSTOM_VIEW_TILE_WIDTH = 280;
+export const BOARD_CUSTOM_VIEW_TILE_HEIGHT = 160;
 export const BOARD_CANVAS_BUFFER = 200;
 export const BOARD_CANVAS_WIDTH = 100000;
 export const BOARD_CANVAS_HEIGHT = 100000;
@@ -130,13 +132,28 @@ export interface RunbookBoardWorkspaceItem {
   height: number;
 }
 
+export interface CustomViewBoardWorkspaceItem {
+  type: "custom_view";
+  id: string;
+  boardItemId: string;
+  customViewId: string;
+  title: string;
+  preview: string;
+  revision: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export type BoardWorkspaceItem =
   | FolderBoardWorkspaceItem
   | SessionBoardWorkspaceItem
   | MarkdownBoardWorkspaceItem
   | AssetBoardWorkspaceItem
   | FrameBoardWorkspaceItem
-  | RunbookBoardWorkspaceItem;
+  | RunbookBoardWorkspaceItem
+  | CustomViewBoardWorkspaceItem;
 
 export interface BuildBoardWorkspaceItemsParams {
   catalog: CatalogState;
@@ -536,6 +553,22 @@ function buildPositionedItems({
         y: boardItem.y,
         width: BOARD_RUNBOOK_TILE_WIDTH,
         height: BOARD_RUNBOOK_TILE_HEIGHT,
+      });
+      continue;
+    }
+    if (boardItem.itemType === "custom_view") {
+      items.push({
+        type: "custom_view",
+        id: boardItem.itemId,
+        boardItemId: boardItem.id,
+        customViewId: boardItem.itemId,
+        title: metadataText(boardItem, "title") || "Custom view",
+        preview: metadataText(boardItem, "preview"),
+        revision: metadataNumber(boardItem, "revision") ?? 1,
+        x: boardItem.x,
+        y: boardItem.y,
+        width: BOARD_CUSTOM_VIEW_TILE_WIDTH,
+        height: BOARD_CUSTOM_VIEW_TILE_HEIGHT,
       });
     }
   }

@@ -14,6 +14,7 @@ import { DetailView } from "./DetailView";
 import { ChatView } from "./chat";
 import { SessionInfoView } from "./SessionInfoView";
 import { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
+import { CustomViewPanel } from "./CustomViewPanel";
 import { useDashboardStore } from "../stores/dashboard-store";
 
 const TAB_VALUES = { chat: 0, detail: 1, info: 2 } as const;
@@ -31,6 +32,7 @@ export function RightPanel({
 }: RightPanelProps = {}) {
   const activeRightTab = useDashboardStore((s) => s.activeRightTab);
   const activeBoardDocumentId = useDashboardStore((s) => s.activeBoardDocumentId);
+  const activeCustomViewId = useDashboardStore((s) => s.activeCustomViewId);
   const setActiveRightTab = useDashboardStore((s) => s.setActiveRightTab);
 
   const handleTabChange = useCallback(
@@ -59,7 +61,9 @@ export function RightPanel({
         </TabsList>
 
         <TabsPanel value={0} className="flex-1 overflow-hidden" keepMounted>
-          {activeBoardDocumentId ? (
+          {activeCustomViewId ? (
+            <CustomViewPanel />
+          ) : activeBoardDocumentId ? (
             <MarkdownDocumentPanel />
           ) : (
             <ChatView

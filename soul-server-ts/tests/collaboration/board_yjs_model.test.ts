@@ -13,6 +13,7 @@ import {
   parseBoardYjsDocumentName,
   readBoardYDocSnapshot,
   readBoardYDocReplica,
+  upsertCustomViewYjsBoardItem,
   updateMarkdownYjsDocument,
 } from "../../src/collaboration/board_yjs_model.js";
 
@@ -78,6 +79,47 @@ describe("board_yjs_model", () => {
         metadata: expect.objectContaining({ title: "Launch runbook" }),
       }),
     ]);
+  });
+
+  it("custom view board item은 HTML 본문 없이 metadata preview와 revision만 Y-doc에 저장한다", () => {
+    const doc = new Y.Doc();
+
+    const boardItem = upsertCustomViewYjsBoardItem(doc, {
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+    }, {
+      boardItemId: "custom_view:cv-1",
+      customViewId: "cv-1",
+      title: "Progress panel",
+      html: "<section><h1>Progress</h1><p>42%</p></section>",
+      revision: 2,
+      x: 120,
+      y: 240,
+    });
+
+    expect(boardItem).toMatchObject({
+      id: "custom_view:cv-1",
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+      membershipKind: "primary",
+      sourceRunbookItemId: null,
+      itemType: "custom_view",
+      itemId: "cv-1",
+      x: 120,
+      y: 240,
+      metadata: {
+        title: "Progress panel",
+        preview: "Progress 42%",
+        revision: 2,
+      },
+    });
+    expect(JSON.stringify(readBoardYDocReplica({
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+    }, doc))).not.toContain("<section>");
   });
 
   it("runbook session membership과 source runbook item id를 Y-doc snapshot으로 round-trip", () => {

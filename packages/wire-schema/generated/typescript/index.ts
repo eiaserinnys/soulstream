@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 107개 $defs (wire 51 + SSE event 56). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 108개 $defs (wire 51 + SSE event 57). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -198,6 +198,7 @@ export interface SessionEventEnvelope {
     | SSEEventClaudeRuntimeScheduleUpdated
     | SSEEventClaudeRuntimeScheduleDeleted
     | SSEEventRunbookUpdated
+    | SSEEventCustomViewUpdated
     | SSEEventContextUsage
     | SSEEventCompact
     | SSEEventReconnect
@@ -698,6 +699,16 @@ export interface SSEEventRunbookUpdated {
   type: "runbook_updated";
   runbookId: string;
   boardItemId: string;
+  [k: string]: unknown;
+}
+/**
+ * SSE: 커스텀 뷰 mutation 후 뷰 갱신 트리거. HTML 본문은 wire에 싣지 않는다.
+ */
+export interface SSEEventCustomViewUpdated {
+  type: "custom_view_updated";
+  customViewId: string;
+  boardItemId: string;
+  revision: number;
   [k: string]: unknown;
 }
 /**

@@ -7,6 +7,7 @@
 
 import type {
   CatalogUpdatedStreamEvent,
+  CustomViewUpdatedStreamEvent,
   MetadataUpdatedStreamEvent,
   ReplayGapStreamEvent,
   RunbookUpdatedStreamEvent,
@@ -26,6 +27,7 @@ export interface SessionStreamHandlers {
   onCatalogUpdated?: (event: CatalogUpdatedStreamEvent) => void;
   onMetadataUpdated?: (event: MetadataUpdatedStreamEvent) => void;
   onRunbookUpdated?: (event: RunbookUpdatedStreamEvent) => void;
+  onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
   onStreamMeta?: (event: StreamMetaStreamEvent) => void;
   onReplayGap?: (event: ReplayGapStreamEvent) => void;
 }
@@ -58,6 +60,9 @@ export function dispatchSessionStreamEvent(
       break;
     case "runbook_updated":
       handlers.onRunbookUpdated?.(event);
+      break;
+    case "custom_view_updated":
+      handlers.onCustomViewUpdated?.(event);
       break;
     case "stream_meta":
       handlers.onStreamMeta?.(event);

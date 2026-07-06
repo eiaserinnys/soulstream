@@ -51,7 +51,8 @@ export type BoardItemType =
   | "subfolder"
   | "asset"
   | "frame"
-  | "runbook";
+  | "runbook"
+  | "custom_view";
 
 export type BoardContainerKind = "folder" | "runbook";
 
@@ -85,6 +86,21 @@ export interface MarkdownDocumentRow {
   title: string;
   body: string;
   version: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CustomViewRow {
+  id: string;
+  boardItemId: string;
+  title: string | null;
+  html: string;
+  revision: number;
+  archived: boolean;
+  createdSessionId: string | null;
+  createdEventId: number | null;
+  updatedSessionId: string | null;
+  updatedEventId: number | null;
   createdAt?: string;
   updatedAt?: string;
 }

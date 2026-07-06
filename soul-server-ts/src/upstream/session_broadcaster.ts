@@ -155,6 +155,20 @@ export class SessionBroadcaster {
     });
   }
 
+  async emitCustomViewUpdated(
+    agentSessionId: string,
+    customViewId: string,
+    boardItemId: string,
+    revision: number,
+  ): Promise<void> {
+    await this.emitEventEnvelope(agentSessionId, {
+      type: "custom_view_updated",
+      customViewId,
+      boardItemId,
+      revision,
+    });
+  }
+
   /**
    * SSE 이벤트 envelope wire. Python `event_relay.py` L175-179 정본:
    *   {type: "event", agentSessionId, event: SSEEventPayload}

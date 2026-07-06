@@ -61,6 +61,8 @@ export const MUTATION_MCP_TOOLS = [
   "unarchive_runbook_item",
   "move_runbook_item",
   "set_runbook_item_status",
+  "create_custom_view",
+  "patch_custom_view",
 ] as const;
 
 const MUTATION_TOOL_SET = new Set<string>(MUTATION_MCP_TOOLS);

@@ -95,9 +95,9 @@ export function processEventSingle(
     return { root, updated: false, statusUpdate: null, notify: false, newLastEventId: lastEventId, isHistorySync: false };
   }
 
-  // subtree_update / runbook_updated — 트리 변경 없음, dedup만 갱신.
-  // 보드 RunbookCard live 갱신은 session stream의 runbook-store projection이 처리한다.
-  if (event.type === "subtree_update" || event.type === "runbook_updated") {
+  // subtree_update / runbook_updated / custom_view_updated — 트리 변경 없음, dedup만 갱신.
+  // 보드 live 갱신은 session stream projection stores가 처리한다.
+  if (event.type === "subtree_update" || event.type === "runbook_updated" || event.type === "custom_view_updated") {
     return {
       root,
       updated: false,
@@ -235,8 +235,8 @@ export function processEventsBatch(
     if (!skipDedup && eventId > 0 && eventId <= lastEventId) continue;
     if (eventId > maxEventId) maxEventId = eventId;
 
-    // subtree_update / runbook_updated — 트리 변경 없음, dedup만 갱신.
-    if (event.type === "subtree_update" || event.type === "runbook_updated") {
+    // subtree_update / runbook_updated / custom_view_updated — 트리 변경 없음, dedup만 갱신.
+    if (event.type === "subtree_update" || event.type === "runbook_updated" || event.type === "custom_view_updated") {
       continue;
     }
 

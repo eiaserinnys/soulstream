@@ -90,6 +90,7 @@ export const createSessionSlice: StateCreator<
       activeSessionKey: key,
       activeSession: detail ?? null,
       activeBoardDocumentId: null,
+      activeCustomViewId: null,
     });
   },
 
@@ -157,6 +158,7 @@ export const createSessionSlice: StateCreator<
       activeSession: null,
       activeSessionSummary: null,
       activeBoardDocumentId: null,
+      activeCustomViewId: null,
       selectedFolderId,
     });
   },

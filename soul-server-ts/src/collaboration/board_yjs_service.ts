@@ -21,6 +21,7 @@ import {
   getBoardYjsContainerDocumentName,
   updateMarkdownYjsDocument,
   upsertBoardYjsItem,
+  upsertCustomViewYjsBoardItem,
   upsertRunbookYjsBoardItem,
 } from "./board_yjs_model.js";
 import {
@@ -139,11 +140,42 @@ export class BoardYjsService {
     );
   }
 
+  async upsertCustomViewBoardItem(input: {
+    folderId: string;
+    container: BoardYjsContainerRef;
+    boardItemId: string;
+    customViewId: string;
+    title: string;
+    html: string;
+    revision: number;
+    x: number;
+    y: number;
+    metadata?: Record<string, unknown>;
+  }): Promise<CatalogBoardItemRow> {
+    return await this.withDirectContainerConnection(input.container, (doc) =>
+      upsertCustomViewYjsBoardItem(doc, {
+        folderId: input.folderId,
+        containerKind: input.container.containerKind,
+        containerId: input.container.containerId,
+      }, input)
+    );
+  }
+
   async removeRunbookBoardItem(
     folderId: string,
     boardItemId: string,
   ): Promise<void> {
     await this.withDirectConnection(folderId, (doc) => {
+      deleteBoardYjsItem(doc, boardItemId);
+      return true;
+    });
+  }
+
+  async removeBoardItem(
+    container: string | BoardYjsContainerRef,
+    boardItemId: string,
+  ): Promise<void> {
+    await this.withDirectContainerConnection(container, (doc) => {
       deleteBoardYjsItem(doc, boardItemId);
       return true;
     });
