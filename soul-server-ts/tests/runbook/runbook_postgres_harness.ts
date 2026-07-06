@@ -53,7 +53,8 @@ export async function createRunbookPostgresHarness(): Promise<RunbookPostgresHar
 export async function resetRunbookData(sql: SqlClient): Promise<void> {
   await sql`
     TRUNCATE runbook_operations, runbook_items, runbook_sections, runbooks,
-      board_yjs_catalog_cache, board_items, folders, events, sessions
+      board_yjs_catalog_cache, board_yjs_updates, board_yjs_documents,
+      board_items, markdown_documents, folders, events, sessions
     RESTART IDENTITY CASCADE
   `;
   await sql`
@@ -174,11 +175,63 @@ async function createRunbookSchema(sql: SqlClient): Promise<void> {
       UNIQUE (folder_id, item_id)
     )
   `;
+  await sql.unsafe(`
+    CREATE OR REPLACE FUNCTION board_seed_items()
+    RETURNS VOID LANGUAGE plpgsql AS $$
+    BEGIN
+      RETURN;
+    END;
+    $$;
+  `);
+  await sql.unsafe(`
+    CREATE OR REPLACE FUNCTION board_item_get_all()
+    RETURNS TABLE (
+      id TEXT,
+      folder_id TEXT,
+      item_type TEXT,
+      item_id TEXT,
+      x DOUBLE PRECISION,
+      y DOUBLE PRECISION,
+      metadata JSONB,
+      created_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ
+    ) LANGUAGE sql AS $$
+      SELECT id, folder_id, item_type, item_id, x, y, metadata, created_at, updated_at
+      FROM board_items
+      ORDER BY folder_id ASC, y ASC, x ASC, id ASC
+    $$;
+  `);
   await sql`
     CREATE TABLE board_yjs_catalog_cache (
       folder_id TEXT PRIMARY KEY REFERENCES folders(id) ON DELETE CASCADE,
       board_items JSONB NOT NULL DEFAULT '[]'::JSONB,
       markdown_documents JSONB NOT NULL DEFAULT '[]'::JSONB,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE TABLE board_yjs_documents (
+      name TEXT PRIMARY KEY,
+      snapshot BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE TABLE board_yjs_updates (
+      id BIGSERIAL PRIMARY KEY,
+      document_name TEXT NOT NULL REFERENCES board_yjs_documents(name) ON DELETE CASCADE,
+      update BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE TABLE markdown_documents (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      version INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;

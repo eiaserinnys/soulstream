@@ -1,15 +1,21 @@
+import * as Y from "yjs";
+
 import {
   getFolderIdFromBoardYjsDocumentName,
+  readBoardYDocReplica,
+  upsertBoardYjsItem,
 } from "../../collaboration/board_yjs_model.js";
 import type {
   BoardYjsReplica,
   BoardYjsSeed,
+  CatalogBoardItemRow,
   MarkdownDocumentRow,
   SqlClient,
 } from "../session_db_types.js";
 import type { BoardRepository } from "./board_repository.js";
 import {
   asPostgresJsonValue,
+  recordFromDb,
   type RepositorySql,
   toMarkdownDocumentRow,
 } from "./repository_helpers.js";
@@ -90,10 +96,39 @@ export class BoardYjsRepository {
     folderId: string,
     replica: BoardYjsReplica,
   ): Promise<void> {
+    if (replica.boardItems.length === 0) return;
     this.boardRepository.invalidateBoardYjsCatalogCache(folderId);
     await this.sql.begin(async (sql) => {
       await this.syncBoardYjsReplicaWithSql(sql, folderId, replica);
     });
+  }
+
+  async backfillRunbookBoardItemsIntoSnapshot(
+    documentName: string,
+    folderId: string,
+    snapshot: Uint8Array,
+  ): Promise<Uint8Array> {
+    const runbookItems = await this.loadRunbookBoardItems(folderId);
+    if (runbookItems.length === 0) return snapshot;
+
+    const doc = new Y.Doc();
+    if (snapshot.byteLength > 0) {
+      Y.applyUpdate(doc, snapshot);
+    }
+    const replica = readBoardYDocReplica(folderId, doc);
+    const existingIds = new Set(replica.boardItems.map((item) => item.id));
+    const missing = runbookItems.filter((item) => !existingIds.has(item.id));
+    if (missing.length === 0) return snapshot;
+
+    doc.transact(() => {
+      for (const item of missing) {
+        upsertBoardYjsItem(doc, item);
+      }
+    });
+    const repaired = Y.encodeStateAsUpdate(doc);
+    await this.storeBoardYjsSnapshot(documentName, repaired);
+    await this.syncBoardYjsReplica(folderId, readBoardYDocReplica(folderId, doc));
+    return repaired;
   }
 
   private async loadMarkdownDocuments(
@@ -112,6 +147,39 @@ export class BoardYjsRepository {
       SELECT * FROM markdown_documents WHERE id = ANY(${this.sql.array(markdownIds)})
     `;
     return rows.map(toMarkdownDocumentRow);
+  }
+
+  private async loadRunbookBoardItems(folderId: string): Promise<CatalogBoardItemRow[]> {
+    const rows = await this.sql<
+      Array<{
+        id: string;
+        folder_id: string;
+        item_type: "runbook";
+        item_id: string;
+        x: string | number;
+        y: string | number;
+        metadata: unknown;
+        created_at: Date | string | null;
+        updated_at: Date | string | null;
+      }>
+    >`
+      SELECT id, folder_id, item_type, item_id, x, y, metadata, created_at, updated_at
+      FROM board_items
+      WHERE folder_id = ${folderId}
+        AND item_type = 'runbook'
+      ORDER BY y ASC, x ASC, id ASC
+    `;
+    return rows.map((row) => ({
+      id: row.id,
+      folderId: row.folder_id,
+      itemType: row.item_type,
+      itemId: row.item_id,
+      x: Number(row.x),
+      y: Number(row.y),
+      metadata: recordFromDb(row.metadata),
+      ...(toIsoString(row.created_at) ? { createdAt: toIsoString(row.created_at) } : {}),
+      ...(toIsoString(row.updated_at) ? { updatedAt: toIsoString(row.updated_at) } : {}),
+    }));
   }
 
   private async syncBoardYjsReplicaWithSql(
@@ -188,4 +256,9 @@ export class BoardYjsRepository {
       SELECT pg_advisory_xact_lock(hashtext(${BOARD_ITEMS_ADVISORY_LOCK_KEY})::bigint)
     `;
   }
+}
+
+function toIsoString(value: Date | string | null): string | undefined {
+  if (!value) return undefined;
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
 }

@@ -11,10 +11,22 @@ import type {
 import { assigneeToFields, type RunbookAssigneeInput } from "./runbook_models.js";
 import { RunbookMutationCore } from "./runbook_mutation_core.js";
 import {
+  itemPatchOperationType,
+  runbookPatchOperationType,
+  sectionPatchOperationType,
+} from "./runbook_operation_types.js";
+import {
   resolveItemPositionTx,
   resolveSectionPositionTx,
 } from "./runbook_position_queries.js";
 import type { RunbookRepository } from "./runbook_repository.js";
+import {
+  removeRunbookBoardItemIfUnlinked,
+  resolveRunbookIdempotent,
+  type RunbookBoardYjsPort,
+  updateRunbookBoardItemTitle,
+  upsertRunbookBoardItem,
+} from "./runbook_board_items.js";
 import type {
   RunbookActorParams,
   RunbookBroadcasterPort,
@@ -36,7 +48,8 @@ export class RunbookService {
 
   constructor(
     private readonly db: RunbookDbPort,
-    private readonly broadcaster?: RunbookBroadcasterPort,
+    private readonly broadcaster: RunbookBroadcasterPort | undefined,
+    private readonly boardYjsService: RunbookBoardYjsPort,
     handoffNotifier?: RunbookHandoffNotifierPort,
   ) {
     this.repo = db.runbooks();
@@ -75,38 +88,50 @@ export class RunbookService {
     const boardItemId = `runbook:${runbookId}`;
     const x = params.x ?? 0;
     const y = params.y ?? 0;
-    const result = await this.core.mutate({
+    const idempotent = await resolveRunbookIdempotent(this.repo, params.idempotencyKey);
+    if (idempotent) return idempotent;
+    await upsertRunbookBoardItem(this.boardYjsService, {
+      folderId: params.folderId,
+      boardItemId,
       runbookId,
-      targetKind: "runbook",
-      targetId: runbookId,
-      operationType: "create_runbook",
-      actor: params,
-      idempotencyKey: params.idempotencyKey,
-      payload: {
-        board_item_id: boardItemId,
-        folder_id: params.folderId,
-        title: params.title,
-        x,
-        y,
-      },
-      apply: async (sql, eventId) => {
-        await this.repo.createRunbookBoardItemTx(sql, {
-          id: boardItemId,
-          folderId: params.folderId,
-          itemId: runbookId,
+      title: params.title,
+      x,
+      y,
+    });
+    let result: RunbookMutationResult;
+    try {
+      result = await this.core.mutate({
+        runbookId,
+        targetKind: "runbook",
+        targetId: runbookId,
+        operationType: "create_runbook",
+        actor: params,
+        idempotencyKey: params.idempotencyKey,
+        payload: {
+          board_item_id: boardItemId,
+          folder_id: params.folderId,
           title: params.title,
           x,
           y,
-        });
-        await this.repo.createRunbookTx(sql, {
-          id: runbookId,
-          boardItemId,
-          title: params.title,
-          createdSessionId: params.actorSessionId,
-          createdEventId: eventId,
-        });
-      },
-    });
+        },
+        apply: async (sql, eventId) => {
+          await this.repo.createRunbookTx(sql, {
+            id: runbookId,
+            boardItemId,
+            title: params.title,
+            createdSessionId: params.actorSessionId,
+            createdEventId: eventId,
+          });
+        },
+      });
+    } catch (err) {
+      await removeRunbookBoardItemIfUnlinked(this.repo, this.boardYjsService, {
+        folderId: params.folderId,
+        boardItemId,
+        runbookId,
+      }).catch(() => undefined);
+      throw err;
+    }
     await this.broadcastCatalog();
     return result;
   }
@@ -137,15 +162,16 @@ export class RunbookService {
           { title: params.title, archived: params.archived },
           params.expectedVersion,
         );
-        if (params.title !== undefined) {
-          await this.repo.patchRunbookBoardItemTitleTx(
-            sql,
-            params.runbookId,
-            params.title,
-          );
-        }
       },
     });
+    if (params.title !== undefined) {
+      await updateRunbookBoardItemTitle(
+        this.repo,
+        this.boardYjsService,
+        params.runbookId,
+        params.title,
+      );
+    }
     if (params.title !== undefined || params.archived !== undefined) {
       await this.broadcastCatalog();
     }
@@ -469,22 +495,4 @@ export class RunbookService {
   }): Promise<RunbookMutationResult> {
     return await this.core.setItemStatus(params);
   }
-}
-
-function runbookPatchOperationType(archived: boolean | undefined): string {
-  if (archived === true) return "archive_runbook";
-  if (archived === false) return "unarchive_runbook";
-  return "update_runbook";
-}
-
-function sectionPatchOperationType(archived: boolean | undefined): string {
-  if (archived === true) return "archive_runbook_section";
-  if (archived === false) return "unarchive_runbook_section";
-  return "update_runbook_section";
-}
-
-function itemPatchOperationType(archived: boolean | undefined): string {
-  if (archived === true) return "archive_runbook_item";
-  if (archived === false) return "unarchive_runbook_item";
-  return "update_runbook_item";
 }

@@ -236,6 +236,18 @@ export class SessionDB {
     return await this.boardYjsRepository.getBoardYjsUpdates(documentName);
   }
 
+  async backfillRunbookBoardItemsIntoBoardYjsSnapshot(
+    documentName: string,
+    folderId: string,
+    snapshot: Uint8Array,
+  ): Promise<Uint8Array> {
+    return await this.boardYjsRepository.backfillRunbookBoardItemsIntoSnapshot(
+      documentName,
+      folderId,
+      snapshot,
+    );
+  }
+
   async loadBoardYjsSeed(folderId: string): Promise<BoardYjsSeed> {
     return await this.boardYjsRepository.loadBoardYjsSeed(folderId);
   }

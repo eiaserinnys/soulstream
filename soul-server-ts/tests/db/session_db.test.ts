@@ -8,7 +8,10 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createBoardYDocSnapshot } from "../../src/collaboration/board_yjs_model.js";
+import {
+  createBoardYDocSnapshot,
+  readBoardYDocSnapshot,
+} from "../../src/collaboration/board_yjs_model.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import { MarkdownDocumentVersionConflictError } from "../../src/db/markdown_document_version.js";
 
@@ -363,6 +366,73 @@ describe("SessionDB board Yjs persistence", () => {
     ]);
     expect(typeof calls[4].values[1]).not.toBe("string");
     expect(typeof calls[4].values[2]).not.toBe("string");
+  });
+
+  it("replica sync는 빈 Y.Doc replica로 기존 폴더를 전멸시키지 않는다", async () => {
+    const { sql, calls, begin } = createMockSql();
+    const db = new SessionDB(sql);
+
+    await db.syncBoardYjsReplica("f1", {
+      boardItems: [],
+      markdownDocuments: [],
+    });
+
+    expect(begin).not.toHaveBeenCalled();
+    expect(
+      calls.some((call) => call.fragments.join("?").includes("DELETE FROM board_items")),
+    ).toBe(false);
+  });
+
+  it("기존 snapshot 로드 시 DB-only runbook board item을 Y.Doc에 주입한다", async () => {
+    const snapshot = createBoardYDocSnapshot({
+      folderId: "f1",
+      boardItems: [{
+        id: "session:s1",
+        folderId: "f1",
+        itemType: "session",
+        itemId: "s1",
+        x: 0,
+        y: 0,
+        metadata: {},
+      }],
+      markdownDocuments: [],
+    });
+    const { sql, calls } = createMockSql((call) => {
+      const query = call.fragments.join("?");
+      if (query.includes("FROM board_items") && query.includes("item_type = 'runbook'")) {
+        return [{
+          id: "runbook:rb-1",
+          folder_id: "f1",
+          item_type: "runbook",
+          item_id: "rb-1",
+          x: 280,
+          y: 0,
+          metadata: { title: "Runbook" },
+          created_at: null,
+          updated_at: null,
+        }];
+      }
+      return [];
+    });
+    const db = new SessionDB(sql);
+
+    const repaired = await db.backfillRunbookBoardItemsIntoBoardYjsSnapshot(
+      "board-folder:f1",
+      "f1",
+      snapshot,
+    );
+
+    expect(readBoardYDocSnapshot({ folderId: "f1", snapshot: repaired }).replica.boardItems)
+      .toEqual([
+        expect.objectContaining({ id: "session:s1" }),
+        expect.objectContaining({ id: "runbook:rb-1", itemType: "runbook" }),
+      ]);
+    expect(calls.some((call) =>
+      call.fragments.join("?").includes("INSERT INTO board_yjs_documents"),
+    )).toBe(true);
+    expect(calls.some((call) =>
+      call.fragments.join("?").includes("INSERT INTO board_yjs_catalog_cache"),
+    )).toBe(true);
   });
 
   it("replica sync는 lock, board_items, markdown_documents, catalog cache 갱신을 한 transaction에서 수행", async () => {
