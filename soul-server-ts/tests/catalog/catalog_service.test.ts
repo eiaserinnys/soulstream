@@ -503,7 +503,7 @@ describe("CatalogService board items", () => {
     await svc.updateBoardItemPosition("markdown:doc-1", 59, 101);
 
     expect(boardYjsService.updateBoardItemPosition).toHaveBeenCalledWith(
-      "f1",
+      { containerKind: "folder", containerId: "f1" },
       "markdown:doc-1",
       60,
       100,
@@ -594,7 +594,7 @@ describe("CatalogService board items", () => {
     });
 
     expect(boardYjsService.updateMarkdownDocument).toHaveBeenCalledWith(
-      "f1",
+      { containerKind: "folder", containerId: "f1" },
       "doc-1",
       { title: "New", body: "Body", expectedVersion: 1 },
     );
@@ -664,7 +664,10 @@ describe("CatalogService board items", () => {
 
     await svc.deleteMarkdownDocument("doc-1");
 
-    expect(boardYjsService.deleteMarkdownDocument).toHaveBeenCalledWith("f1", "doc-1");
+    expect(boardYjsService.deleteMarkdownDocument).toHaveBeenCalledWith(
+      { containerKind: "folder", containerId: "f1" },
+      "doc-1",
+    );
     expect(db.deleteMarkdownDocument).not.toHaveBeenCalled();
   });
 });

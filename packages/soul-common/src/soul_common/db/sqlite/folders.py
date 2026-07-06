@@ -37,6 +37,8 @@ def _normalize_board_item(row: dict) -> dict:
     return {
         "id": row["id"],
         "folderId": row["folder_id"],
+        "containerKind": row.get("container_kind") or "folder",
+        "containerId": row.get("container_id") or row["folder_id"],
         "itemType": row["item_type"],
         "itemId": row["item_id"],
         "x": float(row["x"]),
@@ -374,11 +376,29 @@ class SqliteFolderMixin:
             items.append(item)
         return items
 
-    async def get_board_yjs_catalog_items(self, folder_id: Optional[str] = None) -> list[dict]:
+    async def get_board_yjs_catalog_items(
+        self,
+        folder_id: Optional[str] = None,
+        *,
+        container_kind: Optional[str] = None,
+        container_id: Optional[str] = None,
+    ) -> list[dict]:
+        if folder_id is not None:
+            container_kind = "folder"
+            container_id = folder_id
         items = await self.get_board_items()
-        if folder_id is None:
-            return items
-        return [item for item in items if item.get("folderId") == folder_id]
+        if container_kind is None and container_id is None:
+            return [
+                item for item in items
+                if item.get("containerKind", "folder") == "folder"
+            ]
+        if container_kind is None or container_id is None:
+            raise ValueError("container_kind and container_id must be provided together")
+        return [
+            item for item in items
+            if item.get("containerKind", "folder") == container_kind
+            and item.get("containerId", item.get("folderId")) == container_id
+        ]
 
     async def update_board_item_position(self, board_item_id: str, x: float, y: float) -> None:
         await self._conn.execute(

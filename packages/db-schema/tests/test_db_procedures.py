@@ -288,6 +288,135 @@ async def test_board_items_container_insert_defaults_and_primary_uniqueness(test
         )
 
 
+async def test_board_yjs_persistence_container_schema_contract(test_db):
+    """Yjs documents/cache expose synced marker and container cache key."""
+
+    document_columns = {
+        row["column_name"]
+        for row in await test_db.fetch(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'board_yjs_documents'
+            """
+        )
+    }
+    assert "synced_at" in document_columns
+
+    cache_columns = {
+        row["column_name"]: row
+        for row in await test_db.fetch(
+            """
+            SELECT column_name, is_nullable, column_default
+            FROM information_schema.columns
+            WHERE table_name = 'board_yjs_catalog_cache'
+            """
+        )
+    }
+    assert cache_columns["folder_id"]["is_nullable"] == "NO"
+    assert cache_columns["container_kind"]["is_nullable"] == "NO"
+    assert cache_columns["container_kind"]["column_default"] == "'folder'::text"
+    assert cache_columns["container_id"]["is_nullable"] == "NO"
+
+    pkey_columns = [
+        row["attname"]
+        for row in await test_db.fetch(
+            """
+            SELECT a.attname
+            FROM pg_index i
+            JOIN pg_attribute a
+              ON a.attrelid = i.indrelid
+             AND a.attnum = ANY(i.indkey)
+            WHERE i.indrelid = 'board_yjs_catalog_cache'::regclass
+              AND i.indisprimary
+            ORDER BY array_position(i.indkey, a.attnum)
+            """
+        )
+    ]
+    assert pkey_columns == ["container_kind", "container_id"]
+
+
+async def test_schema_reapply_backfills_legacy_board_yjs_catalog_cache_key(test_db):
+    """schema.sql upgrades legacy folder_id-keyed cache rows idempotently."""
+
+    await _create_folder(test_db, "legacy-cache-folder", "Legacy Cache Folder")
+    await test_db.execute(
+        """
+        TRUNCATE board_yjs_catalog_cache;
+        ALTER TABLE board_yjs_catalog_cache DROP CONSTRAINT IF EXISTS board_yjs_catalog_cache_pkey;
+        ALTER TABLE board_yjs_catalog_cache DROP CONSTRAINT IF EXISTS board_yjs_catalog_cache_container_kind_check;
+        ALTER TABLE board_yjs_catalog_cache DROP COLUMN IF EXISTS container_id;
+        ALTER TABLE board_yjs_catalog_cache DROP COLUMN IF EXISTS container_kind;
+        ALTER TABLE board_yjs_catalog_cache ADD PRIMARY KEY (folder_id);
+        INSERT INTO board_yjs_catalog_cache (folder_id, board_items, markdown_documents)
+        VALUES ('legacy-cache-folder', '[]'::jsonb, '[]'::jsonb);
+        """
+    )
+
+    await test_db.execute(_schema_sql())
+    await test_db.execute(_schema_sql())
+
+    row = await test_db.fetchrow(
+        """
+        SELECT folder_id, container_kind, container_id
+        FROM board_yjs_catalog_cache
+        WHERE folder_id = $1
+        """,
+        "legacy-cache-folder",
+    )
+    assert dict(row) == {
+        "folder_id": "legacy-cache-folder",
+        "container_kind": "folder",
+        "container_id": "legacy-cache-folder",
+    }
+
+
+async def test_schema_prefills_board_yjs_catalog_cache_per_container(test_db):
+    """schema.sql groups cache rows by folder/runbook container, not folder_id alone."""
+
+    await _create_folder(test_db, "container-cache-folder", "Container Cache Folder")
+    await test_db.execute(
+        """
+        INSERT INTO markdown_documents (id, title, body)
+        VALUES
+          ('container-folder-doc', 'Folder doc', 'folder body'),
+          ('container-runbook-doc', 'Runbook doc', 'runbook body')
+        """
+    )
+    await test_db.execute(
+        """
+        INSERT INTO board_items (
+            id, folder_id, item_type, item_id, container_kind, container_id, x, y
+        )
+        VALUES
+          ('markdown:container-folder-doc', 'container-cache-folder', 'markdown',
+           'container-folder-doc', 'folder', 'container-cache-folder', 0, 0),
+          ('markdown:container-runbook-doc', 'container-cache-folder', 'markdown',
+           'container-runbook-doc', 'runbook', 'rb-cache', 20, 20)
+        """
+    )
+
+    await test_db.execute(_schema_sql())
+
+    rows = await test_db.fetch(
+        """
+        SELECT container_kind, container_id, board_items
+        FROM board_yjs_catalog_cache
+        WHERE folder_id = $1
+        ORDER BY container_kind, container_id
+        """,
+        "container-cache-folder",
+    )
+    by_container = {
+        (row["container_kind"], row["container_id"]): _decode_jsonb(row["board_items"])
+        for row in rows
+    }
+    assert ("folder", "container-cache-folder") in by_container
+    assert ("runbook", "rb-cache") in by_container
+    assert by_container[("folder", "container-cache-folder")][0]["containerKind"] == "folder"
+    assert by_container[("runbook", "rb-cache")][0]["containerKind"] == "runbook"
+
+
 async def test_schema_reapply_upgrades_pre_status_runbooks_table(test_db):
     """schema.sql만 재실행해도 029 이전 runbooks 테이블이 최신 형태가 된다."""
 

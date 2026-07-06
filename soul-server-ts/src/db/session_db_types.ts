@@ -53,9 +53,24 @@ export type BoardItemType =
   | "frame"
   | "runbook";
 
+export type BoardContainerKind = "folder" | "runbook";
+
+export interface BoardYjsContainerRef {
+  containerKind: BoardContainerKind;
+  containerId: string;
+}
+
+export interface BoardYjsContainerScope extends BoardYjsContainerRef {
+  folderId: string;
+}
+
 export interface CatalogBoardItemRow {
   id: string;
   folderId: string;
+  containerKind?: BoardContainerKind;
+  containerId?: string;
+  membershipKind?: "primary" | "reference";
+  sourceRunbookItemId?: string | null;
   itemType: BoardItemType;
   itemId: string;
   x: number;

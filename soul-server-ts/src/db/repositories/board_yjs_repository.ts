@@ -1,11 +1,15 @@
 import * as Y from "yjs";
 
 import {
-  getFolderIdFromBoardYjsDocumentName,
+  getBoardYjsContainerDocumentName,
+  normalizeBoardYjsDocumentName,
+  parseBoardYjsDocumentName,
   readBoardYDocReplica,
   upsertBoardYjsItem,
 } from "../../collaboration/board_yjs_model.js";
 import type {
+  BoardYjsContainerRef,
+  BoardYjsContainerScope,
   BoardYjsReplica,
   BoardYjsSeed,
   CatalogBoardItemRow,
@@ -29,8 +33,9 @@ export class BoardYjsRepository {
   ) {}
 
   async getBoardYjsSnapshot(documentName: string): Promise<Uint8Array | null> {
+    const canonicalName = canonicalBoardYjsDocumentName(documentName);
     const rows = await this.sql<Array<{ snapshot: Buffer | Uint8Array }>>`
-      SELECT snapshot FROM board_yjs_documents WHERE name = ${documentName}
+      SELECT snapshot FROM board_yjs_documents WHERE name = ${canonicalName}
     `;
     const snapshot = rows[0]?.snapshot;
     return snapshot ? new Uint8Array(snapshot) : null;
@@ -40,48 +45,84 @@ export class BoardYjsRepository {
     documentName: string,
     snapshot: Uint8Array,
   ): Promise<void> {
+    const canonicalName = canonicalBoardYjsDocumentName(documentName);
     await this.sql`
       INSERT INTO board_yjs_documents (name, snapshot, updated_at)
-      VALUES (${documentName}, ${Buffer.from(snapshot)}, NOW())
+      VALUES (${canonicalName}, ${Buffer.from(snapshot)}, NOW())
       ON CONFLICT (name) DO UPDATE
       SET snapshot = EXCLUDED.snapshot,
           updated_at = EXCLUDED.updated_at
     `;
-    this.boardRepository.invalidateBoardYjsCatalogCache(
-      getFolderIdFromBoardYjsDocumentName(documentName),
-    );
+    this.boardRepository.invalidateBoardYjsCatalogCache(parseBoardYjsDocumentName(canonicalName));
   }
 
   async appendBoardYjsUpdate(
     documentName: string,
     update: Uint8Array,
   ): Promise<void> {
+    const canonicalName = canonicalBoardYjsDocumentName(documentName);
     await this.sql`
       INSERT INTO board_yjs_documents (name, snapshot)
-      VALUES (${documentName}, ${Buffer.alloc(0)})
+      VALUES (${canonicalName}, ${Buffer.alloc(0)})
       ON CONFLICT (name) DO NOTHING
     `;
     await this.sql`
       INSERT INTO board_yjs_updates (document_name, update)
-      VALUES (${documentName}, ${Buffer.from(update)})
+      VALUES (${canonicalName}, ${Buffer.from(update)})
     `;
-    this.boardRepository.invalidateBoardYjsCatalogCache(
-      getFolderIdFromBoardYjsDocumentName(documentName),
-    );
+    this.boardRepository.invalidateBoardYjsCatalogCache(parseBoardYjsDocumentName(canonicalName));
   }
 
   async getBoardYjsUpdates(documentName: string): Promise<Uint8Array[]> {
+    const canonicalName = canonicalBoardYjsDocumentName(documentName);
     const rows = await this.sql<Array<{ update: Buffer | Uint8Array }>>`
       SELECT update FROM board_yjs_updates
-      WHERE document_name = ${documentName}
+      WHERE document_name = ${canonicalName}
       ORDER BY id ASC
     `;
     return rows.map((row) => new Uint8Array(row.update));
   }
 
-  async loadBoardYjsSeed(folderId: string): Promise<BoardYjsSeed> {
+  async resolveBoardYjsContainerScope(
+    containerInput: string | BoardYjsContainerRef,
+  ): Promise<BoardYjsContainerScope | null> {
+    const container = normalizeBoardYjsContainerInput(containerInput);
+    if (container.containerKind === "folder") {
+      return {
+        folderId: container.containerId,
+        containerKind: "folder",
+        containerId: container.containerId,
+      };
+    }
+    const rows = await this.sql<Array<{ folder_id: string }>>`
+      SELECT bi.folder_id
+      FROM runbooks r
+      JOIN board_items bi ON bi.id = r.board_item_id
+      WHERE r.id = ${container.containerId}
+      LIMIT 1
+    `;
+    const folderId = rows[0]?.folder_id;
+    return folderId
+      ? { folderId, containerKind: container.containerKind, containerId: container.containerId }
+      : null;
+  }
+
+  async markBoardYjsDocumentSynced(documentName: string): Promise<void> {
+    const canonicalName = canonicalBoardYjsDocumentName(documentName);
+    await this.sql`
+      UPDATE board_yjs_documents
+      SET synced_at = COALESCE(synced_at, NOW())
+      WHERE name = ${canonicalName}
+    `;
+  }
+
+  async loadBoardYjsSeed(containerInput: string | BoardYjsContainerRef): Promise<BoardYjsSeed> {
+    const scope = await this.resolveBoardYjsContainerScope(containerInput);
+    if (!scope) return { boardItems: [], markdownDocuments: [] };
     await this.boardRepository.ensureBoardItems();
-    const boardItems = (await this.boardRepository.getBoardItems()).filter((item) => item.folderId === folderId);
+    const boardItems = (await this.boardRepository.getBoardItems()).filter((item) =>
+      item.containerKind === scope.containerKind && item.containerId === scope.containerId
+    );
     const markdownIds = boardItems
       .filter((item) => item.itemType === "markdown")
       .map((item) => item.itemId);
@@ -93,29 +134,39 @@ export class BoardYjsRepository {
   }
 
   async syncBoardYjsReplica(
-    folderId: string,
+    containerInput: string | BoardYjsContainerRef,
     replica: BoardYjsReplica,
+    documentName?: string,
   ): Promise<void> {
-    if (replica.boardItems.length === 0) return;
-    this.boardRepository.invalidateBoardYjsCatalogCache(folderId);
+    const scope = await this.resolveBoardYjsContainerScope(containerInput);
+    if (!scope) return;
+    const canonicalName = documentName
+      ? canonicalBoardYjsDocumentName(documentName)
+      : getBoardYjsContainerDocumentName(scope);
+    if (replica.boardItems.length === 0 && !(await this.hasBoardYjsDocumentSynced(canonicalName))) {
+      return;
+    }
+    this.boardRepository.invalidateBoardYjsCatalogCache(scope);
     await this.sql.begin(async (sql) => {
-      await this.syncBoardYjsReplicaWithSql(sql, folderId, replica);
+      await this.syncBoardYjsReplicaWithSql(sql, scope, replica, canonicalName);
     });
   }
 
   async backfillRunbookBoardItemsIntoSnapshot(
     documentName: string,
-    folderId: string,
+    containerInput: string | BoardYjsContainerRef,
     snapshot: Uint8Array,
   ): Promise<Uint8Array> {
-    const runbookItems = await this.loadRunbookBoardItems(folderId);
+    const scope = await this.resolveBoardYjsContainerScope(containerInput);
+    if (!scope || scope.containerKind !== "folder") return snapshot;
+    const runbookItems = await this.loadRunbookBoardItems(scope);
     if (runbookItems.length === 0) return snapshot;
 
     const doc = new Y.Doc();
     if (snapshot.byteLength > 0) {
       Y.applyUpdate(doc, snapshot);
     }
-    const replica = readBoardYDocReplica(folderId, doc);
+    const replica = readBoardYDocReplica(scope, doc);
     const existingIds = new Set(replica.boardItems.map((item) => item.id));
     const missing = runbookItems.filter((item) => !existingIds.has(item.id));
     if (missing.length === 0) return snapshot;
@@ -127,7 +178,7 @@ export class BoardYjsRepository {
     });
     const repaired = Y.encodeStateAsUpdate(doc);
     await this.storeBoardYjsSnapshot(documentName, repaired);
-    await this.syncBoardYjsReplica(folderId, readBoardYDocReplica(folderId, doc));
+    await this.syncBoardYjsReplica(scope, readBoardYDocReplica(scope, doc), documentName);
     return repaired;
   }
 
@@ -149,11 +200,17 @@ export class BoardYjsRepository {
     return rows.map(toMarkdownDocumentRow);
   }
 
-  private async loadRunbookBoardItems(folderId: string): Promise<CatalogBoardItemRow[]> {
+  private async loadRunbookBoardItems(
+    scope: BoardYjsContainerScope,
+  ): Promise<CatalogBoardItemRow[]> {
     const rows = await this.sql<
       Array<{
         id: string;
         folder_id: string;
+        container_kind: "folder";
+        container_id: string;
+        membership_kind: "primary" | "reference";
+        source_runbook_item_id: string | null;
         item_type: "runbook";
         item_id: string;
         x: string | number;
@@ -163,15 +220,22 @@ export class BoardYjsRepository {
         updated_at: Date | string | null;
       }>
     >`
-      SELECT id, folder_id, item_type, item_id, x, y, metadata, created_at, updated_at
+      SELECT
+        id, folder_id, container_kind, container_id, membership_kind,
+        source_runbook_item_id, item_type, item_id, x, y, metadata, created_at, updated_at
       FROM board_items
-      WHERE folder_id = ${folderId}
+      WHERE container_kind = ${scope.containerKind}
+        AND container_id = ${scope.containerId}
         AND item_type = 'runbook'
       ORDER BY y ASC, x ASC, id ASC
     `;
     return rows.map((row) => ({
       id: row.id,
       folderId: row.folder_id,
+      containerKind: row.container_kind,
+      containerId: row.container_id,
+      membershipKind: row.membership_kind,
+      sourceRunbookItemId: row.source_runbook_item_id,
       itemType: row.item_type,
       itemId: row.item_id,
       x: Number(row.x),
@@ -184,28 +248,41 @@ export class BoardYjsRepository {
 
   private async syncBoardYjsReplicaWithSql(
     sql: RepositorySql,
-    folderId: string,
+    scope: BoardYjsContainerScope,
     replica: BoardYjsReplica,
+    documentName: string,
   ): Promise<void> {
     await this.lockBoardItemsReplica(sql);
 
     const boardItemIds = replica.boardItems.map((item) => item.id);
     if (boardItemIds.length === 0) {
-      await sql`DELETE FROM board_items WHERE folder_id = ${folderId}`;
+      await sql`
+        DELETE FROM board_items
+        WHERE container_kind = ${scope.containerKind}
+          AND container_id = ${scope.containerId}
+      `;
     } else {
       await sql`
         DELETE FROM board_items
-        WHERE folder_id = ${folderId}
+        WHERE container_kind = ${scope.containerKind}
+          AND container_id = ${scope.containerId}
           AND id <> ALL(${sql.array(boardItemIds)})
       `;
     }
 
     for (const item of replica.boardItems) {
       await sql`
-        INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata, updated_at)
+        INSERT INTO board_items (
+          id, folder_id, container_kind, container_id, membership_kind,
+          source_runbook_item_id, item_type, item_id, x, y, metadata, updated_at
+        )
         VALUES (
           ${item.id},
-          ${folderId},
+          ${scope.folderId},
+          ${scope.containerKind},
+          ${scope.containerId},
+          ${item.membershipKind ?? "primary"},
+          ${item.sourceRunbookItemId ?? null},
           ${item.itemType},
           ${item.itemId},
           ${item.x},
@@ -215,6 +292,10 @@ export class BoardYjsRepository {
         )
         ON CONFLICT (id) DO UPDATE
         SET folder_id = EXCLUDED.folder_id,
+            container_kind = EXCLUDED.container_kind,
+            container_id = EXCLUDED.container_id,
+            membership_kind = EXCLUDED.membership_kind,
+            source_runbook_item_id = EXCLUDED.source_runbook_item_id,
             item_type = EXCLUDED.item_type,
             item_id = EXCLUDED.item_id,
             x = EXCLUDED.x,
@@ -237,17 +318,28 @@ export class BoardYjsRepository {
     }
 
     await sql`
-      INSERT INTO board_yjs_catalog_cache (folder_id, board_items, markdown_documents, updated_at)
+      INSERT INTO board_yjs_catalog_cache (
+        folder_id, container_kind, container_id, board_items, markdown_documents, updated_at
+      )
       VALUES (
-        ${folderId},
+        ${scope.folderId},
+        ${scope.containerKind},
+        ${scope.containerId},
         ${sql.json(asPostgresJsonValue(replica.boardItems))}::jsonb,
         ${sql.json(asPostgresJsonValue(replica.markdownDocuments))}::jsonb,
         NOW()
       )
-      ON CONFLICT (folder_id) DO UPDATE
+      ON CONFLICT (container_kind, container_id) DO UPDATE
       SET board_items = EXCLUDED.board_items,
+          folder_id = EXCLUDED.folder_id,
           markdown_documents = EXCLUDED.markdown_documents,
           updated_at = EXCLUDED.updated_at
+    `;
+
+    await sql`
+      UPDATE board_yjs_documents
+      SET synced_at = COALESCE(synced_at, NOW())
+      WHERE name = ${documentName}
     `;
   }
 
@@ -256,9 +348,30 @@ export class BoardYjsRepository {
       SELECT pg_advisory_xact_lock(hashtext(${BOARD_ITEMS_ADVISORY_LOCK_KEY})::bigint)
     `;
   }
+
+  private async hasBoardYjsDocumentSynced(documentName: string): Promise<boolean> {
+    const rows = await this.sql<Array<{ synced: boolean }>>`
+      SELECT synced_at IS NOT NULL AS synced
+      FROM board_yjs_documents
+      WHERE name = ${documentName}
+      LIMIT 1
+    `;
+    return rows[0]?.synced === true;
+  }
 }
 
 function toIsoString(value: Date | string | null): string | undefined {
   if (!value) return undefined;
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+function canonicalBoardYjsDocumentName(documentName: string): string {
+  return normalizeBoardYjsDocumentName(documentName) ?? documentName;
+}
+
+function normalizeBoardYjsContainerInput(
+  containerInput: string | BoardYjsContainerRef,
+): BoardYjsContainerRef {
+  if (typeof containerInput !== "string") return containerInput;
+  return { containerKind: "folder", containerId: containerInput };
 }

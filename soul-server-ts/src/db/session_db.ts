@@ -18,7 +18,7 @@ import { MarkdownDocumentRepository } from "./repositories/markdown_document_rep
 import { SessionRepository } from "./repositories/session_repository.js";
 import { SupervisorRepository } from "./repositories/supervisor_repository.js";
 import type { RepositorySql } from "./repositories/repository_helpers.js";
-import type { AppendEventParams, AppendSupervisorEventParams, BoardYjsReplica, BoardYjsSeed, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, SupervisorAppendResult, SupervisorEventRow, SupervisorRegistryRow, SupervisorRegistryUpsertParams, SupervisorSourceCursorRow, SupervisorWakeDispatchStateParams } from "./session_db_types.js";
+import type { AppendEventParams, AppendSupervisorEventParams, BoardYjsContainerRef, BoardYjsContainerScope, BoardYjsReplica, BoardYjsSeed, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, SupervisorAppendResult, SupervisorEventRow, SupervisorRegistryRow, SupervisorRegistryUpsertParams, SupervisorSourceCursorRow, SupervisorWakeDispatchStateParams } from "./session_db_types.js";
 
 export type * from "./session_db_types.js";
 
@@ -160,8 +160,8 @@ export class SessionDB {
     return await this.catalogRepository.getCatalog();
   }
 
-  invalidateBoardYjsCatalogCache(folderId?: string | null): void {
-    this.boardRepository.invalidateBoardYjsCatalogCache(folderId);
+  invalidateBoardYjsCatalogCache(container?: string | BoardYjsContainerRef | null): void {
+    this.boardRepository.invalidateBoardYjsCatalogCache(container);
   }
 
   async ensureBoardItems(): Promise<void> {
@@ -238,25 +238,36 @@ export class SessionDB {
 
   async backfillRunbookBoardItemsIntoBoardYjsSnapshot(
     documentName: string,
-    folderId: string,
+    container: string | BoardYjsContainerRef,
     snapshot: Uint8Array,
   ): Promise<Uint8Array> {
     return await this.boardYjsRepository.backfillRunbookBoardItemsIntoSnapshot(
       documentName,
-      folderId,
+      container,
       snapshot,
     );
   }
 
-  async loadBoardYjsSeed(folderId: string): Promise<BoardYjsSeed> {
-    return await this.boardYjsRepository.loadBoardYjsSeed(folderId);
+  async resolveBoardYjsContainerScope(
+    container: string | BoardYjsContainerRef,
+  ): Promise<BoardYjsContainerScope | null> {
+    return await this.boardYjsRepository.resolveBoardYjsContainerScope(container);
+  }
+
+  async markBoardYjsDocumentSynced(documentName: string): Promise<void> {
+    await this.boardYjsRepository.markBoardYjsDocumentSynced(documentName);
+  }
+
+  async loadBoardYjsSeed(container: string | BoardYjsContainerRef): Promise<BoardYjsSeed> {
+    return await this.boardYjsRepository.loadBoardYjsSeed(container);
   }
 
   async syncBoardYjsReplica(
-    folderId: string,
+    container: string | BoardYjsContainerRef,
     replica: BoardYjsReplica,
+    documentName?: string,
   ): Promise<void> {
-    await this.boardYjsRepository.syncBoardYjsReplica(folderId, replica);
+    await this.boardYjsRepository.syncBoardYjsReplica(container, replica, documentName);
   }
 
   async renameSession(

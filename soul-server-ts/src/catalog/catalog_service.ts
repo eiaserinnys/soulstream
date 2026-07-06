@@ -322,7 +322,10 @@ export class CatalogService {
       const boardItem = await this.db.getBoardItemById(boardItemId);
       if (boardItem) {
         await this.boardYjsService.updateBoardItemPosition(
-          boardItem.folderId,
+          {
+            containerKind: boardItem.containerKind ?? "folder",
+            containerId: boardItem.containerId ?? boardItem.folderId,
+          },
           boardItemId,
           snappedX,
           snappedY,
@@ -390,7 +393,10 @@ export class CatalogService {
       const boardItem = await this.db.getMarkdownDocumentBoardItem(documentId);
       if (boardItem) {
         const document = await this.boardYjsService.updateMarkdownDocument(
-          boardItem.folderId,
+          {
+            containerKind: boardItem.containerKind ?? "folder",
+            containerId: boardItem.containerId ?? boardItem.folderId,
+          },
           documentId,
           fields,
         );
@@ -408,7 +414,10 @@ export class CatalogService {
       const boardItem = await this.db.getMarkdownDocumentBoardItem(documentId);
       if (boardItem) {
         await this.boardYjsService.deleteMarkdownDocument(
-          boardItem.folderId,
+          {
+            containerKind: boardItem.containerKind ?? "folder",
+            containerId: boardItem.containerId ?? boardItem.folderId,
+          },
           documentId,
         );
         await this.broadcastCatalog();
@@ -424,7 +433,11 @@ export class CatalogService {
     await this.db.ensureBoardItems();
     const occupied = new Set(
       (await this.db.getBoardItems())
-        .filter((item) => item.folderId === folderId)
+        .filter((item) =>
+          item.folderId === folderId &&
+          (item.containerKind ?? "folder") === "folder" &&
+          (item.containerId ?? item.folderId) === folderId
+        )
         .map((item) => `${item.x}:${item.y}`),
     );
     let index = 0;

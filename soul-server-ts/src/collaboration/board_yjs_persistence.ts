@@ -5,7 +5,7 @@ import * as Y from "yjs";
 import type { SessionDB } from "../db/session_db.js";
 import {
   createBoardYDocSnapshot,
-  getFolderIdFromBoardYjsDocumentName,
+  parseBoardYjsDocumentName,
   readBoardYDocReplica,
 } from "./board_yjs_model.js";
 
@@ -19,34 +19,42 @@ export function createBoardYjsPersistence(db: SessionDB): BoardYjsPersistence {
     database: new Database({
       fetch: async (payload: fetchPayload) => {
         const snapshot = await db.getBoardYjsSnapshot(payload.documentName);
-        const folderId = getFolderIdFromBoardYjsDocumentName(payload.documentName);
-        if (!folderId) return snapshot ?? null;
+        const container = parseBoardYjsDocumentName(payload.documentName);
+        if (!container) return snapshot ?? null;
+        const scope = await db.resolveBoardYjsContainerScope(container);
+        if (!scope) return snapshot ?? null;
         if (snapshot) {
           return await db.backfillRunbookBoardItemsIntoBoardYjsSnapshot(
             payload.documentName,
-            folderId,
+            scope,
             snapshot,
           );
         }
 
-        const seed = await db.loadBoardYjsSeed(folderId);
+        const seed = await db.loadBoardYjsSeed(scope);
         const encoded = createBoardYDocSnapshot({
-          folderId,
+          folderId: scope.folderId,
+          containerKind: scope.containerKind,
+          containerId: scope.containerId,
           boardItems: seed.boardItems,
           markdownDocuments: seed.markdownDocuments,
         });
         await db.storeBoardYjsSnapshot(payload.documentName, encoded);
+        await db.markBoardYjsDocumentSynced(payload.documentName);
         return encoded;
       },
       store: async (payload: storePayload) => {
         await db.storeBoardYjsSnapshot(payload.documentName, payload.state);
-        const folderId = getFolderIdFromBoardYjsDocumentName(payload.documentName);
-        if (!folderId) return;
+        const container = parseBoardYjsDocumentName(payload.documentName);
+        if (!container) return;
+        const scope = await db.resolveBoardYjsContainerScope(container);
+        if (!scope) return;
         const doc = new Y.Doc();
         Y.applyUpdate(doc, payload.state);
         await db.syncBoardYjsReplica(
-          folderId,
-          readBoardYDocReplica(folderId, doc),
+          scope,
+          readBoardYDocReplica(scope, doc),
+          payload.documentName,
         );
       },
     }),
@@ -54,15 +62,18 @@ export function createBoardYjsPersistence(db: SessionDB): BoardYjsPersistence {
       extensionName: "soulstream-board-yjs-update-log",
       async onChange(payload: onChangePayload) {
         await db.appendBoardYjsUpdate(payload.documentName, payload.update);
-        const folderId = getFolderIdFromBoardYjsDocumentName(payload.documentName);
-        if (!folderId) return;
+        const container = parseBoardYjsDocumentName(payload.documentName);
+        if (!container) return;
+        const scope = await db.resolveBoardYjsContainerScope(container);
+        if (!scope) return;
         const snapshot = Y.encodeStateAsUpdate(payload.document);
         await db.storeBoardYjsSnapshot(payload.documentName, snapshot);
         await db.syncBoardYjsReplica(
-          folderId,
-          readBoardYDocReplica(folderId, payload.document),
+          scope,
+          readBoardYDocReplica(scope, payload.document),
+          payload.documentName,
         );
-        db.invalidateBoardYjsCatalogCache(folderId);
+        db.invalidateBoardYjsCatalogCache(scope);
       },
     },
   };

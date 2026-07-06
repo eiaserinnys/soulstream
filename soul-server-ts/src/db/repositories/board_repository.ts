@@ -1,4 +1,5 @@
 import type {
+  BoardYjsContainerRef,
   BoardItemType,
   CatalogBoardItemRow,
   CatalogFolderRow,
@@ -14,9 +15,9 @@ export class BoardRepository {
 
   constructor(private readonly sql: SqlClient) {}
 
-  invalidateBoardYjsCatalogCache(folderId?: string | null): void {
-    if (folderId) {
-      this.boardYjsCatalogCache.delete(folderId);
+  invalidateBoardYjsCatalogCache(container?: string | BoardYjsContainerRef | null): void {
+    if (container) {
+      this.boardYjsCatalogCache.delete(containerCacheKey(container));
       return;
     }
     this.boardYjsCatalogCache.clear();
@@ -29,16 +30,17 @@ export class BoardRepository {
     if (folderIds.length === 0) return [];
 
     const cachedRows = await this.sql<
-      Array<{ folder_id: string; board_items: unknown }>
+      Array<{ container_id: string; board_items: unknown }>
     >`
-      SELECT folder_id, board_items
+      SELECT container_id, board_items
       FROM board_yjs_catalog_cache
-      WHERE folder_id = ANY(${this.sql.array(folderIds)})
+      WHERE container_kind = 'folder'
+        AND container_id = ANY(${this.sql.array(folderIds)})
     `;
     const result: CatalogBoardItemRow[] = [];
     const cachedFolderIds = new Set<string>();
     for (const row of cachedRows) {
-      cachedFolderIds.add(row.folder_id);
+      cachedFolderIds.add(row.container_id);
       result.push(...parseCatalogBoardItems(row.board_items));
     }
 
@@ -53,13 +55,18 @@ export class BoardRepository {
           x: string | number;
           y: string | number;
           metadata: unknown;
+          container_kind?: "folder" | "runbook" | null;
+          container_id?: string | null;
+          membership_kind?: "primary" | "reference" | null;
+          source_runbook_item_id?: string | null;
           created_at: Date | string | null;
           updated_at: Date | string | null;
         }>
       >`
         SELECT *
         FROM board_items
-        WHERE folder_id = ANY(${this.sql.array(missingFolderIds)})
+        WHERE container_kind = 'folder'
+          AND container_id = ANY(${this.sql.array(missingFolderIds)})
       `;
       result.push(...legacyRows.map(toCatalogBoardItemRow));
     }
@@ -86,6 +93,10 @@ export class BoardRepository {
         x: string | number;
         y: string | number;
         metadata: unknown;
+        container_kind?: "folder" | "runbook" | null;
+        container_id?: string | null;
+        membership_kind?: "primary" | "reference" | null;
+        source_runbook_item_id?: string | null;
         created_at: Date | string | null;
         updated_at: Date | string | null;
       }>
@@ -103,6 +114,10 @@ export class BoardRepository {
         x: string | number;
         y: string | number;
         metadata: unknown;
+        container_kind?: "folder" | "runbook" | null;
+        container_id?: string | null;
+        membership_kind?: "primary" | "reference" | null;
+        source_runbook_item_id?: string | null;
         created_at: Date | string | null;
         updated_at: Date | string | null;
       }>
@@ -125,6 +140,10 @@ export class BoardRepository {
         x: string | number;
         y: string | number;
         metadata: unknown;
+        container_kind?: "folder" | "runbook" | null;
+        container_id?: string | null;
+        membership_kind?: "primary" | "reference" | null;
+        source_runbook_item_id?: string | null;
         created_at: Date | string | null;
         updated_at: Date | string | null;
       }>
@@ -149,4 +168,9 @@ export class BoardRepository {
       WHERE id = ${boardItemId}
     `;
   }
+}
+
+function containerCacheKey(container: string | BoardYjsContainerRef): string {
+  if (typeof container === "string") return `folder:${container}`;
+  return `${container.containerKind}:${container.containerId}`;
 }

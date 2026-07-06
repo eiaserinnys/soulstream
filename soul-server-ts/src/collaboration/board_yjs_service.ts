@@ -6,13 +6,19 @@ import type { FastifyBaseLogger } from "fastify";
 import type WebSocket from "ws";
 import * as Y from "yjs";
 
-import type { CatalogBoardItemRow, MarkdownDocumentRow, SessionDB } from "../db/session_db.js";
+import type {
+  BoardYjsContainerRef,
+  CatalogBoardItemRow,
+  MarkdownDocumentRow,
+  SessionDB,
+} from "../db/session_db.js";
 import {
   applyBoardYjsPosition,
+  boardYjsFolderScope,
   createMarkdownYjsDocument,
   deleteMarkdownYjsDocument,
   deleteBoardYjsItem,
-  getBoardYjsDocumentName,
+  getBoardYjsContainerDocumentName,
   updateMarkdownYjsDocument,
   upsertRunbookYjsBoardItem,
 } from "./board_yjs_model.js";
@@ -51,9 +57,18 @@ export class BoardYjsService {
     request: IncomingMessage,
     folderId: string,
   ): void {
+    const scope = boardYjsFolderScope(folderId);
+    this.handleContainerConnection(socket, request, scope);
+  }
+
+  handleContainerConnection(
+    socket: WebSocket,
+    request: IncomingMessage,
+    container: BoardYjsContainerRef,
+  ): void {
     this.hocuspocus.handleConnection(socket, request, {
-      folderId,
-      documentName: getBoardYjsDocumentName(folderId),
+      ...container,
+      documentName: getBoardYjsContainerDocumentName(container),
     });
   }
 
@@ -100,32 +115,32 @@ export class BoardYjsService {
   }
 
   async updateBoardItemPosition(
-    folderId: string,
+    container: string | BoardYjsContainerRef,
     boardItemId: string,
     x: number,
     y: number,
   ): Promise<void> {
-    await this.withDirectConnection(folderId, (doc) => {
+    await this.withDirectContainerConnection(container, (doc) => {
       applyBoardYjsPosition(doc, boardItemId, { x, y });
       return true;
     });
   }
 
   async updateMarkdownDocument(
-    folderId: string,
+    container: string | BoardYjsContainerRef,
     documentId: string,
     fields: { title?: string; body?: string; expectedVersion: number },
   ): Promise<MarkdownDocumentRow | null> {
-    return await this.withDirectConnection(folderId, (doc) =>
+    return await this.withDirectContainerConnection(container, (doc) =>
       updateMarkdownYjsDocument(doc, documentId, fields)
     );
   }
 
   async deleteMarkdownDocument(
-    folderId: string,
+    container: string | BoardYjsContainerRef,
     documentId: string,
   ): Promise<void> {
-    await this.withDirectConnection(folderId, (doc) => {
+    await this.withDirectContainerConnection(container, (doc) => {
       deleteMarkdownYjsDocument(doc, documentId);
       return true;
     });
@@ -135,9 +150,17 @@ export class BoardYjsService {
     folderId: string,
     callback: (doc: Y.Doc) => T,
   ): Promise<T> {
+    return await this.withDirectContainerConnection(boardYjsFolderScope(folderId), callback);
+  }
+
+  private async withDirectContainerConnection<T>(
+    container: string | BoardYjsContainerRef,
+    callback: (doc: Y.Doc) => T,
+  ): Promise<T> {
+    const resolvedContainer = typeof container === "string" ? boardYjsFolderScope(container) : container;
     const connection = await this.hocuspocus.openDirectConnection(
-      getBoardYjsDocumentName(folderId),
-      { folderId, source: "server" },
+      getBoardYjsContainerDocumentName(resolvedContainer),
+      { ...resolvedContainer, source: "server" },
     );
     try {
       let result: T | undefined;

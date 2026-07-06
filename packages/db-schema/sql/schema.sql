@@ -221,9 +221,11 @@ CREATE TRIGGER trg_board_items_fill_container_defaults
 CREATE TABLE IF NOT EXISTS board_yjs_documents (
     name        TEXT PRIMARY KEY,
     snapshot    BYTEA NOT NULL,
+    synced_at   TIMESTAMPTZ,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE board_yjs_documents ADD COLUMN IF NOT EXISTS synced_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS board_yjs_updates (
     id             BIGSERIAL PRIMARY KEY,
@@ -233,11 +235,30 @@ CREATE TABLE IF NOT EXISTS board_yjs_updates (
 );
 
 CREATE TABLE IF NOT EXISTS board_yjs_catalog_cache (
-    folder_id           TEXT PRIMARY KEY REFERENCES folders(id) ON DELETE CASCADE,
+    folder_id           TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+    container_kind      TEXT NOT NULL DEFAULT 'folder',
+    container_id        TEXT NOT NULL,
     board_items         JSONB NOT NULL DEFAULT '[]'::jsonb,
     markdown_documents  JSONB NOT NULL DEFAULT '[]'::jsonb,
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT board_yjs_catalog_cache_container_kind_check
+        CHECK (container_kind IN ('folder','runbook')),
+    CONSTRAINT board_yjs_catalog_cache_pkey
+        PRIMARY KEY (container_kind, container_id)
 );
+ALTER TABLE board_yjs_catalog_cache ADD COLUMN IF NOT EXISTS container_kind TEXT;
+ALTER TABLE board_yjs_catalog_cache ADD COLUMN IF NOT EXISTS container_id TEXT;
+UPDATE board_yjs_catalog_cache SET container_kind = 'folder' WHERE container_kind IS NULL;
+UPDATE board_yjs_catalog_cache SET container_id = folder_id WHERE container_id IS NULL;
+ALTER TABLE board_yjs_catalog_cache ALTER COLUMN folder_id SET NOT NULL;
+ALTER TABLE board_yjs_catalog_cache ALTER COLUMN container_kind SET NOT NULL;
+ALTER TABLE board_yjs_catalog_cache ALTER COLUMN container_id SET NOT NULL;
+ALTER TABLE board_yjs_catalog_cache DROP CONSTRAINT IF EXISTS board_yjs_catalog_cache_container_kind_check;
+ALTER TABLE board_yjs_catalog_cache ADD CONSTRAINT board_yjs_catalog_cache_container_kind_check
+    CHECK (container_kind IN ('folder','runbook'));
+ALTER TABLE board_yjs_catalog_cache DROP CONSTRAINT IF EXISTS board_yjs_catalog_cache_pkey;
+ALTER TABLE board_yjs_catalog_cache ADD CONSTRAINT board_yjs_catalog_cache_pkey
+    PRIMARY KEY (container_kind, container_id);
 
 CREATE OR REPLACE FUNCTION board_delete_markdown_refs()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
@@ -526,6 +547,8 @@ CREATE INDEX IF NOT EXISTS idx_board_items_ref ON board_items (item_type, item_i
 CREATE UNIQUE INDEX IF NOT EXISTS uq_board_items_primary_membership
     ON board_items (item_type, item_id)
     WHERE membership_kind = 'primary';
+CREATE INDEX IF NOT EXISTS idx_board_yjs_catalog_cache_folder
+    ON board_yjs_catalog_cache (folder_id);
 CREATE INDEX IF NOT EXISTS idx_board_yjs_updates_document ON board_yjs_updates (document_name, id);
 
 CREATE INDEX IF NOT EXISTS idx_task_items_parent ON task_items (parent_id, position_key);
@@ -2345,6 +2368,10 @@ CREATE OR REPLACE FUNCTION board_item_get_all()
 RETURNS TABLE(
     id TEXT,
     folder_id TEXT,
+    container_kind TEXT,
+    container_id TEXT,
+    membership_kind TEXT,
+    source_runbook_item_id TEXT,
     item_type TEXT,
     item_id TEXT,
     x DOUBLE PRECISION,
@@ -2356,6 +2383,10 @@ RETURNS TABLE(
     SELECT
         bi.id,
         bi.folder_id,
+        bi.container_kind,
+        bi.container_id,
+        bi.membership_kind,
+        bi.source_runbook_item_id,
         bi.item_type,
         bi.item_id,
         bi.x,
@@ -2392,13 +2423,19 @@ RETURNS TABLE(
     ORDER BY bi.folder_id, bi.y, bi.x, bi.created_at;
 $$;
 
-INSERT INTO board_yjs_catalog_cache (folder_id, board_items, markdown_documents, updated_at)
+INSERT INTO board_yjs_catalog_cache (
+    folder_id, container_kind, container_id, board_items, markdown_documents, updated_at
+)
 SELECT
     bi.folder_id,
+    bi.container_kind,
+    bi.container_id,
     jsonb_agg(
         jsonb_build_object(
             'id', bi.id,
             'folderId', bi.folder_id,
+            'containerKind', bi.container_kind,
+            'containerId', bi.container_id,
             'itemType', bi.item_type,
             'itemId', bi.item_id,
             'x', bi.x,
@@ -2423,13 +2460,14 @@ SELECT
         )
         FROM board_items mbi
         JOIN markdown_documents md ON md.id = mbi.item_id
-        WHERE mbi.folder_id = bi.folder_id
+        WHERE mbi.container_kind = bi.container_kind
+          AND mbi.container_id = bi.container_id
           AND mbi.item_type = 'markdown'
     ), '[]'::jsonb),
     NOW()
 FROM board_item_get_all() bi
-GROUP BY bi.folder_id
-ON CONFLICT (folder_id) DO NOTHING;
+GROUP BY bi.folder_id, bi.container_kind, bi.container_id
+ON CONFLICT (container_kind, container_id) DO NOTHING;
 
 -- 마이그레이션 ----------------------------------------------------
 

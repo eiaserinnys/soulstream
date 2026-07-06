@@ -179,7 +179,45 @@ class TestBoardItems:
                 "metadata": {},
             }
         ]
-        mock_catalog_service.list_board_items.assert_called_once_with("f1")
+        mock_catalog_service.list_board_items.assert_called_once_with(
+            container_kind="folder",
+            container_id="f1",
+        )
+
+    async def test_list_board_items_scoped_to_runbook_container(self, client, mock_catalog_service):
+        mock_catalog_service.get_catalog.return_value = {
+            "folders": [{"id": "f1", "name": "Folder", "sortOrder": 0}],
+            "sessions": {},
+            "boardItems": [{
+                "id": "runbook:rb1",
+                "folderId": "f1",
+                "itemType": "runbook",
+                "itemId": "rb1",
+                "x": 0,
+                "y": 0,
+                "metadata": {},
+            }],
+        }
+        mock_catalog_service.list_board_items.return_value = [{
+            "id": "markdown:d1",
+            "folderId": "f1",
+            "containerKind": "runbook",
+            "containerId": "rb1",
+            "itemType": "markdown",
+            "itemId": "d1",
+            "x": 0,
+            "y": 0,
+            "metadata": {},
+        }]
+
+        resp = await client.get("/api/board-items?container_kind=runbook&container_id=rb1")
+
+        assert resp.status_code == 200
+        assert resp.json()["boardItems"][0]["containerKind"] == "runbook"
+        mock_catalog_service.list_board_items.assert_called_once_with(
+            container_kind="runbook",
+            container_id="rb1",
+        )
 
     async def test_update_board_item_position(self, client, mock_catalog_service):
         resp = await client.patch(
