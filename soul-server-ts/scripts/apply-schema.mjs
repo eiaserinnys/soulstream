@@ -53,8 +53,8 @@ async function main() {
   try {
     await applySchema();
     console.log("[apply-schema] schema applied");
-  } catch {
-    console.error("[apply-schema] failed");
+  } catch (err) {
+    console.error("[apply-schema] failed:", err);
     process.exitCode = 1;
   }
 }
