@@ -658,6 +658,8 @@ async function main(): Promise<void> {
     broadcaster,
     boardYjsService,
     runbookHandoffNotifier,
+    catalogService,
+    logger,
   );
   const customViewService = new CustomViewService(
     db,

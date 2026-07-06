@@ -58,8 +58,8 @@ export async function resetRunbookData(sql: SqlClient): Promise<void> {
     RESTART IDENTITY CASCADE
   `;
   await sql`
-    INSERT INTO sessions (session_id, node_id, status, session_type)
-    VALUES ('sess-actor', 'node-1', 'running', 'claude')
+    INSERT INTO sessions (session_id, node_id, status, session_type, folder_id)
+    VALUES ('sess-actor', 'node-1', 'running', 'claude', 'folder-1')
   `;
   await sql`INSERT INTO folders (id, name, sort_order) VALUES ('folder-1', 'Folder', 1)`;
 }
@@ -95,11 +95,42 @@ async function createRunbookSchema(sql: SqlClient): Promise<void> {
       node_id TEXT,
       status TEXT,
       session_type TEXT,
+      folder_id TEXT,
       last_event_id INTEGER,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  await sql.unsafe(`
+    CREATE OR REPLACE FUNCTION session_get(p_session_id TEXT)
+    RETURNS TABLE (
+      session_id TEXT,
+      node_id TEXT,
+      status TEXT,
+      session_type TEXT,
+      folder_id TEXT,
+      last_event_id INTEGER,
+      created_at TIMESTAMPTZ,
+      updated_at TIMESTAMPTZ
+    ) LANGUAGE sql AS $$
+      SELECT session_id, node_id, status, session_type, folder_id, last_event_id, created_at, updated_at
+      FROM sessions
+      WHERE session_id = p_session_id
+    $$;
+  `);
+  await sql.unsafe(`
+    CREATE OR REPLACE FUNCTION session_assign_folder(
+      p_session_id TEXT,
+      p_folder_id TEXT
+    ) RETURNS VOID LANGUAGE plpgsql AS $$
+    BEGIN
+      UPDATE sessions
+      SET folder_id = p_folder_id,
+          updated_at = NOW()
+      WHERE session_id = p_session_id;
+    END;
+    $$;
+  `);
   await sql`
     CREATE TABLE events (
       id INTEGER NOT NULL,
