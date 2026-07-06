@@ -254,7 +254,36 @@ export function deleteMarkdownYjsDocument(
   doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP).delete(documentId);
 }
 
-function upsertBoardYjsItem(doc: Y.Doc, boardItem: CatalogBoardItemRow): void {
+export function upsertRunbookYjsBoardItem(
+  doc: Y.Doc,
+  input: {
+    folderId: string;
+    boardItemId: string;
+    runbookId: string;
+    title: string;
+    x: number;
+    y: number;
+    metadata?: Record<string, unknown>;
+  },
+): CatalogBoardItemRow {
+  const boardItem: CatalogBoardItemRow = {
+    id: input.boardItemId,
+    folderId: input.folderId,
+    itemType: "runbook",
+    itemId: input.runbookId,
+    x: input.x,
+    y: input.y,
+    metadata: { ...(input.metadata ?? {}), title: input.title },
+  };
+  upsertBoardYjsItem(doc, boardItem);
+  return boardItem;
+}
+
+export function deleteBoardYjsItem(doc: Y.Doc, boardItemId: string): void {
+  doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP).delete(boardItemId);
+}
+
+export function upsertBoardYjsItem(doc: Y.Doc, boardItem: CatalogBoardItemRow): void {
   doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP).set(boardItem.id, {
     item_type: boardItem.itemType,
     item_id: boardItem.itemId,

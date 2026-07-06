@@ -652,7 +652,12 @@ async function main(): Promise<void> {
     },
     logger,
   );
-  const runbookService = new RunbookService(db, broadcaster, runbookHandoffNotifier);
+  const runbookService = new RunbookService(
+    db,
+    broadcaster,
+    boardYjsService,
+    runbookHandoffNotifier,
+  );
   const llmAdapters = {
     ...(env.LLM_OPENAI_API_KEY
       ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) }

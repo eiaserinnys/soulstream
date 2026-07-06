@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { BoardYjsService } from "../../src/collaboration/board_yjs_service.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import { RunbookHandoffNotifier } from "../../src/runbook/runbook_handoff_notifier.js";
 import { RunbookVersionConflict } from "../../src/runbook/runbook_models.js";
@@ -17,6 +18,7 @@ const describePostgres = hasPostgresTestBackend ? describe : describe.skip;
 describePostgres("RunbookService PostgreSQL integration", () => {
   let harness: RunbookPostgresHarness | undefined;
   let db: SessionDB;
+  let boardYjsService: BoardYjsService | undefined;
   let service: RunbookService;
   let emitRunbookUpdated: ReturnType<typeof vi.fn>;
   let notifyHumanHandoff: ReturnType<typeof vi.fn>;
@@ -33,18 +35,26 @@ describePostgres("RunbookService PostgreSQL integration", () => {
       }
     });
     notifyHumanHandoff = vi.fn();
-    service = new RunbookService(db, { emitRunbookUpdated }, { notifyHumanHandoff });
   }, 45_000);
 
   beforeEach(async () => {
     if (!harness) return;
+    await boardYjsService?.close();
     await resetRunbookData(harness.sql);
+    boardYjsService = createTestBoardYjsService(db);
+    service = new RunbookService(
+      db,
+      { emitRunbookUpdated },
+      boardYjsService,
+      { notifyHumanHandoff },
+    );
     emitRunbookUpdated.mockClear();
     notifyHumanHandoff.mockClear();
     observedOperationCounts.length = 0;
   }, 15_000);
 
   afterAll(async () => {
+    await boardYjsService?.close();
     await harness?.cleanup();
   }, 15_000);
 
@@ -87,6 +97,41 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     });
     expect(Number(rows[0]?.x)).toBe(120);
     expect(Number(rows[0]?.y)).toBe(240);
+  });
+
+  it("keeps a runbook board item when later board Yjs changes persist", async () => {
+    await service.createRunbook({
+      runbookId: "rb-1",
+      folderId: "folder-1",
+      title: "Runbook",
+      x: 120,
+      y: 240,
+      actorSessionId: "sess-actor",
+    });
+
+    await boardYjsService!.createMarkdownDocument({
+      folderId: "folder-1",
+      documentId: "doc-1",
+      title: "Note",
+      body: "Body",
+      x: 280,
+      y: 0,
+    });
+
+    const rows = await harness!.sql<Array<{
+      runbook_count: string | number;
+      board_item_count: string | number;
+      markdown_count: string | number;
+    }>>`
+      SELECT
+        (SELECT COUNT(*) FROM runbooks WHERE id = 'rb-1') AS runbook_count,
+        (SELECT COUNT(*) FROM board_items WHERE id = 'runbook:rb-1') AS board_item_count,
+        (SELECT COUNT(*) FROM board_items WHERE id = 'markdown:doc-1') AS markdown_count
+    `;
+
+    expect(Number(rows[0]?.runbook_count)).toBe(1);
+    expect(Number(rows[0]?.board_item_count)).toBe(1);
+    expect(Number(rows[0]?.markdown_count)).toBe(1);
   });
 
   it("lists runbooks within a folder and filters archived rows by default", async () => {
@@ -680,6 +725,7 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     const serviceWithNotifier = new RunbookService(
       db,
       { emitRunbookUpdated },
+      boardYjsService!,
       new RunbookHandoffNotifier(
         db.runbooks(),
         sender as never,
@@ -713,6 +759,7 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     const serviceWithNotifier = new RunbookService(
       db,
       { emitRunbookUpdated },
+      boardYjsService!,
       new RunbookHandoffNotifier(
         db.runbooks(),
         sender as never,
@@ -955,6 +1002,18 @@ function createSilentLogger() {
     fatal: vi.fn(),
     child: () => createSilentLogger(),
   };
+}
+
+function createTestBoardYjsService(db: SessionDB): BoardYjsService {
+  return new BoardYjsService({
+    db,
+    logger: createSilentLogger() as never,
+    auth: {
+      authBearerToken: "",
+      environment: "development",
+      dashboardAuthEnabled: false,
+    },
+  });
 }
 
 async function waitForMockCall(mock: ReturnType<typeof vi.fn>): Promise<void> {

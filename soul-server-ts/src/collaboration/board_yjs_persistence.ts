@@ -22,7 +22,11 @@ export function createBoardYjsPersistence(db: SessionDB): BoardYjsPersistence {
         const folderId = getFolderIdFromBoardYjsDocumentName(payload.documentName);
         if (!folderId) return snapshot ?? null;
         if (snapshot) {
-          return snapshot;
+          return await db.backfillRunbookBoardItemsIntoBoardYjsSnapshot(
+            payload.documentName,
+            folderId,
+            snapshot,
+          );
         }
 
         const seed = await db.loadBoardYjsSeed(folderId);

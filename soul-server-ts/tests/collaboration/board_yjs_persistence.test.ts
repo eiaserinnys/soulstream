@@ -42,6 +42,7 @@ describe("board_yjs_persistence", () => {
       }),
       storeBoardYjsSnapshot: vi.fn().mockResolvedValue(undefined),
       syncBoardYjsReplica: vi.fn().mockResolvedValue(undefined),
+      backfillRunbookBoardItemsIntoBoardYjsSnapshot: vi.fn().mockResolvedValue(snapshot),
     } as unknown as SessionDB;
 
     const persistence = createBoardYjsPersistence(db);
@@ -58,6 +59,49 @@ describe("board_yjs_persistence", () => {
     expect(db.loadBoardYjsSeed).not.toHaveBeenCalled();
     expect(db.storeBoardYjsSnapshot).not.toHaveBeenCalled();
     expect(db.syncBoardYjsReplica).not.toHaveBeenCalled();
+    expect(db.backfillRunbookBoardItemsIntoBoardYjsSnapshot).toHaveBeenCalledWith(
+      documentName,
+      folderId,
+      snapshot,
+    );
+  });
+
+  it("fetch는 기존 snapshot의 DB-only runbook tile을 보강한 snapshot을 반환", async () => {
+    const folderId = "folder-1";
+    const documentName = getBoardYjsDocumentName(folderId);
+    const snapshot = createBoardYDocSnapshot({
+      folderId,
+      boardItems: [],
+      markdownDocuments: [],
+    });
+    const repaired = createBoardYDocSnapshot({
+      folderId,
+      boardItems: [{
+        id: "runbook:rb-1",
+        folderId,
+        itemType: "runbook",
+        itemId: "rb-1",
+        x: 0,
+        y: 0,
+        metadata: { title: "Runbook" },
+      }],
+      markdownDocuments: [],
+    });
+    const db = {
+      getBoardYjsSnapshot: vi.fn().mockResolvedValue(snapshot),
+      backfillRunbookBoardItemsIntoBoardYjsSnapshot: vi.fn().mockResolvedValue(repaired),
+    } as unknown as SessionDB;
+
+    const persistence = createBoardYjsPersistence(db);
+    const fetched = await persistence.database.configuration.fetch?.({
+      documentName,
+    } as never);
+
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, fetched as Uint8Array);
+    expect(readBoardYDocReplica(folderId, doc).boardItems).toEqual([
+      expect.objectContaining({ id: "runbook:rb-1", itemType: "runbook" }),
+    ]);
   });
 
   it("onChange stores update, writes compact snapshot, syncs replica, and invalidates catalog cache", async () => {

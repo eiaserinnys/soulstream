@@ -11,8 +11,10 @@ import {
   applyBoardYjsPosition,
   createMarkdownYjsDocument,
   deleteMarkdownYjsDocument,
+  deleteBoardYjsItem,
   getBoardYjsDocumentName,
   updateMarkdownYjsDocument,
+  upsertRunbookYjsBoardItem,
 } from "./board_yjs_model.js";
 import {
   authenticateBoardYjsConnection,
@@ -71,6 +73,30 @@ export class BoardYjsService {
     return await this.withDirectConnection(input.folderId, (doc) =>
       createMarkdownYjsDocument(doc, input.folderId, input)
     );
+  }
+
+  async upsertRunbookBoardItem(input: {
+    folderId: string;
+    boardItemId: string;
+    runbookId: string;
+    title: string;
+    x: number;
+    y: number;
+    metadata?: Record<string, unknown>;
+  }): Promise<CatalogBoardItemRow> {
+    return await this.withDirectConnection(input.folderId, (doc) =>
+      upsertRunbookYjsBoardItem(doc, input)
+    );
+  }
+
+  async removeRunbookBoardItem(
+    folderId: string,
+    boardItemId: string,
+  ): Promise<void> {
+    await this.withDirectConnection(folderId, (doc) => {
+      deleteBoardYjsItem(doc, boardItemId);
+      return true;
+    });
   }
 
   async updateBoardItemPosition(
