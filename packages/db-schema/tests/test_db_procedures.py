@@ -108,6 +108,186 @@ async def test_runbook_item_review_status_migration_is_mirrored_in_schema_sql():
     assert migration_sql in _schema_sql()
 
 
+async def test_board_items_container_schema_contract(test_db):
+    """board_items exposes the additive container membership columns and indexes."""
+
+    columns = {
+        row["column_name"]: row
+        for row in await test_db.fetch(
+            """
+            SELECT column_name, is_nullable, column_default
+            FROM information_schema.columns
+            WHERE table_name = 'board_items'
+            """
+        )
+    }
+
+    assert columns["container_kind"]["is_nullable"] == "NO"
+    assert columns["container_kind"]["column_default"] == "'folder'::text"
+    assert columns["container_id"]["is_nullable"] == "NO"
+    assert columns["membership_kind"]["is_nullable"] == "NO"
+    assert columns["membership_kind"]["column_default"] == "'primary'::text"
+    assert columns["source_runbook_item_id"]["is_nullable"] == "YES"
+
+    constraints = {
+        row["conname"]: row["contype"].decode()
+        if isinstance(row["contype"], bytes)
+        else row["contype"]
+        for row in await test_db.fetch(
+            """
+            SELECT conname, contype
+            FROM pg_constraint
+            WHERE conrelid = 'board_items'::regclass
+            """
+        )
+    }
+    assert constraints["board_items_container_kind_check"] == "c"
+    assert constraints["board_items_membership_kind_check"] == "c"
+    assert constraints["uq_board_items_container_item"] == "u"
+    assert constraints["board_items_source_runbook_item_id_fkey"] == "f"
+    assert "board_items_folder_id_item_id_key" not in constraints
+
+    indexes = {
+        row["indexname"]: row["indexdef"]
+        for row in await test_db.fetch(
+            """
+            SELECT indexname, indexdef
+            FROM pg_indexes
+            WHERE tablename = 'board_items'
+            """
+        )
+    }
+    assert "idx_board_items_folder" in indexes
+    assert "idx_board_items_container" in indexes
+    assert "container_kind, container_id, y, x" in indexes["idx_board_items_container"]
+    assert "uq_board_items_primary_membership" in indexes
+    assert "WHERE (membership_kind = 'primary'::text)" in indexes[
+        "uq_board_items_primary_membership"
+    ]
+
+
+async def test_schema_reapply_backfills_legacy_board_items_container_columns(test_db):
+    """schema.sql alone upgrades a pre-container board_items table idempotently."""
+
+    await test_db.execute(
+        """
+        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS uq_board_items_container_item;
+        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_container_kind_check;
+        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_membership_kind_check;
+        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_source_runbook_item_id_fkey;
+        DROP INDEX IF EXISTS idx_board_items_container;
+        DROP INDEX IF EXISTS uq_board_items_primary_membership;
+        DROP TRIGGER IF EXISTS trg_board_items_fill_container_defaults ON board_items;
+        DROP FUNCTION IF EXISTS board_items_fill_container_defaults();
+        ALTER TABLE board_items DROP COLUMN IF EXISTS source_runbook_item_id CASCADE;
+        ALTER TABLE board_items DROP COLUMN IF EXISTS membership_kind CASCADE;
+        ALTER TABLE board_items DROP COLUMN IF EXISTS container_id CASCADE;
+        ALTER TABLE board_items DROP COLUMN IF EXISTS container_kind CASCADE;
+        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_folder_id_item_id_key;
+        ALTER TABLE board_items
+            ADD CONSTRAINT board_items_folder_id_item_id_key UNIQUE (folder_id, item_id);
+        """
+    )
+
+    await _create_folder(test_db, "legacy-container-folder", "Legacy Container Folder")
+    await test_db.execute(
+        """
+        INSERT INTO board_items (id, folder_id, item_type, item_id)
+        VALUES ($1, $2, 'markdown', $3)
+        """,
+        "legacy-container-board-item",
+        "legacy-container-folder",
+        "legacy-container-doc",
+    )
+
+    await test_db.execute(_schema_sql())
+    await test_db.execute(_schema_sql())
+
+    row = await test_db.fetchrow(
+        """
+        SELECT folder_id, container_kind, container_id, membership_kind
+        FROM board_items
+        WHERE id = $1
+        """,
+        "legacy-container-board-item",
+    )
+    assert dict(row) == {
+        "folder_id": "legacy-container-folder",
+        "container_kind": "folder",
+        "container_id": "legacy-container-folder",
+        "membership_kind": "primary",
+    }
+
+    constraints = {
+        row["conname"]
+        for row in await test_db.fetch(
+            """
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = 'board_items'::regclass
+            """
+        )
+    }
+    assert "uq_board_items_container_item" in constraints
+    assert "board_items_folder_id_item_id_key" not in constraints
+
+
+async def test_board_items_container_insert_defaults_and_primary_uniqueness(test_db):
+    """Legacy INSERT paths can omit container columns; primary membership stays unique."""
+
+    await _create_folder(test_db, "container-default-folder-a", "Container Default A")
+    await _create_folder(test_db, "container-default-folder-b", "Container Default B")
+
+    await test_db.execute(
+        """
+        INSERT INTO board_items (id, folder_id, item_type, item_id)
+        VALUES ($1, $2, 'markdown', $3)
+        """,
+        "container-default-item-a",
+        "container-default-folder-a",
+        "shared-markdown-doc",
+    )
+
+    row = await test_db.fetchrow(
+        """
+        SELECT container_kind, container_id, membership_kind
+        FROM board_items
+        WHERE id = $1
+        """,
+        "container-default-item-a",
+    )
+    assert dict(row) == {
+        "container_kind": "folder",
+        "container_id": "container-default-folder-a",
+        "membership_kind": "primary",
+    }
+
+    await test_db.execute(
+        """
+        INSERT INTO board_items (
+            id, folder_id, item_type, item_id, container_kind, container_id, membership_kind
+        )
+        VALUES ($1, $2, 'markdown', $3, 'folder', $2, 'reference')
+        """,
+        "container-reference-item-b",
+        "container-default-folder-b",
+        "shared-markdown-doc",
+    )
+
+    with pytest.raises(Exception):
+        await test_db.execute(
+            """
+            INSERT INTO board_items (
+                id, folder_id, item_type, item_id, container_kind, container_id
+            )
+            VALUES ($1, $2, 'markdown', $3, 'folder', $2)
+            """,
+            "container-primary-item-b",
+            "container-default-folder-b",
+            "shared-markdown-doc",
+        )
+
+
 async def test_schema_reapply_upgrades_pre_status_runbooks_table(test_db):
     """schema.sql만 재실행해도 029 이전 runbooks 테이블이 최신 형태가 된다."""
 
