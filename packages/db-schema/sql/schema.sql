@@ -149,23 +149,74 @@ CREATE TABLE IF NOT EXISTS file_assets (
 );
 
 CREATE TABLE IF NOT EXISTS board_items (
-    id          TEXT PRIMARY KEY,
-    folder_id   TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
-    item_type   TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook')),
-    item_id     TEXT NOT NULL,
-    x           DOUBLE PRECISION NOT NULL DEFAULT 0,
-    y           DOUBLE PRECISION NOT NULL DEFAULT 0,
-    metadata    JSONB NOT NULL DEFAULT '{}',
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE (folder_id, item_id)
+    id                     TEXT PRIMARY KEY,
+    folder_id              TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+    container_kind         TEXT NOT NULL DEFAULT 'folder',
+    container_id           TEXT NOT NULL,
+    membership_kind        TEXT NOT NULL DEFAULT 'primary',
+    source_runbook_item_id TEXT,
+    item_type              TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook')),
+    item_id                TEXT NOT NULL,
+    x                      DOUBLE PRECISION NOT NULL DEFAULT 0,
+    y                      DOUBLE PRECISION NOT NULL DEFAULT 0,
+    metadata               JSONB NOT NULL DEFAULT '{}',
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT board_items_container_kind_check
+        CHECK (container_kind IN ('folder','runbook')),
+    CONSTRAINT board_items_membership_kind_check
+        CHECK (membership_kind IN ('primary','reference')),
+    CONSTRAINT uq_board_items_container_item
+        UNIQUE (container_kind, container_id, item_id)
 );
 
+ALTER TABLE board_items ADD COLUMN IF NOT EXISTS container_kind TEXT NOT NULL DEFAULT 'folder';
+ALTER TABLE board_items ADD COLUMN IF NOT EXISTS container_id TEXT;
+ALTER TABLE board_items ADD COLUMN IF NOT EXISTS membership_kind TEXT NOT NULL DEFAULT 'primary';
+ALTER TABLE board_items ADD COLUMN IF NOT EXISTS source_runbook_item_id TEXT;
 ALTER TABLE board_items ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE board_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+UPDATE board_items SET container_kind = 'folder' WHERE container_kind IS NULL;
+UPDATE board_items SET container_id = folder_id WHERE container_id IS NULL;
+UPDATE board_items SET membership_kind = 'primary' WHERE membership_kind IS NULL;
+ALTER TABLE board_items ALTER COLUMN container_kind SET NOT NULL;
+ALTER TABLE board_items ALTER COLUMN container_id SET NOT NULL;
+ALTER TABLE board_items ALTER COLUMN membership_kind SET NOT NULL;
 ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_item_type_check;
 ALTER TABLE board_items ADD CONSTRAINT board_items_item_type_check
     CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook'));
+ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_container_kind_check;
+ALTER TABLE board_items ADD CONSTRAINT board_items_container_kind_check
+    CHECK (container_kind IN ('folder','runbook'));
+ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_membership_kind_check;
+ALTER TABLE board_items ADD CONSTRAINT board_items_membership_kind_check
+    CHECK (membership_kind IN ('primary','reference'));
+ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_folder_id_item_id_key;
+ALTER TABLE board_items DROP CONSTRAINT IF EXISTS uq_board_items_container_item;
+ALTER TABLE board_items ADD CONSTRAINT uq_board_items_container_item
+    UNIQUE (container_kind, container_id, item_id);
+
+CREATE OR REPLACE FUNCTION board_items_fill_container_defaults()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF NEW.container_id IS NULL THEN
+        NEW.container_kind := 'folder';
+        NEW.container_id := NEW.folder_id;
+    END IF;
+    IF NEW.container_kind IS NULL THEN
+        NEW.container_kind := 'folder';
+    END IF;
+    IF NEW.membership_kind IS NULL THEN
+        NEW.membership_kind := 'primary';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_board_items_fill_container_defaults ON board_items;
+CREATE TRIGGER trg_board_items_fill_container_defaults
+    BEFORE INSERT ON board_items
+    FOR EACH ROW EXECUTE FUNCTION board_items_fill_container_defaults();
 
 CREATE TABLE IF NOT EXISTS board_yjs_documents (
     name        TEXT PRIMARY KEY,
@@ -470,7 +521,11 @@ CREATE INDEX IF NOT EXISTS idx_supervisor_events_inserted_at
 CREATE INDEX IF NOT EXISTS idx_supervisor_registry_last_seen
     ON supervisor_registry (last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_board_items_folder ON board_items (folder_id, y, x);
+CREATE INDEX IF NOT EXISTS idx_board_items_container ON board_items (container_kind, container_id, y, x);
 CREATE INDEX IF NOT EXISTS idx_board_items_ref ON board_items (item_type, item_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_board_items_primary_membership
+    ON board_items (item_type, item_id)
+    WHERE membership_kind = 'primary';
 CREATE INDEX IF NOT EXISTS idx_board_yjs_updates_document ON board_yjs_updates (document_name, id);
 
 CREATE INDEX IF NOT EXISTS idx_task_items_parent ON task_items (parent_id, position_key);
@@ -2257,10 +2312,24 @@ BEGIN
             ) - 1 AS item_index
         FROM candidates
     )
-    INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata)
+    INSERT INTO board_items (
+        id,
+        folder_id,
+        container_kind,
+        container_id,
+        membership_kind,
+        item_type,
+        item_id,
+        x,
+        y,
+        metadata
+    )
     SELECT
         board_item_id,
         folder_id,
+        'folder'::TEXT,
+        folder_id,
+        'primary'::TEXT,
         item_type,
         item_id,
         ((item_index % 4) * 280)::DOUBLE PRECISION,
@@ -2778,6 +2847,10 @@ CREATE TABLE IF NOT EXISTS runbook_items (
 
 CREATE INDEX IF NOT EXISTS idx_runbook_items_section
     ON runbook_items(section_id, position_key);
+
+ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_source_runbook_item_id_fkey;
+ALTER TABLE board_items ADD CONSTRAINT board_items_source_runbook_item_id_fkey
+    FOREIGN KEY (source_runbook_item_id) REFERENCES runbook_items(id) ON DELETE SET NULL;
 
 ALTER TABLE runbook_items DROP CONSTRAINT IF EXISTS runbook_items_status_check;
 ALTER TABLE runbook_items ADD CONSTRAINT runbook_items_status_check
