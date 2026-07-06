@@ -10,6 +10,7 @@ import { Badge } from "../components/ui/badge";
 import { BoardAssetCard } from "../components/BoardAssetCard";
 import { STATUS_CONFIG } from "../components/SessionItem";
 import { cn } from "../lib/cn";
+import { CustomViewTileBody } from "../custom-view/CustomViewTileBody";
 import { RunbookCard } from "../runbook/RunbookCard";
 import type { SessionParentRef } from "./board-session-relations";
 import {
@@ -199,18 +200,18 @@ export function BoardWorkspaceTile({
       >
         <div className="flex items-center gap-2 border-b border-[var(--lg-line)] pb-2">
           <Code2 className="h-5 w-5 shrink-0 text-accent-blue" />
-          <span data-testid="board-custom-view-title" className="line-clamp-2 text-[13.5px] font-semibold leading-snug">
+          <span data-testid="board-custom-view-title" className="line-clamp-2 min-w-0 flex-1 text-left text-[13.5px] font-semibold leading-snug">
             {item.title}
           </span>
-        </div>
-        <div data-testid="board-custom-view-preview" className="mt-2 line-clamp-3 text-xs leading-[1.55] text-muted-foreground">
-          {item.preview || "Empty custom view"}
-        </div>
-        <div className="mt-auto flex items-center justify-end border-t border-[var(--lg-line)] pt-2">
-          <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+          <Badge variant="secondary" className="h-5 shrink-0 px-1.5 text-[10px]">
             r{item.revision}
           </Badge>
         </div>
+        <CustomViewTileBody
+          customViewId={item.customViewId}
+          title={item.title}
+          fallbackPreview={item.preview}
+        />
       </button>
     );
   }
