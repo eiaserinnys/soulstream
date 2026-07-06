@@ -2,23 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { generateKeyBetween } from "@soulstream/fractional-position";
 
-import type {
-  RunbookItemStatus,
-  RunbookSnapshot,
-  RunbookStatus,
-} from "../db/session_db_types.js";
+import type { RunbookItemStatus, RunbookSnapshot, RunbookStatus } from "../db/session_db_types.js";
 
 import { assigneeToFields, type RunbookAssigneeInput } from "./runbook_models.js";
 import { RunbookMutationCore } from "./runbook_mutation_core.js";
-import {
-  itemPatchOperationType,
-  runbookPatchOperationType,
-  sectionPatchOperationType,
-} from "./runbook_operation_types.js";
-import {
-  resolveItemPositionTx,
-  resolveSectionPositionTx,
-} from "./runbook_position_queries.js";
+import { enrollRunbookCreatorSession, type RunbookCreatorBoardItemMoverPort, type RunbookCreatorEnrollmentLoggerPort } from "./runbook_creator_enrollment.js";
+import { itemPatchOperationType, runbookPatchOperationType, sectionPatchOperationType } from "./runbook_operation_types.js";
+import { resolveItemPositionTx, resolveSectionPositionTx } from "./runbook_position_queries.js";
 import type { RunbookRepository } from "./runbook_repository.js";
 import {
   removeRunbookBoardItemIfUnlinked,
@@ -51,6 +41,8 @@ export class RunbookService {
     private readonly broadcaster: RunbookBroadcasterPort | undefined,
     private readonly boardYjsService: RunbookBoardYjsPort,
     handoffNotifier?: RunbookHandoffNotifierPort,
+    private readonly creatorBoardItemMover?: RunbookCreatorBoardItemMoverPort,
+    private readonly logger?: RunbookCreatorEnrollmentLoggerPort,
   ) {
     this.repo = db.runbooks();
     this.core = new RunbookMutationCore(db, this.repo, broadcaster, handoffNotifier);
@@ -132,7 +124,13 @@ export class RunbookService {
       }).catch(() => undefined);
       throw err;
     }
-    await this.broadcastCatalog();
+    const creatorEnrolled = (await enrollRunbookCreatorSession({
+      mover: this.creatorBoardItemMover,
+      logger: this.logger,
+      actorSessionId: params.actorSessionId,
+      runbookId,
+    })) ?? false;
+    if (!creatorEnrolled) await this.broadcastCatalog();
     return result;
   }
 
