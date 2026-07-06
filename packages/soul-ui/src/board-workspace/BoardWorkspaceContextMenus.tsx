@@ -1,14 +1,15 @@
 import { useState } from "react";
-import { Folder, Frame, Maximize2, MessageSquarePlus, Minimize2, Pencil, SquarePen, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Folder, Frame, Maximize2, MessageSquarePlus, Minimize2, Pencil, SquarePen, Trash2 } from "lucide-react";
 
-import type { CatalogFolder, FolderSettings, SessionSummary } from "../shared/types";
+import type { BoardContainerRef, CatalogFolder, FolderSettings, SessionSummary } from "../shared/types";
 import { isSystemFolderId } from "../shared/constants";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { Button } from "../components/ui/button";
+import { toastManager } from "../components/ui/toast";
 import { FolderDialog } from "../components/FolderDialog";
 import { FolderContextMenu, type FolderContextMenuTarget } from "../components/FolderContextMenu";
 import { FolderSettingsDialog } from "../components/FolderSettingsDialog";
-import { SessionContextMenu } from "../components/SessionContextMenu";
+import { SessionContextMenu, type SessionContextMenuExtraAction } from "../components/SessionContextMenu";
 import type { BoardWorkspaceItem } from "./board-workspace-items";
 import type { BoardYjsRuntime } from "./board-yjs-client";
 
@@ -28,11 +29,24 @@ export interface BoardCardContextMenuState {
   item: BoardWorkspaceItem;
 }
 
+export interface RunbookMoveTarget {
+  id: string;
+  title: string;
+}
+
+type MovableBoardWorkspaceItem = Extract<
+  BoardWorkspaceItem,
+  { type: "session" | "markdown" | "asset" | "custom_view" }
+>;
+
 interface BoardWorkspaceContextMenusProps {
   contextMenu: BoardContextMenuState | null;
   cardContextMenu: BoardCardContextMenuState | null;
   displaySessions: SessionSummary[];
   folders: CatalogFolder[];
+  boardContainer: BoardContainerRef | null;
+  resolvedBoardFolderId: string | null;
+  runbookMoveTargets: RunbookMoveTarget[];
   activeBoardDocumentId: string | null;
   boardYjsRuntime: BoardYjsRuntime | null;
   canCreateBoardItems?: boolean;
@@ -45,6 +59,10 @@ interface BoardWorkspaceContextMenusProps {
   onRenameFrame: (item: Extract<BoardWorkspaceItem, { type: "frame" }>, title: string) => void;
   onToggleFrameCollapsed: (item: Extract<BoardWorkspaceItem, { type: "frame" }>) => void;
   onDeleteFrame: (item: Extract<BoardWorkspaceItem, { type: "frame" }>) => void;
+  onMoveBoardItemToContainer?: (
+    item: MovableBoardWorkspaceItem,
+    target: BoardContainerRef,
+  ) => Promise<void>;
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => Promise<void>;
   onRenameSession?: (sessionId: string, displayName: string | null) => Promise<void>;
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
@@ -60,6 +78,9 @@ export function BoardWorkspaceContextMenus({
   cardContextMenu,
   displaySessions,
   folders,
+  boardContainer,
+  resolvedBoardFolderId,
+  runbookMoveTargets,
   activeBoardDocumentId,
   boardYjsRuntime,
   canCreateBoardItems = true,
@@ -72,6 +93,7 @@ export function BoardWorkspaceContextMenus({
   onRenameFrame,
   onToggleFrameCollapsed,
   onDeleteFrame,
+  onMoveBoardItemToContainer,
   onMoveSessions,
   onRenameSession,
   onDeleteSessions,
@@ -92,6 +114,11 @@ export function BoardWorkspaceContextMenus({
   const [renameMarkdownError, setRenameMarkdownError] = useState("");
   const [renameFrameTarget, setRenameFrameTarget] = useState<Extract<BoardWorkspaceItem, { type: "frame" }> | null>(null);
   const [renameFrameInput, setRenameFrameInput] = useState("");
+  const [moveRunbookTarget, setMoveRunbookTarget] = useState<{
+    item: MovableBoardWorkspaceItem;
+    selectedRunbookId: string;
+  } | null>(null);
+  const [moveRunbookError, setMoveRunbookError] = useState("");
 
   const folderContextTarget: FolderContextMenuTarget | null =
     cardContextMenu?.item.type === "folder"
@@ -112,6 +139,61 @@ export function BoardWorkspaceContextMenus({
     cardContextMenu?.item.type === "frame"
       ? { screenX: cardContextMenu.screenX, screenY: cardContextMenu.screenY, item: cardContextMenu.item }
       : null;
+  const movableContextMenu =
+    cardContextMenu && isMovableBoardWorkspaceItem(cardContextMenu.item)
+      ? { screenX: cardContextMenu.screenX, screenY: cardContextMenu.screenY, item: cardContextMenu.item }
+      : null;
+  const assetOrCustomViewContextMenu =
+    movableContextMenu && (movableContextMenu.item.type === "asset" || movableContextMenu.item.type === "custom_view")
+      ? movableContextMenu
+      : null;
+  const canMoveBoardItem = Boolean(onMoveBoardItemToContainer && boardContainer && resolvedBoardFolderId);
+  const moveLabel = boardContainer?.kind === "runbook"
+    ? "폴더 보드로 내보내기"
+    : "런북 보드로 이동...";
+
+  const moveSessionActions: SessionContextMenuExtraAction[] =
+    movableContextMenu?.item.type === "session" && canMoveBoardItem
+      ? [{
+          label: moveLabel,
+          onClick: () => openMoveBoardItemTarget(movableContextMenu.item),
+        }]
+      : [];
+
+  function openMoveBoardItemTarget(item: MovableBoardWorkspaceItem) {
+    if (!onMoveBoardItemToContainer || !boardContainer || !resolvedBoardFolderId) return;
+    onCloseCardContextMenu();
+    if (boardContainer.kind === "runbook") {
+      void handleMoveBoardItem(item, { kind: "folder", id: resolvedBoardFolderId });
+      return;
+    }
+    setMoveRunbookError("");
+    setMoveRunbookTarget({
+      item,
+      selectedRunbookId: runbookMoveTargets[0]?.id ?? "",
+    });
+  }
+
+  async function handleMoveBoardItem(
+    item: MovableBoardWorkspaceItem,
+    target: BoardContainerRef,
+  ) {
+    if (!onMoveBoardItemToContainer) return;
+    try {
+      setMoveRunbookError("");
+      await onMoveBoardItemToContainer(item, target);
+      setMoveRunbookTarget(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setMoveRunbookError(message);
+      toastManager.add({
+        title: "보드 이동 실패",
+        description: message,
+        type: "error",
+      });
+      console.error("Board item container move failed:", err);
+    }
+  }
 
   const handleDeleteFolder = async () => {
     if (!deleteFolderTarget) return;
@@ -260,6 +342,7 @@ export function BoardWorkspaceContextMenus({
         getSessionName={(sessionId) =>
           displaySessions.find((session) => session.agentSessionId === sessionId)?.displayName ?? ""
         }
+        extraActions={moveSessionActions}
         resolveSessionIds={(sessionId) => [sessionId]}
       />
 
@@ -300,6 +383,16 @@ export function BoardWorkspaceContextMenus({
             <Pencil className="h-4 w-4" />
             이름 변경
           </button>
+          {canMoveBoardItem && (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+              onClick={() => openMoveBoardItemTarget(markdownContextMenu.item)}
+            >
+              <ArrowRightLeft className="h-4 w-4" />
+              {moveLabel}
+            </button>
+          )}
           <button
             type="button"
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-destructive hover:bg-accent"
@@ -307,6 +400,22 @@ export function BoardWorkspaceContextMenus({
           >
             <Trash2 className="h-4 w-4" />
             삭제
+          </button>
+        </div>
+      )}
+
+      {assetOrCustomViewContextMenu && canMoveBoardItem && (
+        <div
+          className="fixed z-30 w-48 rounded-md border border-glass-border glass-strong glass-shadow-lg p-1"
+          style={{ left: assetOrCustomViewContextMenu.screenX, top: assetOrCustomViewContextMenu.screenY }}
+        >
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+            onClick={() => openMoveBoardItemTarget(assetOrCustomViewContextMenu.item)}
+          >
+            <ArrowRightLeft className="h-4 w-4" />
+            {moveLabel}
           </button>
         </div>
       )}
@@ -465,6 +574,69 @@ export function BoardWorkspaceContextMenus({
           </form>
         </div>
       )}
+      {moveRunbookTarget && (
+        <div className={BOARD_MODAL_BACKDROP_CLASS}>
+          <form
+            className="w-[22rem] max-w-[calc(100vw-2rem)] rounded-md border border-glass-border glass-strong glass-shadow-lg p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!moveRunbookTarget.selectedRunbookId) return;
+              void handleMoveBoardItem(moveRunbookTarget.item, {
+                kind: "runbook",
+                id: moveRunbookTarget.selectedRunbookId,
+              });
+            }}
+          >
+            <label className="mb-2 block text-sm font-medium" htmlFor="board-runbook-move-target">
+              대상 런북
+            </label>
+            <div id="board-runbook-move-target" className="mb-3 flex max-h-64 flex-col gap-1 overflow-auto">
+              {runbookMoveTargets.length > 0 ? (
+                runbookMoveTargets.map((target) => (
+                  <button
+                    key={target.id}
+                    type="button"
+                    className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                      moveRunbookTarget.selectedRunbookId === target.id
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-accent"
+                    }`}
+                    onClick={() =>
+                      setMoveRunbookTarget((current) =>
+                        current ? { ...current, selectedRunbookId: target.id } : current
+                      )
+                    }
+                  >
+                    {target.title}
+                  </button>
+                ))
+              ) : (
+                <p className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">
+                  이동할 수 있는 런북이 없습니다.
+                </p>
+              )}
+            </div>
+            {moveRunbookError && (
+              <p className="mb-3 text-xs text-destructive">{moveRunbookError}</p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setMoveRunbookTarget(null)}>
+                취소
+              </Button>
+              <Button type="submit" disabled={!moveRunbookTarget.selectedRunbookId}>
+                이동
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
     </>
   );
+}
+
+function isMovableBoardWorkspaceItem(item: BoardWorkspaceItem): item is MovableBoardWorkspaceItem {
+  return item.type === "session" ||
+    item.type === "markdown" ||
+    item.type === "asset" ||
+    item.type === "custom_view";
 }

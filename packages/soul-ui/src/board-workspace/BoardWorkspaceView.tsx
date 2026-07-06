@@ -40,6 +40,7 @@ import {
   BoardWorkspaceContextMenus,
   type BoardCardContextMenuState,
   type BoardContextMenuState,
+  type RunbookMoveTarget,
 } from "./BoardWorkspaceContextMenus";
 import { useBoardYjsRuntime } from "./board-yjs-client";
 import { BoardWorkspaceMinimap } from "./BoardWorkspaceMinimap";
@@ -98,6 +99,16 @@ function getBoardItemCenter(item: BoardWorkspaceItem): { x: number; y: number } 
   const width = "width" in item ? item.width : BOARD_TILE_WIDTH;
   const height = "height" in item ? item.height : BOARD_TILE_HEIGHT;
   return { x: item.x + width / 2, y: item.y + height / 2 };
+}
+
+function createBoardMoveIdempotencyKey(
+  boardItemId: string,
+  target: BoardContainerRef,
+): string {
+  const randomPart = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `board-item-move:${boardItemId}:${target.kind}:${target.id}:${randomPart}`;
 }
 
 export function resolveEffectiveBoardCatalog(params: {
@@ -294,6 +305,7 @@ export function BoardWorkspaceView({
   onDeleteFolder,
   onUpdateFolderSettings,
   onUpdateBoardItemPosition: _onUpdateBoardItemPosition,
+  onMoveBoardItemToContainer,
   onCreateMarkdownDocument: _onCreateMarkdownDocument,
   onUploadBoardAsset,
   onLoadMore,
@@ -474,6 +486,23 @@ export function BoardWorkspaceView({
     () => [...persistedBoardItems, ...assetPlaceholders].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)),
     [assetPlaceholders, persistedBoardItems],
   );
+  const runbookMoveTargets = useMemo<RunbookMoveTarget[]>(() => {
+    if (!effectiveCatalog || !resolvedBoardFolderId) return [];
+    return (effectiveCatalog.boardItems ?? [])
+      .filter((item) =>
+        item.itemType === "runbook" &&
+        item.folderId === resolvedBoardFolderId &&
+        (item.containerKind ?? "folder") === "folder" &&
+        (item.containerId ?? item.folderId) === resolvedBoardFolderId
+      )
+      .map((item) => ({
+        id: item.itemId,
+        title: typeof item.metadata?.title === "string" && item.metadata.title.trim()
+          ? item.metadata.title
+          : item.itemId,
+      }))
+      .sort((a, b) => a.title.localeCompare(b.title));
+  }, [effectiveCatalog, resolvedBoardFolderId]);
   const allBoardItems = useMemo(
     () => [...allPersistedBoardItems, ...assetPlaceholders].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)),
     [allPersistedBoardItems, assetPlaceholders],
@@ -705,6 +734,23 @@ export function BoardWorkspaceView({
     removeBoardItem(frame.boardItemId);
     clearBoardSelection();
   }, [boardSync.runtime, clearBoardSelection, removeBoardItem]);
+
+  const moveBoardItemToContainer = useCallback(async (
+    item: Extract<BoardWorkspaceItem, { type: "session" | "markdown" | "asset" | "custom_view" }>,
+    target: BoardContainerRef,
+  ) => {
+    if (!onMoveBoardItemToContainer) return;
+    await onMoveBoardItemToContainer({
+      boardItemId: item.boardItemId,
+      container: target,
+      x: item.x,
+      y: item.y,
+      idempotencyKey: createBoardMoveIdempotencyKey(item.boardItemId, target),
+    });
+    boardSync.runtime?.deleteBoardItem(item.boardItemId);
+    removeBoardItem(item.boardItemId);
+    clearBoardSelection();
+  }, [boardSync.runtime, clearBoardSelection, onMoveBoardItemToContainer, removeBoardItem]);
 
   useEffect(() => {
     if (!boardSync.connectionError) return;
@@ -1050,6 +1096,9 @@ export function BoardWorkspaceView({
             cardContextMenu={cardContextMenu}
             displaySessions={displaySessions}
             folders={folders}
+            boardContainer={boardContainer}
+            resolvedBoardFolderId={resolvedBoardFolderId}
+            runbookMoveTargets={runbookMoveTargets}
             activeBoardDocumentId={activeBoardDocumentId}
             boardYjsRuntime={boardSync.runtime}
             canCreateBoardItems={canCreateBoardItems}
@@ -1062,6 +1111,7 @@ export function BoardWorkspaceView({
             onRenameFrame={renameFrame}
             onToggleFrameCollapsed={toggleFrameCollapsed}
             onDeleteFrame={deleteFrame}
+            onMoveBoardItemToContainer={moveBoardItemToContainer}
             onMoveSessions={onMoveSessions}
             onRenameSession={onRenameSession}
             onDeleteSessions={onDeleteSessions}

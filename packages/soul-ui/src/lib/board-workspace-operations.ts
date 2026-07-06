@@ -2,6 +2,7 @@ import type { BoardContainerRef, CatalogBoardItem, MarkdownDocument } from "../s
 
 export interface BoardWorkspaceApiConfig {
   updateBoardItemPositionUrl: (id: string) => string;
+  moveBoardItemToContainerUrl: (id: string) => string;
   createMarkdownDocumentUrl: string;
   initBoardAssetUrl: (target: BoardAssetUrlTarget) => string;
   commitBoardAssetUrl: (target: BoardAssetUrlTarget, assetId: string) => string;
@@ -23,6 +24,19 @@ export interface CreateMarkdownDocumentRequest {
 
 export interface CreateMarkdownDocumentResponse {
   document: MarkdownDocument;
+  boardItem: CatalogBoardItem;
+}
+
+export interface MoveBoardItemToContainerInput {
+  boardItemId: string;
+  container: BoardContainerRef;
+  x?: number;
+  y?: number;
+  idempotencyKey: string;
+}
+
+export interface MoveBoardItemToContainerResponse {
+  ok: true;
   boardItem: CatalogBoardItem;
 }
 
@@ -65,6 +79,9 @@ interface UploadedPart {
 
 export interface BoardWorkspaceOperations {
   updateBoardItemPosition: (boardItemId: string, x: number, y: number) => Promise<void>;
+  moveBoardItemToContainer: (
+    input: MoveBoardItemToContainerInput,
+  ) => Promise<MoveBoardItemToContainerResponse>;
   createMarkdownDocument: (
     input: CreateMarkdownDocumentRequest,
   ) => Promise<CreateMarkdownDocumentResponse>;
@@ -115,6 +132,25 @@ export function createBoardWorkspaceOperations(
     if (!res.ok) {
       throw new Error(`Update board item position failed: ${res.status}`);
     }
+  }
+
+  async function moveBoardItemToContainer(
+    input: MoveBoardItemToContainerInput,
+  ): Promise<MoveBoardItemToContainerResponse> {
+    const res = await fetch(config.moveBoardItemToContainerUrl(input.boardItemId), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        container: input.container,
+        x: input.x,
+        y: input.y,
+        idempotencyKey: input.idempotencyKey,
+      }),
+    });
+    if (!res.ok) {
+      throw new Error(`Move board item to container failed: ${res.status}`);
+    }
+    return await res.json() as MoveBoardItemToContainerResponse;
   }
 
   async function createMarkdownDocument(
@@ -218,5 +254,10 @@ export function createBoardWorkspaceOperations(
     return await commitBoardAsset(input, init.assetId, parts);
   }
 
-  return { updateBoardItemPosition, createMarkdownDocument, uploadBoardAsset };
+  return {
+    updateBoardItemPosition,
+    moveBoardItemToContainer,
+    createMarkdownDocument,
+    uploadBoardAsset,
+  };
 }

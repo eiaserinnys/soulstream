@@ -16,6 +16,10 @@ import {
   registerRunbookHttpRoutes,
   type RunbookHttpRouteConfig,
 } from "./runbook/runbook_http_route.js";
+import {
+  registerBoardItemHttpRoutes,
+  type BoardItemHttpRouteConfig,
+} from "./catalog/board_item_http_route.js";
 
 export interface ServerParams {
   host: string;
@@ -44,6 +48,8 @@ export interface ServerParams {
   boardYjs?: BoardYjsRouteConfig;
   /** Runbook dashboard write routes. */
   runbook?: RunbookHttpRouteConfig;
+  /** Board item dashboard write routes. */
+  boardItem?: BoardItemHttpRouteConfig;
 }
 
 export type ServerInstance = FastifyInstance & {
@@ -93,6 +99,9 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
   }
   if (params.runbook) {
     registerRunbookHttpRoutes(fastify, params.runbook);
+  }
+  if (params.boardItem) {
+    registerBoardItemHttpRoutes(fastify, params.boardItem);
   }
 
   return fastify;

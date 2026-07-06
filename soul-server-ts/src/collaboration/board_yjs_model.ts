@@ -36,6 +36,12 @@ export interface BoardYjsReplica {
   markdownDocuments: MarkdownDocumentRow[];
 }
 
+export interface MovedBoardYjsItem {
+  boardItem: CatalogBoardItemRow;
+  value: BoardYjsItemValue;
+  markdownBody?: string;
+}
+
 type BoardYjsScopeInput = string | BoardYjsContainerScope;
 
 export function getBoardYjsDocumentName(folderId: string): string {
@@ -403,6 +409,68 @@ export function upsertCustomViewYjsBoardItem(
 
 export function deleteBoardYjsItem(doc: Y.Doc, boardItemId: string): void {
   doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP).delete(boardItemId);
+}
+
+export function readMovableBoardYjsItem(
+  doc: Y.Doc,
+  boardItemId: string,
+  targetScope: BoardYjsContainerScope,
+  position?: { x: number; y: number },
+): MovedBoardYjsItem | null {
+  const boardItems = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
+  const current = boardItems.get(boardItemId);
+  if (!current) return null;
+  const now = new Date().toISOString();
+  const value: BoardYjsItemValue = {
+    ...current,
+    x: position?.x ?? Number(current.x),
+    y: position?.y ?? Number(current.y),
+    membership_kind: current.membership_kind ?? "primary",
+    updated_at: now,
+  };
+  const markdownBody = current.item_type === "markdown"
+    ? doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP).get(current.item_id)?.toString() ?? ""
+    : undefined;
+  return {
+    boardItem: {
+      id: boardItemId,
+      folderId: targetScope.folderId,
+      containerKind: targetScope.containerKind,
+      containerId: targetScope.containerId,
+      membershipKind: value.membership_kind ?? "primary",
+      sourceRunbookItemId: value.source_runbook_item_id ?? null,
+      itemType: value.item_type,
+      itemId: value.item_id,
+      x: value.x,
+      y: value.y,
+      metadata: value.metadata ?? {},
+      ...(current.created_at ? { createdAt: current.created_at } : {}),
+      updatedAt: now,
+    },
+    value,
+    ...(markdownBody !== undefined ? { markdownBody } : {}),
+  };
+}
+
+export function upsertMovedBoardYjsItem(
+  doc: Y.Doc,
+  moved: MovedBoardYjsItem,
+): void {
+  doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP).set(moved.boardItem.id, moved.value);
+  if (moved.value.item_type !== "markdown") return;
+  const text = getOrCreateMarkdownText(doc, moved.value.item_id);
+  text.delete(0, text.length);
+  text.insert(0, moved.markdownBody ?? "");
+}
+
+export function deleteMovedBoardYjsItem(
+  doc: Y.Doc,
+  moved: MovedBoardYjsItem,
+): void {
+  deleteBoardYjsItem(doc, moved.boardItem.id);
+  if (moved.value.item_type === "markdown") {
+    doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP).delete(moved.value.item_id);
+  }
 }
 
 export function upsertBoardYjsItem(doc: Y.Doc, boardItem: CatalogBoardItemRow): void {

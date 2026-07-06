@@ -1394,6 +1394,84 @@ describe("BoardWorkspaceView", () => {
     expect(document.body.textContent).toContain("이 세션을 이어서 시작하기");
   });
 
+  it("moves an existing markdown tile into a runbook board from the context menu", async () => {
+    seedRunbookProjection("rb-1");
+    const onMoveBoardItemToContainer = vi.fn(async () => ({
+      ok: true as const,
+      boardItem: {
+        id: "markdown:doc-a",
+        folderId: "root",
+        containerKind: "runbook" as const,
+        containerId: "rb-1",
+        itemType: "markdown" as const,
+        itemId: "doc-a",
+        x: 360,
+        y: 80,
+        metadata: { title: "Design note" },
+      },
+    }));
+    ({ container, root } = renderBoard({ onMoveBoardItemToContainer }, {
+      catalog: {
+        ...catalog,
+        boardItems: [
+          ...(catalog.boardItems ?? []),
+          {
+            id: "runbook:rb-1",
+            folderId: "root",
+            containerKind: "folder",
+            containerId: "root",
+            itemType: "runbook",
+            itemId: "rb-1",
+            x: 680,
+            y: 80,
+            metadata: { title: "Deploy Runbook" },
+          },
+        ],
+      },
+    }));
+
+    const markdownTile = container.querySelector<HTMLElement>('[data-testid="board-markdown-tile"]');
+    expect(markdownTile).not.toBeNull();
+    flushSync(() => {
+      markdownTile!.dispatchEvent(new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 50360,
+        clientY: 50080,
+      }));
+    });
+
+    const moveAction = findButtonByText(document.body, "런북 보드로 이동...");
+    expect(moveAction).not.toBeUndefined();
+    flushSync(() => {
+      moveAction!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await Promise.resolve();
+
+    const modal = document.body.querySelector<HTMLElement>("#board-runbook-move-target");
+    expect(modal).not.toBeNull();
+    const runbookTarget = findButtonByText(modal!, "Deploy Runbook");
+    expect(runbookTarget).not.toBeUndefined();
+    flushSync(() => {
+      runbookTarget!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const submit = findButtonByText(document.body, "이동");
+    expect(submit).not.toBeUndefined();
+    flushSync(() => {
+      submit!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onMoveBoardItemToContainer).toHaveBeenCalledWith(expect.objectContaining({
+      boardItemId: "markdown:doc-a",
+      container: { kind: "runbook", id: "rb-1" },
+      x: 360,
+      y: 80,
+    }));
+    expect(useDashboardStore.getState().catalog?.boardItems?.some((item) => item.id === "markdown:doc-a")).toBe(false);
+  });
+
   it("marks the selected board card with a visible ring", () => {
     ({ container, root } = renderBoard());
 

@@ -52,6 +52,7 @@ const EXPECTED_TOOLS = [
   "delete_folder",
   "move_sessions_to_folder",
   "update_board_item_position",
+  "move_board_item_to_container",
   "create_markdown_document",
   "get_markdown_document",
   "update_markdown_document",

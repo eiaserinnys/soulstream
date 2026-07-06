@@ -1,6 +1,11 @@
 import type { CatalogBoardItem, CatalogFolder, FolderSettings, MarkdownDocument, SessionSummary } from "../shared/types";
 import type { LoadMoreCallback } from "../components/load-more-guard";
-import type { BoardAssetCommitResponse, UploadBoardAssetInput } from "../lib/board-workspace-operations";
+import type {
+  BoardAssetCommitResponse,
+  MoveBoardItemToContainerInput,
+  MoveBoardItemToContainerResponse,
+  UploadBoardAssetInput,
+} from "../lib/board-workspace-operations";
 import type { FolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 
 export interface CreateMarkdownDocumentInput {
@@ -28,6 +33,9 @@ export interface BoardWorkspaceViewProps {
   onDeleteFolder?: (folderId: string) => Promise<void> | void;
   onUpdateFolderSettings?: (folderId: string, settings: FolderSettings) => Promise<void> | void;
   onUpdateBoardItemPosition?: (boardItemId: string, x: number, y: number) => Promise<void> | void;
+  onMoveBoardItemToContainer?: (
+    input: MoveBoardItemToContainerInput,
+  ) => Promise<MoveBoardItemToContainerResponse>;
   onCreateMarkdownDocument?: (input: CreateMarkdownDocumentInput) => Promise<CreateMarkdownDocumentResult>;
   onUploadBoardAsset?: (input: UploadBoardAssetInput) => Promise<BoardAssetCommitResponse>;
   onLoadMore?: LoadMoreCallback;

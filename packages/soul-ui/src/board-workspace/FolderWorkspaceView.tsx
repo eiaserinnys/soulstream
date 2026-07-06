@@ -27,6 +27,7 @@ export interface FolderWorkspaceViewProps {
   onDeleteFolder?: (folderId: string) => Promise<void> | void;
   onUpdateFolderSettings?: (folderId: string, settings: FolderSettings) => Promise<void> | void;
   onUpdateBoardItemPosition?: (boardItemId: string, x: number, y: number) => Promise<void> | void;
+  onMoveBoardItemToContainer?: BoardWorkspaceViewProps["onMoveBoardItemToContainer"];
   onCreateMarkdownDocument?: (
     input: CreateMarkdownDocumentInput,
   ) => Promise<CreateMarkdownDocumentResult>;
@@ -47,6 +48,7 @@ export function FolderWorkspaceView({
   onDeleteFolder,
   onUpdateFolderSettings,
   onUpdateBoardItemPosition,
+  onMoveBoardItemToContainer,
   onCreateMarkdownDocument,
   onUploadBoardAsset,
   onLoadMore,
@@ -136,6 +138,7 @@ export function FolderWorkspaceView({
         onDeleteFolder={onDeleteFolder}
         onUpdateFolderSettings={onUpdateFolderSettings}
         onUpdateBoardItemPosition={onUpdateBoardItemPosition}
+        onMoveBoardItemToContainer={onMoveBoardItemToContainer}
         onCreateMarkdownDocument={onCreateMarkdownDocument}
         onUploadBoardAsset={onUploadBoardAsset}
         onLoadMore={onLoadMore}

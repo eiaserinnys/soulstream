@@ -229,6 +229,115 @@ class TestBoardItems:
         assert resp.json() == {"ok": True}
         mock_catalog_service.update_board_item_position.assert_called_once_with("session:s1", 59, 101)
 
+    async def test_move_board_item_to_container_proxies_to_connected_ts_node(
+        self,
+        client,
+        mock_catalog_service,
+        node_manager,
+    ):
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        node = await node_manager.register_node(
+            ws,
+            {
+                "node_id": "node-board",
+                "host": "localhost",
+                "port": 4105,
+                "agents": [],
+            },
+        )
+        mock_catalog_service.get_catalog.return_value = {
+            "folders": [{"id": "root", "name": "Root", "sortOrder": 0}],
+            "sessions": {},
+            "boardItems": [
+                {
+                    "id": "markdown:doc-a",
+                    "folderId": "root",
+                    "itemType": "markdown",
+                    "itemId": "doc-a",
+                    "x": 360,
+                    "y": 80,
+                    "metadata": {"title": "Design note"},
+                },
+                {
+                    "id": "runbook:rb-1",
+                    "folderId": "root",
+                    "itemType": "runbook",
+                    "itemId": "rb-1",
+                    "x": 680,
+                    "y": 80,
+                    "metadata": {"title": "Deploy Runbook"},
+                },
+            ],
+        }
+        mock_resp = _make_response(200, {
+            "ok": True,
+            "boardItem": {
+                "id": "markdown:doc-a",
+                "folderId": "root",
+                "containerKind": "runbook",
+                "containerId": "rb-1",
+                "itemType": "markdown",
+                "itemId": "doc-a",
+                "x": 360,
+                "y": 80,
+                "metadata": {"title": "Design note"},
+            },
+        })
+
+        with patch("soulstream_server.api.catalog.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.patch = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.patch(
+                "/api/board-items/markdown:doc-a/container",
+                json={
+                    "container": {"kind": "runbook", "id": "rb-1"},
+                    "x": 360,
+                    "y": 80,
+                    "idempotencyKey": "move-1",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+        called_url, called_kwargs = mock_client.patch.call_args
+        assert called_url[0] == (
+            f"http://{node.host}:{node.port}"
+            "/api/board-items/markdown%3Adoc-a/container"
+        )
+        assert called_kwargs["headers"]["authorization"] == f"Bearer {TEST_AUTH_TOKEN}"
+        assert called_kwargs["json"] == {
+            "container": {"kind": "runbook", "id": "rb-1"},
+            "x": 360.0,
+            "y": 80.0,
+            "idempotencyKey": "move-1",
+        }
+
+    async def test_move_board_item_to_container_rejects_missing_source(
+        self,
+        client,
+        mock_catalog_service,
+    ):
+        mock_catalog_service.get_catalog.return_value = {
+            "folders": [],
+            "sessions": {},
+            "boardItems": [],
+        }
+
+        resp = await client.patch(
+            "/api/board-items/missing/container",
+            json={
+                "container": {"kind": "folder", "id": "root"},
+                "idempotencyKey": "move-1",
+            },
+        )
+
+        assert resp.status_code == 404
+        assert resp.json()["detail"] == "Board item not found"
+
 
 class TestRunbooks:
     """Runbook read API tests."""

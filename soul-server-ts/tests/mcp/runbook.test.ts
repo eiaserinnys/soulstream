@@ -29,6 +29,7 @@ function createSilentLogger() {
 }
 
 function makeRuntime(params: {
+  catalogService?: Record<string, unknown>;
   runbookService?: Record<string, unknown>;
   customViewService?: Record<string, unknown>;
 } = {}): McpRuntime {
@@ -42,7 +43,7 @@ function makeRuntime(params: {
     } as unknown as TaskManager,
     taskExecutor: {} as TaskExecutor,
     agentRegistry: new AgentRegistry([]),
-    catalogService: {} as CatalogService,
+    catalogService: (params.catalogService ?? {}) as CatalogService,
     runbookService: params.runbookService as never,
     customViewService: params.customViewService as never,
     logger: createSilentLogger(),
@@ -132,6 +133,53 @@ describe("runbook MCP tools", () => {
       "list_my_turn_items",
       "list_runbook_operations",
     ]));
+  });
+
+  it("moves board items between board containers through the catalog MCP tool", async () => {
+    const catalogService = {
+      moveBoardItemToContainer: vi.fn(async () => ({
+        id: "markdown:doc-1",
+        folderId: "folder-1",
+        containerKind: "runbook",
+        containerId: "rb-1",
+        membershipKind: "primary",
+        sourceRunbookItemId: null,
+        itemType: "markdown",
+        itemId: "doc-1",
+        x: 120,
+        y: 240,
+        metadata: { title: "Note" },
+      })),
+    };
+    const client = await createClient(makeRuntime({ catalogService }));
+
+    const result = await client.callTool({
+      name: "move_board_item_to_container",
+      arguments: {
+        board_item_id: "markdown:doc-1",
+        container: { kind: "runbook", id: "rb-1" },
+        x: 121,
+        y: 239,
+        idempotency_key: "move-1",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      idempotency_key: "move-1",
+      board_item: {
+        id: "markdown:doc-1",
+        containerKind: "runbook",
+        containerId: "rb-1",
+      },
+    });
+    expect(catalogService.moveBoardItemToContainer).toHaveBeenCalledWith({
+      boardItemId: "markdown:doc-1",
+      target: { containerKind: "runbook", containerId: "rb-1" },
+      position: { x: 121, y: 239 },
+      idempotencyKey: "move-1",
+    });
   });
 
   it("uses caller session header as actor_kind='agent' for mutations", async () => {

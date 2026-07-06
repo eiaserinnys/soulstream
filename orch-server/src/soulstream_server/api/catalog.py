@@ -8,7 +8,7 @@ workspace data under `/api/board-items` and `/api/markdown-documents`.
 """
 
 import logging
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 from urllib.parse import quote
 
 import httpx
@@ -31,11 +31,29 @@ from soulstream_server.dashboard_access import (
 )
 
 logger = logging.getLogger(__name__)
+_UNSUPPORTED_PATH_STATUS_CODES = {404, 405}
 
 
 class BoardItemPositionUpdate(BaseModel):
     x: float
     y: float
+
+
+class BoardContainerTarget(BaseModel):
+    kind: Literal["folder", "runbook"]
+    id: str = Field(..., min_length=1)
+
+
+class BoardItemContainerMove(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    container: BoardContainerTarget
+    x: Optional[float] = None
+    y: Optional[float] = None
+    idempotency_key: str = Field(
+        ...,
+        validation_alias=AliasChoices("idempotencyKey", "idempotency_key"),
+    )
 
 
 class MarkdownDocumentCreate(BaseModel):
@@ -211,6 +229,46 @@ def create_catalog_router(
         dependencies=dependencies or [],
     )
 
+    async def _request_first_supported_node(
+        request: Request,
+        method: Literal["PATCH"],
+        path: str,
+        *,
+        json_body: dict[str, Any],
+    ) -> tuple[httpx.Response, Any] | None:
+        if node_manager is None:
+            return None
+        nodes = node_manager.get_connected_nodes()
+        if not nodes:
+            return None
+
+        headers = forward_auth_headers(request)
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for node in nodes:
+                url = f"http://{node.host}:{node.port}{path}"
+                try:
+                    resp = await client.patch(url, json=json_body, headers=headers)
+                except httpx.RequestError as exc:
+                    logger.warning(
+                        "%s 프록시 연결 실패, 다음 노드 시도: node=%s url=%s error=%s",
+                        path,
+                        node.node_id,
+                        url,
+                        exc,
+                    )
+                    continue
+                if resp.status_code in _UNSUPPORTED_PATH_STATUS_CODES:
+                    logger.info(
+                        "%s 미지원 노드 건너뜀: node=%s status=%d",
+                        path,
+                        node.node_id,
+                        resp.status_code,
+                    )
+                    continue
+                return resp, node
+
+        return None
+
     @router.get("/board-items")
     async def list_board_items(
         request: Request,
@@ -266,6 +324,62 @@ def create_catalog_router(
             require_folder_allowed(access, folders, board_item.get("folderId"))
         await catalog_service.update_board_item_position(board_item_id, body.x, body.y)
         return {"ok": True}
+
+    @router.patch("/board-items/{board_item_id}/container")
+    async def move_board_item_to_container(
+        request: Request,
+        board_item_id: str,
+        body: BoardItemContainerMove,
+    ):
+        if (body.x is None) != (body.y is None):
+            raise HTTPException(status_code=422, detail="x and y must be supplied together")
+        catalog = await catalog_service.get_catalog()
+        folders = catalog.get("folders") if isinstance(catalog.get("folders"), list) else []
+        board_items = catalog.get("boardItems") if isinstance(catalog.get("boardItems"), list) else []
+        board_item = next(
+            (item for item in board_items if isinstance(item, dict) and item.get("id") == board_item_id),
+            None,
+        )
+        if board_item is None:
+            raise HTTPException(status_code=404, detail="Board item not found")
+
+        access = access_for_request(request)
+        require_folder_allowed(access, folders, board_item.get("folderId"))
+        target_folder_id = await _resolve_board_container_folder_id(
+            catalog_service,
+            body.container.kind,
+            body.container.id,
+        )
+        require_folder_allowed(access, folders, target_folder_id)
+
+        payload: dict[str, Any] = {
+            "container": {
+                "kind": body.container.kind,
+                "id": body.container.id,
+            },
+            "idempotencyKey": body.idempotency_key,
+        }
+        if body.x is not None and body.y is not None:
+            payload["x"] = body.x
+            payload["y"] = body.y
+
+        result = await _request_first_supported_node(
+            request,
+            "PATCH",
+            f"/api/board-items/{quote(board_item_id, safe='')}/container",
+            json_body=payload,
+        )
+        if not result:
+            raise HTTPException(status_code=503, detail="Board item container move is unavailable")
+        resp, _node = result
+        content_type = resp.headers.get("content-type", "")
+        if "application/json" in content_type:
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type=content_type or None,
+        )
 
     @router.post("/markdown-documents", status_code=201)
     async def create_markdown_document(body: MarkdownDocumentCreate, request: Request) -> dict:

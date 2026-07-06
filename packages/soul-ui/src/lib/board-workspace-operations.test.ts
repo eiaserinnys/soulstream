@@ -47,6 +47,7 @@ class MockXMLHttpRequest {
 function makeOperations() {
   return createBoardWorkspaceOperations({
     updateBoardItemPositionUrl: (id) => `/api/board-items/${id}/position`,
+    moveBoardItemToContainerUrl: (id) => `/api/board-items/${id}/container`,
     createMarkdownDocumentUrl: "/api/markdown-documents",
     initBoardAssetUrl: (target) => target.container.kind === "folder"
       ? `/api/board/${target.folderId}/assets/init`
@@ -101,6 +102,43 @@ describe("createBoardWorkspaceOperations asset upload", () => {
         body: "body",
         x: 40,
         y: 80,
+      }),
+    }));
+  });
+
+  it("moves board items to a target container", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({
+      ok: true,
+      boardItem: {
+        id: "markdown:doc-1",
+        folderId: "root",
+        containerKind: "runbook",
+        containerId: "rb-1",
+        itemType: "markdown",
+        itemId: "doc-1",
+        x: 120,
+        y: 240,
+        metadata: {},
+      },
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await makeOperations().moveBoardItemToContainer({
+      boardItemId: "markdown:doc-1",
+      container: { kind: "runbook", id: "rb-1" },
+      x: 120,
+      y: 240,
+      idempotencyKey: "move-1",
+    });
+
+    expect(result.boardItem.containerKind).toBe("runbook");
+    expect(fetchMock).toHaveBeenCalledWith("/api/board-items/markdown:doc-1/container", expect.objectContaining({
+      method: "PATCH",
+      body: JSON.stringify({
+        container: { kind: "runbook", id: "rb-1" },
+        x: 120,
+        y: 240,
+        idempotencyKey: "move-1",
       }),
     }));
   });
