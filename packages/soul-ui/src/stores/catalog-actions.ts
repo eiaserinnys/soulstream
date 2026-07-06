@@ -5,7 +5,13 @@
  * 각 함수는 현재 CatalogState를 받아 새 CatalogState를 반환한다.
  */
 
-import type { CatalogState, CatalogFolder, CatalogFolderReorderItem, CatalogBoardItem } from "@shared/types";
+import type {
+  BoardContainerRef,
+  CatalogState,
+  CatalogFolder,
+  CatalogFolderReorderItem,
+  CatalogBoardItem,
+} from "@shared/types";
 
 export function moveSessionsInCatalog(
   catalog: CatalogState,
@@ -111,9 +117,22 @@ export function setBoardItemsForFolderInCatalog(
   folderId: string,
   boardItems: CatalogBoardItem[],
 ): CatalogState {
+  return setBoardItemsForContainerInCatalog(catalog, { kind: "folder", id: folderId }, boardItems);
+}
+
+export function setBoardItemsForContainerInCatalog(
+  catalog: CatalogState,
+  container: BoardContainerRef,
+  boardItems: CatalogBoardItem[],
+): CatalogState {
   const current = catalog.boardItems ?? [];
-  const otherFolders = current.filter((item) => item.folderId !== folderId);
-  return { ...catalog, boardItems: [...otherFolders, ...boardItems] };
+  const otherContainers = current.filter((item) => !boardItemBelongsToContainer(item, container));
+  const normalizedBoardItems = boardItems.map((item) => ({
+    ...item,
+    containerKind: item.containerKind ?? container.kind,
+    containerId: item.containerId ?? container.id,
+  }));
+  return { ...catalog, boardItems: [...otherContainers, ...normalizedBoardItems] };
 }
 
 export function updateBoardItemPositionInCatalog(
@@ -160,4 +179,13 @@ export function reorderFoldersInCatalog(
       };
     }),
   };
+}
+
+function boardItemBelongsToContainer(
+  item: CatalogBoardItem,
+  container: BoardContainerRef,
+): boolean {
+  const itemContainerKind = item.containerKind ?? "folder";
+  const itemContainerId = item.containerId ?? item.folderId;
+  return itemContainerKind === container.kind && itemContainerId === container.id;
 }

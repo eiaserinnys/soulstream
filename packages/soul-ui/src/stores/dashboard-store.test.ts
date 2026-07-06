@@ -2236,6 +2236,22 @@ describe("dashboard-store", () => {
       const state = useDashboardStore.getState();
       expect(state.viewMode).toBe("folder");
       expect(state.selectedFolderId).toBe("folder-1");
+      expect(state.activeBoardContainer).toEqual({ kind: "folder", id: "folder-1" });
+      expect(state.leftNavigationMode).toBe("folders");
+    });
+
+    it("openRunbookBoard 호출 시 폴더 선택과 보드 렌더 컨테이너를 분리한다", () => {
+      useDashboardStore.getState().selectFolder("folder-1");
+      useDashboardStore.getState().focusBoardItem("runbook:rb-1", "folder-1");
+
+      useDashboardStore.getState().openRunbookBoard("rb-1", "folder-1");
+
+      const state = useDashboardStore.getState();
+      expect(state.selectedFolderId).toBe("folder-1");
+      expect(state.activeBoardContainer).toEqual({ kind: "runbook", id: "rb-1" });
+      expect(state.focusedBoardItem).toBeNull();
+      expect(state.viewMode).toBe("folder");
+      expect(state.activeTab).toBe("folder");
       expect(state.leftNavigationMode).toBe("folders");
     });
 

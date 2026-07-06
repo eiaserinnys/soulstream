@@ -255,6 +255,42 @@ describe("RunbookCard", () => {
     expect(itemRow!.className).toContain("glass");
   });
 
+  it("renders a runbook board affordance that does not arm tile dragging", () => {
+    const onOpenBoard = vi.fn();
+    const onParentPointerDown = vi.fn();
+    useRunbookStore.setState({
+      byId: {
+        "rb-1": {
+          snapshot: sampleSnapshot(),
+          status: "ready",
+          error: null,
+          isRefreshing: false,
+        },
+      },
+    });
+
+    flushSync(() => {
+      root.render(createElement(
+        "div",
+        { onPointerDown: onParentPointerDown },
+        createElement(RunbookCard, {
+          runbookId: "rb-1",
+          fallbackTitle: "Fallback",
+          onOpenBoard,
+        }),
+      ));
+    });
+
+    const openBoard = container.querySelector<HTMLButtonElement>('[data-testid="runbook-card-open-board"]');
+    expect(openBoard).not.toBeNull();
+
+    openBoard!.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
+    openBoard!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+
+    expect(onParentPointerDown).not.toHaveBeenCalled();
+    expect(onOpenBoard).toHaveBeenCalledWith("rb-1");
+  });
+
   it("shows the reason when a human checkbox has no session provenance", () => {
     const noSessionSnapshot = sampleSnapshot();
     noSessionSnapshot.runbook = {

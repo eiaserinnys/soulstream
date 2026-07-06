@@ -3,9 +3,11 @@ import { HocuspocusProvider } from "@hocuspocus/provider";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
-import type { CatalogBoardItem, CatalogState, MarkdownDocument } from "../shared/types";
+import type { BoardContainerRef, CatalogBoardItem, CatalogState, MarkdownDocument } from "../shared/types";
 
-export const BOARD_YJS_PREFIX = "board-folder:";
+export const BOARD_YJS_LEGACY_FOLDER_PREFIX = "board-folder:";
+export const BOARD_YJS_CONTAINER_PREFIX = "board:";
+export const BOARD_YJS_PREFIX = BOARD_YJS_LEGACY_FOLDER_PREFIX;
 export const BOARD_ITEMS_MAP = "boardItems";
 export const MARKDOWN_BODIES_MAP = "markdownBodies";
 
@@ -29,6 +31,8 @@ export type BoardYjsConnectionStatus = "connected" | "disconnected" | "reconnect
 
 export interface BoardYjsRuntime {
   folderId: string;
+  container: BoardContainerRef;
+  containerKey: string;
   doc: Y.Doc;
   awareness: Awareness;
   isProviderBacked: boolean;
@@ -51,16 +55,37 @@ export interface BoardYjsRuntime {
   getRemoteSelections: () => RemoteBoardSelection[];
 }
 
-const runtimeByFolder = new Map<string, BoardYjsRuntime>();
+type BoardContainerInput = string | BoardContainerRef;
+
+const runtimeByContainer = new Map<string, BoardYjsRuntime>();
 const registryListeners = new Set<() => void>();
 
-export function getBoardYjsDocumentName(folderId: string): string {
-  return `${BOARD_YJS_PREFIX}${folderId}`;
+export function getBoardContainerKey(container: BoardContainerRef): string {
+  return `${container.kind}:${container.id}`;
 }
 
-export function buildBoardYjsUrl(folderId: string, locationLike: Location = window.location): string {
+export function folderBoardContainer(folderId: string): BoardContainerRef {
+  return { kind: "folder", id: folderId };
+}
+
+export function getBoardYjsDocumentName(containerInput: BoardContainerInput): string {
+  const container = normalizeBoardContainer(containerInput);
+  if (container.kind === "folder") {
+    return `${BOARD_YJS_LEGACY_FOLDER_PREFIX}${container.id}`;
+  }
+  return `${BOARD_YJS_CONTAINER_PREFIX}${container.kind}:${container.id}`;
+}
+
+export function buildBoardYjsUrl(
+  containerInput: BoardContainerInput,
+  locationLike: Location = window.location,
+): string {
+  const container = normalizeBoardContainer(containerInput);
   const protocol = locationLike.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${locationLike.host}/yjs/${encodeURIComponent(folderId)}`;
+  if (container.kind === "folder") {
+    return `${protocol}//${locationLike.host}/yjs/${encodeURIComponent(container.id)}`;
+  }
+  return `${protocol}//${locationLike.host}/yjs/${encodeURIComponent(container.kind)}/${encodeURIComponent(container.id)}`;
 }
 
 export function isBoardYjsBrowserConnectionAvailable(locationLike: Location = window.location): boolean {
@@ -73,12 +98,20 @@ export function isBoardYjsBrowserConnectionAvailable(locationLike: Location = wi
   );
 }
 
-export function catalogBoardItemsFromYDoc(folderId: string, doc: Y.Doc): CatalogBoardItem[] {
+export function catalogBoardItemsFromYDoc(
+  containerInput: BoardContainerInput,
+  doc: Y.Doc,
+  resolvedFolderId?: string | null,
+): CatalogBoardItem[] {
+  const container = normalizeBoardContainer(containerInput);
+  const folderId = resolveFolderIdForContainer(container, resolvedFolderId);
   const map = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
   return Array.from(map.entries())
     .map(([id, value]) => ({
       id,
       folderId,
+      containerKind: container.kind,
+      containerId: container.id,
       itemType: value.item_type,
       itemId: value.item_id,
       x: value.x,
@@ -92,10 +125,11 @@ export function catalogBoardItemsFromYDoc(folderId: string, doc: Y.Doc): Catalog
 
 export function seedBoardYDocFromCatalog(
   doc: Y.Doc,
-  folderId: string,
+  containerInput: BoardContainerInput,
   catalog: CatalogState | null,
 ): void {
-  const items = catalog?.boardItems?.filter((item) => item.folderId === folderId) ?? [];
+  const container = normalizeBoardContainer(containerInput);
+  const items = catalog?.boardItems?.filter((item) => boardItemBelongsToContainer(item, container)) ?? [];
   const map = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
   doc.transact(() => {
     for (const item of items) {
@@ -134,9 +168,12 @@ export function deleteBoardYjsItem(doc: Y.Doc, boardItemId: string): void {
 
 export function createMarkdownYjsDocument(
   doc: Y.Doc,
-  folderId: string,
+  containerInput: BoardContainerInput,
   input: { title: string; body: string; x: number; y: number; documentId?: string },
+  resolvedFolderId?: string | null,
 ): { document: MarkdownDocument; boardItem: CatalogBoardItem } {
+  const container = normalizeBoardContainer(containerInput);
+  const folderId = resolveFolderIdForContainer(container, resolvedFolderId);
   const documentId = input.documentId ?? createDocumentId();
   const title = input.title.trim() || "Untitled document";
   const body = input.body;
@@ -146,6 +183,8 @@ export function createMarkdownYjsDocument(
   const boardItem: CatalogBoardItem = {
     id: `markdown:${documentId}`,
     folderId,
+    containerKind: container.kind,
+    containerId: container.id,
     itemType: "markdown",
     itemId: documentId,
     x: input.x,
@@ -232,18 +271,22 @@ export function readRemoteBoardSelections(awareness: Awareness): RemoteBoardSele
 }
 
 export function registerBoardYjsRuntime(runtime: BoardYjsRuntime): () => void {
-  runtimeByFolder.set(runtime.folderId, runtime);
+  runtimeByContainer.set(runtime.containerKey, runtime);
   emitRegistryChange();
   return () => {
-    if (runtimeByFolder.get(runtime.folderId) === runtime) {
-      runtimeByFolder.delete(runtime.folderId);
+    if (runtimeByContainer.get(runtime.containerKey) === runtime) {
+      runtimeByContainer.delete(runtime.containerKey);
       emitRegistryChange();
     }
   };
 }
 
-export function getBoardYjsRuntime(folderId: string | null | undefined): BoardYjsRuntime | null {
-  return folderId ? runtimeByFolder.get(folderId) ?? null : null;
+export function getBoardYjsRuntime(
+  containerInput: BoardContainerInput | null | undefined,
+): BoardYjsRuntime | null {
+  if (!containerInput) return null;
+  const container = normalizeBoardContainer(containerInput);
+  return runtimeByContainer.get(getBoardContainerKey(container)) ?? null;
 }
 
 export function subscribeBoardYjsRuntime(listener: () => void): () => void {
@@ -261,6 +304,8 @@ export function placeBoardSessionInYjs(
   runtime.upsertBoardItem({
     id: `session:${sessionId}`,
     folderId,
+    containerKind: "folder",
+    containerId: folderId,
     itemType: "session",
     itemId: sessionId,
     x: position.x,
@@ -270,7 +315,8 @@ export function placeBoardSessionInYjs(
 }
 
 export function useBoardYjsRuntime(params: {
-  folderId: string | null;
+  container: BoardContainerRef | null;
+  resolvedFolderId?: string | null;
   catalog: CatalogState | null;
   selectionItemId: string | null;
   localSelectionColor?: string;
@@ -283,7 +329,9 @@ export function useBoardYjsRuntime(params: {
   connectionStatus: BoardYjsConnectionStatus;
   connectionError: string | null;
 } {
-  const { folderId, catalog, selectionItemId, localSelectionColor = "#22c55e" } = params;
+  const { container, resolvedFolderId, catalog, selectionItemId, localSelectionColor = "#22c55e" } = params;
+  const containerKey = container ? getBoardContainerKey(container) : null;
+  const runtimeFolderId = container ? resolveFolderIdForContainer(container, resolvedFolderId) : null;
   const [state, setState] = useState<{
     runtime: BoardYjsRuntime | null;
     boardItems: CatalogBoardItem[] | null;
@@ -305,7 +353,7 @@ export function useBoardYjsRuntime(params: {
   latestCatalogRef.current = catalog;
 
   useEffect(() => {
-    if (!folderId) {
+    if (!container || !containerKey || !runtimeFolderId) {
       setState({
         runtime: null,
         boardItems: null,
@@ -329,9 +377,9 @@ export function useBoardYjsRuntime(params: {
     let hasConnected = false;
     let provider: HocuspocusProvider | null = null;
     if (!canConnect) {
-      seedBoardYDocFromCatalog(doc, folderId, latestCatalogRef.current);
+      seedBoardYDocFromCatalog(doc, container, latestCatalogRef.current);
     }
-    const runtime = createRuntime(folderId, doc, awareness, listeners, canConnect);
+    const runtime = createRuntime(container, runtimeFolderId, doc, awareness, listeners, canConnect);
     const unsubscribeRuntime = registerBoardYjsRuntime(runtime);
     const boardItemsMap = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
     const markdownBodies = doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP);
@@ -349,8 +397,8 @@ export function useBoardYjsRuntime(params: {
     };
     if (canConnect) {
       provider = new HocuspocusProvider({
-        url: buildBoardYjsUrl(folderId),
-        name: getBoardYjsDocumentName(folderId),
+        url: buildBoardYjsUrl(container),
+        name: getBoardYjsDocumentName(container),
         document: doc,
         awareness,
         token: "cookie",
@@ -396,7 +444,7 @@ export function useBoardYjsRuntime(params: {
       awareness.destroy();
       doc.destroy();
     };
-  }, [folderId]);
+  }, [containerKey, runtimeFolderId]);
 
   useEffect(() => {
     state.runtime?.setLocalSelection(selectionItemId);
@@ -411,6 +459,7 @@ export function useBoardYjsRuntime(params: {
 }
 
 function createRuntime(
+  container: BoardContainerRef,
   folderId: string,
   doc: Y.Doc,
   awareness: Awareness,
@@ -422,6 +471,8 @@ function createRuntime(
   };
   return {
     folderId,
+    container,
+    containerKey: getBoardContainerKey(container),
     doc,
     awareness,
     isProviderBacked,
@@ -429,7 +480,7 @@ function createRuntime(
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    getBoardItems: () => catalogBoardItemsFromYDoc(folderId, doc),
+    getBoardItems: () => catalogBoardItemsFromYDoc(container, doc, folderId),
     updateBoardItemPosition: (boardItemId, x, y) => {
       updateBoardYjsItemPosition(doc, boardItemId, x, y);
       notify();
@@ -443,7 +494,7 @@ function createRuntime(
       notify();
     },
     createMarkdownDocument: (input) => {
-      const created = createMarkdownYjsDocument(doc, folderId, input);
+      const created = createMarkdownYjsDocument(doc, container, input, folderId);
       notify();
       return created;
     },
@@ -462,7 +513,7 @@ function createRuntime(
       notify();
     },
     setLocalSelection: (itemId) => {
-      setBoardAwarenessSelection(awareness, itemId, selectionColorForFolder(folderId));
+      setBoardAwarenessSelection(awareness, itemId, selectionColorForContainer(container));
       notify();
     },
     getRemoteSelections: () => readRemoteBoardSelections(awareness),
@@ -517,9 +568,32 @@ function emitRegistryChange(): void {
   for (const listener of registryListeners) listener();
 }
 
-function selectionColorForFolder(folderId: string): string {
+function normalizeBoardContainer(containerInput: BoardContainerInput): BoardContainerRef {
+  if (typeof containerInput === "string") return folderBoardContainer(containerInput);
+  return containerInput;
+}
+
+function resolveFolderIdForContainer(
+  container: BoardContainerRef,
+  resolvedFolderId?: string | null,
+): string {
+  if (container.kind === "folder") return container.id;
+  return resolvedFolderId || container.id;
+}
+
+function boardItemBelongsToContainer(
+  item: CatalogBoardItem,
+  container: BoardContainerRef,
+): boolean {
+  const itemContainerKind = item.containerKind ?? "folder";
+  const itemContainerId = item.containerId ?? item.folderId;
+  return itemContainerKind === container.kind && itemContainerId === container.id;
+}
+
+function selectionColorForContainer(container: BoardContainerRef): string {
+  const seed = getBoardContainerKey(container);
   let hash = 0;
-  for (const char of folderId) {
+  for (const char of seed) {
     hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   }
   const hue = hash % 360;

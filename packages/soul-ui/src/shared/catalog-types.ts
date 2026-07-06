@@ -54,9 +54,20 @@ export type CatalogBoardItemType =
   | "frame"
   | "runbook";
 
+export type BoardContainerKind = "folder" | "runbook";
+
+export interface BoardContainerRef {
+  kind: BoardContainerKind;
+  id: string;
+}
+
 export interface CatalogBoardItem {
   id: string;
   folderId: string;
+  containerKind?: BoardContainerKind;
+  containerId?: string;
+  membershipKind?: "primary";
+  sourceRunbookItemId?: string | null;
   itemType: CatalogBoardItemType;
   itemId: string;
   x: number;

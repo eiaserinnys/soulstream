@@ -16,6 +16,7 @@ import type {
   CatalogState,
   CatalogFolder,
   CatalogBoardItem,
+  BoardContainerRef,
   CatalogFolderReorderItem,
   TokenUsage,
   TaskItem,
@@ -236,6 +237,9 @@ export interface DashboardState {
   /** 선택된 폴더 ID (null = 미분류) */
   selectedFolderId: string | null;
 
+  /** 실제 보드 렌더링 대상 컨테이너. 폴더 트리 선택과 분리한다. */
+  activeBoardContainer: BoardContainerRef | null;
+
   /** 카탈로그 변경 감지용 카운터 */
   catalogVersion: number;
 
@@ -343,6 +347,7 @@ export interface DashboardActions {
   setFeedScrollOffset: (offset: number) => void;
   focusBoardItem: (boardItemId: string, folderId: string | null) => void;
   clearFocusedBoardItem: (requestId: number) => void;
+  openRunbookBoard: (runbookId: string, parentFolderId?: string | null) => void;
 
   // 카탈로그
   setCatalog: (catalog: CatalogState) => void;
@@ -352,6 +357,7 @@ export interface DashboardActions {
   renameSession: (sessionId: string, displayName: string | null) => void;
   addFolder: (folder: CatalogFolder) => void;
   setBoardItemsForFolder: (folderId: string, boardItems: CatalogBoardItem[]) => void;
+  setBoardItemsForContainer: (container: BoardContainerRef, boardItems: CatalogBoardItem[]) => void;
   addBoardItem: (boardItem: CatalogBoardItem) => void;
   updateBoardItemPosition: (boardItemId: string, x: number, y: number) => void;
   removeBoardItem: (boardItemId: string) => void;

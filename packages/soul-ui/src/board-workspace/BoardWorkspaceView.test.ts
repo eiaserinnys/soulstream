@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogState, SessionSummary } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
+import { useRunbookStore } from "../stores/runbook-store";
 import { BoardWorkspaceView, resolveEffectiveBoardCatalog } from "./BoardWorkspaceView";
 import { FolderWorkspaceView } from "./FolderWorkspaceView";
 import { writeFolderWorkspaceViewMode } from "./folder-workspace-view-mode";
@@ -306,6 +307,7 @@ describe("BoardWorkspaceView", () => {
     container?.remove();
     root = undefined;
     container = undefined;
+    useRunbookStore.getState().reset();
     globalThis.IntersectionObserver = originalIntersectionObserver as typeof IntersectionObserver;
     window.matchMedia = originalMatchMedia as typeof window.matchMedia;
     vi.restoreAllMocks();
@@ -493,6 +495,104 @@ describe("BoardWorkspaceView", () => {
 
     expect(status?.textContent).toContain("연결 끊김");
     expect(status?.title).toContain("websocket is unavailable");
+  });
+
+  it("renders runbook board header and empty state from activeBoardContainer", () => {
+    useRunbookStore.setState({
+      byId: {
+        "rb-1": {
+          snapshot: {
+            runbook: {
+              id: "rb-1",
+              board_item_id: "runbook:rb-1",
+              folder_id: "root",
+              title: "Deploy Runbook",
+              status: "open",
+              archived: false,
+              version: 3,
+              created_session_id: null,
+              created_event_id: null,
+              created_at: "2026-07-06T00:00:00.000Z",
+              updated_at: "2026-07-06T00:00:00.000Z",
+            },
+            sections: [],
+            items: [
+              {
+                id: "item-1",
+                section_id: "sec-1",
+                position_key: "a",
+                title: "Done",
+                how_to: "",
+                status: "completed",
+                archived: false,
+                version: 1,
+                created_session_id: null,
+                created_event_id: null,
+                updated_session_id: null,
+                updated_event_id: null,
+                completed_kind: null,
+                completed_session_id: null,
+                completed_event_id: null,
+                completed_user_id: null,
+                completed_at: null,
+                created_at: "2026-07-06T00:00:00.000Z",
+                updated_at: "2026-07-06T00:00:00.000Z",
+                assignee_kind: null,
+                assignee_agent_id: null,
+                assignee_session_id: null,
+                assignee_user_id: null,
+              },
+              {
+                id: "item-2",
+                section_id: "sec-1",
+                position_key: "b",
+                title: "Pending",
+                how_to: "",
+                status: "pending",
+                archived: false,
+                version: 1,
+                created_session_id: null,
+                created_event_id: null,
+                updated_session_id: null,
+                updated_event_id: null,
+                completed_kind: null,
+                completed_session_id: null,
+                completed_event_id: null,
+                completed_user_id: null,
+                completed_at: null,
+                created_at: "2026-07-06T00:00:00.000Z",
+                updated_at: "2026-07-06T00:00:00.000Z",
+                assignee_kind: null,
+                assignee_agent_id: null,
+                assignee_session_id: null,
+                assignee_user_id: null,
+              },
+            ],
+          },
+          status: "ready",
+          error: null,
+          isRefreshing: false,
+        },
+      },
+    });
+    ({ container, root } = renderBoard({}, {
+      catalog: {
+        ...catalog,
+        boardItems: [],
+      },
+      sessions: [],
+    }));
+
+    flushSync(() => {
+      useDashboardStore.getState().openRunbookBoard("rb-1", "root");
+    });
+
+    expect(container.textContent).toContain("Deploy Runbook");
+    expect(container.textContent).toContain("런북 보드");
+    expect(container.textContent).toContain("1/2");
+    expect(container.textContent).toContain("아직 이 런북 보드에 배치된 항목이 없음");
+    expect(findButtonByText(container, "Folder")).toBeUndefined();
+    expect(findButtonByText(container, "New")).toBeUndefined();
   });
 
   it("keeps folder names, session titles, markdown previews, and agent profiles bounded inside tiles", () => {

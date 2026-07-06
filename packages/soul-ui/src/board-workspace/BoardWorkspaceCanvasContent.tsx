@@ -29,12 +29,14 @@ interface BoardWorkspaceCanvasContentProps {
   onTileContextMenu: (event: ReactMouseEvent<HTMLElement>, item: BoardWorkspaceItem) => void;
   shouldSuppressTileClick: () => boolean;
   onOpenFolder: (item: BoardWorkspaceItem, folderId: string) => void;
+  onOpenRunbookBoard: (runbookId: string) => void;
   onOpenMarkdown: (item: BoardWorkspaceItem, documentId: string) => void;
   onOpenSession: (session: SessionSummary, item?: BoardWorkspaceItem) => void;
   onToggleChildStack: (item: SessionBoardWorkspaceItem) => void;
   onNavigateToParent: (parentRef: SessionParentRef) => void;
   onOpenChildRef: (child: DirectChildPortalItem) => void;
   onToggleFrameCollapsed: (item: Extract<BoardWorkspaceItem, { type: "frame" }>) => void;
+  emptyMessage?: string;
 }
 
 export function BoardWorkspaceCanvasContent({
@@ -58,12 +60,14 @@ export function BoardWorkspaceCanvasContent({
   onTileContextMenu,
   shouldSuppressTileClick,
   onOpenFolder,
+  onOpenRunbookBoard,
   onOpenMarkdown,
   onOpenSession,
   onToggleChildStack,
   onNavigateToParent,
   onOpenChildRef,
   onToggleFrameCollapsed,
+  emptyMessage = "No folders or sessions on this board",
 }: BoardWorkspaceCanvasContentProps) {
   return (
     <>
@@ -76,7 +80,7 @@ export function BoardWorkspaceCanvasContent({
 
       {boardItems.length === 0 && !isLoading && (
         <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
-          No folders or sessions on this board
+          {emptyMessage}
         </div>
       )}
 
@@ -97,6 +101,7 @@ export function BoardWorkspaceCanvasContent({
           onToggleFrameCollapsed={onToggleFrameCollapsed}
           shouldSuppressClick={shouldSuppressTileClick}
           onOpenFolder={(folderId) => onOpenFolder(item, folderId)}
+          onOpenRunbookBoard={onOpenRunbookBoard}
           onOpenMarkdown={(documentId) => onOpenMarkdown(item, documentId)}
           onOpenSession={(session) => onOpenSession(session, item)}
         />

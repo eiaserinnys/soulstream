@@ -128,6 +128,7 @@ function createRuntime(folderId: string): BoardYjsRuntime {
   const doc = new Y.Doc();
   const awareness = new Awareness(doc);
   const listeners = new Set<() => void>();
+  const container = { kind: "folder" as const, id: folderId };
   const notify = () => {
     for (const listener of listeners) listener();
   };
@@ -140,6 +141,8 @@ function createRuntime(folderId: string): BoardYjsRuntime {
   });
   return {
     folderId,
+    container,
+    containerKey: `folder:${folderId}`,
     doc,
     awareness,
     isProviderBacked: false,
