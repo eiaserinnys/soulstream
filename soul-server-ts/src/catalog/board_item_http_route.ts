@@ -60,7 +60,7 @@ export function registerBoardItemHttpRoutes(
     }
 
     try {
-      const boardItem = await config.service.moveBoardItemToContainer({
+      const result = await config.service.moveBoardItemToContainer({
         boardItemId: request.params.boardItemId,
         target: {
           containerKind: parsed.value.container.kind,
@@ -69,7 +69,11 @@ export function registerBoardItemHttpRoutes(
         ...(parsed.value.position ? { position: parsed.value.position } : {}),
         idempotencyKey: parsed.value.idempotencyKey,
       });
-      return { ok: true, boardItem };
+      return {
+        ok: true,
+        boardItem: result.boardItem,
+        ...(result.enrolled ? { enrolled: true } : {}),
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (message.includes("not found")) {
