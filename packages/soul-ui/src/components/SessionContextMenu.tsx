@@ -40,12 +40,21 @@ export interface SessionContextMenuProps {
   getContinueSessionDisabledReason?: (sessionId: string) => string | null;
   /** 세션의 현재 표시 이름 조회 (이름 변경 모달 초기값용) */
   getSessionName: (sessionId: string) => string;
+  /** 보드 전용 메뉴처럼 호출자가 추가하는 세션 액션 */
+  extraActions?: SessionContextMenuExtraAction[];
   /**
    * 이동할 세션 ID 목록 결정 (단일/다중 선택 지원)
    * - FeedView: (id) => [id]
    * - FolderContents: (id) => selectedIds.has(id) ? [...selectedIds] : [id]
    */
   resolveSessionIds: (sessionId: string) => string[];
+}
+
+export interface SessionContextMenuExtraAction {
+  label: string;
+  onClick: () => void | Promise<void>;
+  disabled?: boolean;
+  className?: string;
 }
 
 /** 메뉴 항목 리스트 (모바일/데스크탑 공용) */
@@ -60,6 +69,7 @@ function MenuItems({
   hasRename,
   hasMove,
   hasDelete,
+  extraActions,
   className,
 }: {
   onCopyId: () => void;
@@ -72,6 +82,7 @@ function MenuItems({
   hasRename: boolean;
   hasMove: boolean;
   hasDelete: boolean;
+  extraActions: SessionContextMenuExtraAction[];
   className?: string;
 }) {
   return (
@@ -117,6 +128,24 @@ function MenuItems({
           </button>
         </>
       )}
+      {extraActions.length > 0 && (
+        <>
+          <div className="border-t border-border my-1" />
+          {extraActions.map((action) => (
+            <button
+              key={action.label}
+              className={cn(
+                "w-full text-left px-3 py-2 text-sm hover:bg-accent rounded-md disabled:pointer-events-none disabled:opacity-64",
+                action.className,
+              )}
+              disabled={action.disabled}
+              onClick={() => { void action.onClick(); }}
+            >
+              {action.label}
+            </button>
+          ))}
+        </>
+      )}
       {hasDelete && onDelete && (
         <>
           <div className="border-t border-border my-1" />
@@ -141,6 +170,7 @@ export function SessionContextMenu({
   onContinueSession,
   getContinueSessionDisabledReason,
   getSessionName,
+  extraActions = [],
   resolveSessionIds,
 }: SessionContextMenuProps) {
   const catalog = useDashboardStore((s) => s.catalog);
@@ -264,6 +294,7 @@ export function SessionContextMenu({
                 hasRename={!!onRenameSession}
                 hasMove={!!onMoveSessions}
                 hasDelete={!!onDeleteSessions}
+                extraActions={extraActions}
               />
             </div>
           </DialogPopup>
@@ -311,6 +342,21 @@ export function SessionContextMenu({
               <>
                 <MenuSeparator />
                 <MenuItem onClick={handleMoveClick}>다른 폴더로 이동</MenuItem>
+              </>
+            )}
+            {extraActions.length > 0 && (
+              <>
+                <MenuSeparator />
+                {extraActions.map((action) => (
+                  <MenuItem
+                    key={action.label}
+                    disabled={action.disabled}
+                    onClick={() => { void action.onClick(); }}
+                    className={action.className}
+                  >
+                    {action.label}
+                  </MenuItem>
+                ))}
               </>
             )}
             {!!onDeleteSessions && (

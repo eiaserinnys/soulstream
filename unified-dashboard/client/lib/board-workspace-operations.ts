@@ -2,10 +2,12 @@ import { createBoardWorkspaceOperations } from "@seosoyoung/soul-ui";
 
 export const {
   updateBoardItemPosition,
+  moveBoardItemToContainer,
   createMarkdownDocument,
   uploadBoardAsset,
 } = createBoardWorkspaceOperations({
-  updateBoardItemPositionUrl: (id) => `/api/board-items/${id}/position`,
+  updateBoardItemPositionUrl: (id) => `/api/board-items/${encodeURIComponent(id)}/position`,
+  moveBoardItemToContainerUrl: (id) => `/api/board-items/${encodeURIComponent(id)}/container`,
   createMarkdownDocumentUrl: "/api/markdown-documents",
   initBoardAssetUrl: (target) => target.container.kind === "folder"
     ? `/api/board/${encodeURIComponent(target.folderId)}/assets/init`

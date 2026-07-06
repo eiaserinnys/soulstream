@@ -16,10 +16,13 @@ import {
   applyBoardYjsPosition,
   boardYjsFolderScope,
   createMarkdownYjsDocument,
+  deleteMovedBoardYjsItem,
   deleteMarkdownYjsDocument,
   deleteBoardYjsItem,
   getBoardYjsContainerDocumentName,
+  readMovableBoardYjsItem,
   updateMarkdownYjsDocument,
+  upsertMovedBoardYjsItem,
   upsertBoardYjsItem,
   upsertCustomViewYjsBoardItem,
   upsertRunbookYjsBoardItem,
@@ -191,6 +194,94 @@ export class BoardYjsService {
       applyBoardYjsPosition(doc, boardItemId, { x, y });
       return true;
     });
+  }
+
+  async moveBoardItemToContainer(input: {
+    boardItem: CatalogBoardItemRow;
+    targetScope: {
+      folderId: string;
+      containerKind: BoardYjsContainerRef["containerKind"];
+      containerId: string;
+    };
+    position?: { x: number; y: number };
+  }): Promise<CatalogBoardItemRow> {
+    const sourceContainer = {
+      containerKind: input.boardItem.containerKind ?? "folder",
+      containerId: input.boardItem.containerId ?? input.boardItem.folderId,
+    };
+    const sourceConnection = await this.hocuspocus.openDirectConnection(
+      getBoardYjsContainerDocumentName(sourceContainer),
+      { ...sourceContainer, source: "server" },
+    );
+    let targetApplied = false;
+    const targetContainer = {
+      containerKind: input.targetScope.containerKind,
+      containerId: input.targetScope.containerId,
+    };
+    try {
+      const moved = await (async (): Promise<ReturnType<typeof readMovableBoardYjsItem>> => {
+        let result: ReturnType<typeof readMovableBoardYjsItem> = null;
+        await sourceConnection.transact((document) => {
+          result = readMovableBoardYjsItem(
+            document as unknown as Y.Doc,
+            input.boardItem.id,
+            input.targetScope,
+            input.position,
+          );
+        });
+        return result;
+      })();
+      if (!moved) {
+        const targetConnection = await this.hocuspocus.openDirectConnection(
+          getBoardYjsContainerDocumentName(targetContainer),
+          { ...targetContainer, source: "server" },
+        );
+        try {
+          const targetMoved = await (async (): Promise<ReturnType<typeof readMovableBoardYjsItem>> => {
+            let result: ReturnType<typeof readMovableBoardYjsItem> = null;
+            await targetConnection.transact((document) => {
+              result = readMovableBoardYjsItem(
+                document as unknown as Y.Doc,
+                input.boardItem.id,
+                input.targetScope,
+                input.position,
+              );
+            });
+            return result;
+          })();
+          if (targetMoved) return targetMoved.boardItem;
+        } finally {
+          await targetConnection.disconnect();
+        }
+        throw new Error(`board item not found in source Y.Doc: ${input.boardItem.id}`);
+      }
+
+      const targetConnection = await this.hocuspocus.openDirectConnection(
+        getBoardYjsContainerDocumentName(targetContainer),
+        { ...targetContainer, source: "server" },
+      );
+      try {
+        await targetConnection.transact((document) => {
+          upsertMovedBoardYjsItem(document as unknown as Y.Doc, moved);
+        });
+        targetApplied = true;
+        await sourceConnection.transact((document) => {
+          deleteMovedBoardYjsItem(document as unknown as Y.Doc, moved);
+        });
+        return moved.boardItem;
+      } catch (err) {
+        if (targetApplied) {
+          await targetConnection.transact((document) => {
+            deleteMovedBoardYjsItem(document as unknown as Y.Doc, moved);
+          });
+        }
+        throw err;
+      } finally {
+        await targetConnection.disconnect();
+      }
+    } finally {
+      await sourceConnection.disconnect();
+    }
   }
 
   async updateMarkdownDocument(

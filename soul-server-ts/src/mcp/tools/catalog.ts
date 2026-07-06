@@ -191,6 +191,44 @@ export function registerCatalogTools(
   );
 
   server.registerTool(
+    "move_board_item_to_container",
+    {
+      description:
+        "기존 보드 항목을 폴더 보드와 런북 보드 사이에서 이동한다. 세션/마크다운/애셋/커스텀뷰 primary 항목만 대상.",
+      inputSchema: {
+        board_item_id: z.string().min(1),
+        container: boardContainerSchema,
+        x: z.number().optional(),
+        y: z.number().optional(),
+        idempotency_key: z.string().min(1),
+      },
+    },
+    async ({ board_item_id, container, x, y, idempotency_key }) => {
+      try {
+        if ((x === undefined) !== (y === undefined)) {
+          return errorResult("x and y must be supplied together");
+        }
+        const boardItem = await runtime.catalogService.moveBoardItemToContainer({
+          boardItemId: board_item_id,
+          target: {
+            containerKind: container.kind,
+            containerId: container.id,
+          },
+          ...(x !== undefined && y !== undefined ? { position: { x, y } } : {}),
+          idempotencyKey: idempotency_key,
+        });
+        return jsonResult({
+          ok: true,
+          board_item: boardItem,
+          idempotency_key,
+        });
+      } catch (err) {
+        return errorResult(err instanceof Error ? err.message : String(err));
+      }
+    },
+  );
+
+  server.registerTool(
     "create_markdown_document",
     {
       description: "현재 보드 폴더에 마크다운 문서와 보드 카드를 생성.",

@@ -7,13 +7,16 @@ import {
   getFormalBoardYjsDocumentName,
   createMarkdownYjsDocument,
   deleteMarkdownYjsDocument,
+  deleteMovedBoardYjsItem,
   getBoardYjsDocumentName,
   getFolderIdFromBoardYjsDocumentName,
   normalizeBoardYjsDocumentName,
   parseBoardYjsDocumentName,
   readBoardYDocSnapshot,
   readBoardYDocReplica,
+  readMovableBoardYjsItem,
   upsertCustomViewYjsBoardItem,
+  upsertMovedBoardYjsItem,
   updateMarkdownYjsDocument,
 } from "../../src/collaboration/board_yjs_model.js";
 
@@ -330,6 +333,89 @@ describe("board_yjs_model", () => {
         containerId: "rb-1",
       }),
     ]);
+  });
+
+  it("moving a markdown item copies target membership and markdown body", () => {
+    const sourceDoc = new Y.Doc();
+    const targetDoc = new Y.Doc();
+    createMarkdownYjsDocument(sourceDoc, "folder-1", {
+      documentId: "doc-1",
+      title: "Move me",
+      body: "preserve body",
+      x: 40,
+      y: 80,
+    });
+
+    const moved = readMovableBoardYjsItem(sourceDoc, "markdown:doc-1", {
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+    }, { x: 200, y: 240 });
+
+    expect(moved).not.toBeNull();
+    upsertMovedBoardYjsItem(targetDoc, moved!);
+    deleteMovedBoardYjsItem(sourceDoc, moved!);
+
+    expect(readBoardYDocReplica("folder-1", sourceDoc)).toEqual({
+      boardItems: [],
+      markdownDocuments: [],
+    });
+    expect(readBoardYDocReplica({
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+    }, targetDoc)).toEqual({
+      boardItems: [
+        expect.objectContaining({
+          id: "markdown:doc-1",
+          folderId: "folder-1",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          x: 200,
+          y: 240,
+        }),
+      ],
+      markdownDocuments: [
+        { id: "doc-1", title: "Move me", body: "preserve body", version: 1 },
+      ],
+    });
+  });
+
+  it("target compensation removes a copied item while source remains intact", () => {
+    const sourceDoc = new Y.Doc();
+    const targetDoc = new Y.Doc();
+    Y.applyUpdate(sourceDoc, createBoardYDocSnapshot({
+      folderId: "folder-1",
+      boardItems: [{
+        id: "session:s1",
+        folderId: "folder-1",
+        itemType: "session",
+        itemId: "s1",
+        x: 40,
+        y: 80,
+        metadata: {},
+      }],
+      markdownDocuments: [],
+    }));
+
+    const moved = readMovableBoardYjsItem(sourceDoc, "session:s1", {
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+    });
+
+    expect(moved).not.toBeNull();
+    upsertMovedBoardYjsItem(targetDoc, moved!);
+    deleteMovedBoardYjsItem(targetDoc, moved!);
+
+    expect(readBoardYDocReplica("folder-1", sourceDoc).boardItems).toEqual([
+      expect.objectContaining({ id: "session:s1" }),
+    ]);
+    expect(readBoardYDocReplica({
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+    }, targetDoc).boardItems).toEqual([]);
   });
 
   it("document name은 folder id와 양방향 매핑", () => {

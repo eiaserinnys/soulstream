@@ -344,6 +344,79 @@ export class CatalogService {
     await this.broadcastCatalog();
   }
 
+  async moveBoardItemToContainer(params: {
+    boardItemId: string;
+    target: BoardYjsContainerRef;
+    position?: { x: number; y: number };
+    idempotencyKey: string;
+  }): Promise<CatalogBoardItemRow> {
+    if (!this.boardYjsService) {
+      throw new Error("board Yjs service is not configured");
+    }
+    assertSupportedMoveItemId(params.boardItemId);
+    await this.db.ensureBoardItems();
+    const boardItem = await this.db.getBoardItemById(params.boardItemId);
+    if (!boardItem) {
+      throw new Error(`board item not found: ${params.boardItemId}`);
+    }
+    if ((boardItem.membershipKind ?? "primary") !== "primary") {
+      throw new Error("only primary board item membership can be moved");
+    }
+    if (!isMovableBoardItemType(boardItem.itemType)) {
+      throw new Error(`board item type is not movable: ${boardItem.itemType}`);
+    }
+    const targetScope = await this.db.resolveBoardYjsContainerScope(params.target);
+    if (!targetScope) {
+      throw new Error(`target container not found: ${params.target.containerKind}:${params.target.containerId}`);
+    }
+    const sourceKind = boardItem.containerKind ?? "folder";
+    const sourceId = boardItem.containerId ?? boardItem.folderId;
+    const snappedPosition = params.position
+      ? {
+          x: snapBoardPosition(params.position.x),
+          y: snapBoardPosition(params.position.y),
+        }
+      : undefined;
+
+    if (sourceKind === targetScope.containerKind && sourceId === targetScope.containerId) {
+      if (snappedPosition) {
+        await this.updateBoardItemPosition(
+          boardItem.id,
+          snappedPosition.x,
+          snappedPosition.y,
+        );
+        return {
+          ...boardItem,
+          x: snappedPosition.x,
+          y: snappedPosition.y,
+        };
+      }
+      return boardItem;
+    }
+
+    const previousSessionFolderId = boardItem.itemType === "session"
+      ? (await this.db.getSession(boardItem.itemId))?.folder_id ?? null
+      : null;
+    if (boardItem.itemType === "session") {
+      await this.db.assignSessionToFolder(boardItem.itemId, targetScope.folderId);
+    }
+
+    try {
+      const moved = await this.boardYjsService.moveBoardItemToContainer({
+        boardItem,
+        targetScope,
+        ...(snappedPosition ? { position: snappedPosition } : {}),
+      });
+      await this.broadcastCatalog();
+      return moved;
+    } catch (err) {
+      if (boardItem.itemType === "session") {
+        await this.db.assignSessionToFolder(boardItem.itemId, previousSessionFolderId);
+      }
+      throw err;
+    }
+  }
+
   async createMarkdownDocument(params: {
     folderId: string;
     container?: BoardYjsContainerRef | null;
@@ -487,6 +560,21 @@ export class CatalogService {
 
 function snapBoardPosition(value: number): number {
   return Math.round(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE;
+}
+
+function assertSupportedMoveItemId(boardItemId: string): void {
+  if (!boardItemId.trim()) {
+    throw new Error("boardItemId is required");
+  }
+}
+
+function isMovableBoardItemType(
+  itemType: CatalogBoardItemRow["itemType"],
+): itemType is Extract<CatalogBoardItemRow["itemType"], "session" | "markdown" | "asset" | "custom_view"> {
+  return itemType === "session" ||
+    itemType === "markdown" ||
+    itemType === "asset" ||
+    itemType === "custom_view";
 }
 
 function toBrowseFolderSession(row: ListSessionSummaryRow): BrowseFolderSessionDto {
