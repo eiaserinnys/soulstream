@@ -66,7 +66,8 @@ describe("apply-schema.mjs", () => {
           (
             SELECT COUNT(*)::int
             FROM board_yjs_catalog_cache
-            WHERE folder_id = 'folder-schema'
+            WHERE container_kind = 'folder'
+              AND container_id = 'folder-schema'
           ) AS board_yjs_cache_count
       `;
 
@@ -82,12 +83,15 @@ describe("apply-schema.mjs", () => {
       }>>`
         SELECT board_items, markdown_documents
         FROM board_yjs_catalog_cache
-        WHERE folder_id = 'folder-schema'
+        WHERE container_kind = 'folder'
+          AND container_id = 'folder-schema'
       `;
       expect(cacheRows[0].board_items).toEqual([
         expect.objectContaining({
           id: "markdown:doc-schema",
           folderId: "folder-schema",
+          containerKind: "folder",
+          containerId: "folder-schema",
           itemType: "markdown",
           itemId: "doc-schema",
           x: 10,

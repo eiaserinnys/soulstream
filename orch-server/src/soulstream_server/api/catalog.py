@@ -158,6 +158,25 @@ def _board_asset_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=400, detail=detail)
 
 
+async def _resolve_board_container_folder_id(
+    catalog_service: CatalogService,
+    container_kind: Literal["folder", "runbook"],
+    container_id: str,
+) -> str:
+    if container_kind == "folder":
+        return container_id
+    catalog = await catalog_service.get_catalog()
+    board_items = catalog.get("boardItems") if isinstance(catalog.get("boardItems"), list) else []
+    for item in board_items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("itemType") == "runbook" and item.get("itemId") == container_id:
+            folder_id = item.get("folderId")
+            if isinstance(folder_id, str) and folder_id:
+                return folder_id
+    raise HTTPException(status_code=404, detail="Runbook board container not found")
+
+
 def create_catalog_router(
     catalog_service: CatalogService,
     db: object | None = None,
@@ -171,11 +190,41 @@ def create_catalog_router(
     )
 
     @router.get("/board-items")
-    async def list_board_items(request: Request, folder_id: str = Query(...)) -> dict:
-        """현재 폴더의 보드 항목만 조회한다."""
+    async def list_board_items(
+        request: Request,
+        folder_id: Optional[str] = Query(None),
+        container_kind: Optional[Literal["folder", "runbook"]] = Query(None),
+        container_id: Optional[str] = Query(None),
+    ) -> dict:
+        """현재 컨테이너의 보드 항목만 조회한다."""
         folders = await catalog_service.list_folders()
-        require_folder_allowed(access_for_request(request), folders, folder_id)
-        board_items = await catalog_service.list_board_items(folder_id)
+        if folder_id is not None:
+            if container_kind is not None or container_id is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="folder_id and container_kind/container_id are mutually exclusive",
+                )
+            resolved_kind = "folder"
+            resolved_id = folder_id
+            inherited_folder_id = folder_id
+        else:
+            if container_kind is None or container_id is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail="folder_id or container_kind/container_id is required",
+                )
+            resolved_kind = container_kind
+            resolved_id = container_id
+            inherited_folder_id = await _resolve_board_container_folder_id(
+                catalog_service,
+                container_kind,
+                container_id,
+            )
+        require_folder_allowed(access_for_request(request), folders, inherited_folder_id)
+        board_items = await catalog_service.list_board_items(
+            container_kind=resolved_kind,
+            container_id=resolved_id,
+        )
         return {"boardItems": board_items}
 
     @router.patch("/board-items/{board_item_id}/position")

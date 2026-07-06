@@ -46,6 +46,8 @@ def _normalize_board_item(row: dict) -> dict:
     return {
         "id": row["id"],
         "folderId": row["folder_id"],
+        "containerKind": row.get("container_kind") or "folder",
+        "containerId": row.get("container_id") or row["folder_id"],
         "itemType": row["item_type"],
         "itemId": row["item_id"],
         "x": float(row["x"]),
@@ -284,24 +286,38 @@ class PostgresFolderMixin:
         rows = await self._pool.fetch("SELECT * FROM board_item_get_all()")
         return [_normalize_board_item(dict(r)) for r in rows]
 
-    async def get_board_yjs_catalog_items(self, folder_id: Optional[str] = None) -> list[dict]:
-        if folder_id is None:
+    async def get_board_yjs_catalog_items(
+        self,
+        folder_id: Optional[str] = None,
+        *,
+        container_kind: Optional[str] = None,
+        container_id: Optional[str] = None,
+    ) -> list[dict]:
+        if folder_id is not None:
+            container_kind = "folder"
+            container_id = folder_id
+        if container_kind is None and container_id is None:
             rows = await self._pool.fetch(
                 """
                 SELECT board_items
                 FROM board_yjs_catalog_cache
-                ORDER BY folder_id
+                WHERE container_kind = 'folder'
+                ORDER BY container_id
                 """
             )
         else:
+            if container_kind is None or container_id is None:
+                raise ValueError("container_kind and container_id must be provided together")
             rows = await self._pool.fetch(
                 """
                 SELECT board_items
                 FROM board_yjs_catalog_cache
-                WHERE folder_id = $1
-                ORDER BY folder_id
+                WHERE container_kind = $1
+                  AND container_id = $2
+                ORDER BY container_id
                 """,
-                folder_id,
+                container_kind,
+                container_id,
             )
         items: list[dict] = []
         for row in rows:

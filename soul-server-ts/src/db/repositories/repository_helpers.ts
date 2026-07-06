@@ -2,6 +2,7 @@ import type postgres from "postgres";
 
 import { normalizeMarkdownVersion } from "../markdown_document_version.js";
 import type {
+  BoardContainerKind,
   BoardItemType,
   CatalogBoardItemRow,
   ClaudeTranscriptEntry,
@@ -46,6 +47,10 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 export function toCatalogBoardItemRow(row: {
   id: string;
   folder_id: string;
+  container_kind?: BoardContainerKind | null;
+  container_id?: string | null;
+  membership_kind?: "primary" | "reference" | null;
+  source_runbook_item_id?: string | null;
   item_type: BoardItemType;
   item_id: string;
   x: string | number;
@@ -57,6 +62,10 @@ export function toCatalogBoardItemRow(row: {
   return {
     id: row.id,
     folderId: row.folder_id,
+    containerKind: row.container_kind ?? "folder",
+    containerId: row.container_id ?? row.folder_id,
+    membershipKind: row.membership_kind ?? "primary",
+    sourceRunbookItemId: row.source_runbook_item_id ?? null,
     itemType: row.item_type,
     itemId: row.item_id,
     x: Number(row.x),
@@ -73,15 +82,27 @@ export function parseCatalogBoardItems(value: unknown): CatalogBoardItemRow[] {
     if (!isRecord(item)) return [];
     const id = typeof item.id === "string" ? item.id : null;
     const folderId = typeof item.folderId === "string" ? item.folderId : null;
+    const containerKind = isBoardContainerKind(item.containerKind)
+      ? item.containerKind
+      : "folder";
+    const membershipKind = item.membershipKind === "reference" ? "reference" : "primary";
+    const sourceRunbookItemId = typeof item.sourceRunbookItemId === "string"
+      ? item.sourceRunbookItemId
+      : null;
     const itemType = isBoardItemType(item.itemType) ? item.itemType : null;
     const itemId = typeof item.itemId === "string" ? item.itemId : null;
     if (!id || !folderId || !itemType || !itemId) return [];
+    const containerId = typeof item.containerId === "string" ? item.containerId : folderId;
 
     const x = Number(item.x);
     const y = Number(item.y);
     return [{
       id,
       folderId,
+      containerKind,
+      containerId,
+      membershipKind,
+      sourceRunbookItemId,
       itemType,
       itemId,
       x: Number.isFinite(x) ? x : 0,
@@ -95,6 +116,10 @@ export function parseCatalogBoardItems(value: unknown): CatalogBoardItemRow[] {
         : {}),
     }];
   });
+}
+
+export function isBoardContainerKind(value: unknown): value is BoardContainerKind {
+  return value === "folder" || value === "runbook";
 }
 
 export function isBoardItemType(value: unknown): value is BoardItemType {

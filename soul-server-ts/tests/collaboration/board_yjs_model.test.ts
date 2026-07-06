@@ -4,10 +4,13 @@ import * as Y from "yjs";
 import {
   applyBoardYjsPosition,
   createBoardYDocSnapshot,
+  getFormalBoardYjsDocumentName,
   createMarkdownYjsDocument,
   deleteMarkdownYjsDocument,
   getBoardYjsDocumentName,
   getFolderIdFromBoardYjsDocumentName,
+  normalizeBoardYjsDocumentName,
+  parseBoardYjsDocumentName,
   readBoardYDocSnapshot,
   readBoardYDocReplica,
   updateMarkdownYjsDocument,
@@ -214,6 +217,65 @@ describe("board_yjs_model", () => {
     const name = getBoardYjsDocumentName("folder-1");
     expect(name).toBe("board-folder:folder-1");
     expect(getFolderIdFromBoardYjsDocumentName(name)).toBe("folder-1");
+    expect(getFormalBoardYjsDocumentName({
+      containerKind: "folder",
+      containerId: "folder-1",
+    })).toBe("board:folder:folder-1");
+    expect(normalizeBoardYjsDocumentName("board:folder:folder-1")).toBe(name);
+    expect(parseBoardYjsDocumentName("board:runbook:rb-1")).toEqual({
+      containerKind: "runbook",
+      containerId: "rb-1",
+    });
     expect(getFolderIdFromBoardYjsDocumentName("/yjs/folder-1")).toBeNull();
+  });
+
+  it("runbook 컨테이너 snapshot은 같은 folderId 안에서도 runbook membership만 seed한다", () => {
+    const snapshot = createBoardYDocSnapshot({
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+      boardItems: [
+        {
+          id: "runbook-child",
+          folderId: "folder-1",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          itemType: "markdown",
+          itemId: "doc-1",
+          x: 0,
+          y: 0,
+          metadata: { title: "Child" },
+        },
+        {
+          id: "folder-tile",
+          folderId: "folder-1",
+          containerKind: "folder",
+          containerId: "folder-1",
+          itemType: "runbook",
+          itemId: "rb-1",
+          x: 100,
+          y: 0,
+          metadata: { title: "Parent" },
+        },
+      ],
+      markdownDocuments: [{ id: "doc-1", title: "Child", body: "body", version: 1 }],
+    });
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, snapshot);
+
+    const replica = readBoardYDocReplica({
+      folderId: "folder-1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+    }, doc);
+
+    expect(replica.boardItems).toEqual([
+      expect.objectContaining({
+        id: "runbook-child",
+        folderId: "folder-1",
+        containerKind: "runbook",
+        containerId: "rb-1",
+      }),
+    ]);
   });
 });

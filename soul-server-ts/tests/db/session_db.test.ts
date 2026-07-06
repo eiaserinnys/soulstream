@@ -331,7 +331,71 @@ describe("SessionDB board Yjs persistence", () => {
 
     expect(seed.boardItems).toHaveLength(1);
     expect(seed.boardItems[0].id).toBe("markdown:d1");
+    expect(seed.boardItems[0]).toMatchObject({
+      containerKind: "folder",
+      containerId: "f1",
+    });
     expect(seed.markdownDocuments).toEqual([{ id: "d1", title: "Note", body: "Body", version: 1 }]);
+  });
+
+  it("runbook 컨테이너 seed는 runbook membership만 로드", async () => {
+    const { sql } = createMockSql((call) => {
+      const query = call.fragments.join("?");
+      if (query.includes("FROM runbooks r")) {
+        return [{ folder_id: "f1" }];
+      }
+      if (query.includes("board_item_get_all")) {
+        return [
+          {
+            id: "markdown:d1",
+            folder_id: "f1",
+            container_kind: "runbook",
+            container_id: "rb-1",
+            membership_kind: "primary",
+            source_runbook_item_id: null,
+            item_type: "markdown",
+            item_id: "d1",
+            x: 0,
+            y: 0,
+            metadata: { title: "Runbook note" },
+            created_at: null,
+            updated_at: null,
+          },
+          {
+            id: "runbook:rb-1",
+            folder_id: "f1",
+            container_kind: "folder",
+            container_id: "f1",
+            membership_kind: "primary",
+            source_runbook_item_id: null,
+            item_type: "runbook",
+            item_id: "rb-1",
+            x: 0,
+            y: 0,
+            metadata: {},
+            created_at: null,
+            updated_at: null,
+          },
+        ];
+      }
+      if (query.includes("FROM markdown_documents")) {
+        return [{ id: "d1", title: "Runbook note", body: "Body", version: 1, created_at: null, updated_at: null }];
+      }
+      return [];
+    });
+    const db = new SessionDB(sql);
+
+    const seed = await db.loadBoardYjsSeed({ containerKind: "runbook", containerId: "rb-1" });
+
+    expect(seed.boardItems).toEqual([
+      expect.objectContaining({
+        id: "markdown:d1",
+        folderId: "f1",
+        containerKind: "runbook",
+        containerId: "rb-1",
+      }),
+    ]);
+    expect(seed.markdownDocuments).toEqual([{ id: "d1", title: "Runbook note", body: "Body", version: 1 }]);
   });
 
   it("replica sync는 폴더 내 누락 item 삭제 후 board_items와 markdown_documents를 upsert", async () => {
@@ -356,19 +420,21 @@ describe("SessionDB board Yjs persistence", () => {
     expect(calls[2].fragments.join("?")).toContain("INSERT INTO board_items");
     expect(calls[3].fragments.join("?")).toContain("INSERT INTO markdown_documents");
     expect(calls[4].fragments.join("?")).toContain("INSERT INTO board_yjs_catalog_cache");
-    expect(calls[2].values[6]).toEqual({ title: "Note" });
+    expect(calls[2].values[10]).toEqual({ title: "Note" });
     expect(calls[4].values[0]).toBe("f1");
-    expect(calls[4].values[1]).toEqual([
+    expect(calls[4].values[1]).toBe("folder");
+    expect(calls[4].values[2]).toBe("f1");
+    expect(calls[4].values[3]).toEqual([
       expect.objectContaining({ id: "markdown:d1", x: 280, y: 160 }),
     ]);
-    expect(calls[4].values[2]).toEqual([
+    expect(calls[4].values[4]).toEqual([
       expect.objectContaining({ id: "d1", title: "Note", body: "Body", version: 3 }),
     ]);
-    expect(typeof calls[4].values[1]).not.toBe("string");
-    expect(typeof calls[4].values[2]).not.toBe("string");
+    expect(typeof calls[4].values[3]).not.toBe("string");
+    expect(typeof calls[4].values[4]).not.toBe("string");
   });
 
-  it("replica sync는 빈 Y.Doc replica로 기존 폴더를 전멸시키지 않는다", async () => {
+  it("replica sync는 never-synced 빈 Y.Doc replica로 기존 폴더를 전멸시키지 않는다", async () => {
     const { sql, calls, begin } = createMockSql();
     const db = new SessionDB(sql);
 
@@ -381,6 +447,31 @@ describe("SessionDB board Yjs persistence", () => {
     expect(
       calls.some((call) => call.fragments.join("?").includes("DELETE FROM board_items")),
     ).toBe(false);
+  });
+
+  it("replica sync는 synced marker가 있으면 빈 Y.Doc replica를 마지막 삭제로 반영한다", async () => {
+    const { sql, calls, begin } = createMockSql((call) => {
+      if (call.fragments.join("?").includes("synced_at IS NOT NULL")) {
+        return [{ synced: true }];
+      }
+      return [];
+    });
+    const db = new SessionDB(sql);
+
+    await db.syncBoardYjsReplica("f1", {
+      boardItems: [],
+      markdownDocuments: [],
+    });
+
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(calls.some((call) =>
+      call.fragments.join("?").includes("DELETE FROM board_items") &&
+      call.fragments.join("?").includes("container_kind")
+    )).toBe(true);
+    const cacheCall = calls.find((call) =>
+      call.fragments.join("?").includes("INSERT INTO board_yjs_catalog_cache")
+    );
+    expect(cacheCall?.values.slice(0, 5)).toEqual(["f1", "folder", "f1", [], []]);
   });
 
   it("기존 snapshot 로드 시 DB-only runbook board item을 Y.Doc에 주입한다", async () => {
@@ -403,6 +494,10 @@ describe("SessionDB board Yjs persistence", () => {
         return [{
           id: "runbook:rb-1",
           folder_id: "f1",
+          container_kind: "folder",
+          container_id: "f1",
+          membership_kind: "primary",
+          source_runbook_item_id: null,
           item_type: "runbook",
           item_id: "rb-1",
           x: 280,
@@ -1036,6 +1131,8 @@ describe("SessionDB folder ops (B-5)", () => {
     const cachedBoardItems = [{
       id: "session:s1",
       folderId: "f1",
+      containerKind: "folder",
+      containerId: "f1",
       itemType: "session",
       itemId: "s1",
       x: 0,
@@ -1049,7 +1146,7 @@ describe("SessionDB folder ops (B-5)", () => {
       if (text.includes("folder_get_all")) return folderRows;
       if (text.includes("catalog_get_sessions")) return sessionRows;
       if (text.includes("FROM board_yjs_catalog_cache")) {
-        return [{ folder_id: "f1", board_items: cachedBoardItems }];
+        return [{ container_id: "f1", board_items: cachedBoardItems }];
       }
       if (text.includes("board_yjs_documents") || text.includes("board_yjs_updates")) {
         throw new Error("catalog must not decode or compact Yjs documents");
@@ -1085,6 +1182,10 @@ describe("SessionDB folder ops (B-5)", () => {
       {
         id: "session:s1",
         folderId: "f1",
+        containerKind: "folder",
+        containerId: "f1",
+        membershipKind: "primary",
+        sourceRunbookItemId: null,
         itemType: "session",
         itemId: "s1",
         x: 0,

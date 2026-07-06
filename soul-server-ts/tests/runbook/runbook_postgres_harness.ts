@@ -165,6 +165,10 @@ async function createRunbookSchema(sql: SqlClient): Promise<void> {
     CREATE TABLE board_items (
       id TEXT PRIMARY KEY,
       folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+      container_kind TEXT NOT NULL DEFAULT 'folder',
+      container_id TEXT,
+      membership_kind TEXT NOT NULL DEFAULT 'primary',
+      source_runbook_item_id TEXT,
       item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook')),
       item_id TEXT NOT NULL,
       x DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -174,6 +178,9 @@ async function createRunbookSchema(sql: SqlClient): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (folder_id, item_id)
     )
+  `;
+  await sql`
+    UPDATE board_items SET container_id = folder_id WHERE container_id IS NULL
   `;
   await sql.unsafe(`
     CREATE OR REPLACE FUNCTION board_seed_items()
@@ -188,6 +195,10 @@ async function createRunbookSchema(sql: SqlClient): Promise<void> {
     RETURNS TABLE (
       id TEXT,
       folder_id TEXT,
+      container_kind TEXT,
+      container_id TEXT,
+      membership_kind TEXT,
+      source_runbook_item_id TEXT,
       item_type TEXT,
       item_id TEXT,
       x DOUBLE PRECISION,
@@ -196,23 +207,30 @@ async function createRunbookSchema(sql: SqlClient): Promise<void> {
       created_at TIMESTAMPTZ,
       updated_at TIMESTAMPTZ
     ) LANGUAGE sql AS $$
-      SELECT id, folder_id, item_type, item_id, x, y, metadata, created_at, updated_at
+      SELECT
+        id, folder_id, container_kind, COALESCE(container_id, folder_id),
+        membership_kind, source_runbook_item_id, item_type, item_id, x, y,
+        metadata, created_at, updated_at
       FROM board_items
       ORDER BY folder_id ASC, y ASC, x ASC, id ASC
     $$;
   `);
   await sql`
-    CREATE TABLE board_yjs_catalog_cache (
-      folder_id TEXT PRIMARY KEY REFERENCES folders(id) ON DELETE CASCADE,
+      CREATE TABLE board_yjs_catalog_cache (
+      folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+      container_kind TEXT NOT NULL DEFAULT 'folder',
+      container_id TEXT NOT NULL,
       board_items JSONB NOT NULL DEFAULT '[]'::JSONB,
       markdown_documents JSONB NOT NULL DEFAULT '[]'::JSONB,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (container_kind, container_id)
     )
   `;
   await sql`
     CREATE TABLE board_yjs_documents (
       name TEXT PRIMARY KEY,
       snapshot BYTEA NOT NULL,
+      synced_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )

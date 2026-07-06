@@ -84,6 +84,8 @@ class CatalogService:
         items = [
             item for item in await self._db.get_board_items()
             if item.get("folderId") == folder_id
+            and item.get("containerKind", "folder") == "folder"
+            and item.get("containerId", item.get("folderId")) == folder_id
         ]
         occupied = {
             (int(item.get("x", 0)), int(item.get("y", 0)))
@@ -240,15 +242,30 @@ class CatalogService:
         catalog = await self._db.get_catalog()
         return catalog.get("sessions", {})
 
-    async def list_board_items(self, folder_id: str) -> list[dict]:
-        """현재 폴더의 보드 항목만 반환한다."""
+    async def list_board_items(
+        self,
+        folder_id: Optional[str] = None,
+        *,
+        container_kind: Optional[str] = None,
+        container_id: Optional[str] = None,
+    ) -> list[dict]:
+        """현재 컨테이너의 보드 항목만 반환한다."""
+        if folder_id is not None:
+            container_kind = "folder"
+            container_id = folder_id
+        if container_kind is None or container_id is None:
+            raise ValueError("folder_id or container_kind/container_id is required")
         getter = getattr(self._db, "get_board_yjs_catalog_items", None)
         if getter is not None:
-            return self._with_asset_urls(await getter(folder_id=folder_id))
+            return self._with_asset_urls(await getter(
+                container_kind=container_kind,
+                container_id=container_id,
+            ))
         await self._db.ensure_board_items()
         return self._with_asset_urls([
             item for item in await self._db.get_board_items()
-            if item.get("folderId") == folder_id
+            if item.get("containerKind", "folder") == container_kind
+            and item.get("containerId", item.get("folderId")) == container_id
         ])
 
     async def update_board_item_position(
