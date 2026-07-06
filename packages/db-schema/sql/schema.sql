@@ -2364,6 +2364,9 @@ END;
 $$;
 
 -- 29c. board_item_get_all
+-- RETURNS TABLE 시그니처가 바뀌면 CREATE OR REPLACE가 기존 DB에서 실패한다
+-- (cannot change return type — 260706 배포 사고). 시그니처 변경 시 DROP 병행 필수.
+DROP FUNCTION IF EXISTS board_item_get_all();
 CREATE OR REPLACE FUNCTION board_item_get_all()
 RETURNS TABLE(
     id TEXT,
