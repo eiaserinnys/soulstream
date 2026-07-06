@@ -324,12 +324,14 @@ function RunbookGroup({
   open,
   onToggle,
   onOpenBoard,
+  onOpenRunbookBoard,
   onStatusChanged,
 }: {
   group: RunbookOverviewGroup;
   open: boolean;
   onToggle: () => void;
   onOpenBoard: (item: RunbookOverviewItem) => void;
+  onOpenRunbookBoard: (group: RunbookOverviewGroup) => void;
   onStatusChanged: () => Promise<void>;
 }) {
   const Chevron = open ? ChevronDown : ChevronRight;
@@ -367,6 +369,19 @@ function RunbookGroup({
           <Badge variant="outline" size="sm" className="h-5 px-1.5 text-[10px]">
             {progressText(group)}
           </Badge>
+        </button>
+        <button
+          type="button"
+          data-testid="runbook-overview-group-open-board"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent-blue/10 hover:text-accent-blue focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/55"
+          title="런북 보드 열기"
+          aria-label={`${group.runbook_title} 런북 보드 열기`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenRunbookBoard(group);
+          }}
+        >
+          <ExternalLink className="h-4 w-4" />
         </button>
         <RunbookCompletionAction
           runbook={{
@@ -443,6 +458,10 @@ export function RunbookOverview() {
 
   const openBoardItem = (item: RunbookOverviewItem) => {
     openRunbookBoard(item.runbook_id, item.folder_id);
+  };
+
+  const openGroupBoard = (group: RunbookOverviewGroup) => {
+    openRunbookBoard(group.runbook_id, group.folder_id);
   };
 
   const refreshOverview = async () => {
@@ -576,6 +595,7 @@ export function RunbookOverview() {
                           }))
                         }
                         onOpenBoard={openBoardItem}
+                        onOpenRunbookBoard={openGroupBoard}
                         onStatusChanged={refreshOverview}
                       />
                     );
@@ -627,6 +647,7 @@ export function RunbookOverview() {
                               }))
                             }
                             onOpenBoard={openBoardItem}
+                            onOpenRunbookBoard={openGroupBoard}
                             onStatusChanged={refreshOverview}
                           />
                         );
