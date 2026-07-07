@@ -122,6 +122,37 @@ async def test_board_asset_init_and_commit_uses_r2_head_before_board_item(db: Sq
 
 
 @pytest.mark.asyncio
+async def test_folder_scoped_board_items_include_runbook_container_sessions(db: SqliteSessionDB):
+    service = CatalogService(db, FakeBroadcaster())
+    await db.upsert_session("folder-session", folder_id="f1")
+    await db.upsert_session("runbook-session", folder_id="f1")
+    await db.ensure_board_items()
+    await db._conn.execute(
+        """
+        UPDATE board_items
+        SET container_kind = 'runbook',
+            container_id = 'rb1',
+            source_runbook_item_id = 'item-1',
+            x = 120,
+            y = 160
+        WHERE id = 'session:runbook-session'
+        """
+    )
+    await db._conn.commit()
+
+    items = await service.list_board_items(folder_id="f1")
+
+    assert [item["id"] for item in items] == [
+        "session:folder-session",
+        "session:runbook-session",
+    ]
+    runbook_item = next(item for item in items if item["id"] == "session:runbook-session")
+    assert runbook_item["containerKind"] == "runbook"
+    assert runbook_item["containerId"] == "rb1"
+    assert runbook_item["sourceRunbookItemId"] == "item-1"
+
+
+@pytest.mark.asyncio
 async def test_runbook_board_asset_uses_container_storage_key_and_board_membership(db: SqliteSessionDB):
     storage = FakeBoardAssetStorage()
     service = CatalogService(db, FakeBroadcaster(), asset_storage=storage)

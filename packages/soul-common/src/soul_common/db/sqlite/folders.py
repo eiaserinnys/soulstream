@@ -402,10 +402,15 @@ class SqliteFolderMixin:
         container_kind: Optional[str] = None,
         container_id: Optional[str] = None,
     ) -> list[dict]:
-        if folder_id is not None:
-            container_kind = "folder"
-            container_id = folder_id
         items = await self.get_board_items()
+        if folder_id is not None:
+            if container_kind is not None or container_id is not None:
+                raise ValueError("folder_id and container_kind/container_id are mutually exclusive")
+            return [
+                item for item in items
+                if item.get("folderId") == folder_id
+                and item.get("membershipKind", "primary") == "primary"
+            ]
         if container_kind is None and container_id is None:
             return [
                 item for item in items

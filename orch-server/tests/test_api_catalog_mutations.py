@@ -184,6 +184,19 @@ class TestBoardItems:
                 "x": 40,
                 "y": 80,
                 "metadata": {},
+            },
+            {
+                "id": "session:runbook-session",
+                "folderId": "f1",
+                "containerKind": "runbook",
+                "containerId": "rb1",
+                "membershipKind": "primary",
+                "sourceRunbookItemId": "item-1",
+                "itemType": "session",
+                "itemId": "runbook-session",
+                "x": 120,
+                "y": 160,
+                "metadata": {},
             }
         ]
 
@@ -199,12 +212,22 @@ class TestBoardItems:
                 "x": 40,
                 "y": 80,
                 "metadata": {},
+            },
+            {
+                "id": "session:runbook-session",
+                "folderId": "f1",
+                "containerKind": "runbook",
+                "containerId": "rb1",
+                "membershipKind": "primary",
+                "sourceRunbookItemId": "item-1",
+                "itemType": "session",
+                "itemId": "runbook-session",
+                "x": 120,
+                "y": 160,
+                "metadata": {},
             }
         ]
-        mock_catalog_service.list_board_items.assert_called_once_with(
-            container_kind="folder",
-            container_id="f1",
-        )
+        mock_catalog_service.list_board_items.assert_called_once_with(folder_id="f1")
 
     async def test_list_board_items_scoped_to_runbook_container(self, client, mock_catalog_service):
         mock_catalog_service.get_catalog.return_value = {
