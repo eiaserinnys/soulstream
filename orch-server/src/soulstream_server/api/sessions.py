@@ -99,6 +99,30 @@ async def _resolve_payload_folder_id(
             return resolved if isinstance(resolved, str) and resolved else folder_id
     raise HTTPException(status_code=404, detail="Runbook board container not found")
 
+
+async def _inherit_source_session_runbook_container(
+    db: PostgresSessionDB,
+    payload: dict[str, Any],
+) -> None:
+    source_session_id = payload.pop("sourceSessionId", None)
+    if not isinstance(source_session_id, str) or not source_session_id:
+        return
+    if isinstance(payload.get("container"), dict):
+        return
+
+    getter = getattr(db, "get_primary_session_board_item", None)
+    if getter is None:
+        return
+    board_item = await getter(source_session_id)
+    if not isinstance(board_item, dict):
+        return
+
+    container_kind = board_item.get("containerKind") or "folder"
+    container_id = board_item.get("containerId") or board_item.get("folderId")
+    if container_kind == "runbook" and isinstance(container_id, str) and container_id:
+        payload["container"] = {"kind": "runbook", "id": container_id}
+
+
 TOOL_APPROVAL_ACK_ERROR_HTTP_STATUS = {
     "SESSION_NOT_FOUND": 404,
     "SESSION_NOT_RUNNING": 409,
@@ -246,6 +270,7 @@ def create_sessions_router(
         if task_scope.existing_response:
             return task_scope.existing_response
         payload = body.model_dump(exclude_none=True)
+        await _inherit_source_session_runbook_container(db, payload)
         access = access_for_request(
             request,
             access_email=_access_email_from_caller_info(body.caller_info),

@@ -30,6 +30,10 @@ class CreateSessionRequest(BaseModel):
     nodeId: Optional[str] = None
     folderId: Optional[str] = None
     container: Optional[dict] = None
+    sourceSessionId: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("sourceSessionId", "source_session_id"),
+    )
     sourceRunbookItemId: Optional[str] = Field(
         default=None,
         validation_alias=AliasChoices("sourceRunbookItemId", "source_runbook_item_id"),

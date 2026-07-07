@@ -58,6 +58,7 @@ export function useContinueSession(sessions: SessionSummary[] | undefined) {
         folderId: target.folderId,
         nodeId: target.nodeId,
         agentId: target.agentId,
+        sourceSessionId: sessionId,
         agent: {
           id: target.agentId,
           name: target.agentName,

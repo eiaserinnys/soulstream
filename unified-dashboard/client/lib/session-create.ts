@@ -38,6 +38,7 @@ export interface CreateDashboardSessionInput {
   reasoningEffort?: ReasoningEffort | null;
   oauthProfileName?: string | null;
   container?: BoardContainerRef | null;
+  sourceSessionId?: string | null;
   sourceRunbookItemId?: string | null;
   parentTaskId?: string;
   taskIdempotencyKey?: string;
@@ -53,6 +54,7 @@ export async function createDashboardSession(
     ...(input.attachmentPaths?.length ? { attachmentPaths: input.attachmentPaths } : {}),
     ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
     ...(input.container ? { container: input.container } : {}),
+    ...(input.sourceSessionId ? { sourceSessionId: input.sourceSessionId } : {}),
     ...(input.sourceRunbookItemId !== undefined
       ? { sourceRunbookItemId: input.sourceRunbookItemId }
       : {}),

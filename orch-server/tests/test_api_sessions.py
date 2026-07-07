@@ -25,6 +25,32 @@ def _mock_session_owner(mock_db, node, session_id="test-session"):
     )
 
 
+async def _register_create_session_node(node_manager, session_id="created-session"):
+    ws = AsyncMock()
+    ws.send_json = AsyncMock()
+    ws.close = AsyncMock()
+    node = await node_manager.register_node(
+        ws,
+        {"node_id": "api-node", **DEFAULT_AGENT_REGISTRATION},
+    )
+
+    async def resolve_on_send(data):
+        req_id = data.get("requestId")
+        if req_id and req_id in node._pending:
+            node._pending[req_id].set_result({"agentSessionId": session_id})
+
+    ws.send_json.side_effect = resolve_on_send
+    return ws
+
+
+def _sent_create_payload(ws):
+    sent_payloads = [call.args[0] for call in ws.send_json.await_args_list]
+    return next(
+        payload for payload in sent_payloads
+        if payload.get("type") == "create_session"
+    )
+
+
 def _task_row(**overrides):
     base = {
         "id": "parent-task",
@@ -360,6 +386,93 @@ class TestCreateSession:
         assert body["task"]["status"] == "in_progress"
         assert body["task"]["verificationOwner"] == "both"
         assert body["taskOperation"]["operationType"] == "start_child_session"
+
+    async def test_continue_session_inherits_source_runbook_container(
+        self, client, mock_db, node_manager
+    ):
+        """이어하기는 원 세션의 primary board item runbook 컨테이너를 상속한다."""
+        mock_db.get_primary_session_board_item = AsyncMock(return_value={
+            "id": "session:source-session",
+            "folderId": "folder-a",
+            "containerKind": "runbook",
+            "containerId": "runbook-a",
+            "membershipKind": "primary",
+            "itemType": "session",
+            "itemId": "source-session",
+            "x": 0,
+            "y": 0,
+            "metadata": {},
+        })
+        ws = await _register_create_session_node(node_manager, "continued-session")
+
+        resp = await client.post(
+            "/api/sessions",
+            json={
+                "prompt": "continue",
+                "folderId": "folder-a",
+                "sourceSessionId": "source-session",
+            },
+        )
+
+        assert resp.status_code == 201
+        create_payload = _sent_create_payload(ws)
+        assert create_payload["container"] == {"kind": "runbook", "id": "runbook-a"}
+        assert "sourceSessionId" not in create_payload
+
+    async def test_continue_session_keeps_folder_source_as_existing_folder_payload(
+        self, client, mock_db, node_manager
+    ):
+        """원 세션이 folder 컨테이너면 기존 folderId 기반 생성과 같은 payload를 유지한다."""
+        mock_db.get_primary_session_board_item = AsyncMock(return_value={
+            "id": "session:source-session",
+            "folderId": "folder-a",
+            "containerKind": "folder",
+            "containerId": "folder-a",
+            "membershipKind": "primary",
+            "itemType": "session",
+            "itemId": "source-session",
+            "x": 0,
+            "y": 0,
+            "metadata": {},
+        })
+        ws = await _register_create_session_node(node_manager, "continued-session")
+
+        resp = await client.post(
+            "/api/sessions",
+            json={
+                "prompt": "continue",
+                "folderId": "folder-a",
+                "sourceSessionId": "source-session",
+            },
+        )
+
+        assert resp.status_code == 201
+        create_payload = _sent_create_payload(ws)
+        assert create_payload["folderId"] == "folder-a"
+        assert "container" not in create_payload
+        assert "sourceSessionId" not in create_payload
+
+    async def test_continue_session_without_source_board_item_falls_back_to_folder(
+        self, client, mock_db, node_manager
+    ):
+        """원 세션 board item이 없으면 이어하기 자체를 막지 않고 folderId로 폴백한다."""
+        mock_db.get_primary_session_board_item = AsyncMock(return_value=None)
+        ws = await _register_create_session_node(node_manager, "continued-session")
+
+        resp = await client.post(
+            "/api/sessions",
+            json={
+                "prompt": "continue",
+                "folderId": "folder-a",
+                "sourceSessionId": "source-session",
+            },
+        )
+
+        assert resp.status_code == 201
+        create_payload = _sent_create_payload(ws)
+        assert create_payload["folderId"] == "folder-a"
+        assert "container" not in create_payload
+        assert "sourceSessionId" not in create_payload
 
     def test_task_scoped_idempotent_response_uses_create_session_keys(self):
         """중복 제출 응답도 일반 create session 성공 응답과 같은 task 키를 쓴다."""
