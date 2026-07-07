@@ -69,6 +69,27 @@ function folderRunbookItems(
     .sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
 }
 
+function runbookContainerSessionIds(catalog: { boardItems?: CatalogBoardItem[] } | null): Set<string> | null {
+  if (!catalog?.boardItems) return null;
+  const sessionIds = new Set<string>();
+  for (const item of catalog.boardItems) {
+    if (item.itemType === "session" && item.containerKind === "runbook") {
+      sessionIds.add(item.itemId);
+    }
+  }
+  return sessionIds;
+}
+
+function filterFolderListSessions(
+  sessions: SessionSummary[] | undefined,
+  catalog: { boardItems?: CatalogBoardItem[] } | null,
+): SessionSummary[] | undefined {
+  if (!sessions) return sessions;
+  const hiddenSessionIds = runbookContainerSessionIds(catalog);
+  if (!hiddenSessionIds || hiddenSessionIds.size === 0) return sessions;
+  return sessions.filter((session) => !hiddenSessionIds.has(session.agentSessionId));
+}
+
 function runbookProgress(snapshot: RunbookSnapshot | null): { completed: number; total: number } | null {
   if (!snapshot) return null;
   let completed = 0;
@@ -213,6 +234,10 @@ export function FolderWorkspaceView({
       !runbookProjections[item.itemId]?.snapshot?.runbook.archived
     )
   ), [catalog, runbookProjections, selectedFolderId]);
+  const visibleSessions = useMemo(
+    () => filterFolderListSessions(sessions, catalog),
+    [catalog, sessions],
+  );
   const scrollHeader = useMemo(() => (
     <>
       {childFolders.length > 0 && (
@@ -314,7 +339,7 @@ export function FolderWorkspaceView({
       />
       <div className="min-h-0 flex-1">
         <FolderContents
-          sessions={sessions}
+          sessions={visibleSessions}
           onMoveSessions={onMoveSessions}
           onRenameSession={onRenameSession}
           onContinueSession={onContinueSession}
