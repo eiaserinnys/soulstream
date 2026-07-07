@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogState, SessionSummary } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
+import type { RunbookSnapshot } from "../stores/runbook-store";
+import { useRunbookStore } from "../stores/runbook-store";
 import { FolderWorkspaceView } from "./FolderWorkspaceView";
 import { writeFolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 
@@ -86,6 +88,92 @@ const sessions: SessionSummary[] = [
   },
 ];
 
+const runbookSnapshot: RunbookSnapshot = {
+  runbook: {
+    id: "rb-1",
+    board_item_id: "runbook:rb-1",
+    folder_id: "root",
+    title: "Launch Runbook",
+    status: "open",
+    archived: false,
+    version: 1,
+    created_session_id: null,
+    created_event_id: null,
+    created_at: "2026-07-01T00:00:00.000Z",
+    updated_at: "2026-07-01T00:00:00.000Z",
+  },
+  sections: [{
+    id: "sec-1",
+    runbook_id: "rb-1",
+    position_key: "a",
+    title: "Phase",
+    assignee_kind: null,
+    assignee_agent_id: null,
+    assignee_session_id: null,
+    assignee_user_id: null,
+    archived: false,
+    version: 1,
+    created_session_id: null,
+    created_event_id: null,
+    updated_session_id: null,
+    updated_event_id: null,
+    created_at: "2026-07-01T00:00:00.000Z",
+    updated_at: "2026-07-01T00:00:00.000Z",
+  }],
+  items: [
+    {
+      id: "item-done",
+      section_id: "sec-1",
+      position_key: "a",
+      title: "Done",
+      how_to: "",
+      status: "completed",
+      assignee_kind: null,
+      assignee_agent_id: null,
+      assignee_session_id: null,
+      assignee_user_id: null,
+      archived: false,
+      version: 1,
+      created_session_id: null,
+      created_event_id: null,
+      updated_session_id: null,
+      updated_event_id: null,
+      completed_kind: "agent",
+      completed_session_id: null,
+      completed_event_id: null,
+      completed_user_id: null,
+      completed_at: "2026-07-01T00:00:00.000Z",
+      created_at: "2026-07-01T00:00:00.000Z",
+      updated_at: "2026-07-01T00:00:00.000Z",
+    },
+    {
+      id: "item-pending",
+      section_id: "sec-1",
+      position_key: "b",
+      title: "Pending",
+      how_to: "",
+      status: "pending",
+      assignee_kind: null,
+      assignee_agent_id: null,
+      assignee_session_id: null,
+      assignee_user_id: null,
+      archived: false,
+      version: 1,
+      created_session_id: null,
+      created_event_id: null,
+      updated_session_id: null,
+      updated_event_id: null,
+      completed_kind: null,
+      completed_session_id: null,
+      completed_event_id: null,
+      completed_user_id: null,
+      completed_at: null,
+      created_at: "2026-07-01T00:00:00.000Z",
+      updated_at: "2026-07-01T00:00:00.000Z",
+    },
+  ],
+};
+
 class MockIntersectionObserver {
   observe = vi.fn();
   disconnect = vi.fn();
@@ -117,13 +205,52 @@ class MockResizeObserver {
   disconnect = vi.fn();
 }
 
-function renderFolderWorkspace() {
+function installFetchMock({
+  boardItems = [],
+  snapshots = {},
+}: {
+  boardItems?: NonNullable<CatalogState["boardItems"]>;
+  snapshots?: Record<string, RunbookSnapshot>;
+} = {}) {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "/api/board-items?folder_id=root") {
+      return Response.json({ boardItems });
+    }
+    const runbookMatch = url.match(/^\/api\/runbooks\/([^/]+)$/);
+    if (runbookMatch) {
+      const snapshot = snapshots[decodeURIComponent(runbookMatch[1] ?? "")];
+      if (snapshot) return Response.json(snapshot);
+      return Response.json({ detail: "not found" }, { status: 404 });
+    }
+    return Response.json({ detail: `unexpected fetch ${url}` }, { status: 500 });
+  });
+  globalThis.fetch = fetchMock as unknown as typeof fetch;
+  return fetchMock;
+}
+
+async function flushEffects() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function renderFolderWorkspace(options: {
+  catalogOverride?: CatalogState;
+  boardItems?: NonNullable<CatalogState["boardItems"]>;
+  snapshots?: Record<string, RunbookSnapshot>;
+} = {}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
 
+  const fetchMock = installFetchMock({
+    boardItems: options.boardItems,
+    snapshots: options.snapshots,
+  });
   useDashboardStore.getState().reset();
-  useDashboardStore.getState().setCatalog(catalog);
+  useRunbookStore.getState().reset();
+  useDashboardStore.getState().setCatalog(options.catalogOverride ?? catalog);
   useDashboardStore.getState().selectFolder("root");
   writeFolderWorkspaceViewMode(window.localStorage, "root", "list");
 
@@ -131,7 +258,7 @@ function renderFolderWorkspace() {
     root.render(createElement(FolderWorkspaceView, { sessions }));
   });
 
-  return { container, root };
+  return { container, fetchMock, root };
 }
 
 describe("FolderWorkspaceView list mode", () => {
@@ -191,5 +318,95 @@ describe("FolderWorkspaceView list mode", () => {
     expect(scrollRoot?.textContent).toContain("하위 폴더");
     expect(scrollRoot?.textContent).toContain("세션");
     expect(scrollRoot?.textContent).toContain("Session A");
+  });
+
+  it("renders folder runbooks above sessions and opens the runbook board", async () => {
+    const boardItems: NonNullable<CatalogState["boardItems"]> = [{
+      id: "runbook:rb-1",
+      folderId: "root",
+      containerKind: "folder",
+      containerId: "root",
+      membershipKind: "primary",
+      sourceRunbookItemId: null,
+      itemType: "runbook",
+      itemId: "rb-1",
+      x: 20,
+      y: 10,
+      metadata: { title: "Launch Runbook" },
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+    }];
+    ({ container, root } = renderFolderWorkspace({
+      boardItems,
+      snapshots: { "rb-1": runbookSnapshot },
+    }));
+
+    await flushEffects();
+
+    const scrollRoot = container.querySelector<HTMLElement>("[data-testid='folder-session-scroll-root']");
+    const runbookCard = container.querySelector<HTMLButtonElement>("[data-testid='folder-runbook-card']");
+    const virtualGrid = container.querySelector<HTMLElement>("[data-testid='folder-session-virtual-grid']");
+
+    expect(scrollRoot).not.toBeNull();
+    expect(runbookCard).not.toBeNull();
+    expect(virtualGrid).not.toBeNull();
+    expect(scrollRoot?.contains(runbookCard ?? null)).toBe(true);
+    expect(scrollRoot?.contains(virtualGrid)).toBe(true);
+    expect(scrollRoot?.textContent).toContain("하위 폴더");
+    expect(scrollRoot?.textContent).toContain("런북");
+    expect(scrollRoot?.textContent).toContain("Launch Runbook");
+    expect(scrollRoot?.textContent).toContain("1/2");
+
+    flushSync(() => {
+      runbookCard?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(useDashboardStore.getState().activeBoardContainer).toEqual({
+      kind: "runbook",
+      id: "rb-1",
+    });
+    expect(useDashboardStore.getState().selectedFolderId).toBe("root");
+  });
+
+  it("does not render a runbook section when the folder has no runbooks", async () => {
+    ({ container, root } = renderFolderWorkspace());
+
+    await flushEffects();
+
+    expect(container.querySelector("[data-testid='folder-runbook-section']")).toBeNull();
+    expect(container.textContent).not.toContain("런북");
+    expect(container.textContent).toContain("세션");
+  });
+
+  it("omits archived runbooks from the folder runbook section", async () => {
+    const archivedSnapshot: RunbookSnapshot = {
+      ...runbookSnapshot,
+      runbook: {
+        ...runbookSnapshot.runbook,
+        archived: true,
+      },
+    };
+    ({ container, root } = renderFolderWorkspace({
+      boardItems: [{
+        id: "runbook:rb-1",
+        folderId: "root",
+        containerKind: "folder",
+        containerId: "root",
+        membershipKind: "primary",
+        sourceRunbookItemId: null,
+        itemType: "runbook",
+        itemId: "rb-1",
+        x: 20,
+        y: 10,
+        metadata: { title: "Archived Runbook" },
+      }],
+      snapshots: { "rb-1": archivedSnapshot },
+    }));
+
+    await flushEffects();
+
+    expect(container.querySelector("[data-testid='folder-runbook-section']")).toBeNull();
+    expect(container.textContent).not.toContain("Archived Runbook");
+    expect(container.textContent).toContain("세션");
   });
 });
