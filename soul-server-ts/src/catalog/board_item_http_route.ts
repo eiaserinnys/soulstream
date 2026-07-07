@@ -23,10 +23,68 @@ interface BoardItemContainerMoveBody {
   idempotency_key?: unknown;
 }
 
+interface BoardItemPositionBody {
+  x?: unknown;
+  y?: unknown;
+}
+
 export function registerBoardItemHttpRoutes(
   fastify: FastifyInstance,
   config: BoardItemHttpRouteConfig,
 ): void {
+  fastify.patch<{
+    Params: BoardItemContainerRouteParams;
+    Body: BoardItemPositionBody;
+  }>("/api/board-items/:boardItemId/position", async (request, reply) => {
+    try {
+      await authenticateDashboardHttpRequest({
+        requestHeaders: request.headers,
+        config: config.auth,
+      });
+    } catch (err) {
+      return reply.status(401).send({
+        detail: {
+          error: {
+            code: "UNAUTHORIZED",
+            message: err instanceof Error ? err.message : "Authentication failed",
+          },
+        },
+      });
+    }
+
+    const parsed = parsePositionBody(request.body ?? {});
+    if (!parsed.ok) {
+      return reply.status(422).send({
+        detail: {
+          error: {
+            code: "INVALID_BOARD_ITEM_POSITION",
+            message: parsed.error,
+          },
+        },
+      });
+    }
+
+    try {
+      await config.service.updateBoardItemPosition(
+        request.params.boardItemId,
+        parsed.value.x,
+        parsed.value.y,
+      );
+      return { ok: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      request.log.error({ err }, "Board item position update failed");
+      return reply.status(500).send({
+        detail: {
+          error: {
+            code: "BOARD_ITEM_POSITION_FAILED",
+            message,
+          },
+        },
+      });
+    }
+  });
+
   fastify.patch<{
     Params: BoardItemContainerRouteParams;
     Body: BoardItemContainerMoveBody;
@@ -101,6 +159,18 @@ export function registerBoardItemHttpRoutes(
       });
     }
   });
+}
+
+function parsePositionBody(
+  body: BoardItemPositionBody,
+): { ok: true; value: { x: number; y: number } } | { ok: false; error: string } {
+  if (typeof body.x !== "number" || typeof body.y !== "number") {
+    return { ok: false, error: "x and y are required" };
+  }
+  if (!Number.isFinite(body.x) || !Number.isFinite(body.y)) {
+    return { ok: false, error: "x and y must be finite numbers" };
+  }
+  return { ok: true, value: { x: body.x, y: body.y } };
 }
 
 function parseMoveBody(

@@ -6,10 +6,7 @@ PUT /api/sessions/{session_id}
 DELETE /api/sessions/{session_id}
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-
-from soul_common.catalog.catalog_service import MarkdownDocumentVersionConflictError
 
 TEST_AUTH_TOKEN = "test-bearer-token-for-testing"
 
@@ -21,6 +18,31 @@ def _make_response(status_code: int, json_body: dict, content_type: str = "appli
     resp.headers = {"content-type": content_type}
     resp.json = MagicMock(return_value=json_body)
     return resp
+
+
+async def _register_board_yjs_node(
+    node_manager,
+    node_id: str,
+    port: int,
+    *,
+    is_host: bool,
+):
+    ws = AsyncMock()
+    ws.send_json = AsyncMock()
+    ws.close = AsyncMock()
+    return await node_manager.register_node(
+        ws,
+        {
+            "node_id": node_id,
+            "host": "localhost",
+            "port": port,
+            "agents": [],
+            "capabilities": {
+                "board_yjs_host": is_host,
+                "board_yjs_host_node_id": "board-host",
+            },
+        },
+    )
 
 
 class TestReorderFolders:
@@ -219,34 +241,45 @@ class TestBoardItems:
             container_id="rb1",
         )
 
-    async def test_update_board_item_position(self, client, mock_catalog_service):
-        resp = await client.patch(
-            "/api/board-items/session:s1/position",
-            json={"x": 59, "y": 101},
-        )
-
-        assert resp.status_code == 200
-        assert resp.json() == {"ok": True}
-        mock_catalog_service.update_board_item_position.assert_called_once_with("session:s1", 59, 101)
-
-    async def test_move_board_item_to_container_proxies_to_connected_ts_node(
+    async def test_update_board_item_position_proxies_to_board_yjs_host_node(
         self,
         client,
         mock_catalog_service,
         node_manager,
     ):
-        ws = AsyncMock()
-        ws.send_json = AsyncMock()
-        ws.close = AsyncMock()
-        node = await node_manager.register_node(
-            ws,
-            {
-                "node_id": "node-board",
-                "host": "localhost",
-                "port": 4105,
-                "agents": [],
-            },
+        await _register_board_yjs_node(node_manager, "worker-node", 4106, is_host=False)
+        host = await _register_board_yjs_node(node_manager, "board-host", 4105, is_host=True)
+        mock_resp = _make_response(200, {"ok": True})
+
+        with patch("soulstream_server.api.catalog.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.request = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.patch(
+                "/api/board-items/session:s1/position",
+                json={"x": 59, "y": 101},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        called_args, called_kwargs = mock_client.request.call_args
+        assert called_args == (
+            "PATCH",
+            f"http://{host.host}:{host.port}/api/board-items/session%3As1/position",
         )
+        assert called_kwargs["headers"]["authorization"] == f"Bearer {TEST_AUTH_TOKEN}"
+        assert called_kwargs["json"] == {"x": 59.0, "y": 101.0}
+        mock_catalog_service.update_board_item_position.assert_not_called()
+
+    async def test_move_board_item_to_container_proxies_to_board_yjs_host_node(
+        self,
+        client,
+        mock_catalog_service,
+        node_manager,
+    ):
+        await _register_board_yjs_node(node_manager, "worker-node", 4106, is_host=False)
+        host = await _register_board_yjs_node(node_manager, "board-host", 4105, is_host=True)
         mock_catalog_service.get_catalog.return_value = {
             "folders": [{"id": "root", "name": "Root", "sortOrder": 0}],
             "sessions": {},
@@ -288,7 +321,7 @@ class TestBoardItems:
 
         with patch("soulstream_server.api.catalog.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
-            mock_client.patch = AsyncMock(return_value=mock_resp)
+            mock_client.request = AsyncMock(return_value=mock_resp)
             mock_client_cls.return_value.__aenter__.return_value = mock_client
 
             resp = await client.patch(
@@ -303,9 +336,10 @@ class TestBoardItems:
 
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
-        called_url, called_kwargs = mock_client.patch.call_args
-        assert called_url[0] == (
-            f"http://{node.host}:{node.port}"
+        called_args, called_kwargs = mock_client.request.call_args
+        assert called_args == (
+            "PATCH",
+            f"http://{host.host}:{host.port}"
             "/api/board-items/markdown%3Adoc-a/container"
         )
         assert called_kwargs["headers"]["authorization"] == f"Bearer {TEST_AUTH_TOKEN}"
@@ -337,6 +371,61 @@ class TestBoardItems:
 
         assert resp.status_code == 404
         assert resp.json()["detail"] == "Board item not found"
+
+
+class TestBoardYjsHostProxy:
+    """Remote soul-server-ts board mutation delegation entrypoint."""
+
+    async def test_board_yjs_host_operation_proxies_only_to_declared_host_node(
+        self,
+        client,
+        node_manager,
+    ):
+        await _register_board_yjs_node(node_manager, "worker-node", 4106, is_host=False)
+        host = await _register_board_yjs_node(node_manager, "board-host", 4105, is_host=True)
+        mock_resp = _make_response(200, {"ok": True})
+        payload = {
+            "container": {"containerKind": "runbook", "containerId": "rb-1"},
+            "boardItemId": "markdown:doc-1",
+            "x": 12,
+            "y": 34,
+        }
+
+        with patch("soulstream_server.api.catalog.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.request = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.post(
+                "/api/board-yjs/host/update-board-item-position",
+                json=payload,
+            )
+
+        assert resp.status_code == 200
+        assert resp.json() == {"ok": True}
+        called_args, called_kwargs = mock_client.request.call_args
+        assert called_args == (
+            "POST",
+            f"http://{host.host}:{host.port}"
+            "/api/internal/board-yjs/update-board-item-position",
+        )
+        assert called_kwargs["headers"]["authorization"] == f"Bearer {TEST_AUTH_TOKEN}"
+        assert called_kwargs["json"] == payload
+
+    async def test_board_yjs_host_operation_rejects_when_no_host_is_registered(
+        self,
+        client,
+        node_manager,
+    ):
+        await _register_board_yjs_node(node_manager, "worker-node", 4106, is_host=False)
+
+        resp = await client.post(
+            "/api/board-yjs/host/update-board-item-position",
+            json={"boardItemId": "markdown:doc-1"},
+        )
+
+        assert resp.status_code == 503
+        assert resp.json()["detail"] == "Board Yjs host node is not connected"
 
 
 class TestRunbooks:
@@ -756,25 +845,58 @@ class TestBoardAssets:
 class TestMarkdownDocuments:
     """Markdown document CRUD routes."""
 
-    async def test_create_markdown_document(self, client, mock_catalog_service):
-        resp = await client.post(
-            "/api/markdown-documents",
-            json={"folderId": "f1", "title": "Note", "body": "Body", "x": 40, "y": 80},
-        )
+    async def test_create_markdown_document_proxies_to_board_yjs_host_node(
+        self,
+        client,
+        mock_catalog_service,
+        node_manager,
+    ):
+        host = await _register_board_yjs_node(node_manager, "board-host", 4105, is_host=True)
+        mock_resp = _make_response(201, {
+            "document": {"id": "doc-1", "title": "Note", "body": "Body", "version": 1},
+            "boardItem": {
+                "id": "markdown:doc-1",
+                "folderId": "f1",
+                "itemType": "markdown",
+                "itemId": "doc-1",
+                "x": 40,
+                "y": 80,
+                "metadata": {"title": "Note"},
+            },
+        })
+
+        with patch("soulstream_server.api.catalog.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.request = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.post(
+                "/api/markdown-documents",
+                json={"folderId": "f1", "title": "Note", "body": "Body", "x": 40, "y": 80},
+            )
 
         assert resp.status_code == 201
         assert resp.json()["document"]["id"] == "doc-1"
-        mock_catalog_service.create_markdown_document.assert_called_once_with(
-            folder_id="f1",
-            title="Note",
-            body="Body",
-            x=40,
-            y=80,
-            container_kind="folder",
-            container_id="f1",
-        )
+        called_args, called_kwargs = mock_client.request.call_args
+        assert called_args == ("POST", f"http://{host.host}:{host.port}/api/markdown-documents")
+        assert called_kwargs["headers"]["authorization"] == f"Bearer {TEST_AUTH_TOKEN}"
+        assert called_kwargs["json"] == {
+            "folderId": "f1",
+            "container": {"kind": "folder", "id": "f1"},
+            "title": "Note",
+            "body": "Body",
+            "x": 40.0,
+            "y": 80.0,
+        }
+        mock_catalog_service.create_markdown_document.assert_not_called()
 
-    async def test_create_runbook_markdown_document(self, client, mock_catalog_service):
+    async def test_create_runbook_markdown_document_proxies_to_board_yjs_host_node(
+        self,
+        client,
+        mock_catalog_service,
+        node_manager,
+    ):
+        host = await _register_board_yjs_node(node_manager, "board-host", 4105, is_host=True)
         mock_catalog_service.get_catalog.return_value = {
             "folders": [{"id": "f1", "name": "Folder", "sortOrder": 0}],
             "sessions": {},
@@ -788,28 +910,39 @@ class TestMarkdownDocuments:
                 "metadata": {},
             }],
         }
+        mock_resp = _make_response(201, {
+            "document": {"id": "doc-1", "title": "Note", "body": "Body", "version": 1},
+            "boardItem": {"id": "markdown:doc-1", "folderId": "f1"},
+        })
 
-        resp = await client.post(
-            "/api/markdown-documents",
-            json={
-                "container": {"kind": "runbook", "id": "rb1"},
-                "title": "Note",
-                "body": "Body",
-                "x": 40,
-                "y": 80,
-            },
-        )
+        with patch("soulstream_server.api.catalog.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.request = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.post(
+                "/api/markdown-documents",
+                json={
+                    "container": {"kind": "runbook", "id": "rb1"},
+                    "title": "Note",
+                    "body": "Body",
+                    "x": 40,
+                    "y": 80,
+                },
+            )
 
         assert resp.status_code == 201
-        mock_catalog_service.create_markdown_document.assert_called_once_with(
-            folder_id="f1",
-            title="Note",
-            body="Body",
-            x=40,
-            y=80,
-            container_kind="runbook",
-            container_id="rb1",
-        )
+        called_args, called_kwargs = mock_client.request.call_args
+        assert called_args == ("POST", f"http://{host.host}:{host.port}/api/markdown-documents")
+        assert called_kwargs["json"] == {
+            "folderId": "f1",
+            "container": {"kind": "runbook", "id": "rb1"},
+            "title": "Note",
+            "body": "Body",
+            "x": 40.0,
+            "y": 80.0,
+        }
+        mock_catalog_service.create_markdown_document.assert_not_called()
 
     async def test_get_markdown_document(self, client, mock_catalog_service):
         resp = await client.get("/api/markdown-documents/doc-1")
@@ -826,21 +959,32 @@ class TestMarkdownDocuments:
 
         assert resp.status_code == 404
 
-    async def test_update_markdown_document(self, client, mock_catalog_service):
-        resp = await client.put(
-            "/api/markdown-documents/doc-1",
-            json={"title": "New", "expectedVersion": 1},
-        )
+    async def test_update_markdown_document_proxies_to_board_yjs_host_node(
+        self,
+        client,
+        mock_catalog_service,
+        node_manager,
+    ):
+        host = await _register_board_yjs_node(node_manager, "board-host", 4105, is_host=True)
+        mock_resp = _make_response(200, {"id": "doc-1", "title": "New", "body": "Body", "version": 2})
+
+        with patch("soulstream_server.api.catalog.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.request = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.put(
+                "/api/markdown-documents/doc-1",
+                json={"title": "New", "expectedVersion": 1},
+            )
 
         assert resp.status_code == 200
         assert resp.json()["title"] == "New"
         assert resp.json()["version"] == 2
-        mock_catalog_service.update_markdown_document.assert_called_once_with(
-            "doc-1",
-            title="New",
-            body=None,
-            expected_version=1,
-        )
+        called_args, called_kwargs = mock_client.request.call_args
+        assert called_args == ("PUT", f"http://{host.host}:{host.port}/api/markdown-documents/doc-1")
+        assert called_kwargs["json"] == {"expectedVersion": 1, "title": "New"}
+        mock_catalog_service.update_markdown_document.assert_not_called()
 
     async def test_update_markdown_document_missing_expected_version_returns_422(self, client, mock_catalog_service):
         resp = await client.put(
@@ -857,23 +1001,48 @@ class TestMarkdownDocuments:
         assert resp.status_code == 422
         mock_catalog_service.update_markdown_document.assert_not_called()
 
-    async def test_update_markdown_document_stale_version_returns_409(self, client, mock_catalog_service):
-        mock_catalog_service.update_markdown_document.side_effect = MarkdownDocumentVersionConflictError(
-            "doc-1",
-            expected_version=1,
-            actual_version=2,
+    async def test_update_markdown_document_stale_version_returns_409(
+        self,
+        client,
+        node_manager,
+    ):
+        await _register_board_yjs_node(node_manager, "board-host", 4105, is_host=True)
+        mock_resp = _make_response(
+            409,
+            {"detail": {"error": {"code": "MARKDOWN_DOCUMENT_VERSION_CONFLICT", "message": "version conflict"}}},
         )
 
-        resp = await client.put(
-            "/api/markdown-documents/doc-1",
-            json={"body": "Stale", "expectedVersion": 1},
-        )
+        with patch("soulstream_server.api.catalog.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.request = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.put(
+                "/api/markdown-documents/doc-1",
+                json={"body": "Stale", "expectedVersion": 1},
+            )
 
         assert resp.status_code == 409
-        assert "version conflict" in resp.json()["detail"]
+        assert resp.json()["detail"]["error"]["code"] == "MARKDOWN_DOCUMENT_VERSION_CONFLICT"
 
-    async def test_delete_markdown_document(self, client, mock_catalog_service):
-        resp = await client.delete("/api/markdown-documents/doc-1")
+    async def test_delete_markdown_document_proxies_to_board_yjs_host_node(
+        self,
+        client,
+        mock_catalog_service,
+        node_manager,
+    ):
+        host = await _register_board_yjs_node(node_manager, "board-host", 4105, is_host=True)
+        mock_resp = _make_response(204, {}, content_type="")
+
+        with patch("soulstream_server.api.catalog.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.request = AsyncMock(return_value=mock_resp)
+            mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+            resp = await client.delete("/api/markdown-documents/doc-1")
 
         assert resp.status_code == 204
-        mock_catalog_service.delete_markdown_document.assert_called_once_with("doc-1")
+        called_args, called_kwargs = mock_client.request.call_args
+        assert called_args == ("DELETE", f"http://{host.host}:{host.port}/api/markdown-documents/doc-1")
+        assert called_kwargs["json"] is None
+        mock_catalog_service.delete_markdown_document.assert_not_called()

@@ -9,6 +9,7 @@ import { loadAgentRegistry } from "./agent_registry.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "./auth/claude_auth.js";
 import { FileAttachmentStore } from "./attachments/file_manager.js";
 import { CatalogService } from "./catalog/catalog_service.js";
+import { BoardYjsHostClient } from "./collaboration/board_yjs_host_client.js";
 import { BoardYjsService } from "./collaboration/board_yjs_service.js";
 import { parseEnv } from "./config.js";
 import { CustomViewService } from "./custom_view/custom_view_service.js";
@@ -239,16 +240,32 @@ async function main(): Promise<void> {
     processEnv: process.env,
   });
   const orchProxyConfig = buildOrchProxyConfig(env);
-  const boardYjsService = new BoardYjsService({
+  const boardYjsAuth = {
+    authBearerToken: env.AUTH_BEARER_TOKEN,
+    environment: env.ENVIRONMENT,
+    dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
+    jwtSecret: env.JWT_SECRET,
+  };
+  const isBoardYjsHost = env.SOULSTREAM_NODE_ID === env.BOARD_YJS_HOST_NODE_ID;
+  const localBoardYjsService = new BoardYjsService({
     db,
     logger,
-    auth: {
-      authBearerToken: env.AUTH_BEARER_TOKEN,
-      environment: env.ENVIRONMENT,
-      dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
-      jwtSecret: env.JWT_SECRET,
-    },
+    auth: boardYjsAuth,
+    nodeId: env.SOULSTREAM_NODE_ID,
+    hostNodeId: env.BOARD_YJS_HOST_NODE_ID,
+    isHost: isBoardYjsHost,
   });
+  const boardYjsService = isBoardYjsHost
+    ? localBoardYjsService
+    : new BoardYjsHostClient({ orch: orchProxyConfig, logger });
+  logger.info(
+    {
+      nodeId: env.SOULSTREAM_NODE_ID,
+      boardYjsHostNodeId: env.BOARD_YJS_HOST_NODE_ID,
+      isBoardYjsHost,
+    },
+    "Board Yjs host routing initialized",
+  );
 
   // B-6 context_builder: 신규 task 첫 turn 진입 시 folder_prompt + atom_context +
   // cogito_context + soulstream_item을 합성한 prompt를 codex에 전달.
@@ -697,6 +714,7 @@ async function main(): Promise<void> {
   // MCP runtime — MCP_ENABLED=true일 때 server.ts가 라우트 등록에 사용.
   const mcpRuntime: McpRuntime = {
     nodeId: env.SOULSTREAM_NODE_ID,
+    boardYjsHostNodeId: env.BOARD_YJS_HOST_NODE_ID,
     agentsConfigPath: env.AGENTS_CONFIG_PATH,
     db,
     taskManager,
@@ -745,25 +763,23 @@ async function main(): Promise<void> {
         }
       : undefined,
     boardYjs: {
-      service: boardYjsService,
+      service: localBoardYjsService,
+    },
+    boardYjsHost: {
+      service: localBoardYjsService,
+      auth: boardYjsAuth,
     },
     runbook: {
       service: runbookService,
-      auth: {
-        authBearerToken: env.AUTH_BEARER_TOKEN,
-        environment: env.ENVIRONMENT,
-        dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
-        jwtSecret: env.JWT_SECRET,
-      },
+      auth: boardYjsAuth,
     },
     boardItem: {
       service: catalogService,
-      auth: {
-        authBearerToken: env.AUTH_BEARER_TOKEN,
-        environment: env.ENVIRONMENT,
-        dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
-        jwtSecret: env.JWT_SECRET,
-      },
+      auth: boardYjsAuth,
+    },
+    markdownDocument: {
+      service: catalogService,
+      auth: boardYjsAuth,
     },
   });
   await startServer(server, env.HOST, env.PORT);
@@ -782,6 +798,7 @@ async function main(): Promise<void> {
     {
       url: env.SOULSTREAM_UPSTREAM_URL,
       nodeId: env.SOULSTREAM_NODE_ID,
+      boardYjsHostNodeId: env.BOARD_YJS_HOST_NODE_ID,
       host: env.HOST,
       port: env.PORT,
       authBearerToken: env.AUTH_BEARER_TOKEN,

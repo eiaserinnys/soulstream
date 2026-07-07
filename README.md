@@ -88,6 +88,7 @@ pnpm --dir . install
 pnpm --dir soul-server-ts build
 DATABASE_URL=postgresql://user:pass@localhost:5432/soulstream_test \
 SOULSTREAM_NODE_ID=standalone-ts \
+BOARD_YJS_HOST_NODE_ID=standalone-ts \
 SOULSTREAM_UPSTREAM_URL=ws://localhost:5200/ws/node \
 node soul-server-ts/dist/main.js
 ```
@@ -103,6 +104,7 @@ VITE_API_BASE=http://localhost:3105 pnpm --dir unified-dashboard run dev
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SOULSTREAM_NODE_ID` | `standalone-ts` ¹ | Unique node identifier |
+| `BOARD_YJS_HOST_NODE_ID` | `standalone-ts` ¹ | Single TS node that hosts live board Yjs documents |
 | `SOULSTREAM_UPSTREAM_URL` | *(required)* | Orchestrator WebSocket URL |
 | `DATABASE_URL` | *(required)* | PostgreSQL URL |
 | `AGENTS_CONFIG_PATH` | `config/agents.yaml` | Agent registry YAML path |

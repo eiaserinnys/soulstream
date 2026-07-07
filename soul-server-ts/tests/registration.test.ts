@@ -84,6 +84,30 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     expect(msg.supported_backends).toEqual([]);
   });
 
+  it("board Yjs host capability를 단일 host node id 기준으로 광고", () => {
+    const host = buildRegistrationMsg({
+      nodeId: "eiaserinnys",
+      boardYjsHostNodeId: "eiaserinnys",
+      host: "127.0.0.1",
+      port: 3105,
+      userName: "",
+      agentRegistry: new AgentRegistry([codexAgent]),
+    });
+    const worker = buildRegistrationMsg({
+      nodeId: "eias-linegames-wsl",
+      boardYjsHostNodeId: "eiaserinnys",
+      host: "127.0.0.1",
+      port: 4105,
+      userName: "",
+      agentRegistry: new AgentRegistry([codexAgent]),
+    });
+
+    expect(host.capabilities?.board_yjs_host).toBe(true);
+    expect(worker.capabilities?.board_yjs_host).toBe(false);
+    expect(host.capabilities?.board_yjs_host_node_id).toBe("eiaserinnys");
+    expect(worker.capabilities?.board_yjs_host_node_id).toBe("eiaserinnys");
+  });
+
   it("복수 backend mix를 agents.yaml 정본 그대로 node_register에 광고", () => {
     const msg = buildRegistrationMsg({
       nodeId: "x",

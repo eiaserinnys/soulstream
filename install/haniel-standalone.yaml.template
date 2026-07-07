@@ -49,6 +49,9 @@ install:
         - key: SOULSTREAM_NODE_ID
           prompt: "노드 ID (이 서버의 고유 식별자, 영문으로 입력)"
           default: standalone-ts
+        - key: BOARD_YJS_HOST_NODE_ID
+          prompt: "보드 Y.Doc 호스트 노드 ID"
+          default: standalone-ts
         - key: SOULSTREAM_UPSTREAM_URL
           prompt: "오케스트레이터 WebSocket URL"
           default: ws://127.0.0.1:5200/ws/node

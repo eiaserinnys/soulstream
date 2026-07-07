@@ -174,6 +174,9 @@ function createTestBoardYjsService(db: SessionDB): BoardYjsService {
   return new BoardYjsService({
     db,
     logger: createSilentLogger() as never,
+    nodeId: "test-node",
+    hostNodeId: "test-node",
+    isHost: true,
     auth: {
       authBearerToken: "",
       environment: "development",

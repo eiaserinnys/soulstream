@@ -13,6 +13,10 @@ import {
   type BoardYjsRouteConfig,
 } from "./collaboration/board_yjs_route.js";
 import {
+  registerBoardYjsHostRoutes,
+  type BoardYjsHostRouteConfig,
+} from "./collaboration/board_yjs_host_route.js";
+import {
   registerRunbookHttpRoutes,
   type RunbookHttpRouteConfig,
 } from "./runbook/runbook_http_route.js";
@@ -20,6 +24,10 @@ import {
   registerBoardItemHttpRoutes,
   type BoardItemHttpRouteConfig,
 } from "./catalog/board_item_http_route.js";
+import {
+  registerMarkdownDocumentHttpRoutes,
+  type MarkdownDocumentHttpRouteConfig,
+} from "./catalog/markdown_document_http_route.js";
 
 export interface ServerParams {
   host: string;
@@ -46,10 +54,14 @@ export interface ServerParams {
   llm?: LlmRouteConfig;
   /** Board workspace Yjs collaboration route 설정. */
   boardYjs?: BoardYjsRouteConfig;
+  /** Internal board host write route 설정. */
+  boardYjsHost?: BoardYjsHostRouteConfig;
   /** Runbook dashboard write routes. */
   runbook?: RunbookHttpRouteConfig;
   /** Board item dashboard write routes. */
   boardItem?: BoardItemHttpRouteConfig;
+  /** Markdown document dashboard write routes. */
+  markdownDocument?: MarkdownDocumentHttpRouteConfig;
 }
 
 export type ServerInstance = FastifyInstance & {
@@ -97,11 +109,17 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
   if (params.boardYjs) {
     await registerBoardYjsRoutes(fastify, params.boardYjs);
   }
+  if (params.boardYjsHost) {
+    registerBoardYjsHostRoutes(fastify, params.boardYjsHost);
+  }
   if (params.runbook) {
     registerRunbookHttpRoutes(fastify, params.runbook);
   }
   if (params.boardItem) {
     registerBoardItemHttpRoutes(fastify, params.boardItem);
+  }
+  if (params.markdownDocument) {
+    registerMarkdownDocumentHttpRoutes(fastify, params.markdownDocument);
   }
 
   return fastify;
