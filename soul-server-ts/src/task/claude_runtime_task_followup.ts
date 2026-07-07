@@ -7,6 +7,7 @@ import type { TaskManager } from "./task_manager.js";
 import type { InterventionMessage, Task } from "./task_models.js";
 
 export const CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE = "claude_runtime_task_followup";
+export const MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT = 3;
 
 export type ClaudeRuntimeFollowupStallReason =
   | "empty_response"
@@ -103,7 +104,6 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
   async flush(task: Task): Promise<void> {
     const pending = this.pendingBySession.get(task.agentSessionId);
     if (!pending || pending.size === 0) return;
-    this.pendingBySession.delete(task.agentSessionId);
 
     const items = Array.from(pending.values()).sort((a, b) => a.firstSeen - b.firstSeen);
     try {
@@ -120,13 +120,18 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         this.deps.onResume,
       );
       for (const item of items) {
+        pending.delete(item.taskId);
         this.flushedTaskKeys.add(buildTaskKey(task.agentSessionId, item.taskId));
+      }
+      if (pending.size === 0) {
+        this.pendingBySession.delete(task.agentSessionId);
       }
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId, taskIds: items.map((item) => item.taskId) },
         "Claude runtime task follow-up intervention failed",
       );
+      throw err;
     }
   }
 
@@ -154,6 +159,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         { err, sessionId: task.agentSessionId, followupKey: message.followupKey, reason },
         "Claude runtime task follow-up fallback intervention failed",
       );
+      throw err;
     }
   }
 
@@ -169,6 +175,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
 export function buildClaudeRuntimeTaskFollowupPrompt(
   items: PendingRuntimeTaskFollowup[],
 ): string {
+  const allCompleted = items.every((item) => item.status === "completed");
   const taskLines = items.map((item, index) => {
     const fields = [
       `task_id=${item.taskId}`,
@@ -181,12 +188,20 @@ export function buildClaudeRuntimeTaskFollowupPrompt(
     ].filter(Boolean);
     return `${index + 1}. ${fields.join(" | ")}`;
   });
+  const statusNotes = items
+    .map((item, index) => formatRuntimeTaskStatusNote(index + 1, item))
+    .filter(Boolean);
 
   return [
     "<claude-runtime-background-task-followup>",
-    "백그라운드 Claude runtime task가 완료되었습니다.",
-    "아래 완료 항목을 확인하고 사용자가 기대한 다음 작업을 즉시 이어서 진행하세요.",
-    "필요하면 output_file을 읽어 결과를 검증하세요.",
+    allCompleted
+      ? "백그라운드 Claude runtime task가 완료되었습니다."
+      : "백그라운드 Claude runtime task가 종료되었습니다. 일부 항목은 완료되지 않았을 수 있습니다.",
+    allCompleted
+      ? "아래 완료 항목을 확인하고 사용자가 기대한 다음 작업을 즉시 이어서 진행하세요."
+      : "아래 항목의 실제 status를 먼저 확인하고, 완료되지 않은 항목은 필요한 경우 다른 방식으로 작업을 재수립하세요.",
+    "output_file이나 summary가 있으면 먼저 읽어 실제 결과를 검증하세요.",
+    ...statusNotes,
     "직전 응답을 그대로 반복하지 마세요. 진행할 수 없다면 이유와 필요한 사용자 확인을 명시하세요.",
     "",
     ...taskLines,
@@ -204,7 +219,7 @@ function buildClaudeRuntimeTaskFollowupFallbackPrompt(
   return [
     "<claude-runtime-background-task-followup-retry>",
     reasonText,
-    "아래 원래 follow-up 지시를 다시 수행하되, 완료된 백그라운드 작업 결과를 확인하고 다음 사용자-visible 작업을 이어서 진행하세요.",
+    "아래 원래 follow-up 지시를 다시 수행하되, 백그라운드 작업의 실제 상태와 output_file/summary를 다시 확인하고 다음 사용자-visible 작업을 이어서 진행하세요.",
     "같은 문장을 반복하지 말고, 진행 불가 시 이유와 필요한 사용자 확인을 명시하세요.",
     "",
     originalText,
@@ -218,6 +233,26 @@ function buildFollowupKey(sessionId: string, items: PendingRuntimeTaskFollowup[]
 
 function buildTaskKey(sessionId: string, taskId: string): string {
   return `${sessionId}:${taskId}`;
+}
+
+function formatRuntimeTaskStatusNote(
+  index: number,
+  item: PendingRuntimeTaskFollowup,
+): string | undefined {
+  switch (item.status) {
+    case "completed":
+      return undefined;
+    case "failed":
+      return `${index}. status=failed 항목은 실패했습니다. error나 output_file이 있으면 원인을 확인한 뒤 재시도 가능 여부를 판단하세요.`;
+    case "stopped":
+      return `${index}. status=stopped 항목은 완료 전에 중단되었습니다. 결과가 없을 수 있습니다. output_file이나 summary가 있으면 부분 결과만 신뢰하세요.`;
+    case "killed":
+      return `${index}. status=killed 항목은 완료 전에 강제 종료되었습니다. 결과가 없을 수 있습니다. 턴 종료 teardown 등으로 끊긴 작업은 필요한 경우 다른 방식으로 재수립하세요.`;
+    default:
+      return item.status
+        ? `${index}. status=${item.status} 항목은 완료 여부를 단정하지 말고 실제 결과를 먼저 확인하세요.`
+        : undefined;
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

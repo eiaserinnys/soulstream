@@ -79,6 +79,93 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(text).toContain("직전 응답을 그대로 반복하지 마세요");
   });
 
+  it("failed/stopped/killed follow-up prompt는 완료로 오인하지 않도록 상태를 진실하게 설명한다", async () => {
+    const task = makeTask();
+    for (const runtimeTask of [
+      {
+        taskId: "task-failed",
+        status: "failed" as const,
+        error: "upload failed",
+      },
+      {
+        taskId: "task-stopped",
+        status: "stopped" as const,
+      },
+      {
+        taskId: "task-killed",
+        status: "killed" as const,
+      },
+    ]) {
+      task.claudeRuntime!.tasks[runtimeTask.taskId] = {
+        taskId: runtimeTask.taskId,
+        status: runtimeTask.status,
+        updatedAt: Date.now(),
+        isBackgrounded: true,
+        description: "Long running verification",
+        toolUseId: `toolu_${runtimeTask.status}`,
+        error: runtimeTask.error,
+      };
+    }
+    const { controller, addIntervention } = makeController();
+
+    for (const taskId of ["task-failed", "task-stopped", "task-killed"]) {
+      controller.collect(task, {
+        type: "claude_runtime_task_updated",
+        task_id: taskId,
+        patch: { status: task.claudeRuntime!.tasks[taskId]!.status },
+      } as unknown as SSEEventPayload);
+    }
+    await controller.flush(task);
+
+    const text = addIntervention.mock.calls[0]![0].text;
+    expect(text).not.toContain("백그라운드 Claude runtime task가 완료되었습니다.");
+    expect(text).toContain("status=failed 항목은 실패했습니다");
+    expect(text).toContain("status=stopped 항목은 완료 전에 중단");
+    expect(text).toContain("완료 전에 강제 종료");
+    expect(text).toContain("결과가 없을 수 있습니다");
+    expect(text).toContain("task_id=task-failed");
+    expect(text).toContain("status=failed");
+    expect(text).toContain("error=upload failed");
+    expect(text).toContain("task_id=task-stopped");
+    expect(text).toContain("status=stopped");
+    expect(text).toContain("task_id=task-killed");
+    expect(text).toContain("status=killed");
+  });
+
+  it("flush 실패 시 pending follow-up을 보존해 다음 flush에서 재시도한다", async () => {
+    const task = makeTask();
+    task.claudeRuntime!.tasks["task-retry"] = {
+      taskId: "task-retry",
+      status: "completed",
+      updatedAt: Date.now(),
+      isBackgrounded: true,
+      summary: "retry me",
+    };
+    const addIntervention = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("route unavailable"))
+      .mockResolvedValueOnce({ queued: true, queuePosition: 1 });
+    const controller = new ClaudeRuntimeTaskFollowupController({
+      taskManager: { addIntervention },
+      onResume: vi.fn(),
+      logger: silentLogger,
+    });
+
+    controller.collect(task, {
+      type: "claude_runtime_task_notification",
+      task_id: "task-retry",
+      status: "completed",
+      summary: "retry me",
+    } as SSEEventPayload);
+
+    await expect(controller.flush(task)).rejects.toThrow("route unavailable");
+    await controller.flush(task);
+
+    expect(addIntervention).toHaveBeenCalledTimes(2);
+    expect(addIntervention.mock.calls[1]![0].text).toContain("task-retry");
+    expect(addIntervention.mock.calls[1]![0].text).toContain("retry me");
+  });
+
   it("notification이 누락되어도 terminal task_updated background patch를 follow-up 후보로 삼는다", async () => {
     const task = makeTask();
     task.claudeRuntime!.tasks["task-2"] = {
@@ -198,5 +285,35 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(text).toContain("first done");
     expect(text).toContain("second done");
     expect(addIntervention.mock.calls[0]![0].followupKey).toBe("sess-1:task-a,task-b");
+  });
+
+  it("fallback prompt는 retry 이유를 설명하되 완료 상태를 새로 단정하지 않는다", async () => {
+    const task = makeTask();
+    const { controller, addIntervention, onResume } = makeController();
+
+    await controller.queueFallback(
+      task,
+      {
+        text: "original background task status prompt",
+        user: "system",
+        source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+        followupAttempt: 1,
+        followupKey: "sess-1:task-1",
+      },
+      "empty_response",
+    );
+
+    expect(addIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({
+        followupAttempt: 2,
+        followupKey: "sess-1:task-1",
+        text: expect.stringContaining("빈 응답으로 끝났습니다"),
+      }),
+      onResume,
+    );
+    const text = addIntervention.mock.calls[0]![0].text;
+    expect(text).toContain("원래 follow-up 지시");
+    expect(text).toContain("background task status");
+    expect(text).not.toContain("완료된 백그라운드 작업 결과");
   });
 });
