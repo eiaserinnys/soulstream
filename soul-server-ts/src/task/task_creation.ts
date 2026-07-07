@@ -224,8 +224,17 @@ export class TaskCreation {
       }
     } catch (err) {
       this.deps.logger.warn(
-        { err, sessionId },
-        "assignSessionToFolder failed — proceeding without folder",
+        {
+          err,
+          sessionId,
+          requestedFolderId: folderId,
+          assignedFolderId: assigned,
+          targetContainer: container
+            ? { containerKind: container.containerKind, containerId: container.containerId }
+            : null,
+          sourceRunbookItemId,
+        },
+        "session folder assignment or board container enrollment failed - proceeding with folder fallback",
       );
     }
 

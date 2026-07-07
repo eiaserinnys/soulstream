@@ -8,7 +8,7 @@ import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.
 
 const silentLogger = pino({ level: "silent" });
 
-function makeHarness() {
+function makeHarness(options: { logger?: typeof silentLogger } = {}) {
   const registerSession = vi.fn().mockResolvedValue(undefined);
   const appendMetadata = vi.fn().mockResolvedValue(1);
   const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
@@ -68,7 +68,7 @@ function makeHarness() {
     db,
     boardYjsService: { upsertSessionBoardItem },
     broadcaster,
-    logger: silentLogger,
+    logger: options.logger ?? silentLogger,
     hasTask: (sessionId) => tasks.has(sessionId),
     rememberTask: (task) => {
       tasks.set(task.agentSessionId, task);
@@ -260,6 +260,37 @@ describe("TaskCreation", () => {
       h.emitSessionCreated.mock.invocationCallOrder[0],
     );
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "root");
+  });
+
+  it("logs target container when runbook session board enrollment falls back to folder assignment", async () => {
+    const logger = {
+      warn: vi.fn(),
+      child: () => logger,
+    } as unknown as typeof silentLogger;
+    const h = makeHarness({ logger });
+    h.upsertSessionBoardItem.mockRejectedValueOnce(new Error("host proxy 401"));
+
+    const task = await h.creation.createTask({
+      agentSessionId: "sess-runbook-fallback",
+      prompt: "runbook task",
+      profileId: "roselin_codex",
+      sessionType: "llm",
+      container: { containerKind: "runbook", containerId: "rb-1" },
+      sourceRunbookItemId: "runbook-item-1",
+    });
+
+    expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-runbook-fallback", "root");
+    expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "root");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        err: expect.any(Error),
+        sessionId: "sess-runbook-fallback",
+        assignedFolderId: "root",
+        targetContainer: { containerKind: "runbook", containerId: "rb-1" },
+        sourceRunbookItemId: "runbook-item-1",
+      }),
+      expect.stringContaining("folder fallback"),
+    );
   });
 
   it("isolates folder, catalog, and session_created broadcast failures after DB registration", async () => {

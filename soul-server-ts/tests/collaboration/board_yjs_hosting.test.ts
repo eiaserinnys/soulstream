@@ -132,4 +132,62 @@ describe("board Yjs host centralization", () => {
       await server.close();
     }
   });
+
+  it("host internal route accepts Bearer-only upsert session requests when dashboard auth is enabled", async () => {
+    const boardItem = {
+      id: "session:sess-runbook",
+      folderId: "root",
+      containerKind: "runbook",
+      containerId: "rb-1",
+      membershipKind: "primary",
+      sourceRunbookItemId: "runbook-item-1",
+      itemType: "session",
+      itemId: "sess-runbook",
+      x: 280,
+      y: 160,
+      metadata: {},
+    };
+    const service = {
+      upsertSessionBoardItem: vi.fn().mockResolvedValue(boardItem),
+    };
+    const server = fastify({ logger: false });
+    registerBoardYjsHostRoutes(server, {
+      service: service as unknown as BoardYjsService,
+      auth: {
+        authBearerToken: "test-token",
+        environment: "production",
+        dashboardAuthEnabled: true,
+        jwtSecret: "jwt-secret",
+      },
+    });
+
+    try {
+      const response = await server.inject({
+        method: "POST",
+        url: "/api/internal/board-yjs/upsert-session-board-item",
+        headers: { authorization: "Bearer test-token" },
+        payload: {
+          folderId: "root",
+          container: { containerKind: "runbook", containerId: "rb-1" },
+          sessionId: "sess-runbook",
+          sourceRunbookItemId: "runbook-item-1",
+          x: 280,
+          y: 160,
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual(boardItem);
+      expect(service.upsertSessionBoardItem).toHaveBeenCalledWith({
+        folderId: "root",
+        container: { containerKind: "runbook", containerId: "rb-1" },
+        sessionId: "sess-runbook",
+        sourceRunbookItemId: "runbook-item-1",
+        x: 280,
+        y: 160,
+      });
+    } finally {
+      await server.close();
+    }
+  });
 });
