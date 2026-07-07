@@ -389,6 +389,7 @@ class NodeConnection:
         system_prompt: str | None = None,
         oauth_profile_name: str | None = None,
         caller_session_id: str | None = None,
+        notify_completion: bool | None = None,
         attachment_paths: list[str] | None = None,
         caller_info: dict | None = None,
         container: dict | None = None,
@@ -418,6 +419,8 @@ class NodeConnection:
             payload["oauth_profile_name"] = oauth_profile_name
         if caller_session_id is not None:
             payload["caller_session_id"] = caller_session_id
+        if notify_completion is not None:
+            payload["notify_completion"] = notify_completion
         if caller_info is not None:
             payload["caller_info"] = caller_info
         if container is not None:

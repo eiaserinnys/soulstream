@@ -345,6 +345,33 @@ describe("agent profile backend boundary", () => {
     );
   });
 
+  it("create_agent_session은 notify_completion=false를 로컬 task에 보존한다", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+    );
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "create_agent_session",
+      arguments: {
+        agent_id: "codex-default",
+        prompt: "child work",
+        caller_session_id: "caller-sess-1",
+        notify_completion: false,
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(runtime.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        callerSessionId: "caller-sess-1",
+        notifyCompletion: false,
+      }),
+    );
+  });
+
   it("create_agent_session은 MCP 요청 header의 caller id를 로컬 task에 보존한다", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
@@ -610,6 +637,7 @@ describe("create_remote_agent_session", () => {
           prompt: "delegate",
           caller_session_id: "caller-sess-1",
           folder_id: "folder-1",
+          notify_completion: false,
         },
       });
 
@@ -627,6 +655,7 @@ describe("create_remote_agent_session", () => {
       expect(body.nodeId).toBe("node-remote");
       expect(body.folderId).toBe("folder-1");
       expect(body.caller_session_id).toBe("caller-sess-1");
+      expect(body.notify_completion).toBe(false);
       expect(body.caller_info.agent_id).toBe("codex-default");
       expect(body.caller_info.agent_node).toBe("node-test");
       expect(body.caller_info.email).toBe("owner@example.com");

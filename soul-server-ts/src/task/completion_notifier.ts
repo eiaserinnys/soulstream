@@ -64,6 +64,14 @@ export class TaskCompletionNotifier implements CompletionNotifier {
   }
 
   async notify(task: Task): Promise<void> {
+    if (task.notifyCompletion === false) {
+      this.logger.info(
+        { childId: task.agentSessionId, callerSessionId: task.callerSessionId },
+        "Completion notification suppressed by task notifyCompletion=false",
+      );
+      return;
+    }
+
     const callerSessionId = await this._resolveTargetSessionId(task);
     if (!callerSessionId) {
       // 위임받지 않은 task — 회송 대상 없음.

@@ -1015,6 +1015,10 @@ export interface CreateSession {
   caller_info?: {
     [k: string]: unknown;
   };
+  /**
+   * False suppresses caller completion relay for runbook-tracked fire-and-forget delegation. Missing defaults to true.
+   */
+  notify_completion?: boolean;
   attachment_paths?: string[];
   /**
    * Codex-only reasoning effort. Missing means codex adapter default xhigh.

@@ -28,6 +28,7 @@ export interface CreateTaskParams {
   llmUsage?: Record<string, number> | null;
   callerSessionId?: string | null;
   callerInfo?: CallerInfo;
+  notifyCompletion?: boolean;
   model?: string | null;
   oauthToken?: string;
   reasoningEffort?: ReasoningEffort;
@@ -103,6 +104,7 @@ export class TaskCreation {
       llmUsage: params.llmUsage ?? null,
       callerSessionId: params.callerSessionId ?? undefined,
       callerInfo: params.callerInfo,
+      notifyCompletion: params.notifyCompletion ?? true,
       metadata,
       model: params.model,
       oauthToken: params.oauthToken,
@@ -134,6 +136,7 @@ export class TaskCreation {
       createdAt: task.createdAt,
       updatedAt: task.createdAt,
       callerSessionId: task.callerSessionId ?? null,
+      notifyCompletion: task.notifyCompletion ?? true,
     });
 
     // caller_info와 session-scoped SDK policy를 Task.metadata와 DB에 동시 저장. Python TaskFactory와 같은 타이밍:

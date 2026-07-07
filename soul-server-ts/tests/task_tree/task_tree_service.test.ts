@@ -231,6 +231,7 @@ describe("TaskTreeService", () => {
       title: "Child task",
       prompt: "Do the work",
       agentId: "child-agent",
+      notifyCompletion: false,
     });
 
     expect(h.runtime.taskManager.createTask).toHaveBeenCalledWith(
@@ -239,6 +240,7 @@ describe("TaskTreeService", () => {
         callerSessionId: "parent-session",
         profileId: "child-agent",
         prompt: "Do the work",
+        notifyCompletion: false,
       }),
     );
     expect(h.repo.patchTaskItem).toHaveBeenCalledWith(

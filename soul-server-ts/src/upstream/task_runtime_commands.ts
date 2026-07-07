@@ -25,6 +25,7 @@ export interface CreateSessionRuntimeParams {
   profileId: string;
   callerSessionId?: string | null;
   callerInfo?: CallerInfo;
+  notifyCompletion?: boolean;
   attachmentPaths?: string[];
   extraContextItems?: ContextItem[];
   model?: string | null;
@@ -121,6 +122,7 @@ export class TaskRuntimeCommands {
       profileId: params.profileId,
       callerSessionId: params.callerSessionId ?? null,
       callerInfo: params.callerInfo,
+      notifyCompletion: params.notifyCompletion,
       model: params.model,
       oauthToken:
         agent.backend === "claude"

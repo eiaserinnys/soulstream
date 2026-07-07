@@ -66,7 +66,8 @@ export class SessionRepository {
         ${params.status},
         ${params.createdAt},
         ${params.updatedAt},
-        ${params.callerSessionId}
+        ${params.callerSessionId},
+        ${params.notifyCompletion ?? true}
       )
     `;
   }

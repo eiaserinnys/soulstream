@@ -318,6 +318,7 @@ class CreateSession(TypedDict):
     context_items: NotRequired[list[dict[str, Any]]]
     extra_context_items: NotRequired[list[dict[str, Any]]]
     caller_info: NotRequired[dict[str, Any]]
+    notify_completion: NotRequired[bool]
     attachment_paths: NotRequired[list[str]]
     reasoningEffort: NotRequired[Literal['minimal', 'low', 'medium', 'high', 'xhigh']]
 

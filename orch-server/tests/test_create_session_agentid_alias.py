@@ -163,3 +163,25 @@ class TestCreateSessionCallerSessionAlias:
 
         payload = _extract_ws_payload(ws)
         assert payload["caller_session_id"] == "parent-snake"
+
+
+class TestCreateSessionNotifyCompletion:
+    """CreateSessionRequest가 fire-and-forget 완료통지 플래그를 노드 wire로 보존하는지 검증."""
+
+    async def test_notify_completion_false_is_forwarded(self, client, node_manager):
+        _, ws = await _register_node(node_manager)()
+
+        resp = await client.post(
+            "/api/sessions",
+            json={
+                "prompt": "test",
+                "profile": "seosoyoung",
+                "caller_session_id": "parent-sess-1",
+                "notify_completion": False,
+            },
+        )
+        assert resp.status_code == 201
+
+        payload = _extract_ws_payload(ws)
+        assert payload["caller_session_id"] == "parent-sess-1"
+        assert payload["notify_completion"] is False

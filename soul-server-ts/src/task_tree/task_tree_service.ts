@@ -106,6 +106,7 @@ export class TaskTreeService {
     title: string;
     prompt: string;
     agentId?: string;
+    notifyCompletion?: boolean;
     description?: string;
     acceptanceCriteria?: string;
     verificationOwner?: VerificationOwner;
@@ -176,6 +177,7 @@ export class TaskTreeService {
         profileId: resolvedAgentId,
         callerSessionId: params.sessionId,
         callerInfo,
+        notifyCompletion: params.notifyCompletion,
         folderId: resolvedContainer.folderId,
         container: resolvedContainer.container,
         sourceRunbookItemId: params.sourceRunbookItemId ?? null,
