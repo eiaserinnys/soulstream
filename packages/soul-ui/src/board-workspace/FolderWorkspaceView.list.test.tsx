@@ -208,13 +208,18 @@ class MockResizeObserver {
 function installFetchMock({
   boardItems = [],
   snapshots = {},
+  failBoardItems = false,
 }: {
   boardItems?: NonNullable<CatalogState["boardItems"]>;
   snapshots?: Record<string, RunbookSnapshot>;
+  failBoardItems?: boolean;
 } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url === "/api/board-items?folder_id=root") {
+      if (failBoardItems) {
+        return Response.json({ detail: "board items unavailable" }, { status: 503 });
+      }
       return Response.json({ boardItems });
     }
     const runbookMatch = url.match(/^\/api\/runbooks\/([^/]+)$/);
@@ -237,8 +242,10 @@ async function flushEffects() {
 
 function renderFolderWorkspace(options: {
   catalogOverride?: CatalogState;
+  sessionsOverride?: SessionSummary[];
   boardItems?: NonNullable<CatalogState["boardItems"]>;
   snapshots?: Record<string, RunbookSnapshot>;
+  failBoardItems?: boolean;
 } = {}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -247,6 +254,7 @@ function renderFolderWorkspace(options: {
   const fetchMock = installFetchMock({
     boardItems: options.boardItems,
     snapshots: options.snapshots,
+    failBoardItems: options.failBoardItems,
   });
   useDashboardStore.getState().reset();
   useRunbookStore.getState().reset();
@@ -255,7 +263,7 @@ function renderFolderWorkspace(options: {
   writeFolderWorkspaceViewMode(window.localStorage, "root", "list");
 
   flushSync(() => {
-    root.render(createElement(FolderWorkspaceView, { sessions }));
+    root.render(createElement(FolderWorkspaceView, { sessions: options.sessionsOverride ?? sessions }));
   });
 
   return { container, fetchMock, root };
@@ -376,6 +384,92 @@ describe("FolderWorkspaceView list mode", () => {
     expect(container.querySelector("[data-testid='folder-runbook-section']")).toBeNull();
     expect(container.textContent).not.toContain("런북");
     expect(container.textContent).toContain("세션");
+  });
+
+  it("hides runbook container sessions from the folder session list", () => {
+    ({ container, root } = renderFolderWorkspace({
+      catalogOverride: {
+        ...catalog,
+        boardItems: [
+          {
+            id: "session:session-a",
+            folderId: "root",
+            containerKind: "runbook",
+            containerId: "rb-1",
+            membershipKind: "primary",
+            sourceRunbookItemId: "item-1",
+            itemType: "session",
+            itemId: "session-a",
+            x: 10,
+            y: 10,
+          },
+          {
+            id: "session:session-b",
+            folderId: "root",
+            containerKind: "folder",
+            containerId: "root",
+            membershipKind: "primary",
+            sourceRunbookItemId: null,
+            itemType: "session",
+            itemId: "session-b",
+            x: 20,
+            y: 20,
+          },
+        ],
+      },
+    }));
+
+    expect(container.textContent).not.toContain("Session A");
+    expect(container.textContent).toContain("Session B");
+  });
+
+  it("keeps folder container and tileless sessions visible", () => {
+    const sessionsWithTileless: SessionSummary[] = [
+      sessions[1]!,
+      {
+        agentSessionId: "session-c",
+        status: "completed",
+        eventCount: 3,
+        agentId: "keke",
+        agentName: "Keke",
+        folderId: "root",
+        prompt: "Session C",
+        updatedAt: "2026-06-10T00:00:00.000Z",
+      },
+    ];
+    ({ container, root } = renderFolderWorkspace({
+      sessionsOverride: sessionsWithTileless,
+      catalogOverride: {
+        ...catalog,
+        boardItems: [{
+          id: "session:session-b",
+          folderId: "root",
+          containerKind: "folder",
+          containerId: "root",
+          membershipKind: "primary",
+          sourceRunbookItemId: null,
+          itemType: "session",
+          itemId: "session-b",
+          x: 20,
+          y: 20,
+        }],
+      },
+    }));
+
+    expect(container.textContent).toContain("Session B");
+    expect(container.textContent).toContain("Session C");
+  });
+
+  it("fails open while board items are missing or fail to load", async () => {
+    ({ container, root } = renderFolderWorkspace({ failBoardItems: true }));
+
+    expect(container.textContent).toContain("Session A");
+    expect(container.textContent).toContain("Session B");
+
+    await flushEffects();
+
+    expect(container.textContent).toContain("Session A");
+    expect(container.textContent).toContain("Session B");
   });
 
   it("omits archived runbooks from the folder runbook section", async () => {
