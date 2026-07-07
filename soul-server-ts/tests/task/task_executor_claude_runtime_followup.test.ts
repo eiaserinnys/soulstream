@@ -217,11 +217,24 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     expect(prompts[1].indexOf("task-a")).toBeLessThan(prompts[1].indexOf("task-b"));
   });
 
-  it("runtime follow-up turn이 직전 응답을 반복해도 같은 task follow-up을 재주입하지 않는다", async () => {
+  it("runtime follow-up turn이 직전 응답을 반복하면 fallback follow-up을 재시도한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     let flushCalls = 0;
-    const queueFallback = vi.fn();
+    const queueFallback = vi.fn(
+      async (
+        target: Task,
+        message: { text: string; user: string; followupAttempt?: number; followupKey?: string },
+      ) => {
+        target.interventionQueue.push({
+          text: "runtime follow-up retry prompt",
+          user: message.user,
+          source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+          followupAttempt: (message.followupAttempt ?? 1) + 1,
+          followupKey: message.followupKey,
+        });
+      },
+    );
     const followup: ClaudeRuntimeTaskFollowupPort = {
       collect: vi.fn(),
       flush: vi.fn(async (target) => {
@@ -256,6 +269,9 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
           yield { type: "complete", result: "repeated", timestamp: 2 } as SSEEventPayload;
           return;
         }
+        turnCount += 1;
+        yield { type: "assistant_message", content: "recovered after retry", timestamp: 3 } as SSEEventPayload;
+        yield { type: "complete", result: "recovered", timestamp: 3 } as SSEEventPayload;
       },
       async interrupt() { return true; },
       async close() {},
@@ -275,27 +291,130 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     executor.startExecution(task, claudeAgent);
     await task.executionPromise;
 
-    expect(turnCount).toBe(2);
-    expect(prompts).toEqual(["hi", "runtime follow-up prompt"]);
-    expect(queueFallback).not.toHaveBeenCalled();
+    expect(turnCount).toBe(3);
+    expect(prompts).toEqual(["hi", "runtime follow-up prompt", "runtime follow-up retry prompt"]);
+    expect(queueFallback).toHaveBeenCalledWith(
+      task,
+      expect.objectContaining({
+        source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+        followupAttempt: 1,
+        followupKey: "sess-1:task-1",
+      }),
+      "repeated_response",
+    );
     const errorBroadcast = mocks.broadcaster.emitEventEnvelope.mock.calls.find(
       (call) =>
         (call[1] as { type: string }).type === "error" &&
         (call[1] as { error_code?: string }).error_code ===
           "claude_runtime_followup_stalled",
     );
-    expect(errorBroadcast?.[1]).toMatchObject({
-      type: "error",
-      fatal: false,
-      error_code: "claude_runtime_followup_stalled",
-    });
-    expect(task.lastAssistantText).toBe("previous response");
+    expect(errorBroadcast).toBeUndefined();
+    expect(task.lastAssistantText).toBe("recovered after retry");
   });
 
-  it("runtime follow-up fallback attempt도 반복되면 nonfatal error event로 사용자에게 알린다", async () => {
+  it("runtime follow-up turn이 빈 응답으로 끝나면 fallback follow-up을 재시도한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
     let flushCalls = 0;
+    const queueFallback = vi.fn(
+      async (
+        target: Task,
+        message: { text: string; user: string; followupAttempt?: number; followupKey?: string },
+      ) => {
+        target.interventionQueue.push({
+          text: "runtime follow-up retry after empty",
+          user: message.user,
+          source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+          followupAttempt: (message.followupAttempt ?? 1) + 1,
+          followupKey: message.followupKey,
+        });
+      },
+    );
+    const followup: ClaudeRuntimeTaskFollowupPort = {
+      collect: vi.fn(),
+      flush: vi.fn(async (target) => {
+        if (flushCalls > 0) return;
+        flushCalls += 1;
+        target.interventionQueue.push({
+          text: "runtime follow-up prompt",
+          user: "system",
+          source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+          followupAttempt: 1,
+          followupKey: "sess-1:task-1",
+        });
+      }),
+      queueFallback,
+    };
+    const prompts: string[] = [];
+    let turnCount = 0;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        prompts.push(params.prompt);
+        if (turnCount === 0) {
+          turnCount += 1;
+          yield { type: "complete", result: "first", timestamp: 1 } as SSEEventPayload;
+          return;
+        }
+        if (turnCount === 1) {
+          turnCount += 1;
+          yield { type: "complete", result: "", timestamp: 2 } as SSEEventPayload;
+          return;
+        }
+        turnCount += 1;
+        yield { type: "assistant_message", content: "recovered after empty retry", timestamp: 3 } as SSEEventPayload;
+        yield { type: "complete", result: "recovered", timestamp: 3 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      followup,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(turnCount).toBe(3);
+    expect(prompts).toEqual(["hi", "runtime follow-up prompt", "runtime follow-up retry after empty"]);
+    expect(queueFallback).toHaveBeenCalledWith(
+      task,
+      expect.objectContaining({
+        followupAttempt: 1,
+        followupKey: "sess-1:task-1",
+      }),
+      "empty_response",
+    );
+    expect(task.lastAssistantText).toBe("recovered after empty retry");
+  });
+
+  it("runtime follow-up fallback attempt도 반복되면 마지막 재시도를 큐잉한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    let flushCalls = 0;
+    const queueFallback = vi.fn(
+      async (
+        target: Task,
+        message: { text: string; user: string; followupAttempt?: number; followupKey?: string },
+      ) => {
+        target.interventionQueue.push({
+          text: "runtime follow-up retry attempt 3",
+          user: message.user,
+          source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+          followupAttempt: (message.followupAttempt ?? 1) + 1,
+          followupKey: message.followupKey,
+        });
+      },
+    );
     const followup: ClaudeRuntimeTaskFollowupPort = {
       collect: vi.fn(),
       flush: vi.fn(async (target) => {
@@ -306,6 +425,85 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
           user: "system",
           source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
           followupAttempt: 2,
+          followupKey: "sess-1:task-1",
+        });
+      }),
+      queueFallback,
+    };
+    const prompts: string[] = [];
+    let turnCount = 0;
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        prompts.push(params.prompt);
+        if (turnCount === 0) {
+          turnCount += 1;
+          yield { type: "assistant_message", content: "previous response", timestamp: 1 } as SSEEventPayload;
+          yield { type: "complete", result: "first", timestamp: 1 } as SSEEventPayload;
+          return;
+        }
+        turnCount += 1;
+        if (turnCount === 2) {
+          yield { type: "assistant_message", content: "previous response", timestamp: 2 } as SSEEventPayload;
+          yield { type: "complete", result: "repeated", timestamp: 2 } as SSEEventPayload;
+          return;
+        }
+        yield { type: "assistant_message", content: "recovered at last retry", timestamp: 3 } as SSEEventPayload;
+        yield { type: "complete", result: "recovered", timestamp: 3 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      followup,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(turnCount).toBe(3);
+    expect(prompts).toEqual(["hi", "runtime follow-up retry", "runtime follow-up retry attempt 3"]);
+    expect(queueFallback).toHaveBeenCalledWith(
+      task,
+      expect.objectContaining({
+        followupAttempt: 2,
+        followupKey: "sess-1:task-1",
+      }),
+      "repeated_response",
+    );
+    const errorBroadcast = mocks.broadcaster.emitEventEnvelope.mock.calls.find(
+      (call) =>
+        (call[1] as { type: string }).type === "error" &&
+        (call[1] as { error_code?: string }).error_code ===
+          "claude_runtime_followup_stalled",
+    );
+    expect(errorBroadcast).toBeUndefined();
+    expect(task.status).toBe("completed");
+  });
+
+  it("runtime follow-up attempt 3도 stall이면 recoverable fatal error로 종료한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    let flushCalls = 0;
+    const followup: ClaudeRuntimeTaskFollowupPort = {
+      collect: vi.fn(),
+      flush: vi.fn(async (target) => {
+        if (flushCalls > 0) return;
+        flushCalls += 1;
+        target.interventionQueue.push({
+          text: "runtime follow-up final retry",
+          user: "system",
+          source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+          followupAttempt: 3,
           followupKey: "sess-1:task-1",
         });
       }),
@@ -353,8 +551,58 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     );
     expect(errorBroadcast?.[1]).toMatchObject({
       type: "error",
-      fatal: false,
+      fatal: true,
+      recoverable: true,
       error_code: "claude_runtime_followup_stalled",
+    });
+    expect(task.status).toBe("error");
+    expect(task.error).toContain("automatic retries were exhausted");
+  });
+
+  it("flush가 follow-up을 큐잉하지 못하면 사용자 가시 nonfatal error를 남긴다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    const followup: ClaudeRuntimeTaskFollowupPort = {
+      collect: vi.fn(),
+      flush: vi.fn(async () => {
+        throw new Error("route unavailable");
+      }),
+      queueFallback: vi.fn(),
+    };
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield { type: "complete", result: "first", timestamp: 1 } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      followup,
+    );
+
+    executor.startExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    const errorBroadcast = mocks.broadcaster.emitEventEnvelope.mock.calls.find(
+      (call) =>
+        (call[1] as { type: string }).type === "error" &&
+        (call[1] as { error_code?: string }).error_code ===
+          "claude_runtime_followup_enqueue_failed",
+    );
+    expect(errorBroadcast?.[1]).toMatchObject({
+      type: "error",
+      fatal: false,
+      error_code: "claude_runtime_followup_enqueue_failed",
     });
     expect(task.status).toBe("completed");
   });

@@ -47,6 +47,7 @@ import { TaskTurnInputBuilder } from "./task_turn_input_builder.js";
 import { failBlockingClaudeRuntimeWork } from "./claude_runtime_state.js";
 import {
   CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+  MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT,
   type ClaudeRuntimeFollowupStallReason,
   type ClaudeRuntimeTaskFollowupPort,
 } from "./claude_runtime_task_followup.js";
@@ -300,6 +301,7 @@ export class TaskExecutor {
         { err, sessionId: task.agentSessionId },
         "Claude runtime task follow-up flush failed",
       );
+      await this.publishClaudeRuntimeFollowupEnqueueFailed(task, err);
     }
   }
 
@@ -313,12 +315,84 @@ export class TaskExecutor {
     const reason = resolveFollowupStallReason(previousAssistantText, nextAssistantText);
     if (!reason) return;
 
+    const attempt = intervention.followupAttempt ?? 1;
+    if (attempt < MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT && this.claudeRuntimeTaskFollowup) {
+      try {
+        await this.claudeRuntimeTaskFollowup.queueFallback(task, intervention, reason);
+        return;
+      } catch (err) {
+        this.logger.warn(
+          {
+            err,
+            sessionId: task.agentSessionId,
+            followupAttempt: attempt,
+            followupKey: intervention.followupKey,
+            reason,
+          },
+          "Claude runtime task follow-up fallback enqueue failed",
+        );
+        await this.publishClaudeRuntimeFollowupRetryFailed(task, err);
+        return;
+      }
+    }
+
+    await this.publishClaudeRuntimeFollowupExhausted(task, attempt);
+  }
+
+  private async publishClaudeRuntimeFollowupEnqueueFailed(
+    task: Task,
+    err: unknown,
+  ): Promise<void> {
     await this.engineEventPublisher.publishEngineEvent(task, {
       type: "error",
       message:
-        "Background task follow-up did not produce a new response. Please send a follow-up message manually.",
-      error_code: "claude_runtime_followup_stalled",
+        `Background task follow-up could not be queued automatically: ${formatErrorMessage(err)}. ` +
+        "The pending follow-up was kept for a later retry.",
+      error_code: "claude_runtime_followup_enqueue_failed",
       fatal: false,
+      recoverable: true,
+      recovery_hint:
+        "Send another message to resume this session if the automatic follow-up does not appear.",
+    } as SSEEventPayload);
+  }
+
+  private async publishClaudeRuntimeFollowupRetryFailed(
+    task: Task,
+    err: unknown,
+  ): Promise<void> {
+    const message =
+      `Background task follow-up retry could not be queued: ${formatErrorMessage(err)}. ` +
+      "Automatic follow-up cannot continue; send another message to resume and inspect the background task result.";
+    task.status = "error";
+    task.error = message;
+    await this.engineEventPublisher.publishEngineEvent(task, {
+      type: "error",
+      message,
+      error_code: "claude_runtime_followup_stalled",
+      fatal: true,
+      recoverable: true,
+      recovery_hint:
+        "Send another message to resume this session in a fresh turn and inspect the background task result.",
+    } as SSEEventPayload);
+  }
+
+  private async publishClaudeRuntimeFollowupExhausted(
+    task: Task,
+    attempt: number,
+  ): Promise<void> {
+    const message =
+      `Background task follow-up did not produce a new response after ${attempt} attempt(s); ` +
+      "automatic retries were exhausted. Send another message to resume and inspect the background task result.";
+    task.status = "error";
+    task.error = message;
+    await this.engineEventPublisher.publishEngineEvent(task, {
+      type: "error",
+      message,
+      error_code: "claude_runtime_followup_stalled",
+      fatal: true,
+      recoverable: true,
+      recovery_hint:
+        "Send another message to resume this session in a fresh turn and inspect the background task result.",
     } as SSEEventPayload);
   }
 
@@ -348,4 +422,8 @@ function resolveFollowupStallReason(
     return "repeated_response";
   }
   return null;
+}
+
+function formatErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
