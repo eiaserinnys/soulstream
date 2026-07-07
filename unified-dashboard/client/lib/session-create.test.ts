@@ -118,4 +118,31 @@ describe("createDashboardSession", () => {
       profile: "roselin_codex",
     });
   });
+
+  it("sends sourceSessionId so the server can inherit the original board container", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson({
+      agentSessionId: "session-new",
+      status: "running",
+      nodeId: "node-a",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createDashboardSession({
+      queryClient,
+      addOptimisticSession: vi.fn(),
+      prompt: "hello",
+      folderId: "folder-a",
+      nodeId: "node-a",
+      agentId: "roselin_codex",
+      sourceSessionId: "source-session",
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      prompt: "hello",
+      folderId: "folder-a",
+      nodeId: "node-a",
+      profile: "roselin_codex",
+      sourceSessionId: "source-session",
+    });
+  });
 });

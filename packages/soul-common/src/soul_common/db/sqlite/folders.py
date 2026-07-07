@@ -380,6 +380,21 @@ class SqliteFolderMixin:
             items.append(item)
         return items
 
+    async def get_primary_session_board_item(self, session_id: str) -> Optional[dict]:
+        cursor = await self._conn.execute(
+            """
+            SELECT *
+            FROM board_items
+            WHERE item_type = 'session'
+              AND item_id = ?
+              AND membership_kind = 'primary'
+            LIMIT 1
+            """,
+            (session_id,),
+        )
+        row = await cursor.fetchone()
+        return _normalize_board_item(dict(row)) if row else None
+
     async def get_board_yjs_catalog_items(
         self,
         folder_id: Optional[str] = None,

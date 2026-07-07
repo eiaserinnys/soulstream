@@ -48,6 +48,8 @@ def _normalize_board_item(row: dict) -> dict:
         "folderId": row["folder_id"],
         "containerKind": row.get("container_kind") or "folder",
         "containerId": row.get("container_id") or row["folder_id"],
+        "membershipKind": row.get("membership_kind") or "primary",
+        "sourceRunbookItemId": row.get("source_runbook_item_id"),
         "itemType": row["item_type"],
         "itemId": row["item_id"],
         "x": float(row["x"]),
@@ -305,6 +307,20 @@ class PostgresFolderMixin:
         # Legacy seed/read-replica access. get_catalog uses board_yjs_catalog_cache.
         rows = await self._pool.fetch("SELECT * FROM board_item_get_all()")
         return [_normalize_board_item(dict(r)) for r in rows]
+
+    async def get_primary_session_board_item(self, session_id: str) -> Optional[dict]:
+        row = await self._pool.fetchrow(
+            """
+            SELECT *
+            FROM board_items
+            WHERE item_type = 'session'
+              AND item_id = $1
+              AND membership_kind = 'primary'
+            LIMIT 1
+            """,
+            session_id,
+        )
+        return _normalize_board_item(dict(row)) if row else None
 
     async def get_board_yjs_catalog_items(
         self,
