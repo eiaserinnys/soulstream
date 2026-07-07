@@ -117,7 +117,7 @@ export function setBoardItemsForFolderInCatalog(
   folderId: string,
   boardItems: CatalogBoardItem[],
 ): CatalogState {
-  return setBoardItemsForContainerInCatalog(catalog, { kind: "folder", id: folderId }, boardItems);
+  return setBoardItemsForFolderScopeInCatalog(catalog, folderId, boardItems);
 }
 
 export function setBoardItemsForContainerInCatalog(
@@ -125,6 +125,9 @@ export function setBoardItemsForContainerInCatalog(
   container: BoardContainerRef,
   boardItems: CatalogBoardItem[],
 ): CatalogState {
+  if (container.kind === "folder") {
+    return setBoardItemsForFolderScopeInCatalog(catalog, container.id, boardItems);
+  }
   const current = catalog.boardItems ?? [];
   const otherContainers = current.filter((item) => !boardItemBelongsToContainer(item, container));
   const normalizedBoardItems = boardItems.map((item) => ({
@@ -133,6 +136,21 @@ export function setBoardItemsForContainerInCatalog(
     containerId: item.containerId ?? container.id,
   }));
   return { ...catalog, boardItems: [...otherContainers, ...normalizedBoardItems] };
+}
+
+function setBoardItemsForFolderScopeInCatalog(
+  catalog: CatalogState,
+  folderId: string,
+  boardItems: CatalogBoardItem[],
+): CatalogState {
+  const current = catalog.boardItems ?? [];
+  const otherFolders = current.filter((item) => item.folderId !== folderId);
+  const normalizedBoardItems = boardItems.map((item) => ({
+    ...item,
+    containerKind: item.containerKind ?? "folder",
+    containerId: item.containerId ?? item.folderId,
+  }));
+  return { ...catalog, boardItems: [...otherFolders, ...normalizedBoardItems] };
 }
 
 export function updateBoardItemPositionInCatalog(

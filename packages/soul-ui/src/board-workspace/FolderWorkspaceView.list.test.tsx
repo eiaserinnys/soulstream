@@ -423,6 +423,45 @@ describe("FolderWorkspaceView list mode", () => {
     expect(container.textContent).toContain("Session B");
   });
 
+  it("hides runbook container sessions after loading folder-scoped board items", async () => {
+    ({ container, root } = renderFolderWorkspace({
+      boardItems: [
+        {
+          id: "session:session-a",
+          folderId: "root",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          membershipKind: "primary",
+          sourceRunbookItemId: "item-1",
+          itemType: "session",
+          itemId: "session-a",
+          x: 10,
+          y: 10,
+        },
+        {
+          id: "session:session-b",
+          folderId: "root",
+          containerKind: "folder",
+          containerId: "root",
+          membershipKind: "primary",
+          sourceRunbookItemId: null,
+          itemType: "session",
+          itemId: "session-b",
+          x: 20,
+          y: 20,
+        },
+      ],
+    }));
+
+    expect(container.textContent).toContain("Session A");
+    expect(container.textContent).toContain("Session B");
+
+    await flushEffects();
+
+    expect(container.textContent).not.toContain("Session A");
+    expect(container.textContent).toContain("Session B");
+  });
+
   it("keeps folder container and tileless sessions visible", () => {
     const sessionsWithTileless: SessionSummary[] = [
       sessions[1]!,

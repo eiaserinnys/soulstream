@@ -268,19 +268,27 @@ class CatalogService:
         container_kind: Optional[str] = None,
         container_id: Optional[str] = None,
     ) -> list[dict]:
-        """현재 컨테이너의 보드 항목만 반환한다."""
-        if folder_id is not None:
-            container_kind = "folder"
-            container_id = folder_id
+        """Return board items for a folder scope or a concrete board container."""
+        if folder_id is not None and (container_kind is not None or container_id is not None):
+            raise ValueError("folder_id and container_kind/container_id are mutually exclusive")
         if container_kind is None or container_id is None:
-            raise ValueError("folder_id or container_kind/container_id is required")
+            if folder_id is None:
+                raise ValueError("folder_id or container_kind/container_id is required")
         getter = getattr(self._db, "get_board_yjs_catalog_items", None)
         if getter is not None:
+            if folder_id is not None:
+                return self._with_asset_urls(await getter(folder_id=folder_id))
             return self._with_asset_urls(await getter(
                 container_kind=container_kind,
                 container_id=container_id,
             ))
         await self._db.ensure_board_items()
+        if folder_id is not None:
+            return self._with_asset_urls([
+                item for item in await self._db.get_board_items()
+                if item.get("folderId") == folder_id
+                and item.get("membershipKind", "primary") == "primary"
+            ])
         return self._with_asset_urls([
             item for item in await self._db.get_board_items()
             if item.get("containerKind", "folder") == container_kind

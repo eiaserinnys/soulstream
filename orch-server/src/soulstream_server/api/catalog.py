@@ -303,8 +303,6 @@ def create_catalog_router(
                     status_code=400,
                     detail="folder_id and container_kind/container_id are mutually exclusive",
                 )
-            resolved_kind = "folder"
-            resolved_id = folder_id
             inherited_folder_id = folder_id
         else:
             if container_kind is None or container_id is None:
@@ -320,10 +318,13 @@ def create_catalog_router(
                 container_id,
             )
         require_folder_allowed(access_for_request(request), folders, inherited_folder_id)
-        board_items = await catalog_service.list_board_items(
-            container_kind=resolved_kind,
-            container_id=resolved_id,
-        )
+        if folder_id is not None:
+            board_items = await catalog_service.list_board_items(folder_id=folder_id)
+        else:
+            board_items = await catalog_service.list_board_items(
+                container_kind=container_kind,
+                container_id=container_id,
+            )
         return {"boardItems": board_items}
 
     @router.patch("/board-items/{board_item_id}/position")

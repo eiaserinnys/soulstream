@@ -330,8 +330,19 @@ class PostgresFolderMixin:
         container_id: Optional[str] = None,
     ) -> list[dict]:
         if folder_id is not None:
-            container_kind = "folder"
-            container_id = folder_id
+            if container_kind is not None or container_id is not None:
+                raise ValueError("folder_id and container_kind/container_id are mutually exclusive")
+            rows = await self._pool.fetch(
+                """
+                SELECT *
+                FROM board_item_get_all()
+                WHERE folder_id = $1
+                  AND membership_kind = 'primary'
+                ORDER BY y, x, created_at
+                """,
+                folder_id,
+            )
+            return [_normalize_board_item(dict(r)) for r in rows]
         if container_kind is None and container_id is None:
             rows = await self._pool.fetch(
                 """
