@@ -147,6 +147,7 @@ class SessionRouter:
                 system_prompt=request.get("system_prompt"),
                 oauth_profile_name=request.get("oauth_profile_name"),
                 caller_session_id=request.get("caller_session_id"),
+                notify_completion=request.get("notify_completion"),
                 attachment_paths=request.get("attachmentPaths"),
                 caller_info=request.get("caller_info"),
                 container=request.get("container"),

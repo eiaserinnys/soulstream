@@ -78,6 +78,7 @@ function createDispatcher(opts: {
         profileId: params.profileId,
         callerSessionId: params.callerSessionId ?? undefined,
         callerInfo: params.callerInfo,
+        notifyCompletion: params.notifyCompletion,
         model: params.model,
         reasoningEffort: params.reasoningEffort,
         oauthToken: params.oauthToken,
@@ -423,6 +424,18 @@ describe("CommandDispatcher.create_session", () => {
     expect(createdTasks[0].disallowedTools).toEqual(["Bash"]);
     expect(createdTasks[0].useMcp).toBe(false);
     expect(createdTasks[0].claudePermissionMode).toBe("default");
+  });
+
+  it("notify_completion=false를 createTask로 전달", async () => {
+    const { dispatcher, createdTasks } = createDispatcher();
+    await dispatcher.dispatch({
+      type: "create_session",
+      agentSessionId: "sess-fire-forget",
+      prompt: "fire and forget",
+      profile: "codex-default",
+      notify_completion: false,
+    });
+    expect(createdTasks[0].notifyCompletion).toBe(false);
   });
 
   it("create_session 과도기 camelCase 도구/MCP 옵션도 createTask로 전달", async () => {

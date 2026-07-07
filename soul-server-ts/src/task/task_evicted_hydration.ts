@@ -64,6 +64,7 @@ export function hydrateEvictedTaskFromSessionRow(
     codexThreadId: row.claude_session_id ?? undefined,
     callerSessionId: row.caller_session_id ?? undefined,
     callerInfo: extractCallerInfoFromMetadata(row.metadata),
+    notifyCompletion: row.notify_completion !== false,
     metadata,
     agentsRunState: agentsRunState?.serialized,
     agentsRunStateSchemaVersion: agentsRunState?.schemaVersion,

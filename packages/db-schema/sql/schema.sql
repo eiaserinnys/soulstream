@@ -92,12 +92,14 @@ CREATE TABLE IF NOT EXISTS sessions (
     updated_at              TIMESTAMPTZ DEFAULT NOW(),
     agent_id                VARCHAR,
     caller_session_id       TEXT,
+    notify_completion       BOOLEAN NOT NULL DEFAULT TRUE,
     termination_reason      TEXT,
     termination_detail      TEXT
 );
 
 -- 기존 테이블에 caller_session_id 컬럼 추가 (멱등)
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS caller_session_id TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS notify_completion BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- away_summary 컬럼 추가 (멱등)
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS away_summary TEXT;
@@ -886,6 +888,9 @@ END;
 $$;
 
 -- session_register (4-ID 최초 등록 — 순수 INSERT, ON CONFLICT 없음)
+-- NOTE: 인자 시그니처 변경 시 기존 overload를 DROP하지 않으면 운영 DB에 구시그니처가 남는다.
+DROP FUNCTION IF EXISTS session_register(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT);
+DROP FUNCTION IF EXISTS session_register(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, BOOLEAN);
 CREATE OR REPLACE FUNCTION session_register(
     p_session_id        TEXT,
     p_node_id           TEXT,
@@ -897,16 +902,17 @@ CREATE OR REPLACE FUNCTION session_register(
     p_status            TEXT,
     p_created_at        TIMESTAMPTZ,
     p_updated_at        TIMESTAMPTZ,
-    p_caller_session_id TEXT DEFAULT NULL
+    p_caller_session_id TEXT DEFAULT NULL,
+    p_notify_completion BOOLEAN DEFAULT TRUE
 ) RETURNS void LANGUAGE sql AS $$
     INSERT INTO sessions (
         session_id, node_id, agent_id, claude_session_id,
         session_type, prompt, client_id, status,
-        created_at, updated_at, caller_session_id
+        created_at, updated_at, caller_session_id, notify_completion
     ) VALUES (
         p_session_id, p_node_id, p_agent_id, p_claude_session_id,
         p_session_type, p_prompt, p_client_id, p_status,
-        p_created_at, p_updated_at, p_caller_session_id
+        p_created_at, p_updated_at, p_caller_session_id, COALESCE(p_notify_completion, TRUE)
     );
 $$;
 

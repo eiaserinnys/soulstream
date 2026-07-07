@@ -101,7 +101,7 @@ describe("SessionDB.ensureStableSessionOrderIndex", () => {
 });
 
 describe("SessionDB.registerSession", () => {
-  it("11개 인자가 순서대로 stored proc에 전달됨", async () => {
+  it("12개 인자가 순서대로 stored proc에 전달됨", async () => {
     const { sql, calls } = createMockSql();
     const db = new SessionDB(sql);
 
@@ -118,6 +118,7 @@ describe("SessionDB.registerSession", () => {
       createdAt: now,
       updatedAt: now,
       callerSessionId: null,
+      notifyCompletion: false,
     });
 
     expect(calls).toHaveLength(1);
@@ -134,6 +135,7 @@ describe("SessionDB.registerSession", () => {
       now,
       now,
       null,
+      false,
     ]);
     expect(call.fragments.join("?")).toContain("session_register");
   });

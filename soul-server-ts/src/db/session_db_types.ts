@@ -135,6 +135,7 @@ export interface SessionRow {
   updated_at: Date;
   agent_id: string | null;
   caller_session_id: string | null;
+  notify_completion?: boolean | null;
   away_summary: string | null;
   termination_reason: string | null;
   termination_detail: string | null;
@@ -177,6 +178,7 @@ export interface RegisterSessionParams {
   createdAt: Date;
   updatedAt: Date;
   callerSessionId: string | null;
+  notifyCompletion?: boolean | null;
 }
 
 export interface AppendEventParams {

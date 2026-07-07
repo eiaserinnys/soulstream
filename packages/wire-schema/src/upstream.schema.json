@@ -456,6 +456,10 @@
           "items": { "type": "object", "additionalProperties": true }
         },
         "caller_info": { "type": "object", "additionalProperties": true },
+        "notify_completion": {
+          "type": "boolean",
+          "description": "False suppresses caller completion relay for runbook-tracked fire-and-forget delegation. Missing defaults to true."
+        },
         "attachment_paths": {
           "type": "array",
           "items": { "type": "string" }

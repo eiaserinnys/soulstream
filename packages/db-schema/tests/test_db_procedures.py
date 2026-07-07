@@ -108,6 +108,92 @@ async def test_runbook_item_review_status_migration_is_mirrored_in_schema_sql():
     assert migration_sql in _schema_sql()
 
 
+async def test_notify_completion_migration_contract_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("035_notify_completion.sql")
+    schema_sql = _schema_sql()
+
+    for required in [
+        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS notify_completion BOOLEAN NOT NULL DEFAULT TRUE",
+        "DROP FUNCTION IF EXISTS session_register(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT)",
+        "p_notify_completion BOOLEAN DEFAULT TRUE",
+        "COALESCE(p_notify_completion, TRUE)",
+    ]:
+        assert required in migration_sql
+        assert required in schema_sql
+
+
+async def test_sessions_notify_completion_schema_contract(test_db):
+    columns = {
+        row["column_name"]: row
+        for row in await test_db.fetch(
+            """
+            SELECT column_name, is_nullable, column_default
+            FROM information_schema.columns
+            WHERE table_name = 'sessions'
+            """
+        )
+    }
+
+    assert columns["notify_completion"]["is_nullable"] == "NO"
+    assert columns["notify_completion"]["column_default"] == "true"
+
+    now = _utc_now()
+    await test_db.execute(
+        """
+        SELECT session_register(
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+        )
+        """,
+        "sess-notify-off",
+        "node-1",
+        "codex-default",
+        None,
+        "claude",
+        "fire and forget",
+        None,
+        "running",
+        now,
+        now,
+        "caller-sess-1",
+        False,
+    )
+    await test_db.execute(
+        """
+        SELECT session_register(
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+        )
+        """,
+        "sess-notify-default",
+        "node-1",
+        "codex-default",
+        None,
+        "claude",
+        "default notify",
+        None,
+        "running",
+        now,
+        now,
+        "caller-sess-1",
+    )
+
+    rows = {
+        row["session_id"]: row["notify_completion"]
+        for row in await test_db.fetch(
+            """
+            SELECT session_id, notify_completion
+            FROM sessions
+            WHERE session_id IN ($1, $2)
+            """,
+            "sess-notify-off",
+            "sess-notify-default",
+        )
+    }
+    assert rows == {
+        "sess-notify-off": False,
+        "sess-notify-default": True,
+    }
+
+
 async def test_board_items_container_schema_contract(test_db):
     """board_items exposes the additive container membership columns and indexes."""
 

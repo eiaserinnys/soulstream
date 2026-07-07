@@ -44,17 +44,18 @@ export function registerSessionMgmtTools(
     "create_agent_session",
     {
       description:
-        "현재 노드에 새 에이전트 세션을 생성한다. 비동기 — 세션 ID만 반환. caller_session_id가 있으면 caller_info(v1)를 자동 조립.",
+        "현재 노드에 새 에이전트 세션을 생성한다. 비동기 — 세션 ID만 반환. caller_session_id가 있으면 caller_info(v1)를 자동 조립. notify_completion=false는 런북 기반 워크플로우에서 런북을 추적 표면으로 쓸 때 권장.",
       inputSchema: {
         agent_id: z.string().optional(),
         prompt: z.string(),
         caller_session_id: z.string().optional(),
+        notify_completion: z.boolean().optional(),
         folder_id: z.string().optional(),
         container: delegatedContainerSchema.optional(),
         source_runbook_item_id: z.string().optional(),
       },
     },
-    async ({ agent_id, prompt, caller_session_id, folder_id, container, source_runbook_item_id }) => {
+    async ({ agent_id, prompt, caller_session_id, notify_completion, folder_id, container, source_runbook_item_id }) => {
       // agent_id가 미지정이면 첫 번째 등록 agent를 default로.
       const agents = runtime.agentRegistry.list();
       if (agents.length === 0) {
@@ -90,6 +91,7 @@ export function registerSessionMgmtTools(
           profileId: resolvedAgentId,
           callerSessionId: effectiveCallerSessionId ?? null,
           callerInfo,
+          notifyCompletion: notify_completion,
           folderId: resolvedContainer.folderId,
           container: resolvedContainer.container,
           sourceRunbookItemId: source_runbook_item_id ?? null,

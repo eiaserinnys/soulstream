@@ -55,6 +55,10 @@ class CreateSessionRequest(BaseModel):
         default=None,
         validation_alias=AliasChoices("caller_session_id", "callerSessionId"),
     )
+    notify_completion: Optional[bool] = Field(
+        default=None,
+        validation_alias=AliasChoices("notify_completion", "notifyCompletion"),
+    )
     attachmentPaths: Optional[list[str]] = None
     # Task Tree에서 사용자가 특정 태스크 아래 일반 New Session을 시작할 때 사용한다.
     # 위임 세션이 아니므로 caller_session_id와 분리하고, 서버가 parent task context와

@@ -114,6 +114,15 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     expect(task?.callerSessionId).toBeUndefined();
   });
 
+  it("restores persisted notify_completion=false for resumed completion suppression", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({ notify_completion: false }),
+      makeLogger(),
+    );
+
+    expect(task?.notifyCompletion).toBe(false);
+  });
+
   it("falls back to claude session type for non-llm values", () => {
     expect(hydrateEvictedTaskFromSessionRow(
       makeRow({ session_type: null }),

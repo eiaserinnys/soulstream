@@ -126,6 +126,28 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("1c. notifyCompletion=false면 callerSessionId가 있어도 완료통지를 보내지 않는다", async () => {
+    const tm = makeTaskManagerStub();
+    const registry = makeAgentRegistry();
+    const fetchImpl = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    const onResume = vi.fn();
+
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      registry,
+      onResume,
+      silentLogger,
+      makeOrch(),
+      fetchImpl,
+    );
+
+    await notifier.notify(makeChild({ notifyCompletion: false }));
+
+    expect(tm.addIntervention).not.toHaveBeenCalled();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it("1b. stale supervisor caller는 현재 active supervisor session으로 완료통지를 보낸다", async () => {
     const tm = makeTaskManagerStub();
     const registry = makeAgentRegistry();

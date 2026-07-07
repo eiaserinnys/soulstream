@@ -29,6 +29,8 @@ interface CreateSessionCmd extends CommandLike {
   profile?: string;
   caller_session_id?: string | null;
   caller_info?: CallerInfo;
+  notify_completion?: boolean;
+  notifyCompletion?: boolean;
   attachment_paths?: string[];
   extra_context_items?: ContextItem[];
   model?: string | null;
@@ -114,6 +116,7 @@ async function handleCreateSession(
       profileId,
       callerSessionId: cmd.caller_session_id ?? null,
       callerInfo: cmd.caller_info,
+      notifyCompletion: cmd.notify_completion ?? cmd.notifyCompletion,
       model: cmd.model,
       oauthToken: cmd.oauth_token,
       reasoningEffort: cmd.reasoningEffort,

@@ -75,13 +75,14 @@ export function registerTaskTreeTools(
     "delegate_task_item",
     {
       description:
-        "parent task 아래 child task를 생성하고 새 agent session을 만들어 child task에 link한다. 실패 시 task를 삭제하지 않고 blocked/failure operation으로 남긴다.",
+        "parent task 아래 child task를 생성하고 새 agent session을 만들어 child task에 link한다. 실패 시 task를 삭제하지 않고 blocked/failure operation으로 남긴다. notify_completion=false는 런북 기반 워크플로우에서 런북을 추적 표면으로 쓸 때 권장.",
       inputSchema: {
         session_id: z.string(),
         parent_task_id: z.string(),
         title: z.string().min(1),
         prompt: z.string().min(1),
         agent_id: z.string().optional(),
+        notify_completion: z.boolean().optional(),
         description: z.string().optional(),
         acceptance_criteria: z.string().optional(),
         verification_owner: verificationOwnerSchema.default("agent"),
@@ -100,6 +101,7 @@ export function registerTaskTreeTools(
             title: input.title,
             prompt: input.prompt,
             agentId: input.agent_id,
+            notifyCompletion: input.notify_completion,
             description: input.description,
             acceptanceCriteria: input.acceptance_criteria,
             verificationOwner: input.verification_owner,
