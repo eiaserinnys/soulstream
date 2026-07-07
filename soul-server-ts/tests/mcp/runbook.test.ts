@@ -12,6 +12,42 @@ import type { TaskManager } from "../../src/task/task_manager.js";
 
 const openClients: Client[] = [];
 const openServers: Awaited<ReturnType<typeof buildServer>>[] = [];
+const callerSessionIdGuidance =
+  "Codex 등 헤더 미지원 백엔드는 자기 agent_session_id를 caller_session_id로 전달한다.";
+const runbookMutationToolNames = [
+  "create_runbook",
+  "update_runbook",
+  "set_runbook_status",
+  "archive_runbook",
+  "unarchive_runbook",
+  "create_runbook_section",
+  "update_runbook_section",
+  "set_runbook_section_assignee",
+  "archive_runbook_section",
+  "unarchive_runbook_section",
+  "move_runbook_section",
+  "create_runbook_item",
+  "update_runbook_item",
+  "set_runbook_item_assignee",
+  "archive_runbook_item",
+  "unarchive_runbook_item",
+  "move_runbook_item",
+  "set_runbook_item_status",
+] as const;
+const runbookReadToolNames = [
+  "list_runbooks",
+  "get_runbook",
+  "list_my_turn_items",
+  "list_runbook_operations",
+] as const;
+const customViewMutationToolNames = [
+  "create_custom_view",
+  "patch_custom_view",
+] as const;
+const customViewReadToolNames = [
+  "get_custom_view",
+  "list_custom_views",
+] as const;
 
 function createSilentLogger() {
   const noop = () => {};
@@ -133,6 +169,16 @@ describe("runbook MCP tools", () => {
       "list_my_turn_items",
       "list_runbook_operations",
     ]));
+    for (const name of runbookMutationToolNames) {
+      const tool = tools.tools.find((candidate) => candidate.name === name);
+      expect(JSON.stringify(tool?.inputSchema)).toContain("caller_session_id");
+      expect(tool?.description ?? "").toContain(callerSessionIdGuidance);
+    }
+    for (const name of runbookReadToolNames) {
+      const tool = tools.tools.find((candidate) => candidate.name === name);
+      expect(JSON.stringify(tool?.inputSchema)).not.toContain("caller_session_id");
+      expect(tool?.description ?? "").not.toContain(callerSessionIdGuidance);
+    }
   });
 
   it("moves board items between board containers through the catalog MCP tool", async () => {
@@ -212,6 +258,66 @@ describe("runbook MCP tools", () => {
       expectedVersion: 3,
       reason: "done",
       idempotencyKey: "idem-status-1",
+    });
+  });
+
+  it("uses explicit caller_session_id for runbook mutations without a header", async () => {
+    const service = fakeRunbookService();
+    const client = await createClient(
+      makeRuntime({ runbookService: service }),
+    );
+
+    const result = await client.callTool({
+      name: "set_runbook_item_status",
+      arguments: {
+        item_id: "item-1",
+        status: "completed",
+        expected_version: 3,
+        idempotency_key: "idem-status-explicit",
+        reason: "done",
+        caller_session_id: "sess-explicit",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(service.setItemStatus).toHaveBeenCalledWith({
+      actorKind: "agent",
+      actorSessionId: "sess-explicit",
+      itemId: "item-1",
+      status: "completed",
+      expectedVersion: 3,
+      reason: "done",
+      idempotencyKey: "idem-status-explicit",
+    });
+  });
+
+  it("prefers explicit caller_session_id over the caller session header", async () => {
+    const service = fakeRunbookService();
+    const client = await createClient(
+      makeRuntime({ runbookService: service }),
+      { "x-soulstream-agent-session-id": "sess-header" },
+    );
+
+    const result = await client.callTool({
+      name: "update_runbook",
+      arguments: {
+        runbook_id: "rb-1",
+        expected_version: 3,
+        title: "Explicit caller wins",
+        idempotency_key: "idem-runbook-explicit-wins",
+        caller_session_id: "sess-explicit",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(service.patchRunbook).toHaveBeenCalledWith({
+      actorKind: "agent",
+      actorSessionId: "sess-explicit",
+      runbookId: "rb-1",
+      expectedVersion: 3,
+      title: "Explicit caller wins",
+      reason: undefined,
+      idempotencyKey: "idem-runbook-explicit-wins",
     });
   });
 
@@ -466,6 +572,16 @@ describe("custom view MCP tools", () => {
       "get_custom_view",
       "list_custom_views",
     ]));
+    for (const name of customViewMutationToolNames) {
+      const tool = tools.tools.find((candidate) => candidate.name === name);
+      expect(JSON.stringify(tool?.inputSchema)).toContain("caller_session_id");
+      expect(tool?.description ?? "").toContain(callerSessionIdGuidance);
+    }
+    for (const name of customViewReadToolNames) {
+      const tool = tools.tools.find((candidate) => candidate.name === name);
+      expect(JSON.stringify(tool?.inputSchema)).not.toContain("caller_session_id");
+      expect(tool?.description ?? "").not.toContain(callerSessionIdGuidance);
+    }
   });
 
   it("creates custom views with container input and caller session actor", async () => {
@@ -525,6 +641,67 @@ describe("custom view MCP tools", () => {
       title: "Progress panel v2",
       html: "<main></main>",
       idempotencyKey: "idem-custom-patch",
+    });
+  });
+
+  it("uses explicit caller_session_id for custom view mutations without a header", async () => {
+    const service = fakeCustomViewService();
+    const client = await createClient(
+      makeRuntime({ customViewService: service }),
+    );
+
+    const result = await client.callTool({
+      name: "create_custom_view",
+      arguments: {
+        container: { kind: "runbook", id: "rb-1" },
+        title: "Progress panel",
+        html: "<section></section>",
+        x: 120,
+        y: 240,
+        idempotency_key: "idem-custom-explicit",
+        caller_session_id: "sess-explicit",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(service.createCustomView).toHaveBeenCalledWith({
+      actorSessionId: "sess-explicit",
+      container: { containerKind: "runbook", containerId: "rb-1" },
+      title: "Progress panel",
+      html: "<section></section>",
+      x: 120,
+      y: 240,
+      idempotencyKey: "idem-custom-explicit",
+    });
+  });
+
+  it("prefers explicit caller_session_id over the caller session header for custom view mutations", async () => {
+    const service = fakeCustomViewService();
+    const client = await createClient(
+      makeRuntime({ customViewService: service }),
+      { "x-soulstream-agent-session-id": "sess-header" },
+    );
+
+    const result = await client.callTool({
+      name: "patch_custom_view",
+      arguments: {
+        custom_view_id: "cv-1",
+        expected_revision: 3,
+        title: "Progress panel v2",
+        html: "<main></main>",
+        idempotency_key: "idem-custom-explicit-wins",
+        caller_session_id: "sess-explicit",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(service.patchCustomView).toHaveBeenCalledWith({
+      actorSessionId: "sess-explicit",
+      customViewId: "cv-1",
+      expectedRevision: 3,
+      title: "Progress panel v2",
+      html: "<main></main>",
+      idempotencyKey: "idem-custom-explicit-wins",
     });
   });
 

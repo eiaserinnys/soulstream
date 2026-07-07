@@ -6,11 +6,13 @@ import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
 import {
+  callerSessionIdSchema,
   errorMessage,
   expectedVersionSchema,
   getRunbookService,
   idempotencyKeySchema,
   mutation,
+  mutationToolDescription,
   optionalReasonSchema,
   runbookStatusSchema,
 } from "./runbook_shared.js";
@@ -22,8 +24,9 @@ export function registerRunbookObjectTools(
   server.registerTool(
     "create_runbook",
     {
-      description:
+      description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 독립 runbook board item과 런북을 생성한다.",
+      ),
       inputSchema: {
         folder_id: z.string().min(1),
         title: z.string().default(""),
@@ -31,10 +34,11 @@ export function registerRunbookObjectTools(
         y: z.number().optional(),
         runbook_id: z.string().min(1).optional(),
         idempotency_key: idempotencyKeySchema,
+        caller_session_id: callerSessionIdSchema,
       },
     },
     async (input) =>
-      mutation(runtime, (service, actorSessionId) =>
+      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
         service.createRunbook({
           actorKind: "agent",
           actorSessionId,
@@ -76,18 +80,20 @@ export function registerRunbookObjectTools(
   server.registerTool(
     "update_runbook",
     {
-      description:
+      description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 런북 제목을 수정한다.",
+      ),
       inputSchema: {
         runbook_id: z.string().min(1),
         expected_version: expectedVersionSchema,
         title: z.string().min(1),
         reason: optionalReasonSchema,
         idempotency_key: idempotencyKeySchema,
+        caller_session_id: callerSessionIdSchema,
       },
     },
     async (input) =>
-      mutation(runtime, (service, actorSessionId) =>
+      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
         service.patchRunbook({
           actorKind: "agent",
           actorSessionId,
@@ -103,31 +109,31 @@ export function registerRunbookObjectTools(
   registerRunbookArchiveTool(server, runtime, {
     name: "archive_runbook",
     archived: true,
-    description:
-      "현재 MCP caller session을 actor_kind='agent'로 하여 런북을 archived 처리한다.",
+    description: "현재 MCP caller session을 actor_kind='agent'로 하여 런북을 archived 처리한다.",
   });
   registerRunbookArchiveTool(server, runtime, {
     name: "unarchive_runbook",
     archived: false,
-    description:
-      "현재 MCP caller session을 actor_kind='agent'로 하여 archived 런북을 복구한다.",
+    description: "현재 MCP caller session을 actor_kind='agent'로 하여 archived 런북을 복구한다.",
   });
 
   server.registerTool(
     "set_runbook_status",
     {
-      description:
+      description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 런북 자체의 open/completed 상태를 설정한다.",
+      ),
       inputSchema: {
         runbook_id: z.string().min(1),
         status: runbookStatusSchema,
         expected_version: expectedVersionSchema,
         reason: optionalReasonSchema,
         idempotency_key: idempotencyKeySchema,
+        caller_session_id: callerSessionIdSchema,
       },
     },
     async (input) =>
-      mutation(runtime, (service, actorSessionId) =>
+      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
         service.setRunbookStatus({
           actorKind: "agent",
           actorSessionId,
@@ -202,16 +208,17 @@ function registerRunbookArchiveTool(
   server.registerTool(
     config.name,
     {
-      description: config.description,
+      description: mutationToolDescription(config.description),
       inputSchema: {
         runbook_id: z.string().min(1),
         expected_version: expectedVersionSchema,
         reason: optionalReasonSchema,
         idempotency_key: idempotencyKeySchema,
+        caller_session_id: callerSessionIdSchema,
       },
     },
     async (input) =>
-      mutation(runtime, (service, actorSessionId) =>
+      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
         service.patchRunbook({
           actorKind: "agent",
           actorSessionId,

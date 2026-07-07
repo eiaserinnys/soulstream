@@ -7,9 +7,11 @@ import {
   assigneePatch,
   assigneeSchema,
   assigneeValueSchema,
+  callerSessionIdSchema,
   expectedVersionSchema,
   idempotencyKeySchema,
   mutation,
+  mutationToolDescription,
   optionalReasonSchema,
 } from "./runbook_shared.js";
 
@@ -20,8 +22,9 @@ export function registerRunbookSectionTools(
   server.registerTool(
     "create_runbook_section",
     {
-      description:
+      description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 런북 섹션을 생성한다.",
+      ),
       inputSchema: {
         runbook_id: z.string().min(1),
         title: z.string().min(1),
@@ -30,10 +33,11 @@ export function registerRunbookSectionTools(
         after_section_id: z.string().nullable().optional(),
         before_section_id: z.string().nullable().optional(),
         idempotency_key: idempotencyKeySchema,
+        caller_session_id: callerSessionIdSchema,
       },
     },
     async (input) =>
-      mutation(runtime, (service, actorSessionId) =>
+      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
         service.createSection({
           actorKind: "agent",
           actorSessionId,
@@ -51,8 +55,9 @@ export function registerRunbookSectionTools(
   server.registerTool(
     "update_runbook_section",
     {
-      description:
+      description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 런북 섹션 제목을 수정한다.",
+      ),
       inputSchema: {
         runbook_id: z.string().min(1),
         section_id: z.string().min(1),
@@ -60,10 +65,11 @@ export function registerRunbookSectionTools(
         title: z.string().min(1),
         reason: optionalReasonSchema,
         idempotency_key: idempotencyKeySchema,
+        caller_session_id: callerSessionIdSchema,
       },
     },
     async (input) =>
-      mutation(runtime, (service, actorSessionId) =>
+      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
         service.patchSection({
           actorKind: "agent",
           actorSessionId,
@@ -80,8 +86,9 @@ export function registerRunbookSectionTools(
   server.registerTool(
     "set_runbook_section_assignee",
     {
-      description:
+      description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 런북 섹션 담당자를 설정하거나 해제한다.",
+      ),
       inputSchema: {
         runbook_id: z.string().min(1),
         section_id: z.string().min(1),
@@ -89,10 +96,11 @@ export function registerRunbookSectionTools(
         assignee: assigneeValueSchema,
         reason: optionalReasonSchema,
         idempotency_key: idempotencyKeySchema,
+        caller_session_id: callerSessionIdSchema,
       },
     },
     async (input) =>
-      mutation(runtime, (service, actorSessionId) =>
+      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
         service.setSectionAssignee({
           actorKind: "agent",
           actorSessionId,
@@ -109,21 +117,20 @@ export function registerRunbookSectionTools(
   registerSectionArchiveTool(server, runtime, {
     name: "archive_runbook_section",
     archived: true,
-    description:
-      "현재 MCP caller session을 actor_kind='agent'로 하여 런북 섹션을 archived 처리한다.",
+    description: "현재 MCP caller session을 actor_kind='agent'로 하여 런북 섹션을 archived 처리한다.",
   });
   registerSectionArchiveTool(server, runtime, {
     name: "unarchive_runbook_section",
     archived: false,
-    description:
-      "현재 MCP caller session을 actor_kind='agent'로 하여 archived 런북 섹션을 복구한다.",
+    description: "현재 MCP caller session을 actor_kind='agent'로 하여 archived 런북 섹션을 복구한다.",
   });
 
   server.registerTool(
     "move_runbook_section",
     {
-      description:
+      description: mutationToolDescription(
         "현재 MCP caller session을 actor_kind='agent'로 하여 런북 섹션 position_key를 재계산한다.",
+      ),
       inputSchema: {
         runbook_id: z.string().min(1),
         section_id: z.string().min(1),
@@ -132,10 +139,11 @@ export function registerRunbookSectionTools(
         before_section_id: z.string().nullable().optional(),
         reason: optionalReasonSchema,
         idempotency_key: idempotencyKeySchema,
+        caller_session_id: callerSessionIdSchema,
       },
     },
     async (input) =>
-      mutation(runtime, (service, actorSessionId) =>
+      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
         service.moveSection({
           actorKind: "agent",
           actorSessionId,
@@ -163,17 +171,18 @@ function registerSectionArchiveTool(
   server.registerTool(
     config.name,
     {
-      description: config.description,
+      description: mutationToolDescription(config.description),
       inputSchema: {
         runbook_id: z.string().min(1),
         section_id: z.string().min(1),
         expected_version: expectedVersionSchema,
         reason: optionalReasonSchema,
         idempotency_key: idempotencyKeySchema,
+        caller_session_id: callerSessionIdSchema,
       },
     },
     async (input) =>
-      mutation(runtime, (service, actorSessionId) =>
+      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
         service.patchSection({
           actorKind: "agent",
           actorSessionId,

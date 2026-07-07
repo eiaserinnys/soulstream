@@ -30,15 +30,26 @@ export const assigneeSchema = assigneeValueSchema.optional();
 export const idempotencyKeySchema = z.string().min(1);
 export const optionalReasonSchema = z.string().nullable().optional();
 export const expectedVersionSchema = z.number().int().positive();
+export const callerSessionIdSchema = z.string().optional();
+export const CALLER_SESSION_ID_GUIDANCE =
+  "Codex 등 헤더 미지원 백엔드는 자기 agent_session_id를 caller_session_id로 전달한다.";
 
 type AssigneeToolInput = z.infer<typeof assigneeSchema>;
 
+export function mutationToolDescription(description: string): string {
+  return `${description} ${CALLER_SESSION_ID_GUIDANCE}`;
+}
+
 export async function mutation(
   runtime: McpRuntime,
+  explicitCallerSessionId: string | null | undefined,
   fn: (service: RunbookService, actorSessionId: string) => Promise<unknown>,
 ) {
   try {
-    return jsonResult(await fn(getRunbookService(runtime), requireCallerSessionId()));
+    return jsonResult(await fn(
+      getRunbookService(runtime),
+      requireCallerSessionId(explicitCallerSessionId),
+    ));
   } catch (err) {
     return errorResult(errorMessage(err));
   }
@@ -62,8 +73,10 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function requireCallerSessionId(): string {
-  const callerSessionId = resolveEffectiveCallerSessionId(undefined);
+function requireCallerSessionId(
+  explicitCallerSessionId: string | null | undefined,
+): string {
+  const callerSessionId = resolveEffectiveCallerSessionId(explicitCallerSessionId);
   if (!callerSessionId) {
     throw new Error(
       `caller session id is required for runbook mutation tools. Send ${SOULSTREAM_AGENT_SESSION_HEADER}.`,
