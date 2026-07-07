@@ -15,6 +15,10 @@ import {
   type CreateMarkdownDocumentInput,
   type CreateMarkdownDocumentResult,
 } from "./BoardWorkspaceView";
+import {
+  boardItemBelongsToContainer,
+  sessionIdsOwnedByOtherBoardContainer,
+} from "./board-container-visibility";
 import { getChildFolders, getFolderDirectChildCount } from "./board-workspace-helpers";
 import { useFolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 
@@ -41,9 +45,7 @@ export interface FolderWorkspaceViewProps {
 
 function boardItemBelongsToSelectedFolder(item: CatalogBoardItem, folderId: string | null): boolean {
   if (!folderId) return false;
-  const itemContainerKind = item.containerKind ?? "folder";
-  const itemContainerId = item.containerId ?? item.folderId;
-  return itemContainerKind === "folder" && itemContainerId === folderId;
+  return boardItemBelongsToContainer(item, { kind: "folder", id: folderId });
 }
 
 function metadataText(item: CatalogBoardItem, key: string): string {
@@ -69,24 +71,18 @@ function folderRunbookItems(
     .sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
 }
 
-function runbookContainerSessionIds(catalog: { boardItems?: CatalogBoardItem[] } | null): Set<string> | null {
-  if (!catalog?.boardItems) return null;
-  const sessionIds = new Set<string>();
-  for (const item of catalog.boardItems) {
-    if (item.itemType === "session" && item.containerKind === "runbook") {
-      sessionIds.add(item.itemId);
-    }
-  }
-  return sessionIds;
-}
-
 function filterFolderListSessions(
   sessions: SessionSummary[] | undefined,
   catalog: { boardItems?: CatalogBoardItem[] } | null,
+  selectedFolderId: string | null,
 ): SessionSummary[] | undefined {
   if (!sessions) return sessions;
-  const hiddenSessionIds = runbookContainerSessionIds(catalog);
-  if (!hiddenSessionIds || hiddenSessionIds.size === 0) return sessions;
+  const hiddenSessionIds = sessionIdsOwnedByOtherBoardContainer(
+    catalog?.boardItems,
+    selectedFolderId ? { kind: "folder", id: selectedFolderId } : null,
+    selectedFolderId,
+  );
+  if (hiddenSessionIds.size === 0) return sessions;
   return sessions.filter((session) => !hiddenSessionIds.has(session.agentSessionId));
 }
 
@@ -235,8 +231,8 @@ export function FolderWorkspaceView({
     )
   ), [catalog, runbookProjections, selectedFolderId]);
   const visibleSessions = useMemo(
-    () => filterFolderListSessions(sessions, catalog),
-    [catalog, sessions],
+    () => filterFolderListSessions(sessions, catalog, selectedFolderId),
+    [catalog, selectedFolderId, sessions],
   );
   const scrollHeader = useMemo(() => (
     <>

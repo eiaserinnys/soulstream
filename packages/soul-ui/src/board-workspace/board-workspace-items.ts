@@ -5,6 +5,10 @@ import {
   getBoardFrameMetadata,
 } from "./board-frames";
 import {
+  boardItemBelongsToContainer,
+  sessionIdsOwnedByOtherBoardContainer,
+} from "./board-container-visibility";
+import {
   buildBoardSessionRelations,
   getSessionChildStack,
   getSessionParentRef,
@@ -277,15 +281,6 @@ function sessionBelongsToSelectedFolder(
 
 function folderBoardContainer(folderId: string | null): BoardContainerRef | null {
   return folderId ? { kind: "folder", id: folderId } : null;
-}
-
-function boardItemBelongsToContainer(
-  item: CatalogBoardItem,
-  container: BoardContainerRef,
-): boolean {
-  const itemContainerKind = item.containerKind ?? "folder";
-  const itemContainerId = item.containerId ?? item.folderId;
-  return itemContainerKind === container.kind && itemContainerId === container.id;
 }
 
 function rectsOverlap(a: BoardRect, b: BoardRect): boolean {
@@ -583,16 +578,13 @@ function buildPositionedItems({
     items.filter((item): item is SessionBoardWorkspaceItem => item.type === "session").map((item) => item.id),
   );
 
-  // 런북 등 다른 컨테이너에 primary 타일이 있는 세션은 폴더 보드에서 합성하지
-  // 않는다 (서버 board_seed_items()의 primary membership 가드와 대칭 — #269).
-  const sessionIdsOwnedByOtherContainer = new Set(
-    (catalog.boardItems ?? [])
-      .filter(
-        (boardItem) =>
-          boardItem.itemType === "session" &&
-          (boardItem.containerKind ?? "folder") !== "folder",
-      )
-      .map((boardItem) => boardItem.itemId),
+  // 현재 폴더 컨테이너가 아닌 다른 primary placement가 이미 소유한 세션은
+  // 폴더 보드에서 합성하지 않는다. runbook뿐 아니라 하위 folder 컨테이너도
+  // 같은 소유권 경계로 취급한다.
+  const sessionIdsOwnedByOtherContainer = sessionIdsOwnedByOtherBoardContainer(
+    catalog.boardItems,
+    boardContainer,
+    selectedFolderId,
   );
 
   const sessionCandidates = new Map<string, SessionSummary>();

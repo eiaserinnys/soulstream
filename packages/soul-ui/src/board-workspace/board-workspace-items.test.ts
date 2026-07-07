@@ -232,6 +232,67 @@ describe("board workspace item helpers", () => {
     ]);
   });
 
+  it("does not generate folder board fallback entries for sessions owned by another folder container", () => {
+    const items = buildBoardWorkspaceItems({
+      catalog: {
+        folders: [{
+          id: "root",
+          name: "Root",
+          sortOrder: 0,
+          parentFolderId: null,
+          createdAt: "2026-06-01T00:00:00.000Z",
+        }],
+        sessions: {
+          "root-session": { folderId: "root", displayName: null },
+          "nested-board-session": { folderId: "root", displayName: null },
+        },
+        boardItems: [
+          {
+            id: "session:root-session",
+            folderId: "root",
+            containerKind: "folder",
+            containerId: "root",
+            membershipKind: "primary",
+            itemType: "session",
+            itemId: "root-session",
+            x: 0,
+            y: 0,
+          },
+          {
+            id: "session:nested-board-session",
+            folderId: "root",
+            containerKind: "folder",
+            containerId: "child-folder-or-nested-board",
+            membershipKind: "primary",
+            itemType: "session",
+            itemId: "nested-board-session",
+            x: 120,
+            y: 120,
+          },
+        ],
+      },
+      selectedFolderId: "root",
+      sessions: [
+        {
+          agentSessionId: "root-session",
+          status: "running",
+          eventCount: 1,
+          folderId: "root",
+          prompt: "Root session",
+        },
+        {
+          agentSessionId: "nested-board-session",
+          status: "running",
+          eventCount: 1,
+          folderId: "root",
+          prompt: "Nested board session",
+        },
+      ],
+    });
+
+    expect(items.map((item) => `${item.type}:${item.id}`)).toEqual(["session:root-session"]);
+  });
+
   it("builds frame items and hides children while collapsed without changing child coordinates", () => {
     const frameCatalog: CatalogState = {
       ...catalog,
