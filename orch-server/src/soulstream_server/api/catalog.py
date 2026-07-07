@@ -18,10 +18,7 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from soulstream_server.api._proxy_utils import forward_auth_headers
 from soulstream_server.api.node_utils import find_session_node
-from soul_common.catalog.catalog_service import (
-    CatalogService,
-    MarkdownDocumentVersionConflictError,
-)
+from soul_common.catalog.catalog_service import CatalogService
 from soul_common.auth.caller_info import decode_dashboard_jwt_user
 from soulstream_server.config import get_settings
 from soulstream_server.dashboard_access import (
@@ -31,7 +28,6 @@ from soulstream_server.dashboard_access import (
 )
 
 logger = logging.getLogger(__name__)
-_UNSUPPORTED_PATH_STATUS_CODES = {404, 405}
 
 
 class BoardItemPositionUpdate(BaseModel):
@@ -229,45 +225,68 @@ def create_catalog_router(
         dependencies=dependencies or [],
     )
 
-    async def _request_first_supported_node(
+    def _resolve_board_yjs_host_node():
+        if node_manager is None:
+            raise HTTPException(status_code=503, detail="Board Yjs host routing is not configured")
+        hosts = [
+            node
+            for node in node_manager.get_connected_nodes()
+            if isinstance(getattr(node, "capabilities", None), dict)
+            and node.capabilities.get("board_yjs_host") is True
+        ]
+        if not hosts:
+            raise HTTPException(status_code=503, detail="Board Yjs host node is not connected")
+        if len(hosts) > 1:
+            raise HTTPException(
+                status_code=503,
+                detail="Multiple Board Yjs host nodes are registered",
+            )
+        return hosts[0]
+
+    async def _request_board_yjs_host_node(
         request: Request,
-        method: Literal["PATCH"],
+        method: Literal["POST", "PUT", "PATCH", "DELETE"],
         path: str,
         *,
-        json_body: dict[str, Any],
-    ) -> tuple[httpx.Response, Any] | None:
-        if node_manager is None:
-            return None
-        nodes = node_manager.get_connected_nodes()
-        if not nodes:
-            return None
-
+        json_body: dict[str, Any] | None = None,
+    ) -> httpx.Response:
+        node = _resolve_board_yjs_host_node()
         headers = forward_auth_headers(request)
         async with httpx.AsyncClient(timeout=10.0) as client:
-            for node in nodes:
-                url = f"http://{node.host}:{node.port}{path}"
-                try:
-                    resp = await client.patch(url, json=json_body, headers=headers)
-                except httpx.RequestError as exc:
-                    logger.warning(
-                        "%s 프록시 연결 실패, 다음 노드 시도: node=%s url=%s error=%s",
-                        path,
-                        node.node_id,
-                        url,
-                        exc,
-                    )
-                    continue
-                if resp.status_code in _UNSUPPORTED_PATH_STATUS_CODES:
-                    logger.info(
-                        "%s 미지원 노드 건너뜀: node=%s status=%d",
-                        path,
-                        node.node_id,
-                        resp.status_code,
-                    )
-                    continue
-                return resp, node
+            url = f"http://{node.host}:{node.port}{path}"
+            try:
+                resp = await client.request(method, url, json=json_body, headers=headers)
+            except httpx.RequestError as exc:
+                logger.warning(
+                    "%s board Yjs host proxy failed: node=%s url=%s error=%s",
+                    path,
+                    node.node_id,
+                    url,
+                    exc,
+                )
+                raise HTTPException(status_code=502, detail="Board Yjs host node is unreachable") from exc
+        return resp
 
-        return None
+    def _node_response(resp: httpx.Response):
+        content_type = resp.headers.get("content-type", "")
+        if "application/json" in content_type:
+            return JSONResponse(status_code=resp.status_code, content=resp.json())
+        return Response(
+            content=resp.content,
+            status_code=resp.status_code,
+            media_type=content_type or None,
+        )
+
+    @router.post("/board-yjs/host/{operation}")
+    async def proxy_board_yjs_host_operation(operation: str, request: Request):
+        payload = await request.json()
+        resp = await _request_board_yjs_host_node(
+            request,
+            "POST",
+            f"/api/internal/board-yjs/{quote(operation, safe='')}",
+            json_body=payload,
+        )
+        return _node_response(resp)
 
     @router.get("/board-items")
     async def list_board_items(
@@ -322,8 +341,13 @@ def create_catalog_router(
             if board_item is None:
                 raise HTTPException(status_code=404, detail="Board item not found")
             require_folder_allowed(access, folders, board_item.get("folderId"))
-        await catalog_service.update_board_item_position(board_item_id, body.x, body.y)
-        return {"ok": True}
+        resp = await _request_board_yjs_host_node(
+            request,
+            "PATCH",
+            f"/api/board-items/{quote(board_item_id, safe='')}/position",
+            json_body={"x": body.x, "y": body.y},
+        )
+        return _node_response(resp)
 
     @router.patch("/board-items/{board_item_id}/container")
     async def move_board_item_to_container(
@@ -363,23 +387,13 @@ def create_catalog_router(
             payload["x"] = body.x
             payload["y"] = body.y
 
-        result = await _request_first_supported_node(
+        resp = await _request_board_yjs_host_node(
             request,
             "PATCH",
             f"/api/board-items/{quote(board_item_id, safe='')}/container",
             json_body=payload,
         )
-        if not result:
-            raise HTTPException(status_code=503, detail="Board item container move is unavailable")
-        resp, _node = result
-        content_type = resp.headers.get("content-type", "")
-        if "application/json" in content_type:
-            return JSONResponse(status_code=resp.status_code, content=resp.json())
-        return Response(
-            content=resp.content,
-            status_code=resp.status_code,
-            media_type=content_type or None,
-        )
+        return _node_response(resp)
 
     @router.post("/markdown-documents", status_code=201)
     async def create_markdown_document(body: MarkdownDocumentCreate, request: Request) -> dict:
@@ -390,15 +404,25 @@ def create_catalog_router(
         )
         folders = await catalog_service.list_folders()
         require_folder_allowed(access_for_request(request), folders, folder_id)
-        return await catalog_service.create_markdown_document(
-            folder_id=folder_id,
-            title=body.title,
-            body=body.body,
-            x=body.x,
-            y=body.y,
-            container_kind=container_kind,
-            container_id=container_id,
+        payload = {
+            "folderId": folder_id,
+            "container": {
+                "kind": container_kind,
+                "id": container_id,
+            },
+            "title": body.title,
+            "body": body.body,
+        }
+        if body.x is not None and body.y is not None:
+            payload["x"] = body.x
+            payload["y"] = body.y
+        resp = await _request_board_yjs_host_node(
+            request,
+            "POST",
+            "/api/markdown-documents",
+            json_body=payload,
         )
+        return _node_response(resp)
 
     @router.get("/markdown-documents/{document_id}")
     async def get_markdown_document(document_id: str, request: Request) -> dict:
@@ -569,18 +593,20 @@ def create_catalog_router(
         folder_id = existing.get("folderId") or existing.get("folder_id")
         folders = await catalog_service.list_folders()
         require_folder_allowed(access_for_request(request), folders, folder_id)
-        try:
-            document = await catalog_service.update_markdown_document(
-                document_id,
-                title=body.title if has_title else None,
-                body=body.body if has_body else None,
-                expected_version=body.expected_version,
-            )
-        except MarkdownDocumentVersionConflictError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        if document is None:
-            raise HTTPException(status_code=404, detail="Document not found")
-        return document
+        payload: dict[str, Any] = {
+            "expectedVersion": body.expected_version,
+        }
+        if has_title:
+            payload["title"] = body.title
+        if has_body:
+            payload["body"] = body.body
+        resp = await _request_board_yjs_host_node(
+            request,
+            "PUT",
+            f"/api/markdown-documents/{quote(document_id, safe='')}",
+            json_body=payload,
+        )
+        return _node_response(resp)
 
     @router.delete("/markdown-documents/{document_id}", status_code=204)
     async def delete_markdown_document(document_id: str, request: Request):
@@ -590,7 +616,12 @@ def create_catalog_router(
         folder_id = existing.get("folderId") or existing.get("folder_id")
         folders = await catalog_service.list_folders()
         require_folder_allowed(access_for_request(request), folders, folder_id)
-        await catalog_service.delete_markdown_document(document_id)
+        resp = await _request_board_yjs_host_node(
+            request,
+            "DELETE",
+            f"/api/markdown-documents/{quote(document_id, safe='')}",
+        )
+        return _node_response(resp)
 
     @router.post("/board/{folder_id}/assets/init", status_code=201)
     async def init_board_asset(folder_id: str, body: BoardAssetInit, request: Request) -> dict:

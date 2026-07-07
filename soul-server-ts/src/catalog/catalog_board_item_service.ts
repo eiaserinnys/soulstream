@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
 import type {
   BoardYjsContainerRef,
   BoardYjsContainerScope,
   CatalogBoardItemRow,
+  MarkdownDocumentRow,
   SessionDB,
 } from "../db/session_db.js";
 
@@ -18,10 +18,54 @@ export interface CatalogBoardItemMoveResult {
   enrolled: boolean;
 }
 
+export interface CatalogBoardYjsPort {
+  updateBoardItemPosition(
+    container: string | BoardYjsContainerRef,
+    boardItemId: string,
+    x: number,
+    y: number,
+  ): Promise<void>;
+  moveBoardItemToContainer(input: {
+    boardItem: CatalogBoardItemRow;
+    targetScope: {
+      folderId: string;
+      containerKind: BoardYjsContainerRef["containerKind"];
+      containerId: string;
+    };
+    position?: { x: number; y: number };
+  }): Promise<CatalogBoardItemRow>;
+  createMarkdownDocument(input: {
+    folderId: string;
+    container?: BoardYjsContainerRef;
+    title: string;
+    body: string;
+    x: number;
+    y: number;
+    documentId: string;
+  }): Promise<{ document: MarkdownDocumentRow; boardItem: CatalogBoardItemRow }>;
+  updateMarkdownDocument(
+    container: string | BoardYjsContainerRef,
+    documentId: string,
+    fields: { title?: string; body?: string; expectedVersion: number },
+  ): Promise<MarkdownDocumentRow | null>;
+  deleteMarkdownDocument(
+    container: string | BoardYjsContainerRef,
+    documentId: string,
+  ): Promise<void>;
+  upsertSessionBoardItem(input: {
+    folderId: string;
+    container: BoardYjsContainerRef;
+    sessionId: string;
+    x: number;
+    y: number;
+    sourceRunbookItemId?: string | null;
+  }): Promise<CatalogBoardItemRow>;
+}
+
 export class CatalogBoardItemService {
   constructor(
     private readonly db: SessionDB,
-    private readonly boardYjsService: BoardYjsService | undefined,
+    private readonly boardYjsService: CatalogBoardYjsPort | undefined,
     private readonly broadcastCatalog: () => Promise<void>,
   ) {}
 

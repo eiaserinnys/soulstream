@@ -28,6 +28,14 @@ export function buildConfigReflection(runtime: McpRuntime): ConfigReflectionEntr
       value: runtime.nodeId,
     },
     {
+      key: "BOARD_YJS_HOST_NODE_ID",
+      status: runtime.boardYjsHostNodeId ? "present" : "missing",
+      source: "runtime",
+      required: true,
+      sensitive: false,
+      value: runtime.boardYjsHostNodeId,
+    },
+    {
       key: "AGENTS_CONFIG_PATH",
       status: agentsConfigExists ? "present" : "unavailable",
       source: "runtime",

@@ -14,7 +14,6 @@
 
 import { randomUUID } from "node:crypto";
 
-import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
 import type {
   BoardYjsContainerRef,
   CatalogBoardItemRow,
@@ -26,6 +25,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
   CatalogBoardItemService,
   type CatalogBoardItemMoveResult,
+  type CatalogBoardYjsPort,
 } from "./catalog_board_item_service.js";
 
 export interface CatalogFolderDto {
@@ -91,7 +91,7 @@ export class CatalogService {
   constructor(
     private readonly db: SessionDB,
     private readonly broadcaster: SessionBroadcaster,
-    boardYjsService?: BoardYjsService,
+    boardYjsService?: CatalogBoardYjsPort,
   ) {
     this.boardItems = new CatalogBoardItemService(
       db,

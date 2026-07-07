@@ -23,6 +23,7 @@ const csvStringList = z
 export const EnvSchema = z
   .object({
     SOULSTREAM_NODE_ID: z.string().min(1, "SOULSTREAM_NODE_ID required"),
+    BOARD_YJS_HOST_NODE_ID: z.string().min(1, "BOARD_YJS_HOST_NODE_ID required"),
     SOULSTREAM_UPSTREAM_URL: z
       .string()
       .url("SOULSTREAM_UPSTREAM_URL must be a valid URL")

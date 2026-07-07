@@ -40,6 +40,8 @@ install:
         - key: SOULSTREAM_NODE_ID
           prompt: "TS 노드 ID (예: eias-shopping-ts)"
           default: eias-shopping-ts
+        - key: BOARD_YJS_HOST_NODE_ID
+          prompt: "보드 Y.Doc 호스트 TS 노드 ID (예: eiaserinnys)"
         - key: SOULSTREAM_UPSTREAM_URL
           default: ws://eiaserinnys.me:5200/ws/node
         - key: AUTH_BEARER_TOKEN

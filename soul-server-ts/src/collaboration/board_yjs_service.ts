@@ -37,6 +37,9 @@ export interface BoardYjsServiceConfig {
   db: SessionDB;
   auth: BoardYjsAuthConfig;
   logger: FastifyBaseLogger;
+  nodeId: string;
+  hostNodeId: string;
+  isHost: boolean;
 }
 
 export class BoardYjsService {
@@ -71,6 +74,18 @@ export class BoardYjsService {
     request: IncomingMessage,
     container: BoardYjsContainerRef,
   ): void {
+    if (!this.config.isHost) {
+      this.config.logger.warn(
+        {
+          nodeId: this.config.nodeId,
+          hostNodeId: this.config.hostNodeId,
+          container,
+        },
+        "rejected non-host board Yjs websocket connection",
+      );
+      socket.close(1013, `board Yjs documents are hosted on ${this.config.hostNodeId}`);
+      return;
+    }
     this.hocuspocus.handleConnection(socket, request, {
       ...container,
       documentName: getBoardYjsContainerDocumentName(container),
@@ -205,6 +220,7 @@ export class BoardYjsService {
     };
     position?: { x: number; y: number };
   }): Promise<CatalogBoardItemRow> {
+    this.assertHost();
     const sourceContainer = {
       containerKind: input.boardItem.containerKind ?? "folder",
       containerId: input.boardItem.containerId ?? input.boardItem.folderId,
@@ -315,6 +331,7 @@ export class BoardYjsService {
     container: string | BoardYjsContainerRef,
     callback: (doc: Y.Doc) => T,
   ): Promise<T> {
+    this.assertHost();
     const resolvedContainer = typeof container === "string" ? boardYjsFolderScope(container) : container;
     const connection = await this.hocuspocus.openDirectConnection(
       getBoardYjsContainerDocumentName(resolvedContainer),
@@ -329,6 +346,13 @@ export class BoardYjsService {
     } finally {
       await connection.disconnect();
     }
+  }
+
+  private assertHost(): void {
+    if (this.config.isHost) return;
+    throw new Error(
+      `board Yjs direct document access is only allowed on host node ${this.config.hostNodeId} (current node ${this.config.nodeId})`,
+    );
   }
 }
 

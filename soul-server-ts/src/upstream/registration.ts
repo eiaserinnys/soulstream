@@ -8,6 +8,7 @@ import type { AgentRegistry } from "../agent_registry.js";
 
 export interface RegistrationParams {
   nodeId: string;
+  boardYjsHostNodeId?: string;
   host: string;
   port: number;
   userName: string;
@@ -97,6 +98,12 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
       max_concurrent: agents.length,
       reflect_brief: true,
       app_heartbeat_v1: true,
+      ...(params.boardYjsHostNodeId
+        ? {
+            board_yjs_host: params.nodeId === params.boardYjsHostNodeId,
+            board_yjs_host_node_id: params.boardYjsHostNodeId,
+          }
+        : {}),
     },
     supported_backends: params.agentRegistry.supportedBackends(),
     agents: agents.map((a) => {
