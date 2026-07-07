@@ -43,6 +43,10 @@ import {
   fetchBoardWorkspaceContextItem,
   fetchRunningSessionsContextItem,
 } from "./session_context_items.js";
+import {
+  resolvePrimarySessionContainerContext,
+  type PrimarySessionContainerContext,
+} from "./session_container_context.js";
 import { buildSoulstreamContextItem } from "./soulstream_item.js";
 
 /** Python `_PreparedContext` (execution_context_builder.py:24-34) TS 등가. */
@@ -189,6 +193,12 @@ export class ExecutionContextBuilder {
       this.logger,
       folderId,
     );
+    const primaryContainer = await resolvePrimarySessionContainerContext(
+      this.db,
+      this.logger,
+      task.agentSessionId,
+      folderName,
+    );
     const runningSessionsItem = await fetchRunningSessionsContextItem(
       this.db,
       this.logger,
@@ -203,6 +213,7 @@ export class ExecutionContextBuilder {
       folderPrompt,
       agentAtomMarkdown,
       atomMarkdown,
+      primaryContainer,
       boardWorkspaceItem,
       runningSessionsItem,
       cogitoContextItem,
@@ -385,6 +396,7 @@ export class ExecutionContextBuilder {
     folderPrompt?: string;
     agentAtomMarkdown: string | null;
     atomMarkdown: string | null;
+    primaryContainer: PrimarySessionContainerContext | null;
     boardWorkspaceItem: ContextItem | null;
     runningSessionsItem: ContextItem | null;
     cogitoContextItem: ContextItem | null;
@@ -407,6 +419,9 @@ export class ExecutionContextBuilder {
       nodeId: this.cfg.nodeId,
       agentId: args.task.profileId,
       callerInfo: args.task.callerInfo,
+      container: args.primaryContainer?.container ?? null,
+      sourceRunbookItemId: args.primaryContainer?.sourceRunbookItemId ?? null,
+      runbookGuidance: args.primaryContainer?.runbookGuidance ?? null,
     });
 
     const combinedContextItems: ContextItem[] = [soulstreamItem];

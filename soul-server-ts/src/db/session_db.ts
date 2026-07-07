@@ -183,6 +183,10 @@ export class SessionDB {
     return await this.boardRepository.getBoardItemById(boardItemId);
   }
 
+  async getPrimarySessionBoardItem(sessionId: string): Promise<CatalogBoardItemRow | null> {
+    return await this.boardRepository.getPrimarySessionBoardItem(sessionId);
+  }
+
   async getMarkdownDocumentBoardItem(documentId: string): Promise<CatalogBoardItemRow | null> {
     return await this.boardRepository.getMarkdownDocumentBoardItem(documentId);
   }

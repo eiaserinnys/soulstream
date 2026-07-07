@@ -1216,6 +1216,67 @@ describe("SessionDB folder ops (B-5)", () => {
   });
 });
 
+describe("SessionDB.getPrimarySessionBoardItem", () => {
+  it("getPrimarySessionBoardItem → primary session membership을 normalized board item으로 반환", async () => {
+    const { sql, calls } = createMockSql((call) => {
+      const query = call.fragments.join("?");
+      if (query.includes("FROM board_items")) {
+        return [
+          {
+            id: "session:s1",
+            folder_id: "f1",
+            container_kind: "runbook",
+            container_id: "rb-1",
+            membership_kind: "primary",
+            source_runbook_item_id: "rb-item-1",
+            item_type: "session",
+            item_id: "s1",
+            x: "32",
+            y: "64",
+            metadata: {},
+            created_at: "2026-07-07T00:00:00.000Z",
+            updated_at: "2026-07-07T00:00:00.000Z",
+          },
+        ];
+      }
+      return [];
+    });
+    const db = new SessionDB(sql);
+
+    const item = await db.getPrimarySessionBoardItem("s1");
+
+    expect(calls).toHaveLength(1);
+    const query = calls[0].fragments.join("?");
+    expect(query).toContain("FROM board_items");
+    expect(query).toContain("item_type = 'session'");
+    expect(query).toContain("item_id =");
+    expect(query).toContain("membership_kind = 'primary'");
+    expect(calls[0].values).toEqual(["s1"]);
+    expect(item).toEqual({
+      id: "session:s1",
+      folderId: "f1",
+      containerKind: "runbook",
+      containerId: "rb-1",
+      membershipKind: "primary",
+      sourceRunbookItemId: "rb-item-1",
+      itemType: "session",
+      itemId: "s1",
+      x: 32,
+      y: 64,
+      metadata: {},
+      createdAt: "2026-07-07T00:00:00.000Z",
+      updatedAt: "2026-07-07T00:00:00.000Z",
+    });
+  });
+
+  it("getPrimarySessionBoardItem → row 없음이면 null", async () => {
+    const { sql } = createMockSql();
+    const db = new SessionDB(sql);
+
+    await expect(db.getPrimarySessionBoardItem("missing")).resolves.toBeNull();
+  });
+});
+
 describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
   it("renameSession → session_rename(sessionId, displayName | null)", async () => {
     const { sql, calls } = createMockSql();

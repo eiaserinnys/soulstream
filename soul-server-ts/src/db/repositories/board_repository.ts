@@ -130,6 +130,34 @@ export class BoardRepository {
     return rows[0] ? toCatalogBoardItemRow(rows[0]) : null;
   }
 
+  async getPrimarySessionBoardItem(sessionId: string): Promise<CatalogBoardItemRow | null> {
+    const rows = await this.sql<
+      Array<{
+        id: string;
+        folder_id: string;
+        item_type: BoardItemType;
+        item_id: string;
+        x: string | number;
+        y: string | number;
+        metadata: unknown;
+        container_kind?: "folder" | "runbook" | null;
+        container_id?: string | null;
+        membership_kind?: "primary" | "reference" | null;
+        source_runbook_item_id?: string | null;
+        created_at: Date | string | null;
+        updated_at: Date | string | null;
+      }>
+    >`
+      SELECT *
+      FROM board_items
+      WHERE item_type = 'session'
+        AND item_id = ${sessionId}
+        AND membership_kind = 'primary'
+      LIMIT 1
+    `;
+    return rows[0] ? toCatalogBoardItemRow(rows[0]) : null;
+  }
+
   async getMarkdownDocumentBoardItem(documentId: string): Promise<CatalogBoardItemRow | null> {
     const rows = await this.sql<
       Array<{
