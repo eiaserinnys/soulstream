@@ -232,6 +232,208 @@ describe("board workspace item helpers", () => {
     ]);
   });
 
+  it("keeps same-runbook primary child sessions inside the visible parent stack", () => {
+    const runbookCatalog: CatalogState = {
+      folders: [{
+        id: "root",
+        name: "Root",
+        sortOrder: 0,
+        parentFolderId: null,
+        createdAt: "2026-06-01T00:00:00.000Z",
+      }],
+      sessions: {
+        parent: { folderId: "root", displayName: null },
+        child1: { folderId: "root", displayName: null },
+        child2: { folderId: "root", displayName: null },
+      },
+      boardItems: [
+        {
+          id: "session:parent",
+          folderId: "root",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          membershipKind: "primary",
+          itemType: "session",
+          itemId: "parent",
+          x: 0,
+          y: 0,
+        },
+        {
+          id: "session:child1",
+          folderId: "root",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          membershipKind: "primary",
+          itemType: "session",
+          itemId: "child1",
+          x: 320,
+          y: 0,
+        },
+        {
+          id: "session:child2",
+          folderId: "root",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          membershipKind: "primary",
+          itemType: "session",
+          itemId: "child2",
+          x: 640,
+          y: 0,
+        },
+      ],
+      sessionList: [
+        {
+          agentSessionId: "parent",
+          status: "completed",
+          eventCount: 1,
+          folderId: "root",
+          prompt: "Parent",
+        },
+        {
+          agentSessionId: "child1",
+          status: "running",
+          eventCount: 1,
+          folderId: "root",
+          callerSessionId: "parent",
+          prompt: "Child 1",
+        },
+        {
+          agentSessionId: "child2",
+          status: "completed",
+          eventCount: 1,
+          folderId: "root",
+          callerSessionId: "parent",
+          prompt: "Child 2",
+        },
+      ],
+    };
+
+    const items = buildBoardWorkspaceItems({
+      catalog: runbookCatalog,
+      selectedFolderId: "root",
+      boardContainer: { kind: "runbook", id: "rb-1" },
+      sessions: [],
+    });
+
+    expect(items.map((item) => `${item.type}:${item.id}`)).toEqual(["session:parent"]);
+    expect(items[0]).toMatchObject({
+      type: "session",
+      childStack: { count: 2, status: "running" },
+    });
+  });
+
+  it("keeps a runbook child session visible when its parent has no primary item in the runbook", () => {
+    const runbookCatalog: CatalogState = {
+      folders: [{
+        id: "root",
+        name: "Root",
+        sortOrder: 0,
+        parentFolderId: null,
+        createdAt: "2026-06-01T00:00:00.000Z",
+      }],
+      sessions: {
+        child: { folderId: "root", displayName: null },
+      },
+      boardItems: [{
+        id: "session:child",
+        folderId: "root",
+        containerKind: "runbook",
+        containerId: "rb-1",
+        membershipKind: "primary",
+        itemType: "session",
+        itemId: "child",
+        x: 0,
+        y: 0,
+      }],
+      sessionList: [{
+        agentSessionId: "child",
+        status: "running",
+        eventCount: 1,
+        folderId: "root",
+        callerSessionId: "parent",
+        prompt: "Child",
+      }],
+    };
+
+    const items = buildBoardWorkspaceItems({
+      catalog: runbookCatalog,
+      selectedFolderId: "root",
+      boardContainer: { kind: "runbook", id: "rb-1" },
+      sessions: [],
+    });
+
+    expect(items.map((item) => `${item.type}:${item.id}`)).toEqual(["session:child"]);
+  });
+
+  it("does not suppress reference session memberships in a runbook container", () => {
+    const runbookCatalog: CatalogState = {
+      folders: [{
+        id: "root",
+        name: "Root",
+        sortOrder: 0,
+        parentFolderId: null,
+        createdAt: "2026-06-01T00:00:00.000Z",
+      }],
+      sessions: {
+        parent: { folderId: "root", displayName: null },
+        child: { folderId: "root", displayName: null },
+      },
+      boardItems: [
+        {
+          id: "session:parent",
+          folderId: "root",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          membershipKind: "primary",
+          itemType: "session",
+          itemId: "parent",
+          x: 0,
+          y: 0,
+        },
+        {
+          id: "session:child:reference",
+          folderId: "root",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          membershipKind: "reference",
+          itemType: "session",
+          itemId: "child",
+          x: 320,
+          y: 0,
+        },
+      ],
+      sessionList: [
+        {
+          agentSessionId: "parent",
+          status: "completed",
+          eventCount: 1,
+          folderId: "root",
+          prompt: "Parent",
+        },
+        {
+          agentSessionId: "child",
+          status: "running",
+          eventCount: 1,
+          folderId: "root",
+          callerSessionId: "parent",
+          prompt: "Child",
+        },
+      ],
+    };
+
+    const items = buildBoardWorkspaceItems({
+      catalog: runbookCatalog,
+      selectedFolderId: "root",
+      boardContainer: { kind: "runbook", id: "rb-1" },
+      sessions: [],
+    });
+
+    expect(items.map((item) => `${item.type}:${item.id}`)).toEqual([
+      "session:parent",
+      "session:child",
+    ]);
+  });
+
   it("does not generate folder board fallback entries for sessions owned by another folder container", () => {
     const items = buildBoardWorkspaceItems({
       catalog: {

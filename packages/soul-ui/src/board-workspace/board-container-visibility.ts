@@ -9,7 +9,7 @@ export function boardItemBelongsToContainer(
   return itemContainerKind === container.kind && itemContainerId === container.id;
 }
 
-function isPrimarySessionBoardItem(item: CatalogBoardItem): boolean {
+export function isPrimarySessionBoardItem(item: CatalogBoardItem): boolean {
   return item.itemType === "session" && (item.membershipKind ?? "primary") === "primary";
 }
 

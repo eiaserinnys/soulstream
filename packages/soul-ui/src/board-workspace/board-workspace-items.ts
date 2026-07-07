@@ -6,6 +6,7 @@ import {
 } from "./board-frames";
 import {
   boardItemBelongsToContainer,
+  isPrimarySessionBoardItem,
   sessionIdsOwnedByOtherBoardContainer,
 } from "./board-container-visibility";
 import {
@@ -418,6 +419,37 @@ function refreshSessionChildStacks(
   );
 }
 
+function filterPrimaryChildSessionsWithVisibleContainerParent(
+  relationIndex: BoardSessionRelationIndex,
+  boardItems: readonly CatalogBoardItem[] | undefined,
+  boardContainer: BoardContainerRef | null | undefined,
+  items: readonly BoardWorkspaceItem[],
+  visibleItems: readonly BoardWorkspaceItem[],
+): BoardWorkspaceItem[] {
+  if (!boardItems || !boardContainer) return [...items];
+  const primaryBoardItemIdBySessionId = new Map<string, string>();
+  for (const boardItem of boardItems) {
+    if (!isPrimarySessionBoardItem(boardItem)) continue;
+    if (!boardItemBelongsToContainer(boardItem, boardContainer)) continue;
+    primaryBoardItemIdBySessionId.set(boardItem.itemId, boardItem.id);
+  }
+  if (primaryBoardItemIdBySessionId.size === 0) return [...items];
+
+  const visiblePrimarySessionIds = new Set(
+    visibleItems
+      .filter((item): item is SessionBoardWorkspaceItem => item.type === "session")
+      .filter((item) => primaryBoardItemIdBySessionId.get(item.id) === item.boardItemId)
+      .map((item) => item.id),
+  );
+
+  return items.filter((item) => {
+    if (item.type !== "session") return true;
+    if (primaryBoardItemIdBySessionId.get(item.id) !== item.boardItemId) return true;
+    const parentSessionId = relationIndex.parentIdByChildId.get(item.id);
+    return !parentSessionId || !visiblePrimarySessionIds.has(parentSessionId);
+  });
+}
+
 function buildPositionedItems({
   catalog,
   selectedFolderId,
@@ -571,7 +603,15 @@ function buildPositionedItems({
   if (!isFolderBoard) {
     const summarized = applyFrameSummaries(items)
       .sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
-    return includeCollapsedFrameChildren ? summarized : getVisibleBoardWorkspaceItems(summarized);
+    const visibleItems = getVisibleBoardWorkspaceItems(summarized);
+    const filtered = filterPrimaryChildSessionsWithVisibleContainerParent(
+      relations,
+      catalog.boardItems,
+      boardContainer,
+      summarized,
+      visibleItems,
+    );
+    return includeCollapsedFrameChildren ? filtered : getVisibleBoardWorkspaceItems(filtered);
   }
 
   const existingSessionIds = new Set(
