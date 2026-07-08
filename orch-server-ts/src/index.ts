@@ -93,6 +93,19 @@ export {
   type TaskStreamSnapshot,
 } from "./sse/sse_replay_routes.js";
 export {
+  registerSystemConfigRoutes,
+  systemConfigRouteAuthRequirements,
+  type SystemConfigHttpClient,
+  type SystemConfigHttpRequest,
+  type SystemConfigHttpResponse,
+  type SystemConfigNodeCandidate,
+  type SystemConfigRouteOptions,
+  type SystemConfigRouteProvider,
+  type SystemPortraitBody,
+  type SystemPortraitResult,
+  type SystemPortraitSource,
+} from "./system/system_config_routes.js";
+export {
   DEFAULT_NODE_COMMAND_TIMEOUT_MS,
   PendingNodeCommandRejectedError,
   PendingNodeCommandTimeoutError,
