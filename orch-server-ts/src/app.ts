@@ -92,6 +92,10 @@ import {
   type TaskReadRouteOptions,
 } from "./tasks/task_read_routes.js";
 import {
+  registerTaskMutationRoutes,
+  type TaskMutationRouteOptions,
+} from "./tasks/task_mutation_routes.js";
+import {
   registerUserBackgroundRoutes,
   type UserBackgroundRouteOptions,
 } from "./user/user_background_routes.js";
@@ -121,6 +125,7 @@ export type CreateAppOptions = {
   sseReplayRoutes?: SseReplayRouteOptions;
   systemConfigRoutes?: SystemConfigRouteOptions;
   taskReadRoutes?: TaskReadRouteOptions;
+  taskMutationRoutes?: TaskMutationRouteOptions;
   userBackgroundRoutes?: UserBackgroundRouteOptions;
   userPreferencesRoutes?: UserPreferencesRouteOptions;
   boardYjsHostProxyRoutes?: BoardYjsHostProxyRouteOptions;
@@ -184,6 +189,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.taskReadRoutes !== undefined) {
     registerTaskReadRoutes(app, options.taskReadRoutes);
+  }
+  if (options.taskMutationRoutes !== undefined) {
+    registerTaskMutationRoutes(app, options.taskMutationRoutes);
   }
   if (options.adminUsersRoutes !== undefined) {
     registerAdminUsersRoutes(app, options.adminUsersRoutes);
