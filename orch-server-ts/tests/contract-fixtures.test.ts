@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CONTRACT_FIXTURE_FILES,
   CONTRACT_FIXTURE_NAMES,
   contractFixtureSummary,
   inferFakeNodeReconnectSteps,
@@ -14,6 +15,14 @@ describe("orch-server-ts contract fixture reader", () => {
 
   it("loads the full #289 fixture pack from the Python orch contract directory", () => {
     expect(Object.keys(fixtures).sort()).toEqual([...CONTRACT_FIXTURE_NAMES].sort());
+    expect(Object.values(CONTRACT_FIXTURE_FILES).sort()).toEqual([
+      "board_yjs_host_proxy.json",
+      "db_function_contract.json",
+      "fake_node_reconnect.json",
+      "route_inventory.json",
+      "sse_replay_gap.json",
+      "upstream_ws_wire.json",
+    ]);
 
     for (const fixture of Object.values(fixtures)) {
       expect(fixture.version).toBe(1);
