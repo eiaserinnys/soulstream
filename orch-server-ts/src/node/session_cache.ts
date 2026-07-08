@@ -81,6 +81,68 @@ export class PerNodeSessionCache {
     });
   }
 
+  upsertFromSessionCreated(params: {
+    nodeId: string;
+    connectionId: string;
+    message: Record<string, unknown>;
+    nowMs: number;
+  }): CachedNodeSession | undefined {
+    const agentSessionId = sessionIdFromPayload(params.message);
+    if (agentSessionId === undefined) return undefined;
+
+    const session = nestedSession(params.message);
+    const status = sessionStatusFromPayload(params.message) ?? "running";
+    return this.storeSession({
+      nodeId: params.nodeId,
+      connectionId: params.connectionId,
+      agentSessionId,
+      status,
+      lastEventId: lastEventIdFromPayload(params.message),
+      fresh: true,
+      payload: {
+        ...session,
+        ...selectedSessionCreateFields(params.message),
+        agentSessionId,
+        status,
+        nodeId: params.nodeId,
+      },
+      updatedAtMs: params.nowMs,
+    });
+  }
+
+  upsertFromSessionUpdated(params: {
+    nodeId: string;
+    connectionId: string;
+    message: Record<string, unknown>;
+    nowMs: number;
+  }): CachedNodeSession | undefined {
+    const agentSessionId = sessionIdFromPayload(params.message);
+    if (agentSessionId === undefined) return undefined;
+
+    const previous = this.findSession(agentSessionId);
+    return this.storeSession({
+      nodeId: params.nodeId,
+      connectionId: params.connectionId,
+      agentSessionId,
+      status: sessionStatusFromPayload(params.message) ?? previous?.status,
+      lastEventId: lastEventIdFromPayload(params.message) ?? previous?.lastEventId,
+      fresh: true,
+      payload: {
+        ...(previous?.payload ?? {}),
+        ...params.message,
+      },
+      updatedAtMs: params.nowMs,
+    });
+  }
+
+  deleteFromSessionDeleted(params: {
+    message: Record<string, unknown>;
+  }): CachedNodeSession | undefined {
+    const agentSessionId = sessionIdFromPayload(params.message);
+    if (agentSessionId === undefined) return undefined;
+    return this.deleteSession(agentSessionId);
+  }
+
   replaceNodeSessions(params: {
     nodeId: string;
     connectionId: string;
@@ -150,6 +212,22 @@ export class PerNodeSessionCache {
     this.nodeBySession.set(session.agentSessionId, session.nodeId);
     return copySession(stored);
   }
+
+  private deleteSession(agentSessionId: string): CachedNodeSession | undefined {
+    const nodeId = this.nodeBySession.get(agentSessionId);
+    if (nodeId === undefined) return undefined;
+
+    const sessions = this.sessionsByNode.get(nodeId);
+    const stored = sessions?.get(agentSessionId);
+    if (stored === undefined) return undefined;
+
+    sessions?.delete(agentSessionId);
+    if (sessions?.size === 0) {
+      this.sessionsByNode.delete(nodeId);
+    }
+    this.nodeBySession.delete(agentSessionId);
+    return copySession(stored);
+  }
 }
 
 function copySession(session: CachedNodeSession): CachedNodeSession {
@@ -160,8 +238,25 @@ function copySession(session: CachedNodeSession): CachedNodeSession {
 }
 
 function sessionIdFromPayload(payload: Record<string, unknown>): string | undefined {
-  for (const key of ["agentSessionId", "session_id", "id"]) {
+  const session = nestedSession(payload);
+  for (const key of [
+    "agentSessionId",
+    "agent_session_id",
+    "sessionId",
+    "session_id",
+    "id",
+  ]) {
     const value = payload[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  for (const key of [
+    "agentSessionId",
+    "agent_session_id",
+    "sessionId",
+    "session_id",
+    "id",
+  ]) {
+    const value = session[key];
     if (typeof value === "string" && value.length > 0) return value;
   }
   return undefined;
@@ -170,7 +265,9 @@ function sessionIdFromPayload(payload: Record<string, unknown>): string | undefi
 function sessionStatusFromPayload(
   payload: Record<string, unknown>,
 ): string | undefined {
-  return typeof payload.status === "string" ? payload.status : undefined;
+  if (typeof payload.status === "string") return payload.status;
+  const session = nestedSession(payload);
+  return typeof session.status === "string" ? session.status : undefined;
 }
 
 function lastEventIdFromPayload(
@@ -178,6 +275,9 @@ function lastEventIdFromPayload(
 ): number | undefined {
   if (typeof payload.last_event_id === "number") return payload.last_event_id;
   if (typeof payload.lastEventId === "number") return payload.lastEventId;
+  const session = nestedSession(payload);
+  if (typeof session.last_event_id === "number") return session.last_event_id;
+  if (typeof session.lastEventId === "number") return session.lastEventId;
   return undefined;
 }
 
@@ -191,4 +291,19 @@ function lastEventIdFromEventRelay(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function nestedSession(payload: Record<string, unknown>): Record<string, unknown> {
+  const session = payload.session;
+  return isRecord(session) ? session : {};
+}
+
+function selectedSessionCreateFields(
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const selected: Record<string, unknown> = {};
+  for (const key of ["caller_source", "callerSource", "folder_id", "folderId"]) {
+    if (key in payload) selected[key] = payload[key];
+  }
+  return selected;
 }

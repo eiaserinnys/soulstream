@@ -15,6 +15,7 @@ import {
   supportsAppHeartbeat,
 } from "./registry_helpers.js";
 import { PerNodeSessionCache } from "./session_cache.js";
+import { collectDirectNodeSessionEvents } from "./session_message_events.js";
 import type {
   DisconnectNodeInput,
   InMemoryNodeRegistryOptions,
@@ -48,7 +49,10 @@ export type {
   NodeRegistrationPayload,
   NodeRegistrationResult,
   NodeRegistryEvent,
+  NodeSessionCreatedEvent,
+  NodeSessionDeletedEvent,
   NodeSessionEvent,
+  NodeSessionUpdatedEvent,
   NodeSessionsUpdateEvent,
   NodeUpdatedEvent,
   NodeUnregisteredEvent,
@@ -343,6 +347,15 @@ export class InMemoryNodeRegistry {
       }
       return [];
     }
+
+    const directSessionEvents = collectDirectNodeSessionEvents({
+      sessionCache: this.sessionCache,
+      nodeId,
+      connectionId: node.connectionId,
+      message,
+      nowMs,
+    });
+    if (directSessionEvents !== undefined) return directSessionEvents;
 
     if (message.type === "event") {
       this.sessionCache.upsertFromEventRelay({

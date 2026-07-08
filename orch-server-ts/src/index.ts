@@ -6,6 +6,12 @@ export {
   type OrchestratorRuntimeRouteOptions,
 } from "./runtime/composition.js";
 export {
+  createNodeSessionEventBroadcasterSink,
+  dispatchNodeRegistryEventsToSessionBroadcaster,
+  type NodeRegistryEventSink,
+  type NodeSessionEventDispatchResult,
+} from "./runtime/node_session_event_dispatcher.js";
+export {
   BoardYjsHostProxyError,
   boardYjsHostProxyRouteAuthRequirements,
   registerBoardYjsHostProxyRoutes,
@@ -127,7 +133,10 @@ export {
   type NodeRegistrationPayload,
   type NodeRegistrationResult,
   type NodeRegistryEvent,
+  type NodeSessionCreatedEvent,
+  type NodeSessionDeletedEvent,
   type NodeSessionEvent,
+  type NodeSessionUpdatedEvent,
   type NodeSessionsUpdateEvent,
   type NodeUpdatedEvent,
   type NodeUnregisteredEvent,

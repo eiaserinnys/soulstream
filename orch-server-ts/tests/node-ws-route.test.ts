@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   InMemoryNodeRegistry,
@@ -7,6 +7,7 @@ import {
   createApp,
   loadContractFixtures,
   parseOrchServerConfig,
+  type NodeRegistryEvent,
 } from "../src/index.js";
 
 const explicitTestConfig = parseOrchServerConfig({
@@ -269,6 +270,47 @@ describe("Node WS Fastify route harness", () => {
       transportHub.has({ nodeId: "fake-node", connectionId: currentConnectionId }),
     ).toBe(false);
 
+    await app.close();
+  });
+
+  it("passes frame events to an optional sink without letting sink failures break the route", async () => {
+    const { registry, sessionCache } = createRegistry();
+    const eventSink = vi.fn((events: NodeRegistryEvent[]): void => {
+      expect(events.length).toBeGreaterThan(0);
+      throw new Error("sink failure");
+    });
+    const app = createApp({
+      config: explicitTestConfig,
+      nodeWsRoute: { registry, eventSink },
+    });
+
+    await app.ready();
+    const ws = await (app as unknown as WebSocketInjectableApp).injectWS("/ws/node");
+    ws.send(JSON.stringify(fixture.registration));
+    await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
+
+    ws.send(JSON.stringify(fixture.eventRelay));
+    await waitFor(() => sessionCache.findSession("sess-contract")?.lastEventId === 1);
+
+    expect(eventSink).toHaveBeenCalledTimes(2);
+    expect(eventSink.mock.calls[0]?.[0]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "node_registered", nodeId: "fake-node" }),
+      ]),
+    );
+    expect(eventSink.mock.calls[1]?.[0]).toEqual([
+      {
+        type: "node_session_event",
+        nodeId: "fake-node",
+        data: fixture.eventRelay,
+      },
+    ]);
+    expect(registry.getConnectedNode("fake-node")).toMatchObject({
+      nodeId: "fake-node",
+      status: "connected",
+    });
+
+    ws.terminate();
     await app.close();
   });
 });

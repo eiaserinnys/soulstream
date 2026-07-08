@@ -1,8 +1,12 @@
 import websocket from "@fastify/websocket";
 import type { FastifyInstance } from "fastify";
 
-import { NodeWsFrameController } from "./ws_frame_controller.js";
+import {
+  NodeWsFrameController,
+  type NodeWsFrameControllerResult,
+} from "./ws_frame_controller.js";
 import type { InMemoryNodeRegistry } from "./registry.js";
+import type { NodeRegistryEvent } from "./registry.js";
 import type {
   NodeCommandTransport,
   NodeCommandTransportAttachment,
@@ -15,7 +19,10 @@ const POLICY_VIOLATION_CLOSE_CODE = 1008;
 export type NodeWsRouteOptions = {
   registry: InMemoryNodeRegistry;
   transportHub?: NodeCommandTransportHub;
+  eventSink?: NodeRegistryEventSink;
 };
+
+export type NodeRegistryEventSink = (events: NodeRegistryEvent[]) => void;
 
 export function registerNodeWsRoute(
   app: FastifyInstance,
@@ -58,6 +65,7 @@ export function registerNodeWsRoute(
         if (result.type === "registration_rejected") {
           socket.close(POLICY_VIOLATION_CLOSE_CODE, result.code);
         }
+        emitEvents(options.eventSink, eventsFromControllerResult(result));
       });
 
       socket.on("close", () => {
@@ -80,6 +88,24 @@ function detachTransport(
 ): void {
   if (transportHub === undefined || attachment === undefined) return;
   transportHub.detach(attachment);
+}
+
+function eventsFromControllerResult(
+  result: NodeWsFrameControllerResult,
+): NodeRegistryEvent[] {
+  return "events" in result ? result.events : [];
+}
+
+function emitEvents(
+  eventSink: NodeRegistryEventSink | undefined,
+  events: NodeRegistryEvent[],
+): void {
+  if (eventSink === undefined || events.length === 0) return;
+  try {
+    eventSink(events);
+  } catch {
+    // Event broadcasting is ride-along work; node websocket state stays canonical.
+  }
 }
 
 type JsonFrameParseResult =
