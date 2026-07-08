@@ -26,6 +26,19 @@ export {
   type CogitoSearchSessionRecord,
 } from "./cogito/cogito_routes.js";
 export {
+  ATOM_API_UNAVAILABLE_DETAIL,
+  ATOM_INTEGRATION_DISABLED_DETAIL,
+  ATOM_NODE_NOT_FOUND_DETAIL,
+  atomRouteAuthRequirements,
+  registerAtomRoutes,
+  type AtomHttpClient,
+  type AtomHttpRequest,
+  type AtomHttpResponse,
+  type AtomRouteConfig,
+  type AtomRouteConfigProvider,
+  type AtomRouteOptions,
+} from "./atom/atom_routes.js";
+export {
   createOrchestratorRuntimeComposition,
   type OrchestratorRuntimeComposition,
   type OrchestratorRuntimeCompositionOptions,
