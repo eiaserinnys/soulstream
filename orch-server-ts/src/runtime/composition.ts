@@ -24,6 +24,8 @@ import {
   type SessionCommandTransportBridgeOptions,
 } from "../session/session_command_transport.js";
 import type { SessionCommandRouteOptions } from "../session/session_command_routes.js";
+import { SessionSnapshotService } from "../session/session_snapshot_service.js";
+import type { SessionSnapshotRouteOptions } from "../session/session_snapshot_routes.js";
 import {
   InMemorySseReplayBroadcaster,
   type SessionStreamEvent,
@@ -48,7 +50,7 @@ export type OrchestratorRuntimeCompositionOptions = {
   sseRingMaxlen?: number;
   sseKeepaliveMs?: number;
   sseReplayOnlyForTests?: boolean;
-  loadSessionSnapshot: () => Promise<SessionStreamSnapshot>;
+  loadSessionSnapshot?: () => Promise<SessionStreamSnapshot>;
   loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   boardYjsHostHttpClient: BoardYjsHostHttpClient;
 };
@@ -56,6 +58,7 @@ export type OrchestratorRuntimeCompositionOptions = {
 export type OrchestratorRuntimeRouteOptions = {
   nodeWsRoute: NodeWsRouteOptions;
   sessionCommandRoutes: SessionCommandRouteOptions;
+  sessionSnapshotRoutes: SessionSnapshotRouteOptions;
   sseReplayRoutes: SseReplayRouteOptions;
   boardYjsHostProxyRoutes: BoardYjsHostProxyRouteOptions;
 };
@@ -66,6 +69,7 @@ export type OrchestratorRuntimeComposition = {
   transports: NodeCommandTransportHub;
   sessionRouter: SessionCommandRouter;
   sessionBridge: SessionCommandTransportBridge;
+  sessionSnapshotService: SessionSnapshotService;
   sessionBroadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
   taskBroadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>;
   routeOptions: OrchestratorRuntimeRouteOptions;
@@ -87,6 +91,7 @@ export function createOrchestratorRuntimeComposition(
     registry,
     transports,
   } satisfies SessionCommandTransportBridgeOptions);
+  const sessionSnapshotService = new SessionSnapshotService({ registry });
   const sessionBroadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
     instanceId: options.sessionSseInstanceId,
     ringMaxlen: options.sseRingMaxlen,
@@ -107,10 +112,15 @@ export function createOrchestratorRuntimeComposition(
       bridge: sessionBridge,
       timeoutMs: options.commandTimeoutMs,
     },
+    sessionSnapshotRoutes: {
+      snapshotService: sessionSnapshotService,
+    },
     sseReplayRoutes: {
       session: {
         broadcaster: sessionBroadcaster,
-        loadSnapshot: options.loadSessionSnapshot,
+        loadSnapshot:
+          options.loadSessionSnapshot ??
+          (() => sessionSnapshotService.loadSessionStreamSnapshot()),
       },
       task: {
         broadcaster: taskBroadcaster,
@@ -138,6 +148,7 @@ export function createOrchestratorRuntimeComposition(
     transports,
     sessionRouter,
     sessionBridge,
+    sessionSnapshotService,
     sessionBroadcaster,
     taskBroadcaster,
     routeOptions,

@@ -46,6 +46,12 @@ describe("orchestrator runtime composition harness", () => {
       }),
     ).toMatchObject({ statusCode: 404 });
     expect(
+      await app.inject({
+        method: "GET",
+        url: "/api/sessions",
+      }),
+    ).toMatchObject({ statusCode: 404 });
+    expect(
       await app.inject({ method: "GET", url: "/api/sessions/stream" }),
     ).toMatchObject({ statusCode: 404 });
     expect(
@@ -119,6 +125,18 @@ describe("orchestrator runtime composition harness", () => {
       connected: true,
     });
     expect(runtime.sessionBroadcaster.latestEventId).toBe(0);
+    const snapshotResponse = await runtime.app.inject({
+      method: "GET",
+      url: "/api/sessions",
+    });
+    expect(snapshotResponse.json().sessions[0]).toMatchObject({
+      agent_session_id: "runtime-session",
+      agentSessionId: "runtime-session",
+      nodeId: "fake-node",
+      status: "created",
+      connected: true,
+      fresh: true,
+    });
 
     ws.terminate();
     await runtime.app.close();
@@ -280,6 +298,69 @@ describe("orchestrator runtime composition harness", () => {
 
     await runtime.app.close();
   });
+
+  it("uses registry session cache for GET sessions and the default session stream snapshot", async () => {
+    const runtime = createOrchestratorRuntimeComposition({
+      config,
+      sessionSseInstanceId: "runtime-session-stream",
+      loadTaskSnapshot: async () => ({ tasks: [] }),
+      boardYjsHostHttpClient: vi.fn(),
+      sseReplayOnlyForTests: true,
+    });
+
+    await runtime.app.ready();
+    const ws = await (runtime.app as unknown as WebSocketInjectableApp).injectWS(
+      "/ws/node",
+    );
+    ws.send(JSON.stringify(reconnect.registration));
+    await waitFor(() => runtime.registry.getConnectedNode("fake-node") !== undefined);
+
+    ws.send(
+      JSON.stringify({
+        type: "session_created",
+        session: {
+          agent_session_id: "runtime-cache-session",
+          title: "Runtime Cache",
+          folder_id: "folder-runtime",
+          session_type: "agent",
+        },
+        status: "running",
+        last_event_id: 7,
+      }),
+    );
+    await waitFor(
+      () => runtime.registry.findSessionOwner("runtime-cache-session") !== undefined,
+    );
+
+    const listResponse = await runtime.app.inject({
+      method: "GET",
+      url: "/api/sessions",
+    });
+    const streamResponse = await runtime.app.inject({
+      method: "GET",
+      url: "/api/sessions/stream",
+    });
+    const sessionListFrame = parseSseFrame(streamResponse.body, "session_list");
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(streamResponse.statusCode).toBe(200);
+    expect(listResponse.json().sessions).toEqual(sessionListFrame.sessions);
+    expect(listResponse.json().sessions[0]).toMatchObject({
+      agent_session_id: "runtime-cache-session",
+      agentSessionId: "runtime-cache-session",
+      nodeId: "fake-node",
+      title: "Runtime Cache",
+      folder_id: "folder-runtime",
+      session_type: "agent",
+      status: "running",
+      last_event_id: 7,
+      connected: true,
+      fresh: true,
+    });
+
+    ws.terminate();
+    await runtime.app.close();
+  });
 });
 
 function waitForMessage(ws: TestWebSocket): Promise<string> {
@@ -315,4 +396,17 @@ function requireDefined<TValue>(value: TValue | undefined): TValue {
     throw new Error("expected value to be defined");
   }
   return value;
+}
+
+function parseSseFrame(body: string, eventName: string): Record<string, unknown> {
+  for (const frame of body.split("\n\n")) {
+    const lines = frame.split("\n");
+    if (lines[0] !== `event: ${eventName}`) continue;
+    const data = lines.find((line) => line.startsWith("data: "));
+    if (data === undefined) {
+      throw new Error(`SSE frame is missing data: ${eventName}`);
+    }
+    return JSON.parse(data.slice("data: ".length)) as Record<string, unknown>;
+  }
+  throw new Error(`SSE frame not found: ${eventName}`);
 }
