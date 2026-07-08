@@ -154,6 +154,11 @@ export {
   type NodeCommandTransportErrorCode,
   type SessionCommandTransportBridgeOptions,
 } from "./session/session_command_transport.js";
+export {
+  registerSessionCommandRoutes,
+  sessionCommandRouteAuthRequirements,
+  type SessionCommandRouteOptions,
+} from "./session/session_command_routes.js";
 export type {
   BoardYjsHostProxyFixture,
   ContractFixture,
