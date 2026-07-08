@@ -80,6 +80,10 @@ import {
   type SystemConfigRouteOptions,
 } from "./system/system_config_routes.js";
 import {
+  registerUserBackgroundRoutes,
+  type UserBackgroundRouteOptions,
+} from "./user/user_background_routes.js";
+import {
   registerUserPreferencesRoutes,
   type UserPreferencesRouteOptions,
 } from "./user/user_preferences_routes.js";
@@ -103,6 +107,7 @@ export type CreateAppOptions = {
   sessionSnapshotRoutes?: SessionSnapshotRouteOptions;
   sseReplayRoutes?: SseReplayRouteOptions;
   systemConfigRoutes?: SystemConfigRouteOptions;
+  userBackgroundRoutes?: UserBackgroundRouteOptions;
   userPreferencesRoutes?: UserPreferencesRouteOptions;
   boardYjsHostProxyRoutes?: BoardYjsHostProxyRouteOptions;
   boardAssetRoutes?: BoardAssetRouteOptions;
@@ -167,6 +172,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.attachmentRoutes !== undefined) {
     registerAttachmentRoutes(app, options.attachmentRoutes);
+  }
+  if (options.userBackgroundRoutes !== undefined) {
+    registerUserBackgroundRoutes(app, options.userBackgroundRoutes);
   }
   if (options.userPreferencesRoutes !== undefined) {
     registerUserPreferencesRoutes(app, options.userPreferencesRoutes);

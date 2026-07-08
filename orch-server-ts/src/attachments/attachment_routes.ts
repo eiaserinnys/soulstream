@@ -2,7 +2,11 @@ import { Buffer } from "node:buffer";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { parseMultipartForm, type MultipartFile } from "./attachment_multipart.js";
+import {
+  parseMultipartForm,
+  registerMultipartFormParser,
+  type MultipartFile,
+} from "../http/multipart_form.js";
 
 export const MAX_ATTACHMENT_SIZE_BYTES = 100 * 1024 * 1024;
 export const LEGACY_ATTACHMENT_MAX_SIZE_BYTES = 8 * 1024 * 1024;
@@ -142,13 +146,7 @@ export function registerAttachmentRoutes(
   app: FastifyInstance,
   options: AttachmentRouteOptions,
 ): void {
-  app.addContentTypeParser(
-    /^multipart\/form-data(?:;.*)?$/i,
-    { parseAs: "buffer" },
-    (_request, body, done) => {
-      done(null, body);
-    },
-  );
+  registerMultipartFormParser(app);
 
   app.post<{ Params: UploadParams }>("/api/attachments/sessions", async (request, reply) => {
     const nodeId = requiredQueryString(request, "nodeId");

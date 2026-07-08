@@ -95,7 +95,7 @@ export function registerUserPreferencesRoutes(
   options: UserPreferencesRouteOptions,
 ): void {
   app.get("/api/user/preferences", async (request, reply) => {
-    const email = await requestEmail(options, request);
+    const email = await requestUserPreferencesEmail(options, request);
     if (!email.ok) return userPreferencesError(reply, email.error);
 
     const row = await options.repository.get(email.value);
@@ -103,7 +103,7 @@ export function registerUserPreferencesRoutes(
   });
 
   app.put("/api/user/preferences", async (request, reply) => {
-    const email = await requestEmail(options, request);
+    const email = await requestUserPreferencesEmail(options, request);
     if (!email.ok) return userPreferencesError(reply, email.error);
 
     const payload = isPlainObject(request.body) ? request.body : {};
@@ -114,12 +114,12 @@ export function registerUserPreferencesRoutes(
       });
       return serializePreferences(row);
     } catch (error) {
-      return writeError(reply, error);
+      return userPreferencesWriteError(reply, error);
     }
   });
 }
 
-async function requestEmail(
+export async function requestUserPreferencesEmail(
   options: UserPreferencesRouteOptions,
   request: FastifyRequest,
 ): Promise<{ ok: true; value: string } | { ok: false; error: UserPreferencesRouteError }> {
@@ -140,7 +140,7 @@ async function requestEmail(
   return { ok: true, value: email };
 }
 
-function serializePreferences(row: UserPreferencesRecord): Record<string, unknown> {
+export function serializePreferences(row: UserPreferencesRecord): Record<string, unknown> {
   const prefs = normalizeUserPreferences(row.prefs);
   const updatedAt = updatedAtValue(row);
   let backgroundUrl: string | null = null;
@@ -273,7 +273,7 @@ function serializeUpdatedAt(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
-function writeError(reply: FastifyReply, error: unknown): FastifyReply {
+export function userPreferencesWriteError(reply: FastifyReply, error: unknown): FastifyReply {
   if (errorName(error) === "ForeignKeyViolationError") {
     return reply.code(403).send({
       detail: "Authenticated user is not registered for dashboard access",
