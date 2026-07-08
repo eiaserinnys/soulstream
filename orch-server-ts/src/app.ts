@@ -7,6 +7,10 @@ import {
 import type { OrchServerTsConfig } from "./config.js";
 import { routeOwnerManifest, type RouteOwnerManifest } from "./contract/route_owner_manifest.js";
 import {
+  registerNodeAgentProfileRoutes,
+  type NodeAgentProfileRouteOptions,
+} from "./node/node_agent_profile_routes.js";
+import {
   registerNodeSnapshotRoutes,
   type NodeSnapshotRouteOptions,
 } from "./node/node_snapshot_routes.js";
@@ -44,6 +48,7 @@ export type CreateAppOptions = {
   config: OrchServerTsConfig;
   routeOwners?: RouteOwnerManifest;
   exposeLocalHealthRoute?: boolean;
+  nodeAgentProfileRoutes?: NodeAgentProfileRouteOptions;
   nodeWsRoute?: NodeWsRouteOptions;
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
   sessionActionCommandRoutes?: SessionActionCommandRouteOptions;
@@ -67,6 +72,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
       environment: options.config.environment,
       routeOwnersArtifactOnly: owners.artifactOnly,
     }));
+  }
+  if (options.nodeAgentProfileRoutes !== undefined) {
+    registerNodeAgentProfileRoutes(app, options.nodeAgentProfileRoutes);
   }
   if (options.nodeWsRoute !== undefined) {
     registerNodeWsRoute(app, options.nodeWsRoute);
