@@ -210,6 +210,20 @@ export {
   type SessionCommandRouteOptions,
 } from "./session/session_command_routes.js";
 export {
+  formatSessionHistorySseFrame,
+  registerSessionHistoryRoutes,
+  sessionHistoryRouteAuthRequirements,
+  type SessionHistoryRouteOptions,
+} from "./session/session_history_routes.js";
+export {
+  SessionHistoryReadService,
+  filterFinalizedAppServerReplayEvents,
+  type SessionHistoryPageResponse,
+  type SessionHistoryProvider,
+  type SessionHistoryRawEvent,
+  type SessionHistoryReadServiceOptions,
+} from "./session/session_history_service.js";
+export {
   SessionSnapshotService,
   type SessionSnapshotListResponse,
   type SessionSnapshotQuery,
