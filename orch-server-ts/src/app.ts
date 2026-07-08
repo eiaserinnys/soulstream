@@ -35,6 +35,10 @@ import {
 } from "./cogito/cogito_routes.js";
 import { routeOwnerManifest, type RouteOwnerManifest } from "./contract/route_owner_manifest.js";
 import {
+  registerExecuteProxyRoutes,
+  type ExecuteProxyRouteOptions,
+} from "./execute/execute_proxy_routes.js";
+import {
   registerRunbookRoutes,
   type RunbookRouteOptions,
 } from "./runbooks/runbook_routes.js";
@@ -55,6 +59,10 @@ import {
   type NodeSnapshotRouteOptions,
 } from "./node/node_snapshot_routes.js";
 import { registerNodeWsRoute, type NodeWsRouteOptions } from "./node/ws_route.js";
+import {
+  registerPushRoutes,
+  type PushRouteOptions,
+} from "./push/push_routes.js";
 import {
   registerSessionActionCommandRoutes,
   type SessionActionCommandRouteOptions,
@@ -126,6 +134,8 @@ export type CreateAppOptions = {
   systemConfigRoutes?: SystemConfigRouteOptions;
   taskReadRoutes?: TaskReadRouteOptions;
   taskMutationRoutes?: TaskMutationRouteOptions;
+  executeProxyRoutes?: ExecuteProxyRouteOptions;
+  pushRoutes?: PushRouteOptions;
   userBackgroundRoutes?: UserBackgroundRouteOptions;
   userPreferencesRoutes?: UserPreferencesRouteOptions;
   boardYjsHostProxyRoutes?: BoardYjsHostProxyRouteOptions;
@@ -192,6 +202,12 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.taskMutationRoutes !== undefined) {
     registerTaskMutationRoutes(app, options.taskMutationRoutes);
+  }
+  if (options.executeProxyRoutes !== undefined) {
+    registerExecuteProxyRoutes(app, options.executeProxyRoutes);
+  }
+  if (options.pushRoutes !== undefined) {
+    registerPushRoutes(app, options.pushRoutes);
   }
   if (options.adminUsersRoutes !== undefined) {
     registerAdminUsersRoutes(app, options.adminUsersRoutes);

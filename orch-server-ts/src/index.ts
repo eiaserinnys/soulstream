@@ -255,6 +255,8 @@ export {
 export * from "./tasks/task_read_routes.js";
 export * from "./tasks/task_mutation_payloads.js";
 export * from "./tasks/task_mutation_routes.js";
+export * from "./execute/execute_proxy_routes.js";
+export * from "./push/push_routes.js";
 export {
   registerSystemConfigRoutes,
   systemConfigRouteAuthRequirements,
@@ -488,13 +490,4 @@ export {
   sessionSnapshotRouteAuthRequirements,
   type SessionSnapshotRouteOptions,
 } from "./session/session_snapshot_routes.js";
-export type {
-  BoardYjsHostProxyFixture,
-  ContractFixture,
-  DbFunctionContractFixture,
-  FakeNodeReconnectFixture,
-  OrchContractFixtures,
-  RouteInventoryFixture,
-  SseReplayGapFixture,
-  UpstreamWsWireFixture,
-} from "./contract/types.js";
+export type * from "./contract/types.js";
