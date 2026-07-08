@@ -62,7 +62,7 @@ describe("Board Y.Doc host proxy route harness", () => {
     ).toMatchObject({ statusCode: 404 });
   });
 
-  it("registers only the auth-required proxy routes when explicitly enabled", async () => {
+  it("registers only the auth-required board-yjs proxy route when explicitly enabled", async () => {
     const registry = createRegistry();
     const httpClient: BoardYjsHostHttpClient = vi.fn();
     const app = createApp({
@@ -71,22 +71,25 @@ describe("Board Y.Doc host proxy route harness", () => {
     });
 
     expect(boardYjsHostProxyRouteAuthRequirements).toEqual({
-      "POST /api/markdown-documents": true,
       "POST /api/board-yjs/host/{operation}": true,
     });
     expect(
       fixtures.routeInventory.routes
         .filter(
           (route) =>
-            route.name === "create_markdown_document" ||
             route.name === "proxy_board_yjs_host_operation",
         )
         .map((route) => [route.methods[0], route.path, route.authRequired]),
     ).toEqual([
       ["POST", "/api/board-yjs/host/{operation}", true],
-      ["POST", "/api/markdown-documents", true],
     ]);
-    expect(await app.inject({ method: "GET", url: "/api/markdown-documents/doc-1" }))
+    expect(
+      await app.inject({
+        method: "POST",
+        url: "/api/markdown-documents",
+        payload: { folderId: "f1", title: "Note", body: "Body" },
+      }),
+    )
       .toMatchObject({ statusCode: 404 });
   });
 
@@ -101,8 +104,8 @@ describe("Board Y.Doc host proxy route harness", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: fixture.proxy.route,
-      payload: { folderId: "f1", title: "Note", body: "Body" },
+      url: "/api/board-yjs/host/update",
+      payload: { update: "payload" },
     });
 
     expect(response.statusCode).toBe(fixture.cardinality.zeroHostsStatus);
@@ -124,8 +127,8 @@ describe("Board Y.Doc host proxy route harness", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: fixture.proxy.route,
-      payload: { folderId: "f1", title: "Note", body: "Body" },
+      url: "/api/board-yjs/host/update",
+      payload: { update: "payload" },
     });
 
     expect(response.statusCode).toBe(fixture.cardinality.twoHostsStatus);
@@ -135,7 +138,7 @@ describe("Board Y.Doc host proxy route harness", () => {
     expect(httpClient).not.toHaveBeenCalled();
   });
 
-  it("proxies markdown document creation to the single connected host with authorization only", async () => {
+  it("proxies board-yjs host operation to the single connected host with authorization only", async () => {
     const registry = createRegistry();
     registerNode(registry, "worker-node", 4106, false);
     const disconnectedHostConnectionId = registerNode(registry, "old-board-host", 4107, true);
@@ -147,7 +150,7 @@ describe("Board Y.Doc host proxy route harness", () => {
     const httpClient: BoardYjsHostHttpClient = vi.fn(async () => ({
       statusCode: fixture.cardinality.oneHostStatus,
       headers: { "content-type": "application/json" },
-      body: { document: { id: "doc-1" } },
+      body: { ok: true },
     }));
     const app = createApp({
       config,
@@ -155,24 +158,24 @@ describe("Board Y.Doc host proxy route harness", () => {
     });
 
     const response = await app.inject({
-      method: fixture.proxy.method,
-      url: fixture.proxy.route,
+      method: "POST",
+      url: "/api/board-yjs/host/update",
       headers: {
         authorization: "Bearer test-token",
         "x-extra": "not-forwarded",
       },
-      payload: { folderId: "f1", title: "Note", body: "Body" },
+      payload: { update: "payload" },
     });
 
     expect(response.statusCode).toBe(fixture.cardinality.oneHostStatus);
-    expect(response.json()).toEqual({ document: { id: "doc-1" } });
+    expect(response.json()).toEqual({ ok: true });
     expect(httpClient).toHaveBeenCalledTimes(1);
     expect(httpClient).toHaveBeenCalledWith({
-      method: fixture.proxy.method,
-      url: "http://localhost:4105/api/markdown-documents",
-      upstreamPath: fixture.proxy.upstreamPath,
+      method: "POST",
+      url: "http://localhost:4105/api/internal/board-yjs/update",
+      upstreamPath: "/api/internal/board-yjs/update",
       headers: { authorization: "Bearer test-token" },
-      body: { folderId: "f1", title: "Note", body: "Body" },
+      body: { update: "payload" },
       target: {
         host: "localhost",
         port: 4105,
@@ -197,8 +200,8 @@ describe("Board Y.Doc host proxy route harness", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: fixture.proxy.route,
-      payload: { folderId: "f1", title: "Note", body: "Body" },
+      url: "/api/board-yjs/host/update",
+      payload: { update: "payload" },
     });
 
     expect(response.statusCode).toBe(418);
@@ -249,8 +252,8 @@ describe("Board Y.Doc host proxy route harness", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: fixture.proxy.route,
-      payload: { folderId: "f1", title: "Note", body: "Body" },
+      url: "/api/board-yjs/host/update",
+      payload: { update: "payload" },
     });
 
     expect(response.statusCode).toBe(502);
@@ -272,8 +275,8 @@ describe("Board Y.Doc host proxy route harness", () => {
     expect(
       await app.inject({
         method: "POST",
-        url: fixture.proxy.route,
-        payload: { folderId: "f1", title: "Note", body: "Body" },
+        url: "/api/board-yjs/host/update",
+        payload: { update: "payload" },
       }),
     ).toMatchObject({ statusCode: 503 });
   });

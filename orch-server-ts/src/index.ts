@@ -12,6 +12,12 @@ export {
   type NodeSessionEventDispatchResult,
 } from "./runtime/node_session_event_dispatcher.js";
 export {
+  isBoardFolderAllowed,
+  normalizeBoardAccess,
+  type BoardAccess,
+  type BoardAccessFolderRecord,
+} from "./board/board_access.js";
+export {
   BoardYjsHostProxyError,
   boardYjsHostProxyRouteAuthRequirements,
   forwardAuthorizationHeader,
@@ -44,6 +50,20 @@ export {
   type BoardItemRouteOptions,
   type BoardItemRouteProvider,
 } from "./board/board_item_routes.js";
+export {
+  MarkdownDocumentRouteError,
+  markdownDocumentRouteAuthRequirements,
+  registerMarkdownDocumentRoutes,
+  type CustomViewRecord,
+  type MarkdownDocumentAccess,
+  type MarkdownDocumentAccessProvider,
+  type MarkdownDocumentContainerKind,
+  type MarkdownDocumentContainerTarget,
+  type MarkdownDocumentFolderRecord,
+  type MarkdownDocumentRecord,
+  type MarkdownDocumentRouteOptions,
+  type MarkdownDocumentRouteProvider,
+} from "./board/markdown_document_routes.js";
 export { parseOrchServerConfig, type OrchServerTsConfig } from "./config.js";
 export {
   CONTRACT_FIXTURE_FILES,

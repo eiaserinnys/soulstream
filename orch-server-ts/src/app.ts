@@ -12,6 +12,10 @@ import {
   registerBoardItemRoutes,
   type BoardItemRouteOptions,
 } from "./board/board_item_routes.js";
+import {
+  registerMarkdownDocumentRoutes,
+  type MarkdownDocumentRouteOptions,
+} from "./board/markdown_document_routes.js";
 import type { OrchServerTsConfig } from "./config.js";
 import { routeOwnerManifest, type RouteOwnerManifest } from "./contract/route_owner_manifest.js";
 import {
@@ -84,6 +88,7 @@ export type CreateAppOptions = {
   systemConfigRoutes?: SystemConfigRouteOptions;
   boardYjsHostProxyRoutes?: BoardYjsHostProxyRouteOptions;
   boardItemRoutes?: BoardItemRouteOptions;
+  markdownDocumentRoutes?: MarkdownDocumentRouteOptions;
 };
 
 export function createApp(options: CreateAppOptions): FastifyInstance {
@@ -148,6 +153,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.boardItemRoutes !== undefined) {
     registerBoardItemRoutes(app, options.boardItemRoutes);
+  }
+  if (options.markdownDocumentRoutes !== undefined) {
+    registerMarkdownDocumentRoutes(app, options.markdownDocumentRoutes);
   }
 
   return app;
