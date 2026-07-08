@@ -106,6 +106,16 @@ export {
   type SystemPortraitSource,
 } from "./system/system_config_routes.js";
 export {
+  AdminUsersRouteError,
+  adminUsersRouteAuthRequirements,
+  registerAdminUsersRoutes,
+  type AdminDashboardUser,
+  type AdminUserCreateInput,
+  type AdminUserUpdateInput,
+  type AdminUsersRouteOptions,
+  type AdminUsersRouteProvider,
+} from "./admin/admin_users_routes.js";
+export {
   DEFAULT_NODE_COMMAND_TIMEOUT_MS,
   PendingNodeCommandRejectedError,
   PendingNodeCommandTimeoutError,
