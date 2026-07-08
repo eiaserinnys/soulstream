@@ -15,7 +15,10 @@ import {
 import { deleteSessions } from "client/lib/delete-session";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
 import { renameSessionOptimistic } from "client/lib/rename-session";
-import { uploadBoardAsset } from "client/lib/board-workspace-operations";
+import {
+  moveBoardItemToContainer,
+  uploadBoardAsset,
+} from "client/lib/board-workspace-operations";
 import { useContinueSession } from "client/hooks/useContinueSession";
 
 interface FolderWorkspaceViewWrapperProps {
@@ -63,6 +66,7 @@ export function FolderWorkspaceView({
       onRenameFolder={renameFolderOptimistic}
       onDeleteFolder={deleteFolderOptimistic}
       onUpdateFolderSettings={updateFolderSettingsOptimistic}
+      onMoveBoardItemToContainer={moveBoardItemToContainer}
       onUploadBoardAsset={uploadBoardAsset}
       onLoadMore={onLoadMore}
       hasMore={hasMore}

@@ -129,7 +129,13 @@ export function resolveEffectiveBoardCatalog(params: {
     hasYjsSynced,
     assetSignedUrls,
   } = params;
-  if (!catalog || !yjsBoardItemsForSelectedFolder || isYjsLoading || !hasYjsSynced) return catalog;
+  if (!catalog || !yjsBoardItemsForSelectedFolder || isYjsLoading || !hasYjsSynced) {
+    if (!catalog?.boardItems || !boardContainer || boardContainer.kind === "folder") return catalog;
+    return {
+      ...catalog,
+      boardItems: catalog.boardItems.filter((item) => boardItemBelongsToContainer(item, boardContainer)),
+    };
+  }
   const otherFolderBoardItems = (catalog.boardItems ?? []).filter((item) =>
     boardContainer ? !boardItemBelongsToContainer(item, boardContainer) : item.folderId !== selectedFolderId
   );
@@ -740,7 +746,7 @@ export function BoardWorkspaceView({
     target: BoardContainerRef,
   ) => {
     if (!onMoveBoardItemToContainer) return;
-    await onMoveBoardItemToContainer({
+    const result = await onMoveBoardItemToContainer({
       boardItemId: item.boardItemId,
       container: target,
       x: item.x,
@@ -748,9 +754,9 @@ export function BoardWorkspaceView({
       idempotencyKey: createBoardMoveIdempotencyKey(item.boardItemId, target),
     });
     boardSync.runtime?.deleteBoardItem(item.boardItemId);
-    removeBoardItem(item.boardItemId);
+    addBoardItem(result.boardItem);
     clearBoardSelection();
-  }, [boardSync.runtime, clearBoardSelection, onMoveBoardItemToContainer, removeBoardItem]);
+  }, [addBoardItem, boardSync.runtime, clearBoardSelection, onMoveBoardItemToContainer]);
 
   useEffect(() => {
     if (!boardSync.connectionError) return;

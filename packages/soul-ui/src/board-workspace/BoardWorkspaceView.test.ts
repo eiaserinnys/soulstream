@@ -426,6 +426,36 @@ describe("BoardWorkspaceView", () => {
     expect(result?.boardItems).toHaveLength(3);
   });
 
+  it("scopes runbook boards to catalog items for that container before Yjs has synced", () => {
+    const result = resolveEffectiveBoardCatalog({
+      catalog: {
+        ...catalog,
+        boardItems: [
+          ...(catalog.boardItems ?? []),
+          {
+            id: "session:runbook-parent",
+            folderId: "root",
+            containerKind: "runbook",
+            containerId: "rb-1",
+            membershipKind: "primary",
+            itemType: "session",
+            itemId: "runbook-parent",
+            x: 0,
+            y: 0,
+          },
+        ],
+      },
+      selectedFolderId: "root",
+      boardContainer: { kind: "runbook", id: "rb-1" },
+      yjsBoardItemsForSelectedFolder: [],
+      isYjsLoading: true,
+      hasYjsSynced: false,
+      assetSignedUrls: {},
+    });
+
+    expect(result?.boardItems?.map((item) => item.id)).toEqual(["session:runbook-parent"]);
+  });
+
   it("uses Yjs board items after the document has synced", () => {
     const yjsBoardItems = [{
       id: "session:session-a",
@@ -1469,7 +1499,14 @@ describe("BoardWorkspaceView", () => {
       x: 360,
       y: 80,
     }));
-    expect(useDashboardStore.getState().catalog?.boardItems?.some((item) => item.id === "markdown:doc-a")).toBe(false);
+    expect(useDashboardStore.getState().catalog?.boardItems?.find((item) => item.id === "markdown:doc-a")).toMatchObject({
+      id: "markdown:doc-a",
+      folderId: "root",
+      containerKind: "runbook",
+      containerId: "rb-1",
+      itemType: "markdown",
+      itemId: "doc-a",
+    });
   });
 
   it("marks the selected board card with a visible ring", () => {
