@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   InMemoryNodeRegistry,
+  NodeCommandTransportHub,
   PerNodeSessionCache,
   createApp,
   loadContractFixtures,
@@ -161,6 +162,34 @@ describe("Node WS Fastify route harness", () => {
     await app.close();
   });
 
+  it("attaches transport only after successful node_register and detaches the same connection on close", async () => {
+    const { registry } = createRegistry();
+    const transportHub = new NodeCommandTransportHub();
+    const app = createApp({
+      config: explicitTestConfig,
+      nodeWsRoute: { registry, transportHub },
+    });
+
+    await app.ready();
+    const ws = await (app as unknown as WebSocketInjectableApp).injectWS("/ws/node");
+
+    expect(transportHub.listAttached()).toEqual([]);
+
+    ws.send(JSON.stringify(fixture.registration));
+    await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
+    const connectionId = requireDefined(
+      registry.getConnectedNode("fake-node")?.connectionId,
+    );
+
+    expect(transportHub.has({ nodeId: "fake-node", connectionId })).toBe(true);
+
+    ws.terminate();
+    await waitFor(() => registry.getConnectedNode("fake-node") === undefined);
+    expect(transportHub.has({ nodeId: "fake-node", connectionId })).toBe(false);
+
+    await app.close();
+  });
+
   it("closes unsupported non-object JSON payloads instead of dropping them", async () => {
     const { registry } = createRegistry();
     const app = createApp({
@@ -184,9 +213,10 @@ describe("Node WS Fastify route harness", () => {
 
   it("keeps stale route connection messages and close events from touching the current connection", async () => {
     const { registry, sessionCache } = createRegistry();
+    const transportHub = new NodeCommandTransportHub();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry },
+      nodeWsRoute: { registry, transportHub },
     });
 
     await app.ready();
@@ -195,7 +225,9 @@ describe("Node WS Fastify route harness", () => {
     );
     oldWs.send(JSON.stringify(fixture.registration));
     await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
-    const firstConnectionId = registry.getConnectedNode("fake-node")?.connectionId;
+    const firstConnectionId = requireDefined(
+      registry.getConnectedNode("fake-node")?.connectionId,
+    );
 
     const currentWs = await (app as unknown as WebSocketInjectableApp).injectWS(
       "/ws/node",
@@ -206,7 +238,16 @@ describe("Node WS Fastify route harness", () => {
         registry.getConnectedNode("fake-node")?.connectionId !==
         firstConnectionId,
     );
-    const currentConnectionId = registry.getConnectedNode("fake-node")?.connectionId;
+    const currentConnectionId = requireDefined(
+      registry.getConnectedNode("fake-node")?.connectionId,
+    );
+
+    expect(
+      transportHub.has({ nodeId: "fake-node", connectionId: currentConnectionId }),
+    ).toBe(true);
+    expect(
+      transportHub.has({ nodeId: "fake-node", connectionId: firstConnectionId }),
+    ).toBe(false);
 
     oldWs.send(JSON.stringify(fixture.eventRelay));
     await delay(20);
@@ -218,9 +259,15 @@ describe("Node WS Fastify route harness", () => {
       connectionId: currentConnectionId,
       status: "connected",
     });
+    expect(
+      transportHub.has({ nodeId: "fake-node", connectionId: currentConnectionId }),
+    ).toBe(true);
 
     currentWs.terminate();
     await waitFor(() => registry.getConnectedNode("fake-node") === undefined);
+    expect(
+      transportHub.has({ nodeId: "fake-node", connectionId: currentConnectionId }),
+    ).toBe(false);
 
     await app.close();
   });
@@ -248,4 +295,11 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function requireDefined<TValue>(value: TValue | undefined): TValue {
+  if (value === undefined) {
+    throw new Error("expected value to be defined");
+  }
+  return value;
 }
