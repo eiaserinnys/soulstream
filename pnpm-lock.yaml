@@ -17,6 +17,9 @@ importers:
 
   orch-server-ts:
     dependencies:
+      '@fastify/websocket':
+        specifier: 11.2.0
+        version: 11.2.0
       fastify:
         specifier: ^5.1.0
         version: 5.8.5
