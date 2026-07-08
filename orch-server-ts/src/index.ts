@@ -149,6 +149,20 @@ export {
   type NodeSnapshotServiceOptions,
 } from "./node/node_snapshot_service.js";
 export {
+  NodeAgentProfileRouteError,
+  nodeAgentProfileRouteAuthRequirements,
+  registerNodeAgentProfileRoutes,
+  type AgentProfileUpdateInput,
+  type ApplyAgentProfileUpdateInput,
+  type NodeAgentProfileProvider,
+  type NodeAgentProfileRouteOptions,
+  type NodeAgentProfiles,
+  type NodePortraitResult,
+  type PortraitBody,
+  type RawNodeAgentProfile,
+  type RollbackAgentsConfigInput,
+} from "./node/node_agent_profile_routes.js";
+export {
   InMemoryNodeStreamBroadcaster,
   createNodeStreamBroadcasterSink,
   formatNodeStreamFrame,
