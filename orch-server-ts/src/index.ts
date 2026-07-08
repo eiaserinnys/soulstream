@@ -193,6 +193,7 @@ export {
   SessionRouteNodeUnavailableError,
   SessionRouteSessionOwnerMissingError,
   SessionRouteSessionOwnerStaleError,
+  type ExistingSessionPendingNodeCommandPayload,
   type RoutedFireAndForgetSessionCommand,
   type RoutedPendingSessionCommand,
   type SessionCommandRouterOptions,
@@ -204,6 +205,11 @@ export {
   type NodeCommandTransportErrorCode,
   type SessionCommandTransportBridgeOptions,
 } from "./session/session_command_transport.js";
+export {
+  registerSessionActionCommandRoutes,
+  sessionActionCommandRouteAuthRequirements,
+  type SessionActionCommandRouteOptions,
+} from "./session/session_action_command_routes.js";
 export {
   registerSessionCommandRoutes,
   sessionCommandRouteAuthRequirements,
