@@ -186,6 +186,22 @@ export {
   type RollbackAgentsConfigInput,
 } from "./node/node_agent_profile_routes.js";
 export {
+  nodeClaudeAuthRouteAuthRequirements,
+  registerNodeClaudeAuthRoutes,
+  type ClaudeAuthPkceProvider,
+  type ClaudeAuthSessionRecord,
+  type ClaudeAuthSessionStore,
+  type ClaudeAuthTokenExchangeClient,
+  type ClaudeAuthTokenExchangeRequest,
+  type ClaudeAuthTokenExchangeResponse,
+  type ClaudeOAuthConfig,
+  type NodeClaudeAuthHttpClient,
+  type NodeClaudeAuthHttpRequest,
+  type NodeClaudeAuthHttpResponse,
+  type NodeClaudeAuthRouteOptions,
+  type NodeClaudeAuthRouteProvider,
+} from "./node/node_claude_auth_routes.js";
+export {
   InMemoryNodeStreamBroadcaster,
   createNodeStreamBroadcasterSink,
   formatNodeStreamFrame,

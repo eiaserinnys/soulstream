@@ -15,6 +15,10 @@ import {
   type NodeAgentProfileRouteOptions,
 } from "./node/node_agent_profile_routes.js";
 import {
+  registerNodeClaudeAuthRoutes,
+  type NodeClaudeAuthRouteOptions,
+} from "./node/node_claude_auth_routes.js";
+import {
   registerNodeSnapshotRoutes,
   type NodeSnapshotRouteOptions,
 } from "./node/node_snapshot_routes.js";
@@ -57,6 +61,7 @@ export type CreateAppOptions = {
   routeOwners?: RouteOwnerManifest;
   exposeLocalHealthRoute?: boolean;
   adminUsersRoutes?: AdminUsersRouteOptions;
+  nodeClaudeAuthRoutes?: NodeClaudeAuthRouteOptions;
   nodeAgentProfileRoutes?: NodeAgentProfileRouteOptions;
   nodeWsRoute?: NodeWsRouteOptions;
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
@@ -82,6 +87,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
       environment: options.config.environment,
       routeOwnersArtifactOnly: owners.artifactOnly,
     }));
+  }
+  if (options.nodeClaudeAuthRoutes !== undefined) {
+    registerNodeClaudeAuthRoutes(app, options.nodeClaudeAuthRoutes);
   }
   if (options.nodeAgentProfileRoutes !== undefined) {
     registerNodeAgentProfileRoutes(app, options.nodeAgentProfileRoutes);
