@@ -1,6 +1,10 @@
 import Fastify, { type FastifyInstance } from "fastify";
 
 import {
+  registerAdminUsersRoutes,
+  type AdminUsersRouteOptions,
+} from "./admin/admin_users_routes.js";
+import {
   registerBoardYjsHostProxyRoutes,
   type BoardYjsHostProxyRouteOptions,
 } from "./board/board_yjs_host_proxy.js";
@@ -52,6 +56,7 @@ export type CreateAppOptions = {
   config: OrchServerTsConfig;
   routeOwners?: RouteOwnerManifest;
   exposeLocalHealthRoute?: boolean;
+  adminUsersRoutes?: AdminUsersRouteOptions;
   nodeAgentProfileRoutes?: NodeAgentProfileRouteOptions;
   nodeWsRoute?: NodeWsRouteOptions;
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
@@ -113,6 +118,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.systemConfigRoutes !== undefined) {
     registerSystemConfigRoutes(app, options.systemConfigRoutes);
+  }
+  if (options.adminUsersRoutes !== undefined) {
+    registerAdminUsersRoutes(app, options.adminUsersRoutes);
   }
   if (options.boardYjsHostProxyRoutes !== undefined) {
     registerBoardYjsHostProxyRoutes(app, options.boardYjsHostProxyRoutes);
