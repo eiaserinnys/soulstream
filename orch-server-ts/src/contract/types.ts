@@ -122,6 +122,9 @@ export type BoardYjsHostProxyFixture = ContractFixture & {
     oneHostStatus: number;
   };
   proxy: {
+    method: "POST";
+    route: string;
+    upstreamPath: string;
     forwardedHeaders: string[];
   };
   negativeAssertions: string[];
