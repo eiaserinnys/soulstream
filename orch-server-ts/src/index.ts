@@ -14,14 +14,36 @@ export {
 export {
   BoardYjsHostProxyError,
   boardYjsHostProxyRouteAuthRequirements,
+  forwardAuthorizationHeader,
+  proxyBoardYjsHostRequest,
   registerBoardYjsHostProxyRoutes,
+  requestBoardYjsHost,
   resolveBoardYjsHostTarget,
+  sendBoardYjsHostProxyError,
+  sendBoardYjsHostResponse,
   type BoardYjsHostHttpClient,
+  type BoardYjsHostHttpMethod,
   type BoardYjsHostHttpRequest,
   type BoardYjsHostHttpResponse,
+  type BoardYjsHostProxyInput,
   type BoardYjsHostProxyRouteOptions,
   type BoardYjsHostTarget,
 } from "./board/board_yjs_host_proxy.js";
+export {
+  BoardItemRouteError,
+  boardItemRouteAuthRequirements,
+  registerBoardItemRoutes,
+  type BoardContainerKind,
+  type BoardContainerTarget,
+  type BoardItemAccess,
+  type BoardItemAccessProvider,
+  type BoardItemCatalogSnapshot,
+  type BoardItemFolderRecord,
+  type BoardItemListQuery,
+  type BoardItemRecord,
+  type BoardItemRouteOptions,
+  type BoardItemRouteProvider,
+} from "./board/board_item_routes.js";
 export { parseOrchServerConfig, type OrchServerTsConfig } from "./config.js";
 export {
   CONTRACT_FIXTURE_FILES,
