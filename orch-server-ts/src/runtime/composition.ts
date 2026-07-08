@@ -30,6 +30,8 @@ import {
   type SessionCommandTransportBridgeOptions,
 } from "../session/session_command_transport.js";
 import type { SessionCommandRouteOptions } from "../session/session_command_routes.js";
+import type { SessionHistoryRouteOptions } from "../session/session_history_routes.js";
+import type { SessionHistoryProvider } from "../session/session_history_service.js";
 import { SessionSnapshotService } from "../session/session_snapshot_service.js";
 import type { SessionSnapshotRouteOptions } from "../session/session_snapshot_routes.js";
 import {
@@ -59,6 +61,9 @@ export type OrchestratorRuntimeCompositionOptions = {
   nodeStreamKeepaliveMs?: number;
   nodeStreamCloseAfterInitialSnapshot?: boolean;
   loadSessionSnapshot?: () => Promise<SessionStreamSnapshot>;
+  sessionHistoryProvider?: SessionHistoryProvider;
+  sessionHistoryKeepaliveMs?: number;
+  sessionHistoryCloseAfterHistorySync?: boolean;
   loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   boardYjsHostHttpClient: BoardYjsHostHttpClient;
 };
@@ -67,6 +72,7 @@ export type OrchestratorRuntimeRouteOptions = {
   nodeWsRoute: NodeWsRouteOptions;
   nodeSnapshotRoutes: NodeSnapshotRouteOptions;
   sessionCommandRoutes: SessionCommandRouteOptions;
+  sessionHistoryRoutes?: SessionHistoryRouteOptions;
   sessionSnapshotRoutes: SessionSnapshotRouteOptions;
   sseReplayRoutes: SseReplayRouteOptions;
   boardYjsHostProxyRoutes: BoardYjsHostProxyRouteOptions;
@@ -136,6 +142,15 @@ export function createOrchestratorRuntimeComposition(
       bridge: sessionBridge,
       timeoutMs: options.commandTimeoutMs,
     },
+    ...(options.sessionHistoryProvider === undefined
+      ? {}
+      : {
+          sessionHistoryRoutes: {
+            provider: options.sessionHistoryProvider,
+            keepaliveMs: options.sessionHistoryKeepaliveMs,
+            closeAfterHistorySync: options.sessionHistoryCloseAfterHistorySync,
+          },
+        }),
     sessionSnapshotRoutes: {
       snapshotService: sessionSnapshotService,
     },
