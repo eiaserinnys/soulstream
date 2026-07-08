@@ -19,6 +19,12 @@ export class PerNodeSessionCache {
     return [...(this.sessionsByNode.get(nodeId)?.values() ?? [])].map(copySession);
   }
 
+  listSessions(): CachedNodeSession[] {
+    return [...this.sessionsByNode.values()].flatMap((sessions) =>
+      [...sessions.values()].map(copySession),
+    );
+  }
+
   findSession(agentSessionId: string): CachedNodeSession | undefined {
     const nodeId = this.nodeBySession.get(agentSessionId);
     if (nodeId === undefined) return undefined;

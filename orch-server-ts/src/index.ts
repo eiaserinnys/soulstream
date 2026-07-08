@@ -193,6 +193,18 @@ export {
   sessionCommandRouteAuthRequirements,
   type SessionCommandRouteOptions,
 } from "./session/session_command_routes.js";
+export {
+  SessionSnapshotService,
+  type SessionSnapshotListResponse,
+  type SessionSnapshotQuery,
+  type SessionSnapshotRecord,
+  type SessionSnapshotServiceOptions,
+} from "./session/session_snapshot_service.js";
+export {
+  registerSessionSnapshotRoutes,
+  sessionSnapshotRouteAuthRequirements,
+  type SessionSnapshotRouteOptions,
+} from "./session/session_snapshot_routes.js";
 export type {
   BoardYjsHostProxyFixture,
   ContractFixture,
