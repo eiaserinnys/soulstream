@@ -83,6 +83,31 @@ export {
   type RespondNodeCommandPayload,
   type SubscribeEventsNodeCommandPayload,
 } from "./node/pending_commands.js";
+export {
+  InMemoryNodeRegistry,
+  type CreateSessionNodeCommandPayload,
+  type DisconnectNodeInput,
+  type IgnoredStaleDisconnectEvent,
+  type InMemoryNodeRegistryOptions,
+  type NodeCommandAckEvent,
+  type NodeCommandErrorEvent,
+  type NodeConnectionSnapshot,
+  type NodeHeartbeatPingEvent,
+  type NodeHeartbeatPongEvent,
+  type NodeHeartbeatState,
+  type NodeRegisteredEvent,
+  type NodeRegistrationPayload,
+  type NodeRegistrationResult,
+  type NodeRegistryEvent,
+  type NodeSessionEvent,
+  type NodeSessionsUpdateEvent,
+  type NodeUnregisteredEvent,
+  type SessionOwner,
+} from "./node/registry.js";
+export {
+  PerNodeSessionCache,
+  type CachedNodeSession,
+} from "./node/session_cache.js";
 export type {
   BoardYjsHostProxyFixture,
   ContractFixture,

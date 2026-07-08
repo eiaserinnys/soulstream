@@ -95,11 +95,19 @@ export type FakeNodeReconnectFixture = ContractFixture & {
   registration: {
     type: string;
   };
+  command: {
+    type: string;
+    agentSessionId: string;
+    prompt: string;
+  };
   ack: {
     type: string;
+    agentSessionId?: string;
   };
   eventRelay: {
     type: string;
+    agentSessionId?: string;
+    event?: Record<string, unknown>;
   };
   sessionsUpdateAfterReconnect: {
     type: string;
