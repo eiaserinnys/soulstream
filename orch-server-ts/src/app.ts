@@ -16,6 +16,10 @@ import {
   type SessionActionCommandRouteOptions,
 } from "./session/session_action_command_routes.js";
 import {
+  registerSessionBackgroundScheduleRoutes,
+  type SessionBackgroundScheduleRouteOptions,
+} from "./session/session_background_schedule_routes.js";
+import {
   registerSessionCommandRoutes,
   type SessionCommandRouteOptions,
 } from "./session/session_command_routes.js";
@@ -39,6 +43,7 @@ export type CreateAppOptions = {
   nodeWsRoute?: NodeWsRouteOptions;
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
   sessionActionCommandRoutes?: SessionActionCommandRouteOptions;
+  sessionBackgroundScheduleRoutes?: SessionBackgroundScheduleRouteOptions;
   sessionCommandRoutes?: SessionCommandRouteOptions;
   sessionHistoryRoutes?: SessionHistoryRouteOptions;
   sessionSnapshotRoutes?: SessionSnapshotRouteOptions;
@@ -69,6 +74,12 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.sessionActionCommandRoutes !== undefined) {
     registerSessionActionCommandRoutes(app, options.sessionActionCommandRoutes);
+  }
+  if (options.sessionBackgroundScheduleRoutes !== undefined) {
+    registerSessionBackgroundScheduleRoutes(
+      app,
+      options.sessionBackgroundScheduleRoutes,
+    );
   }
   if (options.sessionHistoryRoutes !== undefined) {
     registerSessionHistoryRoutes(app, options.sessionHistoryRoutes);

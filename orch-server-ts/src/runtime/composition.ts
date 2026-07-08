@@ -30,6 +30,7 @@ import {
   type SessionCommandTransportBridgeOptions,
 } from "../session/session_command_transport.js";
 import type { SessionActionCommandRouteOptions } from "../session/session_action_command_routes.js";
+import type { SessionBackgroundScheduleRouteOptions } from "../session/session_background_schedule_routes.js";
 import type { SessionCommandRouteOptions } from "../session/session_command_routes.js";
 import type { SessionHistoryRouteOptions } from "../session/session_history_routes.js";
 import type { SessionHistoryProvider } from "../session/session_history_service.js";
@@ -55,6 +56,7 @@ export type OrchestratorRuntimeCompositionOptions = {
   heartbeatTimeoutMs?: number;
   commandTimeoutMs?: number;
   enableSessionActionCommandRoutes?: boolean;
+  enableSessionBackgroundScheduleRoutes?: boolean;
   sessionSseInstanceId?: string;
   taskSseInstanceId?: string;
   sseRingMaxlen?: number;
@@ -74,6 +76,7 @@ export type OrchestratorRuntimeRouteOptions = {
   nodeWsRoute: NodeWsRouteOptions;
   nodeSnapshotRoutes: NodeSnapshotRouteOptions;
   sessionActionCommandRoutes?: SessionActionCommandRouteOptions;
+  sessionBackgroundScheduleRoutes?: SessionBackgroundScheduleRouteOptions;
   sessionCommandRoutes: SessionCommandRouteOptions;
   sessionHistoryRoutes?: SessionHistoryRouteOptions;
   sessionSnapshotRoutes: SessionSnapshotRouteOptions;
@@ -148,6 +151,15 @@ export function createOrchestratorRuntimeComposition(
     ...(options.enableSessionActionCommandRoutes === true
       ? {
           sessionActionCommandRoutes: {
+            router: sessionRouter,
+            bridge: sessionBridge,
+            timeoutMs: options.commandTimeoutMs,
+          },
+        }
+      : {}),
+    ...(options.enableSessionBackgroundScheduleRoutes === true
+      ? {
+          sessionBackgroundScheduleRoutes: {
             router: sessionRouter,
             bridge: sessionBridge,
             timeoutMs: options.commandTimeoutMs,
