@@ -211,6 +211,11 @@ export {
   type SessionActionCommandRouteOptions,
 } from "./session/session_action_command_routes.js";
 export {
+  registerSessionBackgroundScheduleRoutes,
+  sessionBackgroundScheduleRouteAuthRequirements,
+  type SessionBackgroundScheduleRouteOptions,
+} from "./session/session_background_schedule_routes.js";
+export {
   registerSessionCommandRoutes,
   sessionCommandRouteAuthRequirements,
   type SessionCommandRouteOptions,
