@@ -126,6 +126,10 @@ export {
   type NodeWsFrameRegistrationRejectedResult,
 } from "./node/ws_frame_controller.js";
 export {
+  registerNodeWsRoute,
+  type NodeWsRouteOptions,
+} from "./node/ws_route.js";
+export {
   SessionCommandRouteError,
   SessionCommandRouter,
   SessionRouteNoAvailableNodesError,
