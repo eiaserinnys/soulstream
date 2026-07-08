@@ -5,6 +5,10 @@ import {
   type AdminUsersRouteOptions,
 } from "./admin/admin_users_routes.js";
 import {
+  registerAttachmentRoutes,
+  type AttachmentRouteOptions,
+} from "./attachments/attachment_routes.js";
+import {
   registerBoardYjsHostProxyRoutes,
   type BoardYjsHostProxyRouteOptions,
 } from "./board/board_yjs_host_proxy.js";
@@ -81,6 +85,7 @@ export type CreateAppOptions = {
   routeOwners?: RouteOwnerManifest;
   exposeLocalHealthRoute?: boolean;
   adminUsersRoutes?: AdminUsersRouteOptions;
+  attachmentRoutes?: AttachmentRouteOptions;
   folderRoutes?: FolderRouteOptions;
   nodeClaudeAuthRoutes?: NodeClaudeAuthRouteOptions;
   nodeAgentProfileRoutes?: NodeAgentProfileRouteOptions;
@@ -154,6 +159,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.adminUsersRoutes !== undefined) {
     registerAdminUsersRoutes(app, options.adminUsersRoutes);
+  }
+  if (options.attachmentRoutes !== undefined) {
+    registerAttachmentRoutes(app, options.attachmentRoutes);
   }
   if (options.folderRoutes !== undefined) {
     registerFolderRoutes(app, options.folderRoutes);
