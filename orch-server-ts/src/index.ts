@@ -116,6 +116,20 @@ export {
   type AdminUsersRouteProvider,
 } from "./admin/admin_users_routes.js";
 export {
+  FolderRouteError,
+  folderRouteAuthRequirements,
+  registerFolderRoutes,
+  type FolderAccess,
+  type FolderAccessProvider,
+  type FolderCreateOptions,
+  type FolderRecord,
+  type FolderReorderInput,
+  type FolderRouteOptions,
+  type FolderRouteProvider,
+  type FolderUpdateInput,
+  type SessionAssignmentRecord,
+} from "./folders/folder_routes.js";
+export {
   DEFAULT_NODE_COMMAND_TIMEOUT_MS,
   PendingNodeCommandRejectedError,
   PendingNodeCommandTimeoutError,
