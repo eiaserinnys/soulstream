@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "registration": {
+    "type": "node_register",
+    "node_id": "fake-node",
+    "host": "127.0.0.1",
+    "port": 4105,
+    "agents": [
+      {
+        "id": "claude-roselin",
+        "name": "Roselin",
+        "backend": "claude"
+      }
+    ],
+    "capabilities": {
+      "max_concurrent": 1
+    },
+    "supported_backends": [
+      "claude"
+    ]
+  },
+  "command": {
+    "type": "create_session",
+    "agentSessionId": "sess-contract",
+    "prompt": "contract prompt"
+  },
+  "ack": {
+    "type": "session_created",
+    "agentSessionId": "sess-contract"
+  },
+  "eventRelay": {
+    "type": "event",
+    "agentSessionId": "sess-contract",
+    "event": {
+      "id": 1,
+      "type": "assistant",
+      "text": "ready"
+    }
+  },
+  "sessionsUpdateAfterReconnect": {
+    "type": "sessions_update",
+    "sessions": [
+      {
+        "agentSessionId": "sess-contract",
+        "status": "running",
+        "last_event_id": 1
+      }
+    ]
+  }
+}

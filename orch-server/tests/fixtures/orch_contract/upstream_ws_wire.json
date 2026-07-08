@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "outbound": {
+    "respond": {
+      "type": "respond",
+      "agentSessionId": "sess-contract",
+      "inputRequestId": "input-req-contract",
+      "answers": {
+        "choice": "yes"
+      },
+      "requestId": "<orch-command-request-id>",
+      "requestIdMustNotEqual": "inputRequestId"
+    },
+    "subscribeEvents": {
+      "type": "subscribe_events",
+      "agentSessionId": "sess-contract",
+      "subscribeId": "<uuid>",
+      "requestId": "<absent>",
+      "fireAndForget": true
+    }
+  },
+  "inbound": {
+    "nodeRegister": {
+      "type": "node_register",
+      "node_id": "fake-node",
+      "host": "127.0.0.1",
+      "port": 4105,
+      "capabilities": {
+        "board_yjs_host": true
+      },
+      "supported_backends": [
+        "claude",
+        "codex"
+      ],
+      "sessions": [
+        {
+          "agentSessionId": "sess-contract",
+          "status": "running",
+          "last_event_id": 2
+        }
+      ]
+    },
+    "commandAck": {
+      "type": "session_created",
+      "requestId": "<orch-command-request-id>",
+      "agentSessionId": "sess-contract"
+    },
+    "commandError": {
+      "type": "error",
+      "requestId": "<orch-command-request-id>",
+      "message": "command failed"
+    },
+    "eventRelay": {
+      "type": "event",
+      "agentSessionId": "sess-contract",
+      "event": {
+        "id": 3,
+        "type": "assistant",
+        "text": "hello"
+      }
+    },
+    "sessionsUpdate": {
+      "type": "sessions_update",
+      "sessions": [
+        {
+          "agentSessionId": "sess-contract",
+          "status": "running",
+          "last_event_id": 3
+        }
+      ]
+    }
+  }
+}

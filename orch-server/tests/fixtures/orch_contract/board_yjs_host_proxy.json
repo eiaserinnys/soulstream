@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "hostCapability": "board_yjs_host",
+  "cardinality": {
+    "zeroHostsStatus": 503,
+    "twoHostsStatus": 503,
+    "oneHostStatus": 200
+  },
+  "proxy": {
+    "method": "POST",
+    "route": "/api/markdown-documents",
+    "upstreamPath": "/api/markdown-documents",
+    "forwardedHeaders": [
+      "authorization"
+    ]
+  },
+  "negativeAssertions": [
+    "catalog_service.create_markdown_document is not called for markdown write routes"
+  ]
+}
