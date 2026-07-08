@@ -87,6 +87,7 @@ export {
   InMemoryNodeRegistry,
   type CreateSessionNodeCommandPayload,
   type DisconnectNodeInput,
+  type IgnoredNodeRegistrationRefreshEvent,
   type IgnoredStaleDisconnectEvent,
   type IgnoredStaleMessageEvent,
   type InMemoryNodeRegistryOptions,
@@ -103,6 +104,7 @@ export {
   type NodeRegistryEvent,
   type NodeSessionEvent,
   type NodeSessionsUpdateEvent,
+  type NodeUpdatedEvent,
   type NodeUnregisteredEvent,
   type SessionOwner,
 } from "./node/registry.js";
@@ -110,6 +112,19 @@ export {
   PerNodeSessionCache,
   type CachedNodeSession,
 } from "./node/session_cache.js";
+export {
+  NodeWsFrameController,
+  type NodeWsFrameCloseResult,
+  type NodeWsFrameControllerOptions,
+  type NodeWsFrameControllerResult,
+  type NodeWsFrameIgnoredAfterCloseResult,
+  type NodeWsFrameMessageResult,
+  type NodeWsFrameRegisteredResult,
+  type NodeWsFrameRegistrationRefreshIgnoredResult,
+  type NodeWsFrameRegistrationRefreshedResult,
+  type NodeWsFrameRegistrationRejectCode,
+  type NodeWsFrameRegistrationRejectedResult,
+} from "./node/ws_frame_controller.js";
 export {
   SessionCommandRouteError,
   SessionCommandRouter,

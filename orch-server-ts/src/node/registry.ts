@@ -26,6 +26,7 @@ import type {
 export type {
   CreateSessionNodeCommandPayload,
   DisconnectNodeInput,
+  IgnoredNodeRegistrationRefreshEvent,
   IgnoredStaleDisconnectEvent,
   IgnoredStaleMessageEvent,
   InMemoryNodeRegistryOptions,
@@ -43,6 +44,7 @@ export type {
   NodeRegistryEvent,
   NodeSessionEvent,
   NodeSessionsUpdateEvent,
+  NodeUpdatedEvent,
   NodeUnregisteredEvent,
   SessionOwner,
 } from "./registry_types.js";
@@ -135,6 +137,81 @@ export class InMemoryNodeRegistry {
       events,
       replacedConnectionId,
     };
+  }
+
+  refreshNodeRegistration(
+    source: NodeMessageSource,
+    registration: NodeRegistrationPayload,
+  ): NodeRegistryEvent[] {
+    const { nodeId, connectionId } = normalizeMessageSource(source);
+    const node = this.requireConnectedNode(nodeId);
+    if (connectionId !== undefined && node.connectionId !== connectionId) {
+      return [
+        ignoredStaleMessageEvent({
+          nodeId,
+          connectionId,
+          currentConnectionId: node.connectionId,
+          message: registration,
+        }),
+      ];
+    }
+
+    const incomingNodeId =
+      typeof registration.node_id === "string" ? registration.node_id : undefined;
+    if (incomingNodeId !== undefined && incomingNodeId !== nodeId) {
+      return [
+        {
+          type: "ignored_node_registration_refresh",
+          nodeId,
+          connectionId: node.connectionId,
+          incomingNodeId,
+          reason: "node_id_mismatch",
+        },
+      ];
+    }
+
+    const nowMs = this.nowMs();
+    node.lastSeenAtMs = nowMs;
+    if ("host" in registration) {
+      node.host = typeof registration.host === "string" ? registration.host : "";
+    }
+    if ("port" in registration) {
+      node.port = typeof registration.port === "number" ? registration.port : 0;
+    }
+    if ("capabilities" in registration) {
+      node.capabilities = isRecord(registration.capabilities)
+        ? { ...registration.capabilities }
+        : {};
+      node.heartbeat.supported = supportsAppHeartbeat(node.capabilities);
+    }
+    if ("supported_backends" in registration) {
+      node.supportedBackends = Array.isArray(registration.supported_backends)
+        ? [...registration.supported_backends]
+        : ["claude"];
+    }
+    if ("agents" in registration) {
+      node.agents = Array.isArray(registration.agents) ? [...registration.agents] : [];
+    }
+
+    const events: NodeRegistryEvent[] = [
+      {
+        type: "node_updated",
+        nodeId,
+        connectionId: node.connectionId,
+        node: snapshotNode(node),
+      },
+    ];
+    if (Array.isArray(registration.sessions)) {
+      const data = { type: "sessions_update", sessions: registration.sessions };
+      this.sessionCache.replaceNodeSessions({
+        nodeId,
+        connectionId: node.connectionId,
+        sessions: registration.sessions,
+        nowMs,
+      });
+      events.push({ type: "node_session_sessions_update", nodeId, data });
+    }
+    return events;
   }
 
   getConnectedNode(nodeId: string): NodeConnectionSnapshot | undefined {

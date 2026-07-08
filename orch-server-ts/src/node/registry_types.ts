@@ -60,6 +60,13 @@ export type NodeRegisteredEvent = {
   connectionId: string;
 };
 
+export type NodeUpdatedEvent = {
+  type: "node_updated";
+  nodeId: string;
+  connectionId: string;
+  node: NodeConnectionSnapshot;
+};
+
 export type NodeUnregisteredEvent = {
   type: "node_unregistered";
   nodeId: string;
@@ -79,6 +86,14 @@ export type IgnoredStaleMessageEvent = {
   connectionId: string;
   currentConnectionId: string | undefined;
   messageType: string;
+};
+
+export type IgnoredNodeRegistrationRefreshEvent = {
+  type: "ignored_node_registration_refresh";
+  nodeId: string;
+  connectionId: string;
+  incomingNodeId: string | undefined;
+  reason: "node_id_mismatch";
 };
 
 export type NodeSessionEvent = {
@@ -120,9 +135,11 @@ export type NodeHeartbeatPingEvent = {
 
 export type NodeRegistryEvent =
   | NodeRegisteredEvent
+  | NodeUpdatedEvent
   | NodeUnregisteredEvent
   | IgnoredStaleDisconnectEvent
   | IgnoredStaleMessageEvent
+  | IgnoredNodeRegistrationRefreshEvent
   | NodeSessionEvent
   | NodeSessionsUpdateEvent
   | NodeCommandAckEvent
