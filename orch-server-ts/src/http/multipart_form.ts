@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-import type { FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 
 export type MultipartFile = {
   filename: string;
@@ -16,6 +16,20 @@ export type MultipartForm = {
 type MultipartParseResult =
   | { ok: true; value: MultipartForm }
   | { ok: false; message: string; statusCode?: number };
+
+const multipartParserApps = new WeakSet<FastifyInstance>();
+
+export function registerMultipartFormParser(app: FastifyInstance): void {
+  if (multipartParserApps.has(app)) return;
+  app.addContentTypeParser(
+    /^multipart\/form-data(?:;.*)?$/i,
+    { bodyLimit: 100 * 1024 * 1024, parseAs: "buffer" },
+    (_request, body, done) => {
+      done(null, body);
+    },
+  );
+  multipartParserApps.add(app);
+}
 
 export function parseMultipartForm(request: FastifyRequest): MultipartParseResult {
   if (!Buffer.isBuffer(request.body)) {

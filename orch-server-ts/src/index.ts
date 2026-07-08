@@ -90,6 +90,16 @@ export {
   type AttachmentUploadResult,
 } from "./attachments/attachment_routes.js";
 export {
+  ALLOWED_BACKGROUND_MIME_TYPES,
+  MAX_BACKGROUND_BYTES,
+  normalizeBackgroundMime,
+  registerUserBackgroundRoutes,
+  userBackgroundRouteAuthRequirements,
+  type UserBackgroundMimeType,
+  type UserBackgroundRepository,
+  type UserBackgroundRouteOptions,
+} from "./user/user_background_routes.js";
+export {
   UserPreferencesForeignKeyViolationError,
   UserPreferencesRouteError,
   normalizeUserPreferences,
