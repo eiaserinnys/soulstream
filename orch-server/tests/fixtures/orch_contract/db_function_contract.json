@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "name": "session_register",
+      "args": "p_session_id TEXT, p_node_id TEXT, p_agent_id TEXT, p_claude_session_id TEXT, p_session_type TEXT, p_prompt TEXT, p_client_id TEXT, p_status TEXT, p_created_at TIMESTAMPTZ, p_updated_at TIMESTAMPTZ, p_caller_session_id TEXT DEFAULT NULL, p_notify_completion BOOLEAN DEFAULT TRUE",
+      "returns": "void"
+    },
+    {
+      "name": "session_get",
+      "args": "p_session_id TEXT",
+      "returns": "SETOF sessions"
+    },
+    {
+      "name": "session_get_all",
+      "args": "p_filters JSONB DEFAULT NULL, p_limit INTEGER DEFAULT NULL, p_offset INTEGER DEFAULT NULL",
+      "returns": "SETOF sessions"
+    },
+    {
+      "name": "session_count",
+      "args": "p_filters JSONB DEFAULT NULL",
+      "returns": "BIGINT"
+    },
+    {
+      "name": "event_append",
+      "args": "p_session_id TEXT, p_event_type TEXT, p_payload TEXT, p_searchable_text TEXT, p_created_at TIMESTAMPTZ, p_dedupe_key TEXT DEFAULT NULL",
+      "returns": "INTEGER"
+    },
+    {
+      "name": "event_read",
+      "args": "p_session_id TEXT, p_after_id INTEGER DEFAULT 0, p_limit INTEGER DEFAULT NULL, p_event_types TEXT[] DEFAULT NULL",
+      "returns": "TABLE( id INTEGER, session_id TEXT, event_type TEXT, payload JSONB, searchable_text TEXT, created_at TIMESTAMPTZ )"
+    },
+    {
+      "name": "event_read_one",
+      "args": "p_session_id TEXT, p_event_id INTEGER",
+      "returns": "TABLE( id INTEGER, session_id TEXT, event_type TEXT, parent_event_id INTEGER, payload JSONB, searchable_text TEXT, created_at TIMESTAMPTZ )"
+    },
+    {
+      "name": "events_viewport",
+      "args": "p_session_id TEXT, p_y_min BIGINT, p_y_max BIGINT",
+      "returns": "TABLE ( id INTEGER, parent_event_id INTEGER, event_type TEXT, depth INTEGER, y_start BIGINT, y_end BIGINT, payload JSONB )"
+    },
+    {
+      "name": "catalog_get_sessions",
+      "args": "",
+      "returns": "TABLE(session_id TEXT, folder_id TEXT, display_name TEXT)"
+    },
+    {
+      "name": "board_item_get_all",
+      "args": "",
+      "returns": "TABLE( id TEXT, folder_id TEXT, container_kind TEXT, container_id TEXT, membership_kind TEXT, source_runbook_item_id TEXT, item_type TEXT, item_id TEXT, x DOUBLE PRECISION, y DOUBLE PRECISION, metadata JSONB, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ )"
+    },
+    {
+      "name": "supervisor_event_append",
+      "args": "p_source_node TEXT, p_source_session_id TEXT, p_source_event_id INTEGER, p_event_type TEXT, p_payload TEXT, p_created_at TIMESTAMPTZ",
+      "returns": "TABLE( \"offset\" BIGINT, inserted BOOLEAN, contiguous_upto INTEGER, highest_seen_event_id INTEGER, gap_start INTEGER, gap_end INTEGER )"
+    },
+    {
+      "name": "supervisor_event_read_after",
+      "args": "p_after_offset BIGINT DEFAULT 0, p_limit INTEGER DEFAULT 100",
+      "returns": "TABLE( \"offset\" BIGINT, source_node TEXT, source_session_id TEXT, source_event_id INTEGER, event_type TEXT, payload JSONB, created_at TIMESTAMPTZ, inserted_at TIMESTAMPTZ )"
+    },
+    {
+      "name": "supervisor_source_cursor_get",
+      "args": "p_source_node TEXT, p_source_session_id TEXT",
+      "returns": "TABLE( source_node TEXT, source_session_id TEXT, contiguous_upto INTEGER, highest_seen_event_id INTEGER, gap_start INTEGER, gap_end INTEGER, updated_at TIMESTAMPTZ )"
+    },
+    {
+      "name": "supervisor_source_cursor_set",
+      "args": "p_source_node TEXT, p_source_session_id TEXT, p_contiguous_upto INTEGER, p_highest_seen_event_id INTEGER, p_gap_start INTEGER DEFAULT NULL, p_gap_end INTEGER DEFAULT NULL",
+      "returns": "TABLE( source_node TEXT, source_session_id TEXT, contiguous_upto INTEGER, highest_seen_event_id INTEGER, gap_start INTEGER, gap_end INTEGER, updated_at TIMESTAMPTZ )"
+    },
+    {
+      "name": "supervisor_registry_upsert",
+      "args": "p_role TEXT, p_active_session_id TEXT, p_epoch BIGINT, p_cursor_offset BIGINT, p_handover_state TEXT, p_cumulative_tokens BIGINT, p_compaction_count INTEGER, p_last_seen_at TIMESTAMPTZ",
+      "returnsContains": [
+        "role TEXT",
+        "active_session_id TEXT",
+        "cursor_offset BIGINT",
+        "wake_dispatch_state TEXT",
+        "wake_blocked_reason TEXT"
+      ]
+    },
+    {
+      "name": "supervisor_registry_get",
+      "args": "p_role TEXT",
+      "returnsContains": [
+        "role TEXT",
+        "active_session_id TEXT",
+        "cursor_offset BIGINT",
+        "wake_dispatch_state TEXT",
+        "wake_blocked_reason TEXT"
+      ]
+    },
+    {
+      "name": "supervisor_registry_list",
+      "args": "",
+      "returnsContains": [
+        "role TEXT",
+        "active_session_id TEXT",
+        "cursor_offset BIGINT",
+        "wake_dispatch_state TEXT",
+        "wake_blocked_reason TEXT"
+      ]
+    }
+  ]
+}

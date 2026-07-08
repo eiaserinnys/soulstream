@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "common": {
+    "resumeInputs": {
+      "lastEventIdHeader": "1",
+      "lastEventIdQuery": "1",
+      "instanceIdQuery": "<current-instance-id>"
+    },
+    "streamMeta": {
+      "type": "stream_meta",
+      "instance_id": "<current-instance-id>",
+      "latest_id": 3
+    },
+    "snapshotRefetchOn": [
+      "ring_gap",
+      "instance_mismatch"
+    ]
+  },
+  "sessionStream": {
+    "events": [
+      {
+        "type": "session_created",
+        "agent_session_id": "sess-1"
+      },
+      {
+        "type": "session_updated",
+        "agent_session_id": "sess-1"
+      },
+      {
+        "type": "session_deleted",
+        "agent_session_id": "sess-1"
+      }
+    ],
+    "resumeFrom": 1,
+    "expectedReplayEventIds": [
+      2,
+      3
+    ]
+  },
+  "taskStream": {
+    "changes": [
+      {
+        "id": "task-1",
+        "status": "open"
+      },
+      {
+        "id": "task-1",
+        "status": "in_progress"
+      },
+      {
+        "id": "task-1",
+        "status": "review"
+      }
+    ],
+    "resumeFrom": 1,
+    "expectedReplayEventIds": [
+      2,
+      3
+    ]
+  },
+  "gap": {
+    "ringMaxlen": 2,
+    "lastEventIdBeforeOldest": 0,
+    "expectedLatestId": 3
+  }
+}

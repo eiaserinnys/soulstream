@@ -512,6 +512,7 @@ def create_app(
     catalog_service: CatalogService | None = None,
     push_repo: PushRepository | None = None,
     user_service: DashboardUserService | None = None,
+    user_preferences_repo: PostgresUserPreferencesRepository | None = None,
 ) -> FastAPI:
     """FastAPI 앱 생성.
 
@@ -631,6 +632,7 @@ def create_app(
             settings=settings,
             push_repo=push_repo,
             user_service=user_service,
+            user_preferences_repo=user_preferences_repo,
         )
 
     return app
