@@ -109,6 +109,13 @@ export {
   type SessionOwner,
 } from "./node/registry.js";
 export {
+  NodeCommandTransportHub,
+  type NodeCommandTransport,
+  type NodeCommandTransportAttachment,
+  type NodeCommandTransportKey,
+  type NodeCommandTransportSend,
+} from "./node/transport_hub.js";
+export {
   PerNodeSessionCache,
   type CachedNodeSession,
 } from "./node/session_cache.js";
@@ -141,6 +148,12 @@ export {
   type SessionCommandRouterOptions,
   type SessionRouteErrorCode,
 } from "./session/session_command_router.js";
+export {
+  NodeCommandTransportError,
+  SessionCommandTransportBridge,
+  type NodeCommandTransportErrorCode,
+  type SessionCommandTransportBridgeOptions,
+} from "./session/session_command_transport.js";
 export type {
   BoardYjsHostProxyFixture,
   ContractFixture,

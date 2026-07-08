@@ -3,12 +3,18 @@ import type { FastifyInstance } from "fastify";
 
 import { NodeWsFrameController } from "./ws_frame_controller.js";
 import type { InMemoryNodeRegistry } from "./registry.js";
+import type {
+  NodeCommandTransport,
+  NodeCommandTransportAttachment,
+  NodeCommandTransportHub,
+} from "./transport_hub.js";
 
 const INVALID_JSON_CLOSE_CODE = 1003;
 const POLICY_VIOLATION_CLOSE_CODE = 1008;
 
 export type NodeWsRouteOptions = {
   registry: InMemoryNodeRegistry;
+  transportHub?: NodeCommandTransportHub;
 };
 
 export function registerNodeWsRoute(
@@ -19,6 +25,10 @@ export function registerNodeWsRoute(
   app.after(() => {
     app.get("/ws/node", { websocket: true }, (socket) => {
       const controller = new NodeWsFrameController({ registry: options.registry });
+      const transport: NodeCommandTransport = {
+        send: (data) => socket.send(data),
+      };
+      let attachment: NodeCommandTransportAttachment | undefined;
 
       socket.on("message", (payload) => {
         const parsed = parseJsonFrame(payload);
@@ -28,19 +38,48 @@ export function registerNodeWsRoute(
         }
 
         const result = controller.handleFrame(parsed.frame);
+        if (result.type === "registered" && options.transportHub !== undefined) {
+          for (const event of result.events) {
+            if (event.type === "node_unregistered") {
+              options.transportHub.detach({
+                nodeId: event.nodeId,
+                connectionId: event.connectionId,
+              });
+            }
+          }
+
+          attachment = {
+            nodeId: result.nodeId,
+            connectionId: result.connectionId,
+            transport,
+          };
+          options.transportHub.attach(attachment);
+        }
         if (result.type === "registration_rejected") {
           socket.close(POLICY_VIOLATION_CLOSE_CODE, result.code);
         }
       });
 
       socket.on("close", () => {
+        detachTransport(options.transportHub, attachment);
+        attachment = undefined;
         controller.close("websocket_close");
       });
       socket.on("error", () => {
+        detachTransport(options.transportHub, attachment);
+        attachment = undefined;
         controller.close("websocket_error");
       });
     });
   });
+}
+
+function detachTransport(
+  transportHub: NodeCommandTransportHub | undefined,
+  attachment: NodeCommandTransportAttachment | undefined,
+): void {
+  if (transportHub === undefined || attachment === undefined) return;
+  transportHub.detach(attachment);
 }
 
 type JsonFrameParseResult =

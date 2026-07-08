@@ -263,6 +263,19 @@ export class InMemoryNodeRegistry {
     return node.pendingCommands.createFireAndForgetCommand(payload);
   }
 
+  rejectCommand(
+    nodeId: string,
+    requestId: string,
+    message: string,
+    response?: NodeCommandResponse,
+  ): boolean {
+    return this.nodes.get(nodeId)?.pendingCommands.reject(
+      requestId,
+      message,
+      response,
+    ) ?? false;
+  }
+
   receiveNodeMessage(
     source: NodeMessageSource,
     message: Record<string, unknown>,
@@ -435,6 +448,7 @@ export class InMemoryNodeRegistry {
     node.connected = false;
     node.disconnectedAtMs = nowMs;
     node.lastSeenAtMs = nowMs;
+    node.pendingCommands.rejectAll(`Node disconnected: ${reason}`);
     this.sessionCache.markNodeDisconnected(node.nodeId, nowMs);
     return {
       type: "node_unregistered",

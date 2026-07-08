@@ -295,6 +295,14 @@ export class PendingNodeCommands {
     return true;
   }
 
+  rejectAll(message: string, response?: NodeCommandResponse): PendingNodeCommandEntry[] {
+    const entries = this.pendingEntries;
+    for (const entry of entries) {
+      this.reject(entry.requestId, message, response);
+    }
+    return entries;
+  }
+
   settleFromResponse(response: NodeCommandResponse): PendingNodeCommandSettlement {
     const requestId =
       typeof response.requestId === "string" && response.requestId.length > 0
