@@ -6,6 +6,10 @@ import {
 } from "./board/board_yjs_host_proxy.js";
 import type { OrchServerTsConfig } from "./config.js";
 import { routeOwnerManifest, type RouteOwnerManifest } from "./contract/route_owner_manifest.js";
+import {
+  registerNodeSnapshotRoutes,
+  type NodeSnapshotRouteOptions,
+} from "./node/node_snapshot_routes.js";
 import { registerNodeWsRoute, type NodeWsRouteOptions } from "./node/ws_route.js";
 import {
   registerSessionCommandRoutes,
@@ -25,6 +29,7 @@ export type CreateAppOptions = {
   routeOwners?: RouteOwnerManifest;
   exposeLocalHealthRoute?: boolean;
   nodeWsRoute?: NodeWsRouteOptions;
+  nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
   sessionCommandRoutes?: SessionCommandRouteOptions;
   sessionSnapshotRoutes?: SessionSnapshotRouteOptions;
   sseReplayRoutes?: SseReplayRouteOptions;
@@ -45,6 +50,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.nodeWsRoute !== undefined) {
     registerNodeWsRoute(app, options.nodeWsRoute);
+  }
+  if (options.nodeSnapshotRoutes !== undefined) {
+    registerNodeSnapshotRoutes(app, options.nodeSnapshotRoutes);
   }
   if (options.sessionCommandRoutes !== undefined) {
     registerSessionCommandRoutes(app, options.sessionCommandRoutes);

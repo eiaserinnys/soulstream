@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 
 import {
   NodeWsFrameController,
+  type NodeWsFrameCloseResult,
   type NodeWsFrameControllerResult,
 } from "./ws_frame_controller.js";
 import type { InMemoryNodeRegistry } from "./registry.js";
@@ -71,12 +72,18 @@ export function registerNodeWsRoute(
       socket.on("close", () => {
         detachTransport(options.transportHub, attachment);
         attachment = undefined;
-        controller.close("websocket_close");
+        emitEvents(
+          options.eventSink,
+          eventsFromControllerCloseResult(controller.close("websocket_close")),
+        );
       });
       socket.on("error", () => {
         detachTransport(options.transportHub, attachment);
         attachment = undefined;
-        controller.close("websocket_error");
+        emitEvents(
+          options.eventSink,
+          eventsFromControllerCloseResult(controller.close("websocket_error")),
+        );
       });
     });
   });
@@ -94,6 +101,12 @@ function eventsFromControllerResult(
   result: NodeWsFrameControllerResult,
 ): NodeRegistryEvent[] {
   return "events" in result ? result.events : [];
+}
+
+function eventsFromControllerCloseResult(
+  result: NodeWsFrameCloseResult,
+): NodeRegistryEvent[] {
+  return result.type === "closed" ? [result.event] : [];
 }
 
 function emitEvents(

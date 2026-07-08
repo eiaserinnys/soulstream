@@ -11,7 +11,13 @@ import type {
   NodeCommandClock,
   NodeCommandRequestIdGenerator,
 } from "../node/pending_commands.js";
-import { InMemoryNodeRegistry } from "../node/registry.js";
+import { InMemoryNodeRegistry, type NodeRegistryEvent } from "../node/registry.js";
+import { NodeSnapshotService } from "../node/node_snapshot_service.js";
+import {
+  InMemoryNodeStreamBroadcaster,
+  createNodeStreamBroadcasterSink,
+  type NodeSnapshotRouteOptions,
+} from "../node/node_snapshot_routes.js";
 import type { NodeWsRouteOptions } from "../node/ws_route.js";
 import { NodeCommandTransportHub } from "../node/transport_hub.js";
 import { createNodeSessionEventBroadcasterSink } from "./node_session_event_dispatcher.js";
@@ -50,6 +56,8 @@ export type OrchestratorRuntimeCompositionOptions = {
   sseRingMaxlen?: number;
   sseKeepaliveMs?: number;
   sseReplayOnlyForTests?: boolean;
+  nodeStreamKeepaliveMs?: number;
+  nodeStreamCloseAfterInitialSnapshot?: boolean;
   loadSessionSnapshot?: () => Promise<SessionStreamSnapshot>;
   loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   boardYjsHostHttpClient: BoardYjsHostHttpClient;
@@ -57,6 +65,7 @@ export type OrchestratorRuntimeCompositionOptions = {
 
 export type OrchestratorRuntimeRouteOptions = {
   nodeWsRoute: NodeWsRouteOptions;
+  nodeSnapshotRoutes: NodeSnapshotRouteOptions;
   sessionCommandRoutes: SessionCommandRouteOptions;
   sessionSnapshotRoutes: SessionSnapshotRouteOptions;
   sseReplayRoutes: SseReplayRouteOptions;
@@ -69,6 +78,8 @@ export type OrchestratorRuntimeComposition = {
   transports: NodeCommandTransportHub;
   sessionRouter: SessionCommandRouter;
   sessionBridge: SessionCommandTransportBridge;
+  nodeSnapshotService: NodeSnapshotService;
+  nodeStreamBroadcaster: InMemoryNodeStreamBroadcaster;
   sessionSnapshotService: SessionSnapshotService;
   sessionBroadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
   taskBroadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>;
@@ -91,6 +102,10 @@ export function createOrchestratorRuntimeComposition(
     registry,
     transports,
   } satisfies SessionCommandTransportBridgeOptions);
+  const nodeSnapshotService = new NodeSnapshotService({ registry });
+  const nodeStreamBroadcaster = new InMemoryNodeStreamBroadcaster({
+    snapshotService: nodeSnapshotService,
+  });
   const sessionSnapshotService = new SessionSnapshotService({ registry });
   const sessionBroadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
     instanceId: options.sessionSseInstanceId,
@@ -105,7 +120,16 @@ export function createOrchestratorRuntimeComposition(
     nodeWsRoute: {
       registry,
       transportHub: transports,
-      eventSink: createNodeSessionEventBroadcasterSink(sessionBroadcaster),
+      eventSink: composeEventSinks(
+        createNodeSessionEventBroadcasterSink(sessionBroadcaster),
+        createNodeStreamBroadcasterSink(nodeStreamBroadcaster),
+      ),
+    },
+    nodeSnapshotRoutes: {
+      snapshotService: nodeSnapshotService,
+      broadcaster: nodeStreamBroadcaster,
+      keepaliveMs: options.nodeStreamKeepaliveMs,
+      closeAfterInitialSnapshot: options.nodeStreamCloseAfterInitialSnapshot,
     },
     sessionCommandRoutes: {
       router: sessionRouter,
@@ -148,9 +172,21 @@ export function createOrchestratorRuntimeComposition(
     transports,
     sessionRouter,
     sessionBridge,
+    nodeSnapshotService,
+    nodeStreamBroadcaster,
     sessionSnapshotService,
     sessionBroadcaster,
     taskBroadcaster,
     routeOptions,
+  };
+}
+
+function composeEventSinks(
+  ...sinks: Array<(events: NodeRegistryEvent[]) => void>
+): NonNullable<NodeWsRouteOptions["eventSink"]> {
+  return (events) => {
+    for (const sink of sinks) {
+      sink(events);
+    }
   };
 }

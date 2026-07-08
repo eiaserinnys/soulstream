@@ -143,6 +143,22 @@ export {
   type SessionOwner,
 } from "./node/registry.js";
 export {
+  NodeSnapshotService,
+  type NodeSnapshotListResponse,
+  type NodeSnapshotRecord,
+  type NodeSnapshotServiceOptions,
+} from "./node/node_snapshot_service.js";
+export {
+  InMemoryNodeStreamBroadcaster,
+  createNodeStreamBroadcasterSink,
+  formatNodeStreamFrame,
+  nodeSnapshotRouteAuthRequirements,
+  registerNodeSnapshotRoutes,
+  type NodeSnapshotRouteOptions,
+  type NodeStreamFrame,
+  type NodeStreamSubscriber,
+} from "./node/node_snapshot_routes.js";
+export {
   NodeCommandTransportHub,
   type NodeCommandTransport,
   type NodeCommandTransportAttachment,
