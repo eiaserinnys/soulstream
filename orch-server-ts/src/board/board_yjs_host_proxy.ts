@@ -12,8 +12,10 @@ export type BoardYjsHostTarget = {
   connectionId: string;
 };
 
+export type BoardYjsHostHttpMethod = "POST" | "PATCH";
+
 export type BoardYjsHostHttpRequest = {
-  method: "POST";
+  method: BoardYjsHostHttpMethod;
   url: string;
   upstreamPath: string;
   headers: Record<string, string>;
@@ -34,6 +36,12 @@ export type BoardYjsHostHttpClient = (
 export type BoardYjsHostProxyRouteOptions = {
   registry: InMemoryNodeRegistry;
   httpClient: BoardYjsHostHttpClient;
+};
+
+export type BoardYjsHostProxyInput = {
+  method: BoardYjsHostHttpMethod;
+  upstreamPath: string;
+  body?: unknown;
 };
 
 export const boardYjsHostProxyRouteAuthRequirements = {
@@ -98,7 +106,10 @@ export function registerBoardYjsHostProxyRoutes(
   options: BoardYjsHostProxyRouteOptions,
 ): void {
   app.post("/api/markdown-documents", async (request, reply) =>
-    proxyBoardYjsHostRequest(request, reply, options, "/api/markdown-documents"),
+    proxyBoardYjsHostRequest(request, reply, options, {
+      method: "POST",
+      upstreamPath: "/api/markdown-documents",
+    }),
   );
 
   app.post<{ Params: { operation: string } }>(
@@ -108,34 +119,37 @@ export function registerBoardYjsHostProxyRoutes(
         request,
         reply,
         options,
-        `/api/internal/board-yjs/${encodeURIComponent(request.params.operation)}`,
+        {
+          method: "POST",
+          upstreamPath: `/api/internal/board-yjs/${encodeURIComponent(request.params.operation)}`,
+        },
       ),
   );
 }
 
-async function proxyBoardYjsHostRequest(
+export async function proxyBoardYjsHostRequest(
   request: FastifyRequest,
   reply: FastifyReply,
   options: BoardYjsHostProxyRouteOptions,
-  upstreamPath: string,
+  input: BoardYjsHostProxyInput,
 ): Promise<FastifyReply> {
   try {
     const target = resolveBoardYjsHostTarget(options.registry);
-    const response = await requestHost(options, {
-      method: "POST",
-      url: `http://${target.host}:${target.port}${upstreamPath}`,
-      upstreamPath,
+    const response = await requestBoardYjsHost(options, {
+      method: input.method,
+      url: `http://${target.host}:${target.port}${input.upstreamPath}`,
+      upstreamPath: input.upstreamPath,
       headers: forwardAuthorizationHeader(request),
-      body: request.body,
+      body: input.body ?? request.body,
       target,
     });
-    return sendHostResponse(reply, response);
+    return sendBoardYjsHostResponse(reply, response);
   } catch (error) {
-    return sendProxyError(reply, error);
+    return sendBoardYjsHostProxyError(reply, error);
   }
 }
 
-async function requestHost(
+export async function requestBoardYjsHost(
   options: BoardYjsHostProxyRouteOptions,
   request: BoardYjsHostHttpRequest,
 ): Promise<BoardYjsHostHttpResponse> {
@@ -151,7 +165,7 @@ async function requestHost(
   }
 }
 
-function sendHostResponse(
+export function sendBoardYjsHostResponse(
   reply: FastifyReply,
   response: BoardYjsHostHttpResponse,
 ): FastifyReply {
@@ -168,7 +182,10 @@ function sendHostResponse(
   return reply.code(response.statusCode).send(response.body);
 }
 
-function sendProxyError(reply: FastifyReply, error: unknown): FastifyReply {
+export function sendBoardYjsHostProxyError(
+  reply: FastifyReply,
+  error: unknown,
+): FastifyReply {
   if (error instanceof BoardYjsHostProxyError) {
     return reply.code(error.statusCode).send({
       error: {
@@ -197,7 +214,9 @@ function targetFromNode(node: NodeConnectionSnapshot): BoardYjsHostTarget {
   };
 }
 
-function forwardAuthorizationHeader(request: FastifyRequest): Record<string, string> {
+export function forwardAuthorizationHeader(
+  request: FastifyRequest,
+): Record<string, string> {
   const authorization = request.headers.authorization;
   const value = Array.isArray(authorization) ? authorization[0] : authorization;
   return typeof value === "string" ? { authorization: value } : {};
