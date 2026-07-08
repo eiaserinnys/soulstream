@@ -90,6 +90,19 @@ export {
   type AttachmentUploadResult,
 } from "./attachments/attachment_routes.js";
 export {
+  UserPreferencesForeignKeyViolationError,
+  UserPreferencesRouteError,
+  normalizeUserPreferences,
+  preferencesFromPayload,
+  registerUserPreferencesRoutes,
+  userPreferencesRouteAuthRequirements,
+  type NormalizedUserPreferences,
+  type UserPreferencesEmailResolver,
+  type UserPreferencesRecord,
+  type UserPreferencesRepository,
+  type UserPreferencesRouteOptions,
+} from "./user/user_preferences_routes.js";
+export {
   MarkdownDocumentRouteError,
   markdownDocumentRouteAuthRequirements,
   registerMarkdownDocumentRoutes,

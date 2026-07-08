@@ -79,6 +79,10 @@ import {
   registerSystemConfigRoutes,
   type SystemConfigRouteOptions,
 } from "./system/system_config_routes.js";
+import {
+  registerUserPreferencesRoutes,
+  type UserPreferencesRouteOptions,
+} from "./user/user_preferences_routes.js";
 
 export type CreateAppOptions = {
   config: OrchServerTsConfig;
@@ -99,6 +103,7 @@ export type CreateAppOptions = {
   sessionSnapshotRoutes?: SessionSnapshotRouteOptions;
   sseReplayRoutes?: SseReplayRouteOptions;
   systemConfigRoutes?: SystemConfigRouteOptions;
+  userPreferencesRoutes?: UserPreferencesRouteOptions;
   boardYjsHostProxyRoutes?: BoardYjsHostProxyRouteOptions;
   boardAssetRoutes?: BoardAssetRouteOptions;
   boardItemRoutes?: BoardItemRouteOptions;
@@ -162,6 +167,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.attachmentRoutes !== undefined) {
     registerAttachmentRoutes(app, options.attachmentRoutes);
+  }
+  if (options.userPreferencesRoutes !== undefined) {
+    registerUserPreferencesRoutes(app, options.userPreferencesRoutes);
   }
   if (options.folderRoutes !== undefined) {
     registerFolderRoutes(app, options.folderRoutes);
