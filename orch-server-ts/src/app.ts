@@ -88,6 +88,10 @@ import {
   type SystemConfigRouteOptions,
 } from "./system/system_config_routes.js";
 import {
+  registerTaskReadRoutes,
+  type TaskReadRouteOptions,
+} from "./tasks/task_read_routes.js";
+import {
   registerUserBackgroundRoutes,
   type UserBackgroundRouteOptions,
 } from "./user/user_background_routes.js";
@@ -116,6 +120,7 @@ export type CreateAppOptions = {
   sessionSnapshotRoutes?: SessionSnapshotRouteOptions;
   sseReplayRoutes?: SseReplayRouteOptions;
   systemConfigRoutes?: SystemConfigRouteOptions;
+  taskReadRoutes?: TaskReadRouteOptions;
   userBackgroundRoutes?: UserBackgroundRouteOptions;
   userPreferencesRoutes?: UserPreferencesRouteOptions;
   boardYjsHostProxyRoutes?: BoardYjsHostProxyRouteOptions;
@@ -176,6 +181,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.systemConfigRoutes !== undefined) {
     registerSystemConfigRoutes(app, options.systemConfigRoutes);
+  }
+  if (options.taskReadRoutes !== undefined) {
+    registerTaskReadRoutes(app, options.taskReadRoutes);
   }
   if (options.adminUsersRoutes !== undefined) {
     registerAdminUsersRoutes(app, options.adminUsersRoutes);

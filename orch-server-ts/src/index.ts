@@ -252,6 +252,7 @@ export {
   type SseReplayRouteOptions,
   type TaskStreamSnapshot,
 } from "./sse/sse_replay_routes.js";
+export * from "./tasks/task_read_routes.js";
 export {
   registerSystemConfigRoutes,
   systemConfigRouteAuthRequirements,
