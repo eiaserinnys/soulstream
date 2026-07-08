@@ -22,7 +22,7 @@ export type NodeRegistrationPayload = {
 
 export type CreateSessionNodeCommandPayload =
   RequestResponseNodeCommandPayload<"create_session"> & {
-    agentSessionId: string;
+    agentSessionId?: string;
     prompt: string;
   };
 
