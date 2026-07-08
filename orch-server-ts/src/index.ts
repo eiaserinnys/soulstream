@@ -61,6 +61,28 @@ export {
   type TaskStreamChange,
   type TaskStreamEvent,
 } from "./sse/replay_broadcaster.js";
+export {
+  DEFAULT_NODE_COMMAND_TIMEOUT_MS,
+  PendingNodeCommandRejectedError,
+  PendingNodeCommandTimeoutError,
+  PendingNodeCommands,
+  defaultNodeCommandRequestIdGenerator,
+  type FireAndForgetNodeCommandPayload,
+  type NodeCommandClock,
+  type NodeCommandEnvelope,
+  type NodeCommandRequestIdContext,
+  type NodeCommandRequestIdGenerator,
+  type NodeCommandResponse,
+  type NodeFireAndForgetCommand,
+  type PendingNodeCommand,
+  type PendingNodeCommandEntry,
+  type PendingNodeCommandSettlement,
+  type PendingNodeCommandTimeout,
+  type PendingNodeCommandsOptions,
+  type RequestResponseNodeCommandPayload,
+  type RespondNodeCommandPayload,
+  type SubscribeEventsNodeCommandPayload,
+} from "./node/pending_commands.js";
 export type {
   BoardYjsHostProxyFixture,
   ContractFixture,

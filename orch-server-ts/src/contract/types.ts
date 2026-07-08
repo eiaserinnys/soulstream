@@ -1,3 +1,5 @@
+import type { NodeCommandResponse } from "../node/pending_commands.js";
+
 export type ContractFixture = {
   version: number;
 };
@@ -15,7 +17,7 @@ export type RouteInventoryFixture = ContractFixture & {
 export type UpstreamWsWireFixture = ContractFixture & {
   outbound: {
     respond: {
-      type: string;
+      type: "respond";
       agentSessionId: string;
       inputRequestId: string;
       answers: Record<string, unknown>;
@@ -23,14 +25,39 @@ export type UpstreamWsWireFixture = ContractFixture & {
       requestIdMustNotEqual: string;
     };
     subscribeEvents: {
-      type: string;
+      type: "subscribe_events";
       agentSessionId: string;
       subscribeId: string;
       requestId: string;
       fireAndForget: boolean;
     };
   };
-  inbound: Record<string, unknown>;
+  inbound: {
+    nodeRegister: {
+      type: "node_register";
+      node_id: string;
+      [key: string]: unknown;
+    };
+    commandAck: NodeCommandResponse & {
+      type: "session_created";
+      requestId: string;
+      agentSessionId: string;
+    };
+    commandError: NodeCommandResponse & {
+      type: "error";
+      requestId: string;
+      message: string;
+    };
+    eventRelay: NodeCommandResponse & {
+      type: "event";
+      agentSessionId: string;
+      event: Record<string, unknown>;
+    };
+    sessionsUpdate: {
+      type: "sessions_update";
+      sessions: unknown[];
+    };
+  };
 };
 
 export type SseReplayGapFixture = ContractFixture & {
