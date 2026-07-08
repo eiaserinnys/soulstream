@@ -1,4 +1,15 @@
 export { createApp, type CreateAppOptions } from "./app.js";
+export {
+  BoardYjsHostProxyError,
+  boardYjsHostProxyRouteAuthRequirements,
+  registerBoardYjsHostProxyRoutes,
+  resolveBoardYjsHostTarget,
+  type BoardYjsHostHttpClient,
+  type BoardYjsHostHttpRequest,
+  type BoardYjsHostHttpResponse,
+  type BoardYjsHostProxyRouteOptions,
+  type BoardYjsHostTarget,
+} from "./board/board_yjs_host_proxy.js";
 export { parseOrchServerConfig, type OrchServerTsConfig } from "./config.js";
 export {
   CONTRACT_FIXTURE_FILES,

@@ -1,5 +1,9 @@
 import Fastify, { type FastifyInstance } from "fastify";
 
+import {
+  registerBoardYjsHostProxyRoutes,
+  type BoardYjsHostProxyRouteOptions,
+} from "./board/board_yjs_host_proxy.js";
 import type { OrchServerTsConfig } from "./config.js";
 import { routeOwnerManifest, type RouteOwnerManifest } from "./contract/route_owner_manifest.js";
 import { registerNodeWsRoute, type NodeWsRouteOptions } from "./node/ws_route.js";
@@ -19,6 +23,7 @@ export type CreateAppOptions = {
   nodeWsRoute?: NodeWsRouteOptions;
   sessionCommandRoutes?: SessionCommandRouteOptions;
   sseReplayRoutes?: SseReplayRouteOptions;
+  boardYjsHostProxyRoutes?: BoardYjsHostProxyRouteOptions;
 };
 
 export function createApp(options: CreateAppOptions): FastifyInstance {
@@ -41,6 +46,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.sseReplayRoutes !== undefined) {
     registerSseReplayRoutes(app, options.sseReplayRoutes);
+  }
+  if (options.boardYjsHostProxyRoutes !== undefined) {
+    registerBoardYjsHostProxyRoutes(app, options.boardYjsHostProxyRoutes);
   }
 
   return app;
