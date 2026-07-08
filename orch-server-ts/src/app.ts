@@ -25,6 +25,10 @@ import {
   type MarkdownDocumentRouteOptions,
 } from "./board/markdown_document_routes.js";
 import type { OrchServerTsConfig } from "./config.js";
+import {
+  registerCogitoRoutes,
+  type CogitoRouteOptions,
+} from "./cogito/cogito_routes.js";
 import { routeOwnerManifest, type RouteOwnerManifest } from "./contract/route_owner_manifest.js";
 import {
   registerRunbookRoutes,
@@ -112,6 +116,7 @@ export type CreateAppOptions = {
   boardYjsHostProxyRoutes?: BoardYjsHostProxyRouteOptions;
   boardAssetRoutes?: BoardAssetRouteOptions;
   boardItemRoutes?: BoardItemRouteOptions;
+  cogitoRoutes?: CogitoRouteOptions;
   markdownDocumentRoutes?: MarkdownDocumentRouteOptions;
   runbookRoutes?: RunbookRouteOptions;
 };
@@ -190,6 +195,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.boardItemRoutes !== undefined) {
     registerBoardItemRoutes(app, options.boardItemRoutes);
+  }
+  if (options.cogitoRoutes !== undefined) {
+    registerCogitoRoutes(app, options.cogitoRoutes);
   }
   if (options.markdownDocumentRoutes !== undefined) {
     registerMarkdownDocumentRoutes(app, options.markdownDocumentRoutes);
