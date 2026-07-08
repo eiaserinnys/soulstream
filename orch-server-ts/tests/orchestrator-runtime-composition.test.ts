@@ -118,6 +118,56 @@ describe("orchestrator runtime composition harness", () => {
       fresh: true,
       connected: true,
     });
+    expect(runtime.sessionBroadcaster.latestEventId).toBe(0);
+
+    ws.terminate();
+    await runtime.app.close();
+  });
+
+  it("bridges direct websocket session updates into the session SSE replay broadcaster", async () => {
+    const runtime = createOrchestratorRuntimeComposition({
+      config,
+      sessionSseInstanceId: "runtime-session-stream",
+      loadSessionSnapshot: async () => ({ sessions: [] }),
+      loadTaskSnapshot: async () => ({ tasks: [] }),
+      boardYjsHostHttpClient: vi.fn(),
+      sseReplayOnlyForTests: true,
+    });
+
+    await runtime.app.ready();
+    const ws = await (runtime.app as unknown as WebSocketInjectableApp).injectWS(
+      "/ws/node",
+    );
+    ws.send(JSON.stringify(reconnect.registration));
+    await waitFor(() => runtime.registry.getConnectedNode("fake-node") !== undefined);
+
+    ws.send(
+      JSON.stringify({
+        type: "session_updated",
+        agentSessionId: "runtime-direct-session",
+        status: "running",
+      }),
+    );
+    await waitFor(() => runtime.sessionBroadcaster.latestEventId === 1);
+
+    const replayResponse = await runtime.app.inject({
+      method: "GET",
+      url: "/api/sessions/stream?lastEventId=0&instanceId=runtime-session-stream",
+    });
+
+    expect(replayResponse.statusCode).toBe(200);
+    expect(replayResponse.body).toBe(
+      'event: stream_meta\n' +
+        'data: {"type":"stream_meta","instance_id":"runtime-session-stream","latest_id":1}\n\n' +
+        "event: session_updated\n" +
+        "id: 1\n" +
+        'data: {"type":"session_updated","agentSessionId":"runtime-direct-session","status":"running","agent_session_id":"runtime-direct-session","nodeId":"fake-node"}\n\n',
+    );
+    expect(runtime.registry.findSessionOwner("runtime-direct-session")).toMatchObject({
+      nodeId: "fake-node",
+      fresh: true,
+      connected: true,
+    });
 
     ws.terminate();
     await runtime.app.close();

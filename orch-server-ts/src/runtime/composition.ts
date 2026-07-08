@@ -14,6 +14,7 @@ import type {
 import { InMemoryNodeRegistry } from "../node/registry.js";
 import type { NodeWsRouteOptions } from "../node/ws_route.js";
 import { NodeCommandTransportHub } from "../node/transport_hub.js";
+import { createNodeSessionEventBroadcasterSink } from "./node_session_event_dispatcher.js";
 import {
   SessionCommandRouter,
   type SessionCommandRouterOptions,
@@ -99,6 +100,7 @@ export function createOrchestratorRuntimeComposition(
     nodeWsRoute: {
       registry,
       transportHub: transports,
+      eventSink: createNodeSessionEventBroadcasterSink(sessionBroadcaster),
     },
     sessionCommandRoutes: {
       router: sessionRouter,

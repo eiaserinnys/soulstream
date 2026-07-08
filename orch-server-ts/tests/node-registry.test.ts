@@ -366,4 +366,92 @@ describe("Node registry and per-node session cache primitive", () => {
       heartbeat: { supported: false },
     });
   });
+
+  it("recognizes request-id-free direct node session messages and updates the session cache", () => {
+    const { registry, sessionCache } = createRegistry();
+    const registered = registry.registerNode(
+      fixture.registration as NodeRegistrationPayload,
+    );
+
+    const created = {
+      type: "session_created",
+      agentSessionId: "direct-session",
+      folderId: "folder-1",
+      session: {
+        agentSessionId: "direct-session",
+        title: "Direct Session",
+        status: "starting",
+      },
+    };
+    expect(
+      registry.receiveNodeMessage(
+        {
+          nodeId: "fake-node",
+          connectionId: registered.node.connectionId,
+        },
+        created,
+      ),
+    ).toEqual([
+      {
+        type: "node_session_session_created",
+        nodeId: "fake-node",
+        data: created,
+      },
+    ]);
+    expect(sessionCache.findSession("direct-session")).toMatchObject({
+      nodeId: "fake-node",
+      connectionId: registered.node.connectionId,
+      agentSessionId: "direct-session",
+      status: "starting",
+      fresh: true,
+    });
+
+    const updated = {
+      type: "session_updated",
+      agentSessionId: "direct-session",
+      status: "running",
+      last_event_id: 7,
+    };
+    expect(
+      registry.receiveNodeMessage(
+        {
+          nodeId: "fake-node",
+          connectionId: registered.node.connectionId,
+        },
+        updated,
+      ),
+    ).toEqual([
+      {
+        type: "node_session_session_updated",
+        nodeId: "fake-node",
+        data: updated,
+      },
+    ]);
+    expect(sessionCache.findSession("direct-session")).toMatchObject({
+      status: "running",
+      fresh: true,
+      lastEventId: 7,
+    });
+
+    const deleted = {
+      type: "session_deleted",
+      agentSessionId: "direct-session",
+    };
+    expect(
+      registry.receiveNodeMessage(
+        {
+          nodeId: "fake-node",
+          connectionId: registered.node.connectionId,
+        },
+        deleted,
+      ),
+    ).toEqual([
+      {
+        type: "node_session_session_deleted",
+        nodeId: "fake-node",
+        data: deleted,
+      },
+    ]);
+    expect(sessionCache.findSession("direct-session")).toBeUndefined();
+  });
 });

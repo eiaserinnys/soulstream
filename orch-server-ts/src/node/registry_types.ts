@@ -102,6 +102,24 @@ export type NodeSessionEvent = {
   data: Record<string, unknown>;
 };
 
+export type NodeSessionCreatedEvent = {
+  type: "node_session_session_created";
+  nodeId: string;
+  data: Record<string, unknown>;
+};
+
+export type NodeSessionUpdatedEvent = {
+  type: "node_session_session_updated";
+  nodeId: string;
+  data: Record<string, unknown>;
+};
+
+export type NodeSessionDeletedEvent = {
+  type: "node_session_session_deleted";
+  nodeId: string;
+  data: Record<string, unknown>;
+};
+
 export type NodeSessionsUpdateEvent = {
   type: "node_session_sessions_update";
   nodeId: string;
@@ -141,6 +159,9 @@ export type NodeRegistryEvent =
   | IgnoredStaleMessageEvent
   | IgnoredNodeRegistrationRefreshEvent
   | NodeSessionEvent
+  | NodeSessionCreatedEvent
+  | NodeSessionUpdatedEvent
+  | NodeSessionDeletedEvent
   | NodeSessionsUpdateEvent
   | NodeCommandAckEvent
   | NodeCommandErrorEvent
