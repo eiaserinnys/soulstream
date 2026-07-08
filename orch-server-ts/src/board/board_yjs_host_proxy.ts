@@ -12,7 +12,7 @@ export type BoardYjsHostTarget = {
   connectionId: string;
 };
 
-export type BoardYjsHostHttpMethod = "POST" | "PATCH";
+export type BoardYjsHostHttpMethod = "POST" | "PUT" | "PATCH" | "DELETE";
 
 export type BoardYjsHostHttpRequest = {
   method: BoardYjsHostHttpMethod;
@@ -45,7 +45,6 @@ export type BoardYjsHostProxyInput = {
 };
 
 export const boardYjsHostProxyRouteAuthRequirements = {
-  "POST /api/markdown-documents": true,
   "POST /api/board-yjs/host/{operation}": true,
 } as const;
 
@@ -105,13 +104,6 @@ export function registerBoardYjsHostProxyRoutes(
   app: FastifyInstance,
   options: BoardYjsHostProxyRouteOptions,
 ): void {
-  app.post("/api/markdown-documents", async (request, reply) =>
-    proxyBoardYjsHostRequest(request, reply, options, {
-      method: "POST",
-      upstreamPath: "/api/markdown-documents",
-    }),
-  );
-
   app.post<{ Params: { operation: string } }>(
     "/api/board-yjs/host/:operation",
     async (request, reply) =>

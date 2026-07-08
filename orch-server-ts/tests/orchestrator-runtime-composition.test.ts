@@ -203,11 +203,11 @@ describe("orchestrator runtime composition harness", () => {
     await runtime.app.close();
   });
 
-  it("shares board host registration with the board proxy route and injectable client", async () => {
+  it("shares board host registration with the board-yjs proxy route and injectable client", async () => {
     const httpClient: BoardYjsHostHttpClient = vi.fn(async () => ({
       statusCode: 201,
       headers: { "content-type": "application/json" },
-      body: { document: { id: "doc-runtime" } },
+      body: { ok: true },
     }));
     const runtime = createOrchestratorRuntimeComposition({
       config,
@@ -239,19 +239,19 @@ describe("orchestrator runtime composition harness", () => {
 
     const response = await runtime.app.inject({
       method: "POST",
-      url: "/api/markdown-documents",
+      url: "/api/board-yjs/host/update",
       headers: { authorization: "Bearer test-token" },
-      payload: { folderId: "f1", title: "Note", body: "Body" },
+      payload: { update: "payload" },
     });
 
     expect(response.statusCode).toBe(201);
-    expect(response.json()).toEqual({ document: { id: "doc-runtime" } });
+    expect(response.json()).toEqual({ ok: true });
     expect(httpClient).toHaveBeenCalledWith({
       method: "POST",
-      url: "http://127.0.0.1:4105/api/markdown-documents",
-      upstreamPath: "/api/markdown-documents",
+      url: "http://127.0.0.1:4105/api/internal/board-yjs/update",
+      upstreamPath: "/api/internal/board-yjs/update",
       headers: { authorization: "Bearer test-token" },
-      body: { folderId: "f1", title: "Note", body: "Body" },
+      body: { update: "payload" },
       target: {
         host: "127.0.0.1",
         port: 4105,
