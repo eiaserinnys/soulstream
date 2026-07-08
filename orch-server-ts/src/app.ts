@@ -19,6 +19,10 @@ import {
 import type { OrchServerTsConfig } from "./config.js";
 import { routeOwnerManifest, type RouteOwnerManifest } from "./contract/route_owner_manifest.js";
 import {
+  registerRunbookRoutes,
+  type RunbookRouteOptions,
+} from "./runbooks/runbook_routes.js";
+import {
   registerNodeAgentProfileRoutes,
   type NodeAgentProfileRouteOptions,
 } from "./node/node_agent_profile_routes.js";
@@ -89,6 +93,7 @@ export type CreateAppOptions = {
   boardYjsHostProxyRoutes?: BoardYjsHostProxyRouteOptions;
   boardItemRoutes?: BoardItemRouteOptions;
   markdownDocumentRoutes?: MarkdownDocumentRouteOptions;
+  runbookRoutes?: RunbookRouteOptions;
 };
 
 export function createApp(options: CreateAppOptions): FastifyInstance {
@@ -156,6 +161,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.markdownDocumentRoutes !== undefined) {
     registerMarkdownDocumentRoutes(app, options.markdownDocumentRoutes);
+  }
+  if (options.runbookRoutes !== undefined) {
+    registerRunbookRoutes(app, options.runbookRoutes);
   }
 
   return app;

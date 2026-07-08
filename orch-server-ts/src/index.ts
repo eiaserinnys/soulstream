@@ -64,6 +64,23 @@ export {
   type MarkdownDocumentRouteOptions,
   type MarkdownDocumentRouteProvider,
 } from "./board/markdown_document_routes.js";
+export {
+  RunbookRouteError,
+  filterRunbookOverviewForAccess,
+  registerRunbookRoutes,
+  runbookRouteAuthRequirements,
+  type RunbookAccess,
+  type RunbookAccessProvider,
+  type RunbookFolderRecord,
+  type RunbookMutationHttpClient,
+  type RunbookMutationHttpRequest,
+  type RunbookMutationHttpResponse,
+  type RunbookMutationNode,
+  type RunbookOverview,
+  type RunbookRouteOptions,
+  type RunbookRouteProvider,
+  type RunbookSnapshot,
+} from "./runbooks/runbook_routes.js";
 export { parseOrchServerConfig, type OrchServerTsConfig } from "./config.js";
 export {
   CONTRACT_FIXTURE_FILES,
