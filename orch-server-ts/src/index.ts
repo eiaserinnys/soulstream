@@ -68,6 +68,28 @@ export {
   type BoardAssetRouteProvider,
 } from "./board/board_asset_routes.js";
 export {
+  ATTACHMENT_UPLOAD_CHUNK_SIZE_BYTES,
+  AttachmentRouteError,
+  AttachmentTransportConnectionError,
+  AttachmentTransportTimeoutError,
+  LEGACY_ATTACHMENT_MAX_SIZE_BYTES,
+  MAX_ATTACHMENT_SIZE_BYTES,
+  attachmentRouteAuthRequirements,
+  registerAttachmentRoutes,
+  type AttachmentAccess,
+  type AttachmentAccessContext,
+  type AttachmentAccessProvider,
+  type AttachmentDeleteResult,
+  type AttachmentDownloadResult,
+  type AttachmentLegacyUploadInput,
+  type AttachmentNode,
+  type AttachmentRouteOptions,
+  type AttachmentRouteProvider,
+  type AttachmentTransport,
+  type AttachmentUploadInput,
+  type AttachmentUploadResult,
+} from "./attachments/attachment_routes.js";
+export {
   MarkdownDocumentRouteError,
   markdownDocumentRouteAuthRequirements,
   registerMarkdownDocumentRoutes,
