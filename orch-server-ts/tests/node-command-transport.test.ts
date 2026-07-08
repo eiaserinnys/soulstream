@@ -193,6 +193,74 @@ describe("Node command transport bridge", () => {
     });
   });
 
+  it("does not reject the current pending command when a stale routed command shares its requestId", async () => {
+    const { registry } = createRegistry();
+    const firstConnectionId = registerNode(registry);
+    const transports = new NodeCommandTransportHub();
+    const oldSent: string[] = [];
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId: firstConnectionId,
+      transport: { send: (data) => { oldSent.push(data); } },
+    });
+    const router = new SessionCommandRouter({ registry });
+    const bridge = new SessionCommandTransportBridge({ registry, transports });
+    const oldRouted = router.createSession({
+      type: "create_session",
+      agentSessionId: "old-session",
+      prompt: "old prompt",
+    });
+
+    const secondConnectionId = registerNode(registry);
+    const currentSent: string[] = [];
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId: secondConnectionId,
+      transport: { send: (data) => { currentSent.push(data); } },
+    });
+    const currentRouted = router.createSession({
+      type: "create_session",
+      agentSessionId: "current-session",
+      prompt: "current prompt",
+    });
+
+    expect(currentRouted.command.requestId).toBe(oldRouted.command.requestId);
+
+    await expect(bridge.sendPendingCommand(oldRouted)).rejects.toMatchObject({
+      code: "TRANSPORT_STALE",
+      nodeId: "fake-node",
+      connectionId: firstConnectionId,
+    });
+    await expect(oldRouted.command.result).rejects.toMatchObject({
+      requestId: oldRouted.command.requestId,
+    });
+    expect(oldSent).toEqual([]);
+    expect(registry.getConnectedNode("fake-node")).toMatchObject({
+      connectionId: secondConnectionId,
+      pendingCommandCount: 1,
+    });
+
+    const currentResult = bridge.sendPendingCommand(currentRouted);
+    expect(currentSent).toEqual([JSON.stringify(currentRouted.command.message)]);
+    registry.receiveNodeMessage(
+      { nodeId: "fake-node", connectionId: secondConnectionId },
+      {
+        ...reconnect.ack,
+        agentSessionId: "current-session",
+        requestId: currentRouted.command.requestId,
+      },
+    );
+
+    await expect(currentResult).resolves.toMatchObject({
+      requestId: currentRouted.command.requestId,
+      agentSessionId: "current-session",
+    });
+    expect(registry.getConnectedNode("fake-node")).toMatchObject({
+      connectionId: secondConnectionId,
+      pendingCommandCount: 0,
+    });
+  });
+
   it("rejects pending commands when JSON serialization fails before send", async () => {
     const { registry } = createRegistry();
     const connectionId = registerNode(registry);

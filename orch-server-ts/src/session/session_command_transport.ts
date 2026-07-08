@@ -64,10 +64,11 @@ export class SessionCommandTransportBridge {
       await this.sendMessage(routed.node, routed.command.message);
     } catch (error) {
       this.registry.rejectCommand(
-        routed.node.nodeId,
+        routed.node,
         routed.command.requestId,
         error instanceof Error ? error.message : String(error),
       );
+      void routed.command.result.catch(() => undefined);
       throw error;
     }
     return routed.command.result;

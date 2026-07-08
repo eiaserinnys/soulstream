@@ -264,16 +264,18 @@ export class InMemoryNodeRegistry {
   }
 
   rejectCommand(
-    nodeId: string,
+    source: NodeMessageSource,
     requestId: string,
     message: string,
     response?: NodeCommandResponse,
   ): boolean {
-    return this.nodes.get(nodeId)?.pendingCommands.reject(
-      requestId,
-      message,
-      response,
-    ) ?? false;
+    const { nodeId, connectionId } = normalizeMessageSource(source);
+    const node = this.nodes.get(nodeId);
+    if (node === undefined) return false;
+    if (connectionId !== undefined && node.connectionId !== connectionId) {
+      return false;
+    }
+    return node.pendingCommands.reject(requestId, message, response);
   }
 
   receiveNodeMessage(
