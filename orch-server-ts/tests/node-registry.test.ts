@@ -177,6 +177,140 @@ describe("Node registry and per-node session cache primitive", () => {
     );
   });
 
+  it("ignores late messages from a replaced connection without mutating current state", async () => {
+    let nowMs = 1_000;
+    const sessionCache = new PerNodeSessionCache();
+    const registry = new InMemoryNodeRegistry({
+      sessionCache,
+      nowMs: () => nowMs,
+      heartbeatTimeoutMs: 1_000,
+      requestIdGenerator: ({ sequence, commandType }) =>
+        `current-${commandType}-${sequence}`,
+    });
+    const registration = fixture.registration as NodeRegistrationPayload;
+
+    const first = registry.registerNode(registration);
+    nowMs = 1_100;
+    const second = registry.registerNode(registration);
+    const currentCommand = registry.createCommand(
+      "fake-node",
+      fixture.command as CreateSessionNodeCommandPayload,
+    );
+
+    expect(registry.getConnectedNode("fake-node")).toMatchObject({
+      connectionId: second.node.connectionId,
+      lastSeenAtMs: 1_100,
+      pendingCommandCount: 1,
+    });
+
+    nowMs = 1_200;
+    expect(
+      registry.receiveNodeMessage(
+        {
+          nodeId: "fake-node",
+          connectionId: first.node.connectionId,
+        },
+        fixture.eventRelay,
+      ),
+    ).toEqual([
+      {
+        type: "ignored_stale_message",
+        nodeId: "fake-node",
+        connectionId: first.node.connectionId,
+        currentConnectionId: second.node.connectionId,
+        messageType: "event",
+      },
+    ]);
+    expect(
+      registry.receiveNodeMessage(
+        {
+          nodeId: "fake-node",
+          connectionId: first.node.connectionId,
+        },
+        {
+          type: "sessions_update",
+          sessions: [
+            {
+              agentSessionId: "stale-session",
+              status: "running",
+              last_event_id: 999,
+            },
+          ],
+        },
+      ),
+    ).toEqual([
+      {
+        type: "ignored_stale_message",
+        nodeId: "fake-node",
+        connectionId: first.node.connectionId,
+        currentConnectionId: second.node.connectionId,
+        messageType: "sessions_update",
+      },
+    ]);
+    expect(
+      registry.receiveNodeMessage(
+        {
+          nodeId: "fake-node",
+          connectionId: first.node.connectionId,
+        },
+        {
+          ...fixture.ack,
+          requestId: currentCommand.requestId,
+        },
+      ),
+    ).toEqual([
+      {
+        type: "ignored_stale_message",
+        nodeId: "fake-node",
+        connectionId: first.node.connectionId,
+        currentConnectionId: second.node.connectionId,
+        messageType: "session_created",
+      },
+    ]);
+
+    expect(registry.getConnectedNode("fake-node")).toMatchObject({
+      connectionId: second.node.connectionId,
+      lastSeenAtMs: 1_100,
+      pendingCommandCount: 1,
+    });
+    expect(sessionCache.findSession("sess-contract")).toBeUndefined();
+    expect(sessionCache.findSession("stale-session")).toBeUndefined();
+
+    nowMs = 1_300;
+    expect(
+      registry.receiveNodeMessage(
+        {
+          nodeId: "fake-node",
+          connectionId: second.node.connectionId,
+        },
+        {
+          ...fixture.ack,
+          requestId: currentCommand.requestId,
+        },
+      ),
+    ).toEqual([
+      {
+        type: "command_ack",
+        nodeId: "fake-node",
+        requestId: currentCommand.requestId,
+        commandType: "create_session",
+      },
+    ]);
+    await expect(currentCommand.result).resolves.toMatchObject({
+      type: "session_created",
+      requestId: currentCommand.requestId,
+    });
+    expect(registry.getConnectedNode("fake-node")).toMatchObject({
+      connectionId: second.node.connectionId,
+      lastSeenAtMs: 1_300,
+      pendingCommandCount: 0,
+    });
+    expect(sessionCache.findSession("sess-contract")).toMatchObject({
+      connectionId: second.node.connectionId,
+      fresh: true,
+    });
+  });
+
   it("tracks heartbeat lastSeen explicitly and sweeps only heartbeat-capable nodes", () => {
     let nowMs = 1_000;
     const sessionCache = new PerNodeSessionCache();

@@ -1,0 +1,175 @@
+import type {
+  NodeCommandRequestIdGenerator,
+  PendingNodeCommands,
+  RequestResponseNodeCommandPayload,
+} from "./pending_commands.js";
+import type {
+  CachedNodeSession,
+  PerNodeSessionCache,
+} from "./session_cache.js";
+
+export type NodeRegistrationPayload = {
+  type: "node_register";
+  node_id: string;
+  host?: string;
+  port?: number;
+  agents?: unknown[];
+  capabilities?: Record<string, unknown>;
+  supported_backends?: string[];
+  sessions?: unknown[];
+  [key: string]: unknown;
+};
+
+export type CreateSessionNodeCommandPayload =
+  RequestResponseNodeCommandPayload<"create_session"> & {
+    agentSessionId: string;
+    prompt: string;
+  };
+
+export type SessionOwner = CachedNodeSession & {
+  connected: boolean;
+};
+
+export type NodeHeartbeatState = {
+  supported: boolean;
+  timeoutMs: number;
+  lastPingAtMs: number | undefined;
+  lastPongAtMs: number | undefined;
+};
+
+export type NodeConnectionSnapshot = {
+  nodeId: string;
+  connectionId: string;
+  host: string;
+  port: number;
+  agents: unknown[];
+  capabilities: Record<string, unknown>;
+  supportedBackends: string[];
+  connected: boolean;
+  status: "connected" | "disconnected";
+  connectedAtMs: number;
+  disconnectedAtMs: number | undefined;
+  lastSeenAtMs: number;
+  heartbeat: NodeHeartbeatState;
+  pendingCommandCount: number;
+};
+
+export type NodeRegisteredEvent = {
+  type: "node_registered";
+  nodeId: string;
+  connectionId: string;
+};
+
+export type NodeUnregisteredEvent = {
+  type: "node_unregistered";
+  nodeId: string;
+  connectionId: string;
+  reason: string;
+};
+
+export type IgnoredStaleDisconnectEvent = {
+  type: "ignored_stale_disconnect";
+  nodeId: string;
+  connectionId: string;
+};
+
+export type IgnoredStaleMessageEvent = {
+  type: "ignored_stale_message";
+  nodeId: string;
+  connectionId: string;
+  currentConnectionId: string | undefined;
+  messageType: string;
+};
+
+export type NodeSessionEvent = {
+  type: "node_session_event";
+  nodeId: string;
+  data: Record<string, unknown>;
+};
+
+export type NodeSessionsUpdateEvent = {
+  type: "node_session_sessions_update";
+  nodeId: string;
+  data: Record<string, unknown>;
+};
+
+export type NodeCommandAckEvent = {
+  type: "command_ack";
+  nodeId: string;
+  requestId: string;
+  commandType: string;
+};
+
+export type NodeCommandErrorEvent = {
+  type: "command_error";
+  nodeId: string;
+  requestId: string;
+  commandType: string;
+  message: string;
+};
+
+export type NodeHeartbeatPongEvent = {
+  type: "node_heartbeat_pong";
+  nodeId: string;
+};
+
+export type NodeHeartbeatPingEvent = {
+  type: "node_heartbeat_ping";
+  nodeId: string;
+};
+
+export type NodeRegistryEvent =
+  | NodeRegisteredEvent
+  | NodeUnregisteredEvent
+  | IgnoredStaleDisconnectEvent
+  | IgnoredStaleMessageEvent
+  | NodeSessionEvent
+  | NodeSessionsUpdateEvent
+  | NodeCommandAckEvent
+  | NodeCommandErrorEvent
+  | NodeHeartbeatPongEvent
+  | NodeHeartbeatPingEvent;
+
+export type NodeRegistrationResult = {
+  node: NodeConnectionSnapshot;
+  event: NodeRegisteredEvent;
+  events: Array<NodeRegisteredEvent | NodeUnregisteredEvent>;
+  replacedConnectionId: string | undefined;
+};
+
+export type DisconnectNodeInput =
+  | string
+  | {
+      connectionId?: string;
+      reason?: string;
+    };
+
+export type NodeMessageSource =
+  | string
+  | {
+      nodeId: string;
+      connectionId?: string;
+    };
+
+export type InMemoryNodeRegistryOptions = {
+  sessionCache?: PerNodeSessionCache;
+  nowMs?: () => number;
+  heartbeatTimeoutMs?: number;
+  requestIdGenerator?: NodeCommandRequestIdGenerator;
+};
+
+export type MutableNodeConnection = {
+  nodeId: string;
+  connectionId: string;
+  host: string;
+  port: number;
+  agents: unknown[];
+  capabilities: Record<string, unknown>;
+  supportedBackends: string[];
+  connected: boolean;
+  connectedAtMs: number;
+  disconnectedAtMs: number | undefined;
+  lastSeenAtMs: number;
+  heartbeat: NodeHeartbeatState;
+  pendingCommands: PendingNodeCommands;
+};
