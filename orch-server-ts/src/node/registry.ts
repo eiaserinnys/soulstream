@@ -1,5 +1,7 @@
 import {
   PendingNodeCommands,
+  type FireAndForgetNodeCommandPayload,
+  type NodeFireAndForgetCommand,
   type NodeCommandRequestIdGenerator,
   type NodeCommandResponse,
   type PendingNodeCommand,
@@ -141,6 +143,18 @@ export class InMemoryNodeRegistry {
     return snapshotNode(node);
   }
 
+  listConnectedNodes(): NodeConnectionSnapshot[] {
+    return [...this.nodes.values()]
+      .filter((node) => node.connected)
+      .map(snapshotNode)
+      .sort((left, right) => {
+        const nodeOrder = left.nodeId.localeCompare(right.nodeId);
+        return nodeOrder === 0
+          ? left.connectionId.localeCompare(right.connectionId)
+          : nodeOrder;
+      });
+  }
+
   getNodeState(nodeId: string): NodeConnectionSnapshot | undefined {
     const node = this.nodes.get(nodeId);
     return node === undefined ? undefined : snapshotNode(node);
@@ -156,6 +170,14 @@ export class InMemoryNodeRegistry {
   ): PendingNodeCommand<TPayload, TResponse> {
     const node = this.requireConnectedNode(nodeId);
     return node.pendingCommands.createCommand<TPayload, TResponse>(payload, options);
+  }
+
+  createFireAndForgetCommand<TPayload extends FireAndForgetNodeCommandPayload>(
+    nodeId: string,
+    payload: TPayload,
+  ): NodeFireAndForgetCommand<TPayload> {
+    const node = this.requireConnectedNode(nodeId);
+    return node.pendingCommands.createFireAndForgetCommand(payload);
   }
 
   receiveNodeMessage(
