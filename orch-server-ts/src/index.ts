@@ -216,6 +216,18 @@ export {
   type SessionBackgroundScheduleRouteOptions,
 } from "./session/session_background_schedule_routes.js";
 export {
+  SessionCatalogRouteError,
+  normalizeSessionEventCards,
+  registerSessionCatalogRoutes,
+  sessionCatalogRouteAuthRequirements,
+  type RawSessionCardEvent,
+  type SessionCatalogCallerInfo,
+  type SessionCatalogProvider,
+  type SessionCatalogRouteOptions,
+  type SessionCatalogUpdateInput,
+  type SessionEventCard,
+} from "./session/session_catalog_routes.js";
+export {
   registerSessionCommandRoutes,
   sessionCommandRouteAuthRequirements,
   type SessionCommandRouteOptions,
