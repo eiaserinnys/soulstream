@@ -21,7 +21,7 @@ export const CONTRACT_FIXTURE_NAMES = [
   "dbFunctionContract",
 ] as const;
 
-const FIXTURE_FILES = {
+export const CONTRACT_FIXTURE_FILES = {
   routeInventory: "route_inventory.json",
   upstreamWsWire: "upstream_ws_wire.json",
   sseReplayGap: "sse_replay_gap.json",
@@ -53,24 +53,27 @@ export function loadContractFixture<T>(name: string, fixtureDir = resolveContrac
 export function loadContractFixtures(fixtureDir = resolveContractFixtureDir()): OrchContractFixtures {
   return {
     routeInventory: loadContractFixture<RouteInventoryFixture>(
-      FIXTURE_FILES.routeInventory,
+      CONTRACT_FIXTURE_FILES.routeInventory,
       fixtureDir,
     ),
     upstreamWsWire: loadContractFixture<UpstreamWsWireFixture>(
-      FIXTURE_FILES.upstreamWsWire,
+      CONTRACT_FIXTURE_FILES.upstreamWsWire,
       fixtureDir,
     ),
-    sseReplayGap: loadContractFixture<SseReplayGapFixture>(FIXTURE_FILES.sseReplayGap, fixtureDir),
+    sseReplayGap: loadContractFixture<SseReplayGapFixture>(
+      CONTRACT_FIXTURE_FILES.sseReplayGap,
+      fixtureDir,
+    ),
     fakeNodeReconnect: loadContractFixture<FakeNodeReconnectFixture>(
-      FIXTURE_FILES.fakeNodeReconnect,
+      CONTRACT_FIXTURE_FILES.fakeNodeReconnect,
       fixtureDir,
     ),
     boardYjsHostProxy: loadContractFixture<BoardYjsHostProxyFixture>(
-      FIXTURE_FILES.boardYjsHostProxy,
+      CONTRACT_FIXTURE_FILES.boardYjsHostProxy,
       fixtureDir,
     ),
     dbFunctionContract: loadContractFixture<DbFunctionContractFixture>(
-      FIXTURE_FILES.dbFunctionContract,
+      CONTRACT_FIXTURE_FILES.dbFunctionContract,
       fixtureDir,
     ),
   };

@@ -3,33 +3,18 @@ import type {
   OrchContractFixtures,
   RouteInventoryFixture,
 } from "./types.js";
+import {
+  buildRouteRegistry,
+  validateStaticBeforeDynamicPriority,
+  type StaticBeforeDynamicHazard,
+} from "./route_registry.js";
 
-export type StaticBeforeDynamicHazard = {
-  staticPath: string;
-  dynamicPath: string;
-};
-
-const KNOWN_STATIC_BEFORE_DYNAMIC_HAZARDS: StaticBeforeDynamicHazard[] = [
-  {
-    staticPath: "/api/sessions/{session_id}/events/viewport",
-    dynamicPath: "/api/sessions/{session_id}/events",
-  },
-  {
-    staticPath: "/api/runbooks/my-turn",
-    dynamicPath: "/api/runbooks/{runbook_id}",
-  },
-];
+export type { StaticBeforeDynamicHazard };
 
 export function staticBeforeDynamicHazards(
   fixture: RouteInventoryFixture,
 ): StaticBeforeDynamicHazard[] {
-  const order = new Map(fixture.routes.map((route) => [route.path, route.order]));
-
-  return KNOWN_STATIC_BEFORE_DYNAMIC_HAZARDS.filter((hazard) => {
-    const staticOrder = order.get(hazard.staticPath);
-    const dynamicOrder = order.get(hazard.dynamicPath);
-    return staticOrder !== undefined && dynamicOrder !== undefined && staticOrder < dynamicOrder;
-  });
+  return validateStaticBeforeDynamicPriority(buildRouteRegistry(fixture)).hazards;
 }
 
 export function contractFixtureSummary(fixtures: OrchContractFixtures): {
