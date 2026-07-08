@@ -43,6 +43,10 @@ import {
   registerSseReplayRoutes,
   type SseReplayRouteOptions,
 } from "./sse/sse_replay_routes.js";
+import {
+  registerSystemConfigRoutes,
+  type SystemConfigRouteOptions,
+} from "./system/system_config_routes.js";
 
 export type CreateAppOptions = {
   config: OrchServerTsConfig;
@@ -58,6 +62,7 @@ export type CreateAppOptions = {
   sessionHistoryRoutes?: SessionHistoryRouteOptions;
   sessionSnapshotRoutes?: SessionSnapshotRouteOptions;
   sseReplayRoutes?: SseReplayRouteOptions;
+  systemConfigRoutes?: SystemConfigRouteOptions;
   boardYjsHostProxyRoutes?: BoardYjsHostProxyRouteOptions;
 };
 
@@ -105,6 +110,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.sseReplayRoutes !== undefined) {
     registerSseReplayRoutes(app, options.sseReplayRoutes);
+  }
+  if (options.systemConfigRoutes !== undefined) {
+    registerSystemConfigRoutes(app, options.systemConfigRoutes);
   }
   if (options.boardYjsHostProxyRoutes !== undefined) {
     registerBoardYjsHostProxyRoutes(app, options.boardYjsHostProxyRoutes);
