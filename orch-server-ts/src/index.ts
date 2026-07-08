@@ -1,5 +1,11 @@
 export { createApp, type CreateAppOptions } from "./app.js";
 export {
+  createOrchestratorRuntimeComposition,
+  type OrchestratorRuntimeComposition,
+  type OrchestratorRuntimeCompositionOptions,
+  type OrchestratorRuntimeRouteOptions,
+} from "./runtime/composition.js";
+export {
   BoardYjsHostProxyError,
   boardYjsHostProxyRouteAuthRequirements,
   registerBoardYjsHostProxyRoutes,
