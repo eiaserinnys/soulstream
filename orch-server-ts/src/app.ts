@@ -7,6 +7,10 @@ import {
   registerSessionCommandRoutes,
   type SessionCommandRouteOptions,
 } from "./session/session_command_routes.js";
+import {
+  registerSseReplayRoutes,
+  type SseReplayRouteOptions,
+} from "./sse/sse_replay_routes.js";
 
 export type CreateAppOptions = {
   config: OrchServerTsConfig;
@@ -14,6 +18,7 @@ export type CreateAppOptions = {
   exposeLocalHealthRoute?: boolean;
   nodeWsRoute?: NodeWsRouteOptions;
   sessionCommandRoutes?: SessionCommandRouteOptions;
+  sseReplayRoutes?: SseReplayRouteOptions;
 };
 
 export function createApp(options: CreateAppOptions): FastifyInstance {
@@ -33,6 +38,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.sessionCommandRoutes !== undefined) {
     registerSessionCommandRoutes(app, options.sessionCommandRoutes);
+  }
+  if (options.sseReplayRoutes !== undefined) {
+    registerSseReplayRoutes(app, options.sseReplayRoutes);
   }
 
   return app;

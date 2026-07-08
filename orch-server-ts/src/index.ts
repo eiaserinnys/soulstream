@@ -62,6 +62,14 @@ export {
   type TaskStreamEvent,
 } from "./sse/replay_broadcaster.js";
 export {
+  formatSseFrame,
+  registerSseReplayRoutes,
+  sseReplayRouteAuthRequirements,
+  type SessionStreamSnapshot,
+  type SseReplayRouteOptions,
+  type TaskStreamSnapshot,
+} from "./sse/sse_replay_routes.js";
+export {
   DEFAULT_NODE_COMMAND_TIMEOUT_MS,
   PendingNodeCommandRejectedError,
   PendingNodeCommandTimeoutError,
