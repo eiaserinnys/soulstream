@@ -110,6 +110,18 @@ export {
   PerNodeSessionCache,
   type CachedNodeSession,
 } from "./node/session_cache.js";
+export {
+  SessionCommandRouteError,
+  SessionCommandRouter,
+  SessionRouteNoAvailableNodesError,
+  SessionRouteNodeUnavailableError,
+  SessionRouteSessionOwnerMissingError,
+  SessionRouteSessionOwnerStaleError,
+  type RoutedFireAndForgetSessionCommand,
+  type RoutedPendingSessionCommand,
+  type SessionCommandRouterOptions,
+  type SessionRouteErrorCode,
+} from "./session/session_command_router.js";
 export type {
   BoardYjsHostProxyFixture,
   ContractFixture,
