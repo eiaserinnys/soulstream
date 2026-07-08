@@ -15,6 +15,10 @@ import {
   type NodeAgentProfileRouteOptions,
 } from "./node/node_agent_profile_routes.js";
 import {
+  registerFolderRoutes,
+  type FolderRouteOptions,
+} from "./folders/folder_routes.js";
+import {
   registerNodeClaudeAuthRoutes,
   type NodeClaudeAuthRouteOptions,
 } from "./node/node_claude_auth_routes.js";
@@ -61,6 +65,7 @@ export type CreateAppOptions = {
   routeOwners?: RouteOwnerManifest;
   exposeLocalHealthRoute?: boolean;
   adminUsersRoutes?: AdminUsersRouteOptions;
+  folderRoutes?: FolderRouteOptions;
   nodeClaudeAuthRoutes?: NodeClaudeAuthRouteOptions;
   nodeAgentProfileRoutes?: NodeAgentProfileRouteOptions;
   nodeWsRoute?: NodeWsRouteOptions;
@@ -129,6 +134,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.adminUsersRoutes !== undefined) {
     registerAdminUsersRoutes(app, options.adminUsersRoutes);
+  }
+  if (options.folderRoutes !== undefined) {
+    registerFolderRoutes(app, options.folderRoutes);
   }
   if (options.boardYjsHostProxyRoutes !== undefined) {
     registerBoardYjsHostProxyRoutes(app, options.boardYjsHostProxyRoutes);
