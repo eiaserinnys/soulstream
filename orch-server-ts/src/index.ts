@@ -51,6 +51,23 @@ export {
   type BoardItemRouteProvider,
 } from "./board/board_item_routes.js";
 export {
+  BoardAssetRouteError,
+  boardAssetRouteAuthRequirements,
+  registerBoardAssetRoutes,
+  type BoardAssetAccess,
+  type BoardAssetAccessProvider,
+  type BoardAssetBoardItemRecord,
+  type BoardAssetCatalogSnapshot,
+  type BoardAssetCommitInput,
+  type BoardAssetCommitPart,
+  type BoardAssetContainerKind,
+  type BoardAssetContainerTarget,
+  type BoardAssetFolderRecord,
+  type BoardAssetInitInput,
+  type BoardAssetRouteOptions,
+  type BoardAssetRouteProvider,
+} from "./board/board_asset_routes.js";
+export {
   MarkdownDocumentRouteError,
   markdownDocumentRouteAuthRequirements,
   registerMarkdownDocumentRoutes,
