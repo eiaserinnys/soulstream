@@ -35,12 +35,26 @@ export type UpstreamWsWireFixture = ContractFixture & {
 
 export type SseReplayGapFixture = ContractFixture & {
   common: {
+    resumeInputs: {
+      lastEventIdHeader: string;
+      lastEventIdQuery: string;
+      instanceIdQuery: string;
+    };
+    streamMeta: {
+      type: "stream_meta";
+      instance_id: string;
+      latest_id: number;
+    };
     snapshotRefetchOn: string[];
   };
   sessionStream: {
+    events: Array<Record<string, unknown>>;
+    resumeFrom: number;
     expectedReplayEventIds: number[];
   };
   taskStream: {
+    changes: Array<Record<string, unknown>>;
+    resumeFrom: number;
     expectedReplayEventIds: number[];
   };
   gap: {

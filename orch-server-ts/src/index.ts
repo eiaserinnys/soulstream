@@ -44,6 +44,23 @@ export {
   type RouteOwnerManifest,
   type RouteOwnerManifestEntry,
 } from "./contract/route_owner_manifest.js";
+export {
+  InMemorySseReplayBroadcaster,
+  SNAPSHOT_REFETCH_REASONS,
+  buildTaskChangedStreamEvent,
+  parseLastEventId,
+  resolveSseResumeCursor,
+  type SessionStreamEvent,
+  type SnapshotRefetchReason,
+  type SseReplayBroadcasterOptions,
+  type SseReplayEvent,
+  type SseReplayResult,
+  type SseResumeCursor,
+  type SseResumeInput,
+  type SseStreamMeta,
+  type TaskStreamChange,
+  type TaskStreamEvent,
+} from "./sse/replay_broadcaster.js";
 export type {
   BoardYjsHostProxyFixture,
   ContractFixture,
