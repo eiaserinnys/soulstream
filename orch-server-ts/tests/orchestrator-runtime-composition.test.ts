@@ -52,6 +52,18 @@ describe("orchestrator runtime composition harness", () => {
       }),
     ).toMatchObject({ statusCode: 404 });
     expect(
+      await app.inject({
+        method: "GET",
+        url: "/api/nodes",
+      }),
+    ).toMatchObject({ statusCode: 404 });
+    expect(
+      await app.inject({
+        method: "GET",
+        url: "/api/nodes/stream",
+      }),
+    ).toMatchObject({ statusCode: 404 });
+    expect(
       await app.inject({ method: "GET", url: "/api/sessions/stream" }),
     ).toMatchObject({ statusCode: 404 });
     expect(
@@ -359,6 +371,76 @@ describe("orchestrator runtime composition harness", () => {
     });
 
     ws.terminate();
+    await runtime.app.close();
+  });
+
+  it("shares registry node state with GET nodes, node stream snapshot, and node stream events", async () => {
+    const runtime = createOrchestratorRuntimeComposition({
+      config,
+      nowMs: () => 1_700_000_000_000,
+      loadTaskSnapshot: async () => ({ tasks: [] }),
+      boardYjsHostHttpClient: vi.fn(),
+      sseReplayOnlyForTests: true,
+      nodeStreamCloseAfterInitialSnapshot: true,
+    });
+    const nodeFrames: Array<{ event: string; data: unknown }> = [];
+    runtime.nodeStreamBroadcaster.subscribe((frame) => {
+      nodeFrames.push(frame);
+    });
+
+    await runtime.app.ready();
+    const ws = await (runtime.app as unknown as WebSocketInjectableApp).injectWS(
+      "/ws/node",
+    );
+    ws.send(JSON.stringify(reconnect.registration));
+    await waitFor(() =>
+      nodeFrames.some((frame) => frame.event === "node_connected"),
+    );
+    const connectionId = requireDefined(
+      runtime.registry.getConnectedNode("fake-node")?.connectionId,
+    );
+
+    ws.send(
+      JSON.stringify({
+        type: "session_created",
+        agentSessionId: "runtime-node-session",
+        status: "running",
+      }),
+    );
+    await waitFor(
+      () => runtime.registry.findSessionOwner("runtime-node-session") !== undefined,
+    );
+
+    const listResponse = await runtime.app.inject({
+      method: "GET",
+      url: "/api/nodes",
+    });
+    const streamResponse = await runtime.app.inject({
+      method: "GET",
+      url: "/api/nodes/stream",
+    });
+    const streamSnapshot = parseSseFrame(streamResponse.body, "snapshot");
+
+    expect(listResponse.statusCode).toBe(200);
+    expect(streamResponse.statusCode).toBe(200);
+    expect(listResponse.json().nodes).toEqual(streamSnapshot);
+    expect(listResponse.json().nodes[0]).toMatchObject({
+      nodeId: "fake-node",
+      connectionId,
+      connectedAt: "2023-11-14T22:13:20.000Z",
+      sessionCount: 1,
+      status: "connected",
+    });
+
+    ws.terminate();
+    await waitFor(() =>
+      nodeFrames.some((frame) => frame.event === "node_disconnected"),
+    );
+    expect(nodeFrames).toContainEqual({
+      event: "node_disconnected",
+      data: { nodeId: "fake-node" },
+    });
+
     await runtime.app.close();
   });
 });
