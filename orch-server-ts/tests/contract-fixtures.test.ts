@@ -75,8 +75,17 @@ describe("orch-server-ts contract fixture reader", () => {
     const { common, sessionStream, taskStream, gap } = fixtures.sseReplayGap;
 
     expect(common.snapshotRefetchOn).toEqual(["ring_gap", "instance_mismatch"]);
-    expect(sessionStream.expectedReplayEventIds).toEqual([2, 3]);
-    expect(taskStream.expectedReplayEventIds).toEqual([2, 3]);
+    expect(common.resumeInputs).toMatchObject({
+      lastEventIdHeader: "1",
+      lastEventIdQuery: "1",
+      instanceIdQuery: "<current-instance-id>",
+    });
+    expect(common.streamMeta).toMatchObject({
+      type: "stream_meta",
+      latest_id: 3,
+    });
+    expect(sessionStream.events).toHaveLength(3);
+    expect(taskStream.changes).toHaveLength(3);
     expect(gap).toMatchObject({
       ringMaxlen: 2,
       lastEventIdBeforeOldest: 0,
