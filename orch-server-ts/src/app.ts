@@ -5,6 +5,10 @@ import {
   type AdminUsersRouteOptions,
 } from "./admin/admin_users_routes.js";
 import {
+  registerAtomRoutes,
+  type AtomRouteOptions,
+} from "./atom/atom_routes.js";
+import {
   registerAttachmentRoutes,
   type AttachmentRouteOptions,
 } from "./attachments/attachment_routes.js";
@@ -97,6 +101,7 @@ export type CreateAppOptions = {
   routeOwners?: RouteOwnerManifest;
   exposeLocalHealthRoute?: boolean;
   adminUsersRoutes?: AdminUsersRouteOptions;
+  atomRoutes?: AtomRouteOptions;
   attachmentRoutes?: AttachmentRouteOptions;
   folderRoutes?: FolderRouteOptions;
   nodeClaudeAuthRoutes?: NodeClaudeAuthRouteOptions;
@@ -174,6 +179,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.adminUsersRoutes !== undefined) {
     registerAdminUsersRoutes(app, options.adminUsersRoutes);
+  }
+  if (options.atomRoutes !== undefined) {
+    registerAtomRoutes(app, options.atomRoutes);
   }
   if (options.attachmentRoutes !== undefined) {
     registerAttachmentRoutes(app, options.attachmentRoutes);
