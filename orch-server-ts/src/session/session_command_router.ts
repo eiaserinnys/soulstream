@@ -2,6 +2,7 @@ import type {
   NodeCommandResponse,
   NodeFireAndForgetCommand,
   PendingNodeCommand,
+  RequestResponseNodeCommandPayload,
   RespondNodeCommandPayload,
   SubscribeEventsNodeCommandPayload,
 } from "../node/pending_commands.js";
@@ -16,12 +17,17 @@ export type SessionCommandRouterOptions = {
 };
 
 export type RoutedPendingSessionCommand<
-  TPayload extends CreateSessionNodeCommandPayload | RespondNodeCommandPayload,
+  TPayload extends RequestResponseNodeCommandPayload,
   TResponse extends NodeCommandResponse = NodeCommandResponse,
 > = {
   node: NodeConnectionSnapshot;
   command: PendingNodeCommand<TPayload, TResponse>;
 };
+
+export type ExistingSessionPendingNodeCommandPayload =
+  RequestResponseNodeCommandPayload & {
+    agentSessionId: string;
+  };
 
 export type RoutedFireAndForgetSessionCommand<
   TPayload extends SubscribeEventsNodeCommandPayload,
@@ -127,6 +133,24 @@ export class SessionCommandRouter {
 
   respond<
     TPayload extends RespondNodeCommandPayload,
+    TResponse extends NodeCommandResponse = NodeCommandResponse,
+  >(
+    payload: TPayload,
+    options: { timeoutMs?: number } = {},
+  ): RoutedPendingSessionCommand<TPayload, TResponse> {
+    const node = this.requireNodeForExistingSession(payload.agentSessionId);
+    return {
+      node,
+      command: this.registry.createCommand<TPayload, TResponse>(
+        node.nodeId,
+        payload,
+        options,
+      ),
+    };
+  }
+
+  routeExistingSessionPendingCommand<
+    TPayload extends ExistingSessionPendingNodeCommandPayload,
     TResponse extends NodeCommandResponse = NodeCommandResponse,
   >(
     payload: TPayload,

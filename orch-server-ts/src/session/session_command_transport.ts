@@ -1,10 +1,9 @@
 import type {
   NodeCommandResponse,
-  RespondNodeCommandPayload,
+  RequestResponseNodeCommandPayload,
   SubscribeEventsNodeCommandPayload,
 } from "../node/pending_commands.js";
 import type { InMemoryNodeRegistry } from "../node/registry.js";
-import type { CreateSessionNodeCommandPayload } from "../node/registry_types.js";
 import type {
   NodeCommandTransportHub,
   NodeCommandTransportKey,
@@ -55,7 +54,7 @@ export class SessionCommandTransportBridge {
   }
 
   async sendPendingCommand<
-    TPayload extends CreateSessionNodeCommandPayload | RespondNodeCommandPayload,
+    TPayload extends RequestResponseNodeCommandPayload,
     TResponse extends NodeCommandResponse,
   >(
     routed: RoutedPendingSessionCommand<TPayload, TResponse>,

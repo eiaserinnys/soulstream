@@ -12,6 +12,10 @@ import {
 } from "./node/node_snapshot_routes.js";
 import { registerNodeWsRoute, type NodeWsRouteOptions } from "./node/ws_route.js";
 import {
+  registerSessionActionCommandRoutes,
+  type SessionActionCommandRouteOptions,
+} from "./session/session_action_command_routes.js";
+import {
   registerSessionCommandRoutes,
   type SessionCommandRouteOptions,
 } from "./session/session_command_routes.js";
@@ -34,6 +38,7 @@ export type CreateAppOptions = {
   exposeLocalHealthRoute?: boolean;
   nodeWsRoute?: NodeWsRouteOptions;
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
+  sessionActionCommandRoutes?: SessionActionCommandRouteOptions;
   sessionCommandRoutes?: SessionCommandRouteOptions;
   sessionHistoryRoutes?: SessionHistoryRouteOptions;
   sessionSnapshotRoutes?: SessionSnapshotRouteOptions;
@@ -61,6 +66,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.sessionCommandRoutes !== undefined) {
     registerSessionCommandRoutes(app, options.sessionCommandRoutes);
+  }
+  if (options.sessionActionCommandRoutes !== undefined) {
+    registerSessionActionCommandRoutes(app, options.sessionActionCommandRoutes);
   }
   if (options.sessionHistoryRoutes !== undefined) {
     registerSessionHistoryRoutes(app, options.sessionHistoryRoutes);
