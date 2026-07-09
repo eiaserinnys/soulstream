@@ -135,6 +135,7 @@ describe("live provider factory boundary", () => {
 
     expect(bundle.implementedProviderPaths).toEqual(liveFactoryImplementedProviderPaths);
     expect(bundle.cogitoRoutes.provider.listConnectedNodes()).toEqual([]);
+    expect(bundle.cogitoRoutes.briefCollector.reflectBrief).toEqual(expect.any(Function));
     await expect(
       bundle.cogitoRoutes.httpClient.get({
         nodeId: "node-a",
