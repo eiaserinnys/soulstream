@@ -282,6 +282,7 @@ describe("live provider factory boundary", () => {
       verifier: "verifier-live",
       metadata: { node_id: "node-claude" },
     });
+    expect(bundle.nodeClaudeAuthRoutes.tokenExchange).toEqual(expect.any(Function));
     runtimeServices.registry.registerNode({
       type: "node_register",
       node_id: "node-agent",

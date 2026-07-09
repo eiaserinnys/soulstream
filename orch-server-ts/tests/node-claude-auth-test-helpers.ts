@@ -30,6 +30,7 @@ export type ClaudeAuthHarnessOptions<
   attachTransport?: boolean;
   registerNode?: boolean;
   tokenResponse?: ClaudeAuthTokenExchangeResponse;
+  tokenExchange?: NodeClaudeAuthRouteOptions["tokenExchange"];
   profileResponse?: NodeClaudeAuthHttpResponse;
   profileHttpError?: Error;
   pkce?: NodeClaudeAuthRouteOptions["pkce"];
@@ -154,7 +155,7 @@ export function createClaudeAuthHarness(
       generateState: () => "state-fixed",
     },
     sessionStore,
-    tokenExchange: async (request) => {
+    tokenExchange: options.tokenExchange ?? (async (request) => {
       tokenRequests.push(request);
       return (
         options.tokenResponse ?? {
@@ -168,7 +169,7 @@ export function createClaudeAuthHarness(
           text: '{"access_token":"access-token"}',
         }
       );
-    },
+    }),
     profileHttpClient: options.profileHttpClient ?? (async (request) => {
       profileRequests.push(request);
       if (options.profileHttpError !== undefined) throw options.profileHttpError;
