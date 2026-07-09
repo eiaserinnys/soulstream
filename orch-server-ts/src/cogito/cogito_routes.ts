@@ -22,6 +22,7 @@ export type CogitoSearchParams = {
 };
 
 export type CogitoSearchHttpRequest = {
+  nodeId: string;
   url: string;
   params: CogitoSearchParams;
   headers: Record<string, string>;
@@ -218,6 +219,7 @@ async function searchNode(
 ): Promise<CogitoSearchResult[]> {
   try {
     const response = await httpClient.get({
+      nodeId: node.id,
       url: `http://${node.host}:${node.port}/cogito/search`,
       params,
       headers,

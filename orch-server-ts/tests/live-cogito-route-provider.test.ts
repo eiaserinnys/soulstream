@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createLiveCogitoRouteProvider,
+  createLiveCogitoSearchHttpClient,
   InMemoryNodeRegistry,
 } from "../src/index.js";
 
@@ -46,5 +47,69 @@ describe("live cogito route provider adapter", () => {
       "id",
       "port",
     ]);
+  });
+
+  it("forwards search requests through the live node HTTP boundary with explicit nodeId", async () => {
+    const requestNode = vi.fn(async () => ({
+      statusCode: 200,
+      body: { results: [{ session_id: "hit" }] },
+    }));
+    const httpClient = createLiveCogitoSearchHttpClient({
+      nodeHttpClient: { requestNode },
+    });
+
+    await expect(
+      httpClient.get({
+        nodeId: "node-a",
+        url: "http://ignored.example.test/cogito/search",
+        params: {
+          q: "hello world",
+          top_k: 7,
+          search_session_id: true,
+          event_types: "message,tool",
+        },
+        headers: {
+          authorization: "Bearer token",
+          cookie: "session=abc",
+        },
+      }),
+    ).resolves.toEqual({
+      statusCode: 200,
+      body: { results: [{ session_id: "hit" }] },
+    });
+    expect(requestNode).toHaveBeenCalledWith({
+      nodeId: "node-a",
+      method: "GET",
+      path: "/cogito/search?q=hello+world&top_k=7&search_session_id=true&event_types=message%2Ctool",
+      headers: {
+        authorization: "Bearer token",
+        cookie: "session=abc",
+      },
+    });
+  });
+
+  it("omits optional event_types while preserving the other Cogito search query keys", async () => {
+    const requestNode = vi.fn(async () => ({ statusCode: 200, body: {} }));
+    const httpClient = createLiveCogitoSearchHttpClient({
+      nodeHttpClient: { requestNode },
+    });
+
+    await httpClient.get({
+      nodeId: "node-a",
+      url: "http://ignored.example.test/cogito/search",
+      params: {
+        q: "plain",
+        top_k: 10,
+        search_session_id: false,
+      },
+      headers: {},
+    });
+
+    expect(requestNode).toHaveBeenCalledWith({
+      nodeId: "node-a",
+      method: "GET",
+      path: "/cogito/search?q=plain&top_k=10&search_session_id=false",
+      headers: {},
+    });
   });
 });
