@@ -1530,6 +1530,25 @@ describe("BoardWorkspaceView", () => {
     expect(Array.from(useDashboardStore.getState().selectedSessionIds)).toEqual(["session-a"]);
   });
 
+  it("switches from an open markdown document back to chat when the active session tile is clicked", () => {
+    ({ container, root } = renderBoard());
+
+    const sessionTile = container.querySelector<HTMLElement>('[data-testid="board-session-tile"]');
+    expect(sessionTile).not.toBeNull();
+    useDashboardStore.getState().setActiveSession("session-a");
+    useDashboardStore.getState().setActiveBoardDocument("doc-a");
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-a");
+
+    flushSync(() => {
+      sessionTile!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    const state = useDashboardStore.getState();
+    expect(state.activeSessionKey).toBe("session-a");
+    expect(state.activeBoardDocumentId).toBeNull();
+    expect(state.activeRightTab).toBe("chat");
+  });
+
   it("renders direct child sessions as a parent stack portal and cross-folder refs", async () => {
     ({ container, root } = renderBoard({}, {
       catalog: relationCatalog,

@@ -81,7 +81,17 @@ export const createSessionSlice: StateCreator<
     // 같은 세션이면 아무것도 하지 않음 (resume 등에서 불필요한 리셋 방지).
     // 이 경로에서는 clearFlattenTreeCache를 호출하지 않음 — 같은 세션의 ChatMessage
     // identity reference를 그대로 재사용하여 React.memo 효과 유지.
-    if (key !== null && key === get().activeSessionKey) return;
+    if (key !== null && key === get().activeSessionKey) {
+      const { activeBoardDocumentId, activeCustomViewId } = get();
+      if (activeBoardDocumentId !== null || activeCustomViewId !== null) {
+        set({
+          activeBoardDocumentId: null,
+          activeCustomViewId: null,
+          activeRightTab: "chat",
+        });
+      }
+      return;
+    }
 
     // 세션 전환 시 ChatMessage identity 캐시를 비워 이전 세션 항목이 누설되지 않도록 한다.
     clearFlattenTreeCache();

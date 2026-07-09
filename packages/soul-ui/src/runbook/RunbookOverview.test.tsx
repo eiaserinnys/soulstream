@@ -441,12 +441,15 @@ describe("RunbookOverview", () => {
     expect(container.querySelector('[data-testid="runbook-overview-running-sessions-rail"]')?.className).toContain("h-[7.75rem]");
     const sessionCard = container.querySelector<HTMLElement>('[data-session-id="sess-running"]');
     expect(sessionCard).not.toBeNull();
+    useDashboardStore.getState().setActiveSession("sess-running");
+    useDashboardStore.getState().setActiveBoardDocument("doc-a");
     flushSync(() => {
       sessionCard!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     expect(useDashboardStore.getState().activeSessionKey).toBe("sess-running");
     expect(useDashboardStore.getState().activeSessionSummary?.agentSessionId).toBe("sess-running");
+    expect(useDashboardStore.getState().activeBoardDocumentId).toBeNull();
     expect(useDashboardStore.getState().viewMode).toBe("runbooks");
     expect(useDashboardStore.getState().activeTab).toBe("feed");
   });
