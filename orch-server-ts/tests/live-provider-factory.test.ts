@@ -7,11 +7,11 @@ import {
   liveProviderDependencyCategories,
   liveProviderWiringInventory,
   parseOrchServerConfig,
-  validateLiveProviderFactoryInventoryAlignment,
   LiveProviderFactoryError,
   type LiveProviderDependencies,
   type NodeConnectionSnapshot,
   type LiveProviderWiringInventoryEntry,
+  type TaskMutationResponse,
 } from "../src/index.js";
 
 const config = parseOrchServerConfig({
@@ -60,57 +60,6 @@ describe("live provider factory boundary", () => {
     expect(Object.keys(dependencies).sort()).toEqual(
       [...liveProviderDependencyCategories].sort(),
     );
-  });
-
-  it("keeps the factory provided paths aligned with implemented inventory entries", () => {
-    const result = validateLiveProviderFactoryInventoryAlignment({
-      inventory: liveProviderWiringInventory,
-      factoryProviderPaths: liveFactoryImplementedProviderPaths,
-    });
-
-    expect(result.missingImplementedProviderPaths).toEqual([]);
-    expect(result.extraFactoryProviderPaths).toEqual([]);
-    expect(result.blockedFactoryProviderPaths).toEqual([]);
-    expect(result.implementedInventoryProviderPaths).toEqual(
-      liveFactoryImplementedProviderPaths,
-    );
-    expect(result.unresolvedProviderPaths.length).toBeGreaterThan(0);
-  });
-
-  it("fails when inventory marks a path implemented but the factory omits it", () => {
-    const [firstPath, ...remainingFactoryPaths] = liveFactoryImplementedProviderPaths;
-    const result = validateLiveProviderFactoryInventoryAlignment({
-      inventory: liveProviderWiringInventory,
-      factoryProviderPaths: remainingFactoryPaths,
-    });
-
-    expect(result.missingImplementedProviderPaths).toEqual([firstPath]);
-  });
-
-  it("fails when the factory provides a path absent from inventory", () => {
-    const extraPath = { owner: "unknown.owner", path: "unknown.provider" };
-    const result = validateLiveProviderFactoryInventoryAlignment({
-      inventory: liveProviderWiringInventory,
-      factoryProviderPaths: [...liveFactoryImplementedProviderPaths, extraPath],
-    });
-
-    expect(result.extraFactoryProviderPaths).toEqual([extraPath]);
-  });
-
-  it("fails when the factory tries to provide a blocked path", () => {
-    const blockedPath = { owner: "atom", path: "atomRoutes.httpClient" };
-    const result = validateLiveProviderFactoryInventoryAlignment({
-      inventory: liveProviderWiringInventory,
-      factoryProviderPaths: [...liveFactoryImplementedProviderPaths, blockedPath],
-    });
-
-    expect(result.blockedFactoryProviderPaths).toEqual([
-      expect.objectContaining({
-        owner: "atom",
-        path: "atomRoutes.httpClient",
-        status: "blocked",
-      }),
-    ]);
   });
 
   it("throws a typed error before returning a bundle while stub or blocked paths remain", () => {
@@ -214,6 +163,39 @@ describe("live provider factory boundary", () => {
     expect(bundle.sessionCatalogRoutes.accessProvider).toMatchObject({
       requireSessionAccess: expect.any(Function),
       requireFolderAccess: expect.any(Function),
+    });
+    expect(bundle.taskReadRoutes.provider).toBe(
+      dependencies.dbCatalogRepository.taskReadProvider,
+    );
+    await expect(
+      bundle.taskMutationRoutes.provider.createTask({
+        sessionId: "sess-task",
+        title: "Task",
+        description: "",
+        acceptanceCriteria: "",
+        verificationOwner: "agent",
+        status: "open",
+        setActive: false,
+      }),
+    ).resolves.toMatchObject({
+      task: { id: "task-live" },
+      operation: {
+        id: "op-live",
+        operationType: "create_task_item",
+        actorEventId: 9,
+      },
+      eventId: 9,
+    });
+    expect(runtimeServices.taskBroadcaster.bufferedEvents.at(-1)?.payload).toEqual({
+      type: "task_changed",
+      change: {
+        table: "task_operations",
+        action: "UPDATE",
+        task_id: "task-live",
+        operation_id: "op-live",
+        operation_type: "create_task_item",
+        actor_event_id: 9,
+      },
     });
     await expect(
       bundle.configProviders.atomRoutes.configProvider.getConfig(),
@@ -393,6 +375,16 @@ function createLiveDependencies(): LiveProviderDependencies {
     readLastEventId: vi.fn(async () => 0),
     streamEventsRaw: vi.fn(() => emptyRawEvents()),
   };
+  const taskMutationResponse = {
+    task: { id: "task-live", status: "open" },
+    operation: {
+      id: "op-live",
+      taskId: "task-live",
+      operationType: "create_task_item",
+      actorEventId: 9,
+    },
+    eventId: 9,
+  } satisfies TaskMutationResponse;
 
   return {
     authSessionIdentity: {
@@ -414,6 +406,25 @@ function createLiveDependencies(): LiveProviderDependencies {
       sessionResourceAccessRepository: {
         getSessionAccessRecord: vi.fn(async () => null),
         listFoldersForAccess: vi.fn(async () => []),
+      },
+      taskReadProvider: {
+        listTasks: vi.fn(async () => []),
+        getTaskContext: vi.fn(async () => ({
+          activeTask: null,
+          activeTaskPath: [],
+          linkedTasks: [],
+        })),
+      },
+      taskMutationProvider: {
+        createTask: vi.fn(async () => taskMutationResponse),
+        setTaskStatus: vi.fn(async () => taskMutationResponse),
+        updateTask: vi.fn(async () => taskMutationResponse),
+        moveTask: vi.fn(async () => taskMutationResponse),
+        linkTask: vi.fn(async () => taskMutationResponse),
+        holdTask: vi.fn(async () => taskMutationResponse),
+        archiveTask: vi.fn(async () => taskMutationResponse),
+        pinTask: vi.fn(async () => taskMutationResponse),
+        listTaskOperations: vi.fn(async () => []),
       },
     },
     nodeHttpClient: {

@@ -22,6 +22,9 @@ import type { BoardItemRouteOptions } from "../board/board_item_routes.js";
 import type { MarkdownDocumentRouteOptions } from "../board/markdown_document_routes.js";
 import type { RunbookRouteOptions } from "../runbooks/runbook_route_types.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
+import type { TaskMutationRouteOptions } from "../tasks/task_mutation_routes.js";
+import type { TaskReadRouteOptions } from "../tasks/task_read_routes.js";
+import { withTaskMutationBroadcasts } from "./live_task_mutation_broadcaster.js";
 import { createLiveDashboardAccessProvider } from "./live_dashboard_access_provider.js";
 import { createLiveExecuteProxyRouteProvider } from "./live_execute_proxy_route_provider.js";
 import {
@@ -120,6 +123,8 @@ export type LiveOrchestratorProviderBundle = {
     & LiveRunbookRouteProviderBundle["runbookRoutes"]
     & Pick<RunbookRouteOptions, "accessProvider">;
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
+  readonly taskMutationRoutes: TaskMutationRouteOptions;
+  readonly taskReadRoutes: TaskReadRouteOptions;
   readonly implementedProviderPaths: readonly LiveProviderPath[];
 };
 
@@ -240,6 +245,15 @@ export function createLiveOrchestratorProviderBundle(
       accessProvider: dashboardAccessProvider,
     },
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
+    taskMutationRoutes: {
+      provider: withTaskMutationBroadcasts(
+        options.dependencies.dbCatalogRepository.taskMutationProvider,
+        options.runtimeServices.taskBroadcaster,
+      ),
+    },
+    taskReadRoutes: {
+      provider: options.dependencies.dbCatalogRepository.taskReadProvider,
+    },
     implementedProviderPaths: alignment.factoryProviderPaths,
   };
 }

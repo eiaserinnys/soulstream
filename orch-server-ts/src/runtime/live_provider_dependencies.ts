@@ -9,6 +9,8 @@ import type {
   SessionStreamSnapshot,
   TaskStreamSnapshot,
 } from "../sse/sse_replay_routes.js";
+import type { TaskMutationRouteProvider } from "../tasks/task_mutation_routes.js";
+import type { TaskReadRouteProvider } from "../tasks/task_read_routes.js";
 import type { LiveSystemPortraitAssetBoundary } from "./live_system_config_route_provider.js";
 
 export const liveProviderDependencyCategories = [
@@ -39,6 +41,8 @@ export type LiveDbCatalogRepositoryBoundary = {
   readonly loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   readonly sessionHistoryProvider: SessionHistoryProvider;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
+  readonly taskReadProvider: TaskReadRouteProvider;
+  readonly taskMutationProvider: TaskMutationRouteProvider;
 };
 
 export type LiveNodeHttpResponse = {
