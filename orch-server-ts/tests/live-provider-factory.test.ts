@@ -349,7 +349,6 @@ describe("live provider factory boundary", () => {
       taskChangeListener: expect.any(Object),
     });
   });
-
 });
 
 function createRuntimeServices(dependencies: LiveProviderDependencies) {
@@ -391,6 +390,8 @@ function createLiveDependencies(): LiveProviderDependencies {
       resolveSessionIdentity: vi.fn(async () => ({})),
     },
     dbCatalogRepository: {
+      folderRouteProvider: {} as never,
+      folderCountsProvider: {} as never,
       sessionCatalogProvider: {
         renameSession: vi.fn(async () => undefined),
         moveSessionsToFolder: vi.fn(async () => ({ count: 0 })),
@@ -496,5 +497,4 @@ function createLiveDependencies(): LiveProviderDependencies {
   };
 }
 
-async function* emptyRawEvents() {
-}
+async function* emptyRawEvents() {}

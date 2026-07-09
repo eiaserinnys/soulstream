@@ -6,7 +6,6 @@ import {
 } from "../board/board_access.js";
 import type {
   SessionCatalogProvider,
-  SessionCatalogUpdateInput,
 } from "../session/session_catalog_routes.js";
 import {
   firstAllowedSessionFolderId,
@@ -29,6 +28,10 @@ import {
   type LivePostgresFactory,
   type LivePostgresSql,
 } from "./live_db_sql.js";
+import {
+  createLiveFolderProvider,
+  type LiveFolderProvider,
+} from "./live_folder_route_provider.js";
 import { createLiveSessionHistoryProvider } from "./live_session_history_provider.js";
 import { serializeSessionRow } from "./live_session_serialization.js";
 import {
@@ -40,6 +43,8 @@ import { createLiveTaskReadProvider } from "./live_task_read_provider.js";
 import { serializeTasksWithLinkedSessions } from "./live_task_serialization.js";
 
 export type LiveDbCatalogRepository = {
+  readonly folderRouteProvider: LiveFolderProvider;
+  readonly folderCountsProvider: LiveFolderProvider;
   readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly sessionHistoryProvider: ReturnType<typeof createLiveSessionHistoryProvider>;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
@@ -89,6 +94,7 @@ export function createLiveDbCatalogRepository(
       closeTimeoutSeconds: options.closeTimeoutSeconds,
     });
   const sessionHistoryProvider = createLiveSessionHistoryProvider({ sqlResolver });
+  const folderProvider = createLiveFolderProvider(sqlResolver);
   const sessionResourceAccessRepository =
     createSessionResourceAccessRepository(sqlResolver);
   const taskReadProvider = createLiveTaskReadProvider({
@@ -103,6 +109,8 @@ export function createLiveDbCatalogRepository(
     options.sessionSnapshotLimit ?? DEFAULT_SESSION_SNAPSHOT_LIMIT;
   const taskSnapshotLimit = options.taskSnapshotLimit ?? DEFAULT_TASK_SNAPSHOT_LIMIT;
   return {
+    folderRouteProvider: folderProvider,
+    folderCountsProvider: folderProvider,
     sessionCatalogProvider: createSessionCatalogProvider(sqlResolver),
     sessionHistoryProvider,
     sessionResourceAccessRepository,
@@ -275,9 +283,6 @@ function numberValue(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-function hasOwn(
-  object: SessionCatalogUpdateInput,
-  key: keyof SessionCatalogUpdateInput,
-): boolean {
+function hasOwn(object: object, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(object, key);
 }

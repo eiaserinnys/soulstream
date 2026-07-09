@@ -15,6 +15,7 @@ import type {
 } from "../sse/replay_broadcaster.js";
 import type { TaskMutationRouteProvider } from "../tasks/task_mutation_routes.js";
 import type { TaskReadRouteProvider } from "../tasks/task_read_routes.js";
+import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 import type { LiveTaskChangeListener } from "./live_task_change_listener.js";
 import type { LiveSystemPortraitAssetBoundary } from "./live_system_config_route_provider.js";
 
@@ -39,6 +40,8 @@ export type LiveAuthSessionIdentityBoundary = {
 };
 
 export type LiveDbCatalogRepositoryBoundary = {
+  readonly folderRouteProvider: LiveFolderProvider;
+  readonly folderCountsProvider: LiveFolderProvider;
   readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly loadSessionSnapshot: (
     input?: { readonly access?: BoardAccess; readonly feedOnly?: boolean },
