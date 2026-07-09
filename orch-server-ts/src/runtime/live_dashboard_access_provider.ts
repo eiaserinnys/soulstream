@@ -200,6 +200,16 @@ async function resolveAccessIdentity(input: {
     ? input.accessEmail
     : extractAccessEmail(input.request);
 
+  if (googleClientId.length > 0) {
+    const cookieToken = extractCookieToken(input.request, input.cookieName);
+    if (cookieToken) {
+      const payload = await input.jwt.verifyToken(cookieToken);
+      if (payload) {
+        return { mode: "dashboard", email: normalizeDashboardEmail(payload.email) };
+      }
+    }
+  }
+
   let bearer: AuthTokenAccessResult;
   if (!configuredBearer) {
     if (!isProductionEnvironment(environment)) {
@@ -216,8 +226,7 @@ async function resolveAccessIdentity(input: {
   }
 
   if (googleClientId.length > 0) {
-    const dashboardToken = extractCookieToken(input.request, input.cookieName) ??
-      extractBearerToken(input.request);
+    const dashboardToken = extractBearerToken(input.request);
     if (dashboardToken) {
       const payload = await input.jwt.verifyToken(dashboardToken);
       if (payload) {
