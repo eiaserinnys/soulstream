@@ -56,6 +56,7 @@ import {
   createSessionStreamEventFilter,
   type SessionStreamEventFilter,
 } from "../session/session_stream_event_filter.js";
+import { withFolderMutationBroadcasts } from "./live_folder_mutation_broadcaster.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import {
   liveProviderWiringInventory,
@@ -221,7 +222,10 @@ export function createLiveOrchestratorProviderBundle(
       userPayloadExtra: dashboardAccessProvider.userPayloadExtra,
     },
     folderRoutes: {
-      provider: options.dependencies.dbCatalogRepository.folderRouteProvider,
+      provider: withFolderMutationBroadcasts(
+        options.dependencies.dbCatalogRepository.folderRouteProvider,
+        options.runtimeServices.sessionBroadcaster,
+      ),
       accessProvider: dashboardAccessProvider,
     },
     boardItemRoutes: { accessProvider: dashboardAccessProvider },
