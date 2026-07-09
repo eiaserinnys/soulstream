@@ -32,6 +32,7 @@ describe("live provider factory boundary", () => {
       "claudeOAuth",
       "pushRepository",
       "configProvider",
+      "systemPortraitAssets",
     ]);
     expect(Object.keys(dependencies).sort()).toEqual(
       [...liveProviderDependencyCategories].sort(),
@@ -148,6 +149,12 @@ describe("live provider factory boundary", () => {
       atomApiKey: "atom-secret",
       atomRootNodeId: "root-node",
     });
+    await expect(
+      bundle.systemConfigRoutes.provider.getSystemPortrait("system"),
+    ).resolves.toEqual({
+      body: Buffer.from("system-portrait"),
+    });
+    expect(bundle.systemConfigRoutes.provider.listConnectedNodes()).toEqual([]);
     expect(bundle.runtime).toEqual({
       nodeSnapshotRoutes: runtimeServices.routeOptions.nodeSnapshotRoutes,
       nodeWsRoute: runtimeServices.routeOptions.nodeWsRoute,
@@ -237,6 +244,9 @@ function createLiveDependencies(): LiveProviderDependencies {
         };
         return config[key];
       }),
+    },
+    systemPortraitAssets: {
+      readSystemPortraitAsset: vi.fn(async () => Buffer.from("system-portrait")),
     },
   };
 }

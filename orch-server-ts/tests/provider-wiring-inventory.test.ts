@@ -84,7 +84,7 @@ describe("live provider wiring inventory", () => {
     expect([...risks].sort()).toEqual(["high", "low", "medium"]);
   });
 
-  it("marks only the low-risk config provider slice implemented in this round", () => {
+  it("marks the live config provider slices implemented without enabling HTTP forwarding", () => {
     const statusByPath = new Map(
       liveProviderWiringInventory.map((entry) => [
         `${entry.owner}:${entry.path}`,
@@ -96,6 +96,11 @@ describe("live provider wiring inventory", () => {
     expect(statusByPath.get("public.status:publicStatusRoutes.configProvider")).toBe(
       "implemented",
     );
-    expect(statusByPath.get("system.config:systemConfigRoutes.provider")).toBe("stub");
+    expect(statusByPath.get("system.config:systemConfigRoutes.provider")).toBe(
+      "implemented",
+    );
+    expect(statusByPath.get("system.config:systemConfigRoutes.httpClient")).toBe(
+      "blocked",
+    );
   });
 });

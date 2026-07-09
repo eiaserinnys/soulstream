@@ -4,6 +4,7 @@ import type {
   SessionStreamSnapshot,
   TaskStreamSnapshot,
 } from "../sse/sse_replay_routes.js";
+import type { LiveSystemPortraitAssetBoundary } from "./live_system_config_route_provider.js";
 
 export const liveProviderDependencyCategories = [
   "authSessionIdentity",
@@ -14,6 +15,7 @@ export const liveProviderDependencyCategories = [
   "claudeOAuth",
   "pushRepository",
   "configProvider",
+  "systemPortraitAssets",
 ] as const;
 
 export type LiveProviderDependencyCategory =
@@ -89,4 +91,5 @@ export type LiveProviderDependencies = {
   readonly claudeOAuth: LiveClaudeOAuthBoundary;
   readonly pushRepository: LivePushRepositoryBoundary;
   readonly configProvider: LiveConfigProviderBoundary;
+  readonly systemPortraitAssets: LiveSystemPortraitAssetBoundary;
 };
