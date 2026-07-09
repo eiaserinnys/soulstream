@@ -16,6 +16,10 @@ import type {
   SessionStreamSnapshot,
   TaskStreamSnapshot,
 } from "../sse/sse_replay_routes.js";
+import type {
+  InMemorySseReplayBroadcaster,
+  TaskStreamEvent,
+} from "../sse/replay_broadcaster.js";
 import type { TaskMutationRouteProvider } from "../tasks/task_mutation_routes.js";
 import type { TaskReadRouteProvider } from "../tasks/task_read_routes.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
@@ -27,6 +31,10 @@ import {
 } from "./live_db_sql.js";
 import { createLiveSessionHistoryProvider } from "./live_session_history_provider.js";
 import { serializeSessionRow } from "./live_session_serialization.js";
+import {
+  createLiveTaskChangeListener,
+  type LiveTaskChangeListener,
+} from "./live_task_change_listener.js";
 import { createLiveTaskMutationProvider } from "./live_task_mutation_provider.js";
 import { createLiveTaskReadProvider } from "./live_task_read_provider.js";
 import { serializeTasksWithLinkedSessions } from "./live_task_serialization.js";
@@ -37,6 +45,9 @@ export type LiveDbCatalogRepository = {
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
   readonly taskReadProvider: TaskReadRouteProvider;
   readonly taskMutationProvider: TaskMutationRouteProvider;
+  readonly createTaskChangeListener: (
+    broadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>,
+  ) => LiveTaskChangeListener;
   readonly loadSessionSnapshot: (
     input?: LoadSessionSnapshotInput,
   ) => Promise<SessionStreamSnapshot>;
@@ -91,13 +102,15 @@ export function createLiveDbCatalogRepository(
   const sessionSnapshotLimit =
     options.sessionSnapshotLimit ?? DEFAULT_SESSION_SNAPSHOT_LIMIT;
   const taskSnapshotLimit = options.taskSnapshotLimit ?? DEFAULT_TASK_SNAPSHOT_LIMIT;
-
   return {
     sessionCatalogProvider: createSessionCatalogProvider(sqlResolver),
     sessionHistoryProvider,
     sessionResourceAccessRepository,
     taskReadProvider,
     taskMutationProvider,
+    createTaskChangeListener(broadcaster) {
+      return createLiveTaskChangeListener({ sqlResolver, broadcaster });
+    },
     async loadSessionSnapshot(input = {}) {
       const sql = await sqlResolver.resolveSql();
       const filters = await sessionSnapshotFilters(
@@ -140,7 +153,9 @@ export function createLiveDbCatalogRepository(
         total: numberValue(countRows[0]?.count) ?? taskRows.length,
       };
     },
-    close: sqlResolver.close,
+    async close() {
+      await sqlResolver.close();
+    },
   };
 }
 

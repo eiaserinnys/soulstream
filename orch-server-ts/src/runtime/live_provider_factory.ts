@@ -1,6 +1,7 @@
 import type { FastifyRequest } from "fastify";
 
 import type { OrchestratorRuntimeServices } from "./composition.js";
+import type { LiveTaskChangeListener } from "./live_task_change_listener.js";
 import {
   createLiveAuthHttpClient,
   createLiveAuthJwtHelper,
@@ -96,6 +97,7 @@ export type LiveRuntimeProviderBundle = {
   >;
   readonly sessionSnapshotRoutes: OrchestratorRuntimeServices["routeOptions"]["sessionSnapshotRoutes"];
   readonly sseReplayRoutes: OrchestratorRuntimeServices["routeOptions"]["sseReplayRoutes"];
+  readonly taskChangeListener: LiveTaskChangeListener;
 };
 
 export type LiveOrchestratorProviderBundle = {
@@ -191,6 +193,10 @@ export function createLiveOrchestratorProviderBundle(
     accessProvider: sessionResourceAccessProvider,
     repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
   });
+  const taskChangeListener =
+    options.dependencies.dbCatalogRepository.createTaskChangeListener(
+      options.runtimeServices.taskBroadcaster,
+    );
 
   return {
     authRoutes: {
@@ -227,6 +233,7 @@ export function createLiveOrchestratorProviderBundle(
           feedOnly: queryBool(request.query, "feed_only"),
         });
       },
+      taskChangeListener,
     ),
     cogitoRoutes: cogitoProviders.cogitoRoutes,
     configProviders,
@@ -249,6 +256,9 @@ export function createLiveOrchestratorProviderBundle(
       provider: withTaskMutationBroadcasts(
         options.dependencies.dbCatalogRepository.taskMutationProvider,
         options.runtimeServices.taskBroadcaster,
+        {
+          shouldBroadcast: () => !taskChangeListener.isRunning(),
+        },
       ),
     },
     taskReadRoutes: {
@@ -285,6 +295,7 @@ function buildLiveRuntimeProviderBundle(
   accessProvider: SessionResourceAccessProvider,
   sessionStreamEventFilter: SessionStreamEventFilter,
   loadSessionSnapshot: (request: FastifyRequest) => Promise<SessionStreamSnapshot>,
+  taskChangeListener: LiveTaskChangeListener,
 ): LiveRuntimeProviderBundle {
   const sessionHistoryRoutes = requireRuntimeRouteOption(
     services.routeOptions.sessionHistoryRoutes,
@@ -316,6 +327,7 @@ function buildLiveRuntimeProviderBundle(
         filterEvent: sessionStreamEventFilter,
       },
     },
+    taskChangeListener,
   };
 }
 

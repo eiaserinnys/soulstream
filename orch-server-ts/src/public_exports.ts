@@ -55,6 +55,7 @@ export * from "./runtime/live_session_serialization.js";
 export * from "./runtime/live_task_mutation_broadcaster.js";
 export * from "./runtime/live_task_mutation_provider.js";
 export * from "./runtime/live_task_mutation_sql.js";
+export * from "./runtime/live_task_change_listener.js";
 export * from "./runtime/live_task_read_provider.js";
 export * from "./runtime/live_task_serialization.js";
 export * from "./runtime/live_timeline_serialization.js";

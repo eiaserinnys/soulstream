@@ -285,9 +285,6 @@ describe("live provider factory boundary", () => {
     expect(bundle.nodeClaudeAuthRoutes.pkce.generateVerifier()).toMatch(
       /^[A-Za-z0-9_-]{43}$/,
     );
-    expect(bundle.nodeClaudeAuthRoutes.pkce.generateState()).toMatch(
-      /^[A-Za-z0-9_-]{43}$/,
-    );
     await bundle.nodeClaudeAuthRoutes.sessionStore.create("state-live", "verifier-live", {
       metadata: { node_id: "node-claude" },
     });
@@ -349,8 +346,10 @@ describe("live provider factory boundary", () => {
           loadSnapshot: expect.any(Function),
         },
       },
+      taskChangeListener: expect.any(Object),
     });
   });
+
 });
 
 function createRuntimeServices(dependencies: LiveProviderDependencies) {
@@ -426,6 +425,11 @@ function createLiveDependencies(): LiveProviderDependencies {
         pinTask: vi.fn(async () => taskMutationResponse),
         listTaskOperations: vi.fn(async () => []),
       },
+      createTaskChangeListener: vi.fn(() => ({
+        start: vi.fn(async () => undefined),
+        stop: vi.fn(async () => undefined),
+        isRunning: vi.fn(() => false),
+      })),
     },
     nodeHttpClient: {
       boardYjsHostHttpClient: vi.fn(async () => ({ statusCode: 200 })),

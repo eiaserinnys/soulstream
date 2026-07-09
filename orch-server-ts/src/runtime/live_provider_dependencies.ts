@@ -9,8 +9,13 @@ import type {
   SessionStreamSnapshot,
   TaskStreamSnapshot,
 } from "../sse/sse_replay_routes.js";
+import type {
+  InMemorySseReplayBroadcaster,
+  TaskStreamEvent,
+} from "../sse/replay_broadcaster.js";
 import type { TaskMutationRouteProvider } from "../tasks/task_mutation_routes.js";
 import type { TaskReadRouteProvider } from "../tasks/task_read_routes.js";
+import type { LiveTaskChangeListener } from "./live_task_change_listener.js";
 import type { LiveSystemPortraitAssetBoundary } from "./live_system_config_route_provider.js";
 
 export const liveProviderDependencyCategories = [
@@ -43,6 +48,9 @@ export type LiveDbCatalogRepositoryBoundary = {
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
   readonly taskReadProvider: TaskReadRouteProvider;
   readonly taskMutationProvider: TaskMutationRouteProvider;
+  readonly createTaskChangeListener: (
+    broadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>,
+  ) => LiveTaskChangeListener;
 };
 
 export type LiveNodeHttpResponse = {
