@@ -62,7 +62,7 @@ describe("live node agent profile route provider", () => {
     expect(requestNode).not.toHaveBeenCalled();
   });
 
-  it("requests agent and user portraits as binary live node HTTP responses", async () => {
+  it("requests agent and user portraits with forwarded auth headers as binary live node HTTP responses", async () => {
     const portraitBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d]);
     const { provider, requestNode } = createFixture({
       agents: [{ id: "remote agent" }],
@@ -74,7 +74,13 @@ describe("live node agent profile route provider", () => {
     });
 
     await expect(
-      provider.getAgentPortrait("node-a", "remote agent"),
+      provider.getAgentPortrait("node-a", "remote agent", {
+        headers: {
+          authorization: "Bearer caller-token",
+          cookie: "session=abc",
+          "x-forwarded-for": "203.0.113.10",
+        },
+      }),
     ).resolves.toEqual({
       status: "upstream",
       statusCode: 200,
@@ -85,10 +91,18 @@ describe("live node agent profile route provider", () => {
       nodeId: "node-a",
       method: "GET",
       path: "/api/agents/remote%20agent/portrait",
+      headers: {
+        authorization: "Bearer caller-token",
+        cookie: "session=abc",
+      },
       responseType: "arrayBuffer",
     });
 
-    await expect(provider.getUserPortrait("node-a")).resolves.toEqual({
+    await expect(
+      provider.getUserPortrait("node-a", {
+        headers: { cookie: "session=abc" },
+      }),
+    ).resolves.toEqual({
       status: "upstream",
       statusCode: 200,
       body: portraitBytes,
@@ -98,6 +112,7 @@ describe("live node agent profile route provider", () => {
       nodeId: "node-a",
       method: "GET",
       path: "/api/dashboard/portrait/user",
+      headers: { cookie: "session=abc" },
       responseType: "arrayBuffer",
     });
   });

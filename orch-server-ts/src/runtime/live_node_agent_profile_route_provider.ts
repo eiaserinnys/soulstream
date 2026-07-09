@@ -3,6 +3,7 @@ import type {
   ApplyAgentProfileUpdateInput,
   NodeAgentProfileProvider,
   NodeAgentProfileRouteOptions,
+  NodePortraitRequestOptions,
   NodePortraitResult,
   RawNodeAgentProfile,
   RollbackAgentsConfigInput,
@@ -100,7 +101,7 @@ function createLiveNodeAgentProfileProvider(
         ]),
       );
     },
-    getAgentPortrait: async (nodeId, agentId) => {
+    getAgentPortrait: async (nodeId, agentId, requestOptions) => {
       const node = options.registry.getConnectedNode(nodeId);
       if (node === undefined) return { status: "missing" };
       const cached = agentSnapshots(node).find((agent) => agent.id === agentId)
@@ -112,10 +113,16 @@ function createLiveNodeAgentProfileProvider(
         options,
         nodeId,
         `/api/agents/${encodeURIComponent(agentId)}/portrait`,
+        requestOptions,
       );
     },
-    getUserPortrait: async (nodeId) =>
-      requestPortrait(options, nodeId, "/api/dashboard/portrait/user"),
+    getUserPortrait: async (nodeId, requestOptions) =>
+      requestPortrait(
+        options,
+        nodeId,
+        "/api/dashboard/portrait/user",
+        requestOptions,
+      ),
     planAgentProfileUpdate: async (nodeId, input) =>
       sendConfigCommand(options, nodeId, planPayload(input)),
     applyAgentProfileUpdate: async (nodeId, input) =>
@@ -145,13 +152,16 @@ async function requestPortrait(
   options: CreateLiveNodeAgentProfileRouteProviderOptions,
   nodeId: string,
   path: string,
+  requestOptions?: NodePortraitRequestOptions,
 ): Promise<NodePortraitResult> {
   try {
+    const headers = forwardAuthHeaders(requestOptions?.headers);
     return upstreamPortrait(
       await options.nodeHttpClient.requestNode({
         nodeId,
         method: "GET",
         path,
+        ...(headers ? { headers } : {}),
         responseType: "arrayBuffer",
       }),
     );
@@ -161,6 +171,17 @@ async function requestPortrait(
     }
     throw error;
   }
+}
+
+function forwardAuthHeaders(
+  headers: NodePortraitRequestOptions["headers"],
+): Readonly<Record<string, string>> | undefined {
+  const forwarded: Record<string, string> = {};
+  const cookie = headerValue(headers, "cookie");
+  if (cookie) forwarded.cookie = cookie;
+  const authorization = headerValue(headers, "authorization");
+  if (authorization) forwarded.authorization = authorization;
+  return Object.keys(forwarded).length > 0 ? forwarded : undefined;
 }
 
 function upstreamPortrait(response: LiveNodeHttpResponse): NodePortraitResult {
@@ -182,12 +203,16 @@ function portraitBody(body: unknown): Buffer | Uint8Array | string | undefined {
 }
 
 function headerValue(
-  headers: Readonly<Record<string, string | undefined>> | undefined,
+  headers:
+    | Readonly<Record<string, string | string[] | undefined>>
+    | undefined,
   name: string,
 ): string | undefined {
   const normalized = name.toLowerCase();
   for (const [key, value] of Object.entries(headers ?? {})) {
-    if (key.toLowerCase() === normalized) return value;
+    if (key.toLowerCase() === normalized) {
+      return Array.isArray(value) ? value.join("; ") : value;
+    }
   }
   return undefined;
 }

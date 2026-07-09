@@ -22,6 +22,10 @@ export type NodePortraitResult =
       encoding?: "base64";
     };
 
+export type NodePortraitRequestOptions = {
+  readonly headers?: Readonly<Record<string, string | string[] | undefined>>;
+};
+
 export type AgentProfileUpdateInput = {
   profile: Record<string, unknown>;
   createIfMissing: boolean;
@@ -43,8 +47,12 @@ export type NodeAgentProfileProvider = {
   getAgentPortrait: (
     nodeId: string,
     agentId: string,
+    options?: NodePortraitRequestOptions,
   ) => Promise<NodePortraitResult>;
-  getUserPortrait: (nodeId: string) => Promise<NodePortraitResult>;
+  getUserPortrait: (
+    nodeId: string,
+    options?: NodePortraitRequestOptions,
+  ) => Promise<NodePortraitResult>;
   planAgentProfileUpdate: (
     nodeId: string,
     input: AgentProfileUpdateInput,
@@ -200,7 +208,9 @@ export function registerNodeAgentProfileRoutes(
       try {
         return sendPortraitResult(
           reply,
-          await options.provider.getUserPortrait(nodeParams(request).node_id),
+          await options.provider.getUserPortrait(nodeParams(request).node_id, {
+            headers: request.headers,
+          }),
         );
       } catch {
         return reply.code(204).send();
@@ -215,7 +225,9 @@ export function registerNodeAgentProfileRoutes(
       try {
         return sendPortraitResult(
           reply,
-          await options.provider.getAgentPortrait(params.node_id, params.agent_id),
+          await options.provider.getAgentPortrait(params.node_id, params.agent_id, {
+            headers: request.headers,
+          }),
         );
       } catch {
         return reply.code(204).send();
