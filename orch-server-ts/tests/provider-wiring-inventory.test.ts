@@ -105,5 +105,8 @@ describe("live provider wiring inventory", () => {
     expect(statusByPath.get("cogito:cogitoRoutes.provider")).toBe("implemented");
     expect(statusByPath.get("cogito:cogitoRoutes.httpClient")).toBe("blocked");
     expect(statusByPath.get("cogito:cogitoRoutes.briefCollector")).toBe("stub");
+    expect(statusByPath.get("board.yjs-host:runtime.boardYjsHostHttpClient")).toBe(
+      "implemented",
+    );
   });
 });

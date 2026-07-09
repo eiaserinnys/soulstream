@@ -21,6 +21,7 @@ import {
 } from "./provider_wiring_inventory.js";
 
 export type LiveRuntimeProviderBundle = {
+  readonly boardYjsHostProxyRoutes: OrchestratorRuntimeServices["routeOptions"]["boardYjsHostProxyRoutes"];
   readonly nodeSnapshotRoutes: OrchestratorRuntimeServices["routeOptions"]["nodeSnapshotRoutes"];
   readonly nodeWsRoute: OrchestratorRuntimeServices["routeOptions"]["nodeWsRoute"];
   readonly sessionActionCommandRoutes: NonNullable<
@@ -76,6 +77,7 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
 
 export const liveFactoryImplementedProviderPaths = [
   { owner: "atom", path: "atomRoutes.configProvider" },
+  { owner: "board.yjs-host", path: "runtime.boardYjsHostHttpClient" },
   { owner: "cogito", path: "cogitoRoutes.provider" },
   { owner: "node.snapshot", path: "runtime" },
   { owner: "node.ws", path: "runtime" },
@@ -206,6 +208,7 @@ function buildLiveRuntimeProviderBundle(
   services: OrchestratorRuntimeServices,
 ): LiveRuntimeProviderBundle {
   return {
+    boardYjsHostProxyRoutes: services.routeOptions.boardYjsHostProxyRoutes,
     nodeSnapshotRoutes: services.routeOptions.nodeSnapshotRoutes,
     nodeWsRoute: services.routeOptions.nodeWsRoute,
     sessionActionCommandRoutes: requireRuntimeRouteOption(

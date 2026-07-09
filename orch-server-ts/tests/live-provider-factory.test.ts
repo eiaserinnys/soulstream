@@ -157,6 +157,7 @@ describe("live provider factory boundary", () => {
     });
     expect(bundle.systemConfigRoutes.provider.listConnectedNodes()).toEqual([]);
     expect(bundle.runtime).toEqual({
+      boardYjsHostProxyRoutes: runtimeServices.routeOptions.boardYjsHostProxyRoutes,
       nodeSnapshotRoutes: runtimeServices.routeOptions.nodeSnapshotRoutes,
       nodeWsRoute: runtimeServices.routeOptions.nodeWsRoute,
       sessionActionCommandRoutes:
@@ -172,8 +173,6 @@ describe("live provider factory boundary", () => {
 function createRuntimeServices(dependencies: LiveProviderDependencies) {
   return createOrchestratorRuntimeServices({
     config,
-    boardYjsHostHttpClient:
-      dependencies.nodeHttpClient.boardYjsHostHttpClient,
     loadTaskSnapshot: dependencies.dbCatalogRepository.loadTaskSnapshot,
     sessionHistoryProvider:
       dependencies.dbCatalogRepository.sessionHistoryProvider,
