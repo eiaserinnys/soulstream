@@ -156,19 +156,18 @@ export function createLiveAuthTokenResolver(
     const environment = requiredSnapshotString(snapshot, "environment");
     const googleClientId = requiredSnapshotString(snapshot, "google_client_id");
 
+    let bearer: AuthTokenAccessResult;
     if (!configuredBearer) {
-      if (isProductionEnvironment(environment)) {
-        return {
-          ok: false,
-          statusCode: 500,
-          detail: "Authentication not configured",
-        };
-      }
-      return { ok: true };
+      if (!isProductionEnvironment(environment)) return { ok: true };
+      bearer = {
+        ok: false,
+        statusCode: 500,
+        detail: "Authentication not configured",
+      };
+    } else {
+      bearer = verifyServiceBearer(request, configuredBearer);
+      if (bearer.ok) return { ok: true };
     }
-
-    const bearer = verifyServiceBearer(request, configuredBearer);
-    if (bearer.ok) return { ok: true };
 
     if (googleClientId.length > 0) {
       const dashboardToken = extractCookieToken(request, cookieName) ??
@@ -299,6 +298,7 @@ function verifyJwt(
 
   const payload = decodeJsonRecord(encodedPayload);
   if (!payload || typeof payload.email !== "string") return null;
+  if ("exp" in payload && typeof payload.exp !== "number") return null;
   if (typeof payload.exp === "number" && payload.exp <= nowSeconds) return null;
   return payload as AuthJwtPayload;
 }

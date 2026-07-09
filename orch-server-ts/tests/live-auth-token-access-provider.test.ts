@@ -73,6 +73,28 @@ describe("live auth token access resolver", () => {
     expect(jwt.verifyToken).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps Python verify_auth JWT fallback when production service Bearer is not configured", async () => {
+    const jwt = jwtVerifier("dashboard-jwt");
+    const resolver = createLiveAuthTokenResolver({
+      configProvider: configWith({
+        auth_bearer_token: "",
+        environment: "production",
+        google_client_id: "google-client",
+        jwt_secret: "jwt-secret",
+      }),
+      jwt,
+    });
+
+    await expect(
+      resolver(request({ cookie: "soul_dashboard_auth=dashboard-jwt" })),
+    ).resolves.toEqual({ ok: true });
+    await expect(resolver(request({}))).resolves.toMatchObject({
+      ok: false,
+      statusCode: 500,
+    });
+    expect(jwt.verifyToken).toHaveBeenCalledTimes(1);
+  });
+
   it("does not turn auth-disabled JWT dependency into a bypass", async () => {
     const jwt = jwtVerifier("dashboard-jwt");
     const resolver = createLiveAuthTokenResolver({

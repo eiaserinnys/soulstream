@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createHmac } from "node:crypto";
 
 import {
   createLiveAuthJwtHelper,
@@ -75,6 +76,15 @@ describe("live auth JWT provider", () => {
     await expect(verifier.verifyToken(token)).resolves.toBeNull();
     await expect(wrongSecret.verifyToken(token)).resolves.toBeNull();
     await expect(issuer.verifyToken("not-a-jwt")).resolves.toBeNull();
+    await expect(
+      issuer.verifyToken(
+        signedToken(
+          { alg: "HS256", typ: "JWT" },
+          { email: "user@example.com", exp: "not-a-number" },
+          "jwt-secret",
+        ),
+      ),
+    ).resolves.toBeNull();
   });
 });
 
@@ -100,4 +110,20 @@ function decodePart(token: string, index: number): Record<string, unknown> {
   const part = token.split(".")[index];
   if (part === undefined) throw new Error(`JWT part ${index} missing`);
   return JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
+}
+
+function signedToken(
+  header: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  secret: string,
+): string {
+  const signingInput = `${base64UrlJson(header)}.${base64UrlJson(payload)}`;
+  const signature = createHmac("sha256", secret)
+    .update(signingInput)
+    .digest("base64url");
+  return `${signingInput}.${signature}`;
+}
+
+function base64UrlJson(value: unknown): string {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
 }
