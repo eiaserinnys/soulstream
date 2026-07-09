@@ -36,9 +36,11 @@ export type AuthUserPayload = {
 };
 
 export type AuthJwtPayload = {
+  sub?: string;
   email: string;
   name?: string;
   picture?: string;
+  exp?: number;
   [key: string]: unknown;
 };
 
@@ -146,11 +148,15 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
 
     const email = normalizeOptionalString(profile.email);
     if (!email) return routeError(reply, 400, "ID token missing email");
-    const token = await options.jwt.issueToken({
+    const user = {
       email,
       name: normalizeOptionalString(profile.name) ?? "",
       picture: normalizeOptionalString(profile.picture) ?? "",
-    });
+    };
+    const authError = await authorizeUser(options, user);
+    if (authError) return routeError(reply, 403, authError);
+
+    const token = await options.jwt.issueToken(user);
     return { token };
   });
 
