@@ -4,6 +4,7 @@ import {
   LiveConfigProviderError,
   LiveNodeHttpClientError,
   createLiveNodeClaudeAuthOAuthConfigProvider,
+  createLiveNodeClaudeAuthPkceProvider,
   createLiveNodeClaudeAuthProfileHttpClient,
   type LiveConfigProviderBoundary,
   type NodeConnectionSnapshot,
@@ -151,6 +152,110 @@ describe("live node Claude auth route provider", () => {
     await headless.app.close();
   });
 
+  it("generates Python-compatible PKCE verifier and state values", () => {
+    const sizes: number[] = [];
+    const provider = createLiveNodeClaudeAuthPkceProvider({
+      randomBytes: (size) => {
+        sizes.push(size);
+        return Buffer.from(Array.from({ length: size }, (_value, index) => index));
+      },
+    });
+
+    expect(provider.generateVerifier()).toBe(
+      "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    );
+    expect(provider.generateState()).toBe(
+      "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    );
+    expect(sizes).toEqual([32, 32]);
+  });
+
+  it("generates SHA-256 S256 challenges from ASCII verifiers", () => {
+    const provider = createLiveNodeClaudeAuthPkceProvider();
+
+    expect(
+      provider.generateChallenge(
+        "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+      ),
+    ).toBe("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+  });
+
+  it("returns URL-safe no-padding 32-byte verifier and state strings", () => {
+    const provider = createLiveNodeClaudeAuthPkceProvider({
+      randomBytes: () => Buffer.alloc(32, 255),
+    });
+
+    for (const value of [provider.generateVerifier(), provider.generateState()]) {
+      expect(value).toHaveLength(43);
+      expect(value).toMatch(/^[A-Za-z0-9_-]+$/);
+      expect(value).not.toContain("=");
+    }
+  });
+
+  it("uses live PKCE values for browser and headless OAuth start", async () => {
+    const provider = createLiveNodeClaudeAuthOAuthConfigProvider({
+      configProvider: createConfigProvider({
+        claude_oauth_client_id: "live-claude-client",
+        claude_oauth_callback_url:
+          "https://orch.example.test/api/nodes/claude-auth/callback",
+      }),
+    });
+    const pkce = createLiveNodeClaudeAuthPkceProvider({
+      randomBytes: sequentialBytes([
+        Buffer.from(Array.from({ length: 32 }, (_value, index) => index)),
+        Buffer.alloc(32, 255),
+        Buffer.from(Array.from({ length: 32 }, (_value, index) => 31 - index)),
+        Buffer.alloc(32, 1),
+      ]),
+    });
+
+    const browser = createClaudeAuthHarness({ provider, pkce });
+    const browserResponse = await browser.app.inject({
+      method: "GET",
+      url: "/api/nodes/fake-node/claude-auth/start",
+    });
+    expect(browserResponse.statusCode).toBe(302);
+    const browserLocation = new URL(String(browserResponse.headers.location));
+    expect(browserLocation.searchParams.get("state")).toBe(
+      "__________________________________________8",
+    );
+    expect(browserLocation.searchParams.get("code_challenge")).toBe(
+      "6oZqdX5MOLq_qBJ8vppAnT4fk6AP8UiP9zX8-Rev_9A",
+    );
+    expect(browser.sessionStore.created).toEqual([
+      {
+        state: "__________________________________________8",
+        verifier: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+        metadata: { node_id: "fake-node" },
+      },
+    ]);
+    await browser.app.close();
+
+    const headless = createClaudeAuthHarness({ provider, pkce });
+    const headlessResponse = await headless.app.inject({
+      method: "GET",
+      url: "/api/nodes/fake-node/claude-auth/headless/start",
+    });
+    expect(headlessResponse.statusCode).toBe(200);
+    const headlessUrl = new URL(
+      headlessResponse.json<{ authUrl: string }>().authUrl,
+    );
+    expect(headlessUrl.searchParams.get("state")).toBe(
+      "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+    );
+    expect(headlessUrl.searchParams.get("code_challenge")).toBe(
+      "hPUmsR8zpTd_x0LYm0rwAsdfEv6A0_gR5AnDa0Abxnc",
+    );
+    expect(headless.sessionStore.created).toEqual([
+      {
+        state: "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+        verifier: "Hx4dHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA",
+        metadata: { node_id: "fake-node" },
+      },
+    ]);
+    await headless.app.close();
+  });
+
   it("forwards explicit profile request fields through the live node HTTP boundary", async () => {
     const requestNode = vi.fn(async () => ({
       statusCode: 200,
@@ -281,5 +386,15 @@ function createConfigProvider(
       if (value === undefined) throw new Error(`missing config: ${key}`);
       return value;
     }),
+  };
+}
+
+function sequentialBytes(values: Buffer[]): (size: number) => Buffer {
+  const queue = [...values];
+  return (size) => {
+    const value = queue.shift();
+    if (value === undefined) throw new Error("randomBytes called too many times");
+    expect(size).toBe(value.length);
+    return value;
   };
 }
