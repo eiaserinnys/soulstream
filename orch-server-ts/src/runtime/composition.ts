@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import { createApp } from "../app.js";
 import type { OrchServerTsConfig } from "../config.js";
@@ -73,7 +73,7 @@ export type OrchestratorRuntimeCompositionOptions = {
   sseReplayOnlyForTests?: boolean;
   nodeStreamKeepaliveMs?: number;
   nodeStreamCloseAfterInitialSnapshot?: boolean;
-  loadSessionSnapshot?: () => Promise<SessionStreamSnapshot>;
+  loadSessionSnapshot?: (request: FastifyRequest) => Promise<SessionStreamSnapshot>;
   sessionHistoryProvider?: SessionHistoryProvider;
   sessionHistoryKeepaliveMs?: number;
   sessionHistoryCloseAfterHistorySync?: boolean;

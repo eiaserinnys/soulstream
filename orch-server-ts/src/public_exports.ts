@@ -66,6 +66,7 @@ export * from "./session/session_command_routes.js";
 export * from "./session/session_command_transport.js";
 export * from "./session/session_history_routes.js";
 export * from "./session/session_history_service.js";
+export * from "./session/session_resource_access.js";
 export * from "./session/session_snapshot_routes.js";
 export * from "./session/session_snapshot_service.js";
 export * from "./sse/replay_broadcaster.js";

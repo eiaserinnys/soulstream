@@ -1,6 +1,10 @@
 import type { BoardYjsHostHttpClient } from "../board/board_yjs_host_proxy.js";
+import type { BoardAccess } from "../board/board_access.js";
 import type { SessionCatalogProvider } from "../session/session_catalog_routes.js";
 import type { SessionHistoryProvider } from "../session/session_history_service.js";
+import type {
+  SessionResourceAccessRepository,
+} from "../session/session_resource_access.js";
 import type {
   SessionStreamSnapshot,
   TaskStreamSnapshot,
@@ -29,9 +33,12 @@ export type LiveAuthSessionIdentityBoundary = {
 
 export type LiveDbCatalogRepositoryBoundary = {
   readonly sessionCatalogProvider: SessionCatalogProvider;
-  readonly loadSessionSnapshot: () => Promise<SessionStreamSnapshot>;
+  readonly loadSessionSnapshot: (
+    input?: { readonly access?: BoardAccess; readonly feedOnly?: boolean },
+  ) => Promise<SessionStreamSnapshot>;
   readonly loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   readonly sessionHistoryProvider: SessionHistoryProvider;
+  readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
 };
 
 export type LiveNodeHttpResponse = {

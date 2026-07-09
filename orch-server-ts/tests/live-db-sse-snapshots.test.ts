@@ -98,6 +98,53 @@ describe("live DB SSE replay snapshots", () => {
     ]);
   });
 
+  it("loads restricted feed-only session snapshots from the first allowed folder", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("FROM folders")) {
+        return [
+          { id: "root", parent_folder_id: null },
+          { id: "child", parent_folder_id: "root" },
+        ];
+      }
+      if (text.includes("session_count")) return [{ count: 0 }];
+      if (text.includes("session_get_all")) return [];
+      return [];
+    });
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    await expect(
+      repository.loadSessionSnapshot({
+        access: { restricted: true, allowedFolderIds: ["root"] },
+        feedOnly: true,
+      }),
+    ).resolves.toEqual({ sessions: [], total: 0 });
+
+    const filterValues = harness.calls
+      .filter((call) => call.text.includes("session_"))
+      .map((call) => JSON.parse(String(call.values[0])));
+    expect(filterValues).toEqual([
+      { folder_id: "root", feed_only: true },
+      { folder_id: "root", feed_only: true },
+    ]);
+  });
+
+  it("returns an empty restricted session snapshot when no allowed folder exists", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("FROM folders")) return [{ id: "root", parent_folder_id: null }];
+      return [];
+    });
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    await expect(
+      repository.loadSessionSnapshot({
+        access: { restricted: true, allowedFolderIds: ["missing"] },
+      }),
+    ).resolves.toEqual({ sessions: [], total: 0 });
+    expect(harness.normalizedCalls()).toEqual([
+      "SELECT id, parent_folder_id FROM folders",
+    ]);
+  });
+
   it("loads task snapshots with linked session serialization", async () => {
     const harness = createSqlHarness((text) => {
       if (text.includes("COUNT(*)::int")) return [{ count: 1 }];

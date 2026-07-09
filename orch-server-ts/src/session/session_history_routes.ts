@@ -8,9 +8,14 @@ import {
   type SessionHistoryProvider,
   type SessionHistoryRawEvent,
 } from "./session_history_service.js";
+import {
+  SessionResourceAccessError,
+  type SessionResourceAccessProvider,
+} from "./session_resource_access.js";
 
 export type SessionHistoryRouteOptions = {
   provider: SessionHistoryProvider;
+  accessProvider?: SessionResourceAccessProvider;
   keepaliveMs?: number;
   closeAfterHistorySync?: boolean;
 };
@@ -58,6 +63,7 @@ export function registerSessionHistoryRoutes(
     const yMax = requiredPositiveIntegerQuery(request.query, "y_max");
     if (!yMax.ok) return sendInvalidQuery(reply, yMax);
 
+    if (!(await ensureSessionAccess(options, request, reply))) return;
     return service.readViewport(sessionParams(request).session_id, yMin.value, yMax.value);
   });
 
@@ -65,6 +71,7 @@ export function registerSessionHistoryRoutes(
     const limit = limitQuery(request.query);
     if (!limit.ok) return sendInvalidQuery(reply, limit);
 
+    if (!(await ensureSessionAccess(options, request, reply))) return;
     return service.readMessagesPage(
       sessionParams(request).session_id,
       optionalStringQuery(request.query, "before"),
@@ -76,6 +83,7 @@ export function registerSessionHistoryRoutes(
     const limit = limitQuery(request.query);
     if (!limit.ok) return sendInvalidQuery(reply, limit);
 
+    if (!(await ensureSessionAccess(options, request, reply))) return;
     return service.readTimelinePage(
       sessionParams(request).session_id,
       optionalStringQuery(request.query, "before"),
@@ -86,6 +94,7 @@ export function registerSessionHistoryRoutes(
   app.get("/api/sessions/:session_id/timeline/:timeline_id/trace", async (request, reply) => {
     const { session_id: sessionId, timeline_id: timelineId } =
       timelineTraceParams(request);
+    if (!(await ensureSessionAccess(options, request, reply))) return;
     const trace = await service.readTimelineTrace(sessionId, timelineId);
     if (trace === null || trace === undefined) {
       return reply.code(404).send({
@@ -190,6 +199,7 @@ async function sendSessionEventsStream(
   options: SessionHistoryRouteOptions,
 ): Promise<FastifyReply> {
   const sessionId = sessionParams(request).session_id;
+  if (!(await ensureSessionAccess(options, request, reply))) return reply;
   const frames = await buildSessionHistoryFrames(request, service, sessionId);
   setSseHeaders(reply);
 
@@ -251,6 +261,35 @@ async function buildSessionHistoryFrames(
   }
   frames.push(historySyncFrame(lastStoredId));
   return frames;
+}
+
+async function ensureSessionAccess(
+  options: SessionHistoryRouteOptions,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<boolean> {
+  try {
+    await options.accessProvider?.requireSessionAccess({
+      request,
+      sessionId: sessionParams(request).session_id,
+    });
+    return true;
+  } catch (error) {
+    sendSessionAccessError(reply, error);
+    return false;
+  }
+}
+
+function sendSessionAccessError(reply: FastifyReply, error: unknown): FastifyReply {
+  if (error instanceof SessionResourceAccessError) {
+    return reply.code(error.statusCode).send({
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+    });
+  }
+  throw error;
 }
 
 function resolveSessionHistoryAfterId(request: FastifyRequest): number {

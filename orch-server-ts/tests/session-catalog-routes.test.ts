@@ -1,12 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   SessionCatalogRouteError,
+  SessionResourceAccessError,
   createApp,
   loadContractFixtures,
   parseOrchServerConfig,
   sessionCatalogRouteAuthRequirements,
   type SessionCatalogProvider,
+  type SessionResourceAccessProvider,
 } from "../src/index.js";
 
 const config = parseOrchServerConfig({
@@ -263,6 +265,96 @@ describe("session catalog/read-position route harness", () => {
       ["move", ["sess-contract"], null, undefined],
       ["move", ["sess-contract"], null, undefined],
     ]);
+
+    await app.close();
+  });
+
+  it("checks session and target-folder access before catalog mutations", async () => {
+    const { provider } = createProvider();
+    const accessProvider: SessionResourceAccessProvider = {
+      requireSessionAccess: vi.fn(async () => undefined),
+      requireFolderAccess: vi.fn(async () => undefined),
+      resolveAccess: vi.fn(async () => ({ restricted: false, allowedFolderIds: [] })),
+    };
+    const app = createApp({ config, sessionCatalogRoutes: { provider, accessProvider } });
+
+    await app.inject({
+      method: "PATCH",
+      url: "/api/sessions/sess-a/display-name",
+      payload: {
+        displayName: "renamed",
+        caller_info: { email: "restricted@example.test" },
+      },
+    });
+    await app.inject({
+      method: "PUT",
+      url: "/api/sessions/folder",
+      payload: {
+        sessionIds: ["sess-a", "sess-b"],
+        folderId: "target-folder",
+        caller_info: { callerEmail: "restricted@example.test" },
+      },
+    });
+    await app.inject({
+      method: "PUT",
+      url: "/api/sessions/sess-a",
+      payload: {
+        folderId: "next-folder",
+        caller_info: { email: "restricted@example.test" },
+      },
+    });
+    await app.inject({ method: "GET", url: "/api/sessions/sess-a/cards" });
+    await app.inject({
+      method: "PUT",
+      url: "/api/sessions/sess-a/read-position",
+      payload: {
+        last_read_event_id: 3,
+        caller_info: { email: "restricted@example.test" },
+      },
+    });
+
+    expect(accessProvider.requireSessionAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "sess-a", accessEmail: "restricted@example.test" }),
+    );
+    expect(accessProvider.requireSessionAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "sess-b", accessEmail: "restricted@example.test" }),
+    );
+    expect(accessProvider.requireFolderAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ folderId: "target-folder", accessEmail: "restricted@example.test" }),
+    );
+    expect(accessProvider.requireFolderAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ folderId: "next-folder", accessEmail: "restricted@example.test" }),
+    );
+    expect(accessProvider.requireSessionAccess).toHaveBeenCalledTimes(6);
+
+    await app.close();
+  });
+
+  it("stops catalog providers when session access denies the request", async () => {
+    const { provider, calls } = createProvider();
+    const accessProvider: SessionResourceAccessProvider = {
+      requireSessionAccess: vi.fn(async () => {
+        throw new SessionResourceAccessError(
+          "SESSION_ACCESS_DENIED",
+          "Folder access denied",
+          403,
+        );
+      }),
+      requireFolderAccess: vi.fn(async () => undefined),
+      resolveAccess: vi.fn(async () => ({ restricted: true, allowedFolderIds: [] })),
+    };
+    const app = createApp({ config, sessionCatalogRoutes: { provider, accessProvider } });
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/sessions/sess-denied",
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      error: { code: "SESSION_ACCESS_DENIED" },
+    });
+    expect(calls).toEqual([]);
 
     await app.close();
   });
