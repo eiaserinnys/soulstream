@@ -141,7 +141,7 @@ describe("live DB SSE replay snapshots", () => {
       }),
     ).resolves.toEqual({ sessions: [], total: 0 });
     expect(harness.normalizedCalls()).toEqual([
-      "SELECT id, parent_folder_id FROM folders",
+      "SELECT id, parent_folder_id, settings FROM folders",
     ]);
   });
 

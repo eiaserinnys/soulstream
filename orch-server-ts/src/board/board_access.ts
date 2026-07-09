@@ -1,6 +1,7 @@
 export type BoardAccessFolderRecord = {
   id: string;
   parentFolderId?: string | null;
+  settings?: unknown;
 };
 
 export type BoardAccess = {

@@ -141,18 +141,19 @@ function createSessionResourceAccessRepository(
   return {
     async getSessionAccessRecord(sessionId) {
       const rows = await (await sqlResolver.resolveSql())`
-        SELECT session_id, folder_id FROM session_get(${sessionId}) LIMIT 1
+        SELECT session_id, folder_id, session_type FROM session_get(${sessionId}) LIMIT 1
       `;
       const row = rows[0];
       if (row === undefined) return null;
       return {
         sessionId: String(row.session_id ?? sessionId),
         folderId: stringOrNull(row.folder_id),
+        sessionType: stringOrNull(row.session_type),
       };
     },
     async listFoldersForAccess() {
       const rows = await (await sqlResolver.resolveSql())`
-        SELECT id, parent_folder_id FROM folders
+        SELECT id, parent_folder_id, settings FROM folders
       `;
       return rows.flatMap(folderAccessRecord);
     },
@@ -255,6 +256,7 @@ function folderAccessRecord(row: Record<string, unknown>): BoardAccessFolderReco
   return [{
     id,
     parentFolderId: stringOrNull(row.parent_folder_id ?? row.parentFolderId),
+    settings: row.settings,
   }];
 }
 
