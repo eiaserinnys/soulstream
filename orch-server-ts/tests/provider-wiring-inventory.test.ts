@@ -84,7 +84,7 @@ describe("live provider wiring inventory", () => {
     expect([...risks].sort()).toEqual(["high", "low", "medium"]);
   });
 
-  it("marks the live config provider slices implemented without enabling HTTP forwarding", () => {
+  it("marks the low-risk live provider slices implemented without enabling HTTP forwarding", () => {
     const statusByPath = new Map(
       liveProviderWiringInventory.map((entry) => [
         `${entry.owner}:${entry.path}`,
@@ -102,5 +102,8 @@ describe("live provider wiring inventory", () => {
     expect(statusByPath.get("system.config:systemConfigRoutes.httpClient")).toBe(
       "blocked",
     );
+    expect(statusByPath.get("cogito:cogitoRoutes.provider")).toBe("implemented");
+    expect(statusByPath.get("cogito:cogitoRoutes.httpClient")).toBe("blocked");
+    expect(statusByPath.get("cogito:cogitoRoutes.briefCollector")).toBe("stub");
   });
 });

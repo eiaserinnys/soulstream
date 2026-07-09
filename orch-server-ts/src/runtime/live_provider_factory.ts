@@ -1,5 +1,9 @@
 import type { OrchestratorRuntimeServices } from "./composition.js";
 import {
+  createLiveCogitoRouteProviders,
+  type LiveCogitoRouteProviderBundle,
+} from "./live_cogito_route_provider.js";
+import {
   createLiveConfigRouteProviders,
   type LiveConfigRouteProviderBundle,
 } from "./live_config_route_providers.js";
@@ -31,6 +35,7 @@ export type LiveRuntimeProviderBundle = {
 
 export type LiveOrchestratorProviderBundle = {
   readonly runtime: LiveRuntimeProviderBundle;
+  readonly cogitoRoutes: LiveCogitoRouteProviderBundle["cogitoRoutes"];
   readonly configProviders: LiveConfigRouteProviderBundle;
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
   readonly implementedProviderPaths: readonly LiveProviderPath[];
@@ -71,6 +76,7 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
 
 export const liveFactoryImplementedProviderPaths = [
   { owner: "atom", path: "atomRoutes.configProvider" },
+  { owner: "cogito", path: "cogitoRoutes.provider" },
   { owner: "node.snapshot", path: "runtime" },
   { owner: "node.ws", path: "runtime" },
   { owner: "public.status", path: "publicStatusRoutes.configProvider" },
@@ -111,9 +117,13 @@ export function createLiveOrchestratorProviderBundle(
     registry: options.runtimeServices.registry,
     portraitAssets: options.dependencies.systemPortraitAssets,
   });
+  const cogitoProviders = createLiveCogitoRouteProviders({
+    registry: options.runtimeServices.registry,
+  });
 
   return {
     runtime: buildLiveRuntimeProviderBundle(options.runtimeServices),
+    cogitoRoutes: cogitoProviders.cogitoRoutes,
     configProviders: createLiveConfigRouteProviders(options.dependencies.configProvider),
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
     implementedProviderPaths: alignment.factoryProviderPaths,

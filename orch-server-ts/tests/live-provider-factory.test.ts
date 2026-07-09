@@ -134,6 +134,7 @@ describe("live provider factory boundary", () => {
     });
 
     expect(bundle.implementedProviderPaths).toEqual(liveFactoryImplementedProviderPaths);
+    expect(bundle.cogitoRoutes.provider.listConnectedNodes()).toEqual([]);
     await expect(
       bundle.configProviders.publicStatusRoutes.configProvider.getConfig(),
     ).resolves.toEqual({
