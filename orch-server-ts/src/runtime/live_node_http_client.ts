@@ -55,6 +55,7 @@ type LiveNodeHttpSendRequest = {
   readonly url: string;
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: unknown;
+  readonly responseType?: LiveNodeHttpRequest["responseType"];
 };
 
 export function createLiveNodeHttpClientBoundary(
@@ -113,6 +114,7 @@ async function requestConnectedNode(
     url: `http://${node.host}:${node.port}${request.path}`,
     headers: request.headers ?? {},
     body: request.body,
+    responseType: request.responseType,
   });
 }
 
@@ -129,7 +131,7 @@ async function sendRequest(
       body: bodyForRequest(request.body),
       signal: controller.signal,
     });
-    return readResponse(response);
+    return readResponse(response, request.responseType);
   } catch (error) {
     throw mapFetchError(error, request, options.timeoutMs);
   } finally {
@@ -174,8 +176,18 @@ function bodyForRequest(body: unknown): string | undefined {
   return body === undefined ? undefined : JSON.stringify(body);
 }
 
-async function readResponse(response: Response): Promise<LiveNodeHttpResponse> {
+async function readResponse(
+  response: Response,
+  responseType?: LiveNodeHttpRequest["responseType"],
+): Promise<LiveNodeHttpResponse> {
   const headers = responseHeaders(response);
+  if (responseType === "arrayBuffer") {
+    return {
+      statusCode: response.status,
+      headers,
+      body: Buffer.from(await response.arrayBuffer()),
+    };
+  }
   const text = await response.text();
   const contentType = headerValue(headers, "content-type");
   return {

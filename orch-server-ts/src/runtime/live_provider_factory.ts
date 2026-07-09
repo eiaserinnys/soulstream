@@ -14,6 +14,10 @@ import {
   type LiveNodeClaudeAuthRouteProviderBundle,
 } from "./live_node_claude_auth_route_provider.js";
 import {
+  createLiveNodeAgentProfileRouteProviders,
+  type LiveNodeAgentProfileRouteProviderBundle,
+} from "./live_node_agent_profile_route_provider.js";
+import {
   createLiveRunbookRouteProviders,
   type LiveRunbookRouteProviderBundle,
 } from "./live_runbook_route_provider.js";
@@ -49,6 +53,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly cogitoRoutes: LiveCogitoRouteProviderBundle["cogitoRoutes"];
   readonly configProviders: LiveConfigRouteProviderBundle;
   readonly executeProxyRoutes: ExecuteProxyRouteOptions;
+  readonly nodeAgentProfileRoutes: LiveNodeAgentProfileRouteProviderBundle["nodeAgentProfileRoutes"];
   readonly nodeClaudeAuthRoutes: LiveNodeClaudeAuthRouteProviderBundle["nodeClaudeAuthRoutes"];
   readonly runbookRoutes: LiveRunbookRouteProviderBundle["runbookRoutes"];
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
@@ -95,6 +100,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "cogito", path: "cogitoRoutes.httpClient" },
   { owner: "cogito", path: "cogitoRoutes.provider" },
   { owner: "execute", path: "executeProxyRoutes.provider" },
+  { owner: "node.agent-profiles", path: "nodeAgentProfileRoutes.provider" },
   { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.profileHttpClient" },
   { owner: "node.snapshot", path: "runtime" },
   { owner: "node.ws", path: "runtime" },
@@ -150,6 +156,11 @@ export function createLiveOrchestratorProviderBundle(
   const nodeClaudeAuthProviders = createLiveNodeClaudeAuthRouteProviders({
     nodeHttpClient: options.dependencies.nodeHttpClient,
   });
+  const nodeAgentProfileProviders = createLiveNodeAgentProfileRouteProviders({
+    registry: options.runtimeServices.registry,
+    bridge: options.runtimeServices.sessionBridge,
+    nodeHttpClient: options.dependencies.nodeHttpClient,
+  });
 
   return {
     runtime: buildLiveRuntimeProviderBundle(options.runtimeServices),
@@ -163,6 +174,7 @@ export function createLiveOrchestratorProviderBundle(
         sessionEventHub: options.runtimeServices.sessionEventHub,
       }),
     },
+    nodeAgentProfileRoutes: nodeAgentProfileProviders.nodeAgentProfileRoutes,
     nodeClaudeAuthRoutes: nodeClaudeAuthProviders.nodeClaudeAuthRoutes,
     runbookRoutes: runbookProviders.runbookRoutes,
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,

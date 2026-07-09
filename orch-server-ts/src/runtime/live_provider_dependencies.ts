@@ -44,6 +44,7 @@ export type LiveNodeHttpRequest = {
   readonly path: string;
   readonly headers?: Readonly<Record<string, string>>;
   readonly body?: unknown;
+  readonly responseType?: "arrayBuffer";
 };
 
 export type LiveNodeHttpClientBoundary = {

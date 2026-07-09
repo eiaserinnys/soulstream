@@ -144,6 +144,35 @@ describe("live node HTTP client boundary", () => {
     );
   });
 
+  it("preserves binary requestNode responses when requested explicitly", async () => {
+    const registry = createRegistry();
+    registerNode(registry, "worker-node", "10.0.0.8", 4106, false);
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d]);
+    const fetch = vi.fn(
+      async () =>
+        new Response(bytes, {
+          status: 200,
+          headers: { "content-type": "image/png" },
+        }),
+    );
+    const client = createLiveNodeHttpClientBoundary({ registry, fetch });
+
+    await expect(
+      client.requestNode({
+        nodeId: "worker-node",
+        method: "GET",
+        path: "/api/agents/agent-a/portrait",
+        responseType: "arrayBuffer",
+      }),
+    ).resolves.toEqual({
+      statusCode: 200,
+      headers: expect.objectContaining({
+        "content-type": "image/png",
+      }),
+      body: Buffer.from(bytes),
+    });
+  });
+
   it("maps upstream request failure and timeout to typed errors", async () => {
     const registry = createRegistry();
     registerNode(registry, "worker-node", "10.0.0.8", 4106, false);

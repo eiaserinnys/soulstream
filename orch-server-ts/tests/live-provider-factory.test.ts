@@ -252,6 +252,32 @@ describe("live provider factory boundary", () => {
       path: "/auth/claude/profiles",
       headers: { cookie: "sid=claude", authorization: "Bearer claude" },
     });
+    runtimeServices.registry.registerNode({
+      type: "node_register",
+      node_id: "node-agent",
+      host: "127.0.0.1",
+      port: 4105,
+      agents: [{ id: "agent-a", name: "Agent A", backend: "codex" }],
+    });
+    await expect(
+      bundle.nodeAgentProfileRoutes.provider.listAgentProfiles("node-agent"),
+    ).resolves.toEqual({
+      "agent-a": {
+        name: "Agent A",
+        portrait_url: undefined,
+        max_turns: undefined,
+        backend: "codex",
+      },
+    });
+    await expect(
+      bundle.nodeAgentProfileRoutes.provider.getUserPortrait("node-agent"),
+    ).resolves.toMatchObject({ status: "upstream", statusCode: 200 });
+    expect(dependencies.nodeHttpClient.requestNode).toHaveBeenCalledWith({
+      nodeId: "node-agent",
+      method: "GET",
+      path: "/api/dashboard/portrait/user",
+      responseType: "arrayBuffer",
+    });
     expect(bundle.executeProxyRoutes.provider.executeNew).toEqual(expect.any(Function));
     expect(bundle.executeProxyRoutes.provider.executeResume).toEqual(expect.any(Function));
     expect(bundle.runtime).toEqual({
