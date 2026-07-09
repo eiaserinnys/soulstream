@@ -25,6 +25,10 @@ export type NodeWsRouteOptions = {
 
 export type NodeRegistryEventSink = (events: NodeRegistryEvent[]) => void;
 
+export const nodeWsRouteAuthRequirements = {
+  "WEBSOCKET /ws/node": false,
+} as const;
+
 export function registerNodeWsRoute(
   app: FastifyInstance,
   options: NodeWsRouteOptions,
