@@ -139,6 +139,49 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().activeSessionKey).toBeNull();
     });
 
+    it("should clear board document overlay when reselecting the active session", () => {
+      const store = useDashboardStore.getState();
+      store.setActiveSession("sess-abc");
+      store.setActiveBoardDocument("doc-1");
+
+      useDashboardStore.getState().setActiveSession("sess-abc");
+
+      const state = useDashboardStore.getState();
+      expect(state.activeSessionKey).toBe("sess-abc");
+      expect(state.activeBoardDocumentId).toBeNull();
+      expect(state.activeRightTab).toBe("chat");
+    });
+
+    it("should clear custom view overlay when reselecting the active session", () => {
+      const store = useDashboardStore.getState();
+      store.setActiveSession("sess-abc");
+      store.setActiveCustomView("view-1");
+
+      useDashboardStore.getState().setActiveSession("sess-abc");
+
+      const state = useDashboardStore.getState();
+      expect(state.activeSessionKey).toBe("sess-abc");
+      expect(state.activeCustomViewId).toBeNull();
+      expect(state.activeRightTab).toBe("chat");
+    });
+
+    it("should keep board document selection semantics while a session stays active", () => {
+      const store = useDashboardStore.getState();
+      store.setActiveSession("sess-abc");
+
+      store.setActiveBoardDocument("doc-1");
+      expect(useDashboardStore.getState().activeSessionKey).toBe("sess-abc");
+      expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-1");
+      expect(useDashboardStore.getState().activeCustomViewId).toBeNull();
+      expect(useDashboardStore.getState().activeRightTab).toBe("chat");
+
+      store.setActiveBoardDocument("doc-2");
+      expect(useDashboardStore.getState().activeSessionKey).toBe("sess-abc");
+      expect(useDashboardStore.getState().activeBoardDocumentId).toBe("doc-2");
+      expect(useDashboardStore.getState().activeCustomViewId).toBeNull();
+      expect(useDashboardStore.getState().activeRightTab).toBe("chat");
+    });
+
     it("should not rewrite selected folder when selecting a session", () => {
       useDashboardStore.getState().setCatalog({
         folders: [
