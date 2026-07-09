@@ -1,8 +1,16 @@
+import {
+  AUTH_COOKIE_NAME,
+  type AuthRouteConfigProvider,
+} from "../auth/auth_routes.js";
 import type { AtomRouteConfigProvider } from "../atom/atom_routes.js";
 import type { PublicStatusRouteConfigProvider } from "../public/public_status_routes.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
 
 type LiveConfigRouteProviderPath =
+  | {
+      readonly owner: "auth";
+      readonly path: "authRoutes.configProvider";
+    }
   | {
       readonly owner: "atom";
       readonly path: "atomRoutes.configProvider";
@@ -26,6 +34,9 @@ export type LiveConfigProviderFailure = LiveConfigRouteProviderPath & {
 };
 
 export type LiveConfigRouteProviderBundle = {
+  readonly authRoutes: {
+    readonly configProvider: AuthRouteConfigProvider;
+  };
   readonly atomRoutes: {
     readonly configProvider: AtomRouteConfigProvider;
   };
@@ -48,6 +59,11 @@ export function createLiveConfigRouteProviders(
   configProvider: LiveConfigProviderBoundary,
 ): LiveConfigRouteProviderBundle {
   return {
+    authRoutes: {
+      configProvider: {
+        getConfig: () => authRouteConfig(configProvider),
+      },
+    },
     atomRoutes: {
       configProvider: {
         getConfig: () => atomRouteConfig(configProvider),
@@ -58,6 +74,37 @@ export function createLiveConfigRouteProviders(
         getConfig: () => publicStatusRouteConfig(configProvider),
       },
     },
+  };
+}
+
+async function authRouteConfig(configProvider: LiveConfigProviderBoundary) {
+  const route = {
+    owner: "auth",
+    path: "authRoutes.configProvider",
+  } as const;
+  const [
+    googleClientId,
+    googleClientSecret,
+    callbackUrl,
+    jwtSecret,
+    environment,
+  ] = await Promise.all([
+    requireString(configProvider, route, "google_client_id"),
+    requireString(configProvider, route, "google_client_secret"),
+    requireString(configProvider, route, "google_callback_url"),
+    requireString(configProvider, route, "jwt_secret"),
+    requireString(configProvider, route, "environment"),
+  ]);
+
+  return {
+    authEnabled: googleClientId.length > 0,
+    devModeEnabled: environment.toLowerCase() === "development" ||
+      environment.toLowerCase() === "dev",
+    googleClientId,
+    googleClientSecret,
+    callbackUrl,
+    jwtSecretConfigured: jwtSecret.length > 0,
+    cookieName: AUTH_COOKIE_NAME,
   };
 }
 
