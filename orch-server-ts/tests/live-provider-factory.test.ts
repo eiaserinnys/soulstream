@@ -275,6 +275,13 @@ describe("live provider factory boundary", () => {
     expect(bundle.nodeClaudeAuthRoutes.pkce.generateState()).toMatch(
       /^[A-Za-z0-9_-]{43}$/,
     );
+    await bundle.nodeClaudeAuthRoutes.sessionStore.create("state-live", "verifier-live", {
+      metadata: { node_id: "node-claude" },
+    });
+    expect(await bundle.nodeClaudeAuthRoutes.sessionStore.pop("state-live")).toEqual({
+      verifier: "verifier-live",
+      metadata: { node_id: "node-claude" },
+    });
     runtimeServices.registry.registerNode({
       type: "node_register",
       node_id: "node-agent",

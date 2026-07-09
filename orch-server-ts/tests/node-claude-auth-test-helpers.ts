@@ -23,7 +23,9 @@ const config = parseOrchServerConfig({
 
 type AckFactory = (message: Record<string, unknown>) => Record<string, unknown>;
 
-export type ClaudeAuthHarnessOptions = {
+export type ClaudeAuthHarnessOptions<
+  TSessionStore extends ClaudeAuthSessionStore = MemoryClaudeAuthSessionStore,
+> = {
   ackFor?: AckFactory;
   attachTransport?: boolean;
   registerNode?: boolean;
@@ -33,6 +35,22 @@ export type ClaudeAuthHarnessOptions = {
   pkce?: NodeClaudeAuthRouteOptions["pkce"];
   profileHttpClient?: NodeClaudeAuthRouteOptions["profileHttpClient"];
   provider?: NodeClaudeAuthRouteOptions["provider"];
+  sessionStore?: TSessionStore;
+};
+
+export type ClaudeAuthHarness<
+  TSessionStore extends ClaudeAuthSessionStore = MemoryClaudeAuthSessionStore,
+> = {
+  app: ReturnType<typeof createApp>;
+  bridge: SessionCommandTransportBridge;
+  connectionId: string | undefined;
+  profileRequests: NodeClaudeAuthHttpRequest[];
+  registry: InMemoryNodeRegistry;
+  routeOptions: NodeClaudeAuthRouteOptions;
+  sent: Array<Record<string, unknown>>;
+  sessionStore: TSessionStore;
+  tokenRequests: ClaudeAuthTokenExchangeRequest[];
+  transports: NodeCommandTransportHub;
 };
 
 export class MemoryClaudeAuthSessionStore implements ClaudeAuthSessionStore {
@@ -67,7 +85,19 @@ export class MemoryClaudeAuthSessionStore implements ClaudeAuthSessionStore {
   }
 }
 
-export function createClaudeAuthHarness(options: ClaudeAuthHarnessOptions = {}) {
+export function createClaudeAuthHarness(
+  options?: ClaudeAuthHarnessOptions<MemoryClaudeAuthSessionStore>,
+): ClaudeAuthHarness<MemoryClaudeAuthSessionStore>;
+export function createClaudeAuthHarness<
+  TSessionStore extends ClaudeAuthSessionStore,
+>(
+  options: ClaudeAuthHarnessOptions<TSessionStore> & {
+    sessionStore: TSessionStore;
+  },
+): ClaudeAuthHarness<TSessionStore>;
+export function createClaudeAuthHarness(
+  options: ClaudeAuthHarnessOptions<ClaudeAuthSessionStore> = {},
+): ClaudeAuthHarness<ClaudeAuthSessionStore> {
   const registry = new InMemoryNodeRegistry({
     nowMs: () => 1_700_000_000_000,
     requestIdGenerator: ({ sequence, commandType, nowMs }) =>
@@ -106,7 +136,7 @@ export function createClaudeAuthHarness(options: ClaudeAuthHarnessOptions = {}) 
     });
   }
 
-  const sessionStore = new MemoryClaudeAuthSessionStore();
+  const sessionStore = options.sessionStore ?? new MemoryClaudeAuthSessionStore();
   const tokenRequests: ClaudeAuthTokenExchangeRequest[] = [];
   const profileRequests: NodeClaudeAuthHttpRequest[] = [];
   const routeOptions: NodeClaudeAuthRouteOptions = {
