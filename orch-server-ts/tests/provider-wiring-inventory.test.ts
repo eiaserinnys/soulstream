@@ -113,6 +113,21 @@ describe("live provider wiring inventory", () => {
     expect(statusByPath.get("runbooks:runbookRoutes.httpClient")).toBe(
       "implemented",
     );
+    expect(statusByPath.get("auth:authRoutes.userPayloadExtra")).toBe(
+      "implemented",
+    );
+    expect(statusByPath.get("folders:folderRoutes.accessProvider")).toBe(
+      "implemented",
+    );
+    expect(statusByPath.get("board.items:boardItemRoutes.accessProvider")).toBe(
+      "implemented",
+    );
+    expect(
+      statusByPath.get("markdown.documents:markdownDocumentRoutes.accessProvider"),
+    ).toBe("implemented");
+    expect(statusByPath.get("runbooks:runbookRoutes.accessProvider")).toBe(
+      "implemented",
+    );
     expect(
       statusByPath.get("node.agent-profiles:nodeAgentProfileRoutes.provider"),
     ).toBe("implemented");
@@ -132,7 +147,6 @@ describe("live provider wiring inventory", () => {
       statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.tokenExchange"),
     ).toBe("implemented");
     expect(statusByPath.get("runbooks:runbookRoutes.provider")).toBe("stub");
-    expect(statusByPath.get("runbooks:runbookRoutes.accessProvider")).toBe("stub");
     expect(statusByPath.get("board.yjs-host:runtime.boardYjsHostHttpClient")).toBe(
       "implemented",
     );

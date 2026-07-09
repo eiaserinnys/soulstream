@@ -175,6 +175,7 @@ export const shadowRouteCompositionRequirements = [
       "authRoutes.nativeVerifier",
       "authRoutes.jwt",
       "authRoutes.httpClient",
+      "authRoutes.userPayloadExtra",
     ],
   },
   {

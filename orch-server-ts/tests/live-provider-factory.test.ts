@@ -201,6 +201,13 @@ describe("live provider factory boundary", () => {
     expect(bundle.authRoutes.nativeVerifier).toEqual(expect.any(Function));
     expect(bundle.authRoutes.resolveTokenAccess).toEqual(expect.any(Function));
     expect(bundle.authRoutes.authorizeUser).toEqual(expect.any(Function));
+    expect(bundle.authRoutes.userPayloadExtra).toEqual(expect.any(Function));
+    expect(bundle.folderRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
+    expect(bundle.boardItemRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
+    expect(bundle.markdownDocumentRoutes.accessProvider.resolveAccess).toEqual(
+      expect.any(Function),
+    );
+    expect(bundle.runbookRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
     await expect(
       bundle.configProviders.atomRoutes.configProvider.getConfig(),
     ).resolves.toEqual({
@@ -403,6 +410,7 @@ function createLiveDependencies(): LiveProviderDependencies {
         google_client_secret: "google-secret",
         google_callback_url: "/api/auth/google/callback",
         jwt_secret: "jwt-secret",
+        databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
         environment: "production",
         atom_enabled: true,
         atom_server_url: "https://atom.example.test",
@@ -419,6 +427,7 @@ function createLiveDependencies(): LiveProviderDependencies {
           google_client_secret: "google-secret",
           google_callback_url: "/api/auth/google/callback",
           jwt_secret: "jwt-secret",
+          databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
           environment: "production",
           atom_enabled: true,
           atom_server_url: "https://atom.example.test",
