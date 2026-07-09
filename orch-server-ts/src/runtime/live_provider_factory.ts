@@ -21,6 +21,7 @@ import type { ExecuteProxyRouteOptions } from "../execute/execute_proxy_routes.j
 import type { FolderRouteOptions } from "../folders/folder_routes.js";
 import type { BoardItemRouteOptions } from "../board/board_item_routes.js";
 import type { MarkdownDocumentRouteOptions } from "../board/markdown_document_routes.js";
+import type { PublicStatusRouteOptions } from "../public/public_status_routes.js";
 import type { RunbookRouteOptions } from "../runbooks/runbook_route_types.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
 import type { TaskMutationRouteOptions } from "../tasks/task_mutation_routes.js";
@@ -55,6 +56,7 @@ import {
   createSessionStreamEventFilter,
   type SessionStreamEventFilter,
 } from "../session/session_stream_event_filter.js";
+import { withFolderMutationBroadcasts } from "./live_folder_mutation_broadcaster.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import {
   liveProviderWiringInventory,
@@ -111,9 +113,13 @@ export type LiveOrchestratorProviderBundle = {
     | "authorizeUser"
     | "userPayloadExtra"
   >;
-  readonly folderRoutes: Pick<FolderRouteOptions, "accessProvider">;
+  readonly folderRoutes: Pick<FolderRouteOptions, "accessProvider" | "provider">;
   readonly boardItemRoutes: Pick<BoardItemRouteOptions, "accessProvider">;
   readonly markdownDocumentRoutes: Pick<MarkdownDocumentRouteOptions, "accessProvider">;
+  readonly publicStatusRoutes: Pick<
+    PublicStatusRouteOptions,
+    "folderCountsProvider"
+  >;
   readonly sessionCatalogRoutes: SessionCatalogRouteOptions;
   readonly runtime: LiveRuntimeProviderBundle;
   readonly cogitoRoutes: LiveCogitoRouteProviderBundle["cogitoRoutes"];
@@ -215,9 +221,21 @@ export function createLiveOrchestratorProviderBundle(
       }),
       userPayloadExtra: dashboardAccessProvider.userPayloadExtra,
     },
-    folderRoutes: { accessProvider: dashboardAccessProvider },
+    folderRoutes: {
+      provider: withFolderMutationBroadcasts(
+        options.dependencies.dbCatalogRepository.folderRouteProvider,
+        options.runtimeServices.sessionBroadcaster,
+      ),
+      accessProvider: dashboardAccessProvider,
+    },
     boardItemRoutes: { accessProvider: dashboardAccessProvider },
     markdownDocumentRoutes: { accessProvider: dashboardAccessProvider },
+    publicStatusRoutes: {
+      folderCountsProvider: {
+        ...options.dependencies.dbCatalogRepository.folderCountsProvider,
+        resolveAccess: dashboardAccessProvider.resolveAccess,
+      },
+    },
     sessionCatalogRoutes: {
       provider: options.dependencies.dbCatalogRepository.sessionCatalogProvider,
       accessProvider: sessionResourceAccessProvider,

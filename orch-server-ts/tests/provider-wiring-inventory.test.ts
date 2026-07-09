@@ -119,6 +119,10 @@ describe("live provider wiring inventory", () => {
     expect(statusByPath.get("folders:folderRoutes.accessProvider")).toBe(
       "implemented",
     );
+    expect(statusByPath.get("folders:folderRoutes.provider")).toBe("implemented");
+    expect(
+      statusByPath.get("public.status:publicStatusRoutes.folderCountsProvider"),
+    ).toBe("implemented");
     expect(statusByPath.get("board.items:boardItemRoutes.accessProvider")).toBe(
       "implemented",
     );
