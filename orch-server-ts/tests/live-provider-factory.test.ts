@@ -363,6 +363,7 @@ describe("live provider factory boundary", () => {
         ...runtimeServices.routeOptions.sseReplayRoutes,
         session: {
           ...runtimeServices.routeOptions.sseReplayRoutes.session,
+          filterEvent: expect.any(Function),
           loadSnapshot: expect.any(Function),
         },
       },

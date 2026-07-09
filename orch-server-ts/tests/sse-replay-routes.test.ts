@@ -60,6 +60,23 @@ describe("SSE replay HTTP route harness", () => {
     };
   }
 
+  function parseSseEvents(body: string) {
+    return body
+      .trim()
+      .split("\n\n")
+      .map((chunk) => {
+        const lines = chunk.split("\n");
+        const event = lines.find((line) => line.startsWith("event: "))?.slice(7);
+        const id = lines.find((line) => line.startsWith("id: "))?.slice(4);
+        const dataLine = lines.find((line) => line.startsWith("data: "));
+        return {
+          event,
+          id,
+          data: dataLine === undefined ? undefined : JSON.parse(dataLine.slice(6)),
+        };
+      });
+  }
+
   it("keeps SSE replay routes disabled on the default app", async () => {
     const app = createApp({ config });
 
@@ -178,6 +195,66 @@ describe("SSE replay HTTP route harness", () => {
         "id: 3\n" +
         'data: {"type":"session_deleted","agent_session_id":"sess-1"}\n\n',
     );
+  });
+
+  it("filters session replay events request-aware while preserving emitted SSE ids", async () => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
+      instanceId,
+    });
+    broadcaster.append({
+      type: "session_created",
+      agent_session_id: "hidden-session",
+      folderId: "hidden",
+    });
+    broadcaster.append({
+      type: "session_created",
+      agent_session_id: "visible-session",
+      folderId: "visible",
+    });
+    const app = createApp({
+      config,
+      sseReplayRoutes: {
+        ...createHarness(),
+        session: {
+          broadcaster,
+          loadSnapshot: async () => ({ sessions: [], total: 0 }),
+          filterEvent: async (request, event) => {
+            const query = request.query as Record<string, unknown>;
+            if (query.feed_only === "true" && event.folderId === "hidden") {
+              return null;
+            }
+            return event;
+          },
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/stream?lastEventId=0&instanceId=current-instance-id&feed_only=true",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(parseSseEvents(response.body)).toEqual([
+      {
+        event: "stream_meta",
+        id: undefined,
+        data: {
+          type: "stream_meta",
+          instance_id: "current-instance-id",
+          latest_id: 2,
+        },
+      },
+      {
+        event: "session_created",
+        id: "2",
+        data: {
+          type: "session_created",
+          agent_session_id: "visible-session",
+          folderId: "visible",
+        },
+      },
+    ]);
   });
 
   it("streams task replay events using the common task_changed event shape", async () => {

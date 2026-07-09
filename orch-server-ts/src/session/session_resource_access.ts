@@ -21,6 +21,7 @@ export type SessionAccessPolicyProvider = {
 export type SessionAccessRecord = {
   readonly sessionId: string;
   readonly folderId: string | null;
+  readonly sessionType?: string | null;
 };
 
 export type SessionResourceAccessRepository = {

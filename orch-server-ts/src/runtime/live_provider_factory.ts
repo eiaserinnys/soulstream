@@ -47,6 +47,10 @@ import {
   createSessionResourceAccessProvider,
   type SessionResourceAccessProvider,
 } from "../session/session_resource_access.js";
+import {
+  createSessionStreamEventFilter,
+  type SessionStreamEventFilter,
+} from "../session/session_stream_event_filter.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import {
   liveProviderWiringInventory,
@@ -178,6 +182,10 @@ export function createLiveOrchestratorProviderBundle(
     accessProvider: dashboardAccessProvider,
     repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
   });
+  const sessionStreamEventFilter = createSessionStreamEventFilter({
+    accessProvider: sessionResourceAccessProvider,
+    repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
+  });
 
   return {
     authRoutes: {
@@ -206,6 +214,7 @@ export function createLiveOrchestratorProviderBundle(
     runtime: buildLiveRuntimeProviderBundle(
       options.runtimeServices,
       sessionResourceAccessProvider,
+      sessionStreamEventFilter,
       async (request) => {
         const access = await sessionResourceAccessProvider.resolveAccess({ request });
         return options.dependencies.dbCatalogRepository.loadSessionSnapshot({
@@ -260,6 +269,7 @@ function assertLiveProviderDependencies(
 function buildLiveRuntimeProviderBundle(
   services: OrchestratorRuntimeServices,
   accessProvider: SessionResourceAccessProvider,
+  sessionStreamEventFilter: SessionStreamEventFilter,
   loadSessionSnapshot: (request: FastifyRequest) => Promise<SessionStreamSnapshot>,
 ): LiveRuntimeProviderBundle {
   const sessionHistoryRoutes = requireRuntimeRouteOption(
@@ -289,6 +299,7 @@ function buildLiveRuntimeProviderBundle(
       session: {
         ...services.routeOptions.sseReplayRoutes.session,
         loadSnapshot: loadSessionSnapshot,
+        filterEvent: sessionStreamEventFilter,
       },
     },
   };

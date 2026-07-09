@@ -25,6 +25,7 @@ export type SseReplayRouteOptions = {
   session: {
     broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
     loadSnapshot: (request: FastifyRequest) => Promise<SessionStreamSnapshot>;
+    filterEvent?: SseReplayEventFilter<SessionStreamEvent>;
   };
   task: {
     broadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>;
@@ -48,9 +49,15 @@ type SseFrame = {
 type ReplayStreamOptions<TPayload extends object> = {
   broadcaster: InMemorySseReplayBroadcaster<TPayload>;
   loadSnapshot: (request: FastifyRequest) => Promise<SseFrame>;
+  filterEvent?: SseReplayEventFilter<TPayload>;
   keepaliveMs?: number;
   replayOnlyForTests?: boolean;
 };
+
+type SseReplayEventFilter<TPayload extends object> = (
+  request: FastifyRequest,
+  event: TPayload,
+) => Promise<TPayload | null>;
 
 const DEFAULT_KEEPALIVE_MS = 30_000;
 
@@ -72,6 +79,7 @@ export function registerSseReplayRoutes(
           },
         };
       },
+      filterEvent: options.session.filterEvent,
       keepaliveMs: options.keepaliveMs,
       replayOnlyForTests: options.replayOnlyForTests,
     }),
@@ -120,6 +128,23 @@ async function sendSseReplayStream<TPayload extends object>(
   let pendingLiveEvents: Array<SseReplayEvent<TPayload>> = [];
   let initialFlushed = false;
   let liveStream: Readable | null = null;
+  let livePushChain: Promise<void> = Promise.resolve();
+  const pushLiveEvent = async (event: SseReplayEvent<TPayload>) => {
+    if (replaySeenIds.has(event.id)) return;
+    const frame = await filteredReplayEventFrame(request, options, event);
+    if (frame !== null) {
+      liveStream?.push(formatSseFrame(frame));
+    }
+  };
+  const destroyLiveStream = (error: unknown) => {
+    const streamError = error instanceof Error ? error : new Error(String(error));
+    liveStream?.destroy(streamError);
+  };
+  const enqueueLiveEvent = (event: SseReplayEvent<TPayload>) => {
+    livePushChain = livePushChain
+      .then(() => pushLiveEvent(event))
+      .catch(destroyLiveStream);
+  };
   const unsubscribe = options.replayOnlyForTests
     ? undefined
     : options.broadcaster.subscribe((event) => {
@@ -128,7 +153,7 @@ async function sendSseReplayStream<TPayload extends object>(
           return;
         }
         if (!replaySeenIds.has(event.id)) {
-          liveStream?.push(formatReplayEvent(event));
+          enqueueLiveEvent(event);
         }
       });
 
@@ -154,9 +179,7 @@ async function sendSseReplayStream<TPayload extends object>(
     }
     initialFlushed = true;
     for (const event of pendingLiveEvents) {
-      if (!replaySeenIds.has(event.id)) {
-        stream.push(formatReplayEvent(event));
-      }
+      await pushLiveEvent(event);
     }
     pendingLiveEvents = [];
 
@@ -211,9 +234,22 @@ async function buildInitialFrames<TPayload extends object>(
 
   for (const event of replay.events) {
     replaySeenIds.add(event.id);
-    frames.push(replayEventFrame(event));
+    const frame = await filteredReplayEventFrame(request, options, event);
+    if (frame !== null) frames.push(frame);
   }
   return frames;
+}
+
+async function filteredReplayEventFrame<TPayload extends object>(
+  request: FastifyRequest,
+  options: ReplayStreamOptions<TPayload>,
+  event: SseReplayEvent<TPayload>,
+): Promise<SseFrame | null> {
+  const payload =
+    options.filterEvent === undefined
+      ? event.payload
+      : await options.filterEvent(request, event.payload);
+  return payload === null ? null : replayEventFrame({ ...event, payload });
 }
 
 function replayEventFrame<TPayload extends object>(
@@ -224,12 +260,6 @@ function replayEventFrame<TPayload extends object>(
     id: event.id,
     data: event.payload as Record<string, unknown>,
   };
-}
-
-function formatReplayEvent<TPayload extends object>(
-  event: SseReplayEvent<TPayload>,
-): string {
-  return formatSseFrame(replayEventFrame(event));
 }
 
 function eventNameForPayload(payload: object): string {
