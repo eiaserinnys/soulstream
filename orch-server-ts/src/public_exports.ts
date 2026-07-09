@@ -43,6 +43,7 @@ export * from "./runtime/live_execute_proxy_route_provider.js";
 export * from "./runtime/live_node_http_client.js";
 export * from "./runtime/live_provider_dependencies.js";
 export * from "./runtime/live_provider_factory.js";
+export * from "./runtime/live_runbook_route_provider.js";
 export * from "./runtime/live_system_config_route_provider.js";
 export * from "./runtime/node_session_event_dispatcher.js";
 export * from "./runtime/provider_wiring_inventory.js";

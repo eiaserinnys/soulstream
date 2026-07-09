@@ -10,6 +10,10 @@ import {
 import type { ExecuteProxyRouteOptions } from "../execute/execute_proxy_routes.js";
 import { createLiveExecuteProxyRouteProvider } from "./live_execute_proxy_route_provider.js";
 import {
+  createLiveRunbookRouteProviders,
+  type LiveRunbookRouteProviderBundle,
+} from "./live_runbook_route_provider.js";
+import {
   createLiveSystemConfigRouteProviders,
   type LiveSystemConfigRouteProviderBundle,
 } from "./live_system_config_route_provider.js";
@@ -41,6 +45,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly cogitoRoutes: LiveCogitoRouteProviderBundle["cogitoRoutes"];
   readonly configProviders: LiveConfigRouteProviderBundle;
   readonly executeProxyRoutes: ExecuteProxyRouteOptions;
+  readonly runbookRoutes: LiveRunbookRouteProviderBundle["runbookRoutes"];
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
   readonly implementedProviderPaths: readonly LiveProviderPath[];
 };
@@ -88,6 +93,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "node.snapshot", path: "runtime" },
   { owner: "node.ws", path: "runtime" },
   { owner: "public.status", path: "publicStatusRoutes.configProvider" },
+  { owner: "runbooks", path: "runbookRoutes.httpClient" },
   { owner: "session.actions", path: "runtime" },
   { owner: "session.background-schedule", path: "runtime" },
   { owner: "session.command", path: "runtime" },
@@ -132,6 +138,9 @@ export function createLiveOrchestratorProviderBundle(
     bridge: options.runtimeServices.sessionBridge,
     nodeHttpClient: options.dependencies.nodeHttpClient,
   });
+  const runbookProviders = createLiveRunbookRouteProviders({
+    nodeHttpClient: options.dependencies.nodeHttpClient,
+  });
 
   return {
     runtime: buildLiveRuntimeProviderBundle(options.runtimeServices),
@@ -145,6 +154,7 @@ export function createLiveOrchestratorProviderBundle(
         sessionEventHub: options.runtimeServices.sessionEventHub,
       }),
     },
+    runbookRoutes: runbookProviders.runbookRoutes,
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
     implementedProviderPaths: alignment.factoryProviderPaths,
   };

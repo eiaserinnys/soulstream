@@ -192,6 +192,28 @@ describe("live provider factory boundary", () => {
       headers: { cookie: "sid=abc" },
       body: { changes: { KEY: "value" } },
     });
+    const runbookPayload = {
+      status: "completed",
+      expectedVersion: 4,
+      idempotencyKey: "idem-runbook",
+    };
+    await expect(
+      bundle.runbookRoutes.httpClient({
+        method: "POST",
+        url: "http://ignored.example.test/legacy-python-proxy",
+        upstreamPath: "/api/runbooks/rb%2F1/status",
+        headers: { cookie: "sid=runbook", authorization: "Bearer runbook" },
+        body: runbookPayload,
+        target: { nodeId: "node-runbook", host: "ignored", port: 4105 },
+      }),
+    ).resolves.toMatchObject({ statusCode: 200 });
+    expect(dependencies.nodeHttpClient.requestNode).toHaveBeenCalledWith({
+      nodeId: "node-runbook",
+      method: "POST",
+      path: "/api/runbooks/rb%2F1/status",
+      headers: { cookie: "sid=runbook", authorization: "Bearer runbook" },
+      body: runbookPayload,
+    });
     expect(bundle.executeProxyRoutes.provider.executeNew).toEqual(expect.any(Function));
     expect(bundle.executeProxyRoutes.provider.executeResume).toEqual(expect.any(Function));
     expect(bundle.runtime).toEqual({
