@@ -83,4 +83,19 @@ describe("live provider wiring inventory", () => {
     expect([...statuses].sort()).toEqual(["blocked", "implemented", "stub"]);
     expect([...risks].sort()).toEqual(["high", "low", "medium"]);
   });
+
+  it("marks only the low-risk config provider slice implemented in this round", () => {
+    const statusByPath = new Map(
+      liveProviderWiringInventory.map((entry) => [
+        `${entry.owner}:${entry.path}`,
+        entry.status,
+      ]),
+    );
+
+    expect(statusByPath.get("atom:atomRoutes.configProvider")).toBe("implemented");
+    expect(statusByPath.get("public.status:publicStatusRoutes.configProvider")).toBe(
+      "implemented",
+    );
+    expect(statusByPath.get("system.config:systemConfigRoutes.provider")).toBe("stub");
+  });
 });
