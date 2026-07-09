@@ -102,6 +102,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "execute", path: "executeProxyRoutes.provider" },
   { owner: "node.agent-profiles", path: "nodeAgentProfileRoutes.provider" },
   { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.profileHttpClient" },
+  { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.provider" },
   { owner: "node.snapshot", path: "runtime" },
   { owner: "node.ws", path: "runtime" },
   { owner: "public.status", path: "publicStatusRoutes.configProvider" },
@@ -154,6 +155,7 @@ export function createLiveOrchestratorProviderBundle(
     nodeHttpClient: options.dependencies.nodeHttpClient,
   });
   const nodeClaudeAuthProviders = createLiveNodeClaudeAuthRouteProviders({
+    configProvider: options.dependencies.configProvider,
     nodeHttpClient: options.dependencies.nodeHttpClient,
   });
   const nodeAgentProfileProviders = createLiveNodeAgentProfileRouteProviders({

@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  LiveConfigProviderError,
   LiveNodeHttpClientError,
+  createLiveNodeClaudeAuthOAuthConfigProvider,
   createLiveNodeClaudeAuthProfileHttpClient,
+  type LiveConfigProviderBoundary,
   type NodeConnectionSnapshot,
 } from "../src/index.js";
 import { createClaudeAuthHarness } from "./node-claude-auth-test-helpers.js";
@@ -30,6 +33,124 @@ const targetNode: NodeConnectionSnapshot = {
 };
 
 describe("live node Claude auth route provider", () => {
+  it("reads OAuth client config from the live config boundary", async () => {
+    const configProvider = createConfigProvider({
+      claude_oauth_client_id: "live-claude-client",
+      claude_oauth_callback_url:
+        "https://orch.example.test/api/nodes/claude-auth/callback",
+    });
+    const provider = createLiveNodeClaudeAuthOAuthConfigProvider({
+      configProvider,
+    });
+
+    await expect(provider.getOAuthConfig()).resolves.toEqual({
+      clientId: "live-claude-client",
+      callbackUrl: "https://orch.example.test/api/nodes/claude-auth/callback",
+    });
+    expect(configProvider.requireConfig).toHaveBeenCalledWith(
+      "claude_oauth_client_id",
+    );
+    expect(configProvider.requireConfig).toHaveBeenCalledWith(
+      "claude_oauth_callback_url",
+    );
+  });
+
+  it("fails with a typed config error when OAuth config is missing", async () => {
+    const configProvider = createConfigProvider({
+      claude_oauth_client_id: "live-claude-client",
+    });
+    const provider = createLiveNodeClaudeAuthOAuthConfigProvider({
+      configProvider,
+    });
+
+    await expect(provider.getOAuthConfig()).rejects.toBeInstanceOf(
+      LiveConfigProviderError,
+    );
+    await expect(provider.getOAuthConfig()).rejects.toMatchObject({
+      failures: [
+        {
+          owner: "node.claude-auth",
+          path: "nodeClaudeAuthRoutes.provider",
+          key: "claude_oauth_callback_url",
+          reason: "missing",
+          expected: "string",
+          actualType: "undefined",
+        },
+      ],
+    });
+  });
+
+  it("fails with a typed config error when OAuth config type is invalid", async () => {
+    const configProvider = createConfigProvider({
+      claude_oauth_client_id: 123,
+      claude_oauth_callback_url:
+        "https://orch.example.test/api/nodes/claude-auth/callback",
+    });
+    const provider = createLiveNodeClaudeAuthOAuthConfigProvider({
+      configProvider,
+    });
+
+    await expect(provider.getOAuthConfig()).rejects.toMatchObject({
+      failures: [
+        {
+          owner: "node.claude-auth",
+          path: "nodeClaudeAuthRoutes.provider",
+          key: "claude_oauth_client_id",
+          reason: "invalid_type",
+          expected: "string",
+          actualType: "number",
+        },
+      ],
+    });
+  });
+
+  it("uses live provider config for browser and headless OAuth start", async () => {
+    const configProvider = createConfigProvider({
+      claude_oauth_client_id: "live-claude-client",
+      claude_oauth_callback_url:
+        "https://orch.example.test/api/nodes/claude-auth/callback",
+    });
+    const provider = createLiveNodeClaudeAuthOAuthConfigProvider({
+      configProvider,
+    });
+
+    const browser = createClaudeAuthHarness({ provider });
+    const browserResponse = await browser.app.inject({
+      method: "GET",
+      url: "/api/nodes/fake-node/claude-auth/start",
+    });
+    expect(browserResponse.statusCode).toBe(302);
+    const browserLocation = new URL(String(browserResponse.headers.location));
+    expect(browserLocation.searchParams.get("client_id")).toBe(
+      "live-claude-client",
+    );
+    expect(browserLocation.searchParams.get("redirect_uri")).toBe(
+      "https://orch.example.test/api/nodes/claude-auth/callback",
+    );
+    await browser.app.close();
+
+    const headless = createClaudeAuthHarness({ provider });
+    const headlessResponse = await headless.app.inject({
+      method: "GET",
+      url: "/api/nodes/fake-node/claude-auth/headless/start",
+    });
+    expect(headlessResponse.statusCode).toBe(200);
+    const headlessUrl = new URL(
+      headlessResponse.json<{ authUrl: string }>().authUrl,
+    );
+    expect(headlessUrl.searchParams.get("client_id")).toBe("live-claude-client");
+    expect(headlessUrl.searchParams.get("redirect_uri")).toBe(
+      "https://platform.claude.com/oauth/code/callback",
+    );
+    expect(configProvider.requireConfig).toHaveBeenCalledWith(
+      "claude_oauth_client_id",
+    );
+    expect(configProvider.requireConfig).toHaveBeenCalledWith(
+      "claude_oauth_callback_url",
+    );
+    await headless.app.close();
+  });
+
   it("forwards explicit profile request fields through the live node HTTP boundary", async () => {
     const requestNode = vi.fn(async () => ({
       statusCode: 200,
@@ -149,3 +270,16 @@ describe("live node Claude auth route provider", () => {
     await app.app.close();
   });
 });
+
+function createConfigProvider(
+  config: Readonly<Record<string, unknown>>,
+): LiveConfigProviderBoundary {
+  return {
+    getConfig: vi.fn(async () => config),
+    requireConfig: vi.fn(async (key: string) => {
+      const value = config[key];
+      if (value === undefined) throw new Error(`missing config: ${key}`);
+      return value;
+    }),
+  };
+}

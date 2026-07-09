@@ -8,6 +8,10 @@ type LiveConfigRouteProviderPath =
       readonly path: "atomRoutes.configProvider";
     }
   | {
+      readonly owner: "node.claude-auth";
+      readonly path: "nodeClaudeAuthRoutes.provider";
+    }
+  | {
       readonly owner: "public.status";
       readonly path: "publicStatusRoutes.configProvider";
     };

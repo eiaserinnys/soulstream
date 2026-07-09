@@ -31,6 +31,7 @@ export type ClaudeAuthHarnessOptions = {
   profileResponse?: NodeClaudeAuthHttpResponse;
   profileHttpError?: Error;
   profileHttpClient?: NodeClaudeAuthRouteOptions["profileHttpClient"];
+  provider?: NodeClaudeAuthRouteOptions["provider"];
 };
 
 export class MemoryClaudeAuthSessionStore implements ClaudeAuthSessionStore {
@@ -110,7 +111,7 @@ export function createClaudeAuthHarness(options: ClaudeAuthHarnessOptions = {}) 
   const routeOptions: NodeClaudeAuthRouteOptions = {
     registry,
     bridge,
-    provider: {
+    provider: options.provider ?? {
       getOAuthConfig: () => ({
         clientId: "claude-client-id",
         callbackUrl: "https://orch.example.com/api/nodes/claude-auth/callback",
