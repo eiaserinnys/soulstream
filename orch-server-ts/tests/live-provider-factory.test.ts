@@ -98,7 +98,7 @@ describe("live provider factory boundary", () => {
   });
 
   it("fails when the factory tries to provide a blocked path", () => {
-    const blockedPath = { owner: "auth", path: "authRoutes.jwt" };
+    const blockedPath = { owner: "atom", path: "atomRoutes.httpClient" };
     const result = validateLiveProviderFactoryInventoryAlignment({
       inventory: liveProviderWiringInventory,
       factoryProviderPaths: [...liveFactoryImplementedProviderPaths, blockedPath],
@@ -106,8 +106,8 @@ describe("live provider factory boundary", () => {
 
     expect(result.blockedFactoryProviderPaths).toEqual([
       expect.objectContaining({
-        owner: "auth",
-        path: "authRoutes.jwt",
+        owner: "atom",
+        path: "atomRoutes.httpClient",
         status: "blocked",
       }),
     ]);
@@ -196,6 +196,11 @@ describe("live provider factory boundary", () => {
     });
     expect(bundle.authRoutes.httpClient.post).toEqual(expect.any(Function));
     expect(bundle.authRoutes.httpClient.get).toEqual(expect.any(Function));
+    expect(bundle.authRoutes.jwt.issueToken).toEqual(expect.any(Function));
+    expect(bundle.authRoutes.jwt.verifyToken).toEqual(expect.any(Function));
+    expect(bundle.authRoutes.nativeVerifier).toEqual(expect.any(Function));
+    expect(bundle.authRoutes.resolveTokenAccess).toEqual(expect.any(Function));
+    expect(bundle.authRoutes.authorizeUser).toEqual(expect.any(Function));
     await expect(
       bundle.configProviders.atomRoutes.configProvider.getConfig(),
     ).resolves.toEqual({

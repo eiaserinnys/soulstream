@@ -1,5 +1,11 @@
 import type { OrchestratorRuntimeServices } from "./composition.js";
-import { createLiveAuthHttpClient } from "./live_auth_route_provider.js";
+import {
+  createLiveAuthHttpClient,
+  createLiveAuthJwtHelper,
+  createLiveAuthNativeVerifier,
+  createLiveAuthTokenResolver,
+  createLiveAuthUserAuthorizer,
+} from "./live_auth_route_provider.js";
 import {
   createLiveCogitoRouteProviders,
   type LiveCogitoRouteProviderBundle,
@@ -51,7 +57,15 @@ export type LiveRuntimeProviderBundle = {
 };
 
 export type LiveOrchestratorProviderBundle = {
-  readonly authRoutes: Pick<AuthRouteOptions, "configProvider" | "httpClient">;
+  readonly authRoutes: Pick<
+    AuthRouteOptions,
+    | "configProvider"
+    | "httpClient"
+    | "jwt"
+    | "nativeVerifier"
+    | "resolveTokenAccess"
+    | "authorizeUser"
+  >;
   readonly runtime: LiveRuntimeProviderBundle;
   readonly cogitoRoutes: LiveCogitoRouteProviderBundle["cogitoRoutes"];
   readonly configProviders: LiveConfigRouteProviderBundle;
@@ -100,6 +114,9 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "atom", path: "atomRoutes.configProvider" },
   { owner: "auth", path: "authRoutes.configProvider" },
   { owner: "auth", path: "authRoutes.httpClient" },
+  { owner: "auth", path: "authRoutes.jwt" },
+  { owner: "auth", path: "authRoutes.nativeVerifier" },
+  { owner: "auth", path: "authRoutes.resolveTokenAccess" },
   { owner: "board.yjs-host", path: "runtime.boardYjsHostHttpClient" },
   { owner: "cogito", path: "cogitoRoutes.briefCollector" },
   { owner: "cogito", path: "cogitoRoutes.httpClient" },
@@ -174,11 +191,25 @@ export function createLiveOrchestratorProviderBundle(
     bridge: options.runtimeServices.sessionBridge,
     nodeHttpClient: options.dependencies.nodeHttpClient,
   });
+  const authJwt = createLiveAuthJwtHelper({
+    configProvider: options.dependencies.configProvider,
+  });
 
   return {
     authRoutes: {
       configProvider: configProviders.authRoutes.configProvider,
       httpClient: createLiveAuthHttpClient(),
+      jwt: authJwt,
+      nativeVerifier: createLiveAuthNativeVerifier({
+        configProvider: options.dependencies.configProvider,
+      }),
+      resolveTokenAccess: createLiveAuthTokenResolver({
+        configProvider: options.dependencies.configProvider,
+        jwt: authJwt,
+      }),
+      authorizeUser: createLiveAuthUserAuthorizer({
+        configProvider: options.dependencies.configProvider,
+      }),
     },
     runtime: buildLiveRuntimeProviderBundle(options.runtimeServices),
     cogitoRoutes: cogitoProviders.cogitoRoutes,
