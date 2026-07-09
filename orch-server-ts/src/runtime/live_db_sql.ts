@@ -7,6 +7,11 @@ export type LivePostgresSql = {
     strings: TemplateStringsArray,
     ...values: unknown[]
   ): readonly Record<string, unknown>[] | Promise<readonly Record<string, unknown>[]>;
+  readonly listen?: (
+    channel: string,
+    onnotify: (value: string) => void,
+    onlisten?: () => void,
+  ) => Promise<{ readonly unlisten: () => Promise<void> }>;
   readonly end?: (options?: { readonly timeout?: number }) => Promise<void>;
 };
 

@@ -69,6 +69,8 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "sse.replay", path: "runtime.loadTaskSnapshot" },
   { owner: "system.config", path: "systemConfigRoutes.httpClient" },
   { owner: "system.config", path: "systemConfigRoutes.provider" },
+  { owner: "tasks.mutation", path: "taskMutationRoutes.provider" },
+  { owner: "tasks.read", path: "taskReadRoutes.provider" },
 ] as const satisfies readonly LiveProviderPath[];
 
 export class LiveProviderFactoryError extends Error {

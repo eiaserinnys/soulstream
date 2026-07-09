@@ -16,6 +16,12 @@ import type {
   SessionStreamSnapshot,
   TaskStreamSnapshot,
 } from "../sse/sse_replay_routes.js";
+import type {
+  InMemorySseReplayBroadcaster,
+  TaskStreamEvent,
+} from "../sse/replay_broadcaster.js";
+import type { TaskMutationRouteProvider } from "../tasks/task_mutation_routes.js";
+import type { TaskReadRouteProvider } from "../tasks/task_read_routes.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
 import {
   createLiveDbSqlResolver,
@@ -24,15 +30,24 @@ import {
   type LivePostgresSql,
 } from "./live_db_sql.js";
 import { createLiveSessionHistoryProvider } from "./live_session_history_provider.js";
+import { serializeSessionRow } from "./live_session_serialization.js";
 import {
-  serializeSessionRow,
-  serializeTaskRow,
-} from "./live_session_serialization.js";
+  createLiveTaskChangeListener,
+  type LiveTaskChangeListener,
+} from "./live_task_change_listener.js";
+import { createLiveTaskMutationProvider } from "./live_task_mutation_provider.js";
+import { createLiveTaskReadProvider } from "./live_task_read_provider.js";
+import { serializeTasksWithLinkedSessions } from "./live_task_serialization.js";
 
 export type LiveDbCatalogRepository = {
   readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly sessionHistoryProvider: ReturnType<typeof createLiveSessionHistoryProvider>;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
+  readonly taskReadProvider: TaskReadRouteProvider;
+  readonly taskMutationProvider: TaskMutationRouteProvider;
+  readonly createTaskChangeListener: (
+    broadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>,
+  ) => LiveTaskChangeListener;
   readonly loadSessionSnapshot: (
     input?: LoadSessionSnapshotInput,
   ) => Promise<SessionStreamSnapshot>;
@@ -76,14 +91,26 @@ export function createLiveDbCatalogRepository(
   const sessionHistoryProvider = createLiveSessionHistoryProvider({ sqlResolver });
   const sessionResourceAccessRepository =
     createSessionResourceAccessRepository(sqlResolver);
+  const taskReadProvider = createLiveTaskReadProvider({
+    sqlResolver,
+    registry: options.registry,
+  });
+  const taskMutationProvider = createLiveTaskMutationProvider({
+    sqlResolver,
+    registry: options.registry,
+  });
   const sessionSnapshotLimit =
     options.sessionSnapshotLimit ?? DEFAULT_SESSION_SNAPSHOT_LIMIT;
   const taskSnapshotLimit = options.taskSnapshotLimit ?? DEFAULT_TASK_SNAPSHOT_LIMIT;
-
   return {
     sessionCatalogProvider: createSessionCatalogProvider(sqlResolver),
     sessionHistoryProvider,
     sessionResourceAccessRepository,
+    taskReadProvider,
+    taskMutationProvider,
+    createTaskChangeListener(broadcaster) {
+      return createLiveTaskChangeListener({ sqlResolver, broadcaster });
+    },
     async loadSessionSnapshot(input = {}) {
       const sql = await sqlResolver.resolveSql();
       const filters = await sessionSnapshotFilters(
@@ -119,19 +146,16 @@ export function createLiveDbCatalogRepository(
         ORDER BY parent_id NULLS FIRST, position_key ASC, created_at ASC
         LIMIT ${taskSnapshotLimit}
       `;
-      const linkedSessions = await linkedSessionsById(sql, taskRows);
       return {
-        tasks: taskRows.map((row) =>
-          serializeTaskRow(
-            row,
-            linkedSessions.get(String(row.linked_session_id)),
-            { registry: options.registry },
-          ),
-        ),
+        tasks: await serializeTasksWithLinkedSessions(sql, taskRows, {
+          registry: options.registry,
+        }),
         total: numberValue(countRows[0]?.count) ?? taskRows.length,
       };
     },
-    close: sqlResolver.close,
+    async close() {
+      await sqlResolver.close();
+    },
   };
 }
 
@@ -230,24 +254,6 @@ function createSessionCatalogProvider(
       `;
     },
   };
-}
-
-async function linkedSessionsById(
-  sql: LivePostgresSql,
-  taskRows: readonly Record<string, unknown>[],
-): Promise<Map<string, Record<string, unknown>>> {
-  const ids = [...new Set(taskRows.flatMap(linkedSessionId))].sort();
-  if (ids.length === 0) return new Map();
-  const rows = await sql`
-    SELECT * FROM sessions WHERE session_id = ANY(${ids}::text[])
-  `;
-  return new Map(rows.map((row) => [String(row.session_id), row]));
-}
-
-function linkedSessionId(row: Record<string, unknown>): string[] {
-  return typeof row.linked_session_id === "string" && row.linked_session_id
-    ? [row.linked_session_id]
-    : [];
 }
 
 function folderAccessRecord(row: Record<string, unknown>): BoardAccessFolderRecord[] {
