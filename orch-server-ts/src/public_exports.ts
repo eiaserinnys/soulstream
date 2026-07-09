@@ -37,6 +37,8 @@ export * from "./public/public_status_routes.js";
 export * from "./push/push_routes.js";
 export * from "./runbooks/runbook_routes.js";
 export * from "./runtime/composition.js";
+export * from "./runtime/live_provider_dependencies.js";
+export * from "./runtime/live_provider_factory.js";
 export * from "./runtime/node_session_event_dispatcher.js";
 export * from "./runtime/provider_wiring_inventory.js";
 export * from "./runtime/shadow_app.js";
