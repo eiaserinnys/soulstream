@@ -1,4 +1,8 @@
 import type { OrchestratorRuntimeServices } from "./composition.js";
+import {
+  createLiveConfigRouteProviders,
+  type LiveConfigRouteProviderBundle,
+} from "./live_config_route_providers.js";
 import type { LiveProviderDependencies } from "./live_provider_dependencies.js";
 import { liveProviderDependencyCategories } from "./live_provider_dependencies.js";
 import {
@@ -23,6 +27,7 @@ export type LiveRuntimeProviderBundle = {
 
 export type LiveOrchestratorProviderBundle = {
   readonly runtime: LiveRuntimeProviderBundle;
+  readonly configProviders: LiveConfigRouteProviderBundle;
   readonly implementedProviderPaths: readonly LiveProviderPath[];
 };
 
@@ -60,8 +65,10 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
 };
 
 export const liveFactoryImplementedProviderPaths = [
+  { owner: "atom", path: "atomRoutes.configProvider" },
   { owner: "node.snapshot", path: "runtime" },
   { owner: "node.ws", path: "runtime" },
+  { owner: "public.status", path: "publicStatusRoutes.configProvider" },
   { owner: "session.actions", path: "runtime" },
   { owner: "session.background-schedule", path: "runtime" },
   { owner: "session.command", path: "runtime" },
@@ -96,6 +103,7 @@ export function createLiveOrchestratorProviderBundle(
 
   return {
     runtime: buildLiveRuntimeProviderBundle(options.runtimeServices),
+    configProviders: createLiveConfigRouteProviders(options.dependencies.configProvider),
     implementedProviderPaths: alignment.factoryProviderPaths,
   };
 }

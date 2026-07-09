@@ -118,7 +118,7 @@ describe("live provider factory boundary", () => {
     }
   });
 
-  it("returns only implemented runtime route providers when the inventory is fully implemented", () => {
+  it("returns implemented runtime and config route providers when the inventory is fully implemented", async () => {
     const dependencies = createLiveDependencies();
     const runtimeServices = createRuntimeServices(dependencies);
     const implementedOnly = liveProviderWiringInventory.filter(
@@ -133,6 +133,21 @@ describe("live provider factory boundary", () => {
     });
 
     expect(bundle.implementedProviderPaths).toEqual(liveFactoryImplementedProviderPaths);
+    await expect(
+      bundle.configProviders.publicStatusRoutes.configProvider.getConfig(),
+    ).resolves.toEqual({
+      nodeName: "orch-live",
+      authEnabled: true,
+      atomEnabled: true,
+    });
+    await expect(
+      bundle.configProviders.atomRoutes.configProvider.getConfig(),
+    ).resolves.toEqual({
+      atomEnabled: true,
+      atomServerUrl: "https://atom.example.test",
+      atomApiKey: "atom-secret",
+      atomRootNodeId: "root-node",
+    });
     expect(bundle.runtime).toEqual({
       nodeSnapshotRoutes: runtimeServices.routeOptions.nodeSnapshotRoutes,
       nodeWsRoute: runtimeServices.routeOptions.nodeWsRoute,
@@ -203,8 +218,25 @@ function createLiveDependencies(): LiveProviderDependencies {
       remove: vi.fn(async () => undefined),
     },
     configProvider: {
-      getConfig: vi.fn(async () => ({})),
-      requireConfig: vi.fn(async () => ({})),
+      getConfig: vi.fn(async () => ({
+        node_name: "orch-live",
+        google_client_id: "google-client",
+        atom_enabled: true,
+        atom_server_url: "https://atom.example.test",
+        atom_api_key: "atom-secret",
+        atom_root_node_id: "root-node",
+      })),
+      requireConfig: vi.fn(async (key: string) => {
+        const config: Record<string, unknown> = {
+          node_name: "orch-live",
+          google_client_id: "google-client",
+          atom_enabled: true,
+          atom_server_url: "https://atom.example.test",
+          atom_api_key: "atom-secret",
+          atom_root_node_id: "root-node",
+        };
+        return config[key];
+      }),
     },
   };
 }
