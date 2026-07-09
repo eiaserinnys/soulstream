@@ -152,7 +152,7 @@ describe("live provider factory boundary", () => {
     expect(bundle.authRoutes.authorizeUser).toEqual(expect.any(Function));
     expect(bundle.authRoutes.userPayloadExtra).toEqual(expect.any(Function));
     expect(bundle.folderRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
-    expect(bundle.boardItemRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
+    expect(bundle.boardItemRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.boardItemRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
     expect(bundle.markdownDocumentRoutes.accessProvider.resolveAccess).toEqual(
       expect.any(Function),
     );
@@ -390,8 +390,7 @@ function createLiveDependencies(): LiveProviderDependencies {
       resolveSessionIdentity: vi.fn(async () => ({})),
     },
     dbCatalogRepository: {
-      folderRouteProvider: {} as never,
-      folderCountsProvider: {} as never,
+      folderRouteProvider: {} as never, folderCountsProvider: {} as never, boardItemRouteProvider: {} as never,
       sessionCatalogProvider: {
         renameSession: vi.fn(async () => undefined),
         moveSessionsToFolder: vi.fn(async () => ({ count: 0 })),

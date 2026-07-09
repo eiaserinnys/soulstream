@@ -40,6 +40,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "auth", path: "authRoutes.resolveTokenAccess" },
   { owner: "auth", path: "authRoutes.userPayloadExtra" },
   { owner: "board.items", path: "boardItemRoutes.accessProvider" },
+  { owner: "board.items", path: "boardItemRoutes.provider" },
   { owner: "board.yjs-host", path: "runtime.boardYjsHostHttpClient" },
   { owner: "cogito", path: "cogitoRoutes.briefCollector" },
   { owner: "cogito", path: "cogitoRoutes.httpClient" },

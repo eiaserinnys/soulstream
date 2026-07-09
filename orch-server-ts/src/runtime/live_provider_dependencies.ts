@@ -1,5 +1,6 @@
 import type { BoardYjsHostHttpClient } from "../board/board_yjs_host_proxy.js";
 import type { BoardAccess } from "../board/board_access.js";
+import type { BoardItemRouteProvider } from "../board/board_item_routes.js";
 import type { SessionCatalogProvider } from "../session/session_catalog_routes.js";
 import type { SessionHistoryProvider } from "../session/session_history_service.js";
 import type {
@@ -42,6 +43,7 @@ export type LiveAuthSessionIdentityBoundary = {
 export type LiveDbCatalogRepositoryBoundary = {
   readonly folderRouteProvider: LiveFolderProvider;
   readonly folderCountsProvider: LiveFolderProvider;
+  readonly boardItemRouteProvider: BoardItemRouteProvider;
   readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly loadSessionSnapshot: (
     input?: { readonly access?: BoardAccess; readonly feedOnly?: boolean },
