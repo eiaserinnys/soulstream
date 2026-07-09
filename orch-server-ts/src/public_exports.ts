@@ -38,6 +38,7 @@ export * from "./push/push_routes.js";
 export * from "./runbooks/runbook_routes.js";
 export * from "./runtime/composition.js";
 export * from "./runtime/node_session_event_dispatcher.js";
+export * from "./runtime/provider_wiring_inventory.js";
 export * from "./runtime/shadow_app.js";
 export * from "./session/session_action_command_routes.js";
 export * from "./session/session_background_schedule_routes.js";
