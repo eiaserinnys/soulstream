@@ -1,5 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import {
+  SessionResourceAccessError,
+  type SessionResourceAccessProvider,
+} from "./session_resource_access.js";
+
 export type SessionCatalogCallerInfo = Record<string, unknown> | null | undefined;
 
 export type SessionCatalogUpdateInput = {
@@ -59,6 +64,7 @@ export type SessionCatalogProvider = {
 
 export type SessionCatalogRouteOptions = {
   provider: SessionCatalogProvider;
+  accessProvider?: SessionResourceAccessProvider;
 };
 
 export class SessionCatalogRouteError extends Error {
@@ -114,6 +120,12 @@ export function registerSessionCatalogRoutes(
       if (!callerInfo.ok) return badRequest(reply, callerInfo.message);
 
       try {
+        await requireSessionAccess(
+          options,
+          request,
+          sessionParams(request).session_id,
+          callerInfo.value,
+        );
         await options.provider.renameSession(
           sessionParams(request).session_id,
           displayName.value ?? null,
@@ -139,6 +151,20 @@ export function registerSessionCatalogRoutes(
       if (!callerInfo.ok) return badRequest(reply, callerInfo.message);
 
       try {
+        await requireSessionAccess(
+          options,
+          request,
+          sessionParams(request).session_id,
+          callerInfo.value,
+        );
+        if (hasOwn(update.value, "folderId")) {
+          await requireFolderAccess(
+            options,
+            request,
+            update.value.folderId ?? null,
+            callerInfo.value,
+          );
+        }
         await options.provider.updateSessionCatalog(
           sessionParams(request).session_id,
           update.value,
@@ -161,6 +187,12 @@ export function registerSessionCatalogRoutes(
       if (!callerInfo.ok) return badRequest(reply, callerInfo.message);
 
       try {
+        await requireSessionAccess(
+          options,
+          request,
+          sessionParams(request).session_id,
+          callerInfo.value,
+        );
         await options.provider.deleteSession(
           sessionParams(request).session_id,
           callerInfo.value,
@@ -177,6 +209,12 @@ export function registerSessionCatalogRoutes(
     "/api/sessions/:session_id/cards",
     async (request, reply) => {
       try {
+        await requireSessionAccess(
+          options,
+          request,
+          sessionParams(request).session_id,
+          undefined,
+        );
         const events = await options.provider.getSessionCards(
           sessionParams(request).session_id,
         );
@@ -199,6 +237,12 @@ export function registerSessionCatalogRoutes(
       if (!callerInfo.ok) return badRequest(reply, callerInfo.message);
 
       try {
+        await requireSessionAccess(
+          options,
+          request,
+          sessionParams(request).session_id,
+          callerInfo.value,
+        );
         await options.provider.updateReadPosition(
           sessionParams(request).session_id,
           lastReadEventId.value,
@@ -243,6 +287,15 @@ async function batchMoveFolder(
   if (!callerInfo.ok) return badRequest(reply, callerInfo.message);
 
   try {
+    await requireFolderAccess(
+      options,
+      request,
+      folderId.value ?? null,
+      callerInfo.value,
+    );
+    for (const sessionId of sessionIds.value) {
+      await requireSessionAccess(options, request, sessionId, callerInfo.value);
+    }
     const result = await options.provider.moveSessionsToFolder(
       sessionIds.value,
       folderId.value ?? null,
@@ -255,6 +308,32 @@ async function batchMoveFolder(
   } catch (error) {
     return sendProviderError(reply, error);
   }
+}
+
+async function requireSessionAccess(
+  options: SessionCatalogRouteOptions,
+  request: FastifyRequest,
+  sessionId: string,
+  callerInfo: SessionCatalogCallerInfo,
+): Promise<void> {
+  await options.accessProvider?.requireSessionAccess({
+    request,
+    sessionId,
+    accessEmail: accessEmailFromCallerInfo(callerInfo),
+  });
+}
+
+async function requireFolderAccess(
+  options: SessionCatalogRouteOptions,
+  request: FastifyRequest,
+  folderId: string | null,
+  callerInfo: SessionCatalogCallerInfo,
+): Promise<void> {
+  await options.accessProvider?.requireFolderAccess({
+    request,
+    folderId,
+    accessEmail: accessEmailFromCallerInfo(callerInfo),
+  });
 }
 
 function parseObjectBody(body: unknown): Validation<Record<string, unknown>> {
@@ -295,8 +374,13 @@ function optionalStringOrNull(
 function optionalCallerInfo(
   body: Record<string, unknown>,
 ): Validation<SessionCatalogCallerInfo> {
-  if (!hasOwn(body, "caller_info")) return { ok: true, value: undefined };
-  const value = body.caller_info;
+  const key = hasOwn(body, "caller_info")
+    ? "caller_info"
+    : hasOwn(body, "callerInfo")
+      ? "callerInfo"
+      : null;
+  if (key === null) return { ok: true, value: undefined };
+  const value = body[key];
   if (value === null) return { ok: true, value };
   if (typeof value === "object" && !Array.isArray(value)) {
     return { ok: true, value: value as Record<string, unknown> };
@@ -335,6 +419,18 @@ function parsePayload(payload: unknown): unknown {
   }
 }
 
+function accessEmailFromCallerInfo(
+  callerInfo: SessionCatalogCallerInfo,
+): string | null | undefined {
+  if (callerInfo === undefined) return undefined;
+  if (callerInfo === null) return null;
+  for (const key of ["email", "callerEmail", "access_email", "accessEmail"]) {
+    const value = callerInfo[key];
+    if (typeof value === "string") return value;
+  }
+  return null;
+}
+
 function badRequest(reply: FastifyReply, message: string): FastifyReply {
   return reply.code(400).send({
     error: {
@@ -345,6 +441,14 @@ function badRequest(reply: FastifyReply, message: string): FastifyReply {
 }
 
 function sendProviderError(reply: FastifyReply, error: unknown): FastifyReply {
+  if (error instanceof SessionResourceAccessError) {
+    return reply.code(error.statusCode).send({
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+    });
+  }
   if (error instanceof SessionCatalogRouteError) {
     return reply.code(error.statusCode).send({
       error: {

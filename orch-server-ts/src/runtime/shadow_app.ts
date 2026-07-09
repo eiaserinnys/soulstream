@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import type { AdminUsersRouteOptions } from "../admin/admin_users_routes.js";
 import type { CreateAppOptions } from "../app.js";
@@ -55,7 +55,7 @@ export type ShadowOrchestratorRuntimeProviders = {
   sseReplayOnlyForTests?: boolean;
   nodeStreamKeepaliveMs?: number;
   nodeStreamCloseAfterInitialSnapshot?: boolean;
-  loadSessionSnapshot?: () => Promise<SessionStreamSnapshot>;
+  loadSessionSnapshot?: (request: FastifyRequest) => Promise<SessionStreamSnapshot>;
   loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   sessionHistoryProvider: SessionHistoryProvider;
   sessionHistoryKeepaliveMs?: number;
@@ -238,7 +238,10 @@ export const shadowRouteCompositionRequirements = [
   },
   { owner: "session.actions", paths: ["runtime"] },
   { owner: "session.background-schedule", paths: ["runtime"] },
-  { owner: "session.catalog", paths: ["sessionCatalogRoutes.provider"] },
+  {
+    owner: "session.catalog",
+    paths: ["sessionCatalogRoutes.provider", "sessionCatalogRoutes.accessProvider"],
+  },
   { owner: "session.command", paths: ["runtime"] },
   { owner: "session.history", paths: ["runtime.sessionHistoryProvider"] },
   { owner: "session.snapshot", paths: ["runtime"] },
@@ -383,10 +386,13 @@ function buildShadowRouteOptions(
       ),
     sessionCatalogRoutes: providers.sessionCatalogRoutes,
     sessionCommandRoutes: runtime.routeOptions.sessionCommandRoutes,
-    sessionHistoryRoutes: requireRuntimeRouteOption(
-      runtime.routeOptions.sessionHistoryRoutes,
-      "session.history",
-    ),
+    sessionHistoryRoutes: {
+      ...requireRuntimeRouteOption(
+        runtime.routeOptions.sessionHistoryRoutes,
+        "session.history",
+      ),
+      accessProvider: providers.sessionCatalogRoutes.accessProvider,
+    },
     sessionSnapshotRoutes: runtime.routeOptions.sessionSnapshotRoutes,
     sseReplayRoutes: runtime.routeOptions.sseReplayRoutes,
     systemConfigRoutes: providers.systemConfigRoutes,

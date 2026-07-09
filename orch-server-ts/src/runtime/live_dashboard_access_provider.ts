@@ -62,12 +62,20 @@ export type CreateLiveDashboardAccessProviderOptions = {
   readonly cookieName?: string;
 };
 
+export type DashboardAccessResolveContext = {
+  readonly accessEmail?: string | null;
+};
+
 export type LiveDashboardAccessProvider =
   & FolderAccessProvider
   & BoardItemAccessProvider
   & MarkdownDocumentAccessProvider
   & RunbookAccessProvider
   & {
+    readonly resolveAccess: (
+      request: FastifyRequest,
+      context?: DashboardAccessResolveContext,
+    ) => Promise<DashboardAccess>;
     readonly userPayloadExtra: AuthUserPayloadExtra;
     readonly close: () => Promise<void>;
   };
@@ -99,12 +107,16 @@ export function createLiveDashboardAccessProvider(
   const cookieName = options.cookieName ?? AUTH_COOKIE_NAME;
 
   return {
-    async resolveAccess(request) {
+    async resolveAccess(
+      request: FastifyRequest,
+      context?: DashboardAccessResolveContext,
+    ) {
       const identity = await resolveAccessIdentity({
         request,
         configProvider: options.configProvider,
         jwt: options.jwt,
         cookieName,
+        accessEmail: context?.accessEmail,
       });
       if (identity.mode === "service_token" && identity.accessEmail === null) {
         return unrestrictedAccess();
@@ -178,12 +190,25 @@ async function resolveAccessIdentity(input: {
   readonly configProvider: LiveConfigProviderBoundary;
   readonly jwt: AuthJwtHelper;
   readonly cookieName: string;
+  readonly accessEmail?: string | null;
 }): Promise<AccessIdentity> {
   const snapshot = await input.configProvider.getConfig();
   const configuredBearer = optionalConfigString(snapshot, "auth_bearer_token");
   const environment = requiredSnapshotString(snapshot, "environment");
   const googleClientId = requiredSnapshotString(snapshot, "google_client_id");
-  const accessEmail = extractAccessEmail(input.request);
+  const accessEmail = input.accessEmail !== undefined
+    ? input.accessEmail
+    : extractAccessEmail(input.request);
+
+  if (googleClientId.length > 0) {
+    const cookieToken = extractCookieToken(input.request, input.cookieName);
+    if (cookieToken) {
+      const payload = await input.jwt.verifyToken(cookieToken);
+      if (payload) {
+        return { mode: "dashboard", email: normalizeDashboardEmail(payload.email) };
+      }
+    }
+  }
 
   let bearer: AuthTokenAccessResult;
   if (!configuredBearer) {
@@ -201,8 +226,7 @@ async function resolveAccessIdentity(input: {
   }
 
   if (googleClientId.length > 0) {
-    const dashboardToken = extractCookieToken(input.request, input.cookieName) ??
-      extractBearerToken(input.request);
+    const dashboardToken = extractBearerToken(input.request);
     if (dashboardToken) {
       const payload = await input.jwt.verifyToken(dashboardToken);
       if (payload) {
@@ -280,6 +304,10 @@ function extractAccessEmail(request: FastifyRequest): string | null {
     recordValue(request.query, "accessEmail"),
     recordValue(request.body, "access_email"),
     recordValue(request.body, "accessEmail"),
+    recordValue(recordValue(request.body, "caller_info"), "email"),
+    recordValue(recordValue(request.body, "caller_info"), "callerEmail"),
+    recordValue(recordValue(request.body, "callerInfo"), "email"),
+    recordValue(recordValue(request.body, "callerInfo"), "callerEmail"),
   ]) {
     if (typeof value === "string") return value;
   }

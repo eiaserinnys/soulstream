@@ -7,8 +7,10 @@ import {
   loadContractFixtures,
   parseOrchServerConfig,
   sessionHistoryRouteAuthRequirements,
+  SessionResourceAccessError,
   type SessionHistoryProvider,
   type SessionHistoryRawEvent,
+  type SessionResourceAccessProvider,
 } from "../src/index.js";
 
 const config = parseOrchServerConfig({
@@ -255,6 +257,69 @@ describe("session history/read-only route harness", () => {
     await app.close();
   });
 
+  it("checks session access before every history read route", async () => {
+    const provider = createProvider({
+      readViewport: vi.fn(async () => []),
+      readMessages: vi.fn(async () => page([], null)),
+      readTimeline: vi.fn(async () => page([], null)),
+      readTimelineTrace: vi.fn(async () => ({ trace: [] })),
+      readLastEventId: vi.fn(async () => 9),
+    });
+    const accessProvider: SessionResourceAccessProvider = {
+      requireSessionAccess: vi.fn(async () => undefined),
+      requireFolderAccess: vi.fn(async () => undefined),
+      resolveAccess: vi.fn(async () => ({ restricted: false, allowedFolderIds: [] })),
+    };
+    const { app } = createHarness(provider, accessProvider);
+
+    await app.inject({ method: "GET", url: "/api/sessions/sess-1/events/viewport?y_min=1&y_max=5" });
+    await app.inject({ method: "GET", url: "/api/sessions/sess-1/messages" });
+    await app.inject({ method: "GET", url: "/api/sessions/sess-1/timeline" });
+    await app.inject({ method: "GET", url: "/api/sessions/sess-1/timeline/tool%3A1/trace" });
+    await app.inject({ method: "GET", url: "/api/sessions/sess-1/events" });
+
+    expect(accessProvider.requireSessionAccess).toHaveBeenCalledTimes(5);
+    expect(accessProvider.requireSessionAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "sess-1" }),
+    );
+    expect(provider.readViewport).toHaveBeenCalled();
+    expect(provider.readMessages).toHaveBeenCalled();
+    expect(provider.readTimeline).toHaveBeenCalled();
+    expect(provider.readTimelineTrace).toHaveBeenCalled();
+    expect(provider.readLastEventId).toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("stops history providers when session access denies the request", async () => {
+    const provider = createProvider();
+    const accessProvider: SessionResourceAccessProvider = {
+      requireSessionAccess: vi.fn(async () => {
+        throw new SessionResourceAccessError(
+          "SESSION_ACCESS_DENIED",
+          "Folder access denied",
+          403,
+        );
+      }),
+      requireFolderAccess: vi.fn(async () => undefined),
+      resolveAccess: vi.fn(async () => ({ restricted: true, allowedFolderIds: [] })),
+    };
+    const { app } = createHarness(provider, accessProvider);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-denied/messages",
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      error: { code: "SESSION_ACCESS_DENIED" },
+    });
+    expect(provider.readMessages).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
   it("sends init then history_sync and skips history replay when after_id is zero", async () => {
     const provider = createProvider({
       readLastEventId: vi.fn(async () => 42),
@@ -388,11 +453,15 @@ describe("session history/read-only route harness", () => {
   });
 });
 
-function createHarness(provider: SessionHistoryProvider = createProvider()) {
+function createHarness(
+  provider: SessionHistoryProvider = createProvider(),
+  accessProvider?: SessionResourceAccessProvider,
+) {
   const app = createApp({
     config,
     sessionHistoryRoutes: {
       provider,
+      accessProvider,
       closeAfterHistorySync: true,
     },
   });

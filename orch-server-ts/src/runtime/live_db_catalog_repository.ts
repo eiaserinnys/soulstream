@@ -1,8 +1,17 @@
 import type { InMemoryNodeRegistry } from "../node/registry.js";
+import {
+  normalizeBoardAccess,
+  type BoardAccess,
+  type BoardAccessFolderRecord,
+} from "../board/board_access.js";
 import type {
   SessionCatalogProvider,
   SessionCatalogUpdateInput,
 } from "../session/session_catalog_routes.js";
+import {
+  firstAllowedSessionFolderId,
+  type SessionResourceAccessRepository,
+} from "../session/session_resource_access.js";
 import type {
   SessionStreamSnapshot,
   TaskStreamSnapshot,
@@ -23,9 +32,17 @@ import {
 export type LiveDbCatalogRepository = {
   readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly sessionHistoryProvider: ReturnType<typeof createLiveSessionHistoryProvider>;
-  readonly loadSessionSnapshot: () => Promise<SessionStreamSnapshot>;
+  readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
+  readonly loadSessionSnapshot: (
+    input?: LoadSessionSnapshotInput,
+  ) => Promise<SessionStreamSnapshot>;
   readonly loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   readonly close: () => Promise<void>;
+};
+
+export type LoadSessionSnapshotInput = {
+  readonly access?: BoardAccess;
+  readonly feedOnly?: boolean;
 };
 
 export type CreateLiveDbCatalogRepositoryOptions = {
@@ -57,6 +74,8 @@ export function createLiveDbCatalogRepository(
       closeTimeoutSeconds: options.closeTimeoutSeconds,
     });
   const sessionHistoryProvider = createLiveSessionHistoryProvider({ sqlResolver });
+  const sessionResourceAccessRepository =
+    createSessionResourceAccessRepository(sqlResolver);
   const sessionSnapshotLimit =
     options.sessionSnapshotLimit ?? DEFAULT_SESSION_SNAPSHOT_LIMIT;
   const taskSnapshotLimit = options.taskSnapshotLimit ?? DEFAULT_TASK_SNAPSHOT_LIMIT;
@@ -64,9 +83,15 @@ export function createLiveDbCatalogRepository(
   return {
     sessionCatalogProvider: createSessionCatalogProvider(sqlResolver),
     sessionHistoryProvider,
-    async loadSessionSnapshot() {
+    sessionResourceAccessRepository,
+    async loadSessionSnapshot(input = {}) {
       const sql = await sqlResolver.resolveSql();
-      const filtersJson = JSON.stringify({});
+      const filters = await sessionSnapshotFilters(
+        input,
+        sessionResourceAccessRepository,
+      );
+      if (filters === null) return { sessions: [], total: 0 };
+      const filtersJson = JSON.stringify(filters);
       const countRows = await sql`
         SELECT session_count(${filtersJson}::jsonb) AS count
       `;
@@ -108,6 +133,48 @@ export function createLiveDbCatalogRepository(
     },
     close: sqlResolver.close,
   };
+}
+
+function createSessionResourceAccessRepository(
+  sqlResolver: LiveDbSqlResolver,
+): SessionResourceAccessRepository {
+  return {
+    async getSessionAccessRecord(sessionId) {
+      const rows = await (await sqlResolver.resolveSql())`
+        SELECT session_id, folder_id FROM session_get(${sessionId}) LIMIT 1
+      `;
+      const row = rows[0];
+      if (row === undefined) return null;
+      return {
+        sessionId: String(row.session_id ?? sessionId),
+        folderId: stringOrNull(row.folder_id),
+      };
+    },
+    async listFoldersForAccess() {
+      const rows = await (await sqlResolver.resolveSql())`
+        SELECT id, parent_folder_id FROM folders
+      `;
+      return rows.flatMap(folderAccessRecord);
+    },
+  };
+}
+
+async function sessionSnapshotFilters(
+  input: LoadSessionSnapshotInput,
+  repository: SessionResourceAccessRepository,
+): Promise<Record<string, unknown> | null> {
+  const filters: Record<string, unknown> = {};
+  if (input.feedOnly === true) filters.feed_only = true;
+  if (input.access === undefined) return filters;
+
+  const access = normalizeBoardAccess(input.access);
+  if (!access.restricted) return filters;
+
+  const folders = await repository.listFoldersForAccess();
+  const folderId = firstAllowedSessionFolderId(access, folders);
+  if (folderId === null) return null;
+  filters.folder_id = folderId;
+  return filters;
 }
 
 function createSessionCatalogProvider(
@@ -180,6 +247,19 @@ function linkedSessionId(row: Record<string, unknown>): string[] {
   return typeof row.linked_session_id === "string" && row.linked_session_id
     ? [row.linked_session_id]
     : [];
+}
+
+function folderAccessRecord(row: Record<string, unknown>): BoardAccessFolderRecord[] {
+  const id = stringOrNull(row.id);
+  if (id === null) return [];
+  return [{
+    id,
+    parentFolderId: stringOrNull(row.parent_folder_id ?? row.parentFolderId),
+  }];
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function numberValue(value: unknown): number | undefined {

@@ -54,6 +54,22 @@ describe("live dashboard DB access provider", () => {
     expect(repository.findUserByEmail).toHaveBeenCalledWith("restricted@example.com");
   });
 
+  it("lets dashboard cookies win over service token access_email overrides", async () => {
+    const { provider, repository } = createProviderHarness();
+
+    await expect(
+      provider.resolveAccess(
+        requestWith({
+          authorization: "Bearer service-token",
+          cookie: `${AUTH_COOKIE_NAME}=restricted-token`,
+        }),
+        { accessEmail: "admin@example.com" },
+      ),
+    ).resolves.toEqual({ restricted: true, allowedFolderIds: ["folder-a"] });
+    expect(repository.findUserByEmail).toHaveBeenCalledWith("restricted@example.com");
+    expect(repository.findUserByEmail).not.toHaveBeenCalledWith("admin@example.com");
+  });
+
   it("denies missing or invalid dashboard JWT requests before resolving user access", async () => {
     const { provider, repository } = createProviderHarness();
 

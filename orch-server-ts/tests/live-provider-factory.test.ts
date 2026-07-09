@@ -211,6 +211,10 @@ describe("live provider factory boundary", () => {
     expect(bundle.sessionCatalogRoutes.provider).toBe(
       dependencies.dbCatalogRepository.sessionCatalogProvider,
     );
+    expect(bundle.sessionCatalogRoutes.accessProvider).toMatchObject({
+      requireSessionAccess: expect.any(Function),
+      requireFolderAccess: expect.any(Function),
+    });
     await expect(
       bundle.configProviders.atomRoutes.configProvider.getConfig(),
     ).resolves.toEqual({
@@ -338,6 +342,9 @@ describe("live provider factory boundary", () => {
     });
     expect(bundle.executeProxyRoutes.provider.executeNew).toEqual(expect.any(Function));
     expect(bundle.executeProxyRoutes.provider.executeResume).toEqual(expect.any(Function));
+    expect(bundle.runtime.sseReplayRoutes.session.loadSnapshot).not.toBe(
+      runtimeServices.routeOptions.sseReplayRoutes.session.loadSnapshot,
+    );
     expect(bundle.runtime).toEqual({
       boardYjsHostProxyRoutes: runtimeServices.routeOptions.boardYjsHostProxyRoutes,
       nodeSnapshotRoutes: runtimeServices.routeOptions.nodeSnapshotRoutes,
@@ -347,9 +354,18 @@ describe("live provider factory boundary", () => {
       sessionBackgroundScheduleRoutes:
         runtimeServices.routeOptions.sessionBackgroundScheduleRoutes,
       sessionCommandRoutes: runtimeServices.routeOptions.sessionCommandRoutes,
-      sessionHistoryRoutes: runtimeServices.routeOptions.sessionHistoryRoutes,
+      sessionHistoryRoutes: {
+        ...runtimeServices.routeOptions.sessionHistoryRoutes,
+        accessProvider: bundle.sessionCatalogRoutes.accessProvider,
+      },
       sessionSnapshotRoutes: runtimeServices.routeOptions.sessionSnapshotRoutes,
-      sseReplayRoutes: runtimeServices.routeOptions.sseReplayRoutes,
+      sseReplayRoutes: {
+        ...runtimeServices.routeOptions.sseReplayRoutes,
+        session: {
+          ...runtimeServices.routeOptions.sseReplayRoutes.session,
+          loadSnapshot: expect.any(Function),
+        },
+      },
     });
   });
 });
@@ -357,7 +373,7 @@ describe("live provider factory boundary", () => {
 function createRuntimeServices(dependencies: LiveProviderDependencies) {
   return createOrchestratorRuntimeServices({
     config,
-    loadSessionSnapshot: dependencies.dbCatalogRepository.loadSessionSnapshot,
+    loadSessionSnapshot: async () => dependencies.dbCatalogRepository.loadSessionSnapshot(),
     loadTaskSnapshot: dependencies.dbCatalogRepository.loadTaskSnapshot,
     sessionHistoryProvider:
       dependencies.dbCatalogRepository.sessionHistoryProvider,
@@ -394,6 +410,10 @@ function createLiveDependencies(): LiveProviderDependencies {
       loadSessionSnapshot: vi.fn(async () => ({ sessions: [] })),
       loadTaskSnapshot: vi.fn(async () => ({ tasks: [] })),
       sessionHistoryProvider,
+      sessionResourceAccessRepository: {
+        getSessionAccessRecord: vi.fn(async () => null),
+        listFoldersForAccess: vi.fn(async () => []),
+      },
     },
     nodeHttpClient: {
       boardYjsHostHttpClient: vi.fn(async () => ({ statusCode: 200 })),

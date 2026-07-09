@@ -1,3 +1,4 @@
+import type { FastifyRequest } from "fastify";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -126,6 +127,30 @@ describe("SSE replay HTTP route harness", () => {
         'data: {"type":"task_list","tasks":[{"id":"task-snapshot","status":"open"}],"total":1}\n\n',
     );
     expect(taskResponse.body).not.toContain("id:");
+  });
+
+  it("passes the session stream request to the snapshot loader", async () => {
+    const observedFeedOnly: string[] = [];
+    const app = createApp({
+      config,
+      sseReplayRoutes: {
+        ...createHarness(),
+        session: {
+          broadcaster: createSessionBroadcaster(),
+          loadSnapshot: async (request: FastifyRequest) => {
+            observedFeedOnly.push(String((request.query as Record<string, unknown>).feed_only));
+            return { sessions: [], total: 0 };
+          },
+        },
+      },
+    });
+
+    await app.inject({
+      method: "GET",
+      url: "/api/sessions/stream?feed_only=true",
+    });
+
+    expect(observedFeedOnly).toEqual(["true"]);
   });
 
   it("prefers Last-Event-ID header over lastEventId query and formats replay events with SSE ids", async () => {

@@ -24,11 +24,11 @@ export type TaskStreamSnapshot = {
 export type SseReplayRouteOptions = {
   session: {
     broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
-    loadSnapshot: () => Promise<SessionStreamSnapshot>;
+    loadSnapshot: (request: FastifyRequest) => Promise<SessionStreamSnapshot>;
   };
   task: {
     broadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>;
-    loadSnapshot: () => Promise<TaskStreamSnapshot>;
+    loadSnapshot: (request: FastifyRequest) => Promise<TaskStreamSnapshot>;
   };
   keepaliveMs?: number;
   replayOnlyForTests?: boolean;
@@ -47,7 +47,7 @@ type SseFrame = {
 
 type ReplayStreamOptions<TPayload extends object> = {
   broadcaster: InMemorySseReplayBroadcaster<TPayload>;
-  loadSnapshot: () => Promise<SseFrame>;
+  loadSnapshot: (request: FastifyRequest) => Promise<SseFrame>;
   keepaliveMs?: number;
   replayOnlyForTests?: boolean;
 };
@@ -61,8 +61,8 @@ export function registerSseReplayRoutes(
   app.get("/api/sessions/stream", async (request, reply) =>
     sendSseReplayStream(request, reply, {
       broadcaster: options.session.broadcaster,
-      loadSnapshot: async () => {
-        const snapshot = await options.session.loadSnapshot();
+      loadSnapshot: async (snapshotRequest) => {
+        const snapshot = await options.session.loadSnapshot(snapshotRequest);
         return {
           event: "session_list",
           data: {
@@ -80,8 +80,8 @@ export function registerSseReplayRoutes(
   app.get("/api/tasks/stream", async (request, reply) =>
     sendSseReplayStream(request, reply, {
       broadcaster: options.task.broadcaster,
-      loadSnapshot: async () => {
-        const snapshot = await options.task.loadSnapshot();
+      loadSnapshot: async (snapshotRequest) => {
+        const snapshot = await options.task.loadSnapshot(snapshotRequest);
         return {
           event: "task_list",
           data: {
@@ -133,7 +133,12 @@ async function sendSseReplayStream<TPayload extends object>(
       });
 
   try {
-    const initialFrames = await buildInitialFrames(options, cursor, replaySeenIds);
+    const initialFrames = await buildInitialFrames(
+      request,
+      options,
+      cursor,
+      replaySeenIds,
+    );
     setSseHeaders(reply);
 
     if (options.replayOnlyForTests) {
@@ -173,6 +178,7 @@ async function sendSseReplayStream<TPayload extends object>(
 }
 
 async function buildInitialFrames<TPayload extends object>(
+  request: FastifyRequest,
   options: ReplayStreamOptions<TPayload>,
   cursor: SseResumeCursor,
   replaySeenIds: Set<number>,
@@ -185,7 +191,7 @@ async function buildInitialFrames<TPayload extends object>(
   ];
 
   if (cursor.lastEventId === null) {
-    frames.push(await options.loadSnapshot());
+    frames.push(await options.loadSnapshot(request));
     return frames;
   }
 
