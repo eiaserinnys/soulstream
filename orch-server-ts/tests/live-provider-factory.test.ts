@@ -192,6 +192,8 @@ describe("live provider factory boundary", () => {
       headers: { cookie: "sid=abc" },
       body: { changes: { KEY: "value" } },
     });
+    expect(bundle.executeProxyRoutes.provider.executeNew).toEqual(expect.any(Function));
+    expect(bundle.executeProxyRoutes.provider.executeResume).toEqual(expect.any(Function));
     expect(bundle.runtime).toEqual({
       boardYjsHostProxyRoutes: runtimeServices.routeOptions.boardYjsHostProxyRoutes,
       nodeSnapshotRoutes: runtimeServices.routeOptions.nodeSnapshotRoutes,
