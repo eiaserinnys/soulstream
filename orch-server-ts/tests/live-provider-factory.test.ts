@@ -252,6 +252,18 @@ describe("live provider factory boundary", () => {
       path: "/auth/claude/profiles",
       headers: { cookie: "sid=claude", authorization: "Bearer claude" },
     });
+    await expect(
+      bundle.nodeClaudeAuthRoutes.provider.getOAuthConfig(),
+    ).resolves.toEqual({
+      clientId: "claude-oauth-client",
+      callbackUrl: "https://orch.example.test/api/nodes/claude-auth/callback",
+    });
+    expect(dependencies.configProvider.requireConfig).toHaveBeenCalledWith(
+      "claude_oauth_client_id",
+    );
+    expect(dependencies.configProvider.requireConfig).toHaveBeenCalledWith(
+      "claude_oauth_callback_url",
+    );
     runtimeServices.registry.registerNode({
       type: "node_register",
       node_id: "node-agent",
@@ -356,6 +368,9 @@ function createLiveDependencies(): LiveProviderDependencies {
         atom_server_url: "https://atom.example.test",
         atom_api_key: "atom-secret",
         atom_root_node_id: "root-node",
+        claude_oauth_client_id: "claude-oauth-client",
+        claude_oauth_callback_url:
+          "https://orch.example.test/api/nodes/claude-auth/callback",
       })),
       requireConfig: vi.fn(async (key: string) => {
         const config: Record<string, unknown> = {
@@ -365,6 +380,9 @@ function createLiveDependencies(): LiveProviderDependencies {
           atom_server_url: "https://atom.example.test",
           atom_api_key: "atom-secret",
           atom_root_node_id: "root-node",
+          claude_oauth_client_id: "claude-oauth-client",
+          claude_oauth_callback_url:
+            "https://orch.example.test/api/nodes/claude-auth/callback",
         };
         return config[key];
       }),

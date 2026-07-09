@@ -120,7 +120,7 @@ describe("live provider wiring inventory", () => {
       statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.profileHttpClient"),
     ).toBe("implemented");
     expect(statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.provider")).toBe(
-      "stub",
+      "implemented",
     );
     expect(statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.pkce")).toBe(
       "blocked",
