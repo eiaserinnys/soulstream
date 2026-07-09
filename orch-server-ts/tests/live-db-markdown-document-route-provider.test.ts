@@ -93,10 +93,6 @@ describe("live DB markdown document route provider", () => {
       html: "<p>ready</p>",
       revision: 4,
       archived: false,
-      createdSessionId: "sess-create",
-      createdEventId: 7,
-      updatedSessionId: "sess-update",
-      updatedEventId: 9,
       createdAt: "2026-07-09T02:00:00.000Z",
       updatedAt: "2026-07-09T02:05:00.000Z",
     });

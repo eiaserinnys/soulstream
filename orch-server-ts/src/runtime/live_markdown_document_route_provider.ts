@@ -111,10 +111,6 @@ function serializeCustomViewRow(row: Record<string, unknown>): CustomViewRecord 
     html: String(row.html ?? ""),
     revision: numberValue(row.revision) ?? 1,
     archived: booleanValue(row.archived) ?? false,
-    createdSessionId: stringOrNull(row.created_session_id ?? row.createdSessionId),
-    createdEventId: nullableNumber(row.created_event_id ?? row.createdEventId),
-    updatedSessionId: stringOrNull(row.updated_session_id ?? row.updatedSessionId),
-    updatedEventId: nullableNumber(row.updated_event_id ?? row.updatedEventId),
   };
   const createdAt = timestampString(row.created_at ?? row.createdAt);
   if (createdAt !== undefined) record.createdAt = createdAt;
@@ -130,10 +126,6 @@ function stringOrNull(value: unknown): string | null {
 function numberValue(value: unknown): number | undefined {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-function nullableNumber(value: unknown): number | null {
-  return value === null || value === undefined ? null : numberValue(value) ?? null;
 }
 
 function booleanValue(value: unknown): boolean | undefined {
