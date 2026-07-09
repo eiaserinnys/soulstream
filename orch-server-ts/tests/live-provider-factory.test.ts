@@ -264,6 +264,17 @@ describe("live provider factory boundary", () => {
     expect(dependencies.configProvider.requireConfig).toHaveBeenCalledWith(
       "claude_oauth_callback_url",
     );
+    expect(
+      bundle.nodeClaudeAuthRoutes.pkce.generateChallenge(
+        "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
+      ),
+    ).toBe("E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM");
+    expect(bundle.nodeClaudeAuthRoutes.pkce.generateVerifier()).toMatch(
+      /^[A-Za-z0-9_-]{43}$/,
+    );
+    expect(bundle.nodeClaudeAuthRoutes.pkce.generateState()).toMatch(
+      /^[A-Za-z0-9_-]{43}$/,
+    );
     runtimeServices.registry.registerNode({
       type: "node_register",
       node_id: "node-agent",

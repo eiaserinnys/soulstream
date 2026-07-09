@@ -30,6 +30,7 @@ export type ClaudeAuthHarnessOptions = {
   tokenResponse?: ClaudeAuthTokenExchangeResponse;
   profileResponse?: NodeClaudeAuthHttpResponse;
   profileHttpError?: Error;
+  pkce?: NodeClaudeAuthRouteOptions["pkce"];
   profileHttpClient?: NodeClaudeAuthRouteOptions["profileHttpClient"];
   provider?: NodeClaudeAuthRouteOptions["provider"];
 };
@@ -117,7 +118,7 @@ export function createClaudeAuthHarness(options: ClaudeAuthHarnessOptions = {}) 
         callbackUrl: "https://orch.example.com/api/nodes/claude-auth/callback",
       }),
     },
-    pkce: {
+    pkce: options.pkce ?? {
       generateVerifier: () => "verifier-fixed",
       generateChallenge: () => "challenge-fixed",
       generateState: () => "state-fixed",

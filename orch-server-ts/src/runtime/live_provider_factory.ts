@@ -101,6 +101,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "cogito", path: "cogitoRoutes.provider" },
   { owner: "execute", path: "executeProxyRoutes.provider" },
   { owner: "node.agent-profiles", path: "nodeAgentProfileRoutes.provider" },
+  { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.pkce" },
   { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.profileHttpClient" },
   { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.provider" },
   { owner: "node.snapshot", path: "runtime" },
