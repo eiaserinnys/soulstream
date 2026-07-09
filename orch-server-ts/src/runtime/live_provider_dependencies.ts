@@ -1,4 +1,5 @@
 import type { BoardYjsHostHttpClient } from "../board/board_yjs_host_proxy.js";
+import type { SessionCatalogProvider } from "../session/session_catalog_routes.js";
 import type { SessionHistoryProvider } from "../session/session_history_service.js";
 import type {
   SessionStreamSnapshot,
@@ -27,6 +28,7 @@ export type LiveAuthSessionIdentityBoundary = {
 };
 
 export type LiveDbCatalogRepositoryBoundary = {
+  readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly loadSessionSnapshot: () => Promise<SessionStreamSnapshot>;
   readonly loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   readonly sessionHistoryProvider: SessionHistoryProvider;

@@ -19,6 +19,7 @@ import type { FolderRouteOptions } from "../folders/folder_routes.js";
 import type { BoardItemRouteOptions } from "../board/board_item_routes.js";
 import type { MarkdownDocumentRouteOptions } from "../board/markdown_document_routes.js";
 import type { RunbookRouteOptions } from "../runbooks/runbook_route_types.js";
+import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
 import { createLiveDashboardAccessProvider } from "./live_dashboard_access_provider.js";
 import { createLiveExecuteProxyRouteProvider } from "./live_execute_proxy_route_provider.js";
 import {
@@ -58,7 +59,11 @@ export type LiveRuntimeProviderBundle = {
     OrchestratorRuntimeServices["routeOptions"]["sessionBackgroundScheduleRoutes"]
   >;
   readonly sessionCommandRoutes: OrchestratorRuntimeServices["routeOptions"]["sessionCommandRoutes"];
+  readonly sessionHistoryRoutes: NonNullable<
+    OrchestratorRuntimeServices["routeOptions"]["sessionHistoryRoutes"]
+  >;
   readonly sessionSnapshotRoutes: OrchestratorRuntimeServices["routeOptions"]["sessionSnapshotRoutes"];
+  readonly sseReplayRoutes: OrchestratorRuntimeServices["routeOptions"]["sseReplayRoutes"];
 };
 
 export type LiveOrchestratorProviderBundle = {
@@ -75,6 +80,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly folderRoutes: Pick<FolderRouteOptions, "accessProvider">;
   readonly boardItemRoutes: Pick<BoardItemRouteOptions, "accessProvider">;
   readonly markdownDocumentRoutes: Pick<MarkdownDocumentRouteOptions, "accessProvider">;
+  readonly sessionCatalogRoutes: SessionCatalogRouteOptions;
   readonly runtime: LiveRuntimeProviderBundle;
   readonly cogitoRoutes: LiveCogitoRouteProviderBundle["cogitoRoutes"];
   readonly configProviders: LiveConfigRouteProviderBundle;
@@ -150,8 +156,12 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "runbooks", path: "runbookRoutes.httpClient" },
   { owner: "session.actions", path: "runtime" },
   { owner: "session.background-schedule", path: "runtime" },
+  { owner: "session.catalog", path: "sessionCatalogRoutes.provider" },
   { owner: "session.command", path: "runtime" },
+  { owner: "session.history", path: "runtime.sessionHistoryProvider" },
   { owner: "session.snapshot", path: "runtime" },
+  { owner: "sse.replay", path: "runtime.loadSessionSnapshot" },
+  { owner: "sse.replay", path: "runtime.loadTaskSnapshot" },
   { owner: "system.config", path: "systemConfigRoutes.httpClient" },
   { owner: "system.config", path: "systemConfigRoutes.provider" },
 ] as const satisfies readonly LiveProviderPath[];
@@ -235,6 +245,9 @@ export function createLiveOrchestratorProviderBundle(
     folderRoutes: { accessProvider: dashboardAccessProvider },
     boardItemRoutes: { accessProvider: dashboardAccessProvider },
     markdownDocumentRoutes: { accessProvider: dashboardAccessProvider },
+    sessionCatalogRoutes: {
+      provider: options.dependencies.dbCatalogRepository.sessionCatalogProvider,
+    },
     runtime: buildLiveRuntimeProviderBundle(options.runtimeServices),
     cogitoRoutes: cogitoProviders.cogitoRoutes,
     configProviders,
@@ -347,7 +360,13 @@ function buildLiveRuntimeProviderBundle(
       "runtime",
     ),
     sessionCommandRoutes: services.routeOptions.sessionCommandRoutes,
+    sessionHistoryRoutes: requireRuntimeRouteOption(
+      services.routeOptions.sessionHistoryRoutes,
+      "session.history",
+      "runtime.sessionHistoryProvider",
+    ),
     sessionSnapshotRoutes: services.routeOptions.sessionSnapshotRoutes,
+    sseReplayRoutes: services.routeOptions.sseReplayRoutes,
   };
 }
 
