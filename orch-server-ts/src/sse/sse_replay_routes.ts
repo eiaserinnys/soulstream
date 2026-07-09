@@ -128,6 +128,7 @@ async function sendSseReplayStream<TPayload extends object>(
   let pendingLiveEvents: Array<SseReplayEvent<TPayload>> = [];
   let initialFlushed = false;
   let liveStream: Readable | null = null;
+  let livePushChain: Promise<void> = Promise.resolve();
   const pushLiveEvent = async (event: SseReplayEvent<TPayload>) => {
     if (replaySeenIds.has(event.id)) return;
     const frame = await filteredReplayEventFrame(request, options, event);
@@ -139,6 +140,11 @@ async function sendSseReplayStream<TPayload extends object>(
     const streamError = error instanceof Error ? error : new Error(String(error));
     liveStream?.destroy(streamError);
   };
+  const enqueueLiveEvent = (event: SseReplayEvent<TPayload>) => {
+    livePushChain = livePushChain
+      .then(() => pushLiveEvent(event))
+      .catch(destroyLiveStream);
+  };
   const unsubscribe = options.replayOnlyForTests
     ? undefined
     : options.broadcaster.subscribe((event) => {
@@ -147,7 +153,7 @@ async function sendSseReplayStream<TPayload extends object>(
           return;
         }
         if (!replaySeenIds.has(event.id)) {
-          void pushLiveEvent(event).catch(destroyLiveStream);
+          enqueueLiveEvent(event);
         }
       });
 
