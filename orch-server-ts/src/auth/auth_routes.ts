@@ -86,7 +86,7 @@ export type AuthUserAuthorizer = (
 
 export type AuthUserPayloadExtra = (
   payload: AuthJwtPayload,
-) => Record<string, unknown>;
+) => Record<string, unknown> | Promise<Record<string, unknown>>;
 
 export type AuthRouteOptions = {
   configProvider: AuthRouteConfigProvider;
@@ -224,13 +224,14 @@ export function registerAuthRoutes(app: FastifyInstance, options: AuthRouteOptio
     const payload = await options.jwt.verifyToken(token);
     if (!payload) return { authenticated: false, user: null };
 
+    const payloadExtra = await options.userPayloadExtra?.(payload);
     return {
       authenticated: true,
       user: {
         email: payload.email,
         name: payload.name ?? "",
         picture: payload.picture ?? "",
-        ...(options.userPayloadExtra?.(payload) ?? {}),
+        ...(payloadExtra ?? {}),
       },
     };
   });

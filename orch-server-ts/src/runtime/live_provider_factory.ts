@@ -15,6 +15,11 @@ import {
   type LiveConfigRouteProviderBundle,
 } from "./live_config_route_providers.js";
 import type { ExecuteProxyRouteOptions } from "../execute/execute_proxy_routes.js";
+import type { FolderRouteOptions } from "../folders/folder_routes.js";
+import type { BoardItemRouteOptions } from "../board/board_item_routes.js";
+import type { MarkdownDocumentRouteOptions } from "../board/markdown_document_routes.js";
+import type { RunbookRouteOptions } from "../runbooks/runbook_route_types.js";
+import { createLiveDashboardAccessProvider } from "./live_dashboard_access_provider.js";
 import { createLiveExecuteProxyRouteProvider } from "./live_execute_proxy_route_provider.js";
 import {
   createLiveNodeClaudeAuthRouteProviders,
@@ -65,14 +70,20 @@ export type LiveOrchestratorProviderBundle = {
     | "nativeVerifier"
     | "resolveTokenAccess"
     | "authorizeUser"
+    | "userPayloadExtra"
   >;
+  readonly folderRoutes: Pick<FolderRouteOptions, "accessProvider">;
+  readonly boardItemRoutes: Pick<BoardItemRouteOptions, "accessProvider">;
+  readonly markdownDocumentRoutes: Pick<MarkdownDocumentRouteOptions, "accessProvider">;
   readonly runtime: LiveRuntimeProviderBundle;
   readonly cogitoRoutes: LiveCogitoRouteProviderBundle["cogitoRoutes"];
   readonly configProviders: LiveConfigRouteProviderBundle;
   readonly executeProxyRoutes: ExecuteProxyRouteOptions;
   readonly nodeAgentProfileRoutes: LiveNodeAgentProfileRouteProviderBundle["nodeAgentProfileRoutes"];
   readonly nodeClaudeAuthRoutes: LiveNodeClaudeAuthRouteProviderBundle["nodeClaudeAuthRoutes"];
-  readonly runbookRoutes: LiveRunbookRouteProviderBundle["runbookRoutes"];
+  readonly runbookRoutes:
+    & LiveRunbookRouteProviderBundle["runbookRoutes"]
+    & Pick<RunbookRouteOptions, "accessProvider">;
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
   readonly implementedProviderPaths: readonly LiveProviderPath[];
 };
@@ -117,11 +128,15 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "auth", path: "authRoutes.jwt" },
   { owner: "auth", path: "authRoutes.nativeVerifier" },
   { owner: "auth", path: "authRoutes.resolveTokenAccess" },
+  { owner: "auth", path: "authRoutes.userPayloadExtra" },
+  { owner: "board.items", path: "boardItemRoutes.accessProvider" },
   { owner: "board.yjs-host", path: "runtime.boardYjsHostHttpClient" },
   { owner: "cogito", path: "cogitoRoutes.briefCollector" },
   { owner: "cogito", path: "cogitoRoutes.httpClient" },
   { owner: "cogito", path: "cogitoRoutes.provider" },
   { owner: "execute", path: "executeProxyRoutes.provider" },
+  { owner: "folders", path: "folderRoutes.accessProvider" },
+  { owner: "markdown.documents", path: "markdownDocumentRoutes.accessProvider" },
   { owner: "node.agent-profiles", path: "nodeAgentProfileRoutes.provider" },
   { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.pkce" },
   { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.profileHttpClient" },
@@ -131,6 +146,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "node.snapshot", path: "runtime" },
   { owner: "node.ws", path: "runtime" },
   { owner: "public.status", path: "publicStatusRoutes.configProvider" },
+  { owner: "runbooks", path: "runbookRoutes.accessProvider" },
   { owner: "runbooks", path: "runbookRoutes.httpClient" },
   { owner: "session.actions", path: "runtime" },
   { owner: "session.background-schedule", path: "runtime" },
@@ -194,6 +210,10 @@ export function createLiveOrchestratorProviderBundle(
   const authJwt = createLiveAuthJwtHelper({
     configProvider: options.dependencies.configProvider,
   });
+  const dashboardAccessProvider = createLiveDashboardAccessProvider({
+    configProvider: options.dependencies.configProvider,
+    jwt: authJwt,
+  });
 
   return {
     authRoutes: {
@@ -210,7 +230,11 @@ export function createLiveOrchestratorProviderBundle(
       authorizeUser: createLiveAuthUserAuthorizer({
         configProvider: options.dependencies.configProvider,
       }),
+      userPayloadExtra: dashboardAccessProvider.userPayloadExtra,
     },
+    folderRoutes: { accessProvider: dashboardAccessProvider },
+    boardItemRoutes: { accessProvider: dashboardAccessProvider },
+    markdownDocumentRoutes: { accessProvider: dashboardAccessProvider },
     runtime: buildLiveRuntimeProviderBundle(options.runtimeServices),
     cogitoRoutes: cogitoProviders.cogitoRoutes,
     configProviders,
@@ -224,7 +248,10 @@ export function createLiveOrchestratorProviderBundle(
     },
     nodeAgentProfileRoutes: nodeAgentProfileProviders.nodeAgentProfileRoutes,
     nodeClaudeAuthRoutes: nodeClaudeAuthProviders.nodeClaudeAuthRoutes,
-    runbookRoutes: runbookProviders.runbookRoutes,
+    runbookRoutes: {
+      ...runbookProviders.runbookRoutes,
+      accessProvider: dashboardAccessProvider,
+    },
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
     implementedProviderPaths: alignment.factoryProviderPaths,
   };
