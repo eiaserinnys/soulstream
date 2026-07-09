@@ -4,6 +4,7 @@ import type {
   ClaudeAuthSessionRecord,
   ClaudeAuthSessionStore,
   ClaudeAuthPkceProvider,
+  ClaudeAuthTokenExchangeClient,
   NodeClaudeAuthHttpClient,
   NodeClaudeAuthRouteProvider,
   NodeClaudeAuthRouteOptions,
@@ -30,6 +31,8 @@ export type LiveNodeClaudeAuthConfigProvider = Pick<
 export type CreateLiveNodeClaudeAuthRouteProviderOptions = {
   readonly nodeHttpClient: LiveNodeClaudeAuthNodeHttpClient;
   readonly configProvider: LiveNodeClaudeAuthConfigProvider;
+  readonly tokenExchangeFetch?: LiveNodeClaudeAuthTokenExchangeFetch;
+  readonly tokenExchangeTimeoutMs?: number;
 };
 
 export type CreateLiveNodeClaudeAuthProfileHttpClientOptions = {
@@ -38,6 +41,16 @@ export type CreateLiveNodeClaudeAuthProfileHttpClientOptions = {
 
 export type CreateLiveNodeClaudeAuthOAuthConfigProviderOptions = {
   readonly configProvider: LiveNodeClaudeAuthConfigProvider;
+};
+
+export type LiveNodeClaudeAuthTokenExchangeFetch = (
+  input: string,
+  init: RequestInit,
+) => Promise<Response>;
+
+export type CreateLiveNodeClaudeAuthTokenExchangeClientOptions = {
+  readonly fetch?: LiveNodeClaudeAuthTokenExchangeFetch;
+  readonly timeoutMs?: number;
 };
 
 export type LiveNodeClaudeAuthRandomBytes = (size: number) => Uint8Array;
@@ -59,12 +72,13 @@ export type CreateLiveNodeClaudeAuthSessionStoreOptions = {
 export type LiveNodeClaudeAuthRouteProviderBundle = {
   readonly nodeClaudeAuthRoutes: Pick<
     NodeClaudeAuthRouteOptions,
-    "pkce" | "profileHttpClient" | "provider" | "sessionStore"
+    "pkce" | "profileHttpClient" | "provider" | "sessionStore" | "tokenExchange"
   >;
 };
 
 const PKCE_RANDOM_BYTE_LENGTH = 32;
 const DEFAULT_SESSION_TTL_MS = 300_000;
+const DEFAULT_TOKEN_EXCHANGE_TIMEOUT_MS = 5_000;
 
 export function createLiveNodeClaudeAuthRouteProviders(
   options: CreateLiveNodeClaudeAuthRouteProviderOptions,
@@ -75,6 +89,10 @@ export function createLiveNodeClaudeAuthRouteProviders(
       provider: createLiveNodeClaudeAuthOAuthConfigProvider(options),
       profileHttpClient: createLiveNodeClaudeAuthProfileHttpClient(options),
       sessionStore: createLiveNodeClaudeAuthSessionStore(),
+      tokenExchange: createLiveNodeClaudeAuthTokenExchangeClient({
+        fetch: options.tokenExchangeFetch,
+        timeoutMs: options.tokenExchangeTimeoutMs,
+      }),
     },
   };
 }
@@ -110,6 +128,41 @@ export function createLiveNodeClaudeAuthProfileHttpClient(
       statusCode: response.statusCode,
       body: response.body,
     };
+  };
+}
+
+export function createLiveNodeClaudeAuthTokenExchangeClient(
+  options: CreateLiveNodeClaudeAuthTokenExchangeClientOptions = {},
+): ClaudeAuthTokenExchangeClient {
+  const fetch = options.fetch ?? globalThis.fetch;
+  if (typeof fetch !== "function") {
+    throw new Error("global fetch is required for live Claude auth token exchange");
+  }
+  const timeoutMs = normalizeTokenExchangeTimeoutMs(options.timeoutMs);
+
+  return async (request) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(request.url, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(request.data),
+        signal: controller.signal,
+      });
+      if (response.status !== 200) {
+        return {
+          statusCode: response.status,
+          text: await response.text(),
+        };
+      }
+      return {
+        statusCode: response.status,
+        body: await response.json(),
+      };
+    } finally {
+      clearTimeout(timer);
+    }
   };
 }
 
@@ -237,4 +290,14 @@ function actualType(value: unknown): string {
   if (value === null) return "null";
   if (Array.isArray(value)) return "array";
   return typeof value;
+}
+
+function normalizeTokenExchangeTimeoutMs(timeoutMs: number | undefined): number {
+  const resolved = timeoutMs ?? DEFAULT_TOKEN_EXCHANGE_TIMEOUT_MS;
+  if (!Number.isInteger(resolved) || resolved <= 0) {
+    throw new Error(
+      `Claude auth token exchange timeoutMs must be a positive integer: ${resolved}`,
+    );
+  }
+  return resolved;
 }
