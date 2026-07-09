@@ -1,6 +1,8 @@
 import { createHash, randomBytes as cryptoRandomBytes } from "node:crypto";
 
 import type {
+  ClaudeAuthSessionRecord,
+  ClaudeAuthSessionStore,
   ClaudeAuthPkceProvider,
   NodeClaudeAuthHttpClient,
   NodeClaudeAuthRouteProvider,
@@ -47,14 +49,22 @@ export type CreateLiveNodeClaudeAuthPkceProviderOptions = {
   readonly sha256?: LiveNodeClaudeAuthSha256Digest;
 };
 
+export type LiveNodeClaudeAuthSessionStoreClock = () => number;
+
+export type CreateLiveNodeClaudeAuthSessionStoreOptions = {
+  readonly nowMs?: LiveNodeClaudeAuthSessionStoreClock;
+  readonly ttlMs?: number;
+};
+
 export type LiveNodeClaudeAuthRouteProviderBundle = {
   readonly nodeClaudeAuthRoutes: Pick<
     NodeClaudeAuthRouteOptions,
-    "pkce" | "profileHttpClient" | "provider"
+    "pkce" | "profileHttpClient" | "provider" | "sessionStore"
   >;
 };
 
 const PKCE_RANDOM_BYTE_LENGTH = 32;
+const DEFAULT_SESSION_TTL_MS = 300_000;
 
 export function createLiveNodeClaudeAuthRouteProviders(
   options: CreateLiveNodeClaudeAuthRouteProviderOptions,
@@ -64,6 +74,7 @@ export function createLiveNodeClaudeAuthRouteProviders(
       pkce: createLiveNodeClaudeAuthPkceProvider(),
       provider: createLiveNodeClaudeAuthOAuthConfigProvider(options),
       profileHttpClient: createLiveNodeClaudeAuthProfileHttpClient(options),
+      sessionStore: createLiveNodeClaudeAuthSessionStore(),
     },
   };
 }
@@ -114,6 +125,37 @@ export function createLiveNodeClaudeAuthPkceProvider(
   };
 }
 
+export function createLiveNodeClaudeAuthSessionStore(
+  options: CreateLiveNodeClaudeAuthSessionStoreOptions = {},
+): ClaudeAuthSessionStore {
+  const nowMs = options.nowMs ?? Date.now;
+  const ttlMs = options.ttlMs ?? DEFAULT_SESSION_TTL_MS;
+  const sessions = new Map<string, StoredClaudeAuthSession>();
+
+  return {
+    create: (state, verifier, createOptions) => {
+      const now = nowMs();
+      sessions.set(state, {
+        verifier,
+        metadata: { ...createOptions.metadata },
+        createdAtMs: now,
+      });
+      evictExpired(sessions, now, ttlMs);
+    },
+    pop: (state) => {
+      const session = sessions.get(state);
+      sessions.delete(state);
+      if (session === undefined || isExpired(session, nowMs(), ttlMs)) {
+        return undefined;
+      }
+      return {
+        verifier: session.verifier,
+        metadata: { ...session.metadata },
+      };
+    },
+  };
+}
+
 function defaultSha256(verifier: string): Uint8Array {
   return createHash("sha256").update(verifier, "ascii").digest();
 }
@@ -124,6 +166,30 @@ function base64UrlNoPadding(bytes: Uint8Array): string {
     .replaceAll("+", "-")
     .replaceAll("/", "_")
     .replace(/=+$/, "");
+}
+
+type StoredClaudeAuthSession = ClaudeAuthSessionRecord & {
+  readonly createdAtMs: number;
+};
+
+function evictExpired(
+  sessions: Map<string, StoredClaudeAuthSession>,
+  nowMs: number,
+  ttlMs: number,
+): void {
+  for (const [state, session] of sessions.entries()) {
+    if (isExpired(session, nowMs, ttlMs)) {
+      sessions.delete(state);
+    }
+  }
+}
+
+function isExpired(
+  session: StoredClaudeAuthSession,
+  nowMs: number,
+  ttlMs: number,
+): boolean {
+  return nowMs - session.createdAtMs > ttlMs;
 }
 
 async function requireClaudeAuthString(

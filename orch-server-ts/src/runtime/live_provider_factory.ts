@@ -104,6 +104,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.pkce" },
   { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.profileHttpClient" },
   { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.provider" },
+  { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.sessionStore" },
   { owner: "node.snapshot", path: "runtime" },
   { owner: "node.ws", path: "runtime" },
   { owner: "public.status", path: "publicStatusRoutes.configProvider" },

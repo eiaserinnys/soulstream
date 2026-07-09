@@ -127,7 +127,7 @@ describe("live provider wiring inventory", () => {
     );
     expect(
       statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.sessionStore"),
-    ).toBe("blocked");
+    ).toBe("implemented");
     expect(
       statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.tokenExchange"),
     ).toBe("blocked");
