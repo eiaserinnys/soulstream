@@ -1,10 +1,12 @@
 import type { NodeConnectionSnapshot } from "../node/registry_types.js";
 import type {
+  SystemConfigHttpClient,
   SystemConfigNodeCandidate,
   SystemConfigRouteProvider,
   SystemPortraitResult,
   SystemPortraitSource,
 } from "../system/system_config_routes.js";
+import type { LiveNodeHttpClientBoundary } from "./live_provider_dependencies.js";
 
 export type SystemPortraitAssetFileName = "system.png";
 
@@ -29,9 +31,23 @@ export type CreateLiveSystemConfigRouteProviderOptions = {
   readonly portraitAssets: LiveSystemPortraitAssetBoundary;
 };
 
+export type LiveSystemConfigNodeHttpClient = Pick<
+  LiveNodeHttpClientBoundary,
+  "requestNode"
+>;
+
+export type CreateLiveSystemConfigHttpClientOptions = {
+  readonly nodeHttpClient: LiveSystemConfigNodeHttpClient;
+};
+
+export type CreateLiveSystemConfigRouteProvidersOptions =
+  CreateLiveSystemConfigRouteProviderOptions &
+  CreateLiveSystemConfigHttpClientOptions;
+
 export type LiveSystemConfigRouteProviderBundle = {
   readonly systemConfigRoutes: {
     readonly provider: SystemConfigRouteProvider;
+    readonly httpClient: SystemConfigHttpClient;
   };
 };
 
@@ -45,12 +61,32 @@ export function createLiveSystemConfigRouteProvider(
 }
 
 export function createLiveSystemConfigRouteProviders(
-  options: CreateLiveSystemConfigRouteProviderOptions,
+  options: CreateLiveSystemConfigRouteProvidersOptions,
 ): LiveSystemConfigRouteProviderBundle {
   return {
     systemConfigRoutes: {
       provider: createLiveSystemConfigRouteProvider(options),
+      httpClient: createLiveSystemConfigHttpClient(options),
     },
+  };
+}
+
+export function createLiveSystemConfigHttpClient(
+  options: CreateLiveSystemConfigHttpClientOptions,
+): SystemConfigHttpClient {
+  return async (request) => {
+    const response = await options.nodeHttpClient.requestNode({
+      nodeId: request.node.nodeId,
+      method: request.method,
+      path: request.path,
+      headers: request.headers,
+      ...(request.body === undefined ? {} : { body: request.body }),
+    });
+    return {
+      statusCode: response.statusCode,
+      headers: response.headers,
+      body: response.body,
+    };
   };
 }
 
