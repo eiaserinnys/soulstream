@@ -68,6 +68,10 @@ import {
   type PushRouteOptions,
 } from "./push/push_routes.js";
 import {
+  registerPublicStatusRoutes,
+  type PublicStatusRouteOptions,
+} from "./public/public_status_routes.js";
+import {
   registerSessionActionCommandRoutes,
   type SessionActionCommandRouteOptions,
 } from "./session/session_action_command_routes.js";
@@ -141,6 +145,7 @@ export type CreateAppOptions = {
   taskMutationRoutes?: TaskMutationRouteOptions;
   executeProxyRoutes?: ExecuteProxyRouteOptions;
   pushRoutes?: PushRouteOptions;
+  publicStatusRoutes?: PublicStatusRouteOptions;
   userBackgroundRoutes?: UserBackgroundRouteOptions;
   userPreferencesRoutes?: UserPreferencesRouteOptions;
   boardYjsHostProxyRoutes?: BoardYjsHostProxyRouteOptions;
@@ -213,6 +218,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.pushRoutes !== undefined) {
     registerPushRoutes(app, options.pushRoutes);
+  }
+  if (options.publicStatusRoutes !== undefined) {
+    registerPublicStatusRoutes(app, options.publicStatusRoutes);
   }
   if (options.authRoutes !== undefined) {
     registerAuthRoutes(app, options.authRoutes);
