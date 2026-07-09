@@ -3,6 +3,10 @@ import {
   createLiveConfigRouteProviders,
   type LiveConfigRouteProviderBundle,
 } from "./live_config_route_providers.js";
+import {
+  createLiveSystemConfigRouteProviders,
+  type LiveSystemConfigRouteProviderBundle,
+} from "./live_system_config_route_provider.js";
 import type { LiveProviderDependencies } from "./live_provider_dependencies.js";
 import { liveProviderDependencyCategories } from "./live_provider_dependencies.js";
 import {
@@ -28,6 +32,7 @@ export type LiveRuntimeProviderBundle = {
 export type LiveOrchestratorProviderBundle = {
   readonly runtime: LiveRuntimeProviderBundle;
   readonly configProviders: LiveConfigRouteProviderBundle;
+  readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
   readonly implementedProviderPaths: readonly LiveProviderPath[];
 };
 
@@ -73,6 +78,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "session.background-schedule", path: "runtime" },
   { owner: "session.command", path: "runtime" },
   { owner: "session.snapshot", path: "runtime" },
+  { owner: "system.config", path: "systemConfigRoutes.provider" },
 ] as const satisfies readonly LiveProviderPath[];
 
 export class LiveProviderFactoryError extends Error {
@@ -101,9 +107,15 @@ export function createLiveOrchestratorProviderBundle(
     throw new LiveProviderFactoryError(failures);
   }
 
+  const systemConfigProviders = createLiveSystemConfigRouteProviders({
+    registry: options.runtimeServices.registry,
+    portraitAssets: options.dependencies.systemPortraitAssets,
+  });
+
   return {
     runtime: buildLiveRuntimeProviderBundle(options.runtimeServices),
     configProviders: createLiveConfigRouteProviders(options.dependencies.configProvider),
+    systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
     implementedProviderPaths: alignment.factoryProviderPaths,
   };
 }
