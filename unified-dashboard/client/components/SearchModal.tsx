@@ -8,7 +8,7 @@
  * 검색 엔드포인트: /cogito/search (BFF 없이 soul-server 직접 접근)
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Dialog,
   DialogPopup,
@@ -17,6 +17,7 @@ import {
   DialogPanel,
   useDashboardStore,
   cn,
+  type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { Search } from "lucide-react";
 import {
@@ -118,16 +119,39 @@ function SearchResultRow({
 interface SearchModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  sessions?: SessionSummary[];
 }
 
 // === Main Component ===
 
-export function SearchModal({ open, onOpenChange }: SearchModalProps) {
+export function SearchModal({
+  open,
+  onOpenChange,
+  sessions = [],
+}: SearchModalProps) {
+  const catalog = useDashboardStore((s) => s.catalog);
+  const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
+  const selectFolder = useDashboardStore((s) => s.selectFolder);
   const setActiveSession = useDashboardStore((s) => s.setActiveSession);
+  const setActiveSessionSummary = useDashboardStore((s) => s.setActiveSessionSummary);
   const setFocusEventId = useDashboardStore((s) => s.setFocusEventId);
+  const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const { results, loading, error, search, clear } = useSessionSearch();
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTER_STATE);
+  const sessionById = useMemo(() => {
+    const byId = new Map<string, SessionSummary>();
+    for (const session of catalog?.sessionList ?? []) {
+      byId.set(session.agentSessionId, session);
+    }
+    for (const session of sessions) {
+      byId.set(session.agentSessionId, session);
+    }
+    if (activeSessionSummary) {
+      byId.set(activeSessionSummary.agentSessionId, activeSessionSummary);
+    }
+    return byId;
+  }, [activeSessionSummary, catalog?.sessionList, sessions]);
 
   // stale closure 방지용 ref
   const queryRef = useRef(query);
@@ -166,8 +190,29 @@ export function SearchModal({ open, onOpenChange }: SearchModalProps) {
   }, [filters, search]);
 
   const handleResultClick = (result: SearchResultItem) => {
+    const assignment = catalog?.sessions[result.session_id];
+    const summary = sessionById.get(result.session_id);
+    const targetSummary =
+      summary && assignment
+        ? {
+            ...summary,
+            folderId: assignment.folderId,
+            displayName: assignment.displayName,
+          }
+        : summary;
+    const targetFolderId = assignment
+      ? assignment.folderId
+      : targetSummary?.folderId;
+
+    if (targetFolderId !== undefined) {
+      selectFolder(targetFolderId);
+    }
+    if (targetSummary) {
+      setActiveSessionSummary(targetSummary);
+    }
     setActiveSession(result.session_id);
     setFocusEventId(result.event_id);
+    setActiveTab("chat");
     onOpenChange(false);
   };
 

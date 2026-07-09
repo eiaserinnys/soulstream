@@ -255,7 +255,11 @@ export function OrchestratorDashboardLayout() {
       modals={
         <>
           <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
-          <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
+          <SearchModal
+            open={searchOpen}
+            onOpenChange={setSearchOpen}
+            sessions={sessions}
+          />
           <OrchestratorNewSessionModal />
           <AskQuestionBanner />
         </>
