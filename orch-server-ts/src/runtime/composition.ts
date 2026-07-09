@@ -84,8 +84,7 @@ export type OrchestratorRuntimeRouteOptions = {
   boardYjsHostProxyRoutes: BoardYjsHostProxyRouteOptions;
 };
 
-export type OrchestratorRuntimeComposition = {
-  app: FastifyInstance;
+export type OrchestratorRuntimeServices = {
   registry: InMemoryNodeRegistry;
   transports: NodeCommandTransportHub;
   sessionRouter: SessionCommandRouter;
@@ -98,9 +97,13 @@ export type OrchestratorRuntimeComposition = {
   routeOptions: OrchestratorRuntimeRouteOptions;
 };
 
-export function createOrchestratorRuntimeComposition(
+export type OrchestratorRuntimeComposition = OrchestratorRuntimeServices & {
+  app: FastifyInstance;
+};
+
+export function createOrchestratorRuntimeServices(
   options: OrchestratorRuntimeCompositionOptions,
-): OrchestratorRuntimeComposition {
+): OrchestratorRuntimeServices {
   const registry = new InMemoryNodeRegistry({
     nowMs: options.nowMs,
     requestIdGenerator: options.requestIdGenerator,
@@ -198,15 +201,7 @@ export function createOrchestratorRuntimeComposition(
     },
   };
 
-  const app = createApp({
-    config: options.config,
-    routeOwners: options.routeOwners,
-    exposeLocalHealthRoute: options.exposeLocalHealthRoute,
-    ...routeOptions,
-  });
-
   return {
-    app,
     registry,
     transports,
     sessionRouter,
@@ -217,6 +212,23 @@ export function createOrchestratorRuntimeComposition(
     sessionBroadcaster,
     taskBroadcaster,
     routeOptions,
+  };
+}
+
+export function createOrchestratorRuntimeComposition(
+  options: OrchestratorRuntimeCompositionOptions,
+): OrchestratorRuntimeComposition {
+  const services = createOrchestratorRuntimeServices(options);
+  const app = createApp({
+    config: options.config,
+    routeOwners: options.routeOwners,
+    exposeLocalHealthRoute: options.exposeLocalHealthRoute,
+    ...services.routeOptions,
+  });
+
+  return {
+    app,
+    ...services,
   };
 }
 
