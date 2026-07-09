@@ -256,7 +256,11 @@ export function DashboardLayout() {
       modals={
         <>
           <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
-          <SearchModal open={searchOpen} onOpenChange={setSearchOpen} />
+          <SearchModal
+            open={searchOpen}
+            onOpenChange={setSearchOpen}
+            sessions={sessions}
+          />
           <NewSessionModal />
           <AskQuestionBanner />
         </>
