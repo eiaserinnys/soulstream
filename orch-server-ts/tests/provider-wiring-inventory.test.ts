@@ -114,6 +114,9 @@ describe("live provider wiring inventory", () => {
       "implemented",
     );
     expect(
+      statusByPath.get("node.agent-profiles:nodeAgentProfileRoutes.provider"),
+    ).toBe("implemented");
+    expect(
       statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.profileHttpClient"),
     ).toBe("implemented");
     expect(statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.provider")).toBe(
