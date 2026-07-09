@@ -136,6 +136,29 @@ describe("live node Claude auth token exchange", () => {
     await assertion;
   });
 
+  it("uses the Python httpx-compatible default timeout boundary", async () => {
+    vi.useFakeTimers();
+    const fetch = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => {
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        }),
+    );
+    const tokenExchange = createLiveNodeClaudeAuthTokenExchangeClient({ fetch });
+
+    const pending = tokenExchange({
+      url: "https://platform.claude.com/v1/oauth/token",
+      flow: "browser",
+      data: { code: "slow" },
+    });
+    const assertion = expect(pending).rejects.toThrow("aborted");
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await assertion;
+  });
+
   it("lets browser route network failures propagate instead of mapping them to token failure detail", async () => {
     const tokenExchange = createLiveNodeClaudeAuthTokenExchangeClient({
       fetch: vi.fn(async (_url: string, _init: RequestInit) => {

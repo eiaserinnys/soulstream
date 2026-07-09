@@ -78,7 +78,7 @@ export type LiveNodeClaudeAuthRouteProviderBundle = {
 
 const PKCE_RANDOM_BYTE_LENGTH = 32;
 const DEFAULT_SESSION_TTL_MS = 300_000;
-const DEFAULT_TOKEN_EXCHANGE_TIMEOUT_MS = 10_000;
+const DEFAULT_TOKEN_EXCHANGE_TIMEOUT_MS = 5_000;
 
 export function createLiveNodeClaudeAuthRouteProviders(
   options: CreateLiveNodeClaudeAuthRouteProviderOptions,
