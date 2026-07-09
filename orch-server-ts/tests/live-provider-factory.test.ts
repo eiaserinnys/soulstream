@@ -10,6 +10,7 @@ import {
   validateLiveProviderFactoryInventoryAlignment,
   LiveProviderFactoryError,
   type LiveProviderDependencies,
+  type NodeConnectionSnapshot,
   type LiveProviderWiringInventoryEntry,
 } from "../src/index.js";
 
@@ -18,6 +19,28 @@ const config = parseOrchServerConfig({
   databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
   authBearerToken: "test-token",
 });
+
+const nodeClaudeAuthProfileNode: NodeConnectionSnapshot = {
+  nodeId: "node-claude",
+  connectionId: "conn-claude",
+  host: "ignored",
+  port: 4105,
+  agents: [],
+  capabilities: {},
+  supportedBackends: [],
+  connected: true,
+  status: "connected",
+  connectedAtMs: 1_700_000_000_000,
+  disconnectedAtMs: undefined,
+  lastSeenAtMs: 1_700_000_000_000,
+  heartbeat: {
+    supported: false,
+    timeoutMs: 0,
+    lastPingAtMs: undefined,
+    lastPongAtMs: undefined,
+  },
+  pendingCommandCount: 0,
+};
 
 describe("live provider factory boundary", () => {
   it("requires explicit dependency categories for live wiring", () => {
@@ -213,6 +236,21 @@ describe("live provider factory boundary", () => {
       path: "/api/runbooks/rb%2F1/status",
       headers: { cookie: "sid=runbook", authorization: "Bearer runbook" },
       body: runbookPayload,
+    });
+    await expect(
+      bundle.nodeClaudeAuthRoutes.profileHttpClient({
+        method: "GET",
+        url: "http://ignored.example.test/auth/claude/profiles",
+        path: "/auth/claude/profiles",
+        headers: { cookie: "sid=claude", authorization: "Bearer claude" },
+        node: nodeClaudeAuthProfileNode,
+      }),
+    ).resolves.toMatchObject({ statusCode: 200 });
+    expect(dependencies.nodeHttpClient.requestNode).toHaveBeenCalledWith({
+      nodeId: "node-claude",
+      method: "GET",
+      path: "/auth/claude/profiles",
+      headers: { cookie: "sid=claude", authorization: "Bearer claude" },
     });
     expect(bundle.executeProxyRoutes.provider.executeNew).toEqual(expect.any(Function));
     expect(bundle.executeProxyRoutes.provider.executeResume).toEqual(expect.any(Function));

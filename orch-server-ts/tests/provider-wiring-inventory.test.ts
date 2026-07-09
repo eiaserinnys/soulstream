@@ -113,6 +113,21 @@ describe("live provider wiring inventory", () => {
     expect(statusByPath.get("runbooks:runbookRoutes.httpClient")).toBe(
       "implemented",
     );
+    expect(
+      statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.profileHttpClient"),
+    ).toBe("implemented");
+    expect(statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.provider")).toBe(
+      "stub",
+    );
+    expect(statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.pkce")).toBe(
+      "blocked",
+    );
+    expect(
+      statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.sessionStore"),
+    ).toBe("blocked");
+    expect(
+      statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.tokenExchange"),
+    ).toBe("blocked");
     expect(statusByPath.get("runbooks:runbookRoutes.provider")).toBe("stub");
     expect(statusByPath.get("runbooks:runbookRoutes.accessProvider")).toBe("stub");
     expect(statusByPath.get("board.yjs-host:runtime.boardYjsHostHttpClient")).toBe(
