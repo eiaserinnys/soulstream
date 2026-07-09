@@ -46,6 +46,11 @@ import type {
   SseReplayRouteOptions,
   TaskStreamSnapshot,
 } from "../sse/sse_replay_routes.js";
+import {
+  createLiveNodeHttpClientBoundary,
+  type LiveNodeHttpFetch,
+} from "./live_node_http_client.js";
+import type { LiveNodeHttpClientBoundary } from "./live_provider_dependencies.js";
 
 export type OrchestratorRuntimeCompositionOptions = {
   config: OrchServerTsConfig;
@@ -69,7 +74,9 @@ export type OrchestratorRuntimeCompositionOptions = {
   sessionHistoryKeepaliveMs?: number;
   sessionHistoryCloseAfterHistorySync?: boolean;
   loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
-  boardYjsHostHttpClient: BoardYjsHostHttpClient;
+  boardYjsHostHttpClient?: BoardYjsHostHttpClient;
+  nodeHttpFetch?: LiveNodeHttpFetch;
+  nodeHttpRequestTimeoutMs?: number;
 };
 
 export type OrchestratorRuntimeRouteOptions = {
@@ -94,6 +101,7 @@ export type OrchestratorRuntimeServices = {
   sessionSnapshotService: SessionSnapshotService;
   sessionBroadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
   taskBroadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>;
+  nodeHttpClient: LiveNodeHttpClientBoundary;
   routeOptions: OrchestratorRuntimeRouteOptions;
 };
 
@@ -129,6 +137,11 @@ export function createOrchestratorRuntimeServices(
   const taskBroadcaster = new InMemorySseReplayBroadcaster<TaskStreamEvent>({
     instanceId: options.taskSseInstanceId,
     ringMaxlen: options.sseRingMaxlen,
+  });
+  const nodeHttpClient = createLiveNodeHttpClientBoundary({
+    registry,
+    fetch: options.nodeHttpFetch,
+    timeoutMs: options.nodeHttpRequestTimeoutMs,
   });
 
   const routeOptions: OrchestratorRuntimeRouteOptions = {
@@ -197,7 +210,8 @@ export function createOrchestratorRuntimeServices(
     },
     boardYjsHostProxyRoutes: {
       registry,
-      httpClient: options.boardYjsHostHttpClient,
+      httpClient:
+        options.boardYjsHostHttpClient ?? nodeHttpClient.boardYjsHostHttpClient,
     },
   };
 
@@ -211,6 +225,7 @@ export function createOrchestratorRuntimeServices(
     sessionSnapshotService,
     sessionBroadcaster,
     taskBroadcaster,
+    nodeHttpClient,
     routeOptions,
   };
 }

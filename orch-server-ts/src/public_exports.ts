@@ -39,6 +39,7 @@ export * from "./runbooks/runbook_routes.js";
 export * from "./runtime/composition.js";
 export * from "./runtime/live_cogito_route_provider.js";
 export * from "./runtime/live_config_route_providers.js";
+export * from "./runtime/live_node_http_client.js";
 export * from "./runtime/live_provider_dependencies.js";
 export * from "./runtime/live_provider_factory.js";
 export * from "./runtime/live_system_config_route_provider.js";
