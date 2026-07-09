@@ -257,6 +257,7 @@ export * from "./tasks/task_mutation_payloads.js";
 export * from "./tasks/task_mutation_routes.js";
 export * from "./execute/execute_proxy_routes.js";
 export * from "./push/push_routes.js";
+export * from "./public/public_status_routes.js";
 export * from "./auth/auth_routes.js";
 export {
   registerSystemConfigRoutes,
