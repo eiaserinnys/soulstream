@@ -204,6 +204,30 @@ describe("markdown document and custom view route harness", () => {
     await app.close();
   });
 
+  it("returns container not found before host proxy when runbook source is missing", async () => {
+    const { app, calls, httpClient } = createAppWithMarkdownDocuments({
+      restricted: false,
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/markdown-documents",
+      payload: {
+        container: { kind: "runbook", id: "missing" },
+        title: "Runbook note",
+      },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ detail: "Runbook board container not found" });
+    expect(calls).toEqual([
+      ["resolveContainer", { kind: "runbook", id: "missing" }],
+    ]);
+    expect(httpClient).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
   it("returns markdown documents with folder_id alias after access check", async () => {
     const { app, calls } = createAppWithMarkdownDocuments({
       restricted: true,

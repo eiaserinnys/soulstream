@@ -34,6 +34,8 @@ import {
 } from "./live_folder_route_provider.js";
 import { createLiveBoardItemRouteProvider } from "./live_board_item_route_provider.js";
 import type { BoardItemRouteProvider } from "../board/board_item_routes.js";
+import { createLiveMarkdownDocumentRouteProvider } from "./live_markdown_document_route_provider.js";
+import type { MarkdownDocumentRouteProvider } from "../board/markdown_document_routes.js";
 import { createLiveSessionHistoryProvider } from "./live_session_history_provider.js";
 import { serializeSessionRow } from "./live_session_serialization.js";
 import {
@@ -48,6 +50,7 @@ export type LiveDbCatalogRepository = {
   readonly folderRouteProvider: LiveFolderProvider;
   readonly folderCountsProvider: LiveFolderProvider;
   readonly boardItemRouteProvider: BoardItemRouteProvider;
+  readonly markdownDocumentRouteProvider: MarkdownDocumentRouteProvider;
   readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly sessionHistoryProvider: ReturnType<typeof createLiveSessionHistoryProvider>;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
@@ -98,6 +101,10 @@ export function createLiveDbCatalogRepository(
     });
   const sessionHistoryProvider = createLiveSessionHistoryProvider({ sqlResolver });
   const folderProvider = createLiveFolderProvider(sqlResolver);
+  const boardItemProvider = createLiveBoardItemRouteProvider(
+    sqlResolver,
+    folderProvider,
+  );
   const sessionResourceAccessRepository =
     createSessionResourceAccessRepository(sqlResolver);
   const taskReadProvider = createLiveTaskReadProvider({
@@ -114,9 +121,11 @@ export function createLiveDbCatalogRepository(
   return {
     folderRouteProvider: folderProvider,
     folderCountsProvider: folderProvider,
-    boardItemRouteProvider: createLiveBoardItemRouteProvider(
+    boardItemRouteProvider: boardItemProvider,
+    markdownDocumentRouteProvider: createLiveMarkdownDocumentRouteProvider(
       sqlResolver,
       folderProvider,
+      boardItemProvider,
     ),
     sessionCatalogProvider: createSessionCatalogProvider(sqlResolver),
     sessionHistoryProvider,

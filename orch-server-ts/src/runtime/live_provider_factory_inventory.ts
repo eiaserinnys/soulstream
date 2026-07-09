@@ -49,6 +49,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "folders", path: "folderRoutes.accessProvider" },
   { owner: "folders", path: "folderRoutes.provider" },
   { owner: "markdown.documents", path: "markdownDocumentRoutes.accessProvider" },
+  { owner: "markdown.documents", path: "markdownDocumentRoutes.provider" },
   { owner: "node.agent-profiles", path: "nodeAgentProfileRoutes.provider" },
   { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.pkce" },
   { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.profileHttpClient" },
