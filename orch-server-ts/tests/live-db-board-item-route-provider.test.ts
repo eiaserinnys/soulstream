@@ -1,0 +1,190 @@
+import { describe, expect, it, vi } from "vitest";
+
+import {
+  BoardItemRouteError,
+  createLiveDbCatalogRepository,
+  type LivePostgresSql,
+} from "../src/index.js";
+
+type SqlCall = {
+  text: string;
+  values: unknown[];
+};
+
+describe("live DB board item route provider", () => {
+  it("lists folder-scoped primary board items with Python catalog serialization", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("folder_get_all")) return [folderRow()];
+      if (text.includes("board_item_get_all")) {
+        return [
+          boardItemRow({
+            id: "item-markdown",
+            item_type: "markdown",
+            item_id: "doc-1",
+            metadata: { title: "Doc" },
+            created_at: new Date("2026-07-09T01:00:00.000Z"),
+          }),
+        ];
+      }
+      return [];
+    });
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    await expect(repository.boardItemRouteProvider.listFolders()).resolves.toEqual([
+      expect.objectContaining({ id: "folder-a", parentFolderId: null }),
+    ]);
+    await expect(
+      repository.boardItemRouteProvider.listBoardItems({ folderId: "folder-a" }),
+    ).resolves.toEqual([
+      {
+        id: "item-markdown",
+        folderId: "folder-a",
+        containerKind: "folder",
+        containerId: "folder-a",
+        membershipKind: "primary",
+        sourceRunbookItemId: null,
+        itemType: "markdown",
+        itemId: "doc-1",
+        x: 20,
+        y: 40,
+        metadata: { title: "Doc" },
+        createdAt: "2026-07-09T01:00:00.000Z",
+        updatedAt: "2026-07-09T00:00:00.000Z",
+      },
+    ]);
+    expect(harness.normalizedCalls()).toEqual([
+      "SELECT * FROM folder_get_all()",
+      expect.stringContaining("WHERE folder_id = ? AND membership_kind = 'primary'"),
+    ]);
+    expect(harness.calls.at(-1)?.values).toEqual(["folder-a"]);
+  });
+
+  it("lists concrete container board items from the Y.Doc catalog cache", async () => {
+    const cached = {
+      id: "item-section",
+      folderId: "folder-a",
+      containerKind: "runbook",
+      containerId: "runbook-1",
+      membershipKind: "primary",
+      sourceRunbookItemId: "section-1",
+      itemType: "session",
+      itemId: "sess-1",
+      x: 10,
+      y: 30,
+      metadata: { title: "Session" },
+      createdAt: "2026-07-09T02:00:00.000Z",
+      updatedAt: "2026-07-09T02:01:00.000Z",
+    };
+    const harness = createSqlHarness((text) => {
+      if (text.includes("board_yjs_catalog_cache")) {
+        return [{ board_items: JSON.stringify([cached]) }];
+      }
+      return [];
+    });
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    await expect(
+      repository.boardItemRouteProvider.listBoardItems({
+        container: { kind: "runbook", id: "runbook-1" },
+      }),
+    ).resolves.toEqual([cached]);
+    expect(harness.normalizedCalls()).toEqual([
+      expect.stringContaining(
+        "FROM board_yjs_catalog_cache WHERE container_kind = ? AND container_id = ?",
+      ),
+    ]);
+    expect(harness.calls[0]?.values).toEqual(["runbook", "runbook-1"]);
+  });
+
+  it("resolves runbook container folders from the catalog snapshot", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("folder_get_all")) return [folderRow()];
+      if (text.includes("board_item_get_all")) {
+        return [
+          boardItemRow({
+            id: "runbook-card",
+            item_type: "runbook",
+            item_id: "runbook-1",
+            folder_id: "folder-a",
+          }),
+        ];
+      }
+      return [];
+    });
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    await expect(
+      repository.boardItemRouteProvider.resolveBoardContainerFolderId({
+        kind: "folder",
+        id: "folder-direct",
+      }),
+    ).resolves.toBe("folder-direct");
+    await expect(
+      repository.boardItemRouteProvider.resolveBoardContainerFolderId({
+        kind: "runbook",
+        id: "runbook-1",
+      }),
+    ).resolves.toBe("folder-a");
+    await expect(
+      repository.boardItemRouteProvider.resolveBoardContainerFolderId({
+        kind: "runbook",
+        id: "missing",
+      }),
+    ).rejects.toMatchObject(
+      new BoardItemRouteError(
+        "BOARD_CONTAINER_NOT_FOUND",
+        "Runbook board container not found",
+        404,
+      ),
+    );
+  });
+});
+
+function folderRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "folder-a",
+    name: "Folder",
+    sort_order: 1,
+    parent_folder_id: null,
+    settings: {},
+    created_at: new Date("2026-07-09T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function boardItemRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    id: "item-a",
+    folder_id: "folder-a",
+    container_kind: "folder",
+    container_id: "folder-a",
+    membership_kind: "primary",
+    source_runbook_item_id: null,
+    item_type: "session",
+    item_id: "sess-1",
+    x: 20,
+    y: 40,
+    metadata: {},
+    created_at: new Date("2026-07-09T00:00:00.000Z"),
+    updated_at: new Date("2026-07-09T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function createSqlHarness(
+  rowsFor: (text: string, values: unknown[]) => readonly Record<string, unknown>[] = () => [],
+) {
+  const calls: SqlCall[] = [];
+  const sql = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+    const text = strings.join("?");
+    calls.push({ text, values });
+    return rowsFor(text, values);
+  }) as unknown as LivePostgresSql;
+
+  return {
+    sql,
+    calls,
+    normalizedCalls: () =>
+      calls.map((call) => call.text.replace(/\s+/g, " ").trim()),
+  };
+}

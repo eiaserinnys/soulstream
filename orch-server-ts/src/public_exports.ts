@@ -41,6 +41,7 @@ export * from "./runtime/live_cogito_route_provider.js";
 export * from "./runtime/live_auth_route_provider.js";
 export * from "./runtime/live_config_route_providers.js";
 export * from "./runtime/live_dashboard_access_provider.js";
+export * from "./runtime/live_board_item_route_provider.js";
 export * from "./runtime/live_db_catalog_repository.js";
 export * from "./runtime/live_db_sql.js";
 export * from "./runtime/live_execute_proxy_route_provider.js";

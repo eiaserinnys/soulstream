@@ -114,7 +114,7 @@ export type LiveOrchestratorProviderBundle = {
     | "userPayloadExtra"
   >;
   readonly folderRoutes: Pick<FolderRouteOptions, "accessProvider" | "provider">;
-  readonly boardItemRoutes: Pick<BoardItemRouteOptions, "accessProvider">;
+  readonly boardItemRoutes: Pick<BoardItemRouteOptions, "accessProvider" | "provider">;
   readonly markdownDocumentRoutes: Pick<MarkdownDocumentRouteOptions, "accessProvider">;
   readonly publicStatusRoutes: Pick<
     PublicStatusRouteOptions,
@@ -228,7 +228,10 @@ export function createLiveOrchestratorProviderBundle(
       ),
       accessProvider: dashboardAccessProvider,
     },
-    boardItemRoutes: { accessProvider: dashboardAccessProvider },
+    boardItemRoutes: {
+      provider: options.dependencies.dbCatalogRepository.boardItemRouteProvider,
+      accessProvider: dashboardAccessProvider,
+    },
     markdownDocumentRoutes: { accessProvider: dashboardAccessProvider },
     publicStatusRoutes: {
       folderCountsProvider: {
