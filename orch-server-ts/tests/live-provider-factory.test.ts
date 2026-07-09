@@ -208,6 +208,9 @@ describe("live provider factory boundary", () => {
       expect.any(Function),
     );
     expect(bundle.runbookRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
+    expect(bundle.sessionCatalogRoutes.provider).toBe(
+      dependencies.dbCatalogRepository.sessionCatalogProvider,
+    );
     await expect(
       bundle.configProviders.atomRoutes.configProvider.getConfig(),
     ).resolves.toEqual({
@@ -344,7 +347,9 @@ describe("live provider factory boundary", () => {
       sessionBackgroundScheduleRoutes:
         runtimeServices.routeOptions.sessionBackgroundScheduleRoutes,
       sessionCommandRoutes: runtimeServices.routeOptions.sessionCommandRoutes,
+      sessionHistoryRoutes: runtimeServices.routeOptions.sessionHistoryRoutes,
       sessionSnapshotRoutes: runtimeServices.routeOptions.sessionSnapshotRoutes,
+      sseReplayRoutes: runtimeServices.routeOptions.sseReplayRoutes,
     });
   });
 });
@@ -352,6 +357,7 @@ describe("live provider factory boundary", () => {
 function createRuntimeServices(dependencies: LiveProviderDependencies) {
   return createOrchestratorRuntimeServices({
     config,
+    loadSessionSnapshot: dependencies.dbCatalogRepository.loadSessionSnapshot,
     loadTaskSnapshot: dependencies.dbCatalogRepository.loadTaskSnapshot,
     sessionHistoryProvider:
       dependencies.dbCatalogRepository.sessionHistoryProvider,
@@ -377,6 +383,14 @@ function createLiveDependencies(): LiveProviderDependencies {
       resolveSessionIdentity: vi.fn(async () => ({})),
     },
     dbCatalogRepository: {
+      sessionCatalogProvider: {
+        renameSession: vi.fn(async () => undefined),
+        moveSessionsToFolder: vi.fn(async () => ({ count: 0 })),
+        updateSessionCatalog: vi.fn(async () => undefined),
+        deleteSession: vi.fn(async () => undefined),
+        getSessionCards: vi.fn(async () => []),
+        updateReadPosition: vi.fn(async () => undefined),
+      },
       loadSessionSnapshot: vi.fn(async () => ({ sessions: [] })),
       loadTaskSnapshot: vi.fn(async () => ({ tasks: [] })),
       sessionHistoryProvider,

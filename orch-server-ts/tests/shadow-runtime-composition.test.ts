@@ -141,6 +141,7 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
   return {
     runtime: {
       boardYjsHostHttpClient: vi.fn(),
+      loadSessionSnapshot: async () => ({ sessions: [] }),
       loadTaskSnapshot: async () => ({ tasks: [] }),
       sessionHistoryProvider: createInertProvider(),
       sseReplayOnlyForTests: true,

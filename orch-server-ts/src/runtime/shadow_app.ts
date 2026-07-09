@@ -242,7 +242,10 @@ export const shadowRouteCompositionRequirements = [
   { owner: "session.command", paths: ["runtime"] },
   { owner: "session.history", paths: ["runtime.sessionHistoryProvider"] },
   { owner: "session.snapshot", paths: ["runtime"] },
-  { owner: "sse.replay", paths: ["runtime.loadTaskSnapshot"] },
+  {
+    owner: "sse.replay",
+    paths: ["runtime.loadSessionSnapshot", "runtime.loadTaskSnapshot"],
+  },
   {
     owner: "system.config",
     paths: ["systemConfigRoutes.provider", "systemConfigRoutes.httpClient"],
