@@ -136,6 +136,24 @@ describe("live provider factory boundary", () => {
     expect(bundle.implementedProviderPaths).toEqual(liveFactoryImplementedProviderPaths);
     expect(bundle.cogitoRoutes.provider.listConnectedNodes()).toEqual([]);
     await expect(
+      bundle.cogitoRoutes.httpClient.get({
+        nodeId: "node-a",
+        url: "http://ignored.example.test/cogito/search",
+        params: {
+          q: "hello",
+          top_k: 2,
+          search_session_id: false,
+        },
+        headers: { authorization: "Bearer token" },
+      }),
+    ).resolves.toMatchObject({ statusCode: 200 });
+    expect(dependencies.nodeHttpClient.requestNode).toHaveBeenCalledWith({
+      nodeId: "node-a",
+      method: "GET",
+      path: "/cogito/search?q=hello&top_k=2&search_session_id=false",
+      headers: { authorization: "Bearer token" },
+    });
+    await expect(
       bundle.configProviders.publicStatusRoutes.configProvider.getConfig(),
     ).resolves.toEqual({
       nodeName: "orch-live",

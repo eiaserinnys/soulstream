@@ -78,6 +78,7 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
 export const liveFactoryImplementedProviderPaths = [
   { owner: "atom", path: "atomRoutes.configProvider" },
   { owner: "board.yjs-host", path: "runtime.boardYjsHostHttpClient" },
+  { owner: "cogito", path: "cogitoRoutes.httpClient" },
   { owner: "cogito", path: "cogitoRoutes.provider" },
   { owner: "node.snapshot", path: "runtime" },
   { owner: "node.ws", path: "runtime" },
@@ -121,6 +122,7 @@ export function createLiveOrchestratorProviderBundle(
   });
   const cogitoProviders = createLiveCogitoRouteProviders({
     registry: options.runtimeServices.registry,
+    nodeHttpClient: options.dependencies.nodeHttpClient,
   });
 
   return {

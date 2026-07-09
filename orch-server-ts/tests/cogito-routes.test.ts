@@ -169,6 +169,7 @@ describe("cogito route harness", () => {
     });
     expect(httpClient.get).toHaveBeenCalledTimes(2);
     expect(httpClient.get).toHaveBeenNthCalledWith(1, {
+      nodeId: "node-a",
       url: "http://127.0.0.1:4105/cogito/search",
       params: {
         q: "hello",
@@ -181,6 +182,55 @@ describe("cogito route harness", () => {
         cookie: "session=abc",
       },
     });
+
+    await app.close();
+  });
+
+  it("skips thrown, non-2xx, and invalid node search responses", async () => {
+    const httpClient: CogitoSearchHttpClient = {
+      get: vi.fn(async (request) => {
+        if (request.nodeId === "node-a") {
+          return {
+            statusCode: 200,
+            body: { results: [{ session_id: "kept", score: 1 }] },
+          };
+        }
+        if (request.nodeId === "node-b") {
+          throw new Error("stale node");
+        }
+        if (request.nodeId === "node-c") {
+          return { statusCode: 503, body: { detail: "down" } };
+        }
+        return { statusCode: 200, body: { results: "not-array" } };
+      }),
+    };
+    const { app } = createHarness({
+      nodes: [
+        nodeA,
+        nodeB,
+        { id: "node-c", host: "127.0.0.3", port: 4107 },
+        { id: "node-d", host: "127.0.0.4", port: 4108 },
+      ],
+      httpClient,
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/cogito/search?q=hello&top_k=10",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      results: [
+        {
+          session_id: "kept",
+          score: 1,
+          node_id: "node-a",
+          node_name: "node-a",
+        },
+      ],
+    });
+    expect(httpClient.get).toHaveBeenCalledTimes(4);
 
     await app.close();
   });
