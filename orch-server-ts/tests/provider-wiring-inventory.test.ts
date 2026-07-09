@@ -100,7 +100,7 @@ describe("live provider wiring inventory", () => {
       "implemented",
     );
     expect(statusByPath.get("system.config:systemConfigRoutes.httpClient")).toBe(
-      "blocked",
+      "implemented",
     );
     expect(statusByPath.get("cogito:cogitoRoutes.provider")).toBe("implemented");
     expect(statusByPath.get("cogito:cogitoRoutes.httpClient")).toBe("implemented");

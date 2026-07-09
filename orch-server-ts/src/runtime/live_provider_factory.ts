@@ -88,6 +88,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "session.background-schedule", path: "runtime" },
   { owner: "session.command", path: "runtime" },
   { owner: "session.snapshot", path: "runtime" },
+  { owner: "system.config", path: "systemConfigRoutes.httpClient" },
   { owner: "system.config", path: "systemConfigRoutes.provider" },
 ] as const satisfies readonly LiveProviderPath[];
 
@@ -119,6 +120,7 @@ export function createLiveOrchestratorProviderBundle(
 
   const systemConfigProviders = createLiveSystemConfigRouteProviders({
     registry: options.runtimeServices.registry,
+    nodeHttpClient: options.dependencies.nodeHttpClient,
     portraitAssets: options.dependencies.systemPortraitAssets,
   });
   const cogitoProviders = createLiveCogitoRouteProviders({

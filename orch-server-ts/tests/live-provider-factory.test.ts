@@ -175,6 +175,23 @@ describe("live provider factory boundary", () => {
       body: Buffer.from("system-portrait"),
     });
     expect(bundle.systemConfigRoutes.provider.listConnectedNodes()).toEqual([]);
+    await expect(
+      bundle.systemConfigRoutes.httpClient({
+        method: "PUT",
+        url: "http://ignored.example.test/api/config/settings",
+        path: "/api/config/settings",
+        headers: { cookie: "sid=abc" },
+        body: { changes: { KEY: "value" } },
+        node: { nodeId: "node-system", host: "ignored", port: 4105 },
+      }),
+    ).resolves.toMatchObject({ statusCode: 200 });
+    expect(dependencies.nodeHttpClient.requestNode).toHaveBeenCalledWith({
+      nodeId: "node-system",
+      method: "PUT",
+      path: "/api/config/settings",
+      headers: { cookie: "sid=abc" },
+      body: { changes: { KEY: "value" } },
+    });
     expect(bundle.runtime).toEqual({
       boardYjsHostProxyRoutes: runtimeServices.routeOptions.boardYjsHostProxyRoutes,
       nodeSnapshotRoutes: runtimeServices.routeOptions.nodeSnapshotRoutes,
