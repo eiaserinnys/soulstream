@@ -115,7 +115,10 @@ export type LiveOrchestratorProviderBundle = {
   >;
   readonly folderRoutes: Pick<FolderRouteOptions, "accessProvider" | "provider">;
   readonly boardItemRoutes: Pick<BoardItemRouteOptions, "accessProvider" | "provider">;
-  readonly markdownDocumentRoutes: Pick<MarkdownDocumentRouteOptions, "accessProvider">;
+  readonly markdownDocumentRoutes: Pick<
+    MarkdownDocumentRouteOptions,
+    "accessProvider" | "provider"
+  >;
   readonly publicStatusRoutes: Pick<
     PublicStatusRouteOptions,
     "folderCountsProvider"
@@ -232,7 +235,10 @@ export function createLiveOrchestratorProviderBundle(
       provider: options.dependencies.dbCatalogRepository.boardItemRouteProvider,
       accessProvider: dashboardAccessProvider,
     },
-    markdownDocumentRoutes: { accessProvider: dashboardAccessProvider },
+    markdownDocumentRoutes: {
+      provider: options.dependencies.dbCatalogRepository.markdownDocumentRouteProvider,
+      accessProvider: dashboardAccessProvider,
+    },
     publicStatusRoutes: {
       folderCountsProvider: {
         ...options.dependencies.dbCatalogRepository.folderCountsProvider,

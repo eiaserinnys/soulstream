@@ -47,6 +47,7 @@ export * from "./runtime/live_db_sql.js";
 export * from "./runtime/live_execute_proxy_route_provider.js";
 export * from "./runtime/live_folder_route_provider.js";
 export * from "./runtime/live_folder_mutation_broadcaster.js";
+export * from "./runtime/live_markdown_document_route_provider.js";
 export * from "./runtime/live_node_agent_profile_route_provider.js";
 export * from "./runtime/live_node_claude_auth_route_provider.js";
 export * from "./runtime/live_node_http_client.js";
