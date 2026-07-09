@@ -10,6 +10,10 @@ import {
 import type { ExecuteProxyRouteOptions } from "../execute/execute_proxy_routes.js";
 import { createLiveExecuteProxyRouteProvider } from "./live_execute_proxy_route_provider.js";
 import {
+  createLiveNodeClaudeAuthRouteProviders,
+  type LiveNodeClaudeAuthRouteProviderBundle,
+} from "./live_node_claude_auth_route_provider.js";
+import {
   createLiveRunbookRouteProviders,
   type LiveRunbookRouteProviderBundle,
 } from "./live_runbook_route_provider.js";
@@ -45,6 +49,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly cogitoRoutes: LiveCogitoRouteProviderBundle["cogitoRoutes"];
   readonly configProviders: LiveConfigRouteProviderBundle;
   readonly executeProxyRoutes: ExecuteProxyRouteOptions;
+  readonly nodeClaudeAuthRoutes: LiveNodeClaudeAuthRouteProviderBundle["nodeClaudeAuthRoutes"];
   readonly runbookRoutes: LiveRunbookRouteProviderBundle["runbookRoutes"];
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
   readonly implementedProviderPaths: readonly LiveProviderPath[];
@@ -90,6 +95,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "cogito", path: "cogitoRoutes.httpClient" },
   { owner: "cogito", path: "cogitoRoutes.provider" },
   { owner: "execute", path: "executeProxyRoutes.provider" },
+  { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.profileHttpClient" },
   { owner: "node.snapshot", path: "runtime" },
   { owner: "node.ws", path: "runtime" },
   { owner: "public.status", path: "publicStatusRoutes.configProvider" },
@@ -141,6 +147,9 @@ export function createLiveOrchestratorProviderBundle(
   const runbookProviders = createLiveRunbookRouteProviders({
     nodeHttpClient: options.dependencies.nodeHttpClient,
   });
+  const nodeClaudeAuthProviders = createLiveNodeClaudeAuthRouteProviders({
+    nodeHttpClient: options.dependencies.nodeHttpClient,
+  });
 
   return {
     runtime: buildLiveRuntimeProviderBundle(options.runtimeServices),
@@ -154,6 +163,7 @@ export function createLiveOrchestratorProviderBundle(
         sessionEventHub: options.runtimeServices.sessionEventHub,
       }),
     },
+    nodeClaudeAuthRoutes: nodeClaudeAuthProviders.nodeClaudeAuthRoutes,
     runbookRoutes: runbookProviders.runbookRoutes,
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
     implementedProviderPaths: alignment.factoryProviderPaths,

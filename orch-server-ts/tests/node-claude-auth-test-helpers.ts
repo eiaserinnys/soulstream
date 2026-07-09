@@ -30,6 +30,7 @@ export type ClaudeAuthHarnessOptions = {
   tokenResponse?: ClaudeAuthTokenExchangeResponse;
   profileResponse?: NodeClaudeAuthHttpResponse;
   profileHttpError?: Error;
+  profileHttpClient?: NodeClaudeAuthRouteOptions["profileHttpClient"];
 };
 
 export class MemoryClaudeAuthSessionStore implements ClaudeAuthSessionStore {
@@ -136,11 +137,11 @@ export function createClaudeAuthHarness(options: ClaudeAuthHarnessOptions = {}) 
         }
       );
     },
-    profileHttpClient: async (request) => {
+    profileHttpClient: options.profileHttpClient ?? (async (request) => {
       profileRequests.push(request);
       if (options.profileHttpError !== undefined) throw options.profileHttpError;
       return options.profileResponse ?? { statusCode: 200, body: { profiles: [] } };
-    },
+    }),
   };
 
   const app = createApp({ config, nodeClaudeAuthRoutes: routeOptions });
