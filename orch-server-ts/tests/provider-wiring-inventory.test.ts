@@ -107,6 +107,9 @@ describe("live provider wiring inventory", () => {
     expect(statusByPath.get("cogito:cogitoRoutes.briefCollector")).toBe(
       "implemented",
     );
+    expect(statusByPath.get("execute:executeProxyRoutes.provider")).toBe(
+      "implemented",
+    );
     expect(statusByPath.get("board.yjs-host:runtime.boardYjsHostHttpClient")).toBe(
       "implemented",
     );

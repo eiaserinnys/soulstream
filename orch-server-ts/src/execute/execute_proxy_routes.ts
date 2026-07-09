@@ -1,3 +1,5 @@
+import type { Readable } from "node:stream";
+
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
@@ -21,7 +23,7 @@ export type ExecuteProxySseResult = {
 };
 
 export type ExecuteProxyTextResult = {
-  body: string;
+  body: string | Readable;
   contentType?: string;
   statusCode?: number;
 };
@@ -57,7 +59,7 @@ export const executeProxyRouteAuthRequirements = {
   "POST /api/execute": true,
 } as const;
 
-type SseFrame = {
+export type ExecuteProxySseFrame = {
   event: string;
   id?: string | number;
   data: unknown;
@@ -89,11 +91,15 @@ export function registerExecuteProxyRoutes(
   });
 }
 
-export function formatExecuteProxySseFrame(frame: SseFrame): string {
+export function formatExecuteProxySseFrame(frame: ExecuteProxySseFrame): string {
   const lines = [`event: ${frame.event}`];
   if (frame.id !== undefined) lines.push(`id: ${frame.id}`);
   lines.push(`data: ${JSON.stringify(frame.data)}`);
   return `${lines.join("\n")}\n\n`;
+}
+
+export function formatExecuteProxyRawEvent(raw: ExecuteProxyRawEvent): string {
+  return formatExecuteProxySseFrame(rawEventToFrame(raw));
 }
 
 function sendExecuteProxyResult(
@@ -110,7 +116,7 @@ function sendExecuteProxyResult(
 }
 
 function formatExecuteProxyEventList(result: ExecuteProxySseResult): string {
-  const frames: SseFrame[] = [
+  const frames: ExecuteProxySseFrame[] = [
     {
       event: "init",
       data: {
@@ -129,7 +135,7 @@ function formatExecuteProxyEventList(result: ExecuteProxySseResult): string {
   return frames.map(formatExecuteProxySseFrame).join("");
 }
 
-function rawEventToFrame(raw: ExecuteProxyRawEvent): SseFrame {
+function rawEventToFrame(raw: ExecuteProxyRawEvent): ExecuteProxySseFrame {
   const eventPayload =
     isJsonObject(raw.event) ? raw.event
       : isJsonObject(raw.payload) ? raw.payload

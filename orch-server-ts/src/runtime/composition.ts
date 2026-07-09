@@ -51,6 +51,10 @@ import {
   type LiveNodeHttpFetch,
 } from "./live_node_http_client.js";
 import type { LiveNodeHttpClientBoundary } from "./live_provider_dependencies.js";
+import {
+  RuntimeSessionEventHub,
+  createRuntimeSessionEventHubSink,
+} from "./session_event_hub.js";
 
 export type OrchestratorRuntimeCompositionOptions = {
   config: OrchServerTsConfig;
@@ -99,6 +103,7 @@ export type OrchestratorRuntimeServices = {
   nodeSnapshotService: NodeSnapshotService;
   nodeStreamBroadcaster: InMemoryNodeStreamBroadcaster;
   sessionSnapshotService: SessionSnapshotService;
+  sessionEventHub: RuntimeSessionEventHub;
   sessionBroadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
   taskBroadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>;
   nodeHttpClient: LiveNodeHttpClientBoundary;
@@ -130,6 +135,7 @@ export function createOrchestratorRuntimeServices(
     snapshotService: nodeSnapshotService,
   });
   const sessionSnapshotService = new SessionSnapshotService({ registry });
+  const sessionEventHub = new RuntimeSessionEventHub();
   const sessionBroadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
     instanceId: options.sessionSseInstanceId,
     ringMaxlen: options.sseRingMaxlen,
@@ -149,6 +155,7 @@ export function createOrchestratorRuntimeServices(
       registry,
       transportHub: transports,
       eventSink: composeEventSinks(
+        createRuntimeSessionEventHubSink(sessionEventHub),
         createNodeSessionEventBroadcasterSink(sessionBroadcaster),
         createNodeStreamBroadcasterSink(nodeStreamBroadcaster),
       ),
@@ -223,6 +230,7 @@ export function createOrchestratorRuntimeServices(
     nodeSnapshotService,
     nodeStreamBroadcaster,
     sessionSnapshotService,
+    sessionEventHub,
     sessionBroadcaster,
     taskBroadcaster,
     nodeHttpClient,
