@@ -110,6 +110,11 @@ describe("live provider wiring inventory", () => {
     expect(statusByPath.get("execute:executeProxyRoutes.provider")).toBe(
       "implemented",
     );
+    expect(statusByPath.get("runbooks:runbookRoutes.httpClient")).toBe(
+      "implemented",
+    );
+    expect(statusByPath.get("runbooks:runbookRoutes.provider")).toBe("stub");
+    expect(statusByPath.get("runbooks:runbookRoutes.accessProvider")).toBe("stub");
     expect(statusByPath.get("board.yjs-host:runtime.boardYjsHostHttpClient")).toBe(
       "implemented",
     );
