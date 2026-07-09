@@ -200,8 +200,11 @@ describe("Auth route harness", () => {
     expect(location.origin).toBe("https://accounts.google.com");
     expect(location.searchParams.get("client_id")).toBe("google-client-id");
     expect(location.searchParams.get("state")).toBe("state-1");
-    expect(setCookieHeaders(google).some((header) => header.startsWith(`${OAUTH_STATE_COOKIE_NAME}=state-1;`))).toBe(true);
-    expect(setCookieHeaders(google).some((header) => header.startsWith(`${RETURN_TO_COOKIE_NAME}=/folder/a;`))).toBe(true);
+    const googleCookies = setCookieHeaders(google);
+    expect(googleCookies.some((header) => header.startsWith(`${OAUTH_STATE_COOKIE_NAME}=state-1;`))).toBe(true);
+    expect(googleCookies.find((header) => header.startsWith(`${OAUTH_STATE_COOKIE_NAME}=state-1;`))).toContain("Path=/");
+    expect(googleCookies.some((header) => header.startsWith(`${RETURN_TO_COOKIE_NAME}=/folder/a;`))).toBe(true);
+    expect(googleCookies.find((header) => header.startsWith(`${RETURN_TO_COOKIE_NAME}=/folder/a;`))).toContain("Path=/");
 
     const unsafe = await app.inject({
       method: "GET",
@@ -304,8 +307,11 @@ describe("Auth route harness", () => {
     });
     const cookies = setCookieHeaders(response);
     expect(cookies.some((header) => header.startsWith(`${AUTH_COOKIE_NAME}=jwt:oauth@example.com:`))).toBe(true);
+    expect(cookies.find((header) => header.startsWith(`${AUTH_COOKIE_NAME}=jwt:oauth@example.com:`))).toContain("Path=/");
     expect(cookies.some((header) => header.startsWith(`${OAUTH_STATE_COOKIE_NAME}=;`))).toBe(true);
+    expect(cookies.find((header) => header.startsWith(`${OAUTH_STATE_COOKIE_NAME}=;`))).toContain("Path=/");
     expect(cookies.some((header) => header.startsWith(`${RETURN_TO_COOKIE_NAME}=;`))).toBe(true);
+    expect(cookies.find((header) => header.startsWith(`${RETURN_TO_COOKIE_NAME}=;`))).toContain("Path=/");
 
     await app.close();
   });
@@ -360,7 +366,9 @@ describe("Auth route harness", () => {
     const response = await app.inject({ method: "POST", url: "/api/auth/logout" });
 
     expect(response.json()).toEqual({ success: true });
-    expect(setCookieHeaders(response).some((header) => header.startsWith(`${AUTH_COOKIE_NAME}=;`))).toBe(true);
+    const cookies = setCookieHeaders(response);
+    expect(cookies.some((header) => header.startsWith(`${AUTH_COOKIE_NAME}=;`))).toBe(true);
+    expect(cookies.find((header) => header.startsWith(`${AUTH_COOKIE_NAME}=;`))).toContain("Path=/");
 
     await app.close();
   });
@@ -392,8 +400,10 @@ describe("Auth route harness", () => {
       name: "Developer",
       picture,
     });
-    expect(setCookieHeaders(success).some((header) => header.startsWith(`${AUTH_COOKIE_NAME}=jwt:dev%20user%40example.com:`))).toBe(false);
-    expect(setCookieHeaders(success).some((header) => header.startsWith(`${AUTH_COOKIE_NAME}=jwt:dev user@example.com:`))).toBe(true);
+    const successCookies = setCookieHeaders(success);
+    expect(successCookies.some((header) => header.startsWith(`${AUTH_COOKIE_NAME}=jwt:dev%20user%40example.com:`))).toBe(false);
+    expect(successCookies.some((header) => header.startsWith(`${AUTH_COOKIE_NAME}=jwt:dev user@example.com:`))).toBe(true);
+    expect(successCookies.find((header) => header.startsWith(`${AUTH_COOKIE_NAME}=jwt:dev user@example.com:`))).toContain("Path=/");
 
     await app.close();
 

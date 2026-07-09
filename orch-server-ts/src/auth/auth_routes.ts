@@ -448,10 +448,12 @@ function serializeCookie(
     httpOnly?: boolean;
     sameSite?: "Lax";
     maxAge?: number;
+    path?: string;
     secure?: boolean;
   },
 ): string {
   const parts = [`${name}=${value}`];
+  parts.push(`Path=${options.path ?? "/"}`);
   if (options.httpOnly) parts.push("HttpOnly");
   if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
   if (options.maxAge !== undefined) parts.push(`Max-Age=${options.maxAge}`);
@@ -460,5 +462,5 @@ function serializeCookie(
 }
 
 function deleteCookie(name: string): string {
-  return `${name}=; Max-Age=0; Path=/`;
+  return serializeCookie(name, "", { maxAge: 0 });
 }
