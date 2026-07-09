@@ -1,4 +1,5 @@
 import type { OrchestratorRuntimeServices } from "./composition.js";
+import { createLiveAuthHttpClient } from "./live_auth_route_provider.js";
 import {
   createLiveCogitoRouteProviders,
   type LiveCogitoRouteProviderBundle,
@@ -25,6 +26,7 @@ import {
   createLiveSystemConfigRouteProviders,
   type LiveSystemConfigRouteProviderBundle,
 } from "./live_system_config_route_provider.js";
+import type { AuthRouteOptions } from "../auth/auth_routes.js";
 import type { LiveProviderDependencies } from "./live_provider_dependencies.js";
 import { liveProviderDependencyCategories } from "./live_provider_dependencies.js";
 import {
@@ -49,6 +51,7 @@ export type LiveRuntimeProviderBundle = {
 };
 
 export type LiveOrchestratorProviderBundle = {
+  readonly authRoutes: Pick<AuthRouteOptions, "configProvider" | "httpClient">;
   readonly runtime: LiveRuntimeProviderBundle;
   readonly cogitoRoutes: LiveCogitoRouteProviderBundle["cogitoRoutes"];
   readonly configProviders: LiveConfigRouteProviderBundle;
@@ -95,6 +98,8 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
 
 export const liveFactoryImplementedProviderPaths = [
   { owner: "atom", path: "atomRoutes.configProvider" },
+  { owner: "auth", path: "authRoutes.configProvider" },
+  { owner: "auth", path: "authRoutes.httpClient" },
   { owner: "board.yjs-host", path: "runtime.boardYjsHostHttpClient" },
   { owner: "cogito", path: "cogitoRoutes.briefCollector" },
   { owner: "cogito", path: "cogitoRoutes.httpClient" },
@@ -157,6 +162,9 @@ export function createLiveOrchestratorProviderBundle(
   const runbookProviders = createLiveRunbookRouteProviders({
     nodeHttpClient: options.dependencies.nodeHttpClient,
   });
+  const configProviders = createLiveConfigRouteProviders(
+    options.dependencies.configProvider,
+  );
   const nodeClaudeAuthProviders = createLiveNodeClaudeAuthRouteProviders({
     configProvider: options.dependencies.configProvider,
     nodeHttpClient: options.dependencies.nodeHttpClient,
@@ -168,9 +176,13 @@ export function createLiveOrchestratorProviderBundle(
   });
 
   return {
+    authRoutes: {
+      configProvider: configProviders.authRoutes.configProvider,
+      httpClient: createLiveAuthHttpClient(),
+    },
     runtime: buildLiveRuntimeProviderBundle(options.runtimeServices),
     cogitoRoutes: cogitoProviders.cogitoRoutes,
-    configProviders: createLiveConfigRouteProviders(options.dependencies.configProvider),
+    configProviders,
     executeProxyRoutes: {
       provider: createLiveExecuteProxyRouteProvider({
         registry: options.runtimeServices.registry,

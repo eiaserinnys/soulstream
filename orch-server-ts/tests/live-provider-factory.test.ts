@@ -185,6 +185,18 @@ describe("live provider factory boundary", () => {
       atomEnabled: true,
     });
     await expect(
+      bundle.authRoutes.configProvider.getConfig(),
+    ).resolves.toMatchObject({
+      authEnabled: true,
+      devModeEnabled: false,
+      googleClientId: "google-client",
+      googleClientSecret: "google-secret",
+      callbackUrl: "/api/auth/google/callback",
+      jwtSecretConfigured: true,
+    });
+    expect(bundle.authRoutes.httpClient.post).toEqual(expect.any(Function));
+    expect(bundle.authRoutes.httpClient.get).toEqual(expect.any(Function));
+    await expect(
       bundle.configProviders.atomRoutes.configProvider.getConfig(),
     ).resolves.toEqual({
       atomEnabled: true,
@@ -383,6 +395,10 @@ function createLiveDependencies(): LiveProviderDependencies {
       getConfig: vi.fn(async () => ({
         node_name: "orch-live",
         google_client_id: "google-client",
+        google_client_secret: "google-secret",
+        google_callback_url: "/api/auth/google/callback",
+        jwt_secret: "jwt-secret",
+        environment: "production",
         atom_enabled: true,
         atom_server_url: "https://atom.example.test",
         atom_api_key: "atom-secret",
@@ -395,6 +411,10 @@ function createLiveDependencies(): LiveProviderDependencies {
         const config: Record<string, unknown> = {
           node_name: "orch-live",
           google_client_id: "google-client",
+          google_client_secret: "google-secret",
+          google_callback_url: "/api/auth/google/callback",
+          jwt_secret: "jwt-secret",
+          environment: "production",
           atom_enabled: true,
           atom_server_url: "https://atom.example.test",
           atom_api_key: "atom-secret",
