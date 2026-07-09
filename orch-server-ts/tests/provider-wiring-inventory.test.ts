@@ -153,7 +153,9 @@ describe("live provider wiring inventory", () => {
     expect(
       statusByPath.get("node.claude-auth:nodeClaudeAuthRoutes.tokenExchange"),
     ).toBe("implemented");
-    expect(statusByPath.get("runbooks:runbookRoutes.provider")).toBe("stub");
+    expect(statusByPath.get("runbooks:runbookRoutes.provider")).toBe(
+      "implemented",
+    );
     expect(statusByPath.get("board.yjs-host:runtime.boardYjsHostHttpClient")).toBe(
       "implemented",
     );

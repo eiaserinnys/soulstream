@@ -154,7 +154,7 @@ describe("live provider factory boundary", () => {
     expect(bundle.folderRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
     expect(bundle.boardItemRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.boardItemRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
     expect(bundle.markdownDocumentRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.markdownDocumentRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
-    expect(bundle.runbookRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
+    expect(bundle.runbookRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.runbookRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
     expect(bundle.sessionCatalogRoutes.provider).toBe(
       dependencies.dbCatalogRepository.sessionCatalogProvider,
     );
@@ -388,7 +388,7 @@ function createLiveDependencies(): LiveProviderDependencies {
       resolveSessionIdentity: vi.fn(async () => ({})),
     },
     dbCatalogRepository: {
-      folderRouteProvider: {} as never, folderCountsProvider: {} as never, boardItemRouteProvider: {} as never, markdownDocumentRouteProvider: {} as never,
+      folderRouteProvider: {} as never, folderCountsProvider: {} as never, boardItemRouteProvider: {} as never, markdownDocumentRouteProvider: {} as never, runbookRouteProvider: {} as never,
       sessionCatalogProvider: {
         renameSession: vi.fn(async () => undefined),
         moveSessionsToFolder: vi.fn(async () => ({ count: 0 })),

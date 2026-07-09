@@ -36,6 +36,8 @@ import { createLiveBoardItemRouteProvider } from "./live_board_item_route_provid
 import type { BoardItemRouteProvider } from "../board/board_item_routes.js";
 import { createLiveMarkdownDocumentRouteProvider } from "./live_markdown_document_route_provider.js";
 import type { MarkdownDocumentRouteProvider } from "../board/markdown_document_routes.js";
+import { createLiveRunbookRouteProvider } from "./live_runbook_route_provider.js";
+import type { RunbookRouteProvider } from "../runbooks/runbook_route_types.js";
 import { createLiveSessionHistoryProvider } from "./live_session_history_provider.js";
 import { serializeSessionRow } from "./live_session_serialization.js";
 import {
@@ -51,6 +53,7 @@ export type LiveDbCatalogRepository = {
   readonly folderCountsProvider: LiveFolderProvider;
   readonly boardItemRouteProvider: BoardItemRouteProvider;
   readonly markdownDocumentRouteProvider: MarkdownDocumentRouteProvider;
+  readonly runbookRouteProvider: RunbookRouteProvider;
   readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly sessionHistoryProvider: ReturnType<typeof createLiveSessionHistoryProvider>;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
@@ -105,6 +108,11 @@ export function createLiveDbCatalogRepository(
     sqlResolver,
     folderProvider,
   );
+  const runbookProvider = createLiveRunbookRouteProvider({
+    sqlResolver,
+    folderProvider,
+    registry: options.registry,
+  });
   const sessionResourceAccessRepository =
     createSessionResourceAccessRepository(sqlResolver);
   const taskReadProvider = createLiveTaskReadProvider({
@@ -127,6 +135,7 @@ export function createLiveDbCatalogRepository(
       folderProvider,
       boardItemProvider,
     ),
+    runbookRouteProvider: runbookProvider,
     sessionCatalogProvider: createSessionCatalogProvider(sqlResolver),
     sessionHistoryProvider,
     sessionResourceAccessRepository,

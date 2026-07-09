@@ -174,6 +174,7 @@ export function createLiveOrchestratorProviderBundle(
   });
   const runbookProviders = createLiveRunbookRouteProviders({
     nodeHttpClient: options.dependencies.nodeHttpClient,
+    provider: options.dependencies.dbCatalogRepository.runbookRouteProvider,
   });
   const configProviders = createLiveConfigRouteProviders(
     options.dependencies.configProvider,
