@@ -3,8 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BoardYjsHostClient } from "../../src/collaboration/board_yjs_host_client.js";
 import { registerBoardYjsHostRoutes } from "../../src/collaboration/board_yjs_host_route.js";
+import { createBoardYjsRouting } from "../../src/collaboration/board_yjs_routing.js";
 import { BoardYjsService } from "../../src/collaboration/board_yjs_service.js";
 import type { SessionDB } from "../../src/db/session_db.js";
+import { upsertRunbookBoardItem } from "../../src/runbook/runbook_board_items.js";
 
 function createSilentLogger() {
   return {
@@ -23,6 +25,101 @@ afterEach(() => {
 });
 
 describe("board Yjs host centralization", () => {
+  it("orch mode routes RunbookBoardYjsPort through client and keeps local WS non-host close", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "runbook:rb-1",
+          folderId: "root",
+          containerKind: "folder",
+          containerId: "root",
+          membershipKind: "primary",
+          sourceRunbookItemId: null,
+          itemType: "runbook",
+          itemId: "rb-1",
+          x: 10,
+          y: 20,
+          metadata: {},
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const routing = createBoardYjsRouting({
+      db: {} as SessionDB,
+      logger: createSilentLogger() as never,
+      auth: {
+        authBearerToken: "",
+        environment: "development",
+        dashboardAuthEnabled: false,
+      },
+      orch: {
+        baseUrl: "http://orch.local",
+        headers: { authorization: "Bearer test-token" },
+      },
+      nodeId: "eiaserinnys",
+      hostNodeId: "orch",
+    });
+
+    try {
+      expect(routing.isBoardYjsHost).toBe(false);
+      expect(routing.mutationPort).toBeInstanceOf(BoardYjsHostClient);
+      await upsertRunbookBoardItem(routing.mutationPort, {
+        folderId: "root",
+        boardItemId: "runbook:rb-1",
+        runbookId: "rb-1",
+        title: "Runbook",
+        x: 10,
+        y: 20,
+      });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://orch.local/api/board-yjs/host/upsert-runbook-board-item",
+        expect.objectContaining({ method: "POST" }),
+      );
+
+      const socket = { close: vi.fn() };
+      routing.localService.handleContainerConnection(
+        socket as never,
+        {} as never,
+        { containerKind: "folder", containerId: "root" },
+      );
+      expect(socket.close).toHaveBeenCalledWith(1013, "board Yjs documents are hosted on orch");
+    } finally {
+      await routing.localService.close();
+    }
+  });
+
+  it("기존 node id host 값은 local service와 host WS 분기를 유지한다", async () => {
+    const routing = createBoardYjsRouting({
+      db: {} as SessionDB,
+      logger: createSilentLogger() as never,
+      auth: {
+        authBearerToken: "",
+        environment: "development",
+        dashboardAuthEnabled: false,
+      },
+      orch: { baseUrl: "http://orch.local", headers: {} },
+      nodeId: "eiaserinnys",
+      hostNodeId: "eiaserinnys",
+    });
+    const handleConnection = vi.fn();
+    (routing.localService as unknown as { hocuspocus: { handleConnection: typeof handleConnection } })
+      .hocuspocus.handleConnection = handleConnection;
+
+    try {
+      expect(routing.isBoardYjsHost).toBe(true);
+      expect(routing.mutationPort).toBe(routing.localService);
+      routing.localService.handleContainerConnection(
+        {} as never,
+        {} as never,
+        { containerKind: "folder", containerId: "root" },
+      );
+      expect(handleConnection).toHaveBeenCalledOnce();
+    } finally {
+      await routing.localService.close();
+    }
+  });
+
   it("non-host node refuses direct board document mutation before loading Y.Doc", async () => {
     const service = new BoardYjsService({
       db: {} as SessionDB,

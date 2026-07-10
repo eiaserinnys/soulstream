@@ -5,6 +5,7 @@ import type { Logger } from "pino";
 import type { NodeRegister } from "@soulstream/wire-schema";
 
 import type { AgentRegistry } from "../agent_registry.js";
+import { isBoardYjsHostNode } from "../board_yjs_host_mode.js";
 
 export interface RegistrationParams {
   nodeId: string;
@@ -100,7 +101,7 @@ export function buildRegistrationMsg(params: RegistrationParams): NodeRegister {
       app_heartbeat_v1: true,
       ...(params.boardYjsHostNodeId
         ? {
-            board_yjs_host: params.nodeId === params.boardYjsHostNodeId,
+            board_yjs_host: isBoardYjsHostNode(params.nodeId, params.boardYjsHostNodeId),
             board_yjs_host_node_id: params.boardYjsHostNodeId,
           }
         : {}),
