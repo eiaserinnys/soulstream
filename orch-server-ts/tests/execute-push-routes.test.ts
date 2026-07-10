@@ -205,6 +205,38 @@ describe("Execute proxy and push route harnesses", () => {
     await app.close();
   });
 
+  it("trusts forwarded client IP only from the configured loopback proxy", async () => {
+    const provider = createExecuteProvider();
+    const app = createApp({
+      config,
+      executeProxyRoutes: { provider },
+    });
+
+    await app.inject({
+      method: "POST",
+      url: "/api/execute",
+      remoteAddress: "127.0.0.1",
+      headers: { "x-forwarded-for": "203.0.113.42" },
+      payload: { prompt: "proxied", profile: "codex-agent" },
+    });
+    expect(provider.executeNew).toHaveBeenLastCalledWith(expect.objectContaining({
+      caller_info: expect.objectContaining({ ip: "203.0.113.42" }),
+    }));
+
+    await app.inject({
+      method: "POST",
+      url: "/api/execute",
+      remoteAddress: "198.51.100.7",
+      headers: { "x-forwarded-for": "203.0.113.99" },
+      payload: { prompt: "direct", profile: "codex-agent" },
+    });
+    expect(provider.executeNew).toHaveBeenLastCalledWith(expect.objectContaining({
+      caller_info: expect.objectContaining({ ip: "198.51.100.7" }),
+    }));
+
+    await app.close();
+  });
+
   it("passes through provider text responses for execute streams", async () => {
     const provider: ExecuteProxyProvider = {
       executeNew: vi.fn(async () => ({

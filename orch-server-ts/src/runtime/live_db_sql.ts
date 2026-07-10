@@ -17,8 +17,15 @@ export type LivePostgresSql = {
 
 export type LivePostgresFactory = (
   databaseUrl: string,
-  options: { readonly max: number },
+  options: LivePostgresOptions,
 ) => LivePostgresSql;
+
+export type LivePostgresOptions = {
+  readonly max: number;
+  readonly connection: {
+    readonly statement_timeout: number;
+  };
+};
 
 export type LiveDbSqlResolver = {
   readonly resolveSql: () => Promise<LivePostgresSql>;
@@ -31,10 +38,16 @@ export type CreateLiveDbSqlResolverOptions = {
   readonly databaseUrl?: string;
   readonly configProvider?: LiveConfigProviderBoundary;
   readonly maxConnections?: number;
+  readonly statementTimeoutMs?: number;
   readonly closeTimeoutSeconds?: number;
 };
 
-const DEFAULT_POSTGRES_MAX_CONNECTIONS = 5;
+// postgres.js creates a separate max: 1 client for sql.listen(), so this keeps
+// ten request-query connections available while LISTEN raises the total ceiling to eleven.
+const DEFAULT_POSTGRES_MAX_CONNECTIONS = 10;
+// postgres.js has no asyncpg-style command_timeout; PostgreSQL statement_timeout
+// is the explicit server-side equivalent for executable commands.
+const DEFAULT_POSTGRES_STATEMENT_TIMEOUT_MS = 30_000;
 const DEFAULT_POSTGRES_CLOSE_TIMEOUT_SECONDS = 5;
 
 export function createLiveDbSqlResolver(
@@ -44,6 +57,8 @@ export function createLiveDbSqlResolver(
   let ownsSql = false;
   const maxConnections =
     options.maxConnections ?? DEFAULT_POSTGRES_MAX_CONNECTIONS;
+  const statementTimeoutMs =
+    options.statementTimeoutMs ?? DEFAULT_POSTGRES_STATEMENT_TIMEOUT_MS;
   const closeTimeoutSeconds =
     options.closeTimeoutSeconds ?? DEFAULT_POSTGRES_CLOSE_TIMEOUT_SECONDS;
 
@@ -53,7 +68,10 @@ export function createLiveDbSqlResolver(
       const databaseUrl =
         options.databaseUrl ?? await requireLiveDatabaseUrl(options.configProvider);
       const factory = options.postgresFactory ?? defaultLivePostgresFactory;
-      sql = factory(databaseUrl, { max: maxConnections });
+      sql = factory(databaseUrl, {
+        max: maxConnections,
+        connection: { statement_timeout: statementTimeoutMs },
+      });
       ownsSql = true;
       return sql;
     },
@@ -85,7 +103,7 @@ export async function requireLiveDatabaseUrl(
 
 function defaultLivePostgresFactory(
   databaseUrl: string,
-  options: { readonly max: number },
+  options: LivePostgresOptions,
 ): LivePostgresSql {
   return postgres(databaseUrl, options) as unknown as LivePostgresSql;
 }

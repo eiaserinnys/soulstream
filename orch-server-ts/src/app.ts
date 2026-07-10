@@ -123,9 +123,15 @@ import {
   registerProductionAuthGuard,
   type ProductionAuthGuardOptions,
 } from "./runtime/production_auth_guard.js";
+import {
+  createOperationalFastifyOptions,
+  registerProductionLogging,
+  type ProductionLogDestination,
+} from "./runtime/production_logging.js";
 
 export type CreateAppOptions = {
   config: OrchServerTsConfig;
+  logDestination?: ProductionLogDestination;
   corsAllowedOrigins?: readonly string[];
   productionAuth?: ProductionAuthGuardOptions;
   routeOwners?: RouteOwnerManifest;
@@ -163,8 +169,12 @@ export type CreateAppOptions = {
 };
 
 export function createApp(options: CreateAppOptions): FastifyInstance {
-  const app = Fastify({ logger: false, forceCloseConnections: true });
+  const app = Fastify({
+    ...createOperationalFastifyOptions(options.config, options.logDestination),
+    forceCloseConnections: true,
+  });
   const owners = options.routeOwners ?? routeOwnerManifest;
+  registerProductionLogging(app, options.config.environment);
   if (options.corsAllowedOrigins !== undefined) {
     registerCorsBoundary(app, options.corsAllowedOrigins);
   }

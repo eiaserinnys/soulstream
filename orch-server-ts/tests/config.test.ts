@@ -16,7 +16,10 @@ const explicitTestConfig = {
 
 describe("orch-server-ts config scaffold", () => {
   it("accepts explicit test config without reading production env", () => {
-    expect(parseOrchServerConfig(explicitTestConfig)).toEqual(explicitTestConfig);
+    expect(parseOrchServerConfig(explicitTestConfig)).toEqual({
+      ...explicitTestConfig,
+      trustProxy: "loopback",
+    });
   });
 
   it("fails fast when a required config value is missing", () => {
@@ -64,6 +67,7 @@ describe("orch-server-ts config scaffold", () => {
       node_name: "orch-primary",
       host: "127.0.0.1",
       port: 5300,
+      trusted_proxy: "loopback",
       database_url: "postgres://orch@localhost/orch",
       dashboard_dir: "/srv/dashboard",
       dashboard_user_folder_access: {
@@ -101,6 +105,7 @@ describe("orch-server-ts config scaffold", () => {
       environment: "production",
       databaseUrl: "postgres://orch@localhost/orch",
       authBearerToken: "bearer-token",
+      trustProxy: "loopback",
       r2_board_assets_access_key_id: "r2-access",
       r2_board_assets_secret_access_key: "r2-secret",
       r2_board_assets_bucket: "r2-bucket",
@@ -120,6 +125,7 @@ describe("orch-server-ts config scaffold", () => {
     expect(loadOrchServerEnvironment(minimalEnvironment())).toMatchObject({
       node_name: null,
       port: 5200,
+      trusted_proxy: "loopback",
       dashboard_dir: "",
       dashboard_user_folder_access: {},
       r2_board_assets_access_key_id: "",

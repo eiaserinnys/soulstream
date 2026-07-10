@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AuthTokenResolver } from "../auth/auth_routes.js";
 import { normalizeRouteKey } from "../contract/route_coverage.js";
 import { routeCoverageOwners } from "../contract/route_coverage_matrix.js";
+import { requestLogPath } from "./production_logging.js";
 
 export type ProductionAuthGuardOptions = {
   readonly resolveTokenAccess: AuthTokenResolver;
@@ -28,7 +29,13 @@ export function registerProductionAuthGuard(
 
     const access = await options.resolveTokenAccess(request);
     if (!access.ok) {
-      return reply.code(access.statusCode ?? 401).send({ detail: access.detail });
+      const statusCode = access.statusCode ?? 401;
+      request.log.warn({
+        method: request.method,
+        path: requestLogPath(request),
+        statusCode,
+      }, "HTTP authentication rejected");
+      return reply.code(statusCode).send({ detail: access.detail });
     }
   });
 }
