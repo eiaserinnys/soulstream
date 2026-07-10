@@ -18,7 +18,7 @@ type SseFrame = {
 };
 
 describe("production session list pagination parity", () => {
-  it("treats feed_only limit=0 as an unbounded DB snapshot", async () => {
+  it("returns only feed-eligible sessions for feed_only limit=0", async () => {
     const harness = await createProductionHarness();
     try {
       const response = await harness.application.app.inject({
@@ -30,11 +30,9 @@ describe("production session list pagination parity", () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toMatchObject({
         sessions: [
-          expect.objectContaining({ agentSessionId: "session-3" }),
-          expect.objectContaining({ agentSessionId: "session-2" }),
-          expect.objectContaining({ agentSessionId: "session-1" }),
+          expect.objectContaining({ agentSessionId: "normal-session" }),
         ],
-        total: 3,
+        total: 1,
         cursor: null,
         nextCursor: null,
         hasMore: false,
@@ -61,8 +59,8 @@ describe("production session list pagination parity", () => {
       });
       expect(first.json()).toMatchObject({
         sessions: [
-          expect.objectContaining({ agentSessionId: "session-3" }),
-          expect.objectContaining({ agentSessionId: "session-2" }),
+          expect.objectContaining({ agentSessionId: "normal-session" }),
+          expect.objectContaining({ agentSessionId: "llm-session" }),
         ],
         total: 3,
         cursor: "2",
@@ -76,7 +74,9 @@ describe("production session list pagination parity", () => {
         headers: harness.authHeaders,
       });
       expect(second.json()).toMatchObject({
-        sessions: [expect.objectContaining({ agentSessionId: "session-1" })],
+        sessions: [
+          expect.objectContaining({ agentSessionId: "excluded-folder-session" }),
+        ],
         total: 3,
         cursor: null,
         nextCursor: null,
@@ -104,7 +104,10 @@ describe("production session list pagination parity", () => {
 
       expect((await stream.next("session_list")).data).toMatchObject({
         type: "session_list",
-        total: 3,
+        sessions: [
+          expect.objectContaining({ agentSessionId: "normal-session" }),
+        ],
+        total: 1,
       });
       expect(sessionListCalls(harness.calls)).toEqual([
         {
@@ -122,19 +125,37 @@ describe("production session list pagination parity", () => {
 
 async function createProductionHarness() {
   const calls: SqlCall[] = [];
-  const rows = [sessionRow("session-3"), sessionRow("session-2"), sessionRow("session-1")];
+  const folders = new Map([
+    ["feed-folder", { excludeFromFeed: false }],
+    ["excluded-folder", { excludeFromFeed: true }],
+  ]);
+  const rows = [
+    sessionRow("normal-session", "feed-folder", "claude"),
+    sessionRow("llm-session", "feed-folder", "llm"),
+    sessionRow("excluded-folder-session", "excluded-folder", "claude"),
+  ];
   const query = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?").replace(/\s+/g, " ").trim();
     calls.push({ text, values });
-    if (text.includes("session_count")) return [{ count: rows.length }];
+    const filters = databaseJsonbObject(values[0]);
+    const filteredRows = filters.feed_only === true
+      ? rows.filter((row) =>
+          row.session_type !== "llm" &&
+          folders.get(String(row.folder_id))?.excludeFromFeed !== true
+        )
+      : rows;
+    if (text.includes("session_count")) return [{ count: filteredRows.length }];
     if (text.includes("session_get_all")) {
       const limit = typeof values[1] === "number" ? values[1] : undefined;
       const offset = typeof values[2] === "number" ? values[2] : 0;
-      return limit === undefined ? rows.slice(offset) : rows.slice(offset, offset + limit);
+      return limit === undefined
+        ? filteredRows.slice(offset)
+        : filteredRows.slice(offset, offset + limit);
     }
     return [];
   });
   const sql = Object.assign(query, {
+    json: vi.fn((value: unknown) => ({ jsonValue: value })),
     listen: vi.fn(async () => ({ unlisten: vi.fn(async () => undefined) })),
   }) as unknown as LivePostgresSql;
   const sqlResolver: LiveDbSqlResolver = {
@@ -154,18 +175,22 @@ async function createProductionHarness() {
   };
 }
 
-function sessionRow(sessionId: string): Record<string, unknown> {
+function sessionRow(
+  sessionId: string,
+  folderId: string,
+  sessionType: string,
+): Record<string, unknown> {
   return {
     session_id: sessionId,
     status: "running",
     prompt: sessionId,
     created_at: "2026-07-10T10:00:00.000Z",
     updated_at: "2026-07-10T11:00:00.000Z",
-    session_type: "codex",
+    session_type: sessionType,
     metadata: {},
     display_name: sessionId,
     node_id: "node-a",
-    folder_id: "feed-folder",
+    folder_id: folderId,
     last_event_id: 1,
     last_read_event_id: 0,
     agent_id: "seosoyoung",
@@ -180,10 +205,32 @@ function sessionListCalls(calls: SqlCall[]): Array<{
   return calls
     .filter((call) => call.text.includes("session_get_all"))
     .map((call) => ({
-      filters: JSON.parse(String(call.values[0])) as Record<string, unknown>,
+      filters: intendedJsonbObject(call.values[0]),
       limit: call.values[1],
       offset: call.values[2],
     }));
+}
+
+function databaseJsonbObject(value: unknown): Record<string, unknown> {
+  // postgres.js encodes a plain JavaScript string as a JSON string scalar.
+  // Only sql.json(...) produces the object-shaped JSONB parameter this DB contract needs.
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "jsonValue" in value &&
+    typeof value.jsonValue === "object" &&
+    value.jsonValue !== null
+  ) {
+    return value.jsonValue as Record<string, unknown>;
+  }
+  return {};
+}
+
+function intendedJsonbObject(value: unknown): Record<string, unknown> {
+  if (typeof value === "string") {
+    return JSON.parse(value) as Record<string, unknown>;
+  }
+  return databaseJsonbObject(value);
 }
 
 async function connectSse(
