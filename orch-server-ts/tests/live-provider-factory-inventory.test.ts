@@ -19,13 +19,7 @@ describe("live provider factory inventory", () => {
     expect(result.implementedInventoryProviderPaths).toEqual(
       liveFactoryImplementedProviderPaths,
     );
-    expect(result.unresolvedProviderPaths).toEqual([
-      expect.objectContaining({
-        owner: "attachments",
-        path: "attachmentRoutes.transport",
-        status: "blocked",
-      }),
-    ]);
+    expect(result.unresolvedProviderPaths).toEqual([]);
   });
 
   it("fails when inventory marks a path implemented but the factory omits it", () => {
@@ -48,11 +42,16 @@ describe("live provider factory inventory", () => {
     expect(result.extraFactoryProviderPaths).toEqual([extraPath]);
   });
 
-  it("fails when the factory tries to provide a blocked path", () => {
+  it("fails when inventory regresses a factory-provided path to blocked", () => {
     const blockedPath = { owner: "attachments", path: "attachmentRoutes.transport" };
+    const regressedInventory = liveProviderWiringInventory.map((entry) =>
+      entry.owner === blockedPath.owner && entry.path === blockedPath.path
+        ? { ...entry, status: "blocked" as const }
+        : entry,
+    );
     const result = validateLiveProviderFactoryInventoryAlignment({
-      inventory: liveProviderWiringInventory,
-      factoryProviderPaths: [...liveFactoryImplementedProviderPaths, blockedPath],
+      inventory: regressedInventory,
+      factoryProviderPaths: liveFactoryImplementedProviderPaths,
     });
 
     expect(result.blockedFactoryProviderPaths).toEqual([

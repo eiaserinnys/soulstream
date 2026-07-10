@@ -220,6 +220,37 @@ describe("attachment route harness", () => {
     await app.close();
   });
 
+  it("splits multipart payloads into 1MiB raw chunks before WS transport", async () => {
+    const chunkSizes: number[] = [];
+    const { app } = createHarness({
+      async uploadAttachment(_target, input) {
+        for await (const chunk of input.chunks) chunkSizes.push(chunk.length);
+        return {
+          path: "/incoming/session-abc/large.bin",
+          filename: "large.bin",
+          size: input.expectedSize,
+          content_type: input.contentType,
+        };
+      },
+    });
+    const content = Buffer.alloc(1024 * 1024 + 3, 1);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/attachments/sessions?nodeId=node-1",
+      ...createUploadBody({
+        sessionId: "session-abc",
+        filename: "large.bin",
+        contentType: "application/octet-stream",
+        content,
+      }),
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(chunkSizes).toEqual([1024 * 1024, 3]);
+    await app.close();
+  });
+
   it("falls back to legacy upload for unsupported chunked command within legacy limit", async () => {
     const { app, calls } = createHarness({
       uploadAttachment: vi.fn(async () => {

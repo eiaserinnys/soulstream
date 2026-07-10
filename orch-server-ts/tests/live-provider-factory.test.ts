@@ -8,7 +8,6 @@ import {
   liveProviderDependencyCategories,
   liveProviderWiringInventory,
   parseOrchServerConfig,
-  LiveProviderFactoryError,
   type LiveProviderDependencies,
   type NodeConnectionSnapshot,
   type LiveProviderWiringInventoryEntry,
@@ -80,33 +79,24 @@ describe("live provider factory boundary", () => {
     );
   });
 
-  it("throws a typed error before returning a bundle while stub or blocked paths remain", () => {
+  it("returns the default bundle after the inventory reaches fully implemented", () => {
     const dependencies = createLiveDependencies();
     const runtimeServices = createRuntimeServices(dependencies);
 
-    expect(() =>
-      createLiveOrchestratorProviderBundle({
-        dependencies,
-        runtimeServices,
-      }),
-    ).toThrowError(LiveProviderFactoryError);
+    const bundle = createLiveOrchestratorProviderBundle({
+      dependencies,
+      runtimeServices,
+    });
 
-    try {
-      createLiveOrchestratorProviderBundle({
-        dependencies,
-        runtimeServices,
-      });
-    } catch (error) {
-      expect(error).toBeInstanceOf(LiveProviderFactoryError);
-      expect((error as LiveProviderFactoryError).failures[0]).toMatchObject({
-        owner: "attachments",
-        path: "attachmentRoutes.transport",
-        status: "blocked",
-        source: expect.any(String),
-        notes: expect.any(String),
-      });
-      expect((error as Error).message).toContain("attachmentRoutes.transport");
-    }
+    expect(bundle.implementedProviderPaths).toEqual(
+      liveFactoryImplementedProviderPaths,
+    );
+    expect(bundle.attachmentRoutes.transport).toMatchObject({
+      uploadAttachment: expect.any(Function),
+      legacyUploadAttachment: expect.any(Function),
+      deleteSessionAttachments: expect.any(Function),
+      downloadAttachment: expect.any(Function),
+    });
   });
 
   it("returns implemented runtime and config route providers when the inventory is fully implemented", async () => {
@@ -228,6 +218,9 @@ describe("live provider factory boundary", () => {
     );
     expect(bundle.attachmentRoutes.accessProvider.requireSessionAccess).toBe(
       bundle.sessionCatalogRoutes.accessProvider?.requireSessionAccess,
+    );
+    expect(bundle.attachmentRoutes.transport.uploadAttachment).toEqual(
+      expect.any(Function),
     );
     expect(await bundle.attachmentRoutes.provider.getNode("missing-attachment-node"))
       .toBeNull();

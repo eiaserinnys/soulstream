@@ -120,7 +120,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly atomRoutes: AtomRouteOptions;
   readonly attachmentRoutes: Pick<
     AttachmentRouteOptions,
-    "provider" | "accessProvider"
+    "provider" | "accessProvider" | "transport"
   >;
   readonly authRoutes: Pick<
     AuthRouteOptions,
@@ -228,6 +228,7 @@ export function createLiveOrchestratorProviderBundle(
   });
   const attachmentProviders = createLiveAttachmentRouteProviders({
     registry: options.runtimeServices.registry,
+    bridge: options.runtimeServices.sessionBridge,
     dashboardAccessProvider,
     sessionResourceAccessProvider,
   });
