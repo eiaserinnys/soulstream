@@ -17,6 +17,7 @@ export * from "./contract/route_coverage_matrix.js";
 export * from "./contract/route_owner_manifest.js";
 export * from "./contract/route_registry.js";
 export type * from "./contract/types.js";
+export * from "./dashboard/dashboard_serving.js";
 export * from "./execute/execute_proxy_routes.js";
 export * from "./folders/folder_routes.js";
 export * from "./node/node_agent_profile_routes.js";
@@ -35,6 +36,7 @@ export {
 } from "./node/ws_route.js";
 export * from "./public/public_status_routes.js";
 export * from "./push/push_routes.js";
+export * from "./production.js";
 export * from "./runbooks/runbook_routes.js";
 export * from "./runtime/composition.js";
 export * from "./runtime/live_cogito_route_provider.js";
