@@ -1,5 +1,6 @@
 import type { BoardYjsHostHttpClient } from "../board/board_yjs_host_proxy.js";
 import type { BoardAccess } from "../board/board_access.js";
+import type { BoardAssetRouteProvider } from "../board/board_asset_routes.js";
 import type { BoardItemRouteProvider } from "../board/board_item_routes.js";
 import type { MarkdownDocumentRouteProvider } from "../board/markdown_document_routes.js";
 import type { RunbookRouteProvider } from "../runbooks/runbook_route_types.js";
@@ -45,6 +46,7 @@ export type LiveAuthSessionIdentityBoundary = {
 export type LiveDbCatalogRepositoryBoundary = {
   readonly folderRouteProvider: LiveFolderProvider;
   readonly folderCountsProvider: LiveFolderProvider;
+  readonly boardAssetRouteProvider: BoardAssetRouteProvider;
   readonly boardItemRouteProvider: BoardItemRouteProvider;
   readonly markdownDocumentRouteProvider: MarkdownDocumentRouteProvider;
   readonly runbookRouteProvider: RunbookRouteProvider;

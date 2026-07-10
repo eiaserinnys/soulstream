@@ -20,6 +20,23 @@ const config = parseOrchServerConfig({
   authBearerToken: "test-token",
 });
 
+const liveProviderConfig: Record<string, unknown> = {
+  node_name: "orch-live",
+  google_client_id: "google-client",
+  google_client_secret: "google-secret",
+  google_callback_url: "/api/auth/google/callback",
+  jwt_secret: "jwt-secret",
+  databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
+  environment: "production",
+  atom_enabled: true,
+  atom_server_url: "https://atom.example.test",
+  atom_api_key: "atom-secret",
+  atom_root_node_id: "root-node",
+  claude_oauth_client_id: "claude-oauth-client",
+  claude_oauth_callback_url:
+    "https://orch.example.test/api/nodes/claude-auth/callback",
+};
+
 const nodeClaudeAuthProfileNode: NodeConnectionSnapshot = {
   nodeId: "node-claude",
   connectionId: "conn-claude",
@@ -152,6 +169,10 @@ describe("live provider factory boundary", () => {
     expect(bundle.authRoutes.authorizeUser).toEqual(expect.any(Function));
     expect(bundle.authRoutes.userPayloadExtra).toEqual(expect.any(Function));
     expect(bundle.folderRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
+    expect(bundle.boardAssetRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
+    expect(bundle.boardAssetRoutes.provider.initFileAsset).toBe(
+      dependencies.dbCatalogRepository.boardAssetRouteProvider.initFileAsset,
+    );
     expect(bundle.boardItemRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.boardItemRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
     expect(bundle.markdownDocumentRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.markdownDocumentRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
     expect(bundle.runbookRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.runbookRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
@@ -388,7 +409,14 @@ function createLiveDependencies(): LiveProviderDependencies {
       resolveSessionIdentity: vi.fn(async () => ({})),
     },
     dbCatalogRepository: {
-      folderRouteProvider: {} as never, folderCountsProvider: {} as never, boardItemRouteProvider: {} as never, markdownDocumentRouteProvider: {} as never, runbookRouteProvider: {} as never,
+      folderRouteProvider: {} as never, folderCountsProvider: {} as never,
+      boardAssetRouteProvider: {
+        listFolders: vi.fn(async () => []),
+        getCatalogSnapshot: vi.fn(async () => ({ boardItems: [] })),
+        initFileAsset: vi.fn(async () => ({ assetId: "asset-live" })),
+        commitFileAsset: vi.fn(async () => ({ asset: {}, boardItem: {} })),
+      },
+      boardItemRouteProvider: {} as never, markdownDocumentRouteProvider: {} as never, runbookRouteProvider: {} as never,
       sessionCatalogProvider: {
         renameSession: vi.fn(async () => undefined),
         moveSessionsToFolder: vi.fn(async () => ({ count: 0 })),
@@ -452,41 +480,8 @@ function createLiveDependencies(): LiveProviderDependencies {
       remove: vi.fn(async () => undefined),
     },
     configProvider: {
-      getConfig: vi.fn(async () => ({
-        node_name: "orch-live",
-        google_client_id: "google-client",
-        google_client_secret: "google-secret",
-        google_callback_url: "/api/auth/google/callback",
-        jwt_secret: "jwt-secret",
-        databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
-        environment: "production",
-        atom_enabled: true,
-        atom_server_url: "https://atom.example.test",
-        atom_api_key: "atom-secret",
-        atom_root_node_id: "root-node",
-        claude_oauth_client_id: "claude-oauth-client",
-        claude_oauth_callback_url:
-          "https://orch.example.test/api/nodes/claude-auth/callback",
-      })),
-      requireConfig: vi.fn(async (key: string) => {
-        const config: Record<string, unknown> = {
-          node_name: "orch-live",
-          google_client_id: "google-client",
-          google_client_secret: "google-secret",
-          google_callback_url: "/api/auth/google/callback",
-          jwt_secret: "jwt-secret",
-          databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
-          environment: "production",
-          atom_enabled: true,
-          atom_server_url: "https://atom.example.test",
-          atom_api_key: "atom-secret",
-          atom_root_node_id: "root-node",
-          claude_oauth_client_id: "claude-oauth-client",
-          claude_oauth_callback_url:
-            "https://orch.example.test/api/nodes/claude-auth/callback",
-        };
-        return config[key];
-      }),
+      getConfig: vi.fn(async () => liveProviderConfig),
+      requireConfig: vi.fn(async (key: string) => liveProviderConfig[key]),
     },
     systemPortraitAssets: {
       readSystemPortraitAsset: vi.fn(async () => Buffer.from("system-portrait")),

@@ -39,6 +39,8 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "auth", path: "authRoutes.nativeVerifier" },
   { owner: "auth", path: "authRoutes.resolveTokenAccess" },
   { owner: "auth", path: "authRoutes.userPayloadExtra" },
+  { owner: "board.assets", path: "boardAssetRoutes.accessProvider" },
+  { owner: "board.assets", path: "boardAssetRoutes.provider" },
   { owner: "board.items", path: "boardItemRoutes.accessProvider" },
   { owner: "board.items", path: "boardItemRoutes.provider" },
   { owner: "board.yjs-host", path: "runtime.boardYjsHostHttpClient" },
