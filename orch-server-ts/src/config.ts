@@ -7,6 +7,7 @@ const ConfigSchema = z
     environment: z.string().min(1),
     databaseUrl: z.string().min(1),
     authBearerToken: z.string(),
+    boardYjsHostMode: z.enum(["node", "orch"]).default("node"),
     trustProxy: z.literal(DEFAULT_TRUSTED_PROXY).default(DEFAULT_TRUSTED_PROXY),
     r2_board_assets_access_key_id: z.string().optional(),
     r2_board_assets_secret_access_key: z.string().optional(),
@@ -17,8 +18,9 @@ const ConfigSchema = z
 
 export type OrchServerTsConfig = Omit<
   z.output<typeof ConfigSchema>,
-  "trustProxy"
+  "boardYjsHostMode" | "trustProxy"
 > & {
+  readonly boardYjsHostMode?: "node" | "orch";
   readonly trustProxy?: typeof DEFAULT_TRUSTED_PROXY;
 };
 
@@ -44,6 +46,7 @@ export type OrchServerEnvironmentConfig = {
   readonly atom_api_key: string;
   readonly atom_root_node_id: string | null;
   readonly auth_bearer_token: string;
+  readonly board_yjs_host_mode: "node" | "orch";
   readonly cors_allowed_origins: readonly string[];
   readonly google_client_id: string;
   readonly google_client_secret: string;
@@ -97,6 +100,7 @@ export function loadOrchServerEnvironment(
     atom_api_key: env.ATOM_API_KEY ?? "",
     atom_root_node_id: optionalString(env.ATOM_ROOT_NODE_ID),
     auth_bearer_token: env.AUTH_BEARER_TOKEN ?? "",
+    board_yjs_host_mode: parseBoardYjsHostMode(env.BOARD_YJS_HOST_MODE),
     cors_allowed_origins: corsAllowedOrigins,
     google_client_id: env.GOOGLE_CLIENT_ID ?? "",
     google_client_secret: env.GOOGLE_CLIENT_SECRET ?? "",
@@ -117,6 +121,7 @@ export function toOrchServerTsConfig(
     environment: config.environment,
     databaseUrl: config.database_url,
     authBearerToken: config.auth_bearer_token,
+    boardYjsHostMode: config.board_yjs_host_mode,
     trustProxy: config.trusted_proxy,
     r2_board_assets_access_key_id: config.r2_board_assets_access_key_id,
     r2_board_assets_secret_access_key: config.r2_board_assets_secret_access_key,
@@ -175,6 +180,15 @@ function parseBoolean(
   if (["true", "1", "yes", "on"].includes(normalized)) return true;
   if (["false", "0", "no", "off"].includes(normalized)) return false;
   throw new Error(`${key} must be one of true/false, 1/0, yes/no, on/off`);
+}
+
+function parseBoardYjsHostMode(
+  value: string | undefined,
+): OrchServerEnvironmentConfig["board_yjs_host_mode"] {
+  if (value === undefined || value.trim().length === 0) return "node";
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "node" || normalized === "orch") return normalized;
+  throw new Error("BOARD_YJS_HOST_MODE must be one of node/orch");
 }
 
 function parseCorsOrigins(value: string | undefined): string[] {

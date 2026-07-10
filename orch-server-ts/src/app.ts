@@ -21,6 +21,10 @@ import {
   type BoardYjsHostProxyRouteOptions,
 } from "./board/board_yjs_host_proxy.js";
 import {
+  registerBoardYjsRoutes,
+  type BoardYjsRouteOptions,
+} from "./board-yjs/board_yjs_route.js";
+import {
   registerBoardAssetRoutes,
   type BoardAssetRouteOptions,
 } from "./board/board_asset_routes.js";
@@ -161,6 +165,7 @@ export type CreateAppOptions = {
   userBackgroundRoutes?: UserBackgroundRouteOptions;
   userPreferencesRoutes?: UserPreferencesRouteOptions;
   boardYjsHostProxyRoutes?: BoardYjsHostProxyRouteOptions;
+  boardYjsRoutes?: BoardYjsRouteOptions;
   boardAssetRoutes?: BoardAssetRouteOptions;
   boardItemRoutes?: BoardItemRouteOptions;
   cogitoRoutes?: CogitoRouteOptions;
@@ -270,6 +275,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.boardYjsHostProxyRoutes !== undefined) {
     registerBoardYjsHostProxyRoutes(app, options.boardYjsHostProxyRoutes);
+  }
+  if (options.boardYjsRoutes !== undefined) {
+    registerBoardYjsRoutes(app, options.boardYjsRoutes);
   }
   if (options.boardAssetRoutes !== undefined) {
     registerBoardAssetRoutes(app, options.boardAssetRoutes);

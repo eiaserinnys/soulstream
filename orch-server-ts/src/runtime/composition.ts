@@ -7,6 +7,7 @@ import type {
   BoardYjsHostHttpClient,
   BoardYjsHostProxyRouteOptions,
 } from "../board/board_yjs_host_proxy.js";
+import type { BoardYjsRouteOptions } from "../board-yjs/board_yjs_route.js";
 import type {
   NodeCommandClock,
   NodeCommandRequestIdGenerator,
@@ -82,6 +83,7 @@ export type OrchestratorRuntimeCompositionOptions = {
   sessionHistoryCloseAfterHistorySync?: boolean;
   loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   boardYjsHostHttpClient?: BoardYjsHostHttpClient;
+  boardYjsRoutes?: BoardYjsRouteOptions;
   nodeHttpFetch?: LiveNodeHttpFetch;
   nodeHttpRequestTimeoutMs?: number;
   additionalNodeEventSinks?: readonly NodeRegistryEventSink[];
@@ -98,6 +100,7 @@ export type OrchestratorRuntimeRouteOptions = {
   sessionSnapshotRoutes: SessionSnapshotRouteOptions;
   sseReplayRoutes: SseReplayRouteOptions;
   boardYjsHostProxyRoutes: BoardYjsHostProxyRouteOptions;
+  boardYjsRoutes?: BoardYjsRouteOptions;
 };
 
 export type OrchestratorRuntimeServices = {
@@ -237,6 +240,9 @@ export function createOrchestratorRuntimeServices(
       httpClient:
         options.boardYjsHostHttpClient ?? nodeHttpClient.boardYjsHostHttpClient,
     },
+    ...(options.boardYjsRoutes === undefined
+      ? {}
+      : { boardYjsRoutes: options.boardYjsRoutes }),
   };
 
   return {
