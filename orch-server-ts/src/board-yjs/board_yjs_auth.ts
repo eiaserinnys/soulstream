@@ -1,7 +1,9 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 
-export const DASHBOARD_AUTH_COOKIE_NAME = "soul_dashboard_auth";
+import { AUTH_COOKIE_NAME } from "../auth/auth_routes.js";
+
+export const DASHBOARD_AUTH_COOKIE_NAME = AUTH_COOKIE_NAME;
 
 export interface BoardYjsAuthConfig {
   authBearerToken: string;
