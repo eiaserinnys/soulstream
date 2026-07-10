@@ -60,6 +60,10 @@ import {
   type SessionResourceAccessProvider,
 } from "../session/session_resource_access.js";
 import {
+  createSessionCreateLifecycle,
+  type SessionCreateLifecycle,
+} from "../session/session_create_lifecycle.js";
+import {
   createSessionStreamEventFilter,
   type SessionStreamEventFilter,
 } from "../session/session_stream_event_filter.js";
@@ -236,6 +240,12 @@ export function createLiveOrchestratorProviderBundle(
     accessProvider: sessionResourceAccessProvider,
     repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
   });
+  const sessionCreateLifecycle = createSessionCreateLifecycle({
+    resolveCallerInfo: authenticatedUserResolvers.resolveCallerInfo,
+    boardItems: options.dependencies.dbCatalogRepository.boardItemRouteProvider,
+    access: sessionResourceAccessProvider,
+    tasks: options.dependencies.dbCatalogRepository.taskMutationProvider,
+  });
   const taskChangeListener =
     options.dependencies.dbCatalogRepository.createTaskChangeListener(
       options.runtimeServices.taskBroadcaster,
@@ -325,6 +335,7 @@ export function createLiveOrchestratorProviderBundle(
       options.runtimeServices,
       sessionResourceAccessProvider,
       sessionStreamEventFilter,
+      sessionCreateLifecycle,
       async (request) => {
         const access = await sessionResourceAccessProvider.resolveAccess({ request });
         return options.dependencies.dbCatalogRepository.loadSessionSnapshot({
@@ -393,6 +404,7 @@ function buildLiveRuntimeProviderBundle(
   services: OrchestratorRuntimeServices,
   accessProvider: SessionResourceAccessProvider,
   sessionStreamEventFilter: SessionStreamEventFilter,
+  sessionCreateLifecycle: SessionCreateLifecycle,
   loadSessionSnapshot: (request: FastifyRequest) => Promise<SessionStreamSnapshot>,
   taskChangeListener: LiveTaskChangeListener,
 ): LiveRuntimeProviderBundle {
@@ -415,7 +427,10 @@ function buildLiveRuntimeProviderBundle(
       "session.background-schedule",
       "runtime",
     ),
-    sessionCommandRoutes: services.routeOptions.sessionCommandRoutes,
+    sessionCommandRoutes: {
+      ...services.routeOptions.sessionCommandRoutes,
+      createSessionLifecycle: sessionCreateLifecycle,
+    },
     sessionHistoryRoutes: { ...sessionHistoryRoutes, accessProvider },
     sessionSnapshotRoutes: services.routeOptions.sessionSnapshotRoutes,
     sseReplayRoutes: {

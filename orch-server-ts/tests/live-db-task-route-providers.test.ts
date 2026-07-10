@@ -227,6 +227,117 @@ describe("live DB task route providers", () => {
     ]);
   });
 
+  it("creates a task-scoped linked child with the Python start_child_session operation", async () => {
+    const harness = createSqlHarness((text, values) => {
+      if (text.includes("WHERE idempotency_key")) return [];
+      if (text.includes("COALESCE(MAX(position_key)")) return [{ position_key: 2 }];
+      if (text.includes("INSERT INTO task_items")) {
+        return [taskRow({
+          id: String(values[0]),
+          parent_id: values[1],
+          position_key: values[2],
+          title: values[3],
+          verification_owner: values[6],
+          status: values[7],
+          linked_session_id: values[8],
+          linked_node_id: values[9],
+          active_for_session_id: values[10],
+          created_from_session_id: values[11],
+          navigation_session_id: values[12],
+          navigation_node_id: values[13],
+        })];
+      }
+      if (text.includes("INSERT INTO task_operations")) {
+        return [operationRow({
+          id: String(values[0]),
+          task_id: values[1],
+          operation_type: values[2],
+          actor_session_id: values[3],
+          idempotency_key: values[4],
+          payload_json: JSON.parse(String(values[5])),
+        })];
+      }
+      if (text.includes("event_append")) return [{ event_id: 55 }];
+      if (text.includes("UPDATE task_operations")) {
+        return [operationRow({
+          id: String(values[1]),
+          task_id: "task-child",
+          operation_type: "start_child_session",
+          actor_session_id: "owner-session",
+          actor_event_id: values[0],
+          idempotency_key: "idem-child",
+        })];
+      }
+      if (text.includes("created_from_event_id")) {
+        return [taskRow({
+          id: String(values[2]),
+          parent_id: "parent-task",
+          title: "하위 대화 내용",
+          verification_owner: "both",
+          status: "in_progress",
+          linked_session_id: "child-session",
+          linked_node_id: "node-a",
+          active_for_session_id: "child-session",
+          created_from_session_id: "owner-session",
+          created_from_event_id: values[0],
+          navigation_session_id: "child-session",
+          navigation_node_id: "node-a",
+          navigation_event_id: values[1],
+        })];
+      }
+      if (text.includes("FROM sessions")) return [sessionRow("child-session")];
+      return [];
+    });
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    const result = await repository.taskMutationProvider.createTaskScopedChild({
+      parentTask: {
+        id: "parent-task",
+        title: "Parent task",
+        status: "in_progress",
+        navigationSessionId: "owner-session",
+      },
+      childSessionId: "child-session",
+      childNodeId: "node-a",
+      prompt: "하위 대화 내용\nsecond line",
+      idempotencyKey: "idem-child",
+    });
+
+    expect(result).toMatchObject({
+      task: {
+        parentId: "parent-task",
+        verificationOwner: "both",
+        status: "in_progress",
+        linkedSessionId: "child-session",
+        linkedNodeId: "node-a",
+        activeForSessionId: "child-session",
+        createdFromSessionId: "owner-session",
+        navigationSessionId: "child-session",
+      },
+      operation: {
+        operationType: "start_child_session",
+        actorSessionId: "owner-session",
+        actorEventId: 55,
+        idempotencyKey: "idem-child",
+      },
+      eventId: 55,
+    });
+    const operationCall = harness.calls.find((call) =>
+      call.text.includes("INSERT INTO task_operations")
+    );
+    expect(operationCall?.values.slice(2, 5)).toEqual([
+      "start_child_session",
+      "owner-session",
+      "idem-child",
+    ]);
+    expect(JSON.parse(String(operationCall?.values[5]))).toMatchObject({
+      parent_task_id: "parent-task",
+      linked_session_id: "child-session",
+      linked_node_id: "node-a",
+      status: "in_progress",
+    });
+  });
+
   it("rejects move cycles before writing", async () => {
     const harness = createSqlHarness();
     const repository = createLiveDbCatalogRepository({ sql: harness.sql });

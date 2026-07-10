@@ -7,6 +7,10 @@ import type {
   TaskMutationRouteProvider,
 } from "../tasks/task_mutation_routes.js";
 import type { CreateTaskPayload } from "../tasks/task_mutation_payloads.js";
+import type {
+  CreateTaskScopedChildInput,
+  TaskScopedSessionProvider,
+} from "../session/session_create_lifecycle.js";
 import type { LiveDbSqlResolver, LivePostgresSql } from "./live_db_sql.js";
 import { serializeTaskRow } from "./live_session_serialization.js";
 import {
@@ -35,6 +39,17 @@ export type CreateLiveTaskMutationProviderOptions = {
   readonly registry?: InMemoryNodeRegistry;
 };
 
+export type LiveTaskMutationProvider =
+  & TaskMutationRouteProvider
+  & TaskScopedSessionProvider;
+
+type CreateTaskOperationOptions = {
+  readonly actorSessionId?: string;
+  readonly createdFromSessionId?: string;
+  readonly operationType?: string;
+  readonly operationPayload?: Record<string, unknown>;
+};
+
 type OperationInput = {
   readonly actorSessionId: string;
   readonly task: Record<string, unknown> | null;
@@ -51,7 +66,7 @@ type RecordedOperation = {
 
 export function createLiveTaskMutationProvider(
   options: CreateLiveTaskMutationProviderOptions,
-): TaskMutationRouteProvider {
+): LiveTaskMutationProvider {
   return {
     async createTask(payload) {
       const sql = await options.sqlResolver.resolveSql();
@@ -172,13 +187,78 @@ export function createLiveTaskMutationProvider(
       const sql = await options.sqlResolver.resolveSql();
       return listTaskOperations(sql, taskId, query);
     },
+    async findTaskScopedSession(idempotencyKey) {
+      const sql = await options.sqlResolver.resolveSql();
+      return idempotentResult(sql, idempotencyKey, options);
+    },
+    async getTask(taskId) {
+      const sql = await options.sqlResolver.resolveSql();
+      const rows = await sql`
+        SELECT * FROM task_items
+        WHERE id = ${taskId} AND archived = FALSE
+        LIMIT 1
+      `;
+      return serializeTaskWithLinkedSession(sql, rows[0], {
+        registry: options.registry,
+      });
+    },
+    async createTaskScopedChild(input) {
+      const sql = await options.sqlResolver.resolveSql();
+      const existing = input.idempotencyKey === undefined
+        ? null
+        : await idempotentResult(sql, input.idempotencyKey, options);
+      if (existing !== null) return existing;
+      return createTaskScopedChild(sql, input, options);
+    },
   };
+}
+
+async function createTaskScopedChild(
+  sql: LivePostgresSql,
+  input: CreateTaskScopedChildInput,
+  options: CreateLiveTaskMutationProviderOptions,
+): Promise<TaskMutationResponse> {
+  const parent = input.parentTask;
+  const actorSessionId = firstString(
+    parent.navigationSessionId,
+    parent.linkedSessionId,
+    parent.createdFromSessionId,
+    input.childSessionId,
+  );
+  const payload: CreateTaskPayload = {
+    sessionId: input.childSessionId,
+    title: childTitle(input.prompt),
+    description: "",
+    acceptanceCriteria: "",
+    verificationOwner: "both",
+    parentTaskId: parent.id,
+    status: "in_progress",
+    setActive: true,
+    idempotencyKey: input.idempotencyKey,
+    linkedSessionId: input.childSessionId,
+    linkedNodeId: input.childNodeId ?? undefined,
+    navigationSessionId: input.childSessionId,
+    navigationNodeId: input.childNodeId ?? undefined,
+  };
+  return createTask(sql, payload, options, {
+    actorSessionId,
+    createdFromSessionId: actorSessionId,
+    operationType: "start_child_session",
+    operationPayload: {
+      parent_task_id: parent.id,
+      linked_session_id: input.childSessionId,
+      linked_node_id: input.childNodeId,
+      title: payload.title,
+      status: "in_progress",
+    },
+  });
 }
 
 async function createTask(
   sql: LivePostgresSql,
   payload: CreateTaskPayload,
   options: CreateLiveTaskMutationProviderOptions,
+  operationOptions: CreateTaskOperationOptions = {},
 ): Promise<TaskMutationResponse> {
   const positionKey = await nextPositionKey(sql, payload.parentTaskId);
   const taskId = randomUUID();
@@ -209,25 +289,26 @@ async function createTask(
       ${payload.description}, ${payload.acceptanceCriteria},
       ${payload.verificationOwner}, ${payload.status},
       ${payload.linkedSessionId ?? null}, ${payload.linkedNodeId ?? null},
-      ${payload.setActive ? payload.sessionId : null}, ${payload.sessionId},
+      ${payload.setActive ? payload.sessionId : null},
+      ${operationOptions.createdFromSessionId ?? payload.sessionId},
       ${navigationSessionId}, ${navigationNodeId}, ${payload.navigationEventId ?? null}
     )
     RETURNING *
   `;
   let task = requireTaskRow(rows);
   const recorded = await recordOperation(sql, {
-    actorSessionId: payload.sessionId,
+    actorSessionId: operationOptions.actorSessionId ?? payload.sessionId,
     task,
-    operationType: "create_task_item",
-    payload: {
-      title: payload.title,
-      parent_task_id: payload.parentTaskId,
-      linked_session_id: payload.linkedSessionId,
-      linked_node_id: payload.linkedNodeId,
-      navigation_session_id: navigationSessionId,
-      navigation_node_id: navigationNodeId,
-      navigation_event_id: payload.navigationEventId,
-    },
+    operationType: operationOptions.operationType ?? "create_task_item",
+    payload: operationOptions.operationPayload ?? {
+        title: payload.title,
+        parent_task_id: payload.parentTaskId,
+        linked_session_id: payload.linkedSessionId,
+        linked_node_id: payload.linkedNodeId,
+        navigation_session_id: navigationSessionId,
+        navigation_node_id: navigationNodeId,
+        navigation_event_id: payload.navigationEventId,
+      },
     idempotencyKey: payload.idempotencyKey,
   });
   const useOperationAnchor =
@@ -241,6 +322,21 @@ async function createTask(
     useOperationAnchor ? recorded.eventId : payload.navigationEventId ?? null,
   );
   return mutationResponse(sql, task, recorded.operation, recorded.eventId, options);
+}
+
+function childTitle(prompt: string): string {
+  const firstLine = prompt.split("\n").find((line) => line.trim().length > 0)?.trim() ?? "";
+  if (firstLine.length === 0) return "하위 대화";
+  if (firstLine.length <= 80) return firstLine;
+  return `${firstLine.slice(0, 79).trimEnd()}…`;
+}
+
+function firstString(
+  ...values: readonly (string | null | undefined)[]
+): string {
+  return values.find((value): value is string =>
+    typeof value === "string" && value.length > 0
+  ) ?? "";
 }
 
 async function idempotentResult(

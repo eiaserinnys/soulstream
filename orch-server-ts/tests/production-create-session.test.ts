@@ -85,6 +85,7 @@ describe("production create-session route", () => {
         prompt: "hello from dashboard",
         agentId: "roselin_codex",
         folderId: "folder-a",
+        caller_info: { source: "browser" },
       });
       expect(response.statusCode).toBe(201);
       expect(response.json()).toEqual({

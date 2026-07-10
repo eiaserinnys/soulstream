@@ -19,9 +19,16 @@ export type LiveAuthenticatedEmailResolver = (
   request: FastifyRequest,
 ) => Promise<string | null>;
 
+export type LiveCallerInfoResolver = (
+  request: FastifyRequest,
+  bodyCallerInfo: Record<string, unknown> | null | undefined,
+  systemNodeId: string,
+) => Promise<Record<string, unknown>>;
+
 export type LiveAuthenticatedUserResolvers = {
   readonly resolveUser: LiveAuthenticatedUserResolver;
   readonly resolveEmail: LiveAuthenticatedEmailResolver;
+  readonly resolveCallerInfo: LiveCallerInfoResolver;
 };
 
 export function createLiveAuthenticatedUserResolvers(
@@ -38,6 +45,37 @@ export function createLiveAuthenticatedUserResolvers(
     resolveUser,
     async resolveEmail(request) {
       return (await resolveUser(request))?.email ?? null;
+    },
+    async resolveCallerInfo(request, bodyCallerInfo, systemNodeId) {
+      if (bodyCallerInfo !== null && bodyCallerInfo !== undefined &&
+        Object.keys(bodyCallerInfo).length > 0) {
+        return bodyCallerInfo;
+      }
+      const user = await resolveUser(request);
+      if (user !== null && !user.name) {
+        return {
+          source: "system",
+          agent_node: systemNodeId,
+          display_name: "Soulstream",
+          user_id: null,
+          avatar_url: "/api/system/portraits/system",
+        };
+      }
+      const callerInfo: Record<string, unknown> = {
+        source: "browser",
+        ip: request.ip ?? null,
+        user_agent: headerString(request.headers["user-agent"]) ?? null,
+        referer: headerString(request.headers.referer) ?? null,
+        forwarded_for: headerString(request.headers["x-forwarded-for"]) ?? null,
+      };
+      if (user !== null) {
+        if (user.name) callerInfo.display_name = user.name;
+        const userId = user.email || user.sub;
+        if (userId) callerInfo.user_id = userId;
+        if (user.picture) callerInfo.avatar_url = user.picture;
+        if (user.email) callerInfo.email = user.email;
+      }
+      return callerInfo;
     },
   };
 }
