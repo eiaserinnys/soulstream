@@ -14,7 +14,6 @@ import {
 import type {
   CreateSessionNodeCommandPayload,
   InMemoryNodeRegistry,
-  NodeConnectionSnapshot,
 } from "../node/registry.js";
 import {
   PendingNodeCommandRejectedError,
@@ -30,6 +29,10 @@ import {
   type SessionCommandTransportBridge,
 } from "../session/session_command_transport.js";
 import type { InterveneNodeCommandPayload } from "../session/session_action_command_payloads.js";
+import {
+  SessionCreateNodeSelectionError,
+  selectNodeForSessionCreate,
+} from "../session/session_create_node_selector.js";
 import type {
   RuntimeSessionEvent,
   RuntimeSessionEventHub,
@@ -53,13 +56,16 @@ export function createLiveExecuteProxyRouteProvider(
 
   return {
     executeNew: async (payload) => {
-      const selected = selectNodeForNewExecute(options.registry, payload);
       const agentSessionId = generateSessionId();
       const queue = new SessionEventQueue(
         options.sessionEventHub,
         agentSessionId,
       );
       try {
+        const selected = selectNodeForSessionCreate(options.registry, {
+          nodeId: payload.nodeId,
+          profileId: payload.profile,
+        });
         const commandPayload = createSessionCommandPayload({
           payload,
           agentSessionId,
@@ -213,100 +219,11 @@ function interveneCommandPayload(
   return command;
 }
 
-function selectNodeForNewExecute(
-  registry: InMemoryNodeRegistry,
-  payload: ExecuteProxyNewProviderRequest,
-): { node: NodeConnectionSnapshot; backend: string } {
-  if (payload.nodeId !== undefined) {
-    const node = registry.getConnectedNode(payload.nodeId);
-    if (node === undefined) {
-      throw new ExecuteProxyRouteError(404, `Node ${payload.nodeId} not found`);
-    }
-    const backend = backendForProfile(node, payload.profile, 404);
-    if (backend === undefined) {
-      throw new ExecuteProxyRouteError(
-        404,
-        `Agent profile '${payload.profile}' is not registered on node ${payload.nodeId}`,
-      );
-    }
-    assertNodeSupportsBackend(node, backend, payload.nodeId);
-    return { node, backend };
-  }
-
-  const nodes = registry.listConnectedNodes();
-  if (nodes.length === 0) {
-    throw new ExecuteProxyRouteError(503, "No nodes available");
-  }
-
-  const eligible = nodes.flatMap((node) => {
-    const backend = backendForProfile(node, payload.profile, undefined);
-    return backend === undefined ? [] : [{ node, backend }];
-  });
-  if (eligible.length === 0) {
-    throw new ExecuteProxyRouteError(
-      404,
-      `Agent profile '${payload.profile}' is not registered on any connected node`,
-    );
-  }
-
-  const compatible = eligible.filter(({ node, backend }) =>
-    node.supportedBackends.includes(backend),
-  );
-  if (compatible.length === 0) {
-    throw new ExecuteProxyRouteError(
-      409,
-      `Agent profile '${payload.profile}' is registered on connected nodes but none supports its configured backend`,
-    );
-  }
-
-  const [selected] = compatible.sort((left, right) => {
-    const sessionDelta =
-      registry.sessionCache.getSessionsForNode(left.node.nodeId).length -
-      registry.sessionCache.getSessionsForNode(right.node.nodeId).length;
-    return sessionDelta === 0
-      ? left.node.nodeId.localeCompare(right.node.nodeId)
-      : sessionDelta;
-  });
-  if (selected === undefined) {
-    throw new ExecuteProxyRouteError(503, "No compatible nodes available");
-  }
-  return selected;
-}
-
-function backendForProfile(
-  node: NodeConnectionSnapshot,
-  profile: string,
-  missingStatus: 404 | undefined,
-): string | undefined {
-  const agent = node.agents
-    .filter(isRecord)
-    .find((candidate) => candidate.id === profile);
-  if (agent === undefined) {
-    if (missingStatus === undefined) return undefined;
-    throw new ExecuteProxyRouteError(
-      missingStatus,
-      `Agent profile '${profile}' is not registered on node ${node.nodeId}`,
-    );
-  }
-  return typeof agent.backend === "string" && agent.backend.length > 0
-    ? agent.backend
-    : "claude";
-}
-
-function assertNodeSupportsBackend(
-  node: NodeConnectionSnapshot,
-  backend: string,
-  nodeId: string,
-): void {
-  if (node.supportedBackends.includes(backend)) return;
-  throw new ExecuteProxyRouteError(
-    409,
-    `Node ${nodeId} does not support backend '${backend}' (supports: ${node.supportedBackends.join(",")})`,
-  );
-}
-
 function mapCommandError(error: unknown, ackErrorStatus: number): ExecuteProxyRouteError {
   if (error instanceof ExecuteProxyRouteError) return error;
+  if (error instanceof SessionCreateNodeSelectionError) {
+    return new ExecuteProxyRouteError(error.statusCode, error.message);
+  }
   if (error instanceof SessionCommandRouteError) {
     return new ExecuteProxyRouteError(
       error.code === "SESSION_OWNER_MISSING" ? 404 : 503,

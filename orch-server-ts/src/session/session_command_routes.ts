@@ -20,6 +20,7 @@ import {
   type PreparedSessionCreate,
   type SessionCreateLifecycle,
 } from "./session_create_lifecycle.js";
+import { SessionCreateNodeSelectionError } from "./session_create_node_selector.js";
 
 export type SessionCommandRouteOptions = {
   router: SessionCommandRouter;
@@ -213,6 +214,17 @@ function serviceUnavailable(
 }
 
 function sendMappedError(reply: FastifyReply, error: unknown): FastifyReply {
+  if (error instanceof SessionCreateNodeSelectionError) {
+    return reply.code(error.statusCode).send({
+      error: {
+        code: error.code,
+        message: error.message,
+        nodeId: error.nodeId,
+        profile: error.profileId,
+        backend: error.backend,
+      },
+    });
+  }
   if (error instanceof SessionCreateLifecycleError) {
     return reply.code(error.statusCode).send({
       error: {
