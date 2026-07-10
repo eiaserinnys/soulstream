@@ -20,12 +20,23 @@ type TestWebSocket = {
   close: () => void;
   send: (data: string) => void;
   terminate: () => void;
-  on: (event: "close", handler: (code: number, reason: Buffer) => void) => void;
+  on: {
+    (event: "close", handler: (code: number, reason: Buffer) => void): void;
+    (event: "message", handler: (data: string | Buffer | ArrayBuffer) => void): void;
+  };
 };
 
 type WebSocketInjectableApp = {
-  injectWS: (path: string) => Promise<TestWebSocket>;
+  injectWS: (path: string, upgradeContext?: {
+    headers?: Record<string, string>;
+  }) => Promise<TestWebSocket>;
 };
+
+const productionConfig = parseOrchServerConfig({
+  environment: "production",
+  databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
+  authBearerToken: "production-service-token",
+});
 
 describe("Node WS Fastify route harness", () => {
   const fixture = loadContractFixtures().fakeNodeReconnect;
@@ -39,7 +50,6 @@ describe("Node WS Fastify route harness", () => {
       registry: new InMemoryNodeRegistry({
         sessionCache,
         nowMs: () => nowMs,
-        heartbeatTimeoutMs: 1_000,
       }),
       sessionCache,
     };
@@ -56,6 +66,74 @@ describe("Node WS Fastify route harness", () => {
     await app.close();
   });
 
+  it("rejects unauthenticated and invalid bearer handshakes before upgrade", async () => {
+    const { registry } = createRegistry();
+    const app = createApp({
+      config: productionConfig,
+      nodeWsRoute: { registry },
+    });
+
+    await app.ready();
+    const injectable = app as unknown as WebSocketInjectableApp;
+    await expect(injectable.injectWS("/ws/node")).rejects.toThrow(
+      "Unexpected server response: 401",
+    );
+    await expect(
+      injectable.injectWS("/ws/node", {
+        headers: { authorization: "Bearer wrong-token" },
+      }),
+    ).rejects.toThrow("Unexpected server response: 403");
+    expect(registry.listConnectedNodes()).toEqual([]);
+
+    await app.close();
+  });
+
+  it("rejects production handshakes when AUTH_BEARER_TOKEN is not configured", async () => {
+    const { registry } = createRegistry();
+    const app = createApp({
+      config: parseOrchServerConfig({
+        environment: "production",
+        databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
+        authBearerToken: "",
+      }),
+      nodeWsRoute: { registry },
+    });
+
+    await app.ready();
+    await expect(
+      (app as unknown as WebSocketInjectableApp).injectWS("/ws/node"),
+    ).rejects.toThrow("Unexpected server response: 503");
+
+    await app.close();
+  });
+
+  it("accepts a valid production bearer and registers the node", async () => {
+    const { registry } = createRegistry();
+    const resolveTokenAccess = vi.fn(async () => ({
+      ok: false as const,
+      statusCode: 401,
+      detail: "HTTP auth should not own node WebSocket authentication",
+    }));
+    const app = createApp({
+      config: productionConfig,
+      productionAuth: { resolveTokenAccess },
+      nodeWsRoute: { registry },
+    });
+
+    await app.ready();
+    const ws = await injectAuthenticatedWs(app, "production-service-token");
+    ws.send(JSON.stringify(fixture.registration));
+    await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
+    expect(registry.getConnectedNode("fake-node")).toMatchObject({
+      nodeId: "fake-node",
+      status: "connected",
+    });
+    expect(resolveTokenAccess).not.toHaveBeenCalled();
+
+    ws.terminate();
+    await app.close();
+  });
+
   it("wires register, refresh, message relay, and close through a per-connection controller", async () => {
     const { registry, sessionCache } = createRegistry();
     const app = createApp({
@@ -64,7 +142,7 @@ describe("Node WS Fastify route harness", () => {
     });
 
     await app.ready();
-    const ws = await (app as unknown as WebSocketInjectableApp).injectWS("/ws/node");
+    const ws = await injectAuthenticatedWs(app);
     ws.send(JSON.stringify(fixture.registration));
     await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
     const registered = registry.getConnectedNode("fake-node");
@@ -121,6 +199,52 @@ describe("Node WS Fastify route harness", () => {
     await app.close();
   });
 
+  it("echoes the same sentAt in pong across two heartbeat windows", async () => {
+    const { registry } = createRegistry();
+    const app = createApp({
+      config: explicitTestConfig,
+      nodeWsRoute: { registry },
+    });
+
+    await app.ready();
+    const ws = await injectAuthenticatedWs(app);
+    ws.send(JSON.stringify(fixture.registration));
+    await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
+
+    for (const sentAt of ["2026-07-10T06:00:00.000Z", "2026-07-10T06:00:30.000Z"]) {
+      const pong = waitForMessage(ws);
+      ws.send(JSON.stringify({ type: "app_heartbeat_ping", sentAt }));
+      await expect(pong).resolves.toBe(
+        JSON.stringify({ type: "app_heartbeat_pong", sentAt }),
+      );
+      expect(registry.getConnectedNode("fake-node")).toMatchObject({
+        status: "connected",
+        heartbeat: { lastPingAtMs: 1_700_000_000_000 },
+      });
+    }
+
+    ws.terminate();
+    await app.close();
+  });
+
+  it("closes an unregistered connection when the registration deadline expires", async () => {
+    const { registry } = createRegistry();
+    const app = createApp({
+      config: explicitTestConfig,
+      nodeWsRoute: { registry, registrationTimeoutMs: 20 },
+    });
+
+    await app.ready();
+    const ws = await injectAuthenticatedWs(app);
+    await expect(waitForClose(ws)).resolves.toEqual({
+      code: 4001,
+      reason: "registration timeout",
+    });
+    expect(registry.listConnectedNodes()).toEqual([]);
+
+    await app.close();
+  });
+
   it("closes invalid JSON with an observable protocol error", async () => {
     const { registry } = createRegistry();
     const app = createApp({
@@ -129,7 +253,7 @@ describe("Node WS Fastify route harness", () => {
     });
 
     await app.ready();
-    const ws = await (app as unknown as WebSocketInjectableApp).injectWS("/ws/node");
+    const ws = await injectAuthenticatedWs(app);
     const closed = waitForClose(ws);
     ws.send("{not-json");
 
@@ -150,7 +274,7 @@ describe("Node WS Fastify route harness", () => {
     });
 
     await app.ready();
-    const ws = await (app as unknown as WebSocketInjectableApp).injectWS("/ws/node");
+    const ws = await injectAuthenticatedWs(app);
     const closed = waitForClose(ws);
     ws.send(JSON.stringify({ type: "event" }));
 
@@ -172,7 +296,7 @@ describe("Node WS Fastify route harness", () => {
     });
 
     await app.ready();
-    const ws = await (app as unknown as WebSocketInjectableApp).injectWS("/ws/node");
+    const ws = await injectAuthenticatedWs(app);
 
     expect(transportHub.listAttached()).toEqual([]);
 
@@ -191,6 +315,28 @@ describe("Node WS Fastify route harness", () => {
     await app.close();
   });
 
+  it("cleans registry and transport once when socket close is followed by app shutdown", async () => {
+    const { registry } = createRegistry();
+    const disconnectNode = vi.spyOn(registry, "disconnectNode");
+    const transportHub = new NodeCommandTransportHub();
+    const app = createApp({
+      config: explicitTestConfig,
+      nodeWsRoute: { registry, transportHub },
+    });
+
+    await app.ready();
+    const ws = await injectAuthenticatedWs(app);
+    ws.send(JSON.stringify(fixture.registration));
+    await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
+
+    ws.terminate();
+    await waitFor(() => registry.getConnectedNode("fake-node") === undefined);
+    await app.close();
+
+    expect(disconnectNode).toHaveBeenCalledTimes(1);
+    expect(transportHub.listAttached()).toEqual([]);
+  });
+
   it("closes unsupported non-object JSON payloads instead of dropping them", async () => {
     const { registry } = createRegistry();
     const app = createApp({
@@ -199,7 +345,7 @@ describe("Node WS Fastify route harness", () => {
     });
 
     await app.ready();
-    const ws = await (app as unknown as WebSocketInjectableApp).injectWS("/ws/node");
+    const ws = await injectAuthenticatedWs(app);
     const closed = waitForClose(ws);
     ws.send(JSON.stringify(["node_register"]));
 
@@ -221,18 +367,14 @@ describe("Node WS Fastify route harness", () => {
     });
 
     await app.ready();
-    const oldWs = await (app as unknown as WebSocketInjectableApp).injectWS(
-      "/ws/node",
-    );
+    const oldWs = await injectAuthenticatedWs(app);
     oldWs.send(JSON.stringify(fixture.registration));
     await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
     const firstConnectionId = requireDefined(
       registry.getConnectedNode("fake-node")?.connectionId,
     );
 
-    const currentWs = await (app as unknown as WebSocketInjectableApp).injectWS(
-      "/ws/node",
-    );
+    const currentWs = await injectAuthenticatedWs(app);
     currentWs.send(JSON.stringify(fixture.registration));
     await waitFor(
       () =>
@@ -285,7 +427,7 @@ describe("Node WS Fastify route harness", () => {
     });
 
     await app.ready();
-    const ws = await (app as unknown as WebSocketInjectableApp).injectWS("/ws/node");
+    const ws = await injectAuthenticatedWs(app);
     ws.send(JSON.stringify(fixture.registration));
     await waitFor(() => registry.getConnectedNode("fake-node") !== undefined);
 
@@ -315,13 +457,25 @@ describe("Node WS Fastify route harness", () => {
   });
 });
 
-function waitForClose(
-  ws: TestWebSocket,
-): Promise<{ code: number; reason: string }> {
+function waitForClose(ws: TestWebSocket): Promise<{ code: number; reason: string }> {
   return new Promise((resolve) => {
     ws.on("close", (code, reason) => {
       resolve({ code, reason: reason.toString("utf8") });
     });
+  });
+}
+
+function waitForMessage(ws: TestWebSocket): Promise<string> {
+  return new Promise((resolve) => {
+    ws.on("message", (data) => {
+      resolve(Buffer.isBuffer(data) ? data.toString("utf8") : String(data));
+    });
+  });
+}
+
+function injectAuthenticatedWs(app: unknown, token = "test-token"): Promise<TestWebSocket> {
+  return (app as WebSocketInjectableApp).injectWS("/ws/node", {
+    headers: { authorization: `Bearer ${token}` },
   });
 }
 
@@ -335,9 +489,8 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   }
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const delay = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 function requireDefined<TValue>(value: TValue | undefined): TValue {
   if (value === undefined) {

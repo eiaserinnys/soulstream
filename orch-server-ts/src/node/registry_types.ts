@@ -31,8 +31,8 @@ export type SessionOwner = CachedNodeSession & {
 };
 
 export type NodeHeartbeatState = {
+  // Observability only. The worker owns heartbeat liveness and closes its socket.
   supported: boolean;
-  timeoutMs: number;
   lastPingAtMs: number | undefined;
   lastPongAtMs: number | undefined;
 };
@@ -192,7 +192,6 @@ export type NodeMessageSource =
 export type InMemoryNodeRegistryOptions = {
   sessionCache?: PerNodeSessionCache;
   nowMs?: () => number;
-  heartbeatTimeoutMs?: number;
   requestIdGenerator?: NodeCommandRequestIdGenerator;
 };
 

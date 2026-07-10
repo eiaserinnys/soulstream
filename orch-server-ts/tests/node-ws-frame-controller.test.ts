@@ -21,7 +21,6 @@ describe("Node WS frame controller primitive", () => {
     const registry = new InMemoryNodeRegistry({
       sessionCache,
       nowMs: () => nowMs,
-      heartbeatTimeoutMs: 1_000,
       requestIdGenerator: ({ sequence, commandType }) =>
         `frame-${commandType}-${sequence}`,
     });
@@ -86,6 +85,25 @@ describe("Node WS frame controller primitive", () => {
       nodeId: "fake-node",
       fresh: true,
       lastEventId: 1,
+    });
+  });
+
+  it("records app heartbeat ping and emits a pong with the same sentAt", () => {
+    const { controller } = createController();
+    const registered = controller.handleFrame(
+      fixture.registration as NodeRegistrationPayload,
+    );
+    if (registered.type !== "registered") throw new Error("registration failed");
+
+    const sentAt = "2026-07-10T06:00:00.000Z";
+    expect(
+      controller.handleFrame({ type: "app_heartbeat_ping", sentAt }),
+    ).toEqual({
+      type: "message",
+      nodeId: "fake-node",
+      connectionId: registered.connectionId,
+      events: [{ type: "node_heartbeat_ping", nodeId: "fake-node" }],
+      outboundFrames: [{ type: "app_heartbeat_pong", sentAt }],
     });
   });
 
@@ -199,7 +217,6 @@ describe("Node WS frame controller primitive", () => {
     const sessionCache = new PerNodeSessionCache();
     const registry = new InMemoryNodeRegistry({
       sessionCache,
-      heartbeatTimeoutMs: 1_000,
     });
     const oldController = new NodeWsFrameController({ registry });
     const currentController = new NodeWsFrameController({ registry });

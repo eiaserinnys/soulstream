@@ -61,7 +61,6 @@ export type {
 
 export class InMemoryNodeRegistry {
   readonly sessionCache: PerNodeSessionCache;
-  readonly heartbeatTimeoutMs: number;
 
   private readonly nowMs: () => number;
   private readonly requestIdGenerator: NodeCommandRequestIdGenerator | undefined;
@@ -69,16 +68,8 @@ export class InMemoryNodeRegistry {
   private connectionSequence = 0;
 
   constructor(options: InMemoryNodeRegistryOptions = {}) {
-    const heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? 30_000;
-    if (!Number.isInteger(heartbeatTimeoutMs) || heartbeatTimeoutMs <= 0) {
-      throw new Error(
-        `heartbeatTimeoutMs must be a positive integer: ${heartbeatTimeoutMs}`,
-      );
-    }
-
     this.sessionCache = options.sessionCache ?? new PerNodeSessionCache();
     this.nowMs = options.nowMs ?? Date.now;
-    this.heartbeatTimeoutMs = heartbeatTimeoutMs;
     this.requestIdGenerator = options.requestIdGenerator;
   }
 
@@ -123,7 +114,6 @@ export class InMemoryNodeRegistry {
       lastSeenAtMs: nowMs,
       heartbeat: {
         supported: supportsAppHeartbeat(registration.capabilities),
-        timeoutMs: this.heartbeatTimeoutMs,
         lastPingAtMs: undefined,
         lastPongAtMs: undefined,
       },
@@ -433,18 +423,6 @@ export class InMemoryNodeRegistry {
       connected:
         node?.connected === true && node.connectionId === session.connectionId,
     };
-  }
-
-  sweepHeartbeatTimeouts(nowMs = this.nowMs()): NodeUnregisteredEvent[] {
-    const events: NodeUnregisteredEvent[] = [];
-
-    for (const node of this.nodes.values()) {
-      if (!node.connected || !node.heartbeat.supported) continue;
-      if (nowMs < node.lastSeenAtMs + this.heartbeatTimeoutMs) continue;
-      events.push(this.disconnectCurrentNode(node, nowMs, "heartbeat_timeout"));
-    }
-
-    return events;
   }
 
   private requireConnectedNode(nodeId: string): MutableNodeConnection {

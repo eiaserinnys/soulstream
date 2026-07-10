@@ -13,14 +13,24 @@ import type {
   NodeCommandTransportAttachment,
   NodeCommandTransportHub,
 } from "./transport_hub.js";
+import { verifyNodeWsBearer } from "./ws_auth.js";
 
 const INVALID_JSON_CLOSE_CODE = 1003;
 const POLICY_VIOLATION_CLOSE_CODE = 1008;
+const REGISTRATION_TIMEOUT_CLOSE_CODE = 4001;
+const INTERNAL_ERROR_CLOSE_CODE = 1011;
+const DEFAULT_REGISTRATION_TIMEOUT_MS = 10_000;
 
 export type NodeWsRouteOptions = {
   registry: InMemoryNodeRegistry;
   transportHub?: NodeCommandTransportHub;
   eventSink?: NodeRegistryEventSink;
+  registrationTimeoutMs?: number;
+};
+
+export type NodeWsRouteSecurity = {
+  environment: string;
+  authBearerToken: string;
 };
 
 export type NodeRegistryEventSink = (events: NodeRegistryEvent[]) => void;
@@ -32,25 +42,83 @@ export const nodeWsRouteAuthRequirements = {
 export function registerNodeWsRoute(
   app: FastifyInstance,
   options: NodeWsRouteOptions,
+  security: NodeWsRouteSecurity,
 ): void {
+  const registrationTimeoutMs = resolveRegistrationTimeoutMs(
+    options.registrationTimeoutMs,
+  );
   app.register(websocket);
   app.after(() => {
-    app.get("/ws/node", { websocket: true }, (socket) => {
+    app.get("/ws/node", {
+      websocket: true,
+      preValidation: async (request, reply) => {
+        const auth = verifyNodeWsBearer({
+          environment: security.environment,
+          configuredToken: security.authBearerToken,
+          authorization: request.headers.authorization,
+        });
+        if (!auth.ok) {
+          return reply.code(auth.statusCode).send({ detail: auth.detail });
+        }
+      },
+    }, (socket) => {
       const controller = new NodeWsFrameController({ registry: options.registry });
       const transport: NodeCommandTransport = {
         send: (data) => socket.send(data),
       };
       let attachment: NodeCommandTransportAttachment | undefined;
+      let finalized = false;
+      let registrationTimer: ReturnType<typeof setTimeout> | undefined;
+
+      const finalize = (reason: string): void => {
+        if (finalized) return;
+        finalized = true;
+        clearRegistrationTimer();
+        detachTransport(options.transportHub, attachment);
+        attachment = undefined;
+        emitEvents(
+          options.eventSink,
+          eventsFromControllerCloseResult(controller.close(reason)),
+        );
+      };
+      const closeAndFinalize = (
+        code: number,
+        reason: string,
+        cleanupReason = reason,
+      ): void => {
+        try {
+          socket.close(code, reason);
+        } catch {
+          // The socket may already be broken; canonical cleanup still runs below.
+        } finally {
+          finalize(cleanupReason);
+        }
+      };
+      const clearRegistrationTimer = (): void => {
+        if (registrationTimer === undefined) return;
+        clearTimeout(registrationTimer);
+        registrationTimer = undefined;
+      };
+
+      registrationTimer = setTimeout(() => {
+        closeAndFinalize(
+          REGISTRATION_TIMEOUT_CLOSE_CODE,
+          "registration timeout",
+          "registration_timeout",
+        );
+      }, registrationTimeoutMs);
 
       socket.on("message", (payload) => {
+        if (finalized) return;
         const parsed = parseJsonFrame(payload);
         if (!parsed.ok) {
-          socket.close(parsed.closeCode, parsed.reason);
+          closeAndFinalize(parsed.closeCode, parsed.reason);
           return;
         }
 
         const result = controller.handleFrame(parsed.frame);
         if (result.type === "registered" && options.transportHub !== undefined) {
+          clearRegistrationTimer();
           for (const event of result.events) {
             if (event.type === "node_unregistered") {
               options.transportHub.detach({
@@ -66,31 +134,50 @@ export function registerNodeWsRoute(
             transport,
           };
           options.transportHub.attach(attachment);
+        } else if (result.type === "registered") {
+          clearRegistrationTimer();
         }
         if (result.type === "registration_rejected") {
-          socket.close(POLICY_VIOLATION_CLOSE_CODE, result.code);
+          closeAndFinalize(POLICY_VIOLATION_CLOSE_CODE, result.code);
+          return;
         }
         emitEvents(options.eventSink, eventsFromControllerResult(result));
+
+        if (result.type === "message" && result.outboundFrames !== undefined) {
+          try {
+            for (const frame of result.outboundFrames) {
+              socket.send(JSON.stringify(frame));
+            }
+          } catch {
+            closeAndFinalize(
+              INTERNAL_ERROR_CLOSE_CODE,
+              "websocket send failed",
+              "websocket_send_error",
+            );
+          }
+        }
       });
 
       socket.on("close", () => {
-        detachTransport(options.transportHub, attachment);
-        attachment = undefined;
-        emitEvents(
-          options.eventSink,
-          eventsFromControllerCloseResult(controller.close("websocket_close")),
-        );
+        finalize("websocket_close");
       });
       socket.on("error", () => {
-        detachTransport(options.transportHub, attachment);
-        attachment = undefined;
-        emitEvents(
-          options.eventSink,
-          eventsFromControllerCloseResult(controller.close("websocket_error")),
+        closeAndFinalize(
+          INTERNAL_ERROR_CLOSE_CODE,
+          "websocket error",
+          "websocket_error",
         );
       });
     });
   });
+}
+
+function resolveRegistrationTimeoutMs(value: number | undefined): number {
+  const timeoutMs = value ?? DEFAULT_REGISTRATION_TIMEOUT_MS;
+  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new Error(`registrationTimeoutMs must be a positive integer: ${timeoutMs}`);
+  }
+  return timeoutMs;
 }
 
 function detachTransport(

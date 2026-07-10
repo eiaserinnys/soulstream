@@ -17,7 +17,10 @@ type TestWebSocket = {
 };
 
 type WebSocketInjectableApp = {
-  injectWS: (path: string) => Promise<TestWebSocket>;
+  injectWS: (
+    path: string,
+    upgradeContext?: { headers?: Record<string, string> },
+  ) => Promise<TestWebSocket>;
 };
 
 describe("orchestrator runtime live node HTTP client", () => {
@@ -39,6 +42,7 @@ describe("orchestrator runtime live node HTTP client", () => {
     await runtime.app.ready();
     const ws = await (runtime.app as unknown as WebSocketInjectableApp).injectWS(
       "/ws/node",
+      { headers: { authorization: "Bearer test-token" } },
     );
     ws.send(
       JSON.stringify({
