@@ -17,16 +17,16 @@ import { CustomViewRepository } from "./repositories/custom_view_repository.js";
 import { EventRepository } from "./repositories/event_repository.js";
 import { MarkdownDocumentRepository } from "./repositories/markdown_document_repository.js";
 import { SessionRepository } from "./repositories/session_repository.js";
-import { SupervisorRepository } from "./repositories/supervisor_repository.js";
 import type { RepositorySql } from "./repositories/repository_helpers.js";
-import type { AppendEventParams, AppendSupervisorEventParams, BoardYjsContainerRef, BoardYjsContainerScope, BoardYjsReplica, BoardYjsSeed, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, SupervisorAppendResult, SupervisorEventRow, SupervisorRegistryRow, SupervisorRegistryUpsertParams, SupervisorSourceCursorRow, SupervisorWakeDispatchStateParams } from "./session_db_types.js";
+import type { AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, BoardYjsReplica, BoardYjsSeed, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, UpstreamSessionDumpRow } from "./session_db_types.js";
+import { SupervisorSessionDbFacade } from "./supervisor_session_db_facade.js";
 
 export type * from "./session_db_types.js";
 
 /** 표시 이름 하위 호환 export. 기본 폴더 식별 정본은 system_folders.ts의 id 상수다. */
 export const DEFAULT_FOLDERS = SYSTEM_DEFAULT_FOLDERS;
 
-export class SessionDB {
+export class SessionDB extends SupervisorSessionDbFacade {
   private readonly sql: SqlClient;
   private readonly ownsSql: boolean;
   private runbookRepository?: RunbookRepository;
@@ -39,21 +39,26 @@ export class SessionDB {
   private readonly markdownDocumentRepository: MarkdownDocumentRepository;
   private readonly boardYjsRepository: BoardYjsRepository;
   private readonly eventRepository: EventRepository;
-  private readonly supervisorRepository: SupervisorRepository;
   private readonly claudeTranscriptRepository: ClaudeTranscriptRepository;
 
   /** @param sqlOrUrl `postgres()` 인스턴스 또는 DATABASE_URL 문자열. 문자열이면 close 시 end. */
   constructor(sqlOrUrl: SqlClient | string) {
+    let sql: SqlClient;
+    let ownsSql: boolean;
     if (typeof sqlOrUrl === "string") {
-      this.sql = postgres(sqlOrUrl, {
+      sql = postgres(sqlOrUrl, {
         max: 10,
         idle_timeout: 60,
       });
-      this.ownsSql = true;
+      ownsSql = true;
     } else {
-      this.sql = sqlOrUrl;
-      this.ownsSql = false;
+      sql = sqlOrUrl;
+      ownsSql = false;
     }
+
+    super(sql);
+    this.sql = sql;
+    this.ownsSql = ownsSql;
 
     this.sessionRepository = new SessionRepository(this.sql);
     this.boardRepository = new BoardRepository(this.sql);
@@ -61,7 +66,6 @@ export class SessionDB {
     this.markdownDocumentRepository = new MarkdownDocumentRepository(this.sql);
     this.boardYjsRepository = new BoardYjsRepository(this.sql, this.boardRepository);
     this.eventRepository = new EventRepository(this.sql);
-    this.supervisorRepository = new SupervisorRepository(this.sql);
     this.claudeTranscriptRepository = new ClaudeTranscriptRepository(this.sql);
   }
 
@@ -302,6 +306,14 @@ export class SessionDB {
     return await this.sessionRepository.listSessionsSummary(params);
   }
 
+  async listSessionsForUpstreamDump(params: {
+    limit: number;
+    offset: number;
+    nodeId: string;
+  }): Promise<{ sessions: UpstreamSessionDumpRow[]; total: number }> {
+    return await this.sessionRepository.listSessionsForUpstreamDump(params);
+  }
+
   async listRunningSessionsSummary(params: {
     limit: number;
     excludeSessionId?: string | null;
@@ -436,92 +448,6 @@ export class SessionDB {
     dedupeKey: string,
   ): Promise<number | null> {
     return await this.eventRepository.findEventIdByDedupeKey(sessionId, dedupeKey);
-  }
-
-  async appendSupervisorEvent(
-    params: AppendSupervisorEventParams,
-  ): Promise<SupervisorAppendResult> {
-    return await this.supervisorRepository.appendSupervisorEvent(params);
-  }
-
-  async readSupervisorEventsAfter(
-    afterOffset = 0,
-    limit = 100,
-  ): Promise<SupervisorEventRow[]> {
-    return await this.supervisorRepository.readSupervisorEventsAfter(afterOffset, limit);
-  }
-
-  async getSupervisorEventHeadOffset(): Promise<number> {
-    return await this.supervisorRepository.getSupervisorEventHeadOffset();
-  }
-
-  async getSupervisorSourceCursor(
-    sourceNode: string,
-    sourceSessionId: string,
-  ): Promise<SupervisorSourceCursorRow | null> {
-    return await this.supervisorRepository.getSupervisorSourceCursor(sourceNode, sourceSessionId);
-  }
-
-  async setSupervisorSourceCursor(params: {
-    sourceNode: string;
-    sourceSessionId: string;
-    contiguousUpto: number;
-    highestSeenEventId: number;
-    gapStart?: number | null;
-    gapEnd?: number | null;
-  }): Promise<SupervisorSourceCursorRow> {
-    return await this.supervisorRepository.setSupervisorSourceCursor(params);
-  }
-
-  async getSupervisorConsumerCursor(supervisorId: string): Promise<number> {
-    return await this.supervisorRepository.getSupervisorConsumerCursor(supervisorId);
-  }
-
-  async setSupervisorConsumerCursor(
-    supervisorId: string,
-    cursorOffset: number,
-  ): Promise<number> {
-    return await this.supervisorRepository.setSupervisorConsumerCursor(supervisorId, cursorOffset);
-  }
-
-  async setSupervisorWakeDispatchState(
-    params: SupervisorWakeDispatchStateParams,
-  ): Promise<SupervisorRegistryRow> {
-    return await this.supervisorRepository.setSupervisorWakeDispatchState(params);
-  }
-
-  async upsertSupervisorRegistry(
-    params: SupervisorRegistryUpsertParams,
-  ): Promise<SupervisorRegistryRow> {
-    return await this.supervisorRepository.upsertSupervisorRegistry(params);
-  }
-
-  async getSupervisorRegistry(role: string): Promise<SupervisorRegistryRow | null> {
-    return await this.supervisorRepository.getSupervisorRegistry(role);
-  }
-
-  async listSupervisorRegistries(): Promise<SupervisorRegistryRow[]> {
-    return await this.supervisorRepository.listSupervisorRegistries();
-  }
-
-  async touchSupervisorRegistry(
-    role: string,
-    lastSeenAt: Date,
-  ): Promise<SupervisorRegistryRow | null> {
-    return await this.supervisorRepository.touchSupervisorRegistry(role, lastSeenAt);
-  }
-
-  async recordSupervisorUsageDelta(params: {
-    role: string;
-    tokenDelta: number;
-    compactionDelta?: number;
-    lastSeenAt?: Date | null;
-  }): Promise<SupervisorRegistryRow> {
-    return await this.supervisorRepository.recordSupervisorUsageDelta(params);
-  }
-
-  async deleteSupervisorRegistry(role: string): Promise<boolean> {
-    return await this.supervisorRepository.deleteSupervisorRegistry(role);
   }
 
   async appendClaudeTranscriptEntries(

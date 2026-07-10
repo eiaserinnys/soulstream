@@ -160,7 +160,7 @@ export function createOrchestratorRuntimeServices(
       transportHub: transports,
       eventSink: composeEventSinks(
         createRuntimeSessionEventHubSink(sessionEventHub),
-        createNodeSessionEventBroadcasterSink(sessionBroadcaster),
+        createNodeSessionEventBroadcasterSink(sessionBroadcaster, registry),
         createNodeStreamBroadcasterSink(nodeStreamBroadcaster),
         ...(options.additionalNodeEventSinks ?? []),
       ),

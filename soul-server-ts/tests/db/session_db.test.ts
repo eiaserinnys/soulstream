@@ -1342,6 +1342,37 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
     expect(calls[0].values).toEqual(["Hi", null, 20, 0, "claude", "node-1"]);
   });
 
+  it("listSessionsForUpstreamDump → 기존 sessions 컬럼을 손실 없이 반환", async () => {
+    const row = {
+      session_id: "s1",
+      display_name: "게이트",
+      agent_id: "seosoyoung",
+      node_id: "node-1",
+      folder_id: "folder-1",
+      prompt: "검증",
+      metadata: [{ type: "caller_info", value: { source: "agent" } }],
+    };
+    const { sql, calls } = createMockSql((call) => {
+      const query = call.fragments.join("?");
+      return query.includes("SELECT COUNT(*) AS count") ? [{ count: "1" }] : [row];
+    });
+
+    await expect(new SessionDB(sql).listSessionsForUpstreamDump({
+      limit: 10_000,
+      offset: 0,
+      nodeId: "node-1",
+    })).resolves.toEqual({ sessions: [row], total: 1 });
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].fragments.join("?")).toContain("s.agent_id");
+    expect(calls[0].fragments.join("?")).toContain("AS event_count");
+    expect(calls[0].fragments.join("?")).not.toContain("SELECT *");
+    expect(calls[0].fragments.join("?")).toContain("ORDER BY s.updated_at DESC, s.session_id DESC");
+    expect(calls[0].values).toEqual(["node-1", 10_000, 0]);
+    expect(calls[1].fragments.join("?")).toContain("SELECT COUNT(*) AS count");
+    expect(calls[1].values).toEqual(["node-1"]);
+  });
+
   it("listRunningSessionsSummary → running 세션만 current session 제외 후 최신순으로 조회", async () => {
     const now = new Date("2026-06-07T05:00:00Z");
     const { sql, calls } = createMockSql(() => [

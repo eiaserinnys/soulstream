@@ -6,6 +6,7 @@ import type {
   SessionRow,
   SessionUpdateFields,
   SqlClient,
+  UpstreamSessionDumpRow,
 } from "../session_db_types.js";
 
 /**
@@ -238,6 +239,46 @@ export class SessionRepository {
       node_id: r.node_id,
     }));
     return { sessions, total };
+  }
+
+  async listSessionsForUpstreamDump(params: {
+    limit: number;
+    offset: number;
+    nodeId: string;
+  }): Promise<{ sessions: UpstreamSessionDumpRow[]; total: number }> {
+    // Reconnect inventory needs the Python session wire inputs, not the smaller
+    // dashboard summary and not private session columns such as claude_session_id.
+    const sessions = await this.sql<UpstreamSessionDumpRow[]>`
+      SELECT
+        s.session_id,
+        s.display_name,
+        s.status,
+        s.session_type,
+        s.created_at,
+        s.updated_at,
+        (SELECT COUNT(*)::int FROM events e WHERE e.session_id = s.session_id) AS event_count,
+        s.away_summary,
+        s.caller_session_id,
+        s.last_event_id,
+        s.last_read_event_id,
+        s.node_id,
+        s.agent_id,
+        s.prompt,
+        s.folder_id,
+        s.metadata,
+        s.last_message,
+        s.client_id
+      FROM sessions s
+      WHERE s.node_id = ${params.nodeId}
+      ORDER BY s.updated_at DESC, s.session_id DESC
+      LIMIT ${params.limit} OFFSET ${params.offset}
+    `;
+    const counts = await this.sql<Array<{ count: string | number }>>`
+      SELECT COUNT(*) AS count
+      FROM sessions
+      WHERE node_id = ${params.nodeId}
+    `;
+    return { sessions, total: Number(counts[0]?.count ?? 0) };
   }
 
   async listRunningSessionsSummary(params: {

@@ -8,14 +8,14 @@ import {
 
 function createSessionDb(overrides: Partial<SessionDB> = {}): SessionDB {
   return {
-    listSessionsSummary: vi.fn(async () => ({ sessions: [], total: 0 })),
+    listSessionsForUpstreamDump: vi.fn(async () => ({ sessions: [], total: 0 })),
     ...overrides,
   } as unknown as SessionDB;
 }
 
 describe("session list command boundary", () => {
-  it("queries all session summaries with the hard limit and builds sessions_update wire", async () => {
-    const summaryRows = [
+  it("queries full session rows so reconnect dumps preserve agent identity", async () => {
+    const sessionRows = [
       {
         session_id: "sess-a",
         display_name: "A",
@@ -29,6 +29,11 @@ describe("session list command boundary", () => {
         last_event_id: 12,
         last_read_event_id: 0,
         node_id: "node-1",
+        agent_id: "agent-a",
+        prompt: "hello",
+        folder_id: "folder-a",
+        metadata: [{ type: "caller_info", value: { source: "agent" } }],
+        last_message: null,
       },
       {
         session_id: "sess-b",
@@ -43,29 +48,40 @@ describe("session list command boundary", () => {
         last_event_id: 7,
         last_read_event_id: 6,
         node_id: "node-1",
+        agent_id: "agent-b",
+        prompt: "world",
+        folder_id: "folder-b",
+        metadata: [],
+        last_message: { type: "assistant_message", preview: "done" },
       },
     ];
-    const listSessionsSummary = vi.fn(async () => ({
-      sessions: summaryRows,
+    const listSessionsForUpstreamDump = vi.fn(async () => ({
+      sessions: sessionRows,
       total: 2,
     }));
     const commands = new SessionListCommands(
-      createSessionDb({ listSessionsSummary } as unknown as Partial<SessionDB>),
+      createSessionDb({ listSessionsForUpstreamDump } as unknown as Partial<SessionDB>),
       "node-1",
     );
 
     const ack = await commands.listSessions({ requestId: "list-1" });
 
-    expect(listSessionsSummary).toHaveBeenCalledWith({
+    expect(listSessionsForUpstreamDump).toHaveBeenCalledWith({
       limit: 10_000,
       offset: 0,
       nodeId: "node-1",
     });
     expect(ack).toEqual({
       type: "sessions_update",
-      sessions: summaryRows,
+      sessions: sessionRows,
       total: 2,
       requestId: "list-1",
+    });
+    expect(ack.sessions[0]).toMatchObject({
+      session_id: "sess-a",
+      agent_id: "agent-a",
+      display_name: "A",
+      folder_id: "folder-a",
     });
   });
 

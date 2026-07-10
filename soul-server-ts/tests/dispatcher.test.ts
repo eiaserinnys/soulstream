@@ -1551,7 +1551,7 @@ describe("CommandDispatcher attachment reverse-proxy", () => {
 });
 
 describe("CommandDispatcher.list_sessions (Python parity)", () => {
-  it("list_sessions → session_db.listSessionsSummary → sessions_update wire", async () => {
+  it("list_sessions → full DB rows → sessions_update wire", async () => {
     // Python `command_handler._handle_list_sessions` L351-359 정합 — `{type:"sessions_update", sessions, total, requestId}`.
     const summaryRows = [
       {
@@ -1583,18 +1583,18 @@ describe("CommandDispatcher.list_sessions (Python parity)", () => {
         node_id: "node-1",
       },
     ];
-    const listSessionsSummary = vi.fn().mockResolvedValue({
+    const listSessionsForUpstreamDump = vi.fn().mockResolvedValue({
       sessions: summaryRows,
       total: 2,
     });
     const { dispatcher, sent } = createDispatcher({
-      sessionDb: { listSessionsSummary } as unknown as Partial<SessionDB>,
+      sessionDb: { listSessionsForUpstreamDump } as unknown as Partial<SessionDB>,
     });
 
     await dispatcher.dispatch({ type: "list_sessions", requestId: "list-1" });
 
-    expect(listSessionsSummary).toHaveBeenCalledTimes(1);
-    expect(listSessionsSummary).toHaveBeenCalledWith({
+    expect(listSessionsForUpstreamDump).toHaveBeenCalledTimes(1);
+    expect(listSessionsForUpstreamDump).toHaveBeenCalledWith({
       limit: 10_000,
       offset: 0,
       nodeId: "eias-shopping-ts",
@@ -1609,9 +1609,12 @@ describe("CommandDispatcher.list_sessions (Python parity)", () => {
   });
 
   it("list_sessions → requestId 없으면 빈 문자열로 회신 (Python 정합)", async () => {
-    const listSessionsSummary = vi.fn().mockResolvedValue({ sessions: [], total: 0 });
+    const listSessionsForUpstreamDump = vi.fn().mockResolvedValue({
+      sessions: [],
+      total: 0,
+    });
     const { dispatcher, sent } = createDispatcher({
-      sessionDb: { listSessionsSummary } as unknown as Partial<SessionDB>,
+      sessionDb: { listSessionsForUpstreamDump } as unknown as Partial<SessionDB>,
     });
 
     await dispatcher.dispatch({ type: "list_sessions" });

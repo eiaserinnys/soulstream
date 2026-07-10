@@ -1,6 +1,7 @@
 import type { InMemoryNodeRegistry } from "../node/registry.js";
 import type { CachedNodeSession } from "../node/session_cache.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
+import { serializeSessionRow } from "../runtime/live_session_serialization.js";
 
 export type SessionSnapshotQuery = {
   folderId?: string;
@@ -73,6 +74,16 @@ export class SessionSnapshotService {
     const owner = this.registry.findSessionOwner(session.agentSessionId);
     return {
       ...session.payload,
+      ...serializeSessionRow(
+        {
+          ...session.payload,
+          session_id: session.agentSessionId,
+          node_id: session.nodeId,
+          status: session.status,
+          last_event_id: session.lastEventId,
+        },
+        { registry: this.registry },
+      ),
       agent_session_id: session.agentSessionId,
       agentSessionId: session.agentSessionId,
       nodeId: session.nodeId,

@@ -165,6 +165,15 @@ export interface ListSessionSummaryRow {
   node_id: string | null;
 }
 
+export interface UpstreamSessionDumpRow extends ListSessionSummaryRow {
+  agent_id: string | null;
+  prompt: string | null;
+  folder_id: string | null;
+  metadata: unknown;
+  last_message: unknown;
+  client_id: string | null;
+}
+
 export interface RegisterSessionParams {
   sessionId: string;
   nodeId: string;

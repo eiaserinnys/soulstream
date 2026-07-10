@@ -241,7 +241,7 @@ describe("UpstreamAdapter", () => {
 
   it("sessionDb가 있으면 node_register 직후 현재 세션 dump를 sessions_update로 보낸다", async () => {
     const sessionDb = {
-      listSessionsSummary: vi.fn(async () => ({
+      listSessionsForUpstreamDump: vi.fn(async () => ({
         sessions: [
           {
             session_id: "sess-1",
@@ -283,7 +283,7 @@ describe("UpstreamAdapter", () => {
       ),
     );
 
-    expect(sessionDb.listSessionsSummary).toHaveBeenCalledWith({
+    expect(sessionDb.listSessionsForUpstreamDump).toHaveBeenCalledWith({
       limit: 10_000,
       offset: 0,
       nodeId: "eias-shopping-ts",
@@ -480,7 +480,7 @@ describe("UpstreamAdapter", () => {
       total: number;
     }>();
     const sessionDb = {
-      listSessionsSummary: vi.fn(() => sessionDump.promise),
+      listSessionsForUpstreamDump: vi.fn(() => sessionDump.promise),
     } as unknown as SessionDB;
     const adapter = new UpstreamAdapter(
       {
