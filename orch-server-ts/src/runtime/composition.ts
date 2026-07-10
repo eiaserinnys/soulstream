@@ -156,6 +156,13 @@ export function createOrchestratorRuntimeServices(
     fetch: options.nodeHttpFetch,
     timeoutMs: options.nodeHttpRequestTimeoutMs,
   });
+  const boardYjsRoutes = options.boardYjsRoutes === undefined
+    ? undefined
+    : {
+        createService: memoizeBoardYjsServiceFactory(
+          options.boardYjsRoutes.createService,
+        ),
+      };
 
   const routeOptions: OrchestratorRuntimeRouteOptions = {
     nodeWsRoute: {
@@ -239,10 +246,15 @@ export function createOrchestratorRuntimeServices(
       registry,
       httpClient:
         options.boardYjsHostHttpClient ?? nodeHttpClient.boardYjsHostHttpClient,
+      hostMode: options.config.boardYjsHostMode ?? "node",
+      authBearerToken: options.config.authBearerToken,
+      ...(boardYjsRoutes === undefined
+        ? {}
+        : { createService: boardYjsRoutes.createService }),
     },
-    ...(options.boardYjsRoutes === undefined
+    ...(boardYjsRoutes === undefined
       ? {}
-      : { boardYjsRoutes: options.boardYjsRoutes }),
+      : { boardYjsRoutes }),
   };
 
   return {
@@ -258,6 +270,16 @@ export function createOrchestratorRuntimeServices(
     taskBroadcaster,
     nodeHttpClient,
     routeOptions,
+  };
+}
+
+function memoizeBoardYjsServiceFactory(
+  createService: BoardYjsRouteOptions["createService"],
+): BoardYjsRouteOptions["createService"] {
+  let service: ReturnType<BoardYjsRouteOptions["createService"]> | undefined;
+  return (logger) => {
+    service ??= createService(logger);
+    return service;
   };
 }
 

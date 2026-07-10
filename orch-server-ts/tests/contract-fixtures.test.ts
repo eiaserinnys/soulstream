@@ -112,6 +112,10 @@ describe("orch-server-ts contract fixture reader", () => {
       oneHostStatus: 200,
     });
     expect(fixtures.boardYjsHostProxy.proxy.forwardedHeaders).toContain("authorization");
+    expect(fixtures.boardYjsHostProxy.directOperations).toHaveLength(10);
+    expect(new Set(
+      fixtures.boardYjsHostProxy.directOperations.map((item) => item.operation),
+    ).size).toBe(10);
     expect(fixtures.boardYjsHostProxy.negativeAssertions).toContain(
       "catalog_service.create_markdown_document is not called for markdown write routes",
     );
