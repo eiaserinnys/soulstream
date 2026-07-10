@@ -6,6 +6,7 @@ import type { MarkdownDocumentRouteProvider } from "../board/markdown_document_r
 import type { RunbookRouteProvider } from "../runbooks/runbook_route_types.js";
 import type { SessionCatalogProvider } from "../session/session_catalog_routes.js";
 import type { SessionHistoryProvider } from "../session/session_history_service.js";
+import type { SessionSnapshotListResponse } from "../session/session_snapshot_service.js";
 import type {
   SessionResourceAccessRepository,
 } from "../session/session_resource_access.js";
@@ -49,6 +50,14 @@ export type LiveDbCatalogRepositoryBoundary = {
   readonly loadSessionSnapshot: (
     input?: { readonly access?: BoardAccess; readonly feedOnly?: boolean },
   ) => Promise<SessionStreamSnapshot>;
+  readonly listSessionSnapshots: (input: {
+    readonly access?: BoardAccess;
+    readonly feedOnly?: boolean;
+    readonly folderId?: string;
+    readonly sessionType?: string;
+    readonly offset: number;
+    readonly limit: number;
+  }) => Promise<SessionSnapshotListResponse>;
   readonly loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   readonly sessionHistoryProvider: SessionHistoryProvider;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
