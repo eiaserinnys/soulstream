@@ -54,13 +54,32 @@ describe("live push registration repository", () => {
     );
     expect(harness.calls[0]?.values).toEqual(["User@Example.com", "device-1"]);
   });
+
+  it("lists every device token for the user through the same repository", async () => {
+    const harness = createSqlHarness([
+      { device_id: "device-1", expo_token: "token-1" },
+      { device_id: "device-2", expo_token: "token-2" },
+    ]);
+    const repository = createLivePushRegistrationRepository({
+      sqlResolver: resolverFor(harness.sql),
+    });
+
+    await expect(repository.listTokens("User@Example.com")).resolves.toEqual([
+      { deviceId: "device-1", expoToken: "token-1" },
+      { deviceId: "device-2", expoToken: "token-2" },
+    ]);
+    expect(normalizeSql(harness.calls[0]?.text)).toContain(
+      "SELECT device_id, expo_token FROM push_tokens WHERE user_email = ?",
+    );
+    expect(harness.calls[0]?.values).toEqual(["User@Example.com"]);
+  });
 });
 
-function createSqlHarness() {
+function createSqlHarness(rows: Record<string, unknown>[] = []) {
   const calls: SqlCall[] = [];
   const sql = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     calls.push({ text: strings.join("?"), values });
-    return [];
+    return rows;
   }) as unknown as LivePostgresSql;
   return { sql, calls };
 }

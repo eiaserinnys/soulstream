@@ -108,6 +108,7 @@ export class InMemoryNodeRegistry {
       supportedBackends: Array.isArray(registration.supported_backends)
         ? [...registration.supported_backends]
         : ["claude"],
+      userInfo: isRecord(registration.user) ? { ...registration.user } : {},
       connected: true,
       connectedAtMs: nowMs,
       disconnectedAtMs: undefined,
@@ -192,6 +193,9 @@ export class InMemoryNodeRegistry {
     if ("agents" in registration) {
       node.agents = Array.isArray(registration.agents) ? [...registration.agents] : [];
     }
+    if (isRecord(registration.user) && Object.keys(registration.user).length > 0) {
+      node.userInfo = { ...registration.user };
+    }
 
     const events: NodeRegistryEvent[] = [
       {
@@ -235,6 +239,10 @@ export class InMemoryNodeRegistry {
   getNodeState(nodeId: string): NodeConnectionSnapshot | undefined {
     const node = this.nodes.get(nodeId);
     return node === undefined ? undefined : snapshotNode(node);
+  }
+
+  getUserInfo(nodeId: string): Record<string, unknown> {
+    return { ...(this.nodes.get(nodeId)?.userInfo ?? {}) };
   }
 
   createCommand<

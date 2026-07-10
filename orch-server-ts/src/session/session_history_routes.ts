@@ -18,6 +18,11 @@ export type SessionHistoryRouteOptions = {
   accessProvider?: SessionResourceAccessProvider;
   keepaliveMs?: number;
   closeAfterHistorySync?: boolean;
+  foregroundObservers?: SessionHistoryForegroundObservers;
+};
+
+export type SessionHistoryForegroundObservers = {
+  observe: (sessionId: string) => () => void;
 };
 
 export const sessionHistoryRouteAuthRequirements = {
@@ -200,29 +205,40 @@ async function sendSessionEventsStream(
 ): Promise<FastifyReply> {
   const sessionId = sessionParams(request).session_id;
   if (!(await ensureSessionAccess(options, request, reply))) return reply;
-  const frames = await buildSessionHistoryFrames(request, service, sessionId);
-  setSseHeaders(reply);
+  const releaseObserver = options.foregroundObservers?.observe(sessionId);
+  try {
+    const frames = await buildSessionHistoryFrames(request, service, sessionId);
+    setSseHeaders(reply);
 
-  if (options.closeAfterHistorySync ?? true) {
-    return reply.send(frames.map(formatSessionHistorySseFrame).join(""));
+    if (options.closeAfterHistorySync ?? true) {
+      releaseObserver?.();
+      return reply.send(frames.map(formatSessionHistorySseFrame).join(""));
+    }
+
+    const stream = new Readable({
+      read() {},
+    });
+    for (const frame of frames) {
+      stream.push(formatSessionHistorySseFrame(frame));
+    }
+    const keepalive = setInterval(() => {
+      stream.push(": keepalive\n\n");
+    }, options.keepaliveMs ?? DEFAULT_KEEPALIVE_MS);
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      clearInterval(keepalive);
+      releaseObserver?.();
+    };
+    request.raw.on("close", cleanup);
+    stream.on("close", cleanup);
+
+    return reply.send(stream);
+  } catch (error) {
+    releaseObserver?.();
+    throw error;
   }
-
-  const stream = new Readable({
-    read() {},
-  });
-  for (const frame of frames) {
-    stream.push(formatSessionHistorySseFrame(frame));
-  }
-  const keepalive = setInterval(() => {
-    stream.push(": keepalive\n\n");
-  }, options.keepaliveMs ?? DEFAULT_KEEPALIVE_MS);
-  const cleanup = () => {
-    clearInterval(keepalive);
-  };
-  request.raw.on("close", cleanup);
-  stream.on("close", cleanup);
-
-  return reply.send(stream);
 }
 
 async function buildSessionHistoryFrames(
