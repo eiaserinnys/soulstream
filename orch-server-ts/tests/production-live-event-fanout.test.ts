@@ -20,6 +20,79 @@ type SseFrame = {
 };
 
 describe("production live event fanout", () => {
+  it("forwards last-message updates for sessions restored from a node dump", async () => {
+    const database = createFakeSql();
+    const sqlResolver: LiveDbSqlResolver = {
+      resolveSql: vi.fn(async () => database.sql),
+      close: vi.fn(async () => undefined),
+    };
+    const application = await createLiveProductionApplication(
+      loadOrchServerEnvironment(minimalEnvironment()),
+      { warn: vi.fn() },
+      { sqlResolver },
+    );
+    await application.app.listen({ host: "127.0.0.1", port: 0 });
+    const catalogController = new AbortController();
+    let ws: TestWebSocket | undefined;
+    try {
+      const authHeaders = { authorization: "Bearer production-service-token" };
+      ws = await (application.app as typeof application.app & {
+        injectWS: (
+          path: string,
+          options: { headers: Record<string, string> },
+        ) => Promise<TestWebSocket>;
+      }).injectWS("/ws/node", { headers: authHeaders });
+      ws.send(JSON.stringify({ type: "node_register", node_id: "node-a" }));
+      ws.send(JSON.stringify({
+        type: "sessions_update",
+        sessions: [{
+          agentSessionId: "restored-session",
+          status: "running",
+          last_event_id: 40,
+        }],
+        total: 1,
+        requestId: "",
+      }));
+
+      // Production restart order: the node reconnects and sends its dump before
+      // dashboard clients reopen the catalog stream.
+      const catalog = await connectSse(
+        `${application.app.listeningOrigin}/api/sessions/stream`,
+        authHeaders,
+        catalogController.signal,
+      );
+      expect((await catalog.next("session_list")).data).toMatchObject({
+        type: "session_list",
+      });
+      ws.send(JSON.stringify({
+        type: "session_updated",
+        agent_session_id: "restored-session",
+        status: "running",
+        updated_at: "2026-07-10T12:50:00.000Z",
+        last_message: {
+          type: "assistant_message",
+          preview: "restored session live message",
+          timestamp: "2026-07-10T12:50:00.000Z",
+        },
+        last_event_id: 41,
+        last_read_event_id: 40,
+      }));
+
+      expect((await catalog.next("session_updated", 1_000)).data).toMatchObject({
+        agent_session_id: "restored-session",
+        last_message: {
+          type: "assistant_message",
+          preview: "restored session live message",
+        },
+      });
+    } finally {
+      catalogController.abort();
+      ws?.terminate();
+      await application.app.close();
+      await application.closeResources();
+    }
+  });
+
   it("connects every production live-event consumer to its canonical source", async () => {
     const observedConsumers = new Set<string>();
     const database = createFakeSql();
