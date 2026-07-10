@@ -117,8 +117,6 @@ describe("production live event fanout", () => {
         agent_session_id: "session-a",
         status: "running",
         updated_at: "2026-07-10T12:00:00.000Z",
-        caller_source: "browser",
-        session_type: "codex",
         last_event_id: 41,
         last_read_event_id: 40,
         last_message: {
@@ -136,6 +134,19 @@ describe("production live event fanout", () => {
       const catalogUpdated = await catalog.next("session_updated", 1_000);
       expect(catalogUpdated.raw).toContain("event: session_updated\n");
       expect(catalogUpdated.raw).toContain("\ndata: {\"type\":\"session_updated\"");
+      // F-3A/G-19: the node message-update wire has exactly seven keys. The
+      // orchestrator must forward that variant without requiring state-update
+      // metadata such as caller_source or session_type; only nodeId is added.
+      expect(Object.keys(catalogUpdated.data).sort()).toEqual([
+        "agent_session_id",
+        "last_event_id",
+        "last_message",
+        "last_read_event_id",
+        "nodeId",
+        "status",
+        "type",
+        "updated_at",
+      ].sort());
       expect(catalogUpdated.data).toMatchObject({
         type: "session_updated",
         agent_session_id: "session-a",
@@ -149,6 +160,8 @@ describe("production live event fanout", () => {
           timestamp: "2026-07-10T12:00:00.000Z",
         },
       });
+      expect(catalogUpdated.data).not.toHaveProperty("caller_source");
+      expect(catalogUpdated.data).not.toHaveProperty("session_type");
       observedConsumers.add("sessions-stream");
 
       database.publishTaskChange({ taskId: "task-a", operation: "updated" });
