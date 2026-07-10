@@ -24,6 +24,7 @@ import type { BoardItemRouteOptions } from "../board/board_item_routes.js";
 import type { MarkdownDocumentRouteOptions } from "../board/markdown_document_routes.js";
 import type { PublicStatusRouteOptions } from "../public/public_status_routes.js";
 import type { PushRouteOptions } from "../push/push_routes.js";
+import type { UserPreferencesRouteOptions } from "../user/user_preferences_routes.js";
 import type { RunbookRouteOptions } from "../runbooks/runbook_route_types.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
 import type { TaskMutationRouteOptions } from "../tasks/task_mutation_routes.js";
@@ -129,6 +130,7 @@ export type LiveOrchestratorProviderBundle = {
     "folderCountsProvider"
   >;
   readonly pushRoutes: PushRouteOptions;
+  readonly userPreferencesRoutes: UserPreferencesRouteOptions;
   readonly sessionCatalogRoutes: SessionCatalogRouteOptions;
   readonly runtime: LiveRuntimeProviderBundle;
   readonly cogitoRoutes: LiveCogitoRouteProviderBundle["cogitoRoutes"];
@@ -266,6 +268,10 @@ export function createLiveOrchestratorProviderBundle(
     pushRoutes: {
       repository: options.dependencies.pushRepository,
       resolveJwtUser: authenticatedUserResolvers.resolveUser,
+    },
+    userPreferencesRoutes: {
+      repository: options.dependencies.dbCatalogRepository.userPreferencesRepository,
+      resolveAuthenticatedEmail: authenticatedUserResolvers.resolveEmail,
     },
     sessionCatalogRoutes: {
       provider: options.dependencies.dbCatalogRepository.sessionCatalogProvider,

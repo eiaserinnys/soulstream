@@ -52,6 +52,8 @@ import {
 import { createLiveTaskMutationProvider } from "./live_task_mutation_provider.js";
 import { createLiveTaskReadProvider } from "./live_task_read_provider.js";
 import { serializeTasksWithLinkedSessions } from "./live_task_serialization.js";
+import { createLiveUserPreferencesRepository } from "./live_user_preferences_repository.js";
+import type { UserPreferencesRepository } from "../user/user_preferences_routes.js";
 
 export type LiveDbCatalogRepository = {
   readonly folderRouteProvider: LiveFolderProvider;
@@ -65,6 +67,7 @@ export type LiveDbCatalogRepository = {
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
   readonly taskReadProvider: TaskReadRouteProvider;
   readonly taskMutationProvider: TaskMutationRouteProvider;
+  readonly userPreferencesRepository: UserPreferencesRepository;
   readonly createTaskChangeListener: (
     broadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>,
   ) => LiveTaskChangeListener;
@@ -156,6 +159,7 @@ export function createLiveDbCatalogRepository(
     sessionResourceAccessRepository,
     taskReadProvider,
     taskMutationProvider,
+    userPreferencesRepository: createLiveUserPreferencesRepository({ sqlResolver }),
     createTaskChangeListener(broadcaster) {
       return createLiveTaskChangeListener({ sqlResolver, broadcaster });
     },

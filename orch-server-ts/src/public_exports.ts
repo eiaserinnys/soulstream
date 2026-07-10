@@ -58,6 +58,7 @@ export * from "./runtime/live_node_http_client.js";
 export * from "./runtime/live_provider_dependencies.js";
 export * from "./runtime/live_provider_factory.js";
 export * from "./runtime/live_push_registration_repository.js";
+export * from "./runtime/live_user_preferences_repository.js";
 export * from "./runtime/live_runbook_route_provider.js";
 export * from "./runtime/live_session_history_provider.js";
 export * from "./runtime/live_session_serialization.js";

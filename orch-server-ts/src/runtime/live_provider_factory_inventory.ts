@@ -80,6 +80,11 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "system.config", path: "systemConfigRoutes.provider" },
   { owner: "tasks.mutation", path: "taskMutationRoutes.provider" },
   { owner: "tasks.read", path: "taskReadRoutes.provider" },
+  { owner: "user.preferences", path: "userPreferencesRoutes.repository" },
+  {
+    owner: "user.preferences",
+    path: "userPreferencesRoutes.resolveAuthenticatedEmail",
+  },
 ] as const satisfies readonly LiveProviderPath[];
 
 export class LiveProviderFactoryError extends Error {
