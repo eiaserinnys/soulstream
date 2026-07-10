@@ -180,6 +180,14 @@ describe("live provider factory boundary", () => {
         headers: { cookie: `soul_dashboard_auth=${pushJwt}` },
       } as unknown as FastifyRequest),
     ).resolves.toMatchObject({ email: "push@example.com", name: "Push User" });
+    expect(bundle.userPreferencesRoutes.repository).toBe(
+      dependencies.dbCatalogRepository.userPreferencesRepository,
+    );
+    await expect(
+      bundle.userPreferencesRoutes.resolveAuthenticatedEmail({
+        headers: { cookie: `soul_dashboard_auth=${pushJwt}` },
+      } as unknown as FastifyRequest),
+    ).resolves.toBe("push@example.com");
     expect(bundle.folderRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
     expect(bundle.boardAssetRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
     expect(bundle.boardAssetRoutes.provider.initFileAsset).toBe(
@@ -462,6 +470,10 @@ function createLiveDependencies(): LiveProviderDependencies {
         archiveTask: vi.fn(async () => taskMutationResponse),
         pinTask: vi.fn(async () => taskMutationResponse),
         listTaskOperations: vi.fn(async () => []),
+      },
+      userPreferencesRepository: {
+        get: vi.fn(async () => null),
+        put: vi.fn(async (email, prefs) => ({ email, prefs })),
       },
       createTaskChangeListener: vi.fn(() => ({
         start: vi.fn(async () => undefined),

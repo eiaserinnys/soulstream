@@ -19,7 +19,7 @@ describe("live provider factory inventory", () => {
     expect(result.implementedInventoryProviderPaths).toEqual(
       liveFactoryImplementedProviderPaths,
     );
-    expect(result.unresolvedProviderPaths).toHaveLength(9);
+    expect(result.unresolvedProviderPaths).toHaveLength(7);
   });
 
   it("fails when inventory marks a path implemented but the factory omits it", () => {
