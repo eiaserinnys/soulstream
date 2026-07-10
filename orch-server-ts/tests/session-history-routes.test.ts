@@ -9,6 +9,7 @@ import {
   sessionHistoryRouteAuthRequirements,
   SessionResourceAccessError,
   type SessionHistoryProvider,
+  type SessionHistoryLiveEventSource,
   type SessionHistoryRawEvent,
   type SessionResourceAccessProvider,
 } from "../src/index.js";
@@ -342,6 +343,58 @@ describe("session history/read-only route harness", () => {
     expect(provider.readLastEventId).toHaveBeenCalledWith("sess-1");
     expect(provider.streamEventsRaw).not.toHaveBeenCalled();
 
+    await app.close();
+  });
+
+  it("subscribes before the baseline read and flushes pending live events before history_sync", async () => {
+    let liveListener: ((event: Record<string, unknown>) => void) | undefined;
+    const unsubscribe = vi.fn();
+    const liveEvents: SessionHistoryLiveEventSource = {
+      subscribe: vi.fn((_sessionId, listener) => {
+        liveListener = listener;
+        return unsubscribe;
+      }),
+    };
+    const provider = createProvider({
+      readLastEventId: vi.fn(async () => {
+        liveListener?.({
+          type: "event",
+          agentSessionId: "sess-1",
+          event: {
+            _event_id: 43,
+            type: "assistant_message",
+            content: "arrived during baseline",
+          },
+        });
+        return 42;
+      }),
+    });
+    const app = createApp({
+      config,
+      sessionHistoryRoutes: {
+        provider,
+        liveEvents,
+        closeAfterHistorySync: true,
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-1/events",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toBe(
+      'event: init\n' +
+        'data: {"agentSessionId":"sess-1"}\n\n' +
+        'event: assistant_message\n' +
+        'id: 43\n' +
+        'data: {"_event_id":43,"type":"assistant_message","content":"arrived during baseline"}\n\n' +
+        'event: history_sync\n' +
+        'data: {"type":"history_sync","last_event_id":42,"is_live":true}\n\n',
+    );
+    expect(liveEvents.subscribe).toHaveBeenCalledWith("sess-1", expect.any(Function));
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
     await app.close();
   });
 

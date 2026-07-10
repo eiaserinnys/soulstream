@@ -199,6 +199,17 @@ export function createOrchestratorRuntimeServices(
       : {
           sessionHistoryRoutes: {
             provider: options.sessionHistoryProvider,
+            liveEvents: {
+              subscribe(agentSessionId, listener) {
+                if (registry.findConnectedNodeForSession(agentSessionId) === undefined) {
+                  return undefined;
+                }
+                return sessionEventHub.subscribe(
+                  agentSessionId,
+                  (event) => listener(event.data),
+                );
+              },
+            },
             keepaliveMs: options.sessionHistoryKeepaliveMs,
             closeAfterHistorySync: options.sessionHistoryCloseAfterHistorySync,
             foregroundObservers: options.sessionForegroundObservers,

@@ -16,9 +16,17 @@ import {
 export type SessionHistoryRouteOptions = {
   provider: SessionHistoryProvider;
   accessProvider?: SessionResourceAccessProvider;
+  liveEvents?: SessionHistoryLiveEventSource;
   keepaliveMs?: number;
   closeAfterHistorySync?: boolean;
   foregroundObservers?: SessionHistoryForegroundObservers;
+};
+
+export type SessionHistoryLiveEventSource = {
+  subscribe: (
+    sessionId: string,
+    listener: (envelope: Record<string, unknown>) => void,
+  ) => (() => void) | undefined;
 };
 
 export type SessionHistoryForegroundObservers = {
@@ -206,11 +214,37 @@ async function sendSessionEventsStream(
   const sessionId = sessionParams(request).session_id;
   if (!(await ensureSessionAccess(options, request, reply))) return reply;
   const releaseObserver = options.foregroundObservers?.observe(sessionId);
+  let pendingLiveEvents: Record<string, unknown>[] = [];
+  let liveStream: Readable | null = null;
+  let history: SessionHistoryInitialState | undefined;
+  let initialFlushed = false;
+  const unsubscribe = options.liveEvents?.subscribe(sessionId, (envelope) => {
+    if (!initialFlushed) {
+      pendingLiveEvents.push(envelope);
+      return;
+    }
+    try {
+      const frame = liveSessionEventFrame(envelope, history);
+      if (frame !== null) liveStream?.push(formatSessionHistorySseFrame(frame));
+    } catch (error) {
+      liveStream?.destroy(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
   try {
-    const frames = await buildSessionHistoryFrames(request, service, sessionId);
+    history = await buildSessionHistoryInitialState(request, service, sessionId);
+    const frames = [...history.frames];
+    if (history.afterId === 0) {
+      for (const envelope of pendingLiveEvents) {
+        const frame = liveSessionEventFrame(envelope, history);
+        if (frame !== null) frames.push(frame);
+      }
+      pendingLiveEvents = [];
+    }
+    frames.push(historySyncFrame(history.lastStoredId, unsubscribe !== undefined));
     setSseHeaders(reply);
 
-    if (options.closeAfterHistorySync ?? true) {
+    if ((options.closeAfterHistorySync ?? true) || unsubscribe === undefined) {
+      unsubscribe?.();
       releaseObserver?.();
       return reply.send(frames.map(formatSessionHistorySseFrame).join(""));
     }
@@ -218,9 +252,16 @@ async function sendSessionEventsStream(
     const stream = new Readable({
       read() {},
     });
+    liveStream = stream;
     for (const frame of frames) {
       stream.push(formatSessionHistorySseFrame(frame));
     }
+    initialFlushed = true;
+    for (const envelope of pendingLiveEvents) {
+      const frame = liveSessionEventFrame(envelope, history);
+      if (frame !== null) stream.push(formatSessionHistorySseFrame(frame));
+    }
+    pendingLiveEvents = [];
     const keepalive = setInterval(() => {
       stream.push(": keepalive\n\n");
     }, options.keepaliveMs ?? DEFAULT_KEEPALIVE_MS);
@@ -229,6 +270,7 @@ async function sendSessionEventsStream(
       if (cleaned) return;
       cleaned = true;
       clearInterval(keepalive);
+      unsubscribe();
       releaseObserver?.();
     };
     request.raw.on("close", cleanup);
@@ -236,16 +278,24 @@ async function sendSessionEventsStream(
 
     return reply.send(stream);
   } catch (error) {
+    unsubscribe?.();
     releaseObserver?.();
     throw error;
   }
 }
 
-async function buildSessionHistoryFrames(
+type SessionHistoryInitialState = {
+  readonly frames: SessionHistorySseFrame[];
+  readonly afterId: number;
+  readonly lastStoredId: number;
+  readonly seenEventIds: Set<number>;
+};
+
+async function buildSessionHistoryInitialState(
   request: FastifyRequest,
   service: SessionHistoryReadService,
   sessionId: string,
-): Promise<SessionHistorySseFrame[]> {
+): Promise<SessionHistoryInitialState> {
   const frames: SessionHistorySseFrame[] = [
     {
       event: "init",
@@ -253,11 +303,11 @@ async function buildSessionHistoryFrames(
     },
   ];
   const afterId = resolveSessionHistoryAfterId(request);
+  const seenEventIds = new Set<number>();
 
   if (afterId === 0) {
     const lastEventId = await service.readLastEventId(sessionId);
-    frames.push(historySyncFrame(lastEventId));
-    return frames;
+    return { frames, afterId, lastStoredId: lastEventId, seenEventIds };
   }
 
   let lastStoredId = 0;
@@ -265,6 +315,7 @@ async function buildSessionHistoryFrames(
   for await (const event of service.streamEventsRaw(sessionId, afterId)) {
     if (event.eventId <= afterId) continue;
     lastStoredId = Math.max(lastStoredId, event.eventId);
+    seenEventIds.add(event.eventId);
     replayEvents.push(event);
   }
 
@@ -275,8 +326,46 @@ async function buildSessionHistoryFrames(
       data: event.payloadText,
     });
   }
-  frames.push(historySyncFrame(lastStoredId));
-  return frames;
+  return { frames, afterId, lastStoredId, seenEventIds };
+}
+
+function liveSessionEventFrame(
+  envelope: Record<string, unknown>,
+  history: SessionHistoryInitialState | undefined,
+): SessionHistorySseFrame | null {
+  if (history === undefined) return null;
+  const payload = isRecord(envelope.event)
+    ? envelope.event
+    : isRecord(envelope.payload)
+      ? envelope.payload
+      : envelope;
+  const eventId = liveEventId(envelope, payload);
+  if (eventId !== undefined) {
+    if (history.afterId > 0 && eventId <= history.afterId) return null;
+    if (history.seenEventIds.has(eventId)) return null;
+    history.seenEventIds.add(eventId);
+  }
+  return {
+    event: typeof payload.type === "string" ? payload.type : "message",
+    data: JSON.stringify(payload),
+    ...(eventId === undefined ? {} : { id: eventId }),
+  };
+}
+
+function liveEventId(
+  envelope: Record<string, unknown>,
+  payload: Record<string, unknown>,
+): number | undefined {
+  for (const value of [
+    envelope.eventId,
+    envelope.id,
+    payload._event_id,
+    payload.id,
+  ]) {
+    const parsed = typeof value === "number" ? value : Number(value);
+    if (Number.isSafeInteger(parsed) && parsed > 0) return parsed;
+  }
+  return undefined;
 }
 
 async function ensureSessionAccess(
@@ -327,15 +416,22 @@ function headerValue(value: string | string[] | undefined): string | null {
   return value ?? null;
 }
 
-function historySyncFrame(lastEventId: number): SessionHistorySseFrame {
+function historySyncFrame(
+  lastEventId: number,
+  isLive = false,
+): SessionHistorySseFrame {
   return {
     event: "history_sync",
     data: JSON.stringify({
       type: "history_sync",
       last_event_id: lastEventId,
-      is_live: false,
+      is_live: isLive,
     }),
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function setSseHeaders(reply: FastifyReply): void {
