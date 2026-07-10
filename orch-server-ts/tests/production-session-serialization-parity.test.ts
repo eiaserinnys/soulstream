@@ -143,6 +143,7 @@ function createFakeSql(row: Record<string, unknown>): { sql: LivePostgresSql } {
   });
   return {
     sql: Object.assign(query, {
+      json: (value: unknown) => value,
       listen: vi.fn(async () => ({ unlisten: vi.fn(async () => undefined) })),
     }) as unknown as LivePostgresSql,
   };
