@@ -427,6 +427,29 @@ describe("Node registry and per-node session cache primitive", () => {
       lastEventId: 7,
     });
 
+    const catalogUpdated = {
+      type: "catalog_updated",
+      catalog: {
+        folders: [{ id: "folder-1" }],
+        sessions: [{ agentSessionId: "direct-session", folderId: "folder-1" }],
+      },
+    };
+    expect(
+      registry.receiveNodeMessage(
+        {
+          nodeId: "fake-node",
+          connectionId: registered.node.connectionId,
+        },
+        catalogUpdated,
+      ),
+    ).toEqual([
+      {
+        type: "node_session_event",
+        nodeId: "fake-node",
+        data: catalogUpdated,
+      },
+    ]);
+
     const deleted = {
       type: "session_deleted",
       agentSessionId: "direct-session",

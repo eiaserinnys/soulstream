@@ -91,6 +91,17 @@ describe("node inbound session event dispatcher", () => {
           type: "node_session_event",
           nodeId: "node-1",
           data: {
+            type: "catalog_updated",
+            catalog: {
+              folders: [{ id: "folder-1" }],
+              sessions: [{ agentSessionId: "sess-1", folderId: "folder-1" }],
+            },
+          },
+        },
+        {
+          type: "node_session_event",
+          nodeId: "node-1",
+          data: {
             type: "event",
             agentSessionId: "sess-1",
             event: {
@@ -133,8 +144,16 @@ describe("node inbound session event dispatcher", () => {
       broadcaster,
     );
 
-    expect(result).toEqual({ appended: 2, skipped: 3, failed: 0 });
+    expect(result).toEqual({ appended: 3, skipped: 3, failed: 0 });
     expect(broadcaster.bufferedEvents.map((event) => event.payload)).toEqual([
+      {
+        type: "catalog_updated",
+        catalog: {
+          folders: [{ id: "folder-1" }],
+          sessions: [{ agentSessionId: "sess-1", folderId: "folder-1" }],
+        },
+        nodeId: "node-1",
+      },
       {
         type: "runbook_updated",
         runbookId: "rb-1",

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
@@ -59,11 +61,14 @@ export function registerSessionCommandRoutes(
       if (isErrorAck(result)) {
         return serviceUnavailable(reply, result);
       }
-      const agentSessionId = result.agentSessionId ?? payload.agentSessionId;
-      if (typeof agentSessionId !== "string" || agentSessionId.length === 0) {
+      const agentSessionId = payload.agentSessionId;
+      if (
+        typeof result.agentSessionId === "string" &&
+        result.agentSessionId !== agentSessionId
+      ) {
         return serviceUnavailable(reply, {
-          code: "MISSING_AGENT_SESSION_ID",
-          message: "create_session ack did not include agentSessionId",
+          code: "SESSION_ID_MISMATCH",
+          message: "create_session ack changed the server-generated agentSessionId",
         });
       }
       return reply.code(201).send({
@@ -131,6 +136,7 @@ function createSessionPayload(
     ...rest,
     type: "create_session",
     prompt,
+    agentSessionId: randomUUID(),
   };
 }
 
