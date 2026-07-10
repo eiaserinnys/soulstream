@@ -19,7 +19,13 @@ describe("live provider factory inventory", () => {
     expect(result.implementedInventoryProviderPaths).toEqual(
       liveFactoryImplementedProviderPaths,
     );
-    expect(result.unresolvedProviderPaths).toHaveLength(3);
+    expect(result.unresolvedProviderPaths).toEqual([
+      expect.objectContaining({
+        owner: "attachments",
+        path: "attachmentRoutes.transport",
+        status: "blocked",
+      }),
+    ]);
   });
 
   it("fails when inventory marks a path implemented but the factory omits it", () => {

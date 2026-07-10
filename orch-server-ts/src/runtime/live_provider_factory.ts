@@ -2,6 +2,7 @@ import type { FastifyRequest } from "fastify";
 
 import type { AdminUsersRouteOptions } from "../admin/admin_users_routes.js";
 import type { AtomRouteOptions } from "../atom/atom_routes.js";
+import type { AttachmentRouteOptions } from "../attachments/attachment_routes.js";
 import type { OrchestratorRuntimeServices } from "./composition.js";
 import type { LiveTaskChangeListener } from "./live_task_change_listener.js";
 import {
@@ -67,6 +68,7 @@ import { withBoardAssetMutationBroadcasts } from "./live_board_asset_mutation_br
 import { createLiveAuthenticatedUserResolvers } from "./live_authenticated_user_resolver.js";
 import { createLiveAdminUsersRouteProvider } from "./live_admin_users_route_provider.js";
 import { createLiveAtomHttpClient } from "./live_atom_route_provider.js";
+import { createLiveAttachmentRouteProviders } from "./live_attachment_route_provider.js";
 import { broadcastCatalogSnapshot } from "./live_folder_mutation_broadcaster.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import {
@@ -116,6 +118,10 @@ export type LiveRuntimeProviderBundle = {
 export type LiveOrchestratorProviderBundle = {
   readonly adminUsersRoutes: AdminUsersRouteOptions;
   readonly atomRoutes: AtomRouteOptions;
+  readonly attachmentRoutes: Pick<
+    AttachmentRouteOptions,
+    "provider" | "accessProvider"
+  >;
   readonly authRoutes: Pick<
     AuthRouteOptions,
     | "configProvider"
@@ -220,6 +226,11 @@ export function createLiveOrchestratorProviderBundle(
     accessProvider: dashboardAccessProvider,
     repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
   });
+  const attachmentProviders = createLiveAttachmentRouteProviders({
+    registry: options.runtimeServices.registry,
+    dashboardAccessProvider,
+    sessionResourceAccessProvider,
+  });
   const sessionStreamEventFilter = createSessionStreamEventFilter({
     accessProvider: sessionResourceAccessProvider,
     repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
@@ -247,6 +258,7 @@ export function createLiveOrchestratorProviderBundle(
       configProvider: configProviders.atomRoutes.configProvider,
       httpClient: createLiveAtomHttpClient(),
     },
+    attachmentRoutes: attachmentProviders,
     authRoutes: {
       configProvider: configProviders.authRoutes.configProvider,
       httpClient: createLiveAuthHttpClient(),

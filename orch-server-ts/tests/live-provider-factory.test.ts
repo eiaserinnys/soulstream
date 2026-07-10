@@ -100,12 +100,12 @@ describe("live provider factory boundary", () => {
       expect(error).toBeInstanceOf(LiveProviderFactoryError);
       expect((error as LiveProviderFactoryError).failures[0]).toMatchObject({
         owner: "attachments",
-        path: "attachmentRoutes.accessProvider",
-        status: "stub",
+        path: "attachmentRoutes.transport",
+        status: "blocked",
         source: expect.any(String),
         notes: expect.any(String),
       });
-      expect((error as Error).message).toContain("attachmentRoutes.accessProvider");
+      expect((error as Error).message).toContain("attachmentRoutes.transport");
     }
   });
 
@@ -223,6 +223,14 @@ describe("live provider factory boundary", () => {
       },
     });
     expect(bundle.folderRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
+    expect(bundle.attachmentRoutes.accessProvider.resolveAccess).toBe(
+      bundle.folderRoutes.accessProvider.resolveAccess,
+    );
+    expect(bundle.attachmentRoutes.accessProvider.requireSessionAccess).toBe(
+      bundle.sessionCatalogRoutes.accessProvider?.requireSessionAccess,
+    );
+    expect(await bundle.attachmentRoutes.provider.getNode("missing-attachment-node"))
+      .toBeNull();
     expect(bundle.boardAssetRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
     expect(bundle.boardAssetRoutes.provider.initFileAsset).toBe(
       dependencies.dbCatalogRepository.boardAssetRouteProvider.initFileAsset,
@@ -284,6 +292,18 @@ describe("live provider factory boundary", () => {
       body: Buffer.from("system-portrait"),
     });
     expect(bundle.systemConfigRoutes.provider.listConnectedNodes()).toEqual([]);
+    runtimeServices.registry.registerNode({
+      type: "node_register",
+      node_id: "node-attachment",
+      host: "127.0.0.1",
+      port: 4105,
+      agents: [],
+    });
+    await expect(bundle.attachmentRoutes.provider.getNode("node-attachment"))
+      .resolves.toMatchObject({
+        nodeId: "node-attachment",
+        connected: true,
+      });
     await expect(
       bundle.systemConfigRoutes.httpClient({
         method: "PUT",

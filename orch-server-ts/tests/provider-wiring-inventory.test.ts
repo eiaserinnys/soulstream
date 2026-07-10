@@ -80,7 +80,7 @@ describe("live provider wiring inventory", () => {
       liveProviderWiringInventory.map((entry) => entry.cutoverRisk),
     );
 
-    expect([...statuses].sort()).toEqual(["blocked", "implemented", "stub"]);
+    expect([...statuses].sort()).toEqual(["blocked", "implemented"]);
     expect([...risks].sort()).toEqual(["high", "low", "medium"]);
   });
 
@@ -99,6 +99,31 @@ describe("live provider wiring inventory", () => {
     ).toEqual([
       { path: "atomRoutes.configProvider", status: "implemented" },
       { path: "atomRoutes.httpClient", status: "implemented" },
+    ]);
+    expect(
+      liveProviderWiringInventory
+        .filter((entry) => entry.owner === "attachments")
+        .map((entry) => ({
+          path: entry.path,
+          status: entry.status,
+          dependencies: entry.dependencies,
+        })),
+    ).toEqual([
+      {
+        path: "attachmentRoutes.provider",
+        status: "implemented",
+        dependencies: ["runtime", "session_registry"],
+      },
+      {
+        path: "attachmentRoutes.accessProvider",
+        status: "implemented",
+        dependencies: ["auth", "db"],
+      },
+      {
+        path: "attachmentRoutes.transport",
+        status: "blocked",
+        dependencies: ["node_http", "websocket"],
+      },
     ]);
     expect(statusByPath.get("public.status:publicStatusRoutes.configProvider")).toBe(
       "implemented",
