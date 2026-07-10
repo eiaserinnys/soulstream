@@ -203,6 +203,7 @@ export type MutableNodeConnection = {
   agents: unknown[];
   capabilities: Record<string, unknown>;
   supportedBackends: string[];
+  userInfo: Record<string, unknown>;
   connected: boolean;
   connectedAtMs: number;
   disconnectedAtMs: number | undefined;

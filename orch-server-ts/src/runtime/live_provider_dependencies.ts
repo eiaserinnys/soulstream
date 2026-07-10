@@ -19,7 +19,7 @@ import type {
 } from "../sse/replay_broadcaster.js";
 import type { TaskMutationRouteProvider } from "../tasks/task_mutation_routes.js";
 import type { TaskReadRouteProvider } from "../tasks/task_read_routes.js";
-import type { PushRegistrationRepository } from "../push/push_routes.js";
+import type { PushNotificationRepository } from "../push/push_notifier.js";
 import type { UserBackgroundRepository } from "../user/user_background_routes.js";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 import type { LiveTaskChangeListener } from "./live_task_change_listener.js";
@@ -82,7 +82,7 @@ export type LiveNodeHttpClientBoundary = {
   ) => Promise<LiveNodeHttpResponse>;
 };
 
-export type LivePushRepositoryBoundary = PushRegistrationRepository;
+export type LivePushRepositoryBoundary = PushNotificationRepository;
 
 export type LiveConfigProviderBoundary = {
   readonly getConfig: () =>

@@ -10,6 +10,11 @@ import {
 } from "./config.js";
 import { registerDashboardServing } from "./dashboard/dashboard_serving.js";
 import { InMemoryNodeRegistry } from "./node/registry.js";
+import { createExpoPushProvider } from "./push/expo_push_provider.js";
+import {
+  PushNotifier,
+  SessionForegroundObserverTracker,
+} from "./push/push_notifier.js";
 import {
   createOrchestratorRuntimeServices,
   type OrchestratorRuntimeServices,
@@ -104,6 +109,18 @@ export async function createLiveProductionApplication(
     registry,
     boardAssetStorage,
   });
+  const pushRepository = createLivePushRegistrationRepository({ sqlResolver });
+  const foregroundObservers = new SessionForegroundObserverTracker();
+  const pushNotifier = new PushNotifier({
+    provider: createExpoPushProvider(),
+    repository: pushRepository,
+    catalog: dbCatalogRepository.folderRouteProvider,
+    sessionLookup: (sessionId) =>
+      registry.sessionCache.findSession(sessionId)?.payload,
+    resolveNodeEmail: (nodeId) =>
+      stringValue(registry.getUserInfo(nodeId).email) || config.allowed_email || undefined,
+    foregroundObservers,
+  });
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
@@ -113,11 +130,13 @@ export async function createLiveProductionApplication(
     loadTaskSnapshot: dbCatalogRepository.loadTaskSnapshot,
     sessionHistoryProvider: dbCatalogRepository.sessionHistoryProvider,
     sessionHistoryCloseAfterHistorySync: false,
+    sessionForegroundObservers: foregroundObservers,
+    additionalNodeEventSinks: [(events) => pushNotifier.accept(events)],
   });
   const dependencies: LiveProviderDependencies = {
     dbCatalogRepository,
     nodeHttpClient: runtimeServices.nodeHttpClient,
-    pushRepository: createLivePushRegistrationRepository({ sqlResolver }),
+    pushRepository,
     configProvider,
     systemPortraitAssets: createSystemPortraitAssets(),
   };
@@ -145,10 +164,15 @@ export async function createLiveProductionApplication(
     async closeResources() {
       if (resourcesClosed) return;
       resourcesClosed = true;
+      await pushNotifier.close();
       await providers.runtime.taskChangeListener.stop();
       await dbCatalogRepository.close();
     },
   };
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }
 
 export function buildProductionRouteOptions(

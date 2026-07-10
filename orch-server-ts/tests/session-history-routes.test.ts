@@ -451,6 +451,29 @@ describe("session history/read-only route harness", () => {
 
     expect(filterFinalizedAppServerReplayEvents(events)).toEqual([events[1], events[2]]);
   });
+
+  it("tracks a session history stream as a foreground observer and releases it", async () => {
+    const release = vi.fn();
+    const foregroundObservers = { observe: vi.fn(() => release) };
+    const app = createApp({
+      config,
+      sessionHistoryRoutes: {
+        provider: createProvider(),
+        closeAfterHistorySync: true,
+        foregroundObservers,
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/sess-observed/events",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(foregroundObservers.observe).toHaveBeenCalledWith("sess-observed");
+    expect(release).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
 });
 
 function createHarness(

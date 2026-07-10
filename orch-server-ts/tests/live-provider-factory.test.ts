@@ -567,6 +567,7 @@ function createLiveDependencies(): LiveProviderDependencies {
     },
     pushRepository: {
       upsertToken: vi.fn(async () => undefined),
+      listTokens: vi.fn(async () => []),
       deleteToken: vi.fn(async () => undefined),
     },
     configProvider: {

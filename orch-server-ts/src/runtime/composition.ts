@@ -20,7 +20,10 @@ import {
 } from "../node/node_snapshot_routes.js";
 import type { NodeWsRouteOptions } from "../node/ws_route.js";
 import { NodeCommandTransportHub } from "../node/transport_hub.js";
-import { createNodeSessionEventBroadcasterSink } from "./node_session_event_dispatcher.js";
+import {
+  createNodeSessionEventBroadcasterSink,
+  type NodeRegistryEventSink,
+} from "./node_session_event_dispatcher.js";
 import {
   SessionCommandRouter,
   type SessionCommandRouterOptions,
@@ -81,6 +84,8 @@ export type OrchestratorRuntimeCompositionOptions = {
   boardYjsHostHttpClient?: BoardYjsHostHttpClient;
   nodeHttpFetch?: LiveNodeHttpFetch;
   nodeHttpRequestTimeoutMs?: number;
+  additionalNodeEventSinks?: readonly NodeRegistryEventSink[];
+  sessionForegroundObservers?: SessionHistoryRouteOptions["foregroundObservers"];
 };
 
 export type OrchestratorRuntimeRouteOptions = {
@@ -157,6 +162,7 @@ export function createOrchestratorRuntimeServices(
         createRuntimeSessionEventHubSink(sessionEventHub),
         createNodeSessionEventBroadcasterSink(sessionBroadcaster),
         createNodeStreamBroadcasterSink(nodeStreamBroadcaster),
+        ...(options.additionalNodeEventSinks ?? []),
       ),
     },
     nodeSnapshotRoutes: {
@@ -195,6 +201,7 @@ export function createOrchestratorRuntimeServices(
             provider: options.sessionHistoryProvider,
             keepaliveMs: options.sessionHistoryKeepaliveMs,
             closeAfterHistorySync: options.sessionHistoryCloseAfterHistorySync,
+            foregroundObservers: options.sessionForegroundObservers,
           },
         }),
     sessionSnapshotRoutes: {
