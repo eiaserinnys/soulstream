@@ -41,5 +41,15 @@ export function collectDirectNodeSessionEvents(params: {
     ];
   }
 
+  if (params.message.type === "catalog_updated") {
+    return [
+      {
+        type: "node_session_event",
+        nodeId: params.nodeId,
+        data: params.message,
+      },
+    ];
+  }
+
   return undefined;
 }

@@ -115,23 +115,29 @@ describe("orchestrator runtime composition harness", () => {
       requestId: "runtime-create_session-1",
       prompt: "hello",
       folderId: "folder-1",
+      agentSessionId: expect.any(String),
     });
+    const agentSessionId = requireDefined(
+      typeof command.agentSessionId === "string"
+        ? command.agentSessionId
+        : undefined,
+    );
 
     ws.send(
       JSON.stringify({
         type: "session_created",
         requestId: command.requestId,
-        agentSessionId: "runtime-session",
+        agentSessionId,
       }),
     );
     const response = await responsePromise;
 
     expect(response.statusCode).toBe(201);
     expect(response.json()).toEqual({
-      agentSessionId: "runtime-session",
+      agentSessionId,
       nodeId: "fake-node",
     });
-    expect(runtime.registry.findSessionOwner("runtime-session")).toMatchObject({
+    expect(runtime.registry.findSessionOwner(agentSessionId)).toMatchObject({
       nodeId: "fake-node",
       connectionId,
       fresh: true,
@@ -143,8 +149,8 @@ describe("orchestrator runtime composition harness", () => {
       url: "/api/sessions",
     });
     expect(snapshotResponse.json().sessions[0]).toMatchObject({
-      agent_session_id: "runtime-session",
-      agentSessionId: "runtime-session",
+      agent_session_id: agentSessionId,
+      agentSessionId,
       nodeId: "fake-node",
       status: "created",
       connected: true,

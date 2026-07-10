@@ -131,7 +131,7 @@ describe("session command HTTP route harness", () => {
             {
               type: "session_created",
               requestId: message.requestId,
-              agentSessionId: "generated-session",
+              agentSessionId: message.agentSessionId,
             },
           );
         },
@@ -149,12 +149,13 @@ describe("session command HTTP route harness", () => {
         prompt: "hello",
         profile: "claude-roselin",
         folderId: "folder-1",
+        agentSessionId: "client-selected-session",
       },
     });
 
     expect(response.statusCode).toBe(201);
     expect(response.json()).toEqual({
-      agentSessionId: "generated-session",
+      agentSessionId: sent[0]?.agentSessionId,
       nodeId: "fake-node",
     });
     expect(sent).toHaveLength(1);
@@ -163,9 +164,52 @@ describe("session command HTTP route harness", () => {
       prompt: "hello",
       profile: "claude-roselin",
       folderId: "folder-1",
+      agentSessionId: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      ),
       requestId: "route-create_session-1-1700000000000",
     });
-    expect(sent[0]).not.toHaveProperty("agentSessionId");
+    expect(sent[0]?.agentSessionId).not.toBe("client-selected-session");
+  });
+
+  it("rejects a create_session ack that changes the server-generated session id", async () => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: {
+        send: (data) => {
+          const message = JSON.parse(data) as Record<string, unknown>;
+          registry.receiveNodeMessage(
+            { nodeId: "fake-node", connectionId },
+            {
+              type: "session_created",
+              requestId: message.requestId,
+              agentSessionId: "different-session-id",
+            },
+          );
+        },
+      },
+    });
+    const app = createApp({
+      config,
+      sessionCommandRoutes: { router, bridge },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { prompt: "hello", profile: "claude-roselin" },
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({
+      error: {
+        code: "SESSION_ID_MISMATCH",
+        message: "create_session ack changed the server-generated agentSessionId",
+      },
+    });
   });
 
   it("maps respond request_id to inputRequestId without letting body.requestId override the command requestId", async () => {

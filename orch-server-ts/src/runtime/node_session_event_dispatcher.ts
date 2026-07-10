@@ -110,9 +110,15 @@ function customStreamEventFromEnvelope(
     ? data.event
     : isRecord(data.payload)
       ? data.payload
-      : undefined;
+      : data.type === "catalog_updated"
+        ? data
+        : undefined;
   if (payload === undefined) return undefined;
-  if (payload.type !== "runbook_updated" && payload.type !== "custom_view_updated") {
+  if (
+    payload.type !== "catalog_updated" &&
+    payload.type !== "runbook_updated" &&
+    payload.type !== "custom_view_updated"
+  ) {
     return undefined;
   }
   return {
