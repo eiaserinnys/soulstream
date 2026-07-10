@@ -46,7 +46,6 @@ import {
 export type ShadowOrchestratorRuntimeProviders = {
   nowMs?: NodeCommandClock;
   requestIdGenerator?: NodeCommandRequestIdGenerator;
-  heartbeatTimeoutMs?: number;
   commandTimeoutMs?: number;
   sessionSseInstanceId?: string;
   taskSseInstanceId?: string;

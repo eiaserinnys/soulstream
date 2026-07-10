@@ -90,7 +90,6 @@ describe("node snapshot and stream route harness", () => {
       pendingCommandCount: 0,
       heartbeat: {
         supported: false,
-        timeoutMs: 30_000,
       },
     });
 

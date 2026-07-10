@@ -1,5 +1,4 @@
 import type { FastifyRequest } from "fastify";
-import { timingSafeEqual } from "node:crypto";
 import postgres from "postgres";
 
 import {
@@ -9,6 +8,7 @@ import {
   type AuthTokenAccessResult,
   type AuthUserPayloadExtra,
 } from "../auth/auth_routes.js";
+import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { BoardItemAccessProvider } from "../board/board_item_routes.js";
 import type { MarkdownDocumentAccessProvider } from "../board/markdown_document_routes.js";
 import type { FolderAccessProvider } from "../folders/folder_routes.js";
@@ -327,30 +327,30 @@ function verifyServiceBearer(
   request: FastifyRequest,
   configuredBearer: string,
 ): AuthTokenAccessResult {
-  const authorization = headerString(request.headers.authorization);
-  if (!authorization) {
+  const verification = verifyServiceBearerAuthorization(
+    request.headers.authorization,
+    configuredBearer,
+  );
+  if (verification.ok) return { ok: true };
+  if (verification.reason === "missing") {
     return {
       ok: false,
       statusCode: 401,
       detail: "Authorization header is required",
     };
   }
-  const parts = authorization.split(/\s+/);
-  if (parts.length !== 2 || parts[0]?.toLowerCase() !== "bearer") {
+  if (verification.reason === "malformed") {
     return {
       ok: false,
       statusCode: 401,
       detail: "Bearer token format is invalid",
     };
   }
-  if (!constantTimeStringEqual(parts[1] ?? "", configuredBearer)) {
-    return {
-      ok: false,
-      statusCode: 401,
-      detail: "Invalid token",
-    };
-  }
-  return { ok: true };
+  return {
+    ok: false,
+    statusCode: 401,
+    detail: "Invalid token",
+  };
 }
 
 function recordValue(value: unknown, key: string): unknown {
@@ -385,17 +385,6 @@ function optionalConfigString(
 
 function isProductionEnvironment(environment: string): boolean {
   return environment.toLowerCase() === "production";
-}
-
-function headerString(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function constantTimeStringEqual(left: string, right: string): boolean {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-  if (leftBuffer.length !== rightBuffer.length) return false;
-  return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
 function defaultPostgresFactory(

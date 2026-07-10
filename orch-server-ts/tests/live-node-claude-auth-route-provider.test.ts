@@ -26,7 +26,6 @@ const targetNode: NodeConnectionSnapshot = {
   lastSeenAtMs: 1_700_000_000_000,
   heartbeat: {
     supported: false,
-    timeoutMs: 0,
     lastPingAtMs: undefined,
     lastPongAtMs: undefined,
   },

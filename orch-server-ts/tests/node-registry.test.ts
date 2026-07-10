@@ -19,7 +19,6 @@ describe("Node registry and per-node session cache primitive", () => {
     const registry = new InMemoryNodeRegistry({
       sessionCache,
       nowMs: () => nowMs,
-      heartbeatTimeoutMs: 1_000,
       requestIdGenerator: ({ sequence, commandType, nowMs }) =>
         `node-req-${commandType}-${sequence}-${nowMs}`,
     });
@@ -183,7 +182,6 @@ describe("Node registry and per-node session cache primitive", () => {
     const registry = new InMemoryNodeRegistry({
       sessionCache,
       nowMs: () => nowMs,
-      heartbeatTimeoutMs: 1_000,
       requestIdGenerator: ({ sequence, commandType }) =>
         `current-${commandType}-${sequence}`,
     });
@@ -311,13 +309,12 @@ describe("Node registry and per-node session cache primitive", () => {
     });
   });
 
-  it("tracks heartbeat lastSeen explicitly and sweeps only heartbeat-capable nodes", () => {
+  it("tracks heartbeat observations without owning a second liveness timeout", () => {
     let nowMs = 1_000;
     const sessionCache = new PerNodeSessionCache();
     const registry = new InMemoryNodeRegistry({
       sessionCache,
       nowMs: () => nowMs,
-      heartbeatTimeoutMs: 500,
     });
 
     registry.registerNode({
@@ -350,16 +347,13 @@ describe("Node registry and per-node session cache primitive", () => {
       },
     });
 
-    expect(registry.sweepHeartbeatTimeouts(1_749)).toEqual([]);
-    expect(registry.sweepHeartbeatTimeouts(1_750)).toEqual([
-      {
-        type: "node_unregistered",
-        nodeId: "heartbeat-node",
-        connectionId: registry.getNodeState("heartbeat-node")?.connectionId,
-        reason: "heartbeat_timeout",
-      },
-    ]);
-    expect(registry.getConnectedNode("heartbeat-node")).toBeUndefined();
+    nowMs = 1_750;
+    expect(registry.getConnectedNode("heartbeat-node")).toMatchObject({
+      nodeId: "heartbeat-node",
+      connected: true,
+      lastSeenAtMs: 1_250,
+      heartbeat: { supported: true, lastPongAtMs: 1_250 },
+    });
     expect(registry.getConnectedNode("legacy-node")).toMatchObject({
       nodeId: "legacy-node",
       connected: true,

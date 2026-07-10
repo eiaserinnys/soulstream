@@ -187,7 +187,10 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
     registerNodeAgentProfileRoutes(app, options.nodeAgentProfileRoutes);
   }
   if (options.nodeWsRoute !== undefined) {
-    registerNodeWsRoute(app, options.nodeWsRoute);
+    registerNodeWsRoute(app, options.nodeWsRoute, {
+      environment: options.config.environment,
+      authBearerToken: options.config.authBearerToken,
+    });
   }
   if (options.nodeSnapshotRoutes !== undefined) {
     registerNodeSnapshotRoutes(app, options.nodeSnapshotRoutes);

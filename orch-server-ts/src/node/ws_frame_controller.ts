@@ -47,6 +47,12 @@ export type NodeWsFrameMessageResult = {
   nodeId: string;
   connectionId: string;
   events: NodeRegistryEvent[];
+  outboundFrames?: NodeWsOutboundFrame[];
+};
+
+export type NodeWsOutboundFrame = {
+  type: "app_heartbeat_pong";
+  sentAt: unknown;
 };
 
 export type NodeWsFrameIgnoredAfterCloseResult = {
@@ -100,12 +106,19 @@ export class NodeWsFrameController {
     }
 
     const events = this.registry.receiveNodeMessage(this.registered, frame);
-    return {
+    const result: NodeWsFrameMessageResult = {
       type: "message",
       nodeId: this.registered.nodeId,
       connectionId: this.registered.connectionId,
       events,
     };
+    if (frame.type === "app_heartbeat_ping") {
+      result.outboundFrames = [{
+        type: "app_heartbeat_pong",
+        sentAt: frame.sentAt,
+      }];
+    }
+    return result;
   }
 
   close(reason = "disconnect"): NodeWsFrameCloseResult {

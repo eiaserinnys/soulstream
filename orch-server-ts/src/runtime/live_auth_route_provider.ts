@@ -15,6 +15,7 @@ import type {
   AuthUserAuthorizer,
 } from "../auth/auth_routes.js";
 import { AUTH_COOKIE_NAME } from "../auth/auth_routes.js";
+import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import { extractDashboardJwtToken } from "./live_authenticated_user_resolver.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
 
@@ -333,30 +334,30 @@ function verifyServiceBearer(
   request: Parameters<AuthTokenResolver>[0],
   configuredBearer: string,
 ): AuthTokenAccessResult {
-  const authorization = headerString(request.headers.authorization);
-  if (!authorization) {
+  const verification = verifyServiceBearerAuthorization(
+    request.headers.authorization,
+    configuredBearer,
+  );
+  if (verification.ok) return { ok: true };
+  if (verification.reason === "missing") {
     return {
       ok: false,
       statusCode: 401,
       detail: "Authorization 헤더가 필요합니다",
     };
   }
-  const parts = authorization.split(/\s+/);
-  if (parts.length !== 2 || parts[0]?.toLowerCase() !== "bearer") {
+  if (verification.reason === "malformed") {
     return {
       ok: false,
       statusCode: 401,
       detail: "Bearer 토큰 형식이 올바르지 않습니다",
     };
   }
-  if (!constantTimeStringEqual(parts[1] ?? "", configuredBearer)) {
-    return {
-      ok: false,
-      statusCode: 401,
-      detail: "유효하지 않은 토큰입니다",
-    };
-  }
-  return { ok: true };
+  return {
+    ok: false,
+    statusCode: 401,
+    detail: "유효하지 않은 토큰입니다",
+  };
 }
 
 type AuthTokenAccessResult = Awaited<ReturnType<AuthTokenResolver>>;
@@ -386,8 +387,4 @@ function optionalConfigString(
 
 function isProductionEnvironment(environment: string): boolean {
   return environment.toLowerCase() === "production";
-}
-
-function headerString(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
 }

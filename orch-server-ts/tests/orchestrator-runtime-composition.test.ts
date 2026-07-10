@@ -25,7 +25,10 @@ type TestWebSocket = {
 };
 
 type WebSocketInjectableApp = {
-  injectWS: (path: string) => Promise<TestWebSocket>;
+  injectWS: (
+    path: string,
+    upgradeContext?: { headers?: Record<string, string> },
+  ) => Promise<TestWebSocket>;
 };
 
 describe("orchestrator runtime composition harness", () => {
@@ -92,9 +95,7 @@ describe("orchestrator runtime composition harness", () => {
     });
 
     await runtime.app.ready();
-    const ws = await (runtime.app as unknown as WebSocketInjectableApp).injectWS(
-      "/ws/node",
-    );
+    const ws = await injectAuthenticatedWs(runtime.app);
     ws.send(JSON.stringify(reconnect.registration));
     await waitFor(() => runtime.registry.getConnectedNode("fake-node") !== undefined);
     const connectionId = requireDefined(
@@ -165,9 +166,7 @@ describe("orchestrator runtime composition harness", () => {
     });
 
     await runtime.app.ready();
-    const ws = await (runtime.app as unknown as WebSocketInjectableApp).injectWS(
-      "/ws/node",
-    );
+    const ws = await injectAuthenticatedWs(runtime.app);
     ws.send(JSON.stringify(reconnect.registration));
     await waitFor(() => runtime.registry.getConnectedNode("fake-node") !== undefined);
 
@@ -219,9 +218,7 @@ describe("orchestrator runtime composition harness", () => {
     });
 
     await runtime.app.ready();
-    const ws = await (runtime.app as unknown as WebSocketInjectableApp).injectWS(
-      "/ws/node",
-    );
+    const ws = await injectAuthenticatedWs(runtime.app);
     ws.send(
       JSON.stringify({
         type: "node_register",
@@ -321,9 +318,7 @@ describe("orchestrator runtime composition harness", () => {
     });
 
     await runtime.app.ready();
-    const ws = await (runtime.app as unknown as WebSocketInjectableApp).injectWS(
-      "/ws/node",
-    );
+    const ws = await injectAuthenticatedWs(runtime.app);
     ws.send(JSON.stringify(reconnect.registration));
     await waitFor(() => runtime.registry.getConnectedNode("fake-node") !== undefined);
 
@@ -389,9 +384,7 @@ describe("orchestrator runtime composition harness", () => {
     });
 
     await runtime.app.ready();
-    const ws = await (runtime.app as unknown as WebSocketInjectableApp).injectWS(
-      "/ws/node",
-    );
+    const ws = await injectAuthenticatedWs(runtime.app);
     ws.send(JSON.stringify(reconnect.registration));
     await waitFor(() =>
       nodeFrames.some((frame) => frame.event === "node_connected"),
@@ -444,6 +437,12 @@ describe("orchestrator runtime composition harness", () => {
     await runtime.app.close();
   });
 });
+
+function injectAuthenticatedWs(app: unknown): Promise<TestWebSocket> {
+  return (app as WebSocketInjectableApp).injectWS("/ws/node", {
+    headers: { authorization: "Bearer test-token" },
+  });
+}
 
 function waitForMessage(ws: TestWebSocket): Promise<string> {
   return new Promise((resolve) => {

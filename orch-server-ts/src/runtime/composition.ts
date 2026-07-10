@@ -63,7 +63,6 @@ export type OrchestratorRuntimeCompositionOptions = {
   exposeLocalHealthRoute?: boolean;
   nowMs?: NodeCommandClock;
   requestIdGenerator?: NodeCommandRequestIdGenerator;
-  heartbeatTimeoutMs?: number;
   commandTimeoutMs?: number;
   enableSessionActionCommandRoutes?: boolean;
   enableSessionBackgroundScheduleRoutes?: boolean;
@@ -121,7 +120,6 @@ export function createOrchestratorRuntimeServices(
   const registry = options.registry ?? new InMemoryNodeRegistry({
     nowMs: options.nowMs,
     requestIdGenerator: options.requestIdGenerator,
-    heartbeatTimeoutMs: options.heartbeatTimeoutMs,
   });
   const transports = new NodeCommandTransportHub();
   const sessionRouter = new SessionCommandRouter({

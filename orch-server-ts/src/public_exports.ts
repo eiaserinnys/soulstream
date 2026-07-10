@@ -33,6 +33,7 @@ export {
   nodeWsRouteAuthRequirements,
   registerNodeWsRoute,
   type NodeWsRouteOptions,
+  type NodeWsRouteSecurity,
 } from "./node/ws_route.js";
 export * from "./public/public_status_routes.js";
 export * from "./push/push_routes.js";
