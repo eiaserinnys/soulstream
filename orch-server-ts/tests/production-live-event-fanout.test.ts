@@ -309,6 +309,7 @@ function createFakeSql(): {
     return [];
   });
   const sql = Object.assign(query, {
+    json: vi.fn((value: unknown) => ({ jsonValue: value })),
     listen: vi.fn(async (_channel: string, listener: (payload: string) => void) => {
       taskChangeListener = listener;
       return {

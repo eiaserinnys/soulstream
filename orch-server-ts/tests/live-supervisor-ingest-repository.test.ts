@@ -94,9 +94,12 @@ function fakeSql(responses: readonly unknown[][]): {
 } {
   const calls: SqlCall[] = [];
   let index = 0;
-  const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+  const query = (strings: TemplateStringsArray, ...values: unknown[]) => {
     calls.push({ query: strings.join("?"), values });
     return Promise.resolve(responses[index++] ?? []);
+  };
+  const sql = Object.assign(query, {
+    json: (value: unknown) => ({ jsonValue: value }),
   }) as LivePostgresSql;
   return { sql, calls };
 }

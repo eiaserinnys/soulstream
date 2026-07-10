@@ -813,6 +813,44 @@ async def test_session_get_all_and_count(test_db):
     assert len(rows) == 2
 
 
+async def test_session_feed_only_excludes_hidden_folders_and_llm(test_db):
+    await _create_folder(test_db, "feed-visible", "Feed Visible")
+    await _create_folder(test_db, "feed-hidden", "Feed Hidden")
+    await test_db.execute(
+        "UPDATE folders SET settings = $1::jsonb WHERE id = $2",
+        json.dumps({"excludeFromFeed": True}),
+        "feed-hidden",
+    )
+    await _create_session(
+        test_db,
+        "feed-normal",
+        folder_id="feed-visible",
+        session_type="claude",
+    )
+    await _create_session(
+        test_db,
+        "feed-llm",
+        folder_id="feed-visible",
+        session_type="llm",
+    )
+    await _create_session(
+        test_db,
+        "feed-hidden-normal",
+        folder_id="feed-hidden",
+        session_type="claude",
+    )
+
+    filters = json.dumps({"feed_only": True})
+    rows = await test_db.fetch(
+        "SELECT * FROM session_get_all($1::jsonb, NULL, NULL)",
+        filters,
+    )
+    count = await test_db.fetchval("SELECT session_count($1::jsonb)", filters)
+
+    assert [row["session_id"] for row in rows] == ["feed-normal"]
+    assert count == 1
+
+
 async def test_session_delete(test_db):
     await _create_session(test_db, "s-del")
     await test_db.execute("SELECT session_delete($1)", "s-del")

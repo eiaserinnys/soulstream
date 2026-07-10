@@ -177,7 +177,7 @@ export function createLiveDbCatalogRepository(
       sessionResourceAccessRepository,
     );
     if (filters === null) return { sessions: [], total: 0 };
-    const filtersJson = JSON.stringify(filters);
+    const filtersJson = sql.json(filters);
     const countRows = await sql`
       SELECT session_count(${filtersJson}::jsonb) AS count
     `;

@@ -121,7 +121,7 @@ describe("live DB SSE replay snapshots", () => {
 
     const filterValues = harness.calls
       .filter((call) => call.text.includes("session_"))
-      .map((call) => JSON.parse(String(call.values[0])));
+      .map((call) => (call.values[0] as { jsonValue: unknown }).jsonValue);
     expect(filterValues).toEqual([
       { folder_id: "root", feed_only: true },
       { folder_id: "root", feed_only: true },
@@ -229,10 +229,13 @@ function createSqlHarness(
   rowsFor: (text: string, values: unknown[]) => readonly Record<string, unknown>[] = () => [],
 ) {
   const calls: Array<{ text: string; values: unknown[] }> = [];
-  const sql = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+  const query = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?");
     calls.push({ text, values });
     return rowsFor(text, values);
+  });
+  const sql = Object.assign(query, {
+    json: vi.fn((value: unknown) => ({ jsonValue: value })),
   }) as unknown as LivePostgresSql;
 
   return {
