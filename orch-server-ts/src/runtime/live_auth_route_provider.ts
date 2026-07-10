@@ -15,6 +15,7 @@ import type {
   AuthUserAuthorizer,
 } from "../auth/auth_routes.js";
 import { AUTH_COOKIE_NAME } from "../auth/auth_routes.js";
+import { extractDashboardJwtToken } from "./live_authenticated_user_resolver.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
 
 export type LiveAuthHttpClientFetch = (
@@ -170,8 +171,7 @@ export function createLiveAuthTokenResolver(
     }
 
     if (googleClientId.length > 0) {
-      const dashboardToken = extractCookieToken(request, cookieName) ??
-        extractBearerToken(request);
+      const dashboardToken = extractDashboardJwtToken(request, cookieName);
       if (dashboardToken) {
         const payload = await jwt.verifyToken(dashboardToken);
         if (payload) return { ok: true };
@@ -386,33 +386,6 @@ function optionalConfigString(
 
 function isProductionEnvironment(environment: string): boolean {
   return environment.toLowerCase() === "production";
-}
-
-function extractCookieToken(
-  request: Parameters<AuthTokenResolver>[0],
-  name: string,
-): string | undefined {
-  return parseCookies(headerString(request.headers.cookie))[name];
-}
-
-function extractBearerToken(
-  request: Parameters<AuthTokenResolver>[0],
-): string | undefined {
-  const authorization = headerString(request.headers.authorization);
-  if (authorization?.toLowerCase().startsWith("bearer ")) {
-    return authorization.slice(7);
-  }
-  return undefined;
-}
-
-function parseCookies(header: string | undefined): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const part of header?.split(";") ?? []) {
-    const index = part.indexOf("=");
-    if (index <= 0) continue;
-    result[part.slice(0, index).trim()] = part.slice(index + 1).trim();
-  }
-  return result;
 }
 
 function headerString(value: string | string[] | undefined): string | undefined {

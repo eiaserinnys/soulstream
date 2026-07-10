@@ -14,6 +14,10 @@ import type { MarkdownDocumentAccessProvider } from "../board/markdown_document_
 import type { FolderAccessProvider } from "../folders/folder_routes.js";
 import type { RunbookAccessProvider } from "../runbooks/runbook_route_types.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
+import {
+  extractDashboardBearerToken,
+  extractDashboardJwtCookieToken,
+} from "./live_authenticated_user_resolver.js";
 
 export type DashboardAccess = {
   readonly restricted: boolean;
@@ -201,7 +205,7 @@ async function resolveAccessIdentity(input: {
     : extractAccessEmail(input.request);
 
   if (googleClientId.length > 0) {
-    const cookieToken = extractCookieToken(input.request, input.cookieName);
+    const cookieToken = extractDashboardJwtCookieToken(input.request, input.cookieName);
     if (cookieToken) {
       const payload = await input.jwt.verifyToken(cookieToken);
       if (payload) {
@@ -226,7 +230,7 @@ async function resolveAccessIdentity(input: {
   }
 
   if (googleClientId.length > 0) {
-    const dashboardToken = extractBearerToken(input.request);
+    const dashboardToken = extractDashboardBearerToken(input.request);
     if (dashboardToken) {
       const payload = await input.jwt.verifyToken(dashboardToken);
       if (payload) {
@@ -342,28 +346,6 @@ function verifyServiceBearer(
     };
   }
   return { ok: true };
-}
-
-function extractCookieToken(request: FastifyRequest, name: string): string | undefined {
-  return parseCookies(headerString(request.headers.cookie))[name];
-}
-
-function extractBearerToken(request: FastifyRequest): string | undefined {
-  const authorization = headerString(request.headers.authorization);
-  if (authorization?.toLowerCase().startsWith("bearer ")) {
-    return authorization.slice(7);
-  }
-  return undefined;
-}
-
-function parseCookies(header: string | undefined): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const part of header?.split(";") ?? []) {
-    const index = part.indexOf("=");
-    if (index <= 0) continue;
-    result[part.slice(0, index).trim()] = part.slice(index + 1).trim();
-  }
-  return result;
 }
 
 function recordValue(value: unknown, key: string): unknown {

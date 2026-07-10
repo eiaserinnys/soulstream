@@ -19,6 +19,7 @@ import type {
 } from "../sse/replay_broadcaster.js";
 import type { TaskMutationRouteProvider } from "../tasks/task_mutation_routes.js";
 import type { TaskReadRouteProvider } from "../tasks/task_read_routes.js";
+import type { PushRegistrationRepository } from "../push/push_routes.js";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 import type { LiveTaskChangeListener } from "./live_task_change_listener.js";
 import type { LiveSystemPortraitAssetBoundary } from "./live_system_config_route_provider.js";
@@ -103,10 +104,7 @@ export type LiveClaudeOAuthBoundary = {
   readonly fetchProfile: (input: unknown) => unknown | Promise<unknown>;
 };
 
-export type LivePushRepositoryBoundary = {
-  readonly register: (input: unknown) => void | Promise<void>;
-  readonly remove: (input: unknown) => void | Promise<void>;
-};
+export type LivePushRepositoryBoundary = PushRegistrationRepository;
 
 export type LiveConfigProviderBoundary = {
   readonly getConfig: () =>

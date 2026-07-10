@@ -23,6 +23,7 @@ import type { BoardAssetRouteOptions } from "../board/board_asset_routes.js";
 import type { BoardItemRouteOptions } from "../board/board_item_routes.js";
 import type { MarkdownDocumentRouteOptions } from "../board/markdown_document_routes.js";
 import type { PublicStatusRouteOptions } from "../public/public_status_routes.js";
+import type { PushRouteOptions } from "../push/push_routes.js";
 import type { RunbookRouteOptions } from "../runbooks/runbook_route_types.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
 import type { TaskMutationRouteOptions } from "../tasks/task_mutation_routes.js";
@@ -59,6 +60,7 @@ import {
 } from "../session/session_stream_event_filter.js";
 import { withFolderMutationBroadcasts } from "./live_folder_mutation_broadcaster.js";
 import { withBoardAssetMutationBroadcasts } from "./live_board_asset_mutation_broadcaster.js";
+import { createLiveAuthenticatedUserResolvers } from "./live_authenticated_user_resolver.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import {
   liveProviderWiringInventory,
@@ -126,6 +128,7 @@ export type LiveOrchestratorProviderBundle = {
     PublicStatusRouteOptions,
     "folderCountsProvider"
   >;
+  readonly pushRoutes: PushRouteOptions;
   readonly sessionCatalogRoutes: SessionCatalogRouteOptions;
   readonly runtime: LiveRuntimeProviderBundle;
   readonly cogitoRoutes: LiveCogitoRouteProviderBundle["cogitoRoutes"];
@@ -198,6 +201,9 @@ export function createLiveOrchestratorProviderBundle(
     configProvider: options.dependencies.configProvider,
     jwt: authJwt,
   });
+  const authenticatedUserResolvers = createLiveAuthenticatedUserResolvers({
+    jwt: authJwt,
+  });
   const sessionResourceAccessProvider = createSessionResourceAccessProvider({
     accessProvider: dashboardAccessProvider,
     repository: options.dependencies.dbCatalogRepository.sessionResourceAccessRepository,
@@ -256,6 +262,10 @@ export function createLiveOrchestratorProviderBundle(
         ...options.dependencies.dbCatalogRepository.folderCountsProvider,
         resolveAccess: dashboardAccessProvider.resolveAccess,
       },
+    },
+    pushRoutes: {
+      repository: options.dependencies.pushRepository,
+      resolveJwtUser: authenticatedUserResolvers.resolveUser,
     },
     sessionCatalogRoutes: {
       provider: options.dependencies.dbCatalogRepository.sessionCatalogProvider,
