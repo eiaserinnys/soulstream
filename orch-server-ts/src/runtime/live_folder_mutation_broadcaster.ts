@@ -12,25 +12,25 @@ export function withFolderMutationBroadcasts(
     ...provider,
     async createFolder(name, sortOrder, options) {
       const result = await provider.createFolder(name, sortOrder, options);
-      await broadcastCatalog(provider, broadcaster);
+      await broadcastCatalogSnapshot(provider, broadcaster);
       return result;
     },
     async updateFolder(folderId, update) {
       await provider.updateFolder(folderId, update);
-      await broadcastCatalog(provider, broadcaster);
+      await broadcastCatalogSnapshot(provider, broadcaster);
     },
     async deleteFolder(folderId) {
       await provider.deleteFolder(folderId);
-      await broadcastCatalog(provider, broadcaster);
+      await broadcastCatalogSnapshot(provider, broadcaster);
     },
     async reorderFolders(items) {
       await provider.reorderFolders(items);
-      await broadcastCatalog(provider, broadcaster);
+      await broadcastCatalogSnapshot(provider, broadcaster);
     },
   };
 }
 
-async function broadcastCatalog(
+export async function broadcastCatalogSnapshot(
   provider: FolderRouteProvider,
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
 ): Promise<void> {

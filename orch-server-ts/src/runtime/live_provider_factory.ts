@@ -1,5 +1,6 @@
 import type { FastifyRequest } from "fastify";
 
+import type { AdminUsersRouteOptions } from "../admin/admin_users_routes.js";
 import type { OrchestratorRuntimeServices } from "./composition.js";
 import type { LiveTaskChangeListener } from "./live_task_change_listener.js";
 import {
@@ -63,6 +64,8 @@ import {
 import { withFolderMutationBroadcasts } from "./live_folder_mutation_broadcaster.js";
 import { withBoardAssetMutationBroadcasts } from "./live_board_asset_mutation_broadcaster.js";
 import { createLiveAuthenticatedUserResolvers } from "./live_authenticated_user_resolver.js";
+import { createLiveAdminUsersRouteProvider } from "./live_admin_users_route_provider.js";
+import { broadcastCatalogSnapshot } from "./live_folder_mutation_broadcaster.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import {
   liveProviderWiringInventory,
@@ -109,6 +112,7 @@ export type LiveRuntimeProviderBundle = {
 };
 
 export type LiveOrchestratorProviderBundle = {
+  readonly adminUsersRoutes: AdminUsersRouteOptions;
   readonly authRoutes: Pick<
     AuthRouteOptions,
     | "configProvider"
@@ -204,6 +208,7 @@ export function createLiveOrchestratorProviderBundle(
   const dashboardAccessProvider = createLiveDashboardAccessProvider({
     configProvider: options.dependencies.configProvider,
     jwt: authJwt,
+    repository: options.dependencies.dbCatalogRepository.adminUsersRepository,
   });
   const authenticatedUserResolvers = createLiveAuthenticatedUserResolvers({
     jwt: authJwt,
@@ -222,6 +227,19 @@ export function createLiveOrchestratorProviderBundle(
     );
 
   return {
+    adminUsersRoutes: {
+      provider: createLiveAdminUsersRouteProvider({
+        repository: options.dependencies.dbCatalogRepository.adminUsersRepository,
+        currentEmail: authenticatedUserResolvers.resolveEmail,
+        isAdminEmail: dashboardAccessProvider.isAdminEmail,
+        listFolders: options.dependencies.dbCatalogRepository.folderRouteProvider.listFolders,
+        broadcastAccessChange: () =>
+          broadcastCatalogSnapshot(
+            options.dependencies.dbCatalogRepository.folderRouteProvider,
+            options.runtimeServices.sessionBroadcaster,
+          ),
+      }),
+    },
     authRoutes: {
       configProvider: configProviders.authRoutes.configProvider,
       httpClient: createLiveAuthHttpClient(),

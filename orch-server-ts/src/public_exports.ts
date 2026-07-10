@@ -40,6 +40,7 @@ export * from "./runtime/composition.js";
 export * from "./runtime/live_cogito_route_provider.js";
 export * from "./runtime/live_auth_route_provider.js";
 export * from "./runtime/live_authenticated_user_resolver.js";
+export * from "./runtime/live_admin_users_route_provider.js";
 export * from "./runtime/live_config_route_providers.js";
 export * from "./runtime/live_dashboard_access_provider.js";
 export * from "./runtime/live_board_asset_mutation_broadcaster.js";

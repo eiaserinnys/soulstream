@@ -6,7 +6,7 @@ import type {
 } from "./provider_wiring_inventory.js";
 
 export const liveProviderWiringInventory = [
-  e("admin.users", "adminUsersRoutes.provider", "stub", "Python orch-server admin users API; TS harness src/admin/admin_users_routes.ts.", ["auth", "db"], "medium", "Needs a live user repository and admin authorization boundary before cutover."),
+  e("admin.users", "adminUsersRoutes.provider", "implemented", "TS live admin users repository src/runtime/live_admin_users_route_provider.ts maps Python admin users CRUD for src/admin/admin_users_routes.ts.", ["auth", "db", "sse"], "medium", "Uses the same dbCatalogRepository.adminUsersRepository instance as live_dashboard_access_provider for DB users policy, reuses the shared authenticated email resolver, and emits catalog_updated after successful writes. TS performs request-time DB reads, so Python DashboardUserCache refresh has no separate invalidation equivalent."),
   e("atom", "atomRoutes.configProvider", "implemented", "TS live config adapter src/runtime/live_config_route_providers.ts maps Python atom_* settings for src/atom/atom_routes.ts.", ["env"], "low", "Reads only the explicit LiveConfigProviderBoundary. Atom disabled preserves Python behavior by not requiring URL/API key."),
   e("atom", "atomRoutes.httpClient", "blocked", "Python orch-server atom proxy HTTP client; TS harness src/atom/atom_routes.ts.", ["env", "http"], "medium", "Requires live outbound HTTP client policy and upstream base URL configuration."),
   e("attachments", "attachmentRoutes.provider", "stub", "Python orch-server attachment API; TS harness src/attachments/attachment_routes.ts.", ["db", "filesystem", "r2"], "high", "Storage metadata and download lookup need live repository wiring."),

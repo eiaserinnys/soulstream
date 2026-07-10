@@ -76,6 +76,7 @@ export type LiveDashboardAccessProvider =
   & MarkdownDocumentAccessProvider
   & RunbookAccessProvider
   & {
+    readonly isAdminEmail: (email: string) => Promise<boolean>;
     readonly resolveAccess: (
       request: FastifyRequest,
       context?: DashboardAccessResolveContext,
@@ -111,6 +112,10 @@ export function createLiveDashboardAccessProvider(
   const cookieName = options.cookieName ?? AUTH_COOKIE_NAME;
 
   return {
+    async isAdminEmail(email) {
+      const user = await repository.findUserByEmail(normalizeDashboardEmail(email));
+      return user?.isAdmin === true;
+    },
     async resolveAccess(
       request: FastifyRequest,
       context?: DashboardAccessResolveContext,

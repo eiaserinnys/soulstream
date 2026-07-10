@@ -54,8 +54,13 @@ import { createLiveTaskReadProvider } from "./live_task_read_provider.js";
 import { serializeTasksWithLinkedSessions } from "./live_task_serialization.js";
 import { createLiveUserPreferencesRepository } from "./live_user_preferences_repository.js";
 import type { UserBackgroundRepository } from "../user/user_background_routes.js";
+import {
+  createLiveAdminUsersRepository,
+  type LiveAdminUsersRepository,
+} from "./live_admin_users_route_provider.js";
 
 export type LiveDbCatalogRepository = {
+  readonly adminUsersRepository: LiveAdminUsersRepository;
   readonly folderRouteProvider: LiveFolderProvider;
   readonly folderCountsProvider: LiveFolderProvider;
   readonly boardAssetRouteProvider: BoardAssetRouteProvider;
@@ -113,6 +118,7 @@ export function createLiveDbCatalogRepository(
       closeTimeoutSeconds: options.closeTimeoutSeconds,
     });
   const sessionHistoryProvider = createLiveSessionHistoryProvider({ sqlResolver });
+  const adminUsersRepository = createLiveAdminUsersRepository({ sqlResolver });
   const folderProvider = createLiveFolderProvider(sqlResolver);
   const boardItemProvider = createLiveBoardItemRouteProvider(
     sqlResolver,
@@ -144,6 +150,7 @@ export function createLiveDbCatalogRepository(
     options.sessionSnapshotLimit ?? DEFAULT_SESSION_SNAPSHOT_LIMIT;
   const taskSnapshotLimit = options.taskSnapshotLimit ?? DEFAULT_TASK_SNAPSHOT_LIMIT;
   return {
+    adminUsersRepository,
     folderRouteProvider: folderProvider,
     folderCountsProvider: folderProvider,
     boardAssetRouteProvider: boardAssetProvider,
