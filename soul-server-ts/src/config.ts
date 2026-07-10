@@ -5,6 +5,7 @@ import {
   DEFAULT_HANDOVER_MIN_INTERVAL_MS,
   DEFAULT_SOFT_TOKEN_THRESHOLD,
 } from "./supervisor/handover_policy.js";
+import { ORCH_BOARD_YJS_HOST_NODE_ID } from "./board_yjs_host_mode.js";
 
 const csvStringList = z
   .string()
@@ -22,7 +23,14 @@ const csvStringList = z
  */
 export const EnvSchema = z
   .object({
-    SOULSTREAM_NODE_ID: z.string().min(1, "SOULSTREAM_NODE_ID required"),
+    SOULSTREAM_NODE_ID: z
+      .string()
+      .min(1, "SOULSTREAM_NODE_ID required")
+      .refine(
+        (value) => value !== ORCH_BOARD_YJS_HOST_NODE_ID,
+        "SOULSTREAM_NODE_ID cannot use reserved board Yjs host sentinel orch",
+      ),
+    /** Node ID of the legacy host, or `orch` when the orchestrator owns all board Y.Doc state. */
     BOARD_YJS_HOST_NODE_ID: z.string().min(1, "BOARD_YJS_HOST_NODE_ID required"),
     SOULSTREAM_UPSTREAM_URL: z
       .string()

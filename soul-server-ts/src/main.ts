@@ -9,8 +9,7 @@ import { loadAgentRegistry } from "./agent_registry.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "./auth/claude_auth.js";
 import { FileAttachmentStore } from "./attachments/file_manager.js";
 import { CatalogService } from "./catalog/catalog_service.js";
-import { BoardYjsHostClient } from "./collaboration/board_yjs_host_client.js";
-import { BoardYjsService } from "./collaboration/board_yjs_service.js";
+import { createBoardYjsRouting } from "./collaboration/board_yjs_routing.js";
 import { parseEnv } from "./config.js";
 import { CustomViewService } from "./custom_view/custom_view_service.js";
 import { ensureStableSessionOrderIndexInBackground } from "./db/session_index_ensure.js";
@@ -246,18 +245,18 @@ async function main(): Promise<void> {
     dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
     jwtSecret: env.JWT_SECRET,
   };
-  const isBoardYjsHost = env.SOULSTREAM_NODE_ID === env.BOARD_YJS_HOST_NODE_ID;
-  const localBoardYjsService = new BoardYjsService({
+  const {
+    isBoardYjsHost,
+    localService: localBoardYjsService,
+    mutationPort: boardYjsService,
+  } = createBoardYjsRouting({
     db,
     logger,
     auth: boardYjsAuth,
+    orch: orchProxyConfig,
     nodeId: env.SOULSTREAM_NODE_ID,
     hostNodeId: env.BOARD_YJS_HOST_NODE_ID,
-    isHost: isBoardYjsHost,
   });
-  const boardYjsService = isBoardYjsHost
-    ? localBoardYjsService
-    : new BoardYjsHostClient({ orch: orchProxyConfig, logger });
   logger.info(
     {
       nodeId: env.SOULSTREAM_NODE_ID,

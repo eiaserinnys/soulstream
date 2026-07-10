@@ -108,6 +108,20 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     expect(worker.capabilities?.board_yjs_host_node_id).toBe("eiaserinnys");
   });
 
+  it("orch 특수값은 node id 우연 충돌에도 host capability를 광고하지 않는다", () => {
+    const msg = buildRegistrationMsg({
+      nodeId: "orch",
+      boardYjsHostNodeId: "orch",
+      host: "127.0.0.1",
+      port: 3105,
+      userName: "",
+      agentRegistry: new AgentRegistry([codexAgent]),
+    });
+
+    expect(msg.capabilities?.board_yjs_host).toBe(false);
+    expect(msg.capabilities?.board_yjs_host_node_id).toBe("orch");
+  });
+
   it("복수 backend mix를 agents.yaml 정본 그대로 node_register에 광고", () => {
     const msg = buildRegistrationMsg({
       nodeId: "x",
