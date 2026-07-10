@@ -123,6 +123,16 @@ describe("live provider wiring inventory", () => {
     expect(
       statusByPath.get("public.status:publicStatusRoutes.folderCountsProvider"),
     ).toBe("implemented");
+    expect(statusByPath.get("push:pushRoutes.repository")).toBe("implemented");
+    expect(statusByPath.get("push:pushRoutes.resolveJwtUser")).toBe("implemented");
+    expect(
+      liveProviderWiringInventory
+        .filter((entry) => entry.owner === "push")
+        .map((entry) => ({ path: entry.path, status: entry.status })),
+    ).toEqual([
+      { path: "pushRoutes.repository", status: "implemented" },
+      { path: "pushRoutes.resolveJwtUser", status: "implemented" },
+    ]);
     expect(statusByPath.get("board.items:boardItemRoutes.accessProvider")).toBe(
       "implemented",
     );

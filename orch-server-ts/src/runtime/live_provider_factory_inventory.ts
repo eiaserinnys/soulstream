@@ -62,6 +62,8 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "node.ws", path: "runtime" },
   { owner: "public.status", path: "publicStatusRoutes.configProvider" },
   { owner: "public.status", path: "publicStatusRoutes.folderCountsProvider" },
+  { owner: "push", path: "pushRoutes.repository" },
+  { owner: "push", path: "pushRoutes.resolveJwtUser" },
   { owner: "runbooks", path: "runbookRoutes.accessProvider" },
   { owner: "runbooks", path: "runbookRoutes.httpClient" },
   { owner: "runbooks", path: "runbookRoutes.provider" },

@@ -1,3 +1,4 @@
+import type { FastifyRequest } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -168,6 +169,17 @@ describe("live provider factory boundary", () => {
     expect(bundle.authRoutes.resolveTokenAccess).toEqual(expect.any(Function));
     expect(bundle.authRoutes.authorizeUser).toEqual(expect.any(Function));
     expect(bundle.authRoutes.userPayloadExtra).toEqual(expect.any(Function));
+    expect(bundle.pushRoutes.repository).toBe(dependencies.pushRepository);
+    expect(bundle.pushRoutes.resolveJwtUser).toEqual(expect.any(Function));
+    const pushJwt = await bundle.authRoutes.jwt.issueToken({
+      email: "push@example.com",
+      name: "Push User",
+    });
+    await expect(
+      bundle.pushRoutes.resolveJwtUser({
+        headers: { cookie: `soul_dashboard_auth=${pushJwt}` },
+      } as unknown as FastifyRequest),
+    ).resolves.toMatchObject({ email: "push@example.com", name: "Push User" });
     expect(bundle.folderRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
     expect(bundle.boardAssetRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
     expect(bundle.boardAssetRoutes.provider.initFileAsset).toBe(
@@ -476,8 +488,8 @@ function createLiveDependencies(): LiveProviderDependencies {
       fetchProfile: vi.fn(async () => ({})),
     },
     pushRepository: {
-      register: vi.fn(async () => undefined),
-      remove: vi.fn(async () => undefined),
+      upsertToken: vi.fn(async () => undefined),
+      deleteToken: vi.fn(async () => undefined),
     },
     configProvider: {
       getConfig: vi.fn(async () => liveProviderConfig),
