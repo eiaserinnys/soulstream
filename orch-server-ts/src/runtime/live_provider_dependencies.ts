@@ -20,7 +20,7 @@ import type {
 import type { TaskMutationRouteProvider } from "../tasks/task_mutation_routes.js";
 import type { TaskReadRouteProvider } from "../tasks/task_read_routes.js";
 import type { PushRegistrationRepository } from "../push/push_routes.js";
-import type { UserPreferencesRepository } from "../user/user_preferences_routes.js";
+import type { UserBackgroundRepository } from "../user/user_background_routes.js";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 import type { LiveTaskChangeListener } from "./live_task_change_listener.js";
 import type { LiveSystemPortraitAssetBoundary } from "./live_system_config_route_provider.js";
@@ -61,7 +61,7 @@ export type LiveDbCatalogRepositoryBoundary = {
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
   readonly taskReadProvider: TaskReadRouteProvider;
   readonly taskMutationProvider: TaskMutationRouteProvider;
-  readonly userPreferencesRepository: UserPreferencesRepository;
+  readonly userPreferencesRepository: UserBackgroundRepository;
   readonly createTaskChangeListener: (
     broadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>,
   ) => LiveTaskChangeListener;

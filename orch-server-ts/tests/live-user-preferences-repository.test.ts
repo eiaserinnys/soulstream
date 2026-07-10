@@ -89,6 +89,47 @@ describe("live user preferences repository", () => {
     ]);
   });
 
+  it("upserts the Python background blob and MIME contract on the same row", async () => {
+    const stored = {
+      email: "user@example.com",
+      prefs: { appearance: "dark", wallpaper: { mode: "photo" } },
+      background_blob: Buffer.from("background"),
+      background_mime: "image/png",
+      updated_at: new Date("2026-07-10T00:00:00.000Z"),
+    };
+    const harness = createSqlHarness([[stored]]);
+    const repository = createLiveUserPreferencesRepository({
+      sqlResolver: resolverFor(harness.sql),
+    });
+    const prefs = normalizeUserPreferences(stored.prefs);
+    const blob = Buffer.from("background");
+
+    await expect(
+      repository.putBackground("user@example.com", prefs, {
+        blob,
+        mime: "image/png",
+      }),
+    ).resolves.toBe(stored);
+
+    const sql = normalizeSql(harness.calls[0]?.text);
+    expect(sql).toContain(
+      "INSERT INTO user_preferences (email, prefs, background_blob, background_mime, updated_at)",
+    );
+    expect(sql).toContain("VALUES (?, ?::jsonb, ?, ?, NOW())");
+    expect(sql).toContain(
+      "ON CONFLICT (email) DO UPDATE SET prefs = EXCLUDED.prefs, background_blob = EXCLUDED.background_blob, background_mime = EXCLUDED.background_mime, updated_at = NOW()",
+    );
+    expect(sql).toContain(
+      "RETURNING email, prefs, background_blob, background_mime, updated_at",
+    );
+    expect(harness.calls[0]?.values).toEqual([
+      "user@example.com",
+      JSON.stringify(prefs),
+      blob,
+      "image/png",
+    ]);
+  });
+
   it("maps a Postgres foreign-key violation to the route contract", async () => {
     const error = Object.assign(new Error("missing user"), { code: "23503" });
     const sql = vi.fn(async () => {

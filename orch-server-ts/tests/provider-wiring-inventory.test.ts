@@ -141,6 +141,26 @@ describe("live provider wiring inventory", () => {
       { path: "userPreferencesRoutes.repository", status: "implemented" },
       { path: "userPreferencesRoutes.resolveAuthenticatedEmail", status: "implemented" },
     ]);
+    expect(
+      liveProviderWiringInventory
+        .filter((entry) => entry.owner === "user.background")
+        .map((entry) => ({
+          path: entry.path,
+          status: entry.status,
+          dependencies: entry.dependencies,
+        })),
+    ).toEqual([
+      {
+        path: "userBackgroundRoutes.repository",
+        status: "implemented",
+        dependencies: ["db"],
+      },
+      {
+        path: "userBackgroundRoutes.resolveAuthenticatedEmail",
+        status: "implemented",
+        dependencies: ["auth", "jwt"],
+      },
+    ]);
     expect(statusByPath.get("board.items:boardItemRoutes.accessProvider")).toBe(
       "implemented",
     );

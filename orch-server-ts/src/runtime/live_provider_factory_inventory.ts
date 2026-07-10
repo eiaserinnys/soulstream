@@ -80,6 +80,11 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "system.config", path: "systemConfigRoutes.provider" },
   { owner: "tasks.mutation", path: "taskMutationRoutes.provider" },
   { owner: "tasks.read", path: "taskReadRoutes.provider" },
+  { owner: "user.background", path: "userBackgroundRoutes.repository" },
+  {
+    owner: "user.background",
+    path: "userBackgroundRoutes.resolveAuthenticatedEmail",
+  },
   { owner: "user.preferences", path: "userPreferencesRoutes.repository" },
   {
     owner: "user.preferences",
