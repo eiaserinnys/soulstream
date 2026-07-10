@@ -160,6 +160,9 @@ export function buildProductionRouteOptions(
   return {
     config,
     corsAllowedOrigins,
+    productionAuth: {
+      resolveTokenAccess: providers.authRoutes.resolveTokenAccess,
+    },
     adminUsersRoutes: providers.adminUsersRoutes,
     atomRoutes: providers.atomRoutes,
     authRoutes: providers.authRoutes,
