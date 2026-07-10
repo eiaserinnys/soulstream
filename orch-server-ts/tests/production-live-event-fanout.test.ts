@@ -16,9 +16,83 @@ type SseFrame = {
   event: string;
   id?: string;
   data: Record<string, unknown>;
+  raw: string;
 };
 
 describe("production live event fanout", () => {
+  it("forwards last-message updates for sessions restored from a node dump", async () => {
+    const database = createFakeSql();
+    const sqlResolver: LiveDbSqlResolver = {
+      resolveSql: vi.fn(async () => database.sql),
+      close: vi.fn(async () => undefined),
+    };
+    const application = await createLiveProductionApplication(
+      loadOrchServerEnvironment(minimalEnvironment()),
+      { warn: vi.fn() },
+      { sqlResolver },
+    );
+    await application.app.listen({ host: "127.0.0.1", port: 0 });
+    const catalogController = new AbortController();
+    let ws: TestWebSocket | undefined;
+    try {
+      const authHeaders = { authorization: "Bearer production-service-token" };
+      ws = await (application.app as typeof application.app & {
+        injectWS: (
+          path: string,
+          options: { headers: Record<string, string> },
+        ) => Promise<TestWebSocket>;
+      }).injectWS("/ws/node", { headers: authHeaders });
+      ws.send(JSON.stringify({ type: "node_register", node_id: "node-a" }));
+      ws.send(JSON.stringify({
+        type: "sessions_update",
+        sessions: [{
+          agentSessionId: "restored-session",
+          status: "running",
+          last_event_id: 40,
+        }],
+        total: 1,
+        requestId: "",
+      }));
+
+      // Production restart order: the node reconnects and sends its dump before
+      // dashboard clients reopen the catalog stream.
+      const catalog = await connectSse(
+        `${application.app.listeningOrigin}/api/sessions/stream`,
+        authHeaders,
+        catalogController.signal,
+      );
+      expect((await catalog.next("session_list")).data).toMatchObject({
+        type: "session_list",
+      });
+      ws.send(JSON.stringify({
+        type: "session_updated",
+        agent_session_id: "restored-session",
+        status: "running",
+        updated_at: "2026-07-10T12:50:00.000Z",
+        last_message: {
+          type: "assistant_message",
+          preview: "restored session live message",
+          timestamp: "2026-07-10T12:50:00.000Z",
+        },
+        last_event_id: 41,
+        last_read_event_id: 40,
+      }));
+
+      expect((await catalog.next("session_updated", 1_000)).data).toMatchObject({
+        agent_session_id: "restored-session",
+        last_message: {
+          type: "assistant_message",
+          preview: "restored session live message",
+        },
+      });
+    } finally {
+      catalogController.abort();
+      ws?.terminate();
+      await application.app.close();
+      await application.closeResources();
+    }
+  });
+
   it("connects every production live-event consumer to its canonical source", async () => {
     const observedConsumers = new Set<string>();
     const database = createFakeSql();
@@ -69,7 +143,9 @@ describe("production live event fanout", () => {
         node_id: "node-a",
         user: { email: "dashboard@example.com" },
       }));
-      expect((await nodeStream.next("node_connected")).data).toMatchObject({
+      const nodeConnected = await nodeStream.next("node_connected");
+      expect(nodeConnected.raw).toContain("event: node_connected\n");
+      expect(nodeConnected.data).toMatchObject({
         nodeId: "node-a",
       });
       observedConsumers.add("node-stream");
@@ -113,10 +189,14 @@ describe("production live event fanout", () => {
         type: "session_updated",
         agent_session_id: "session-a",
         status: "running",
-        caller_source: "browser",
-        session_type: "codex",
+        updated_at: "2026-07-10T12:00:00.000Z",
         last_event_id: 41,
-        last_message: { preview: "live catalog message" },
+        last_read_event_id: 40,
+        last_message: {
+          type: "assistant_message",
+          preview: "live catalog message",
+          timestamp: "2026-07-10T12:00:00.000Z",
+        },
       }));
 
       expect((await realtime.next("assistant_message", 1_000)).data).toMatchObject({
@@ -124,15 +204,43 @@ describe("production live event fanout", () => {
         content: "live realtime message",
       });
       observedConsumers.add("per-session-realtime");
-      expect((await catalog.next("session_updated", 1_000)).data).toMatchObject({
+      const catalogUpdated = await catalog.next("session_updated", 1_000);
+      expect(catalogUpdated.raw).toContain("event: session_updated\n");
+      expect(catalogUpdated.raw).toContain("\ndata: {\"type\":\"session_updated\"");
+      // F-3A/G-19: the node message-update wire has exactly seven keys. The
+      // orchestrator must forward that variant without requiring state-update
+      // metadata such as caller_source or session_type; only nodeId is added.
+      expect(Object.keys(catalogUpdated.data).sort()).toEqual([
+        "agent_session_id",
+        "last_event_id",
+        "last_message",
+        "last_read_event_id",
+        "nodeId",
+        "status",
+        "type",
+        "updated_at",
+      ].sort());
+      expect(catalogUpdated.data).toMatchObject({
         type: "session_updated",
         agent_session_id: "session-a",
-        last_message: { preview: "live catalog message" },
+        status: "running",
+        updated_at: "2026-07-10T12:00:00.000Z",
+        last_event_id: 41,
+        last_read_event_id: 40,
+        last_message: {
+          type: "assistant_message",
+          preview: "live catalog message",
+          timestamp: "2026-07-10T12:00:00.000Z",
+        },
       });
+      expect(catalogUpdated.data).not.toHaveProperty("caller_source");
+      expect(catalogUpdated.data).not.toHaveProperty("session_type");
       observedConsumers.add("sessions-stream");
 
       database.publishTaskChange({ taskId: "task-a", operation: "updated" });
-      expect((await taskStream.next("task_changed")).data).toMatchObject({
+      const taskChanged = await taskStream.next("task_changed");
+      expect(taskChanged.raw).toContain("event: task_changed\n");
+      expect(taskChanged.data).toMatchObject({
         type: "task_changed",
         change: {
           taskId: "task-a",
@@ -270,6 +378,7 @@ function parseSseFrame(rawFrame: string): SseFrame | undefined {
     event,
     ...(values.has("id") ? { id: values.get("id") } : {}),
     data: JSON.parse(data) as Record<string, unknown>,
+    raw: rawFrame,
   };
 }
 
