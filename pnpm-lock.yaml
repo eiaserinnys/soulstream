@@ -20,6 +20,12 @@ importers:
       '@fastify/websocket':
         specifier: 11.2.0
         version: 11.2.0
+      '@hocuspocus/extension-database':
+        specifier: 3.4.4
+        version: 3.4.4(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27)
+      '@hocuspocus/server':
+        specifier: 3.4.4
+        version: 3.4.4(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27)
       fastify:
         specifier: ^5.1.0
         version: 5.8.5
@@ -29,6 +35,12 @@ importers:
       postgres:
         specifier: 3.4.9
         version: 3.4.9
+      y-protocols:
+        specifier: 1.0.6
+        version: 1.0.6(yjs@13.6.27)
+      yjs:
+        specifier: 13.6.27
+        version: 13.6.27
       zod:
         specifier: ^4.3.6
         version: 4.3.6

@@ -15,9 +15,13 @@
   },
   "dependencies": {
     "@fastify/websocket": "11.2.0",
+    "@hocuspocus/extension-database": "3.4.4",
+    "@hocuspocus/server": "3.4.4",
     "fastify": "^5.1.0",
     "google-auth-library": "10.9.0",
     "postgres": "3.4.9",
+    "y-protocols": "1.0.6",
+    "yjs": "13.6.27",
     "zod": "^4.3.6"
   },
   "devDependencies": {
