@@ -21,14 +21,19 @@ import {
 } from "./runtime/composition.js";
 import { resolveLiveBoardAssetStorageFromConfig } from "./runtime/live_board_asset_storage.js";
 import { createLiveDbCatalogRepository } from "./runtime/live_db_catalog_repository.js";
-import { createLiveDbSqlResolver } from "./runtime/live_db_sql.js";
+import {
+  createLiveDbSqlResolver,
+  type LiveDbSqlResolver,
+} from "./runtime/live_db_sql.js";
 import type { LiveProviderDependencies } from "./runtime/live_provider_dependencies.js";
 import {
   createLiveOrchestratorProviderBundle,
   type LiveOrchestratorProviderBundle,
 } from "./runtime/live_provider_factory.js";
 import { createLivePushRegistrationRepository } from "./runtime/live_push_registration_repository.js";
+import { createLiveSupervisorIngestRepository } from "./runtime/live_supervisor_ingest_repository.js";
 import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_config_route_provider.js";
+import { SupervisorIngestService } from "./supervisor/supervisor_ingest.js";
 
 export type ProductionApplication = {
   readonly app: FastifyInstance;
@@ -40,6 +45,10 @@ export type ProductionApplicationFactory = (
   config: OrchServerEnvironmentConfig,
   context: { readonly warn: (message: string) => void },
 ) => Promise<ProductionApplication>;
+
+export type LiveProductionApplicationOverrides = {
+  readonly sqlResolver?: LiveDbSqlResolver;
+};
 
 export type CreateProductionOrchestratorOptions = {
   readonly config: OrchServerEnvironmentConfig;
@@ -96,10 +105,12 @@ export async function createProductionOrchestrator(
 export async function createLiveProductionApplication(
   config: OrchServerEnvironmentConfig,
   context: { readonly warn: (message: string) => void },
+  overrides: LiveProductionApplicationOverrides = {},
 ): Promise<ProductionApplication> {
   const appConfig = toOrchServerTsConfig(config);
   const configProvider = createEnvironmentConfigProvider(config);
-  const sqlResolver = createLiveDbSqlResolver({ databaseUrl: config.database_url });
+  const sqlResolver = overrides.sqlResolver ??
+    createLiveDbSqlResolver({ databaseUrl: config.database_url });
   const registry = new InMemoryNodeRegistry();
   const boardAssetStorage = await resolveLiveBoardAssetStorageFromConfig(config);
   warnForPartialR2Config(config, context.warn);
@@ -110,6 +121,10 @@ export async function createLiveProductionApplication(
     boardAssetStorage,
   });
   const pushRepository = createLivePushRegistrationRepository({ sqlResolver });
+  const supervisorIngest = new SupervisorIngestService({
+    repository: createLiveSupervisorIngestRepository({ sqlResolver }),
+    onWarning: (message, error) => context.warn(warningMessage(message, error)),
+  });
   const foregroundObservers = new SessionForegroundObserverTracker();
   const pushNotifier = new PushNotifier({
     provider: createExpoPushProvider(),
@@ -131,7 +146,10 @@ export async function createLiveProductionApplication(
     sessionHistoryProvider: dbCatalogRepository.sessionHistoryProvider,
     sessionHistoryCloseAfterHistorySync: false,
     sessionForegroundObservers: foregroundObservers,
-    additionalNodeEventSinks: [(events) => pushNotifier.accept(events)],
+    additionalNodeEventSinks: [
+      (events) => pushNotifier.accept(events),
+      (events) => supervisorIngest.accept(events),
+    ],
   });
   const dependencies: LiveProviderDependencies = {
     dbCatalogRepository,
@@ -165,10 +183,16 @@ export async function createLiveProductionApplication(
       if (resourcesClosed) return;
       resourcesClosed = true;
       await pushNotifier.close();
+      await supervisorIngest.close();
       await providers.runtime.taskChangeListener.stop();
       await dbCatalogRepository.close();
     },
   };
+}
+
+function warningMessage(message: string, error: unknown): string {
+  if (error instanceof Error && error.message) return `${message}: ${error.message}`;
+  return error === undefined ? message : `${message}: ${String(error)}`;
 }
 
 function stringValue(value: unknown): string {
