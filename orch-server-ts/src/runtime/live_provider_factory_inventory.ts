@@ -62,6 +62,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "public.status", path: "publicStatusRoutes.folderCountsProvider" },
   { owner: "runbooks", path: "runbookRoutes.accessProvider" },
   { owner: "runbooks", path: "runbookRoutes.httpClient" },
+  { owner: "runbooks", path: "runbookRoutes.provider" },
   { owner: "session.actions", path: "runtime" },
   { owner: "session.background-schedule", path: "runtime" },
   { owner: "session.catalog", path: "sessionCatalogRoutes.accessProvider" },
