@@ -62,4 +62,30 @@ describe("live provider factory inventory", () => {
       }),
     ]);
   });
+
+  it.each(["stub", "blocked"] as const)(
+    "fails the cutover gate when any inventory path regresses to %s",
+    (status) => {
+      const [regressedPath] = liveProviderWiringInventory;
+      const regressedInventory = liveProviderWiringInventory.map((entry) =>
+        entry.owner === regressedPath.owner && entry.path === regressedPath.path
+          ? { ...entry, status }
+          : entry,
+      );
+
+      const result = validateLiveProviderFactoryInventoryAlignment({
+        inventory: regressedInventory,
+        factoryProviderPaths: liveFactoryImplementedProviderPaths,
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.unresolvedProviderPaths).toEqual([
+        expect.objectContaining({
+          owner: regressedPath.owner,
+          path: regressedPath.path,
+          status,
+        }),
+      ]);
+    },
+  );
 });
