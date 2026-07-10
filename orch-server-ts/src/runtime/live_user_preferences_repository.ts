@@ -1,8 +1,8 @@
 import {
   UserPreferencesForeignKeyViolationError,
   type UserPreferencesRecord,
-  type UserPreferencesRepository,
 } from "../user/user_preferences_routes.js";
+import type { UserBackgroundRepository } from "../user/user_background_routes.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
 
 export type CreateLiveUserPreferencesRepositoryOptions = {
@@ -11,7 +11,7 @@ export type CreateLiveUserPreferencesRepositoryOptions = {
 
 export function createLiveUserPreferencesRepository(
   options: CreateLiveUserPreferencesRepositoryOptions,
-): UserPreferencesRepository {
+): UserBackgroundRepository {
   return {
     async get(email) {
       const rows = await (await options.sqlResolver.resolveSql())`
@@ -43,6 +43,30 @@ export function createLiveUserPreferencesRepository(
         const row = rows[0] as UserPreferencesRecord | undefined;
         if (row === undefined) {
           throw new Error("user preferences upsert did not return a row");
+        }
+        return row;
+      } catch (error) {
+        if (postgresErrorCode(error) === "23503") {
+          throw new UserPreferencesForeignKeyViolationError(errorMessage(error));
+        }
+        throw error;
+      }
+    },
+    async putBackground(email, prefs, input) {
+      try {
+        const rows = await (await options.sqlResolver.resolveSql())`
+          INSERT INTO user_preferences (email, prefs, background_blob, background_mime, updated_at)
+          VALUES (${email}, ${JSON.stringify(prefs)}::jsonb, ${input.blob}, ${input.mime}, NOW())
+          ON CONFLICT (email) DO UPDATE SET
+            prefs = EXCLUDED.prefs,
+            background_blob = EXCLUDED.background_blob,
+            background_mime = EXCLUDED.background_mime,
+            updated_at = NOW()
+          RETURNING email, prefs, background_blob, background_mime, updated_at
+        `;
+        const row = rows[0] as UserPreferencesRecord | undefined;
+        if (row === undefined) {
+          throw new Error("user background upsert did not return a row");
         }
         return row;
       } catch (error) {
