@@ -99,13 +99,13 @@ describe("live provider factory boundary", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(LiveProviderFactoryError);
       expect((error as LiveProviderFactoryError).failures[0]).toMatchObject({
-        owner: "admin.users",
-        path: "adminUsersRoutes.provider",
-        status: "stub",
+        owner: "atom",
+        path: "atomRoutes.httpClient",
+        status: "blocked",
         source: expect.any(String),
         notes: expect.any(String),
       });
-      expect((error as Error).message).toContain("admin.users");
+      expect((error as Error).message).toContain("atomRoutes.httpClient");
     }
   });
 
@@ -196,6 +196,28 @@ describe("live provider factory boundary", () => {
         headers: { cookie: `soul_dashboard_auth=${pushJwt}` },
       } as unknown as FastifyRequest),
     ).resolves.toBe("push@example.com");
+    await expect(
+      bundle.adminUsersRoutes.provider.currentEmail({
+        headers: { cookie: `soul_dashboard_auth=${pushJwt}` },
+      } as unknown as FastifyRequest),
+    ).resolves.toBe("push@example.com");
+    await expect(
+      bundle.adminUsersRoutes.provider.isAdminEmail("admin@example.com"),
+    ).resolves.toBe(true);
+    expect(
+      dependencies.dbCatalogRepository.adminUsersRepository.findUserByEmail,
+    ).toHaveBeenCalledWith("admin@example.com");
+    await expect(bundle.adminUsersRoutes.provider.listUsers()).resolves.toEqual([
+      expect.objectContaining({ email: "admin@example.com", isAdmin: true }),
+    ]);
+    await bundle.adminUsersRoutes.provider.broadcastAccessChange();
+    expect(runtimeServices.sessionBroadcaster.bufferedEvents.at(-1)?.payload).toEqual({
+      type: "catalog_updated",
+      catalog: {
+        folders: [{ id: "folder-a", name: "Folder A" }],
+        sessions: { "session-a": { folderId: "folder-a" } },
+      },
+    });
     expect(bundle.folderRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
     expect(bundle.boardAssetRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
     expect(bundle.boardAssetRoutes.provider.initFileAsset).toBe(
@@ -437,7 +459,43 @@ function createLiveDependencies(): LiveProviderDependencies {
       resolveSessionIdentity: vi.fn(async () => ({})),
     },
     dbCatalogRepository: {
-      folderRouteProvider: {} as never, folderCountsProvider: {} as never,
+      adminUsersRepository: {
+        findUserByEmail: vi.fn(async (email) =>
+          email === "admin@example.com"
+            ? { email, isAdmin: true, allowedFolderIds: [] }
+            : null
+        ),
+        listUsers: vi.fn(async () => [{
+          email: "admin@example.com",
+          displayName: "Admin",
+          isAdmin: true,
+          allowedFolderIds: [],
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "init_admin",
+        }]),
+        createUser: vi.fn(async (input) => ({
+          ...input,
+          displayName: input.displayName ?? null,
+          createdAt: "2026-07-10T00:00:00.000Z",
+        })),
+        updateUser: vi.fn(async (email, update) => ({
+          email,
+          displayName: update.displayName ?? null,
+          isAdmin: update.isAdmin === true,
+          allowedFolderIds: update.allowedFolderIds ?? [],
+          createdAt: "2026-07-10T00:00:00.000Z",
+          createdBy: "init_admin",
+        })),
+        deleteUser: vi.fn(async () => undefined),
+        canRemoveAdmin: vi.fn(async () => true),
+      },
+      folderRouteProvider: {
+        listFolders: vi.fn(async () => [{ id: "folder-a", name: "Folder A" }]),
+        listSessionAssignments: vi.fn(async () => ({
+          "session-a": { folderId: "folder-a" },
+        })),
+      } as never,
+      folderCountsProvider: {} as never,
       boardAssetRouteProvider: {
         listFolders: vi.fn(async () => []),
         getCatalogSnapshot: vi.fn(async () => ({ boardItems: [] })),

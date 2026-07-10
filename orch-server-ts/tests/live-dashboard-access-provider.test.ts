@@ -87,6 +87,9 @@ describe("live dashboard DB access provider", () => {
   it("builds Python-compatible auth status payload extras from the DB user row", async () => {
     const { provider } = createProviderHarness();
 
+    await expect(provider.isAdminEmail(" ADMIN@example.com ")).resolves.toBe(true);
+    await expect(provider.isAdminEmail("missing@example.com")).resolves.toBe(false);
+
     await expect(provider.userPayloadExtra({ email: "ADMIN@example.com" })).resolves.toEqual({
       isAdmin: true,
       dashboardAccess: { restricted: false, allowedFolderIds: [] },

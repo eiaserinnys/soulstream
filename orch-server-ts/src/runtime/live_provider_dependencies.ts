@@ -24,6 +24,7 @@ import type { UserBackgroundRepository } from "../user/user_background_routes.js
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 import type { LiveTaskChangeListener } from "./live_task_change_listener.js";
 import type { LiveSystemPortraitAssetBoundary } from "./live_system_config_route_provider.js";
+import type { LiveAdminUsersRepository } from "./live_admin_users_route_provider.js";
 
 export const liveProviderDependencyCategories = [
   "authSessionIdentity",
@@ -46,6 +47,7 @@ export type LiveAuthSessionIdentityBoundary = {
 };
 
 export type LiveDbCatalogRepositoryBoundary = {
+  readonly adminUsersRepository: LiveAdminUsersRepository;
   readonly folderRouteProvider: LiveFolderProvider;
   readonly folderCountsProvider: LiveFolderProvider;
   readonly boardAssetRouteProvider: BoardAssetRouteProvider;

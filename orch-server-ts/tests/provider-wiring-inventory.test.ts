@@ -121,6 +121,13 @@ describe("live provider wiring inventory", () => {
     );
     expect(statusByPath.get("folders:folderRoutes.provider")).toBe("implemented");
     expect(
+      liveProviderWiringInventory
+        .filter((entry) => entry.owner === "admin.users")
+        .map((entry) => ({ path: entry.path, status: entry.status })),
+    ).toEqual([
+      { path: "adminUsersRoutes.provider", status: "implemented" },
+    ]);
+    expect(
       statusByPath.get("public.status:publicStatusRoutes.folderCountsProvider"),
     ).toBe("implemented");
     expect(statusByPath.get("push:pushRoutes.repository")).toBe("implemented");
