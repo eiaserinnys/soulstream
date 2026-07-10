@@ -1,6 +1,7 @@
 import type { FastifyRequest } from "fastify";
 
 import type { AdminUsersRouteOptions } from "../admin/admin_users_routes.js";
+import type { AtomRouteOptions } from "../atom/atom_routes.js";
 import type { OrchestratorRuntimeServices } from "./composition.js";
 import type { LiveTaskChangeListener } from "./live_task_change_listener.js";
 import {
@@ -65,6 +66,7 @@ import { withFolderMutationBroadcasts } from "./live_folder_mutation_broadcaster
 import { withBoardAssetMutationBroadcasts } from "./live_board_asset_mutation_broadcaster.js";
 import { createLiveAuthenticatedUserResolvers } from "./live_authenticated_user_resolver.js";
 import { createLiveAdminUsersRouteProvider } from "./live_admin_users_route_provider.js";
+import { createLiveAtomHttpClient } from "./live_atom_route_provider.js";
 import { broadcastCatalogSnapshot } from "./live_folder_mutation_broadcaster.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import {
@@ -113,6 +115,7 @@ export type LiveRuntimeProviderBundle = {
 
 export type LiveOrchestratorProviderBundle = {
   readonly adminUsersRoutes: AdminUsersRouteOptions;
+  readonly atomRoutes: AtomRouteOptions;
   readonly authRoutes: Pick<
     AuthRouteOptions,
     | "configProvider"
@@ -239,6 +242,10 @@ export function createLiveOrchestratorProviderBundle(
             options.runtimeServices.sessionBroadcaster,
           ),
       }),
+    },
+    atomRoutes: {
+      configProvider: configProviders.atomRoutes.configProvider,
+      httpClient: createLiveAtomHttpClient(),
     },
     authRoutes: {
       configProvider: configProviders.authRoutes.configProvider,

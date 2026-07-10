@@ -92,7 +92,14 @@ describe("live provider wiring inventory", () => {
       ]),
     );
 
-    expect(statusByPath.get("atom:atomRoutes.configProvider")).toBe("implemented");
+    expect(
+      liveProviderWiringInventory
+        .filter((entry) => entry.owner === "atom")
+        .map((entry) => ({ path: entry.path, status: entry.status })),
+    ).toEqual([
+      { path: "atomRoutes.configProvider", status: "implemented" },
+      { path: "atomRoutes.httpClient", status: "implemented" },
+    ]);
     expect(statusByPath.get("public.status:publicStatusRoutes.configProvider")).toBe(
       "implemented",
     );

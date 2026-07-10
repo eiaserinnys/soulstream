@@ -99,13 +99,13 @@ describe("live provider factory boundary", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(LiveProviderFactoryError);
       expect((error as LiveProviderFactoryError).failures[0]).toMatchObject({
-        owner: "atom",
-        path: "atomRoutes.httpClient",
-        status: "blocked",
+        owner: "attachments",
+        path: "attachmentRoutes.accessProvider",
+        status: "stub",
         source: expect.any(String),
         notes: expect.any(String),
       });
-      expect((error as Error).message).toContain("atomRoutes.httpClient");
+      expect((error as Error).message).toContain("attachmentRoutes.accessProvider");
     }
   });
 
@@ -124,6 +124,10 @@ describe("live provider factory boundary", () => {
     });
 
     expect(bundle.implementedProviderPaths).toEqual(liveFactoryImplementedProviderPaths);
+    expect(bundle.atomRoutes.configProvider).toBe(
+      bundle.configProviders.atomRoutes.configProvider,
+    );
+    expect(bundle.atomRoutes.httpClient.get).toEqual(expect.any(Function));
     expect(bundle.cogitoRoutes.provider.listConnectedNodes()).toEqual([]);
     expect(bundle.cogitoRoutes.briefCollector.reflectBrief).toEqual(expect.any(Function));
     await expect(

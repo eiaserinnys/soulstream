@@ -19,7 +19,7 @@ describe("live provider factory inventory", () => {
     expect(result.implementedInventoryProviderPaths).toEqual(
       liveFactoryImplementedProviderPaths,
     );
-    expect(result.unresolvedProviderPaths).toHaveLength(4);
+    expect(result.unresolvedProviderPaths).toHaveLength(3);
   });
 
   it("fails when inventory marks a path implemented but the factory omits it", () => {
@@ -43,7 +43,7 @@ describe("live provider factory inventory", () => {
   });
 
   it("fails when the factory tries to provide a blocked path", () => {
-    const blockedPath = { owner: "atom", path: "atomRoutes.httpClient" };
+    const blockedPath = { owner: "attachments", path: "attachmentRoutes.transport" };
     const result = validateLiveProviderFactoryInventoryAlignment({
       inventory: liveProviderWiringInventory,
       factoryProviderPaths: [...liveFactoryImplementedProviderPaths, blockedPath],
@@ -51,8 +51,8 @@ describe("live provider factory inventory", () => {
 
     expect(result.blockedFactoryProviderPaths).toEqual([
       expect.objectContaining({
-        owner: "atom",
-        path: "atomRoutes.httpClient",
+        owner: "attachments",
+        path: "attachmentRoutes.transport",
         status: "blocked",
       }),
     ]);
