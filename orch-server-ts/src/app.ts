@@ -122,6 +122,7 @@ import {
 
 export type CreateAppOptions = {
   config: OrchServerTsConfig;
+  corsAllowedOrigins?: readonly string[];
   routeOwners?: RouteOwnerManifest;
   exposeLocalHealthRoute?: boolean;
   adminUsersRoutes?: AdminUsersRouteOptions;
@@ -157,8 +158,11 @@ export type CreateAppOptions = {
 };
 
 export function createApp(options: CreateAppOptions): FastifyInstance {
-  const app = Fastify({ logger: false });
+  const app = Fastify({ logger: false, forceCloseConnections: true });
   const owners = options.routeOwners ?? routeOwnerManifest;
+  if (options.corsAllowedOrigins !== undefined) {
+    registerCorsBoundary(app, options.corsAllowedOrigins);
+  }
 
   if (options.exposeLocalHealthRoute) {
     app.get("/__orch_server_ts/health", async () => ({
@@ -263,4 +267,40 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
 
   return app;
+}
+
+function registerCorsBoundary(
+  app: FastifyInstance,
+  allowedOrigins: readonly string[],
+): void {
+  const allowed = new Set(allowedOrigins);
+  app.addHook("onRequest", async (request, reply) => {
+    const origin = singleHeader(request.headers.origin);
+    const originAllowed = origin !== undefined &&
+      (allowed.has(origin) || allowed.has("*"));
+    if (originAllowed) {
+      reply.header("access-control-allow-origin", origin);
+      reply.header("access-control-allow-credentials", "true");
+      reply.header("vary", "Origin");
+    }
+    if (request.method !== "OPTIONS" || origin === undefined) return;
+    if (!originAllowed) {
+      return reply.code(400).send({ detail: "Disallowed CORS origin" });
+    }
+    reply.header(
+      "access-control-allow-methods",
+      "DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT",
+    );
+    const requestedHeaders = singleHeader(
+      request.headers["access-control-request-headers"],
+    );
+    if (requestedHeaders !== undefined) {
+      reply.header("access-control-allow-headers", requestedHeaders);
+    }
+    return reply.code(200).send("OK");
+  });
+}
+
+function singleHeader(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }

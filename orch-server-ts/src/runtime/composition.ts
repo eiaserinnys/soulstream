@@ -58,6 +58,7 @@ import {
 
 export type OrchestratorRuntimeCompositionOptions = {
   config: OrchServerTsConfig;
+  registry?: InMemoryNodeRegistry;
   routeOwners?: RouteOwnerManifest;
   exposeLocalHealthRoute?: boolean;
   nowMs?: NodeCommandClock;
@@ -117,7 +118,7 @@ export type OrchestratorRuntimeComposition = OrchestratorRuntimeServices & {
 export function createOrchestratorRuntimeServices(
   options: OrchestratorRuntimeCompositionOptions,
 ): OrchestratorRuntimeServices {
-  const registry = new InMemoryNodeRegistry({
+  const registry = options.registry ?? new InMemoryNodeRegistry({
     nowMs: options.nowMs,
     requestIdGenerator: options.requestIdGenerator,
     heartbeatTimeoutMs: options.heartbeatTimeoutMs,

@@ -64,12 +64,8 @@ describe("live provider factory boundary", () => {
     const dependencies = createLiveDependencies();
 
     expect(liveProviderDependencyCategories).toEqual([
-      "authSessionIdentity",
       "dbCatalogRepository",
       "nodeHttpClient",
-      "fileBlobR2Storage",
-      "jwtToken",
-      "claudeOAuth",
       "pushRepository",
       "configProvider",
       "systemPortraitAssets",
@@ -471,10 +467,6 @@ function createLiveDependencies(): LiveProviderDependencies {
   } satisfies TaskMutationResponse;
 
   return {
-    authSessionIdentity: {
-      resolveCallerIdentity: vi.fn(async () => ({})),
-      resolveSessionIdentity: vi.fn(async () => ({})),
-    },
     dbCatalogRepository: {
       adminUsersRepository: {
         findUserByEmail: vi.fn(async (email) =>
@@ -573,20 +565,6 @@ function createLiveDependencies(): LiveProviderDependencies {
     nodeHttpClient: {
       boardYjsHostHttpClient: vi.fn(async () => ({ statusCode: 200 })),
       requestNode: vi.fn(async () => ({ statusCode: 200 })),
-    },
-    fileBlobR2Storage: {
-      readObject: vi.fn(async () => new Uint8Array()),
-      writeObject: vi.fn(async () => undefined),
-      deleteObject: vi.fn(async () => undefined),
-    },
-    jwtToken: {
-      sign: vi.fn(async () => "token"),
-      verify: vi.fn(async () => ({})),
-    },
-    claudeOAuth: {
-      buildAuthorizeUrl: vi.fn(async () => "https://auth.example.test"),
-      exchangeCode: vi.fn(async () => ({})),
-      fetchProfile: vi.fn(async () => ({})),
     },
     pushRepository: {
       upsertToken: vi.fn(async () => undefined),
