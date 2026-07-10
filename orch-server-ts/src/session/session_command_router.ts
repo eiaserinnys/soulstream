@@ -11,6 +11,10 @@ import type {
   NodeConnectionSnapshot,
 } from "../node/registry.js";
 import { InMemoryNodeRegistry } from "../node/registry.js";
+import {
+  SessionCreateNodeSelectionError,
+  selectNodeForSessionCreate,
+} from "./session_create_node_selector.js";
 
 export type SessionCommandRouterOptions = {
   registry: InMemoryNodeRegistry;
@@ -120,12 +124,31 @@ export class SessionCommandRouter {
     payload: TPayload,
     options: { timeoutMs?: number } = {},
   ): RoutedPendingSessionCommand<TPayload, TResponse> {
-    const node = this.selectNodeForCreateSession();
+    let selection;
+    try {
+      selection = selectNodeForSessionCreate(this.registry, {
+        nodeId: optionalNonEmptyString(payload.nodeId),
+        profileId: optionalNonEmptyString(payload.profile),
+      });
+    } catch (error) {
+      if (
+        error instanceof SessionCreateNodeSelectionError &&
+        error.code === "NO_AVAILABLE_NODE"
+      ) {
+        throw new SessionRouteNoAvailableNodesError();
+      }
+      throw error;
+    }
+    const { nodeId: _nodeId, ...commandPayload } = payload;
+    const selectedPayload = {
+      ...commandPayload,
+      profile: selection.profileId,
+    } as unknown as TPayload;
     return {
-      node,
+      node: selection.node,
       command: this.registry.createCommand<TPayload, TResponse>(
-        node.nodeId,
-        payload,
+        selection.node.nodeId,
+        selectedPayload,
         options,
       ),
     };
@@ -177,14 +200,6 @@ export class SessionCommandRouter {
     };
   }
 
-  private selectNodeForCreateSession(): NodeConnectionSnapshot {
-    const [node] = this.registry.listConnectedNodes();
-    if (node === undefined) {
-      throw new SessionRouteNoAvailableNodesError();
-    }
-    return node;
-  }
-
   private requireNodeForExistingSession(
     agentSessionId: string,
   ): NodeConnectionSnapshot {
@@ -208,4 +223,8 @@ export class SessionCommandRouter {
     }
     return connectedNode;
   }
+}
+
+function optionalNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }

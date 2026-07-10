@@ -225,15 +225,18 @@ export class InMemoryNodeRegistry {
   }
 
   listConnectedNodes(): NodeConnectionSnapshot[] {
+    return this.listConnectedNodesInRegistrationOrder().sort((left, right) => {
+      const nodeOrder = left.nodeId.localeCompare(right.nodeId);
+      return nodeOrder === 0
+        ? left.connectionId.localeCompare(right.connectionId)
+        : nodeOrder;
+    });
+  }
+
+  listConnectedNodesInRegistrationOrder(): NodeConnectionSnapshot[] {
     return [...this.nodes.values()]
       .filter((node) => node.connected)
-      .map(snapshotNode)
-      .sort((left, right) => {
-        const nodeOrder = left.nodeId.localeCompare(right.nodeId);
-        return nodeOrder === 0
-          ? left.connectionId.localeCompare(right.connectionId)
-          : nodeOrder;
-      });
+      .map(snapshotNode);
   }
 
   getNodeState(nodeId: string): NodeConnectionSnapshot | undefined {

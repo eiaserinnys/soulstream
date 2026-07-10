@@ -61,7 +61,7 @@ describe("Session command router primitive", () => {
     });
   }
 
-  it("routes new create_session commands to the deterministic first connected node", () => {
+  it("preserves Python registration order when equally loaded nodes are compatible", () => {
     const { registry } = createRegistry();
     registerNode(registry, "z-node");
     registerNode(registry, "a-node");
@@ -73,17 +73,17 @@ describe("Session command router primitive", () => {
       prompt: "hello",
     });
 
-    expect(routed.node.nodeId).toBe("a-node");
+    expect(routed.node.nodeId).toBe("z-node");
     expect(routed.command.message).toMatchObject({
       type: "create_session",
       agentSessionId: "new-session",
       prompt: "hello",
       requestId: "router-create_session-1-1700000000000",
     });
-    expect(registry.getConnectedNode("a-node")).toMatchObject({
+    expect(registry.getConnectedNode("z-node")).toMatchObject({
       pendingCommandCount: 1,
     });
-    expect(registry.getConnectedNode("z-node")).toMatchObject({
+    expect(registry.getConnectedNode("a-node")).toMatchObject({
       pendingCommandCount: 0,
     });
   });

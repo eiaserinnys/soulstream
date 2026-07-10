@@ -88,6 +88,7 @@ export * from "./session/session_action_command_routes.js";
 export * from "./session/session_background_schedule_routes.js";
 export * from "./session/session_catalog_routes.js";
 export * from "./session/session_command_router.js";
+export * from "./session/session_create_node_selector.js";
 export * from "./session/session_command_routes.js";
 export * from "./session/session_create_lifecycle.js";
 export * from "./session/session_command_transport.js";
