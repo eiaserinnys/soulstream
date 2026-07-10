@@ -1,4 +1,3 @@
-import websocket from "@fastify/websocket";
 import type { FastifyInstance } from "fastify";
 
 import {
@@ -14,6 +13,7 @@ import type {
   NodeCommandTransportHub,
 } from "./transport_hub.js";
 import { verifyNodeWsBearer } from "./ws_auth.js";
+import { registerWebsocketPlugin } from "../websocket_plugin.js";
 
 const INVALID_JSON_CLOSE_CODE = 1003;
 const POLICY_VIOLATION_CLOSE_CODE = 1008;
@@ -47,7 +47,7 @@ export function registerNodeWsRoute(
   const registrationTimeoutMs = resolveRegistrationTimeoutMs(
     options.registrationTimeoutMs,
   );
-  app.register(websocket);
+  registerWebsocketPlugin(app);
   app.after(() => {
     app.get("/ws/node", {
       websocket: true,

@@ -45,9 +45,15 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
+      '@hocuspocus/provider':
+        specifier: 3.4.4
+        version: 3.4.4(y-protocols@1.0.6(yjs@13.6.27))(yjs@13.6.27)
       '@types/node':
         specifier: ^20.11.0
         version: 20.19.41
+      '@types/ws':
+        specifier: 8.18.1
+        version: 8.18.1
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.9.0)
@@ -60,6 +66,9 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.41)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.46.1)
+      ws:
+        specifier: ^8.18.0
+        version: 8.20.0
 
   packages/db-schema: {}
 

@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import type { FastifyInstance } from "fastify";
 
 import { createApp, type CreateAppOptions } from "./app.js";
+import { BoardYjsRepository } from "./board-yjs/board_yjs_repository.js";
+import { BoardYjsService } from "./board-yjs/board_yjs_service.js";
 import {
   createEnvironmentConfigProvider,
   type OrchServerEnvironmentConfig,
@@ -112,6 +114,7 @@ export async function createLiveProductionApplication(
   const sqlResolver = overrides.sqlResolver ??
     createLiveDbSqlResolver({ databaseUrl: config.database_url });
   const registry = new InMemoryNodeRegistry();
+  const boardYjsRepository = new BoardYjsRepository(sqlResolver);
   const boardAssetStorage = await resolveLiveBoardAssetStorageFromConfig(config);
   warnForPartialR2Config(config, context.warn);
   const dbCatalogRepository = createLiveDbCatalogRepository({
@@ -136,6 +139,7 @@ export async function createLiveProductionApplication(
       stringValue(registry.getUserInfo(nodeId).email) || config.allowed_email || undefined,
     foregroundObservers,
   });
+  let providers: LiveOrchestratorProviderBundle;
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
@@ -150,6 +154,20 @@ export async function createLiveProductionApplication(
       (events) => pushNotifier.accept(events),
       (events) => supervisorIngest.accept(events),
     ],
+    boardYjsRoutes: {
+      createService: (logger) => new BoardYjsService({
+        repository: boardYjsRepository,
+        logger,
+        hostMode: config.board_yjs_host_mode,
+        auth: {
+          authBearerToken: config.auth_bearer_token,
+          environment: config.environment,
+          dashboardAuthEnabled: Boolean(config.google_client_id),
+          verifyDashboardToken: async (token) =>
+            await providers.authRoutes.jwt.verifyToken(token),
+        },
+      }),
+    },
   });
   const dependencies: LiveProviderDependencies = {
     dbCatalogRepository,
@@ -159,7 +177,6 @@ export async function createLiveProductionApplication(
     systemPortraitAssets: createSystemPortraitAssets(),
   };
 
-  let providers: LiveOrchestratorProviderBundle;
   try {
     providers = createLiveOrchestratorProviderBundle({
       dependencies,
@@ -221,6 +238,7 @@ export function buildProductionRouteOptions(
       hostProxy: providers.runtime.boardYjsHostProxyRoutes,
     },
     boardYjsHostProxyRoutes: providers.runtime.boardYjsHostProxyRoutes,
+    boardYjsRoutes: runtime.routeOptions.boardYjsRoutes,
     cogitoRoutes: providers.cogitoRoutes,
     executeProxyRoutes: providers.executeProxyRoutes,
     folderRoutes: providers.folderRoutes,
