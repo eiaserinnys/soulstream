@@ -37,6 +37,8 @@ async def test_board_yjs_host_cardinality_and_proxy_contract(
     node_manager,
 ):
     fixture = load_contract_fixture("board_yjs_host_proxy.json")
+    assert len(fixture["directOperations"]) == 10
+    assert len({item["operation"] for item in fixture["directOperations"]}) == 10
 
     no_host = await client.post(fixture["proxy"]["route"], json={
         "folderId": "f1",

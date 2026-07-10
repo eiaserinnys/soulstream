@@ -4,6 +4,11 @@ import type {
   InMemoryNodeRegistry,
   NodeConnectionSnapshot,
 } from "../node/registry.js";
+import {
+  handleBoardYjsHostOperation,
+  type BoardYjsHostOperationOptions,
+} from "../board-yjs/board_yjs_host_operations.js";
+import type { BoardYjsService } from "../board-yjs/board_yjs_service.js";
 
 export type BoardYjsHostTarget = {
   host: string;
@@ -36,6 +41,10 @@ export type BoardYjsHostHttpClient = (
 export type BoardYjsHostProxyRouteOptions = {
   registry: InMemoryNodeRegistry;
   httpClient: BoardYjsHostHttpClient;
+  hostMode?: "node" | "orch";
+  authBearerToken?: string;
+  service?: BoardYjsService;
+  createService?: (logger: FastifyInstance["log"]) => BoardYjsService;
 };
 
 export type BoardYjsHostProxyInput = {
@@ -69,7 +78,17 @@ export class BoardYjsHostProxyError extends Error {
 
 export function resolveBoardYjsHostTarget(
   registry: InMemoryNodeRegistry,
-): BoardYjsHostTarget {
+  hostMode: "orch",
+): { kind: "self" };
+export function resolveBoardYjsHostTarget(
+  registry: InMemoryNodeRegistry,
+  hostMode?: "node",
+): BoardYjsHostTarget;
+export function resolveBoardYjsHostTarget(
+  registry: InMemoryNodeRegistry,
+  hostMode: "node" | "orch" = "node",
+): BoardYjsHostTarget | { kind: "self" } {
+  if (hostMode === "orch") return { kind: "self" };
   const hosts = registry
     .listConnectedNodes()
     .filter((node) => node.capabilities.board_yjs_host === true);
@@ -104,10 +123,23 @@ export function registerBoardYjsHostProxyRoutes(
   app: FastifyInstance,
   options: BoardYjsHostProxyRouteOptions,
 ): void {
+  const hostMode = options.hostMode ?? "node";
+  const localOperationOptions = hostMode === "orch"
+    ? resolveLocalOperationOptions(app, options)
+    : undefined;
   app.post<{ Params: { operation: string } }>(
     "/api/board-yjs/host/:operation",
-    async (request, reply) =>
-      proxyBoardYjsHostRequest(
+    async (request, reply) => {
+      if (hostMode === "orch") {
+        resolveBoardYjsHostTarget(options.registry, hostMode);
+        return await handleBoardYjsHostOperation(
+          request,
+          reply,
+          request.params.operation,
+          localOperationOptions!,
+        );
+      }
+      return await proxyBoardYjsHostRequest(
         request,
         reply,
         options,
@@ -115,7 +147,8 @@ export function registerBoardYjsHostProxyRoutes(
           method: "POST",
           upstreamPath: `/api/internal/board-yjs/${encodeURIComponent(request.params.operation)}`,
         },
-      ),
+      );
+    },
   );
 }
 
@@ -139,6 +172,20 @@ export async function proxyBoardYjsHostRequest(
   } catch (error) {
     return sendBoardYjsHostProxyError(reply, error);
   }
+}
+
+function resolveLocalOperationOptions(
+  app: FastifyInstance,
+  options: BoardYjsHostProxyRouteOptions,
+): BoardYjsHostOperationOptions {
+  const service = options.service ?? options.createService?.(app.log);
+  if (service === undefined) {
+    throw new Error("Board Yjs host service is required when BOARD_YJS_HOST_MODE=orch");
+  }
+  if (options.authBearerToken === undefined) {
+    throw new Error("Board Yjs host bearer token is required when BOARD_YJS_HOST_MODE=orch");
+  }
+  return { service, authBearerToken: options.authBearerToken };
 }
 
 export async function requestBoardYjsHost(
