@@ -52,8 +52,9 @@ describe("node inbound session event dispatcher", () => {
     );
 
     expect(result).toEqual({ appended: 3, skipped: 0, failed: 0 });
-    expect(broadcaster.bufferedEvents.map((event) => event.payload)).toEqual([
-      {
+    const payloads = broadcaster.bufferedEvents.map((event) => event.payload);
+    expect(payloads).toHaveLength(3);
+    expect(payloads[0]).toMatchObject({
         type: "session_created",
         session: {
           agentSessionId: "sess-1",
@@ -65,19 +66,18 @@ describe("node inbound session event dispatcher", () => {
         nodeId: "node-1",
         folder_id: "folder-1",
         folderId: "folder-1",
-      },
-      {
+      });
+    expect(payloads[1]).toMatchObject({
         type: "session_updated",
         agentSessionId: "sess-1",
         status: "running",
         agent_session_id: "sess-1",
         nodeId: "node-1",
-      },
-      {
+      });
+    expect(payloads[2]).toEqual({
         type: "session_deleted",
         agent_session_id: "sess-1",
-      },
-    ]);
+      });
   });
 
   it("maps runbook and custom view event envelopes while skipping non-session broadcasts", () => {
@@ -190,12 +190,12 @@ describe("node inbound session event dispatcher", () => {
       ]),
     ).not.toThrow();
     expect(broadcaster.bufferedEvents.map((event) => event.payload)).toEqual([
-      {
+      expect.objectContaining({
         type: "session_updated",
         agentSessionId: "sess-1",
         agent_session_id: "sess-1",
         nodeId: "node-1",
-      },
+      }),
     ]);
   });
 });

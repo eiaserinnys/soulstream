@@ -207,11 +207,18 @@ describe("production live event fanout", () => {
       const catalogUpdated = await catalog.next("session_updated", 1_000);
       expect(catalogUpdated.raw).toContain("event: session_updated\n");
       expect(catalogUpdated.raw).toContain("\ndata: {\"type\":\"session_updated\"");
-      // F-3A/G-19: the node message-update wire has exactly seven keys. The
-      // orchestrator must forward that variant without requiring state-update
-      // metadata such as caller_source or session_type; only nodeId is added.
-      expect(Object.keys(catalogUpdated.data).sort()).toEqual([
+      // The node message-update wire stays sparse, while the orchestrator adds
+      // the canonical client session fields from its updated registry cache.
+      expect(Object.keys(catalogUpdated.data)).toEqual(expect.arrayContaining([
         "agent_session_id",
+        "agentSessionId",
+        "displayName",
+        "agentId",
+        "agentName",
+        "agentPortraitUrl",
+        "backend",
+        "userName",
+        "userPortraitUrl",
         "last_event_id",
         "last_message",
         "last_read_event_id",
@@ -219,10 +226,11 @@ describe("production live event fanout", () => {
         "status",
         "type",
         "updated_at",
-      ].sort());
+      ]));
       expect(catalogUpdated.data).toMatchObject({
         type: "session_updated",
         agent_session_id: "session-a",
+        agentSessionId: "session-a",
         status: "running",
         updated_at: "2026-07-10T12:00:00.000Z",
         last_event_id: 41,

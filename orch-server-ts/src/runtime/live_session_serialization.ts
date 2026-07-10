@@ -18,28 +18,39 @@ export function serializeSessionRow(
   row: Record<string, unknown>,
   options: SessionSerializationOptions = {},
 ): Record<string, unknown> {
+  const sessionType = firstDefined(row, "session_type", "sessionType");
   const payload: Record<string, unknown> = {
-    agentSessionId: row.session_id,
+    agentSessionId: firstNonNullish(
+      row,
+      "session_id",
+      "agent_session_id",
+      "agentSessionId",
+      "sessionId",
+    ),
     status: row.status,
     prompt: row.prompt,
-    createdAt: iso(row.created_at),
-    updatedAt: iso(row.updated_at),
-    sessionType: row.session_type ?? "claude",
-    lastMessage: row.last_message,
-    clientId: row.client_id,
+    createdAt: iso(firstDefined(row, "created_at", "createdAt")),
+    updatedAt: iso(firstDefined(row, "updated_at", "updatedAt")),
+    sessionType: sessionType === undefined ? "claude" : sessionType,
+    lastMessage: firstDefined(row, "last_message", "lastMessage"),
+    clientId: firstDefined(row, "client_id", "clientId"),
     metadata: row.metadata,
-    displayName: row.display_name,
-    nodeId: row.node_id,
-    folderId: row.folder_id,
-    lastEventId: row.last_event_id ?? 0,
-    lastReadEventId: row.last_read_event_id ?? 0,
-    callerSessionId: row.caller_session_id,
-    agentId: row.agent_id,
-    agentName: null,
-    agentPortraitUrl: null,
-    backend: null,
-    userName: null,
-    userPortraitUrl: null,
+    displayName: firstDefined(row, "display_name", "displayName") ?? null,
+    nodeId: firstDefined(row, "node_id", "nodeId") ?? null,
+    folderId: firstDefined(row, "folder_id", "folderId") ?? null,
+    lastEventId: firstDefined(row, "last_event_id", "lastEventId") ?? 0,
+    lastReadEventId:
+      firstDefined(row, "last_read_event_id", "lastReadEventId") ?? 0,
+    callerSessionId:
+      firstDefined(row, "caller_session_id", "callerSessionId") ?? null,
+    agentId: firstDefined(row, "agent_id", "agentId") ?? null,
+    agentName: firstDefined(row, "agent_name", "agentName") ?? null,
+    agentPortraitUrl:
+      firstDefined(row, "agent_portrait_url", "agentPortraitUrl") ?? null,
+    backend: row.backend ?? null,
+    userName: firstDefined(row, "user_name", "userName") ?? null,
+    userPortraitUrl:
+      firstDefined(row, "user_portrait_url", "userPortraitUrl") ?? null,
   };
 
   enrichAgent(payload, options.registry);
@@ -54,7 +65,7 @@ export function serializeSessionRow(
       payload.userPortraitUrl = avatarUrl;
     }
   }
-  applyUserProfileNoopPolicy(payload, callerInfo);
+  applyUserProfileFallback(payload, callerInfo, options.registry);
   return payload;
 }
 
@@ -170,13 +181,48 @@ function hasCallerIdentity(callerInfo: Record<string, unknown>): boolean {
   );
 }
 
-function applyUserProfileNoopPolicy(
+function applyUserProfileFallback(
   payload: Record<string, unknown>,
   callerInfo: Record<string, unknown> | null,
+  registry: InMemoryNodeRegistry | undefined,
 ): void {
   const source = callerInfo?.source;
   if (typeof source === "string" && IDENTITY_BEARING_SOURCES.has(source)) return;
   if (payload.userName || payload.userPortraitUrl) return;
+  const nodeId = payload.nodeId;
+  if (typeof nodeId !== "string" || nodeId.length === 0 || registry === undefined) {
+    return;
+  }
+  const userInfo = registry.getUserInfo(nodeId);
+  if (typeof userInfo.name === "string" && userInfo.name.length > 0) {
+    payload.userName = userInfo.name;
+  }
+  if (userInfo.hasPortrait === true) {
+    payload.userPortraitUrl = `/api/nodes/${nodeId}/user/portrait`;
+  }
+}
+
+function firstNonNullish(
+  row: Record<string, unknown>,
+  ...keys: string[]
+): unknown {
+  let explicitNull: unknown = undefined;
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null) return value;
+    if (value === null) explicitNull = null;
+  }
+  return explicitNull;
+}
+
+function firstDefined(
+  row: Record<string, unknown>,
+  ...keys: string[]
+): unknown {
+  for (const key of keys) {
+    if (row[key] !== undefined) return row[key];
+  }
+  return undefined;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

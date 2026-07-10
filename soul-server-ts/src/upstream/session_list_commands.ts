@@ -1,7 +1,9 @@
 import type { SessionDB } from "../db/session_db.js";
 
-type SessionListDb = Pick<SessionDB, "listSessionsSummary">;
-type ListSessionsSummary = Awaited<ReturnType<SessionListDb["listSessionsSummary"]>>;
+type SessionListDb = Pick<SessionDB, "listSessionsForUpstreamDump">;
+type ListSessionsSummary = Awaited<
+  ReturnType<SessionListDb["listSessionsForUpstreamDump"]>
+>;
 
 export interface ListSessionsParams {
   requestId: string;
@@ -47,7 +49,7 @@ export class SessionListCommands {
       );
     }
 
-    const { sessions, total } = await this.sessionDb.listSessionsSummary({
+    const { sessions, total } = await this.sessionDb.listSessionsForUpstreamDump({
       limit: LIST_SESSIONS_HARD_LIMIT,
       offset: 0,
       nodeId: this.nodeId,

@@ -191,13 +191,20 @@ describe("orchestrator runtime composition harness", () => {
     });
 
     expect(replayResponse.statusCode).toBe(200);
-    expect(replayResponse.body).toBe(
-      'event: stream_meta\n' +
-        'data: {"type":"stream_meta","instance_id":"runtime-session-stream","latest_id":1}\n\n' +
-        "event: session_updated\n" +
-        "id: 1\n" +
-        'data: {"type":"session_updated","agentSessionId":"runtime-direct-session","status":"running","agent_session_id":"runtime-direct-session","nodeId":"fake-node"}\n\n',
-    );
+    expect(parseSseFrame(replayResponse.body, "stream_meta")).toEqual({
+      type: "stream_meta",
+      instance_id: "runtime-session-stream",
+      latest_id: 1,
+    });
+    expect(parseSseFrame(replayResponse.body, "session_updated")).toMatchObject({
+      type: "session_updated",
+      agentSessionId: "runtime-direct-session",
+      agent_session_id: "runtime-direct-session",
+      status: "running",
+      nodeId: "fake-node",
+      displayName: null,
+      agentId: null,
+    });
     expect(runtime.registry.findSessionOwner("runtime-direct-session")).toMatchObject({
       nodeId: "fake-node",
       fresh: true,

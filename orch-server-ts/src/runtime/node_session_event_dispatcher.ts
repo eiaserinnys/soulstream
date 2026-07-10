@@ -1,8 +1,12 @@
-import type { NodeRegistryEvent } from "../node/registry.js";
+import type {
+  InMemoryNodeRegistry,
+  NodeRegistryEvent,
+} from "../node/registry.js";
 import type {
   InMemorySseReplayBroadcaster,
   SessionStreamEvent,
 } from "../sse/replay_broadcaster.js";
+import { serializeSessionRow } from "./live_session_serialization.js";
 
 export type NodeSessionEventDispatchResult = {
   appended: number;
@@ -14,15 +18,17 @@ export type NodeRegistryEventSink = (events: NodeRegistryEvent[]) => void;
 
 export function createNodeSessionEventBroadcasterSink(
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
+  registry?: InMemoryNodeRegistry,
 ): NodeRegistryEventSink {
   return (events) => {
-    dispatchNodeRegistryEventsToSessionBroadcaster(events, broadcaster);
+    dispatchNodeRegistryEventsToSessionBroadcaster(events, broadcaster, registry);
   };
 }
 
 export function dispatchNodeRegistryEventsToSessionBroadcaster(
   events: NodeRegistryEvent[],
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
+  registry?: InMemoryNodeRegistry,
 ): NodeSessionEventDispatchResult {
   const result: NodeSessionEventDispatchResult = {
     appended: 0,
@@ -31,7 +37,7 @@ export function dispatchNodeRegistryEventsToSessionBroadcaster(
   };
 
   for (const event of events) {
-    const streamEvent = sessionStreamEventFromNodeRegistryEvent(event);
+    const streamEvent = sessionStreamEventFromNodeRegistryEvent(event, registry);
     if (streamEvent === undefined) {
       result.skipped += 1;
       continue;
@@ -49,15 +55,23 @@ export function dispatchNodeRegistryEventsToSessionBroadcaster(
 
 function sessionStreamEventFromNodeRegistryEvent(
   event: NodeRegistryEvent,
+  registry: InMemoryNodeRegistry | undefined,
 ): SessionStreamEvent | undefined {
   if (event.type === "node_session_session_created") {
-    return sessionCreatedStreamEvent(event.nodeId, event.data);
+    return sessionCreatedStreamEvent(event.nodeId, event.data, registry);
   }
   if (event.type === "node_session_session_updated") {
     const agentSessionId = sessionIdFromPayload(event.data);
+    const session = serializeCachedSession(
+      event.nodeId,
+      agentSessionId,
+      event.data,
+      registry,
+    );
     return {
       type: "session_updated",
       ...event.data,
+      ...session,
       agent_session_id: agentSessionId,
       nodeId: event.nodeId,
     };
@@ -79,11 +93,15 @@ function sessionStreamEventFromNodeRegistryEvent(
 function sessionCreatedStreamEvent(
   nodeId: string,
   data: Record<string, unknown>,
+  registry: InMemoryNodeRegistry | undefined,
 ): SessionStreamEvent {
   const folderKeyPresent = "folder_id" in data || "folderId" in data;
   const folderId = "folder_id" in data ? data.folder_id : data.folderId;
+  const rawSession = isRecord(data.session) ? data.session : data;
+  const agentSessionId = sessionIdFromPayload(data);
   const session = {
-    ...(isRecord(data.session) ? data.session : data),
+    ...rawSession,
+    ...serializeCachedSession(nodeId, agentSessionId, rawSession, registry),
   };
   if (folderKeyPresent) {
     session.folder_id = folderId;
@@ -100,6 +118,27 @@ function sessionCreatedStreamEvent(
     payload.folderId = folderId;
   }
   return payload;
+}
+
+function serializeCachedSession(
+  nodeId: string,
+  agentSessionId: string | undefined,
+  fallback: Record<string, unknown>,
+  registry: InMemoryNodeRegistry | undefined,
+): Record<string, unknown> {
+  const cached = agentSessionId === undefined
+    ? undefined
+    : registry?.sessionCache.findSession(agentSessionId);
+  return serializeSessionRow(
+    {
+      ...(cached?.payload ?? fallback),
+      session_id: agentSessionId,
+      node_id: nodeId,
+      status: cached?.status ?? fallback.status,
+      last_event_id: cached?.lastEventId ?? fallback.last_event_id,
+    },
+    { registry },
+  );
 }
 
 function customStreamEventFromEnvelope(
