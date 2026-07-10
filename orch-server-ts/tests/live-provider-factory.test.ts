@@ -20,6 +20,23 @@ const config = parseOrchServerConfig({
   authBearerToken: "test-token",
 });
 
+const liveProviderConfig: Record<string, unknown> = {
+  node_name: "orch-live",
+  google_client_id: "google-client",
+  google_client_secret: "google-secret",
+  google_callback_url: "/api/auth/google/callback",
+  jwt_secret: "jwt-secret",
+  databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
+  environment: "production",
+  atom_enabled: true,
+  atom_server_url: "https://atom.example.test",
+  atom_api_key: "atom-secret",
+  atom_root_node_id: "root-node",
+  claude_oauth_client_id: "claude-oauth-client",
+  claude_oauth_callback_url:
+    "https://orch.example.test/api/nodes/claude-auth/callback",
+};
+
 const nodeClaudeAuthProfileNode: NodeConnectionSnapshot = {
   nodeId: "node-claude",
   connectionId: "conn-claude",
@@ -463,41 +480,8 @@ function createLiveDependencies(): LiveProviderDependencies {
       remove: vi.fn(async () => undefined),
     },
     configProvider: {
-      getConfig: vi.fn(async () => ({
-        node_name: "orch-live",
-        google_client_id: "google-client",
-        google_client_secret: "google-secret",
-        google_callback_url: "/api/auth/google/callback",
-        jwt_secret: "jwt-secret",
-        databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
-        environment: "production",
-        atom_enabled: true,
-        atom_server_url: "https://atom.example.test",
-        atom_api_key: "atom-secret",
-        atom_root_node_id: "root-node",
-        claude_oauth_client_id: "claude-oauth-client",
-        claude_oauth_callback_url:
-          "https://orch.example.test/api/nodes/claude-auth/callback",
-      })),
-      requireConfig: vi.fn(async (key: string) => {
-        const config: Record<string, unknown> = {
-          node_name: "orch-live",
-          google_client_id: "google-client",
-          google_client_secret: "google-secret",
-          google_callback_url: "/api/auth/google/callback",
-          jwt_secret: "jwt-secret",
-          databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
-          environment: "production",
-          atom_enabled: true,
-          atom_server_url: "https://atom.example.test",
-          atom_api_key: "atom-secret",
-          atom_root_node_id: "root-node",
-          claude_oauth_client_id: "claude-oauth-client",
-          claude_oauth_callback_url:
-            "https://orch.example.test/api/nodes/claude-auth/callback",
-        };
-        return config[key];
-      }),
+      getConfig: vi.fn(async () => liveProviderConfig),
+      requireConfig: vi.fn(async (key: string) => liveProviderConfig[key]),
     },
     systemPortraitAssets: {
       readSystemPortraitAsset: vi.fn(async () => Buffer.from("system-portrait")),
