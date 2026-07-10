@@ -17,7 +17,7 @@ import type {
   InMemorySseReplayBroadcaster,
   TaskStreamEvent,
 } from "../sse/replay_broadcaster.js";
-import type { TaskMutationRouteProvider } from "../tasks/task_mutation_routes.js";
+import type { LiveTaskMutationProvider } from "./live_task_mutation_provider.js";
 import type { TaskReadRouteProvider } from "../tasks/task_read_routes.js";
 import type { PushNotificationRepository } from "../push/push_notifier.js";
 import type { UserBackgroundRepository } from "../user/user_background_routes.js";
@@ -53,7 +53,7 @@ export type LiveDbCatalogRepositoryBoundary = {
   readonly sessionHistoryProvider: SessionHistoryProvider;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
   readonly taskReadProvider: TaskReadRouteProvider;
-  readonly taskMutationProvider: TaskMutationRouteProvider;
+  readonly taskMutationProvider: LiveTaskMutationProvider;
   readonly userPreferencesRepository: UserBackgroundRepository;
   readonly createTaskChangeListener: (
     broadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>,

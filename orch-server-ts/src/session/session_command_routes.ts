@@ -15,11 +15,17 @@ import {
   SessionCommandRouter,
 } from "./session_command_router.js";
 import type { SessionCommandTransportBridge } from "./session_command_transport.js";
+import {
+  SessionCreateLifecycleError,
+  type PreparedSessionCreate,
+  type SessionCreateLifecycle,
+} from "./session_create_lifecycle.js";
 
 export type SessionCommandRouteOptions = {
   router: SessionCommandRouter;
   bridge: SessionCommandTransportBridge;
   timeoutMs?: number;
+  createSessionLifecycle?: SessionCreateLifecycle;
 };
 
 export const sessionCommandRouteAuthRequirements = {
@@ -52,8 +58,12 @@ export function registerSessionCommandRoutes(
       return badRequest(reply, "prompt is required");
     }
 
-    const payload = createSessionPayload(body, prompt);
     try {
+      const prepared = await prepareCreateSession(options.createSessionLifecycle, request, body);
+      if (prepared.existingResponse !== undefined) {
+        return reply.code(201).send(prepared.existingResponse);
+      }
+      const payload = createSessionPayload(prepared.payload, prompt);
       const routed = options.router.createSession(payload, {
         timeoutMs: options.timeoutMs,
       });
@@ -71,9 +81,18 @@ export function registerSessionCommandRoutes(
           message: "create_session ack changed the server-generated agentSessionId",
         });
       }
+      const taskFields = options.createSessionLifecycle === undefined
+        ? {}
+        : await options.createSessionLifecycle.complete({
+            prepared,
+            childSessionId: agentSessionId,
+            childNodeId: routed.node.nodeId,
+            prompt,
+          });
       return reply.code(201).send({
         agentSessionId,
         nodeId: routed.node.nodeId,
+        ...taskFields,
       });
     } catch (error) {
       return sendMappedError(reply, error);
@@ -120,6 +139,15 @@ export function registerSessionCommandRoutes(
       return sendMappedError(reply, error);
     }
   });
+}
+
+async function prepareCreateSession(
+  lifecycle: SessionCreateLifecycle | undefined,
+  request: Parameters<SessionCreateLifecycle["prepare"]>[0]["request"],
+  body: JsonObject,
+): Promise<PreparedSessionCreate> {
+  if (lifecycle === undefined) return { payload: body };
+  return lifecycle.prepare({ request, body });
 }
 
 function createSessionPayload(
@@ -185,6 +213,14 @@ function serviceUnavailable(
 }
 
 function sendMappedError(reply: FastifyReply, error: unknown): FastifyReply {
+  if (error instanceof SessionCreateLifecycleError) {
+    return reply.code(error.statusCode).send({
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+    });
+  }
   if (error instanceof SessionCommandRouteError) {
     if (error.code === "SESSION_OWNER_MISSING") {
       return reply.code(404).send({

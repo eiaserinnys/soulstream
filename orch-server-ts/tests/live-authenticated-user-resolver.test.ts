@@ -61,6 +61,70 @@ describe("live authenticated user resolver", () => {
     ).resolves.toBe("User@Example.com");
     await expect(resolvers.resolveEmail(requestWithHeaders({}))).resolves.toBeNull();
   });
+
+  it("preserves a truthy body caller_info before JWT classification", async () => {
+    const jwt = createJwtHelper({
+      "minimal-jwt": { email: "cron@example.com" },
+    });
+    const resolvers = createLiveAuthenticatedUserResolvers({ jwt });
+    const supplied = { source: "agent", agent_node: "node-a", agent_id: "roselin" };
+
+    await expect(resolvers.resolveCallerInfo(
+      requestWithHeaders({ authorization: "Bearer minimal-jwt" }),
+      supplied,
+      "ignored-node",
+    )).resolves.toEqual(supplied);
+    expect(jwt.verifyToken).not.toHaveBeenCalled();
+  });
+
+  it("classifies a name-less JWT as system caller_info", async () => {
+    const jwt = createJwtHelper({
+      "minimal-jwt": { email: "cron@example.com" },
+    });
+    const resolvers = createLiveAuthenticatedUserResolvers({ jwt });
+
+    await expect(resolvers.resolveCallerInfo(
+      requestWithHeaders({ authorization: "Bearer minimal-jwt" }),
+      undefined,
+      "node-a",
+    )).resolves.toEqual({
+      source: "system",
+      agent_node: "node-a",
+      display_name: "Soulstream",
+      user_id: null,
+      avatar_url: "/api/system/portraits/system",
+    });
+  });
+
+  it("builds browser caller_info from HTTP metadata and a named JWT", async () => {
+    const jwt = createJwtHelper({
+      "user-jwt": {
+        email: "alice@example.com",
+        name: "Alice",
+        picture: "https://example.com/alice.png",
+      },
+    });
+    const resolvers = createLiveAuthenticatedUserResolvers({ jwt });
+    const request = requestWithHeaders({
+      authorization: "Bearer user-jwt",
+      "user-agent": "TestClient/1.0",
+      referer: "https://dashboard.example.com",
+      "x-forwarded-for": "203.0.113.8",
+    });
+    Object.assign(request, { ip: "198.51.100.4" });
+
+    await expect(resolvers.resolveCallerInfo(request, undefined, "ignored")).resolves.toEqual({
+      source: "browser",
+      ip: "198.51.100.4",
+      user_agent: "TestClient/1.0",
+      referer: "https://dashboard.example.com",
+      forwarded_for: "203.0.113.8",
+      display_name: "Alice",
+      user_id: "alice@example.com",
+      avatar_url: "https://example.com/alice.png",
+      email: "alice@example.com",
+    });
+  });
 });
 
 function createJwtHelper(

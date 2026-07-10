@@ -413,7 +413,10 @@ describe("live provider factory boundary", () => {
         runtimeServices.routeOptions.sessionActionCommandRoutes,
       sessionBackgroundScheduleRoutes:
         runtimeServices.routeOptions.sessionBackgroundScheduleRoutes,
-      sessionCommandRoutes: runtimeServices.routeOptions.sessionCommandRoutes,
+      sessionCommandRoutes: {
+        ...runtimeServices.routeOptions.sessionCommandRoutes,
+        createSessionLifecycle: expect.any(Object),
+      },
       sessionHistoryRoutes: {
         ...runtimeServices.routeOptions.sessionHistoryRoutes,
         accessProvider: bundle.sessionCatalogRoutes.accessProvider,
@@ -544,6 +547,9 @@ function createLiveDependencies(): LiveProviderDependencies {
         archiveTask: vi.fn(async () => taskMutationResponse),
         pinTask: vi.fn(async () => taskMutationResponse),
         listTaskOperations: vi.fn(async () => []),
+        findTaskScopedSession: vi.fn(async () => null),
+        getTask: vi.fn(async () => null),
+        createTaskScopedChild: vi.fn(async () => taskMutationResponse),
       },
       userPreferencesRepository: {
         get: vi.fn(async () => null),
