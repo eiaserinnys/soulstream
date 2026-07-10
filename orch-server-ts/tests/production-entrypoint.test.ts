@@ -6,6 +6,9 @@ import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  AUTH_COOKIE_NAME,
+  createEnvironmentConfigProvider,
+  createLiveAuthJwtHelper,
   createLiveProductionApplication,
   createProductionOrchestrator,
   loadOrchServerEnvironment,
@@ -23,22 +26,42 @@ afterEach(async () => {
 
 describe("production orchestrator entrypoint", () => {
   it("assembles the complete live provider bundle without contacting external services", async () => {
+    const config = loadOrchServerEnvironment(minimalEnvironment());
     const application = await createLiveProductionApplication(
-      loadOrchServerEnvironment(minimalEnvironment()),
+      config,
       { warn: vi.fn() },
     );
+    const jwt = createLiveAuthJwtHelper({
+      configProvider: createEnvironmentConfigProvider(config),
+    });
+    const jwtToken = await jwt.issueToken({
+      email: "dashboard@example.com",
+      name: "Dashboard User",
+    });
 
     const health = await application.app.inject({ method: "GET", url: "/api/health" });
-    const status = await application.app.inject({ method: "GET", url: "/api/status" });
-
     expect(health.statusCode).toBe(200);
     expect(health.json()).toMatchObject({ status: "ok", version: "0.1.0" });
-    expect(status.statusCode).toBe(200);
-    expect(status.json()).toEqual({
-      is_draining: false,
-      healthy: true,
-      atom_enabled: false,
-    });
+
+    const protectedRoutes = ["/api/status", "/api/nodes", "/api/auth/token"];
+    for (const url of protectedRoutes) {
+      const unauthenticated = await application.app.inject({ method: "GET", url });
+      expect(unauthenticated.statusCode, url).toBe(401);
+
+      const serviceBearer = await application.app.inject({
+        method: "GET",
+        url,
+        headers: { authorization: "Bearer production-service-token" },
+      });
+      expect(serviceBearer.statusCode, url).toBe(200);
+
+      const dashboardJwt = await application.app.inject({
+        method: "GET",
+        url,
+        headers: { cookie: `${AUTH_COOKIE_NAME}=${jwtToken}` },
+      });
+      expect(dashboardJwt.statusCode, url).toBe(200);
+    }
     expect(application.app.printRoutes()).toContain("ws/node");
     expect(application.app.printRoutes()).toContain("runbooks/");
 
@@ -123,7 +146,11 @@ function minimalEnvironment(): Record<string, string> {
   return {
     HOST: "127.0.0.1",
     DATABASE_URL: "postgres://unused@localhost/unused",
-    ENVIRONMENT: "test",
+    ENVIRONMENT: "production",
+    CORS_ALLOWED_ORIGINS: "http://127.0.0.1",
+    AUTH_BEARER_TOKEN: "production-service-token",
+    GOOGLE_CLIENT_ID: "dashboard-google-client",
+    JWT_SECRET: "production-jwt-secret",
     CLAUDE_OAUTH_CLIENT_ID: "test-client",
     CLAUDE_OAUTH_CALLBACK_URL: "http://127.0.0.1/claude/callback",
   };

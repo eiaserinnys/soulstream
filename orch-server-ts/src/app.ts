@@ -119,10 +119,15 @@ import {
   registerUserPreferencesRoutes,
   type UserPreferencesRouteOptions,
 } from "./user/user_preferences_routes.js";
+import {
+  registerProductionAuthGuard,
+  type ProductionAuthGuardOptions,
+} from "./runtime/production_auth_guard.js";
 
 export type CreateAppOptions = {
   config: OrchServerTsConfig;
   corsAllowedOrigins?: readonly string[];
+  productionAuth?: ProductionAuthGuardOptions;
   routeOwners?: RouteOwnerManifest;
   exposeLocalHealthRoute?: boolean;
   adminUsersRoutes?: AdminUsersRouteOptions;
@@ -162,6 +167,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   const owners = options.routeOwners ?? routeOwnerManifest;
   if (options.corsAllowedOrigins !== undefined) {
     registerCorsBoundary(app, options.corsAllowedOrigins);
+  }
+  if (options.productionAuth !== undefined) {
+    registerProductionAuthGuard(app, options.productionAuth);
   }
 
   if (options.exposeLocalHealthRoute) {
