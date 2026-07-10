@@ -61,7 +61,7 @@ export function registerNodeWsRoute(
           return reply.code(auth.statusCode).send({ detail: auth.detail });
         }
       },
-    }, (socket) => {
+    }, (socket, _request) => {
       const controller = new NodeWsFrameController({ registry: options.registry });
       const transport: NodeCommandTransport = {
         send: (data) => socket.send(data),
@@ -70,10 +70,19 @@ export function registerNodeWsRoute(
       let finalized = false;
       let registrationTimer: ReturnType<typeof setTimeout> | undefined;
 
+      app.log.info({
+        path: "/ws/node",
+      }, "Node WebSocket connected");
+
       const finalize = (reason: string): void => {
         if (finalized) return;
         finalized = true;
         clearRegistrationTimer();
+        app.log.info({
+          nodeId: attachment?.nodeId,
+          path: "/ws/node",
+          reason,
+        }, "Node WebSocket disconnected");
         detachTransport(options.transportHub, attachment);
         attachment = undefined;
         emitEvents(

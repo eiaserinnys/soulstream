@@ -1,10 +1,13 @@
 import { z } from "zod";
 
+export const DEFAULT_TRUSTED_PROXY = "loopback" as const;
+
 const ConfigSchema = z
   .object({
     environment: z.string().min(1),
     databaseUrl: z.string().min(1),
     authBearerToken: z.string(),
+    trustProxy: z.literal(DEFAULT_TRUSTED_PROXY).default(DEFAULT_TRUSTED_PROXY),
     r2_board_assets_access_key_id: z.string().optional(),
     r2_board_assets_secret_access_key: z.string().optional(),
     r2_board_assets_bucket: z.string().optional(),
@@ -12,7 +15,12 @@ const ConfigSchema = z
   })
   .strict();
 
-export type OrchServerTsConfig = z.infer<typeof ConfigSchema>;
+export type OrchServerTsConfig = Omit<
+  z.output<typeof ConfigSchema>,
+  "trustProxy"
+> & {
+  readonly trustProxy?: typeof DEFAULT_TRUSTED_PROXY;
+};
 
 export type DashboardFolderAccessRule = {
   readonly restricted: boolean;
@@ -23,6 +31,7 @@ export type OrchServerEnvironmentConfig = {
   readonly node_name: string | null;
   readonly host: string;
   readonly port: number;
+  readonly trusted_proxy: typeof DEFAULT_TRUSTED_PROXY;
   readonly database_url: string;
   readonly dashboard_dir: string;
   readonly dashboard_user_folder_access: Readonly<Record<string, DashboardFolderAccessRule>>;
@@ -73,6 +82,7 @@ export function loadOrchServerEnvironment(
     node_name: optionalString(env.NODE_NAME),
     host: requiredString(env, "HOST"),
     port: parsePort(env.PORT),
+    trusted_proxy: DEFAULT_TRUSTED_PROXY,
     database_url: requiredString(env, "DATABASE_URL"),
     dashboard_dir: env.DASHBOARD_DIR ?? "",
     dashboard_user_folder_access: parseDashboardFolderAccess(
@@ -107,6 +117,7 @@ export function toOrchServerTsConfig(
     environment: config.environment,
     databaseUrl: config.database_url,
     authBearerToken: config.auth_bearer_token,
+    trustProxy: config.trusted_proxy,
     r2_board_assets_access_key_id: config.r2_board_assets_access_key_id,
     r2_board_assets_secret_access_key: config.r2_board_assets_secret_access_key,
     r2_board_assets_bucket: config.r2_board_assets_bucket,
