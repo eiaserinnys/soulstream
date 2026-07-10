@@ -37,6 +37,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "atom", path: "atomRoutes.httpClient" },
   { owner: "attachments", path: "attachmentRoutes.accessProvider" },
   { owner: "attachments", path: "attachmentRoutes.provider" },
+  { owner: "attachments", path: "attachmentRoutes.transport" },
   { owner: "auth", path: "authRoutes.configProvider" },
   { owner: "auth", path: "authRoutes.httpClient" },
   { owner: "auth", path: "authRoutes.jwt" },

@@ -3,6 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createLiveAttachmentRouteProviders,
+  InMemoryNodeRegistry,
+  NodeCommandTransportHub,
+  SessionCommandTransportBridge,
   type NodeConnectionSnapshot,
 } from "../src/index.js";
 
@@ -30,11 +33,22 @@ const connectedNode: NodeConnectionSnapshot = {
 
 describe("live attachment route providers", () => {
   it("maps Python NodeManager.get_node semantics to the connected runtime registry", async () => {
-    const getConnectedNode = vi.fn((nodeId: string) =>
-      nodeId === connectedNode.nodeId ? connectedNode : undefined
-    );
+    const registry = new InMemoryNodeRegistry();
+    registry.registerNode({
+      type: "node_register",
+      node_id: connectedNode.nodeId,
+      host: connectedNode.host,
+      port: connectedNode.port,
+      capabilities: connectedNode.capabilities,
+      supported_backends: connectedNode.supportedBackends,
+    });
+    const getConnectedNode = vi.spyOn(registry, "getConnectedNode");
     const providers = createLiveAttachmentRouteProviders({
-      registry: { getConnectedNode },
+      registry,
+      bridge: new SessionCommandTransportBridge({
+        registry,
+        transports: new NodeCommandTransportHub(),
+      }),
       dashboardAccessProvider: {
         resolveAccess: vi.fn(async () => ({
           restricted: false,
@@ -46,9 +60,10 @@ describe("live attachment route providers", () => {
       },
     });
 
-    await expect(providers.provider.getNode("node-attachment")).resolves.toBe(
-      connectedNode,
-    );
+    await expect(providers.provider.getNode("node-attachment")).resolves.toMatchObject({
+      nodeId: connectedNode.nodeId,
+      connected: true,
+    });
     await expect(providers.provider.getNode("missing-node")).resolves.toBeNull();
     expect(getConnectedNode).toHaveBeenNthCalledWith(1, "node-attachment");
     expect(getConnectedNode).toHaveBeenNthCalledWith(2, "missing-node");
@@ -60,8 +75,13 @@ describe("live attachment route providers", () => {
       allowedFolderIds: ["folder-a"],
     }));
     const requireSessionAccess = vi.fn(async () => undefined);
+    const registry = new InMemoryNodeRegistry();
     const providers = createLiveAttachmentRouteProviders({
-      registry: { getConnectedNode: vi.fn(() => undefined) },
+      registry,
+      bridge: new SessionCommandTransportBridge({
+        registry,
+        transports: new NodeCommandTransportHub(),
+      }),
       dashboardAccessProvider: { resolveAccess },
       sessionResourceAccessProvider: { requireSessionAccess },
     });

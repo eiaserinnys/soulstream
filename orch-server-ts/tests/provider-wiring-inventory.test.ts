@@ -80,7 +80,7 @@ describe("live provider wiring inventory", () => {
       liveProviderWiringInventory.map((entry) => entry.cutoverRisk),
     );
 
-    expect([...statuses].sort()).toEqual(["blocked", "implemented"]);
+    expect([...statuses]).toEqual(["implemented"]);
     expect([...risks].sort()).toEqual(["high", "low", "medium"]);
   });
 
@@ -121,8 +121,8 @@ describe("live provider wiring inventory", () => {
       },
       {
         path: "attachmentRoutes.transport",
-        status: "blocked",
-        dependencies: ["node_http", "websocket"],
+        status: "implemented",
+        dependencies: ["runtime", "websocket"],
       },
     ]);
     expect(statusByPath.get("public.status:publicStatusRoutes.configProvider")).toBe(
