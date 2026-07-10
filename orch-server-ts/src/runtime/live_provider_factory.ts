@@ -19,6 +19,7 @@ import {
 } from "./live_config_route_providers.js";
 import type { ExecuteProxyRouteOptions } from "../execute/execute_proxy_routes.js";
 import type { FolderRouteOptions } from "../folders/folder_routes.js";
+import type { BoardAssetRouteOptions } from "../board/board_asset_routes.js";
 import type { BoardItemRouteOptions } from "../board/board_item_routes.js";
 import type { MarkdownDocumentRouteOptions } from "../board/markdown_document_routes.js";
 import type { PublicStatusRouteOptions } from "../public/public_status_routes.js";
@@ -57,6 +58,7 @@ import {
   type SessionStreamEventFilter,
 } from "../session/session_stream_event_filter.js";
 import { withFolderMutationBroadcasts } from "./live_folder_mutation_broadcaster.js";
+import { withBoardAssetMutationBroadcasts } from "./live_board_asset_mutation_broadcaster.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import {
   liveProviderWiringInventory,
@@ -114,6 +116,7 @@ export type LiveOrchestratorProviderBundle = {
     | "userPayloadExtra"
   >;
   readonly folderRoutes: Pick<FolderRouteOptions, "accessProvider" | "provider">;
+  readonly boardAssetRoutes: Pick<BoardAssetRouteOptions, "accessProvider" | "provider">;
   readonly boardItemRoutes: Pick<BoardItemRouteOptions, "accessProvider" | "provider">;
   readonly markdownDocumentRoutes: Pick<
     MarkdownDocumentRouteOptions,
@@ -227,6 +230,14 @@ export function createLiveOrchestratorProviderBundle(
     },
     folderRoutes: {
       provider: withFolderMutationBroadcasts(
+        options.dependencies.dbCatalogRepository.folderRouteProvider,
+        options.runtimeServices.sessionBroadcaster,
+      ),
+      accessProvider: dashboardAccessProvider,
+    },
+    boardAssetRoutes: {
+      provider: withBoardAssetMutationBroadcasts(
+        options.dependencies.dbCatalogRepository.boardAssetRouteProvider,
         options.dependencies.dbCatalogRepository.folderRouteProvider,
         options.runtimeServices.sessionBroadcaster,
       ),

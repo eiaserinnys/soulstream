@@ -152,6 +152,10 @@ describe("live provider factory boundary", () => {
     expect(bundle.authRoutes.authorizeUser).toEqual(expect.any(Function));
     expect(bundle.authRoutes.userPayloadExtra).toEqual(expect.any(Function));
     expect(bundle.folderRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
+    expect(bundle.boardAssetRoutes.accessProvider.resolveAccess).toEqual(expect.any(Function));
+    expect(bundle.boardAssetRoutes.provider.initFileAsset).toBe(
+      dependencies.dbCatalogRepository.boardAssetRouteProvider.initFileAsset,
+    );
     expect(bundle.boardItemRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.boardItemRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
     expect(bundle.markdownDocumentRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.markdownDocumentRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
     expect(bundle.runbookRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.runbookRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
@@ -388,7 +392,14 @@ function createLiveDependencies(): LiveProviderDependencies {
       resolveSessionIdentity: vi.fn(async () => ({})),
     },
     dbCatalogRepository: {
-      folderRouteProvider: {} as never, folderCountsProvider: {} as never, boardItemRouteProvider: {} as never, markdownDocumentRouteProvider: {} as never, runbookRouteProvider: {} as never,
+      folderRouteProvider: {} as never, folderCountsProvider: {} as never,
+      boardAssetRouteProvider: {
+        listFolders: vi.fn(async () => []),
+        getCatalogSnapshot: vi.fn(async () => ({ boardItems: [] })),
+        initFileAsset: vi.fn(async () => ({ assetId: "asset-live" })),
+        commitFileAsset: vi.fn(async () => ({ asset: {}, boardItem: {} })),
+      },
+      boardItemRouteProvider: {} as never, markdownDocumentRouteProvider: {} as never, runbookRouteProvider: {} as never,
       sessionCatalogProvider: {
         renameSession: vi.fn(async () => undefined),
         moveSessionsToFolder: vi.fn(async () => ({ count: 0 })),

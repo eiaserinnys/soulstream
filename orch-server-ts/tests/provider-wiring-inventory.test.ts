@@ -129,6 +129,12 @@ describe("live provider wiring inventory", () => {
     expect(statusByPath.get("board.items:boardItemRoutes.provider")).toBe(
       "implemented",
     );
+    expect(statusByPath.get("board.assets:boardAssetRoutes.accessProvider")).toBe(
+      "implemented",
+    );
+    expect(statusByPath.get("board.assets:boardAssetRoutes.provider")).toBe(
+      "implemented",
+    );
     expect(
       statusByPath.get("markdown.documents:markdownDocumentRoutes.accessProvider"),
     ).toBe("implemented");

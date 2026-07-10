@@ -34,6 +34,11 @@ import {
 } from "./live_folder_route_provider.js";
 import { createLiveBoardItemRouteProvider } from "./live_board_item_route_provider.js";
 import type { BoardItemRouteProvider } from "../board/board_item_routes.js";
+import {
+  createLiveBoardAssetRouteProvider,
+} from "./live_board_asset_route_provider.js";
+import type { BoardAssetRouteProvider } from "../board/board_asset_routes.js";
+import type { LiveBoardAssetStorage } from "./live_board_asset_storage.js";
 import { createLiveMarkdownDocumentRouteProvider } from "./live_markdown_document_route_provider.js";
 import type { MarkdownDocumentRouteProvider } from "../board/markdown_document_routes.js";
 import { createLiveRunbookRouteProvider } from "./live_runbook_route_provider.js";
@@ -51,6 +56,7 @@ import { serializeTasksWithLinkedSessions } from "./live_task_serialization.js";
 export type LiveDbCatalogRepository = {
   readonly folderRouteProvider: LiveFolderProvider;
   readonly folderCountsProvider: LiveFolderProvider;
+  readonly boardAssetRouteProvider: BoardAssetRouteProvider;
   readonly boardItemRouteProvider: BoardItemRouteProvider;
   readonly markdownDocumentRouteProvider: MarkdownDocumentRouteProvider;
   readonly runbookRouteProvider: RunbookRouteProvider;
@@ -85,6 +91,7 @@ export type CreateLiveDbCatalogRepositoryOptions = {
   readonly closeTimeoutSeconds?: number;
   readonly sessionSnapshotLimit?: number;
   readonly taskSnapshotLimit?: number;
+  readonly boardAssetStorage?: LiveBoardAssetStorage | null;
 };
 
 const DEFAULT_SESSION_SNAPSHOT_LIMIT = 200;
@@ -108,6 +115,13 @@ export function createLiveDbCatalogRepository(
     sqlResolver,
     folderProvider,
   );
+  const boardAssetProvider = createLiveBoardAssetRouteProvider({
+    sqlResolver,
+    folderProvider,
+    boardItemProvider,
+    storage: options.boardAssetStorage,
+    configProvider: options.configProvider,
+  });
   const runbookProvider = createLiveRunbookRouteProvider({
     sqlResolver,
     folderProvider,
@@ -129,6 +143,7 @@ export function createLiveDbCatalogRepository(
   return {
     folderRouteProvider: folderProvider,
     folderCountsProvider: folderProvider,
+    boardAssetRouteProvider: boardAssetProvider,
     boardItemRouteProvider: boardItemProvider,
     markdownDocumentRouteProvider: createLiveMarkdownDocumentRouteProvider(
       sqlResolver,
