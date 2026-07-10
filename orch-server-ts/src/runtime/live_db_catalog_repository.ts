@@ -11,6 +11,10 @@ import {
   firstAllowedSessionFolderId,
   type SessionResourceAccessRepository,
 } from "../session/session_resource_access.js";
+import {
+  buildSessionSnapshotListResponse,
+  type SessionSnapshotListResponse,
+} from "../session/session_snapshot_service.js";
 import type {
   SessionStreamSnapshot,
   TaskStreamSnapshot,
@@ -79,6 +83,9 @@ export type LiveDbCatalogRepository = {
   readonly loadSessionSnapshot: (
     input?: LoadSessionSnapshotInput,
   ) => Promise<SessionStreamSnapshot>;
+  readonly listSessionSnapshots: (
+    input: ListSessionSnapshotsInput,
+  ) => Promise<SessionSnapshotListResponse>;
   readonly loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   readonly close: () => Promise<void>;
 };
@@ -86,6 +93,13 @@ export type LiveDbCatalogRepository = {
 export type LoadSessionSnapshotInput = {
   readonly access?: BoardAccess;
   readonly feedOnly?: boolean;
+};
+
+export type ListSessionSnapshotsInput = LoadSessionSnapshotInput & {
+  readonly folderId?: string;
+  readonly sessionType?: string;
+  readonly offset: number;
+  readonly limit: number;
 };
 
 export type CreateLiveDbCatalogRepositoryOptions = {
@@ -149,6 +163,34 @@ export function createLiveDbCatalogRepository(
   const sessionSnapshotLimit =
     options.sessionSnapshotLimit ?? DEFAULT_SESSION_SNAPSHOT_LIMIT;
   const taskSnapshotLimit = options.taskSnapshotLimit ?? DEFAULT_TASK_SNAPSHOT_LIMIT;
+  async function loadSessionPage(
+    input: LoadSessionSnapshotInput & {
+      readonly folderId?: string;
+      readonly sessionType?: string;
+    },
+    limit: number | null,
+    offset: number | null,
+  ): Promise<{ sessions: Record<string, unknown>[]; total: number }> {
+    const sql = await sqlResolver.resolveSql();
+    const filters = await sessionSnapshotFilters(
+      input,
+      sessionResourceAccessRepository,
+    );
+    if (filters === null) return { sessions: [], total: 0 };
+    const filtersJson = JSON.stringify(filters);
+    const countRows = await sql`
+      SELECT session_count(${filtersJson}::jsonb) AS count
+    `;
+    const sessionRows = await sql`
+      SELECT * FROM session_get_all(${filtersJson}::jsonb, ${limit}, ${offset})
+    `;
+    return {
+      sessions: sessionRows.map((row) =>
+        serializeSessionRow(row, { registry: options.registry }),
+      ),
+      total: numberValue(countRows[0]?.count) ?? sessionRows.length,
+    };
+  }
   return {
     adminUsersRepository,
     folderRouteProvider: folderProvider,
@@ -171,25 +213,20 @@ export function createLiveDbCatalogRepository(
       return createLiveTaskChangeListener({ sqlResolver, broadcaster });
     },
     async loadSessionSnapshot(input = {}) {
-      const sql = await sqlResolver.resolveSql();
-      const filters = await sessionSnapshotFilters(
+      return loadSessionPage(input, sessionSnapshotLimit, null);
+    },
+    async listSessionSnapshots(input) {
+      const page = await loadSessionPage(
         input,
-        sessionResourceAccessRepository,
+        input.limit > 0 ? input.limit : null,
+        input.offset > 0 ? input.offset : null,
       );
-      if (filters === null) return { sessions: [], total: 0 };
-      const filtersJson = JSON.stringify(filters);
-      const countRows = await sql`
-        SELECT session_count(${filtersJson}::jsonb) AS count
-      `;
-      const sessionRows = await sql`
-        SELECT * FROM session_get_all(${filtersJson}::jsonb, ${sessionSnapshotLimit}, ${null})
-      `;
-      return {
-        sessions: sessionRows.map((row) =>
-          serializeSessionRow(row, { registry: options.registry }),
-        ),
-        total: numberValue(countRows[0]?.count) ?? sessionRows.length,
-      };
+      return buildSessionSnapshotListResponse(
+        page.sessions,
+        page.total,
+        input.offset,
+        input.limit,
+      );
     },
     async loadTaskSnapshot() {
       const sql = await sqlResolver.resolveSql();
@@ -244,12 +281,17 @@ function createSessionResourceAccessRepository(
 }
 
 async function sessionSnapshotFilters(
-  input: LoadSessionSnapshotInput,
+  input: LoadSessionSnapshotInput & {
+    readonly folderId?: string;
+    readonly sessionType?: string;
+  },
   repository: SessionResourceAccessRepository,
 ): Promise<Record<string, unknown> | null> {
   const filters: Record<string, unknown> = {};
   if (input.feedOnly === true) filters.feed_only = true;
-  if (input.access === undefined) return filters;
+  if (input.folderId !== undefined) filters.folder_id = input.folderId;
+  if (input.sessionType !== undefined) filters.session_type = input.sessionType;
+  if (input.access === undefined || input.folderId !== undefined) return filters;
 
   const access = normalizeBoardAccess(input.access);
   if (!access.restricted) return filters;

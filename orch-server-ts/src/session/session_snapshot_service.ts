@@ -13,8 +13,8 @@ export type SessionSnapshotQuery = {
 };
 
 export type SessionSnapshotListResponse = {
-  sessions: SessionSnapshotRecord[];
-  sessionList: SessionSnapshotRecord[];
+  sessions: Record<string, unknown>[];
+  sessionList: Record<string, unknown>[];
   total: number;
   cursor: string | null;
   nextCursor: string | null;
@@ -44,8 +44,8 @@ export class SessionSnapshotService {
   }
 
   listSessions(query: SessionSnapshotQuery = {}): SessionSnapshotListResponse {
-    const offset = resolveOffset(query);
-    const limit = resolveLimit(query.limit);
+    const offset = resolveSessionSnapshotOffset(query);
+    const limit = resolveSessionSnapshotLimit(query.limit);
     const filtered = this.registry.sessionCache
       .listSessions()
       .map((session) => ({
@@ -54,22 +54,11 @@ export class SessionSnapshotService {
       }))
       .filter(({ snapshot }) => matchesQuery(snapshot, query))
       .sort((left, right) => compareSessions(left.session, right.session));
-    const page =
-      limit === 0
-        ? []
-        : filtered.slice(offset, offset + limit).map((entry) => entry.snapshot);
-    const loadedCount = offset + page.length;
-    const hasMore = limit > 0 && loadedCount < filtered.length;
-    const nextCursor = hasMore ? String(offset + limit) : null;
-
-    return {
-      sessions: page,
-      sessionList: page,
-      total: filtered.length,
-      cursor: nextCursor,
-      nextCursor,
-      hasMore,
-    };
+    const page = (limit === 0
+      ? filtered.slice(offset)
+      : filtered.slice(offset, offset + limit)
+    ).map((entry) => entry.snapshot);
+    return buildSessionSnapshotListResponse(page, filtered.length, offset, limit);
   }
 
   loadSessionStreamSnapshot(): Promise<SessionStreamSnapshot> {
@@ -95,7 +84,7 @@ export class SessionSnapshotService {
   }
 }
 
-function resolveOffset(query: SessionSnapshotQuery): number {
+export function resolveSessionSnapshotOffset(query: SessionSnapshotQuery): number {
   if (query.cursor !== undefined && query.cursor.length > 0) {
     const cursorOffset = Number.parseInt(query.cursor, 10);
     return Number.isFinite(cursorOffset) && cursorOffset >= 0 ? cursorOffset : 0;
@@ -107,10 +96,29 @@ function resolveOffset(query: SessionSnapshotQuery): number {
     : 0;
 }
 
-function resolveLimit(limit: number | undefined): number {
+export function resolveSessionSnapshotLimit(limit: number | undefined): number {
   if (limit === undefined) return DEFAULT_LIMIT;
   if (!Number.isInteger(limit) || limit < 0) return DEFAULT_LIMIT;
   return Math.min(limit, MAX_LIMIT);
+}
+
+export function buildSessionSnapshotListResponse(
+  sessions: Record<string, unknown>[],
+  total: number,
+  offset: number,
+  limit: number,
+): SessionSnapshotListResponse {
+  const loadedCount = offset + sessions.length;
+  const hasMore = limit > 0 && loadedCount < total;
+  const nextCursor = hasMore ? String(offset + limit) : null;
+  return {
+    sessions,
+    sessionList: sessions,
+    total,
+    cursor: nextCursor,
+    nextCursor,
+    hasMore,
+  };
 }
 
 function matchesQuery(

@@ -1,12 +1,19 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import {
-  SessionSnapshotService,
+  type SessionSnapshotListResponse,
   type SessionSnapshotQuery,
 } from "./session_snapshot_service.js";
 
+export type SessionSnapshotListProvider = {
+  listSessions: (
+    query: SessionSnapshotQuery,
+    request: FastifyRequest,
+  ) => SessionSnapshotListResponse | Promise<SessionSnapshotListResponse>;
+};
+
 export type SessionSnapshotRouteOptions = {
-  snapshotService: SessionSnapshotService;
+  snapshotService: SessionSnapshotListProvider;
 };
 
 export const sessionSnapshotRouteAuthRequirements = {
@@ -18,7 +25,10 @@ export function registerSessionSnapshotRoutes(
   options: SessionSnapshotRouteOptions,
 ): void {
   app.get("/api/sessions", async (request) =>
-    options.snapshotService.listSessions(parseSessionSnapshotQuery(request.query)),
+    options.snapshotService.listSessions(
+      parseSessionSnapshotQuery(request.query),
+      request,
+    ),
   );
 }
 

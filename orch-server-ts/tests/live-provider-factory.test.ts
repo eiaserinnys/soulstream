@@ -421,7 +421,9 @@ describe("live provider factory boundary", () => {
         ...runtimeServices.routeOptions.sessionHistoryRoutes,
         accessProvider: bundle.sessionCatalogRoutes.accessProvider,
       },
-      sessionSnapshotRoutes: runtimeServices.routeOptions.sessionSnapshotRoutes,
+      sessionSnapshotRoutes: {
+        snapshotService: { listSessions: expect.any(Function) },
+      },
       sseReplayRoutes: {
         ...runtimeServices.routeOptions.sseReplayRoutes,
         session: {
@@ -523,6 +525,14 @@ function createLiveDependencies(): LiveProviderDependencies {
         updateReadPosition: vi.fn(async () => undefined),
       },
       loadSessionSnapshot: vi.fn(async () => ({ sessions: [] })),
+      listSessionSnapshots: vi.fn(async () => ({
+        sessions: [],
+        sessionList: [],
+        total: 0,
+        cursor: null,
+        nextCursor: null,
+        hasMore: false,
+      })),
       loadTaskSnapshot: vi.fn(async () => ({ tasks: [] })),
       sessionHistoryProvider,
       sessionResourceAccessRepository: {

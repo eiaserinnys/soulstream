@@ -188,6 +188,21 @@ describe("session snapshot route harness", () => {
       hasMore: false,
     });
 
+    const unbounded = (
+      await app.inject({ method: "GET", url: "/api/sessions?limit=0" })
+    ).json();
+    expect(
+      unbounded.sessions.map(
+        (session: Record<string, unknown>) => session.agent_session_id,
+      ),
+    ).toEqual(["sess-c", "sess-a", "sess-b"]);
+    expect(unbounded).toMatchObject({
+      total: 3,
+      cursor: null,
+      nextCursor: null,
+      hasMore: false,
+    });
+
     await app.close();
   });
 });
