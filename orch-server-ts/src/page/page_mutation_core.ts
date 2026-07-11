@@ -20,8 +20,21 @@ import {
   validateIdempotencyKey,
   validateTitle,
 } from "./page_mutation_validation.js";
+import {
+  commandPayload,
+  docFromUpdate,
+  PageMutationStateVectorConflictError,
+  PageMutationVersionConflictError,
+  stateVectorsEqual,
+  yMapFromRecord,
+} from "./page_mutation_helpers.js";
 
 export { PageMutationValidationError } from "./page_mutation_validation.js";
+export {
+  PageMutationStateVectorConflictError,
+  PageMutationVersionConflictError,
+} from "./page_mutation_helpers.js";
+
 export interface PageMutationActor {
   actorKind: PageActorKind;
   actorSessionId?: string | null;
@@ -62,13 +75,24 @@ export type PageMutationCommand =
   | { type: "replace_page_markdown"; blocks: readonly PageYjsBlockInput[] }
   | { type: "batch_operations"; operations: readonly PageBatchOperation[] };
 
-interface PageBlockPlacement { parentId: string | null; parentTempId?: string | null;
-  afterBlockId: string | null; afterTempId?: string | null; }
-interface PageBlockContent { blockType: string; text: string;
-  properties: Record<string, unknown>; collapsed?: boolean; }
+interface PageBlockPlacement {
+  parentId: string | null;
+  parentTempId?: string | null;
+  afterBlockId: string | null;
+  afterTempId?: string | null;
+}
+
+interface PageBlockContent {
+  blockType: string;
+  text: string;
+  properties: Record<string, unknown>;
+  collapsed?: boolean;
+}
 
 export interface PageMutationInput {
-  pageId: string; expectedVersion: number; expectedStateVector?: Uint8Array;
+  pageId: string;
+  expectedVersion: number;
+  expectedStateVector?: Uint8Array;
   command: PageMutationCommand;
   actor: PageMutationActor;
   idempotencyKey: string;
@@ -104,17 +128,6 @@ export interface PageMutationApplication {
   payload: Record<string, unknown>;
   tempIdMapping: Record<string, string>;
 }
-
-export class PageMutationVersionConflictError extends Error {
-  readonly code = "PAGE_MUTATION_VERSION_CONFLICT";
-  constructor(readonly pageId: string, readonly expectedVersion: number,
-    readonly actualVersion: number) {
-    super(`page ${pageId} version conflict: expected ${expectedVersion}, actual ${actualVersion}`);
-  }
-}
-export class PageMutationStateVectorConflictError extends Error {
-  readonly code = "PAGE_MUTATION_STATE_VECTOR_CONFLICT";
-  constructor(readonly pageId: string) { super(`page ${pageId} state vector conflict`); } }
 
 export class PageMutationCore {
   private readonly createId: () => string;
@@ -172,7 +185,7 @@ export class PageMutationCore {
     }
 
     const beforeVector = Y.encodeStateVector(source);
-    if (input.expectedStateVector && !sameBytes(beforeVector, input.expectedStateVector)) {
+    if (input.expectedStateVector && !stateVectorsEqual(beforeVector, input.expectedStateVector)) {
       throw new PageMutationStateVectorConflictError(input.pageId);
     }
 
@@ -312,8 +325,12 @@ export class PageMutationCore {
 }
 
 function applied(operationType: PageOperationType, targetBlockId: string | null = null) {
-  return { operationType, targetBlockId, tempIdMapping: {} }; }
-function appliedCreatePage() { return applied("create_page"); }
+  return { operationType, targetBlockId, tempIdMapping: {} };
+}
+
+function appliedCreatePage() {
+  return applied("create_page");
+}
 
 function createBlock(
   doc: Y.Doc,
@@ -475,26 +492,7 @@ function resolvePlacement(
   return temp ? resolve(temp) : direct === null ? null : resolve(direct);
 }
 
-function yMapFromRecord(input: Record<string, unknown>): Y.Map<unknown> {
-  const map = new Y.Map<unknown>();
-  for (const [key, value] of Object.entries(input)) map.set(key, structuredClone(value));
-  return map;
-}
-
 function requireString(value: unknown, label: string): string {
   if (typeof value !== "string") throw new PageMutationValidationError(`${label} must be a string`);
   return value;
-}
-
-function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]); }
-
-function docFromUpdate(update: Uint8Array): Y.Doc {
-  const doc = new Y.Doc();
-  Y.applyUpdate(doc, update);
-  return doc;
-}
-
-function commandPayload(command: PageMutationCommand): Record<string, unknown> {
-  return structuredClone(command) as unknown as Record<string, unknown>;
 }
