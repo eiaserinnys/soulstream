@@ -3,11 +3,17 @@ import type {
   PageDocumentBlock,
   PageDto,
   PageYjsClient,
+  PageLens,
+  SessionSummaryIndex,
 } from "@seosoyoung/soul-ui/page";
+import type { SessionSummary } from "@seosoyoung/soul-ui";
 import { PageOutliner } from "@seosoyoung/soul-ui/page-editor";
 import { CircleAlert, LoaderCircle, LockKeyhole, Star } from "lucide-react";
 
 import { V2_TOKENS } from "./v2-token-fixture";
+import { V2PageLensControls } from "./V2PageLensControls";
+
+const EMPTY_SESSION_INDEX: SessionSummaryIndex = new Map();
 
 export type V2PageSurfaceState =
   | { readonly status: "loading"; readonly message: string }
@@ -29,9 +35,17 @@ export type V2PageSurfaceState =
 export function V2PageSurface({
   state,
   onToggleStar,
+  lens = "default",
+  onLensChange = () => undefined,
+  sessionIndex = EMPTY_SESSION_INDEX,
+  onOpenSession,
 }: {
   state: V2PageSurfaceState;
   onToggleStar(): void;
+  lens?: PageLens;
+  onLensChange?(lens: PageLens): void;
+  sessionIndex?: SessionSummaryIndex;
+  onOpenSession?(session: SessionSummary): void;
 }) {
   if (state.status !== "ready") {
     const Icon = state.status === "loading"
@@ -69,17 +83,20 @@ export function V2PageSurface({
           </p>
           <h1 className="truncate text-xl font-semibold text-foreground">{state.page.title}</h1>
         </div>
-        <button
-          type="button"
-          aria-pressed={starred}
-          aria-label={starred ? "Remove page from starred pages" : "Add page to starred pages"}
-          disabled={state.starring}
-          className={`flex shrink-0 items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50 ${V2_TOKENS.control}`}
-          onClick={onToggleStar}
-        >
-          <Star aria-hidden="true" className={`h-4 w-4 ${starred ? "fill-current text-primary" : ""}`} />
-          <span>{starred ? "Starred" : "Star"}</span>
-        </button>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <V2PageLensControls lens={lens} onChange={onLensChange} />
+          <button
+            type="button"
+            aria-pressed={starred}
+            aria-label={starred ? "Remove page from starred pages" : "Add page to starred pages"}
+            disabled={state.starring}
+            className={`flex shrink-0 items-center gap-2 px-3 py-2 text-sm text-muted-foreground hover:text-foreground disabled:opacity-50 ${V2_TOKENS.control}`}
+            onClick={onToggleStar}
+          >
+            <Star aria-hidden="true" className={`h-4 w-4 ${starred ? "fill-current text-primary" : ""}`} />
+            <span>{starred ? "Starred" : "Star"}</span>
+          </button>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col">
@@ -95,6 +112,9 @@ export function V2PageSurface({
           mutationVersion={state.page.version}
           apiClient={state.editor.apiClient}
           onResync={state.editor.onResync}
+          sessionIndex={sessionIndex}
+          lens={lens}
+          onOpenSession={onOpenSession}
         />
       </div>
     </main>

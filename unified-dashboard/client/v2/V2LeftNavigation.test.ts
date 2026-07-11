@@ -17,6 +17,13 @@ describe("V2LeftNavigation", () => {
       onOpenDaily: vi.fn(),
       onOpenPage: vi.fn(),
       onUnstarPage: vi.fn(),
+      legacyFolders: [
+        { id: "legacy-root", name: "Legacy root", sortOrder: 0 },
+        { id: "legacy-child", name: "Legacy child", sortOrder: 0, parentFolderId: "legacy-root" },
+      ],
+      selectedLegacyFolderId: "legacy-child",
+      legacyStatus: { status: "ready", message: null },
+      onOpenLegacyFolder: vi.fn(),
     }));
 
     expect(html).toContain('data-testid="v2-daily-entry"');
@@ -24,6 +31,9 @@ describe("V2LeftNavigation", () => {
     expect(html).toContain('aria-current="page"');
     expect(html).toContain("첫 페이지");
     expect(html).toContain('aria-label="Remove 둘째 페이지 from starred pages"');
+    expect(html).toContain("Legacy root");
+    expect(html).toContain("Legacy child");
+    expect(html).toContain('data-legacy-folder-id="legacy-child"');
   });
 
   it("keeps starred-list failure isolated from the daily entry", () => {

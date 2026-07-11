@@ -9,6 +9,7 @@ import {
   type PageDto,
   type PageYjsClient,
   type PageYjsClientSnapshot,
+  type PageLens,
 } from "@seosoyoung/soul-ui/page";
 
 import type { V2PageSurfaceState } from "./V2PageSurface";
@@ -45,12 +46,16 @@ type PageRequestState =
 
 export interface V2PageWorkspace {
   readonly selectedPageId: string | null;
+  readonly selectedLegacyFolderId: string | null;
+  readonly lens: PageLens;
   readonly pageState: V2PageSurfaceState;
   readonly starredPages: readonly PageDto[];
   readonly starredLoading: boolean;
   readonly starredError: string | null;
   openDaily(): void;
   openPage(pageId: string): void;
+  openLegacyFolder(folderId: string): void;
+  setLens(lens: PageLens): void;
   toggleCurrentPageStar(): Promise<void>;
   unstarPage(page: PageDto): Promise<void>;
 }
@@ -64,7 +69,7 @@ export function useV2PageWorkspace({
   routeController?: V2PageRouteController;
   createPageClient?: (pageId: string) => PageYjsClient;
 }): V2PageWorkspace {
-  const [route, controller] = useV2PageRoute(routeController);
+  const [route, controller, lens] = useV2PageRoute(routeController);
   const [pageRequest, setPageRequest] = useState<PageRequestState>({ status: "idle" });
   const [starredPages, setStarredPages] = useState<readonly PageDto[]>([]);
   const [starredLoading, setStarredLoading] = useState(true);
@@ -107,6 +112,12 @@ export function useV2PageWorkspace({
       dailyRequest.current = null;
       pageReadRequest.current = null;
       setPageRequest({ status: "error", message: route.message });
+      return () => { active = false; };
+    }
+    if (route.kind === "legacy-folder") {
+      dailyRequest.current = null;
+      pageReadRequest.current = null;
+      setPageRequest({ status: "idle" });
       return () => { active = false; };
     }
     if (route.kind === "daily") {
@@ -217,6 +228,9 @@ export function useV2PageWorkspace({
     }
     if (projectionResult.error) return { status: "error", message: projectionResult.error };
     if (route.kind === "invalid") return { status: "error", message: route.message };
+    if (route.kind === "legacy-folder") {
+      return { status: "loading", message: "Opening legacy folder…" };
+    }
     if (pageRequest.status !== "ready" || !runtime || !runtimeSnapshot.ready || !projectionResult.projection) {
       const message = runtimeSnapshot.status === "reconnecting"
         ? "Reconnecting page…"
@@ -291,12 +305,16 @@ export function useV2PageWorkspace({
 
   return {
     selectedPageId: route.kind === "page" ? route.pageId : null,
+    selectedLegacyFolderId: route.kind === "legacy-folder" ? route.folderId : null,
+    lens,
     pageState,
     starredPages,
     starredLoading,
     starredError,
     openDaily: controller.navigateToDaily,
     openPage: controller.navigateToPage,
+    openLegacyFolder: controller.navigateToLegacyFolder,
+    setLens: controller.setLens,
     async toggleCurrentPageStar() {
       if (pageState.status !== "ready") return;
       await mutateStar(pageState.page, pageState.page.metadata.starred !== true);

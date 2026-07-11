@@ -4,7 +4,7 @@ import type { DashboardState } from "../stores/dashboard-store-types";
 export type SessionListQueryKey = readonly [
   "sessions",
   DashboardState["sessionTypeFilter"],
-  DashboardState["viewMode"],
+  DashboardState["viewMode"] | "all",
   string | null,
 ];
 

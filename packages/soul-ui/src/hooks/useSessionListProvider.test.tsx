@@ -62,12 +62,15 @@ function makeProvider(sessions: SessionSummary[]): SessionStorageProvider {
 function Probe({
   onSessions,
   provider,
+  sessionScope = "view",
 }: {
   onSessions: (sessions: SessionSummary[]) => void;
   provider: SessionStorageProvider;
+  sessionScope?: "view" | "all";
 }) {
   const { sessions } = useSessionListProvider({
     getSessionProvider: () => provider,
+    sessionScope,
     viewModeOverride: "feed",
     folderIdOverride: null,
     streamEnabled: false,
@@ -154,5 +157,32 @@ describe("useSessionListProvider query overrides", () => {
     expect(streamCacheSyncSpy).toHaveBeenCalledWith(
       expect.objectContaining({ enabled: false }),
     );
+  });
+
+  it("loads the all-sessions index once with limit=0 through the existing query path", async () => {
+    const provider = makeProvider([makeSession("global-a"), makeSession("global-b")]);
+    let latest: SessionSummary[] = [];
+
+    flushSync(() => {
+      root.render(
+        createElement(
+          QueryClientProvider,
+          { client: queryClient },
+          createElement(Probe, {
+            provider,
+            sessionScope: "all",
+            onSessions: (value) => {
+              latest = value;
+            },
+          }),
+        ),
+      );
+    });
+
+    await waitFor(() => {
+      expect(provider.fetchSessions).toHaveBeenCalledWith({ offset: 0, limit: 0 });
+      expect(latest.map((session) => session.agentSessionId)).toEqual(["global-a", "global-b"]);
+    });
+    expect(provider.fetchSessions).toHaveBeenCalledTimes(1);
   });
 });

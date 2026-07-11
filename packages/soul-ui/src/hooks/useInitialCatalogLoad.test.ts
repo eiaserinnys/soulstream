@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveInitialDefaultFolderId } from "./useInitialCatalogLoad";
+import {
+  catalogLoadFailureKind,
+  resolveInitialDefaultFolderId,
+} from "./useInitialCatalogLoad";
 
 describe("resolveInitialDefaultFolderId", () => {
   it("selects the stable claude folder id even when the display name changes", () => {
@@ -19,5 +22,13 @@ describe("resolveInitialDefaultFolderId", () => {
         { id: "other", name: "Other" },
       ]),
     ).toBeNull();
+  });
+});
+
+describe("catalogLoadFailureKind", () => {
+  it("separates authentication, forbidden, and generic failures", () => {
+    expect(catalogLoadFailureKind(401)).toBe("authentication");
+    expect(catalogLoadFailureKind(403)).toBe("forbidden");
+    expect(catalogLoadFailureKind(500)).toBe("error");
   });
 });
