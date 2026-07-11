@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PageApiClient, PageDto, PageYjsClient } from "@seosoyoung/soul-ui/page";
 
+const sessionListProviderSpy = vi.hoisted(() => vi.fn());
+
 vi.mock("@seosoyoung/soul-ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@seosoyoung/soul-ui")>();
   return {
@@ -25,7 +27,7 @@ vi.mock("@seosoyoung/soul-ui", async (importOriginal) => {
     useNotification: vi.fn(),
     useReadPositionSync: vi.fn(),
     useServerStatus: () => ({ isDraining: false }),
-    useSessionListProvider: () => ({ sessions: [] }),
+    useSessionListProvider: sessionListProviderSpy,
     useSessionProvider: () => ({ status: "connected" }),
     useUserPreferencesSync: vi.fn(),
   };
@@ -36,6 +38,9 @@ vi.mock("../components/ConfigModal", () => ({ ConfigModal: () => null }));
 vi.mock("../components/SearchModal", () => ({ SearchModal: () => null }));
 vi.mock("../hooks/useNodes", () => ({ useNodes: vi.fn() }));
 vi.mock("../providers", () => ({ orchestratorSessionProvider: {} }));
+vi.mock("./useV2LegacyBoardItems", () => ({
+  useV2LegacyBoardItems: () => ({ status: "ready", message: null }),
+}));
 vi.mock("../store/orchestrator-store", () => ({
   useOrchestratorStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
     nodes: new Map(),
@@ -58,10 +63,10 @@ const page: PageDto = {
   updated_at: "",
 };
 
-function createTarget() {
+function createTarget(pathname = "/v2") {
   const listeners = new Set<() => void>();
   const target = {
-    location: { pathname: "/v2" },
+    location: { pathname, search: "" },
     history: {
       pushState: vi.fn((_state: unknown, _unused: string, path: string) => { target.location.pathname = path; }),
       replaceState: vi.fn((_state: unknown, _unused: string, path: string) => { target.location.pathname = path; }),
@@ -111,6 +116,8 @@ describe("V2DashboardLayout", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
   let originalMatchMedia: typeof window.matchMedia | undefined;
+  let heightSpy: ReturnType<typeof vi.spyOn> | undefined;
+  let widthSpy: ReturnType<typeof vi.spyOn> | undefined;
 
   beforeEach(() => {
     originalMatchMedia = window.matchMedia;
@@ -127,6 +134,14 @@ describe("V2DashboardLayout", () => {
     }));
     vi.stubGlobal("CSS", { supports: vi.fn(() => false) });
     window.localStorage.clear();
+    heightSpy = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(600);
+    widthSpy = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
+    sessionListProviderSpy.mockReturnValue({
+      sessions: [],
+      loading: false,
+      error: null,
+      catalogLoad: { status: "ready", message: null },
+    });
     useDashboardStore.getState().reset();
   });
 
@@ -136,6 +151,8 @@ describe("V2DashboardLayout", () => {
     root = undefined;
     container = undefined;
     window.matchMedia = originalMatchMedia as typeof window.matchMedia;
+    heightSpy?.mockRestore();
+    widthSpy?.mockRestore();
     vi.unstubAllGlobals();
   });
 
@@ -235,6 +252,53 @@ describe("V2DashboardLayout", () => {
 
     expect(useDashboardStore.getState().activeTab).toBe("feed");
 
+    controller.destroy();
+  });
+
+  it("opens a legacy session through the canonical active session and mobile Chat tab", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    const summary = {
+      agentSessionId: "session-live",
+      status: "running" as const,
+      eventCount: 0,
+      prompt: "Live referenced session",
+      folderId: "legacy-folder",
+      nodeId: "eiaserinnys",
+    };
+    sessionListProviderSpy.mockReturnValue({
+      sessions: [summary],
+      loading: false,
+      error: null,
+      catalogLoad: { status: "ready", message: null },
+    });
+    useDashboardStore.getState().setCatalog({
+      folders: [{ id: "legacy-folder", name: "Legacy", sortOrder: 0 }],
+      sessions: { "session-live": { folderId: "legacy-folder", displayName: null } },
+      boardItems: [],
+    });
+    const target = createTarget("/v2/legacy-folders/legacy-folder");
+    const controller = createV2PageRouteController(target);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(
+      <V2DashboardLayout
+        apiClient={createApi()}
+        routeController={controller}
+        createPageClient={createClient}
+      />,
+    ));
+    await settle();
+
+    expect(container.textContent).toContain("Live referenced session");
+    const sessionRef = container.querySelector<HTMLElement>("[data-session-ref='session-live']");
+    expect(sessionRef).not.toBeNull();
+    flushSync(() => sessionRef!.click());
+
+    expect(useDashboardStore.getState().activeSessionKey).toBe("session-live");
+    expect(useDashboardStore.getState().activeSessionSummary?.agentSessionId).toBe("session-live");
+    expect(useDashboardStore.getState().activeTab).toBe("chat");
+    expect(container.querySelector('[data-testid="existing-chat-view"]')).not.toBeNull();
     controller.destroy();
   });
 });

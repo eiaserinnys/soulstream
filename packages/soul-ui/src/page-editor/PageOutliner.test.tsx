@@ -5,7 +5,12 @@ import { flushSync } from "react-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
-import { readPageDocument, type ApplyPageOperationsInput, type PageApiClient } from "../page";
+import {
+  createSessionSummaryIndex,
+  readPageDocument,
+  type ApplyPageOperationsInput,
+  type PageApiClient,
+} from "../page";
 import { PageOutliner } from "./PageOutliner";
 
 describe("PageOutliner", () => {
@@ -59,6 +64,30 @@ describe("PageOutliner", () => {
     await render(doc, createApi());
     expect(container!.querySelectorAll("[data-page-editor-row]")).toHaveLength(1);
     expect(container!.querySelector('[data-block-id="block-1"]')).toBeNull();
+  });
+
+  it("dispatches session_ref as an atomic read-only renderer", async () => {
+    const doc = createPageDoc(1);
+    const block = doc.getMap<Y.Map<unknown>>("blocks").get("block-0")!;
+    block.set("type", "session_ref");
+    const properties = block.get("properties") as Y.Map<unknown>;
+    properties.set("sessionId", "session-a");
+    const onOpenSession = vi.fn();
+    await render(doc, createApi(), vi.fn(), {
+      sessionIndex: createSessionSummaryIndex([{
+        agentSessionId: "session-a",
+        status: "running",
+        eventCount: 0,
+        prompt: "Referenced session",
+      }]),
+      onOpenSession,
+      lens: "running",
+    });
+
+    expect(container!.querySelector("textarea")).toBeNull();
+    expect(container!.querySelector("[data-session-ref='session-a']")).not.toBeNull();
+    flushSync(() => container!.querySelector<HTMLElement>("[role='button']")!.click());
+    expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ agentSessionId: "session-a" }));
   });
 
   it("maps Enter to the editor-core split intent and one HTTP batch", async () => {
@@ -267,7 +296,12 @@ describe("PageOutliner", () => {
     expect(container!.querySelector('[data-editor-state="resyncing"]')).not.toBeNull();
   });
 
-  async function render(doc: Y.Doc, api: PageApiClient, onResync = vi.fn()) {
+  async function render(
+    doc: Y.Doc,
+    api: PageApiClient,
+    onResync = vi.fn(),
+    sessionProps: Pick<React.ComponentProps<typeof PageOutliner>, "sessionIndex" | "onOpenSession" | "lens"> = {},
+  ) {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -280,6 +314,7 @@ describe("PageOutliner", () => {
         mutationVersion={snapshot.page.mutationVersion}
         apiClient={api}
         onResync={onResync}
+        {...sessionProps}
       />,
     ));
     await settle();

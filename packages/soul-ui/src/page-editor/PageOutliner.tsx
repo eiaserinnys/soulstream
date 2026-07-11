@@ -12,7 +12,13 @@ import { AlertTriangle, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import type * as Y from "yjs";
 
-import type { PageApiClient, PageDocumentBlock } from "../page";
+import type {
+  PageApiClient,
+  PageDocumentBlock,
+  PageLens,
+  SessionSummaryIndex,
+} from "../page";
+import type { SessionSummary } from "../shared/types";
 import { PageBlockRow } from "./PageBlockRow";
 import type { PageBlockEditorKeyInput } from "./PageBlockEditor";
 import { measureTextareaCaretLines } from "./page-editor-caret-geometry";
@@ -20,6 +26,7 @@ import { createContiguousBlockSelection } from "./page-editor-selection";
 import { usePageEditorController } from "./usePageEditorController";
 
 const ROW_HEIGHT = 40;
+const EMPTY_SESSION_INDEX: SessionSummaryIndex = new Map();
 
 export function PageOutliner({
   pageId,
@@ -28,6 +35,9 @@ export function PageOutliner({
   mutationVersion,
   apiClient,
   onResync,
+  sessionIndex = EMPTY_SESSION_INDEX,
+  lens = "default",
+  onOpenSession,
 }: {
   pageId: string;
   doc: Y.Doc;
@@ -35,6 +45,9 @@ export function PageOutliner({
   mutationVersion: number;
   apiClient: PageApiClient;
   onResync(): void;
+  sessionIndex?: SessionSummaryIndex;
+  lens?: PageLens;
+  onOpenSession?(session: SessionSummary): void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowElements = useRef(new Map<string, HTMLDivElement>());
@@ -187,6 +200,9 @@ export function PageOutliner({
                     onPasteInput={pasteInput}
                     onSelectBlock={selectBlock}
                     onEditorHeightChange={remeasureEditorRow}
+                    sessionIndex={sessionIndex}
+                    lens={lens}
+                    onOpenSession={onOpenSession}
                   />
                 </div>
               );

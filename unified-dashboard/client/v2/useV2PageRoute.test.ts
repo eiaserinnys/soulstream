@@ -2,20 +2,23 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createV2PageRouteController,
+  formatV2LegacyFolderPath,
   formatV2PagePath,
+  parseV2Lens,
   parseV2PageRoute,
 } from "./useV2PageRoute";
 
-function createTarget(pathname: string) {
+function createTarget(initialUrl: string) {
   const popstateListeners = new Set<() => void>();
+  const [pathname, initialSearch = ""] = initialUrl.split("?");
   const target = {
-    location: { pathname },
+    location: { pathname, search: initialSearch ? `?${initialSearch}` : "" },
     history: {
-      pushState: vi.fn((_state: unknown, _unused: string, nextPath: string) => {
-        target.location.pathname = nextPath;
+      pushState: vi.fn((_state: unknown, _unused: string, nextUrl: string) => {
+        setUrl(nextUrl);
       }),
-      replaceState: vi.fn((_state: unknown, _unused: string, nextPath: string) => {
-        target.location.pathname = nextPath;
+      replaceState: vi.fn((_state: unknown, _unused: string, nextUrl: string) => {
+        setUrl(nextUrl);
       }),
     },
     addEventListener: vi.fn((type: string, listener: () => void) => {
@@ -24,11 +27,16 @@ function createTarget(pathname: string) {
     removeEventListener: vi.fn((type: string, listener: () => void) => {
       if (type === "popstate") popstateListeners.delete(listener);
     }),
-    restore(nextPath: string) {
-      target.location.pathname = nextPath;
+    restore(nextUrl: string) {
+      setUrl(nextUrl);
       for (const listener of popstateListeners) listener();
     },
   };
+  function setUrl(nextUrl: string) {
+    const [nextPathname, nextSearch = ""] = nextUrl.split("?");
+    target.location.pathname = nextPathname;
+    target.location.search = nextSearch ? `?${nextSearch}` : "";
+  }
   return target;
 }
 
@@ -44,6 +52,33 @@ describe("v2 page route", () => {
       pageId: "page:2026-07-12",
     });
     expect(formatV2PagePath("page:2026-07-12")).toBe("/v2/pages/page%3A2026-07-12");
+  });
+
+  it("restores legacy folders and the running/completed lens from history", () => {
+    expect(parseV2PageRoute("/v2/legacy-folders/folder%3Aone")).toEqual({
+      kind: "legacy-folder",
+      folderId: "folder:one",
+    });
+    expect(formatV2LegacyFolderPath("folder:one")).toBe("/v2/legacy-folders/folder%3Aone");
+    expect(parseV2Lens("?lens=running")).toBe("running");
+    expect(parseV2Lens("?lens=completed")).toBe("completed");
+    expect(parseV2Lens("?lens=unknown")).toBe("default");
+
+    const target = createTarget("/v2/legacy-folders/folder-one?lens=running");
+    const controller = createV2PageRouteController(target);
+    const unsubscribe = controller.subscribe(() => undefined);
+    expect(controller.getSnapshot()).toEqual({ kind: "legacy-folder", folderId: "folder-one" });
+    expect(controller.getLensSnapshot()).toBe("running");
+
+    controller.setLens("completed");
+    expect(target.history.pushState).toHaveBeenCalledWith(
+      null,
+      "",
+      "/v2/legacy-folders/folder-one?lens=completed",
+    );
+    target.restore("/v2/legacy-folders/folder-one?lens=running");
+    expect(controller.getLensSnapshot()).toBe("running");
+    unsubscribe();
   });
 
   it("rejects missing, extra, and malformed page routes explicitly", () => {

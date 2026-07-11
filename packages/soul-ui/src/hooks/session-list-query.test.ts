@@ -36,4 +36,14 @@ describe("buildFetchSessionsOptions", () => {
       folderId: "folder-A",
     });
   });
+
+  it("all scope requests the unbounded canonical session snapshot", () => {
+    const result = buildFetchSessionsOptions(
+      ["sessions", "all", "all", null],
+      0,
+      0,
+    );
+
+    expect(result).toEqual({ offset: 0, limit: 0 });
+  });
 });

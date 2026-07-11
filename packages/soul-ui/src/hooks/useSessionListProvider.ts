@@ -68,6 +68,8 @@ export interface UseSessionListProviderOptions {
   initialCatalogLoadEnabled?: boolean;
   /** 폴더 카운트 조회 활성화. 기본 true */
   folderCountsEnabled?: boolean;
+  /** 전역 session_ref/legacy projection용 무제한 목록. 기존 Query/SSE 캐시 경로를 그대로 쓴다. */
+  sessionScope?: "view" | "all";
 }
 
 export function useSessionListProvider(
@@ -83,6 +85,7 @@ export function useSessionListProvider(
     streamEnabled = true,
     initialCatalogLoadEnabled = true,
     folderCountsEnabled = true,
+    sessionScope = "view",
   } = options;
 
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
@@ -106,9 +109,12 @@ export function useSessionListProvider(
 
   // 현재 쿼리 키 — SSE setQueryData에서도 동일 키 사용
   const queryKey = useMemo(
-    () => ["sessions", sessionTypeFilter, viewMode, effectiveFolderId] as const,
-    [sessionTypeFilter, viewMode, effectiveFolderId],
+    () => sessionScope === "all"
+      ? ["sessions", "all", "all", null] as const
+      : ["sessions", sessionTypeFilter, viewMode, effectiveFolderId] as const,
+    [sessionScope, sessionTypeFilter, viewMode, effectiveFolderId],
   );
+  const pageSize = sessionScope === "all" ? 0 : DEFAULT_PAGE_SIZE;
 
   // --- TanStack Query ---
 
@@ -129,7 +135,7 @@ export function useSessionListProvider(
         buildFetchSessionsOptions(
           fetchQueryKey as SessionListQueryKey,
           pageParam as number,
-          DEFAULT_PAGE_SIZE,
+          pageSize,
         ),
       );
 
@@ -153,6 +159,7 @@ export function useSessionListProvider(
     },
     initialPageParam: 0,
     getNextPageParam: (_lastPage, allPages) => {
+      if (sessionScope === "all") return undefined;
       const loaded = countLoadedSessionsForQuery(
         allPages,
         queryKey,
@@ -184,7 +191,10 @@ export function useSessionListProvider(
   }, [fetchNextPage]);
 
   // --- 초기 카탈로그 로드 ---
-  useInitialCatalogLoad(enabled && initialCatalogLoadEnabled);
+  const catalogLoad = useInitialCatalogLoad(enabled && initialCatalogLoadEnabled) ?? {
+    status: "idle" as const,
+    message: null,
+  };
 
   // --- Last-Event-ID resume 정본 (provider 레벨) ---
   // 매 SSE id 부착 이벤트마다 lastEventIdRef를 갱신, instance_id 변경/replay_gap
@@ -236,5 +246,7 @@ export function useSessionListProvider(
     folderCounts,
     /** 수동 새로고침 */
     refetch: queryRefetch,
+    /** legacy virtual page가 loading/auth/permission/error를 구분하는 기존 catalog load 상태 */
+    catalogLoad,
   };
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { BookOpenText, MessageSquare, Settings } from "lucide-react";
 
 import {
@@ -9,7 +9,9 @@ import {
   MobileChatHeader,
   RightPanel,
   ThemeToggle,
+  createSessionSummaryIndex,
   initTheme,
+  projectLegacyFolder,
   useAuth,
   useDashboardConfig,
   useDashboardStore,
@@ -34,10 +36,12 @@ import { resolveActiveSessionSummary } from "../lib/active-session-summary";
 import { orchestratorSessionProvider } from "../providers";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { V2LeftNavigation } from "./V2LeftNavigation";
+import { V2LegacyFolderSurface, type V2LegacyFolderSurfaceState } from "./V2LegacyFolderSurface";
 import { V2MobileWorkspace } from "./V2MobileWorkspace";
 import { V2PageSurface } from "./V2PageSurface";
 import type { V2PageRouteController } from "./useV2PageRoute";
 import { useV2PageWorkspace } from "./useV2PageWorkspace";
+import { useV2LegacyBoardItems } from "./useV2LegacyBoardItems";
 
 const V2_MOBILE_TABS = [
   {
@@ -71,6 +75,10 @@ export function V2DashboardLayout({
 
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
   const activeSessionSummary = useDashboardStore((state) => state.activeSessionSummary);
+  const catalog = useDashboardStore((state) => state.catalog);
+  const setActiveSession = useDashboardStore((state) => state.setActiveSession);
+  const setActiveSessionSummary = useDashboardStore((state) => state.setActiveSessionSummary);
+  const setActiveTab = useDashboardStore((state) => state.setActiveTab);
   const nodes = useOrchestratorStore((state) => state.nodes);
   const connectionStatus = useOrchestratorStore((state) => state.connectionStatus);
 
@@ -83,9 +91,15 @@ export function V2DashboardLayout({
   const { isDraining } = useServerStatus();
   useNodes();
 
-  const { sessions } = useSessionListProvider({
+  const {
+    sessions,
+    loading: sessionsLoading,
+    error: sessionsError,
+    catalogLoad,
+  } = useSessionListProvider({
     intervalMs: 5000,
     getSessionProvider: () => orchestratorSessionProvider,
+    sessionScope: "all",
   });
   const { status: sessionStatus } = useSessionProvider({
     sessionKey: activeSessionKey,
@@ -105,6 +119,59 @@ export function V2DashboardLayout({
     if (!activeSession?.nodeId || chatInputDisabled) return undefined;
     return `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSession.nodeId)}`;
   }, [activeSession, chatInputDisabled]);
+  const sessionIndex = useMemo(() => createSessionSummaryIndex(sessions), [sessions]);
+  const openSession = useCallback((session: typeof sessions[number]) => {
+    setActiveSessionSummary(session);
+    setActiveSession(session.agentSessionId);
+    setActiveTab("chat");
+  }, [setActiveSession, setActiveSessionSummary, setActiveTab]);
+  const selectedLegacyFolderExists = workspace.selectedLegacyFolderId !== null
+    && (catalog?.folders.some((folder) => folder.id === workspace.selectedLegacyFolderId) ?? false);
+  const boardItemsLoad = useV2LegacyBoardItems({
+    folderId: workspace.selectedLegacyFolderId,
+    folders: catalog?.folders ?? [],
+    enabled: catalogLoad.status === "ready" && selectedLegacyFolderExists,
+  });
+
+  const legacyState = useMemo<V2LegacyFolderSurfaceState>(() => {
+    const folderId = workspace.selectedLegacyFolderId;
+    if (!folderId) return { status: "loading", message: "Opening legacy folder…" };
+    if (catalogLoad.status === "authentication") {
+      return { status: "authentication", message: catalogLoad.message ?? "Sign in again to load legacy folders." };
+    }
+    if (catalogLoad.status === "forbidden") {
+      return { status: "forbidden", message: catalogLoad.message ?? "You do not have access to this legacy folder." };
+    }
+    if (catalogLoad.status === "error") {
+      return { status: "error", message: catalogLoad.message ?? "Legacy folders could not be loaded." };
+    }
+    if (!catalog || catalogLoad.status !== "ready" || (sessionsLoading && sessions.length === 0)) {
+      return { status: "loading", message: "Loading legacy folder…" };
+    }
+    if (!selectedLegacyFolderExists) {
+      return { status: "missing", message: "This legacy folder no longer exists or is unavailable." };
+    }
+    if (boardItemsLoad.status === "authentication") {
+      return { status: "authentication", message: boardItemsLoad.message ?? "Sign in again to load legacy board items." };
+    }
+    if (boardItemsLoad.status === "forbidden") {
+      return { status: "forbidden", message: boardItemsLoad.message ?? "You do not have access to these legacy board items." };
+    }
+    if (boardItemsLoad.status === "error") {
+      return { status: "error", message: boardItemsLoad.message ?? "Legacy board items could not be loaded." };
+    }
+    if (boardItemsLoad.status !== "ready") {
+      return { status: "loading", message: "Loading legacy board items…" };
+    }
+    if (sessionsError && sessions.length === 0) {
+      return { status: "error", message: "Sessions could not be loaded for this legacy folder." };
+    }
+    const projection = projectLegacyFolder(catalog, sessions, folderId);
+    if (projection.status === "missing") {
+      return { status: "missing", message: "This legacy folder no longer exists or is unavailable." };
+    }
+    return { status: "ready", projection };
+  }, [boardItemsLoad, catalog, catalogLoad, selectedLegacyFolderExists, sessions, sessionsError, sessionsLoading, workspace.selectedLegacyFolderId]);
 
   const openDaily = () => {
     setMobilePageOpenRequest((value) => value + 1);
@@ -113,6 +180,10 @@ export function V2DashboardLayout({
   const openPage = (pageId: string) => {
     setMobilePageOpenRequest((value) => value + 1);
     workspace.openPage(pageId);
+  };
+  const openLegacyFolder = (folderId: string) => {
+    setMobilePageOpenRequest((value) => value + 1);
+    workspace.openLegacyFolder(folderId);
   };
   const navigation = (
     <V2LeftNavigation
@@ -123,17 +194,34 @@ export function V2DashboardLayout({
       onOpenDaily={openDaily}
       onOpenPage={openPage}
       onUnstarPage={(page) => { void workspace.unstarPage(page); }}
+      legacyFolders={catalog?.folders ?? []}
+      selectedLegacyFolderId={workspace.selectedLegacyFolderId}
+      legacyStatus={catalogLoad}
+      onOpenLegacyFolder={openLegacyFolder}
     />
   );
-  const pageSurface = (
+  const nativePageSurface = (
     <V2PageSurface
       state={workspace.pageState}
       onToggleStar={() => { void workspace.toggleCurrentPageStar(); }}
+      lens={workspace.lens}
+      onLensChange={workspace.setLens}
+      sessionIndex={sessionIndex}
+      onOpenSession={openSession}
     />
   );
+  const pageSurface = workspace.selectedLegacyFolderId ? (
+    <V2LegacyFolderSurface
+      state={legacyState}
+      lens={workspace.lens}
+      onLensChange={workspace.setLens}
+      onOpenFolder={openLegacyFolder}
+      onOpenSession={openSession}
+    />
+  ) : nativePageSurface;
   const mobileWorkspace = (
     <V2MobileWorkspace
-      pageId={workspace.selectedPageId}
+      pageId={workspace.selectedPageId ?? workspace.selectedLegacyFolderId}
       pageOpenRequest={mobilePageOpenRequest}
       navigation={navigation}
       pageSurface={pageSurface}

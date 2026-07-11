@@ -10,7 +10,7 @@
  * 이 훅은 useSessionListProvider에서 분리된 사이드 이펙트다.
  */
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { DEFAULT_FOLDER_ID } from "../shared/constants";
 
@@ -19,26 +19,63 @@ interface FolderIdentity {
   [key: string]: unknown;
 }
 
+export type CatalogLoadStatus =
+  | "idle"
+  | "loading"
+  | "ready"
+  | "authentication"
+  | "forbidden"
+  | "error";
+
+export interface CatalogLoadState {
+  status: CatalogLoadStatus;
+  message: string | null;
+}
+
+export function catalogLoadFailureKind(status: number): Extract<
+  CatalogLoadStatus,
+  "authentication" | "forbidden" | "error"
+> {
+  if (status === 401) return "authentication";
+  if (status === 403) return "forbidden";
+  return "error";
+}
+
 export function resolveInitialDefaultFolderId(folders: readonly FolderIdentity[]): string | null {
   return folders.some((folder) => folder.id === DEFAULT_FOLDER_ID) ? DEFAULT_FOLDER_ID : null;
 }
 
-export function useInitialCatalogLoad(enabled: boolean): void {
+export function useInitialCatalogLoad(enabled: boolean): CatalogLoadState {
+  const [loadState, setLoadState] = useState<CatalogLoadState>(() => ({
+    status: enabled ? "loading" : "idle",
+    message: null,
+  }));
+
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      setLoadState({ status: "idle", message: null });
+      return;
+    }
 
     const controller = new AbortController();
+    setLoadState({ status: "loading", message: null });
 
     fetch("/api/folders", { signal: controller.signal })
       .then((r) => {
         if (r.ok) return r.json();
-        throw new Error("folders fetch failed");
+        const error = new Error(`folders fetch failed: HTTP ${r.status}`);
+        Object.assign(error, { status: r.status });
+        throw error;
       })
       .then((data) => {
-        if (!data?.folders) return;
+        if (!data?.folders) {
+          setLoadState({ status: "error", message: "Folder data is invalid." });
+          return;
+        }
         const store = useDashboardStore.getState();
         const catalog = { folders: data.folders, sessions: data.sessions ?? {} };
         store.setCatalog(catalog);
+        setLoadState({ status: "ready", message: null });
 
         if (
           store.selectedFolderId === null &&
@@ -52,11 +89,24 @@ export function useInitialCatalogLoad(enabled: boolean): void {
         }
       })
       .catch((err) => {
+        if (controller.signal.aborted) return;
         if (err instanceof DOMException && err.name === "AbortError") return;
+        const status = typeof err === "object" && err !== null && "status" in err
+          ? Number((err as { status: unknown }).status)
+          : 0;
+        const kind = catalogLoadFailureKind(status);
+        const message = kind === "authentication"
+          ? "Sign in again to load legacy folders."
+          : kind === "forbidden"
+            ? "You do not have access to these legacy folders."
+            : "Legacy folders could not be loaded.";
+        setLoadState({ status: kind, message });
       });
 
     return () => {
       controller.abort();
     };
   }, [enabled]);
+
+  return loadState;
 }
