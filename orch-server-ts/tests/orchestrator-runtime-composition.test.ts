@@ -7,6 +7,7 @@ import {
   parseOrchServerConfig,
   type BoardYjsHostHttpClient,
 } from "../src/index.js";
+import type { PageYjsService } from "../src/page/page_service.js";
 
 const config = parseOrchServerConfig({
   environment: "test",
@@ -79,6 +80,51 @@ describe("orchestrator runtime composition harness", () => {
     expect("injectWS" in app).toBe(false);
 
     await app.close();
+  });
+
+  it("passes the page service route bundle through composition only in orch host mode", async () => {
+    const service = pageServiceDouble();
+    const routeOptions = {
+      authBearerToken: "test-token",
+      createService: vi.fn(() => service),
+    };
+    expect(() => createOrchestratorRuntimeComposition({
+      config,
+      loadTaskSnapshot: async () => ({ tasks: [] }),
+      pageYjsRoutes: routeOptions,
+    })).toThrow("Page Yjs production routes require BOARD_YJS_HOST_MODE=orch");
+
+    const runtime = createOrchestratorRuntimeComposition({
+      config: { ...config, boardYjsHostMode: "orch" },
+      loadTaskSnapshot: async () => ({ tasks: [] }),
+      boardYjsRoutes: {
+        createService: () => ({
+          handleConnection: vi.fn(),
+          handleContainerConnection: vi.fn(),
+          close: vi.fn(async () => undefined),
+        } as never),
+      },
+      pageYjsRoutes: routeOptions,
+    });
+    await runtime.app.ready();
+    expect(runtime.routeOptions.pageYjsRoutes).toBe(routeOptions);
+    expect(runtime.app.hasRoute({ method: "GET", url: "/yjs/page/:pageId" })).toBe(true);
+
+    const response = await runtime.app.inject({
+      method: "POST",
+      url: "/api/page-yjs/host/create-page",
+      headers: { authorization: "Bearer test-token" },
+      payload: {
+        page: { id: "page-1", title: "Page", daily_date: null },
+        actor_kind: "system",
+        idempotency_key: "create_page:system:composition",
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(service.createPage).toHaveBeenCalledOnce();
+
+    await runtime.app.close();
+    expect(service.close).toHaveBeenCalledOnce();
   });
 
   it("shares node websocket registration, transport, and session command routing", async () => {
@@ -503,4 +549,23 @@ function parseSseFrame(body: string, eventName: string): Record<string, unknown>
     return JSON.parse(data.slice("data: ".length)) as Record<string, unknown>;
   }
   throw new Error(`SSE frame not found: ${eventName}`);
+}
+
+function pageServiceDouble() {
+  const result = {
+    page: { id: "page-1", title: "Page", version: 1 },
+    blocks: [],
+    operation: { id: "operation-1" },
+    temp_id_mapping: {},
+  };
+  return {
+    createPage: vi.fn().mockResolvedValue(result),
+    mutatePage: vi.fn().mockResolvedValue(result),
+    handleConnection: vi.fn(),
+    assertWebsocketAuthConfigured: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
+  } as unknown as PageYjsService & {
+    createPage: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+  };
 }

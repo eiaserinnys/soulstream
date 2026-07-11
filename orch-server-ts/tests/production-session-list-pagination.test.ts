@@ -285,6 +285,7 @@ function minimalEnvironment(): Record<string, string> {
     ENVIRONMENT: "production",
     CORS_ALLOWED_ORIGINS: "http://127.0.0.1",
     AUTH_BEARER_TOKEN: "production-service-token",
+    BOARD_YJS_HOST_MODE: "orch",
     GOOGLE_CLIENT_ID: "dashboard-google-client",
     JWT_SECRET: "production-jwt-secret",
     CLAUDE_OAUTH_CLIENT_ID: "test-client",

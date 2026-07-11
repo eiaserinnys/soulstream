@@ -64,6 +64,10 @@ describe("production orchestrator entrypoint", () => {
     }
     expect(application.app.printRoutes()).toContain("ws/node");
     expect(application.app.printRoutes()).toContain("runbooks/");
+    expect(application.app.hasRoute({ method: "GET", url: "/yjs/page/:pageId" }))
+      .toBe(true);
+    expect(application.app.hasRoute({ method: "POST", url: "/api/page-yjs/host/:operation" }))
+      .toBe(true);
 
     await application.app.close();
     await application.closeResources();
@@ -133,6 +137,16 @@ describe("production orchestrator entrypoint", () => {
     await expect(server.listen()).rejects.toThrow(/LISTEN unavailable/);
     expect(closeResources).toHaveBeenCalledTimes(1);
   });
+
+  it("fails fast when page hosting would be assembled outside orch host mode", async () => {
+    const config = loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      BOARD_YJS_HOST_MODE: "node",
+    });
+
+    await expect(createLiveProductionApplication(config, { warn: vi.fn() }))
+      .rejects.toThrow("Page Yjs production assembly requires BOARD_YJS_HOST_MODE=orch");
+  });
 });
 
 async function createDashboardDirectory(): Promise<string> {
@@ -149,6 +163,7 @@ function minimalEnvironment(): Record<string, string> {
     ENVIRONMENT: "production",
     CORS_ALLOWED_ORIGINS: "http://127.0.0.1",
     AUTH_BEARER_TOKEN: "production-service-token",
+    BOARD_YJS_HOST_MODE: "orch",
     GOOGLE_CLIENT_ID: "dashboard-google-client",
     JWT_SECRET: "production-jwt-secret",
     CLAUDE_OAUTH_CLIENT_ID: "test-client",

@@ -121,6 +121,8 @@
     {"order": 117, "methods": ["GET"], "path": "/api/auth/google/callback", "name": "auth_callback", "authRequired": false},
     {"order": 118, "methods": ["GET"], "path": "/api/auth/status", "name": "auth_status", "authRequired": false},
     {"order": 119, "methods": ["POST"], "path": "/api/auth/logout", "name": "auth_logout", "authRequired": false},
-    {"order": 120, "methods": ["POST"], "path": "/api/auth/dev-login", "name": "dev_login", "authRequired": false}
+    {"order": 120, "methods": ["POST"], "path": "/api/auth/dev-login", "name": "dev_login", "authRequired": false},
+    {"order": 121, "methods": ["WEBSOCKET"], "path": "/yjs/page/{pageId}", "name": "page_yjs_websocket", "authRequired": false},
+    {"order": 122, "methods": ["POST"], "path": "/api/page-yjs/host/{operation}", "name": "page_yjs_host_operation", "authRequired": true}
   ]
 }
