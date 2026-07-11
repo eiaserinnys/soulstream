@@ -7,7 +7,12 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./page": "./src/page/index.ts",
     "./styles": "./src/styles/globals.css"
+  },
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
     "react": "^18 || ^19",
@@ -15,6 +20,7 @@
     "zustand": "^4 || ^5"
   },
   "dependencies": {
+    "@soulstream/page-model": "workspace:*",
     "@soulstream/fractional-position": "workspace:*",
     "@base-ui/react": "^1.2.0",
     "@chenglou/pretext": "^0.0.5",

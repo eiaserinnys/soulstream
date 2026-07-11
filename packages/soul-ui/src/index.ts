@@ -16,3 +16,4 @@ export * from "./hooks";
 export * from "./components";
 export * from "./board-workspace";
 export * from "./runbook";
+export * from "./page";
