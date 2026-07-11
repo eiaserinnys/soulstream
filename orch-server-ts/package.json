@@ -14,6 +14,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@soulstream/fractional-position": "workspace:*",
+    "@soulstream/page-model": "workspace:*",
     "@fastify/websocket": "11.2.0",
     "@hocuspocus/extension-database": "3.4.4",
     "@hocuspocus/server": "3.4.4",

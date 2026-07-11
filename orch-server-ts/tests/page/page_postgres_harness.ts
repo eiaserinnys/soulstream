@@ -1,0 +1,224 @@
+import { execFileSync } from "node:child_process";
+
+import postgres from "postgres";
+
+import type { LivePostgresSql } from "../../src/runtime/live_db_sql.js";
+
+export interface PagePostgresHarness {
+  sql: ReturnType<typeof postgres>;
+  liveSql: LivePostgresSql;
+  cleanup(): Promise<void>;
+}
+
+const TEST_DB_NAME = "page_mutation_test_db";
+const TEST_USER = "page_mutation_test";
+const TEST_PASSWORD = "page_mutation_test";
+
+export async function createPagePostgresHarness(): Promise<PagePostgresHarness> {
+  const externalUrl = process.env.TEST_DATABASE_URL?.trim();
+  if (externalUrl) {
+    await assertSafeExternalDatabase(externalUrl);
+    return await connect(externalUrl);
+  }
+
+  const containerId = execFileSync("docker", [
+    "run", "--rm", "-d",
+    "-e", `POSTGRES_USER=${TEST_USER}`,
+    "-e", `POSTGRES_PASSWORD=${TEST_PASSWORD}`,
+    "-e", `POSTGRES_DB=${TEST_DB_NAME}`,
+    "-p", "127.0.0.1::5432",
+    "postgres:16-alpine",
+  ], { encoding: "utf8" }).trim();
+  try {
+    const port = dockerMappedPort(containerId);
+    return await connect(
+      `postgres://${TEST_USER}:${TEST_PASSWORD}@127.0.0.1:${port}/${TEST_DB_NAME}`,
+      containerId,
+    );
+  } catch (error) {
+    stopDocker(containerId);
+    throw error;
+  }
+}
+
+async function connect(url: string, containerId?: string): Promise<PagePostgresHarness> {
+  const sql = postgres(url, { max: 1, idle_timeout: 1 });
+  await waitForPostgres(sql);
+  const schema = `page_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+  await sql.unsafe(`CREATE SCHEMA ${schema}`);
+  await sql.unsafe(`SET search_path TO ${schema}`);
+  await createSchema(sql);
+  return {
+    sql,
+    liveSql: sql as unknown as LivePostgresSql,
+    async cleanup() {
+      try {
+        await sql.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+      } finally {
+        await sql.end({ timeout: 2 });
+        if (containerId) stopDocker(containerId);
+      }
+    },
+  };
+}
+
+async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
+  await sql.unsafe(`
+    CREATE TABLE sessions (
+      session_id TEXT PRIMARY KEY,
+      last_event_id INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE events (
+      session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
+      id INTEGER NOT NULL,
+      event_type TEXT NOT NULL,
+      payload JSONB,
+      searchable_text TEXT,
+      dedupe_key TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (session_id, id),
+      UNIQUE (session_id, dedupe_key)
+    );
+    CREATE OR REPLACE FUNCTION event_append(
+      p_session_id TEXT,
+      p_event_type TEXT,
+      p_payload JSONB,
+      p_searchable_text TEXT,
+      p_created_at TIMESTAMPTZ,
+      p_dedupe_key TEXT DEFAULT NULL
+    ) RETURNS INTEGER LANGUAGE plpgsql AS $$
+    DECLARE next_id INTEGER;
+    BEGIN
+      UPDATE sessions SET last_event_id = last_event_id + 1
+      WHERE session_id = p_session_id
+      RETURNING last_event_id INTO next_id;
+      IF next_id IS NULL THEN RAISE EXCEPTION 'session not found: %', p_session_id; END IF;
+      INSERT INTO events (
+        session_id, id, event_type, payload, searchable_text, dedupe_key, created_at
+      ) VALUES (
+        p_session_id, next_id, p_event_type, p_payload, p_searchable_text,
+        p_dedupe_key, p_created_at
+      );
+      RETURN next_id;
+    END;
+    $$;
+    CREATE TABLE board_yjs_documents (
+      name TEXT PRIMARY KEY,
+      snapshot BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE board_yjs_updates (
+      id BIGSERIAL PRIMARY KEY,
+      document_name TEXT NOT NULL REFERENCES board_yjs_documents(name) ON DELETE CASCADE,
+      update BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE pages (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      daily_date DATE,
+      version INTEGER NOT NULL CHECK (version > 0),
+      archived BOOLEAN NOT NULL DEFAULT FALSE,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      created_event_id INTEGER,
+      updated_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      updated_event_id INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      FOREIGN KEY (created_session_id, created_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL,
+      FOREIGN KEY (updated_session_id, updated_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL
+    );
+    CREATE TABLE blocks (
+      id TEXT PRIMARY KEY,
+      page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+      parent_id TEXT,
+      position_key TEXT NOT NULL,
+      block_type TEXT NOT NULL,
+      text_plain TEXT NOT NULL DEFAULT '',
+      properties JSONB NOT NULL DEFAULT '{}'::jsonb,
+      collapsed BOOLEAN NOT NULL DEFAULT FALSE,
+      created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      created_event_id INTEGER,
+      updated_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      updated_event_id INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (page_id, id),
+      FOREIGN KEY (page_id, parent_id) REFERENCES blocks(page_id, id) ON DELETE CASCADE
+    );
+    CREATE TABLE block_operations (
+      id TEXT PRIMARY KEY,
+      page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+      target_block_id TEXT REFERENCES blocks(id) ON DELETE SET NULL,
+      operation_type TEXT NOT NULL,
+      actor_kind TEXT NOT NULL CHECK (actor_kind IN ('agent','user','system')),
+      actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      actor_event_id INTEGER,
+      actor_user_id TEXT,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      expected_version INTEGER NOT NULL,
+      result_version INTEGER NOT NULL CHECK (result_version = expected_version + 1),
+      payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      FOREIGN KEY (actor_session_id, actor_event_id)
+        REFERENCES events(session_id, id) ON DELETE SET NULL,
+      CHECK (actor_kind <> 'agent' OR actor_session_id IS NOT NULL),
+      CHECK (actor_kind <> 'user' OR actor_user_id IS NOT NULL)
+    );
+  `);
+}
+
+async function assertSafeExternalDatabase(url: string): Promise<void> {
+  const parsed = new URL(url);
+  const name = parsed.pathname.replace(/^\//, "").toLowerCase();
+  const full = `${parsed.hostname}/${name}`.toLowerCase();
+  if (!name.includes("test")) throw new Error("TEST_DATABASE_URL database name must include test");
+  if (["atom_db", "reverie", "soulstream", "serendipity"].some((token) => full.includes(token))) {
+    throw new Error("TEST_DATABASE_URL points at a protected database name");
+  }
+  const sql = postgres(url, { max: 1, idle_timeout: 1 });
+  try {
+    const [row] = await sql<[{ count: number }]>`
+      SELECT COUNT(*)::int AS count FROM information_schema.tables
+      WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+    `;
+    if ((row?.count ?? 0) > 0) throw new Error("TEST_DATABASE_URL must point at an empty test database");
+  } finally {
+    await sql.end({ timeout: 2 });
+  }
+}
+
+async function waitForPostgres(sql: ReturnType<typeof postgres>): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      await sql`SELECT 1`;
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+function dockerMappedPort(containerId: string): string {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const output = execFileSync("docker", ["port", containerId, "5432/tcp"], {
+      encoding: "utf8",
+    }).trim();
+    const match = output.match(/:(\d+)$/);
+    if (match) return match[1]!;
+  }
+  throw new Error("docker did not publish a PostgreSQL port");
+}
+
+function stopDocker(containerId: string): void {
+  execFileSync("docker", ["stop", containerId], { stdio: "ignore" });
+}
