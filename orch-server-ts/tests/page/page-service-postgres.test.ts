@@ -18,7 +18,11 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
     harness = await createPagePostgresHarness();
     await harness.sql`INSERT INTO sessions (session_id) VALUES ('agent-session')`;
     repository = new PageRepository(createLiveDbSqlResolver({ sql: harness.liveSql }));
-    service = new PageYjsService({ repository });
+    service = new PageYjsService({
+      repository,
+      now: () => new Date("2026-07-11T15:30:00.000Z"),
+      createPageId: () => "daily-page-1",
+    });
   }, 60_000);
 
   afterAll(async () => {
@@ -134,6 +138,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
         getPageTimestamps: repository.getPageTimestamps.bind(repository),
         findPageIdByTitle: repository.findPageIdByTitle.bind(repository),
         findPageIdByDailyDate: repository.findPageIdByDailyDate.bind(repository),
+        listPages: repository.listPages.bind(repository),
         getPageBacklinks: repository.getPageBacklinks.bind(repository),
         commitPageMutation: async () => { throw new Error("commit failed"); },
         storePageYjsState: repository.storePageYjsState.bind(repository),
@@ -154,4 +159,28 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       await failing.close();
     }
   });
+
+  it("derives the omitted daily date in KST and returns the same page idempotently", async () => {
+    const actor = { actorKind: "user" as const, actorUserId: "user@example.com" };
+    const first = await service.getDailyPage({ actor });
+    const second = await service.getDailyPage({ actor });
+
+    expect(first).toMatchObject({
+      created: true,
+      page: {
+        id: "daily-page-1",
+        daily_date: "2026-07-12",
+        title: "2026년 7월 12일",
+      },
+      operation: {
+        operation_type: "create_page",
+        actor_kind: "user",
+        actor_user_id: "user@example.com",
+      },
+    });
+    expect(second).toMatchObject({
+      created: false,
+      page: { id: first.page.id, daily_date: "2026-07-12" },
+    });
+  }, 30_000);
 });

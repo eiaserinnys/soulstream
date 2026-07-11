@@ -352,6 +352,7 @@ class MemoryPageRepository {
 
   async findPageIdByTitle(): Promise<null> { return null; }
   async findPageIdByDailyDate(): Promise<null> { return null; }
+  async listPages() { return { items: [], next_cursor: null }; }
   async getPageBacklinks() { return { items: [], next_cursor: null }; }
 
   async commitPageMutation(): Promise<never> {

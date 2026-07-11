@@ -22,7 +22,6 @@ import {
 } from "./page_mutation_validation.js";
 
 export { PageMutationValidationError } from "./page_mutation_validation.js";
-
 export interface PageMutationActor {
   actorKind: PageActorKind;
   actorSessionId?: string | null;
@@ -59,26 +58,17 @@ export type PageMutationCommand =
   | ({ type: "move_block"; blockId: string } & PageBlockPlacement)
   | { type: "delete_block_subtree"; blockId: string }
   | { type: "set_check_state"; blockId: string; checked: boolean }
+  | { type: "set_page_starred"; starred: boolean }
   | { type: "replace_page_markdown"; blocks: readonly PageYjsBlockInput[] }
   | { type: "batch_operations"; operations: readonly PageBatchOperation[] };
 
-interface PageBlockPlacement {
-  parentId: string | null;
-  parentTempId?: string | null;
-  afterBlockId: string | null;
-  afterTempId?: string | null;
-}
-
-interface PageBlockContent {
-  blockType: string;
-  text: string;
-  properties: Record<string, unknown>;
-  collapsed?: boolean;
-}
+interface PageBlockPlacement { parentId: string | null; parentTempId?: string | null;
+  afterBlockId: string | null; afterTempId?: string | null; }
+interface PageBlockContent { blockType: string; text: string;
+  properties: Record<string, unknown>; collapsed?: boolean; }
 
 export interface PageMutationInput {
-  pageId: string;
-  expectedVersion: number;
+  pageId: string; expectedVersion: number; expectedStateVector?: Uint8Array;
   command: PageMutationCommand;
   actor: PageMutationActor;
   idempotencyKey: string;
@@ -117,15 +107,14 @@ export interface PageMutationApplication {
 
 export class PageMutationVersionConflictError extends Error {
   readonly code = "PAGE_MUTATION_VERSION_CONFLICT";
-
-  constructor(
-    readonly pageId: string,
-    readonly expectedVersion: number,
-    readonly actualVersion: number,
-  ) {
+  constructor(readonly pageId: string, readonly expectedVersion: number,
+    readonly actualVersion: number) {
     super(`page ${pageId} version conflict: expected ${expectedVersion}, actual ${actualVersion}`);
   }
 }
+export class PageMutationStateVectorConflictError extends Error {
+  readonly code = "PAGE_MUTATION_STATE_VECTOR_CONFLICT";
+  constructor(readonly pageId: string) { super(`page ${pageId} state vector conflict`); } }
 
 export class PageMutationCore {
   private readonly createId: () => string;
@@ -183,6 +172,10 @@ export class PageMutationCore {
     }
 
     const beforeVector = Y.encodeStateVector(source);
+    if (input.expectedStateVector && !sameBytes(beforeVector, input.expectedStateVector)) {
+      throw new PageMutationStateVectorConflictError(input.pageId);
+    }
+
     const document = docFromUpdate(Y.encodeStateAsUpdate(source));
     const applied = this.applyCommand(document, input.command);
     document.getMap(PAGE_META_MAP).set("mutationVersion", input.expectedVersion + 1);
@@ -231,6 +224,9 @@ export class PageMutationCore {
       case "set_check_state":
         setCheckState(requireBlock(doc, command.blockId), command.checked);
         return applied("set_check_state", command.blockId);
+      case "set_page_starred":
+        setPageStarred(doc, command.starred);
+        return applied("set_page_starred");
       case "replace_page_markdown":
         replaceBlocks(doc, command.blocks);
         return applied("replace_page_markdown");
@@ -316,12 +312,8 @@ export class PageMutationCore {
 }
 
 function applied(operationType: PageOperationType, targetBlockId: string | null = null) {
-  return { operationType, targetBlockId, tempIdMapping: {} };
-}
-
-function appliedCreatePage() {
-  return applied("create_page");
-}
+  return { operationType, targetBlockId, tempIdMapping: {} }; }
+function appliedCreatePage() { return applied("create_page"); }
 
 function createBlock(
   doc: Y.Doc,
@@ -435,6 +427,15 @@ function setCheckState(block: Y.Map<unknown>, checked: boolean): void {
   properties.set("checked", checked);
 }
 
+function setPageStarred(doc: Y.Doc, starred: boolean): void {
+  const pageMeta = doc.getMap(PAGE_META_MAP);
+  const metadata = pageMeta.get("metadata");
+  if (metadata === null || typeof metadata !== "object" || Array.isArray(metadata)) {
+    throw new PageMutationValidationError("page metadata invalid");
+  }
+  pageMeta.set("metadata", { ...metadata, starred });
+}
+
 function replaceText(block: Y.Map<unknown>, value: string): void {
   const text = block.get("text");
   if (!(text instanceof Y.Text)) throw new PageMutationValidationError("block text invalid");
@@ -484,6 +485,9 @@ function requireString(value: unknown, label: string): string {
   if (typeof value !== "string") throw new PageMutationValidationError(`${label} must be a string`);
   return value;
 }
+
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]); }
 
 function docFromUpdate(update: Uint8Array): Y.Doc {
   const doc = new Y.Doc();

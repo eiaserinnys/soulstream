@@ -3,10 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   PageMutationCore,
+  PageMutationStateVectorConflictError,
   PageMutationValidationError,
   PageMutationVersionConflictError,
 } from "../../src/page/page_mutation_core.js";
-import { readPageYDocReplica } from "../../src/page/page_yjs_model.js";
+import { BLOCKS_MAP, readPageYDocReplica } from "../../src/page/page_yjs_model.js";
 
 function createCore(): PageMutationCore {
   let nextId = 0;
@@ -107,6 +108,61 @@ describe("PageMutationCore", () => {
       }),
     ]);
     expect(readPageYDocReplica("page-1", created.document).blocks).toEqual([]);
+  });
+
+  it("rejects a structural batch when concurrent Y.Text changed the state vector", () => {
+    const core = createCore();
+    const source = createPage(core).document;
+    const seeded = core.mutate(source, {
+      pageId: "page-1",
+      expectedVersion: 1,
+      expectedStateVector: Y.encodeStateVector(source),
+      actor: { actorKind: "user", actorUserId: "user-1" },
+      idempotencyKey: "batch_page_operations:user-1:seed",
+      command: { type: "batch_operations", operations: [createBlock("root")] },
+    });
+    const expectedStateVector = Y.encodeStateVector(seeded.document);
+    const rootId = seeded.tempIdMapping.root!;
+    const root = seeded.document.getMap<Y.Map<unknown>>(BLOCKS_MAP).get(rootId)!;
+    (root.get("text") as Y.Text).insert(0, "concurrent ");
+
+    expect(() => core.mutate(seeded.document, {
+      pageId: "page-1",
+      expectedVersion: 2,
+      expectedStateVector,
+      actor: { actorKind: "user", actorUserId: "user-1" },
+      idempotencyKey: "batch_page_operations:user-1:stale",
+      command: {
+        type: "batch_operations",
+        operations: [{ op: "update_block_text", blockId: rootId, text: "split source" }],
+      },
+    })).toThrow(PageMutationStateVectorConflictError);
+    expect(readPageYDocReplica("page-1", seeded.document).blocks[0]?.text)
+      .toBe("concurrent root");
+  });
+
+  it("records set_page_starred as an explicit operation without replacing other metadata", () => {
+    const core = createCore();
+    const created = core.createPage({
+      page: {
+        id: "page-1",
+        title: "Original",
+        dailyDate: null,
+        metadata: { color: "blue" },
+      },
+      actor: { actorKind: "user", actorUserId: "user-1" },
+      idempotencyKey: "create_page:user-1:star-seed",
+    });
+    const starred = core.mutate(created.document, {
+      pageId: "page-1",
+      expectedVersion: 1,
+      command: { type: "set_page_starred", starred: true },
+      actor: { actorKind: "user", actorUserId: "user-1" },
+      idempotencyKey: "set_page_starred:user-1:true",
+    });
+
+    expect(starred.operationType).toBe("set_page_starred");
+    expect(starred.replica.page.metadata).toEqual({ color: "blue", starred: true });
   });
 
   it.each([
