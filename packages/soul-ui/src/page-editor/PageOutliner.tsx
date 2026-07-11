@@ -9,12 +9,13 @@ import {
 } from "@soulstream/page-editor-core";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AlertTriangle, LoaderCircle, RefreshCw, X } from "lucide-react";
-import { useEffect, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import type * as Y from "yjs";
 
 import type { PageApiClient, PageDocumentBlock } from "../page";
 import { PageBlockRow } from "./PageBlockRow";
 import type { PageBlockEditorKeyInput } from "./PageBlockEditor";
+import { measureTextareaCaretLines } from "./page-editor-caret-geometry";
 import { createContiguousBlockSelection } from "./page-editor-selection";
 import { usePageEditorController } from "./usePageEditorController";
 
@@ -36,6 +37,7 @@ export function PageOutliner({
   onResync(): void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const rowElements = useRef(new Map<string, HTMLDivElement>());
   const renderedBlocks = useMemo(() => visibleOutlineBlocks(blocks), [blocks]);
   const [, renderSelection] = useReducer((value) => value + 1, 0);
   const selection = useMemo(
@@ -55,6 +57,10 @@ export function PageOutliner({
     getItemKey: (index) => renderedBlocks[index]?.id ?? index,
     initialRect: { width: 800, height: 600 },
   });
+  const remeasureEditorRow = useCallback((blockId: string) => {
+    const row = rowElements.current.get(blockId);
+    if (row) virtualizer.measureElement(row);
+  }, [virtualizer]);
   const focusApplier = useMemo(() => createPostRenderFocusSelectionApplier({
     getTextControlByBlockId(blockId) {
       return scrollRef.current?.querySelector<HTMLTextAreaElement>(
@@ -160,7 +166,14 @@ export function PageOutliner({
               return (
                 <div
                   key={block.id}
-                  ref={virtualizer.measureElement}
+                  ref={(element) => {
+                    if (element) {
+                      rowElements.current.set(block.id, element);
+                      virtualizer.measureElement(element);
+                    } else {
+                      rowElements.current.delete(block.id);
+                    }
+                  }}
                   role="none"
                   data-index={item.index}
                   className="absolute left-0 top-0 w-full"
@@ -173,6 +186,7 @@ export function PageOutliner({
                     onKeyInput={keyInput}
                     onPasteInput={pasteInput}
                     onSelectBlock={selectBlock}
+                    onEditorHeightChange={remeasureEditorRow}
                   />
                 </div>
               );
@@ -232,7 +246,7 @@ function handleArrowNavigation(
     : decideVerticalEdgeNavigation({
         direction: event.key === "ArrowUp" ? "up" : "down",
         selection,
-        metrics: logicalLineMetrics(input.block.textValue, input.focus),
+        metrics: measureTextareaCaretLines(input.element, input.focus),
         previousBlock: adjacent(previous),
         nextBlock: adjacent(next),
       });
@@ -247,20 +261,6 @@ function handleArrowNavigation(
   return true;
 }
 
-function logicalLineMetrics(text: string, offset: number) {
-  const lines = text.split("\n");
-  const line = text.slice(0, offset).split("\n").length - 1;
-  return {
-    caretTop: line,
-    caretBottom: line + 1,
-    firstLineTop: 0,
-    firstLineBottom: 1,
-    lastLineTop: Math.max(0, lines.length - 1),
-    lastLineBottom: lines.length,
-    tolerancePx: 0,
-  };
-}
-
 function crossesVerticalBlockEdge(
   input: PageBlockEditorKeyInput,
   key: "ArrowUp" | "ArrowDown",
@@ -272,7 +272,7 @@ function crossesVerticalBlockEdge(
   return decideVerticalEdgeNavigation({
     direction: key === "ArrowUp" ? "up" : "down",
     selection: { anchor: input.anchor, focus: input.focus },
-    metrics: logicalLineMetrics(input.block.textValue, input.focus),
+    metrics: measureTextareaCaretLines(input.element, input.focus),
     previousBlock: key === "ArrowUp" ? { target: existingBlock(adjacent.id), textLength: adjacent.textValue.length } : null,
     nextBlock: key === "ArrowDown" ? { target: existingBlock(adjacent.id), textLength: adjacent.textValue.length } : null,
   }).kind === "focus";

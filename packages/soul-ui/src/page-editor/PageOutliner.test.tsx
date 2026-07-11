@@ -21,8 +21,14 @@ describe("PageOutliner", () => {
     });
     widthSpy = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
     rectSpy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.dataset.pageEditorCaretMarker === "true") {
+        const offset = Number(this.dataset.caretOffset);
+        const line = Math.min(2, Math.floor(offset / 10));
+        return domRect(line * 20, 16, 1);
+      }
+      if (this.dataset.pageEditorCaretMirror === "true") return domRect(0, 60, 100);
       const height = this.getAttribute("role") === "tree" ? 600 : 40;
-      return { x: 0, y: 0, top: 0, left: 0, right: 800, bottom: height, width: 800, height, toJSON: () => ({}) };
+      return domRect(0, height, 800);
     });
   });
 
@@ -84,6 +90,143 @@ describe("PageOutliner", () => {
     }));
   });
 
+  it("maps Shift+Tab to an editor-core outdent intent", async () => {
+    const doc = createPageDoc(2);
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", "block-0");
+    const api = createApi();
+    await render(doc, api);
+    const second = editor("block-1");
+    dispatchKey(second, "Tab", 0, { shiftKey: true });
+    await settle();
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: [expect.objectContaining({
+        op: "move_block",
+        block_id: "block-1",
+        parent_id: null,
+        after_block_id: "block-0",
+      })],
+    }));
+  });
+
+  it.each([
+    ["Backspace", "block-1", 0],
+    ["Delete", "block-0", 7],
+  ] as const)("maps %s only at a text boundary to a merge batch", async (key, blockId, offset) => {
+    const doc = createPageDoc(2);
+    const api = createApi();
+    await render(doc, api);
+    dispatchKey(editor(blockId), key, offset);
+    await settle();
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: [
+        expect.objectContaining({ op: "update_block_text", block_id: "block-0" }),
+        expect.objectContaining({ op: "delete_block_subtree", block_id: "block-1" }),
+      ],
+    }));
+  });
+
+  it.each([
+    ["ArrowLeft", "block-1", 0, "block-0", 7],
+    ["ArrowRight", "block-0", 7, "block-1", 0],
+    ["ArrowUp", "block-1", 0, "block-0", 0],
+    ["ArrowDown", "block-0", 7, "block-1", 7],
+  ] as const)("moves %s across a block edge through post-render focus", async (key, fromId, offset, targetId, targetOffset) => {
+    await render(createPageDoc(2), createApi());
+    dispatchKey(editor(fromId), key, offset);
+    await settleFocus();
+    expect(document.activeElement).toBe(editor(targetId));
+    expect(editor(targetId).selectionStart).toBe(targetOffset);
+    expect(editor(targetId).selectionEnd).toBe(targetOffset);
+  });
+
+  it("keeps ArrowUp/Down native on a wrapped middle line and crosses only first/last visual lines", async () => {
+    const doc = createPageDoc(3);
+    setBlockText(doc, "block-1", "12345678901234567890123456789");
+    await render(doc, createApi());
+    const wrapped = editor("block-1");
+    wrapped.focus();
+
+    const middleUp = dispatchKey(wrapped, "ArrowUp", 15);
+    const middleDown = dispatchKey(wrapped, "ArrowDown", 15);
+    expect(middleUp.defaultPrevented).toBe(false);
+    expect(middleDown.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(wrapped);
+
+    dispatchKey(wrapped, "ArrowUp", 5);
+    await settleFocus();
+    expect(document.activeElement).toBe(editor("block-0"));
+
+    wrapped.focus();
+    dispatchKey(wrapped, "ArrowDown", 25);
+    await settleFocus();
+    expect(document.activeElement).toBe(editor("block-2"));
+  });
+
+  it("extends a contiguous Shift+Arrow selection and deletes it as one batch", async () => {
+    const api = createApi();
+    await render(createPageDoc(3), api);
+    const first = editor("block-0");
+    first.focus();
+    dispatchKey(first, "ArrowDown", 7, { shiftKey: true });
+    expect(container!.querySelector('[data-block-id="block-0"]')?.getAttribute("aria-selected")).toBe("true");
+    expect(container!.querySelector('[data-block-id="block-1"]')?.getAttribute("aria-selected")).toBe("true");
+    dispatchKey(first, "Delete", 7);
+    await settle();
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: [
+        { op: "delete_block_subtree", block_id: "block-0" },
+        { op: "delete_block_subtree", block_id: "block-1" },
+      ],
+    }));
+  });
+
+  it("maps paste and paste-over-selection from real textarea clipboard events", async () => {
+    const api = createApi();
+    await render(createPageDoc(3), api);
+    const first = editor("block-0");
+    first.setSelectionRange(2, 2);
+    dispatchPaste(first, "One\nTwo");
+    await settle();
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: expect.arrayContaining([
+        expect.objectContaining({ op: "update_block_text", block_id: "block-0" }),
+        expect.objectContaining({ op: "create_block", text: expect.stringContaining("Two") }),
+      ]),
+    }));
+  });
+
+  it("replaces a Shift-selected range through pasteOverSelection", async () => {
+    const api = createApi();
+    await render(createPageDoc(3), api);
+    const first = editor("block-0");
+    first.focus();
+    dispatchKey(first, "ArrowDown", 7, { shiftKey: true });
+    dispatchPaste(first, "Replacement");
+    await settle();
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: expect.arrayContaining([
+        expect.objectContaining({ op: "create_block", text: "Replacement" }),
+        { op: "delete_block_subtree", block_id: "block-0" },
+        { op: "delete_block_subtree", block_id: "block-1" },
+      ]),
+    }));
+  });
+
+  it("applies only the latest queued focus request", async () => {
+    await render(createPageDoc(3), createApi());
+    const first = editor("block-0");
+    const third = editor("block-2");
+    first.setSelectionRange(7, 7);
+    third.setSelectionRange(0, 0);
+    flushSync(() => {
+      first.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }));
+      third.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true, cancelable: true }));
+    });
+    await settleFocus();
+    expect(document.activeElement).toBe(editor("block-1"));
+    expect(editor("block-1").selectionStart).toBe(7);
+  });
+
   it("blocks structural shortcuts during IME composition", async () => {
     const doc = createPageDoc(1);
     const api = createApi();
@@ -141,6 +284,10 @@ describe("PageOutliner", () => {
     ));
     await settle();
   }
+
+  function editor(blockId: string): HTMLTextAreaElement {
+    return container!.querySelector<HTMLTextAreaElement>(`[data-block-id="${blockId}"] textarea`)!;
+  }
 });
 
 function createPageDoc(count: number): Y.Doc {
@@ -184,8 +331,62 @@ function createApi(overrides: Partial<PageApiClient> = {}): PageApiClient {
   } as PageApiClient;
 }
 
+function setBlockText(doc: Y.Doc, blockId: string, value: string): void {
+  const text = doc.getMap<Y.Map<unknown>>("blocks").get(blockId)!.get("text") as Y.Text;
+  text.delete(0, text.length);
+  text.insert(0, value);
+}
+
+function dispatchKey(
+  textarea: HTMLTextAreaElement,
+  key: string,
+  offset: number,
+  options: { shiftKey?: boolean } = {},
+): KeyboardEvent {
+  textarea.setSelectionRange(offset, offset);
+  const event = new KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+    shiftKey: options.shiftKey,
+  });
+  flushSync(() => textarea.dispatchEvent(event));
+  return event;
+}
+
+function dispatchPaste(textarea: HTMLTextAreaElement, plainText: string): void {
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", {
+    value: {
+      getData: (type: string) => type === "text/plain" ? plainText : "",
+      files: [],
+    },
+  });
+  flushSync(() => textarea.dispatchEvent(event));
+}
+
+function domRect(top: number, height: number, width: number): DOMRect {
+  return {
+    x: 0,
+    y: top,
+    top,
+    left: 0,
+    right: width,
+    bottom: top + height,
+    width,
+    height,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
+
 async function settle() {
   await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 0));
   await Promise.resolve();
+}
+
+async function settleFocus() {
+  await settle();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await settle();
 }

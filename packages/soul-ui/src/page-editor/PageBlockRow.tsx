@@ -8,6 +8,7 @@ export function PageBlockRow({
   onKeyInput,
   onPasteInput,
   onSelectBlock,
+  onEditorHeightChange,
 }: {
   block: PageDocumentBlock;
   depth: number;
@@ -15,6 +16,7 @@ export function PageBlockRow({
   onKeyInput(input: PageBlockEditorKeyInput, event: React.KeyboardEvent<HTMLTextAreaElement>): void;
   onPasteInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
   onSelectBlock(blockId: string, extend: boolean): void;
+  onEditorHeightChange(blockId: string): void;
 }) {
   return (
     <div
@@ -35,6 +37,7 @@ export function PageBlockRow({
         onKeyInput={onKeyInput}
         onPasteInput={onPasteInput}
         onSelectBlock={onSelectBlock}
+        onHeightChange={onEditorHeightChange}
       />
     </div>
   );

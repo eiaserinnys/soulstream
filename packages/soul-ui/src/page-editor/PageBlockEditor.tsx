@@ -4,6 +4,7 @@ import { createPageTextBinding, type PageDocumentBlock } from "../page";
 
 export interface PageBlockEditorKeyInput {
   readonly block: PageDocumentBlock;
+  readonly element: HTMLTextAreaElement;
   readonly anchor: number;
   readonly focus: number;
   readonly isComposing: boolean;
@@ -14,11 +15,13 @@ export function PageBlockEditor({
   onKeyInput,
   onPasteInput,
   onSelectBlock,
+  onHeightChange,
 }: {
   block: PageDocumentBlock;
   onKeyInput(input: PageBlockEditorKeyInput, event: React.KeyboardEvent<HTMLTextAreaElement>): void;
   onPasteInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
   onSelectBlock(blockId: string, extend: boolean): void;
+  onHeightChange(blockId: string): void;
 }) {
   const binding = useMemo(() => createPageTextBinding(block.text), [block.text]);
   const snapshot = useSyncExternalStore(binding.subscribe, binding.getSnapshot, binding.getSnapshot);
@@ -27,12 +30,38 @@ export function PageBlockEditor({
   const extendFocus = useRef(false);
   useEffect(() => () => binding.destroy(), [binding]);
   useLayoutEffect(() => {
+    const element = textarea.current;
+    if (!element) return;
+    let lastWidth = element.clientWidth;
+    const fitHeight = () => {
+      const previous = element.style.height;
+      element.style.height = "0px";
+      const next = `${Math.max(32, element.scrollHeight)}px`;
+      element.style.height = next;
+      if (previous !== next) onHeightChange(block.id);
+    };
+    fitHeight();
+    if (typeof ResizeObserver === "function") {
+      const observer = new ResizeObserver((entries) => {
+        const width = entries[0]?.contentRect.width ?? element.clientWidth;
+        if (width === lastWidth) return;
+        lastWidth = width;
+        fitHeight();
+      });
+      observer.observe(element);
+      return () => observer.disconnect();
+    }
+    window.addEventListener("resize", fitHeight);
+    return () => window.removeEventListener("resize", fitHeight);
+  }, [block.id, onHeightChange, snapshot.text]);
+  useLayoutEffect(() => {
     if (!snapshot.remote || !snapshot.selection || !textarea.current) return;
     textarea.current.setSelectionRange(snapshot.selection.anchor, snapshot.selection.head);
   }, [snapshot]);
 
   const input = (target: HTMLTextAreaElement): PageBlockEditorKeyInput => ({
     block,
+    element: target,
     anchor: target.selectionStart ?? 0,
     focus: target.selectionEnd ?? 0,
     isComposing: composing.current,
