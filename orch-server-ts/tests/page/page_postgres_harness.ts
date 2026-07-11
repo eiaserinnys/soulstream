@@ -42,7 +42,7 @@ export async function createPagePostgresHarness(): Promise<PagePostgresHarness> 
 }
 
 async function connect(url: string, containerId?: string): Promise<PagePostgresHarness> {
-  const sql = postgres(url, { max: 1, idle_timeout: 1 });
+  const sql = postgres(url, { max: 1, idle_timeout: 1, onnotice: () => {} });
   await waitForPostgres(sql);
   const schema = `page_${Date.now()}_${Math.random().toString(36).slice(2)}`;
   await sql.unsafe(`CREATE SCHEMA ${schema}`);
@@ -117,6 +117,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
     CREATE TABLE pages (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
+      title_key TEXT GENERATED ALWAYS AS (lower(btrim(title))) STORED,
       daily_date DATE,
       version INTEGER NOT NULL CHECK (version > 0),
       archived BOOLEAN NOT NULL DEFAULT FALSE,
@@ -169,6 +170,31 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
         REFERENCES events(session_id, id) ON DELETE SET NULL,
       CHECK (actor_kind <> 'agent' OR actor_session_id IS NOT NULL),
       CHECK (actor_kind <> 'user' OR actor_user_id IS NOT NULL)
+    );
+    CREATE UNIQUE INDEX uq_pages_title_key ON pages(title_key);
+    CREATE TABLE block_links (
+      id TEXT PRIMARY KEY,
+      source_block_id TEXT NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,
+      link_kind TEXT NOT NULL CHECK (link_kind IN ('mount','inline_page','block_ref')),
+      ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+      source_start INTEGER NOT NULL CHECK (source_start >= 0),
+      source_end INTEGER NOT NULL CHECK (source_end > source_start),
+      target_page_id TEXT REFERENCES pages(id) ON DELETE SET NULL,
+      target_title TEXT,
+      target_title_key TEXT,
+      target_block_id TEXT REFERENCES blocks(id) ON DELETE SET NULL,
+      target_block_ref TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (source_block_id, ordinal),
+      CHECK (
+        (link_kind IN ('mount','inline_page')
+          AND target_title IS NOT NULL AND target_title_key IS NOT NULL
+          AND target_block_ref IS NULL)
+        OR
+        (link_kind = 'block_ref'
+          AND target_block_ref IS NOT NULL
+          AND target_title IS NULL AND target_title_key IS NULL)
+      )
     );
   `);
 }

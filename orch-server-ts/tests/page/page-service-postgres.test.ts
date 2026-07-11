@@ -57,7 +57,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
             afterBlockId: null,
             afterTempId: null,
             blockType: "paragraph",
-            text: "Root",
+            text: "[[Page]]",
             properties: {},
           },
           {
@@ -90,13 +90,31 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
     expect(duplicate.operation.id).toBe(mutated.operation.id);
     expect(duplicate.page.version).toBe(2);
 
-    const [counts] = await harness.sql<[{ operations: number; events: number; blocks: number }]>`
+    const [counts] = await harness.sql<[{
+      operations: number;
+      events: number;
+      blocks: number;
+      links: number;
+    }]>`
       SELECT
         (SELECT COUNT(*)::int FROM block_operations) AS operations,
         (SELECT COUNT(*)::int FROM events WHERE event_type = 'block_operation') AS events,
-        (SELECT COUNT(*)::int FROM blocks) AS blocks
+        (SELECT COUNT(*)::int FROM blocks) AS blocks,
+        (SELECT COUNT(*)::int FROM block_links) AS links
     `;
-    expect(counts).toEqual({ operations: 2, events: 2, blocks: 2 });
+    expect(counts).toEqual({ operations: 2, events: 2, blocks: 2, links: 1 });
+    const [link] = await harness.sql<[{
+      link_kind: string;
+      target_page_id: string | null;
+      target_title: string;
+    }]>`
+      SELECT link_kind, target_page_id, target_title FROM block_links
+    `;
+    expect(link).toEqual({
+      link_kind: "mount",
+      target_page_id: "page-1",
+      target_title: "Page",
+    });
     const [page] = await harness.sql<[{ version: number; updated_session_id: string }]>`
       SELECT version, updated_session_id FROM pages WHERE id = 'page-1'
     `;
