@@ -68,7 +68,7 @@ const replica = {
 };
 
 describe("orch PageRepository", () => {
-  it("stores snapshot, update, page, and block SET-DIFF in one transaction", async () => {
+  it("stores snapshot, update, page, block SET-DIFF, and link diff in one transaction", async () => {
     const { sql, calls } = createMockSql();
     const repository = new PageRepository({
       resolveSql: vi.fn(async () => sql),
@@ -91,11 +91,14 @@ describe("orch PageRepository", () => {
       expect.stringContaining("DELETE FROM blocks"),
       expect.stringContaining("INSERT INTO blocks"),
       expect.stringContaining("INSERT INTO blocks"),
+      expect.stringContaining("SELECT source_block_id"),
+      expect.stringContaining("DELETE FROM block_links"),
+      expect.stringContaining("UPDATE block_links"),
     ]);
     expect(calls.every((call) => call.inTransaction)).toBe(true);
     expect(calls[0]?.values[0]).toBe("page:page-1");
     expect(calls.some((call) => call.query.includes("board_items"))).toBe(false);
-    expect(calls.some((call) => call.query.includes("block_links"))).toBe(false);
+    expect(calls.some((call) => call.query.includes("block_links"))).toBe(true);
   });
 
   it("reads bytes from the shared document table without board canonicalization", async () => {
