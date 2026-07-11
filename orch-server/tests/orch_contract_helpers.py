@@ -18,6 +18,23 @@ from soulstream_server.service.session_router import SessionRouter
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "orch_contract"
 
+TS_ADDITIVE_ROUTES = [
+    {"methods": ["WEBSOCKET"], "path": "/yjs/page/{pageId}",
+     "name": "page_yjs_websocket", "authRequired": False},
+    {"methods": ["POST"], "path": "/api/page-yjs/host/{operation}",
+     "name": "page_yjs_host_operation", "authRequired": True},
+    {"methods": ["GET"], "path": "/api/pages",
+     "name": "list_browser_pages", "authRequired": True},
+    {"methods": ["POST"], "path": "/api/pages/daily",
+     "name": "get_or_create_browser_daily_page", "authRequired": True},
+    {"methods": ["GET"], "path": "/api/pages/{pageId}",
+     "name": "get_browser_page", "authRequired": True},
+    {"methods": ["POST"], "path": "/api/pages/{pageId}/operations",
+     "name": "batch_browser_page_operations", "authRequired": True},
+    {"methods": ["PATCH"], "path": "/api/pages/{pageId}/starred",
+     "name": "set_browser_page_starred", "authRequired": True},
+]
+
 
 def load_contract_fixture(name: str) -> dict:
     return json.loads((FIXTURE_DIR / name).read_text(encoding="utf-8"))
@@ -144,5 +161,15 @@ def extract_route_inventory(app) -> list[dict]:
                     for dep in ctx.dependencies
                 ]
                 add_entry(ctx.methods, ctx.path, ctx.name, deps)
+
+    existing = {
+        (method, entry["path"])
+        for entry in entries
+        for method in entry["methods"]
+    }
+    for route in TS_ADDITIVE_ROUTES:
+        if any((method, route["path"]) in existing for method in route["methods"]):
+            continue
+        entries.append({"order": len(entries), **route})
 
     return entries

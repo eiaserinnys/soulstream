@@ -54,4 +54,24 @@ def test_public_route_auth_contract_is_explicit():
         "/api/auth/status",
         "/api/auth/logout",
         "/api/auth/dev-login",
+        "/yjs/page/{pageId}",
     }
+
+
+def test_browser_page_routes_are_additive_authenticated_contracts():
+    routes = load_contract_fixture("route_inventory.json")["routes"]
+    by_key = {
+        (method, route["path"]): route
+        for route in routes
+        for method in route["methods"]
+    }
+    expected = {
+        ("GET", "/api/pages"),
+        ("POST", "/api/pages/daily"),
+        ("GET", "/api/pages/{pageId}"),
+        ("POST", "/api/pages/{pageId}/operations"),
+        ("PATCH", "/api/pages/{pageId}/starred"),
+    }
+
+    assert expected <= by_key.keys()
+    assert all(by_key[key]["authRequired"] is True for key in expected)

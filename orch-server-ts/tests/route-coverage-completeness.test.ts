@@ -22,6 +22,13 @@ const config = parseOrchServerConfig({
 describe("route coverage completeness gate", () => {
   const fixtures = loadContractFixtures();
   const registry = buildRouteRegistry(fixtures.routeInventory);
+  const browserRouteKeys = [
+    "GET /api/pages",
+    "POST /api/pages/daily",
+    "GET /api/pages/{pageId}",
+    "POST /api/pages/{pageId}/operations",
+    "PATCH /api/pages/{pageId}/starred",
+  ];
 
   it("covers every Python fixture route with opt-in TS registration and auth metadata", async () => {
     const registeredRouteKeys = await collectRegisteredFixtureRouteKeys(registry);
@@ -43,6 +50,10 @@ describe("route coverage completeness gate", () => {
       unknownAuthRequirementKeys: [],
     });
     expect(registeredRouteKeys).toHaveLength(registry.entries.length);
+    expect(registry.entries.map((entry) => entry.key)).toEqual(
+      expect.arrayContaining(browserRouteKeys),
+    );
+    expect(registeredRouteKeys).toEqual(expect.arrayContaining(browserRouteKeys));
   });
 
   it("reports missing registrations, auth mismatches, duplicate owners, and unknown entries", () => {
@@ -129,6 +140,7 @@ function createAllOptInRouteApp() {
     nodeWsRoute: { registry: inert },
     pageYjsRoutes: {
       authBearerToken: "test-token",
+      resolveBrowserUser: async () => ({ email: "user@example.com" }),
       createService: () => ({
         handleConnection: () => undefined,
         assertWebsocketAuthConfigured: () => undefined,

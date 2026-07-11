@@ -32,7 +32,7 @@ describe("orch-server-ts contract fixture reader", () => {
   it("keeps route inventory count, public routes, and static-before-dynamic hazards visible", () => {
     const summary = contractFixtureSummary(fixtures);
 
-    expect(summary.routeCount).toBe(123);
+    expect(summary.routeCount).toBe(128);
     expect(summary.publicRoutes).toEqual([
       "/api/auth/config",
       "/api/auth/dev-login",
@@ -54,6 +54,10 @@ describe("orch-server-ts contract fixture reader", () => {
       {
         staticPath: "/api/runbooks/my-turn",
         dynamicPath: "/api/runbooks/{runbook_id}",
+      },
+      {
+        staticPath: "/api/pages/daily",
+        dynamicPath: "/api/pages/{pageId}",
       },
     ]);
   });
