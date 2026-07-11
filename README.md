@@ -27,7 +27,8 @@ Agent definitions live in the server config. Each agent gets:
 
 ```
 soulstream/
-├── orch-server/          # Orchestrator server
+├── orch-server/          # Deprecated Python orchestrator; contract tests only
+├── orch-server-ts/       # Production TypeScript orchestrator
 ├── soul-server-ts/       # TypeScript execution worker
 ├── unified-dashboard/    # React dashboard (TypeScript)
 ├── packages/
