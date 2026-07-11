@@ -1,15 +1,13 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/main.ts"],
+  entry: ["src/index.ts", "src/production_main.ts"],
   format: ["esm"],
   target: "node20",
+  dts: true,
   clean: true,
-  sourcemap: true,
-  // wire-schema는 source 그대로 export하므로 번들에 포함 (workspace 의존)
   noExternal: [
     "@soulstream/fractional-position",
     "@soulstream/page-model",
-    "@soulstream/wire-schema",
   ],
 });
