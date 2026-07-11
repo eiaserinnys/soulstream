@@ -5,7 +5,7 @@
  * 각 모드의 실제 레이아웃은 Phase 2-5에서 구현된다.
  */
 
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useAppConfig } from "./config/AppConfigContext";
 
 const DashboardLayout = lazy(() =>
@@ -16,9 +16,25 @@ const OrchestratorDashboardLayout = lazy(() =>
     default: mod.OrchestratorDashboardLayout,
   })),
 );
+const V2DashboardLayout = lazy(() =>
+  import("./v2/V2DashboardLayout").then((mod) => ({
+    default: mod.V2DashboardLayout,
+  })),
+);
+
+export function isV2Pathname(pathname: string): boolean {
+  return pathname === "/v2" || pathname.startsWith("/v2/");
+}
 
 export function App() {
   const config = useAppConfig();
+  const [pathname, setPathname] = useState(() => window.location.pathname);
+
+  useEffect(() => {
+    const handlePopState = () => setPathname(window.location.pathname);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     if (config.mode === "orchestrator") {
@@ -31,6 +47,13 @@ export function App() {
   }, [config.mode, config.nodeId]);
 
   if (config.mode === "orchestrator") {
+    if (isV2Pathname(pathname)) {
+      return (
+        <Suspense fallback={null}>
+          <V2DashboardLayout />
+        </Suspense>
+      );
+    }
     return (
       <Suspense fallback={null}>
         <OrchestratorDashboardLayout />
