@@ -11,6 +11,13 @@ import {
 import type { StorePageYjsStateInput } from "./page_yjs_persistence.js";
 import type { PageMutationApplication } from "./page_mutation_core.js";
 import { reconcilePageLinks } from "./page_link_projection.js";
+import {
+  findPageIdByDailyDate,
+  findPageIdByTitle,
+  getPageBacklinks,
+  type PageBacklinkPage,
+} from "./page_repository_reads.js";
+import type { PageLinkKind } from "@soulstream/page-model";
 
 type PageQuerySql = {
   <T extends readonly Record<string, unknown>[] = readonly Record<string, unknown>[]>(
@@ -121,6 +128,23 @@ export class PageRepository {
     `;
     const row = rows[0];
     return row ? { pageCreatedAt: row.created_at, pageUpdatedAt: row.updated_at } : null;
+  }
+
+  async findPageIdByTitle(title: string): Promise<string | null> {
+    return await findPageIdByTitle(await this.resolveSql(), title);
+  }
+
+  async findPageIdByDailyDate(date: string): Promise<string | null> {
+    return await findPageIdByDailyDate(await this.resolveSql(), date);
+  }
+
+  async getPageBacklinks(input: {
+    pageId: string;
+    kinds: readonly PageLinkKind[];
+    cursor?: string;
+    limit: number;
+  }): Promise<PageBacklinkPage> {
+    return await getPageBacklinks(await this.resolveSql(), input);
   }
 
   async commitPageMutation(input: CommitPageMutationInput): Promise<PageMutationCommitResult> {

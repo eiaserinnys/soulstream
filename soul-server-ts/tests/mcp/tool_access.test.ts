@@ -32,6 +32,10 @@ describe("MCP tool access profiles", () => {
         "set_task_status",
         "background_claude_tasks",
         "set_runbook_item_status",
+        "create_page",
+        "batch_page_operations",
+        "upsert_page_markdown",
+        "get_daily_page",
       ]),
     );
     expect(isMutationMcpTool("list_sessions")).toBe(false);

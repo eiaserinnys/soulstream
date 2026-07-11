@@ -64,6 +64,10 @@ export const MUTATION_MCP_TOOLS = [
   "set_runbook_item_status",
   "create_custom_view",
   "patch_custom_view",
+  "create_page",
+  "batch_page_operations",
+  "upsert_page_markdown",
+  "get_daily_page",
 ] as const;
 
 const MUTATION_TOOL_SET = new Set<string>(MUTATION_MCP_TOOLS);
