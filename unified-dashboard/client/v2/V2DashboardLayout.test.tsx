@@ -6,39 +6,31 @@ import * as React from "react";
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PageApiClient, PageDto, PageYjsClient } from "@seosoyoung/soul-ui/page";
 
-vi.mock("@seosoyoung/soul-ui", () => ({
-  AskQuestionBanner: () => createElement("div", { "data-testid": "ask-question" }),
-  ChatView: () => createElement("div", { "data-testid": "existing-chat-view" }),
-  ConnectionBadge: () => createElement("div", { "data-testid": "connection-badge" }),
-  DashboardShell: ({ leftPanel, centerPanel, rightPanel, mobileSessionsView }: Record<string, React.ReactNode>) => createElement(
-    "div",
-    { "data-testid": "v2-dashboard-shell" },
-    createElement("section", { "data-desktop-pane": "left" }, leftPanel),
-    createElement("section", { "data-desktop-pane": "center" }, centerPanel),
-    createElement("section", { "data-desktop-pane": "right" }, rightPanel),
-    createElement("section", { "data-mobile-contract": "single-pane" }, mobileSessionsView),
-  ),
-  MobileChatHeader: () => createElement("div"),
-  RightPanel: () => createElement("div", { "data-testid": "existing-right-panel" }),
-  ThemeToggle: () => createElement("button", null, "Theme"),
-  initTheme: vi.fn(),
-  useAuth: () => ({ user: { email: "admin@example.com" } }),
-  useDashboardConfig: vi.fn(),
-  useDashboardStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
-    activeSessionKey: null,
-    activeSessionSummary: null,
-  }),
-  useNotification: vi.fn(),
-  useReadPositionSync: vi.fn(),
-  useServerStatus: () => ({ isDraining: false }),
-  useSessionListProvider: () => ({ sessions: [] }),
-  useSessionProvider: () => ({ status: "connected" }),
-  useUserPreferencesSync: vi.fn(),
-}));
+vi.mock("@seosoyoung/soul-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@seosoyoung/soul-ui")>();
+  return {
+    ...actual,
+    AskQuestionBanner: () => createElement("div", { "data-testid": "ask-question" }),
+    ChatView: () => createElement("div", { "data-testid": "existing-chat-view" }),
+    ConnectionBadge: () => createElement("div", { "data-testid": "connection-badge" }),
+    MobileChatHeader: () => createElement("div"),
+    RightPanel: () => createElement("div", { "data-testid": "existing-right-panel" }),
+    ThemeToggle: () => createElement("button", null, "Theme"),
+    initTheme: vi.fn(),
+    useAuth: () => ({ user: { email: "admin@example.com" } }),
+    useDashboardConfig: vi.fn(),
+    useNotification: vi.fn(),
+    useReadPositionSync: vi.fn(),
+    useServerStatus: () => ({ isDraining: false }),
+    useSessionListProvider: () => ({ sessions: [] }),
+    useSessionProvider: () => ({ status: "connected" }),
+    useUserPreferencesSync: vi.fn(),
+  };
+});
 
 vi.mock("../components/ConfigButton", () => ({ ConfigButton: () => createElement("button", null, "Config") }));
 vi.mock("../components/ConfigModal", () => ({ ConfigModal: () => null }));
@@ -54,6 +46,7 @@ vi.mock("../store/orchestrator-store", () => ({
 
 import { V2DashboardLayout } from "./V2DashboardLayout";
 import { createV2PageRouteController } from "./useV2PageRoute";
+import { useDashboardStore } from "@seosoyoung/soul-ui";
 
 const page: PageDto = {
   id: "page-daily",
@@ -118,15 +111,36 @@ async function settle() {
 describe("V2DashboardLayout", () => {
   let root: Root | undefined;
   let container: HTMLDivElement | undefined;
+  let originalMatchMedia: typeof window.matchMedia | undefined;
+
+  beforeEach(() => {
+    originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 1024 });
+    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    vi.stubGlobal("CSS", { supports: vi.fn(() => false) });
+    window.localStorage.clear();
+    useDashboardStore.getState().reset();
+  });
 
   afterEach(() => {
     if (root) flushSync(() => root!.unmount());
     container?.remove();
     root = undefined;
     container = undefined;
+    window.matchMedia = originalMatchMedia as typeof window.matchMedia;
+    vi.unstubAllGlobals();
   });
 
-  it("assembles desktop three-pane chrome and a mobile single-pane contract", async () => {
+  it("assembles the actual DashboardShell desktop three-pane chrome", async () => {
     const api = createApi();
     const target = createTarget();
     const controller = createV2PageRouteController(target);
@@ -142,16 +156,57 @@ describe("V2DashboardLayout", () => {
     ));
     await settle();
 
-    expect(container.querySelectorAll("[data-desktop-pane]")).toHaveLength(3);
-    expect(container.querySelector('[data-desktop-pane="left"] [data-v2-pane="left"]')).not.toBeNull();
-    expect(container.querySelector('[data-desktop-pane="center"] [data-v2-pane="center"]')).not.toBeNull();
-    expect(container.querySelector('[data-desktop-pane="right"] [data-v2-pane="right"]')).not.toBeNull();
+    expect(container.querySelectorAll("[data-v2-pane]")).toHaveLength(3);
+    expect(container.querySelector('[data-v2-pane="left"]')).not.toBeNull();
+    expect(container.querySelector('[data-v2-pane="center"]')).not.toBeNull();
+    expect(container.querySelector('[data-v2-pane="right"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="existing-right-panel"]')).not.toBeNull();
-    expect(container.querySelector('[data-mobile-contract] [data-responsive-mode="single-pane"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="mobile-main"]')).toBeNull();
     expect(api.getDailyPage).toHaveBeenCalledTimes(1);
     expect(target.location.pathname).toBe("/v2/pages/page-daily");
     expect(container.textContent).toContain("Daily page");
     expect(container.textContent).toContain("Starred");
+
+    controller.destroy();
+  });
+
+  it("shows only Pages, Chat, and Settings on mobile and transitions navigation to page", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    useDashboardStore.setState({ activeTab: "runbooks", selectedFolderId: "legacy-folder" });
+    const api = createApi();
+    const target = createTarget();
+    const controller = createV2PageRouteController(target);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(
+      <V2DashboardLayout
+        apiClient={api}
+        routeController={controller}
+        createPageClient={createClient}
+      />,
+    ));
+    await settle();
+
+    const labels = Array.from(container.querySelectorAll('[data-slot="tabs-tab"]'))
+      .map((tab) => tab.textContent?.trim());
+    expect(labels).toEqual(["Pages", "Chat", "Settings"]);
+    expect(container.querySelectorAll('[data-slot="tabs-content"]')).toHaveLength(3);
+    expect(container.querySelector(".folder-stack")).toBeNull();
+    expect(container.querySelector('[data-testid="v2-pages-tab-icon"]')).not.toBeNull();
+    expect(useDashboardStore.getState().activeTab).toBe("feed");
+    expect(container.querySelector('[data-mobile-v2-pane="page"]')).not.toBeNull();
+
+    const pagesBackButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "Pages");
+    flushSync(() => pagesBackButton!.click());
+    expect(container.querySelector('[data-mobile-v2-pane="navigation"]')).not.toBeNull();
+
+    const starredPageButton = Array.from(container.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "Daily page");
+    flushSync(() => starredPageButton!.click());
+    await settle();
+    expect(container.querySelector('[data-mobile-v2-pane="page"]')).not.toBeNull();
 
     controller.destroy();
   });

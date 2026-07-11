@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { BookOpenText, MessageSquare, Settings } from "lucide-react";
 
 import {
   AskQuestionBanner,
@@ -37,6 +38,16 @@ import { V2MobileWorkspace } from "./V2MobileWorkspace";
 import { V2PageSurface } from "./V2PageSurface";
 import type { V2PageRouteController } from "./useV2PageRoute";
 import { useV2PageWorkspace } from "./useV2PageWorkspace";
+
+const V2_MOBILE_TABS = [
+  {
+    id: "feed",
+    label: "Pages",
+    icon: <BookOpenText data-testid="v2-pages-tab-icon" className="h-5 w-5" />,
+  },
+  { id: "chat", label: "Chat", icon: <MessageSquare className="h-5 w-5" /> },
+  { id: "settings", label: "Settings", icon: <Settings className="h-5 w-5" /> },
+] as const;
 
 export interface V2DashboardLayoutProps {
   apiClient?: PageApiClient;
@@ -154,8 +165,7 @@ export function V2DashboardLayout({
         </>
       )}
       mobileSessionsView={mobileWorkspace}
-      mobileFolderContents={mobileWorkspace}
-      mobileRunbooksView={mobileWorkspace}
+      mobileTabs={V2_MOBILE_TABS}
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={(
         <ChatView

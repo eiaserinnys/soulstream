@@ -15,11 +15,15 @@ import {
   DASHBOARD_LEFT_SIDEBAR_WIDTH_STORAGE_KEY,
 } from "./dashboard-sidebar-collapse";
 
-function renderShell(props: Partial<DashboardShellProps> = {}) {
+function renderShell(
+  props: Partial<DashboardShellProps> = {},
+  initialActiveTab?: "feed" | "folder" | "runbooks" | "chat" | "settings",
+) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   useDashboardStore.getState().reset();
+  if (initialActiveTab) useDashboardStore.getState().setActiveTab(initialActiveTab);
   flushSync(() => {
     root.render(createElement(DashboardShell, {
       title: "Dashboard",
@@ -225,5 +229,34 @@ describe("DashboardShell", () => {
     expect(wrapper?.className).toContain("z-50");
     expect(wrapper?.className).not.toContain("left-[308px]");
     expect(wrapper?.className).not.toContain("top-[76px]");
+  });
+
+  it("keeps the legacy five-tab mobile navigation by default", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    ({ container, root } = renderShell());
+
+    const labels = Array.from(container.querySelectorAll('[data-slot="tabs-tab"]'))
+      .map((tab) => tab.textContent?.trim());
+    expect(labels).toEqual(["피드", "폴더", "런북", "채팅", "설정"]);
+    expect(container.querySelectorAll('[data-slot="tabs-content"]')).toHaveLength(5);
+  });
+
+  it("renders only configured mobile tabs and normalizes a hidden active tab", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    ({ container, root } = renderShell({
+      mobileTabs: [
+        { id: "feed", label: "Pages", icon: createElement("span", { "data-testid": "pages-icon" }) },
+        { id: "chat", label: "Chat", icon: createElement("span") },
+        { id: "settings", label: "Settings", icon: createElement("span") },
+      ],
+    }, "runbooks"));
+
+    const labels = Array.from(container.querySelectorAll('[data-slot="tabs-tab"]'))
+      .map((tab) => tab.textContent?.trim());
+    expect(labels).toEqual(["Pages", "Chat", "Settings"]);
+    expect(container.querySelectorAll('[data-slot="tabs-content"]')).toHaveLength(3);
+    expect(container.querySelector(".folder-stack")).toBeNull();
+    expect(container.querySelector('[data-testid="pages-icon"]')).not.toBeNull();
+    expect(useDashboardStore.getState().activeTab).toBe("feed");
   });
 });

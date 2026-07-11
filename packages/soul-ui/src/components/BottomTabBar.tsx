@@ -3,7 +3,13 @@ import type React from "react";
 import type { MobileTab } from "../stores/dashboard-store";
 import { TabsList, TabsTrigger } from "./ui/tabs";
 
-const TABS: { id: MobileTab; label: string; icon: React.ReactNode }[] = [
+export interface DashboardMobileTab {
+  id: MobileTab;
+  label: string;
+  icon: React.ReactNode;
+}
+
+export const DEFAULT_DASHBOARD_MOBILE_TABS: readonly DashboardMobileTab[] = [
   { id: "feed",     label: "피드",  icon: <Activity className="h-5 w-5" /> },
   { id: "folder",   label: "폴더",  icon: <Folder className="h-5 w-5" /> },
   { id: "runbooks", label: "런북",  icon: <BookOpenCheck className="h-5 w-5" /> },
@@ -22,7 +28,11 @@ const TABS: { id: MobileTab; label: string; icon: React.ReactNode }[] = [
  * `!` 프리픽스(Tailwind !important)로 덮어쓴다. TabsPrimitive.Indicator는
  * 활성 탭 위치를 CSS 변수로 자동 추적하므로 추가 처리 없이 슬라이드가 복원된다.
  */
-export function BottomTabBar() {
+export function BottomTabBar({
+  tabs = DEFAULT_DASHBOARD_MOBILE_TABS,
+}: {
+  tabs?: readonly DashboardMobileTab[];
+}) {
   return (
     <nav
       className="bg-popover border-t border-border"
@@ -31,7 +41,7 @@ export function BottomTabBar() {
       <TabsList
         className="!w-full !flex !rounded-none !bg-transparent !p-0 !gap-0"
       >
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <TabsTrigger
             key={tab.id}
             value={tab.id}

@@ -195,7 +195,7 @@ describe("useV2PageWorkspace", () => {
       return { ...client, getSnapshot: () => disconnectedSnapshot } as PageYjsClient;
     };
     const output = await render(createApi(), "/v2/pages/page-daily", createClient);
-    expect(output.dataset.status).toBe("error");
+    await vi.waitFor(() => expect(output.dataset.status).toBe("error"));
     expect(output.textContent).toContain("Page sync disconnected");
   });
 

@@ -5,6 +5,7 @@
 // === Layout Components ===
 export { DashboardShell } from "./DashboardShell";
 export type { DashboardShellProps } from "./DashboardShell";
+export type { DashboardMobileTab } from "./BottomTabBar";
 export { DragHandle } from "./DragHandle";
 export type { DragHandleProps } from "./DragHandle";
 export { ConnectionBadge } from "./ConnectionBadge";
