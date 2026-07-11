@@ -23,11 +23,16 @@ export interface StorePageYjsStateInput {
 export interface PageYjsPersistenceRepository {
   getPageYjsSnapshot(documentName: string): Promise<Uint8Array | null>;
   storePageYjsState(input: StorePageYjsStateInput): Promise<void>;
+  hasPageOperation?(operationId: string): Promise<boolean>;
 }
 
 export interface PageYjsPersistence {
   database: Database;
   updateLog: Extension;
+}
+
+export interface PageYjsPersistenceCoordinator {
+  runExclusive<T>(pageId: string, callback: () => Promise<T>): Promise<T>;
 }
 
 export class PageYjsSnapshotMissingError extends Error {
@@ -41,7 +46,13 @@ export class PageYjsSnapshotMissingError extends Error {
 
 export function createPageYjsPersistence(
   repository: PageYjsPersistenceRepository,
+  coordinator?: PageYjsPersistenceCoordinator,
 ): PageYjsPersistence {
+  const runExclusive = async <T>(pageId: string, callback: () => Promise<T>): Promise<T> =>
+    coordinator ? await coordinator.runExclusive(pageId, callback) : await callback();
+  const isPersistedOperation = async (value: unknown): Promise<boolean> =>
+    typeof value === "string" && repository.hasPageOperation !== undefined &&
+    await repository.hasPageOperation(value);
   return {
     database: new Database({
       fetch: async (payload: fetchPayload) => {
@@ -52,12 +63,21 @@ export function createPageYjsPersistence(
       },
       store: async (payload: storePayload) => {
         const pageId = requirePageDocumentName(payload.documentName);
-        const doc = new Y.Doc();
-        Y.applyUpdate(doc, payload.state);
-        await repository.storePageYjsState({
-          documentName: payload.documentName,
-          snapshot: payload.state,
-          replica: readPageYDocReplica(pageId, doc),
+        const context = payload.context as {
+          pageOperationId?: unknown;
+          skipPagePersistence?: unknown;
+        } | undefined;
+        if (context?.skipPagePersistence === true) return;
+        const operationId = context?.pageOperationId;
+        if (typeof operationId === "string") return;
+        await runExclusive(pageId, async () => {
+          const doc = new Y.Doc();
+          Y.applyUpdate(doc, payload.state);
+          await repository.storePageYjsState({
+            documentName: payload.documentName,
+            snapshot: payload.state,
+            replica: readPageYDocReplica(pageId, doc),
+          });
         });
       },
     }),
@@ -65,11 +85,14 @@ export function createPageYjsPersistence(
       extensionName: "soulstream-page-yjs-update-log",
       async onChange(payload: onChangePayload) {
         const pageId = requirePageDocumentName(payload.documentName);
-        await repository.storePageYjsState({
-          documentName: payload.documentName,
-          snapshot: Y.encodeStateAsUpdate(payload.document),
-          update: payload.update,
-          replica: readPageYDocReplica(pageId, payload.document),
+        if (await isPersistedOperation(payload.transactionOrigin)) return;
+        await runExclusive(pageId, async () => {
+          await repository.storePageYjsState({
+            documentName: payload.documentName,
+            snapshot: Y.encodeStateAsUpdate(payload.document),
+            update: payload.update,
+            replica: readPageYDocReplica(pageId, payload.document),
+          });
         });
       },
     },

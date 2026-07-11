@@ -1,17 +1,15 @@
-import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import {
-  createLiveDbSqlResolver,
-  type LivePostgresSql,
-} from "../../src/runtime/live_db_sql.js";
+import { createLiveDbSqlResolver } from "../../src/runtime/live_db_sql.js";
 import { PageRepository } from "../../src/page/page_repository.js";
+import {
+  createPagePostgresHarness,
+  type PagePostgresHarness,
+} from "./page_postgres_harness.js";
 
-const databaseUrl = requireTestDatabaseUrl();
-const sql = postgres(databaseUrl, { max: 2 });
-const repository = new PageRepository(createLiveDbSqlResolver({
-  sql: sql as unknown as LivePostgresSql,
-}));
+let harness: PagePostgresHarness;
+let sql: PagePostgresHarness["sql"];
+let repository: PageRepository;
 
 const replica = {
   page: {
@@ -48,63 +46,13 @@ const replica = {
 
 describe("PageRepository PostgreSQL replica integration", () => {
   beforeAll(async () => {
-    const [{ count }] = await sql<[{ count: string }]>`
-      SELECT COUNT(*)::text AS count
-      FROM pg_tables
-      WHERE schemaname = 'public'
-    `;
-    if (count !== "0") {
-      throw new Error(`test database must be empty before setup; found ${count} tables`);
-    }
-    await sql.unsafe(`
-      CREATE TABLE board_yjs_documents (
-        name TEXT PRIMARY KEY,
-        snapshot BYTEA NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE TABLE board_yjs_updates (
-        id BIGSERIAL PRIMARY KEY,
-        document_name TEXT NOT NULL REFERENCES board_yjs_documents(name) ON DELETE CASCADE,
-        update BYTEA NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE TABLE pages (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL CHECK (btrim(title) <> ''),
-        daily_date DATE,
-        version INTEGER NOT NULL CHECK (version > 0),
-        archived BOOLEAN NOT NULL DEFAULT FALSE,
-        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-      CREATE TABLE blocks (
-        id TEXT PRIMARY KEY,
-        page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
-        parent_id TEXT,
-        position_key TEXT NOT NULL CHECK (position_key <> ''),
-        block_type TEXT NOT NULL,
-        text_plain TEXT NOT NULL DEFAULT '',
-        properties JSONB NOT NULL DEFAULT '{}'::jsonb,
-        collapsed BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        CONSTRAINT uq_blocks_page_id_id UNIQUE (page_id, id),
-        CONSTRAINT blocks_parent_same_page_fkey
-          FOREIGN KEY (page_id, parent_id) REFERENCES blocks(page_id, id) ON DELETE CASCADE
-      );
-    `);
-  });
+    harness = await createPagePostgresHarness();
+    sql = harness.sql;
+    repository = new PageRepository(createLiveDbSqlResolver({ sql: harness.liveSql }));
+  }, 60_000);
 
   afterAll(async () => {
-    await sql.unsafe(`
-      DROP TABLE blocks;
-      DROP TABLE pages;
-      DROP TABLE board_yjs_updates;
-      DROP TABLE board_yjs_documents;
-    `);
-    await sql.end({ timeout: 2 });
+    await harness.cleanup();
   });
 
   it("round-trips the snapshot and keeps repeated reconciliation idempotent", async () => {
@@ -188,18 +136,3 @@ describe("PageRepository PostgreSQL replica integration", () => {
     expect(rolledBackPage).toBe(0);
   });
 });
-
-function requireTestDatabaseUrl(): string {
-  const value = process.env.TEST_DATABASE_URL;
-  if (!value) throw new Error("TEST_DATABASE_URL is required for PostgreSQL integration tests");
-  const databaseName = new URL(value).pathname.slice(1).toLowerCase();
-  if (!databaseName.includes("test")) {
-    throw new Error("TEST_DATABASE_URL database name must include test");
-  }
-  for (const forbidden of ["atom_db", "reverie", "soulstream", "serendipity"]) {
-    if (databaseName.includes(forbidden)) {
-      throw new Error(`TEST_DATABASE_URL must not target ${forbidden}`);
-    }
-  }
-  return value;
-}

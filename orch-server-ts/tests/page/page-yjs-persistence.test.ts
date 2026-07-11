@@ -119,4 +119,26 @@ describe("orch page Yjs persistence", () => {
       }),
     });
   });
+
+  it("treats a committed operation transaction origin as an onChange no-op", async () => {
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, snapshot());
+    const repository = {
+      hasPageOperation: vi.fn().mockResolvedValue(true),
+      storePageYjsState: vi.fn().mockResolvedValue(undefined),
+    } as unknown as PageYjsPersistenceRepository;
+    const coordinator = { runExclusive: vi.fn() };
+    const persistence = createPageYjsPersistence(repository, coordinator);
+
+    await persistence.updateLog.onChange?.({
+      documentName: "page:page-1",
+      document: doc,
+      update: new Uint8Array([1]),
+      transactionOrigin: "operation-1",
+    } as never);
+
+    expect(repository.hasPageOperation).toHaveBeenCalledWith("operation-1");
+    expect(repository.storePageYjsState).not.toHaveBeenCalled();
+    expect(coordinator.runExclusive).not.toHaveBeenCalled();
+  });
 });
