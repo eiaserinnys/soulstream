@@ -10,17 +10,16 @@
  */
 
 import { useState, useCallback, useRef, useEffect, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
-import { ArrowLeft, BookOpenCheck, ChevronLeft, ChevronRight, FolderTree, MessageSquare, Newspaper, Search } from "lucide-react";
+import { BookOpenCheck, ChevronLeft, ChevronRight, FolderTree, Newspaper, Search } from "lucide-react";
 import { DragHandle } from "./DragHandle";
-import { BottomTabBar } from "./BottomTabBar";
+import type { DashboardMobileTab } from "./BottomTabBar";
+import { DashboardMobileTabs } from "./DashboardMobileTabs";
 import { ConnectionBadge, type ConnectionStatus } from "./ConnectionBadge";
 import { VerticalSplitPane } from "./VerticalSplitPane";
-import { Tabs, TabsPanel } from "./ui/tabs";
-import { FolderStack } from "./dashboard/FolderStack";
 import { WallpaperLayer } from "./WallpaperLayer";
 import { LiquidGlassCanvas, LiquidGlassProvider, useGlassSurface } from "./LiquidGlassProvider";
 import { useIsMobile } from "../hooks/use-mobile";
-import { useDashboardStore, type MobileTab } from "../stores/dashboard-store";
+import { useDashboardStore } from "../stores/dashboard-store";
 import { cn } from "../lib/cn";
 import { useLiquidLens } from "../lib/liquid-lens";
 import { Button } from "../components/ui/button";
@@ -88,6 +87,8 @@ export interface DashboardShellProps {
 
   /** 모바일 세션 뷰 내용물. 미지정 시 centerPanel 사용 */
   mobileSessionsView?: ReactNode;
+  /** 모바일 하단 탭과 panel inventory. 미지정 시 기존 5탭을 그대로 사용한다. */
+  mobileTabs?: readonly DashboardMobileTab[];
   /** 모바일 폴더 탭에서 폴더 선택 후 표시할 세션 목록 뷰 */
   mobileFolderContents?: ReactNode;
   /** 모바일 Runbooks 탭 내용물 */
@@ -106,27 +107,6 @@ export interface DashboardShellProps {
   onSearchClick?: () => void;
   /** 모바일 폴더 세션 리스트에서 '새 세션' 버튼 클릭 시 콜백 */
   onNewSession?: () => void;
-}
-
-/**
- * DefaultMobileChatHeader - 기본 모바일 채팅 뷰 헤더
- *
- * 백 버튼만 표시합니다. 세션 정보 등 앱 레벨 내용은
- * mobileChatHeader 슬롯으로 주입받습니다.
- */
-function DefaultMobileChatHeader({ onBack }: { onBack: () => void }) {
-  return (
-    <div className="flex items-center gap-2 px-2 h-[44px] border-b border-glass-border glass-strong glass-chrome glass-shadow-xs shrink-0">
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={onBack}
-        data-testid="mobile-back-button"
-      >
-        <ArrowLeft className="h-5 w-5" />
-      </Button>
-    </div>
-  );
 }
 
 export function DashboardShell(props: DashboardShellProps) {
@@ -153,6 +133,7 @@ function DashboardShellContent({
   leftBottomRatio = 0,
   leftSplitStorageKey,
   mobileSessionsView,
+  mobileTabs,
   mobileFolderContents,
   mobileRunbooksView,
   mobileChatView,
@@ -192,13 +173,9 @@ function DashboardShellContent({
   );
 
   const isMobile = useIsMobile();
-  const activeTab = useDashboardStore((s) => s.activeTab);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
-  const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const viewMode = useDashboardStore((s) => s.viewMode);
-  const catalog = useDashboardStore((s) => s.catalog);
-  const clearSelectedFolder = useDashboardStore((s) => s.clearSelectedFolder);
   const setViewMode = useDashboardStore((s) => s.setViewMode);
   const leftNavigationMode = useDashboardStore((s) => s.leftNavigationMode);
   const setLeftNavigationMode = useDashboardStore((s) => s.setLeftNavigationMode);
@@ -246,14 +223,6 @@ function DashboardShellContent({
     document.body.style.userSelect = "none";
   }, []);
 
-  // 채팅 탭 뒤로가기 시 돌아갈 이전 탭 추적
-  const [previousTab, setPreviousTab] = useState<typeof activeTab>("feed");
-  useEffect(() => {
-    if (activeTab !== "chat") {
-      setPreviousTab(activeTab);
-    }
-  }, [activeTab]);
-
   // PC 전환 시 모바일 탭 상태만 피드로 유지하고, 가운데 표면은 폴더 작업 표면으로 정규화한다.
   useEffect(() => {
     if (!isMobile) {
@@ -273,31 +242,6 @@ function DashboardShellContent({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isMobile, toggleLeftSidebarCollapsed]);
-
-  /**
-   * 모바일 탭 변경 핸들러.
-   *
-   * 기존 BottomTabBar의 onClick 로직(setActiveTab + feed/folder 분기 사이드 이펙트)을
-   * base-ui Tabs의 onValueChange 콜백으로 그대로 이동한 것이다.
-   *
-   * base-ui v1.3.0 `Tabs.Root.onValueChange`는 `(value: TabsTab.Value, eventDetails) => void`로,
-   * TabsTab.Value는 `any | null` 타입이다. TABS 배열의 id가 유일한 value이므로
-   * 런타임 가드 후 MobileTab으로 좁힌다.
-   */
-  const handleMobileTabChange = useCallback((value: unknown) => {
-    if (value == null) return;
-    const tabId = value as MobileTab;
-    setActiveTab(tabId);
-    if (tabId === "feed") {
-      // 피드 탭: viewMode도 함께 초기화 (기존 BottomTabBar L29-32 동작)
-      clearSelectedFolder();
-    } else if (tabId === "folder") {
-      // 폴더 탭: 항상 폴더 리스트에서 시작. viewMode는 건드리지 않아 세션 쿼리가 꼬이지 않게 한다 (기존 BottomTabBar L33-36 동작)
-      useDashboardStore.setState({ selectedFolderId: null });
-    } else if (tabId === "runbooks") {
-      setViewMode("runbooks");
-    }
-  }, [setActiveTab, clearSelectedFolder, setViewMode]);
 
   const centerPercent = Math.max(MIN_CENTER, 100 - rightPercent);
   const centerPanelWidth = `calc((100% - ${DASHBOARD_PANEL_GAP_PX}px) * ${centerPercent / 100})`;
@@ -457,62 +401,19 @@ function DashboardShellContent({
       ) : null}
 
       {isMobile ? (
-        /**
-         * 모바일: base-ui Tabs로 탭 상태·키보드 네비게이션·Indicator 슬라이드를 위임하고,
-         * keepMounted로 inactive 패널을 언마운트 없이 유지하여 탭 전환 시 스크롤/상태를 보존한다.
-         * [hidden] 패널은 globals.css의 `.mobile-tabs [data-slot="tabs-content"][hidden]` 규칙으로
-         * `display:none` 대신 opacity/visibility 페이드로 전환된다.
-         */
-        <Tabs
-          value={activeTab}
-          onValueChange={handleMobileTabChange}
-          className="mobile-tabs relative z-10 flex flex-col flex-1 overflow-hidden gap-0"
-        >
-          <main data-testid="mobile-main" className="flex-1 overflow-hidden relative bg-transparent">
-            <TabsPanel value="feed" keepMounted className="h-full">
-              {mobileSessionsView ?? centerPanel}
-            </TabsPanel>
-
-            <TabsPanel value="folder" keepMounted className="h-full">
-              <FolderStack
-                selectedFolderId={selectedFolderId}
-                leftPanelContent={leftPanelContent}
-                mobileFolderContents={mobileFolderContents}
-                folderName={catalog?.folders?.find((f) => f.id === selectedFolderId)?.name ?? "세션"}
-                onBack={() => clearSelectedFolder()}
-                onNewSession={onNewSession}
-              />
-            </TabsPanel>
-
-            <TabsPanel value="runbooks" keepMounted className="h-full">
-              {mobileRunbooksView ?? centerPanel}
-            </TabsPanel>
-
-            <TabsPanel value="chat" keepMounted className="h-full flex flex-col">
-              {activeSessionKey ? (
-                <>
-                  {mobileChatHeader
-                    ? mobileChatHeader(() => setActiveTab(previousTab))
-                    : <DefaultMobileChatHeader onBack={() => setActiveTab(previousTab)} />}
-                  {mobileChatView ?? rightPanel}
-                </>
-              ) : (
-                <div className="flex-1 flex items-center justify-center p-8 text-center text-muted-foreground">
-                  <div>
-                    <MessageSquare className="h-12 w-12 mx-auto mb-3 opacity-30" />
-                    <p className="text-base">피드 또는 폴더에서<br />세션을 선택하세요</p>
-                  </div>
-                </div>
-              )}
-            </TabsPanel>
-
-            <TabsPanel value="settings" keepMounted className="h-full overflow-y-auto">
-              {mobileSettingsContent}
-            </TabsPanel>
-          </main>
-
-          <BottomTabBar />
-        </Tabs>
+        <DashboardMobileTabs
+          tabs={mobileTabs}
+          leftPanelContent={leftPanelContent}
+          centerPanel={centerPanel}
+          rightPanel={rightPanel}
+          mobileSessionsView={mobileSessionsView}
+          mobileFolderContents={mobileFolderContents}
+          mobileRunbooksView={mobileRunbooksView}
+          mobileChatView={mobileChatView}
+          mobileChatHeader={mobileChatHeader}
+          mobileSettingsContent={mobileSettingsContent}
+          onNewSession={onNewSession}
+        />
       ) : (
         <>
           <aside

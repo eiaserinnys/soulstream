@@ -21,7 +21,7 @@ export default defineConfig({
     alias: soulUiAliases,
   },
   test: {
-    include: ["client/**/*.test.ts"],
+    include: ["client/**/*.test.ts", "client/**/*.test.tsx"],
     environment: "node",
     alias: soulUiAliases,
     server: {
