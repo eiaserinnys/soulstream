@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./page": "./src/page/index.ts",
+    "./page-editor": "./src/page-editor/index.ts",
     "./styles": "./src/styles/globals.css"
   },
   "scripts": {
@@ -20,6 +21,7 @@
     "zustand": "^4 || ^5"
   },
   "dependencies": {
+    "@soulstream/page-editor-core": "workspace:*",
     "@soulstream/page-model": "workspace:*",
     "@soulstream/fractional-position": "workspace:*",
     "@base-ui/react": "^1.2.0",

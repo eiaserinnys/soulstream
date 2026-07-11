@@ -1,17 +1,13 @@
-import type { PageDto } from "@seosoyoung/soul-ui/page";
+import type {
+  PageApiClient,
+  PageDocumentBlock,
+  PageDto,
+  PageYjsClient,
+} from "@seosoyoung/soul-ui/page";
+import { PageOutliner } from "@seosoyoung/soul-ui/page-editor";
 import { CircleAlert, LoaderCircle, LockKeyhole, Star } from "lucide-react";
 
 import { V2_TOKENS } from "./v2-token-fixture";
-
-export interface V2OutlineBlock {
-  readonly id: string;
-  readonly parentId: string | null;
-  readonly positionKey: string;
-  readonly type: string;
-  readonly textValue: string;
-  readonly properties: Readonly<Record<string, unknown>>;
-  readonly collapsed: boolean;
-}
 
 export type V2PageSurfaceState =
   | { readonly status: "loading"; readonly message: string }
@@ -20,7 +16,12 @@ export type V2PageSurfaceState =
   | {
     readonly status: "ready";
     readonly page: PageDto;
-    readonly blocks: readonly V2OutlineBlock[];
+    readonly blocks: readonly PageDocumentBlock[];
+    readonly editor: {
+      readonly doc: PageYjsClient["doc"];
+      readonly apiClient: PageApiClient;
+      onResync(): void;
+    };
     readonly starring: boolean;
     readonly actionError?: string | null;
   };
@@ -54,7 +55,6 @@ export function V2PageSurface({
   }
 
   const starred = state.page.metadata.starred === true;
-  const depths = outlineDepths(state.blocks);
   return (
     <main
       data-testid="v2-page-surface"
@@ -82,54 +82,21 @@ export function V2PageSurface({
         </button>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+      <div className="flex min-h-0 flex-1 flex-col">
         {state.actionError ? (
-          <p role="alert" className="mx-auto mb-3 max-w-4xl rounded-lg border border-destructive/40 px-3 py-2 text-sm text-destructive">
+          <p role="alert" className="mx-4 mt-3 rounded-lg border border-destructive/40 px-3 py-2 text-sm text-destructive">
             {state.actionError}
           </p>
         ) : null}
-        {state.blocks.length === 0 ? (
-          <div
-            data-testid="v2-empty-page"
-            className={`mx-auto mt-10 max-w-lg p-8 text-center ${V2_TOKENS.state}`}
-          >
-            <p className="font-medium text-foreground">This page is empty.</p>
-            <p className="mt-2 text-sm">Ready for the editor in the next phase.</p>
-          </div>
-        ) : (
-          <ol aria-label="Read-only page outline" aria-readonly="true" className="mx-auto max-w-4xl space-y-1">
-            {state.blocks.map((block) => (
-              <li
-                key={block.id}
-                data-block-id={block.id}
-                data-outline-depth={depths.get(block.id) ?? 0}
-                className={`min-h-9 px-3 py-2 text-sm ${V2_TOKENS.row}`}
-                style={{ paddingInlineStart: `${12 + (depths.get(block.id) ?? 0) * 24}px` }}
-              >
-                <span className="mr-2 text-muted-foreground" aria-hidden="true">•</span>
-                <span>{block.textValue || "Empty block"}</span>
-              </li>
-            ))}
-          </ol>
-        )}
+        <PageOutliner
+          pageId={state.page.id}
+          doc={state.editor.doc}
+          blocks={state.blocks}
+          mutationVersion={state.page.version}
+          apiClient={state.editor.apiClient}
+          onResync={state.editor.onResync}
+        />
       </div>
     </main>
   );
-}
-
-function outlineDepths(blocks: readonly V2OutlineBlock[]): ReadonlyMap<string, number> {
-  const byId = new Map(blocks.map((block) => [block.id, block] as const));
-  const depths = new Map<string, number>();
-  for (const block of blocks) {
-    let depth = 0;
-    let parentId = block.parentId;
-    const visited = new Set<string>([block.id]);
-    while (parentId && byId.has(parentId) && !visited.has(parentId)) {
-      visited.add(parentId);
-      depth += 1;
-      parentId = byId.get(parentId)?.parentId ?? null;
-    }
-    depths.set(block.id, depth);
-  }
-  return depths;
 }

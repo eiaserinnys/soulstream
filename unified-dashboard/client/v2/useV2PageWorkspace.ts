@@ -72,6 +72,7 @@ export function useV2PageWorkspace({
   const [starringPageIds, setStarringPageIds] = useState<ReadonlySet<string>>(() => new Set());
   const [pageActionError, setPageActionError] = useState<string | null>(null);
   const [runtime, setRuntime] = useState<PageYjsClient | null>(null);
+  const [runtimeGeneration, setRuntimeGeneration] = useState(0);
   const [runtimeConnectError, setRuntimeConnectError] = useState<string | null>(null);
   const initialStarredRequested = useRef(false);
   const dailyRequest = useRef<ReturnType<PageApiClient["getDailyPage"]> | null>(null);
@@ -167,7 +168,11 @@ export function useV2PageWorkspace({
       active = false;
       client.destroy();
     };
-  }, [createPageClient, route]);
+  }, [createPageClient, route, runtimeGeneration]);
+
+  const resyncPage = useCallback(() => {
+    setRuntimeGeneration((generation) => generation + 1);
+  }, []);
 
   const runtimeSnapshot = useSyncExternalStore(
     runtime?.subscribe ?? noopSubscribe,
@@ -212,7 +217,7 @@ export function useV2PageWorkspace({
     }
     if (projectionResult.error) return { status: "error", message: projectionResult.error };
     if (route.kind === "invalid") return { status: "error", message: route.message };
-    if (pageRequest.status !== "ready" || !runtimeSnapshot.ready || !projectionResult.projection) {
+    if (pageRequest.status !== "ready" || !runtime || !runtimeSnapshot.ready || !projectionResult.projection) {
       const message = runtimeSnapshot.status === "reconnecting"
         ? "Reconnecting page…"
         : route.kind === "daily"
@@ -236,15 +241,23 @@ export function useV2PageWorkspace({
       status: "ready",
       page,
       blocks: projectionSnapshot.blocks,
+      editor: {
+        doc: runtime.doc,
+        apiClient,
+        onResync: resyncPage,
+      },
       starring: starringPageIds.has(page.id),
       actionError: pageActionError,
     };
   }, [
     pageActionError,
+    apiClient,
     pageRequest,
     projectionResult,
     projectionSnapshot,
     route,
+    resyncPage,
+    runtime,
     runtimeConnectError,
     runtimeSnapshot,
     starringPageIds,
