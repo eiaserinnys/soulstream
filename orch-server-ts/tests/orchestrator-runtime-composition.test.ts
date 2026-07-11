@@ -87,6 +87,7 @@ describe("orchestrator runtime composition harness", () => {
     const routeOptions = {
       authBearerToken: "test-token",
       createService: vi.fn(() => service),
+      resolveBrowserUser: vi.fn(async () => ({ email: "user@example.com" })),
     };
     expect(() => createOrchestratorRuntimeComposition({
       config,
@@ -109,6 +110,7 @@ describe("orchestrator runtime composition harness", () => {
     await runtime.app.ready();
     expect(runtime.routeOptions.pageYjsRoutes).toBe(routeOptions);
     expect(runtime.app.hasRoute({ method: "GET", url: "/yjs/page/:pageId" })).toBe(true);
+    expect(runtime.app.hasRoute({ method: "GET", url: "/api/pages" })).toBe(true);
 
     const response = await runtime.app.inject({
       method: "POST",

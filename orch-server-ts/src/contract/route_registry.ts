@@ -100,6 +100,10 @@ const KNOWN_STATIC_BEFORE_DYNAMIC_HAZARDS: StaticBeforeDynamicHazard[] = [
     staticPath: "/api/runbooks/my-turn",
     dynamicPath: "/api/runbooks/{runbook_id}",
   },
+  {
+    staticPath: "/api/pages/daily",
+    dynamicPath: "/api/pages/{pageId}",
+  },
 ];
 
 export function routeKey(method: RouteMethod, path: string): RouteKey {
@@ -242,7 +246,12 @@ export function classifyRouteFamily(path: string): RouteFamily {
   if (path.startsWith("/api/auth/") || path === "/api/auth/token") return "auth";
   if (path.includes("/claude-auth/") || path.includes("/provider-usage")) return "auth";
   if (path.startsWith("/api/board-yjs/")) return "board_yjs_proxy";
-  if (path.startsWith("/api/page-yjs/") || path.startsWith("/yjs/page/")) {
+  if (
+    path === "/api/pages" ||
+    path.startsWith("/api/pages/") ||
+    path.startsWith("/api/page-yjs/") ||
+    path.startsWith("/yjs/page/")
+  ) {
     return "page_yjs";
   }
   if (path.startsWith("/api/runbooks/")) return "runbook";

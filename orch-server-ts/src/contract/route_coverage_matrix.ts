@@ -29,6 +29,7 @@ import { taskReadRouteAuthRequirements } from "../tasks/task_read_routes.js";
 import { userBackgroundRouteAuthRequirements } from "../user/user_background_routes.js";
 import { userPreferencesRouteAuthRequirements } from "../user/user_preferences_routes.js";
 import { pageYjsRouteAuthRequirements } from "../page/page_yjs_route.js";
+import { pageBrowserRouteAuthRequirements } from "../page/page_browser_routes.js";
 import type { RouteCoverageOwner } from "./route_coverage.js";
 
 export const routeCoverageOwners = [
@@ -44,6 +45,7 @@ export const routeCoverageOwners = [
   { owner: "folders", authRequirements: folderRouteAuthRequirements },
   { owner: "markdown.documents", authRequirements: markdownDocumentRouteAuthRequirements },
   { owner: "page.yjs", authRequirements: pageYjsRouteAuthRequirements },
+  { owner: "page.browser", authRequirements: pageBrowserRouteAuthRequirements },
   { owner: "node.agent-profiles", authRequirements: nodeAgentProfileRouteAuthRequirements },
   { owner: "node.claude-auth", authRequirements: nodeClaudeAuthRouteAuthRequirements },
   { owner: "node.snapshot", authRequirements: nodeSnapshotRouteAuthRequirements },

@@ -15,9 +15,10 @@ import {
   findPageIdByDailyDate,
   findPageIdByTitle,
   getPageBacklinks,
+  listPages,
   type PageBacklinkPage,
 } from "./page_repository_reads.js";
-import type { PageLinkKind } from "@soulstream/page-model";
+import type { PageLinkKind, PageListDto } from "@soulstream/page-model";
 
 type PageQuerySql = {
   <T extends readonly Record<string, unknown>[] = readonly Record<string, unknown>[]>(
@@ -136,6 +137,14 @@ export class PageRepository {
 
   async findPageIdByDailyDate(date: string): Promise<string | null> {
     return await findPageIdByDailyDate(await this.resolveSql(), date);
+  }
+
+  async listPages(input: {
+    starred?: boolean;
+    cursor?: string;
+    limit: number;
+  }): Promise<PageListDto> {
+    return await listPages(await this.resolveSql(), input);
   }
 
   async getPageBacklinks(input: {

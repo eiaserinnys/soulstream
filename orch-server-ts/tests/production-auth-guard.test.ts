@@ -75,6 +75,15 @@ describe("production auth guard", () => {
       routeUrl: "/ws/node",
       websocket: true,
     })).toBe(false);
+    for (const [method, routeUrl] of [
+      ["GET", "/api/pages"],
+      ["POST", "/api/pages/daily"],
+      ["GET", "/api/pages/:pageId"],
+      ["POST", "/api/pages/:pageId/operations"],
+      ["PATCH", "/api/pages/:pageId/starred"],
+    ] as const) {
+      expect(resolveProductionRouteAuthRequirement({ method, routeUrl })).toBe(true);
+    }
   });
 });
 

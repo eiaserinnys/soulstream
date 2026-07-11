@@ -176,6 +176,35 @@ describe("orch PageRepository", () => {
     expect(calls[1]?.values).toContain("2026-07-11T00:00:00.000Z");
     expect(calls[1]?.values).toContain("link-1");
   });
+
+  it("lists pages with a deterministic updated_at/id cursor and starred filter", async () => {
+    const rows = [
+      pageRow("page-3", new Date("2026-07-11T03:00:00.000Z"), true),
+      pageRow("page-2", new Date("2026-07-11T02:00:00.000Z"), true),
+      pageRow("page-1", new Date("2026-07-11T01:00:00.000Z"), true),
+    ];
+    const { sql, calls } = createMockSql((call) =>
+      call.query.includes("FROM pages") && call.query.includes("ORDER BY updated_at DESC")
+        ? rows
+        : []);
+    const repository = new PageRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+
+    const first = await repository.listPages({ starred: true, limit: 2 });
+    expect(first.items).toEqual([
+      expect.objectContaining({ id: "page-3", metadata: { starred: true } }),
+      expect.objectContaining({ id: "page-2", updated_at: "2026-07-11T02:00:00.000Z" }),
+    ]);
+    expect(first.next_cursor).toEqual(expect.any(String));
+    expect(calls[0]?.query).toContain("metadata");
+    expect(calls[0]?.query).toContain("id DESC");
+
+    await repository.listPages({ starred: true, cursor: first.next_cursor!, limit: 2 });
+    expect(calls[1]?.values).toContain("2026-07-11T02:00:00.000Z");
+    expect(calls[1]?.values).toContain("page-2");
+  });
 });
 
 function backlinkRow(id: string, createdAt: Date) {
@@ -189,5 +218,18 @@ function backlinkRow(id: string, createdAt: Date) {
     source_start: 0,
     source_end: 10,
     created_at: createdAt,
+  };
+}
+
+function pageRow(id: string, updatedAt: Date, starred: boolean) {
+  return {
+    id,
+    title: id,
+    daily_date: null,
+    version: 1,
+    archived: false,
+    metadata: { starred },
+    created_at: new Date("2026-07-10T00:00:00.000Z"),
+    updated_at: updatedAt,
   };
 }

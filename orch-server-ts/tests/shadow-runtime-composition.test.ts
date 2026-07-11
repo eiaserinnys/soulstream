@@ -174,6 +174,7 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
 function createInertPageYjsRoutes() {
   return {
     authBearerToken: "test-token",
+    resolveBrowserUser: vi.fn(async () => null),
     createService: () => ({
       handleConnection: vi.fn(),
       assertWebsocketAuthConfigured: vi.fn(),

@@ -74,6 +74,7 @@ export type PageOperationType =
   | "move_block"
   | "delete_block_subtree"
   | "set_check_state"
+  | "set_page_starred"
   | "replace_page_markdown"
   | "batch_operations";
 
@@ -86,6 +87,11 @@ export interface PageDto {
   metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+export interface PageListDto {
+  items: PageDto[];
+  next_cursor: string | null;
 }
 
 export interface BlockDto<T extends PageBlockType = PageBlockType> {

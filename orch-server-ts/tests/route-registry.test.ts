@@ -89,6 +89,10 @@ describe("route registry", () => {
         staticPath: "/api/runbooks/my-turn",
         dynamicPath: "/api/runbooks/{runbook_id}",
       },
+      {
+        staticPath: "/api/pages/daily",
+        dynamicPath: "/api/pages/{pageId}",
+      },
     ]);
 
     const brokenFixture: RouteInventoryFixture = {
@@ -144,6 +148,25 @@ describe("route registry", () => {
     }
 
     expect(isLowRiskRouteEntry(getRouteByKey(registry, "GET", "/api/health")!)).toBe(true);
+  });
+
+  it("classifies every browser page route as authenticated page_yjs", () => {
+    const browserRoutes = [
+      ["GET", "/api/pages"],
+      ["POST", "/api/pages/daily"],
+      ["GET", "/api/pages/{pageId}"],
+      ["POST", "/api/pages/{pageId}/operations"],
+      ["PATCH", "/api/pages/{pageId}/starred"],
+    ] as const;
+
+    for (const [method, path] of browserRoutes) {
+      expect(getRouteByKey(registry, method, path)).toMatchObject({
+        family: "page_yjs",
+        authRequired: true,
+      });
+    }
+    expect(validatePublicRouteAuthMatrix(registry).publicRouteKeys)
+      .not.toContain("GET /api/pages");
   });
 
   it("builds a planning-only owner manifest from the Python fixture without TS production owners", () => {

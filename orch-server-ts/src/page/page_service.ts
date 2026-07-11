@@ -6,7 +6,7 @@ import type { Extension, onAuthenticatePayload } from "@hocuspocus/server";
 import type { FastifyBaseLogger } from "fastify";
 import type WebSocket from "ws";
 import * as Y from "yjs";
-import type { BacklinkDto, PageLinkKind } from "@soulstream/page-model";
+import type { BacklinkDto, PageLinkKind, PageListDto } from "@soulstream/page-model";
 
 import {
   authenticateBoardYjsConnection,
@@ -44,6 +44,11 @@ export interface PageServiceRepository extends PageYjsPersistenceRepository {
   ): Promise<{ pageCreatedAt: Date; pageUpdatedAt: Date } | null>;
   findPageIdByTitle(title: string): Promise<string | null>;
   findPageIdByDailyDate(date: string): Promise<string | null>;
+  listPages(input: {
+    starred?: boolean;
+    cursor?: string;
+    limit: number;
+  }): Promise<PageListDto>;
   getPageBacklinks(input: {
     pageId: string;
     kinds: readonly PageLinkKind[];
@@ -88,6 +93,10 @@ export interface PageServiceBlockDto {
 export interface PageServiceReadResult {
   page: PageServicePageDto;
   blocks: PageServiceBlockDto[];
+}
+
+export interface PageServiceBrowserReadResult extends PageServiceReadResult {
+  state_vector: string;
 }
 
 export interface PageServiceMutationResult extends PageServiceReadResult {
@@ -182,6 +191,11 @@ export class PageYjsService {
   }
 
   async getPage(pageId: string): Promise<PageServiceReadResult> {
+    const { state_vector: _stateVector, ...result } = await this.getBrowserPage(pageId);
+    return result;
+  }
+
+  async getBrowserPage(pageId: string): Promise<PageServiceBrowserReadResult> {
     return await this.mutex.runExclusive(pageId, async () => {
       const documentName = getPageYjsDocumentName(pageId);
       const connection = await this.hocuspocus.openDirectConnection(documentName, {
@@ -194,11 +208,22 @@ export class PageYjsService {
         const replica = readPageYDocReplica(pageId, document);
         const times = await this.config.repository.getPageTimestamps(replica.page.id);
         if (!times) throw new Error(`page not found: ${replica.page.id}`);
-        return toReadResult(replica, times.pageCreatedAt, times.pageUpdatedAt);
+        return {
+          ...toReadResult(replica, times.pageCreatedAt, times.pageUpdatedAt),
+          state_vector: Buffer.from(Y.encodeStateVector(document)).toString("base64"),
+        };
       } finally {
         await connection.disconnect();
       }
     });
+  }
+
+  async listPages(input: {
+    starred?: boolean;
+    cursor?: string;
+    limit: number;
+  }): Promise<PageListDto> {
+    return await this.config.repository.listPages(input);
   }
 
   async findPage(title: string): Promise<PageServicePageDto | null> {

@@ -3,10 +3,12 @@ import { readFile } from "node:fs/promises";
 import type { FastifyInstance } from "fastify";
 
 import { createApp, type CreateAppOptions } from "./app.js";
+import { AUTH_COOKIE_NAME } from "./auth/auth_routes.js";
 import { BoardYjsRepository } from "./board-yjs/board_yjs_repository.js";
 import { BoardYjsService } from "./board-yjs/board_yjs_service.js";
 import { PageRepository } from "./page/page_repository.js";
 import { PageYjsService } from "./page/page_service.js";
+import { extractDashboardJwtCookieToken } from "./runtime/live_authenticated_user_resolver.js";
 import {
   createEnvironmentConfigProvider,
   type OrchServerEnvironmentConfig,
@@ -176,6 +178,10 @@ export async function createLiveProductionApplication(
     },
     pageYjsRoutes: {
       authBearerToken: config.auth_bearer_token,
+      resolveBrowserUser: async (request) => {
+        const token = extractDashboardJwtCookieToken(request, AUTH_COOKIE_NAME);
+        return token ? await providers.authRoutes.jwt.verifyToken(token) : null;
+      },
       createService: (logger) => new PageYjsService({
         repository: pageRepository,
         logger,

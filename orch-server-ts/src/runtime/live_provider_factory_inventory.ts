@@ -65,6 +65,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "node.claude-auth", path: "nodeClaudeAuthRoutes.tokenExchange" },
   { owner: "node.snapshot", path: "runtime" },
   { owner: "node.ws", path: "runtime" },
+  { owner: "page.browser", path: "runtime.pageYjsRoutes.resolveBrowserUser" },
   { owner: "page.yjs", path: "runtime" },
   { owner: "public.status", path: "publicStatusRoutes.configProvider" },
   { owner: "public.status", path: "publicStatusRoutes.folderCountsProvider" },
