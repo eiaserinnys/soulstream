@@ -9,6 +9,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
 const SCRIPT_PATH = fileURLToPath(new URL("../../scripts/apply-schema.mjs", import.meta.url));
+const PAGE_MODEL_MIGRATION_PATH = fileURLToPath(new URL(
+  "../../../packages/db-schema/sql/migrations/032_page_block_model.sql",
+  import.meta.url,
+));
 const YAML_PATH = fileURLToPath(
   new URL("../../../install/haniel-soul-server-ts.example.yaml", import.meta.url),
 );
@@ -47,7 +51,12 @@ describe("apply-schema.mjs", () => {
     expect(second.stdout).toContain("[apply-schema] schema applied");
     expectNoSecretLeak(second);
 
-    const sql = postgres(url, { max: 1, idle_timeout: 1 });
+    const notices: Array<{ severity?: string; code?: string }> = [];
+    const sql = postgres(url, {
+      max: 1,
+      idle_timeout: 1,
+      onnotice: (notice) => notices.push(notice),
+    });
     try {
       const rows = await sql<Array<{
         heartbeat_table: string | null;
@@ -105,6 +114,189 @@ describe("apply-schema.mjs", () => {
           title: "Schema doc",
           body: "body",
         }),
+      ]);
+
+      const pageModelTables = await sql<Array<{ table_name: string }>>`
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name IN ('pages', 'blocks', 'block_operations', 'block_links')
+        ORDER BY table_name
+      `;
+      expect(pageModelTables.map((row) => row.table_name)).toEqual([
+        "block_links",
+        "block_operations",
+        "blocks",
+        "pages",
+      ]);
+
+      const pageModelColumns = await sql<Array<{
+        table_name: string;
+        column_name: string;
+        is_nullable: string;
+        data_type: string;
+        is_generated: string;
+      }>>`
+        SELECT table_name, column_name, is_nullable, data_type, is_generated
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name IN ('pages', 'blocks', 'block_operations', 'block_links')
+        ORDER BY table_name, ordinal_position
+      `;
+      expect(columnNames(pageModelColumns, "pages")).toEqual([
+        "id", "title", "title_key", "daily_date", "version", "archived", "metadata",
+        "created_session_id", "created_event_id", "updated_session_id", "updated_event_id",
+        "created_at", "updated_at",
+      ]);
+      expect(columnNames(pageModelColumns, "blocks")).toEqual([
+        "id", "page_id", "parent_id", "position_key", "block_type", "text_plain",
+        "properties", "collapsed", "created_session_id", "created_event_id",
+        "updated_session_id", "updated_event_id", "created_at", "updated_at",
+      ]);
+      expect(columnNames(pageModelColumns, "block_operations")).toEqual([
+        "id", "page_id", "target_block_id", "operation_type", "actor_kind",
+        "actor_session_id", "actor_event_id", "actor_user_id", "idempotency_key",
+        "expected_version", "result_version", "payload_json", "reason", "created_at",
+      ]);
+      expect(columnNames(pageModelColumns, "block_links")).toEqual([
+        "id", "source_block_id", "link_kind", "ordinal", "source_start", "source_end",
+        "target_page_id", "target_title", "target_title_key", "target_block_id",
+        "target_block_ref", "created_at",
+      ]);
+      expect(pageModelColumns.find(
+        (row) => row.table_name === "pages" && row.column_name === "title_key",
+      )).toMatchObject({ is_generated: "ALWAYS", is_nullable: "YES" });
+
+      const pageModelConstraints = await sql<Array<{ constraint_name: string }>>`
+        SELECT con.conname AS constraint_name
+        FROM pg_constraint con
+        JOIN pg_class rel ON rel.oid = con.conrelid
+        JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+        WHERE ns.nspname = 'public'
+          AND rel.relname IN ('pages', 'blocks', 'block_operations', 'block_links')
+        ORDER BY con.conname
+      `;
+      expect(pageModelConstraints.map((row) => row.constraint_name)).toEqual(
+        expect.arrayContaining([
+          "pages_created_event_fkey",
+          "pages_updated_event_fkey",
+          "pages_title_check",
+          "pages_version_check",
+          "blocks_parent_same_page_fkey",
+          "blocks_not_own_parent",
+          "blocks_created_event_fkey",
+          "blocks_updated_event_fkey",
+          "block_operations_actor_event_fkey",
+          "block_operations_agent_actor_check",
+          "block_operations_user_actor_check",
+          "block_operations_version_check",
+          "block_links_target_shape_check",
+          "uq_blocks_page_id_id",
+          "uq_block_links_source_ordinal",
+        ]),
+      );
+
+      const pageModelIndexes = await sql<Array<{ indexname: string }>>`
+        SELECT indexname
+        FROM pg_indexes
+        WHERE schemaname = 'public'
+          AND tablename IN ('pages', 'blocks', 'block_operations', 'block_links')
+        ORDER BY indexname
+      `;
+      expect(pageModelIndexes.map((row) => row.indexname)).toEqual(
+        expect.arrayContaining([
+          "uq_pages_title_key",
+          "uq_pages_daily_date",
+          "idx_pages_active_updated",
+          "idx_blocks_tree",
+          "idx_blocks_type",
+          "uq_block_operations_idempotency",
+          "idx_block_operations_page",
+          "idx_block_operations_target",
+          "idx_block_links_target_page",
+          "idx_block_links_unresolved_page",
+          "idx_block_links_target_block",
+        ]),
+      );
+
+      await sql`
+        INSERT INTO pages (id, title, daily_date)
+        VALUES ('page-schema-1', '  Daily Note  ', DATE '2026-07-11')
+      `;
+      await expect(sql`
+        INSERT INTO pages (id, title)
+        VALUES ('page-schema-2', 'daily note')
+      `).rejects.toMatchObject({ code: "23505" });
+      await expect(sql`
+        INSERT INTO pages (id, title, daily_date)
+        VALUES ('page-schema-3', 'Another page', DATE '2026-07-11')
+      `).rejects.toMatchObject({ code: "23505" });
+
+      await sql`
+        INSERT INTO blocks (id, page_id, position_key)
+        VALUES ('block-schema-1', 'page-schema-1', 'V')
+      `;
+      await sql`
+        INSERT INTO block_operations (
+          id, page_id, operation_type, actor_kind, idempotency_key,
+          expected_version, result_version
+        ) VALUES (
+          'operation-system', 'page-schema-1', 'create_block', 'system',
+          'schema:system:1', 1, 2
+        )
+      `;
+      await expect(sql`
+        INSERT INTO block_operations (
+          id, page_id, operation_type, actor_kind, idempotency_key,
+          expected_version, result_version
+        ) VALUES (
+          'operation-agent-missing-session', 'page-schema-1', 'create_block', 'agent',
+          'schema:agent:1', 2, 3
+        )
+      `).rejects.toMatchObject({ code: "23514" });
+      await expect(sql`
+        INSERT INTO block_operations (
+          id, page_id, operation_type, actor_kind, idempotency_key,
+          expected_version, result_version
+        ) VALUES (
+          'operation-user-missing-id', 'page-schema-1', 'create_block', 'user',
+          'schema:user:1', 2, 3
+        )
+      `).rejects.toMatchObject({ code: "23514" });
+      await expect(sql`
+        INSERT INTO block_links (
+          id, source_block_id, link_kind, ordinal, source_start, source_end
+        ) VALUES (
+          'link-invalid-shape', 'block-schema-1', 'inline_page', 0, 0, 8
+        )
+      `).rejects.toMatchObject({ code: "23514" });
+
+      await sql.unsafe(`
+        DROP TABLE block_links;
+        DROP TABLE block_operations;
+        DROP TABLE blocks;
+        DROP TABLE pages;
+      `);
+      const pageModelMigration = readFileSync(PAGE_MODEL_MIGRATION_PATH, "utf8");
+      await sql.unsafe(pageModelMigration);
+      notices.length = 0;
+      await sql.unsafe(pageModelMigration);
+      expect(notices.length).toBeGreaterThan(0);
+      expect(notices.every(
+        (notice) => notice.severity === "NOTICE" && notice.code === "42P07",
+      )).toBe(true);
+      const migratedTables = await sql<Array<{ table_name: string }>>`
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name IN ('pages', 'blocks', 'block_operations', 'block_links')
+        ORDER BY table_name
+      `;
+      expect(migratedTables.map((row) => row.table_name)).toEqual([
+        "block_links",
+        "block_operations",
+        "blocks",
+        "pages",
       ]);
     } finally {
       await sql.end({ timeout: 5 });
@@ -271,4 +463,13 @@ function expectNoSecretLeak(result: { stdout: string; stderr: string }) {
   expect(output).not.toContain(TEST_PASSWORD);
   expect(output).not.toContain(`${TEST_USER}:${TEST_PASSWORD}`);
   expect(output).not.toContain("DATABASE_URL=");
+}
+
+function columnNames(
+  rows: Array<{ table_name: string; column_name: string }>,
+  tableName: string,
+): string[] {
+  return rows
+    .filter((row) => row.table_name === tableName)
+    .map((row) => row.column_name);
 }
