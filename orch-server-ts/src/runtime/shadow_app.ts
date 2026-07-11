@@ -25,6 +25,7 @@ import type {
   NodeCommandRequestIdGenerator,
 } from "../node/pending_commands.js";
 import type { PublicStatusRouteOptions } from "../public/public_status_routes.js";
+import type { PageYjsRouteOptions } from "../page/page_yjs_route.js";
 import type { PushRouteOptions } from "../push/push_routes.js";
 import type { RunbookRouteOptions } from "../runbooks/runbook_route_types.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
@@ -60,6 +61,7 @@ export type ShadowOrchestratorRuntimeProviders = {
   sessionHistoryKeepaliveMs?: number;
   sessionHistoryCloseAfterHistorySync?: boolean;
   boardYjsHostHttpClient: BoardYjsHostHttpClient;
+  pageYjsRoutes: PageYjsRouteOptions;
 };
 
 export type ShadowNodeClaudeAuthRouteProviders = Omit<
@@ -127,6 +129,7 @@ export type ShadowOrchestratorRouteOptions = Required<
     | "nodeClaudeAuthRoutes"
     | "nodeSnapshotRoutes"
     | "nodeWsRoute"
+    | "pageYjsRoutes"
     | "publicStatusRoutes"
     | "pushRoutes"
     | "runbookRoutes"
@@ -202,6 +205,10 @@ export const shadowRouteCompositionRequirements = [
   {
     owner: "markdown.documents",
     paths: ["markdownDocumentRoutes.provider", "markdownDocumentRoutes.accessProvider"],
+  },
+  {
+    owner: "page.yjs",
+    paths: ["runtime"],
   },
   { owner: "node.agent-profiles", paths: ["nodeAgentProfileRoutes.provider"] },
   {
@@ -287,11 +294,13 @@ export function createShadowOrchestratorApp(
   options: CreateShadowOrchestratorAppOptions,
 ): ShadowOrchestratorAppComposition {
   assertShadowProviderBundle(options.providers);
+  const { pageYjsRoutes: _pageYjsRoutes, ...runtimeProviders } =
+    options.providers.runtime;
   const runtime = createOrchestratorRuntimeServices({
     config: options.config,
     routeOwners: options.routeOwners,
     exposeLocalHealthRoute: options.exposeLocalHealthRoute,
-    ...options.providers.runtime,
+    ...runtimeProviders,
     enableSessionActionCommandRoutes: true,
     enableSessionBackgroundScheduleRoutes: true,
     sessionHistoryProvider: options.providers.runtime.sessionHistoryProvider,
@@ -358,6 +367,7 @@ function buildShadowRouteOptions(
       accessProvider: providers.markdownDocumentRoutes.accessProvider,
       hostProxy: boardYjsHostProxyRoutes,
     },
+    pageYjsRoutes: providers.runtime.pageYjsRoutes,
     nodeAgentProfileRoutes: providers.nodeAgentProfileRoutes,
     nodeClaudeAuthRoutes: {
       provider: providers.nodeClaudeAuthRoutes.provider,

@@ -127,6 +127,16 @@ function createAllOptInRouteApp() {
     nodeClaudeAuthRoutes: inert,
     nodeSnapshotRoutes: inert,
     nodeWsRoute: { registry: inert },
+    pageYjsRoutes: {
+      authBearerToken: "test-token",
+      createService: () => ({
+        handleConnection: () => undefined,
+        assertWebsocketAuthConfigured: () => undefined,
+        createPage: async () => inert,
+        mutatePage: async () => inert,
+        close: async () => undefined,
+      } as never),
+    },
     publicStatusRoutes: inert,
     pushRoutes: inert,
     runbookRoutes: inert,

@@ -145,6 +145,7 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
       loadTaskSnapshot: async () => ({ tasks: [] }),
       sessionHistoryProvider: createInertProvider(),
       sseReplayOnlyForTests: true,
+      pageYjsRoutes: createInertPageYjsRoutes(),
     },
     adminUsersRoutes: createInertProvider(),
     atomRoutes: createInertProvider(),
@@ -167,6 +168,19 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
     taskReadRoutes: createInertProvider(),
     userBackgroundRoutes: createInertProvider(),
     userPreferencesRoutes: createInertProvider(),
+  };
+}
+
+function createInertPageYjsRoutes() {
+  return {
+    authBearerToken: "test-token",
+    createService: () => ({
+      handleConnection: vi.fn(),
+      assertWebsocketAuthConfigured: vi.fn(),
+      createPage: vi.fn(),
+      mutatePage: vi.fn(),
+      close: vi.fn(async () => undefined),
+    } as never),
   };
 }
 

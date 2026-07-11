@@ -8,6 +8,7 @@ import type {
   BoardYjsHostProxyRouteOptions,
 } from "../board/board_yjs_host_proxy.js";
 import type { BoardYjsRouteOptions } from "../board-yjs/board_yjs_route.js";
+import type { PageYjsRouteOptions } from "../page/page_yjs_route.js";
 import type {
   NodeCommandClock,
   NodeCommandRequestIdGenerator,
@@ -84,6 +85,7 @@ export type OrchestratorRuntimeCompositionOptions = {
   loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   boardYjsHostHttpClient?: BoardYjsHostHttpClient;
   boardYjsRoutes?: BoardYjsRouteOptions;
+  pageYjsRoutes?: PageYjsRouteOptions;
   nodeHttpFetch?: LiveNodeHttpFetch;
   nodeHttpRequestTimeoutMs?: number;
   additionalNodeEventSinks?: readonly NodeRegistryEventSink[];
@@ -101,6 +103,7 @@ export type OrchestratorRuntimeRouteOptions = {
   sseReplayRoutes: SseReplayRouteOptions;
   boardYjsHostProxyRoutes: BoardYjsHostProxyRouteOptions;
   boardYjsRoutes?: BoardYjsRouteOptions;
+  pageYjsRoutes?: PageYjsRouteOptions;
 };
 
 export type OrchestratorRuntimeServices = {
@@ -125,6 +128,14 @@ export type OrchestratorRuntimeComposition = OrchestratorRuntimeServices & {
 export function createOrchestratorRuntimeServices(
   options: OrchestratorRuntimeCompositionOptions,
 ): OrchestratorRuntimeServices {
+  if (
+    options.pageYjsRoutes !== undefined &&
+    (options.config.boardYjsHostMode ?? "node") !== "orch"
+  ) {
+    throw new Error(
+      "Page Yjs production routes require BOARD_YJS_HOST_MODE=orch",
+    );
+  }
   const registry = options.registry ?? new InMemoryNodeRegistry({
     nowMs: options.nowMs,
     requestIdGenerator: options.requestIdGenerator,
@@ -255,6 +266,9 @@ export function createOrchestratorRuntimeServices(
     ...(boardYjsRoutes === undefined
       ? {}
       : { boardYjsRoutes }),
+    ...(options.pageYjsRoutes === undefined
+      ? {}
+      : { pageYjsRoutes: options.pageYjsRoutes }),
   };
 
   return {

@@ -2,9 +2,15 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
 import { Hocuspocus } from "@hocuspocus/server";
+import type { Extension, onAuthenticatePayload } from "@hocuspocus/server";
+import type { FastifyBaseLogger } from "fastify";
 import type WebSocket from "ws";
 import * as Y from "yjs";
 
+import {
+  authenticateBoardYjsConnection,
+  type BoardYjsAuthConfig,
+} from "../board-yjs/board_yjs_auth.js";
 import {
   PageMutationCore,
   type CreatePageMutationInput,
@@ -41,6 +47,8 @@ export interface PageYjsServiceConfig {
   repository: PageServiceRepository;
   mutationCore?: PageMutationCore;
   createOperationId?: () => string;
+  auth?: BoardYjsAuthConfig;
+  logger?: FastifyBaseLogger;
 }
 
 export interface PageServicePageDto {
@@ -91,7 +99,13 @@ export class PageYjsService {
       quiet: true,
       debounce: 500,
       maxDebounce: 5_000,
-      extensions: [persistence.updateLog, persistence.database],
+      extensions: [
+        ...(config.auth === undefined
+          ? []
+          : [createPageYjsAuthExtension(config.auth, config.logger)]),
+        persistence.updateLog,
+        persistence.database,
+      ],
     });
   }
 
@@ -165,10 +179,13 @@ export class PageYjsService {
   }
 
   handleConnection(socket: WebSocket, request: IncomingMessage, pageId: string): void {
-    this.hocuspocus.handleConnection(socket, request, {
-      pageId,
-      documentName: getPageYjsDocumentName(pageId),
-    });
+    void this.openConnection(socket, request, pageId);
+  }
+
+  assertWebsocketAuthConfigured(): void {
+    if (this.config.auth === undefined) {
+      throw new Error("Page Yjs websocket authentication is not configured");
+    }
   }
 
   decodeSnapshot(snapshot: Uint8Array): Y.Doc {
@@ -188,6 +205,26 @@ export class PageYjsService {
       pageOperationId: operationId,
     });
     await connection.disconnect();
+  }
+
+  private async openConnection(
+    socket: WebSocket,
+    request: IncomingMessage,
+    pageId: string,
+  ): Promise<void> {
+    try {
+      const documentName = getPageYjsDocumentName(pageId);
+      const snapshot = await this.config.repository.getPageYjsSnapshot(documentName);
+      if (!snapshot) throw new Error(`page snapshot missing: ${pageId}`);
+      readPageYDocReplica(pageId, this.decodeSnapshot(snapshot));
+      this.hocuspocus.handleConnection(socket, request, { pageId, documentName });
+    } catch (error) {
+      this.config.logger?.error(
+        { err: error, pageId },
+        "Page Yjs websocket rejected invalid document",
+      );
+      socket.close(1008, "invalid page document");
+    }
   }
 
   private async resolveIdempotent(
@@ -214,6 +251,38 @@ export class PageYjsService {
     };
   }
 
+}
+
+function createPageYjsAuthExtension(
+  auth: BoardYjsAuthConfig,
+  logger?: FastifyBaseLogger,
+): Extension {
+  return {
+    extensionName: "soulstream-page-yjs-auth",
+    async onAuthenticate(payload: onAuthenticatePayload) {
+      const routePageId = (payload.context as { pageId?: unknown } | undefined)?.pageId;
+      if (
+        typeof routePageId !== "string" ||
+        getPageYjsDocumentName(routePageId) !== payload.documentName
+      ) {
+        throw new Error("Page Yjs route pageId does not match document name");
+      }
+      const result = await authenticateBoardYjsConnection({
+        token: payload.token,
+        requestHeaders: payload.requestHeaders,
+        config: auth,
+      });
+      logger?.debug(
+        {
+          documentName: payload.documentName,
+          authSource: result.source,
+          subject: result.subject,
+        },
+        "Page Yjs websocket authenticated",
+      );
+      return { user: result.subject };
+    },
+  };
 }
 
 class PageAsyncMutex {

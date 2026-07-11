@@ -5,6 +5,8 @@ import type { FastifyInstance } from "fastify";
 import { createApp, type CreateAppOptions } from "./app.js";
 import { BoardYjsRepository } from "./board-yjs/board_yjs_repository.js";
 import { BoardYjsService } from "./board-yjs/board_yjs_service.js";
+import { PageRepository } from "./page/page_repository.js";
+import { PageYjsService } from "./page/page_service.js";
 import {
   createEnvironmentConfigProvider,
   type OrchServerEnvironmentConfig,
@@ -109,12 +111,16 @@ export async function createLiveProductionApplication(
   context: { readonly warn: (message: string) => void },
   overrides: LiveProductionApplicationOverrides = {},
 ): Promise<ProductionApplication> {
+  if (config.board_yjs_host_mode !== "orch") {
+    throw new Error("Page Yjs production assembly requires BOARD_YJS_HOST_MODE=orch");
+  }
   const appConfig = toOrchServerTsConfig(config);
   const configProvider = createEnvironmentConfigProvider(config);
   const sqlResolver = overrides.sqlResolver ??
     createLiveDbSqlResolver({ databaseUrl: config.database_url });
   const registry = new InMemoryNodeRegistry();
   const boardYjsRepository = new BoardYjsRepository(sqlResolver);
+  const pageRepository = new PageRepository(sqlResolver);
   const boardAssetStorage = await resolveLiveBoardAssetStorageFromConfig(config);
   warnForPartialR2Config(config, context.warn);
   const dbCatalogRepository = createLiveDbCatalogRepository({
@@ -159,6 +165,20 @@ export async function createLiveProductionApplication(
         repository: boardYjsRepository,
         logger,
         hostMode: config.board_yjs_host_mode,
+        auth: {
+          authBearerToken: config.auth_bearer_token,
+          environment: config.environment,
+          dashboardAuthEnabled: Boolean(config.google_client_id),
+          verifyDashboardToken: async (token) =>
+            await providers.authRoutes.jwt.verifyToken(token),
+        },
+      }),
+    },
+    pageYjsRoutes: {
+      authBearerToken: config.auth_bearer_token,
+      createService: (logger) => new PageYjsService({
+        repository: pageRepository,
+        logger,
         auth: {
           authBearerToken: config.auth_bearer_token,
           environment: config.environment,
@@ -239,6 +259,7 @@ export function buildProductionRouteOptions(
     },
     boardYjsHostProxyRoutes: providers.runtime.boardYjsHostProxyRoutes,
     boardYjsRoutes: runtime.routeOptions.boardYjsRoutes,
+    pageYjsRoutes: runtime.routeOptions.pageYjsRoutes,
     cogitoRoutes: providers.cogitoRoutes,
     executeProxyRoutes: providers.executeProxyRoutes,
     folderRoutes: providers.folderRoutes,

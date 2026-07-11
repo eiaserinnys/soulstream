@@ -9,6 +9,7 @@ export type RouteFamily =
   | "auth"
   | "control_plane"
   | "board_yjs_proxy"
+  | "page_yjs"
   | "runbook"
   | "task_tree"
   | "dashboard_static"
@@ -87,6 +88,7 @@ export const EXPECTED_PUBLIC_ROUTE_KEYS = [
   "POST /api/auth/google/native",
   "POST /api/auth/logout",
   "WEBSOCKET /ws/node",
+  "WEBSOCKET /yjs/page/{pageId}",
 ] as const satisfies readonly RouteKey[];
 
 const KNOWN_STATIC_BEFORE_DYNAMIC_HAZARDS: StaticBeforeDynamicHazard[] = [
@@ -240,6 +242,9 @@ export function classifyRouteFamily(path: string): RouteFamily {
   if (path.startsWith("/api/auth/") || path === "/api/auth/token") return "auth";
   if (path.includes("/claude-auth/") || path.includes("/provider-usage")) return "auth";
   if (path.startsWith("/api/board-yjs/")) return "board_yjs_proxy";
+  if (path.startsWith("/api/page-yjs/") || path.startsWith("/yjs/page/")) {
+    return "page_yjs";
+  }
   if (path.startsWith("/api/runbooks/")) return "runbook";
   if (path.startsWith("/api/tasks")) return "task_tree";
   if (path.startsWith("/api/sessions")) return "session";
