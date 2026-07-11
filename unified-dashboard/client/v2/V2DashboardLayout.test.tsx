@@ -17,7 +17,6 @@ vi.mock("@seosoyoung/soul-ui", async (importOriginal) => {
     AskQuestionBanner: () => createElement("div", { "data-testid": "ask-question" }),
     ChatView: () => createElement("div", { "data-testid": "existing-chat-view" }),
     ConnectionBadge: () => createElement("div", { "data-testid": "connection-badge" }),
-    MobileChatHeader: () => createElement("div"),
     RightPanel: () => createElement("div", { "data-testid": "existing-right-panel" }),
     ThemeToggle: () => createElement("button", null, "Theme"),
     initTheme: vi.fn(),
@@ -207,6 +206,34 @@ describe("V2DashboardLayout", () => {
     flushSync(() => starredPageButton!.click());
     await settle();
     expect(container.querySelector('[data-mobile-v2-pane="page"]')).not.toBeNull();
+
+    controller.destroy();
+  });
+
+  it("returns a restored mobile chat tab to Pages through the real mobile header", async () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    useDashboardStore.setState({ activeTab: "chat", activeSessionKey: "session-a" });
+    const api = createApi();
+    const target = createTarget();
+    const controller = createV2PageRouteController(target);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(
+      <V2DashboardLayout
+        apiClient={api}
+        routeController={controller}
+        createPageClient={createClient}
+      />,
+    ));
+    await settle();
+
+    const backButton = container.querySelector<HTMLButtonElement>('[data-testid="mobile-back-button"]');
+    expect(backButton).not.toBeNull();
+
+    flushSync(() => backButton!.click());
+
+    expect(useDashboardStore.getState().activeTab).toBe("feed");
 
     controller.destroy();
   });

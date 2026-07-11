@@ -56,11 +56,19 @@ export function DashboardMobileTabs({
   const normalizedActiveTab = visibleTabIds.has(activeTab)
     ? activeTab
     : resolvedTabs[0]!.id;
-  const [previousTab, setPreviousTab] = useState<MobileTab>(normalizedActiveTab);
+  const initialPreviousTab = useMemo(
+    () => resolvedTabs.find((tab) => tab.id !== "chat")?.id ?? "chat",
+    [resolvedTabs],
+  );
+  const [previousTab, setPreviousTab] = useState<MobileTab>(initialPreviousTab);
 
   useEffect(() => {
-    if (normalizedActiveTab !== "chat") setPreviousTab(normalizedActiveTab);
-  }, [normalizedActiveTab]);
+    if (normalizedActiveTab !== "chat") {
+      setPreviousTab(normalizedActiveTab);
+    } else if (!visibleTabIds.has(previousTab)) {
+      setPreviousTab(initialPreviousTab);
+    }
+  }, [initialPreviousTab, normalizedActiveTab, previousTab, visibleTabIds]);
 
   useEffect(() => {
     if (activeTab !== normalizedActiveTab) setActiveTab(normalizedActiveTab);

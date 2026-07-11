@@ -18,11 +18,13 @@ import {
 function renderShell(
   props: Partial<DashboardShellProps> = {},
   initialActiveTab?: "feed" | "folder" | "runbooks" | "chat" | "settings",
+  initialActiveSessionKey?: string,
 ) {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   useDashboardStore.getState().reset();
+  if (initialActiveSessionKey) useDashboardStore.getState().setActiveSession(initialActiveSessionKey);
   if (initialActiveTab) useDashboardStore.getState().setActiveTab(initialActiveTab);
   flushSync(() => {
     root.render(createElement(DashboardShell, {
@@ -258,5 +260,51 @@ describe("DashboardShell", () => {
     expect(container.querySelector(".folder-stack")).toBeNull();
     expect(container.querySelector('[data-testid="pages-icon"]')).not.toBeNull();
     expect(useDashboardStore.getState().activeTab).toBe("feed");
+  });
+
+  it("returns a restored legacy chat tab to feed", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    ({ container, root } = renderShell({}, "chat", "session-a"));
+
+    const backButton = container.querySelector<HTMLButtonElement>('[data-testid="mobile-back-button"]');
+    expect(backButton).not.toBeNull();
+
+    flushSync(() => backButton!.click());
+
+    expect(useDashboardStore.getState().activeTab).toBe("feed");
+  });
+
+  it("returns a restored custom chat tab to the first visible non-chat tab", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    ({ container, root } = renderShell({
+      mobileTabs: [
+        { id: "feed", label: "Pages", icon: createElement("span") },
+        { id: "chat", label: "Chat", icon: createElement("span") },
+        { id: "settings", label: "Settings", icon: createElement("span") },
+      ],
+    }, "chat", "session-a"));
+
+    const backButton = container.querySelector<HTMLButtonElement>('[data-testid="mobile-back-button"]');
+    expect(backButton).not.toBeNull();
+
+    flushSync(() => backButton!.click());
+
+    expect(useDashboardStore.getState().activeTab).toBe("feed");
+  });
+
+  it("keeps chat-only mobile navigation on chat when back has no visible destination", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 375 });
+    ({ container, root } = renderShell({
+      mobileTabs: [
+        { id: "chat", label: "Chat", icon: createElement("span") },
+      ],
+    }, "chat", "session-a"));
+
+    const backButton = container.querySelector<HTMLButtonElement>('[data-testid="mobile-back-button"]');
+    expect(backButton).not.toBeNull();
+
+    flushSync(() => backButton!.click());
+
+    expect(useDashboardStore.getState().activeTab).toBe("chat");
   });
 });
