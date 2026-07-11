@@ -95,6 +95,8 @@ export interface CreatePageMutationInput {
   actor: PageMutationActor;
   idempotencyKey: string;
   reason?: string | null;
+  initialCommand?: Extract<PageMutationCommand,
+    { type: "batch_operations" } | { type: "replace_page_markdown" }>;
 }
 
 export interface PageMutationApplication {
@@ -149,15 +151,18 @@ export class PageMutationCore {
       blocks: [],
     });
     const document = docFromUpdate(snapshot);
+    const applied = input.initialCommand
+      ? this.applyCommand(document, input.initialCommand)
+      : appliedCreatePage();
     return this.buildApplication(document, new Uint8Array(), {
-      operationType: "create_page",
-      targetBlockId: null,
+      ...applied,
       expectedVersion: 0,
       actor: input.actor,
       idempotencyKey: input.idempotencyKey,
       reason: input.reason,
-      payload: { page: input.page },
-      tempIdMapping: {},
+      payload: input.initialCommand
+        ? { page: input.page, ...commandPayload(input.initialCommand) }
+        : { page: input.page },
     });
   }
 
@@ -312,6 +317,10 @@ export class PageMutationCore {
 
 function applied(operationType: PageOperationType, targetBlockId: string | null = null) {
   return { operationType, targetBlockId, tempIdMapping: {} };
+}
+
+function appliedCreatePage() {
+  return applied("create_page");
 }
 
 function createBlock(

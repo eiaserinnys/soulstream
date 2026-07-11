@@ -13,6 +13,7 @@ import { registerCatalogTools } from "./tools/catalog.js";
 import { registerClaudeRuntimeTools } from "./tools/claude_runtime.js";
 import { registerCustomViewTools } from "./tools/custom_view.js";
 import { registerMultiNodeTools } from "./tools/multi_node.js";
+import { registerPageTools } from "./tools/page.js";
 import { registerReflectTools } from "./tools/reflect.js";
 import { registerRunbookTools } from "./tools/runbook.js";
 import { registerSessionMgmtTools } from "./tools/session_mgmt.js";
@@ -35,5 +36,6 @@ export function buildMcpServer(runtime: McpRuntime): McpServer {
   registerTaskTreeTools(guardedServer, runtime);
   registerRunbookTools(guardedServer, runtime);
   registerCustomViewTools(guardedServer, runtime);
+  registerPageTools(guardedServer, runtime);
   return server;
 }

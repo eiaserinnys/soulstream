@@ -309,6 +309,9 @@ importers:
       '@soulstream/fractional-position':
         specifier: workspace:*
         version: link:../packages/fractional-position
+      '@soulstream/page-model':
+        specifier: workspace:*
+        version: link:../packages/page-model
       '@soulstream/wire-schema':
         specifier: workspace:*
         version: link:../packages/wire-schema

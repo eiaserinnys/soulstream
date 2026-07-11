@@ -22,6 +22,7 @@
     "@openai/agents": "0.11.4",
     "@openai/codex-sdk": "^0.130.0",
     "@soulstream/fractional-position": "workspace:*",
+    "@soulstream/page-model": "workspace:*",
     "@soulstream/wire-schema": "workspace:*",
     "dotenv": "^16.4.7",
     "fastify": "^5.1.0",

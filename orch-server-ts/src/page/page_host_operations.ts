@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+import type { BlockOperationDto, PageLinkKind } from "@soulstream/page-model";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import {
@@ -22,13 +23,16 @@ const actorFields = {
   actor_kind: z.enum(["agent", "user", "system"]),
   actor_session_id: id.nullable().optional(),
   actor_user_id: id.nullable().optional(),
+};
+const mutationActorFields = {
+  ...actorFields,
   idempotency_key: id,
   reason: z.string().nullable().optional(),
 };
 const mutationFields = {
   page_id: id,
   expected_version: z.number().int().positive(),
-  ...actorFields,
+  ...mutationActorFields,
 };
 const placementFields = {
   parent_id: id.nullable(),
@@ -50,6 +54,14 @@ const actorSchema = z.object(actorFields).superRefine((value, context) => {
   if (value.actor_kind === "user" && !value.actor_user_id) {
     context.addIssue({ code: "custom", message: "user actor_user_id is required" });
   }
+});
+
+const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const pageInputSchema = z.object({
+  id,
+  title: id,
+  daily_date: dateSchema.nullable(),
+  metadata: jsonObject.optional(),
 });
 
 const blockInputSchema = z.object({
@@ -79,14 +91,25 @@ const batchOperationSchema = z.discriminatedUnion("op", [
 ]);
 
 const schemas = {
+  "get-page": z.object({ page_id: id, include_blocks: z.boolean().default(true) }),
+  "find-page": z.object({ title: id }),
+  "get-backlinks": z.object({
+    page_id: id,
+    kinds: z.array(z.enum(["mount", "inline_page", "block_ref"]))
+      .min(1).default(["mount", "inline_page", "block_ref"]),
+    cursor: id.optional(),
+    limit: z.number().int().min(1).max(200).default(50),
+  }),
+  "get-daily-page": z.object({ date: dateSchema.optional(), ...actorFields }),
   "create-page": z.object({
-    page: z.object({
-      id,
-      title: id,
-      daily_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-      metadata: jsonObject.optional(),
-    }),
-    ...actorFields,
+    page: pageInputSchema,
+    blocks: z.array(blockInputSchema).optional(),
+    operations: z.array(batchOperationSchema).min(1).optional(),
+    ...mutationActorFields,
+  }).superRefine((value, context) => {
+    if (value.blocks && value.operations) {
+      context.addIssue({ code: "custom", message: "blocks and operations are mutually exclusive" });
+    }
   }),
   "rename-page": z.object({ ...mutationFields, title: id }),
   "archive-page": z.object(mutationFields),
@@ -103,11 +126,24 @@ const schemas = {
   "delete-block-subtree": z.object({ ...mutationFields, block_id: id }),
   "set-check-state": z.object({ ...mutationFields, block_id: id, checked: z.boolean() }),
   "replace-page-markdown": z.object({ ...mutationFields, blocks: z.array(blockInputSchema) }),
-  "batch-page-operations": z.object({
-    ...mutationFields,
-    operations: z.array(batchOperationSchema).min(1),
-  }),
+  "batch-page-operations": z.union([
+    z.object({
+      page: pageInputSchema,
+      operations: z.array(batchOperationSchema).min(1),
+      ...mutationActorFields,
+    }),
+    z.object({
+      ...mutationFields,
+      operations: z.array(batchOperationSchema).min(1),
+    }),
+  ]),
 } as const;
+
+const ACTOR_OPERATIONS = new Set([
+  "get-daily-page", "create-page", "rename-page", "archive-page", "unarchive-page",
+  "create-block", "update-block-text", "update-block-type-and-properties", "move-block",
+  "delete-block-subtree", "set-check-state", "replace-page-markdown", "batch-page-operations",
+]);
 
 export function registerPageYjsHostOperationRoutes(
   app: FastifyInstance,
@@ -144,9 +180,11 @@ export async function handlePageYjsHostOperation(
   if (!parsed.success) {
     return errorReply(reply, 422, "INVALID_PAGE_YJS_HOST_REQUEST", parsed.error.message);
   }
-  const actorResult = actorSchema.safeParse(parsed.data);
-  if (!actorResult.success) {
-    return errorReply(reply, 422, "INVALID_PAGE_YJS_HOST_REQUEST", actorResult.error.message);
+  if (ACTOR_OPERATIONS.has(operation)) {
+    const actorResult = actorSchema.safeParse(parsed.data);
+    if (!actorResult.success) {
+      return errorReply(reply, 422, "INVALID_PAGE_YJS_HOST_REQUEST", actorResult.error.message);
+    }
   }
 
   try {
@@ -174,6 +212,30 @@ async function dispatch(
   service: PageYjsService,
 ): Promise<unknown> {
   const input = raw as Record<string, unknown>;
+  if (operation === "get-page") {
+    const result = await service.getPage(input.page_id as string);
+    return input.include_blocks === false ? { page: result.page } : result;
+  }
+  if (operation === "find-page") {
+    return { page: await service.findPage(input.title as string) };
+  }
+  if (operation === "get-backlinks") {
+    return await service.getBacklinks({
+      pageId: input.page_id as string,
+      kinds: input.kinds as PageLinkKind[],
+      cursor: input.cursor as string | undefined,
+      limit: input.limit as number,
+    });
+  }
+  if (operation === "get-daily-page") {
+    const result = await service.getDailyPage({
+      date: input.date as string | undefined,
+      actor: toActor(input),
+    });
+    return result.operation
+      ? { ...result, operation: toOperationDto(result.operation) }
+      : result;
+  }
   const actor = toActor(input);
   const common = {
     actor,
@@ -181,29 +243,102 @@ async function dispatch(
     reason: (input.reason as string | null | undefined) ?? null,
   };
   if (operation === "create-page") {
-    const page = input.page as {
-      id: string;
-      title: string;
-      daily_date: string | null;
-      metadata?: Record<string, unknown>;
-    };
-    return await service.createPage({
-      page: {
-        id: page.id,
-        title: page.title,
-        dailyDate: page.daily_date,
-        metadata: page.metadata ?? {},
+    const page = pageFromInput(input.page);
+    return mutationResultDto(await service.createPage({
+      page,
+      ...initialCommand(input),
+      ...common,
+    }));
+  }
+  if (operation === "batch-page-operations" && input.page) {
+    return mutationResultDto(await service.createPage({
+      page: pageFromInput(input.page),
+      initialCommand: {
+        type: "batch_operations",
+        operations: (input.operations as Record<string, unknown>[]).map(toBatchOperation),
       },
       ...common,
-    });
+    }));
   }
   const command = commandFor(operation, input);
-  return await service.mutatePage({
+  return mutationResultDto(await service.mutatePage({
     pageId: input.page_id as string,
     expectedVersion: input.expected_version as number,
     command,
     ...common,
-  });
+  }));
+}
+
+function mutationResultDto<T extends { operation: Parameters<typeof toOperationDto>[0]; idempotent?: boolean }>(
+  result: T,
+) {
+  return {
+    ...result,
+    operation: toOperationDto(result.operation, result.idempotent === true),
+  };
+}
+
+function toOperationDto(
+  operation: {
+    id: string;
+    page_id: string;
+    target_block_id: string | null;
+    operation_type: string;
+    actor_kind: "agent" | "user" | "system";
+    actor_session_id: string | null;
+    actor_user_id: string | null;
+    expected_version: number;
+    result_version: number;
+  },
+  idempotent = false,
+): BlockOperationDto {
+  return {
+    id: operation.id,
+    page_id: operation.page_id,
+    target_block_id: operation.target_block_id,
+    operation_type: operation.operation_type as BlockOperationDto["operation_type"],
+    actor_kind: operation.actor_kind,
+    actor_session_id: operation.actor_session_id,
+    actor_user_id: operation.actor_user_id,
+    expected_version: operation.expected_version,
+    result_version: operation.result_version,
+    ...(idempotent ? { idempotent: true } : {}),
+  };
+}
+
+function pageFromInput(raw: unknown) {
+  const page = raw as {
+    id: string;
+    title: string;
+    daily_date: string | null;
+    metadata?: Record<string, unknown>;
+  };
+  return {
+    id: page.id,
+    title: page.title,
+    dailyDate: page.daily_date,
+    metadata: page.metadata ?? {},
+  };
+}
+
+function initialCommand(input: Record<string, unknown>) {
+  if (input.blocks) {
+    return {
+      initialCommand: {
+        type: "replace_page_markdown" as const,
+        blocks: (input.blocks as Record<string, unknown>[]).map(toBlockInput),
+      },
+    };
+  }
+  if (input.operations) {
+    return {
+      initialCommand: {
+        type: "batch_operations" as const,
+        operations: (input.operations as Record<string, unknown>[]).map(toBatchOperation),
+      },
+    };
+  }
+  return {};
 }
 
 function commandFor(operation: string, input: Record<string, unknown>): PageMutationCommand {

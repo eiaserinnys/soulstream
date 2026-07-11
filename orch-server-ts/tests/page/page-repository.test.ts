@@ -129,4 +129,65 @@ describe("orch PageRepository", () => {
     })).rejects.toThrow("page id");
     expect(calls).toHaveLength(0);
   });
+
+  it("looks up normalized titles and daily dates through the page replica", async () => {
+    const { sql, calls } = createMockSql((call) => {
+      if (call.query.includes("title_key")) return [{ id: "page-title" }];
+      if (call.query.includes("daily_date")) return [{ id: "page-daily" }];
+      return [];
+    });
+    const repository = new PageRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+
+    await expect(repository.findPageIdByTitle("  PAGE  ")).resolves.toBe("page-title");
+    await expect(repository.findPageIdByDailyDate("2026-07-12")).resolves.toBe("page-daily");
+    expect(calls[0]?.query).toContain("lower(btrim");
+    expect(calls[1]?.query).toContain("::date");
+  });
+
+  it("paginates backlinks with an opaque (created_at,id) cursor", async () => {
+    const rows = [
+      backlinkRow("link-1", new Date("2026-07-11T00:00:00.000Z")),
+      backlinkRow("link-2", new Date("2026-07-11T00:00:01.000Z")),
+    ];
+    const { sql, calls } = createMockSql((call) =>
+      call.query.includes("FROM block_links") ? rows : []);
+    const repository = new PageRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+
+    const first = await repository.getPageBacklinks({
+      pageId: "target",
+      kinds: ["mount"],
+      limit: 1,
+    });
+    expect(first.items).toEqual([expect.objectContaining({ id: "link-1", source_page_id: "source" })]);
+    expect(first.next_cursor).toEqual(expect.any(String));
+
+    await repository.getPageBacklinks({
+      pageId: "target",
+      kinds: ["mount"],
+      cursor: first.next_cursor!,
+      limit: 1,
+    });
+    expect(calls[1]?.values).toContain("2026-07-11T00:00:00.000Z");
+    expect(calls[1]?.values).toContain("link-1");
+  });
 });
+
+function backlinkRow(id: string, createdAt: Date) {
+  return {
+    id,
+    source_page_id: "source",
+    source_block_id: "block-source",
+    link_kind: "mount",
+    target_page_id: "target",
+    target_block_id: null,
+    source_start: 0,
+    source_end: 10,
+    created_at: createdAt,
+  };
+}

@@ -104,6 +104,72 @@ describe("orch-local Page Yjs host operation routes", () => {
     }
   });
 
+  it("dispatches read operations, strips omitted blocks, and applies backlink defaults", async () => {
+    const service = serviceDouble();
+    const app = Fastify({ logger: false });
+    registerPageYjsHostOperationRoutes(app, { service, authBearerToken: "service-token" });
+    try {
+      const headers = { authorization: "Bearer service-token" };
+      const page = await app.inject({
+        method: "POST",
+        url: "/api/page-yjs/host/get-page",
+        headers,
+        payload: { page_id: "page-1", include_blocks: false },
+      });
+      expect(page.statusCode).toBe(200);
+      expect(page.json()).toEqual({ page: expect.objectContaining({ id: "page-1" }) });
+
+      const found = await app.inject({
+        method: "POST",
+        url: "/api/page-yjs/host/find-page",
+        headers,
+        payload: { title: " Page " },
+      });
+      expect(found.statusCode).toBe(200);
+      expect(service.findPage).toHaveBeenCalledWith("Page");
+
+      await app.inject({
+        method: "POST",
+        url: "/api/page-yjs/host/get-backlinks",
+        headers,
+        payload: { page_id: "page-1" },
+      });
+      expect(service.getBacklinks).toHaveBeenCalledWith({
+        pageId: "page-1",
+        kinds: ["mount", "inline_page", "block_ref"],
+        cursor: undefined,
+        limit: 50,
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("delegates daily get-or-create with agent provenance and no client idempotency key", async () => {
+    const service = serviceDouble();
+    const app = Fastify({ logger: false });
+    registerPageYjsHostOperationRoutes(app, { service, authBearerToken: "service-token" });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/page-yjs/host/get-daily-page",
+        headers: { authorization: "Bearer service-token" },
+        payload: {
+          date: "2026-07-12",
+          actor_kind: "agent",
+          actor_session_id: "agent-session",
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(service.getDailyPage).toHaveBeenCalledWith({
+        date: "2026-07-12",
+        actor: { actorKind: "agent", actorSessionId: "agent-session", actorUserId: null },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("maps mutation conflicts and isolates unexpected failures to the request", async () => {
     const service = serviceDouble();
     vi.mocked(service.mutatePage)
@@ -167,5 +233,9 @@ function serviceDouble() {
   return {
     createPage: vi.fn().mockResolvedValue(result),
     mutatePage: vi.fn().mockResolvedValue(result),
+    getPage: vi.fn().mockResolvedValue(result),
+    findPage: vi.fn().mockResolvedValue(result.page),
+    getBacklinks: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
+    getDailyPage: vi.fn().mockResolvedValue({ page: result.page, created: false }),
   } as unknown as PageYjsService;
 }

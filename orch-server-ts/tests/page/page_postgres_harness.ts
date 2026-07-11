@@ -172,6 +172,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       CHECK (actor_kind <> 'user' OR actor_user_id IS NOT NULL)
     );
     CREATE UNIQUE INDEX uq_pages_title_key ON pages(title_key);
+    CREATE UNIQUE INDEX uq_pages_daily_date ON pages(daily_date) WHERE daily_date IS NOT NULL;
     CREATE TABLE block_links (
       id TEXT PRIMARY KEY,
       source_block_id TEXT NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,

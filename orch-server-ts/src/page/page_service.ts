@@ -6,6 +6,7 @@ import type { Extension, onAuthenticatePayload } from "@hocuspocus/server";
 import type { FastifyBaseLogger } from "fastify";
 import type WebSocket from "ws";
 import * as Y from "yjs";
+import type { BacklinkDto, PageLinkKind } from "@soulstream/page-model";
 
 import {
   authenticateBoardYjsConnection,
@@ -31,6 +32,7 @@ import {
   createPageYjsPersistence,
   type PageYjsPersistenceRepository,
 } from "./page_yjs_persistence.js";
+import type { PageBacklinkPage } from "./page_repository_reads.js";
 
 export interface PageServiceRepository extends PageYjsPersistenceRepository {
   getPageMutationByIdempotencyKey(
@@ -40,6 +42,14 @@ export interface PageServiceRepository extends PageYjsPersistenceRepository {
   getPageTimestamps(
     pageId: string,
   ): Promise<{ pageCreatedAt: Date; pageUpdatedAt: Date } | null>;
+  findPageIdByTitle(title: string): Promise<string | null>;
+  findPageIdByDailyDate(date: string): Promise<string | null>;
+  getPageBacklinks(input: {
+    pageId: string;
+    kinds: readonly PageLinkKind[];
+    cursor?: string;
+    limit: number;
+  }): Promise<PageBacklinkPage>;
   commitPageMutation(input: CommitPageMutationInput): Promise<PageMutationCommitResult>;
 }
 
@@ -47,6 +57,8 @@ export interface PageYjsServiceConfig {
   repository: PageServiceRepository;
   mutationCore?: PageMutationCore;
   createOperationId?: () => string;
+  createPageId?: () => string;
+  now?: () => Date;
   auth?: BoardYjsAuthConfig;
   logger?: FastifyBaseLogger;
 }
@@ -84,15 +96,26 @@ export interface PageServiceMutationResult extends PageServiceReadResult {
   idempotent?: boolean;
 }
 
+export interface PageServiceDailyResult {
+  page: PageServicePageDto;
+  created: boolean;
+  operation?: PageOperationRecord;
+}
+
 export class PageYjsService {
   private readonly mutationCore: PageMutationCore;
   private readonly createOperationId: () => string;
+  private readonly createPageId: () => string;
+  private readonly now: () => Date;
   private readonly mutex = new PageAsyncMutex();
+  private readonly dailyMutex = new PageAsyncMutex();
   private readonly hocuspocus: Hocuspocus;
 
   constructor(private readonly config: PageYjsServiceConfig) {
     this.mutationCore = config.mutationCore ?? new PageMutationCore();
     this.createOperationId = config.createOperationId ?? randomUUID;
+    this.createPageId = config.createPageId ?? randomUUID;
+    this.now = config.now ?? (() => new Date());
     const persistence = createPageYjsPersistence(config.repository, this.mutex);
     this.hocuspocus = new Hocuspocus({
       name: "soulstream-page-yjs",
@@ -178,6 +201,42 @@ export class PageYjsService {
     });
   }
 
+  async findPage(title: string): Promise<PageServicePageDto | null> {
+    const pageId = await this.config.repository.findPageIdByTitle(title);
+    return pageId ? (await this.getPage(pageId)).page : null;
+  }
+
+  async getBacklinks(input: {
+    pageId: string;
+    kinds: readonly PageLinkKind[];
+    cursor?: string;
+    limit: number;
+  }): Promise<{ items: BacklinkDto[]; next_cursor: string | null }> {
+    return await this.config.repository.getPageBacklinks(input);
+  }
+
+  async getDailyPage(input: {
+    date?: string;
+    actor: CreatePageMutationInput["actor"];
+  }): Promise<PageServiceDailyResult> {
+    const date = input.date ?? kstDate(this.now());
+    return await this.dailyMutex.runExclusive(date, async () => {
+      const existingId = await this.config.repository.findPageIdByDailyDate(date);
+      if (existingId) return { page: (await this.getPage(existingId)).page, created: false };
+      const created = await this.createPage({
+        page: {
+          id: this.createPageId(),
+          title: dailyPageTitle(date),
+          dailyDate: date,
+          metadata: {},
+        },
+        actor: input.actor,
+        idempotencyKey: `get_daily_page:KST:${date}`,
+      });
+      return { page: created.page, operation: created.operation, created: true };
+    });
+  }
+
   handleConnection(socket: WebSocket, request: IncomingMessage, pageId: string): void {
     void this.openConnection(socket, request, pageId);
   }
@@ -251,6 +310,23 @@ export class PageYjsService {
     };
   }
 
+}
+
+function kstDate(now: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
+
+function dailyPageTitle(date: string): string {
+  const [year, month, day] = date.split("-").map(Number);
+  return `${year}년 ${month}월 ${day}일`;
 }
 
 function createPageYjsAuthExtension(
