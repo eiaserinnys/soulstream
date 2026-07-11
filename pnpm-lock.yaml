@@ -145,6 +145,9 @@ importers:
       '@soulstream/fractional-position':
         specifier: workspace:*
         version: link:../fractional-position
+      '@soulstream/page-model':
+        specifier: workspace:*
+        version: link:../page-model
       '@tanstack/react-query':
         specifier: ^5.0.0
         version: 5.97.0(react@19.2.4)
