@@ -101,6 +101,13 @@ function Harness({ api, pathname, createClient = createReadyClient }: {
       "data-testid": "toggle-star",
       onClick: () => { void workspace.toggleCurrentPageStar(); },
     }),
+    createElement("button", {
+      type: "button",
+      "data-testid": "resync-page",
+      onClick: () => {
+        if (workspace.pageState.status === "ready") workspace.pageState.editor.onResync();
+      },
+    }),
   );
 }
 
@@ -201,7 +208,8 @@ describe("useV2PageWorkspace", () => {
 
   it("uses the current page version for an explicit starred toggle", async () => {
     const api = createApi();
-    await render(api, "/v2/pages/page-daily");
+    const output = await render(api, "/v2/pages/page-daily");
+    await vi.waitFor(() => expect(output.dataset.status).toBe("ready"));
     flushSync(() => {
       container!.querySelector<HTMLButtonElement>('[data-testid="toggle-star"]')!.click();
     });
@@ -211,5 +219,20 @@ describe("useV2PageWorkspace", () => {
       expectedVersion: 1,
     }));
     expect(container!.querySelector("output")!.getAttribute("data-starred")).toBe("true");
+  });
+
+  it("recreates the Y.Doc runtime for an explicit editor resync", async () => {
+    const clients: PageYjsClient[] = [];
+    const createClient = (pageId: string) => {
+      const client = createReadyClient(pageId);
+      clients.push(client);
+      return client;
+    };
+    const output = await render(createApi(), "/v2/pages/page-daily", createClient);
+    await vi.waitFor(() => expect(output.dataset.status).toBe("ready"));
+    flushSync(() => container!.querySelector<HTMLButtonElement>('[data-testid="resync-page"]')!.click());
+    await vi.waitFor(() => expect(clients).toHaveLength(2));
+    expect(clients[0]!.destroy).toHaveBeenCalledTimes(1);
+    expect(output.dataset.status).toBe("ready");
   });
 });

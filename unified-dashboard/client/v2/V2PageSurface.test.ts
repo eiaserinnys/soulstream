@@ -2,6 +2,26 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
+import type { PageApiClient, PageDocumentBlock, PageYjsClient } from "@seosoyoung/soul-ui/page";
+
+vi.mock("@seosoyoung/soul-ui/page-editor", async () => {
+  const { createElement: element } = await import("react");
+  return {
+    PageOutliner: ({ blocks }: { blocks: readonly PageDocumentBlock[] }) => element(
+      "div",
+      { "aria-label": "Page outline editor" },
+      blocks.length === 0
+        ? element("button", { "data-testid": "page-editor-create-first" }, "Start writing")
+        : blocks.map((block, index) => element("textarea", {
+            key: block.id,
+            value: block.textValue,
+            readOnly: true,
+            "data-outline-depth": index,
+          })),
+    ),
+  };
+});
+
 import { V2PageSurface } from "./V2PageSurface";
 
 const page = {
@@ -27,37 +47,60 @@ describe("V2PageSurface", () => {
     }));
     expect(html).toContain(`data-page-state="${status}"`);
     expect(html).toContain(expected);
-    expect(html).not.toContain('data-testid="v2-empty-page"');
+    expect(html).not.toContain('data-testid="page-editor-create-first"');
   });
 
-  it("renders a read-only outline only after sync readiness", () => {
+  it("renders the editable outline only after sync readiness", () => {
+    const blocks = [editorBlock("root", null, "a0", "Root"), editorBlock("child", "root", "a0", "Child")];
     const html = renderToStaticMarkup(createElement(V2PageSurface, {
       state: {
         status: "ready",
         page,
+        editor: editorRuntime(),
         starring: false,
-        blocks: [
-          { id: "root", parentId: null, positionKey: "a0", type: "paragraph", textValue: "Root", properties: {}, collapsed: false },
-          { id: "child", parentId: "root", positionKey: "a0", type: "paragraph", textValue: "Child", properties: {}, collapsed: false },
-        ],
+        blocks,
       },
       onToggleStar: vi.fn(),
     }));
     expect(html).toContain('data-page-state="ready"');
-    expect(html).toContain('aria-readonly="true"');
+    expect(html).toContain('aria-label="Page outline editor"');
     expect(html).toContain('data-outline-depth="0"');
     expect(html).toContain('data-outline-depth="1"');
-    expect(html).toContain("Root");
-    expect(html).toContain("Child");
+    expect(html).toContain(">Root</textarea>");
+    expect(html).toContain(">Child</textarea>");
     expect(html).toContain('aria-label="Remove page from starred pages"');
   });
 
   it("shows the empty-page seam only for a synced page", () => {
     const html = renderToStaticMarkup(createElement(V2PageSurface, {
-      state: { status: "ready", page, starring: false, blocks: [] },
+      state: { status: "ready", page, editor: editorRuntime(), starring: false, blocks: [] },
       onToggleStar: vi.fn(),
     }));
-    expect(html).toContain('data-testid="v2-empty-page"');
-    expect(html).toContain("Ready for the editor in the next phase");
+    expect(html).toContain('data-testid="page-editor-create-first"');
+    expect(html).toContain("Start writing");
   });
 });
+
+function editorBlock(id: string, parentId: string | null, positionKey: string, value: string): PageDocumentBlock {
+  return {
+    id,
+    parentId,
+    positionKey,
+    type: "paragraph",
+    text: {} as PageDocumentBlock["text"],
+    textValue: value,
+    properties: {},
+    collapsed: false,
+  };
+}
+
+function editorRuntime() {
+  const apiClient = {
+    listPages: vi.fn(),
+    getPage: vi.fn(),
+    getDailyPage: vi.fn(),
+    applyOperations: vi.fn(),
+    setStarred: vi.fn(),
+  } as PageApiClient;
+  return { doc: {} as PageYjsClient["doc"], apiClient, onResync: vi.fn() };
+}
