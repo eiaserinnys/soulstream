@@ -218,7 +218,9 @@ describe("useV2PageWorkspace", () => {
       starred: true,
       expectedVersion: 1,
     }));
-    expect(container!.querySelector("output")!.getAttribute("data-starred")).toBe("true");
+    await vi.waitFor(() => {
+      expect(container!.querySelector("output")!.getAttribute("data-starred")).toBe("true");
+    });
   });
 
   it("recreates the Y.Doc runtime for an explicit editor resync", async () => {
