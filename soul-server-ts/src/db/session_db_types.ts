@@ -1,6 +1,6 @@
 import type postgres from "postgres";
 
-import type { TaskStatus, TerminationReason } from "../task/task_models.js";
+import type { ReviewState, TaskStatus, TerminationReason } from "../task/task_models.js";
 import type { SupervisorWakeDispatchState } from "../supervisor/wake_dispatch_state.js";
 
 export type SessionType = "claude" | "llm";
@@ -19,6 +19,7 @@ export interface SessionUpdateFields {
   last_read_event_id?: number;
   termination_reason?: TerminationReason | null;
   termination_detail?: string | null;
+  review_state?: ReviewState;
 }
 
 export interface LastMessageRow {
@@ -139,6 +140,8 @@ export interface SessionRow {
   away_summary: string | null;
   termination_reason: string | null;
   termination_detail: string | null;
+  review_required?: boolean;
+  review_state?: ReviewState;
 }
 
 export interface RunningSessionSummaryRow {
@@ -163,6 +166,8 @@ export interface ListSessionSummaryRow {
   last_event_id: number | null;
   last_read_event_id: number | null;
   node_id: string | null;
+  review_required?: boolean;
+  review_state?: ReviewState;
 }
 
 export interface UpstreamSessionDumpRow extends ListSessionSummaryRow {
@@ -172,6 +177,8 @@ export interface UpstreamSessionDumpRow extends ListSessionSummaryRow {
   metadata: unknown;
   last_message: unknown;
   client_id: string | null;
+  review_required?: boolean;
+  review_state?: ReviewState;
 }
 
 export interface RegisterSessionParams {
@@ -188,7 +195,16 @@ export interface RegisterSessionParams {
   updatedAt: Date;
   callerSessionId: string | null;
   notifyCompletion?: boolean | null;
+  reviewRequired?: boolean;
+  reviewState?: ReviewState;
 }
+
+export type AcknowledgeReviewOutcome =
+  | "acknowledged"
+  | "already_acknowledged"
+  | "not_required"
+  | "not_pending"
+  | "not_found";
 
 export interface AppendEventParams {
   sessionId: string;

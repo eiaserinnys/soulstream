@@ -51,6 +51,11 @@ export function serializeSessionRow(
     userName: firstDefined(row, "user_name", "userName") ?? null,
     userPortraitUrl:
       firstDefined(row, "user_portrait_url", "userPortraitUrl") ?? null,
+    reviewRequired:
+      firstDefined(row, "review_required", "reviewRequired") === true,
+    reviewState: normalizeReviewState(
+      firstDefined(row, "review_state", "reviewState"),
+    ),
   };
 
   enrichAgent(payload, options.registry);
@@ -67,6 +72,12 @@ export function serializeSessionRow(
   }
   applyUserProfileFallback(payload, callerInfo, options.registry);
   return payload;
+}
+
+function normalizeReviewState(value: unknown): string {
+  return value === "needs_review" || value === "acknowledged"
+    ? value
+    : "not_required";
 }
 
 export function serializeTaskRow(

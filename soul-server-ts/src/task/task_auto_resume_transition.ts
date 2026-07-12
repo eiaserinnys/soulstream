@@ -8,6 +8,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { CallerInfo, InterventionMessage, Task } from "./task_models.js";
 import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
+import { reviewStateAfterFollowup } from "./session_review.js";
 
 export type AutoResumeCallback = (task: Task) => void;
 
@@ -99,6 +100,7 @@ export class AutoResumeTransition {
         last_event_id: task.lastEventId,
         termination_reason: null,
         termination_detail: null,
+        review_state: task.reviewState,
       });
     } catch (err) {
       this.deps.logger.warn(
@@ -129,6 +131,7 @@ function transitionTaskToRunning(task: Task, message: InterventionMessage): void
   task.attachmentPaths = message.attachmentPaths ?? [];
   task.contextItems = message.context ?? [];
   task.status = "running";
+  task.reviewState = reviewStateAfterFollowup(task.reviewState ?? "not_required");
   task.completedAt = undefined;
   task.error = undefined;
   task.result = undefined;

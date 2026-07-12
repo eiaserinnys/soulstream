@@ -82,6 +82,8 @@ function toOrchestratorSessionSummary(raw: Record<string, unknown>): SessionSumm
   return {
     agentSessionId: summary.agentSessionId,
     status: summary.status,
+    reviewRequired: summary.reviewRequired,
+    reviewState: summary.reviewState,
     sessionType: (summary.sessionType ?? "claude") as "claude" | "llm",
     eventCount: 0,
     createdAt: summary.createdAt,

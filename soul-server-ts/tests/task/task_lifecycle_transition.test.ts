@@ -113,6 +113,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
       last_event_id: 8,
       termination_reason: "completed_ok",
       termination_detail: null,
+      review_state: "not_required",
     });
     expect(emitSessionUpdated).toHaveBeenCalledWith(task);
     expect(emitSessionUpdated).toHaveBeenCalledTimes(1);
@@ -214,6 +215,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
       last_event_id: 8,
       termination_reason: "completed_ok",
       termination_detail: null,
+      review_state: "not_required",
     });
   });
 
@@ -232,7 +234,50 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
       last_event_id: 8,
       termination_reason: "unknown",
       termination_detail: null,
+      review_state: "not_required",
     });
+  });
+
+  it("marks every human-owned terminal result as needs_review", async () => {
+    const { transition, updateSession, emitSessionUpdated } = makeMocks();
+    const task = makeTask({
+      reviewRequired: true,
+      reviewState: "acknowledged",
+    });
+
+    await transition.finalizeExternalTask(task, { result: "new result" });
+
+    expect(task.reviewState).toBe("needs_review");
+    expect(updateSession).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ review_state: "needs_review" }),
+    );
+    expect(emitSessionUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewState: "needs_review" }),
+    );
+  });
+
+  it("does not reopen an acknowledged review when finalization is retried", async () => {
+    const { transition, updateSession, emitSessionUpdated } = makeMocks();
+    const task = makeTask({
+      status: "completed",
+      completedAt: new Date("2026-05-23T01:05:00.000Z"),
+      terminationReason: "completed_ok",
+      terminationDetail: null,
+      reviewRequired: true,
+      reviewState: "acknowledged",
+    });
+
+    await transition.persistExecutorFinalState(task);
+
+    expect(task.reviewState).toBe("acknowledged");
+    expect(updateSession).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ review_state: "acknowledged" }),
+    );
+    expect(emitSessionUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewState: "acknowledged" }),
+    );
   });
 
   it("uses pending termination hints by precedence for non-completed final states", async () => {
@@ -250,6 +295,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
       last_event_id: 8,
       termination_reason: "limit_hit",
       termination_detail: "rate limit",
+      review_state: "not_required",
     });
   });
 });
@@ -269,6 +315,7 @@ describe("TaskLifecycleTransition.persistExecutorFinalState", () => {
       last_event_id: 8,
       termination_reason: "unknown",
       termination_detail: null,
+      review_state: "not_required",
     });
     expect(emitSessionUpdated).toHaveBeenCalledWith(task);
   });
@@ -301,6 +348,7 @@ describe("TaskLifecycleTransition shutdown/delete interrupt helpers", () => {
       last_event_id: 8,
       termination_reason: "killed",
       termination_detail: "shutdown",
+      review_state: "not_required",
     });
     expect(emitSessionUpdated).toHaveBeenCalledWith(task);
   });

@@ -50,6 +50,7 @@ describe("AutoResumeTransition", () => {
         last_event_id: 7,
         termination_reason: null,
         termination_detail: null,
+        review_state: "not_required",
       });
     });
     const db = { appendMetadata, updateSession } as unknown as SessionDB;
@@ -175,6 +176,7 @@ describe("AutoResumeTransition", () => {
       last_event_id: 7,
       termination_reason: null,
       termination_detail: null,
+      review_state: "not_required",
     });
     expect(task.terminationReason).toBe("limit_hit");
     expect(task.terminationDetail).toBe("fresh limit");
@@ -200,6 +202,7 @@ describe("AutoResumeTransition", () => {
       last_event_id: 12,
       termination_reason: "limit_hit",
       termination_detail: "fresh limit",
+      review_state: "not_required",
     });
   });
 
@@ -254,6 +257,34 @@ describe("AutoResumeTransition", () => {
     expect(task.engine).toBeUndefined();
     expect(task.executionPromise).toBeUndefined();
     expect(order).toEqual(["close", "updateSession", "emitSessionUpdated", "onResume"]);
+  });
+
+  it("auto-acknowledges a needs_review result before terminal follow-up resumes", async () => {
+    const task = makeTerminalTask({
+      reviewRequired: true,
+      reviewState: "needs_review",
+    });
+    const updateSession = vi.fn().mockResolvedValue(undefined);
+    const emitSessionUpdated = vi.fn().mockResolvedValue(undefined);
+    const transition = new AutoResumeTransition({
+      db: { appendMetadata: vi.fn(), updateSession } as unknown as SessionDB,
+      broadcaster: { emitSessionUpdated } as unknown as SessionBroadcaster,
+      logger: silentLogger,
+    });
+
+    await transition.resume(task, { text: "follow up", user: "human" }, vi.fn());
+
+    expect(task.reviewState).toBe("acknowledged");
+    expect(updateSession).toHaveBeenCalledWith(
+      "s1",
+      expect.objectContaining({
+        status: "running",
+        review_state: "acknowledged",
+      }),
+    );
+    expect(emitSessionUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewState: "acknowledged" }),
+    );
   });
 
   it("stores resume message context for the executor initial-message path", async () => {

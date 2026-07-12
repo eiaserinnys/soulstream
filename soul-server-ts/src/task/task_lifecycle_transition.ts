@@ -4,6 +4,7 @@ import type { SessionDB } from "../db/session_db.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { Task } from "./task_models.js";
+import { reviewStateAfterTerminal } from "./session_review.js";
 import {
   buildSessionEndedEvent,
   finalizeTaskTermination,
@@ -133,6 +134,9 @@ export class TaskLifecycleTransition {
     messages: FinalStateLogMessages,
   ): Promise<void> {
     const termination = finalizeTaskTermination(task);
+    if (termination.newlyFinalized) {
+      task.reviewState = reviewStateAfterTerminal(task.reviewRequired === true);
+    }
     if (termination.newlyFinalized && !task.terminationEventRecorded) {
       await this.persistAndBroadcastSessionEnded(task, messages);
     }
@@ -143,6 +147,7 @@ export class TaskLifecycleTransition {
         last_event_id: task.lastEventId,
         termination_reason: termination.reason,
         termination_detail: termination.detail,
+        review_state: task.reviewState,
       });
     } catch (err) {
       this.deps.logger.warn(

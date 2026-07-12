@@ -34,6 +34,8 @@ export { createMoveSessionsOperations } from "./move-sessions";
 export type { MoveSessionsApiConfig, MoveSessionsOperations } from "./move-sessions";
 export { shouldLoadMoreAfterSessionMove } from "./session-move-load-more";
 export type { SessionMoveLoadMoreState } from "./session-move-load-more";
+export { acknowledgeSessionReview } from "./session-review";
+export type { SessionReviewAcknowledgeResult } from "./session-review";
 export {
   applyLiquidLens,
   calculateLiquidLensMapSize,

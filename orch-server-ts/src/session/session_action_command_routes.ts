@@ -5,6 +5,7 @@ import {
   sendActionCommand,
   sendGenericStatusError,
   sendInterruptAckError,
+  sendReviewAcknowledgeAckError,
   sendRealtimeAckError,
   sendToolApprovalAckError,
   type SessionActionCommandDispatchOptions,
@@ -18,6 +19,7 @@ import {
   toolApprovalPayload,
   type ApprovalParams,
   type InterruptNodeCommandPayload,
+  type AcknowledgeSessionReviewNodeCommandPayload,
   type SessionParams,
 } from "./session_action_command_payloads.js";
 
@@ -28,6 +30,7 @@ export const sessionActionCommandRouteAuthRequirements = {
   "POST /api/sessions/:session_id/intervene": true,
   "POST /api/sessions/:session_id/message": true,
   "POST /api/sessions/:session_id/interrupt": true,
+  "POST /api/sessions/:session_id/review/acknowledge": true,
   "POST /api/sessions/:session_id/tool-approvals/:approval_id/approve": true,
   "POST /api/sessions/:session_id/tool-approvals/:approval_id/reject": true,
   "POST /api/sessions/:session_id/realtime/call": true,
@@ -51,6 +54,22 @@ export function registerSessionActionCommandRoutes(
       if (!payload.ok) return badRequest(reply, payload.message);
 
       return sendActionCommand(reply, options, payload.value, sendGenericStatusError);
+    },
+  );
+
+  app.post<{ Params: SessionParams }>(
+    "/api/sessions/:session_id/review/acknowledge",
+    async (request, reply) => {
+      const payload: AcknowledgeSessionReviewNodeCommandPayload = {
+        type: "acknowledge_session_review",
+        agentSessionId: sessionParams(request).session_id,
+      };
+      return sendActionCommand(
+        reply,
+        options,
+        payload,
+        sendReviewAcknowledgeAckError,
+      );
     },
   );
 

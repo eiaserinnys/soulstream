@@ -20,6 +20,7 @@ import {
   NOOP_TASK_CREATION_HOOK,
   type TaskCreationHook,
 } from "./task_creation_hook.js";
+import { initialSessionReview } from "./session_review.js";
 
 export interface CreateTaskParams {
   agentSessionId: string;
@@ -97,10 +98,12 @@ export class TaskCreation {
       (entry): entry is Record<string, unknown> => entry !== undefined,
     );
     const sessionType = params.sessionType ?? "claude";
+    const review = initialSessionReview(params.callerInfo);
     const task: Task = {
       agentSessionId: params.agentSessionId,
       prompt: params.prompt,
       status: "running",
+      ...review,
       profileId: params.profileId,
       clientId: params.clientId ?? null,
       sessionType,
@@ -142,6 +145,8 @@ export class TaskCreation {
       updatedAt: task.createdAt,
       callerSessionId: task.callerSessionId ?? null,
       notifyCompletion: task.notifyCompletion ?? true,
+      reviewRequired: task.reviewRequired === true,
+      reviewState: task.reviewState ?? "not_required",
     });
 
     // caller_info와 session-scoped SDK policy를 Task.metadata와 DB에 동시 저장. Python TaskFactory와 같은 타이밍:

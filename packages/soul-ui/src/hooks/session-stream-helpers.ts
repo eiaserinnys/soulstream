@@ -332,6 +332,8 @@ export type SessionUpdatesPatch = Partial<
     | "lastMessage"
     | "lastEventId"
     | "lastReadEventId"
+    | "reviewRequired"
+    | "reviewState"
     // F-10C fix(2026-05-08): SSE session_updated wire가 운반하는 user 프로필.
     // catalog API와 정합 — userName/userPortraitUrl이 SessionSummary(UserProfile extend)
     // 멤버이므로 Pick 범위 확장만으로 타입 정합.
@@ -366,6 +368,18 @@ export function buildSessionUpdates(
   }
   if (event.last_read_event_id != null) {
     updates.lastReadEventId = event.last_read_event_id;
+  }
+  const reviewRequired = event.review_required ?? event.reviewRequired;
+  if (reviewRequired !== undefined) {
+    updates.reviewRequired = reviewRequired;
+  }
+  const reviewState = event.review_state ?? event.reviewState;
+  if (
+    reviewState === "not_required" ||
+    reviewState === "needs_review" ||
+    reviewState === "acknowledged"
+  ) {
+    updates.reviewState = reviewState;
   }
   // F-10C fix(2026-05-08): SSE session_updated wire의 user 프로필을 store에 머지.
   // catalog API가 박는 키와 동일 (userName/userPortraitUrl). null이면 머지 안 함

@@ -27,6 +27,8 @@ describe("node inbound session event dispatcher", () => {
               agentSessionId: "sess-1",
               title: "Created",
               agentId: "agent-a",
+              review_required: true,
+              review_state: "not_required",
             },
           },
         },
@@ -37,6 +39,8 @@ describe("node inbound session event dispatcher", () => {
             type: "session_updated",
             agentSessionId: "sess-1",
             status: "running",
+            review_required: true,
+            review_state: "needs_review",
           },
         },
         {
@@ -62,6 +66,8 @@ describe("node inbound session event dispatcher", () => {
           agentId: "agent-a",
           folder_id: "folder-1",
           folderId: "folder-1",
+          reviewRequired: true,
+          reviewState: "not_required",
         },
         nodeId: "node-1",
         folder_id: "folder-1",
@@ -73,6 +79,8 @@ describe("node inbound session event dispatcher", () => {
         status: "running",
         agent_session_id: "sess-1",
         nodeId: "node-1",
+        reviewRequired: true,
+        reviewState: "needs_review",
       });
     expect(payloads[2]).toEqual({
         type: "session_deleted",

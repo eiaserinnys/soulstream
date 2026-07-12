@@ -73,6 +73,8 @@ export class SessionBroadcaster {
       terminationReason: task.terminationReason ?? null,
       termination_detail: task.terminationDetail ?? null,
       terminationDetail: task.terminationDetail ?? null,
+      review_required: task.reviewRequired === true,
+      review_state: task.reviewState ?? "not_required",
     });
   }
 
@@ -211,6 +213,8 @@ export class SessionBroadcaster {
       terminationReason: task.terminationReason ?? null,
       termination_detail: task.terminationDetail ?? null,
       terminationDetail: task.terminationDetail ?? null,
+      review_required: task.reviewRequired === true,
+      review_state: task.reviewState ?? "not_required",
     };
     if (sessionType !== "claude") {
       info.llm_provider = task.llmProvider ?? null;

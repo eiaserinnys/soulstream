@@ -51,6 +51,7 @@ export type {
   SoulSSEEvent,
   EventRecord,
   SessionStatus,
+  ReviewState,
   LlmUsage,
   SessionSummary,
   SessionDetail,

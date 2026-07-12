@@ -78,6 +78,48 @@ describePostgres("SessionDB supervisor PostgreSQL integration", () => {
     expect(rows[0].definition).toContain("(updated_at DESC, session_id DESC)");
   }, 30_000);
 
+  it("keeps review registration, terminal, restart, and acknowledge transitions consistent", async () => {
+    const now = new Date("2026-07-12T00:00:00Z");
+    await db.registerSession({
+      sessionId: "sess-review",
+      nodeId: "node-review",
+      agentId: "codex-default",
+      claudeSessionId: null,
+      sessionType: "claude",
+      prompt: "review me",
+      clientId: null,
+      status: "running",
+      createdAt: now,
+      updatedAt: now,
+      callerSessionId: null,
+      reviewRequired: true,
+      reviewState: "not_required",
+    });
+
+    await db.updateSession("sess-review", {
+      status: "completed",
+      review_state: "needs_review",
+    });
+    await expect(db.acknowledgeSessionReview("sess-review")).resolves.toBe(
+      "acknowledged",
+    );
+    await expect(db.acknowledgeSessionReview("sess-review")).resolves.toBe(
+      "already_acknowledged",
+    );
+
+    await db.updateSession("sess-review", {
+      status: "running",
+      review_state: "acknowledged",
+    });
+    await expect(db.interruptRunningSessionsForNode("node-review")).resolves.toBe(1);
+
+    await expect(db.getSession("sess-review")).resolves.toMatchObject({
+      status: "interrupted",
+      review_required: true,
+      review_state: "needs_review",
+    });
+  }, 30_000);
+
   it("drops an invalid concurrent index remnant and recreates a valid one", async () => {
     const duplicateUpdatedAt = new Date("2026-06-14T00:00:00Z");
     await harness!.sql`

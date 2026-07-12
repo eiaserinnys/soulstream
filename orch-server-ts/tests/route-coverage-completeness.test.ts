@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildRouteRegistry,
+  buildRuntimeRouteRegistry,
   createApp,
   loadContractFixtures,
   parseOrchServerConfig,
@@ -21,7 +21,7 @@ const config = parseOrchServerConfig({
 
 describe("route coverage completeness gate", () => {
   const fixtures = loadContractFixtures();
-  const registry = buildRouteRegistry(fixtures.routeInventory);
+  const registry = buildRuntimeRouteRegistry(fixtures.routeInventory);
   const browserRouteKeys = [
     "GET /api/pages",
     "POST /api/pages/daily",
@@ -29,6 +29,7 @@ describe("route coverage completeness gate", () => {
     "POST /api/pages/{pageId}/operations",
     "PATCH /api/pages/{pageId}/starred",
   ];
+  const reviewRouteKey = "POST /api/sessions/{session_id}/review/acknowledge";
 
   it("covers every Python fixture route with opt-in TS registration and auth metadata", async () => {
     const registeredRouteKeys = await collectRegisteredFixtureRouteKeys(registry);
@@ -51,9 +52,11 @@ describe("route coverage completeness gate", () => {
     });
     expect(registeredRouteKeys).toHaveLength(registry.entries.length);
     expect(registry.entries.map((entry) => entry.key)).toEqual(
-      expect.arrayContaining(browserRouteKeys),
+      expect.arrayContaining([...browserRouteKeys, reviewRouteKey]),
     );
-    expect(registeredRouteKeys).toEqual(expect.arrayContaining(browserRouteKeys));
+    expect(registeredRouteKeys).toEqual(
+      expect.arrayContaining([...browserRouteKeys, reviewRouteKey]),
+    );
   });
 
   it("reports missing registrations, auth mismatches, duplicate owners, and unknown entries", () => {

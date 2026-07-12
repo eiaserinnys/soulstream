@@ -181,6 +181,8 @@ describe("TaskCreation", () => {
       agentSessionId: "sess-1",
       prompt: "hello",
       status: "running",
+      reviewRequired: true,
+      reviewState: "not_required",
       profileId: "codex-default",
       sessionType: "llm",
       reasoningEffort: "high",
@@ -209,6 +211,8 @@ describe("TaskCreation", () => {
         prompt: "hello",
         status: "running",
         callerSessionId: null,
+        reviewRequired: true,
+        reviewState: "not_required",
       }),
     );
     expect(h.appendMetadata).toHaveBeenCalledWith("sess-1", {

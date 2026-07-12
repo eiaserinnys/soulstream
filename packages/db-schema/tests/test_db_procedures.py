@@ -122,6 +122,80 @@ async def test_notify_completion_migration_contract_is_mirrored_in_schema_sql():
         assert required in schema_sql
 
 
+async def test_session_review_migration_contract_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("036_session_review_state.sql")
+    schema_sql = _schema_sql()
+
+    for required in [
+        "review_required BOOLEAN NOT NULL DEFAULT FALSE",
+        "review_state TEXT NOT NULL DEFAULT 'not_required'",
+        "CREATE OR REPLACE FUNCTION session_register_with_review(",
+        "CREATE OR REPLACE FUNCTION session_acknowledge_review(",
+        "'termination_reason', 'termination_detail', 'review_state'",
+    ]:
+        assert required in migration_sql
+        assert required in schema_sql
+
+
+async def test_session_review_schema_and_atomic_transitions(test_db):
+    columns = {
+        row["column_name"]: row
+        for row in await test_db.fetch(
+            """
+            SELECT column_name, is_nullable, column_default
+            FROM information_schema.columns
+            WHERE table_name = 'sessions'
+            """
+        )
+    }
+    assert columns["review_required"]["is_nullable"] == "NO"
+    assert columns["review_required"]["column_default"] == "false"
+    assert columns["review_state"]["is_nullable"] == "NO"
+    assert columns["review_state"]["column_default"] == "'not_required'::text"
+
+    now = _utc_now()
+    await test_db.execute(
+        """
+        SELECT session_register_with_review(
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14
+        )
+        """,
+        "sess-review",
+        "node-1",
+        "codex-default",
+        None,
+        "claude",
+        "review",
+        None,
+        "running",
+        now,
+        now,
+        None,
+        True,
+        True,
+        "not_required",
+    )
+    await test_db.execute(
+        "SELECT session_update($1, $2, $3, $4)",
+        "sess-review",
+        ["status", "review_state"],
+        ["completed", "needs_review"],
+        now,
+    )
+    assert await test_db.fetchval(
+        "SELECT session_acknowledge_review($1, $2)", "sess-review", now
+    ) == "acknowledged"
+    assert await test_db.fetchval(
+        "SELECT session_acknowledge_review($1, $2)", "sess-review", now
+    ) == "already_acknowledged"
+
+    row = await test_db.fetchrow(
+        "SELECT review_required, review_state FROM sessions WHERE session_id = $1",
+        "sess-review",
+    )
+    assert dict(row) == {"review_required": True, "review_state": "acknowledged"}
+
+
 async def test_sessions_notify_completion_schema_contract(test_db):
     columns = {
         row["column_name"]: row

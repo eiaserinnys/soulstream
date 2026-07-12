@@ -77,6 +77,19 @@ export function sendInterruptAckError(
   });
 }
 
+export function sendReviewAcknowledgeAckError(
+  reply: FastifyReply,
+  response: NodeCommandResponse,
+): FastifyReply {
+  const code = stringField(response.code, "REVIEW_ACKNOWLEDGE_FAILED");
+  return reply.code(code === "SESSION_NOT_FOUND" ? 404 : 409).send({
+    error: {
+      code,
+      message: stringField(response.message, code),
+    },
+  });
+}
+
 export function sendToolApprovalAckError(
   reply: FastifyReply,
   response: NodeCommandResponse,

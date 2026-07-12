@@ -18,7 +18,7 @@ import { EventRepository } from "./repositories/event_repository.js";
 import { MarkdownDocumentRepository } from "./repositories/markdown_document_repository.js";
 import { SessionRepository } from "./repositories/session_repository.js";
 import type { RepositorySql } from "./repositories/repository_helpers.js";
-import type { AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, BoardYjsReplica, BoardYjsSeed, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, UpstreamSessionDumpRow } from "./session_db_types.js";
+import type { AcknowledgeReviewOutcome, AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, BoardYjsReplica, BoardYjsSeed, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, UpstreamSessionDumpRow } from "./session_db_types.js";
 import { SupervisorSessionDbFacade } from "./supervisor_session_db_facade.js";
 
 export type * from "./session_db_types.js";
@@ -111,6 +111,12 @@ export class SessionDB extends SupervisorSessionDbFacade {
     fields: SessionUpdateFields,
   ): Promise<void> {
     await this.sessionRepository.updateSession(sessionId, fields);
+  }
+
+  async acknowledgeSessionReview(
+    sessionId: string,
+  ): Promise<AcknowledgeReviewOutcome> {
+    return await this.sessionRepository.acknowledgeSessionReview(sessionId);
   }
 
   async interruptRunningSessionsForNode(nodeId: string): Promise<number> {

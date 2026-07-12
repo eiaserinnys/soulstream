@@ -20,7 +20,7 @@ import type { Logger } from "pino";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
-import type { SessionDB } from "../db/session_db.js";
+import type { AcknowledgeReviewOutcome, SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 
 import type { Task, TaskStatus } from "./task_models.js";
@@ -366,6 +366,21 @@ export class TaskManager {
    */
   async finalizeTask(params: FinalizeTaskParams): Promise<Task | undefined> {
     return await this.lifecycleRoute.finalizeTask(params);
+  }
+
+  async acknowledgeReview(sessionId: string): Promise<AcknowledgeReviewOutcome> {
+    const outcome = await this.db.acknowledgeSessionReview(sessionId);
+    if (outcome !== "acknowledged") return outcome;
+
+    const task = this.tasks.get(sessionId) ?? await this.loadEvictedTask(sessionId);
+    if (!task) return "not_found";
+    task.reviewState = "acknowledged";
+    try {
+      await this.broadcaster.emitSessionUpdated(task);
+    } catch (err) {
+      this.logger.warn({ err, sessionId }, "session_updated review acknowledge broadcast failed");
+    }
+    return outcome;
   }
 
   /**

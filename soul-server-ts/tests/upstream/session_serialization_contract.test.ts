@@ -24,6 +24,8 @@ function taskFromFixture(raw: Record<string, any>): Task {
     agentSessionId: raw.agentSessionId,
     prompt: raw.prompt,
     status: raw.status,
+    reviewRequired: raw.reviewRequired,
+    reviewState: raw.reviewState,
     createdAt: new Date(raw.createdAt),
     lastEventId: raw.lastEventId,
     lastReadEventId: raw.lastReadEventId,

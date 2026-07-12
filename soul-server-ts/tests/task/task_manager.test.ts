@@ -17,6 +17,7 @@ function makeMocks() {
   const appendMetadata = vi.fn().mockResolvedValue(1);
   const deleteSession = vi.fn().mockResolvedValue(undefined);
   const updateSession = vi.fn().mockResolvedValue(undefined);
+  const acknowledgeSessionReview = vi.fn().mockResolvedValue("acknowledged");
   // B-5: 폴더 배정 정본 흐름 mocks.
   const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
   const getFolderById = vi
@@ -38,6 +39,7 @@ function makeMocks() {
     appendMetadata,
     deleteSession,
     updateSession,
+    acknowledgeSessionReview,
     assignSessionToFolder,
     getFolderById,
     getCatalog,
@@ -64,6 +66,7 @@ function makeMocks() {
     appendMetadata,
     deleteSession,
     updateSession,
+    acknowledgeSessionReview,
     assignSessionToFolder,
     getFolderById,
     getCatalog,
@@ -75,6 +78,30 @@ function makeMocks() {
     emitSessionUpdated,
   };
 }
+
+describe("TaskManager.acknowledgeReview", () => {
+  it("applies the atomic DB outcome to memory and broadcasts the acknowledged state", async () => {
+    const mocks = makeMocks();
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "sess-review",
+      prompt: "review me",
+      profileId: "a",
+      callerInfo: { source: "browser" },
+    });
+    task.status = "completed";
+    task.reviewState = "needs_review";
+    mocks.emitSessionUpdated.mockClear();
+
+    await expect(tm.acknowledgeReview("sess-review")).resolves.toBe("acknowledged");
+
+    expect(mocks.acknowledgeSessionReview).toHaveBeenCalledWith("sess-review");
+    expect(task.reviewState).toBe("acknowledged");
+    expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewState: "acknowledged" }),
+    );
+  });
+});
 
 describe("TaskManager.createTask", () => {
   it("Task 생성 + DB registerSession + caller_info metadata + broadcast session_created", async () => {
@@ -1004,6 +1031,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       last_event_id: task.lastEventId,
       termination_reason: null,
       termination_detail: null,
+      review_state: "not_required",
     });
   });
 
@@ -1619,6 +1647,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       last_event_id: memTask!.lastEventId,
       termination_reason: null,
       termination_detail: null,
+      review_state: "not_required",
     });
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
@@ -1671,6 +1700,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       last_event_id: memTask!.lastEventId,
       termination_reason: null,
       termination_detail: null,
+      review_state: "not_required",
     });
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
@@ -1721,6 +1751,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       last_event_id: memTask!.lastEventId,
       termination_reason: null,
       termination_detail: null,
+      review_state: "not_required",
     });
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
