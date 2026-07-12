@@ -8,6 +8,16 @@ const charToIndex = new Map(
   Array.from(POSITION_ALPHABET, (char, index) => [char, index] as const),
 );
 
+export function comparePositionKeys(left: string, right: string): number {
+  normalizeBound(left, "left");
+  normalizeBound(right, "right");
+  return compareLexicographically(left, right);
+}
+
+export function compareLexicographically(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function normalizeBound(value: string | null, name: string): string | null {
   if (value === null) return null;
   if (value.length === 0) {

@@ -1,3 +1,4 @@
+import { compareLexicographically, comparePositionKeys } from "@soulstream/fractional-position";
 import * as Y from "yjs";
 
 export const PAGE_META_MAP = "pageMeta";
@@ -124,7 +125,7 @@ function orderBlocks(blocks: ReadonlyMap<string, PageDocumentBlock>): PageDocume
     children.set(block.parentId, siblings);
   }
   for (const siblings of children.values()) {
-    siblings.sort((a, b) => a.positionKey.localeCompare(b.positionKey) || a.id.localeCompare(b.id));
+    siblings.sort((a, b) => comparePositionKeys(a.positionKey, b.positionKey) || compareLexicographically(a.id, b.id));
   }
   const ordered: PageDocumentBlock[] = [];
   const stack = [...(children.get(null) ?? [])].reverse();

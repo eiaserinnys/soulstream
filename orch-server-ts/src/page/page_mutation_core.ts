@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { generateKeyBetween } from "@soulstream/fractional-position";
+import { compareLexicographically, comparePositionKeys, generateKeyBetween } from "@soulstream/fractional-position";
 import type { PageActorKind, PageOperationType } from "@soulstream/page-model";
 import * as Y from "yjs";
 
@@ -384,7 +384,7 @@ function positionAfter(
 ): string {
   const siblings = [...doc.getMap<Y.Map<unknown>>(BLOCKS_MAP).values()]
     .filter((block) => blockParent(block) === parentId && block.get("id") !== excludeId)
-    .sort((a, b) => blockPosition(a).localeCompare(blockPosition(b)) || blockId(a).localeCompare(blockId(b)));
+    .sort((a, b) => comparePositionKeys(blockPosition(a), blockPosition(b)) || compareLexicographically(blockId(a), blockId(b)));
   if (afterBlockId === excludeId) {
     throw new PageMutationValidationError("after block cannot be the moved block");
   }

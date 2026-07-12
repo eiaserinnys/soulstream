@@ -22,6 +22,16 @@ describe("page document projection", () => {
     expect(getPageBlockText(doc, "b")).toBe(firstText);
   });
 
+  it("keeps a generated lowercase key after its uppercase predecessor", () => {
+    const doc = pageDoc();
+    addBlock(doc, { id: "current", positionKey: "V", text: "Current" });
+    addBlock(doc, { id: "created", positionKey: "k", text: "" });
+
+    const snapshot = createPageDocumentProjection(doc, "page-1").getSnapshot();
+
+    expect(snapshot.blocks.map((block) => block.id)).toEqual(["current", "created"]);
+  });
+
   it("publishes immutable snapshots from Y.Doc changes without cloning text objects", () => {
     const doc = pageDoc();
     const text = addBlock(doc, { id: "block-1", positionKey: "a", text: "hello" });

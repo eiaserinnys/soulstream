@@ -12,6 +12,9 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "@soulstream/fractional-position": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "typescript": "^5.7.2",

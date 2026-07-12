@@ -1,4 +1,5 @@
 import { expect } from "vitest";
+import { compareLexicographically, comparePositionKeys } from "@soulstream/fractional-position";
 
 import type {
   BlockReference,
@@ -66,7 +67,7 @@ export class IntentProjection {
       refs.sort((left, right) => {
         const leftBlock = snapshot.find((block) => block.id === left)!;
         const rightBlock = snapshot.find((block) => block.id === right)!;
-        return leftBlock.positionKey.localeCompare(rightBlock.positionKey) || left.localeCompare(right);
+        return comparePositionKeys(leftBlock.positionKey, rightBlock.positionKey) || compareLexicographically(left, right);
       });
       this.children.set(parentRef, refs);
     }

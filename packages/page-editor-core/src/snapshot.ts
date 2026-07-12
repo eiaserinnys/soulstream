@@ -1,3 +1,5 @@
+import { compareLexicographically, comparePositionKeys } from "@soulstream/fractional-position";
+
 import type { EditorBlockSnapshot } from "./types.js";
 
 export interface SiblingGroup {
@@ -122,7 +124,7 @@ export class SnapshotIndex {
 }
 
 export function compareBlocks(left: EditorBlockSnapshot, right: EditorBlockSnapshot): number {
-  return left.positionKey.localeCompare(right.positionKey) || left.id.localeCompare(right.id);
+  return comparePositionKeys(left.positionKey, right.positionKey) || compareLexicographically(left.id, right.id);
 }
 
 export function normalizedRange(anchor: number, focus: number, textLength: number) {

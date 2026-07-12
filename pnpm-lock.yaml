@@ -81,6 +81,10 @@ importers:
   packages/fractional-position: {}
 
   packages/page-editor-core:
+    dependencies:
+      '@soulstream/fractional-position':
+        specifier: workspace:*
+        version: link:../fractional-position
     devDependencies:
       '@types/node':
         specifier: ^20.11.0
@@ -93,6 +97,10 @@ importers:
         version: 2.1.9(@types/node@20.19.41)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.46.1)
 
   packages/page-model:
+    dependencies:
+      '@soulstream/fractional-position':
+        specifier: workspace:*
+        version: link:../fractional-position
     devDependencies:
       '@types/node':
         specifier: ^20.11.0

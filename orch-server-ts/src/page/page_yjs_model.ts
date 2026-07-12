@@ -1,3 +1,4 @@
+import { compareLexicographically, comparePositionKeys } from "@soulstream/fractional-position";
 import * as Y from "yjs";
 
 export const PAGE_YJS_PREFIX = "page:";
@@ -197,7 +198,7 @@ function orderBlocks(blocks: ReadonlyMap<string, PageYjsBlockReplica>): PageYjsB
     children.set(block.parentId, siblings);
   }
   for (const siblings of children.values()) {
-    siblings.sort((a, b) => a.positionKey.localeCompare(b.positionKey) || a.id.localeCompare(b.id));
+    siblings.sort((a, b) => comparePositionKeys(a.positionKey, b.positionKey) || compareLexicographically(a.id, b.id));
   }
   const result: PageYjsBlockReplica[] = [];
   const stack = [...(children.get(null) ?? [])].reverse();

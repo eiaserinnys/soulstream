@@ -36,7 +36,11 @@ function manualScheduler(): SelectionScheduler & { flushMicrotasks(): void; flus
     requestAnimationFrame(callback) { handle += 1; frames.set(handle, callback); return handle; },
     cancelAnimationFrame(id) { frames.delete(id); },
     flushMicrotasks() { while (microtasks.length > 0) microtasks.shift()?.(); },
-    flushFrames() { for (const callback of [...frames.values()]) callback(); frames.clear(); },
+    flushFrames() {
+      const callbacks = [...frames.values()];
+      frames.clear();
+      for (const callback of callbacks) callback();
+    },
   };
 }
 
@@ -56,6 +60,31 @@ describe("Serendipity-homologous selection and IME fixtures", () => {
     applier.requestApply({ target: { kind: "existing", blockId: "a" }, selection: { anchor: 3, focus: 3 } });
     scheduler.flushMicrotasks(); scheduler.flushFrames();
     expect(target.selected).toEqual([3, 3]);
+  });
+
+  it("S-02b retries the same latest request after a stale render miss", () => {
+    const target = control("abcdef");
+    const scheduler = manualScheduler();
+    let mounted = false;
+    const applied: boolean[] = [];
+    const applier = createPostRenderFocusSelectionApplier(
+      { getTextControlByBlockId: () => mounted ? target : null },
+      scheduler,
+    );
+
+    applier.requestApply(
+      { target: { kind: "existing", blockId: "a" }, selection: { anchor: 1, focus: 1 } },
+      (result) => applied.push(result),
+    );
+    scheduler.flushMicrotasks();
+    scheduler.flushFrames();
+    expect(applied).toEqual([false]);
+
+    mounted = true;
+    scheduler.flushFrames();
+
+    expect(target.selected).toEqual([1, 1]);
+    expect(applied).toEqual([false, true]);
   });
 
   it("S-03 clamps restored offsets to rendered text length", () => {
