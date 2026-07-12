@@ -165,6 +165,7 @@ async function main(): Promise<void> {
       clearInterval(runtime.supervisorWatchdogInterval);
     }
     runtime.supervisorWakeScheduler?.dispose();
+    runtime.sessionPageBindingService.stop();
     try {
       runtime.scheduleDispatcher.stop();
       await runtime.taskManager.shutdown();

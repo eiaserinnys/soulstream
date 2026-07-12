@@ -2,7 +2,7 @@ import type { Logger } from "pino";
 
 import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
-import type { BoardYjsContainerRef, CatalogBoardItemRow, SessionDB } from "../db/session_db.js";
+import type { BoardYjsContainerRef, SessionDB } from "../db/session_db.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -21,6 +21,7 @@ import {
   type TaskCreationHook,
 } from "./task_creation_hook.js";
 import { initialSessionReview } from "./session_review.js";
+import { sessionBoardItemPosition } from "./runbook_session_position.js";
 
 export interface CreateTaskParams {
   agentSessionId: string;
@@ -48,6 +49,8 @@ export interface CreateTaskParams {
   folderId?: string | null;
   container?: BoardYjsContainerRef | null;
   sourceRunbookItemId?: string | null;
+  /** Optional page block converted into the canonical primary session_ref before first turn. */
+  pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
   /** B-6 context_builder: 사용자/위임자 system_prompt. folder_prompt와 합성됨. */
   systemPrompt?: string;
   /** 첫 turn prompt와 user_message.context에 함께 박을 외부 context items. */
@@ -173,18 +176,31 @@ export class TaskCreation {
     // session_assign_folder로 박는다. folder_id 미지정 시 session_type 기반 기본 폴더 폴백.
     //
     // 부가 기능 — 실패는 격리 (Python L292-293 코멘트 정합).
-    const assignedFolderId = await this.assignFolderAndBroadcastCatalog(
+    const legacyProjection = await this.assignFolderAndBroadcastCatalog(
       task.agentSessionId,
       sessionType,
       params.folderId ?? null,
       params.container ?? null,
       params.sourceRunbookItemId ?? null,
     );
+    try {
+      await this.deps.taskCreationHook?.afterLegacyProjection?.({
+        task,
+        params,
+        assignedFolderId: legacyProjection.assignedFolderId,
+        completed: legacyProjection.completed,
+      });
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "legacy projection hook update failed; durable replay remains pending",
+      );
+    }
 
     // broadcast session_created — 실패해도 task는 메모리에 살아있음 (orch 재연결 시 동기 가능).
     // Python L304-313 정합: catalog_updated 이후 session_created 발행 (순서 보장).
     try {
-      await this.deps.broadcaster.emitSessionCreated(task, assignedFolderId);
+      await this.deps.broadcaster.emitSessionCreated(task, legacyProjection.assignedFolderId);
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
@@ -215,8 +231,9 @@ export class TaskCreation {
     folderId: string | null,
     container: BoardYjsContainerRef | null,
     sourceRunbookItemId: string | null,
-  ): Promise<string | null> {
+  ): Promise<{ assignedFolderId: string | null; completed: boolean }> {
     let assigned: string | null = null;
+    let completed = true;
     try {
       if (container?.containerKind === "runbook") {
         const scope = await this.deps.db.resolveBoardYjsContainerScope(container);
@@ -225,7 +242,8 @@ export class TaskCreation {
         }
         await this.deps.db.assignSessionToFolder(sessionId, scope.folderId);
         assigned = scope.folderId;
-        const [x, y] = await this.nextRunbookSessionPosition(container);
+        const seed = await this.deps.db.loadBoardYjsSeed(container);
+        const [x, y] = sessionBoardItemPosition(seed.boardItems, sessionId);
         await this.deps.boardYjsService?.upsertSessionBoardItem({
           folderId: scope.folderId,
           container,
@@ -246,6 +264,7 @@ export class TaskCreation {
         }
       }
     } catch (err) {
+      completed = false;
       this.deps.logger.warn(
         {
           err,
@@ -273,18 +292,7 @@ export class TaskCreation {
       }
     }
 
-    return assigned;
+    return { assignedFolderId: assigned, completed };
   }
 
-  private async nextRunbookSessionPosition(container: BoardYjsContainerRef): Promise<[number, number]> {
-    const seed = await this.deps.db.loadBoardYjsSeed(container);
-    const occupied = new Set(seed.boardItems.map((item: CatalogBoardItemRow) => `${item.x}:${item.y}`));
-    let index = 4;
-    while (true) {
-      const x = (index % 4) * 280;
-      const y = Math.floor(index / 4) * 160;
-      if (!occupied.has(`${x}:${y}`)) return [x, y];
-      index += 1;
-    }
-  }
 }
