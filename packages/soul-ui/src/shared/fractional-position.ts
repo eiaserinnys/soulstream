@@ -1,1 +1,1 @@
-export { generateKeyBetween } from "@soulstream/fractional-position";
+export { comparePositionKeys, generateKeyBetween } from "@soulstream/fractional-position";

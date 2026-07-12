@@ -18,7 +18,7 @@ export interface SelectionScheduler {
 }
 
 export interface PostRenderFocusSelectionApplier {
-  requestApply(state: FocusResult | null): void;
+  requestApply(state: FocusResult | null, onApplied?: (applied: boolean) => void): void;
   cancel(): void;
 }
 
@@ -63,6 +63,8 @@ export interface CompositionGuard {
   canRunStructuralOperation(): boolean;
 }
 
+const MAX_POST_RENDER_FOCUS_ATTEMPTS = 60;
+
 export function applyFocusSelection(host: FocusSelectionHost, state: FocusResult | null): boolean {
   if (!state) return false;
   const key = state.target.kind === "existing" ? state.target.blockId : state.target.tempId;
@@ -79,14 +81,37 @@ export function createPostRenderFocusSelectionApplier(
   host: FocusSelectionHost,
   scheduler: SelectionScheduler = browserScheduler(),
 ): PostRenderFocusSelectionApplier {
-  let pending: FocusResult | null = null;
+  let pending: { state: FocusResult; onApplied?: (applied: boolean) => void; attempts: number } | null = null;
   let microtaskQueued = false;
   let frame: number | null = null;
   let generation = 0;
 
+  const scheduleFrame = (requestedGeneration: number) => {
+    if (requestedGeneration !== generation || pending === null) return;
+    if (frame !== null) scheduler.cancelAnimationFrame(frame);
+    frame = scheduler.requestAnimationFrame(() => {
+      frame = null;
+      const latest = pending;
+      if (latest === null || requestedGeneration !== generation) return;
+      const applied = applyFocusSelection(host, latest.state);
+      latest.onApplied?.(applied);
+      if (pending !== latest) return;
+      if (applied) {
+        pending = null;
+        return;
+      }
+      latest.attempts += 1;
+      if (latest.attempts >= MAX_POST_RENDER_FOCUS_ATTEMPTS) {
+        pending = null;
+        return;
+      }
+      scheduleFrame(requestedGeneration);
+    });
+  };
+
   return {
-    requestApply(state) {
-      pending = state;
+    requestApply(state, onApplied) {
+      pending = state === null ? null : { state, onApplied, attempts: 0 };
       if (microtaskQueued) return;
       microtaskQueued = true;
       const requestedGeneration = generation;
@@ -94,13 +119,7 @@ export function createPostRenderFocusSelectionApplier(
         if (requestedGeneration !== generation) return;
         microtaskQueued = false;
         if (pending === null) return;
-        if (frame !== null) scheduler.cancelAnimationFrame(frame);
-        frame = scheduler.requestAnimationFrame(() => {
-          frame = null;
-          const latest = pending;
-          pending = null;
-          applyFocusSelection(host, latest);
-        });
+        scheduleFrame(requestedGeneration);
       });
     },
     cancel() {

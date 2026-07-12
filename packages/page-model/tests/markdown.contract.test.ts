@@ -23,6 +23,18 @@ describe("page markdown contract", () => {
     ].join("\n"));
   });
 
+  it("renders generated fractional keys in canonical order across case boundaries", () => {
+    const markdown = pageToMarkdown(
+      { title: "순서" },
+      [
+        block("created", null, "k", "paragraph", "아래"),
+        block("current", null, "V", "paragraph", "위"),
+      ],
+    );
+
+    expect(markdown).toBe(["# 순서", "", "위", "아래"].join("\n"));
+  });
+
   it("parses a full-replace document and preserves explicit block IDs", () => {
     let sequence = 0;
     const blocks = markdownToPageBlocks([

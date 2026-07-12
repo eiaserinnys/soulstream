@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { generateKeyBetween } from "./fractional-position";
+import { comparePositionKeys, generateKeyBetween } from "./fractional-position";
 
 function expectBetween(key: string, lower: string | null, upper: string | null) {
   if (lower !== null) expect(key > lower).toBe(true);
@@ -8,6 +8,15 @@ function expectBetween(key: string, lower: string | null, upper: string | null) 
 }
 
 describe("generateKeyBetween", () => {
+  it("orders keys by the fractional alphabet instead of the runtime locale", () => {
+    const first = generateKeyBetween(null, null);
+    const after = generateKeyBetween(first, null);
+
+    expect(comparePositionKeys(first, after)).toBeLessThan(0);
+    expect([after, first].sort(comparePositionKeys)).toEqual([first, after]);
+    expect([first, after]).toEqual(["V", "k"]);
+  });
+
   it("generates a deterministic first key for an empty list", () => {
     expect(generateKeyBetween(null, null)).toBe("V");
   });

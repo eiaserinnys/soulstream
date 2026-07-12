@@ -1,3 +1,5 @@
+import { compareLexicographically, comparePositionKeys } from "@soulstream/fractional-position";
+
 import type { BlockDto, PageDto } from "./types.js";
 
 export interface PageMarkdownBlockInput {
@@ -32,7 +34,7 @@ export function pageToMarkdown(
   }
   for (const siblings of children.values()) {
     siblings.sort((left, right) =>
-      left.position_key.localeCompare(right.position_key) || left.id.localeCompare(right.id));
+      comparePositionKeys(left.position_key, right.position_key) || compareLexicographically(left.id, right.id));
   }
 
   const lines = [`# ${page.title}`, ""];

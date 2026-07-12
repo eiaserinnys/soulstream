@@ -89,8 +89,9 @@ export function PageOutliner({
     const index = renderedBlocks.findIndex((block) => block.id === focus.blockId);
     if (index < 0) return;
     virtualizer.scrollToIndex(index, { align: "auto" });
-    focusApplier.requestApply(toCoreFocus(focus));
-    editor.clearFocus(focus.blockId);
+    focusApplier.requestApply(toCoreFocus(focus), (applied) => {
+      if (applied) editor.clearFocus(focus);
+    });
   }, [editor, focusApplier, renderedBlocks, virtualizer]);
 
   const selectBlock = (blockId: string, extend: boolean) => {

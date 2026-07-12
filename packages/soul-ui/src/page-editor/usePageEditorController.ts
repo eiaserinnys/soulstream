@@ -26,7 +26,7 @@ export interface PageEditorController {
   run(operation: EditorOperation): Promise<void>;
   createFirstBlock(): Promise<void>;
   queueFocus(focus: ResolvedEditorFocus | null): void;
-  clearFocus(blockId: string): void;
+  clearFocus(focus: ResolvedEditorFocus): void;
   dismissError(): void;
   resync(): void;
 }
@@ -144,8 +144,8 @@ export function usePageEditorController({
     run,
     createFirstBlock,
     queueFocus: setPendingFocus,
-    clearFocus(blockId) {
-      setPendingFocus((current) => current?.blockId === blockId ? null : current);
+    clearFocus(focus) {
+      setPendingFocus((current) => current === focus ? null : current);
     },
     dismissError() { setState({ status: "idle" }); },
     resync() {

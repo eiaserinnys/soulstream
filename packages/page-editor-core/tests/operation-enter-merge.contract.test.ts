@@ -37,6 +37,26 @@ describe("editor-core contract and positionKey ordering", () => {
 });
 
 describe("Serendipity-homologous Enter fixtures", () => {
+  it("E-00 splits at the start and keeps the new sibling after the current block", () => {
+    const snapshot = createSnapshot([{ id: "a", text: "abcdef", positionKey: "V" }]);
+    const result = planEditorOperation(snapshot, {
+      type: "splitBlock",
+      blockId: "a",
+      selection: { anchor: 0, focus: 0 },
+      newBlockTempId: "b",
+    });
+
+    const state = project(snapshot, result.intents);
+    expect([state.text("a"), state.text("b")]).toEqual(["", "abcdef"]);
+    expect(state.childIds()).toEqual(["a", "b"]);
+    expect(result.intents).toContainEqual(expect.objectContaining({
+      type: "create-block",
+      tempId: "b",
+      after: existing("a"),
+    }));
+    expect(result.focus).toEqual({ target: temporary("b"), selection: { anchor: 0, focus: 0 } });
+  });
+
   it("E-01 splits abc|def and focuses the new sibling", () => {
     const snapshot = createSnapshot([{ id: "a", text: "abcdef" }]);
     const result = planEditorOperation(snapshot, {
@@ -101,6 +121,8 @@ describe("Serendipity-homologous Enter fixtures", () => {
     });
     const state = project(snapshot, result.intents);
     expect([state.text("a"), state.text("b")]).toEqual(["abc", ""]);
+    expect(state.childIds()).toEqual(["a", "b"]);
+    expect(result.focus).toEqual({ target: temporary("b"), selection: { anchor: 0, focus: 0 } });
   });
 
   it("E-06 leaves Enter on the native path during IME composition", () => {

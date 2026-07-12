@@ -90,7 +90,7 @@ describe("PageOutliner", () => {
     expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ agentSessionId: "session-a" }));
   });
 
-  it("maps Enter to the editor-core split intent and one HTTP batch", async () => {
+  it("maps middle Enter to ordered split intents in one HTTP batch", async () => {
     const doc = createPageDoc(2);
     const api = createApi();
     await render(doc, api);
@@ -101,10 +101,93 @@ describe("PageOutliner", () => {
     expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
       operations: expect.arrayContaining([
         expect.objectContaining({ op: "update_block_text", block_id: "block-0" }),
-        expect.objectContaining({ op: "create_block" }),
+        expect.objectContaining({ op: "create_block", after_block_id: "block-0" }),
       ]),
     }));
 
+  });
+
+  it("maps start Enter to an empty current block followed by the original text", async () => {
+    const doc = createPageDoc(1);
+    const api = createApi();
+    await render(doc, api);
+
+    dispatchKey(editor("block-0"), "Enter", 0);
+    await settle();
+
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: [
+        { op: "update_block_text", block_id: "block-0", text: "" },
+        expect.objectContaining({ op: "create_block", after_block_id: "block-0", text: "Block 0" }),
+      ],
+    }));
+  });
+
+  it("keeps end Enter below the current row and focuses the created textarea at zero", async () => {
+    const doc = createPageDoc(1);
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-0")!.set("positionKey", "V");
+    setBlockText(doc, "block-0", "Current");
+    const api = createApi();
+    await render(doc, api);
+
+    dispatchKey(editor("block-0"), "Enter", "Current".length);
+    dispatchKey(editor("block-0"), "Enter", "Current".length);
+    await settle();
+    expect(api.applyOperations).toHaveBeenCalledTimes(1);
+    const request = vi.mocked(api.applyOperations).mock.calls[0]?.[1];
+    const create = request?.operations.find((operation) => operation.op === "create_block");
+    expect(create).toMatchObject({ parent_id: null, after_block_id: "block-0", text: "" });
+    if (!create || create.op !== "create_block") throw new Error("missing Enter create operation");
+
+    addProjectedBlock(doc, { id: `created-${create.temp_id}`, positionKey: "k", text: "" });
+    doc.getMap("pageMeta").set("mutationVersion", 4);
+    await rerender(doc, api);
+    await settleFocus();
+
+    expect([...container!.querySelectorAll("[data-page-editor-row]")].map((row) => row.getAttribute("data-block-id")))
+      .toEqual(["block-0", `created-${create.temp_id}`]);
+    expect(document.activeElement).toBe(editor(`created-${create.temp_id}`));
+    expect(editor(`created-${create.temp_id}`).selectionStart).toBe(0);
+
+    dispatchKey(editor(`created-${create.temp_id}`), "Enter", 0);
+    await settle();
+    expect(api.applyOperations).toHaveBeenCalledTimes(2);
+    const nextRequest = vi.mocked(api.applyOperations).mock.calls[1]?.[1];
+    const nextCreate = nextRequest?.operations.find((operation) => operation.op === "create_block");
+    expect(nextCreate).toMatchObject({ parent_id: null, after_block_id: `created-${create.temp_id}`, text: "" });
+    if (!nextCreate || nextCreate.op !== "create_block") throw new Error("missing repeated Enter create operation");
+
+    addProjectedBlock(doc, { id: `created-${nextCreate.temp_id}`, positionKey: "s", text: "" });
+    doc.getMap("pageMeta").set("mutationVersion", 5);
+    await rerender(doc, api);
+    await settleFocus();
+
+    expect([...container!.querySelectorAll("[data-page-editor-row]")].map((row) => row.getAttribute("data-block-id")))
+      .toEqual(["block-0", `created-${create.temp_id}`, `created-${nextCreate.temp_id}`]);
+    expect(document.activeElement).toBe(editor(`created-${nextCreate.temp_id}`));
+    expect(editor(`created-${nextCreate.temp_id}`).selectionStart).toBe(0);
+  });
+
+  it("outdents an empty nested block on Enter and keeps focus on that block", async () => {
+    const doc = createPageDoc(2);
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", "block-0");
+    setBlockText(doc, "block-1", "");
+    const api = createApi();
+    await render(doc, api);
+
+    dispatchKey(editor("block-1"), "Enter", 0);
+    await settleFocus();
+
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: [expect.objectContaining({
+        op: "move_block",
+        block_id: "block-1",
+        parent_id: null,
+        after_block_id: "block-0",
+      })],
+    }));
+    expect(document.activeElement).toBe(editor("block-1"));
+    expect(editor("block-1").selectionStart).toBe(0);
   });
 
   it("maps Tab to an editor-core indent intent and one HTTP batch", async () => {
@@ -305,6 +388,15 @@ describe("PageOutliner", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
+    await rerender(doc, api, onResync, sessionProps);
+  }
+
+  async function rerender(
+    doc: Y.Doc,
+    api: PageApiClient,
+    onResync = vi.fn(),
+    sessionProps: Pick<React.ComponentProps<typeof PageOutliner>, "sessionIndex" | "onOpenSession" | "lens"> = {},
+  ) {
     const snapshot = readPageDocument(doc, "page-1");
     flushSync(() => root!.render(
       <PageOutliner
@@ -324,6 +416,21 @@ describe("PageOutliner", () => {
     return container!.querySelector<HTMLTextAreaElement>(`[data-block-id="${blockId}"] textarea`)!;
   }
 });
+
+function addProjectedBlock(
+  doc: Y.Doc,
+  input: { id: string; parentId?: string | null; positionKey: string; text: string },
+): void {
+  const block = new Y.Map<unknown>();
+  block.set("id", input.id);
+  block.set("parentId", input.parentId ?? null);
+  block.set("positionKey", input.positionKey);
+  block.set("type", "paragraph");
+  block.set("text", new Y.Text(input.text));
+  block.set("properties", new Y.Map());
+  block.set("collapsed", false);
+  doc.getMap<Y.Map<unknown>>("blocks").set(input.id, block);
+}
 
 function createPageDoc(count: number): Y.Doc {
   const doc = new Y.Doc();

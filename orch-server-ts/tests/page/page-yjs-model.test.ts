@@ -95,6 +95,20 @@ describe("orch page Yjs model", () => {
     });
   });
 
+  it("orders generated fractional keys without locale collation", () => {
+    const snapshot = createPageYDocSnapshot({
+      page,
+      blocks: [
+        { id: "created", parentId: null, positionKey: "k", type: "paragraph", text: "", properties: {}, collapsed: false },
+        { id: "current", parentId: null, positionKey: "V", type: "paragraph", text: "Current", properties: {}, collapsed: false },
+      ],
+    });
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, snapshot);
+
+    expect(readPageYDocReplica("page-1", doc).blocks.map((block) => block.id)).toEqual(["current", "created"]);
+  });
+
   it.each([
     {
       name: "missing parent",
