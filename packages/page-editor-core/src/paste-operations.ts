@@ -1,5 +1,10 @@
-import { normalizedRange, SnapshotIndex, type SiblingGroup } from "./snapshot.js";
-import { parentReference, placementBeforeGroup } from "./tree-operations.js";
+import { normalizedRange, SnapshotIndex } from "./snapshot.js";
+import {
+  parentReference,
+  placementBeforeSelection,
+  resolveBlockSelection,
+  type BlockSelectionGroup,
+} from "./tree-operations.js";
 import {
   existingBlock,
   focusAt,
@@ -44,21 +49,22 @@ export function planPasteOverSelection(
   tempIdPrefix = `${placeholderTempId}-paste`,
 ): EditorOperationPlan {
   if (payload.kind === "unsupported") return noopPlan(payload.reason);
-  const group = index.siblingGroup(blockIds);
+  const group = resolveBlockSelection(index, blockIds);
   if (!group) return noopPlan("invalid-group");
-  const first = group.blocks[0]!;
-  const placement = placementBeforeGroup(index, group);
+  const first = group.roots[0]!;
+  const placement = placementBeforeSelection(index, group);
   const placeholderText = payload.kind === "plain-text"
     ? payload.text
     : payload.blocks[0]?.text ?? "";
+  const placeholderSource = payload.kind === "block-tree" ? payload.blocks[0] : undefined;
   const intents: SemanticEditIntent[] = [{
     type: "create-block",
     tempId: placeholderTempId,
     ...placement,
-    blockType: first.type,
+    blockType: placeholderSource?.type ?? first.type,
     text: placeholderText,
-    properties: {},
-    collapsed: false,
+    properties: cloneProperties(placeholderSource?.properties),
+    collapsed: placeholderSource?.collapsed ?? false,
   }];
   intents.push(...deleteGroupIntents(group));
   if (payload.kind === "plain-text") {
@@ -91,6 +97,14 @@ function buildTreePaste(
     target: existingBlock(block.id),
     text: prefix + first.text + (firstIsLast ? suffix : ""),
   });
+  if (prefix.length === 0 && suffix.length === 0 && (first.type !== undefined || first.properties !== undefined)) {
+    intents.push({
+      type: "update-type-and-properties",
+      target: existingBlock(block.id),
+      blockType: first.type ?? block.type,
+      properties: cloneProperties(first.properties),
+    });
+  }
   const builder = new PasteTreeBuilder(tempIdPrefix, intents);
   builder.appendChildren(existingBlock(block.id), first.children);
   let last: BlockReference = existingBlock(block.id);
@@ -133,19 +147,25 @@ class PasteTreeBuilder {
       tempId,
       parent,
       after,
-      blockType: "paragraph",
+      blockType: block.type ?? "paragraph",
       text: block.text,
-      properties: {},
-      collapsed: false,
+      properties: cloneProperties(block.properties),
+      collapsed: block.collapsed ?? false,
     });
     this.appendChildren(target, block.children);
     return target;
   }
 }
 
-function deleteGroupIntents(group: SiblingGroup): SemanticEditIntent[] {
-  return group.blocks.map((block) => ({
+function deleteGroupIntents(group: BlockSelectionGroup): SemanticEditIntent[] {
+  return group.roots.map((block) => ({
     type: "delete-subtree" as const,
     target: existingBlock(block.id),
   }));
+}
+
+function cloneProperties(
+  properties: Readonly<Record<string, unknown>> | undefined,
+): Record<string, unknown> {
+  return structuredClone(properties ?? {}) as Record<string, unknown>;
 }

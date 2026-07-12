@@ -14,6 +14,7 @@ interface BlockFixtureInput {
   positionKey?: string;
   collapsed?: boolean;
   type?: string;
+  properties?: Record<string, unknown>;
 }
 
 export interface ProjectedBlock {
@@ -23,6 +24,7 @@ export interface ProjectedBlock {
   parentRef: string | null;
   type: string;
   collapsed: boolean;
+  properties: Record<string, unknown>;
 }
 
 export function createSnapshot(inputs: readonly BlockFixtureInput[]): EditorBlockSnapshot[] {
@@ -39,6 +41,7 @@ export function createSnapshot(inputs: readonly BlockFixtureInput[]): EditorBloc
       collapsed: input.collapsed ?? false,
       type: input.type ?? "paragraph",
       text: input.text ?? "",
+      properties: structuredClone(input.properties ?? {}),
     };
   });
 }
@@ -56,6 +59,7 @@ export class IntentProjection {
         parentRef: block.parentId,
         type: block.type,
         collapsed: block.collapsed,
+        properties: structuredClone(block.properties),
       });
     }
     for (const block of snapshot) {
@@ -87,8 +91,13 @@ export class IntentProjection {
           parentRef,
           type: intent.blockType,
           collapsed: intent.collapsed,
+          properties: structuredClone(intent.properties),
         });
         this.insert(ref, parentRef, refKey(intent.after));
+      } else if (intent.type === "update-type-and-properties") {
+        const node = this.require(intent.target);
+        node.type = intent.blockType;
+        node.properties = structuredClone(intent.properties);
       } else if (intent.type === "move-block") {
         const ref = refKey(intent.target)!;
         const node = this.require(intent.target);

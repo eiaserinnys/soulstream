@@ -3,7 +3,6 @@ import {
   decideHorizontalEdgeNavigation,
   decideVerticalEdgeNavigation,
   existingBlock,
-  parseClipboard,
   type EditorOperation,
   type FocusResult,
 } from "@soulstream/page-editor-core";
@@ -22,8 +21,9 @@ import type { SessionSummary } from "../shared/types";
 import { PageBlockRow } from "./PageBlockRow";
 import type { PageBlockEditorKeyInput } from "./PageBlockEditor";
 import { measureTextareaCaretLines } from "./page-editor-caret-geometry";
+import { readPageEditorClipboard, writeBlockSelectionClipboard } from "./page-editor-clipboard";
 import { createContiguousBlockSelection } from "./page-editor-selection";
-import { usePageEditorController } from "./usePageEditorController";
+import { toEditorSnapshots, usePageEditorController } from "./usePageEditorController";
 
 const ROW_HEIGHT = 40;
 const EMPTY_SESSION_INDEX: SessionSummaryIndex = new Map();
@@ -107,7 +107,14 @@ export function PageOutliner({
       crossesVerticalBlockEdge(input, event.key, renderedBlocks)
     ) {
       event.preventDefault();
-      selection.extend(input.block.id);
+      const current = selection.getSnapshot();
+      if (
+        current.anchorId === null ||
+        current.focusId === null ||
+        !current.blockIds.includes(input.block.id)
+      ) {
+        selection.select(input.block.id);
+      }
       selection.extendBy(event.key === "ArrowUp" ? -1 : 1);
       renderSelection();
       return;
@@ -124,12 +131,14 @@ export function PageOutliner({
   const pasteInput = (input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (input.isComposing) return;
     const selectedIds = selection.getSnapshot().blockIds;
-    const payload = parseClipboard({
-      plainText: event.clipboardData.getData("text/plain"),
-      html: event.clipboardData.getData("text/html") || undefined,
-      files: Array.from(event.clipboardData.files).map((file) => ({ type: file.type, name: file.name })),
-    });
     event.preventDefault();
+    let payload;
+    try {
+      payload = readPageEditorClipboard(event.clipboardData);
+    } catch {
+      editor.reportFailure("The clipboard data could not be read. Nothing was changed.");
+      return;
+    }
     const operation: EditorOperation = selectedIds.length > 1
       ? {
           type: "pasteOverSelection",
@@ -148,9 +157,30 @@ export function PageOutliner({
     void editor.run(operation);
   };
 
+  const copyOrCutInput = (
+    _input: PageBlockEditorKeyInput,
+    event: React.ClipboardEvent<HTMLTextAreaElement>,
+    cut: boolean,
+  ) => {
+    const selectedIds = selection.getSnapshot().blockIds;
+    if (selectedIds.length <= 1) return;
+    event.preventDefault();
+    const wrote = writeBlockSelectionClipboard(
+      event.clipboardData,
+      toEditorSnapshots(pageId, blocks),
+      selectedIds,
+    );
+    if (!wrote) {
+      editor.reportFailure("The clipboard could not be written. The selected blocks were not changed.");
+      return;
+    }
+    if (cut) void editor.run({ type: "deleteSelection", blockIds: selectedIds });
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="page-outliner">
       <MutationStatus state={editor.state} onDismiss={editor.dismissError} onResync={editor.resync} />
+      <EditorFeedback message={editor.feedback} onDismiss={editor.dismissFeedback} />
       {blocks.length === 0 ? (
         <div className="mx-auto mt-10 max-w-lg rounded-xl border border-glass-border bg-glass-surface/60 p-8 text-center">
           <p className="font-medium text-foreground">This page is empty.</p>
@@ -199,6 +229,8 @@ export function PageOutliner({
                     selected={selected.has(block.id)}
                     onKeyInput={keyInput}
                     onPasteInput={pasteInput}
+                    onCopyInput={(input, event) => copyOrCutInput(input, event, false)}
+                    onCutInput={(input, event) => copyOrCutInput(input, event, true)}
                     onSelectBlock={selectBlock}
                     onEditorHeightChange={remeasureEditorRow}
                     sessionIndex={sessionIndex}
@@ -222,7 +254,13 @@ function structuralOperation(
 ): EditorOperation | null {
   const range = { anchor: input.anchor, focus: input.focus };
   if (event.key === "Enter") return { type: "splitBlock", blockId: input.block.id, selection: range, newBlockTempId: uniqueTempId("split"), isComposing: input.isComposing };
-  if (event.key === "Tab") return { type: event.shiftKey ? "outdent" : "indent", blockIds: selectedIds };
+  if (event.key === "Tab") {
+    return {
+      type: event.shiftKey ? "outdent" : "indent",
+      blockIds: selectedIds,
+      focus: { blockId: input.block.id, selection: range },
+    };
+  }
   if (event.key === "Backspace") {
     if (selectedIds.length > 1) return { type: "deleteSelection", blockIds: selectedIds };
     return input.anchor === input.focus && input.focus === 0
@@ -320,6 +358,24 @@ function MutationStatus({ state, onDismiss, onResync }: {
           <X aria-hidden="true" className="h-4 w-4" />
         </button>
       ) : null}
+    </div>
+  );
+}
+
+function EditorFeedback({ message, onDismiss }: { message: string | null; onDismiss(): void }) {
+  if (!message) return null;
+  return (
+    <div
+      role="alert"
+      aria-live="polite"
+      data-editor-feedback="error"
+      className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-glass-border bg-glass-surface/80 px-3 py-2 text-sm text-foreground"
+    >
+      <AlertTriangle aria-hidden="true" className="h-4 w-4 text-warning" />
+      <span className="flex-1">{message}</span>
+      <button type="button" aria-label="Dismiss editor feedback" className="rounded p-1 focus-visible:ring-2 focus-visible:ring-primary" onClick={onDismiss}>
+        <X aria-hidden="true" className="h-4 w-4" />
+      </button>
     </div>
   );
 }

@@ -8,8 +8,8 @@ import {
 } from "./page-editor-command-adapter";
 
 const blocks = [
-  { id: "a", pageId: "page-1", parentId: null, positionKey: "a0", collapsed: false, type: "paragraph", text: "Alpha" },
-  { id: "b", pageId: "page-1", parentId: null, positionKey: "a1", collapsed: false, type: "paragraph", text: "Beta" },
+  { id: "a", pageId: "page-1", parentId: null, positionKey: "a0", collapsed: false, type: "paragraph", text: "Alpha", properties: {} },
+  { id: "b", pageId: "page-1", parentId: null, positionKey: "a1", collapsed: false, type: "paragraph", text: "Beta", properties: {} },
 ] as const;
 
 describe("page editor command adapter", () => {

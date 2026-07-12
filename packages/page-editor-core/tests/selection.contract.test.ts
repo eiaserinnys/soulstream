@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyFocusSelection,
   createCompositionGuard,
+  createContiguousBlockSelection,
   createPostRenderFocusSelectionApplier,
   decideHorizontalEdgeNavigation,
   decideVerticalEdgeNavigation,
@@ -45,6 +46,28 @@ function manualScheduler(): SelectionScheduler & { flushMicrotasks(): void; flus
 }
 
 describe("Serendipity-homologous selection and IME fixtures", () => {
+  it("B-01 expands four blocks, contracts, and crosses the stable anchor", () => {
+    const selection = createContiguousBlockSelection(["a", "b", "c", "d", "e"]);
+    selection.select("b");
+    selection.extendBy(1);
+    selection.extendBy(1);
+    selection.extendBy(1);
+    expect(selection.getSnapshot()).toEqual({
+      anchorId: "b",
+      focusId: "e",
+      blockIds: ["b", "c", "d", "e"],
+    });
+    selection.extendBy(-1);
+    selection.extendBy(-1);
+    selection.extendBy(-1);
+    selection.extendBy(-1);
+    expect(selection.getSnapshot()).toEqual({
+      anchorId: "b",
+      focusId: "a",
+      blockIds: ["a", "b"],
+    });
+  });
+
   it("S-01 applies focus by block id", () => {
     const target = control("abcdef");
     const host: FocusSelectionHost = { getTextControlByBlockId: (id) => id === "target" ? target : null };

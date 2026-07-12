@@ -1,6 +1,6 @@
 import { compareLexicographically, comparePositionKeys } from "@soulstream/fractional-position";
 
-import type { EditorBlockSnapshot } from "./types.js";
+import type { EditorBlockSnapshot, TextRange } from "./types.js";
 
 export interface SiblingGroup {
   readonly blocks: readonly EditorBlockSnapshot[];
@@ -131,6 +131,13 @@ export function normalizedRange(anchor: number, focus: number, textLength: numbe
   const start = Math.min(clamp(anchor, textLength), clamp(focus, textLength));
   const end = Math.max(clamp(anchor, textLength), clamp(focus, textLength));
   return { start, end };
+}
+
+export function clampTextRange(selection: TextRange, textLength: number): TextRange {
+  return {
+    anchor: clamp(selection.anchor, textLength),
+    focus: clamp(selection.focus, textLength),
+  };
 }
 
 function clamp(offset: number, textLength: number): number {

@@ -36,6 +36,8 @@ describe("PageBlockEditor auto height", () => {
         block={editorBlock}
         onKeyInput={vi.fn()}
         onPasteInput={vi.fn()}
+        onCopyInput={vi.fn()}
+        onCutInput={vi.fn()}
         onSelectBlock={vi.fn()}
         onHeightChange={onHeightChange}
       />,

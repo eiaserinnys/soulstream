@@ -14,12 +14,16 @@ export function PageBlockEditor({
   block,
   onKeyInput,
   onPasteInput,
+  onCopyInput,
+  onCutInput,
   onSelectBlock,
   onHeightChange,
 }: {
   block: PageDocumentBlock;
   onKeyInput(input: PageBlockEditorKeyInput, event: React.KeyboardEvent<HTMLTextAreaElement>): void;
   onPasteInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
+  onCopyInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
+  onCutInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
   onSelectBlock(blockId: string, extend: boolean): void;
   onHeightChange(blockId: string): void;
 }) {
@@ -98,6 +102,8 @@ export function PageBlockEditor({
       onCompositionEnd={() => { composing.current = false; }}
       onKeyDown={(event) => onKeyInput(input(event.currentTarget), event)}
       onPaste={(event) => onPasteInput(input(event.currentTarget), event)}
+      onCopy={(event) => onCopyInput(input(event.currentTarget), event)}
+      onCut={(event) => onCutInput(input(event.currentTarget), event)}
     />
   );
 }

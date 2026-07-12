@@ -4,12 +4,19 @@ import { createRoot, type Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
+import {
+  decodeStructuredClipboard,
+  encodeStructuredClipboard,
+  PAGE_BLOCK_CLIPBOARD_MIME,
+  type StructuredClipboardPayload,
+} from "@soulstream/page-editor-core";
 
 import {
   createSessionSummaryIndex,
   readPageDocument,
   type ApplyPageOperationsInput,
   type PageApiClient,
+  type PageMutationResponse,
 } from "../page";
 import { PageOutliner } from "./PageOutliner";
 
@@ -176,7 +183,7 @@ describe("PageOutliner", () => {
     await render(doc, api);
 
     dispatchKey(editor("block-1"), "Enter", 0);
-    await settleFocus();
+    await settle();
 
     expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
       operations: [expect.objectContaining({
@@ -186,6 +193,10 @@ describe("PageOutliner", () => {
         after_block_id: "block-0",
       })],
     }));
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", null);
+    doc.getMap("pageMeta").set("mutationVersion", 4);
+    await rerender(doc, api);
+    await settleFocus();
     expect(document.activeElement).toBe(editor("block-1"));
     expect(editor("block-1").selectionStart).toBe(0);
   });
@@ -218,6 +229,49 @@ describe("PageOutliner", () => {
         after_block_id: "block-0",
       })],
     }));
+  });
+
+  it.each([
+    [0, 0],
+    [2, 5],
+    [7, 7],
+  ] as const)("preserves Tab selection range %i..%i after projection", async (anchor, focus) => {
+    const doc = createPageDoc(2);
+    const api = createApi();
+    await render(doc, api);
+    const second = editor("block-1");
+    second.focus();
+    second.setSelectionRange(anchor, focus);
+
+    flushSync(() => second.dispatchEvent(new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    })));
+    await settle();
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", "block-0");
+    doc.getMap("pageMeta").set("mutationVersion", 4);
+    await rerender(doc, api);
+    await settleFocus();
+
+    expect(document.activeElement).toBe(editor("block-1"));
+    expect(editor("block-1").selectionStart).toBe(anchor);
+    expect(editor("block-1").selectionEnd).toBe(focus);
+  });
+
+  it("preserves Shift+Tab caret after projection", async () => {
+    const doc = createPageDoc(2);
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", "block-0");
+    const api = createApi();
+    await render(doc, api);
+    dispatchKey(editor("block-1"), "Tab", 4, { shiftKey: true });
+    await settle();
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", null);
+    doc.getMap("pageMeta").set("mutationVersion", 4);
+    await rerender(doc, api);
+    await settleFocus();
+    expect(editor("block-1").selectionStart).toBe(4);
+    expect(editor("block-1").selectionEnd).toBe(4);
   });
 
   it.each([
@@ -292,6 +346,157 @@ describe("PageOutliner", () => {
     }));
   });
 
+  it("extends Shift+Arrow across four blocks and contracts from the moving focus edge", async () => {
+    await render(createPageDoc(5), createApi());
+    const second = editor("block-1");
+    second.focus();
+    dispatchKey(second, "ArrowDown", 7, { shiftKey: true });
+    dispatchKey(second, "ArrowDown", 7, { shiftKey: true });
+    dispatchKey(second, "ArrowDown", 7, { shiftKey: true });
+
+    expect(selectedRowIds()).toEqual(["block-1", "block-2", "block-3", "block-4"]);
+
+    dispatchKey(second, "ArrowUp", 0, { shiftKey: true });
+    dispatchKey(second, "ArrowUp", 0, { shiftKey: true });
+    expect(selectedRowIds()).toEqual(["block-1", "block-2"]);
+
+    dispatchKey(second, "ArrowUp", 0, { shiftKey: true });
+    dispatchKey(second, "ArrowUp", 0, { shiftKey: true });
+    expect(selectedRowIds()).toEqual(["block-0", "block-1"]);
+  });
+
+  it("copies a multi-block selection to plain text and structured MIME without mutation", async () => {
+    const doc = createPageDoc(4);
+    const properties = doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.get("properties") as Y.Map<unknown>;
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("type", "checklist");
+    properties.set("checked", true);
+    await render(doc, createApi());
+    const first = editor("block-0");
+    first.focus();
+    dispatchKey(first, "ArrowDown", 7, { shiftKey: true });
+    dispatchKey(first, "ArrowDown", 7, { shiftKey: true });
+    dispatchKey(first, "ArrowDown", 7, { shiftKey: true });
+    const before = readPageDocument(doc, "page-1").blocks.map((block) => block.textValue);
+    const clipboard = clipboardTransfer();
+
+    const event = dispatchClipboard(first, "copy", clipboard.transfer);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(clipboard.data.get("text/plain")).toBe("Block 0\nBlock 1\nBlock 2\nBlock 3");
+    const structured = decodeStructuredClipboard(clipboard.data.get(PAGE_BLOCK_CLIPBOARD_MIME)!);
+    expect(structured.blocks[1]).toMatchObject({
+      text: "Block 1",
+      type: "checklist",
+      properties: { checked: true },
+    });
+    expect(readPageDocument(doc, "page-1").blocks.map((block) => block.textValue)).toEqual(before);
+  });
+
+  it("pastes the structured MIME produced by a real copy event with fresh IDs", async () => {
+    const doc = createPageDoc(3);
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", "block-0");
+    const api = createApi();
+    await render(doc, api);
+    const first = editor("block-0");
+    first.focus();
+    dispatchKey(first, "ArrowDown", 7, { shiftKey: true });
+    const clipboard = clipboardTransfer();
+    dispatchClipboard(first, "copy", clipboard.transfer);
+
+    const destination = editor("block-2");
+    destination.focus();
+    destination.setSelectionRange(0, destination.value.length);
+    dispatchPasteData(destination, Object.fromEntries(clipboard.data));
+    await settle();
+
+    const operations = vi.mocked(api.applyOperations).mock.calls[0]?.[1].operations ?? [];
+    expect(operations).toEqual([
+      { op: "update_block_text", block_id: "block-2", text: "Block 0" },
+      {
+        op: "update_block_type_and_properties",
+        block_id: "block-2",
+        block_type: "paragraph",
+        properties: {},
+      },
+      expect.objectContaining({
+        op: "create_block",
+        parent_id: "block-2",
+        text: "Block 1",
+      }),
+    ]);
+    const created = operations.filter((operation) => operation.op === "create_block");
+    expect(new Set(created.map((operation) => operation.temp_id)).size).toBe(created.length);
+    expect(created.every((operation) => !["block-0", "block-1"].includes(operation.temp_id))).toBe(true);
+  });
+
+  it("keeps a single textarea partial selection on native copy", async () => {
+    await render(createPageDoc(1), createApi());
+    const first = editor("block-0");
+    first.focus();
+    first.setSelectionRange(1, 4);
+    const clipboard = clipboardTransfer();
+    const event = dispatchClipboard(first, "copy", clipboard.transfer);
+    expect(event.defaultPrevented).toBe(false);
+    expect(clipboard.data.size).toBe(0);
+  });
+
+  it("cuts only after both clipboard formats are written", async () => {
+    const api = createApi();
+    await render(createPageDoc(3), api);
+    const first = editor("block-0");
+    first.focus();
+    dispatchKey(first, "ArrowDown", 7, { shiftKey: true });
+    dispatchKey(first, "ArrowDown", 7, { shiftKey: true });
+    const clipboard = clipboardTransfer();
+
+    dispatchClipboard(first, "cut", clipboard.transfer);
+    await settle();
+
+    expect([...clipboard.data.keys()]).toEqual([PAGE_BLOCK_CLIPBOARD_MIME, "text/plain"]);
+    expect(api.applyOperations).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(api.applyOperations).mock.calls[0]?.[1].operations).toEqual([
+      { op: "delete_block_subtree", block_id: "block-0" },
+      { op: "delete_block_subtree", block_id: "block-1" },
+      { op: "delete_block_subtree", block_id: "block-2" },
+    ]);
+  });
+
+  it("cuts a parent-child-sibling range once per structural root", async () => {
+    const doc = createPageDoc(3);
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", "block-0");
+    const api = createApi();
+    await render(doc, api);
+    const first = editor("block-0");
+    first.focus();
+    dispatchKey(first, "ArrowDown", 7, { shiftKey: true });
+    dispatchKey(first, "ArrowDown", 7, { shiftKey: true });
+
+    dispatchClipboard(first, "cut", clipboardTransfer().transfer);
+    await settle();
+
+    expect(vi.mocked(api.applyOperations).mock.calls[0]?.[1].operations).toEqual([
+      { op: "delete_block_subtree", block_id: "block-0" },
+      { op: "delete_block_subtree", block_id: "block-2" },
+    ]);
+  });
+
+  it("does not delete when clipboard writing fails and shows feedback", async () => {
+    const api = createApi();
+    await render(createPageDoc(2), api);
+    const first = editor("block-0");
+    first.focus();
+    dispatchKey(first, "ArrowDown", 7, { shiftKey: true });
+    const clipboard = clipboardTransfer({ failOn: "text/plain" });
+
+    const event = dispatchClipboard(first, "cut", clipboard.transfer);
+    await settle();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(api.applyOperations).not.toHaveBeenCalled();
+    expect(container!.querySelector('[data-editor-feedback="error"]')?.textContent)
+      .toContain("clipboard");
+  });
+
   it("maps paste and paste-over-selection from real textarea clipboard events", async () => {
     const api = createApi();
     await render(createPageDoc(3), api);
@@ -305,6 +510,40 @@ describe("PageOutliner", () => {
         expect.objectContaining({ op: "create_block", text: expect.stringContaining("Two") }),
       ]),
     }));
+  });
+
+  it("prefers structured MIME and restores block type and properties", async () => {
+    const api = createApi();
+    const doc = createPageDoc(1);
+    setBlockText(doc, "block-0", "");
+    await render(doc, api);
+    const structured: StructuredClipboardPayload = {
+      schema: "soulstream-page-blocks",
+      version: 1,
+      blocks: [{
+        text: "Task",
+        type: "checklist",
+        properties: { checked: true },
+        collapsed: false,
+        children: [],
+      }],
+    };
+
+    dispatchPasteData(editor("block-0"), {
+      "text/plain": "fallback",
+      [PAGE_BLOCK_CLIPBOARD_MIME]: encodeStructuredClipboard(structured),
+    });
+    await settle();
+
+    expect(vi.mocked(api.applyOperations).mock.calls[0]?.[1].operations).toEqual([
+      { op: "update_block_text", block_id: "block-0", text: "Task" },
+      {
+        op: "update_block_type_and_properties",
+        block_id: "block-0",
+        block_type: "checklist",
+        properties: { checked: true },
+      },
+    ]);
   });
 
   it("replaces a Shift-selected range through pasteOverSelection", async () => {
@@ -337,6 +576,174 @@ describe("PageOutliner", () => {
     await settleFocus();
     expect(document.activeElement).toBe(editor("block-1"));
     expect(editor("block-1").selectionStart).toBe(7);
+  });
+
+  it("replays Tab, Shift+Tab, and paste in FIFO order after each projection", async () => {
+    const doc = createPageDoc(3);
+    const pending: Array<{
+      input: ApplyPageOperationsInput;
+      resolve(value: PageMutationResponse): void;
+    }> = [];
+    const api = createApi({
+      applyOperations: vi.fn(async (_pageId: string, input: ApplyPageOperationsInput) => new Promise<PageMutationResponse>((resolve) => {
+        pending.push({ input, resolve });
+      })),
+    });
+    await render(doc, api);
+    const second = editor("block-1");
+    second.focus();
+
+    dispatchKey(second, "Tab", 4);
+    dispatchKey(second, "Tab", 4, { shiftKey: true });
+    dispatchPaste(second, "queued paste");
+    await waitFor(() => pending.length === 1);
+    expect(api.applyOperations).toHaveBeenCalledTimes(1);
+
+    pending[0]!.resolve(operationResponse(pending[0]!.input));
+    await settle();
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", "block-0");
+    doc.getMap("pageMeta").set("mutationVersion", 4);
+    await rerender(doc, api);
+    await waitFor(() => pending.length === 2);
+
+    pending[1]!.resolve(operationResponse(pending[1]!.input));
+    await settle();
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", null);
+    doc.getMap("pageMeta").set("mutationVersion", 5);
+    await rerender(doc, api);
+    await waitFor(() => pending.length === 3);
+
+    expect(pending.map(({ input }) => input.operations[0])).toEqual([
+      expect.objectContaining({ op: "move_block", block_id: "block-1", parent_id: "block-0" }),
+      expect.objectContaining({ op: "move_block", block_id: "block-1", parent_id: null }),
+      { op: "update_block_text", block_id: "block-1", text: "Blocqueued pastek 1" },
+    ]);
+    expect(new Set(pending.map(({ input }) => input.idempotencyKey)).size).toBe(3);
+  });
+
+  it("keeps an ambiguous API failure visible while later Tab and paste intents continue safely", async () => {
+    const doc = createPageDoc(3);
+    const pending: Array<{
+      input: ApplyPageOperationsInput;
+      resolve(value: PageMutationResponse): void;
+    }> = [];
+    let callCount = 0;
+    const api = createApi({
+      applyOperations: vi.fn(async (_pageId: string, input: ApplyPageOperationsInput) => {
+        callCount += 1;
+        if (callCount === 1) throw new Error("connection closed before response");
+        return new Promise<PageMutationResponse>((resolve) => pending.push({ input, resolve }));
+      }),
+    });
+    await render(doc, api);
+    const second = editor("block-1");
+
+    dispatchKey(second, "Tab", 4);
+    dispatchKey(second, "Tab", 4);
+    dispatchPaste(second, "queued paste");
+
+    await waitFor(() => vi.mocked(api.applyOperations).mock.calls.length === 2);
+    await waitFor(() => container!.querySelector('[data-editor-feedback="error"]') !== null);
+    expect(container!.querySelector('[data-editor-feedback="error"]')?.textContent)
+      .toContain("could not be confirmed");
+    expect(container!.querySelector('[data-editor-feedback="error"]')?.textContent)
+      .toContain("2 later edits will continue");
+
+    pending[0]!.resolve(operationResponse(pending[0]!.input));
+    await settle();
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", "block-0");
+    doc.getMap("pageMeta").set("mutationVersion", 4);
+    await rerender(doc, api);
+    await waitFor(() => vi.mocked(api.applyOperations).mock.calls.length === 3);
+
+    expect(container!.querySelector('[data-editor-feedback="error"]')?.textContent)
+      .toContain("connection closed before response");
+    expect(pending.map(({ input }) => input.operations[0])).toEqual([
+      expect.objectContaining({ op: "move_block", block_id: "block-1", parent_id: "block-0" }),
+      { op: "update_block_text", block_id: "block-1", text: "Blocqueued pastek 1" },
+    ]);
+  });
+
+  it("does not wait again when projection arrives before the HTTP response", async () => {
+    const doc = createPageDoc(2);
+    const pending: Array<{
+      input: ApplyPageOperationsInput;
+      resolve(value: PageMutationResponse): void;
+    }> = [];
+    const api = createApi({
+      applyOperations: vi.fn(async (_pageId: string, input: ApplyPageOperationsInput) => new Promise<PageMutationResponse>((resolve) => {
+        pending.push({ input, resolve });
+      })),
+    });
+    await render(doc, api);
+    const second = editor("block-1");
+    dispatchKey(second, "Tab", 4);
+    dispatchKey(second, "Tab", 4, { shiftKey: true });
+    await waitFor(() => pending.length === 1);
+
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", "block-0");
+    doc.getMap("pageMeta").set("mutationVersion", 4);
+    await rerender(doc, api);
+    pending[0]!.resolve(operationResponse(pending[0]!.input));
+    await waitFor(() => pending.length === 2);
+
+    expect(pending[1]!.input.operations[0]).toMatchObject({
+      op: "move_block",
+      block_id: "block-1",
+      parent_id: null,
+    });
+  });
+
+  it("ignores a completed command after the editor doc is replaced", async () => {
+    const oldDoc = createPageDoc(2);
+    let resolve!: (value: PageMutationResponse) => void;
+    let request!: ApplyPageOperationsInput;
+    const api = createApi({
+      applyOperations: vi.fn(async (_pageId: string, input: ApplyPageOperationsInput) => new Promise<PageMutationResponse>((done) => {
+        request = input;
+        resolve = done;
+      })),
+    });
+    await render(oldDoc, api);
+    dispatchKey(editor("block-1"), "Tab", 4);
+    await waitFor(() => request !== undefined);
+
+    const replacementDoc = createPageDoc(2);
+    await rerender(replacementDoc, api);
+    resolve(operationResponse(request));
+    await settle();
+
+    expect(container!.querySelector("[data-editor-state]")).toBeNull();
+    expect(container!.querySelector("[data-editor-feedback]")).toBeNull();
+  });
+
+  it("fails a stale queued paste explicitly without applying it to another block", async () => {
+    const doc = createPageDoc(2);
+    const pending: Array<{
+      input: ApplyPageOperationsInput;
+      resolve(value: PageMutationResponse): void;
+    }> = [];
+    const api = createApi({
+      applyOperations: vi.fn(async (_pageId: string, input: ApplyPageOperationsInput) => new Promise<PageMutationResponse>((resolve) => {
+        pending.push({ input, resolve });
+      })),
+    });
+    await render(doc, api);
+    const second = editor("block-1");
+    dispatchKey(second, "Tab", 4);
+    dispatchPaste(second, "must not move");
+    await waitFor(() => pending.length === 1);
+
+    pending[0]!.resolve(operationResponse(pending[0]!.input));
+    await settle();
+    doc.getMap<Y.Map<unknown>>("blocks").delete("block-1");
+    doc.getMap("pageMeta").set("mutationVersion", 4);
+    await rerender(doc, api);
+    await waitFor(() => container!.querySelector('[data-editor-feedback="error"]') !== null);
+
+    expect(api.applyOperations).toHaveBeenCalledTimes(1);
+    expect(container!.querySelector('[data-editor-feedback="error"]')?.textContent)
+      .toContain("no longer exists");
   });
 
   it("blocks structural shortcuts during IME composition", async () => {
@@ -415,6 +822,11 @@ describe("PageOutliner", () => {
   function editor(blockId: string): HTMLTextAreaElement {
     return container!.querySelector<HTMLTextAreaElement>(`[data-block-id="${blockId}"] textarea`)!;
   }
+
+  function selectedRowIds(): string[] {
+    return [...container!.querySelectorAll<HTMLElement>('[data-page-editor-row][aria-selected="true"]')]
+      .map((row) => row.dataset.blockId!);
+  }
 });
 
 function addProjectedBlock(
@@ -463,14 +875,18 @@ function createApi(overrides: Partial<PageApiClient> = {}): PageApiClient {
     getPage: vi.fn(),
     getDailyPage: vi.fn(),
     setStarred: vi.fn(),
-    applyOperations: vi.fn(async (_pageId: string, input: ApplyPageOperationsInput) => ({
-      page: { id: "page-1", title: "Page", daily_date: null, version: input.expectedVersion + 1, archived: false, metadata: {}, created_at: "", updated_at: "" },
-      blocks: [],
-      operation: { id: "operation-1" },
-      temp_id_mapping: Object.fromEntries(input.operations.flatMap((operation) => operation.op === "create_block" ? [[operation.temp_id, `created-${operation.temp_id}`]] : [])),
-    })),
+    applyOperations: vi.fn(async (_pageId: string, input: ApplyPageOperationsInput) => operationResponse(input)),
     ...overrides,
   } as PageApiClient;
+}
+
+function operationResponse(input: ApplyPageOperationsInput) {
+  return {
+    page: { id: "page-1", title: "Page", daily_date: null, version: input.expectedVersion + 1, archived: false, metadata: {}, created_at: "", updated_at: "" },
+    blocks: [],
+    operation: { id: `operation-${input.idempotencyKey}` },
+    temp_id_mapping: Object.fromEntries(input.operations.flatMap((operation) => operation.op === "create_block" ? [[operation.temp_id, `created-${operation.temp_id}`]] : [])),
+  };
 }
 
 function setBlockText(doc: Y.Doc, blockId: string, value: string): void {
@@ -497,14 +913,47 @@ function dispatchKey(
 }
 
 function dispatchPaste(textarea: HTMLTextAreaElement, plainText: string): void {
+  dispatchPasteData(textarea, { "text/plain": plainText });
+}
+
+function dispatchPasteData(
+  textarea: HTMLTextAreaElement,
+  values: Readonly<Record<string, string>>,
+): Event {
   const event = new Event("paste", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "clipboardData", {
     value: {
-      getData: (type: string) => type === "text/plain" ? plainText : "",
+      getData: (type: string) => values[type] ?? "",
       files: [],
     },
   });
   flushSync(() => textarea.dispatchEvent(event));
+  return event;
+}
+
+function clipboardTransfer(options: { failOn?: string } = {}) {
+  const data = new Map<string, string>();
+  const transfer = {
+    files: [],
+    getData(type: string) { return data.get(type) ?? ""; },
+    setData(type: string, value: string) {
+      if (options.failOn === type) throw new Error("clipboard unavailable");
+      data.set(type, value);
+    },
+    clearData() { data.clear(); },
+  } as unknown as DataTransfer;
+  return { data, transfer };
+}
+
+function dispatchClipboard(
+  textarea: HTMLTextAreaElement,
+  type: "copy" | "cut",
+  clipboardData: DataTransfer,
+): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "clipboardData", { value: clipboardData });
+  flushSync(() => textarea.dispatchEvent(event));
+  return event;
 }
 
 function domRect(top: number, height: number, width: number): DOMRect {
@@ -531,4 +980,12 @@ async function settleFocus() {
   await settle();
   await new Promise((resolve) => setTimeout(resolve, 50));
   await settle();
+}
+
+async function waitFor(predicate: () => boolean, attempts = 20): Promise<void> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (predicate()) return;
+    await settle();
+  }
+  throw new Error("condition was not reached");
 }
