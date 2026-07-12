@@ -141,6 +141,39 @@ export function buildRouteRegistry(fixture: RouteInventoryFixture): RouteRegistr
   };
 }
 
+const TYPESCRIPT_ADDITIVE_ROUTES: readonly Omit<RouteDefinition, "order">[] = [
+  {
+    methods: ["POST"],
+    path: "/api/sessions/{session_id}/review/acknowledge",
+    name: "acknowledge_session_review",
+    authRequired: true,
+    family: "session",
+  },
+];
+
+/**
+ * Python 이행 fixture에 아직 존재하지 않는 TS 런타임 전용 additive route까지 포함한다.
+ * Python 기준선 자체를 변조하지 않으면서 route coverage가 실제 TS 운영 표면을 검증한다.
+ */
+export function buildRuntimeRouteRegistry(fixture: RouteInventoryFixture): RouteRegistry {
+  const baseline = buildRouteRegistry(fixture);
+  const nextOrder = baseline.routes.reduce(
+    (highest, route) => Math.max(highest, route.order),
+    -1,
+  ) + 1;
+  const routes = [
+    ...baseline.routes,
+    ...TYPESCRIPT_ADDITIVE_ROUTES.map((route, index) => ({
+      ...route,
+      order: nextOrder + index,
+    })),
+  ];
+  return buildRouteRegistry({
+    ...fixture,
+    routes: routes.map(({ family: _family, ...route }) => route),
+  });
+}
+
 export function getRouteByKey(
   registry: RouteRegistry,
   method: RouteMethod,
@@ -302,7 +335,7 @@ function isControlPlanePath(path: string): boolean {
     return true;
   }
 
-  return /^\/api\/sessions\/\{session_id\}\/(events|intervene|message|interrupt|background-tasks|schedules|respond|tool-approvals|realtime)(\/|$)/.test(
+  return /^\/api\/sessions\/\{session_id\}\/(events|intervene|message|interrupt|review|background-tasks|schedules|respond|tool-approvals|realtime)(\/|$)/.test(
     path,
   );
 }

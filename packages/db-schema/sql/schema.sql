@@ -94,7 +94,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     caller_session_id       TEXT,
     notify_completion       BOOLEAN NOT NULL DEFAULT TRUE,
     termination_reason      TEXT,
-    termination_detail      TEXT
+    termination_detail      TEXT,
+    review_required         BOOLEAN NOT NULL DEFAULT FALSE,
+    review_state            TEXT NOT NULL DEFAULT 'not_required'
 );
 
 -- 기존 테이블에 caller_session_id 컬럼 추가 (멱등)
@@ -107,6 +109,11 @@ ALTER TABLE sessions ADD COLUMN IF NOT EXISTS away_summary TEXT;
 -- Supervisor termination reason 컬럼 추가 (멱등)
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS termination_reason TEXT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS termination_detail TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS review_required BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS review_state TEXT NOT NULL DEFAULT 'not_required';
+ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_review_state_check;
+ALTER TABLE sessions ADD CONSTRAINT sessions_review_state_check
+    CHECK (review_state IN ('not_required', 'needs_review', 'acknowledged'));
 
 CREATE OR REPLACE FUNCTION board_delete_session_refs()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
@@ -916,6 +923,71 @@ CREATE OR REPLACE FUNCTION session_register(
     );
 $$;
 
+-- Additive review-aware registration. Keep session_register's signature intact for old workers.
+DROP FUNCTION IF EXISTS session_register_with_review(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, TIMESTAMPTZ, TEXT, BOOLEAN, BOOLEAN, TEXT);
+CREATE OR REPLACE FUNCTION session_register_with_review(
+    p_session_id        TEXT,
+    p_node_id           TEXT,
+    p_agent_id          TEXT,
+    p_claude_session_id TEXT,
+    p_session_type      TEXT,
+    p_prompt            TEXT,
+    p_client_id         TEXT,
+    p_status            TEXT,
+    p_created_at        TIMESTAMPTZ,
+    p_updated_at        TIMESTAMPTZ,
+    p_caller_session_id TEXT,
+    p_notify_completion BOOLEAN,
+    p_review_required   BOOLEAN,
+    p_review_state      TEXT
+) RETURNS void LANGUAGE sql AS $$
+    INSERT INTO sessions (
+        session_id, node_id, agent_id, claude_session_id,
+        session_type, prompt, client_id, status,
+        created_at, updated_at, caller_session_id, notify_completion,
+        review_required, review_state
+    ) VALUES (
+        p_session_id, p_node_id, p_agent_id, p_claude_session_id,
+        p_session_type, p_prompt, p_client_id, p_status,
+        p_created_at, p_updated_at, p_caller_session_id,
+        COALESCE(p_notify_completion, TRUE),
+        COALESCE(p_review_required, FALSE),
+        COALESCE(p_review_state, 'not_required')
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION session_acknowledge_review(
+    p_session_id TEXT,
+    p_updated_at TIMESTAMPTZ
+) RETURNS TEXT LANGUAGE plpgsql AS $$
+DECLARE
+    v_review_required BOOLEAN;
+    v_review_state TEXT;
+BEGIN
+    SELECT review_required, review_state
+      INTO v_review_required, v_review_state
+      FROM sessions
+     WHERE session_id = p_session_id
+     FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RETURN 'not_found';
+    ELSIF NOT v_review_required THEN
+        RETURN 'not_required';
+    ELSIF v_review_state = 'acknowledged' THEN
+        RETURN 'already_acknowledged';
+    ELSIF v_review_state <> 'needs_review' THEN
+        RETURN 'not_pending';
+    END IF;
+
+    UPDATE sessions
+       SET review_state = 'acknowledged',
+           updated_at = p_updated_at
+     WHERE session_id = p_session_id;
+    RETURN 'acknowledged';
+END;
+$$;
+
 -- session_set_claude_id (claude_session_id 불변 설정)
 -- NULL → SET (최초 설정)
 -- 같은 값 → no-op (idempotent, 컴팩션/재시작 재진입 허용)
@@ -958,7 +1030,7 @@ DECLARE
         'prompt', 'client_id', 'last_message',
         'metadata', 'was_running_at_shutdown',
         'last_event_id', 'last_read_event_id',
-        'termination_reason', 'termination_detail'
+        'termination_reason', 'termination_detail', 'review_state'
     ];
     set_list  TEXT;
     i         INTEGER;

@@ -99,6 +99,7 @@ function createDispatcher(opts: {
     listTasks: vi.fn(() => runningTasks),
     addIntervention: vi.fn(),
     cancelTask: vi.fn(async () => true),
+    acknowledgeReview: vi.fn(async () => "acknowledged"),
     deliverInputResponse: vi.fn(),
     deliverToolApproval: vi.fn(),
   };
@@ -775,6 +776,7 @@ describe("CommandDispatcher.intervene (B-4)", () => {
       last_event_id: 581,
       termination_reason: null,
       termination_detail: null,
+      review_state: "not_required",
     });
     expect(startExecution).toHaveBeenCalledTimes(1);
     const [resumedTask, agent] = startExecution.mock.calls[0] as [Task, AgentProfile];
@@ -961,6 +963,53 @@ describe("CommandDispatcher.interrupt_session", () => {
       requestId: "stop-2",
     });
     expect((sent[0] as { message: string }).message).toContain("agentSessionId");
+  });
+});
+
+describe("CommandDispatcher.acknowledge_session_review", () => {
+  it("returns an explicit ACK for the atomic review transition", async () => {
+    const acknowledgeReview = vi.fn(async () => "acknowledged" as const);
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: { acknowledgeReview } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "acknowledge_session_review",
+      agentSessionId: "sess-review",
+      requestId: "review-1",
+    });
+
+    expect(acknowledgeReview).toHaveBeenCalledWith("sess-review");
+    expect(sent).toEqual([{
+      type: "acknowledge_session_review_ack",
+      requestId: "review-1",
+      agentSessionId: "sess-review",
+      status: "ok",
+      reviewState: "acknowledged",
+      changed: true,
+      code: undefined,
+      message: undefined,
+    }]);
+  });
+
+  it("returns explicit domain errors instead of timing out", async () => {
+    const { dispatcher, sent } = createDispatcher({
+      taskManager: {
+        acknowledgeReview: vi.fn(async () => "not_required" as const),
+      } as Partial<TaskManager>,
+    });
+
+    await dispatcher.dispatch({
+      type: "acknowledge_session_review",
+      agentSessionId: "sess-review",
+      requestId: "review-2",
+    });
+
+    expect(sent[0]).toMatchObject({
+      type: "acknowledge_session_review_ack",
+      status: "error",
+      code: "REVIEW_NOT_REQUIRED",
+    });
   });
 });
 

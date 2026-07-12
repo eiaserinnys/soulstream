@@ -27,6 +27,9 @@ export type InterveneNodeCommandPayload =
 export type InterruptNodeCommandPayload =
   ExistingSessionActionPayload<"interrupt_session">;
 
+export type AcknowledgeSessionReviewNodeCommandPayload =
+  ExistingSessionActionPayload<"acknowledge_session_review">;
+
 export type ToolApprovalNodeCommandPayload =
   ExistingSessionActionPayload<"approve_tool" | "reject_tool"> & {
     approvalId: string;

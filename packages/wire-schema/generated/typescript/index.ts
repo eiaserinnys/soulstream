@@ -16,6 +16,7 @@ export type SoulstreamUpstreamProtocol =
   | ErrorMessage
   | InterveneAck
   | InterruptSessionAck
+  | AcknowledgeSessionReviewAck
   | RespondAck
   | ToolApprovalAck
   | RealtimeCallCreated
@@ -30,6 +31,7 @@ export type SoulstreamUpstreamProtocol =
   | CreateSession
   | Intervene
   | InterruptSession
+  | AcknowledgeSessionReview
   | Respond
   | ApproveTool
   | RejectTool
@@ -124,6 +126,8 @@ export interface SessionCreated {
    * broadcast 경로에서 송신되는 세션 정보 (to_session_info 결과).
    */
   session?: {
+    review_required?: boolean;
+    review_state?: "not_required" | "needs_review" | "acknowledged";
     [k: string]: unknown;
   };
   folderId?: string | null;
@@ -770,6 +774,8 @@ export interface SSEEventAwaySummary {
 export interface SessionsUpdate {
   type: "sessions_update";
   sessions: {
+    review_required?: boolean;
+    review_state?: "not_required" | "needs_review" | "acknowledged";
     [k: string]: unknown;
   }[];
   total?: number;
@@ -795,6 +801,8 @@ export interface SessionUpdated {
   type: "session_updated";
   agent_session_id?: string;
   agentSessionId?: string;
+  review_required?: boolean;
+  review_state?: "not_required" | "needs_review" | "acknowledged";
   [k: string]: unknown;
 }
 /**
@@ -838,6 +846,20 @@ export interface InterruptSessionAck {
   status: "ok";
   interrupted?: boolean;
   agentSessionId?: string;
+  [k: string]: unknown;
+}
+/**
+ * 노드→orch: acknowledge_session_review 원자 전이 ACK.
+ */
+export interface AcknowledgeSessionReviewAck {
+  type: "acknowledge_session_review_ack";
+  requestId: string;
+  status: "ok" | "error";
+  agentSessionId: string;
+  reviewState?: "acknowledged";
+  changed?: boolean;
+  code?: string;
+  message?: string;
   [k: string]: unknown;
 }
 /**
@@ -1059,6 +1081,20 @@ export interface InterruptSession {
   agentSessionId: string;
   /**
    * 구버전 호환 — 신규 코드는 agentSessionId 사용.
+   */
+  session_id?: string;
+  requestId?: string;
+  request_id?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: 세션 결과 검수 확인을 원자 전이한다.
+ */
+export interface AcknowledgeSessionReview {
+  type: "acknowledge_session_review";
+  agentSessionId: string;
+  /**
+   * 구버전 호환.
    */
   session_id?: string;
   requestId?: string;

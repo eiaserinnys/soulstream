@@ -57,6 +57,8 @@ export function hydrateEvictedTaskFromSessionRow(
     agentSessionId: row.session_id,
     prompt: row.prompt ?? "",
     status,
+    reviewRequired: row.review_required === true,
+    reviewState: row.review_state ?? "not_required",
     hydratedFromDb: true,
     profileId: row.agent_id ?? undefined,
     clientId: row.client_id,

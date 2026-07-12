@@ -29,6 +29,7 @@ describe("session action command HTTP route harness", () => {
       ["/api/sessions/sess-contract/intervene", { text: "hello" }],
       ["/api/sessions/sess-contract/message", { text: "hello" }],
       ["/api/sessions/sess-contract/interrupt", {}],
+      ["/api/sessions/sess-contract/review/acknowledge", {}],
       ["/api/sessions/sess-contract/tool-approvals/approval-1/approve", {}],
       ["/api/sessions/sess-contract/tool-approvals/approval-1/reject", {}],
       ["/api/sessions/sess-contract/realtime/call", { offerSdp: "offer" }],
@@ -55,6 +56,7 @@ describe("session action command HTTP route harness", () => {
       "POST /api/sessions/:session_id/intervene": true,
       "POST /api/sessions/:session_id/message": true,
       "POST /api/sessions/:session_id/interrupt": true,
+      "POST /api/sessions/:session_id/review/acknowledge": true,
       "POST /api/sessions/:session_id/tool-approvals/:approval_id/approve": true,
       "POST /api/sessions/:session_id/tool-approvals/:approval_id/reject": true,
       "POST /api/sessions/:session_id/realtime/call": true,
@@ -191,6 +193,47 @@ describe("session action command HTTP route harness", () => {
       });
 
       await app.close();
+    }
+  });
+
+  it("routes review acknowledge and maps domain errors explicitly", async () => {
+    const success = createActionHarness();
+    const ok = await success.app.inject({
+      method: "POST",
+      url: "/api/sessions/sess-contract/review/acknowledge",
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toMatchObject({
+      status: "ok",
+      reviewState: "acknowledged",
+      changed: true,
+    });
+    expect(success.sent[0]).toMatchObject({
+      type: "acknowledge_session_review",
+      agentSessionId: "sess-contract",
+    });
+    await success.app.close();
+
+    for (const [code, statusCode] of [
+      ["SESSION_NOT_FOUND", 404],
+      ["REVIEW_NOT_REQUIRED", 409],
+      ["REVIEW_NOT_PENDING", 409],
+    ] as const) {
+      const failure = createActionHarness({
+        ackFor: () => ({
+          type: "acknowledge_session_review_ack",
+          status: "error",
+          code,
+          message: code,
+        }),
+      });
+      const response = await failure.app.inject({
+        method: "POST",
+        url: "/api/sessions/sess-contract/review/acknowledge",
+      });
+      expect(response.statusCode).toBe(statusCode);
+      expect(response.json()).toMatchObject({ error: { code } });
+      await failure.app.close();
     }
   });
 

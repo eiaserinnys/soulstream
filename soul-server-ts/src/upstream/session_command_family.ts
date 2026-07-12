@@ -67,12 +67,18 @@ interface SubscribeEventsCmd extends CommandLike {
   subscribeId?: string;
 }
 
+interface AcknowledgeSessionReviewCmd extends CommandLike {
+  type: "acknowledge_session_review";
+  agentSessionId?: string;
+  session_id?: string;
+}
+
 type ListSessionsCmd = CommandLike & { type: "list_sessions" };
 
 interface SessionCommandFamilyDeps {
   send: SendFn;
   logger: Logger;
-  taskManager: Pick<TaskManager, "cancelTask">;
+  taskManager: Pick<TaskManager, "cancelTask" | "acknowledgeReview">;
   taskRuntimeCommands: TaskRuntimeCommands;
   sessionListCommands: SessionListCommands;
 }
@@ -84,10 +90,54 @@ export function createSessionCommandFamily(
     create_session: (cmd) => handleCreateSession(deps, cmd as CreateSessionCmd),
     interrupt_session: (cmd) =>
       handleInterruptSession(deps, cmd as InterruptSessionCmd),
+    acknowledge_session_review: (cmd) =>
+      handleAcknowledgeSessionReview(deps, cmd as AcknowledgeSessionReviewCmd),
     subscribe_events: (cmd) =>
       handleSubscribeEvents(deps, cmd as SubscribeEventsCmd),
     list_sessions: (cmd) => handleListSessions(deps, cmd as ListSessionsCmd),
   };
+}
+
+async function handleAcknowledgeSessionReview(
+  deps: SessionCommandFamilyDeps,
+  cmd: AcknowledgeSessionReviewCmd,
+): Promise<void> {
+  const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+  if (!sessionId) {
+    throw new CommandDispatchError(
+      "acknowledge_session_review requires agentSessionId",
+    );
+  }
+  const requestId = commandRequestId(cmd);
+  const outcome = await deps.taskManager.acknowledgeReview(sessionId);
+  if (!requestId) return;
+
+  const errorCode = reviewOutcomeErrorCode(outcome);
+  await deps.send({
+    type: "acknowledge_session_review_ack",
+    requestId,
+    agentSessionId: sessionId,
+    status: errorCode ? "error" : "ok",
+    reviewState: outcome === "acknowledged" || outcome === "already_acknowledged"
+      ? "acknowledged"
+      : undefined,
+    changed: outcome === "acknowledged",
+    code: errorCode,
+    message: errorCode ? reviewOutcomeMessage(outcome) : undefined,
+  });
+}
+
+function reviewOutcomeErrorCode(outcome: string): string | undefined {
+  if (outcome === "not_found") return "SESSION_NOT_FOUND";
+  if (outcome === "not_required") return "REVIEW_NOT_REQUIRED";
+  if (outcome === "not_pending") return "REVIEW_NOT_PENDING";
+  return undefined;
+}
+
+function reviewOutcomeMessage(outcome: string): string {
+  if (outcome === "not_found") return "Session not found";
+  if (outcome === "not_required") return "Session does not require review";
+  return "Session has no result pending review";
 }
 
 /**

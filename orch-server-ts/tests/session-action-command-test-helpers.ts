@@ -123,6 +123,14 @@ function defaultAckFor(message: Record<string, unknown>): Record<string, unknown
       return { type: "intervene_ack", status: "ok" };
     case "interrupt_session":
       return { type: "interrupt_session_ack", status: "ok" };
+    case "acknowledge_session_review":
+      return {
+        type: "acknowledge_session_review_ack",
+        status: "ok",
+        reviewState: "acknowledged",
+        changed: true,
+        agentSessionId: message.agentSessionId,
+      };
     case "approve_tool":
     case "reject_tool":
       return {

@@ -25,6 +25,8 @@ import type {
 /** task lifecycle 상태. Python `TaskStatus` enum과 값 일치 (DB sessions.status 컬럼 정본). */
 export type TaskStatus = "running" | "completed" | "error" | "interrupted";
 
+export type ReviewState = "not_required" | "needs_review" | "acknowledged";
+
 export type TerminationReason =
   | "completed_ok"
   | "killed"
@@ -199,6 +201,9 @@ export interface Task {
   agentSessionId: string;
   prompt: string;
   status: TaskStatus;
+  /** Orthogonal user review axis. Old in-memory test fixtures may omit it. */
+  reviewRequired?: boolean;
+  reviewState?: ReviewState;
 
   /** Agent registry 프로필 id (sessions.agent_id 컬럼). */
   profileId?: string;

@@ -63,6 +63,8 @@ describe("live DB SSE replay snapshots", () => {
         {
           agentSessionId: "sess-1",
           status: "running",
+          reviewRequired: false,
+          reviewState: "not_required",
           prompt: "hello",
           createdAt: "2026-07-09T00:00:00.000Z",
           updatedAt: "2026-07-09T00:01:00.000Z",

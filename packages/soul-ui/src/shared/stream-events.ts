@@ -9,6 +9,7 @@ import type { CatalogState } from "./catalog-types";
 import type {
   LastMessage,
   MetadataEntry,
+  ReviewState,
   SessionStatus,
   SessionSummary,
 } from "./session-types";
@@ -45,6 +46,10 @@ export interface SessionUpdatedStreamEvent {
   last_message?: LastMessage;
   last_event_id?: number;
   last_read_event_id?: number;
+  review_required?: boolean;
+  review_state?: ReviewState;
+  reviewRequired?: boolean;
+  reviewState?: ReviewState;
   /**
    * F-10C fix(2026-05-08): SSE session_updated wire가 운반하는 user 프로필.
    * catalog API의 userName/userPortraitUrl과 정합 — buildSessionUpdates가

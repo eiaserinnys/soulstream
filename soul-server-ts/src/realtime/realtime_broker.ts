@@ -402,6 +402,8 @@ function taskFromSessionRow(row: SessionRow): Task {
     agentSessionId: row.session_id,
     prompt: row.prompt ?? "",
     status: normalizeTaskStatus(row.status),
+    reviewRequired: row.review_required === true,
+    reviewState: row.review_state ?? "not_required",
     profileId: row.agent_id ?? undefined,
     callerSessionId: row.caller_session_id ?? undefined,
     metadata: Array.isArray(row.metadata) ? row.metadata as Array<Record<string, unknown>> : [],

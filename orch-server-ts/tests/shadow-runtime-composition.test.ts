@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  buildRouteRegistry,
+  buildRuntimeRouteRegistry,
   createShadowOrchestratorApp,
   loadContractFixtures,
   parseOrchServerConfig,
@@ -22,7 +22,7 @@ const config = parseOrchServerConfig({
 
 describe("shadow runtime composition", () => {
   const fixtures = loadContractFixtures();
-  const registry = buildRouteRegistry(fixtures.routeInventory);
+  const registry = buildRuntimeRouteRegistry(fixtures.routeInventory);
 
   it("fails during composition when route providers are missing", () => {
     expect(() =>

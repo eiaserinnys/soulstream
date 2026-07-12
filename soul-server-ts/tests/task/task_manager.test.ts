@@ -17,6 +17,7 @@ function makeMocks() {
   const appendMetadata = vi.fn().mockResolvedValue(1);
   const deleteSession = vi.fn().mockResolvedValue(undefined);
   const updateSession = vi.fn().mockResolvedValue(undefined);
+  const acknowledgeSessionReview = vi.fn().mockResolvedValue("acknowledged");
   // B-5: 폴더 배정 정본 흐름 mocks.
   const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
   const getFolderById = vi
@@ -38,6 +39,7 @@ function makeMocks() {
     appendMetadata,
     deleteSession,
     updateSession,
+    acknowledgeSessionReview,
     assignSessionToFolder,
     getFolderById,
     getCatalog,
@@ -64,6 +66,7 @@ function makeMocks() {
     appendMetadata,
     deleteSession,
     updateSession,
+    acknowledgeSessionReview,
     assignSessionToFolder,
     getFolderById,
     getCatalog,
@@ -75,6 +78,104 @@ function makeMocks() {
     emitSessionUpdated,
   };
 }
+
+describe("TaskManager.acknowledgeReview", () => {
+  it("applies the atomic DB outcome to memory and broadcasts the acknowledged state", async () => {
+    const mocks = makeMocks();
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "sess-review",
+      prompt: "review me",
+      profileId: "a",
+      callerInfo: { source: "browser" },
+    });
+    task.status = "completed";
+    task.reviewState = "needs_review";
+    mocks.emitSessionUpdated.mockClear();
+
+    await expect(tm.acknowledgeReview("sess-review")).resolves.toBe("acknowledged");
+
+    expect(mocks.acknowledgeSessionReview).toHaveBeenCalledWith("sess-review");
+    expect(task.reviewState).toBe("acknowledged");
+    expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewState: "acknowledged" }),
+    );
+  });
+
+  it("repairs stale memory and rebroadcasts an already acknowledged durable state", async () => {
+    const mocks = makeMocks();
+    mocks.acknowledgeSessionReview.mockResolvedValueOnce("already_acknowledged");
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "sess-review-retry",
+      prompt: "review me",
+      profileId: "a",
+      callerInfo: { source: "browser" },
+    });
+    task.status = "completed";
+    task.reviewState = "needs_review";
+    mocks.emitSessionUpdated.mockClear();
+
+    await expect(tm.acknowledgeReview("sess-review-retry")).resolves.toBe(
+      "already_acknowledged",
+    );
+
+    expect(task.reviewState).toBe("acknowledged");
+    expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
+  });
+
+  it("retries the cache broadcast after the first acknowledge broadcast fails", async () => {
+    const mocks = makeMocks();
+    mocks.acknowledgeSessionReview
+      .mockResolvedValueOnce("acknowledged")
+      .mockResolvedValueOnce("already_acknowledged");
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "sess-review-broadcast-retry",
+      prompt: "review me",
+      profileId: "a",
+      callerInfo: { source: "browser" },
+    });
+    task.status = "completed";
+    task.reviewState = "needs_review";
+    mocks.emitSessionUpdated.mockClear();
+    mocks.emitSessionUpdated.mockRejectedValueOnce(new Error("ws down"));
+
+    await expect(tm.acknowledgeReview(task.agentSessionId)).resolves.toBe("acknowledged");
+    await expect(tm.acknowledgeReview(task.agentSessionId)).resolves.toBe(
+      "already_acknowledged",
+    );
+
+    expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(2);
+    expect(task.reviewState).toBe("acknowledged");
+  });
+
+  it("keeps durable acknowledge success when runtime hydration is unavailable", async () => {
+    const mocks = makeMocks();
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+
+    await expect(tm.acknowledgeReview("sess-review-evicted")).resolves.toBe(
+      "acknowledged",
+    );
+
+    expect(mocks.getSession).toHaveBeenCalledWith("sess-review-evicted");
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
+  });
+
+  it.each(["not_found", "not_required", "not_pending"] as const)(
+    "keeps %s as an error outcome without runtime repair",
+    async (outcome) => {
+      const mocks = makeMocks();
+      mocks.acknowledgeSessionReview.mockResolvedValueOnce(outcome);
+      const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+
+      await expect(tm.acknowledgeReview("sess-review-error")).resolves.toBe(outcome);
+
+      expect(mocks.getSession).not.toHaveBeenCalled();
+      expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
+    },
+  );
+});
 
 describe("TaskManager.createTask", () => {
   it("Task 생성 + DB registerSession + caller_info metadata + broadcast session_created", async () => {
@@ -1004,6 +1105,7 @@ describe("TaskManager.addIntervention (B-4)", () => {
       last_event_id: task.lastEventId,
       termination_reason: null,
       termination_detail: null,
+      review_state: "not_required",
     });
   });
 
@@ -1619,6 +1721,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       last_event_id: memTask!.lastEventId,
       termination_reason: null,
       termination_detail: null,
+      review_state: "not_required",
     });
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
@@ -1671,6 +1774,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       last_event_id: memTask!.lastEventId,
       termination_reason: null,
       termination_detail: null,
+      review_state: "not_required",
     });
     expect(onResume).toHaveBeenCalledWith(memTask);
   });
@@ -1721,6 +1825,7 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       last_event_id: memTask!.lastEventId,
       termination_reason: null,
       termination_detail: null,
+      review_state: "not_required",
     });
     expect(onResume).toHaveBeenCalledWith(memTask);
   });

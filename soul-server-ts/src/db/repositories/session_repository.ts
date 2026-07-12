@@ -7,6 +7,7 @@ import type {
   SessionUpdateFields,
   SqlClient,
   UpstreamSessionDumpRow,
+  AcknowledgeReviewOutcome,
 } from "../session_db_types.js";
 
 /**
@@ -28,6 +29,7 @@ const SESSION_UPDATE_ALLOWED = new Set([
   "last_read_event_id",
   "termination_reason",
   "termination_detail",
+  "review_state",
 ]);
 
 export class SessionRepository {
@@ -56,7 +58,7 @@ export class SessionRepository {
   /** Python `session_register` stored procedure 호출 (schema.sql L196-218). */
   async registerSession(params: RegisterSessionParams): Promise<void> {
     await this.sql`
-      SELECT session_register(
+      SELECT session_register_with_review(
         ${params.sessionId},
         ${params.nodeId},
         ${params.agentId},
@@ -68,9 +70,20 @@ export class SessionRepository {
         ${params.createdAt},
         ${params.updatedAt},
         ${params.callerSessionId},
-        ${params.notifyCompletion ?? true}
+        ${params.notifyCompletion ?? true},
+        ${params.reviewRequired ?? false},
+        ${params.reviewState ?? "not_required"}
       )
     `;
+  }
+
+  async acknowledgeSessionReview(
+    sessionId: string,
+  ): Promise<AcknowledgeReviewOutcome> {
+    const rows = await this.sql<Array<{ outcome: AcknowledgeReviewOutcome }>>`
+      SELECT session_acknowledge_review(${sessionId}, ${new Date()}) AS outcome
+    `;
+    return rows[0]?.outcome ?? "not_found";
   }
 
   async updateSession(
@@ -110,6 +123,10 @@ export class SessionRepository {
         SET status = 'interrupted',
             was_running_at_shutdown = FALSE,
             termination_reason = 'unknown',
+            review_state = CASE
+              WHEN review_required THEN 'needs_review'
+              ELSE 'not_required'
+            END,
             updated_at = NOW()
         WHERE node_id = ${nodeId}
           AND status = 'running'
@@ -267,7 +284,9 @@ export class SessionRepository {
         s.folder_id,
         s.metadata,
         s.last_message,
-        s.client_id
+        s.client_id,
+        s.review_required,
+        s.review_state
       FROM sessions s
       WHERE s.node_id = ${params.nodeId}
       ORDER BY s.updated_at DESC, s.session_id DESC

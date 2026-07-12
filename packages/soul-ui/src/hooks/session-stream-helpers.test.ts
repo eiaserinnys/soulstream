@@ -423,6 +423,23 @@ describe("buildSessionUpdates — F-10C user profile extraction", () => {
     expect(updates.userName).toBe("이름만");
     expect(updates.userPortraitUrl).toBeUndefined();
   });
+
+  it("review snake_case와 camelCase를 같은 cache patch로 정규화한다", () => {
+    expect(buildSessionUpdates(makeEvent({
+      review_required: true,
+      review_state: "needs_review",
+    }))).toMatchObject({
+      reviewRequired: true,
+      reviewState: "needs_review",
+    });
+    expect(buildSessionUpdates(makeEvent({
+      reviewRequired: true,
+      reviewState: "acknowledged",
+    }))).toMatchObject({
+      reviewRequired: true,
+      reviewState: "acknowledged",
+    });
+  });
 });
 
 describe("normalizeSessionStatus", () => {

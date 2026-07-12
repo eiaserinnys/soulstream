@@ -101,7 +101,7 @@ describe("SessionDB.ensureStableSessionOrderIndex", () => {
 });
 
 describe("SessionDB.registerSession", () => {
-  it("12개 인자가 순서대로 stored proc에 전달됨", async () => {
+  it("review 필드를 포함한 additive stored proc에 14개 인자를 순서대로 전달", async () => {
     const { sql, calls } = createMockSql();
     const db = new SessionDB(sql);
 
@@ -119,6 +119,8 @@ describe("SessionDB.registerSession", () => {
       updatedAt: now,
       callerSessionId: null,
       notifyCompletion: false,
+      reviewRequired: true,
+      reviewState: "not_required",
     });
 
     expect(calls).toHaveLength(1);
@@ -136,8 +138,23 @@ describe("SessionDB.registerSession", () => {
       now,
       null,
       false,
+      true,
+      "not_required",
     ]);
-    expect(call.fragments.join("?")).toContain("session_register");
+    expect(call.fragments.join("?")).toContain("session_register_with_review");
+  });
+});
+
+describe("SessionDB.acknowledgeSessionReview", () => {
+  it("returns the atomic transition result from the database", async () => {
+    const { sql, calls } = createMockSql(() => [{ outcome: "acknowledged" }]);
+    const db = new SessionDB(sql);
+
+    await expect(db.acknowledgeSessionReview("sess-1")).resolves.toBe("acknowledged");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].values[0]).toBe("sess-1");
+    expect(calls[0].fragments.join("?")).toContain("session_acknowledge_review");
   });
 });
 
@@ -222,6 +239,8 @@ describe("SessionDB.interruptRunningSessionsForNode", () => {
     expect(query).toContain("UPDATE sessions");
     expect(query).toContain("status = 'interrupted'");
     expect(query).toContain("was_running_at_shutdown = FALSE");
+    expect(query).toContain("review_state = CASE");
+    expect(query).toContain("review_required");
     expect(query).toContain("node_id =");
     expect(query).toContain("status = 'running'");
   });

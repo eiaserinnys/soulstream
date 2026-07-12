@@ -10,6 +10,8 @@ import type { EventRecord } from "./api-types";
 /** 세션 상태 */
 export type SessionStatus = "running" | "completed" | "error" | "interrupted" | "unknown";
 
+export type ReviewState = "not_required" | "needs_review" | "acknowledged";
+
 /** LLM 토큰 사용량 */
 export interface LlmUsage {
   inputTokens: number;
@@ -65,6 +67,8 @@ export interface SessionSummary extends AgentProfile, UserProfile {
   /** 세션의 유일한 키. JSONL 파일명. */
   agentSessionId: string;
   status: SessionStatus;
+  reviewRequired?: boolean;
+  reviewState?: ReviewState;
   eventCount: number;
   lastEventType?: string;
   createdAt?: string;
