@@ -15,6 +15,8 @@ export function PageBlockRow({
   selected,
   onKeyInput,
   onPasteInput,
+  onCopyInput,
+  onCutInput,
   onSelectBlock,
   onEditorHeightChange,
   sessionIndex,
@@ -26,6 +28,8 @@ export function PageBlockRow({
   selected: boolean;
   onKeyInput(input: PageBlockEditorKeyInput, event: React.KeyboardEvent<HTMLTextAreaElement>): void;
   onPasteInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
+  onCopyInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
+  onCutInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
   onSelectBlock(blockId: string, extend: boolean): void;
   onEditorHeightChange(blockId: string): void;
   sessionIndex: SessionSummaryIndex;
@@ -88,6 +92,8 @@ export function PageBlockRow({
         block={block}
         onKeyInput={onKeyInput}
         onPasteInput={onPasteInput}
+        onCopyInput={onCopyInput}
+        onCutInput={onCutInput}
         onSelectBlock={onSelectBlock}
         onHeightChange={onEditorHeightChange}
       />

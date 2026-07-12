@@ -23,4 +23,27 @@ describe("page editor contiguous selection", () => {
     selection.extendBy(1);
     expect(selection.getSnapshot().blockIds).toEqual(["b", "c"]);
   });
+
+  it("extends across four blocks, contracts, and grows past the anchor in reverse", () => {
+    const selection = createContiguousBlockSelection(["a", "b", "c", "d", "e"]);
+    selection.select("b");
+    selection.extendBy(1);
+    selection.extendBy(1);
+    selection.extendBy(1);
+    expect(selection.getSnapshot()).toEqual({
+      anchorId: "b",
+      focusId: "e",
+      blockIds: ["b", "c", "d", "e"],
+    });
+
+    selection.extendBy(-1);
+    selection.extendBy(-1);
+    selection.extendBy(-1);
+    selection.extendBy(-1);
+    expect(selection.getSnapshot()).toEqual({
+      anchorId: "b",
+      focusId: "a",
+      blockIds: ["a", "b"],
+    });
+  });
 });

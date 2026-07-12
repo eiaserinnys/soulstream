@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { parseClipboard, planEditorOperation } from "../src/index.js";
+import {
+  decodeStructuredClipboard,
+  EditorOperationUnavailableError,
+  encodeStructuredClipboard,
+  parseClipboard,
+  planEditorOperation,
+  serializeBlockSelection,
+  StaleEditorTargetError,
+} from "../src/index.js";
 import { createSnapshot, existing, project, temporary } from "./contract-fixtures.js";
 
 describe("Serendipity-homologous indent/outdent fixtures", () => {
@@ -11,12 +19,20 @@ describe("Serendipity-homologous indent/outdent fixtures", () => {
 
   it("T-02 indents under the previous sibling as its last child", () => {
     const snapshot = createSnapshot([
-      { id: "a" }, { id: "a-child", parentId: "a" }, { id: "b" }, { id: "c" },
+      { id: "a" }, { id: "a-child", parentId: "a" }, { id: "b", text: "hello" }, { id: "c" },
     ]);
-    const result = planEditorOperation(snapshot, { type: "indent", blockIds: ["b"] });
+    const result = planEditorOperation(snapshot, {
+      type: "indent",
+      blockIds: ["b"],
+      focus: { blockId: "b", selection: { anchor: 2, focus: 4 } },
+    });
     const state = project(snapshot, result.intents);
     expect(state.childIds("a")).toEqual(["a-child", "b"]);
     expect(state.childIds()).toEqual(["a", "c"]);
+    expect(result.focus).toEqual({
+      target: existing("b"),
+      selection: { anchor: 2, focus: 4 },
+    });
   });
 
   it("T-03 no-ops outdent on a root block", () => {
@@ -37,17 +53,20 @@ describe("Serendipity-homologous indent/outdent fixtures", () => {
 
   it("T-05 indents a contiguous selected sibling group in relative order", () => {
     const snapshot = createSnapshot([{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }]);
-    const result = planEditorOperation(snapshot, { type: "indent", blockIds: ["b", "c"] });
+    const result = planEditorOperation(snapshot, {
+      type: "indent",
+      blockIds: ["b", "c"],
+      focus: { blockId: "c", selection: { anchor: 10, focus: 10 } },
+    });
     const state = project(snapshot, result.intents);
     expect(state.childIds("a")).toEqual(["b", "c"]);
-    expect(result.focus?.target).toEqual(existing("b"));
+    expect(result.focus).toEqual({ target: existing("c"), selection: { anchor: 0, focus: 0 } });
   });
 
   it("T-06 no-ops a non-contiguous selected group", () => {
     const snapshot = createSnapshot([{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }]);
-    expect(planEditorOperation(snapshot, { type: "indent", blockIds: ["b", "d"] })).toMatchObject({
-      intents: [], noopReason: "invalid-group",
-    });
+    expect(() => planEditorOperation(snapshot, { type: "indent", blockIds: ["b", "d"] }))
+      .toThrow(EditorOperationUnavailableError);
   });
 
   it("T-07 outdents a valid nested group in relative order", () => {
@@ -62,9 +81,10 @@ describe("Serendipity-homologous indent/outdent fixtures", () => {
     expect(state.childIds("parent")).toEqual(["c"]);
   });
 
-  it("T-08 no-ops a mixed-parent outdent group", () => {
+  it("T-08 rejects a mixed-parent outdent group explicitly", () => {
     const snapshot = createSnapshot([{ id: "parent" }, { id: "a", parentId: "parent" }]);
-    expect(planEditorOperation(snapshot, { type: "outdent", blockIds: ["parent", "a"] }).intents).toEqual([]);
+    expect(() => planEditorOperation(snapshot, { type: "outdent", blockIds: ["parent", "a"] }))
+      .toThrow(EditorOperationUnavailableError);
   });
 });
 
@@ -146,6 +166,153 @@ describe("Serendipity-homologous clipboard/paste fixtures", () => {
       { text: "a", children: [] }, { text: "b", children: [] },
     ] });
   });
+
+  it("P-09 serializes one immutable selection snapshot to plain text and structured MIME", () => {
+    const snapshot = createSnapshot([
+      { id: "a", text: "A" },
+      { id: "b", text: "B", type: "checklist", properties: { checked: true } },
+      { id: "b-child", parentId: "b", text: "B child", properties: { tone: "quiet" } },
+      { id: "c", text: "C" },
+    ]);
+    const before = structuredClone(snapshot);
+
+    const payload = serializeBlockSelection(snapshot, ["b", "b-child", "c"]);
+    const roundTrip = decodeStructuredClipboard(encodeStructuredClipboard(payload.structured));
+
+    expect(payload.plainText).toBe("B\nB child\nC");
+    expect(roundTrip.blocks).toEqual([
+      {
+        text: "B",
+        type: "checklist",
+        properties: { checked: true },
+        collapsed: false,
+        children: [{
+          text: "B child",
+          type: "paragraph",
+          properties: { tone: "quiet" },
+          collapsed: false,
+          children: [],
+        }],
+      },
+      {
+        text: "C",
+        type: "paragraph",
+        properties: {},
+        collapsed: false,
+        children: [],
+      },
+    ]);
+    expect(snapshot).toEqual(before);
+  });
+
+  it("P-10 restores structured type and properties when pasting into a blank block", () => {
+    const snapshot = createSnapshot([{ id: "blank" }]);
+    const payload = parseClipboard({ structured: {
+      blocks: [{
+        text: "Task",
+        type: "checklist",
+        properties: { checked: true },
+        collapsed: false,
+        children: [{
+          text: "Child",
+          type: "paragraph",
+          properties: { tone: "quiet" },
+          collapsed: true,
+          children: [],
+        }],
+      }],
+    } });
+    const result = planEditorOperation(snapshot, {
+      type: "paste",
+      blockId: "blank",
+      selection: { anchor: 0, focus: 0 },
+      payload,
+      tempIdPrefix: "p",
+    });
+
+    expect(result.intents).toEqual([
+      { type: "update-text", target: existing("blank"), text: "Task" },
+      {
+        type: "update-type-and-properties",
+        target: existing("blank"),
+        blockType: "checklist",
+        properties: { checked: true },
+      },
+      {
+        type: "create-block",
+        tempId: "p-1",
+        parent: existing("blank"),
+        after: null,
+        blockType: "paragraph",
+        text: "Child",
+        properties: { tone: "quiet" },
+        collapsed: true,
+      },
+    ]);
+  });
+
+  it("P-11 uses the same structured metadata contract for paste-over-selection", () => {
+    const snapshot = createSnapshot([{ id: "a" }, { id: "b" }, { id: "c" }]);
+    const result = planEditorOperation(snapshot, {
+      type: "pasteOverSelection",
+      blockIds: ["b"],
+      placeholderTempId: "replacement",
+      tempIdPrefix: "p",
+      payload: {
+        kind: "block-tree",
+        blocks: [{
+          text: "Task",
+          type: "checklist",
+          properties: { checked: false },
+          collapsed: false,
+          children: [{
+            text: "Child",
+            type: "paragraph",
+            properties: { tone: "quiet" },
+            collapsed: true,
+            children: [],
+          }],
+        }],
+      },
+    });
+
+    expect(result.intents[0]).toMatchObject({
+      type: "create-block",
+      tempId: "replacement",
+      blockType: "checklist",
+      properties: { checked: false },
+    });
+    expect(result.intents).toContainEqual(expect.objectContaining({
+      type: "create-block",
+      tempId: "p-1",
+      blockType: "paragraph",
+      properties: { tone: "quiet" },
+      collapsed: true,
+    }));
+  });
+
+  it("P-12 replaces a flat parent-child-sibling range at its first structural position", () => {
+    const snapshot = createSnapshot([
+      { id: "a" },
+      { id: "b" },
+      { id: "b-1", parentId: "b" },
+      { id: "b-2", parentId: "b" },
+      { id: "c" },
+      { id: "d" },
+    ]);
+    const result = planEditorOperation(snapshot, {
+      type: "pasteOverSelection",
+      blockIds: ["b", "b-1", "b-2", "c"],
+      placeholderTempId: "replacement",
+      payload: parseClipboard({ plainText: "Replacement" }),
+    });
+
+    expect(result.intents).toEqual([
+      expect.objectContaining({ type: "create-block", tempId: "replacement", after: existing("a") }),
+      { type: "delete-subtree", target: existing("b") },
+      { type: "delete-subtree", target: existing("c") },
+    ]);
+  });
 });
 
 describe("Serendipity-homologous contiguous selection deletion", () => {
@@ -164,11 +331,10 @@ describe("Serendipity-homologous contiguous selection deletion", () => {
     expect(result.focus).toEqual({ target: existing("a"), selection: { anchor: 3, focus: 3 } });
   });
 
-  it("M-03 no-ops non-contiguous selection deletion", () => {
+  it("M-03 rejects non-contiguous selection deletion explicitly", () => {
     const snapshot = createSnapshot([{ id: "a" }, { id: "b" }, { id: "c" }]);
-    expect(planEditorOperation(snapshot, { type: "deleteSelection", blockIds: ["a", "c"] })).toMatchObject({
-      intents: [], noopReason: "invalid-group",
-    });
+    expect(() => planEditorOperation(snapshot, { type: "deleteSelection", blockIds: ["a", "c"] }))
+      .toThrow(EditorOperationUnavailableError);
   });
 
   it("M-04 no-ops an empty selection", () => {
@@ -176,5 +342,36 @@ describe("Serendipity-homologous contiguous selection deletion", () => {
     expect(planEditorOperation(snapshot, { type: "deleteSelection", blockIds: [] })).toMatchObject({
       intents: [], focus: null,
     });
+  });
+
+  it("M-05 rejects a queued intent whose target disappeared", () => {
+    const snapshot = createSnapshot([{ id: "a" }]);
+    expect(() => planEditorOperation(snapshot, {
+      type: "outdent",
+      blockIds: ["missing"],
+      focus: { blockId: "missing", selection: { anchor: 2, focus: 2 } },
+    })).toThrow(StaleEditorTargetError);
+  });
+
+  it("M-06 deletes a flat parent-child-sibling selection exactly once per selected root", () => {
+    const snapshot = createSnapshot([
+      { id: "a" },
+      { id: "b" },
+      { id: "b-1", parentId: "b" },
+      { id: "b-2", parentId: "b" },
+      { id: "c" },
+      { id: "d" },
+    ]);
+    const result = planEditorOperation(snapshot, {
+      type: "deleteSelection",
+      blockIds: ["b", "b-1", "b-2", "c"],
+    });
+
+    expect(result.intents).toEqual([
+      { type: "delete-subtree", target: existing("b") },
+      { type: "delete-subtree", target: existing("c") },
+    ]);
+    expect(project(snapshot, result.intents).childIds()).toEqual(["a", "d"]);
+    expect(result.focus).toEqual({ target: existing("d"), selection: { anchor: 0, focus: 0 } });
   });
 });

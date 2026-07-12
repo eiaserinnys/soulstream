@@ -1,4 +1,7 @@
 import {
+  createSerialIntentQueue,
+  EditorOperationUnavailableError,
+  StaleEditorTargetError,
   temporaryBlock,
   type EditorBlockSnapshot,
   type EditorOperation,
@@ -11,7 +14,6 @@ import { PageApiError, type PageApiClient, type PageDocumentBlock } from "../pag
 import {
   executePageEditorOperation,
   executePageEditorPlan,
-  type PageEditorOperationResult,
   type ResolvedEditorFocus,
 } from "./page-editor-command-adapter";
 
@@ -23,11 +25,14 @@ export type PageEditorMutationState =
 export interface PageEditorController {
   readonly state: PageEditorMutationState;
   readonly pendingFocus: ResolvedEditorFocus | null;
+  readonly feedback: string | null;
   run(operation: EditorOperation): Promise<void>;
   createFirstBlock(): Promise<void>;
   queueFocus(focus: ResolvedEditorFocus | null): void;
   clearFocus(focus: ResolvedEditorFocus): void;
   dismissError(): void;
+  dismissFeedback(): void;
+  reportFailure(message: string): void;
   resync(): void;
 }
 
@@ -48,70 +53,113 @@ export function usePageEditorController({
 }): PageEditorController {
   const [state, setState] = useState<PageEditorMutationState>({ status: "idle" });
   const [pendingFocus, setPendingFocus] = useState<ResolvedEditorFocus | null>(null);
-  const running = useRef(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
   const awaitingVersion = useRef<number | null>(null);
+  const deferredFocus = useRef<ResolvedEditorFocus | null>(null);
+  const blocked = useRef(false);
   const latest = useRef({ doc, blocks, mutationVersion });
   latest.current = { doc, blocks, mutationVersion };
   const snapshots = useMemo(() => toEditorSnapshots(pageId, blocks), [blocks, pageId]);
   const snapshotRef = useRef(snapshots);
   snapshotRef.current = snapshots;
 
+  type QueuedCommand =
+    | { readonly kind: "operation"; readonly operation: EditorOperation }
+    | { readonly kind: "plan"; readonly plan: EditorOperationPlan };
+
+  const commandRuntime = useMemo(() => {
+    let disposed = false;
+    const queue = createSerialIntentQueue<QueuedCommand>({
+      isReady: () => awaitingVersion.current === null && !blocked.current,
+      shouldSuppress: shouldSuppressCommand,
+      execute: async (command) => {
+        setState({ status: "pending", message: "Saving structure…" });
+        try {
+          const context = latest.current;
+          const idempotencyKey = pageEditorIdempotencyKey(pageId);
+          const result = command.kind === "operation"
+            ? await executePageEditorOperation({
+                apiClient,
+                pageId,
+                doc: context.doc,
+                mutationVersion: context.mutationVersion,
+                blocks: snapshotRef.current,
+                operation: command.operation,
+                idempotencyKey,
+              })
+            : await executePageEditorPlan({
+                apiClient,
+                pageId,
+                doc: context.doc,
+                mutationVersion: context.mutationVersion,
+                plan: command.plan,
+                idempotencyKey,
+              });
+          if (disposed) return;
+          if (result.mutationVersion > latest.current.mutationVersion) {
+            deferredFocus.current = result.focus;
+            awaitingVersion.current = result.mutationVersion;
+            setState({ status: "pending", message: "Waiting for page sync…" });
+          } else {
+            setPendingFocus(result.focus);
+            setState({ status: "idle" });
+          }
+        } catch (error) {
+          if (disposed) return;
+          if (error instanceof PageApiError && error.kind === "conflict") {
+            blocked.current = true;
+            setState({
+              status: "conflict",
+              message: "This page changed elsewhere. Reload the latest page before repeating the command.",
+            });
+          } else if (error instanceof StaleEditorTargetError) {
+            setFeedback("That queued edit could not run because its block no longer exists. Nothing else was changed.");
+            setState({ status: "idle" });
+          } else if (error instanceof EditorOperationUnavailableError) {
+            setFeedback(error.message);
+            setState({ status: "idle" });
+          } else {
+            setState({
+              status: "error",
+              message: error instanceof Error && error.message ? error.message : "The page structure could not be changed.",
+            });
+          }
+        }
+      },
+    });
+    return {
+      queue,
+      dispose() {
+        disposed = true;
+        queue.cancel();
+      },
+    };
+  }, [apiClient, doc, pageId]);
+  const commandQueue = commandRuntime.queue;
+
   useEffect(() => {
     setState({ status: "idle" });
     setPendingFocus(null);
-    running.current = false;
+    setFeedback(null);
     awaitingVersion.current = null;
-  }, [doc, pageId]);
+    deferredFocus.current = null;
+    blocked.current = false;
+    return () => commandRuntime.dispose();
+  }, [commandRuntime]);
 
   useEffect(() => {
     if (awaitingVersion.current === null || mutationVersion < awaitingVersion.current) return;
     awaitingVersion.current = null;
+    const focus = deferredFocus.current;
+    deferredFocus.current = null;
+    setPendingFocus(focus);
     setState({ status: "idle" });
-  }, [mutationVersion]);
-
-  const execute = useCallback(async (
-    task: (context: typeof latest.current, idempotencyKey: string) => Promise<PageEditorOperationResult>,
-  ) => {
-    if (running.current || awaitingVersion.current !== null) return;
-    running.current = true;
-    setState({ status: "pending", message: "Saving structure…" });
-    try {
-      const result = await task(latest.current, pageEditorIdempotencyKey(pageId));
-      setPendingFocus(result.focus);
-      if (result.mutationVersion > latest.current.mutationVersion) {
-        awaitingVersion.current = result.mutationVersion;
-        setState({ status: "pending", message: "Waiting for page sync…" });
-      } else {
-        setState({ status: "idle" });
-      }
-    } catch (error) {
-      if (error instanceof PageApiError && error.kind === "conflict") {
-        setState({
-          status: "conflict",
-          message: "This page changed elsewhere. Reload the latest page before repeating the command.",
-        });
-      } else {
-        setState({
-          status: "error",
-          message: error instanceof Error && error.message ? error.message : "The page structure could not be changed.",
-        });
-      }
-    } finally {
-      running.current = false;
-    }
-  }, [pageId]);
+    commandQueue.notifyReady();
+  }, [commandQueue, mutationVersion]);
 
   const run = useCallback(async (operation: EditorOperation) => {
-    await execute((context, idempotencyKey) => executePageEditorOperation({
-      apiClient,
-      pageId,
-      doc: context.doc,
-      mutationVersion: context.mutationVersion,
-      blocks: snapshotRef.current,
-      operation,
-      idempotencyKey,
-    }));
-  }, [apiClient, execute, pageId]);
+    await commandQueue.enqueue({ kind: "operation", operation }).catch(() => undefined);
+  }, [commandQueue]);
 
   const createFirstBlock = useCallback(async () => {
     const tempId = `first-${crypto.randomUUID()}`;
@@ -128,19 +176,13 @@ export function usePageEditorController({
       }],
       focus: { target: temporaryBlock(tempId), selection: { anchor: 0, focus: 0 } },
     };
-    await execute((context, idempotencyKey) => executePageEditorPlan({
-      apiClient,
-      pageId,
-      doc: context.doc,
-      mutationVersion: context.mutationVersion,
-      plan,
-      idempotencyKey,
-    }));
-  }, [apiClient, execute, pageId]);
+    await commandQueue.enqueue({ kind: "plan", plan }).catch(() => undefined);
+  }, [commandQueue]);
 
   return {
     state,
     pendingFocus,
+    feedback,
     run,
     createFirstBlock,
     queueFocus: setPendingFocus,
@@ -148,11 +190,31 @@ export function usePageEditorController({
       setPendingFocus((current) => current === focus ? null : current);
     },
     dismissError() { setState({ status: "idle" }); },
+    dismissFeedback() { setFeedback(null); },
+    reportFailure(message) { setFeedback(message); },
     resync() {
       setState({ status: "resyncing", message: "Reloading the latest page…" });
       onResync();
     },
   };
+}
+
+function shouldSuppressCommand(
+  pending: { readonly kind: "operation"; readonly operation: EditorOperation } | { readonly kind: "plan"; readonly plan: EditorOperationPlan },
+  incoming: { readonly kind: "operation"; readonly operation: EditorOperation } | { readonly kind: "plan"; readonly plan: EditorOperationPlan },
+): boolean {
+  if (pending.kind !== "operation" || incoming.kind !== "operation") return false;
+  const left = pending.operation;
+  const right = incoming.operation;
+  if (left.type === "splitBlock" && right.type === "splitBlock") {
+    return left.blockId === right.blockId &&
+      left.selection.anchor === right.selection.anchor &&
+      left.selection.focus === right.selection.focus;
+  }
+  if (left.type === "deleteSelection" && right.type === "deleteSelection") {
+    return left.blockIds.join("\u0000") === right.blockIds.join("\u0000");
+  }
+  return false;
 }
 
 export function toEditorSnapshots(
@@ -167,6 +229,7 @@ export function toEditorSnapshots(
     collapsed: block.collapsed,
     type: block.type,
     text: block.textValue,
+    properties: structuredClone(block.properties),
   }));
 }
 

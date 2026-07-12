@@ -6,6 +6,7 @@ export interface EditorBlockSnapshot {
   readonly collapsed: boolean;
   readonly type: string;
   readonly text: string;
+  readonly properties: Readonly<Record<string, unknown>>;
 }
 
 export interface TextRange {
@@ -39,6 +40,12 @@ export type SemanticEditIntent =
       readonly collapsed: boolean;
     }
   | {
+      readonly type: "update-type-and-properties";
+      readonly target: BlockReference;
+      readonly blockType: string;
+      readonly properties: Readonly<Record<string, unknown>>;
+    }
+  | {
       readonly type: "move-block";
       readonly target: BlockReference;
       readonly parent: BlockReference | null;
@@ -51,6 +58,9 @@ export type SemanticEditIntent =
 
 export interface ParsedClipboardBlock {
   readonly text: string;
+  readonly type?: string;
+  readonly properties?: Readonly<Record<string, unknown>>;
+  readonly collapsed?: boolean;
   readonly children: readonly ParsedClipboardBlock[];
 }
 
@@ -83,7 +93,14 @@ export type EditorOperation =
       readonly blockId: string;
       readonly selection: TextRange;
     } & CompositionAwareOperation)
-  | { readonly type: "indent" | "outdent"; readonly blockIds: readonly string[] }
+  | {
+      readonly type: "indent" | "outdent";
+      readonly blockIds: readonly string[];
+      readonly focus?: {
+        readonly blockId: string;
+        readonly selection: TextRange;
+      };
+    }
   | { readonly type: "deleteSelection"; readonly blockIds: readonly string[] }
   | {
       readonly type: "paste";

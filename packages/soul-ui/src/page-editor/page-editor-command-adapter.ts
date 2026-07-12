@@ -89,6 +89,13 @@ function mapIntent(intent: SemanticEditIntent): PageStructureOperation {
   switch (intent.type) {
     case "update-text":
       return { op: "update_block_text", block_id: existingId(intent.target), text: intent.text };
+    case "update-type-and-properties":
+      return {
+        op: "update_block_type_and_properties",
+        block_id: existingId(intent.target),
+        block_type: intent.blockType,
+        properties: { ...intent.properties },
+      };
     case "delete-subtree":
       return { op: "delete_block_subtree", block_id: existingId(intent.target) };
     case "move-block": {
