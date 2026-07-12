@@ -98,8 +98,10 @@ def test_schema_has_all_message_types() -> None:
         "ClaudeAuthDeleteToken",
         "ClaudeAuthGetUsage",
         "ClaudeAuthGetProfile",
+        "AcknowledgeSessionReview",
+        "AcknowledgeSessionReviewAck",
     }
-    assert len(wire_types) == 51
+    assert len(wire_types) == 53
 
     sse_types = {
         "SSEEventInit",
@@ -278,6 +280,8 @@ def test_oneof_covers_all_wire_messages() -> None:
         "ClaudeAuthDeleteToken",
         "ClaudeAuthGetUsage",
         "ClaudeAuthGetProfile",
+        "AcknowledgeSessionReview",
+        "AcknowledgeSessionReviewAck",
     }
     assert oneof_refs == wire_types
 
