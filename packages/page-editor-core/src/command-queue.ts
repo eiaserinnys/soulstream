@@ -1,8 +1,14 @@
-export type SerialIntentResult = "executed" | "suppressed";
+export type SerialIntentExecutionOutcome =
+  | "executed"
+  | "local-failure"
+  | "external-failure"
+  | "blocked";
+
+export type SerialIntentResult = SerialIntentExecutionOutcome | "suppressed";
 
 export interface SerialIntentQueueOptions<TIntent> {
   isReady(): boolean;
-  execute(intent: TIntent): Promise<void>;
+  execute(intent: TIntent): Promise<SerialIntentExecutionOutcome | void>;
   shouldSuppress?(pending: TIntent, incoming: TIntent): boolean;
   onPendingCountChange?(pendingCount: number): void;
 }
@@ -43,9 +49,9 @@ export function createSerialIntentQueue<TIntent>(
     const current = active;
     void (async () => {
       try {
-        await options.execute(current.intent);
-        if (!options.isReady()) waitingForReady = current.intent;
-        current.resolve("executed");
+        const outcome = await options.execute(current.intent) ?? "executed";
+        if (outcome === "blocked" || !options.isReady()) waitingForReady = current.intent;
+        current.resolve(outcome);
       } catch (error) {
         current.reject(error);
       } finally {

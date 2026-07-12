@@ -621,6 +621,49 @@ describe("PageOutliner", () => {
     expect(new Set(pending.map(({ input }) => input.idempotencyKey)).size).toBe(3);
   });
 
+  it("keeps an ambiguous API failure visible while later Tab and paste intents continue safely", async () => {
+    const doc = createPageDoc(3);
+    const pending: Array<{
+      input: ApplyPageOperationsInput;
+      resolve(value: PageMutationResponse): void;
+    }> = [];
+    let callCount = 0;
+    const api = createApi({
+      applyOperations: vi.fn(async (_pageId: string, input: ApplyPageOperationsInput) => {
+        callCount += 1;
+        if (callCount === 1) throw new Error("connection closed before response");
+        return new Promise<PageMutationResponse>((resolve) => pending.push({ input, resolve }));
+      }),
+    });
+    await render(doc, api);
+    const second = editor("block-1");
+
+    dispatchKey(second, "Tab", 4);
+    dispatchKey(second, "Tab", 4);
+    dispatchPaste(second, "queued paste");
+
+    await waitFor(() => vi.mocked(api.applyOperations).mock.calls.length === 2);
+    await waitFor(() => container!.querySelector('[data-editor-feedback="error"]') !== null);
+    expect(container!.querySelector('[data-editor-feedback="error"]')?.textContent)
+      .toContain("could not be confirmed");
+    expect(container!.querySelector('[data-editor-feedback="error"]')?.textContent)
+      .toContain("2 later edits will continue");
+
+    pending[0]!.resolve(operationResponse(pending[0]!.input));
+    await settle();
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", "block-0");
+    doc.getMap("pageMeta").set("mutationVersion", 4);
+    await rerender(doc, api);
+    await waitFor(() => vi.mocked(api.applyOperations).mock.calls.length === 3);
+
+    expect(container!.querySelector('[data-editor-feedback="error"]')?.textContent)
+      .toContain("connection closed before response");
+    expect(pending.map(({ input }) => input.operations[0])).toEqual([
+      expect.objectContaining({ op: "move_block", block_id: "block-1", parent_id: "block-0" }),
+      { op: "update_block_text", block_id: "block-1", text: "Blocqueued pastek 1" },
+    ]);
+  });
+
   it("does not wait again when projection arrives before the HTTP response", async () => {
     const doc = createPageDoc(2);
     const pending: Array<{

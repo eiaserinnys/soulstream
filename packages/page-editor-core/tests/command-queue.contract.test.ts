@@ -85,4 +85,34 @@ describe("serial editor intent queue", () => {
     await expect(queue.enqueue("next")).resolves.toBe("executed");
     expect(executed).toEqual(["stale", "next"]);
   });
+
+  it("reports local, ambiguous external, and blocked execution outcomes separately", async () => {
+    let ready = true;
+    const executed: string[] = [];
+    const queue = createSerialIntentQueue<string>({
+      isReady: () => ready,
+      execute: async (intent) => {
+        executed.push(intent);
+        if (intent === "local") return "local-failure";
+        if (intent === "external") return "external-failure";
+        if (intent === "blocked") {
+          ready = false;
+          return "blocked";
+        }
+        return "executed";
+      },
+    });
+
+    await expect(queue.enqueue("local")).resolves.toBe("local-failure");
+    await expect(queue.enqueue("external")).resolves.toBe("external-failure");
+    await expect(queue.enqueue("blocked")).resolves.toBe("blocked");
+    const next = queue.enqueue("next");
+    await Promise.resolve();
+    expect(executed).toEqual(["local", "external", "blocked"]);
+
+    ready = true;
+    queue.notifyReady();
+    await expect(next).resolves.toBe("executed");
+    expect(executed).toEqual(["local", "external", "blocked", "next"]);
+  });
 });

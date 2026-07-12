@@ -57,6 +57,7 @@ export function usePageEditorController({
   const awaitingVersion = useRef<number | null>(null);
   const deferredFocus = useRef<ResolvedEditorFocus | null>(null);
   const blocked = useRef(false);
+  const pendingCommandCount = useRef(0);
   const latest = useRef({ doc, blocks, mutationVersion });
   latest.current = { doc, blocks, mutationVersion };
   const snapshots = useMemo(() => toEditorSnapshots(pageId, blocks), [blocks, pageId]);
@@ -72,6 +73,7 @@ export function usePageEditorController({
     const queue = createSerialIntentQueue<QueuedCommand>({
       isReady: () => awaitingVersion.current === null && !blocked.current,
       shouldSuppress: shouldSuppressCommand,
+      onPendingCountChange: (count) => { pendingCommandCount.current = count; },
       execute: async (command) => {
         setState({ status: "pending", message: "Saving structure…" });
         try {
@@ -95,7 +97,7 @@ export function usePageEditorController({
                 plan: command.plan,
                 idempotencyKey,
               });
-          if (disposed) return;
+          if (disposed) return "local-failure";
           if (result.mutationVersion > latest.current.mutationVersion) {
             deferredFocus.current = result.focus;
             awaitingVersion.current = result.mutationVersion;
@@ -104,25 +106,35 @@ export function usePageEditorController({
             setPendingFocus(result.focus);
             setState({ status: "idle" });
           }
+          return "executed";
         } catch (error) {
-          if (disposed) return;
+          if (disposed) return "local-failure";
           if (error instanceof PageApiError && error.kind === "conflict") {
             blocked.current = true;
             setState({
               status: "conflict",
               message: "This page changed elsewhere. Reload the latest page before repeating the command.",
             });
+            return "blocked";
           } else if (error instanceof StaleEditorTargetError) {
             setFeedback("That queued edit could not run because its block no longer exists. Nothing else was changed.");
             setState({ status: "idle" });
+            return "local-failure";
           } else if (error instanceof EditorOperationUnavailableError) {
             setFeedback(error.message);
             setState({ status: "idle" });
+            return "local-failure";
           } else {
-            setState({
-              status: "error",
-              message: error instanceof Error && error.message ? error.message : "The page structure could not be changed.",
-            });
+            const laterCount = Math.max(0, pendingCommandCount.current - 1);
+            const detail = error instanceof Error && error.message
+              ? error.message
+              : "The page structure request ended without a confirmed response.";
+            const continuation = laterCount === 0
+              ? "No later edits are queued."
+              : `${laterCount} later ${laterCount === 1 ? "edit" : "edits"} will continue with version checks.`;
+            setFeedback(`The previous edit could not be confirmed: ${detail} It was not retried. ${continuation} Repeat the failed edit after reviewing the page.`);
+            setState({ status: "idle" });
+            return "external-failure";
           }
         }
       },
@@ -144,6 +156,7 @@ export function usePageEditorController({
     awaitingVersion.current = null;
     deferredFocus.current = null;
     blocked.current = false;
+    pendingCommandCount.current = 0;
     return () => commandRuntime.dispose();
   }, [commandRuntime]);
 
