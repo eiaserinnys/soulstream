@@ -101,6 +101,80 @@ describe("TaskManager.acknowledgeReview", () => {
       expect.objectContaining({ reviewState: "acknowledged" }),
     );
   });
+
+  it("repairs stale memory and rebroadcasts an already acknowledged durable state", async () => {
+    const mocks = makeMocks();
+    mocks.acknowledgeSessionReview.mockResolvedValueOnce("already_acknowledged");
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "sess-review-retry",
+      prompt: "review me",
+      profileId: "a",
+      callerInfo: { source: "browser" },
+    });
+    task.status = "completed";
+    task.reviewState = "needs_review";
+    mocks.emitSessionUpdated.mockClear();
+
+    await expect(tm.acknowledgeReview("sess-review-retry")).resolves.toBe(
+      "already_acknowledged",
+    );
+
+    expect(task.reviewState).toBe("acknowledged");
+    expect(mocks.emitSessionUpdated).toHaveBeenCalledWith(task);
+  });
+
+  it("retries the cache broadcast after the first acknowledge broadcast fails", async () => {
+    const mocks = makeMocks();
+    mocks.acknowledgeSessionReview
+      .mockResolvedValueOnce("acknowledged")
+      .mockResolvedValueOnce("already_acknowledged");
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+    const task = await tm.createTask({
+      agentSessionId: "sess-review-broadcast-retry",
+      prompt: "review me",
+      profileId: "a",
+      callerInfo: { source: "browser" },
+    });
+    task.status = "completed";
+    task.reviewState = "needs_review";
+    mocks.emitSessionUpdated.mockClear();
+    mocks.emitSessionUpdated.mockRejectedValueOnce(new Error("ws down"));
+
+    await expect(tm.acknowledgeReview(task.agentSessionId)).resolves.toBe("acknowledged");
+    await expect(tm.acknowledgeReview(task.agentSessionId)).resolves.toBe(
+      "already_acknowledged",
+    );
+
+    expect(mocks.emitSessionUpdated).toHaveBeenCalledTimes(2);
+    expect(task.reviewState).toBe("acknowledged");
+  });
+
+  it("keeps durable acknowledge success when runtime hydration is unavailable", async () => {
+    const mocks = makeMocks();
+    const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+
+    await expect(tm.acknowledgeReview("sess-review-evicted")).resolves.toBe(
+      "acknowledged",
+    );
+
+    expect(mocks.getSession).toHaveBeenCalledWith("sess-review-evicted");
+    expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
+  });
+
+  it.each(["not_found", "not_required", "not_pending"] as const)(
+    "keeps %s as an error outcome without runtime repair",
+    async (outcome) => {
+      const mocks = makeMocks();
+      mocks.acknowledgeSessionReview.mockResolvedValueOnce(outcome);
+      const tm = new TaskManager("n", mocks.db, mocks.broadcaster, silentLogger);
+
+      await expect(tm.acknowledgeReview("sess-review-error")).resolves.toBe(outcome);
+
+      expect(mocks.getSession).not.toHaveBeenCalled();
+      expect(mocks.emitSessionUpdated).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("TaskManager.createTask", () => {

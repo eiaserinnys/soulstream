@@ -370,10 +370,27 @@ export class TaskManager {
 
   async acknowledgeReview(sessionId: string): Promise<AcknowledgeReviewOutcome> {
     const outcome = await this.db.acknowledgeSessionReview(sessionId);
-    if (outcome !== "acknowledged") return outcome;
+    if (outcome !== "acknowledged" && outcome !== "already_acknowledged") {
+      return outcome;
+    }
 
-    const task = this.tasks.get(sessionId) ?? await this.loadEvictedTask(sessionId);
-    if (!task) return "not_found";
+    let task: Task | null | undefined = this.tasks.get(sessionId);
+    try {
+      task ??= await this.loadEvictedTask(sessionId);
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId, outcome },
+        "runtime review repair unavailable after durable acknowledge",
+      );
+      return outcome;
+    }
+    if (!task) {
+      this.logger.warn(
+        { sessionId, outcome },
+        "runtime review repair missing task after durable acknowledge",
+      );
+      return outcome;
+    }
     task.reviewState = "acknowledged";
     try {
       await this.broadcaster.emitSessionUpdated(task);
