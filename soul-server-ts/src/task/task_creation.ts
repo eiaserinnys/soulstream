@@ -16,6 +16,10 @@ import {
   buildCallerInfoMetadataEntry,
   buildClaudePermissionModeMetadataEntry,
 } from "./task_metadata.js";
+import {
+  NOOP_TASK_CREATION_HOOK,
+  type TaskCreationHook,
+} from "./task_creation_hook.js";
 
 export interface CreateTaskParams {
   agentSessionId: string;
@@ -57,6 +61,7 @@ export interface TaskCreationDeps {
   boardYjsService?: Pick<BoardYjsService, "upsertSessionBoardItem">;
   broadcaster: SessionBroadcaster;
   logger: Logger;
+  taskCreationHook?: TaskCreationHook;
   hasTask(sessionId: string): boolean;
   rememberTask(task: Task): void;
 }
@@ -143,6 +148,16 @@ export class TaskCreation {
     // session_created 전에 박아 feed/folder 초기 카드가 metadata fallback을 즉시 사용할 수 있게 한다.
     for (const entry of metadata) {
       await this.deps.db.appendMetadata(task.agentSessionId, entry);
+    }
+
+    try {
+      await (this.deps.taskCreationHook ?? NOOP_TASK_CREATION_HOOK)
+        .afterSessionRegistered({ task, params });
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "post-registration task creation hook failed",
+      );
     }
 
     this.deps.rememberTask(task);
