@@ -41,7 +41,13 @@ function harness(initial = binding()) {
     enqueue: vi.fn(async () => row),
     get: vi.fn(async () => row),
     listDue: vi.fn(async () => [row]),
-    markPageBound: vi.fn(async () => { row = { ...row, page_state: "bound" }; }),
+    markPageBound: vi.fn(async () => {
+      row = {
+        ...row,
+        page_state: "bound",
+        next_retry_at: new Date("2026-07-12T15:30:30.000Z"),
+      };
+    }),
     markLegacyCompleted: vi.fn(async () => { row = { ...row, legacy_state: "completed" }; }),
     markFailure: vi.fn(async (_id, step, error, manual) => {
       row = {
@@ -172,6 +178,142 @@ describe("SessionPageBindingService", () => {
     expect(h.legacyProjection.project).not.toHaveBeenCalled();
   });
 
+  it("retries an unanchored daily-page CAS race with the latest page version", async () => {
+    const h = harness();
+    h.pageHost.getDailyPage
+      .mockResolvedValueOnce({ page: { id: "daily-1", title: "2026-07-13", version: 3 }, created: false })
+      .mockResolvedValueOnce({ page: { id: "daily-1", title: "2026-07-13", version: 4 }, created: false });
+    h.pageHost.batchPageOperations
+      .mockRejectedValueOnce(new Error("page version conflict (409)"))
+      .mockResolvedValueOnce({});
+
+    await h.service.reconcile(h.row(), true);
+    expect(h.repository.markFailure).toHaveBeenCalledWith(
+      "sess-1", "page", "page version conflict (409)", false,
+    );
+    await h.service.reconcile(h.row(), true);
+
+    expect(h.pageHost.batchPageOperations.mock.calls.map(([input]) => input.expected_version))
+      .toEqual([3, 4]);
+    expect(h.row().page_state).toBe("bound");
+  });
+
+  it("eventually binds two concurrent unanchored sessions to the same daily page", async () => {
+    const rows = new Map([
+      ["sess-a", binding({ session_id: "sess-a", legacy_state: "completed" })],
+      ["sess-b", binding({ session_id: "sess-b", legacy_state: "completed" })],
+    ]);
+    const repository = {
+      get: vi.fn(async (sessionId: string) => rows.get(sessionId) ?? null),
+      markPageBound: vi.fn(async (sessionId: string) => {
+        rows.set(sessionId, { ...rows.get(sessionId)!, page_state: "bound" });
+      }),
+      markLegacyCompleted: vi.fn(async () => undefined),
+      markFailure: vi.fn(async (sessionId: string, step: string, error: string, manual: boolean) => {
+        rows.set(sessionId, {
+          ...rows.get(sessionId)!,
+          ...(step === "page" ? { page_state: manual ? "manual_repair" as const : "pending" as const } : {}),
+          last_error: error,
+        });
+      }),
+      listDue: vi.fn(async () => []),
+    } as unknown as SessionPageBindingRepository;
+    let pageVersion = 3;
+    let dailyReads = 0;
+    let releaseDaily!: () => void;
+    const dailyBarrier = new Promise<void>((resolve) => { releaseDaily = resolve; });
+    const pageHost = {
+      getDailyPage: vi.fn(async () => {
+        const snapshotVersion = pageVersion;
+        dailyReads += 1;
+        if (dailyReads === 2) releaseDaily();
+        await dailyBarrier;
+        return { page: { id: "daily-1", title: "2026-07-13", version: snapshotVersion }, created: false };
+      }),
+      getPage: vi.fn(),
+      batchPageOperations: vi.fn(async (input: { expected_version: number }) => {
+        if (input.expected_version !== pageVersion) throw new Error("page version conflict (409)");
+        pageVersion += 1;
+        return {};
+      }),
+    };
+    const service = new SessionPageBindingService({
+      nodeId: "node-1",
+      repository,
+      pageHost: pageHost as never,
+      legacyProjection: { project: vi.fn(async () => undefined) },
+      logger,
+    });
+
+    await Promise.all([
+      service.reconcile(rows.get("sess-a")!, true),
+      service.reconcile(rows.get("sess-b")!, true),
+    ]);
+    const retry = [...rows.values()].find((row) => row.page_state === "pending");
+    expect(retry).toBeDefined();
+    await service.reconcile(retry!, true);
+
+    expect([...rows.values()].map((row) => row.page_state)).toEqual(["bound", "bound"]);
+    expect(pageHost.batchPageOperations).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps an explicit pageAnchor CAS conflict in manual repair", async () => {
+    const h = harness(binding({
+      target_page_id: "page-1",
+      target_block_id: "block-1",
+      target_expected_version: 7,
+    }));
+    h.pageHost.batchPageOperations.mockRejectedValueOnce(new Error("page version conflict (409)"));
+    await h.service.reconcile(h.row(), true);
+    expect(h.repository.markFailure).toHaveBeenCalledWith(
+      "sess-1", "page", "page version conflict (409)", true,
+    );
+  });
+
+  it("serializes hook and stale background work per session and rereads durable state", async () => {
+    const h = harness();
+    const stale = { ...h.row() };
+    vi.mocked(h.repository.listDue).mockResolvedValueOnce([stale]);
+    let releasePage!: () => void;
+    h.pageHost.batchPageOperations.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => { releasePage = resolve; });
+      return {};
+    });
+
+    const hook = h.service.afterSessionRegistered({
+      task: { agentSessionId: "sess-1" } as never,
+      params: { agentSessionId: "sess-1", prompt: "start" },
+    });
+    await vi.waitFor(() => expect(h.pageHost.batchPageOperations).toHaveBeenCalledOnce());
+    const scan = h.service.reconcileDue();
+    await vi.waitFor(() => expect(h.repository.listDue).toHaveBeenCalledOnce());
+    releasePage();
+    await Promise.all([hook, scan]);
+
+    expect(h.pageHost.batchPageOperations).toHaveBeenCalledOnce();
+    expect(h.legacyProjection.project).not.toHaveBeenCalled();
+    expect(h.row()).toMatchObject({ page_state: "bound", legacy_state: "pending" });
+    await h.service.afterLegacyProjection({
+      task: { agentSessionId: "sess-1" } as never,
+      params: { agentSessionId: "sess-1", prompt: "start" },
+      assignedFolderId: "folder-1",
+      completed: true,
+    });
+    expect(h.repository.markLegacyCompleted).toHaveBeenCalledOnce();
+    expect(h.row()).toMatchObject({ page_state: "bound", legacy_state: "completed" });
+  });
+
+  it("does not execute a stale pending snapshot after durable page state advanced", async () => {
+    const h = harness(binding({
+      page_state: "bound",
+      next_retry_at: new Date("2026-07-12T15:30:30.000Z"),
+    }));
+    vi.mocked(h.repository.listDue).mockResolvedValueOnce([binding({ page_state: "pending" })]);
+    await h.service.reconcileDue();
+    expect(h.pageHost.batchPageOperations).not.toHaveBeenCalled();
+    expect(h.legacyProjection.project).not.toHaveBeenCalled();
+  });
+
   it("does not overlap owner-node reconciliation scans", async () => {
     const h = harness(binding({ page_state: "bound", legacy_state: "completed" }));
     let release!: () => void;
@@ -220,5 +362,42 @@ describe("SessionLegacyProjection", () => {
       x: 560,
       y: 160,
     }));
+  });
+
+  it("preserves an existing session board item's coordinates across crash replay", async () => {
+    const boardItems: Array<Record<string, unknown> & { x: number; y: number }> = [
+      { id: "other", itemId: "other", itemType: "session", x: 0, y: 160 },
+    ];
+    const calls: Array<{ x: number; y: number }> = [];
+    const upsertSessionBoardItem = vi.fn(async (input: { sessionId: string; x: number; y: number }) => {
+      calls.push({ x: input.x, y: input.y });
+      const existing = boardItems.find((item) => item.id === `session:${input.sessionId}`);
+      if (existing) Object.assign(existing, { x: input.x, y: input.y });
+      else boardItems.push({
+        id: `session:${input.sessionId}`,
+        itemId: input.sessionId,
+        itemType: "session",
+        x: input.x,
+        y: input.y,
+      });
+      return {};
+    });
+    const db = {
+      resolveBoardYjsContainerScope: vi.fn(async () => ({ folderId: "root" })),
+      assignSessionToFolder: vi.fn(async () => undefined),
+      loadBoardYjsSeed: vi.fn(async () => ({ boardItems: boardItems.map((item) => ({ ...item })) })),
+    };
+    const projection = new SessionLegacyProjection(db as never, { upsertSessionBoardItem } as never);
+    const row = binding({
+      legacy_folder_id: null,
+      legacy_container_kind: "runbook",
+      legacy_container_id: "rb-1",
+      page_state: "bound",
+    });
+
+    await projection.project(row); // upsert succeeded, outbox completion crashes
+    await projection.project(row); // durable replay
+
+    expect(calls).toEqual([{ x: 280, y: 160 }, { x: 280, y: 160 }]);
   });
 });

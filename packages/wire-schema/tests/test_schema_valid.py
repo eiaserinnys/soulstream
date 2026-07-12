@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 107개 $defs (wire 51 + SSE event 56)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 110개 $defs (wire 53 + SSE event 57)를 모두 포함하는지 확인한다.
 """
 
 import json

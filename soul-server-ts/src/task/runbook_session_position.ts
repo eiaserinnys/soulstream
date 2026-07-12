@@ -1,6 +1,20 @@
 export interface PositionedBoardItem {
+  id?: string;
+  itemId?: string;
+  itemType?: string;
   x: number;
   y: number;
+}
+
+/** Preserve an idempotently upserted session card; allocate only when absent. */
+export function sessionBoardItemPosition(
+  boardItems: readonly PositionedBoardItem[],
+  sessionId: string,
+): [number, number] {
+  const existing = boardItems.find((item) =>
+    item.id === `session:${sessionId}`
+    || (item.itemType === "session" && item.itemId === sessionId));
+  return existing ? [existing.x, existing.y] : nextRunbookSessionPosition(boardItems);
 }
 
 /** Existing runbook placement policy shared by initial projection and durable replay. */

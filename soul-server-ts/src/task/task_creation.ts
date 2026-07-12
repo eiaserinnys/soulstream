@@ -21,7 +21,7 @@ import {
   type TaskCreationHook,
 } from "./task_creation_hook.js";
 import { initialSessionReview } from "./session_review.js";
-import { nextRunbookSessionPosition } from "./runbook_session_position.js";
+import { sessionBoardItemPosition } from "./runbook_session_position.js";
 
 export interface CreateTaskParams {
   agentSessionId: string;
@@ -243,7 +243,7 @@ export class TaskCreation {
         await this.deps.db.assignSessionToFolder(sessionId, scope.folderId);
         assigned = scope.folderId;
         const seed = await this.deps.db.loadBoardYjsSeed(container);
-        const [x, y] = nextRunbookSessionPosition(seed.boardItems);
+        const [x, y] = sessionBoardItemPosition(seed.boardItems, sessionId);
         await this.deps.boardYjsService?.upsertSessionBoardItem({
           folderId: scope.folderId,
           container,

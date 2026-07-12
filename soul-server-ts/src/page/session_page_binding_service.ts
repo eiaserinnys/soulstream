@@ -5,7 +5,7 @@ import type { BoardYjsContainerRef, SessionDB } from "../db/session_db.js";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
 import type { TaskCreationHook, TaskCreationHookParams } from "../task/task_creation_hook.js";
 import type { LegacyProjectionHookParams } from "../task/task_creation_hook.js";
-import { nextRunbookSessionPosition } from "../task/runbook_session_position.js";
+import { sessionBoardItemPosition } from "../task/runbook_session_position.js";
 import type { PageYjsHostClient } from "./page_host_client.js";
 import {
   SessionPageBindingRepository,
@@ -36,11 +36,12 @@ export interface SessionPageBindingServiceDeps {
 export class SessionPageBindingService implements TaskCreationHook {
   private timer: NodeJS.Timeout | undefined;
   private reconciling = false;
+  private readonly sessionTails = new Map<string, Promise<void>>();
 
   constructor(private readonly deps: SessionPageBindingServiceDeps) {}
 
   async afterSessionRegistered({ task, params }: TaskCreationHookParams): Promise<void> {
-    const binding = await this.deps.repository.enqueue({
+    await this.deps.repository.enqueue({
       sessionId: task.agentSessionId,
       nodeId: this.deps.nodeId,
       targetPageId: params.pageAnchor?.pageId ?? null,
@@ -53,20 +54,24 @@ export class SessionPageBindingService implements TaskCreationHook {
       legacyContainerId: params.container?.containerId ?? null,
       sourceRunbookItemId: params.sourceRunbookItemId ?? null,
     });
-    await this.reconcile(binding, true);
+    await this.reconcileSession(task.agentSessionId, true);
   }
 
   async afterLegacyProjection(params: LegacyProjectionHookParams): Promise<void> {
-    if (params.completed) {
-      await this.deps.repository.markLegacyCompleted(params.task.agentSessionId);
-      return;
-    }
-    await this.deps.repository.markFailure(
-      params.task.agentSessionId,
-      "legacy",
-      "legacy folder/board projection failed during task creation",
-      false,
-    );
+    await this.withSessionLock(params.task.agentSessionId, async () => {
+      const binding = await this.deps.repository.get(params.task.agentSessionId);
+      if (!binding || binding.legacy_state !== "pending") return;
+      if (params.completed) {
+        await this.deps.repository.markLegacyCompleted(params.task.agentSessionId);
+        return;
+      }
+      await this.deps.repository.markFailure(
+        params.task.agentSessionId,
+        "legacy",
+        "legacy folder/board projection failed during task creation",
+        false,
+      );
+    });
   }
 
   start(intervalMs = 30_000): void {
@@ -85,9 +90,8 @@ export class SessionPageBindingService implements TaskCreationHook {
     if (this.reconciling) return;
     this.reconciling = true;
     try {
-      for (const binding of await this.deps.repository.listDue(this.deps.nodeId)) {
-        await this.reconcile(binding);
-      }
+      const due = await this.deps.repository.listDue(this.deps.nodeId);
+      await Promise.all(due.map((binding) => this.reconcileSession(binding.session_id, false, true)));
     } catch (err) {
       this.deps.logger.warn({ err }, "session page binding reconciliation scan failed");
     } finally {
@@ -96,13 +100,32 @@ export class SessionPageBindingService implements TaskCreationHook {
   }
 
   async reconcile(binding: SessionPageBindingRow, pageOnly = false): Promise<void> {
+    await this.reconcileSession(binding.session_id, pageOnly);
+  }
+
+  private async reconcileSession(
+    sessionId: string,
+    pageOnly: boolean,
+    requireDue = false,
+  ): Promise<void> {
+    await this.withSessionLock(sessionId, async () => {
+      const binding = await this.deps.repository.get(sessionId);
+      if (!binding) return;
+      if (requireDue && binding.next_retry_at.getTime() > (this.deps.now?.() ?? new Date()).getTime()) {
+        return;
+      }
+      await this.reconcileLatest(binding, pageOnly);
+    });
+  }
+
+  private async reconcileLatest(binding: SessionPageBindingRow, pageOnly: boolean): Promise<void> {
     if (binding.page_state === "pending") {
       try {
         await this.withTimeout(this.bindPrimaryPage(binding), "primary page binding");
         await this.deps.repository.markPageBound(binding.session_id);
         binding = { ...binding, page_state: "bound" };
       } catch (err) {
-        await this.recordFailure(binding.session_id, "page", err);
+        await this.recordFailure(binding, "page", err);
         return;
       }
     }
@@ -111,7 +134,7 @@ export class SessionPageBindingService implements TaskCreationHook {
       await this.withTimeout(this.deps.legacyProjection.project(binding), "legacy projection");
       await this.deps.repository.markLegacyCompleted(binding.session_id);
     } catch (err) {
-      await this.recordFailure(binding.session_id, "legacy", err);
+      await this.recordFailure(binding, "legacy", err);
     }
   }
 
@@ -161,18 +184,36 @@ export class SessionPageBindingService implements TaskCreationHook {
   }
 
   private async recordFailure(
-    sessionId: string,
+    binding: SessionPageBindingRow,
     step: "page" | "legacy",
     err: unknown,
   ): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
+    const conflict = /\b409\b|conflict/i.test(message);
+    const dailyCasRace = step === "page" && binding.target_page_id === null && conflict;
     const manualRepair = err instanceof ManualRepairError
-      || /\b(401|403|404|409)\b|unauthori[sz]ed|forbidden|not found|stale|permission|conflict/i.test(message);
-    await this.deps.repository.markFailure(sessionId, step, message, manualRepair);
+      || /\b(401|403|404)\b|unauthori[sz]ed|forbidden|not found|stale|permission/i.test(message)
+      || (conflict && !dailyCasRace);
+    await this.deps.repository.markFailure(binding.session_id, step, message, manualRepair);
     this.deps.logger.warn(
-      { err, sessionId, step, manualRepair },
+      { err, sessionId: binding.session_id, step, manualRepair },
       "session page binding step failed; durable state retained",
     );
+  }
+
+  private async withSessionLock<T>(sessionId: string, run: () => Promise<T>): Promise<T> {
+    const previous = this.sessionTails.get(sessionId) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => gate, () => gate);
+    this.sessionTails.set(sessionId, tail);
+    await previous.catch(() => undefined);
+    try {
+      return await run();
+    } finally {
+      release();
+      if (this.sessionTails.get(sessionId) === tail) this.sessionTails.delete(sessionId);
+    }
   }
 
   private async withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
@@ -211,7 +252,7 @@ export class SessionLegacyProjection implements LegacyProjectionPort {
       if (!scope) throw new ManualRepairError(`stale legacy container: ${binding.legacy_container_id}`);
       await this.db.assignSessionToFolder(binding.session_id, scope.folderId);
       const seed = await this.db.loadBoardYjsSeed(container);
-      const [x, y] = nextRunbookSessionPosition(seed.boardItems);
+      const [x, y] = sessionBoardItemPosition(seed.boardItems, binding.session_id);
       await this.boardYjsService.upsertSessionBoardItem({
         folderId: scope.folderId,
         container,

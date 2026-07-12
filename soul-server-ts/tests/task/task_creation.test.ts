@@ -335,6 +335,39 @@ describe("TaskCreation", () => {
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "root");
   });
 
+  it("preserves an existing delegated session card position during idempotent creation", async () => {
+    const h = makeHarness();
+    h.loadBoardYjsSeed.mockResolvedValueOnce({
+      boardItems: [{
+        id: "session:sess-runbook",
+        folderId: "root",
+        containerKind: "runbook",
+        containerId: "rb-1",
+        itemType: "session",
+        itemId: "sess-runbook",
+        x: 840,
+        y: 480,
+        metadata: {},
+      }],
+      markdownDocuments: [],
+    });
+
+    await h.creation.createTask({
+      agentSessionId: "sess-runbook",
+      prompt: "runbook task",
+      profileId: "roselin_codex",
+      sessionType: "llm",
+      container: { containerKind: "runbook", containerId: "rb-1" },
+      sourceRunbookItemId: "runbook-item-1",
+    });
+
+    expect(h.upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "sess-runbook",
+      x: 840,
+      y: 480,
+    }));
+  });
+
   it("logs target container when runbook session board enrollment falls back to folder assignment", async () => {
     const logger = {
       warn: vi.fn(),
