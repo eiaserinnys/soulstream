@@ -3,12 +3,16 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { SessionDB } from "../../src/db/session_db.js";
 import { TaskCreation } from "../../src/task/task_creation.js";
+import type { TaskCreationHook } from "../../src/task/task_creation_hook.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 const silentLogger = pino({ level: "silent" });
 
-function makeHarness(options: { logger?: typeof silentLogger } = {}) {
+function makeHarness(options: {
+  logger?: typeof silentLogger;
+  taskCreationHook?: TaskCreationHook;
+} = {}) {
   const registerSession = vi.fn().mockResolvedValue(undefined);
   const appendMetadata = vi.fn().mockResolvedValue(1);
   const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
@@ -69,6 +73,7 @@ function makeHarness(options: { logger?: typeof silentLogger } = {}) {
     boardYjsService: { upsertSessionBoardItem },
     broadcaster,
     logger: options.logger ?? silentLogger,
+    taskCreationHook: options.taskCreationHook,
     hasTask: (sessionId) => tasks.has(sessionId),
     rememberTask: (task) => {
       tasks.set(task.agentSessionId, task);
@@ -92,6 +97,70 @@ function makeHarness(options: { logger?: typeof silentLogger } = {}) {
 }
 
 describe("TaskCreation", () => {
+  it("runs the binding hook after durable registration and metadata but before remembering or projection", async () => {
+    const order: string[] = [];
+    const taskCreationHook: TaskCreationHook = {
+      afterSessionRegistered: vi.fn(async ({ task, params }) => {
+        order.push("hook");
+        expect(task.agentSessionId).toBe("sess-hook-order");
+        expect(params.prompt).toBe("hook prompt");
+      }),
+    };
+    const h = makeHarness({ taskCreationHook });
+    h.registerSession.mockImplementation(async () => {
+      order.push("register");
+    });
+    h.appendMetadata.mockImplementation(async () => {
+      order.push("metadata");
+      return 1;
+    });
+    h.assignSessionToFolder.mockImplementation(async () => {
+      order.push("folder");
+    });
+    h.emitSessionCreated.mockImplementation(async () => {
+      order.push("created");
+    });
+
+    await h.creation.createTask({
+      agentSessionId: "sess-hook-order",
+      prompt: "hook prompt",
+      profileId: "codex-default",
+      callerInfo: { source: "browser" },
+      folderId: "folder-1",
+    });
+
+    expect(order).toEqual(["register", "metadata", "hook", "folder", "created"]);
+  });
+
+  it("isolates binding hook failures and preserves session creation", async () => {
+    const logger = {
+      warn: vi.fn(),
+      child: () => logger,
+    } as unknown as typeof silentLogger;
+    const hookError = new Error("binding unavailable");
+    const h = makeHarness({
+      logger,
+      taskCreationHook: {
+        afterSessionRegistered: vi.fn().mockRejectedValue(hookError),
+      },
+    });
+
+    const task = await h.creation.createTask({
+      agentSessionId: "sess-hook-failure",
+      prompt: "still starts",
+      profileId: "codex-default",
+      folderId: "folder-1",
+    });
+
+    expect(h.tasks.get(task.agentSessionId)).toBe(task);
+    expect(h.assignSessionToFolder).toHaveBeenCalled();
+    expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "folder-1");
+    expect(logger.warn).toHaveBeenCalledWith(
+      { err: hookError, sessionId: "sess-hook-failure" },
+      "post-registration task creation hook failed",
+    );
+  });
+
   it("creates the runtime task, registers the session, persists caller metadata, and broadcasts after folder assignment", async () => {
     const h = makeHarness();
 

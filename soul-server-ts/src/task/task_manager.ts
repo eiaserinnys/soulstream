@@ -42,6 +42,7 @@ import {
   TaskCreation,
   type CreateTaskParams,
 } from "./task_creation.js";
+import type { TaskCreationHook } from "./task_creation_hook.js";
 import {
   TaskDeliveryRoute,
   type DeliverInputResponseParams,
@@ -112,6 +113,7 @@ export class TaskManager {
     contextBuilder?: ExecutionContextBuilder,
     private readonly agentRegistry?: AgentRegistry,
     private readonly boardYjsService?: Pick<BoardYjsService, "upsertSessionBoardItem">,
+    taskCreationHook?: TaskCreationHook,
   ) {
     this.taskCreation = new TaskCreation({
       nodeId: this.nodeId,
@@ -119,6 +121,7 @@ export class TaskManager {
       boardYjsService,
       broadcaster,
       logger,
+      taskCreationHook,
       hasTask: (sessionId) => this.tasks.has(sessionId),
       rememberTask: (task) => {
         this.tasks.set(task.agentSessionId, task);

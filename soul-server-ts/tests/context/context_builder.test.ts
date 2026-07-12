@@ -12,6 +12,10 @@ import {
   composeFirstTurnPrompt,
 } from "../../src/context/context_builder.js";
 import type { CogitoContextConfig } from "../../src/context/cogito_context.js";
+import {
+  NoPageAnchorContextResolver,
+  type PageContextResolver,
+} from "../../src/context/page_context_resolver.js";
 import type { Task } from "../../src/task/task_models.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -42,6 +46,7 @@ function makeBuilder(
   registry?: AgentRegistry,
   atomEnabled = false,
   cogito?: CogitoContextConfig,
+  pageContextResolver?: PageContextResolver,
 ): ExecutionContextBuilder {
   const getSession = vi.fn().mockResolvedValue(null);
   const getFolderById = vi.fn().mockResolvedValue(null);
@@ -59,6 +64,7 @@ function makeBuilder(
       ...(cogito ? { cogito } : {}),
     },
     silentLogger,
+    pageContextResolver,
   );
 }
 
@@ -76,6 +82,29 @@ function makeCogitoConfig(
 }
 
 describe("ExecutionContextBuilder.build — 기본 흐름", () => {
+  it("calls the injected page resolver once while preserving legacy context for no-page-anchor", async () => {
+    const resolve = vi.fn().mockResolvedValue({ kind: "no-page-anchor" });
+    const cb = makeBuilder({}, undefined, false, undefined, { resolve });
+    const task = makeTask();
+
+    const ctx = await cb.build(task, codexAgent);
+
+    expect(resolve).toHaveBeenCalledOnce();
+    expect(resolve).toHaveBeenCalledWith(task, codexAgent);
+    expect(ctx.effectiveSystemPrompt).toBeUndefined();
+    expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
+      "soulstream_session",
+    ]);
+  });
+
+  it("provides an explicit no-page-anchor default resolver", async () => {
+    const resolver = new NoPageAnchorContextResolver();
+
+    await expect(resolver.resolve(makeTask(), codexAgent)).resolves.toEqual({
+      kind: "no-page-anchor",
+    });
+  });
+
   it("folder 없음 → effectiveSystemPrompt undefined, soulstream_item만 combinedContextItems", async () => {
     const cb = makeBuilder();
     const ctx = await cb.build(makeTask(), codexAgent);

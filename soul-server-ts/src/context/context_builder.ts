@@ -36,9 +36,18 @@ import {
 } from "./cogito_context.js";
 import {
   assemblePrompt,
-  formatContextItems,
   type ContextItem,
 } from "./prompt_assembler.js";
+import {
+  buildCallerInfoUpdateContextItem,
+  buildClaudeSessionIdUpdateContextItem,
+  callerInfoChanged,
+  composeFirstTurnPrompt as composeFirstTurnPromptImpl,
+  composeFolderPromptChain,
+  extractFolderAtomContextSpecs,
+  normalizeSettings,
+  type FolderChainEntry,
+} from "./context_builder_helpers.js";
 import {
   fetchBoardWorkspaceContextItem,
   fetchRunningSessionsContextItem,
@@ -47,6 +56,10 @@ import {
   resolvePrimarySessionContainerContext,
   type PrimarySessionContainerContext,
 } from "./session_container_context.js";
+import {
+  NO_PAGE_ANCHOR_CONTEXT_RESOLVER,
+  type PageContextResolver,
+} from "./page_context_resolver.js";
 import { buildSoulstreamContextItem } from "./soulstream_item.js";
 
 /** Python `_PreparedContext` (execution_context_builder.py:24-34) TS 등가. */
@@ -76,12 +89,6 @@ export interface FollowupContext {
   contextItems: ContextItem[];
 }
 
-interface FolderChainEntry {
-  id: string;
-  parentFolderId: string | null;
-  settings: Record<string, unknown>;
-}
-
 /** atom 호출 설정 (config.ts env에서 주입). */
 export interface AtomConfig {
   enabled: boolean;
@@ -102,6 +109,8 @@ export class ExecutionContextBuilder {
     private readonly registry: AgentRegistry,
     private readonly cfg: ContextBuilderConfig,
     private readonly logger: Logger,
+    private readonly pageContextResolver: PageContextResolver =
+      NO_PAGE_ANCHOR_CONTEXT_RESOLVER,
   ) {}
 
   async buildFollowupContext(
@@ -185,6 +194,7 @@ export class ExecutionContextBuilder {
    * (`task.resume_session_id is None`) 정합.
    */
   async build(task: Task, agent: AgentProfile): Promise<PreparedContext> {
+    await this.pageContextResolver.resolve(task, agent);
     const { folderId, folderName, folderPrompt, atomContextSpecs } = await this._resolveFolder(task);
     const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
     const atomMarkdown = await this._fetchAtomContext(atomContextSpecs);
@@ -474,123 +484,7 @@ export class ExecutionContextBuilder {
   }
 }
 
-/**
- * codex SDK는 turn-level systemPrompt를 지원하지 않으므로, claude의
- * `system_prompt + context_items + assembled_prompt` 흐름을 *단일 prompt 문자열*로 합성한다.
- *
- * 합성 순서 (분석 캐시 §C-5):
- *   [effectiveSystemPrompt]\n\n[<context>...</context>]\n\n[assembledPrompt]
- *
- * 비어있는 component는 skip. 모두 비면 assembledPrompt만 반환.
- */
+/** Keeps the public and cogito-reflected context composition entrypoint stable. */
 export function composeFirstTurnPrompt(ctx: PreparedContext): string {
-  const parts: string[] = [];
-  if (ctx.effectiveSystemPrompt) {
-    parts.push(ctx.effectiveSystemPrompt);
-  }
-  const contextBlock = formatContextItems(ctx.combinedContextItems);
-  if (contextBlock) {
-    parts.push(contextBlock);
-  }
-  parts.push(ctx.assembledPrompt);
-  return parts.join("\n\n");
-}
-
-function buildClaudeSessionIdUpdateContextItem(task: Task): ContextItem {
-  return {
-    key: "claude_session_id_update",
-    label: "Claude session id update",
-    content: {
-      agent_session_id: task.agentSessionId,
-      claude_session_id: task.codexThreadId,
-    },
-  };
-}
-
-function buildCallerInfoUpdateContextItem(
-  previousCallerInfo: CallerInfo | undefined,
-  currentCallerInfo: CallerInfo,
-): ContextItem {
-  return {
-    key: "caller_info_update",
-    label: "Caller info update",
-    content: {
-      previous_caller_info: previousCallerInfo ?? null,
-      current_caller_info: currentCallerInfo,
-    },
-  };
-}
-
-function callerInfoChanged(
-  previousCallerInfo: CallerInfo | undefined,
-  currentCallerInfo: CallerInfo,
-): boolean {
-  return stableJson(previousCallerInfo ?? null) !== stableJson(currentCallerInfo);
-}
-
-function stableJson(value: unknown): string {
-  return JSON.stringify(sortObjectKeys(value));
-}
-
-function sortObjectKeys(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => sortObjectKeys(item));
-  }
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-  const record = value as Record<string, unknown>;
-  return Object.fromEntries(
-    Object.keys(record)
-      .sort()
-      .map((key) => [key, sortObjectKeys(record[key])]),
-  );
-}
-
-function extractFolderPrompt(settings: Record<string, unknown>): string | undefined {
-  const value = settings.folderPrompt;
-  return typeof value === "string" && value.trim() ? value : undefined;
-}
-
-function composeFolderPromptChain(chain: FolderChainEntry[]): string | undefined {
-  const prompts: string[] = [];
-  const seenPrompts = new Set<string>();
-  for (const folder of chain) {
-    const prompt = extractFolderPrompt(folder.settings);
-    if (!prompt || seenPrompts.has(prompt)) continue;
-    seenPrompts.add(prompt);
-    prompts.push(prompt);
-  }
-  return prompts.length > 0 ? prompts.join("\n\n") : undefined;
-}
-
-function extractFolderAtomContextSpecs(chain: FolderChainEntry[]): AtomContextSpec[] {
-  const specsByNodeId = new Map<string, AtomContextSpec>();
-  for (const folder of chain) {
-    const spec = extractAtomContextSpec(folder.settings);
-    if (!spec) continue;
-    specsByNodeId.delete(spec.nodeId);
-    specsByNodeId.set(spec.nodeId, spec);
-  }
-  return [...specsByNodeId.values()];
-}
-
-function extractAtomContextSpec(settings: Record<string, unknown>): AtomContextSpec | null {
-  const cfg = settings.atomContextNode;
-  if (!cfg || typeof cfg !== "object") return null;
-  const record = cfg as Record<string, unknown>;
-  const nodeId = record.nodeId;
-  if (typeof nodeId !== "string" || !nodeId) return null;
-  const depth = typeof record.depth === "number" ? record.depth : 3;
-  return {
-    nodeId,
-    depth,
-    titlesOnly: Boolean(record.titlesOnly),
-  };
-}
-
-function normalizeSettings(settings: unknown): Record<string, unknown> {
-  return settings && typeof settings === "object"
-    ? (settings as Record<string, unknown>)
-    : {};
+  return composeFirstTurnPromptImpl(ctx);
 }
