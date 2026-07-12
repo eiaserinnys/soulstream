@@ -78,6 +78,69 @@ describePostgres("SessionDB supervisor PostgreSQL integration", () => {
     expect(rows[0].definition).toContain("(updated_at DESC, session_id DESC)");
   }, 30_000);
 
+  it("persists one idempotent page-binding intent and advances its replay steps", async () => {
+    await harness!.sql`
+      INSERT INTO sessions (session_id, node_id, updated_at, session_type, status)
+      VALUES ('sess-binding', 'node-1', NOW(), 'claude', 'running')
+    `;
+    const repository = db.sessionPageBindings();
+    const input = {
+      sessionId: "sess-binding",
+      nodeId: "node-1",
+      targetPageId: null,
+      targetBlockId: null,
+      targetExpectedVersion: null,
+      dailyDate: "2026-07-13",
+      sessionType: "claude",
+      legacyFolderId: null,
+      legacyContainerKind: null,
+      legacyContainerId: null,
+      sourceRunbookItemId: null,
+    };
+    const first = await repository.enqueue(input);
+    const duplicate = await repository.enqueue({ ...input, dailyDate: "2026-07-14" });
+    expect(first.daily_date).toBe("2026-07-13");
+    expect(duplicate.daily_date).toBe("2026-07-13");
+    expect(await repository.listDue("node-1")).toHaveLength(1);
+
+    await repository.markPageBound("sess-binding");
+    await repository.markLegacyCompleted("sess-binding");
+    expect(await repository.get("sess-binding")).toMatchObject({
+      page_state: "bound",
+      legacy_state: "completed",
+    });
+    expect(await repository.listDue("node-1")).toHaveLength(0);
+
+    await harness!.sql`
+      UPDATE session_page_bindings
+      SET page_state = 'manual_repair', legacy_state = 'pending', next_retry_at = NOW()
+      WHERE session_id = 'sess-binding'
+    `;
+    expect(await repository.listDue("node-1")).toHaveLength(0);
+  });
+
+  it("enforces exactly one primary session_ref across pages", async () => {
+    await harness!.sql`
+      INSERT INTO sessions (session_id, updated_at, session_type, status)
+      VALUES ('sess-primary', NOW(), 'claude', 'running')
+    `;
+    await harness!.sql`
+      INSERT INTO pages (id, title) VALUES ('page-a', 'Page A'), ('page-b', 'Page B');
+    `;
+    await harness!.sql`
+      INSERT INTO blocks (id, page_id, position_key, block_type, properties)
+      VALUES ('block-a', 'page-a', 'a', 'session_ref', ${harness!.sql.json({
+        sessionId: "sess-primary", primary: true,
+      })})
+    `;
+    await expect(harness!.sql`
+      INSERT INTO blocks (id, page_id, position_key, block_type, properties)
+      VALUES ('block-b', 'page-b', 'a', 'session_ref', ${harness!.sql.json({
+        sessionId: "sess-primary", primary: true,
+      })})
+    `).rejects.toMatchObject({ code: "23505" });
+  });
+
   it("keeps review registration, terminal, restart, and acknowledge transitions consistent", async () => {
     const now = new Date("2026-07-12T00:00:00Z");
     await db.registerSession({

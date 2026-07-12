@@ -29,11 +29,15 @@ import type { McpConfigService } from "../mcp_config_service.js";
 import { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { RunbookHandoffNotifier } from "../runbook/runbook_handoff_notifier.js";
 import { RunbookService } from "../runbook/runbook_service.js";
+import { PageYjsHostClient } from "../page/page_host_client.js";
+import {
+  SessionLegacyProjection,
+  SessionPageBindingService,
+} from "../page/session_page_binding_service.js";
 import { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import { buildServer, type ServerInstance } from "../server.js";
 import { sendMessageToSession } from "../task/session_message_sender.js";
 import type { EngineFactory } from "../task/task_executor.js";
-import { NOOP_TASK_CREATION_HOOK } from "../task/task_creation_hook.js";
 import { TaskManager } from "../task/task_manager.js";
 import { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { UpstreamAdapter } from "../upstream/adapter.js";
@@ -62,6 +66,7 @@ export interface WorkerComposition extends SupervisorComposition {
   agentConfigService: AgentConfigService;
   mcpRuntime: McpRuntime;
   scheduleService: SoulstreamScheduleService;
+  sessionPageBindingService: SessionPageBindingService;
   createUpstreamAdapter(): UpstreamAdapter;
 }
 
@@ -145,6 +150,14 @@ export async function composeWorkerRuntime(
     },
     "Board Yjs host routing initialized",
   );
+  const sessionPageBindingService = new SessionPageBindingService({
+    nodeId: env.SOULSTREAM_NODE_ID,
+    repository: db.sessionPageBindings(),
+    pageHost: new PageYjsHostClient({ orch: orchProxyConfig, logger }),
+    legacyProjection: new SessionLegacyProjection(db, boardYjsService),
+    logger,
+  });
+  sessionPageBindingService.start();
 
   const contextBuilder = new ExecutionContextBuilder(
     db,
@@ -174,7 +187,7 @@ export async function composeWorkerRuntime(
     contextBuilder,
     agentRegistry,
     boardYjsService,
-    NOOP_TASK_CREATION_HOOK,
+    sessionPageBindingService,
   );
   const scheduleService = new SoulstreamScheduleService(
     db.schedules(),
@@ -381,6 +394,7 @@ export async function composeWorkerRuntime(
     agentConfigService,
     mcpRuntime,
     scheduleService,
+    sessionPageBindingService,
     createUpstreamAdapter,
   };
 }
