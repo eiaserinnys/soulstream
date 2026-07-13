@@ -107,7 +107,8 @@ export function registerUserPreferencesRoutes(
     if (!email.ok) return userPreferencesError(reply, email.error);
 
     const payload = isPlainObject(request.body) ? request.body : {};
-    const prefs = preferencesFromPayload(payload);
+    const existing = await options.repository.get(email.value);
+    const prefs = preferencesFromPayload(payload, existing?.prefs);
     try {
       const row = await options.repository.put(email.value, prefs, {
         clearBackground: Boolean(payload.clearBackground),
@@ -170,7 +171,7 @@ export function serializePreferences(row: UserPreferencesRecord): Record<string,
 }
 
 export function normalizeUserPreferences(value: unknown): NormalizedUserPreferences {
-  const source = isPlainObject(value) ? value : {};
+  const source = userPreferencesSource(value);
   const rawAppearance = source.appearance;
   const appearance = ALLOWED_APPEARANCES.has(String(rawAppearance))
     ? String(rawAppearance) as NormalizedUserPreferences["appearance"]
@@ -196,17 +197,25 @@ export function normalizeUserPreferences(value: unknown): NormalizedUserPreferen
   };
 }
 
-export function preferencesFromPayload(payload: Record<string, unknown>): NormalizedUserPreferences {
-  const prefs: Record<string, unknown> = {};
+export function preferencesFromPayload(
+  payload: Record<string, unknown>,
+  existingValue?: unknown,
+): NormalizedUserPreferences {
+  const existing = normalizeUserPreferences(existingValue);
+  const patch: Record<string, unknown> = {};
   if (isPlainObject(payload.prefs)) {
-    Object.assign(prefs, payload.prefs);
+    Object.assign(patch, payload.prefs);
   }
   for (const key of ["appearance", "wallpaper", "glass"] as const) {
     if (Object.hasOwn(payload, key)) {
-      prefs[key] = payload[key];
+      patch[key] = payload[key];
     }
   }
-  return normalizeUserPreferences(prefs);
+  return normalizeUserPreferences({
+    appearance: Object.hasOwn(patch, "appearance") ? patch.appearance : existing.appearance,
+    wallpaper: Object.hasOwn(patch, "wallpaper") ? patch.wallpaper : existing.wallpaper,
+    glass: Object.hasOwn(patch, "glass") ? patch.glass : existing.glass,
+  });
 }
 
 function normalizeGlassSettings(value: unknown): NormalizedUserPreferences["glass"] {
@@ -301,6 +310,17 @@ function isSafeBackgroundUrl(value: string): boolean {
 
 function errorName(error: unknown): string {
   return error instanceof Error ? error.name : "";
+}
+
+function userPreferencesSource(value: unknown): Record<string, unknown> {
+  if (isPlainObject(value)) return value;
+  if (typeof value !== "string") return {};
+  try {
+    const decoded = JSON.parse(value);
+    return isPlainObject(decoded) ? decoded : {};
+  } catch {
+    return {};
+  }
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
