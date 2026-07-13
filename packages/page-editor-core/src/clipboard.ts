@@ -13,6 +13,15 @@ export interface StructuredClipboardPayload {
   readonly schema: "soulstream-page-blocks";
   readonly version: 1;
   readonly blocks: readonly ParsedClipboardBlock[];
+  readonly cut?: StructuredClipboardCutSource;
+}
+
+export interface StructuredClipboardCutSource {
+  readonly sourcePageId: string;
+  readonly blockIds: readonly string[];
+  readonly expectedVersion: number;
+  readonly expectedStateVector: string;
+  readonly idempotencyKey: string;
 }
 
 export interface SerializedBlockSelection {
@@ -23,6 +32,7 @@ export interface SerializedBlockSelection {
 export function serializeBlockSelection(
   snapshot: readonly EditorBlockSnapshot[],
   selectedBlockIds: readonly string[],
+  cut?: StructuredClipboardCutSource,
 ): SerializedBlockSelection {
   const index = new SnapshotIndex(snapshot);
   const selection = resolveBlockSelection(index, selectedBlockIds);
@@ -30,7 +40,7 @@ export function serializeBlockSelection(
   const blocks = selection.roots.map((block) => serializeTree(index, block));
   return {
     plainText: flattenClipboardText(blocks).join("\n"),
-    structured: { schema: "soulstream-page-blocks", version: 1, blocks },
+    structured: { schema: "soulstream-page-blocks", version: 1, blocks, ...(cut ? { cut } : {}) },
   };
 }
 
@@ -48,6 +58,7 @@ export function decodeStructuredClipboard(value: string): StructuredClipboardPay
     schema: "soulstream-page-blocks",
     version: 1,
     blocks: parsed.blocks.map((block) => validateStructuredBlock(block)),
+    ...(parsed.cut === undefined ? {} : { cut: validateCutSource(parsed.cut) }),
   };
 }
 
@@ -121,10 +132,18 @@ function cloneBlocks(blocks: readonly ParsedClipboardBlock[]): ParsedClipboardBl
   return blocks.map((block) => ({
     text: block.text,
     ...(block.type === undefined ? {} : { type: block.type }),
-    ...(block.properties === undefined ? {} : { properties: cloneProperties(block.properties) }),
+    ...(block.properties === undefined ? {} : { properties: materializePasteProperties(block) }),
     ...(block.collapsed === undefined ? {} : { collapsed: block.collapsed }),
     children: cloneBlocks(block.children),
   }));
+}
+
+function materializePasteProperties(block: ParsedClipboardBlock): Record<string, unknown> {
+  const properties = cloneProperties(block.properties ?? {});
+  if (block.type === "session_ref" && properties.primary === true) {
+    properties.primary = false;
+  }
+  return properties;
 }
 
 function serializeTree(index: SnapshotIndex, block: EditorBlockSnapshot): ParsedClipboardBlock {
@@ -161,6 +180,31 @@ function validateStructuredBlock(value: unknown): ParsedClipboardBlock {
     ...(value.collapsed === undefined ? {} : { collapsed: value.collapsed }),
     children: value.children.map((child) => validateStructuredBlock(child)),
   };
+}
+
+function validateCutSource(value: unknown): StructuredClipboardCutSource {
+  if (
+    !isRecord(value) ||
+    typeof value.sourcePageId !== "string" || !value.sourcePageId ||
+    !Array.isArray(value.blockIds) ||
+    value.blockIds.length === 0 ||
+    value.blockIds.some((blockId) => typeof blockId !== "string" || !blockId) ||
+    !Number.isInteger(value.expectedVersion) || Number(value.expectedVersion) < 1 ||
+    typeof value.expectedStateVector !== "string" || !value.expectedStateVector ||
+    !isCanonicalBase64(value.expectedStateVector) ||
+    typeof value.idempotencyKey !== "string" || !value.idempotencyKey
+  ) throw new Error("Soulstream clipboard cut source is invalid");
+  return {
+    sourcePageId: value.sourcePageId,
+    blockIds: [...value.blockIds] as string[],
+    expectedVersion: Number(value.expectedVersion),
+    expectedStateVector: value.expectedStateVector,
+    idempotencyKey: value.idempotencyKey,
+  };
+}
+
+function isCanonicalBase64(value: string): boolean {
+  return /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value);
 }
 
 function cloneProperties(properties: Readonly<Record<string, unknown>>): Record<string, unknown> {

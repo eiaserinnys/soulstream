@@ -24,6 +24,7 @@ import {
 } from "./page_mutation_core.js";
 import type {
   CommitPageMutationInput,
+  CommitPageMutationsInput,
   PageMutationCommitResult,
   PageOperationRecord,
 } from "./page_repository.js";
@@ -43,6 +44,12 @@ import {
   getPageYjsServiceDiagnostics,
   type PageYjsServiceDiagnostics,
 } from "./page_service_lifecycle.js";
+import {
+  transferPageBlocks,
+  type PageBlockTransferInput,
+  type PageBlockTransferResult,
+} from "./page_block_transfer_service.js";
+import { PageAsyncMutex } from "./page_async_mutex.js";
 
 export interface PageServiceRepository extends PageYjsPersistenceRepository {
   getPageMutationByIdempotencyKey(
@@ -67,6 +74,7 @@ export interface PageServiceRepository extends PageYjsPersistenceRepository {
     limit: number;
   }): Promise<PageBacklinkPage>;
   commitPageMutation(input: CommitPageMutationInput): Promise<PageMutationCommitResult>;
+  commitPageMutations?(input: CommitPageMutationsInput): Promise<PageMutationCommitResult[]>;
 }
 
 export interface PageYjsServiceConfig {
@@ -223,6 +231,19 @@ export class PageYjsService {
         await connection.disconnect();
       }
     });
+  }
+
+  async transferBlocks(input: PageBlockTransferInput): Promise<PageBlockTransferResult> {
+    return await transferPageBlocks({
+      repository: this.config.repository,
+      mutationCore: this.mutationCore,
+      mutex: this.mutex,
+      hocuspocus: this.hocuspocus,
+      createOperationId: this.createOperationId,
+      hydrateCommittedPage: async (documentName) => await this.hydrateCommittedPage(documentName),
+      decodeSnapshot: (snapshot) => this.decodeSnapshot(snapshot),
+      toMutationResult,
+    }, input);
   }
 
   async getPage(pageId: string): Promise<PageServiceReadResult> {
@@ -427,26 +448,7 @@ function createPageYjsAuthExtension(
   };
 }
 
-class PageAsyncMutex {
-  private readonly tails = new Map<string, Promise<void>>();
-
-  async runExclusive<T>(pageId: string, callback: () => Promise<T>): Promise<T> {
-    const previous = this.tails.get(pageId) ?? Promise.resolve();
-    let release!: () => void;
-    const current = new Promise<void>((resolve) => { release = resolve; });
-    const queued = previous.then(() => current);
-    this.tails.set(pageId, queued);
-    await previous;
-    try {
-      return await callback();
-    } finally {
-      release();
-      if (this.tails.get(pageId) === queued) this.tails.delete(pageId);
-    }
-  }
-}
-
-function toMutationResult(
+export function toMutationResult(
   replica: PageYjsReplica,
   mapping: Record<string, string>,
   committed: PageMutationCommitResult,

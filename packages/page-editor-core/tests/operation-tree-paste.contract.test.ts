@@ -86,6 +86,29 @@ describe("Serendipity-homologous indent/outdent fixtures", () => {
     expect(() => planEditorOperation(snapshot, { type: "outdent", blockIds: ["parent", "a"] }))
       .toThrow(EditorOperationUnavailableError);
   });
+
+  it("T-09 indents a mixed text and session-card group without changing block identity", () => {
+    const snapshot = createSnapshot([
+      { id: "parent", text: "Parent" },
+      { id: "text", text: "Text" },
+      {
+        id: "session",
+        type: "session_ref",
+        properties: { sessionId: "session-a", primary: true },
+      },
+    ]);
+    const state = project(snapshot, planEditorOperation(snapshot, {
+      type: "indent",
+      blockIds: ["text", "session"],
+    }).intents);
+
+    expect(state.childIds("parent")).toEqual(["text", "session"]);
+    expect(state.nodes.get("session")).toMatchObject({
+      id: "session",
+      type: "session_ref",
+      properties: { sessionId: "session-a", primary: true },
+    });
+  });
 });
 
 describe("Serendipity-homologous clipboard/paste fixtures", () => {
@@ -312,6 +335,30 @@ describe("Serendipity-homologous clipboard/paste fixtures", () => {
       { type: "delete-subtree", target: existing("b") },
       { type: "delete-subtree", target: existing("c") },
     ]);
+  });
+
+  it("P-13 materializes copied primary session cards as secondary references", () => {
+    const snapshot = createSnapshot([
+      { id: "text", text: "Context" },
+      {
+        id: "primary-session",
+        type: "session_ref",
+        properties: { sessionId: "session-a", primary: true },
+      },
+    ]);
+    const serialized = serializeBlockSelection(snapshot, ["text", "primary-session"]);
+
+    expect(serialized.structured.blocks[1]?.properties).toEqual({
+      sessionId: "session-a",
+      primary: true,
+    });
+    expect(parseClipboard({ structured: serialized.structured })).toMatchObject({
+      kind: "block-tree",
+      blocks: [
+        { text: "Context" },
+        { type: "session_ref", properties: { sessionId: "session-a", primary: false } },
+      ],
+    });
   });
 });
 

@@ -26,6 +26,8 @@ export function PageBlockRow({
   onCutInput,
   onSelectBlock,
   onSelectAtomicBlock,
+  onSelectionDragStart,
+  onSelectionDragEnter,
   onLocalInput,
   onBlockKeyInput,
   onEditorHeightChange,
@@ -50,6 +52,8 @@ export function PageBlockRow({
   onCutInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
   onSelectBlock(blockId: string, extend: boolean): void;
   onSelectAtomicBlock(blockId: string, extend: boolean, element: HTMLDivElement): void;
+  onSelectionDragStart(blockId: string): void;
+  onSelectionDragEnter(blockId: string): void;
   onLocalInput(): void;
   onBlockKeyInput(block: PageDocumentBlock, event: React.KeyboardEvent<HTMLDivElement>): void;
   onEditorHeightChange(blockId: string): void;
@@ -95,6 +99,7 @@ export function PageBlockRow({
         }`}
         style={pageEditorRowStyle(depth)}
         onClick={(event) => onSelectAtomicBlock(block.id, event.shiftKey, event.currentTarget)}
+        onMouseMove={() => onSelectionDragEnter(block.id)}
         onDoubleClick={() => {
           if (resolution.kind === "ready") onOpenSession?.(resolution.summary);
         }}
@@ -102,7 +107,11 @@ export function PageBlockRow({
           if (event.target === event.currentTarget) onBlockKeyInput(block, event);
         }}
       >
-        <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 self-center rounded-full bg-primary/70" />
+        <SelectionHandle
+          blockId={block.id}
+          onDragStart={onSelectionDragStart}
+          colorClass="bg-primary/70"
+        />
         <SessionRefBlock
           resolution={resolution}
           lensState={sessionLensState(
@@ -137,8 +146,13 @@ export function PageBlockRow({
       onKeyDown={(event) => {
         if (event.target === event.currentTarget) onBlockKeyInput(block, event);
       }}
+      onMouseMove={() => onSelectionDragEnter(block.id)}
     >
-      <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 self-center rounded-full bg-muted-foreground/70" />
+      <SelectionHandle
+        blockId={block.id}
+        onDragStart={onSelectionDragStart}
+        colorClass="bg-muted-foreground/70"
+      />
       <PageBlockEditor
         block={block}
         onKeyInput={onKeyInput}
@@ -168,5 +182,37 @@ export function PageBlockRow({
         </button>
       ) : null}
     </div>
+  );
+}
+
+function SelectionHandle({
+  blockId,
+  onDragStart,
+  colorClass,
+}: {
+  blockId: string;
+  onDragStart(blockId: string): void;
+  colorClass: string;
+}) {
+  return (
+    <button
+      type="button"
+      tabIndex={-1}
+      aria-label={`Select block ${blockId}`}
+      data-page-selection-handle={blockId}
+      className="flex h-6 w-3 shrink-0 items-center justify-center self-center cursor-grab"
+      onMouseDown={(event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onDragStart(blockId);
+      }}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+    >
+      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${colorClass}`} />
+    </button>
   );
 }

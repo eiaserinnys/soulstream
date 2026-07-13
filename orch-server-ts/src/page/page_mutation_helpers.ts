@@ -20,6 +20,14 @@ export class PageMutationStateVectorConflictError extends Error {
   }
 }
 
+export class PageMutationIdempotencyConflictError extends Error {
+  readonly code = "PAGE_MUTATION_IDEMPOTENCY_CONFLICT";
+
+  constructor() {
+    super("page mutation idempotency key was already used with a different payload");
+  }
+}
+
 export function stateVectorsEqual(left: Uint8Array, right: Uint8Array): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }

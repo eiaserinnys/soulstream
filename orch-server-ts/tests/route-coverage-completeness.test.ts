@@ -30,6 +30,7 @@ describe("route coverage completeness gate", () => {
     "GET /api/pages/{pageId}/backlinks",
     "GET /api/blocks/search",
     "GET /api/blocks/{blockId}",
+    "POST /api/pages/block-transfers",
     "POST /api/pages/{pageId}/operations",
     "PATCH /api/pages/{pageId}/starred",
   ];

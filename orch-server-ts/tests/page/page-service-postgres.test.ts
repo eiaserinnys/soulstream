@@ -8,6 +8,11 @@ import WebSocket from "ws";
 import * as Y from "yjs";
 
 import { PageRepository } from "../../src/page/page_repository.js";
+import {
+  PageMutationIdempotencyConflictError,
+  PageMutationStateVectorConflictError,
+  PageMutationVersionConflictError,
+} from "../../src/page/page_mutation_helpers.js";
 import { PageYjsService } from "../../src/page/page_service.js";
 import { readPageYDocReplica } from "../../src/page/page_yjs_model.js";
 import { registerPageYjsRoutes } from "../../src/page/page_yjs_route.js";
@@ -164,6 +169,566 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
     expect(readPageYDocReplica("page-1", service.decodeSnapshot(snapshot!)).page.mutationVersion)
       .toBe(2);
   }, 30_000);
+
+  it("moves a mixed block forest and its primary session binding in one transaction", async () => {
+    await harness.sql`INSERT INTO sessions (session_id) VALUES ('moved-session')`;
+    await harness.sql`
+      INSERT INTO session_page_bindings (
+        session_id, node_id, daily_date, session_type, page_state, legacy_state
+      ) VALUES (
+        'moved-session', 'test-node', '2026-07-13', 'agent', 'pending', 'completed'
+      )
+    `;
+    await service.createPage({
+      page: { id: "transfer-source", title: "Transfer source", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "create_page:agent-session:transfer-source",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [
+          createBlock("before", null, null, "paragraph", "Before"),
+          createBlock("text-root", null, "before", "paragraph", "Move me"),
+          createBlock("check-child", "text-root", null, "checklist", "Child", { checked: true }, true),
+          createBlock(
+            "session-ref",
+            null,
+            "text-root",
+            "session_ref",
+            "",
+            { sessionId: "moved-session", primary: true },
+          ),
+          createBlock("after", null, "session-ref", "paragraph", "After"),
+        ],
+      },
+    });
+    await harness.sql`
+      UPDATE session_page_bindings
+      SET target_page_id = 'transfer-source', target_block_id = 'session-ref',
+          target_expected_version = 1, page_state = 'bound'
+      WHERE session_id = 'moved-session'
+    `;
+    await service.createPage({
+      page: { id: "transfer-target", title: "Transfer target", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "create_page:agent-session:transfer-target",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [createBlock("target-root", null, null, "paragraph", "Target")],
+      },
+    });
+    const sourceBefore = await service.getBrowserPage("transfer-source");
+    const targetBefore = await service.getBrowserPage("transfer-target");
+    const input = {
+      source: {
+        pageId: "transfer-source",
+        expectedVersion: sourceBefore.page.version,
+        expectedStateVector: decodeStateVector(sourceBefore.state_vector),
+        blockIds: ["text-root", "session-ref"],
+      },
+      target: {
+        kind: "existing" as const,
+        pageId: "transfer-target",
+        expectedVersion: targetBefore.page.version,
+        expectedStateVector: decodeStateVector(targetBefore.state_vector),
+        parentId: null,
+        afterBlockId: "target-root",
+      },
+      actor: { actorKind: "agent" as const, actorSessionId: "agent-session" },
+      idempotencyKey: "page-transfer:agent-session:mixed",
+    };
+
+    const concurrentResults = await Promise.all([
+      service.transferBlocks(input),
+      service.transferBlocks(input),
+    ]);
+    const moved = concurrentResults[0]!;
+
+    expect(moved.source.blocks.map((block) => block.id)).toEqual(["before", "after"]);
+    expect(moved.target.blocks.map((block) => block.id)).toEqual([
+      "target-root", "text-root", "check-child", "session-ref",
+    ]);
+    expect(moved.target.blocks.find((block) => block.id === "check-child")).toMatchObject({
+      parent_id: "text-root",
+      block_type: "checklist",
+      properties: { checked: true },
+      collapsed: true,
+    });
+    expect(concurrentResults.some((result) => (
+      result.source.idempotent === true && result.target.idempotent === true
+    ))).toBe(true);
+    expect(moved.target.blocks.find((block) => block.id === "session-ref")).toMatchObject({
+      block_type: "session_ref",
+      properties: { sessionId: "moved-session", primary: true },
+    });
+    const [binding] = await harness.sql<[{
+      target_page_id: string;
+      target_block_id: string;
+      target_expected_version: number;
+      page_state: string;
+    }]>`
+      SELECT target_page_id, target_block_id, target_expected_version, page_state
+      FROM session_page_bindings WHERE session_id = 'moved-session'
+    `;
+    expect(binding).toEqual({
+      target_page_id: "transfer-target",
+      target_block_id: "session-ref",
+      target_expected_version: 2,
+      page_state: "bound",
+    });
+
+    const duplicate = await service.transferBlocks(input);
+    expect(duplicate.source.idempotent).toBe(true);
+    expect(duplicate.target.idempotent).toBe(true);
+    expect(duplicate.target.blocks.map((block) => block.id)).toEqual(moved.target.blocks.map((block) => block.id));
+    await expect(service.transferBlocks({
+      ...input,
+      target: { ...input.target, afterBlockId: null },
+    })).rejects.toBeInstanceOf(PageMutationIdempotencyConflictError);
+    await expect(service.transferBlocks({
+      ...input,
+      target: { kind: "new", pageId: "mode-change-target", title: "Mode change" },
+    })).rejects.toBeInstanceOf(PageMutationIdempotencyConflictError);
+
+    const targetCurrent = await service.getBrowserPage("transfer-target");
+    const samePageInput = {
+      source: {
+        pageId: "transfer-target",
+        expectedVersion: targetCurrent.page.version,
+        expectedStateVector: decodeStateVector(targetCurrent.state_vector),
+        blockIds: ["session-ref"],
+      },
+      target: {
+        kind: "existing",
+        pageId: "transfer-target",
+        expectedVersion: targetCurrent.page.version,
+        expectedStateVector: decodeStateVector(targetCurrent.state_vector),
+        parentId: "text-root",
+        afterBlockId: "check-child",
+      },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "page-transfer:agent-session:same-page-primary",
+    } as const;
+    await expect(service.transferBlocks({
+      ...samePageInput,
+      target: { ...samePageInput.target, expectedVersion: targetCurrent.page.version + 1 },
+    })).rejects.toBeInstanceOf(PageMutationVersionConflictError);
+    await expect(service.transferBlocks({
+      ...samePageInput,
+      target: { ...samePageInput.target, expectedStateVector: new Uint8Array([9, 9]) },
+    })).rejects.toBeInstanceOf(PageMutationStateVectorConflictError);
+    await service.transferBlocks(samePageInput);
+    const [samePageBinding] = await harness.sql<[{ target_page_id: string; target_expected_version: number }]>`
+      SELECT target_page_id, target_expected_version
+      FROM session_page_bindings WHERE session_id = 'moved-session'
+    `;
+    expect(samePageBinding).toEqual({
+      target_page_id: "transfer-target",
+      target_expected_version: 3,
+    });
+  }, 30_000);
+
+  it("rejects a new transfer target that already exists without changing either page", async () => {
+    await service.createPage({
+      page: { id: "collision-source", title: "Collision source", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "create_page:agent-session:collision-source",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [createBlock("collision-moved", null, null, "paragraph", "Move")],
+      },
+    });
+    await service.createPage({
+      page: { id: "collision-target", title: "Existing target", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "create_page:agent-session:collision-target",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [createBlock("collision-existing", null, null, "paragraph", "Keep")],
+      },
+    });
+    const sourceBefore = await service.getBrowserPage("collision-source");
+    const targetBefore = await service.getBrowserPage("collision-target");
+
+    await expect(service.transferBlocks({
+      source: {
+        pageId: "collision-source",
+        expectedVersion: sourceBefore.page.version,
+        expectedStateVector: decodeStateVector(sourceBefore.state_vector),
+        blockIds: ["collision-moved"],
+      },
+      target: { kind: "new", pageId: "collision-target", title: "Must not overwrite" },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "page-transfer:agent-session:collision-target",
+    })).rejects.toBeInstanceOf(PageMutationVersionConflictError);
+
+    expect(await service.getBrowserPage("collision-source")).toEqual(sourceBefore);
+    expect(await service.getBrowserPage("collision-target")).toEqual(targetBefore);
+  }, 30_000);
+
+  it("rolls back both pages when target CAS validation fails", async () => {
+    await service.createPage({
+      page: { id: "rollback-source", title: "Rollback source", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "create_page:agent-session:rollback-source",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [createBlock("rollback-block", null, null, "paragraph", "Stay")],
+      },
+    });
+    await service.createPage({
+      page: { id: "rollback-target", title: "Rollback target", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "create_page:agent-session:rollback-target",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [createBlock("rollback-anchor", null, null, "paragraph", "Anchor")],
+      },
+    });
+    const sourceBefore = await service.getBrowserPage("rollback-source");
+    const targetBefore = await service.getBrowserPage("rollback-target");
+    const [countBefore] = await harness.sql<[{ count: number }]>`
+      SELECT COUNT(*)::int AS count FROM block_operations
+    `;
+
+    await expect(service.transferBlocks({
+      source: {
+        pageId: "rollback-source",
+        expectedVersion: sourceBefore.page.version,
+        expectedStateVector: decodeStateVector(sourceBefore.state_vector),
+        blockIds: ["rollback-block"],
+      },
+      target: {
+        kind: "existing",
+        pageId: "rollback-target",
+        expectedVersion: targetBefore.page.version,
+        expectedStateVector: new Uint8Array([1, 2, 3]),
+        parentId: null,
+        afterBlockId: "rollback-anchor",
+      },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "page-transfer:agent-session:rollback",
+    })).rejects.toThrow();
+
+    expect(await service.getBrowserPage("rollback-source")).toEqual(sourceBefore);
+    expect(await service.getBrowserPage("rollback-target")).toEqual(targetBefore);
+    const [countAfter] = await harness.sql<[{ count: number }]>`
+      SELECT COUNT(*)::int AS count FROM block_operations
+    `;
+    expect(countAfter).toEqual(countBefore);
+  }, 30_000);
+
+  it("extracts to a new page while replacing the source range with an exact mount", async () => {
+    await service.createPage({
+      page: { id: "extract-source", title: "Extract source", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "create_page:agent-session:extract-source",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [
+          createBlock("extract-before", null, null, "paragraph", "Before"),
+          createBlock("extract-root", null, "extract-before", "paragraph", "Extracted"),
+          createBlock("extract-child", "extract-root", null, "paragraph", "Child"),
+          createBlock("extract-after", null, "extract-root", "paragraph", "After"),
+        ],
+      },
+    });
+    const sourceBefore = await service.getBrowserPage("extract-source");
+
+    const extracted = await service.transferBlocks({
+      source: {
+        pageId: "extract-source",
+        expectedVersion: sourceBefore.page.version,
+        expectedStateVector: decodeStateVector(sourceBefore.state_vector),
+        blockIds: ["extract-root"],
+      },
+      target: { kind: "new", pageId: "extracted-page", title: "Extracted page" },
+      sourceMount: { title: "Extracted page", tempId: "extract-mount" },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "page-extract:agent-session:new-page",
+    });
+
+    expect(extracted.target_created).toBe(true);
+    expect(extracted.source.blocks.map((block) => block.text)).toEqual([
+      "Before", "[[Extracted page]]", "After",
+    ]);
+    expect(extracted.target.page).toMatchObject({ id: "extracted-page", title: "Extracted page", version: 1 });
+    expect(extracted.target.blocks).toEqual([
+      expect.objectContaining({ id: "extract-root", parent_id: null, text: "Extracted" }),
+      expect.objectContaining({ id: "extract-child", parent_id: "extract-root", text: "Child" }),
+    ]);
+  }, 30_000);
+
+  it("converges both live source and target Y.Docs after one cross-page transfer", async () => {
+    const liveRepository = new PageRepository(createLiveDbSqlResolver({ sql: harness.liveSql }));
+    const app = Fastify({ logger: false });
+    const liveService = new PageYjsService({
+      repository: liveRepository,
+      auth: {
+        authBearerToken: "service-token",
+        environment: "production",
+        dashboardAuthEnabled: false,
+        verifyDashboardToken: async () => null,
+      },
+      logger: app.log,
+    });
+    registerPageYjsRoutes(app, {
+      createService: () => liveService,
+      authBearerToken: "service-token",
+    });
+    await liveService.createPage({
+      page: { id: "live-transfer-source", title: "Live source", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "create_page:agent-session:live-transfer-source",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [createBlock("live-moved", null, null, "paragraph", "Live move")],
+      },
+    });
+    await liveService.createPage({
+      page: { id: "live-transfer-target", title: "Live target", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "create_page:agent-session:live-transfer-target",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [createBlock("live-anchor", null, null, "paragraph", "Anchor")],
+      },
+    });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    const sourceProvider = connectProvider(address, "live-transfer-source");
+    const targetProvider = connectProvider(address, "live-transfer-target");
+    try {
+      await Promise.all([
+        connectAndWaitForSync(sourceProvider),
+        connectAndWaitForSync(targetProvider),
+      ]);
+      const sourceBefore = await liveService.getBrowserPage("live-transfer-source");
+      const targetBefore = await liveService.getBrowserPage("live-transfer-target");
+      const moved = await liveService.transferBlocks({
+        source: {
+          pageId: "live-transfer-source",
+          expectedVersion: sourceBefore.page.version,
+          expectedStateVector: decodeStateVector(sourceBefore.state_vector),
+          blockIds: ["live-moved"],
+        },
+        target: {
+          kind: "existing",
+          pageId: "live-transfer-target",
+          expectedVersion: targetBefore.page.version,
+          expectedStateVector: decodeStateVector(targetBefore.state_vector),
+          parentId: null,
+          afterBlockId: "live-anchor",
+        },
+        actor: { actorKind: "agent", actorSessionId: "agent-session" },
+        idempotencyKey: "page-transfer:agent-session:live-convergence",
+      });
+
+      await waitForAsync(async () => {
+        const source = readPageYDocReplica("live-transfer-source", sourceProvider.document);
+        const target = readPageYDocReplica("live-transfer-target", targetProvider.document);
+        return source.page.mutationVersion === moved.source.page.version &&
+          target.page.mutationVersion === moved.target.page.version &&
+          !source.blocks.some((block) => block.id === "live-moved") &&
+          target.blocks.some((block) => block.id === "live-moved");
+      });
+      expect(readPageYDocReplica("live-transfer-source", sourceProvider.document).blocks)
+        .not.toContainEqual(expect.objectContaining({ id: "live-moved" }));
+      expect(readPageYDocReplica("live-transfer-target", targetProvider.document).blocks)
+        .toContainEqual(expect.objectContaining({ id: "live-moved", text: "Live move" }));
+    } finally {
+      await Promise.all([sourceProvider.destroy(), targetProvider.destroy()]);
+      await app.close();
+      await liveService.close();
+    }
+  }, 60_000);
+
+  it("uses PostgreSQL CAS to reject concurrent new-target transfers from independent services", async () => {
+    await service.createPage({
+      page: { id: "db-race-source-a", title: "Race A", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "create_page:agent-session:db-race-source-a",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [createBlock("db-race-a", null, null, "paragraph", "A")],
+      },
+    });
+    await service.createPage({
+      page: { id: "db-race-source-b", title: "Race B", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "create_page:agent-session:db-race-source-b",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [createBlock("db-race-b", null, null, "paragraph", "B")],
+      },
+    });
+    const repositoryA = new PageRepository(createLiveDbSqlResolver({ sql: harness.liveSql }));
+    const repositoryB = new PageRepository(createLiveDbSqlResolver({ sql: harness.liveSql }));
+    let targetChecks = 0;
+    let releaseTargetChecks!: () => void;
+    const bothChecked = new Promise<void>((resolve) => { releaseTargetChecks = resolve; });
+    const gateNewTargetCheck = (repo: PageRepository) => {
+      const original = repo.getPageYjsSnapshot.bind(repo);
+      repo.getPageYjsSnapshot = async (documentName) => {
+        const snapshot = await original(documentName);
+        if (documentName === "page:db-race-target" && snapshot === null) {
+          targetChecks += 1;
+          if (targetChecks === 2) releaseTargetChecks();
+          await bothChecked;
+        }
+        return snapshot;
+      };
+    };
+    gateNewTargetCheck(repositoryA);
+    gateNewTargetCheck(repositoryB);
+    const serviceA = new PageYjsService({ repository: repositoryA });
+    const serviceB = new PageYjsService({ repository: repositoryB });
+    try {
+      const [sourceA, sourceB] = await Promise.all([
+        serviceA.getBrowserPage("db-race-source-a"),
+        serviceB.getBrowserPage("db-race-source-b"),
+      ]);
+      const results = await Promise.allSettled([
+        serviceA.transferBlocks({
+          source: {
+            pageId: "db-race-source-a",
+            expectedVersion: sourceA.page.version,
+            expectedStateVector: decodeStateVector(sourceA.state_vector),
+            blockIds: ["db-race-a"],
+          },
+          target: { kind: "new", pageId: "db-race-target", title: "Race target A" },
+          actor: { actorKind: "agent", actorSessionId: "agent-session" },
+          idempotencyKey: "page-transfer:agent-session:db-race-a",
+        }),
+        serviceB.transferBlocks({
+          source: {
+            pageId: "db-race-source-b",
+            expectedVersion: sourceB.page.version,
+            expectedStateVector: decodeStateVector(sourceB.state_vector),
+            blockIds: ["db-race-b"],
+          },
+          target: { kind: "new", pageId: "db-race-target", title: "Race target B" },
+          actor: { actorKind: "agent", actorSessionId: "agent-session" },
+          idempotencyKey: "page-transfer:agent-session:db-race-b",
+        }),
+      ]);
+
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      const rejected = results.find((result) => result.status === "rejected") as PromiseRejectedResult;
+      expect(rejected.reason).toBeInstanceOf(PageMutationVersionConflictError);
+      const target = await service.getBrowserPage("db-race-target");
+      expect(target.blocks.map((block) => block.id).sort()).toEqual([
+        results[0]?.status === "fulfilled" ? "db-race-a" : "db-race-b",
+      ]);
+      const sourceAfterA = await service.getBrowserPage("db-race-source-a");
+      const sourceAfterB = await service.getBrowserPage("db-race-source-b");
+      expect(sourceAfterA.blocks.some((block) => block.id === "db-race-a"))
+        .toBe(results[0]?.status !== "fulfilled");
+      expect(sourceAfterB.blocks.some((block) => block.id === "db-race-b"))
+        .toBe(results[1]?.status !== "fulfilled");
+    } finally {
+      releaseTargetChecks();
+      await Promise.all([serviceA.close(), serviceB.close()]);
+    }
+  }, 60_000);
+
+  it("rejects concurrent different payloads sharing one logical transfer key", async () => {
+    for (const suffix of ["a", "b"] as const) {
+      await service.createPage({
+        page: { id: `idempotency-source-${suffix}`, title: `Source ${suffix}`, dailyDate: null, metadata: {} },
+        actor: { actorKind: "agent", actorSessionId: "agent-session" },
+        idempotencyKey: `create_page:agent-session:idempotency-source-${suffix}`,
+        initialCommand: {
+          type: "batch_operations",
+          operations: [createBlock(`idempotency-block-${suffix}`, null, null, "paragraph", suffix)],
+        },
+      });
+    }
+    await service.createPage({
+      page: { id: "idempotency-target", title: "Idempotency target", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "create_page:agent-session:idempotency-target",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [createBlock("idempotency-anchor", null, null, "paragraph", "anchor")],
+      },
+    });
+    const repositoryA = new PageRepository(createLiveDbSqlResolver({ sql: harness.liveSql }));
+    const repositoryB = new PageRepository(createLiveDbSqlResolver({ sql: harness.liveSql }));
+    let commitArrivals = 0;
+    let releaseCommits!: () => void;
+    const bothAtCommit = new Promise<void>((resolve) => { releaseCommits = resolve; });
+    const gateCommit = (repo: PageRepository) => {
+      const original = repo.commitPageMutations.bind(repo);
+      repo.commitPageMutations = async (input) => {
+        commitArrivals += 1;
+        if (commitArrivals === 2) releaseCommits();
+        await bothAtCommit;
+        return await original(input);
+      };
+    };
+    gateCommit(repositoryA);
+    gateCommit(repositoryB);
+    const serviceA = new PageYjsService({ repository: repositoryA });
+    const serviceB = new PageYjsService({ repository: repositoryB });
+    try {
+      const [sourceA, sourceB, target] = await Promise.all([
+        serviceA.getBrowserPage("idempotency-source-a"),
+        serviceB.getBrowserPage("idempotency-source-b"),
+        serviceA.getBrowserPage("idempotency-target"),
+      ]);
+      const targetInput = {
+        kind: "existing" as const,
+        pageId: "idempotency-target",
+        expectedVersion: target.page.version,
+        expectedStateVector: decodeStateVector(target.state_vector),
+        parentId: null,
+        afterBlockId: "idempotency-anchor",
+      };
+      const logicalKey = "page-transfer:agent-session:shared-payload-key";
+      const results = await Promise.allSettled([
+        serviceA.transferBlocks({
+          source: {
+            pageId: "idempotency-source-a",
+            expectedVersion: sourceA.page.version,
+            expectedStateVector: decodeStateVector(sourceA.state_vector),
+            blockIds: ["idempotency-block-a"],
+          },
+          target: targetInput,
+          actor: { actorKind: "agent", actorSessionId: "agent-session" },
+          idempotencyKey: logicalKey,
+        }),
+        serviceB.transferBlocks({
+          source: {
+            pageId: "idempotency-source-b",
+            expectedVersion: sourceB.page.version,
+            expectedStateVector: decodeStateVector(sourceB.state_vector),
+            blockIds: ["idempotency-block-b"],
+          },
+          target: targetInput,
+          actor: { actorKind: "agent", actorSessionId: "agent-session" },
+          idempotencyKey: logicalKey,
+        }),
+      ]);
+
+      expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+      const rejected = results.find((result) => result.status === "rejected") as PromiseRejectedResult;
+      expect(rejected.reason).toBeInstanceOf(PageMutationIdempotencyConflictError);
+      const canonicalTarget = await service.getBrowserPage("idempotency-target");
+      const movedIds = canonicalTarget.blocks.map((block) => block.id)
+        .filter((id) => id.startsWith("idempotency-block-"));
+      expect(movedIds).toEqual([
+        results[0]?.status === "fulfilled" ? "idempotency-block-a" : "idempotency-block-b",
+      ]);
+      const sourceAfterA = await service.getBrowserPage("idempotency-source-a");
+      const sourceAfterB = await service.getBrowserPage("idempotency-source-b");
+      expect(sourceAfterA.blocks.some((block) => block.id === "idempotency-block-a"))
+        .toBe(results[0]?.status !== "fulfilled");
+      expect(sourceAfterB.blocks.some((block) => block.id === "idempotency-block-b"))
+        .toBe(results[1]?.status !== "fulfilled");
+    } finally {
+      releaseCommits();
+      await Promise.all([serviceA.close(), serviceB.close()]);
+    }
+  }, 60_000);
 
   it("does not change the live document when the database commit fails", async () => {
     const failing = new PageYjsService({
@@ -391,4 +956,32 @@ async function waitForAsync(predicate: () => Promise<boolean>): Promise<void> {
     if (Date.now() >= deadline) throw new Error("condition timed out");
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+}
+
+function createBlock(
+  id: string,
+  parentId: string | null,
+  afterBlockId: string | null,
+  blockType: string,
+  text: string,
+  properties: Record<string, unknown> = {},
+  collapsed = false,
+) {
+  return {
+    op: "create_block" as const,
+    id,
+    tempId: id,
+    parentId,
+    parentTempId: null,
+    afterBlockId,
+    afterTempId: null,
+    blockType,
+    text,
+    properties,
+    collapsed,
+  };
+}
+
+function decodeStateVector(value: string): Uint8Array {
+  return new Uint8Array(Buffer.from(value, "base64"));
 }

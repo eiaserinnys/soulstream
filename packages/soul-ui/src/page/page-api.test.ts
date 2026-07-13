@@ -109,6 +109,56 @@ describe("page API client", () => {
     }));
   });
 
+  it("sends source and target CAS in one additive block-transfer request", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(jsonResponse({
+      source: { page: page(), blocks: [], operation: { id: "source-op" }, temp_id_mapping: {} },
+      target: { page: { ...page(), id: "target" }, blocks: [], operation: { id: "target-op" }, temp_id_mapping: {} },
+      target_created: false,
+    }));
+    const client = createPageApiClient({ fetch });
+
+    await client.transferBlocks({
+      source: {
+        pageId: "source",
+        expectedVersion: 3,
+        expectedStateVector: Uint8Array.of(0, 1),
+        blockIds: ["block-1"],
+      },
+      target: {
+        kind: "existing",
+        pageId: "target",
+        expectedVersion: 5,
+        expectedStateVector: Uint8Array.of(2, 3),
+        parentId: null,
+        afterBlockId: "anchor",
+      },
+      sourceMount: { title: "Target", tempId: "mount" },
+      idempotencyKey: "transfer-1",
+    });
+
+    expect(fetch).toHaveBeenCalledWith("/api/pages/block-transfers", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({
+        source: {
+          page_id: "source",
+          expected_version: 3,
+          expected_state_vector: "AAE=",
+          block_ids: ["block-1"],
+        },
+        target: {
+          kind: "existing",
+          page_id: "target",
+          expected_version: 5,
+          expected_state_vector: "AgM=",
+          parent_id: null,
+          after_block_id: "anchor",
+        },
+        source_mount: { title: "Target", temp_id: "mount" },
+        idempotency_key: "transfer-1",
+      }),
+    }));
+  });
+
   it("surfaces authentication and conflict failures without fallback", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(jsonResponse({ detail: "Authentication required" }, 401))

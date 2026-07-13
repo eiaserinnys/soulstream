@@ -7,6 +7,7 @@ import {
   type PageBrowserRouteOptions,
 } from "../../src/page/page_browser_routes.js";
 import {
+  PageMutationIdempotencyConflictError,
   PageMutationStateVectorConflictError,
   PageMutationVersionConflictError,
 } from "../../src/page/page_mutation_core.js";
@@ -150,6 +151,61 @@ describe("browser page routes", () => {
     }
   });
 
+  it("maps an authenticated cross-page block transfer without weakening either page CAS", async () => {
+    const service = serviceDouble();
+    const app = Fastify({ logger: false });
+    registerPageBrowserRoutes(app, { service, reads: service, resolveUser: cookieUserResolver() });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/pages/block-transfers",
+        headers: { cookie: browserCookie },
+        payload: {
+          source: {
+            page_id: "source-page",
+            expected_version: 4,
+            expected_state_vector: "AAEC",
+            block_ids: ["text", "session-card"],
+          },
+          target: {
+            kind: "existing",
+            page_id: "target-page",
+            expected_version: 7,
+            expected_state_vector: "AwQ=",
+            parent_id: null,
+            after_block_id: "target-anchor",
+          },
+          source_mount: { title: "Target", temp_id: "mount-temp" },
+          idempotency_key: "transfer-1",
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(service.transferBlocks).toHaveBeenCalledWith({
+        source: {
+          pageId: "source-page",
+          expectedVersion: 4,
+          expectedStateVector: Uint8Array.of(0, 1, 2),
+          blockIds: ["text", "session-card"],
+        },
+        target: {
+          kind: "existing",
+          pageId: "target-page",
+          expectedVersion: 7,
+          expectedStateVector: Uint8Array.of(3, 4),
+          parentId: null,
+          afterBlockId: "target-anchor",
+        },
+        sourceMount: { title: "Target", tempId: "mount-temp" },
+        actor: { actorKind: "user", actorUserId: "user@example.com" },
+        idempotencyKey: "browser_page_transfer:user@example.com:source-page:transfer-1",
+        reason: null,
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("rejects malformed state vectors and maps both CAS conflicts to 409", async () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });
@@ -173,6 +229,28 @@ describe("browser page routes", () => {
           headers: { cookie: browserCookie },
           payload: {
             ...mutationPayload("AA=="),
+            idempotency_key: idempotencyKey,
+          },
+        });
+        expect(response.statusCode).toBe(409);
+      }
+
+      vi.mocked(service.transferBlocks)
+        .mockRejectedValueOnce(new PageMutationVersionConflictError("existing-target", 0, 3))
+        .mockRejectedValueOnce(new PageMutationIdempotencyConflictError());
+      for (const idempotencyKey of ["new-target-exists", "payload-mismatch"]) {
+        const response = await app.inject({
+          method: "POST",
+          url: "/api/pages/block-transfers",
+          headers: { cookie: browserCookie },
+          payload: {
+            source: {
+              page_id: "source-page",
+              expected_version: 2,
+              expected_state_vector: "AA==",
+              block_ids: ["block-1"],
+            },
+            target: { kind: "new", page_id: "existing-target", title: "Target" },
             idempotency_key: idempotencyKey,
           },
         });
@@ -300,6 +378,7 @@ describe("browser page routes", () => {
       "GET /api/blocks/search": true,
       "GET /api/blocks/{blockId}": true,
       "POST /api/pages/daily": true,
+      "POST /api/pages/block-transfers": true,
       "POST /api/pages/{pageId}/operations": true,
       "PATCH /api/pages/{pageId}/starred": true,
     });
@@ -327,6 +406,7 @@ type BrowserServiceDouble = PageBrowserRouteOptions["service"] & {
   getBrowserPage: ReturnType<typeof vi.fn>;
   getDailyPage: ReturnType<typeof vi.fn>;
   mutatePage: ReturnType<typeof vi.fn>;
+  transferBlocks: ReturnType<typeof vi.fn>;
   searchBrowserPages: ReturnType<typeof vi.fn>;
   searchBrowserBlocks: ReturnType<typeof vi.fn>;
   getBrowserBlock: ReturnType<typeof vi.fn>;
@@ -355,6 +435,7 @@ function serviceDouble(): BrowserServiceDouble {
     getBrowserPage: vi.fn().mockResolvedValue({ page, blocks: [], state_vector: "AA==" }),
     getDailyPage: vi.fn().mockResolvedValue({ page, created: false }),
     mutatePage: vi.fn().mockResolvedValue(mutation),
+    transferBlocks: vi.fn().mockResolvedValue({ source: mutation, target: mutation, target_created: false }),
     searchBrowserPages: vi.fn().mockResolvedValue({
       items: [{ pageId: "page-1", title: "Page" }],
     }),
