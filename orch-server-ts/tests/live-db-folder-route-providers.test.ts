@@ -29,10 +29,10 @@ describe("live DB folder route providers", () => {
           }),
         ];
       }
-      if (text.includes("session_id, folder_id FROM sessions")) {
+      if (text.includes("session_id, folder_id, display_name FROM sessions")) {
         return [
-          { session_id: "sess-a", folder_id: "folder-a" },
-          { session_id: "sess-root", folder_id: null },
+          { session_id: "sess-a", folder_id: "folder-a", display_name: "Named session" },
+          { session_id: "sess-root", folder_id: null, display_name: null },
         ];
       }
       if (text.includes("GROUP BY folder_id")) {
@@ -64,8 +64,8 @@ describe("live DB folder route providers", () => {
       },
     ]);
     await expect(repository.folderRouteProvider.listSessionAssignments()).resolves.toEqual({
-      "sess-a": { folderId: "folder-a" },
-      "sess-root": { folderId: null },
+      "sess-a": { folderId: "folder-a", displayName: "Named session" },
+      "sess-root": { folderId: null, displayName: null },
     });
     await expect(repository.folderCountsProvider.listFolders()).resolves.toMatchObject([
       { id: "folder-a", parentFolderId: null },
@@ -80,7 +80,7 @@ describe("live DB folder route providers", () => {
     ]);
     expect(harness.normalizedCalls()).toEqual([
       "SELECT * FROM folder_get_all()",
-      "SELECT session_id, folder_id FROM sessions",
+      "SELECT session_id, folder_id, display_name FROM sessions",
       "SELECT * FROM folder_get_all()",
       expect.stringContaining("GROUP BY folder_id"),
     ]);

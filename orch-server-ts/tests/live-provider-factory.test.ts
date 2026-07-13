@@ -226,9 +226,20 @@ describe("live provider factory boundary", () => {
     expect(bundle.boardItemRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.boardItemRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
     expect(bundle.markdownDocumentRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.markdownDocumentRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
     expect(bundle.runbookRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.runbookRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
-    expect(bundle.sessionCatalogRoutes.provider).toBe(
+    expect(bundle.sessionCatalogRoutes.provider).not.toBe(
       dependencies.dbCatalogRepository.sessionCatalogProvider,
     );
+    await bundle.sessionCatalogRoutes.provider.renameSession("session-a", "Renamed");
+    expect(
+      dependencies.dbCatalogRepository.sessionCatalogProvider.renameSession,
+    ).toHaveBeenCalledWith("session-a", "Renamed", undefined);
+    expect(runtimeServices.sessionBroadcaster.bufferedEvents.at(-1)?.payload).toEqual({
+      type: "catalog_updated",
+      catalog: {
+        folders: [{ id: "folder-a", name: "Folder A" }],
+        sessions: { "session-a": { folderId: "folder-a" } },
+      },
+    });
     expect(bundle.sessionCatalogRoutes.accessProvider).toMatchObject({
       requireSessionAccess: expect.any(Function),
       requireFolderAccess: expect.any(Function),

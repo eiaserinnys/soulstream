@@ -544,7 +544,7 @@ describe("BoardWorkspaceView", () => {
     expect(scrollInset?.className).toContain("pb-3");
   });
 
-  it("declutters overlapping board cards through the header action", async () => {
+  it("arranges overlapping board cards into type clusters through the header action", async () => {
     const declutterCatalog: CatalogState = {
       ...catalog,
       boardItems: [
@@ -599,9 +599,9 @@ describe("BoardWorkspaceView", () => {
     const byId = new Map(updatedItems.map((item) => [item.id, item]));
 
     expect(onUpdateBoardItemPosition).not.toHaveBeenCalled();
-    expect(byId.get("session:session-a")).toMatchObject({ x: 0, y: 0 });
-    expect(byId.get("markdown:doc-a")).toMatchObject({ x: 700, y: 0 });
-    expect(byId.get("subfolder:child-folder")).not.toMatchObject({ x: 120, y: 0 });
+    expect(byId.get("markdown:doc-a")).toMatchObject({ x: 0, y: 0 });
+    expect(byId.get("session:session-a")).toMatchObject({ x: 360, y: 0 });
+    expect(byId.get("subfolder:child-folder")).toMatchObject({ x: 0, y: 240 });
     expect(undoButton?.disabled).toBe(false);
 
     flushSync(() => {

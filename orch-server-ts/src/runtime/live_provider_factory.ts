@@ -68,6 +68,7 @@ import {
   type SessionStreamEventFilter,
 } from "../session/session_stream_event_filter.js";
 import { withFolderMutationBroadcasts } from "./live_folder_mutation_broadcaster.js";
+import { withSessionCatalogMutationBroadcasts } from "./live_session_catalog_mutation_broadcaster.js";
 import { withBoardAssetMutationBroadcasts } from "./live_board_asset_mutation_broadcaster.js";
 import { createLiveAuthenticatedUserResolvers } from "./live_authenticated_user_resolver.js";
 import { createLiveAdminUsersRouteProvider } from "./live_admin_users_route_provider.js";
@@ -329,7 +330,11 @@ export function createLiveOrchestratorProviderBundle(
       resolveAuthenticatedEmail: authenticatedUserResolvers.resolveEmail,
     },
     sessionCatalogRoutes: {
-      provider: options.dependencies.dbCatalogRepository.sessionCatalogProvider,
+      provider: withSessionCatalogMutationBroadcasts(
+        options.dependencies.dbCatalogRepository.sessionCatalogProvider,
+        options.dependencies.dbCatalogRepository.folderRouteProvider,
+        options.runtimeServices.sessionBroadcaster,
+      ),
       accessProvider: sessionResourceAccessProvider,
     },
     runtime: buildLiveRuntimeProviderBundle(

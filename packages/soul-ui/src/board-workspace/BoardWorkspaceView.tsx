@@ -176,6 +176,8 @@ function boardWorkspaceItemToCatalogBoardItem(
       folderId: resolvedFolderId,
       itemType: "session",
       itemId: item.session.agentSessionId,
+      createdAt: item.session.createdAt,
+      updatedAt: item.session.updatedAt,
       x,
       y,
     });
@@ -186,12 +188,17 @@ function boardWorkspaceItemToCatalogBoardItem(
       folderId: resolvedFolderId,
       itemType: "subfolder",
       itemId: item.folder.id,
+      createdAt: item.folder.createdAt,
+      updatedAt: item.folder.updatedAt,
       x,
       y,
     });
   }
   if (item.type === "frame") {
-    return withContainer(frameItemToCatalogBoardItem(item, { x, y }));
+    return withContainer({
+      ...frameItemToCatalogBoardItem(item, { x, y }),
+      updatedAt: item.updatedAt,
+    });
   }
   if (item.type === "runbook") {
     return withContainer({
@@ -199,6 +206,7 @@ function boardWorkspaceItemToCatalogBoardItem(
       folderId: resolvedFolderId,
       itemType: "runbook",
       itemId: item.runbookId,
+      updatedAt: item.updatedAt,
       x,
       y,
       metadata: {
@@ -212,6 +220,7 @@ function boardWorkspaceItemToCatalogBoardItem(
       folderId: resolvedFolderId,
       itemType: "custom_view",
       itemId: item.customViewId,
+      updatedAt: item.updatedAt,
       x,
       y,
       metadata: {
@@ -513,12 +522,23 @@ export function BoardWorkspaceView({
     () => [...allPersistedBoardItems, ...assetPlaceholders].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)),
     [allPersistedBoardItems, assetPlaceholders],
   );
-  const yjsUpdateBoardItemPosition = useCallback((boardItemId: string, x: number, y: number) => {
+  const yjsUpdateBoardItemPosition = useCallback((
+    boardItemId: string,
+    x: number,
+    y: number,
+    preserveUpdatedAt = false,
+  ) => {
     const existingItem = allBoardItems.find((item) => item.boardItemId === boardItemId);
+    const existsInYjs = boardSync.runtime?.getBoardItems()
+      .some((item) => item.id === boardItemId) === true;
     const boardItem = existingItem
       ? boardWorkspaceItemToCatalogBoardItem(existingItem, boardContainer, resolvedBoardFolderId, x, y)
       : null;
-    if (boardItem) {
+    if (preserveUpdatedAt && existsInYjs) {
+      boardSync.runtime?.updateBoardItemPosition(boardItemId, x, y, {
+        preserveUpdatedAt: true,
+      });
+    } else if (boardItem) {
       boardSync.runtime?.upsertBoardItem(boardItem);
       addBoardItem(boardItem);
     } else {
@@ -532,10 +552,18 @@ export function BoardWorkspaceView({
     selectedFolderId,
     selectFolder,
   });
-  const yjsUpdateBoardItemPositions = useCallback((updates: BoardItemPositionUpdate[]) => {
+  const yjsUpdateBoardItemPositions = useCallback((
+    updates: BoardItemPositionUpdate[],
+    preserveUpdatedAt = false,
+  ) => {
     const expandedUpdates = expandFramePositionUpdates(allBoardItems, updates);
     for (const update of expandedUpdates) {
-      yjsUpdateBoardItemPosition(update.boardItemId, update.x, update.y);
+      yjsUpdateBoardItemPosition(
+        update.boardItemId,
+        update.x,
+        update.y,
+        preserveUpdatedAt,
+      );
     }
     const nextItems = applyBoardItemPositionUpdates(allBoardItems, expandedUpdates);
     const frameUpdates = buildFrameMembershipUpdates(nextItems, updates.map((update) => update.boardItemId));
@@ -554,11 +582,11 @@ export function BoardWorkspaceView({
       if (!current || (current.x === update.x && current.y === update.y)) return [];
       return [{ boardItemId: current.boardItemId, x: current.x, y: current.y }];
     }));
-    yjsUpdateBoardItemPositions(declutterUpdates);
+    yjsUpdateBoardItemPositions(declutterUpdates, true);
   }, [allBoardItems, boardItems, yjsUpdateBoardItemPositions]);
   const handleUndoDeclutter = useCallback(() => {
     if (declutterUndoUpdates.length === 0) return;
-    yjsUpdateBoardItemPositions(declutterUndoUpdates);
+    yjsUpdateBoardItemPositions(declutterUndoUpdates, true);
     setDeclutterUndoUpdates([]);
   }, [declutterUndoUpdates, yjsUpdateBoardItemPositions]);
 

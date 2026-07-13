@@ -83,6 +83,7 @@ export interface MarkdownBoardWorkspaceItem {
   title: string;
   preview: string;
   version: number;
+  updatedAt?: string;
   x: number;
   y: number;
 }
@@ -103,6 +104,7 @@ export interface AssetBoardWorkspaceItem {
   uploadProgress?: number;
   uploadState?: "uploading" | "error";
   errorMessage?: string;
+  updatedAt?: string;
   x: number;
   y: number;
   width: number;
@@ -119,6 +121,7 @@ export interface FrameBoardWorkspaceItem {
   childItemIds: string[];
   childCount: number;
   hasRunningChild: boolean;
+  updatedAt?: string;
   x: number;
   y: number;
   width: number;
@@ -131,6 +134,7 @@ export interface RunbookBoardWorkspaceItem {
   boardItemId: string;
   runbookId: string;
   title: string;
+  updatedAt?: string;
   x: number;
   y: number;
   width: number;
@@ -145,6 +149,7 @@ export interface CustomViewBoardWorkspaceItem {
   title: string;
   preview: string;
   revision: number;
+  updatedAt?: string;
   x: number;
   y: number;
   width: number;
@@ -180,7 +185,13 @@ export function getSessionActivityMs(session: SessionSummary): number {
 }
 
 export function getFolderActivityMs(folder: CatalogFolder): number {
-  return parseTimeMs(folder.createdAt);
+  return parseTimeMs(folder.updatedAt ?? folder.createdAt);
+}
+
+export function getBoardItemActivityMs(item: BoardWorkspaceItem): number {
+  if (item.type === "session") return getSessionActivityMs(item.session);
+  if (item.type === "folder") return getFolderActivityMs(item.folder);
+  return parseTimeMs(item.updatedAt);
 }
 
 export function getSessionBoardTitle(session: SessionSummary): string {
@@ -525,6 +536,7 @@ function buildPositionedItems({
         title: metadataText(boardItem, "title") || "Untitled document",
         preview: metadataText(boardItem, "preview"),
         version: metadataNumber(boardItem, "version") ?? 1,
+        updatedAt: boardItem.updatedAt,
         x: boardItem.x,
         y: boardItem.y,
       });
@@ -543,6 +555,7 @@ function buildPositionedItems({
         mediaWidth: metadataNumber(boardItem, "width"),
         mediaHeight: metadataNumber(boardItem, "height"),
         durationSeconds: metadataNumber(boardItem, "durationSeconds"),
+        updatedAt: boardItem.updatedAt,
         x: boardItem.x,
         y: boardItem.y,
         width: BOARD_TILE_WIDTH,
@@ -562,6 +575,7 @@ function buildPositionedItems({
         childItemIds: metadata.childItemIds,
         childCount: metadata.childItemIds.length,
         hasRunningChild: false,
+        updatedAt: boardItem.updatedAt,
         x: boardItem.x,
         y: boardItem.y,
         width: metadata.width,
@@ -576,6 +590,7 @@ function buildPositionedItems({
         boardItemId: boardItem.id,
         runbookId: boardItem.itemId,
         title: metadataText(boardItem, "title") || "Runbook",
+        updatedAt: boardItem.updatedAt,
         x: boardItem.x,
         y: boardItem.y,
         width: BOARD_RUNBOOK_TILE_WIDTH,
@@ -592,6 +607,7 @@ function buildPositionedItems({
         title: metadataText(boardItem, "title") || "Custom view",
         preview: metadataText(boardItem, "preview"),
         revision: metadataNumber(boardItem, "revision") ?? 1,
+        updatedAt: boardItem.updatedAt,
         x: boardItem.x,
         y: boardItem.y,
         width: BOARD_CUSTOM_VIEW_TILE_WIDTH,

@@ -232,6 +232,42 @@ describe("board workspace item helpers", () => {
     ]);
   });
 
+  it("projects an existing runbook session title from catalog without board metadata", () => {
+    const items = buildBoardWorkspaceItems({
+      catalog: {
+        folders: catalog.folders,
+        sessions: {
+          "older-session": { folderId: "root", displayName: "Recovered title" },
+        },
+        boardItems: [{
+          id: "session:older-session",
+          folderId: "root",
+          containerKind: "runbook",
+          containerId: "rb-1",
+          itemType: "session",
+          itemId: "older-session",
+          x: 0,
+          y: 0,
+          metadata: {},
+        }],
+      },
+      selectedFolderId: "root",
+      boardContainer: { kind: "runbook", id: "rb-1" },
+      sessions: [],
+    });
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      type: "session",
+      session: {
+        agentSessionId: "older-session",
+        displayName: "Recovered title",
+      },
+    });
+    expect(getSessionBoardTitle((items[0] as { session: SessionSummary }).session))
+      .toBe("Recovered title");
+  });
+
   it("keeps same-runbook primary child sessions inside the visible parent stack", () => {
     const runbookCatalog: CatalogState = {
       folders: [{
