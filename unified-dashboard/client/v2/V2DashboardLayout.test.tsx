@@ -8,10 +8,18 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { PageApiClient, PageDocumentBlock, PageDto, PageYjsClient } from "@seosoyoung/soul-ui/page";
+import type {
+  PageApiClient,
+  PageDocumentBlock,
+  PageDocumentSnapshot,
+  PageDto,
+  PageYjsClient,
+} from "@seosoyoung/soul-ui/page";
 
 const sessionListProviderSpy = vi.hoisted(() => vi.fn());
+const sessionListRefetchSpy = vi.hoisted(() => vi.fn());
 const createDashboardSessionSpy = vi.hoisted(() => vi.fn());
+const acknowledgeSessionReviewSpy = vi.hoisted(() => vi.fn());
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-query")>();
@@ -22,6 +30,7 @@ vi.mock("@seosoyoung/soul-ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@seosoyoung/soul-ui")>();
   return {
     ...actual,
+    acknowledgeSessionReview: acknowledgeSessionReviewSpy,
     AskQuestionBanner: () => createElement("div", { "data-testid": "ask-question" }),
     ChatView: () => createElement("div", { "data-testid": "existing-chat-view" }),
     ConnectionBadge: () => createElement("div", { "data-testid": "connection-badge" }),
@@ -65,7 +74,7 @@ vi.mock("../store/orchestrator-store", () => ({
 
 import { V2DashboardLayout } from "./V2DashboardLayout";
 import { createV2PageRouteController } from "./useV2PageRoute";
-import { useDashboardStore } from "@seosoyoung/soul-ui";
+import { useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 
 const page: PageDto = {
   id: "page-daily",
@@ -125,6 +134,61 @@ function createClient(pageId: string, blocks: readonly PageDocumentBlock[] = [])
   };
 }
 
+function createMutableClient(
+  pageId: string,
+  initialBlocks: readonly PageDocumentBlock[],
+): { client: PageYjsClient; setBlocks(blocks: readonly PageDocumentBlock[], version: number): void } {
+  const runtimeSnapshot = {
+    status: "ready",
+    ready: true,
+    connected: true,
+    synced: true,
+    error: null,
+  } as const;
+  let documentSnapshot: PageDocumentSnapshot = {
+    page: {
+      id: pageId,
+      title: page.title,
+      dailyDate: page.daily_date,
+      mutationVersion: 1,
+      archived: false,
+      metadata: { starred: true },
+    },
+    blocks: initialBlocks,
+  };
+  let notifyProjection: () => void = () => undefined;
+  const projection = {
+    getSnapshot: () => documentSnapshot,
+    subscribe: (listener: () => void) => {
+      notifyProjection = listener;
+      return () => { notifyProjection = () => undefined; };
+    },
+    destroy: vi.fn(),
+  };
+  const client = {
+    pageId,
+    doc: {} as PageYjsClient["doc"],
+    awareness: {} as PageYjsClient["awareness"],
+    getSnapshot: () => runtimeSnapshot,
+    subscribe: () => () => undefined,
+    getProjection: () => projection,
+    connect: vi.fn(async () => undefined),
+    disconnect: vi.fn(),
+    destroy: vi.fn(),
+  } as PageYjsClient;
+  return {
+    client,
+    setBlocks(blocks, version) {
+      documentSnapshot = {
+        ...documentSnapshot,
+        page: { ...documentSnapshot.page, mutationVersion: version },
+        blocks,
+      };
+      notifyProjection();
+    },
+  };
+}
+
 function fakePageText(value: string): PageDocumentBlock["text"] {
   return {
     doc: null,
@@ -139,6 +203,45 @@ async function settle() {
   await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 0));
   await Promise.resolve();
+}
+
+async function waitForElement<T extends Element>(
+  container: ParentNode,
+  selector: string,
+): Promise<T> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const element = container.querySelector<T>(selector);
+    if (element) return element;
+    await settle();
+  }
+  throw new Error(`Element did not appear: ${selector}`);
+}
+
+async function submitInlineSession(
+  container: ParentNode,
+  blockId: string,
+  promptValue: string,
+): Promise<void> {
+  const command = await waitForElement<HTMLButtonElement>(
+    container,
+    `[data-testid="page-session-command-${blockId}"]`,
+  );
+  flushSync(() => command.click());
+  await settle();
+  await settle();
+  const agent = container.querySelector<HTMLSelectElement>('[aria-label="Session agent"]')!;
+  expect(agent.value).toBe("agent-a");
+  const prompt = container.querySelector<HTMLTextAreaElement>('[aria-label="First session prompt"]')!;
+  Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!
+    .call(prompt, promptValue);
+  flushSync(() => prompt.dispatchEvent(new Event("input", { bubbles: true })));
+  await settle();
+  expect(prompt.value).toBe(promptValue);
+  flushSync(() => container.querySelector<HTMLButtonElement>(
+    '[data-testid="v2-inline-session-send"]',
+  )!.click());
+  await settle();
+  await settle();
 }
 
 describe("V2DashboardLayout", () => {
@@ -170,8 +273,11 @@ describe("V2DashboardLayout", () => {
       loading: false,
       error: null,
       catalogLoad: { status: "ready", message: null },
+      refetch: sessionListRefetchSpy,
     });
+    sessionListRefetchSpy.mockReset();
     createDashboardSessionSpy.mockReset();
+    acknowledgeSessionReviewSpy.mockReset();
     useDashboardStore.getState().reset();
   });
 
@@ -332,7 +438,7 @@ describe("V2DashboardLayout", () => {
     controller.destroy();
   });
 
-  it("shows creation warnings only for the created session and clears them from the DOM after opening another session", async () => {
+  it("clears a response warning when the canonical visible session poll reports no warnings", async () => {
     const blocks: readonly PageDocumentBlock[] = [
       {
         id: "block-draft",
@@ -363,12 +469,14 @@ describe("V2DashboardLayout", () => {
       folderId: null,
       nodeId: "node-a",
     };
-    sessionListProviderSpy.mockReturnValue({
-      sessions: [otherSession],
+    let visibleSessions: SessionSummary[] = [otherSession];
+    sessionListProviderSpy.mockImplementation(() => ({
+      sessions: visibleSessions,
       loading: false,
       error: null,
       catalogLoad: { status: "ready", message: null },
-    });
+      refetch: sessionListRefetchSpy,
+    }));
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
       agents: [{ id: "agent-a", name: "Agent A" }],
     }), { status: 200, headers: { "Content-Type": "application/json" } })));
@@ -379,6 +487,8 @@ describe("V2DashboardLayout", () => {
     });
     const target = createTarget();
     const controller = createV2PageRouteController(target);
+    const pageClient = createClient(page.id, blocks);
+    const createPageClient = () => pageClient;
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
@@ -386,36 +496,281 @@ describe("V2DashboardLayout", () => {
       <V2DashboardLayout
         apiClient={createApi()}
         routeController={controller}
-        createPageClient={(pageId) => createClient(pageId, blocks)}
+        createPageClient={createPageClient}
       />,
     ));
     await settle();
 
-    flushSync(() => container!.querySelector<HTMLButtonElement>(
-      '[data-testid="page-session-command-block-draft"]',
-    )!.click());
-    await settle();
-    await settle();
-    const agent = container.querySelector<HTMLSelectElement>('[aria-label="Session agent"]')!;
-    expect(agent.value).toBe("agent-a");
-    const prompt = container.querySelector<HTMLTextAreaElement>('[aria-label="First session prompt"]')!;
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!
-      .call(prompt, "Create from page");
-    flushSync(() => prompt.dispatchEvent(new Event("input", { bubbles: true })));
-    await settle();
-    expect(prompt.value).toBe("Create from page");
-    flushSync(() => container!.querySelector<HTMLButtonElement>('[data-testid="v2-inline-session-send"]')!.click());
-    await settle();
-    await settle();
+    await submitInlineSession(container, "block-draft", "Create from page");
 
     expect(createDashboardSessionSpy).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-testid="v2-session-creation-warnings"]')?.textContent)
       .toContain("Legacy projection is pending.");
+    visibleSessions = [{
+      agentSessionId: "session-created",
+      status: "running" as const,
+      eventCount: 0,
+      prompt: "Create from page",
+      folderId: null,
+      nodeId: "node-a",
+      bindingWarnings: [],
+    }, otherSession];
+    flushSync(() => root!.render(
+      <V2DashboardLayout
+        apiClient={createApi()}
+        routeController={controller}
+        createPageClient={createPageClient}
+      />,
+    ));
+    await settle();
+
+    expect(useDashboardStore.getState().activeSessionKey).toBe("session-created");
+    expect(container.querySelector('[data-testid="v2-session-creation-warnings"]')).toBeNull();
     flushSync(() => container!.querySelector<HTMLElement>('[data-session-ref="session-other"]')!.click());
     await settle();
     expect(useDashboardStore.getState().activeSessionKey).toBe("session-other");
     expect(container.querySelector('[data-testid="v2-session-creation-warnings"]')).toBeNull();
 
+    controller.destroy();
+  });
+
+  it("uses canonical visible session warnings instead of a stale response warning", async () => {
+    const blocks: readonly PageDocumentBlock[] = [{
+      id: "block-canonical-warning",
+      parentId: null,
+      positionKey: "a",
+      type: "paragraph",
+      text: fakePageText("/세션"),
+      textValue: "/세션",
+      properties: {},
+      collapsed: false,
+    }];
+    let visibleSessions: SessionSummary[] = [];
+    sessionListProviderSpy.mockImplementation(() => ({
+      sessions: visibleSessions,
+      loading: false,
+      error: null,
+      catalogLoad: { status: "ready", message: null },
+      refetch: sessionListRefetchSpy,
+    }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      agents: [{ id: "agent-a", name: "Agent A" }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    createDashboardSessionSpy.mockResolvedValue({
+      agentSessionId: "session-canonical-warning",
+      nodeId: "node-a",
+      warnings: [{ code: "LEGACY_PROJECTION_PENDING", message: "Stale response warning." }],
+    });
+    const target = createTarget();
+    const controller = createV2PageRouteController(target);
+    const pageClient = createClient(page.id, blocks);
+    const createPageClient = () => pageClient;
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(
+      <V2DashboardLayout
+        apiClient={createApi()}
+        routeController={controller}
+        createPageClient={createPageClient}
+      />,
+    ));
+    await settle();
+
+    await submitInlineSession(container, "block-canonical-warning", "Canonical warning");
+    expect(container.textContent).toContain("Stale response warning.");
+
+    visibleSessions = [{
+      agentSessionId: "session-canonical-warning",
+      status: "running",
+      eventCount: 0,
+      prompt: "Canonical warning",
+      folderId: null,
+      nodeId: "node-a",
+      bindingWarnings: [{
+        code: "PAGE_BINDING_MANUAL_REPAIR",
+        message: "Canonical manual repair warning.",
+      }],
+    }];
+    flushSync(() => root!.render(
+      <V2DashboardLayout
+        apiClient={createApi()}
+        routeController={controller}
+        createPageClient={createPageClient}
+      />,
+    ));
+    await settle();
+
+    expect(useDashboardStore.getState().activeSessionKey).toBe("session-canonical-warning");
+    expect(container.textContent).toContain("Canonical manual repair warning.");
+    expect(container.textContent).not.toContain("Stale response warning.");
+    controller.destroy();
+  });
+
+  it("refetches the canonical durable warnings when a lost create response is recovered", async () => {
+    const recoverySessionId = "8c55c4d8-625b-4b1f-92ec-81dcb52ae453";
+    vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue(recoverySessionId);
+    const initialBlock: PageDocumentBlock = {
+      id: "block-recovery",
+      parentId: null,
+      positionKey: "a",
+      type: "paragraph",
+      text: fakePageText("/세션"),
+      textValue: "/세션",
+      properties: {},
+      collapsed: false,
+    };
+    const mutableClient = createMutableClient(page.id, [initialBlock]);
+    const canonical = {
+      agentSessionId: recoverySessionId,
+      status: "completed" as const,
+      eventCount: 2,
+      prompt: "Recovered prompt",
+      folderId: null,
+      nodeId: "node-a",
+      reviewRequired: true,
+      reviewState: "needs_review" as const,
+      bindingWarnings: [{
+        code: "PAGE_BINDING_MANUAL_REPAIR" as const,
+        message: "Recovered from the durable binding row.",
+      }],
+    };
+    sessionListRefetchSpy.mockResolvedValue({
+      data: { pages: [{ sessions: [canonical], total: 1 }], pageParams: [0] },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      agents: [{ id: "agent-a", name: "Agent A" }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    createDashboardSessionSpy.mockRejectedValueOnce(new Error("response lost"));
+    const target = createTarget();
+    const controller = createV2PageRouteController(target);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(
+      <V2DashboardLayout
+        apiClient={createApi()}
+        routeController={controller}
+        createPageClient={() => mutableClient.client}
+      />,
+    ));
+    const commandButton = await waitForElement<HTMLButtonElement>(container,
+      '[data-testid="page-session-command-block-recovery"]',
+    );
+    flushSync(() => commandButton.click());
+    await settle();
+    await settle();
+    const prompt = container.querySelector<HTMLTextAreaElement>(
+      '[aria-label="First session prompt"]',
+    )!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!
+      .call(prompt, "Recovered prompt");
+    flushSync(() => prompt.dispatchEvent(new Event("input", { bubbles: true })));
+    await settle();
+    flushSync(() => container!.querySelector<HTMLButtonElement>(
+      '[data-testid="v2-inline-session-send"]',
+    )!.click());
+    await settle();
+    expect(container.textContent).toContain("response lost");
+
+    flushSync(() => mutableClient.setBlocks([{
+      ...initialBlock,
+      type: "session_ref",
+      text: fakePageText("[[Recovered]]"),
+      textValue: "[[Recovered]]",
+      properties: { sessionId: recoverySessionId, primary: true },
+    }], 2));
+    await settle();
+    flushSync(() => container!.querySelector<HTMLButtonElement>(
+      '[data-testid="v2-inline-session-send"]',
+    )!.click());
+    await settle();
+    await settle();
+
+    expect(sessionListRefetchSpy).toHaveBeenCalledTimes(1);
+    expect(useDashboardStore.getState().activeSessionSummary).toMatchObject({
+      agentSessionId: recoverySessionId,
+      status: "completed",
+      bindingWarnings: [{ code: "PAGE_BINDING_MANUAL_REPAIR" }],
+    });
+    expect(container.textContent).toContain("Recovered from the durable binding row.");
+    expect(container.querySelector('[data-testid="v2-session-review"]')).not.toBeNull();
+    controller.destroy();
+  });
+
+  it("composes durable recovery warnings and review acknowledgement without changing status", async () => {
+    const summary = {
+      agentSessionId: "session-recovered",
+      status: "completed" as const,
+      eventCount: 7,
+      prompt: "Recovered after response loss",
+      folderId: null,
+      nodeId: "node-a",
+      reviewRequired: true,
+      reviewState: "needs_review" as const,
+      bindingWarnings: [{
+        code: "PAGE_BINDING_MANUAL_REPAIR" as const,
+        message: "Manual repair is required.",
+      }],
+    };
+    sessionListProviderSpy.mockReturnValue({
+      sessions: [summary],
+      loading: false,
+      error: null,
+      catalogLoad: { status: "ready", message: null },
+    });
+    useDashboardStore.setState({
+      activeSessionKey: summary.agentSessionId,
+      activeSessionSummary: summary,
+      activeTab: "chat",
+    });
+    let resolveAcknowledge!: (value: {
+      status: "ok";
+      agentSessionId: string;
+      reviewState: "acknowledged";
+      changed: boolean;
+    }) => void;
+    acknowledgeSessionReviewSpy.mockReturnValue(new Promise((resolve) => {
+      resolveAcknowledge = resolve;
+    }));
+    const target = createTarget();
+    const controller = createV2PageRouteController(target);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(
+      <V2DashboardLayout
+        apiClient={createApi()}
+        routeController={controller}
+        createPageClient={createClient}
+      />,
+    ));
+    await settle();
+
+    expect(container.querySelector('[data-testid="v2-session-creation-warnings"]')?.textContent)
+      .toContain("Manual repair is required.");
+    expect(container.querySelector('[data-testid="v2-session-review"]')).not.toBeNull();
+    flushSync(() => container!.querySelector<HTMLButtonElement>(
+      '[data-testid="v2-session-review-acknowledge"]',
+    )!.click());
+    flushSync(() => useDashboardStore.getState().setActiveSessionSummary({
+      ...summary,
+      status: "interrupted",
+    }));
+    resolveAcknowledge({
+      status: "ok",
+      agentSessionId: summary.agentSessionId,
+      reviewState: "acknowledged",
+      changed: true,
+    });
+    await settle();
+
+    expect(useDashboardStore.getState().activeSessionSummary).toMatchObject({
+      status: "interrupted",
+      reviewState: "acknowledged",
+    });
+    expect(container.textContent).toContain("Review acknowledged.");
+    expect(container.querySelector('[data-testid="v2-session-creation-warnings"]')).not.toBeNull();
     controller.destroy();
   });
 });

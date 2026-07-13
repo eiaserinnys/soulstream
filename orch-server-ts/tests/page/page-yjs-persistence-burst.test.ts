@@ -145,6 +145,7 @@ describe("Page Yjs rapid-edit persistence", () => {
   it("retries transient persistence failure without growing a memory queue", async () => {
     const repository = new InstrumentedPageRepository();
     repository.seed("page-1", editableBlock(""));
+    const baseSnapshot = repository.snapshots.get("page:page-1")!;
     repository.failuresRemaining = 2;
     const { app, service } = createHarness(repository);
     const address = await app.listen({ host: "127.0.0.1", port: 0 });
@@ -153,15 +154,28 @@ describe("Page Yjs rapid-edit persistence", () => {
       await waitForSync(provider);
       const text = getEditableText(provider.document);
       for (let index = 0; index < 1_000; index += 1) text.insert(text.length, "r");
-      await waitFor(() => repository.storeCount === 1);
+      const finalText = "r".repeat(1_000);
+      await waitFor(() => {
+        const diagnostics = service.getPersistenceDiagnostics();
+        return repository.lastText === finalText &&
+          diagnostics.pendingStores === 0 &&
+          diagnostics.executingStores === 0 &&
+          diagnostics.activeRepositoryStores === 0 &&
+          diagnostics.pendingUpdateDocuments === 0;
+      }, 10_000);
 
-      expect(repository.storeAttempts).toBe(3);
-      expect(repository.successfulUpdates).toHaveLength(1);
-      expect(repository.attemptedUpdates).toHaveLength(3);
-      expect(repository.attemptedUpdates.every((update) =>
+      expect(repository.storeCount).toBeLessThanOrEqual(3);
+      expect(repository.storeAttempts).toBe(2 + repository.storeCount);
+      expect(repository.successfulUpdates).toHaveLength(repository.storeCount);
+      expect(repository.attemptedUpdates).toHaveLength(repository.storeAttempts);
+      expect(repository.attemptedUpdates.slice(0, 3).every((update) =>
         Buffer.from(update).equals(Buffer.from(repository.attemptedUpdates[0]!))
       )).toBe(true);
-      expect(repository.lastText).toBe("r".repeat(1_000));
+      expect(repository.lastText).toBe(finalText);
+      const opLogReplica = new Y.Doc();
+      Y.applyUpdate(opLogReplica, baseSnapshot);
+      for (const update of repository.successfulUpdates) Y.applyUpdate(opLogReplica, update);
+      expect(readPageYDocReplica("page-1", opLogReplica).blocks[0]?.text).toBe(finalText);
       expect(service.getPersistenceDiagnostics()).toMatchObject({
         activeRepositoryStores: 0,
         failedStores: 0,

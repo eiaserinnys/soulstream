@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import { projectSessionBindingWarnings } from "@soulstream/page-model";
 
 import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
 import type { BoardYjsContainerRef, SessionDB } from "../db/session_db.js";
@@ -67,16 +68,11 @@ export class SessionPageBindingService implements TaskCreationHook {
     });
     await this.reconcileSession(task.agentSessionId, true);
     const binding = await this.deps.repository.get(task.agentSessionId);
-    if (binding?.page_state === "manual_repair") {
-      appendCreationWarning(task, {
-        code: "PAGE_BINDING_MANUAL_REPAIR",
-        message: "The session was created, but its page block could not be converted automatically. Manual repair is required.",
-      });
-    } else if (binding?.page_state === "pending") {
-      appendCreationWarning(task, {
-        code: "PAGE_BINDING_PENDING",
-        message: "The session was created. Page binding is pending and will retry automatically.",
-      });
+    for (const warning of projectSessionBindingWarnings({
+      pageState: binding?.page_state,
+      legacyState: "completed",
+    })) {
+      appendCreationWarning(task, warning);
     }
   }
 
@@ -96,11 +92,11 @@ export class SessionPageBindingService implements TaskCreationHook {
       );
     });
     const binding = await this.deps.repository.get(params.task.agentSessionId);
-    if (binding && binding.legacy_state !== "completed") {
-      appendCreationWarning(params.task, {
-        code: "LEGACY_PROJECTION_PENDING",
-        message: "The session was created. Its legacy folder projection is pending and will retry automatically.",
-      });
+    for (const warning of projectSessionBindingWarnings({
+      pageState: "bound",
+      legacyState: binding?.legacy_state,
+    })) {
+      appendCreationWarning(params.task, warning);
     }
   }
 

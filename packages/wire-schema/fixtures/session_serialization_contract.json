@@ -128,6 +128,7 @@
       },
       "expectedNodeSessionInfo": {
         "agent_session_id": "sess-contract-1",
+        "binding_warnings": [],
         "status": "running",
         "review_required": true,
         "review_state": "needs_review",
@@ -203,6 +204,7 @@
       },
       "expectedSoulUiSummaryFromOrch": {
         "agentSessionId": "sess-contract-1",
+        "bindingWarnings": [],
         "status": "running",
         "reviewRequired": true,
         "reviewState": "needs_review",

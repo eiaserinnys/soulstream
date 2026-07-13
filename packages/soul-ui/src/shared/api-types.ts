@@ -5,6 +5,8 @@
  * EventStore JSONL 레코드 형식도 함께 정의합니다.
  */
 
+import type { SessionBindingWarning } from "@soulstream/page-model";
+
 import type { SessionSummary } from "./session-types";
 import type { TaskItem } from "./task-types";
 
@@ -62,10 +64,7 @@ export interface CreateSessionRequest {
   pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
 }
 
-export interface SessionCreationWarning {
-  code: "PAGE_BINDING_PENDING" | "PAGE_BINDING_MANUAL_REPAIR" | "LEGACY_PROJECTION_PENDING";
-  message: string;
-}
+export type SessionCreationWarning = SessionBindingWarning;
 
 /** POST /api/sessions 응답 */
 export interface CreateSessionResponse {

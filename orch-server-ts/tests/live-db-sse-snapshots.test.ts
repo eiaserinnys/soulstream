@@ -51,6 +51,13 @@ describe("live DB SSE replay snapshots", () => {
           },
         ];
       }
+      if (text.includes("FROM session_page_bindings")) {
+        return [{
+          session_id: "sess-1",
+          page_state: "manual_repair",
+          legacy_state: "pending",
+        }];
+      }
       return [];
     });
     const repository = createLiveDbCatalogRepository({
@@ -65,6 +72,16 @@ describe("live DB SSE replay snapshots", () => {
           status: "running",
           reviewRequired: false,
           reviewState: "not_required",
+          bindingWarnings: [
+            {
+              code: "PAGE_BINDING_MANUAL_REPAIR",
+              message: "The session was created, but its page block could not be converted automatically. Manual repair is required.",
+            },
+            {
+              code: "LEGACY_PROJECTION_PENDING",
+              message: "The session was created. Its legacy folder projection is pending and will retry automatically.",
+            },
+          ],
           prompt: "hello",
           createdAt: "2026-07-09T00:00:00.000Z",
           updatedAt: "2026-07-09T00:01:00.000Z",
@@ -97,6 +114,7 @@ describe("live DB SSE replay snapshots", () => {
     expect(harness.normalizedCalls()).toEqual([
       "SELECT session_count(?::jsonb) AS count",
       "SELECT * FROM session_get_all(?::jsonb, ?, ?)",
+      "SELECT session_id, page_state, legacy_state FROM session_page_bindings WHERE session_id = ANY(?::text[])",
     ]);
   });
 

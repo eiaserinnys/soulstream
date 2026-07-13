@@ -1,4 +1,5 @@
 import type { InMemoryNodeRegistry } from "../node/registry.js";
+import { normalizeSessionBindingWarnings } from "@soulstream/page-model";
 
 export type SessionSerializationOptions = {
   readonly registry?: InMemoryNodeRegistry;
@@ -55,6 +56,9 @@ export function serializeSessionRow(
       firstDefined(row, "review_required", "reviewRequired") === true,
     reviewState: normalizeReviewState(
       firstDefined(row, "review_state", "reviewState"),
+    ),
+    bindingWarnings: normalizeSessionBindingWarnings(
+      firstDefined(row, "binding_warnings", "bindingWarnings"),
     ),
   };
 

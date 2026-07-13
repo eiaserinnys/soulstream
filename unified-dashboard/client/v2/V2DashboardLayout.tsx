@@ -23,6 +23,7 @@ import {
   useSessionProvider,
   useUserPreferencesSync,
   type SessionCreationWarning,
+  type SessionReviewAcknowledgeResult,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import {
@@ -43,6 +44,7 @@ import { V2LeftNavigation } from "./V2LeftNavigation";
 import { V2LegacyFolderSurface, type V2LegacyFolderSurfaceState } from "./V2LegacyFolderSurface";
 import { V2MobileWorkspace } from "./V2MobileWorkspace";
 import { V2PageSurface } from "./V2PageSurface";
+import { V2SessionReviewBanner } from "./V2SessionReviewBanner";
 import {
   createInlineSessionDraft,
   resolveInlineSessionDraftTarget,
@@ -115,6 +117,7 @@ export function V2DashboardLayout({
     loading: sessionsLoading,
     error: sessionsError,
     catalogLoad,
+    refetch: refetchSessions,
   } = useSessionListProvider({
     intervalMs: 5000,
     getSessionProvider: () => orchestratorSessionProvider,
@@ -127,6 +130,10 @@ export function V2DashboardLayout({
   const activeSession = useMemo(
     () => resolveActiveSessionSummary(activeSessionKey, activeSessionSummary, sessions),
     [activeSessionKey, activeSessionSummary, sessions],
+  );
+  const canonicalActiveSession = useMemo(
+    () => sessions.find((session) => session.agentSessionId === activeSessionKey),
+    [activeSessionKey, sessions],
   );
   const chatInputDisabled = useMemo(() => {
     if (!activeSessionKey) return false;
@@ -181,14 +188,22 @@ export function V2DashboardLayout({
       return;
     }
     if (target.kind === "recovered") {
-        openSession(optimisticSessionSummary({
-          agentSessionId: target.sessionId,
-          nodeId: draft.nodeId,
-          agentId: draft.agentId,
-          prompt,
-        }));
-        setInlineDraft(null);
-        return;
+      const refreshed = await refetchSessions();
+      const canonical = refreshed.data?.pages
+        .flatMap((page) => page.sessions)
+        .find((session) => session.agentSessionId === target.sessionId);
+      openSession(
+        canonical
+          ?? sessions.find((session) => session.agentSessionId === target.sessionId)
+          ?? optimisticSessionSummary({
+            agentSessionId: target.sessionId,
+            nodeId: draft.nodeId,
+            agentId: draft.agentId,
+            prompt,
+          }),
+      );
+      setInlineDraft(null);
+      return;
     }
 
     submittingDraftId.current = draft.recoverySessionId;
@@ -224,7 +239,7 @@ export function V2DashboardLayout({
         submittingDraftId.current = null;
       }
     }
-  }, [addOptimisticSession, connectedNodes, inlineDraft, openSession, queryClient, updateInlineDraft, workspace.pageState]);
+  }, [addOptimisticSession, connectedNodes, inlineDraft, openSession, queryClient, refetchSessions, sessions, updateInlineDraft, workspace.pageState]);
   const selectedLegacyFolderExists = workspace.selectedLegacyFolderId !== null
     && (catalog?.folders.some((folder) => folder.id === workspace.selectedLegacyFolderId) ?? false);
   const boardItemsLoad = useV2LegacyBoardItems({
@@ -232,9 +247,19 @@ export function V2DashboardLayout({
     folders: catalog?.folders ?? [],
     enabled: catalogLoad.status === "ready" && selectedLegacyFolderExists,
   });
-  const activeCreationWarnings = creationWarningNotice?.sessionId === activeSessionKey
-    ? creationWarningNotice.warnings
-    : [];
+  const activeCreationWarnings = canonicalActiveSession
+    ? canonicalActiveSession.bindingWarnings ?? []
+    : creationWarningNotice?.sessionId === activeSessionKey
+        && creationWarningNotice.warnings.length > 0
+      ? creationWarningNotice.warnings
+      : activeSession?.bindingWarnings ?? [];
+  const acknowledgeActiveReview = useCallback((result: SessionReviewAcknowledgeResult) => {
+    const state = useDashboardStore.getState();
+    if (state.activeSessionKey !== result.agentSessionId) return;
+    const current = state.activeSessionSummary;
+    if (!current || current.agentSessionId !== result.agentSessionId) return;
+    state.setActiveSessionSummary({ ...current, reviewState: result.reviewState });
+  }, []);
 
   const legacyState = useMemo<V2LegacyFolderSurfaceState>(() => {
     const folderId = workspace.selectedLegacyFolderId;
@@ -346,6 +371,10 @@ export function V2DashboardLayout({
       centerPanel={pageSurface}
       rightPanel={(
         <div data-v2-pane="right" className="flex h-full min-h-0 flex-col">
+          <V2SessionReviewBanner
+            session={activeSession}
+            onAcknowledged={acknowledgeActiveReview}
+          />
           <V2SessionCreationWarnings warnings={activeCreationWarnings} />
           <div className="min-h-0 flex-1">
             {inlineDraft ? (
@@ -390,6 +419,10 @@ export function V2DashboardLayout({
           />
         ) : (
           <div className="flex h-full min-h-0 flex-col">
+            <V2SessionReviewBanner
+              session={activeSession}
+              onAcknowledged={acknowledgeActiveReview}
+            />
             <V2SessionCreationWarnings warnings={activeCreationWarnings} />
             <div className="min-h-0 flex-1">
               <ChatView

@@ -6,6 +6,7 @@
  */
 
 import type { ReviewState, SessionSummary, SessionStatus, LlmUsage, MetadataEntry } from "./types";
+import { normalizeSessionBindingWarnings } from "@soulstream/page-model";
 import { normalizeSessionStatus } from "./session-status";
 
 /** snake_case / camelCase 양쪽 응답을 LlmUsage로 변환 */
@@ -33,6 +34,9 @@ export function toSessionSummary(raw: Record<string, unknown>): SessionSummary {
     status: normalizeSessionStatus(raw.status as SessionStatus | undefined),
     reviewRequired: (raw.review_required ?? raw.reviewRequired) === true,
     reviewState: normalizeReviewState(raw.review_state ?? raw.reviewState),
+    bindingWarnings: normalizeSessionBindingWarnings(
+      raw.binding_warnings ?? raw.bindingWarnings,
+    ),
     eventCount: (raw.event_count ?? raw.eventCount ?? 0) as number,
     createdAt: (raw.created_at ?? raw.createdAt) as string | undefined,
     updatedAt: (raw.updated_at ?? raw.updatedAt) as string | undefined,

@@ -1380,10 +1380,11 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
       limit: 10_000,
       offset: 0,
       nodeId: "node-1",
-    })).resolves.toEqual({ sessions: [row], total: 1 });
+    })).resolves.toEqual({ sessions: [{ ...row, binding_warnings: [] }], total: 1 });
 
     expect(calls).toHaveLength(2);
     expect(calls[0].fragments.join("?")).toContain("s.agent_id");
+    expect(calls[0].fragments.join("?")).toContain("session_page_bindings");
     expect(calls[0].fragments.join("?")).toContain("AS event_count");
     expect(calls[0].fragments.join("?")).not.toContain("SELECT *");
     expect(calls[0].fragments.join("?")).toContain("ORDER BY s.updated_at DESC, s.session_id DESC");

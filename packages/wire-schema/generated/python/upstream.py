@@ -62,6 +62,15 @@ class Warning(TypedDict, closed=True):
     message: str
 
 
+class BindingWarning(TypedDict, closed=True):
+    code: Literal[
+        'PAGE_BINDING_PENDING',
+        'PAGE_BINDING_MANUAL_REPAIR',
+        'LEGACY_PROJECTION_PENDING',
+    ]
+    message: str
+
+
 class Session(TypedDict):
     """
     broadcast 경로에서 송신되는 세션 정보 (to_session_info 결과).
@@ -69,6 +78,7 @@ class Session(TypedDict):
 
     review_required: NotRequired[bool]
     review_state: NotRequired[Literal['not_required', 'needs_review', 'acknowledged']]
+    binding_warnings: NotRequired[list[BindingWarning]]
 
 
 class SessionCreated(TypedDict):
@@ -88,6 +98,7 @@ class SessionCreated(TypedDict):
 class Session1(TypedDict):
     review_required: NotRequired[bool]
     review_state: NotRequired[Literal['not_required', 'needs_review', 'acknowledged']]
+    binding_warnings: NotRequired[list[BindingWarning]]
 
 
 class SessionsUpdate(TypedDict):

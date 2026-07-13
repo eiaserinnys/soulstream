@@ -5,6 +5,8 @@
  * 세션 목록 조회와 세션 카드 렌더링에서 공통으로 사용합니다.
  */
 
+import type { SessionBindingWarning } from "@soulstream/page-model";
+
 import type { EventRecord } from "./api-types";
 
 /** 세션 상태 */
@@ -69,6 +71,8 @@ export interface SessionSummary extends AgentProfile, UserProfile {
   status: SessionStatus;
   reviewRequired?: boolean;
   reviewState?: ReviewState;
+  /** Durable read projection of page/legacy binding work that still needs attention. */
+  bindingWarnings?: SessionBindingWarning[];
   eventCount: number;
   lastEventType?: string;
   createdAt?: string;
