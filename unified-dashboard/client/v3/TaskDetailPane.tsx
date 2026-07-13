@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
 import type { PlannerTask } from "./planner-data";
@@ -6,7 +6,9 @@ import { plannerStatusPresentation } from "./planner-model";
 import type { PageSessionDefaults } from "./task-workspace-api";
 import { descriptionMarkdown } from "./task-workspace-model";
 import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
+import { TaskContextPicker } from "./TaskContextPicker";
 import { TaskRunHistory } from "./TaskRunHistory";
+import "./v3-context-succession.css";
 
 export function TaskDetailPane({
   task,
@@ -33,7 +35,17 @@ export function TaskDetailPane({
   );
   const status = plannerStatusPresentation(task.status);
   const [promotingId, setPromotingId] = useState<string | null>(null);
-  const contexts = task.blocks.flatMap((block) => {
+  const [contextPickerOpen, setContextPickerOpen] = useState(false);
+  const [contextBlocks, setContextBlocks] = useState(task.blocks);
+  const [predecessorSessionId, setPredecessorSessionId] = useState<string | null>(null);
+  const [createdSessions, setCreatedSessions] = useState<SessionSummary[]>([]);
+  useEffect(() => {
+    setContextBlocks(task.blocks);
+    setContextPickerOpen(false);
+    setPredecessorSessionId(null);
+    setCreatedSessions([]);
+  }, [task.blocks, task.page.id]);
+  const contexts = contextBlocks.flatMap((block) => {
     if (block.block_type === "atom_ref") {
       const label = stringProperty(block.properties, "title")
         ?? stringProperty(block.properties, "label")
@@ -46,6 +58,12 @@ export function TaskDetailPane({
     }
     return [];
   });
+  const mountedContextTitles = contextBlocks.flatMap((block) => {
+    const match = /^\[\[([^\[\]]+)\]\]$/.exec(block.text.trim());
+    return match ? [{ id: block.id, title: match[1] }] : [];
+  });
+  const allSessions = [...sessions, ...createdSessions.filter((created) => !sessions.some((session) => session.agentSessionId === created.agentSessionId))];
+  const allSessionIds = [...task.sessionIds, ...createdSessions.map((session) => session.agentSessionId)];
 
   const promote = async (blockId: string) => {
     setPromotingId(blockId);
@@ -83,12 +101,27 @@ export function TaskDetailPane({
         </section>
 
         <section className="v3-detail-section">
-          <div className="v3-detail-section-head"><h3>컨텍스트</h3><span>{contexts.length + task.mountedDocuments.length}개</span></div>
+          <div className="v3-detail-section-head"><h3>컨텍스트</h3><span>{contexts.length + mountedContextTitles.length}개</span></div>
           <div className="v3-context-chips">
             {contexts.map((context) => <span key={context.id}>{context.icon} {context.label}</span>)}
-            {task.mountedDocuments.map((document) => <span key={document.blockId}>📄 {document.page.title}</span>)}
-            {contexts.length + task.mountedDocuments.length === 0 ? <small>연결된 컨텍스트가 없습니다.</small> : null}
+            {mountedContextTitles.map((document) => <span key={document.id}>📄 {document.title}</span>)}
+            {contexts.length + mountedContextTitles.length === 0 ? <small>연결된 컨텍스트가 없습니다.</small> : null}
+            <button type="button" className="v3-context-add" aria-expanded={contextPickerOpen} onClick={() => setContextPickerOpen((value) => !value)}>＋ 컨텍스트</button>
           </div>
+          {contextPickerOpen ? (
+            <TaskContextPicker
+              taskPageId={task.page.id}
+              taskBlocks={contextBlocks}
+              projectPageId={task.projectPageId}
+              sessionIds={allSessionIds}
+              sessions={allSessions}
+              sessionDefaults={sessionDefaults}
+              predecessorSessionId={predecessorSessionId}
+              onBlocksChanged={setContextBlocks}
+              onPredecessorChanged={setPredecessorSessionId}
+              onClose={() => setContextPickerOpen(false)}
+            />
+          ) : null}
         </section>
 
         <section className="v3-detail-section">
@@ -116,7 +149,22 @@ export function TaskDetailPane({
           <div className="v3-session-defaults">👤 기본값: {sessionDefaults.agentId ?? "agent 미지정"}@{sessionDefaults.nodeId ?? "node 미지정"} <span>(상속)</span></div>
         ) : null}
 
-        <TaskRunHistory sessionIds={task.sessionIds} sessions={sessions} onOpenSession={onOpenSession} />
+        <TaskRunHistory
+          taskTitle={task.page.title}
+          taskPageId={task.page.id}
+          runbookId={task.runbookId}
+          contextCount={contexts.length + mountedContextTitles.length}
+          sessionDefaults={sessionDefaults}
+          predecessorSessionId={predecessorSessionId}
+          sessionIds={allSessionIds}
+          sessions={allSessions}
+          onOpenSession={onOpenSession}
+          onSessionCreated={(session) => {
+            setCreatedSessions((current) => [...current, session]);
+            setPredecessorSessionId(null);
+            onOpenSession(session);
+          }}
+        />
       </div>
     </article>
   );

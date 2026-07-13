@@ -1,0 +1,441 @@
+.v3-context-add {
+  border: 1px dashed var(--glass-border);
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: var(--info-foreground);
+  background: color-mix(in srgb, var(--info) 9%, transparent);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.v3-context-add:hover,
+.v3-context-add[aria-expanded="true"] {
+  border-style: solid;
+  background: color-mix(in srgb, var(--info) 16%, transparent);
+}
+
+.v3-context-picker {
+  margin-top: 10px;
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  box-shadow: var(--md-shadow);
+}
+
+.v3-context-inherited {
+  padding: 12px;
+  background: color-mix(in srgb, var(--info) 7%, transparent);
+}
+
+.v3-context-inherited > strong {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  letter-spacing: .035em;
+  text-transform: uppercase;
+}
+
+.v3-context-inherited > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.v3-context-inherited span {
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 4px 7px;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--background) 58%, transparent);
+  font-size: 10px;
+}
+
+.v3-context-inherited small {
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+
+.v3-context-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.v3-context-tabs button {
+  min-width: 0;
+  border: 0;
+  border-right: 1px solid var(--border);
+  padding: 9px 3px;
+  color: var(--muted-foreground);
+  background: transparent;
+  font-size: 10px;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.v3-context-tabs button:last-child {
+  border-right: 0;
+}
+
+.v3-context-tabs button.is-active {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  box-shadow: inset 0 -2px var(--info);
+}
+
+.v3-context-tabs small {
+  margin-left: 3px;
+  border-radius: 999px;
+  padding: 1px 3px;
+  color: var(--info-foreground);
+  background: color-mix(in srgb, var(--info) 13%, transparent);
+  font-size: 8px;
+}
+
+.v3-context-panel {
+  display: flex;
+  min-height: 120px;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+}
+
+.v3-context-panel > input,
+.v3-context-create-page input,
+.v3-succession-assignment select {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 9px;
+  color: var(--foreground);
+  background: var(--background);
+  font: inherit;
+  font-size: 11px;
+}
+
+.v3-context-panel input:focus,
+.v3-succession-assignment select:focus {
+  border-color: var(--info);
+  outline: 2px solid color-mix(in srgb, var(--info) 18%, transparent);
+}
+
+.v3-context-options {
+  display: flex;
+  max-height: 190px;
+  overflow-y: auto;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.v3-context-options > p {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.v3-context-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 8px;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--background) 72%, transparent);
+  text-align: left;
+  cursor: pointer;
+}
+
+.v3-context-option:hover:not(:disabled),
+.v3-context-option.is-selected {
+  border-color: color-mix(in srgb, var(--info) 60%, var(--border));
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+}
+
+.v3-context-option:disabled {
+  opacity: .55;
+  cursor: default;
+}
+
+.v3-context-option > span:nth-child(2) {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.v3-context-option strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-context-option small {
+  color: var(--muted-foreground);
+  font-size: 9px;
+}
+
+.v3-context-option i {
+  width: 25px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--muted);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.v3-context-option i::after {
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin: 2px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  content: "";
+  transition: transform .15s ease;
+}
+
+.v3-context-option.is-selected i {
+  background: var(--info);
+}
+
+.v3-context-option.is-selected i::after {
+  background: var(--info-foreground);
+  transform: translateX(11px);
+}
+
+.v3-context-create-page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.v3-context-create-page button {
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  color: var(--foreground);
+  background: var(--muted);
+  font-size: 10px;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.v3-context-create-page button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.v3-context-error,
+.v3-succession-error {
+  margin: 0 10px 8px;
+  border: 1px solid color-mix(in srgb, var(--destructive) 35%, var(--border));
+  border-radius: 8px;
+  padding: 7px 9px;
+  color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 7%, transparent);
+  font-size: 10px;
+}
+
+.v3-succession-error {
+  position: fixed;
+  z-index: 130;
+  right: 24px;
+  bottom: 24px;
+  max-width: min(420px, calc(100vw - 48px));
+  margin: 0;
+  box-shadow: var(--lg-shadow);
+}
+
+.v3-context-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding: 9px 10px;
+}
+
+.v3-context-footer span {
+  min-width: 0;
+  flex: 1;
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+
+.v3-succession-overlay {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: color-mix(in srgb, var(--background) 45%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.v3-succession-modal {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: 17px;
+  background: var(--card);
+  box-shadow: var(--xl-shadow);
+}
+
+.v3-succession-modal > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  border-bottom: 1px solid var(--border);
+  padding: 15px 17px;
+}
+
+.v3-succession-modal > header > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--info-foreground);
+  background: color-mix(in srgb, var(--info) 13%, transparent);
+  font-size: 18px;
+}
+
+.v3-succession-modal h2,
+.v3-succession-modal p {
+  margin: 0;
+}
+
+.v3-succession-modal h2 {
+  font-size: 17px;
+}
+
+.v3-succession-modal header p {
+  margin-top: 3px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+
+.v3-succession-modal header button {
+  border: 0;
+  color: var(--muted-foreground);
+  background: transparent;
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.v3-succession-body {
+  padding: 16px 18px;
+}
+
+.v3-succession-body > p {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.v3-succession-body ol {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin: 11px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.v3-succession-body li {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--background) 72%, transparent);
+}
+
+.v3-succession-body li label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.v3-succession-body li input {
+  margin-top: 3px;
+  accent-color: var(--info);
+}
+
+.v3-succession-body li span {
+  display: flex;
+  flex-direction: column;
+}
+
+.v3-succession-body li strong {
+  font-size: 12px;
+}
+
+.v3-succession-body li small,
+.v3-succession-default-source {
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+
+.v3-succession-body li em {
+  width: fit-content;
+  margin-top: 4px;
+  border-radius: 999px;
+  padding: 2px 5px;
+  color: var(--info-foreground);
+  background: color-mix(in srgb, var(--info) 12%, transparent);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 780;
+}
+
+.v3-succession-choice {
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: var(--info-foreground);
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.v3-succession-assignment {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.v3-succession-assignment label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted-foreground);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.v3-succession-default-source {
+  display: block;
+  margin-top: 8px;
+}
+
+.v3-succession-modal > footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding: 12px 17px;
+}
+
+@media (max-width: 600px) {
+  .v3-context-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v3-context-tabs button:nth-child(2) { border-right: 0; }
+  .v3-context-tabs button:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+  .v3-succession-assignment { grid-template-columns: 1fr; }
+}

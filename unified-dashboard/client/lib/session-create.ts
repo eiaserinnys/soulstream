@@ -45,15 +45,17 @@ export interface CreateDashboardSessionInput {
   boardPosition?: { x: number; y: number } | null;
   agentSessionId?: string;
   pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
+  predecessorSessionId?: string | null;
 }
 
 export async function createDashboardSession(
   input: CreateDashboardSessionInput,
 ): Promise<CreateSessionResponse> {
-  const payload: CreateSessionRequest = {
+  const payload: CreateSessionRequest & { predecessor_session_id?: string } = {
     prompt: input.prompt,
     ...(input.agentSessionId ? { agentSessionId: input.agentSessionId } : {}),
     ...(input.pageAnchor ? { pageAnchor: input.pageAnchor } : {}),
+    ...(input.predecessorSessionId ? { predecessor_session_id: input.predecessorSessionId } : {}),
     ...(input.nodeId ? { nodeId: input.nodeId } : {}),
     ...(input.attachmentPaths?.length ? { attachmentPaths: input.attachmentPaths } : {}),
     ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),

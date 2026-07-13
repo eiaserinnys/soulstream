@@ -1,6 +1,11 @@
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
+import {
+  buildContextBlockOperations,
+  type ContextPickerSelection,
+} from "./context-picker-model";
 import { buildDescriptionMutation } from "./task-workspace-model";
+import type { SessionPageAnchor } from "./session-succession-model";
 
 export interface PageSessionDefaults {
   agentId: string | null;
@@ -42,6 +47,57 @@ export async function saveTaskDescription(
     reason: "v3 task description edit",
     operations: mutation.operations,
   });
+}
+
+export async function addTaskContextBlocks(
+  api: PageApiClient,
+  pageId: string,
+  selections: readonly ContextPickerSelection[],
+): Promise<{ blocks: Awaited<ReturnType<PageApiClient["getPage"]>>["blocks"] }> {
+  const current = await api.getPage(pageId);
+  const mutation = buildContextBlockOperations({
+    selections,
+    afterBlockId: [...current.blocks].reverse().find((block) => block.parent_id === null)?.id ?? null,
+    createTempId: () => `v3-context-${crypto.randomUUID()}`,
+  });
+  if (mutation.operations.length === 0) {
+    return { blocks: current.blocks };
+  }
+  const result = await api.applyOperations(pageId, {
+    expectedVersion: current.page.version,
+    expectedStateVector: decodeBase64(current.state_vector),
+    idempotencyKey: `v3-context-apply-${crypto.randomUUID()}`,
+    reason: "v3 task context picker apply",
+    operations: mutation.operations,
+  });
+  return { blocks: result.blocks };
+}
+
+export async function createTaskPageAnchor(
+  api: PageApiClient,
+  pageId: string,
+): Promise<SessionPageAnchor> {
+  const current = await api.getPage(pageId);
+  const tempId = `v3-session-anchor-${crypto.randomUUID()}`;
+  const result = await api.applyOperations(pageId, {
+    expectedVersion: current.page.version,
+    expectedStateVector: decodeBase64(current.state_vector),
+    idempotencyKey: `v3-session-anchor-create-${crypto.randomUUID()}`,
+    reason: "v3 successor session page anchor",
+    operations: [{
+      op: "create_block",
+      temp_id: tempId,
+      parent_id: null,
+      after_block_id: [...current.blocks].reverse().find((block) => block.parent_id === null)?.id ?? null,
+      block_type: "paragraph",
+      text: "",
+      properties: {},
+      collapsed: false,
+    }],
+  });
+  const blockId = result.temp_id_mapping[tempId];
+  if (!blockId) throw new Error("새 세션 page anchor 블록 ID를 받지 못했습니다");
+  return { pageId, blockId, expectedVersion: result.page.version };
 }
 
 export async function promoteMountedDocument(
