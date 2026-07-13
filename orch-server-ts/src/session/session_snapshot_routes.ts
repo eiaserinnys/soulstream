@@ -34,6 +34,7 @@ export function registerSessionSnapshotRoutes(
 
 function parseSessionSnapshotQuery(query: unknown): SessionSnapshotQuery {
   return {
+    session_ids: stringArrayQuery(query, "session_id"),
     folderId: stringQuery(query, "folderId"),
     folder_id: stringQuery(query, "folder_id"),
     session_type: stringQuery(query, "session_type"),
@@ -42,6 +43,16 @@ function parseSessionSnapshotQuery(query: unknown): SessionSnapshotQuery {
     limit: numberQuery(query, "limit"),
     cursor: stringQuery(query, "cursor"),
   };
+}
+
+function stringArrayQuery(query: unknown, key: string): string[] | undefined {
+  if (typeof query !== "object" || query === null || !(key in query)) {
+    return undefined;
+  }
+  const raw = (query as Record<string, unknown>)[key];
+  const values = (Array.isArray(raw) ? raw : [raw])
+    .filter((value): value is string => typeof value === "string" && value.length > 0);
+  return values.length > 0 ? [...new Set(values)] : undefined;
 }
 
 function stringQuery(query: unknown, key: string): string | undefined {

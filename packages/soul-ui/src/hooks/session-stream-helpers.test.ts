@@ -582,6 +582,27 @@ describe("shared normalizeSessionStatus", () => {
 //   - viewMode "feed" 캐시(folderId=null)는 feed-eligible 폴더 세션만 통과
 //   - viewMode "folder" 캐시는 같은 folderId만 통과, 다른 폴더 / undefined → 제외
 describe("shouldApplySessionCreatedToCache", () => {
+  it("ids 캐시는 참조된 session_created만 통과시킨다", () => {
+    expect(
+      shouldApplySessionCreatedToCache(
+        ["sessions", "all", "ids", null, ["session-a"]],
+        "claude",
+        null,
+        null,
+        "session-a",
+      ),
+    ).toBe(true);
+    expect(
+      shouldApplySessionCreatedToCache(
+        ["sessions", "all", "ids", null, ["session-a"]],
+        "claude",
+        null,
+        null,
+        "session-b",
+      ),
+    ).toBe(false);
+  });
+
   it("feed 캐시(typeFilter=all, viewMode=feed, folderId=null)는 모든 세션 통과", () => {
     expect(
       shouldApplySessionCreatedToCache(

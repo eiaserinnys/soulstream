@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import {
   PageApiError,
   createPageYjsClient,
+  destroyPageYjsClientSafely,
   type PageApiClient,
   type PageDocumentProjection,
   type PageDocumentSnapshot,
@@ -171,15 +172,22 @@ export function useV2PageWorkspace({
       return;
     }
     let active = true;
-    const client = createPageClient(route.pageId);
-    setRuntime(client);
+    let client: PageYjsClient | null = null;
+    let connection: Promise<void> | null = null;
+    setRuntime(null);
     setRuntimeConnectError(null);
-    void client.connect().catch((error: unknown) => {
-      if (active) setRuntimeConnectError(messageFor(error, "Page sync failed to connect."));
+    queueMicrotask(() => {
+      if (!active) return;
+      client = createPageClient(route.pageId);
+      setRuntime(client);
+      connection = client.connect();
+      void connection.catch((error: unknown) => {
+        if (active) setRuntimeConnectError(messageFor(error, "Page sync failed to connect."));
+      });
     });
     return () => {
       active = false;
-      client.destroy();
+      if (client) void destroyPageYjsClientSafely(client);
     };
   }, [createPageClient, route, runtimeGeneration]);
 

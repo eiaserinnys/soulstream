@@ -1,15 +1,90 @@
 import { describe, expect, it, vi } from "vitest";
+import { HocuspocusProviderWebsocket } from "@hocuspocus/provider";
 
 import {
   buildPageYjsUrl,
   createPageYjsClient,
+  destroyPageYjsClientSafely,
   getPageYjsDocumentName,
+  type PageYjsClient,
+  type PageYjsStatus,
   type PageProviderConfiguration,
   type PageProviderLike,
 } from "./page-yjs-client";
 import { BLOCKS_MAP, PAGE_META_MAP } from "./page-document";
+import {
+  hasPendingDashboardMutations,
+  waitForDashboardMutationsToFlush,
+} from "../pending-mutation-registry";
 
 describe("page Yjs client", () => {
+  it("waits for a CONNECTING attempt before destroying its websocket", async () => {
+    let status: PageYjsStatus = "reconnecting";
+    let listener: () => void = () => undefined;
+    const destroy = vi.fn();
+    const client = {
+      getSnapshot: () => ({
+        status,
+        ready: false,
+        connected: false,
+        synced: false,
+        error: null,
+      }),
+      subscribe: vi.fn((next: () => void) => {
+        listener = next;
+        return () => undefined;
+      }),
+      destroy,
+    } as unknown as PageYjsClient;
+
+    const teardown = destroyPageYjsClientSafely(client);
+    await Promise.resolve();
+    expect(destroy).not.toHaveBeenCalled();
+    status = "ready";
+    listener();
+    await teardown;
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds CONNECTING teardown when the handshake never settles", async () => {
+    const destroy = vi.fn();
+    const client = {
+      getSnapshot: () => ({
+        status: "connecting",
+        ready: false,
+        connected: false,
+        synced: false,
+        error: null,
+      }),
+      subscribe: vi.fn(() => () => undefined),
+      destroy,
+    } as unknown as PageYjsClient;
+
+    await destroyPageYjsClientSafely(client, 1);
+
+    expect(destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the real Hocuspocus provider manual until the client connects", async () => {
+    vi.stubGlobal("WebSocket", class TestWebSocket {});
+    const connect = vi.spyOn(HocuspocusProviderWebsocket.prototype, "connect")
+      .mockResolvedValue(undefined);
+    try {
+      const client = createPageYjsClient({
+        pageId: "page-manual",
+        location: { protocol: "https:", host: "soul.example" } as Location,
+      });
+      expect(connect).not.toHaveBeenCalled();
+
+      await client.connect();
+      expect(connect).toHaveBeenCalledTimes(1);
+      client.destroy();
+    } finally {
+      connect.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("builds the dedicated page websocket route and document name", () => {
     const location = { protocol: "https:", host: "soul.example" } as Location;
     expect(buildPageYjsUrl("page/one", location)).toBe("wss://soul.example/yjs/page/page%2Fone");
@@ -23,6 +98,7 @@ describe("page Yjs client", () => {
       location: { protocol: "https:", host: "soul.example" } as Location,
       createProvider: provider.create,
     });
+    expect(provider.create).toHaveBeenCalledWith(expect.objectContaining({ autoConnect: false }));
 
     provider.emitStatus("connected");
     expect(client.getSnapshot()).toMatchObject({ status: "syncing", ready: false });
@@ -38,6 +114,24 @@ describe("page Yjs client", () => {
     expect(client.getSnapshot()).toMatchObject({ status: "syncing", ready: false });
     provider.emitSynced(true);
     expect(client.getSnapshot()).toMatchObject({ status: "ready", ready: true });
+    client.destroy();
+  });
+
+  it("keeps dashboard reload deferred until Hocuspocus acknowledges local updates", async () => {
+    const provider = providerHarness();
+    const client = createPageYjsClient({
+      pageId: "page-pending",
+      location: { protocol: "https:", host: "soul.example" } as Location,
+      createProvider: provider.create,
+    });
+
+    provider.emitUnsyncedChanges(1);
+    expect(hasPendingDashboardMutations()).toBe(true);
+    const flushed = waitForDashboardMutationsToFlush();
+    provider.emitUnsyncedChanges(0);
+
+    await expect(flushed).resolves.toBe(true);
+    expect(hasPendingDashboardMutations()).toBe(false);
     client.destroy();
   });
 
@@ -103,6 +197,9 @@ function providerHarness() {
     },
     emitAuthenticationFailed(reason: string) {
       configuration?.onAuthenticationFailed({ reason });
+    },
+    emitUnsyncedChanges(number: number) {
+      configuration?.onUnsyncedChanges({ number });
     },
   };
 }

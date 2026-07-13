@@ -7,5 +7,6 @@ export * from "./page-editor-command-adapter";
 export * from "./page-editor-caret-geometry";
 export * from "./page-editor-selection";
 export * from "./page-editor-visual-tokens";
+export * from "./page-editor-pending-registry";
 export * from "./page-reference-parser";
 export * from "./usePageEditorController";

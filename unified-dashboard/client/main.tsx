@@ -12,6 +12,9 @@ import { ToastProvider } from "@seosoyoung/soul-ui";
 import { AuthProvider } from "@seosoyoung/soul-ui/providers";
 import { AuthGate } from "@seosoyoung/soul-ui/components/auth";
 import { AppConfigProvider } from "./config/AppConfigContext";
+import { registerDashboardServiceWorker } from "./pwa/register-dashboard-service-worker";
+
+void registerDashboardServiceWorker();
 
 const queryClient = new QueryClient({
   defaultOptions: {

@@ -117,8 +117,10 @@ function sessionMatchesCatalogCache(
   const typeFilter = (cacheQueryKey[1] as string | undefined) ?? "all";
   const vMode = (cacheQueryKey[2] as string | undefined) ?? "feed";
   const fId = (cacheQueryKey[3] as string | null | undefined) ?? null;
+  const sessionIds = cacheQueryKey[4] as readonly string[] | undefined;
 
   if (typeFilter !== "all" && session.sessionType !== typeFilter) return false;
+  if (vMode === "ids") return sessionIds?.includes(session.agentSessionId) === true;
 
   const assignment = catalog.sessions[session.agentSessionId];
   const assignedFolderId = assignment?.folderId ?? null;
@@ -215,11 +217,14 @@ export function shouldApplySessionCreatedToCache(
   newSessionType: string | undefined,
   newSessionFolderId: string | null | undefined,
   catalog?: CatalogState | null,
+  newSessionId?: string,
 ): boolean {
   const typeFilter = (cacheQueryKey[1] as string | undefined) ?? "all";
   const vMode = (cacheQueryKey[2] as string | undefined) ?? "feed";
   const fId = (cacheQueryKey[3] as string | null | undefined) ?? null;
+  const sessionIds = cacheQueryKey[4] as readonly string[] | undefined;
   if (typeFilter !== "all" && newSessionType !== typeFilter) return false;
+  if (vMode === "ids") return newSessionId !== undefined && sessionIds?.includes(newSessionId) === true;
   // viewMode=folder 캐시 — newSessionFolderId가 undefined(assignment 불명)이면
   // fId(string|null) !== undefined → 항상 false → 어떤 folder 캐시에도 prepend 안 함
   if (vMode === "folder" && fId !== newSessionFolderId) return false;

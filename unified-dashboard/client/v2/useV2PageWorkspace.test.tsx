@@ -156,6 +156,136 @@ describe("useV2PageWorkspace", () => {
     expect(output.dataset.status).toBe("ready");
   });
 
+  it("does not create and destroy a CONNECTING page client during the discarded StrictMode effect", async () => {
+    const clients: PageYjsClient[] = [];
+    const createClient = (pageId: string) => {
+      const client = createReadyClient(pageId);
+      clients.push(client);
+      return client;
+    };
+
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const target = createTarget("/v2/pages/page-daily");
+    const controller = createV2PageRouteController(target);
+    const api = createApi();
+    const harness = createElement(() => {
+      const workspace = useV2PageWorkspace({
+        apiClient: api,
+        routeController: controller,
+        createPageClient: createClient,
+      });
+      return createElement("output", { "data-status": workspace.pageState.status });
+    });
+    flushSync(() => root!.render(createElement(React.StrictMode, null, harness)));
+
+    expect(clients).toHaveLength(0);
+    await settle();
+    const output = container.querySelector("output")!;
+
+    await vi.waitFor(() => expect(output.dataset.status).toBe("ready"));
+    expect(clients).toHaveLength(1);
+    expect(clients[0]!.connect).toHaveBeenCalledTimes(1);
+    expect(clients[0]!.destroy).not.toHaveBeenCalled();
+    controller.destroy();
+  });
+
+  it("waits for CONNECTING teardown during a page route transition", async () => {
+    const clients: Array<{ client: PageYjsClient; settle(): void }> = [];
+    const createClient = (pageId: string) => {
+      let settle!: () => void;
+      const connection = new Promise<void>((resolve) => { settle = resolve; });
+      const base = createReadyClient(pageId);
+      const connectingSnapshot = {
+        status: "connecting",
+        ready: false,
+        connected: false,
+        synced: false,
+        error: null,
+      } as const;
+      let snapshot: ReturnType<PageYjsClient["getSnapshot"]> = connectingSnapshot;
+      const listeners = new Set<() => void>();
+      const connecting = {
+        ...base,
+        getSnapshot: () => snapshot,
+        subscribe: (listener: () => void) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+        connect: vi.fn(() => connection),
+      } as PageYjsClient;
+      clients.push({
+        client: connecting,
+        settle() {
+          snapshot = base.getSnapshot();
+          settle();
+          for (const listener of listeners) listener();
+        },
+      });
+      return connecting;
+    };
+    const target = createTarget("/v2/pages/page-daily");
+    const controller = createV2PageRouteController(target);
+    const api = createApi();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const RouteHarness = () => {
+      useV2PageWorkspace({
+        apiClient: api,
+        routeController: controller,
+        createPageClient: createClient,
+      });
+      return null;
+    };
+    flushSync(() => root!.render(createElement(RouteHarness)));
+    await settle();
+    expect(clients).toHaveLength(1);
+
+    flushSync(() => controller.navigateToPage("page-next"));
+    await settle();
+    expect(clients).toHaveLength(2);
+    expect(clients[0]!.client.destroy).not.toHaveBeenCalled();
+    clients[0]!.settle();
+    await vi.waitFor(() => expect(clients[0]!.client.destroy).toHaveBeenCalledTimes(1));
+    clients[1]!.settle();
+    controller.destroy();
+  });
+
+  it("waits for CONNECTING teardown during unmount", async () => {
+    let settleConnection!: () => void;
+    const connection = new Promise<void>((resolve) => { settleConnection = resolve; });
+    const connectingSnapshot = {
+      status: "connecting",
+      ready: false,
+      connected: false,
+      synced: false,
+      error: null,
+    } as const;
+    const readyClient = createReadyClient("page-daily");
+    let snapshot: ReturnType<PageYjsClient["getSnapshot"]> = connectingSnapshot;
+    const listeners = new Set<() => void>();
+    const client = {
+      ...readyClient,
+      getSnapshot: () => snapshot,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+      connect: vi.fn(() => connection),
+    } as PageYjsClient;
+    await render(createApi(), "/v2/pages/page-daily", () => client);
+
+    flushSync(() => root!.unmount());
+    root = undefined;
+    expect(client.destroy).not.toHaveBeenCalled();
+    snapshot = readyClient.getSnapshot();
+    settleConnection();
+    for (const listener of listeners) listener();
+    await vi.waitFor(() => expect(client.destroy).toHaveBeenCalledTimes(1));
+  });
+
   it("restores a deep link without calling daily", async () => {
     const api = createApi();
     const output = await render(api, "/v2/pages/page-daily");
@@ -240,5 +370,51 @@ describe("useV2PageWorkspace", () => {
     await vi.waitFor(() => expect(clients).toHaveLength(2));
     expect(clients[0]!.destroy).toHaveBeenCalledTimes(1);
     expect(output.dataset.status).toBe("ready");
+  });
+
+  it("waits for CONNECTING teardown during an explicit editor resync", async () => {
+    let settleConnection!: () => void;
+    const connection = new Promise<void>((resolve) => { settleConnection = resolve; });
+    const connectingSnapshot = {
+      status: "connecting",
+      ready: false,
+      connected: false,
+      synced: false,
+      error: null,
+    } as const;
+    const readyClient = createReadyClient("page-daily");
+    let snapshot: ReturnType<PageYjsClient["getSnapshot"]> = readyClient.getSnapshot();
+    const listeners = new Set<() => void>();
+    const clients: PageYjsClient[] = [];
+    const createClient = (pageId: string) => {
+      if (clients.length > 0) {
+        const replacement = createReadyClient(pageId);
+        clients.push(replacement);
+        return replacement;
+      }
+      const client = {
+        ...readyClient,
+        getSnapshot: () => snapshot,
+        subscribe: (listener: () => void) => {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+        connect: vi.fn(() => connection),
+      } as PageYjsClient;
+      clients.push(client);
+      return client;
+    };
+    const output = await render(createApi(), "/v2/pages/page-daily", createClient);
+    await vi.waitFor(() => expect(output.dataset.status).toBe("ready"));
+
+    snapshot = connectingSnapshot;
+    flushSync(() => container!.querySelector<HTMLButtonElement>('[data-testid="resync-page"]')!.click());
+    await vi.waitFor(() => expect(clients).toHaveLength(2));
+    expect(clients[0]!.destroy).not.toHaveBeenCalled();
+
+    snapshot = readyClient.getSnapshot();
+    settleConnection();
+    for (const listener of listeners) listener();
+    await vi.waitFor(() => expect(clients[0]!.destroy).toHaveBeenCalledTimes(1));
   });
 });

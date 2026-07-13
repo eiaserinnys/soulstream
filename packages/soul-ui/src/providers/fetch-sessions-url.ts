@@ -5,6 +5,9 @@ export function buildFetchSessionsUrl(
   options?: FetchSessionsOptions,
 ): string {
   const params = new URLSearchParams();
+  for (const sessionId of options?.sessionIds ?? []) {
+    params.append("session_id", sessionId);
+  }
   if (options?.sessionType) params.set("session_type", options.sessionType);
   if (options?.offset != null && options.offset > 0) {
     params.set("offset", String(options.offset));

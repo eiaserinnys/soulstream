@@ -91,6 +91,33 @@ describe("production session list pagination parity", () => {
     }
   });
 
+  it("loads only explicitly requested session summaries without scanning the catalog", async () => {
+    const harness = await createProductionHarness();
+    try {
+      const response = await harness.application.app.inject({
+        method: "GET",
+        url: "/api/sessions?session_id=excluded-folder-session&session_id=normal-session&limit=0",
+        headers: harness.authHeaders,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        sessions: [
+          expect.objectContaining({ agentSessionId: "normal-session" }),
+          expect.objectContaining({ agentSessionId: "excluded-folder-session" }),
+        ],
+        total: 2,
+        hasMore: false,
+      });
+      expect(sessionListCalls(harness.calls)).toEqual([]);
+      expect(targetedSessionListCalls(harness.calls)).toEqual([
+        ["excluded-folder-session", "normal-session"],
+      ]);
+    } finally {
+      await closeHarness(harness);
+    }
+  });
+
   it("keeps SSE feed_only on the DB path with Python's 200-row snapshot cap", async () => {
     const harness = await createProductionHarness();
     const controller = new AbortController();
@@ -137,6 +164,10 @@ async function createProductionHarness() {
   const query = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?").replace(/\s+/g, " ").trim();
     calls.push({ text, values });
+    if (text.includes("FROM sessions s") && text.includes("s.session_id = ANY")) {
+      const sessionIds = Array.isArray(values[0]) ? values[0] : [];
+      return rows.filter((row) => sessionIds.includes(row.session_id));
+    }
     const filters = databaseJsonbObject(values[0]);
     const filteredRows = filters.feed_only === true
       ? rows.filter((row) =>
@@ -173,6 +204,15 @@ async function createProductionHarness() {
     calls,
     authHeaders: { authorization: "Bearer production-service-token" },
   };
+}
+
+function targetedSessionListCalls(calls: SqlCall[]): unknown[][] {
+  return calls
+    .filter((call) =>
+      call.text.includes("FROM sessions s") &&
+      call.text.includes("s.session_id = ANY")
+    )
+    .map((call) => Array.isArray(call.values[0]) ? call.values[0] : []);
 }
 
 function sessionRow(

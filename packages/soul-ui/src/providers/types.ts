@@ -11,6 +11,8 @@ import type { SessionSummary, EventTreeNode, SoulSSEEvent } from "@shared/types"
 
 /** 세션 목록 조회 옵션 */
 export interface FetchSessionsOptions {
+  /** 특정 세션 요약만 조회. 빈 배열은 세션을 조회하지 않는다. */
+  sessionIds?: readonly string[];
   /** 세션 타입 필터 */
   sessionType?: string;
   /** 페이지네이션 오프셋 (0-based) */

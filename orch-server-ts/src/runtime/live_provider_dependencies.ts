@@ -51,6 +51,7 @@ export type LiveDbCatalogRepositoryBoundary = {
     input?: { readonly access?: BoardAccess; readonly feedOnly?: boolean },
   ) => Promise<SessionStreamSnapshot>;
   readonly listSessionSnapshots: (input: {
+    readonly sessionIds?: readonly string[];
     readonly access?: BoardAccess;
     readonly feedOnly?: boolean;
     readonly folderId?: string;

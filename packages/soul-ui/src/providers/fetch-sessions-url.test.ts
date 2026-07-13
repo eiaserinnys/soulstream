@@ -28,4 +28,12 @@ describe("buildFetchSessionsUrl", () => {
       }),
     ).toBe("/api/sessions?limit=0");
   });
+
+  it("serializes a targeted session summary lookup as repeated session_id params", () => {
+    expect(
+      buildFetchSessionsUrl("/api/sessions", {
+        sessionIds: ["session-a", "session B"],
+      }),
+    ).toBe("/api/sessions?session_id=session-a&session_id=session+B");
+  });
 });

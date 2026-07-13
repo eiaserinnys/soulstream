@@ -1,12 +1,21 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
-import { extname, resolve, sep } from "node:path";
+import { basename, extname, resolve, sep } from "node:path";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 export const DASHBOARD_INDEX_CACHE_CONTROL = "no-cache";
+export const DASHBOARD_MUTABLE_ROOT_CACHE_CONTROL = "no-cache";
 export const DASHBOARD_ASSET_CACHE_CONTROL =
   "public, max-age=31536000, immutable";
+
+const DASHBOARD_MUTABLE_ROOT_FILES = new Set([
+  "index.html",
+  "manifest.webmanifest",
+  "registerSW.js",
+  "sw-update-migration.js",
+  "sw.js",
+]);
 
 export type RegisterDashboardServingOptions = {
   readonly dashboardDir: string;
@@ -60,12 +69,21 @@ export async function registerDashboardServing(
       return sendFile(
         reply,
         rootFile,
-        rootFile === indexPath ? DASHBOARD_INDEX_CACHE_CONTROL : undefined,
+        dashboardRootCacheControl(rootFile, indexPath),
       );
     }
     return sendFile(reply, indexPath, DASHBOARD_INDEX_CACHE_CONTROL);
   });
   return true;
+}
+
+function dashboardRootCacheControl(
+  filePath: string,
+  indexPath: string,
+): string | undefined {
+  return filePath === indexPath || DASHBOARD_MUTABLE_ROOT_FILES.has(basename(filePath))
+    ? DASHBOARD_MUTABLE_ROOT_CACHE_CONTROL
+    : undefined;
 }
 
 async function sendFile(

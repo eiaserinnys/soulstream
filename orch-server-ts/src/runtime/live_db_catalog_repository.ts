@@ -4,6 +4,7 @@ import {
   type SessionBindingWarning,
 } from "@soulstream/page-model";
 import {
+  isBoardFolderAllowed,
   normalizeBoardAccess,
   type BoardAccess,
   type BoardAccessFolderRecord,
@@ -100,6 +101,7 @@ export type LoadSessionSnapshotInput = {
 };
 
 export type ListSessionSnapshotsInput = LoadSessionSnapshotInput & {
+  readonly sessionIds?: readonly string[];
   readonly folderId?: string;
   readonly sessionType?: string;
   readonly offset: number;
@@ -169,6 +171,7 @@ export function createLiveDbCatalogRepository(
   const taskSnapshotLimit = options.taskSnapshotLimit ?? DEFAULT_TASK_SNAPSHOT_LIMIT;
   async function loadSessionPage(
     input: LoadSessionSnapshotInput & {
+      readonly sessionIds?: readonly string[];
       readonly folderId?: string;
       readonly sessionType?: string;
     },
@@ -176,6 +179,53 @@ export function createLiveDbCatalogRepository(
     offset: number | null,
   ): Promise<{ sessions: Record<string, unknown>[]; total: number }> {
     const sql = await sqlResolver.resolveSql();
+    if (input.sessionIds !== undefined) {
+      const sessionIds = [...new Set(input.sessionIds)];
+      if (sessionIds.length === 0) return { sessions: [], total: 0 };
+      const folderId = input.folderId ?? null;
+      const sessionType = input.sessionType ?? null;
+      const feedOnly = input.feedOnly === true;
+      const targetedRows = await sql`
+        SELECT s.*
+        FROM sessions s
+        LEFT JOIN folders f ON s.folder_id = f.id
+        WHERE s.session_id = ANY(${sessionIds}::text[])
+          AND (${folderId}::text IS NULL OR s.folder_id = ${folderId})
+          AND (${sessionType}::text IS NULL OR s.session_type = ${sessionType})
+          AND (
+            ${feedOnly}::boolean = FALSE
+            OR (
+              (s.folder_id IS NULL OR COALESCE(f.settings->>'excludeFromFeed', 'false') != 'true')
+              AND COALESCE(s.session_type, 'claude') != 'llm'
+            )
+          )
+        ORDER BY s.updated_at DESC, s.session_id DESC
+      `;
+      const access = normalizeBoardAccess(input.access ?? { restricted: false });
+      const folders = access.restricted
+        ? await sessionResourceAccessRepository.listFoldersForAccess()
+        : [];
+      const accessibleRows = access.restricted
+        ? targetedRows.filter((row) =>
+            isBoardFolderAllowed(access, folders, stringOrNull(row.folder_id))
+          )
+        : targetedRows;
+      const start = offset ?? 0;
+      const sessionRows = accessibleRows.slice(
+        start,
+        limit === null ? undefined : start + limit,
+      );
+      const bindingWarnings = await loadSessionBindingWarnings(sql, sessionRows);
+      return {
+        sessions: sessionRows.map((row) =>
+          serializeSessionRow({
+            ...row,
+            binding_warnings: bindingWarnings.get(String(row.session_id ?? "")) ?? [],
+          }, { registry: options.registry }),
+        ),
+        total: accessibleRows.length,
+      };
+    }
     const filters = await sessionSnapshotFilters(
       input,
       sessionResourceAccessRepository,
@@ -314,6 +364,7 @@ function createSessionResourceAccessRepository(
 
 async function sessionSnapshotFilters(
   input: LoadSessionSnapshotInput & {
+    readonly sessionIds?: readonly string[];
     readonly folderId?: string;
     readonly sessionType?: string;
   },

@@ -17,6 +17,7 @@ import {
   executePageEditorPlan,
   type ResolvedEditorFocus,
 } from "./page-editor-command-adapter";
+import { createPageEditorPendingHandle } from "./page-editor-pending-registry";
 
 export type PageEditorMutationState =
   | { readonly status: "idle" }
@@ -62,6 +63,7 @@ export function usePageEditorController({
   const blocked = useRef(false);
   const pendingCommandCount = useRef(0);
   const localInputRevision = useRef(0);
+  const pendingHandle = useMemo(() => createPageEditorPendingHandle(), [apiClient, doc, pageId]);
   const latest = useRef({ doc, blocks, mutationVersion });
   latest.current = { doc, blocks, mutationVersion };
   const snapshots = useMemo(() => toEditorSnapshots(pageId, blocks), [blocks, pageId]);
@@ -77,7 +79,10 @@ export function usePageEditorController({
     const queue = createSerialIntentQueue<QueuedCommand>({
       isReady: () => awaitingVersion.current === null && !blocked.current,
       shouldSuppress: shouldSuppressCommand,
-      onPendingCountChange: (count) => { pendingCommandCount.current = count; },
+      onPendingCountChange: (count) => {
+        pendingCommandCount.current = count;
+        pendingHandle.setPending(count > 0 || awaitingVersion.current !== null);
+      },
       execute: async (command) => {
         setState({ status: "pending", message: "Saving structure…" });
         try {
@@ -156,7 +161,7 @@ export function usePageEditorController({
         queue.cancel();
       },
     };
-  }, [apiClient, doc, pageId]);
+  }, [apiClient, doc, pageId, pendingHandle]);
   const commandQueue = commandRuntime.queue;
 
   useEffect(() => {
@@ -168,18 +173,23 @@ export function usePageEditorController({
     blocked.current = false;
     pendingCommandCount.current = 0;
     localInputRevision.current = 0;
-    return () => commandRuntime.dispose();
-  }, [commandRuntime]);
+    pendingHandle.setPending(false);
+    return () => {
+      commandRuntime.dispose();
+      pendingHandle.dispose();
+    };
+  }, [commandRuntime, pendingHandle]);
 
   useEffect(() => {
     if (awaitingVersion.current === null || mutationVersion < awaitingVersion.current) return;
     awaitingVersion.current = null;
+    pendingHandle.setPending(pendingCommandCount.current > 0);
     const focus = deferredFocus.current;
     deferredFocus.current = null;
     setPendingFocus(focus);
     setState({ status: "idle" });
     commandQueue.notifyReady();
-  }, [commandQueue, mutationVersion]);
+  }, [commandQueue, mutationVersion, pendingHandle]);
 
   const run = useCallback(async (
     operation: EditorOperation,

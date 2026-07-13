@@ -36,6 +36,13 @@ describe("dashboard static serving", () => {
     const rootFile = await app.inject({ method: "GET", url: "/registerSW.js" });
     expect(rootFile.statusCode).toBe(200);
     expect(rootFile.body).toBe("register-sw");
+    expect(rootFile.headers["cache-control"]).toBe("no-cache");
+
+    for (const rootPath of ["/sw.js", "/sw-update-migration.js", "/manifest.webmanifest"]) {
+      const mutableRootFile = await app.inject({ method: "GET", url: rootPath });
+      expect(mutableRootFile.statusCode).toBe(200);
+      expect(mutableRootFile.headers["cache-control"]).toBe("no-cache");
+    }
 
     const spa = await app.inject({ method: "GET", url: "/folders/alpha" });
     expect(spa.statusCode).toBe(200);
@@ -77,6 +84,9 @@ async function createDashboardDirectory(): Promise<string> {
   await mkdir(join(directory, "assets"));
   await writeFile(join(directory, "index.html"), "<html>dashboard-index</html>");
   await writeFile(join(directory, "registerSW.js"), "register-sw");
+  await writeFile(join(directory, "sw.js"), "service-worker");
+  await writeFile(join(directory, "sw-update-migration.js"), "service-worker-migration");
+  await writeFile(join(directory, "manifest.webmanifest"), "{}");
   await writeFile(join(directory, "assets", "app.js"), "console.log('asset')");
   return directory;
 }
