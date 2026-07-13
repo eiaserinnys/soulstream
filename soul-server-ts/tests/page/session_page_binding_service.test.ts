@@ -88,13 +88,19 @@ describe("SessionPageBindingService", () => {
     const h = harness();
     await h.service.afterSessionRegistered({
       task: { agentSessionId: "sess-1" } as never,
-      params: { agentSessionId: "sess-1", prompt: "start", folderId: "folder-1" },
+      params: {
+        agentSessionId: "sess-1",
+        prompt: "start",
+        folderId: "folder-1",
+        callerInfo: { source: "browser" },
+      },
     });
 
     expect(h.repository.enqueue).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "sess-1",
       dailyDate: "2026-07-13",
       targetPageId: null,
+      initialPageState: "pending",
     }));
     expect(h.pageHost.batchPageOperations).toHaveBeenCalledWith(expect.objectContaining({
       page_id: "daily-1",
@@ -124,17 +130,57 @@ describe("SessionPageBindingService", () => {
     }));
     await h.service.reconcile(h.row());
 
+    expect(h.pageHost.getDailyPage).not.toHaveBeenCalled();
     expect(h.pageHost.batchPageOperations).toHaveBeenCalledWith(expect.objectContaining({
       page_id: "page-1",
       expected_version: 7,
-      operations: [
-        { op: "update_block_text", block_id: "block-1", text: "[[2026-07-13]]" },
-        expect.objectContaining({ op: "update_block_type_and_properties", block_id: "block-1" }),
-      ],
+      operations: [expect.objectContaining({
+        op: "update_block_type_and_properties",
+        block_id: "block-1",
+      })],
     }));
     expect(vi.mocked(h.repository.markPageBound).mock.invocationCallOrder[0]).toBeLessThan(
       h.legacyProjection.project.mock.invocationCallOrder[0]!,
     );
+  });
+
+  it.each([
+    {
+      name: "delegated agent source",
+      params: { callerInfo: { source: "agent" } },
+    },
+    {
+      name: "runbook container",
+      params: {
+        callerInfo: { source: "browser" },
+        container: { containerKind: "runbook", containerId: "rb-1" },
+      },
+    },
+    {
+      name: "unknown source",
+      params: {},
+    },
+  ])("keeps $name out of daily while preserving durable legacy projection", async ({ params }) => {
+    const h = harness(binding({ page_state: "bound" }));
+    await h.service.afterSessionRegistered({
+      task: { agentSessionId: "sess-1" } as never,
+      params: { agentSessionId: "sess-1", prompt: "start", ...params } as never,
+    });
+
+    expect(h.repository.enqueue).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "sess-1",
+      initialPageState: "bound",
+    }));
+    expect(h.pageHost.getDailyPage).not.toHaveBeenCalled();
+    expect(h.pageHost.batchPageOperations).not.toHaveBeenCalled();
+
+    await h.service.afterLegacyProjection({
+      task: { agentSessionId: "sess-1" } as never,
+      params: { agentSessionId: "sess-1", prompt: "start" },
+      assignedFolderId: "folder-1",
+      completed: true,
+    });
+    expect(h.repository.markLegacyCompleted).toHaveBeenCalledOnce();
   });
 
   it("replays the same idempotency key after a crash between page mutation and outbox update", async () => {

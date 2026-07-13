@@ -90,6 +90,7 @@ describePostgres("SessionDB supervisor PostgreSQL integration", () => {
       targetPageId: null,
       targetBlockId: null,
       targetExpectedVersion: null,
+      initialPageState: "pending" as const,
       dailyDate: "2026-07-13",
       sessionType: "claude",
       legacyFolderId: null,
@@ -100,11 +101,25 @@ describePostgres("SessionDB supervisor PostgreSQL integration", () => {
     const first = await repository.enqueue(input);
     const duplicate = await repository.enqueue({ ...input, dailyDate: "2026-07-14" });
     expect(first.daily_date).toBe("2026-07-13");
+    expect(first.page_state).toBe("pending");
     expect(duplicate.daily_date).toBe("2026-07-13");
     expect(await repository.listDue("node-1")).toHaveLength(1);
 
+    await harness!.sql`
+      INSERT INTO sessions (session_id, node_id, updated_at, session_type, status)
+      VALUES ('sess-excluded', 'node-1', NOW(), 'claude', 'running')
+    `;
+    const excluded = await repository.enqueue({
+      ...input,
+      sessionId: "sess-excluded",
+      initialPageState: "bound",
+    });
+    expect(excluded.page_state).toBe("bound");
+    expect(await repository.listDue("node-1")).toHaveLength(2);
+
     await repository.markPageBound("sess-binding");
     await repository.markLegacyCompleted("sess-binding");
+    await repository.markLegacyCompleted("sess-excluded");
     expect(await repository.get("sess-binding")).toMatchObject({
       page_state: "bound",
       legacy_state: "completed",

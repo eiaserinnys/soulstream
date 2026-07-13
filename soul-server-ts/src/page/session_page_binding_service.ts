@@ -7,6 +7,7 @@ import type { TaskCreationHook, TaskCreationHookParams } from "../task/task_crea
 import type { LegacyProjectionHookParams } from "../task/task_creation_hook.js";
 import { sessionBoardItemPosition } from "../task/runbook_session_position.js";
 import type { PageYjsHostClient } from "./page_host_client.js";
+import { decideSessionPageEnrollment } from "./session_page_enrollment_policy.js";
 import {
   SessionPageBindingRepository,
   type SessionPageBindingRow,
@@ -41,12 +42,18 @@ export class SessionPageBindingService implements TaskCreationHook {
   constructor(private readonly deps: SessionPageBindingServiceDeps) {}
 
   async afterSessionRegistered({ task, params }: TaskCreationHookParams): Promise<void> {
+    const enrollment = decideSessionPageEnrollment({
+      hasPageAnchor: params.pageAnchor !== undefined,
+      containerKind: params.container?.containerKind ?? null,
+      callerSource: params.callerInfo?.source,
+    });
     await this.deps.repository.enqueue({
       sessionId: task.agentSessionId,
       nodeId: this.deps.nodeId,
       targetPageId: params.pageAnchor?.pageId ?? null,
       targetBlockId: params.pageAnchor?.blockId ?? null,
       targetExpectedVersion: params.pageAnchor?.expectedVersion ?? null,
+      initialPageState: enrollment.kind === "excluded" ? "bound" : "pending",
       dailyDate: kstDate(this.deps.now?.() ?? new Date()),
       sessionType: params.sessionType ?? "claude",
       legacyFolderId: params.folderId ?? null,
@@ -139,11 +146,6 @@ export class SessionPageBindingService implements TaskCreationHook {
   }
 
   private async bindPrimaryPage(binding: SessionPageBindingRow): Promise<void> {
-    const daily = await this.deps.pageHost.getDailyPage({
-      date: binding.daily_date,
-      actorSessionId: binding.session_id,
-    });
-    const text = `[[${daily.page.title}]]`;
     if (binding.target_page_id && binding.target_block_id && binding.target_expected_version) {
       const target = await this.deps.pageHost.getPage(binding.target_page_id, true);
       if (!target.blocks?.some((block) => block.id === binding.target_block_id)) {
@@ -152,20 +154,21 @@ export class SessionPageBindingService implements TaskCreationHook {
       await this.deps.pageHost.batchPageOperations({
         page_id: binding.target_page_id,
         expected_version: binding.target_expected_version,
-        operations: [
-          { op: "update_block_text", block_id: binding.target_block_id, text },
-          {
-            op: "update_block_type_and_properties",
-            block_id: binding.target_block_id,
-            block_type: "session_ref",
-            properties: { sessionId: binding.session_id, primary: true },
-          },
-        ],
+        operations: [{
+          op: "update_block_type_and_properties",
+          block_id: binding.target_block_id,
+          block_type: "session_ref",
+          properties: { sessionId: binding.session_id, primary: true },
+        }],
         actor_session_id: binding.session_id,
         idempotency_key: `session-page-binding:${binding.session_id}:primary`,
       });
       return;
     }
+    const daily = await this.deps.pageHost.getDailyPage({
+      date: binding.daily_date,
+      actorSessionId: binding.session_id,
+    });
     await this.deps.pageHost.batchPageOperations({
       page_id: daily.page.id,
       expected_version: daily.page.version,
@@ -175,7 +178,7 @@ export class SessionPageBindingService implements TaskCreationHook {
         parent_id: null,
         after_block_id: null,
         block_type: "session_ref",
-        text,
+        text: `[[${daily.page.title}]]`,
         properties: { sessionId: binding.session_id, primary: true },
       }],
       actor_session_id: binding.session_id,
