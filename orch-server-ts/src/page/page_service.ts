@@ -8,10 +8,6 @@ import type WebSocket from "ws";
 import * as Y from "yjs";
 import type {
   BacklinkDto,
-  BrowserBacklinkPageDto,
-  BrowserBlockDto,
-  BrowserBlockSearchDto,
-  BrowserPageSearchDto,
   PageLinkKind,
   PageListDto,
 } from "@soulstream/page-model";
@@ -69,15 +65,6 @@ export interface PageServiceRepository extends PageYjsPersistenceRepository {
     cursor?: string;
     limit: number;
   }): Promise<PageBacklinkPage>;
-  searchBrowserPages(input: { query: string; limit: number }): Promise<BrowserPageSearchDto>;
-  searchBrowserBlocks(input: { query: string; limit: number }): Promise<BrowserBlockSearchDto>;
-  getBrowserBlock(blockId: string): Promise<BrowserBlockDto | null>;
-  getBrowserBacklinks(input: {
-    pageId: string;
-    kinds: readonly PageLinkKind[];
-    cursor?: string;
-    limit: number;
-  }): Promise<BrowserBacklinkPageDto>;
   commitPageMutation(input: CommitPageMutationInput): Promise<PageMutationCommitResult>;
 }
 
@@ -286,33 +273,6 @@ export class PageYjsService {
     limit: number;
   }): Promise<{ items: BacklinkDto[]; next_cursor: string | null }> {
     return await this.config.repository.getPageBacklinks(input);
-  }
-
-  async searchBrowserPages(input: {
-    query: string;
-    limit: number;
-  }): Promise<BrowserPageSearchDto> {
-    return await this.config.repository.searchBrowserPages(input);
-  }
-
-  async searchBrowserBlocks(input: {
-    query: string;
-    limit: number;
-  }): Promise<BrowserBlockSearchDto> {
-    return await this.config.repository.searchBrowserBlocks(input);
-  }
-
-  async getBrowserBlock(blockId: string): Promise<BrowserBlockDto | null> {
-    return await this.config.repository.getBrowserBlock(blockId);
-  }
-
-  async getBrowserBacklinks(input: {
-    pageId: string;
-    kinds: readonly PageLinkKind[];
-    cursor?: string;
-    limit: number;
-  }): Promise<BrowserBacklinkPageDto> {
-    return await this.config.repository.getBrowserBacklinks(input);
   }
 
   async getDailyPage(input: {

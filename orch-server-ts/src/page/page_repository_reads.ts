@@ -71,7 +71,7 @@ interface BrowserBacklinkRow extends Record<string, unknown> {
   target_block_id: string | null;
   source_start: number;
   source_end: number;
-  created_at: Date;
+  created_at_cursor: string;
 }
 
 export async function listPages(
@@ -212,7 +212,11 @@ export async function getBrowserBacklinks(
            source_page.title AS source_page_title,
            link.source_block_id, source.text_plain AS source_text_plain,
            link.link_kind, link.target_page_id, link.target_block_id,
-           link.source_start, link.source_end, link.created_at
+           link.source_start, link.source_end,
+           to_char(
+             link.created_at AT TIME ZONE 'UTC',
+             'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+           ) AS created_at_cursor
     FROM block_links link
     JOIN blocks source ON source.id = link.source_block_id
     JOIN pages source_page ON source_page.id = source.page_id
@@ -220,8 +224,14 @@ export async function getBrowserBacklinks(
     WHERE (link.target_page_id = ${input.pageId} OR target.page_id = ${input.pageId})
       AND link.link_kind = ANY(${sql.array(kinds)}::text[])
       AND (
-        ${cursorDate}::timestamptz IS NULL
-        OR (link.created_at, link.id) > (${cursorDate}::timestamptz, ${cursorId})
+        ${cursorDate}::text IS NULL
+        OR (
+          to_char(
+            link.created_at AT TIME ZONE 'UTC',
+            'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+          ),
+          link.id
+        ) > (${cursorDate}::text, ${cursorId})
       )
     ORDER BY link.created_at ASC, link.id ASC
     LIMIT ${input.limit + 1}
@@ -231,7 +241,7 @@ export async function getBrowserBacklinks(
   return {
     items: visible.map(browserBacklinkDto),
     nextCursor: rows.length > input.limit && last
-      ? encodeBrowserBacklinkCursor(last.created_at, last.id, input.pageId, kinds)
+      ? encodeBrowserBacklinkCursor(last.created_at_cursor, last.id, input.pageId, kinds)
       : null,
   };
 }
@@ -342,14 +352,14 @@ function canonicalKinds(kinds: readonly PageLinkKind[]): PageLinkKind[] {
 }
 
 function encodeBrowserBacklinkCursor(
-  createdAt: Date,
+  createdAt: string,
   id: string,
   pageId: string,
   kinds: readonly PageLinkKind[],
 ): string {
   return Buffer.from(JSON.stringify([
     1,
-    createdAt.toISOString(),
+    createdAt,
     id,
     pageId,
     canonicalKinds(kinds).join(","),
@@ -367,7 +377,7 @@ function decodeBrowserBacklinkCursor(
     const parsed = JSON.parse(bytes.toString("utf8")) as unknown;
     if (
       !Array.isArray(parsed) || parsed.length !== 5 || parsed[0] !== 1 ||
-      typeof parsed[1] !== "string" || new Date(parsed[1]).toISOString() !== parsed[1] ||
+      typeof parsed[1] !== "string" || !isPostgresMicrosecondTimestamp(parsed[1]) ||
       typeof parsed[2] !== "string" || parsed[2].length === 0 ||
       parsed[3] !== pageId ||
       parsed[4] !== canonicalKinds(kinds).join(",")
@@ -376,6 +386,11 @@ function decodeBrowserBacklinkCursor(
   } catch {
     throw new PageBrowserBacklinkCursorError("invalid browser backlink cursor");
   }
+}
+
+function isPostgresMicrosecondTimestamp(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(value) &&
+    !Number.isNaN(Date.parse(value));
 }
 
 function pageDto(row: PageRow): PageDto {

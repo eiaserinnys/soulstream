@@ -19,7 +19,7 @@ describe("browser page routes", () => {
     const service = serviceDouble();
     const resolveUser = cookieUserResolver();
     const app = Fastify({ logger: false });
-    registerPageBrowserRoutes(app, { service, resolveUser });
+    registerPageBrowserRoutes(app, { service, reads: service, resolveUser });
     try {
       const serviceBearer = await app.inject({
         method: "GET",
@@ -53,7 +53,7 @@ describe("browser page routes", () => {
   it("reads browser bootstrap state and creates the KST daily page with user provenance", async () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });
-    registerPageBrowserRoutes(app, { service, resolveUser: cookieUserResolver() });
+    registerPageBrowserRoutes(app, { service, reads: service, resolveUser: cookieUserResolver() });
     try {
       const read = await app.inject({
         method: "GET",
@@ -86,7 +86,7 @@ describe("browser page routes", () => {
   it("requires state-vector CAS for structural batch and exposes explicit star mutation", async () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });
-    registerPageBrowserRoutes(app, { service, resolveUser: cookieUserResolver() });
+    registerPageBrowserRoutes(app, { service, reads: service, resolveUser: cookieUserResolver() });
     try {
       const batch = await app.inject({
         method: "POST",
@@ -153,7 +153,7 @@ describe("browser page routes", () => {
   it("rejects malformed state vectors and maps both CAS conflicts to 409", async () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });
-    registerPageBrowserRoutes(app, { service, resolveUser: cookieUserResolver() });
+    registerPageBrowserRoutes(app, { service, reads: service, resolveUser: cookieUserResolver() });
     try {
       const invalid = await app.inject({
         method: "POST",
@@ -186,7 +186,7 @@ describe("browser page routes", () => {
   it("exposes authenticated prefix search, block read, and canonical backlinks queries", async () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });
-    registerPageBrowserRoutes(app, { service, resolveUser: cookieUserResolver() });
+    registerPageBrowserRoutes(app, { service, reads: service, resolveUser: cookieUserResolver() });
     try {
       const pageSearch = await app.inject({
         method: "GET",
@@ -232,7 +232,7 @@ describe("browser page routes", () => {
   it("rejects unauthenticated, empty, oversized, and malformed search/backlink queries", async () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });
-    registerPageBrowserRoutes(app, { service, resolveUser: cookieUserResolver() });
+    registerPageBrowserRoutes(app, { service, reads: service, resolveUser: cookieUserResolver() });
     try {
       const unauthenticated = await app.inject({ method: "GET", url: "/api/pages/search?q=Page" });
       expect(unauthenticated.statusCode).toBe(401);

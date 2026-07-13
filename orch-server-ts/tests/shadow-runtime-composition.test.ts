@@ -175,6 +175,12 @@ function createInertPageYjsRoutes() {
   return {
     authBearerToken: "test-token",
     resolveBrowserUser: vi.fn(async () => null),
+    browserReads: {
+      searchBrowserPages: vi.fn(async () => ({ items: [] })),
+      searchBrowserBlocks: vi.fn(async () => ({ items: [] })),
+      getBrowserBlock: vi.fn(async () => null),
+      getBrowserBacklinks: vi.fn(async () => ({ items: [], nextCursor: null })),
+    },
     createService: () => ({
       handleConnection: vi.fn(),
       assertWebsocketAuthConfigured: vi.fn(),

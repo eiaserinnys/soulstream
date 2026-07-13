@@ -37,9 +37,9 @@ describe("browser page reads PostgreSQL integration", () => {
         target_page_id, target_title, target_title_key, created_at
       ) VALUES
         ('link-a', 'source-a', 'mount', 0, 0, 8,
-         'page-target', 'Target', 'target', '2026-07-11T00:00:00Z'),
+         'page-target', 'Target', 'target', '2026-07-11T00:00:00.000123Z'),
         ('link-b', 'source-b', 'inline_page', 0, 0, 8,
-         'page-target', 'Target', 'target', '2026-07-11T00:00:00Z')
+         'page-target', 'Target', 'target', '2026-07-11T00:00:00.000456Z')
     `;
   }, 60_000);
 
@@ -82,11 +82,41 @@ describe("browser page reads PostgreSQL integration", () => {
   });
 
   it("paginates duplicate timestamps without gaps or duplicates and survives deleted rows", async () => {
+    const storedTimes = await harness.sql<readonly { id: string; created_at_cursor: string }[]>`
+      SELECT id, to_char(
+        created_at AT TIME ZONE 'UTC',
+        'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+      ) AS created_at_cursor
+      FROM block_links
+      ORDER BY id
+    `;
+    expect(storedTimes).toEqual([
+      { id: "link-a", created_at_cursor: "2026-07-11T00:00:00.000123Z" },
+      { id: "link-b", created_at_cursor: "2026-07-11T00:00:00.000456Z" },
+    ]);
     const first = await repository.getBrowserBacklinks({
       pageId: "page-target",
       kinds: ["mount", "inline_page"],
       limit: 1,
     });
+    const cursorPayload = JSON.parse(
+      Buffer.from(first.nextCursor!, "base64url").toString("utf8"),
+    ) as unknown[];
+    expect(cursorPayload[1]).toBe("2026-07-11T00:00:00.000123Z");
+    const cursorTimestamp = cursorPayload[1] as string;
+    const comparisons = await harness.sql<readonly { id: string; after_cursor: boolean }[]>`
+      SELECT id,
+             to_char(
+               created_at AT TIME ZONE 'UTC',
+               'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+             ) > ${cursorTimestamp}::text AS after_cursor
+      FROM block_links
+      ORDER BY id
+    `;
+    expect(comparisons).toEqual([
+      { id: "link-a", after_cursor: false },
+      { id: "link-b", after_cursor: true },
+    ]);
     const second = await repository.getBrowserBacklinks({
       pageId: "page-target",
       kinds: ["inline_page", "mount"],

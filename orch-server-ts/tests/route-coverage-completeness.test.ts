@@ -148,6 +148,12 @@ function createAllOptInRouteApp() {
     pageYjsRoutes: {
       authBearerToken: "test-token",
       resolveBrowserUser: async () => ({ email: "user@example.com" }),
+      browserReads: {
+        searchBrowserPages: async () => ({ items: [] }),
+        searchBrowserBlocks: async () => ({ items: [] }),
+        getBrowserBlock: async () => null,
+        getBrowserBacklinks: async () => ({ items: [], nextCursor: null }),
+      },
       createService: () => ({
         handleConnection: () => undefined,
         assertWebsocketAuthConfigured: () => undefined,

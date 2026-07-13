@@ -311,7 +311,8 @@ describe("orch PageRepository", () => {
       cursor: first.nextCursor!,
       limit: 1,
     });
-    expect(calls[1]?.query).toContain("(link.created_at, link.id) >");
+    expect(calls[1]?.query).toContain("'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"'");
+    expect(calls[1]?.query).toContain(") > (?::text, ?)");
     expect(calls[1]?.values).toContain("link-1");
 
     await expect(repository.getBrowserBacklinks({
@@ -373,6 +374,6 @@ function browserBacklinkRow(
     target_block_id: null,
     source_start: 0,
     source_end: 10,
-    created_at: createdAt,
+    created_at_cursor: createdAt.toISOString().replace("Z", "000Z"),
   };
 }

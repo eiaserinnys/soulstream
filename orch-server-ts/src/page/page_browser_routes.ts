@@ -2,7 +2,13 @@ import { Buffer } from "node:buffer";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import type { PageLinkKind } from "@soulstream/page-model";
+import type {
+  BrowserBacklinkPageDto,
+  BrowserBlockDto,
+  BrowserBlockSearchDto,
+  BrowserPageSearchDto,
+  PageLinkKind,
+} from "@soulstream/page-model";
 
 import {
   PageMutationStateVectorConflictError,
@@ -40,12 +46,21 @@ export interface PageBrowserRouteOptions {
     | "getBrowserPage"
     | "getDailyPage"
     | "mutatePage"
-    | "searchBrowserPages"
-    | "searchBrowserBlocks"
-    | "getBrowserBlock"
-    | "getBrowserBacklinks"
   >;
+  reads: PageBrowserReads;
   resolveUser: (request: FastifyRequest) => Promise<PageBrowserUser | null>;
+}
+
+export interface PageBrowserReads {
+  searchBrowserPages(input: { query: string; limit: number }): Promise<BrowserPageSearchDto>;
+  searchBrowserBlocks(input: { query: string; limit: number }): Promise<BrowserBlockSearchDto>;
+  getBrowserBlock(blockId: string): Promise<BrowserBlockDto | null>;
+  getBrowserBacklinks(input: {
+    pageId: string;
+    kinds: readonly PageLinkKind[];
+    cursor?: string;
+    limit: number;
+  }): Promise<BrowserBacklinkPageDto>;
 }
 
 const id = z.string().trim().min(1);
@@ -133,7 +148,7 @@ export function registerPageBrowserRoutes(
     const parsed = searchQuerySchema.safeParse(request.query);
     if (!parsed.success) return invalid(reply, parsed.error.message);
     try {
-      return reply.send(await options.service.searchBrowserPages({
+      return reply.send(await options.reads.searchBrowserPages({
         query: parsed.data.q,
         limit: parsed.data.limit,
       }));
@@ -148,7 +163,7 @@ export function registerPageBrowserRoutes(
     const parsed = searchQuerySchema.safeParse(request.query);
     if (!parsed.success) return invalid(reply, parsed.error.message);
     try {
-      return reply.send(await options.service.searchBrowserBlocks({
+      return reply.send(await options.reads.searchBrowserBlocks({
         query: parsed.data.q,
         limit: parsed.data.limit,
       }));
@@ -165,7 +180,7 @@ export function registerPageBrowserRoutes(
       const parsed = id.safeParse(request.params.blockId);
       if (!parsed.success) return invalid(reply, parsed.error.message);
       try {
-        const block = await options.service.getBrowserBlock(parsed.data);
+        const block = await options.reads.getBrowserBlock(parsed.data);
         return block
           ? reply.send(block)
           : errorReply(reply, 404, "BLOCK_NOT_FOUND", `block not found: ${parsed.data}`);
@@ -204,7 +219,7 @@ export function registerPageBrowserRoutes(
         return invalid(reply, error instanceof Error ? error.message : "invalid link kinds");
       }
       try {
-        return reply.send(await options.service.getBrowserBacklinks({
+        return reply.send(await options.reads.getBrowserBacklinks({
           pageId: pageId.data,
           kinds,
           cursor: query.data.cursor,
