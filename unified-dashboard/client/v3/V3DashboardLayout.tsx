@@ -35,6 +35,7 @@ import {
   ProjectPlannerView,
   type PlannerLoadState,
 } from "./PlannerViews";
+import { RitualModal } from "./RitualModal";
 import { TaskWorkspace } from "./TaskWorkspace";
 import { V3Navigation, type PlannerDateNavItem } from "./V3Navigation";
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
@@ -82,6 +83,7 @@ export function V3DashboardLayout() {
   const [project, setProject] = useState<PlannerLoadState<ProjectPlannerData>>({ status: "loading", data: null, message: null });
   const [refreshKey, setRefreshKey] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
+  const [ritualOpen, setRitualOpen] = useState(false);
   const [createPending, setCreatePending] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedTaskSnapshot, setSelectedTaskSnapshot] = useState<PlannerTask | null>(null);
@@ -314,6 +316,7 @@ export function V3DashboardLayout() {
         <div className="v3-planner">
           <header className="v3-topbar">
             <span className="v3-eyebrow">DAILY PLANNER · PROJECT MOUNTS · RUN CHAT</span><span className="v3-spacer" />
+            <button type="button" className="v3-button v3-button--ghost" onClick={() => setRitualOpen(true)}>☀ 아침 정리</button>
             <button type="button" className="v3-button v3-button--primary" onClick={() => setCreateOpen(true)}>＋ 새 업무</button><ThemeToggle />
           </header>
           {createOpen ? <NewTaskForm projects={projects} initialProjectId={selectedProjectId} pending={createPending} onCreate={(title, projectId) => { void createTask(title, projectId); }} onCancel={() => setCreateOpen(false)} /> : null}
@@ -327,6 +330,7 @@ export function V3DashboardLayout() {
       {workspaceOpen && selectedTask ? (
         <TaskWorkspace task={selectedTask} projectTitle={projectTitle} sessions={sessions} activeSession={activeSession} chatOpen={chatOpen} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} sessionDefaults={sessionDefaults} onReturnToPlanner={returnToPlanner} onCloseChat={() => setChatOpen(false)} onOpenBoard={openBoard} onOpenSession={openSession} onSaveDescription={saveDescription} onPromoteDocument={promoteDocument} onAcknowledgedReview={acknowledgeReview} />
       ) : null}
+      <RitualModal open={ritualOpen} today={today} sessions={sessions} onClose={() => setRitualOpen(false)} onRefresh={() => setRefreshKey((value) => value + 1)} />
       <div className={`v3-toast${toast ? " is-visible" : ""}`} role="status" aria-live="polite">{toast}</div>
     </div>
   );

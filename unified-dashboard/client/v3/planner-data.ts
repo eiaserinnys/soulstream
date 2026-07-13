@@ -219,7 +219,7 @@ async function findMountedProject(
   }
 }
 
-async function listAllPages(api: PageApiClient, starred?: boolean): Promise<PageDto[]> {
+export async function listAllPages(api: PageApiClient, starred?: boolean): Promise<PageDto[]> {
   const pages: PageDto[] = [];
   const visited = new Set<string>();
   let cursor: string | undefined;

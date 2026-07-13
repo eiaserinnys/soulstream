@@ -1,0 +1,213 @@
+.v3-ritual-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: color-mix(in srgb, var(--background) 42%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.v3-ritual-modal {
+  width: min(520px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--glass-border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--lg-card) 94%, var(--background));
+  box-shadow: var(--lg-shadow);
+}
+
+.v3-ritual-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding: 18px 20px;
+}
+
+.v3-ritual-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  font-size: 19px;
+}
+
+.v3-ritual-head h2,
+.v3-ritual-head p {
+  margin: 0;
+}
+
+.v3-ritual-head h2 {
+  font-size: 18px;
+  letter-spacing: -.02em;
+}
+
+.v3-ritual-head p {
+  margin-top: 4px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.v3-ritual-head > button {
+  border: 0;
+  padding: 4px 7px;
+  color: var(--muted-foreground);
+  background: transparent;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.v3-ritual-body {
+  padding: 20px;
+}
+
+.v3-ritual-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.v3-ritual-progress {
+  flex: 1;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.v3-ritual-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+  transition: width .2s ease;
+}
+
+.v3-ritual-progress-row strong {
+  min-width: 42px;
+  color: var(--muted-foreground);
+  text-align: right;
+  font-size: 12px;
+}
+
+.v3-ritual-card {
+  min-height: 190px;
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 22px;
+  background: color-mix(in srgb, var(--card) 76%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 14%, transparent);
+}
+
+.v3-ritual-card > span {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--warning-foreground);
+  background: color-mix(in srgb, var(--warning) 13%, transparent);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.v3-ritual-card h3 {
+  margin: 18px 0 8px;
+  font-size: 21px;
+  letter-spacing: -.025em;
+}
+
+.v3-ritual-card p {
+  min-height: 44px;
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.v3-ritual-card small {
+  display: block;
+  margin-top: 20px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.v3-ritual-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.v3-ritual-actions .v3-button {
+  min-height: 38px;
+}
+
+.v3-ritual-error {
+  margin: 10px 2px 0;
+  color: var(--destructive-foreground);
+  font-size: 12px;
+}
+
+.v3-ritual-message,
+.v3-ritual-done {
+  display: flex;
+  min-height: 270px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+}
+
+.v3-ritual-message p,
+.v3-ritual-done p {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.v3-ritual-done > span {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--primary-foreground);
+  background: var(--primary);
+  font-size: 26px;
+  font-weight: 900;
+}
+
+.v3-ritual-done h3 {
+  margin: 2px 0 0;
+  font-size: 22px;
+}
+
+@media (max-width: 620px) {
+  .v3-ritual-overlay {
+    align-items: end;
+    padding: 0;
+  }
+
+  .v3-ritual-modal {
+    width: 100%;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .v3-ritual-head,
+  .v3-ritual-body {
+    padding: 16px;
+  }
+
+  .v3-ritual-actions {
+    grid-template-columns: 1fr;
+  }
+}
