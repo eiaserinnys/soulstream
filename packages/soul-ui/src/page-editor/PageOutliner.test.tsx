@@ -13,6 +13,7 @@ import {
 
 import {
   createSessionSummaryIndex,
+  PageApiError,
   readPageDocument,
   type ApplyPageOperationsInput,
   type PageApiClient,
@@ -164,13 +165,74 @@ describe("PageOutliner", () => {
     const projected = container!.querySelector<HTMLElement>("[data-block-id='block-1']")!;
     flushSync(() => projected.click());
     dispatchRowKey(projected, "Delete");
+    expect(api.applyOperations).not.toHaveBeenCalled();
+    expect(projected.dataset.deleteConfirmation).toBe("armed");
+    expect(projected.className).toContain("bg-destructive/20");
+    dispatchRowKey(projected, "Delete");
     await settle();
     expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
       operations: [{ op: "delete_block_subtree", block_id: "block-1" }],
     }));
   });
 
-  it("deletes an atomic session_ref with Backspace while it is selected", async () => {
+  it("enters an adjacent session_ref as an atomic selection from text ArrowUp and ArrowDown", async () => {
+    const doc = createPageDoc(3);
+    const blocks = doc.getMap<Y.Map<unknown>>("blocks");
+    blocks.get("block-1")!.set("type", "session_ref");
+    (blocks.get("block-1")!.get("properties") as Y.Map<unknown>).set("sessionId", "session-a");
+    await render(doc, createApi(), vi.fn(), {
+      sessionIndex: createSessionSummaryIndex([{
+        agentSessionId: "session-a",
+        status: "running",
+        eventCount: 0,
+        prompt: "Atomic session",
+      }]),
+    });
+
+    const first = editor("block-0");
+    flushSync(() => first.focus());
+    const arrowEvent = dispatchKey(first, "ArrowDown", first.value.length);
+    expect(arrowEvent.defaultPrevented).toBe(true);
+    await settleFocus();
+
+    const sessionRow = container!.querySelector<HTMLElement>("[data-block-id='block-1']")!;
+    expect(sessionRow.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(sessionRow);
+
+    const last = editor("block-2");
+    flushSync(() => last.focus());
+    const upwardEvent = dispatchKey(last, "ArrowUp", 0);
+    expect(upwardEvent.defaultPrevented).toBe(true);
+    await settleFocus();
+
+    const upwardSessionRow = container!.querySelector<HTMLElement>("[data-block-id='block-1']")!;
+    expect(upwardSessionRow.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(upwardSessionRow);
+  });
+
+  it("renders a contiguous selection as one background without row rings or spacing seams", async () => {
+    const doc = createPageDoc(3);
+    await render(doc, createApi());
+    const firstEditor = editor("block-0");
+    firstEditor.focus();
+
+    dispatchKey(firstEditor, "ArrowDown", firstEditor.value.length, { shiftKey: true });
+
+    const first = container!.querySelector<HTMLElement>("[data-block-id='block-0']")!;
+    const second = container!.querySelector<HTMLElement>("[data-block-id='block-1']")!;
+    expect(first.className).toContain("bg-muted/70");
+    expect(second.className).toContain("bg-muted/70");
+    expect(`${first.className} ${second.className}`).not.toMatch(/(?:^|\s)(?:ring-(?!0)|outline-(?!none)|border-)/);
+    expect(first.className).toContain("rounded-t-lg");
+    expect(first.className).toContain("rounded-b-none");
+    expect(second.className).toContain("rounded-t-none");
+    expect(second.className).toContain("rounded-b-lg");
+    expect(first.style.minHeight).toBe("40px");
+    expect(first.style.paddingTop).toBe("4px");
+    expect(first.style.paddingBottom).toBe("4px");
+  });
+
+  it("requires a visual confirmation before Backspace removes an atomic session_ref", async () => {
     const doc = createPageDoc(1);
     const block = doc.getMap<Y.Map<unknown>>("blocks").get("block-0")!;
     block.set("type", "session_ref");
@@ -186,6 +248,10 @@ describe("PageOutliner", () => {
 
     const row = container!.querySelector<HTMLElement>("[data-block-id='block-0']")!;
     flushSync(() => row.click());
+    dispatchRowKey(row, "Backspace");
+    expect(api.applyOperations).not.toHaveBeenCalled();
+    expect(row.dataset.deleteConfirmation).toBe("armed");
+    expect(row.title).toContain("again");
     dispatchRowKey(row, "Backspace");
     await settle();
 
@@ -980,6 +1046,60 @@ describe("PageOutliner", () => {
       { op: "update_block_text", block_id: "block-1", text: "Blocqueued pastek 1" },
     ]);
     expect(new Set(pending.map(({ input }) => input.idempotencyKey)).size).toBe(3);
+  });
+
+  it("keeps continuous local typing and the latest caret while a structure save is delayed", async () => {
+    const doc = createPageDoc(2);
+    let pendingInput!: ApplyPageOperationsInput;
+    let resolveSave!: (value: PageMutationResponse) => void;
+    const api = createApi({
+      applyOperations: vi.fn(async (_pageId: string, input: ApplyPageOperationsInput) => {
+        pendingInput = input;
+        return await new Promise<PageMutationResponse>((resolve) => { resolveSave = resolve; });
+      }),
+    });
+    await render(doc, api);
+    const second = editor("block-1");
+    second.focus();
+
+    dispatchKey(second, "Tab", 4);
+    await waitFor(() => pendingInput !== undefined);
+    for (const value of ["Block 1a", "Block 1ab", "Block 1abc"]) changeEditor(second, value);
+    expect((doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.get("text") as Y.Text).toString())
+      .toBe("Block 1abc");
+    expect(second.selectionStart).toBe("Block 1abc".length);
+
+    resolveSave(operationResponse(pendingInput));
+    await settle();
+    doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", "block-0");
+    doc.getMap("pageMeta").set("mutationVersion", 4);
+    await rerender(doc, api);
+    await settleFocus();
+
+    const projected = editor("block-1");
+    expect(projected.value).toBe("Block 1abc");
+    expect(projected.selectionStart).toBe("Block 1abc".length);
+    expect(projected.selectionEnd).toBe("Block 1abc".length);
+  });
+
+  it("retries a transient background structure save with the same idempotency key", async () => {
+    const doc = createPageDoc(2);
+    let attempts = 0;
+    const api = createApi({
+      applyOperations: vi.fn(async (_pageId: string, input: ApplyPageOperationsInput) => {
+        attempts += 1;
+        if (attempts === 1) throw new PageApiError("temporary network loss", 0, "network");
+        return operationResponse(input);
+      }),
+    });
+    await render(doc, api);
+
+    dispatchKey(editor("block-1"), "Tab", 4);
+    await waitFor(() => vi.mocked(api.applyOperations).mock.calls.length === 2);
+
+    const calls = vi.mocked(api.applyOperations).mock.calls;
+    expect(calls[0]?.[1].idempotencyKey).toBe(calls[1]?.[1].idempotencyKey);
+    expect(container!.querySelector('[data-editor-feedback="error"]')).toBeNull();
   });
 
   it("keeps an ambiguous API failure visible while later Tab and paste intents continue safely", async () => {

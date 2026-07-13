@@ -8,17 +8,25 @@ import {
 } from "../page";
 import type { SessionSummary } from "../shared/types";
 import { PageBlockEditor, type PageBlockEditorKeyInput } from "./PageBlockEditor";
+import {
+  PAGE_EDITOR_ROW_TOKENS,
+  pageEditorRowStyle,
+  type PageEditorSelectionSegment,
+} from "./page-editor-visual-tokens";
 
 export function PageBlockRow({
   block,
   depth,
   selected,
+  deleteArmed,
+  selectionSegment,
   onKeyInput,
   onPasteInput,
   onCopyInput,
   onCutInput,
   onSelectBlock,
   onSelectAtomicBlock,
+  onLocalInput,
   onBlockKeyInput,
   onEditorHeightChange,
   sessionIndex,
@@ -34,12 +42,15 @@ export function PageBlockRow({
   block: PageDocumentBlock;
   depth: number;
   selected: boolean;
+  deleteArmed: boolean;
+  selectionSegment: PageEditorSelectionSegment | null;
   onKeyInput(input: PageBlockEditorKeyInput, event: React.KeyboardEvent<HTMLTextAreaElement>): void;
   onPasteInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
   onCopyInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
   onCutInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
   onSelectBlock(blockId: string, extend: boolean): void;
   onSelectAtomicBlock(blockId: string, extend: boolean, element: HTMLDivElement): void;
+  onLocalInput(): void;
   onBlockKeyInput(block: PageDocumentBlock, event: React.KeyboardEvent<HTMLDivElement>): void;
   onEditorHeightChange(blockId: string): void;
   sessionIndex: SessionSummaryIndex;
@@ -72,11 +83,17 @@ export function PageBlockRow({
         data-block-id={block.id}
         data-outline-depth={depth}
         data-block-type="session_ref"
+        data-delete-confirmation={deleteArmed ? "armed" : undefined}
         tabIndex={selected ? 0 : -1}
-        className={`flex min-h-10 items-start gap-2 rounded-lg px-2 py-1 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary ${
-          selected ? "bg-primary/12 ring-1 ring-primary/40" : "hover:bg-glass-highlight/50"
+        title={deleteArmed ? "Press Delete or Backspace again to remove this session reference" : undefined}
+        className={`${PAGE_EDITOR_ROW_TOKENS.base} outline-none ${
+          deleteArmed
+            ? `${PAGE_EDITOR_ROW_TOKENS.deleteArmed} rounded-lg`
+            : selected && selectionSegment
+            ? `${PAGE_EDITOR_ROW_TOKENS.selected} ${PAGE_EDITOR_ROW_TOKENS.selectionRadius[selectionSegment]}`
+            : PAGE_EDITOR_ROW_TOKENS.idle
         }`}
-        style={{ paddingInlineStart: `${8 + depth * 24}px` }}
+        style={pageEditorRowStyle(depth)}
         onClick={(event) => onSelectAtomicBlock(block.id, event.shiftKey, event.currentTarget)}
         onDoubleClick={() => {
           if (resolution.kind === "ready") onOpenSession?.(resolution.summary);
@@ -85,7 +102,7 @@ export function PageBlockRow({
           if (event.target === event.currentTarget) onBlockKeyInput(block, event);
         }}
       >
-        <span aria-hidden="true" className="mt-3 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
+        <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 self-center rounded-full bg-primary/70" />
         <SessionRefBlock
           resolution={resolution}
           lensState={sessionLensState(
@@ -111,15 +128,17 @@ export function PageBlockRow({
       data-block-id={block.id}
       data-outline-depth={depth}
       tabIndex={selected ? 0 : -1}
-      className={`flex min-h-10 items-start gap-2 rounded-lg px-2 py-1 transition-colors ${
-        selected ? "bg-primary/12 ring-1 ring-primary/30" : "hover:bg-glass-highlight/50"
+      className={`${PAGE_EDITOR_ROW_TOKENS.base} ${
+        selected && selectionSegment
+          ? `${PAGE_EDITOR_ROW_TOKENS.selected} ${PAGE_EDITOR_ROW_TOKENS.selectionRadius[selectionSegment]}`
+          : PAGE_EDITOR_ROW_TOKENS.idle
       }`}
-      style={{ paddingInlineStart: `${8 + depth * 24}px` }}
+      style={pageEditorRowStyle(depth)}
       onKeyDown={(event) => {
         if (event.target === event.currentTarget) onBlockKeyInput(block, event);
       }}
     >
-      <span aria-hidden="true" className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/70" />
+      <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 self-center rounded-full bg-muted-foreground/70" />
       <PageBlockEditor
         block={block}
         onKeyInput={onKeyInput}
@@ -127,6 +146,7 @@ export function PageBlockRow({
         onCopyInput={onCopyInput}
         onCutInput={onCutInput}
         onSelectBlock={onSelectBlock}
+        onLocalInput={onLocalInput}
         onHeightChange={onEditorHeightChange}
         apiClient={apiClient}
         sessionIndex={sessionIndex}

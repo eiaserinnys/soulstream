@@ -4,9 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { PageApiClient, PageDocumentBlock, PageYjsClient } from "@seosoyoung/soul-ui/page";
 
-vi.mock("@seosoyoung/soul-ui/page-editor", async () => {
+vi.mock("@seosoyoung/soul-ui/page-editor", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@seosoyoung/soul-ui/page-editor")>();
   const { createElement: element } = await import("react");
   return {
+    ...actual,
     PageOutliner: ({ blocks }: { blocks: readonly PageDocumentBlock[] }) => element(
       "div",
       { "aria-label": "Page outline editor" },

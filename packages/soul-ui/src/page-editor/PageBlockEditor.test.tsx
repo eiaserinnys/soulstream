@@ -39,6 +39,7 @@ describe("PageBlockEditor auto height", () => {
         onCopyInput={vi.fn()}
         onCutInput={vi.fn()}
         onSelectBlock={vi.fn()}
+        onLocalInput={vi.fn()}
         onHeightChange={onHeightChange}
         apiClient={apiClient()}
         sessionIndex={new Map()}
