@@ -27,12 +27,35 @@ export interface PageYjsPersistenceRepository {
 }
 
 export interface PageYjsPersistence {
+  updateCollector: Extension;
   database: Database;
-  updateLog: Extension;
+  getDiagnostics(): PageYjsPersistenceDiagnostics;
 }
 
 export interface PageYjsPersistenceCoordinator {
   runExclusive<T>(pageId: string, callback: () => Promise<T>): Promise<T>;
+}
+
+export interface PageYjsPersistenceDiagnostics {
+  activeStores: number;
+  failedStores: number;
+  pendingUpdateBytes: number;
+  pendingUpdateDocuments: number;
+  retryAttempts: number;
+}
+
+export interface PageYjsPersistenceOptions {
+  maxAttempts?: number;
+  onFailure?: (input: {
+    documentName: string;
+    attempts: number;
+    error: unknown;
+  }) => void;
+  onRetry?: (input: {
+    documentName: string;
+    attempt: number;
+    error: unknown;
+  }) => void;
 }
 
 export class PageYjsSnapshotMissingError extends Error {
@@ -47,55 +70,121 @@ export class PageYjsSnapshotMissingError extends Error {
 export function createPageYjsPersistence(
   repository: PageYjsPersistenceRepository,
   coordinator?: PageYjsPersistenceCoordinator,
+  options: PageYjsPersistenceOptions = {},
 ): PageYjsPersistence {
   const runExclusive = async <T>(pageId: string, callback: () => Promise<T>): Promise<T> =>
     coordinator ? await coordinator.runExclusive(pageId, callback) : await callback();
+  const maxAttempts = options.maxAttempts ?? 3;
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1) {
+    throw new Error("Page Yjs persistence maxAttempts must be a positive integer");
+  }
+  let activeStores = 0;
+  let failedStores = 0;
+  let retryAttempts = 0;
+  const pendingUpdates = new Map<string, Uint8Array>();
+
+  const mergePendingUpdate = (documentName: string, update: Uint8Array): void => {
+    const current = pendingUpdates.get(documentName);
+    pendingUpdates.set(
+      documentName,
+      current ? Y.mergeUpdates([current, update]) : update.slice(),
+    );
+  };
+
+  const takePendingUpdate = (documentName: string): Uint8Array | undefined => {
+    const update = pendingUpdates.get(documentName);
+    pendingUpdates.delete(documentName);
+    return update;
+  };
+
   const isPersistedOperation = async (value: unknown): Promise<boolean> =>
     typeof value === "string" && repository.hasPageOperation !== undefined &&
     await repository.hasPageOperation(value);
-  return {
-    database: new Database({
-      fetch: async (payload: fetchPayload) => {
-        const pageId = requirePageDocumentName(payload.documentName);
-        const snapshot = await repository.getPageYjsSnapshot(payload.documentName);
-        if (!snapshot) throw new PageYjsSnapshotMissingError(pageId);
-        return snapshot;
-      },
-      store: async (payload: storePayload) => {
-        const pageId = requirePageDocumentName(payload.documentName);
-        const context = payload.context as {
-          pageOperationId?: unknown;
-          skipPagePersistence?: unknown;
-        } | undefined;
-        if (context?.skipPagePersistence === true) return;
-        const operationId = context?.pageOperationId;
-        if (typeof operationId === "string") return;
-        await runExclusive(pageId, async () => {
-          const doc = new Y.Doc();
-          Y.applyUpdate(doc, payload.state);
-          await repository.storePageYjsState({
-            documentName: payload.documentName,
-            snapshot: payload.state,
-            replica: readPageYDocReplica(pageId, doc),
+
+  const storeWithRetry = async (input: StorePageYjsStateInput): Promise<boolean> => {
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        await repository.storePageYjsState(input);
+        return true;
+      } catch (error) {
+        if (attempt === maxAttempts) {
+          failedStores += 1;
+          options.onFailure?.({
+            documentName: input.documentName,
+            attempts: maxAttempts,
+            error,
           });
-        });
-      },
-    }),
-    updateLog: {
-      extensionName: "soulstream-page-yjs-update-log",
-      async onChange(payload: onChangePayload) {
-        const pageId = requirePageDocumentName(payload.documentName);
-        if (await isPersistedOperation(payload.transactionOrigin)) return;
-        await runExclusive(pageId, async () => {
-          await repository.storePageYjsState({
-            documentName: payload.documentName,
-            snapshot: Y.encodeStateAsUpdate(payload.document),
-            update: payload.update,
-            replica: readPageYDocReplica(pageId, payload.document),
-          });
-        });
-      },
+          return false;
+        }
+        retryAttempts += 1;
+        options.onRetry?.({ documentName: input.documentName, attempt, error });
+      }
+    }
+    return false;
+  };
+
+  const database = new Database({
+    fetch: async (payload: fetchPayload) => {
+      const pageId = requirePageDocumentName(payload.documentName);
+      const snapshot = await repository.getPageYjsSnapshot(payload.documentName);
+      if (!snapshot) throw new PageYjsSnapshotMissingError(pageId);
+      const pending = pendingUpdates.get(payload.documentName);
+      return pending ? Y.mergeUpdates([snapshot, pending]) : snapshot;
     },
+    store: async (payload: storePayload) => {
+      const pageId = requirePageDocumentName(payload.documentName);
+      const context = payload.context as {
+        pageLockHeld?: unknown;
+        skipPagePersistence?: unknown;
+      } | undefined;
+      const persistedOperation = await isPersistedOperation(payload.transactionOrigin);
+      const maySkipStore = context?.skipPagePersistence === true || persistedOperation;
+      const update = takePendingUpdate(payload.documentName);
+      if (maySkipStore && update === undefined) return;
+      const snapshot = Y.encodeStateAsUpdate(payload.document);
+      const replica = readPageYDocReplica(pageId, payload.document);
+      activeStores += 1;
+      try {
+        const persist = async () => await storeWithRetry({
+          documentName: payload.documentName,
+          snapshot,
+          ...(update === undefined ? {} : { update }),
+          replica,
+        });
+        const stored = persistedOperation || context?.pageLockHeld === true
+          ? await persist()
+          : await runExclusive(pageId, persist);
+        if (!stored && update !== undefined) {
+          mergePendingUpdate(payload.documentName, update);
+        }
+      } finally {
+        activeStores -= 1;
+      }
+    },
+  });
+
+  const updateCollector: Extension = {
+    extensionName: "soulstream-page-yjs-update-collector",
+    async onChange(payload: onChangePayload) {
+      requirePageDocumentName(payload.documentName);
+      if (typeof payload.transactionOrigin === "string") return;
+      mergePendingUpdate(payload.documentName, payload.update);
+    },
+  };
+
+  return {
+    updateCollector,
+    database,
+    getDiagnostics: () => ({
+      activeStores,
+      failedStores,
+      pendingUpdateBytes: [...pendingUpdates.values()].reduce(
+        (total, update) => total + update.byteLength,
+        0,
+      ),
+      pendingUpdateDocuments: pendingUpdates.size,
+      retryAttempts,
+    }),
   };
 }
 
