@@ -75,15 +75,16 @@ describe("live user preferences repository", () => {
     expect(sql).toContain(
       "RETURNING email, prefs, background_blob, background_mime, updated_at",
     );
+    expect(harness.json).toHaveBeenCalledWith(prefs);
     expect(harness.calls[0]?.values).toEqual([
       "user@example.com",
-      JSON.stringify(prefs),
+      prefs,
       false,
       false,
     ]);
     expect(harness.calls[1]?.values).toEqual([
       "user@example.com",
-      JSON.stringify(prefs),
+      prefs,
       true,
       true,
     ]);
@@ -122,9 +123,10 @@ describe("live user preferences repository", () => {
     expect(sql).toContain(
       "RETURNING email, prefs, background_blob, background_mime, updated_at",
     );
+    expect(harness.json).toHaveBeenCalledWith(prefs);
     expect(harness.calls[0]?.values).toEqual([
       "user@example.com",
-      JSON.stringify(prefs),
+      prefs,
       blob,
       "image/png",
     ]);
@@ -132,9 +134,12 @@ describe("live user preferences repository", () => {
 
   it("maps a Postgres foreign-key violation to the route contract", async () => {
     const error = Object.assign(new Error("missing user"), { code: "23503" });
-    const sql = vi.fn(async () => {
-      throw error;
-    }) as unknown as LivePostgresSql;
+    const sql = Object.assign(
+      vi.fn(async () => {
+        throw error;
+      }),
+      { json: (value: unknown) => value },
+    ) as unknown as LivePostgresSql;
     const repository = createLiveUserPreferencesRepository({
       sqlResolver: resolverFor(sql),
     });
@@ -149,11 +154,13 @@ describe("live user preferences repository", () => {
 
 function createSqlHarness(results: readonly (readonly Record<string, unknown>[])[]) {
   const calls: SqlCall[] = [];
-  const sql = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
+  const query = vi.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
     calls.push({ text: strings.join("?"), values });
     return results[calls.length - 1] ?? [];
-  }) as unknown as LivePostgresSql;
-  return { sql, calls };
+  });
+  const json = vi.fn((value: unknown) => value);
+  const sql = Object.assign(query, { json }) as unknown as LivePostgresSql;
+  return { sql, calls, json };
 }
 
 function resolverFor(sql: LivePostgresSql) {

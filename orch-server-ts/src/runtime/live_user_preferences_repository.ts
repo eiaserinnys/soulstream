@@ -23,10 +23,11 @@ export function createLiveUserPreferencesRepository(
     },
     async put(email, prefs, putOptions) {
       try {
+        const sql = await options.sqlResolver.resolveSql();
         const clearBackground = putOptions.clearBackground;
-        const rows = await (await options.sqlResolver.resolveSql())`
+        const rows = await sql`
           INSERT INTO user_preferences (email, prefs, background_blob, background_mime, updated_at)
-          VALUES (${email}, ${JSON.stringify(prefs)}::jsonb, NULL, NULL, NOW())
+          VALUES (${email}, ${sql.json(prefs)}::jsonb, NULL, NULL, NOW())
           ON CONFLICT (email) DO UPDATE SET
             prefs = EXCLUDED.prefs,
             background_blob = CASE
@@ -54,9 +55,10 @@ export function createLiveUserPreferencesRepository(
     },
     async putBackground(email, prefs, input) {
       try {
-        const rows = await (await options.sqlResolver.resolveSql())`
+        const sql = await options.sqlResolver.resolveSql();
+        const rows = await sql`
           INSERT INTO user_preferences (email, prefs, background_blob, background_mime, updated_at)
-          VALUES (${email}, ${JSON.stringify(prefs)}::jsonb, ${input.blob}, ${input.mime}, NOW())
+          VALUES (${email}, ${sql.json(prefs)}::jsonb, ${input.blob}, ${input.mime}, NOW())
           ON CONFLICT (email) DO UPDATE SET
             prefs = EXCLUDED.prefs,
             background_blob = EXCLUDED.background_blob,

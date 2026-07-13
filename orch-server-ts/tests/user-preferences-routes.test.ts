@@ -127,14 +127,14 @@ describe("user preferences route harness", () => {
     const { app } = createHarness({
       getRow: {
         email: "user@example.com",
-        prefs: {
+        prefs: JSON.stringify({
           appearance: "dark",
           wallpaper: {
             mode: "photo",
             customImage: "https://example.com/old.png",
           },
           glass: { enabled: false },
-        },
+        }),
         hasBackground: true,
         updatedAt: "2026-07-09T03:05:06+00:00",
       },
@@ -185,6 +185,7 @@ describe("user preferences route harness", () => {
 
     expect(response.statusCode).toBe(200);
     expect(calls).toEqual([
+      ["get", "user@example.com"],
       [
         "put",
         "user@example.com",
@@ -207,6 +208,125 @@ describe("user preferences route harness", () => {
       appearance: "dark",
       wallpaper: { mode: "metal" },
       hasBackground: false,
+    });
+
+    await app.close();
+  });
+
+  it("preserves stored preferences omitted from a partial PUT payload", async () => {
+    const { app, calls } = createHarness({
+      getRow: {
+        email: "user@example.com",
+        prefs: JSON.stringify({
+          appearance: "dark",
+          wallpaper: {
+            mode: "photo",
+            customImage: "/api/user/background?v=1",
+          },
+          glass: {
+            enabled: false,
+            refraction: 44,
+            blur: 3,
+            chromatic: 1.25,
+            specular: 0.5,
+            tint: 0.2,
+          },
+        }),
+        hasBackground: true,
+      },
+    });
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/user/preferences",
+      payload: { appearance: "light" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(calls).toEqual([
+      ["get", "user@example.com"],
+      [
+        "put",
+        "user@example.com",
+        {
+          appearance: "light",
+          wallpaper: {
+            mode: "photo",
+            customImage: "/api/user/background?v=1",
+          },
+          glass: {
+            enabled: false,
+            refraction: 44,
+            blur: 3,
+            chromatic: 1.25,
+            specular: 0.5,
+            tint: 0.2,
+          },
+        },
+        { clearBackground: false },
+      ],
+    ]);
+    expect(response.json()).toMatchObject({
+      appearance: "light",
+      wallpaper: {
+        mode: "photo",
+        customImage: "/api/user/background?v=1",
+      },
+      hasBackground: false,
+    });
+
+    await app.close();
+  });
+
+  it("preserves appearance and glass settings when only wallpaper changes", async () => {
+    const { app, calls } = createHarness({
+      getRow: {
+        email: "user@example.com",
+        prefs: {
+          appearance: "dark",
+          wallpaper: { mode: "metal" },
+          glass: {
+            enabled: false,
+            refraction: 60,
+            blur: 2,
+            chromatic: 0.4,
+            specular: 0.7,
+            tint: 0.3,
+          },
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/api/user/preferences",
+      payload: { wallpaper: { mode: "plain" } },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(calls).toEqual([
+      ["get", "user@example.com"],
+      [
+        "put",
+        "user@example.com",
+        {
+          appearance: "dark",
+          wallpaper: { mode: "plain" },
+          glass: {
+            enabled: false,
+            refraction: 60,
+            blur: 2,
+            chromatic: 0.4,
+            specular: 0.7,
+            tint: 0.3,
+          },
+        },
+        { clearBackground: false },
+      ],
+    ]);
+    expect(response.json()).toMatchObject({
+      appearance: "dark",
+      wallpaper: { mode: "plain" },
     });
 
     await app.close();
