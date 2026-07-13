@@ -35,9 +35,17 @@ import {
   ProjectPlannerView,
   type PlannerLoadState,
 } from "./PlannerViews";
+import { MobilePlannerTabs, useMobilePlannerMode } from "./MobilePlannerTabs";
 import { RitualModal } from "./RitualModal";
 import { TaskWorkspace } from "./TaskWorkspace";
 import { V3Navigation, type PlannerDateNavItem } from "./V3Navigation";
+import {
+  reduceMobilePlannerEscape,
+  selectMobilePlannerTab,
+  type MobilePlannerState,
+  type MobilePlannerTab,
+  type MobilePlannerTaskOption,
+} from "./mobile-planner-state";
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import {
   createPlannerDataDependencies,
@@ -59,6 +67,7 @@ import {
   saveTaskDescription,
   type PageSessionDefaults,
 } from "./task-workspace-api";
+import { buildRunTree, type RunTreeNode } from "./task-workspace-model";
 import "./v3-planner.css";
 import "./v3-planner-surfaces.css";
 import "./v3-task-workspace.css";
@@ -84,6 +93,7 @@ export function V3DashboardLayout() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [ritualOpen, setRitualOpen] = useState(false);
+  const [mobileTab, setMobileTab] = useState<MobilePlannerTab>("today");
   const [createPending, setCreatePending] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedTaskSnapshot, setSelectedTaskSnapshot] = useState<PlannerTask | null>(null);
@@ -100,6 +110,7 @@ export function V3DashboardLayout() {
   useUserPreferencesSync(user?.email ?? null);
   useReadPositionSync();
   useNodes();
+  const mobileMode = useMobilePlannerMode();
 
   const catalog = useDashboardStore((state) => state.catalog);
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
@@ -154,8 +165,15 @@ export function V3DashboardLayout() {
     return () => { active = false; };
   }, [api, dataDependencies, refreshKey, selectedProject]);
 
-  const currentTasks = [...(daily.data?.tasks ?? []), ...(project.data?.tasks ?? [])];
+  const currentTasks = useMemo(
+    () => [...(daily.data?.tasks ?? []), ...(project.data?.tasks ?? [])],
+    [daily.data?.tasks, project.data?.tasks],
+  );
   const selectedTask = currentTasks.find((task) => task.page.id === selectedTaskId) ?? selectedTaskSnapshot;
+  const mobileTaskOptions = useMemo(
+    () => buildMobileTaskOptions(currentTasks, sessions),
+    [currentTasks, sessions],
+  );
   useEffect(() => {
     if (!workspaceOpen || !selectedTaskId) {
       setSessionDefaults(null);
@@ -179,7 +197,39 @@ export function V3DashboardLayout() {
     ? `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSession.nodeId)}`
     : undefined;
 
+  const applyMobileState = useCallback((next: MobilePlannerState) => {
+    setMobileTab(next.activeTab);
+    setWorkspaceOpen(next.workspaceOpen);
+    setChatOpen(next.chatOpen);
+    if (next.selectedTaskId !== selectedTaskId) {
+      const task = currentTasks.find((candidate) => candidate.page.id === next.selectedTaskId) ?? null;
+      setSelectedTaskId(task?.page.id ?? null);
+      if (task) setSelectedTaskSnapshot(task);
+    }
+    if (next.selectedRunId !== activeSessionKey) {
+      const session = sessions.find((candidate) => candidate.agentSessionId === next.selectedRunId) ?? null;
+      setActiveSessionSummary(session);
+      setActiveSession(session?.agentSessionId ?? null);
+      if (session) setActiveTab("chat");
+    }
+    if (next.activeTab === "today") {
+      setSelectedProjectId(null);
+      setSelectedDate(today);
+    }
+  }, [activeSessionKey, currentTasks, selectedTaskId, sessions, setActiveSession, setActiveSessionSummary, setActiveTab, today]);
+
+  const switchMobileTab = useCallback((target: MobilePlannerTab) => {
+    applyMobileState(selectMobilePlannerTab({
+      activeTab: mobileTab,
+      selectedTaskId,
+      selectedRunId: activeSessionKey,
+      workspaceOpen,
+      chatOpen,
+    }, target, mobileTaskOptions));
+  }, [activeSessionKey, applyMobileState, chatOpen, mobileTab, mobileTaskOptions, selectedTaskId, workspaceOpen]);
+
   const returnToPlanner = useCallback(() => {
+    setMobileTab("today");
     setChatOpen(false);
     setWorkspaceOpen(false);
     setSelectedProjectId(null);
@@ -198,19 +248,30 @@ export function V3DashboardLayout() {
       if (event.key !== "Escape") return;
       if (createOpen) setCreateOpen(false);
       else if (newDocumentOpen) setNewDocumentOpen(false);
+      else if (mobileMode && mobileTab === "chat" && chatOpen) {
+        event.preventDefault();
+        applyMobileState(reduceMobilePlannerEscape({
+          activeTab: mobileTab,
+          selectedTaskId,
+          selectedRunId: activeSessionKey,
+          workspaceOpen,
+          chatOpen,
+        }));
+      }
       else if (workspaceOpen) returnToPlanner();
       else if (selectedProjectId) setSelectedProjectId(null);
       else if (selectedDate !== today) setSelectedDate(today);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [createOpen, newDocumentOpen, returnToPlanner, selectedDate, selectedProjectId, today, workspaceOpen]);
+  }, [activeSessionKey, applyMobileState, chatOpen, createOpen, mobileMode, mobileTab, newDocumentOpen, returnToPlanner, selectedDate, selectedProjectId, selectedTaskId, today, workspaceOpen]);
 
   const openTask = (task: PlannerTask) => {
     setSelectedTaskId(task.page.id);
     setSelectedTaskSnapshot(task);
     setWorkspaceOpen(true);
     setChatOpen(false);
+    if (mobileMode) setMobileTab("task");
   };
   const openSession = useCallback((session: SessionSummary) => {
     setActiveSessionSummary(session);
@@ -218,7 +279,8 @@ export function V3DashboardLayout() {
     setActiveTab("chat");
     setWorkspaceOpen(true);
     setChatOpen(true);
-  }, [setActiveSession, setActiveSessionSummary, setActiveTab]);
+    if (mobileMode && selectedTaskId) setMobileTab("chat");
+  }, [mobileMode, selectedTaskId, setActiveSession, setActiveSessionSummary, setActiveTab]);
 
   const createTask = async (title: string, projectId: string) => {
     const projectPage = projects.find((item) => item.id === projectId);
@@ -309,14 +371,14 @@ export function V3DashboardLayout() {
   const projectTitle = projects.find((item) => item.id === selectedTask?.projectPageId)?.title ?? "미분류";
 
   return (
-    <div className="v3-shell" style={shellStyle}>
+    <div className="v3-shell" data-mobile-tab={mobileTab} style={shellStyle}>
       <WallpaperLayer />
       <V3Navigation dates={dates} selectedDate={selectedDate} projects={projects} selectedProjectId={selectedProjectId} onSelectDate={(date) => { setSelectedProjectId(null); setSelectedDate(date); }} onSelectProject={(projectId) => { setSelectedProjectId(projectId); setNewDocumentOpen(false); }} />
       <main className="v3-main">
         <div className="v3-planner">
           <header className="v3-topbar">
             <span className="v3-eyebrow">DAILY PLANNER · PROJECT MOUNTS · RUN CHAT</span><span className="v3-spacer" />
-            <button type="button" className="v3-button v3-button--ghost" onClick={() => setRitualOpen(true)}>☀ 아침 정리</button>
+            <button type="button" className="v3-button v3-button--ghost v3-ritual-trigger" onClick={() => setRitualOpen(true)}>☀ 아침 정리</button>
             <button type="button" className="v3-button v3-button--primary" onClick={() => setCreateOpen(true)}>＋ 새 업무</button><ThemeToggle />
           </header>
           {createOpen ? <NewTaskForm projects={projects} initialProjectId={selectedProjectId} pending={createPending} onCreate={(title, projectId) => { void createTask(title, projectId); }} onCancel={() => setCreateOpen(false)} /> : null}
@@ -328,8 +390,9 @@ export function V3DashboardLayout() {
         </div>
       </main>
       {workspaceOpen && selectedTask ? (
-        <TaskWorkspace task={selectedTask} projectTitle={projectTitle} sessions={sessions} activeSession={activeSession} chatOpen={chatOpen} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} sessionDefaults={sessionDefaults} onReturnToPlanner={returnToPlanner} onCloseChat={() => setChatOpen(false)} onOpenBoard={openBoard} onOpenSession={openSession} onSaveDescription={saveDescription} onPromoteDocument={promoteDocument} onAcknowledgedReview={acknowledgeReview} />
+        <TaskWorkspace task={selectedTask} projectTitle={projectTitle} sessions={sessions} activeSession={activeSession} chatOpen={chatOpen} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} sessionDefaults={sessionDefaults} mobileMode={mobileMode} mobileTab={mobileTab} onReturnToPlanner={returnToPlanner} onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }} onOpenBoard={openBoard} onOpenSession={openSession} onSaveDescription={saveDescription} onPromoteDocument={promoteDocument} onAcknowledgedReview={acknowledgeReview} />
       ) : null}
+      <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
       <RitualModal open={ritualOpen} today={today} sessions={sessions} onClose={() => setRitualOpen(false)} onRefresh={() => setRefreshKey((value) => value + 1)} />
       <div className={`v3-toast${toast ? " is-visible" : ""}`} role="status" aria-live="polite">{toast}</div>
     </div>
@@ -351,4 +414,25 @@ function dateKey(value: Date): string {
 
 function errorText(error: unknown): string {
   return error instanceof Error && error.message ? error.message : String(error);
+}
+
+function buildMobileTaskOptions(
+  tasks: readonly PlannerTask[],
+  sessions: readonly SessionSummary[],
+): MobilePlannerTaskOption[] {
+  const seen = new Set<string>();
+  return tasks.flatMap((task) => {
+    if (seen.has(task.page.id)) return [];
+    seen.add(task.page.id);
+    const roots = buildRunTree(task.sessionIds, sessions);
+    return [{
+      taskId: task.page.id,
+      runIds: roots.flatMap(flattenRunIds),
+      latestRunId: roots[0]?.session.agentSessionId ?? null,
+    }];
+  });
+}
+
+function flattenRunIds(node: RunTreeNode): string[] {
+  return [node.session.agentSessionId, ...node.children.flatMap(flattenRunIds)];
 }
