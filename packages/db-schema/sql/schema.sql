@@ -3148,6 +3148,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_pages_daily_date
     ON pages(daily_date) WHERE daily_date IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_pages_active_updated
     ON pages(archived, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pages_title_prefix
+    ON pages (title_key text_pattern_ops, id)
+    WHERE archived = FALSE;
 
 CREATE TABLE IF NOT EXISTS blocks (
     id                 TEXT PRIMARY KEY,
@@ -3222,6 +3225,8 @@ CREATE INDEX IF NOT EXISTS idx_blocks_tree
     ON blocks(page_id, parent_id, position_key, id);
 CREATE INDEX IF NOT EXISTS idx_blocks_type
     ON blocks(page_id, block_type);
+CREATE INDEX IF NOT EXISTS idx_blocks_text_prefix
+    ON blocks ((lower(text_plain)) text_pattern_ops, id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_blocks_primary_session_ref
     ON blocks ((properties ->> 'sessionId'))

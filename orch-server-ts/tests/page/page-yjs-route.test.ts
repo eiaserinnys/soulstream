@@ -354,6 +354,10 @@ class MemoryPageRepository {
   async findPageIdByDailyDate(): Promise<null> { return null; }
   async listPages() { return { items: [], next_cursor: null }; }
   async getPageBacklinks() { return { items: [], next_cursor: null }; }
+  async searchBrowserPages() { return { items: [] }; }
+  async searchBrowserBlocks() { return { items: [] }; }
+  async getBrowserBlock() { return null; }
+  async getBrowserBacklinks() { return { items: [], nextCursor: null }; }
 
   async commitPageMutation(): Promise<never> {
     throw new Error("not used in websocket route tests");

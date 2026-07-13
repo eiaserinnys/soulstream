@@ -1,6 +1,16 @@
 import { Buffer } from "node:buffer";
 
-import type { BacklinkDto, PageDto, PageLinkKind, PageListDto } from "@soulstream/page-model";
+import type {
+  BacklinkDto,
+  BrowserBacklinkDto,
+  BrowserBacklinkPageDto,
+  BrowserBlockDto,
+  BrowserBlockSearchDto,
+  BrowserPageSearchDto,
+  PageDto,
+  PageLinkKind,
+  PageListDto,
+} from "@soulstream/page-model";
 
 export interface PageReadQuerySql {
   <T extends readonly Record<string, unknown>[] = readonly Record<string, unknown>[]>(
@@ -32,6 +42,36 @@ export interface PageBacklinkPage {
 
 export class PageListCursorError extends Error {
   readonly code = "PAGE_LIST_CURSOR_INVALID";
+}
+
+export class PageBrowserBacklinkCursorError extends Error {
+  readonly code = "PAGE_BROWSER_BACKLINK_CURSOR_INVALID";
+}
+
+interface BrowserBlockRow extends Record<string, unknown> {
+  id: string;
+  page_id: string;
+  page_title: string;
+  parent_id: string | null;
+  position_key: string;
+  block_type: string;
+  text_plain: string;
+  properties: Record<string, unknown>;
+  collapsed: boolean;
+}
+
+interface BrowserBacklinkRow extends Record<string, unknown> {
+  id: string;
+  source_page_id: string;
+  source_page_title: string;
+  source_block_id: string;
+  source_text_plain: string;
+  link_kind: PageLinkKind;
+  target_page_id: string | null;
+  target_block_id: string | null;
+  source_start: number;
+  source_end: number;
+  created_at: Date;
 }
 
 export async function listPages(
@@ -87,6 +127,111 @@ export async function findPageIdByDailyDate(
     SELECT id FROM pages WHERE daily_date = ${date}::date LIMIT 1
   `;
   return rows[0]?.id ?? null;
+}
+
+export async function searchBrowserPages(
+  sql: PageReadQuerySql,
+  input: { query: string; limit: number },
+): Promise<BrowserPageSearchDto> {
+  const pattern = escapeLikePrefix(input.query);
+  const rows = await sql<readonly { page_id: string; title: string }[]>`
+    SELECT id AS page_id, title
+    FROM pages
+    WHERE archived = FALSE
+      AND title_key LIKE ${pattern} ESCAPE '\\'
+    ORDER BY title_key ASC, id ASC
+    LIMIT ${input.limit}
+  `;
+  return { items: rows.map((row) => ({ pageId: row.page_id, title: row.title })) };
+}
+
+export async function searchBrowserBlocks(
+  sql: PageReadQuerySql,
+  input: { query: string; limit: number },
+): Promise<BrowserBlockSearchDto> {
+  const pattern = escapeLikePrefix(input.query);
+  const rows = await sql<readonly {
+    block_id: string;
+    page_id: string;
+    page_title: string;
+    text_plain: string;
+  }[]>`
+    SELECT block.id AS block_id, block.page_id,
+           page.title AS page_title, block.text_plain
+    FROM blocks block
+    JOIN pages page ON page.id = block.page_id
+    WHERE page.archived = FALSE
+      AND lower(block.text_plain) LIKE ${pattern} ESCAPE '\\'
+    ORDER BY lower(block.text_plain) ASC, block.id ASC
+    LIMIT ${input.limit}
+  `;
+  return {
+    items: rows.map((row) => ({
+      blockId: row.block_id,
+      pageId: row.page_id,
+      pageTitle: row.page_title,
+      textPreview: preview(row.text_plain),
+    })),
+  };
+}
+
+export async function getBrowserBlock(
+  sql: PageReadQuerySql,
+  blockId: string,
+): Promise<BrowserBlockDto | null> {
+  const rows = await sql<readonly BrowserBlockRow[]>`
+    SELECT block.id, block.page_id, page.title AS page_title,
+           block.parent_id, block.position_key, block.block_type,
+           block.text_plain, block.properties, block.collapsed
+    FROM blocks block
+    JOIN pages page ON page.id = block.page_id
+    WHERE block.id = ${blockId}
+    LIMIT 1
+  `;
+  const row = rows[0];
+  return row ? browserBlockDto(row) : null;
+}
+
+export async function getBrowserBacklinks(
+  sql: PageReadQuerySql,
+  input: {
+    pageId: string;
+    kinds: readonly PageLinkKind[];
+    cursor?: string;
+    limit: number;
+  },
+): Promise<BrowserBacklinkPageDto> {
+  const kinds = canonicalKinds(input.kinds);
+  const cursor = input.cursor ? decodeBrowserBacklinkCursor(input.cursor, kinds) : null;
+  const cursorDate = cursor?.createdAt ?? null;
+  const cursorId = cursor?.id ?? "";
+  const rows = await sql<readonly BrowserBacklinkRow[]>`
+    SELECT link.id, source.page_id AS source_page_id,
+           source_page.title AS source_page_title,
+           link.source_block_id, source.text_plain AS source_text_plain,
+           link.link_kind, link.target_page_id, link.target_block_id,
+           link.source_start, link.source_end, link.created_at
+    FROM block_links link
+    JOIN blocks source ON source.id = link.source_block_id
+    JOIN pages source_page ON source_page.id = source.page_id
+    LEFT JOIN blocks target ON target.id = link.target_block_id
+    WHERE (link.target_page_id = ${input.pageId} OR target.page_id = ${input.pageId})
+      AND link.link_kind = ANY(${sql.array(kinds)}::text[])
+      AND (
+        ${cursorDate}::timestamptz IS NULL
+        OR (link.created_at, link.id) > (${cursorDate}::timestamptz, ${cursorId})
+      )
+    ORDER BY link.created_at ASC, link.id ASC
+    LIMIT ${input.limit + 1}
+  `;
+  const visible = rows.slice(0, input.limit);
+  const last = visible.at(-1);
+  return {
+    items: visible.map(browserBacklinkDto),
+    nextCursor: rows.length > input.limit && last
+      ? encodeBrowserBacklinkCursor(last.created_at, last.id, kinds)
+      : null,
+  };
 }
 
 export async function getPageBacklinks(
@@ -147,6 +292,83 @@ function decodeBacklinkCursor(cursor: string): { createdAt: string; id: string }
     return { createdAt: parsed[0], id: parsed[1] };
   } catch {
     throw new Error("invalid backlink cursor");
+  }
+}
+
+function escapeLikePrefix(query: string): string {
+  return `${query.toLowerCase().replace(/[\\%_]/g, "\\$&")}%`;
+}
+
+function preview(text: string): string {
+  return text.replace(/\s+/g, " ").trim().slice(0, 160);
+}
+
+function browserBlockDto(row: BrowserBlockRow): BrowserBlockDto {
+  return {
+    id: row.id,
+    pageId: row.page_id,
+    pageTitle: row.page_title,
+    parentId: row.parent_id,
+    positionKey: row.position_key,
+    blockType: row.block_type,
+    text: row.text_plain,
+    properties: row.properties,
+    collapsed: row.collapsed,
+  };
+}
+
+function browserBacklinkDto(row: BrowserBacklinkRow): BrowserBacklinkDto {
+  return {
+    id: row.id,
+    sourcePageId: row.source_page_id,
+    sourcePageTitle: row.source_page_title,
+    sourceBlockId: row.source_block_id,
+    sourceTextPreview: preview(row.source_text_plain),
+    linkKind: row.link_kind,
+    targetPageId: row.target_page_id,
+    targetBlockId: row.target_block_id,
+    sourceStart: row.source_start,
+    sourceEnd: row.source_end,
+  };
+}
+
+const LINK_KIND_ORDER: readonly PageLinkKind[] = ["mount", "inline_page", "block_ref"];
+
+function canonicalKinds(kinds: readonly PageLinkKind[]): PageLinkKind[] {
+  const selected = new Set(kinds);
+  return LINK_KIND_ORDER.filter((kind) => selected.has(kind));
+}
+
+function encodeBrowserBacklinkCursor(
+  createdAt: Date,
+  id: string,
+  kinds: readonly PageLinkKind[],
+): string {
+  return Buffer.from(JSON.stringify([
+    1,
+    createdAt.toISOString(),
+    id,
+    canonicalKinds(kinds).join(","),
+  ]), "utf8").toString("base64url");
+}
+
+function decodeBrowserBacklinkCursor(
+  cursor: string,
+  kinds: readonly PageLinkKind[],
+): { createdAt: string; id: string } {
+  try {
+    const bytes = Buffer.from(cursor, "base64url");
+    if (!bytes.length || bytes.toString("base64url") !== cursor) throw new Error("encoding");
+    const parsed = JSON.parse(bytes.toString("utf8")) as unknown;
+    if (
+      !Array.isArray(parsed) || parsed.length !== 4 || parsed[0] !== 1 ||
+      typeof parsed[1] !== "string" || new Date(parsed[1]).toISOString() !== parsed[1] ||
+      typeof parsed[2] !== "string" || parsed[2].length === 0 ||
+      parsed[3] !== canonicalKinds(kinds).join(",")
+    ) throw new Error("shape");
+    return { createdAt: parsed[1], id: parsed[2] };
+  } catch {
+    throw new PageBrowserBacklinkCursorError("invalid browser backlink cursor");
   }
 }
 

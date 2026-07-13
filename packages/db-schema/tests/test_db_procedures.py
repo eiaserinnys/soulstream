@@ -137,6 +137,20 @@ async def test_session_review_migration_contract_is_mirrored_in_schema_sql():
         assert required in schema_sql
 
 
+async def test_page_prefix_search_indexes_are_additive_and_mirrored():
+    migration_sql = _migration_sql("038_page_prefix_search_indexes.sql")
+    schema_sql = _schema_sql()
+
+    for required in [
+        "CREATE INDEX IF NOT EXISTS idx_pages_title_prefix",
+        "ON pages (title_key text_pattern_ops, id)",
+        "CREATE INDEX IF NOT EXISTS idx_blocks_text_prefix",
+        "ON blocks ((lower(text_plain)) text_pattern_ops, id)",
+    ]:
+        assert required in migration_sql
+        assert required in schema_sql
+
+
 async def test_session_review_schema_and_atomic_transitions(test_db):
     columns = {
         row["column_name"]: row

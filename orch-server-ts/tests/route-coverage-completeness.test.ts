@@ -24,8 +24,12 @@ describe("route coverage completeness gate", () => {
   const registry = buildRuntimeRouteRegistry(fixtures.routeInventory);
   const browserRouteKeys = [
     "GET /api/pages",
+    "GET /api/pages/search",
     "POST /api/pages/daily",
     "GET /api/pages/{pageId}",
+    "GET /api/pages/{pageId}/backlinks",
+    "GET /api/blocks/search",
+    "GET /api/blocks/{blockId}",
     "POST /api/pages/{pageId}/operations",
     "PATCH /api/pages/{pageId}/starred",
   ];

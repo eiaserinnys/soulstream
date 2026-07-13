@@ -14,11 +14,22 @@ import { reconcilePageLinks } from "./page_link_projection.js";
 import {
   findPageIdByDailyDate,
   findPageIdByTitle,
+  getBrowserBacklinks,
+  getBrowserBlock,
   getPageBacklinks,
   listPages,
+  searchBrowserBlocks,
+  searchBrowserPages,
   type PageBacklinkPage,
 } from "./page_repository_reads.js";
-import type { PageLinkKind, PageListDto } from "@soulstream/page-model";
+import type {
+  BrowserBacklinkPageDto,
+  BrowserBlockDto,
+  BrowserBlockSearchDto,
+  BrowserPageSearchDto,
+  PageLinkKind,
+  PageListDto,
+} from "@soulstream/page-model";
 
 type PageQuerySql = {
   <T extends readonly Record<string, unknown>[] = readonly Record<string, unknown>[]>(
@@ -154,6 +165,33 @@ export class PageRepository {
     limit: number;
   }): Promise<PageBacklinkPage> {
     return await getPageBacklinks(await this.resolveSql(), input);
+  }
+
+  async searchBrowserPages(input: {
+    query: string;
+    limit: number;
+  }): Promise<BrowserPageSearchDto> {
+    return await searchBrowserPages(await this.resolveSql(), input);
+  }
+
+  async searchBrowserBlocks(input: {
+    query: string;
+    limit: number;
+  }): Promise<BrowserBlockSearchDto> {
+    return await searchBrowserBlocks(await this.resolveSql(), input);
+  }
+
+  async getBrowserBlock(blockId: string): Promise<BrowserBlockDto | null> {
+    return await getBrowserBlock(await this.resolveSql(), blockId);
+  }
+
+  async getBrowserBacklinks(input: {
+    pageId: string;
+    kinds: readonly PageLinkKind[];
+    cursor?: string;
+    limit: number;
+  }): Promise<BrowserBacklinkPageDto> {
+    return await getBrowserBacklinks(await this.resolveSql(), input);
   }
 
   async commitPageMutation(input: CommitPageMutationInput): Promise<PageMutationCommitResult> {

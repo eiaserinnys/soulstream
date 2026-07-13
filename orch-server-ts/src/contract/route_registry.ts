@@ -143,6 +143,34 @@ export function buildRouteRegistry(fixture: RouteInventoryFixture): RouteRegistr
 
 const TYPESCRIPT_ADDITIVE_ROUTES: readonly Omit<RouteDefinition, "order">[] = [
   {
+    methods: ["GET"],
+    path: "/api/pages/search",
+    name: "search_pages",
+    authRequired: true,
+    family: "page_yjs",
+  },
+  {
+    methods: ["GET"],
+    path: "/api/blocks/search",
+    name: "search_blocks",
+    authRequired: true,
+    family: "page_yjs",
+  },
+  {
+    methods: ["GET"],
+    path: "/api/blocks/{blockId}",
+    name: "read_block",
+    authRequired: true,
+    family: "page_yjs",
+  },
+  {
+    methods: ["GET"],
+    path: "/api/pages/{pageId}/backlinks",
+    name: "list_page_backlinks",
+    authRequired: true,
+    family: "page_yjs",
+  },
+  {
     methods: ["POST"],
     path: "/api/sessions/{session_id}/review/acknowledge",
     name: "acknowledge_session_review",
@@ -282,6 +310,7 @@ export function classifyRouteFamily(path: string): RouteFamily {
   if (
     path === "/api/pages" ||
     path.startsWith("/api/pages/") ||
+    path.startsWith("/api/blocks/") ||
     path.startsWith("/api/page-yjs/") ||
     path.startsWith("/yjs/page/")
   ) {

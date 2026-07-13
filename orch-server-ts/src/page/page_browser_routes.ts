@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+import type { PageLinkKind } from "@soulstream/page-model";
 
 import {
   PageMutationStateVectorConflictError,
@@ -9,12 +10,19 @@ import {
   PageMutationVersionConflictError,
   type PageBatchOperation,
 } from "./page_mutation_core.js";
-import { PageListCursorError } from "./page_repository_reads.js";
+import {
+  PageBrowserBacklinkCursorError,
+  PageListCursorError,
+} from "./page_repository_reads.js";
 import type { PageYjsService } from "./page_service.js";
 
 export const pageBrowserRouteAuthRequirements = {
   "GET /api/pages": true,
+  "GET /api/pages/search": true,
   "GET /api/pages/{pageId}": true,
+  "GET /api/pages/{pageId}/backlinks": true,
+  "GET /api/blocks/search": true,
+  "GET /api/blocks/{blockId}": true,
   "POST /api/pages/daily": true,
   "POST /api/pages/{pageId}/operations": true,
   "PATCH /api/pages/{pageId}/starred": true,
@@ -28,7 +36,14 @@ export interface PageBrowserUser {
 export interface PageBrowserRouteOptions {
   service: Pick<
     PageYjsService,
-    "listPages" | "getBrowserPage" | "getDailyPage" | "mutatePage"
+    | "listPages"
+    | "getBrowserPage"
+    | "getDailyPage"
+    | "mutatePage"
+    | "searchBrowserPages"
+    | "searchBrowserBlocks"
+    | "getBrowserBlock"
+    | "getBrowserBacklinks"
   >;
   resolveUser: (request: FastifyRequest) => Promise<PageBrowserUser | null>;
 }
@@ -68,6 +83,15 @@ const listQuerySchema = z.object({
   cursor: id.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
+const searchQuerySchema = z.object({
+  q: z.string().transform((value) => value.trim()).pipe(z.string().min(1).max(200)),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+const backlinksQuerySchema = z.object({
+  kinds: z.string().optional(),
+  cursor: id.optional(),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
 const dailySchema = z.object({ date: date.optional() });
 const mutationSchema = z.object({
   expected_version: z.number().int().positive(),
@@ -103,6 +127,54 @@ export function registerPageBrowserRoutes(
     }
   });
 
+  app.get("/api/pages/search", async (request, reply) => {
+    const userId = await resolveUserId(request, options);
+    if (!userId) return unauthorized(reply);
+    const parsed = searchQuerySchema.safeParse(request.query);
+    if (!parsed.success) return invalid(reply, parsed.error.message);
+    try {
+      return reply.send(await options.service.searchBrowserPages({
+        query: parsed.data.q,
+        limit: parsed.data.limit,
+      }));
+    } catch (error) {
+      return routeError(request, reply, error, "page-search");
+    }
+  });
+
+  app.get("/api/blocks/search", async (request, reply) => {
+    const userId = await resolveUserId(request, options);
+    if (!userId) return unauthorized(reply);
+    const parsed = searchQuerySchema.safeParse(request.query);
+    if (!parsed.success) return invalid(reply, parsed.error.message);
+    try {
+      return reply.send(await options.service.searchBrowserBlocks({
+        query: parsed.data.q,
+        limit: parsed.data.limit,
+      }));
+    } catch (error) {
+      return routeError(request, reply, error, "block-search");
+    }
+  });
+
+  app.get<{ Params: { blockId: string } }>(
+    "/api/blocks/:blockId",
+    async (request, reply) => {
+      const userId = await resolveUserId(request, options);
+      if (!userId) return unauthorized(reply);
+      const parsed = id.safeParse(request.params.blockId);
+      if (!parsed.success) return invalid(reply, parsed.error.message);
+      try {
+        const block = await options.service.getBrowserBlock(parsed.data);
+        return block
+          ? reply.send(block)
+          : errorReply(reply, 404, "BLOCK_NOT_FOUND", `block not found: ${parsed.data}`);
+      } catch (error) {
+        return routeError(request, reply, error, "block-read");
+      }
+    },
+  );
+
   app.get<{ Params: { pageId: string } }>(
     "/api/pages/:pageId",
     async (request, reply) => {
@@ -112,6 +184,34 @@ export function registerPageBrowserRoutes(
         return reply.send(await options.service.getBrowserPage(request.params.pageId));
       } catch (error) {
         return routeError(request, reply, error, "read");
+      }
+    },
+  );
+
+  app.get<{ Params: { pageId: string } }>(
+    "/api/pages/:pageId/backlinks",
+    async (request, reply) => {
+      const userId = await resolveUserId(request, options);
+      if (!userId) return unauthorized(reply);
+      const pageId = id.safeParse(request.params.pageId);
+      const query = backlinksQuerySchema.safeParse(request.query);
+      if (!pageId.success) return invalid(reply, pageId.error.message);
+      if (!query.success) return invalid(reply, query.error.message);
+      let kinds: PageLinkKind[];
+      try {
+        kinds = parseLinkKinds(query.data.kinds);
+      } catch (error) {
+        return invalid(reply, error instanceof Error ? error.message : "invalid link kinds");
+      }
+      try {
+        return reply.send(await options.service.getBrowserBacklinks({
+          pageId: pageId.data,
+          kinds,
+          cursor: query.data.cursor,
+          limit: query.data.limit,
+        }));
+      } catch (error) {
+        return routeError(request, reply, error, "backlinks");
       }
     },
   );
@@ -268,6 +368,21 @@ function decodeBase64(value: string): Uint8Array {
   return new Uint8Array(bytes);
 }
 
+const LINK_KINDS: readonly PageLinkKind[] = ["mount", "inline_page", "block_ref"];
+
+function parseLinkKinds(value: string | undefined): PageLinkKind[] {
+  if (value === undefined) return [...LINK_KINDS];
+  const raw = value.split(",").map((kind) => kind.trim());
+  if (raw.length === 0 || raw.some((kind) => !kind)) {
+    throw new Error("kinds must contain one or more link kinds");
+  }
+  const selected = new Set(raw);
+  if ([...selected].some((kind) => !LINK_KINDS.includes(kind as PageLinkKind))) {
+    throw new Error("kinds must contain only mount, inline_page, or block_ref");
+  }
+  return LINK_KINDS.filter((kind) => selected.has(kind));
+}
+
 function routeError(
   request: FastifyRequest,
   reply: FastifyReply,
@@ -278,7 +393,11 @@ function routeError(
     error instanceof PageMutationVersionConflictError ||
     error instanceof PageMutationStateVectorConflictError
   ) return errorReply(reply, 409, error.code, error.message);
-  if (error instanceof PageMutationValidationError || error instanceof PageListCursorError) {
+  if (
+    error instanceof PageMutationValidationError ||
+    error instanceof PageListCursorError ||
+    error instanceof PageBrowserBacklinkCursorError
+  ) {
     return errorReply(reply, 422, error.code, error.message);
   }
   if (error instanceof Error && error.message.includes("page not found")) {
