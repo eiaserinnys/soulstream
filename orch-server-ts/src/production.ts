@@ -178,6 +178,7 @@ export async function createLiveProductionApplication(
     },
     pageYjsRoutes: {
       authBearerToken: config.auth_bearer_token,
+      browserReads: pageRepository,
       resolveBrowserUser: async (request) => {
         const token = extractDashboardJwtCookieToken(request, AUTH_COOKIE_NAME);
         return token ? await providers.authRoutes.jwt.verifyToken(token) : null;

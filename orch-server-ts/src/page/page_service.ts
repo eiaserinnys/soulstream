@@ -6,7 +6,11 @@ import type { Extension, onAuthenticatePayload } from "@hocuspocus/server";
 import type { FastifyBaseLogger } from "fastify";
 import type WebSocket from "ws";
 import * as Y from "yjs";
-import type { BacklinkDto, PageLinkKind, PageListDto } from "@soulstream/page-model";
+import type {
+  BacklinkDto,
+  PageLinkKind,
+  PageListDto,
+} from "@soulstream/page-model";
 
 import {
   authenticateBoardYjsConnection,

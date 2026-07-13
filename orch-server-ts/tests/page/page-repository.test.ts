@@ -205,6 +205,129 @@ describe("orch PageRepository", () => {
     expect(calls[1]?.values).toContain("2026-07-11T02:00:00.000Z");
     expect(calls[1]?.values).toContain("page-2");
   });
+
+  it("uses literal prefix queries with deterministic title/text and id ordering", async () => {
+    const { sql, calls } = createMockSql((call) => {
+      if (call.query.includes("FROM pages") && call.query.includes("title_key LIKE")) {
+        return [{ page_id: "page-1", title: "Page" }];
+      }
+      if (call.query.includes("FROM blocks block") && call.query.includes("text_plain")) {
+        return [{
+          block_id: "block-1",
+          page_id: "page-1",
+          page_title: "Page",
+          text_plain: "Block text",
+        }];
+      }
+      return [];
+    });
+    const repository = new PageRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+
+    await expect(repository.searchBrowserPages({ query: "100%_", limit: 5 })).resolves.toEqual({
+      items: [{ pageId: "page-1", title: "Page" }],
+    });
+    await expect(repository.searchBrowserBlocks({ query: "Block", limit: 6 })).resolves.toEqual({
+      items: [{
+        blockId: "block-1",
+        pageId: "page-1",
+        pageTitle: "Page",
+        textPreview: "Block text",
+      }],
+    });
+    expect(calls[0]?.query).toContain("title_key LIKE");
+    expect(calls[0]?.query).toContain("ORDER BY title_key ASC, id ASC");
+    expect(calls[0]?.values).toContain("100\\%\\_");
+    expect(calls[1]?.query).toContain("ORDER BY lower(block.text_plain) ASC, block.id ASC");
+  });
+
+  it("reads a single browser block and returns null when it is deleted", async () => {
+    const rows = [{
+      id: "block-1",
+      page_id: "page-1",
+      page_title: "Page",
+      parent_id: null,
+      position_key: "a",
+      block_type: "paragraph",
+      text_plain: "Block",
+      properties: {},
+      collapsed: false,
+    }];
+    let read = 0;
+    const { sql } = createMockSql((call) =>
+      call.query.includes("WHERE block.id") && read++ === 0 ? rows : []);
+    const repository = new PageRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+
+    await expect(repository.getBrowserBlock("block-1")).resolves.toEqual({
+      id: "block-1",
+      pageId: "page-1",
+      pageTitle: "Page",
+      parentId: null,
+      positionKey: "a",
+      blockType: "paragraph",
+      text: "Block",
+      properties: {},
+      collapsed: false,
+    });
+    await expect(repository.getBrowserBlock("deleted")).resolves.toBeNull();
+  });
+
+  it("paginates browser backlinks with source previews, nullable targets, and kind-bound cursors", async () => {
+    const createdAt = new Date("2026-07-11T00:00:00.000Z");
+    const rows = [
+      browserBacklinkRow("link-1", createdAt, "First   source"),
+      browserBacklinkRow("link-2", createdAt, "Second source", null),
+    ];
+    const { sql, calls } = createMockSql((call) =>
+      call.query.includes("source_page_title") ? rows : []);
+    const repository = new PageRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+
+    const first = await repository.getBrowserBacklinks({
+      pageId: "target",
+      kinds: ["mount", "inline_page"],
+      limit: 1,
+    });
+    expect(first).toEqual({
+      items: [expect.objectContaining({
+        id: "link-1",
+        sourcePageTitle: "Source Page",
+        sourceTextPreview: "First source",
+        linkKind: "mount",
+      })],
+      nextCursor: expect.any(String),
+    });
+
+    await repository.getBrowserBacklinks({
+      pageId: "target",
+      kinds: ["inline_page", "mount"],
+      cursor: first.nextCursor!,
+      limit: 1,
+    });
+    expect(calls[1]?.query).toContain("'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"'");
+    expect(calls[1]?.query).toContain(") > (?::text, ?)");
+    expect(calls[1]?.values).toContain("link-1");
+
+    await expect(repository.getBrowserBacklinks({
+      pageId: "target",
+      kinds: ["block_ref"],
+      cursor: first.nextCursor!,
+      limit: 1,
+    })).rejects.toMatchObject({ code: "PAGE_BROWSER_BACKLINK_CURSOR_INVALID" });
+    await expect(repository.getBrowserBacklinks({
+      pageId: "different-target",
+      kinds: ["mount", "inline_page"],
+      cursor: first.nextCursor!,
+      limit: 1,
+    })).rejects.toMatchObject({ code: "PAGE_BROWSER_BACKLINK_CURSOR_INVALID" });
+  });
 });
 
 function backlinkRow(id: string, createdAt: Date) {
@@ -231,5 +354,26 @@ function pageRow(id: string, updatedAt: Date, starred: boolean) {
     metadata: { starred },
     created_at: new Date("2026-07-10T00:00:00.000Z"),
     updated_at: updatedAt,
+  };
+}
+
+function browserBacklinkRow(
+  id: string,
+  createdAt: Date,
+  text: string,
+  targetPageId: string | null = "target",
+) {
+  return {
+    id,
+    source_page_id: "source",
+    source_page_title: "Source Page",
+    source_block_id: "block-source",
+    source_text_plain: text,
+    link_kind: "mount",
+    target_page_id: targetPageId,
+    target_block_id: null,
+    source_start: 0,
+    source_end: 10,
+    created_at_cursor: createdAt.toISOString().replace("Z", "000Z"),
   };
 }

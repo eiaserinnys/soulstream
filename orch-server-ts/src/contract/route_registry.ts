@@ -141,7 +141,40 @@ export function buildRouteRegistry(fixture: RouteInventoryFixture): RouteRegistr
   };
 }
 
-const TYPESCRIPT_ADDITIVE_ROUTES: readonly Omit<RouteDefinition, "order">[] = [
+type TypeScriptAdditiveRoute = Omit<RouteDefinition, "order"> & {
+  beforePath?: string;
+};
+
+const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
+  {
+    methods: ["GET"],
+    path: "/api/pages/search",
+    name: "search_pages",
+    authRequired: true,
+    family: "page_yjs",
+    beforePath: "/api/pages/{pageId}",
+  },
+  {
+    methods: ["GET"],
+    path: "/api/blocks/search",
+    name: "search_blocks",
+    authRequired: true,
+    family: "page_yjs",
+  },
+  {
+    methods: ["GET"],
+    path: "/api/blocks/{blockId}",
+    name: "read_block",
+    authRequired: true,
+    family: "page_yjs",
+  },
+  {
+    methods: ["GET"],
+    path: "/api/pages/{pageId}/backlinks",
+    name: "list_page_backlinks",
+    authRequired: true,
+    family: "page_yjs",
+  },
   {
     methods: ["POST"],
     path: "/api/sessions/{session_id}/review/acknowledge",
@@ -163,9 +196,11 @@ export function buildRuntimeRouteRegistry(fixture: RouteInventoryFixture): Route
   ) + 1;
   const routes = [
     ...baseline.routes,
-    ...TYPESCRIPT_ADDITIVE_ROUTES.map((route, index) => ({
+    ...TYPESCRIPT_ADDITIVE_ROUTES.map(({ beforePath, ...route }, index) => ({
       ...route,
-      order: nextOrder + index,
+      order: beforePath === undefined
+        ? nextOrder + index
+        : (baseline.routes.find((entry) => entry.path === beforePath)?.order ?? nextOrder) - 0.5,
     })),
   ];
   return buildRouteRegistry({
@@ -282,6 +317,7 @@ export function classifyRouteFamily(path: string): RouteFamily {
   if (
     path === "/api/pages" ||
     path.startsWith("/api/pages/") ||
+    path.startsWith("/api/blocks/") ||
     path.startsWith("/api/page-yjs/") ||
     path.startsWith("/yjs/page/")
   ) {

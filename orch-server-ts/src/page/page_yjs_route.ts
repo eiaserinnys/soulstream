@@ -17,6 +17,7 @@ export interface PageYjsRouteOptions {
   createService: (logger: FastifyBaseLogger) => PageYjsService;
   authBearerToken: string;
   resolveBrowserUser?: PageBrowserRouteOptions["resolveUser"];
+  browserReads?: PageBrowserRouteOptions["reads"];
 }
 
 export function registerPageYjsRoutes(
@@ -30,7 +31,14 @@ export function registerPageYjsRoutes(
     authBearerToken: options.authBearerToken,
   });
   if (options.resolveBrowserUser) {
-    registerPageBrowserRoutes(app, { service, resolveUser: options.resolveBrowserUser });
+    if (!options.browserReads) {
+      throw new Error("Browser page reads are not configured");
+    }
+    registerPageBrowserRoutes(app, {
+      service,
+      reads: options.browserReads,
+      resolveUser: options.resolveBrowserUser,
+    });
   }
   registerWebsocketPlugin(app);
   app.after(() => {

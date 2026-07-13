@@ -5,6 +5,7 @@ import {
   assertNoDuplicateRouteKeys,
   buildPlanningRouteOwnerManifest,
   buildRouteRegistry,
+  buildRuntimeRouteRegistry,
   findDuplicateRouteKeys,
   getRouteByKey,
   getRoutesByMethod,
@@ -151,22 +152,28 @@ describe("route registry", () => {
   });
 
   it("classifies every browser page route as authenticated page_yjs", () => {
+    const runtimeRegistry = buildRuntimeRouteRegistry(fixtures.routeInventory);
     const browserRoutes = [
       ["GET", "/api/pages"],
+      ["GET", "/api/pages/search"],
       ["POST", "/api/pages/daily"],
       ["GET", "/api/pages/{pageId}"],
+      ["GET", "/api/pages/{pageId}/backlinks"],
+      ["GET", "/api/blocks/search"],
+      ["GET", "/api/blocks/{blockId}"],
       ["POST", "/api/pages/{pageId}/operations"],
       ["PATCH", "/api/pages/{pageId}/starred"],
     ] as const;
 
     for (const [method, path] of browserRoutes) {
-      expect(getRouteByKey(registry, method, path)).toMatchObject({
+      expect(getRouteByKey(runtimeRegistry, method, path)).toMatchObject({
         family: "page_yjs",
         authRequired: true,
       });
     }
-    expect(validatePublicRouteAuthMatrix(registry).publicRouteKeys)
+    expect(validatePublicRouteAuthMatrix(runtimeRegistry).publicRouteKeys)
       .not.toContain("GET /api/pages");
+    expect(validateStaticBeforeDynamicPriority(runtimeRegistry).valid).toBe(true);
   });
 
   it("builds a planning-only owner manifest from the Python fixture without TS production owners", () => {

@@ -7,6 +7,7 @@ import {
   parseOrchServerConfig,
   type BoardYjsHostHttpClient,
 } from "../src/index.js";
+import type { PageBrowserReads } from "../src/page/page_browser_routes.js";
 import type { PageYjsService } from "../src/page/page_service.js";
 
 const config = parseOrchServerConfig({
@@ -87,6 +88,7 @@ describe("orchestrator runtime composition harness", () => {
     const routeOptions = {
       authBearerToken: "test-token",
       createService: vi.fn(() => service),
+      browserReads: service,
       resolveBrowserUser: vi.fn(async () => ({ email: "user@example.com" })),
     };
     expect(() => createOrchestratorRuntimeComposition({
@@ -563,10 +565,17 @@ function pageServiceDouble() {
   return {
     createPage: vi.fn().mockResolvedValue(result),
     mutatePage: vi.fn().mockResolvedValue(result),
+    listPages: vi.fn().mockResolvedValue({ items: [], next_cursor: null }),
+    getBrowserPage: vi.fn().mockResolvedValue(result),
+    getDailyPage: vi.fn().mockResolvedValue({ page: result.page, created: false }),
+    searchBrowserPages: vi.fn().mockResolvedValue({ items: [] }),
+    searchBrowserBlocks: vi.fn().mockResolvedValue({ items: [] }),
+    getBrowserBlock: vi.fn().mockResolvedValue(null),
+    getBrowserBacklinks: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
     handleConnection: vi.fn(),
     assertWebsocketAuthConfigured: vi.fn(),
     close: vi.fn().mockResolvedValue(undefined),
-  } as unknown as PageYjsService & {
+  } as unknown as PageYjsService & PageBrowserReads & {
     createPage: ReturnType<typeof vi.fn>;
     close: ReturnType<typeof vi.fn>;
   };

@@ -128,3 +128,53 @@ export interface BacklinkDto {
   source_start: number;
   source_end: number;
 }
+
+export interface BrowserPageSearchItemDto {
+  pageId: string;
+  title: string;
+}
+
+export interface BrowserPageSearchDto {
+  items: BrowserPageSearchItemDto[];
+}
+
+export interface BrowserBlockSearchItemDto {
+  blockId: string;
+  pageId: string;
+  pageTitle: string;
+  textPreview: string;
+}
+
+export interface BrowserBlockSearchDto {
+  items: BrowserBlockSearchItemDto[];
+}
+
+export interface BrowserBlockDto {
+  id: string;
+  pageId: string;
+  pageTitle: string;
+  parentId: string | null;
+  positionKey: string;
+  blockType: PageBlockType;
+  text: string;
+  properties: Record<string, unknown>;
+  collapsed: boolean;
+}
+
+export interface BrowserBacklinkDto {
+  id: string;
+  sourcePageId: string;
+  sourcePageTitle: string;
+  sourceBlockId: string;
+  sourceTextPreview: string;
+  linkKind: PageLinkKind;
+  targetPageId: string | null;
+  targetBlockId: string | null;
+  sourceStart: number;
+  sourceEnd: number;
+}
+
+export interface BrowserBacklinkPageDto {
+  items: BrowserBacklinkDto[];
+  nextCursor: string | null;
+}

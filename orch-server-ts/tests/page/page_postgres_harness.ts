@@ -173,6 +173,10 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
     );
     CREATE UNIQUE INDEX uq_pages_title_key ON pages(title_key);
     CREATE UNIQUE INDEX uq_pages_daily_date ON pages(daily_date) WHERE daily_date IS NOT NULL;
+    CREATE INDEX idx_pages_title_prefix
+      ON pages (title_key text_pattern_ops, id) WHERE archived = FALSE;
+    CREATE INDEX idx_blocks_text_prefix
+      ON blocks ((lower(text_plain)) text_pattern_ops, id);
     CREATE TABLE block_links (
       id TEXT PRIMARY KEY,
       source_block_id TEXT NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,

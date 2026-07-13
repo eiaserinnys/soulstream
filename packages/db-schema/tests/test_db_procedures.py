@@ -137,6 +137,63 @@ async def test_session_review_migration_contract_is_mirrored_in_schema_sql():
         assert required in schema_sql
 
 
+async def test_page_prefix_search_indexes_are_additive_and_mirrored():
+    migration_sql = _migration_sql("038_page_prefix_search_indexes.sql")
+    schema_sql = _schema_sql()
+
+    for required in [
+        "CREATE INDEX IF NOT EXISTS idx_pages_title_prefix",
+        "ON pages (title_key text_pattern_ops, id)",
+        "CREATE INDEX IF NOT EXISTS idx_blocks_text_prefix",
+        "ON blocks ((lower(text_plain)) text_pattern_ops, id)",
+    ]:
+        assert required in migration_sql
+        assert required in schema_sql
+
+
+async def test_page_prefix_search_indexes_apply_to_fresh_schema_and_are_idempotent(test_db):
+    expected_fragments = {
+        "idx_pages_title_prefix": [
+            "title_key text_pattern_ops",
+            "id",
+            "WHERE (archived = false)",
+        ],
+        "idx_blocks_text_prefix": [
+            "lower(text_plain) text_pattern_ops",
+            "id",
+        ],
+    }
+
+    async def read_indexes():
+        return {
+            row["indexname"]: row["indexdef"]
+            for row in await test_db.fetch(
+                """
+                SELECT indexname, indexdef
+                FROM pg_indexes
+                WHERE schemaname = current_schema()
+                  AND indexname = ANY($1::text[])
+                """,
+                list(expected_fragments),
+            )
+        }
+
+    fresh_indexes = await read_indexes()
+    assert set(fresh_indexes) == set(expected_fragments)
+
+    await test_db.execute("DROP INDEX idx_pages_title_prefix")
+    await test_db.execute("DROP INDEX idx_blocks_text_prefix")
+    migration_sql = _migration_sql("038_page_prefix_search_indexes.sql")
+    await test_db.execute(migration_sql)
+    await test_db.execute(migration_sql)
+
+    migrated_indexes = await read_indexes()
+    assert set(migrated_indexes) == set(expected_fragments)
+    for index_name, fragments in expected_fragments.items():
+        for fragment in fragments:
+            assert fragment in migrated_indexes[index_name]
+
+
 async def test_session_review_schema_and_atomic_transitions(test_db):
     columns = {
         row["column_name"]: row
