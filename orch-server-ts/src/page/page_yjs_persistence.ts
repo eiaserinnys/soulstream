@@ -141,13 +141,15 @@ export function createPageYjsPersistence(
       const maySkipStore = context?.skipPagePersistence === true || persistedOperation;
       const update = takePendingUpdate(payload.documentName);
       if (maySkipStore && update === undefined) return;
+      const snapshot = Y.encodeStateAsUpdate(payload.document);
+      const replica = readPageYDocReplica(pageId, payload.document);
       activeStores += 1;
       try {
         const persist = async () => await storeWithRetry({
           documentName: payload.documentName,
-          snapshot: payload.state,
+          snapshot,
           ...(update === undefined ? {} : { update }),
-          replica: readPageYDocReplica(pageId, payload.document),
+          replica,
         });
         const stored = persistedOperation || context?.pageLockHeld === true
           ? await persist()

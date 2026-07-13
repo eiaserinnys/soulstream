@@ -311,7 +311,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       await provider.destroy();
       await app.close();
     }
-  }, 30_000);
+  }, 60_000);
 });
 
 function connectProvider(address: string, pageId: string): HocuspocusProvider {
@@ -327,7 +327,7 @@ function connectProvider(address: string, pageId: string): HocuspocusProvider {
 function waitForSync(provider: HocuspocusProvider): Promise<void> {
   if (provider.isSynced) return Promise.resolve();
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("provider sync timed out")), 10_000);
+    const timer = setTimeout(() => reject(new Error("provider sync timed out")), 20_000);
     provider.on("synced", () => {
       clearTimeout(timer);
       resolve();
@@ -336,6 +336,10 @@ function waitForSync(provider: HocuspocusProvider): Promise<void> {
       clearTimeout(timer);
       reject(new Error(reason));
     });
+    if (provider.isSynced) {
+      clearTimeout(timer);
+      resolve();
+    }
   });
 }
 

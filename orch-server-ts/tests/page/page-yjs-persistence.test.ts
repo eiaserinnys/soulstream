@@ -197,6 +197,116 @@ describe("orch page Yjs persistence", () => {
     expect(coordinator.runExclusive).not.toHaveBeenCalled();
   });
 
+  it("captures snapshot and replica after the operation lookup and pending take", async () => {
+    const document = new Y.Doc();
+    Y.applyUpdate(document, snapshot());
+    const staleState = Y.encodeStateAsUpdate(document);
+    let releaseLookup!: () => void;
+    let markLookupStarted!: () => void;
+    const lookupBarrier = new Promise<void>((resolve) => { releaseLookup = resolve; });
+    const lookupStarted = new Promise<void>((resolve) => { markLookupStarted = resolve; });
+    const repository = {
+      hasPageOperation: vi.fn().mockImplementation(async () => {
+        markLookupStarted();
+        await lookupBarrier;
+        return true;
+      }),
+      storePageYjsState: vi.fn().mockResolvedValue(undefined),
+    } as unknown as PageYjsPersistenceRepository;
+    const persistence = createPageYjsPersistence(repository);
+
+    const storing = persistence.database.configuration.store?.({
+      documentName: "page:page-1",
+      document,
+      state: staleState,
+      transactionOrigin: "operation-1",
+    } as never);
+    await lookupStarted;
+    let clientUpdate: Uint8Array | undefined;
+    document.once("update", (update: Uint8Array) => { clientUpdate = update; });
+    const block = document.getMap<Y.Map<unknown>>("blocks").get("block-1");
+    const body = block?.get("text");
+    if (!(body instanceof Y.Text)) throw new Error("editable block text missing");
+    body.insert(body.length, " C");
+    await persistence.updateCollector.onChange?.({
+      documentName: "page:page-1",
+      transactionOrigin: { source: "browser" },
+      update: clientUpdate!,
+    } as never);
+    releaseLookup();
+    await storing;
+
+    const stored = vi.mocked(repository.storePageYjsState).mock.calls[0]![0];
+    const reloaded = new Y.Doc();
+    Y.applyUpdate(reloaded, stored.snapshot);
+    const snapshotReplica = readPageYDocReplica("page-1", reloaded);
+    expect(snapshotReplica.blocks[0]?.text).toBe("Body C");
+    expect(stored.replica).toEqual(snapshotReplica);
+    expect(Buffer.from(stored.snapshot).equals(
+      Buffer.from(Y.encodeStateAsUpdate(document)),
+    )).toBe(true);
+    expect(stored.update).toEqual(clientUpdate);
+  });
+
+  it("keeps an update that arrives after the fresh snapshot for the next store", async () => {
+    const edited = editSnapshot(" A");
+    let releaseFirstStore!: () => void;
+    let markFirstStoreStarted!: () => void;
+    const firstStoreBarrier = new Promise<void>((resolve) => { releaseFirstStore = resolve; });
+    const firstStoreStarted = new Promise<void>((resolve) => { markFirstStoreStarted = resolve; });
+    let calls = 0;
+    const repository = {
+      storePageYjsState: vi.fn().mockImplementation(async () => {
+        calls += 1;
+        if (calls === 1) {
+          markFirstStoreStarted();
+          await firstStoreBarrier;
+        }
+      }),
+    } as unknown as PageYjsPersistenceRepository;
+    const persistence = createPageYjsPersistence(repository);
+    await persistence.updateCollector.onChange?.({
+      documentName: "page:page-1",
+      transactionOrigin: { source: "browser" },
+      update: edited.update,
+    } as never);
+
+    const firstStore = persistence.database.configuration.store?.({
+      documentName: "page:page-1",
+      document: edited.document,
+      state: edited.snapshot,
+    } as never);
+    await firstStoreStarted;
+    let laterUpdate: Uint8Array | undefined;
+    edited.document.once("update", (update: Uint8Array) => { laterUpdate = update; });
+    const block = edited.document.getMap<Y.Map<unknown>>("blocks").get("block-1");
+    const body = block?.get("text");
+    if (!(body instanceof Y.Text)) throw new Error("editable block text missing");
+    body.insert(body.length, " D");
+    await persistence.updateCollector.onChange?.({
+      documentName: "page:page-1",
+      transactionOrigin: { source: "browser" },
+      update: laterUpdate!,
+    } as never);
+    releaseFirstStore();
+    await firstStore;
+
+    expect(persistence.getDiagnostics().pendingUpdateDocuments).toBe(1);
+    await persistence.database.configuration.store?.({
+      documentName: "page:page-1",
+      document: edited.document,
+      state: edited.snapshot,
+    } as never);
+
+    const firstInput = vi.mocked(repository.storePageYjsState).mock.calls[0]![0];
+    const secondInput = vi.mocked(repository.storePageYjsState).mock.calls[1]![0];
+    expect(firstInput.replica.blocks[0]?.text).toBe("Body A");
+    expect(firstInput.update).toEqual(edited.update);
+    expect(secondInput.replica.blocks[0]?.text).toBe("Body A D");
+    expect(secondInput.update).toEqual(laterUpdate);
+    expect(persistence.getDiagnostics().pendingUpdateDocuments).toBe(0);
+  });
+
   it("restores a failed incremental update so fetch can recover the live state", async () => {
     const edited = editSnapshot(" pending");
     const repository = {
