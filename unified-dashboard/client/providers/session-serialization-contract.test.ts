@@ -76,4 +76,25 @@ describe("OrchestratorSessionProvider session serialization contract", () => {
     expect(result.sessions.map((session) => session.agentSessionId)).toEqual(sessionIds);
     expect(result).toMatchObject({ total: 250, hasMore: false });
   });
+
+  it("preserves awaySummary for the run history summary toggle", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          sessions: [{
+            agentSessionId: "run-a",
+            status: "completed",
+            awaySummary: "검증을 마치고 PR 준비 중입니다.",
+          }],
+          total: 1,
+        }),
+      }),
+    );
+
+    const result = await new OrchestratorSessionProvider().fetchSessions();
+
+    expect(result.sessions[0]?.awaySummary).toBe("검증을 마치고 PR 준비 중입니다.");
+  });
 });

@@ -20,6 +20,7 @@ import {
 export interface PlannerTask {
   page: PageDto;
   blocks: BlockDto[];
+  stateVector: string;
   runbookId: string;
   runbook: RunbookSnapshot | null;
   status: PlannerTaskStatus;
@@ -28,6 +29,12 @@ export interface PlannerTask {
   progress: number | null;
   projectPageId: string | null;
   sessionIds: string[];
+  mountedDocuments: MountedTaskDocument[];
+}
+
+export interface MountedTaskDocument {
+  blockId: string;
+  page: PageDto;
 }
 
 export interface DailyPlannerData {
@@ -92,7 +99,7 @@ export async function loadDailyPlanner(
     const classification = classifyMountedPage(mounted.blocks);
     if (classification.kind === "document") return null;
     const projectPageId = await findMountedProject(api, mounted.page.id, projectIds);
-    return await buildTask(mounted, classification.runbookId, projectPageId, dependencies);
+    return await buildTask(mounted, classification.runbookId, projectPageId, allPages, dependencies);
   }))).filter((task): task is PlannerTask => task !== null);
   return {
     daily,
@@ -126,6 +133,7 @@ export async function loadProjectPlanner(
       mounted,
       classification.runbookId,
       project.id,
+      allPages,
       dependencies,
     ));
   }
@@ -136,6 +144,7 @@ async function buildTask(
   mounted: PageReadResponse,
   runbookId: string,
   projectPageId: string | null,
+  allPages: readonly PageDto[],
   dependencies: PlannerDataDependencies,
 ): Promise<PlannerTask> {
   const [runbook, sessionIds] = await Promise.all([
@@ -151,6 +160,7 @@ async function buildTask(
   return {
     page: mounted.page,
     blocks: mounted.blocks,
+    stateVector: mounted.state_vector,
     runbookId,
     runbook,
     status: runbook ? derivePlannerTaskStatus(runbook) : "open",
@@ -159,7 +169,23 @@ async function buildTask(
     progress: plannerProgress(runbook),
     projectPageId,
     sessionIds,
+    mountedDocuments: mountedTaskDocuments(mounted, allPages),
   };
+}
+
+function mountedTaskDocuments(
+  task: PageReadResponse,
+  pages: readonly PageDto[],
+): MountedTaskDocument[] {
+  const pageByTitle = new Map<string, PageDto>();
+  for (const page of pages) {
+    if (!pageByTitle.has(page.title)) pageByTitle.set(page.title, page);
+  }
+  return task.blocks.flatMap((block) => {
+    const title = parseSingleMountTitle(block);
+    const page = title ? pageByTitle.get(title) : undefined;
+    return page && page.id !== task.page.id ? [{ blockId: block.id, page }] : [];
+  });
 }
 
 async function readMountedPages(

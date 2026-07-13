@@ -138,6 +138,7 @@ function toOrchestratorSessionSummary(raw: Record<string, unknown>): SessionSumm
     lastMessage: summary.lastMessage,
     lastEventId: summary.lastEventId ?? 0,
     lastReadEventId: summary.lastReadEventId ?? 0,
+    ...(summary.awaySummary == null ? {} : { awaySummary: summary.awaySummary }),
     prompt: summary.prompt ?? undefined,
     agentId: summary.agentId ?? undefined,
     agentName: summary.agentName ?? undefined,
