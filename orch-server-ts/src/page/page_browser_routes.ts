@@ -59,6 +59,7 @@ export interface PageBrowserReads {
     pageId: string;
     kinds: readonly PageLinkKind[];
     cursor?: string;
+    includeSelf?: boolean;
     limit: number;
   }): Promise<BrowserBacklinkPageDto>;
 }
@@ -105,6 +106,8 @@ const searchQuerySchema = z.object({
 const backlinksQuerySchema = z.object({
   kinds: z.string().optional(),
   cursor: id.optional(),
+  include_self: z.enum(["true", "false"]).optional()
+    .transform((value) => value === "true"),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 const dailySchema = z.object({ date: date.optional() });
@@ -223,6 +226,7 @@ export function registerPageBrowserRoutes(
           pageId: pageId.data,
           kinds,
           cursor: query.data.cursor,
+          includeSelf: query.data.include_self,
           limit: query.data.limit,
         }));
       } catch (error) {

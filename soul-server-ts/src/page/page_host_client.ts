@@ -38,12 +38,14 @@ export class PageYjsHostClient {
     pageId: string;
     kinds: readonly PageLinkKind[];
     cursor?: string;
+    includeSelf?: boolean;
     limit: number;
   }): Promise<{ items: BacklinkDto[]; next_cursor: string | null }> {
     return await this.request("get-backlinks", {
       page_id: input.pageId,
       kinds: input.kinds,
       ...(input.cursor ? { cursor: input.cursor } : {}),
+      include_self: input.includeSelf ?? false,
       limit: input.limit,
     });
   }

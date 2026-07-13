@@ -1,4 +1,4 @@
-import { LockKeyhole, MessageSquare } from "lucide-react";
+import { ExternalLink, LockKeyhole, MessageSquare } from "lucide-react";
 import type { KeyboardEvent } from "react";
 
 import type { SessionLensState } from "./page-lenses";
@@ -9,11 +9,15 @@ export function SessionRefBlock({
   lensState,
   onOpen,
   wrapText = false,
+  displayOnly = false,
+  showOpenButton = false,
 }: {
   resolution: SessionReferenceResolution;
   lensState: SessionLensState;
   onOpen(): void;
   wrapText?: boolean;
+  displayOnly?: boolean;
+  showOpenButton?: boolean;
 }) {
   const readableTextClass = wrapText ? "whitespace-normal break-words" : "truncate";
   const unavailableMessageClass = wrapText ? "whitespace-normal break-words" : "";
@@ -53,22 +57,24 @@ export function SessionRefBlock({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      aria-label={accessibleLabel}
+      role={displayOnly ? "group" : "button"}
+      tabIndex={displayOnly ? undefined : 0}
+      aria-label={displayOnly ? undefined : accessibleLabel}
       data-session-ref={summary.agentSessionId}
       data-session-ref-wrap={wrapText ? "true" : undefined}
       data-session-status={summary.status}
       data-lens-state={lensState}
-      className={`flex min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-lg border border-glass-border bg-glass-surface/55 px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+      className={`flex min-w-0 flex-1 items-start gap-3 rounded-lg border border-glass-border bg-glass-surface/55 px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+        displayOnly ? "" : "cursor-pointer"
+      } ${
         lensState === "dimmed"
           ? "opacity-40"
           : lensState === "match"
             ? "border-primary/50 bg-primary/10 ring-1 ring-primary/25"
             : "hover:bg-glass-highlight/60"
       }`}
-      onClick={onOpen}
-      onKeyDown={activate}
+      onClick={displayOnly ? undefined : onOpen}
+      onKeyDown={displayOnly ? undefined : activate}
     >
       <MessageSquare aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
@@ -83,6 +89,20 @@ export function SessionRefBlock({
         ) : null}
         {identity ? <p className={`mt-1 text-[11px] text-muted-foreground ${readableTextClass}`}>{identity}</p> : null}
       </div>
+      {showOpenButton ? (
+        <button
+          type="button"
+          aria-label={accessibleLabel}
+          data-session-ref-open={summary.agentSessionId}
+          className="shrink-0 rounded-md p-1 text-muted-foreground transition hover:bg-glass-highlight hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen();
+          }}
+        >
+          <ExternalLink aria-hidden="true" className="h-4 w-4" />
+        </button>
+      ) : null}
     </div>
   );
 }

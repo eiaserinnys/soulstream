@@ -98,6 +98,7 @@ const schemas = {
     kinds: z.array(z.enum(["mount", "inline_page", "block_ref"]))
       .min(1).default(["mount", "inline_page", "block_ref"]),
     cursor: id.optional(),
+    include_self: z.boolean().default(false),
     limit: z.number().int().min(1).max(200).default(50),
   }),
   "get-daily-page": z.object({ date: dateSchema.optional(), ...actorFields }),
@@ -224,6 +225,7 @@ async function dispatch(
       pageId: input.page_id as string,
       kinds: input.kinds as PageLinkKind[],
       cursor: input.cursor as string | undefined,
+      includeSelf: input.include_self as boolean,
       limit: input.limit as number,
     });
   }

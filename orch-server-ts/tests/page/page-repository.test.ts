@@ -177,6 +177,16 @@ describe("orch PageRepository", () => {
     });
     expect(calls[1]?.values).toContain("2026-07-11T00:00:00.000Z");
     expect(calls[1]?.values).toContain("link-1");
+    expect(calls[0]?.query).toContain("source.page_id <> ?");
+    expect(calls[0]?.values).toContain(false);
+
+    await repository.getPageBacklinks({
+      pageId: "target",
+      kinds: ["mount"],
+      includeSelf: true,
+      limit: 1,
+    });
+    expect(calls[2]?.values).toContain(true);
   });
 
   it("lists pages with a deterministic updated_at/id cursor and starred filter", async () => {
@@ -316,6 +326,25 @@ describe("orch PageRepository", () => {
     expect(calls[1]?.query).toContain("'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"'");
     expect(calls[1]?.query).toContain(") > (?::text, ?)");
     expect(calls[1]?.values).toContain("link-1");
+    expect(calls[0]?.query).toContain("source.page_id <> ?");
+    expect(calls[0]?.values).toContain(false);
+
+    const withSelf = await repository.getBrowserBacklinks({
+      pageId: "target",
+      kinds: ["mount", "inline_page"],
+      includeSelf: true,
+      limit: 1,
+    });
+    expect(calls[2]?.values).toContain(true);
+    expect(withSelf.nextCursor).toEqual(expect.any(String));
+
+    await expect(repository.getBrowserBacklinks({
+      pageId: "target",
+      kinds: ["mount", "inline_page"],
+      cursor: withSelf.nextCursor!,
+      includeSelf: false,
+      limit: 1,
+    })).rejects.toMatchObject({ code: "PAGE_BROWSER_BACKLINK_CURSOR_INVALID" });
 
     await expect(repository.getBrowserBacklinks({
       pageId: "target",

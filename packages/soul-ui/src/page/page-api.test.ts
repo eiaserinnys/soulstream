@@ -11,7 +11,8 @@ describe("page API client", () => {
       .mockResolvedValueOnce(jsonResponse({ items: [{ pageId: "page-1", title: "Page" }] }))
       .mockResolvedValueOnce(jsonResponse({ items: [{ blockId: "block-1", pageId: "page-1", pageTitle: "Page", textPreview: "Block" }] }))
       .mockResolvedValueOnce(jsonResponse({ id: "block-1", pageId: "page-1" }))
-      .mockResolvedValueOnce(jsonResponse({ items: [], nextCursor: "next cursor" }));
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextCursor: "next cursor" }))
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextCursor: null }));
     const client = createPageApiClient({ fetch });
 
     await client.listPages({ starred: true, cursor: "cursor 1", limit: 25 });
@@ -25,6 +26,7 @@ describe("page API client", () => {
       cursor: "cursor 2",
       limit: 15,
     });
+    await client.getBacklinks("page/one", { includeSelf: true });
 
     expect(fetch).toHaveBeenNthCalledWith(1, "/api/pages?starred=true&cursor=cursor+1&limit=25", {
       credentials: "same-origin",
@@ -54,6 +56,11 @@ describe("page API client", () => {
     expect(fetch).toHaveBeenNthCalledWith(
       7,
       "/api/pages/page%2Fone/backlinks?kinds=mount%2Cblock_ref&cursor=cursor+2&limit=15",
+      { credentials: "same-origin", headers: { Accept: "application/json" } },
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      8,
+      "/api/pages/page%2Fone/backlinks?include_self=true",
       { credentials: "same-origin", headers: { Accept: "application/json" } },
     );
   });

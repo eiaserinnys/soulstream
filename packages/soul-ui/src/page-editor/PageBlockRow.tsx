@@ -18,6 +18,8 @@ export function PageBlockRow({
   onCopyInput,
   onCutInput,
   onSelectBlock,
+  onSelectAtomicBlock,
+  onBlockKeyInput,
   onEditorHeightChange,
   sessionIndex,
   lens,
@@ -37,6 +39,8 @@ export function PageBlockRow({
   onCopyInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
   onCutInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
   onSelectBlock(blockId: string, extend: boolean): void;
+  onSelectAtomicBlock(blockId: string, extend: boolean, element: HTMLDivElement): void;
+  onBlockKeyInput(block: PageDocumentBlock, event: React.KeyboardEvent<HTMLDivElement>): void;
   onEditorHeightChange(blockId: string): void;
   sessionIndex: SessionSummaryIndex;
   lens: PageLens;
@@ -68,8 +72,18 @@ export function PageBlockRow({
         data-block-id={block.id}
         data-outline-depth={depth}
         data-block-type="session_ref"
-        className="flex min-h-10 items-start gap-2 rounded-lg px-2 py-1"
+        tabIndex={selected ? 0 : -1}
+        className={`flex min-h-10 items-start gap-2 rounded-lg px-2 py-1 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary ${
+          selected ? "bg-primary/12 ring-1 ring-primary/40" : "hover:bg-glass-highlight/50"
+        }`}
         style={{ paddingInlineStart: `${8 + depth * 24}px` }}
+        onClick={(event) => onSelectAtomicBlock(block.id, event.shiftKey, event.currentTarget)}
+        onDoubleClick={() => {
+          if (resolution.kind === "ready") onOpenSession?.(resolution.summary);
+        }}
+        onKeyDown={(event) => {
+          if (event.target === event.currentTarget) onBlockKeyInput(block, event);
+        }}
       >
         <span aria-hidden="true" className="mt-3 h-1.5 w-1.5 shrink-0 rounded-full bg-primary/70" />
         <SessionRefBlock
@@ -81,6 +95,8 @@ export function PageBlockRow({
           onOpen={() => {
             if (resolution.kind === "ready") onOpenSession?.(resolution.summary);
           }}
+          displayOnly
+          showOpenButton
         />
       </div>
     );
@@ -94,10 +110,14 @@ export function PageBlockRow({
       data-page-editor-row
       data-block-id={block.id}
       data-outline-depth={depth}
+      tabIndex={selected ? 0 : -1}
       className={`flex min-h-10 items-start gap-2 rounded-lg px-2 py-1 transition-colors ${
         selected ? "bg-primary/12 ring-1 ring-primary/30" : "hover:bg-glass-highlight/50"
       }`}
       style={{ paddingInlineStart: `${8 + depth * 24}px` }}
+      onKeyDown={(event) => {
+        if (event.target === event.currentTarget) onBlockKeyInput(block, event);
+      }}
     >
       <span aria-hidden="true" className="mt-2.5 h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/70" />
       <PageBlockEditor
@@ -114,6 +134,7 @@ export function PageBlockRow({
         onOpenPage={onOpenPage}
         onOpenBlock={onOpenBlock}
         focusRequested={focusRequested}
+        blockSelectionMode={selected}
       />
       {block.textValue.trim() === "/세션" && onCreateSessionDraft ? (
         <button

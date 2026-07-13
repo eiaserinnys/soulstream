@@ -1,14 +1,10 @@
 import {
   createPostRenderFocusSelectionApplier,
-  decideHorizontalEdgeNavigation,
-  decideVerticalEdgeNavigation,
-  existingBlock,
   type EditorOperation,
-  type FocusResult,
 } from "@soulstream/page-editor-core";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { AlertTriangle, LoaderCircle, RefreshCw, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import type * as Y from "yjs";
 
 import type {
@@ -20,9 +16,18 @@ import type {
 import type { SessionSummary } from "../shared/types";
 import { PageBlockRow } from "./PageBlockRow";
 import type { PageBlockEditorKeyInput } from "./PageBlockEditor";
-import { measureTextareaCaretLines } from "./page-editor-caret-geometry";
 import { readPageEditorClipboard, writeBlockSelectionClipboard } from "./page-editor-clipboard";
 import { createContiguousBlockSelection } from "./page-editor-selection";
+import {
+  crossesVerticalBlockEdge,
+  cssEscape,
+  handleArrowNavigation,
+  outlineDepths,
+  structuralOperation,
+  toCoreFocus,
+  uniqueTempId,
+  visibleOutlineBlocks,
+} from "./page-outliner-operations";
 import { toEditorSnapshots, usePageEditorController } from "./usePageEditorController";
 
 const ROW_HEIGHT = 40;
@@ -61,13 +66,16 @@ export function PageOutliner({
   const rowElements = useRef(new Map<string, HTMLDivElement>());
   const renderedBlocks = useMemo(() => visibleOutlineBlocks(blocks), [blocks]);
   const [, renderSelection] = useReducer((value) => value + 1, 0);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectionFocusId, setSelectionFocusId] = useState<string | null>(null);
+  const lastTextSelections = useRef(new Map<string, { anchor: number; focus: number }>());
   const selection = useMemo(
     () => createContiguousBlockSelection(renderedBlocks.map((block) => block.id)),
     [pageId],
   );
   selection.replaceBlockOrder(renderedBlocks.map((block) => block.id));
   const selectionSnapshot = selection.getSnapshot();
-  const selected = new Set(selectionSnapshot.blockIds);
+  const selected = new Set(selectionMode ? selectionSnapshot.blockIds : []);
   const depths = useMemo(() => outlineDepths(renderedBlocks), [renderedBlocks]);
   const editor = usePageEditorController({ apiClient, pageId, doc, blocks, mutationVersion, onResync });
   const virtualizer = useVirtualizer({
@@ -120,13 +128,106 @@ export function PageOutliner({
     editor.queueFocus({ blockId: focusBlockId, anchor: 0, focus: 0 });
   }, [editor, focusBlockId, pageId, renderedBlocks, virtualizer]);
 
+  const focusBlockRow = useCallback((blockId: string) => {
+    rowElements.current.get(blockId)
+      ?.querySelector<HTMLElement>("[data-page-editor-row]")
+      ?.focus();
+  }, []);
+  useLayoutEffect(() => {
+    if (selectionMode && selectionFocusId) focusBlockRow(selectionFocusId);
+  }, [focusBlockRow, selectionFocusId, selectionMode]);
+
   const selectBlock = (blockId: string, extend: boolean) => {
-    if (extend) selection.extend(blockId);
-    else selection.select(blockId);
+    if (extend) {
+      selection.extend(blockId);
+      setSelectionMode(true);
+      setSelectionFocusId(blockId);
+      const active = document.activeElement;
+      if (active instanceof HTMLTextAreaElement) active.blur();
+      focusBlockRow(blockId);
+    } else {
+      selection.select(blockId);
+      setSelectionMode(false);
+      setSelectionFocusId(null);
+    }
     renderSelection();
   };
 
+  const selectAtomicBlock = (blockId: string, extend: boolean, element: HTMLDivElement) => {
+    if (extend) selection.extend(blockId);
+    else selection.select(blockId);
+    setSelectionMode(true);
+    setSelectionFocusId(blockId);
+    renderSelection();
+    element.focus();
+  };
+
+  const blockKeyInput = (
+    block: PageDocumentBlock,
+    event: React.KeyboardEvent<HTMLDivElement>,
+  ) => {
+    const snapshot = selection.getSnapshot();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      const restoreId = snapshot.anchorId ?? block.id;
+      const restore = lastTextSelections.current.get(restoreId);
+      selection.clear();
+      setSelectionMode(false);
+      setSelectionFocusId(null);
+      renderSelection();
+      if (restore) {
+        editor.queueFocus({ blockId: restoreId, anchor: restore.anchor, focus: restore.focus });
+      } else {
+        event.currentTarget.blur();
+      }
+      return;
+    }
+    if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+      event.preventDefault();
+      const focusId = snapshot.focusId ?? block.id;
+      const index = renderedBlocks.findIndex((candidate) => candidate.id === focusId);
+      const target = renderedBlocks[index + (event.key === "ArrowUp" ? -1 : 1)];
+      if (!target) return;
+      if (event.shiftKey) selection.extend(target.id);
+      else selection.select(target.id);
+      setSelectionMode(true);
+      setSelectionFocusId(target.id);
+      renderSelection();
+      virtualizer.scrollToIndex(index + (event.key === "ArrowUp" ? -1 : 1), { align: "auto" });
+      focusBlockRow(target.id);
+      return;
+    }
+    if (event.key === "Enter") {
+      if (block.type !== "session_ref") return;
+      event.preventDefault();
+      const sessionId = typeof block.properties.sessionId === "string"
+        ? block.properties.sessionId
+        : "";
+      const session = sessionIndex.get(sessionId);
+      if (session) onOpenSession?.(session);
+      return;
+    }
+    if (event.key !== "Tab" && event.key !== "Backspace" && event.key !== "Delete") return;
+    event.preventDefault();
+    const targets = snapshot.blockIds.includes(block.id) ? snapshot.blockIds : [block.id];
+    const operation: EditorOperation = event.key === "Tab"
+      ? { type: event.shiftKey ? "outdent" : "indent", blockIds: targets }
+      : { type: "deleteSelection", blockIds: targets };
+    void editor.run(operation, { restoreFocus: false });
+  };
+
   const keyInput = (input: PageBlockEditorKeyInput, event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      lastTextSelections.current.set(input.block.id, { anchor: input.anchor, focus: input.focus });
+      selection.select(input.block.id);
+      setSelectionMode(true);
+      setSelectionFocusId(input.block.id);
+      renderSelection();
+      input.element.blur();
+      focusBlockRow(input.block.id);
+      return;
+    }
     if (
       event.key === "Enter" &&
       !event.shiftKey &&
@@ -154,7 +255,13 @@ export function PageOutliner({
         selection.select(input.block.id);
       }
       selection.extendBy(event.key === "ArrowUp" ? -1 : 1);
+      lastTextSelections.current.set(input.block.id, { anchor: input.anchor, focus: input.focus });
+      setSelectionMode(true);
+      setSelectionFocusId(selection.getSnapshot().focusId);
       renderSelection();
+      input.element.blur();
+      const focusId = selection.getSnapshot().focusId;
+      if (focusId) focusBlockRow(focusId);
       return;
     }
     if (handleArrowNavigation(input, event, renderedBlocks, editor.queueFocus)) return;
@@ -270,6 +377,8 @@ export function PageOutliner({
                     onCopyInput={(input, event) => copyOrCutInput(input, event, false)}
                     onCutInput={(input, event) => copyOrCutInput(input, event, true)}
                     onSelectBlock={selectBlock}
+                    onSelectAtomicBlock={selectAtomicBlock}
+                    onBlockKeyInput={blockKeyInput}
                     onEditorHeightChange={remeasureEditorRow}
                     sessionIndex={sessionIndex}
                     lens={lens}
@@ -295,92 +404,6 @@ export function PageOutliner({
       )}
     </div>
   );
-}
-
-function structuralOperation(
-  input: PageBlockEditorKeyInput,
-  event: React.KeyboardEvent<HTMLTextAreaElement>,
-  selectedIds: readonly string[],
-): EditorOperation | null {
-  const range = { anchor: input.anchor, focus: input.focus };
-  if (event.key === "Enter") return { type: "splitBlock", blockId: input.block.id, selection: range, newBlockTempId: uniqueTempId("split"), isComposing: input.isComposing };
-  if (event.key === "Tab") {
-    return {
-      type: event.shiftKey ? "outdent" : "indent",
-      blockIds: selectedIds,
-      focus: { blockId: input.block.id, selection: range },
-    };
-  }
-  if (event.key === "Backspace") {
-    if (selectedIds.length > 1) return { type: "deleteSelection", blockIds: selectedIds };
-    return input.anchor === input.focus && input.focus === 0
-      ? { type: "mergePrevious", blockId: input.block.id, selection: range, isComposing: input.isComposing }
-      : null;
-  }
-  if (event.key === "Delete") {
-    if (selectedIds.length > 1) return { type: "deleteSelection", blockIds: selectedIds };
-    return input.anchor === input.focus && input.focus === input.block.textValue.length
-      ? { type: "mergeNext", blockId: input.block.id, selection: range, isComposing: input.isComposing }
-      : null;
-  }
-  return null;
-}
-
-function handleArrowNavigation(
-  input: PageBlockEditorKeyInput,
-  event: React.KeyboardEvent<HTMLTextAreaElement>,
-  blocks: readonly PageDocumentBlock[],
-  queueFocus: (focus: { blockId: string; anchor: number; focus: number } | null) => void,
-): boolean {
-  if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key) || event.shiftKey) return false;
-  const index = blocks.findIndex((block) => block.id === input.block.id);
-  const previous = blocks[index - 1];
-  const next = blocks[index + 1];
-  const adjacent = (block: PageDocumentBlock | undefined) => block
-    ? { target: existingBlock(block.id), textLength: block.textValue.length }
-    : null;
-  const selection = { anchor: input.anchor, focus: input.focus };
-  const decision = event.key === "ArrowLeft" || event.key === "ArrowRight"
-    ? decideHorizontalEdgeNavigation({
-        direction: event.key === "ArrowLeft" ? "left" : "right",
-        selection,
-        textLength: input.block.textValue.length,
-        previousBlock: adjacent(previous),
-        nextBlock: adjacent(next),
-      })
-    : decideVerticalEdgeNavigation({
-        direction: event.key === "ArrowUp" ? "up" : "down",
-        selection,
-        metrics: measureTextareaCaretLines(input.element, input.focus),
-        previousBlock: adjacent(previous),
-        nextBlock: adjacent(next),
-      });
-  if (decision.kind === "native") return false;
-  event.preventDefault();
-  const target = decision.focus.target;
-  queueFocus({
-    blockId: target.kind === "existing" ? target.blockId : target.tempId,
-    anchor: decision.focus.selection.anchor,
-    focus: decision.focus.selection.focus,
-  });
-  return true;
-}
-
-function crossesVerticalBlockEdge(
-  input: PageBlockEditorKeyInput,
-  key: "ArrowUp" | "ArrowDown",
-  blocks: readonly PageDocumentBlock[],
-): boolean {
-  const index = blocks.findIndex((block) => block.id === input.block.id);
-  const adjacent = key === "ArrowUp" ? blocks[index - 1] : blocks[index + 1];
-  if (!adjacent) return false;
-  return decideVerticalEdgeNavigation({
-    direction: key === "ArrowUp" ? "up" : "down",
-    selection: { anchor: input.anchor, focus: input.focus },
-    metrics: measureTextareaCaretLines(input.element, input.focus),
-    previousBlock: key === "ArrowUp" ? { target: existingBlock(adjacent.id), textLength: adjacent.textValue.length } : null,
-    nextBlock: key === "ArrowDown" ? { target: existingBlock(adjacent.id), textLength: adjacent.textValue.length } : null,
-  }).kind === "focus";
 }
 
 function MutationStatus({ state, onDismiss, onResync }: {
@@ -430,47 +453,4 @@ function EditorFeedback({ message, onDismiss }: { message: string | null; onDism
   );
 }
 
-function outlineDepths(blocks: readonly PageDocumentBlock[]): ReadonlyMap<string, number> {
-  const byId = new Map(blocks.map((block) => [block.id, block] as const));
-  const depths = new Map<string, number>();
-  for (const block of blocks) {
-    let depth = 0;
-    let parentId = block.parentId;
-    const visited = new Set<string>([block.id]);
-    while (parentId && byId.has(parentId) && !visited.has(parentId)) {
-      visited.add(parentId);
-      depth += 1;
-      parentId = byId.get(parentId)?.parentId ?? null;
-    }
-    depths.set(block.id, depth);
-  }
-  return depths;
-}
-
-export function visibleOutlineBlocks(
-  blocks: readonly PageDocumentBlock[],
-): readonly PageDocumentBlock[] {
-  const hiddenParents = new Set<string>();
-  const visible: PageDocumentBlock[] = [];
-  for (const block of blocks) {
-    if (block.parentId !== null && hiddenParents.has(block.parentId)) {
-      hiddenParents.add(block.id);
-      continue;
-    }
-    visible.push(block);
-    if (block.collapsed) hiddenParents.add(block.id);
-  }
-  return visible;
-}
-
-function toCoreFocus(focus: { blockId: string; anchor: number; focus: number }): FocusResult {
-  return { target: existingBlock(focus.blockId), selection: { anchor: focus.anchor, focus: focus.focus } };
-}
-
-function uniqueTempId(prefix: string): string {
-  return `${prefix}-${globalThis.crypto.randomUUID()}`;
-}
-
-function cssEscape(value: string): string {
-  return globalThis.CSS?.escape ? globalThis.CSS.escape(value) : value.replace(/["\\]/g, "\\$&");
-}
+export { visibleOutlineBlocks } from "./page-outliner-operations";

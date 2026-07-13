@@ -53,7 +53,7 @@ export function planMergePrevious(
   if (isComposing) return noopPlan("composition");
   const current = index.require(blockId);
   if (selection.anchor !== selection.focus || selection.focus !== 0) return noopPlan("not-at-start");
-  const previous = index.previousSibling(blockId);
+  const previous = index.previousFlat(blockId);
   if (!previous) return noopPlan("first-block");
 
   const intents: SemanticEditIntent[] = [{
