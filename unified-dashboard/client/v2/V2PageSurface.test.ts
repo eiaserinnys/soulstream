@@ -106,6 +106,7 @@ function editorRuntime() {
     getPage: vi.fn(),
     getDailyPage: vi.fn(),
     applyOperations: vi.fn(),
+    transferBlocks: vi.fn(),
     setStarred: vi.fn(),
   } as PageApiClient;
   return { doc: {} as PageYjsClient["doc"], apiClient, onResync: vi.fn() };

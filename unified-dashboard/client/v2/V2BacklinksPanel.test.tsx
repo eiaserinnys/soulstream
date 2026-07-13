@@ -112,6 +112,7 @@ function api(overrides: Partial<PageApiClient>): PageApiClient {
     applyOperations: vi.fn(),
     setStarred: vi.fn(),
     ...overrides,
+    transferBlocks: overrides.transferBlocks ?? vi.fn(),
   };
 }
 

@@ -111,6 +111,7 @@ function createApi(): PageApiClient {
     getBlock: vi.fn(async () => { throw new Error("not found"); }),
     getBacklinks: vi.fn(async () => ({ items: [], nextCursor: null })),
     applyOperations: vi.fn(),
+    transferBlocks: vi.fn(),
     setStarred: vi.fn(),
   };
 }
