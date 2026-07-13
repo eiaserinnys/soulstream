@@ -65,9 +65,12 @@ export function resolveInlineSessionDraftTarget(input: {
   }
   if (target.type === "session_ref") {
     const sessionId = target.properties.sessionId;
-    return typeof sessionId === "string" && sessionId
+    return target.properties.primary === true && sessionId === draft.recoverySessionId
       ? { kind: "recovered", sessionId }
-      : { kind: "error", message: "The draft block changed into an invalid session reference." };
+      : {
+          kind: "error",
+          message: "The draft block changed into a different session reference. No session was opened.",
+        };
   }
   if (target.textValue.trim() !== "/세션") {
     return { kind: "error", message: "The draft block changed. Restore /세션 before retrying." };

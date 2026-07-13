@@ -165,7 +165,7 @@ export class TaskCreation {
     } catch (err) {
       appendCreationWarning(task, {
         code: "PAGE_BINDING_PENDING",
-        message: "Page binding is pending and will retry automatically.",
+        message: "The session was created, but page binding status could not be confirmed. Check the page before retrying.",
       });
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },

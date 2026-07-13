@@ -115,14 +115,54 @@ describe("session command HTTP route harness", () => {
     ).toMatchObject({ statusCode: 404 });
   });
 
-  it("rejects blank prompts and malformed page anchors before dispatch", async () => {
-    const { router, bridge } = createHarness();
+  it("preserves legacy whitespace-only prompts but rejects them for page-anchored creates", async () => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    const sent: Array<Record<string, unknown>> = [];
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: {
+        send: (data) => {
+          const message = JSON.parse(data) as Record<string, unknown>;
+          sent.push(message);
+          registry.receiveNodeMessage(
+            { nodeId: "fake-node", connectionId },
+            {
+              type: "session_created",
+              requestId: message.requestId,
+              agentSessionId: message.agentSessionId,
+            },
+          );
+        },
+      },
+    });
     const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
-    expect((await app.inject({
+
+    const legacy = await app.inject({
       method: "POST",
       url: "/api/sessions",
       payload: { prompt: "   ", profile: "claude-roselin" },
-    })).statusCode).toBe(400);
+    });
+    const anchored = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: {
+        prompt: "   ",
+        profile: "claude-roselin",
+        pageAnchor: { pageId: "page-a", blockId: "block-a", expectedVersion: 7 },
+      },
+    });
+
+    expect(legacy.statusCode).toBe(201);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ prompt: "   " });
+    expect(anchored.statusCode).toBe(400);
+  });
+
+  it("rejects malformed page anchors before dispatch", async () => {
+    const { router, bridge } = createHarness();
+    const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
     expect((await app.inject({
       method: "POST",
       url: "/api/sessions",

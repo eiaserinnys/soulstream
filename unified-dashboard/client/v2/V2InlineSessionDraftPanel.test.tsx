@@ -107,9 +107,34 @@ describe("V2InlineSessionDraftPanel", () => {
           id: "block-a",
           type: "session_ref",
           textValue: "[[Daily]]",
-          properties: { sessionId: "session-recovered", primary: true },
+          properties: { sessionId: draft.recoverySessionId, primary: true },
         }],
       },
-    })).toEqual({ kind: "recovered", sessionId: "session-recovered" });
+    })).toEqual({ kind: "recovered", sessionId: draft.recoverySessionId });
+
+    for (const properties of [
+      { sessionId: "session-other", primary: true },
+      { sessionId: draft.recoverySessionId, primary: false },
+      { sessionId: draft.recoverySessionId },
+      { sessionId: 42, primary: true },
+    ]) {
+      expect(resolveInlineSessionDraftTarget({
+        draft,
+        connectedNodeIds: new Set(["node-a"]),
+        currentPage: {
+          id: "page-a",
+          version: 8,
+          blocks: [{
+            id: "block-a",
+            type: "session_ref",
+            textValue: "[[Daily]]",
+            properties,
+          }],
+        },
+      })).toEqual({
+        kind: "error",
+        message: "The draft block changed into a different session reference. No session was opened.",
+      });
+    }
   });
 });

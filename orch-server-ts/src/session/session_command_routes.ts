@@ -55,11 +55,14 @@ export function registerSessionCommandRoutes(
       return badRequest(reply, "Request body must be a JSON object");
     }
     const prompt = body.prompt;
-    if (typeof prompt !== "string" || prompt.trim().length === 0) {
+    if (typeof prompt !== "string") {
       return badRequest(reply, "prompt is required");
     }
     if (body.pageAnchor !== undefined && !isPageAnchor(body.pageAnchor)) {
       return badRequest(reply, "pageAnchor must include pageId, blockId, and a positive expectedVersion");
+    }
+    if (body.pageAnchor !== undefined && prompt.trim().length === 0) {
+      return badRequest(reply, "prompt is required for page-anchored session creation");
     }
 
     try {
