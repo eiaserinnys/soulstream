@@ -94,9 +94,7 @@ export function registerFolderRoutes(
   app.get("/api/folders", async (request, reply) => {
     const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
     const folders = [...(await options.provider.listFolders())];
-    const assignments = access.restricted
-      ? await options.provider.listSessionAssignments()
-      : {};
+    const assignments = await options.provider.listSessionAssignments();
 
     return reply.send({
       folders: filterFolders(access, folders),

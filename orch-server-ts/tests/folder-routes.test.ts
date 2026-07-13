@@ -36,10 +36,10 @@ const folders: FolderRecord[] = [
 ];
 
 const assignments: Record<string, SessionAssignmentRecord> = {
-  "sess-a": { folderId: "folder-a" },
-  "sess-child": { folderId: "folder-a-child" },
-  "sess-b": { folderId: "folder-b" },
-  "sess-none": { folderId: null },
+  "sess-a": { folderId: "folder-a", displayName: "Alpha session" },
+  "sess-child": { folderId: "folder-a-child", displayName: "Child session" },
+  "sess-b": { folderId: "folder-b", displayName: "Beta session" },
+  "sess-none": { folderId: null, displayName: "Unfiled session" },
 };
 
 function createHarness(overrides: Partial<FolderRouteProvider> = {}) {
@@ -147,7 +147,7 @@ describe("folder route harness", () => {
     ]);
   });
 
-  it("lists unrestricted folders without loading session assignments", async () => {
+  it("lists unrestricted folders with every session title projection", async () => {
     const { app, calls } = createAppWithFolders({ restricted: false });
 
     const response = await app.inject({ method: "GET", url: "/api/folders" });
@@ -155,10 +155,10 @@ describe("folder route harness", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       folders,
-      sessions: {},
+      sessions: assignments,
       access: { restricted: false, allowedFolderIds: [] },
     });
-    expect(calls).toEqual([["access"], ["listFolders"]]);
+    expect(calls).toEqual([["access"], ["listFolders"], ["listSessionAssignments"]]);
 
     await app.close();
   });

@@ -31,6 +31,7 @@ export interface CatalogFolder {
   parentFolderId?: string | null;
   settings?: FolderSettings;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 /** 폴더 drag/reorder mutation 항목 */

@@ -100,6 +100,27 @@ describe("board-yjs-client", () => {
     });
   });
 
+  it("arrange position update는 최근 갱신순의 기준 시각을 보존한다", () => {
+    const doc = new Y.Doc();
+    seedBoardYDocFromCatalog(doc, "f1", {
+      ...catalog,
+      boardItems: [{
+        ...catalog.boardItems![0]!,
+        updatedAt: "2026-07-12T00:00:00.000Z",
+      }],
+    });
+
+    updateBoardYjsItemPosition(doc, "session:s1", 560, 320, {
+      preserveUpdatedAt: true,
+    });
+
+    expect(catalogBoardItemsFromYDoc("f1", doc)[0]).toMatchObject({
+      x: 560,
+      y: 320,
+      updatedAt: "2026-07-12T00:00:00.000Z",
+    });
+  });
+
   it("frame board item type과 metadata를 Yjs roundtrip으로 보존한다", () => {
     const doc = new Y.Doc();
     seedBoardYDocFromCatalog(doc, "folder-a", {

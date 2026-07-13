@@ -28,7 +28,7 @@ export function createLiveFolderProvider(
     async listSessionAssignments() {
       const sql = await sqlResolver.resolveSql();
       const rows = await sql`
-        SELECT session_id, folder_id FROM sessions
+        SELECT session_id, folder_id, display_name FROM sessions
       `;
       return Object.fromEntries(rows.flatMap(sessionAssignmentEntry));
     },
@@ -120,7 +120,10 @@ function sessionAssignmentEntry(
 ): Array<[string, SessionAssignmentRecord]> {
   const sessionId = stringOrNull(row.session_id ?? row.sessionId);
   if (sessionId === null) return [];
-  return [[sessionId, { folderId: stringOrNull(row.folder_id ?? row.folderId) }]];
+  return [[sessionId, {
+    folderId: stringOrNull(row.folder_id ?? row.folderId),
+    displayName: stringOrNull(row.display_name ?? row.displayName),
+  }]];
 }
 
 type FolderUpdatePatch = {

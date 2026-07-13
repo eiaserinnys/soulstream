@@ -1,29 +1,42 @@
 import type { BoardItemPositionUpdate } from "./board-selection";
 import {
   BOARD_GRID_SIZE,
+  getBoardItemActivityMs,
   getBoardItemHeight,
   getBoardItemWidth,
   snapBoardPosition,
   type BoardWorkspaceItem,
 } from "./board-workspace-items";
 
-interface BoardDeclutterRect {
-  boardItemId: string;
+type ArrangeClusterKey = "markdown" | "custom_view" | "session" | "other";
+
+interface ArrangeCell<T> {
+  value: T;
   x: number;
   y: number;
   width: number;
   height: number;
 }
 
-function rectForItem(item: BoardWorkspaceItem, position = { x: item.x, y: item.y }): BoardDeclutterRect {
-  return {
-    boardItemId: item.boardItemId,
-    x: position.x,
-    y: position.y,
-    width: getBoardItemWidth(item),
-    height: getBoardItemHeight(item),
-  };
+interface ArrangeGrid<T> {
+  cells: ArrangeCell<T>[];
+  width: number;
+  height: number;
 }
+
+interface ArrangeCluster {
+  layout: ArrangeGrid<BoardWorkspaceItem>;
+}
+
+const TARGET_ASPECT_RATIO = 4 / 3;
+const CARD_GAP = BOARD_GRID_SIZE;
+const CLUSTER_GAP = BOARD_GRID_SIZE * 4;
+const CLUSTER_ORDER: readonly ArrangeClusterKey[] = [
+  "markdown",
+  "custom_view",
+  "session",
+  "other",
+];
 
 function getFrameChildIds(items: readonly BoardWorkspaceItem[]): Set<string> {
   const childIds = new Set<string>();
@@ -38,88 +51,164 @@ function isPinnedItem(item: BoardWorkspaceItem): boolean {
   return item.type === "session" && item.generatedPlacementKind === "inbox";
 }
 
-function rectsConflictWithMargin(
-  a: BoardDeclutterRect,
-  b: BoardDeclutterRect,
-  margin = BOARD_GRID_SIZE,
-): boolean {
-  return a.x < b.x + b.width + margin &&
-    a.x + a.width + margin > b.x &&
-    a.y < b.y + b.height + margin &&
-    a.y + a.height + margin > b.y;
-}
-
-function snapUpBoardCoordinate(value: number): number {
-  return Math.ceil(value / BOARD_GRID_SIZE) * BOARD_GRID_SIZE;
-}
-
-function spiralOffset(index: number, step: number): { x: number; y: number } {
-  if (index === 0) return { x: 0, y: 0 };
-  const ring = Math.ceil((Math.sqrt(index + 1) - 1) / 2);
-  const side = ring * 2;
-  const maxIndex = (side + 1) ** 2 - 1;
-  const offset = maxIndex - index;
-  const radius = ring * step;
-
-  if (offset < side) return { x: radius - offset * step, y: radius };
-  if (offset < side * 2) return { x: -radius, y: radius - (offset - side) * step };
-  if (offset < side * 3) return { x: -radius + (offset - side * 2) * step, y: -radius };
-  return { x: radius, y: -radius + (offset - side * 3) * step };
-}
-
-function hasMarginConflict(rect: BoardDeclutterRect, occupied: readonly BoardDeclutterRect[]): boolean {
-  return occupied.some((candidate) => rectsConflictWithMargin(rect, candidate));
-}
-
-function findNearestAvailablePosition(
-  item: BoardWorkspaceItem,
-  occupied: readonly BoardDeclutterRect[],
-): { x: number; y: number } {
-  const origin = snapBoardPosition(item.x, item.y);
-  const maxCandidates = Math.max(10_000, occupied.length * occupied.length * 64);
-
-  for (let index = 0; index < maxCandidates; index += 1) {
-    const offset = spiralOffset(index, BOARD_GRID_SIZE);
-    const position = {
-      x: origin.x + offset.x,
-      y: origin.y + offset.y,
-    };
-    const candidate = rectForItem(item, position);
-    if (!hasMarginConflict(candidate, occupied)) return position;
+function clusterKey(item: BoardWorkspaceItem): ArrangeClusterKey {
+  if (item.type === "markdown" || item.type === "custom_view" || item.type === "session") {
+    return item.type;
   }
+  return "other";
+}
 
-  const bottom = occupied.reduce((max, rect) => Math.max(max, rect.y + rect.height), origin.y);
+function compareRecent(left: BoardWorkspaceItem, right: BoardWorkspaceItem): number {
+  return getBoardItemActivityMs(right) - getBoardItemActivityMs(left)
+    || left.boardItemId.localeCompare(right.boardItemId);
+}
+
+function dimensions(item: BoardWorkspaceItem): { width: number; height: number } {
   return {
-    x: origin.x,
-    y: snapUpBoardCoordinate(bottom + BOARD_GRID_SIZE),
+    width: getBoardItemWidth(item),
+    height: getBoardItemHeight(item),
   };
 }
 
-export function declutterBoardItems(items: readonly BoardWorkspaceItem[]): BoardItemPositionUpdate[] {
+function packGrid<T>(
+  values: readonly T[],
+  columns: number,
+  gap: number,
+  sizeOf: (value: T) => { width: number; height: number },
+): ArrangeGrid<T> {
+  const columnCount = Math.min(Math.max(1, columns), values.length);
+  const rowCount = Math.ceil(values.length / columnCount);
+  const sizes = values.map(sizeOf);
+  const columnWidths = Array.from({ length: columnCount }, () => 0);
+  const rowHeights = Array.from({ length: rowCount }, () => 0);
+
+  sizes.forEach((size, index) => {
+    const column = index % columnCount;
+    const row = Math.floor(index / columnCount);
+    columnWidths[column] = Math.max(columnWidths[column]!, size.width);
+    rowHeights[row] = Math.max(rowHeights[row]!, size.height);
+  });
+
+  const columnX = cumulativeOffsets(columnWidths, gap);
+  const rowY = cumulativeOffsets(rowHeights, gap);
+  return {
+    cells: values.map((value, index) => {
+      const column = index % columnCount;
+      const row = Math.floor(index / columnCount);
+      return {
+        value,
+        x: columnX[column]!,
+        y: rowY[row]!,
+        width: sizes[index]!.width,
+        height: sizes[index]!.height,
+      };
+    }),
+    width: sum(columnWidths) + gap * Math.max(0, columnCount - 1),
+    height: sum(rowHeights) + gap * Math.max(0, rowCount - 1),
+  };
+}
+
+function cumulativeOffsets(values: readonly number[], gap: number): number[] {
+  const offsets: number[] = [];
+  let offset = 0;
+  for (const value of values) {
+    offsets.push(offset);
+    offset += value + gap;
+  }
+  return offsets;
+}
+
+function sum(values: readonly number[]): number {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+function aspectScore(layout: Pick<ArrangeGrid<unknown>, "width" | "height">): number {
+  if (layout.width <= 0 || layout.height <= 0) return Number.POSITIVE_INFINITY;
+  return Math.abs(Math.log((layout.width / layout.height) / TARGET_ASPECT_RATIO));
+}
+
+function chooseBestGrid<T>(
+  values: readonly T[],
+  gap: number,
+  sizeOf: (value: T) => { width: number; height: number },
+): ArrangeGrid<T> {
+  let best = packGrid(values, 1, gap, sizeOf);
+  for (let columns = 2; columns <= values.length; columns += 1) {
+    const candidate = packGrid(values, columns, gap, sizeOf);
+    const score = aspectScore(candidate);
+    const bestScore = aspectScore(best);
+    if (
+      score < bestScore
+      || (score === bestScore && candidate.width * candidate.height < best.width * best.height)
+    ) {
+      best = candidate;
+    }
+  }
+  return best;
+}
+
+function buildClusters(items: readonly BoardWorkspaceItem[]): ArrangeCluster[] {
+  const byKey = new Map<ArrangeClusterKey, BoardWorkspaceItem[]>(
+    CLUSTER_ORDER.map((key) => [key, []]),
+  );
+  for (const item of items) byKey.get(clusterKey(item))!.push(item);
+
+  return CLUSTER_ORDER.flatMap((key) => {
+    const clusterItems = byKey.get(key)!.sort(compareRecent);
+    if (clusterItems.length === 0) return [];
+    return [{
+      layout: chooseBestGrid(clusterItems, CARD_GAP, dimensions),
+    }];
+  });
+}
+
+function arrangeClusters(clusters: readonly ArrangeCluster[]): ArrangeGrid<ArrangeCluster> {
+  return chooseBestGrid(clusters, CLUSTER_GAP, (cluster) => ({
+    width: cluster.layout.width,
+    height: cluster.layout.height,
+  }));
+}
+
+function pinnedBottom(pinnedItems: readonly BoardWorkspaceItem[]): number | null {
+  if (pinnedItems.length === 0) return null;
+  return Math.max(...pinnedItems.map((item) => item.y + getBoardItemHeight(item)));
+}
+
+export function declutterBoardItems(
+  items: readonly BoardWorkspaceItem[],
+): BoardItemPositionUpdate[] {
   if (items.length <= 1) return [];
 
   const frameChildIds = getFrameChildIds(items);
-  const layoutItems = items.filter((item) => !frameChildIds.has(item.boardItemId));
-  const pinnedItems = layoutItems.filter(isPinnedItem);
-  const movableItems = layoutItems.filter((item) => !isPinnedItem(item));
-  const occupied = pinnedItems.map((item) => rectForItem(item));
-  const updates: BoardItemPositionUpdate[] = [];
+  const rootItems = items.filter((item) => !frameChildIds.has(item.boardItemId));
+  const pinnedItems = rootItems.filter(isPinnedItem);
+  const movableItems = rootItems.filter((item) => !isPinnedItem(item));
+  if (movableItems.length === 0) return [];
 
-  for (const item of movableItems) {
-    const rect = rectForItem(item);
-    const next = hasMarginConflict(rect, occupied)
-      ? findNearestAvailablePosition(item, occupied)
-      : { x: item.x, y: item.y };
-    occupied.push(rectForItem(item, next));
-    if (next.x === item.x && next.y === item.y) {
-      continue;
-    }
-    updates.push({
-      boardItemId: item.boardItemId,
-      x: next.x,
-      y: next.y,
-    });
+  const origin = snapBoardPosition(
+    Math.min(...movableItems.map((item) => item.x)),
+    Math.min(...movableItems.map((item) => item.y)),
+  );
+  const fixedBottom = pinnedBottom(pinnedItems);
+  if (fixedBottom !== null) {
+    origin.y = Math.max(origin.y, snapBoardPosition(0, fixedBottom + CLUSTER_GAP).y);
   }
 
+  const clusterGrid = arrangeClusters(buildClusters(movableItems));
+  const updates: BoardItemPositionUpdate[] = [];
+  for (const clusterCell of clusterGrid.cells) {
+    for (const itemCell of clusterCell.value.layout.cells) {
+      const next = snapBoardPosition(
+        origin.x + clusterCell.x + itemCell.x,
+        origin.y + clusterCell.y + itemCell.y,
+      );
+      if (next.x === itemCell.value.x && next.y === itemCell.value.y) continue;
+      updates.push({
+        boardItemId: itemCell.value.boardItemId,
+        x: next.x,
+        y: next.y,
+      });
+    }
+  }
   return updates;
 }

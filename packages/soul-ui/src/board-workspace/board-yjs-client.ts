@@ -40,7 +40,12 @@ export interface BoardYjsRuntime {
   isProviderBacked: boolean;
   subscribe: (listener: () => void) => () => void;
   getBoardItems: () => CatalogBoardItem[];
-  updateBoardItemPosition: (boardItemId: string, x: number, y: number) => void;
+  updateBoardItemPosition: (
+    boardItemId: string,
+    x: number,
+    y: number,
+    options?: { preserveUpdatedAt?: boolean },
+  ) => void;
   upsertBoardItem: (boardItem: CatalogBoardItem) => void;
   deleteBoardItem: (boardItemId: string) => void;
   createMarkdownDocument: (input: {
@@ -154,6 +159,7 @@ export function updateBoardYjsItemPosition(
   boardItemId: string,
   x: number,
   y: number,
+  options: { preserveUpdatedAt?: boolean } = {},
 ): void {
   const map = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
   const current = map.get(boardItemId);
@@ -162,7 +168,7 @@ export function updateBoardYjsItemPosition(
     ...current,
     x,
     y,
-    updated_at: new Date().toISOString(),
+    ...(!options.preserveUpdatedAt ? { updated_at: new Date().toISOString() } : {}),
   });
 }
 
@@ -487,8 +493,8 @@ function createRuntime(
       return () => listeners.delete(listener);
     },
     getBoardItems: () => catalogBoardItemsFromYDoc(container, doc, folderId),
-    updateBoardItemPosition: (boardItemId, x, y) => {
-      updateBoardYjsItemPosition(doc, boardItemId, x, y);
+    updateBoardItemPosition: (boardItemId, x, y, options) => {
+      updateBoardYjsItemPosition(doc, boardItemId, x, y, options);
       notify();
     },
     upsertBoardItem: (boardItem) => {
