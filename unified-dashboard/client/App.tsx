@@ -16,19 +16,26 @@ const OrchestratorDashboardLayout = lazy(() =>
     default: mod.OrchestratorDashboardLayout,
   })),
 );
-const V2DashboardLayout = lazy(() =>
-  import("./v2/V2DashboardLayout").then((mod) => ({
-    default: mod.V2DashboardLayout,
-  })),
-);
 const V3DashboardLayout = lazy(() =>
   import("./v3/V3DashboardLayout").then((mod) => ({
     default: mod.V3DashboardLayout,
   })),
 );
 
-export function isV2Pathname(pathname: string): boolean {
+function isRetiredV2Pathname(pathname: string): boolean {
   return pathname === "/v2" || pathname.startsWith("/v2/");
+}
+
+export function redirectV2Pathname(
+  pathname: string,
+  history: Pick<History, "replaceState" | "state">,
+  updatePathname: (pathname: string) => void,
+): boolean {
+  if (!isRetiredV2Pathname(pathname)) return false;
+
+  history.replaceState(history.state, "", "/v3");
+  updatePathname("/v3");
+  return true;
 }
 
 export function isV3Pathname(pathname: string): boolean {
@@ -46,6 +53,10 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    redirectV2Pathname(pathname, window.history, setPathname);
+  }, [pathname]);
+
+  useEffect(() => {
     if (config.mode === "orchestrator") {
       document.title = "Soulstream Dashboard";
     } else {
@@ -60,13 +71,6 @@ export function App() {
       return (
         <Suspense fallback={null}>
           <V3DashboardLayout />
-        </Suspense>
-      );
-    }
-    if (isV2Pathname(pathname)) {
-      return (
-        <Suspense fallback={null}>
-          <V2DashboardLayout />
         </Suspense>
       );
     }
