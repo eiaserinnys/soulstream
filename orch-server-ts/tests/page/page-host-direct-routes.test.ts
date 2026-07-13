@@ -138,8 +138,20 @@ describe("orch-local Page Yjs host operation routes", () => {
         pageId: "page-1",
         kinds: ["mount", "inline_page", "block_ref"],
         cursor: undefined,
+        includeSelf: false,
         limit: 50,
       });
+
+      await app.inject({
+        method: "POST",
+        url: "/api/page-yjs/host/get-backlinks",
+        headers,
+        payload: { page_id: "page-1", include_self: true },
+      });
+      expect(service.getBacklinks).toHaveBeenLastCalledWith(expect.objectContaining({
+        pageId: "page-1",
+        includeSelf: true,
+      }));
     } finally {
       await app.close();
     }

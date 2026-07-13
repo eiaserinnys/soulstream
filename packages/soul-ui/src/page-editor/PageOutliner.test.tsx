@@ -73,7 +73,7 @@ describe("PageOutliner", () => {
     expect(container!.querySelector('[data-block-id="block-1"]')).toBeNull();
   });
 
-  it("dispatches session_ref as an atomic read-only renderer", async () => {
+  it("treats session_ref as a select-first atomic block with explicit open actions", async () => {
     const doc = createPageDoc(1);
     const block = doc.getMap<Y.Map<unknown>>("blocks").get("block-0")!;
     block.set("type", "session_ref");
@@ -93,8 +93,105 @@ describe("PageOutliner", () => {
 
     expect(container!.querySelector("textarea")).toBeNull();
     expect(container!.querySelector("[data-session-ref='session-a']")).not.toBeNull();
-    flushSync(() => container!.querySelector<HTMLElement>("[role='button']")!.click());
-    expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ agentSessionId: "session-a" }));
+    const row = container!.querySelector<HTMLElement>("[data-block-id='block-0']")!;
+
+    flushSync(() => row.click());
+    expect(row.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(row);
+    expect(onOpenSession).not.toHaveBeenCalled();
+
+    flushSync(() => row.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true })));
+    dispatchRowKey(row, "Enter");
+    flushSync(() => container!.querySelector<HTMLButtonElement>("[data-session-ref-open='session-a']")!.click());
+    expect(onOpenSession).toHaveBeenCalledTimes(3);
+    expect(onOpenSession).toHaveBeenLastCalledWith(expect.objectContaining({ agentSessionId: "session-a" }));
+  });
+
+  it("applies indent, outdent, delete, and arrow selection to an atomic session_ref", async () => {
+    const doc = createPageDoc(3);
+    const blocks = doc.getMap<Y.Map<unknown>>("blocks");
+    blocks.get("block-1")!.set("type", "session_ref");
+    (blocks.get("block-1")!.get("properties") as Y.Map<unknown>).set("sessionId", "session-a");
+    const api = createApi();
+    await render(doc, api, vi.fn(), {
+      sessionIndex: createSessionSummaryIndex([{
+        agentSessionId: "session-a",
+        status: "running",
+        eventCount: 0,
+        prompt: "Atomic session",
+      }]),
+    });
+
+    const row = container!.querySelector<HTMLElement>("[data-block-id='block-1']")!;
+    flushSync(() => row.click());
+    dispatchRowKey(row, "ArrowDown");
+    const lower = container!.querySelector<HTMLElement>("[data-block-id='block-2']")!;
+    expect(lower.getAttribute("aria-selected")).toBe("true");
+    dispatchRowKey(lower, "ArrowUp");
+    expect(row.getAttribute("aria-selected")).toBe("true");
+
+    flushSync(() => row.click());
+    dispatchRowKey(row, "Tab");
+    await settle();
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: [expect.objectContaining({
+        op: "move_block",
+        block_id: "block-1",
+        parent_id: "block-0",
+      })],
+    }));
+
+    vi.mocked(api.applyOperations).mockClear();
+    blocks.get("block-1")!.set("parentId", "block-0");
+    doc.getMap("pageMeta").set("mutationVersion", 4);
+    await rerender(doc, api);
+    const nested = container!.querySelector<HTMLElement>("[data-block-id='block-1']")!;
+    flushSync(() => nested.click());
+    dispatchRowKey(nested, "Tab", { shiftKey: true });
+    await settle();
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: [expect.objectContaining({
+        op: "move_block",
+        block_id: "block-1",
+        parent_id: null,
+      })],
+    }));
+
+    vi.mocked(api.applyOperations).mockClear();
+    blocks.get("block-1")!.set("parentId", null);
+    doc.getMap("pageMeta").set("mutationVersion", 5);
+    await rerender(doc, api);
+    const projected = container!.querySelector<HTMLElement>("[data-block-id='block-1']")!;
+    flushSync(() => projected.click());
+    dispatchRowKey(projected, "Delete");
+    await settle();
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: [{ op: "delete_block_subtree", block_id: "block-1" }],
+    }));
+  });
+
+  it("deletes an atomic session_ref with Backspace while it is selected", async () => {
+    const doc = createPageDoc(1);
+    const block = doc.getMap<Y.Map<unknown>>("blocks").get("block-0")!;
+    block.set("type", "session_ref");
+    (block.get("properties") as Y.Map<unknown>).set("sessionId", "session-a");
+    const api = createApi();
+    await render(doc, api, vi.fn(), {
+      sessionIndex: createSessionSummaryIndex([{
+        agentSessionId: "session-a",
+        status: "running",
+        eventCount: 0,
+      }]),
+    });
+
+    const row = container!.querySelector<HTMLElement>("[data-block-id='block-0']")!;
+    flushSync(() => row.click());
+    dispatchRowKey(row, "Backspace");
+    await settle();
+
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: [{ op: "delete_block_subtree", block_id: "block-0" }],
+    }));
   });
 
   it("offers page autocomplete and inserts only the canonical inline token", async () => {
@@ -105,8 +202,8 @@ describe("PageOutliner", () => {
     await render(doc, api);
 
     changeEditor(editor("block-0"), "[[Dai");
-    await waitFor(() => container!.querySelector('[role="listbox"]')?.textContent?.includes("Daily note") === true);
-    expect(container!.querySelector('[role="listbox"]')?.textContent).toContain("Daily note");
+    await waitFor(() => autocomplete()?.textContent?.includes("Daily note") === true);
+    expect(autocomplete()?.textContent).toContain("Daily note");
     dispatchKey(editor("block-0"), "Enter", 5);
     await settle();
 
@@ -125,7 +222,7 @@ describe("PageOutliner", () => {
     await render(doc, api);
 
     changeEditor(editor("block-0"), "((Dec");
-    await waitFor(() => container!.querySelector('[role="listbox"]')?.textContent?.includes("Decision") === true);
+    await waitFor(() => autocomplete()?.textContent?.includes("Decision") === true);
     dispatchKey(editor("block-0"), "Enter", 5);
     await settle();
 
@@ -185,6 +282,41 @@ describe("PageOutliner", () => {
     }));
   });
 
+  it("shows unnamed sessions as a prompt preview with relative time and agent identity", async () => {
+    const createdAt = new Date(Date.now() - 2 * 60 * 60 * 1_000).toISOString();
+    await render(createPageDoc(1), createApi(), vi.fn(), {
+      sessionIndex: createSessionSummaryIndex([{
+        agentSessionId: "session-unnamed",
+        status: "running",
+        eventCount: 1,
+        prompt: "이 첫 사용자 메시지는 마흔 자를 넘기므로 자동완성에서 짧고 식별 가능하게 잘려야 합니다",
+        createdAt,
+        agentName: "Roselin",
+      }]),
+    });
+
+    changeEditor(editor("block-0"), "[[이 첫");
+    await waitFor(() => autocomplete()?.textContent?.includes("Roselin") === true);
+    expect(autocomplete()?.textContent).toContain("이 첫 사용자 메시지는");
+    expect(autocomplete()?.textContent).toContain("2h ago · Roselin");
+    expect(autocomplete()?.textContent).toContain("…");
+  });
+
+  it("renders reference autocomplete in a body portal with viewport-fixed positioning", async () => {
+    const api = createApi({
+      searchPages: vi.fn(async () => ({ items: [{ pageId: "page-daily", title: "Daily note" }] })),
+    });
+    await render(createPageDoc(1), api);
+
+    changeEditor(editor("block-0"), "[[Dai");
+    await waitFor(() => autocomplete() !== null);
+
+    expect(autocomplete()?.parentElement).toBe(document.body);
+    expect((autocomplete() as HTMLElement).style.position).toBe("fixed");
+    expect((autocomplete() as HTMLElement).style.left).not.toBe("");
+    expect((autocomplete() as HTMLElement).style.top).not.toBe("");
+  });
+
   it("suppresses autocomplete confirmation while IME composition is active", async () => {
     const api = createApi({
       searchPages: vi.fn(async () => ({ items: [{ pageId: "page-korean", title: "한글" }] })),
@@ -196,12 +328,12 @@ describe("PageOutliner", () => {
     changeEditor(target, "[[한");
     dispatchKey(target, "Enter", 3);
     await settle();
-    expect(container!.querySelector('[role="listbox"]')).toBeNull();
+    expect(autocomplete()).toBeNull();
     expect(api.applyOperations).not.toHaveBeenCalled();
 
     flushSync(() => target.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })));
-    await waitFor(() => container!.querySelector('[role="listbox"]')?.textContent?.includes("한글") === true);
-    expect(container!.querySelector('[role="listbox"]')?.textContent).toContain("한글");
+    await waitFor(() => autocomplete()?.textContent?.includes("한글") === true);
+    expect(autocomplete()?.textContent).toContain("한글");
   });
 
   it("does not reopen autocomplete when a dismissed search resolves late", async () => {
@@ -215,13 +347,13 @@ describe("PageOutliner", () => {
     const target = editor("block-0");
 
     changeEditor(target, "[[Dai");
-    expect(container!.querySelector('[role="listbox"]')).not.toBeNull();
+    expect(autocomplete()).not.toBeNull();
     dispatchKey(target, "Escape", 5);
-    expect(container!.querySelector('[role="listbox"]')).toBeNull();
+    expect(autocomplete()).toBeNull();
 
     resolveSearch({ items: [{ pageId: "page-daily", title: "Daily note" }] });
     await settle();
-    expect(container!.querySelector('[role="listbox"]')).toBeNull();
+    expect(autocomplete()).toBeNull();
   });
 
   it("renders resolved tokens read-only, isolates missing targets, and re-enters textarea editing", async () => {
@@ -535,6 +667,44 @@ describe("PageOutliner", () => {
         { op: "delete_block_subtree", block_id: "block-1" },
       ],
     }));
+  });
+
+  it("uses Escape to enter block selection, then restores the last text caret", async () => {
+    await render(createPageDoc(2), createApi());
+    const second = editor("block-1");
+    second.focus();
+    second.setSelectionRange(2, 5);
+
+    dispatchKey(second, "Escape", 2, { selectionEnd: 5 });
+    const row = container!.querySelector<HTMLElement>("[data-block-id='block-1']")!;
+    expect(document.activeElement).toBe(row);
+    expect(row.getAttribute("aria-selected")).toBe("true");
+
+    dispatchRowKey(row, "Escape");
+    await settleFocus();
+    expect(document.activeElement).toBe(second);
+    expect(second.selectionStart).toBe(2);
+    expect(second.selectionEnd).toBe(5);
+    expect(row.getAttribute("aria-selected")).toBe("false");
+  });
+
+  it("blurs the text caret when a multi-block selection starts and restores it on Escape", async () => {
+    await render(createPageDoc(3), createApi());
+    const first = editor("block-0");
+    first.focus();
+
+    dispatchKey(first, "ArrowDown", 4, { shiftKey: true });
+    const focusRow = container!.querySelector<HTMLElement>("[data-block-id='block-1']")!;
+    expect(document.activeElement).toBe(focusRow);
+    expect(document.activeElement).not.toBe(first);
+    expect(selectedRowIds()).toEqual(["block-0", "block-1"]);
+
+    dispatchRowKey(focusRow, "Escape");
+    await settleFocus();
+    expect(document.activeElement).toBe(first);
+    expect(first.selectionStart).toBe(4);
+    expect(first.selectionEnd).toBe(4);
+    expect(selectedRowIds()).toEqual([]);
   });
 
   it("extends Shift+Arrow across four blocks and contracts from the moving focus edge", async () => {
@@ -1101,9 +1271,9 @@ function dispatchKey(
   textarea: HTMLTextAreaElement,
   key: string,
   offset: number,
-  options: { shiftKey?: boolean } = {},
+  options: { shiftKey?: boolean; selectionEnd?: number } = {},
 ): KeyboardEvent {
-  textarea.setSelectionRange(offset, offset);
+  textarea.setSelectionRange(offset, options.selectionEnd ?? offset);
   const event = new KeyboardEvent("keydown", {
     key,
     bubbles: true,
@@ -1112,6 +1282,25 @@ function dispatchKey(
   });
   flushSync(() => textarea.dispatchEvent(event));
   return event;
+}
+
+function dispatchRowKey(
+  row: HTMLElement,
+  key: string,
+  options: { shiftKey?: boolean } = {},
+): KeyboardEvent {
+  const event = new KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+    shiftKey: options.shiftKey,
+  });
+  flushSync(() => row.dispatchEvent(event));
+  return event;
+}
+
+function autocomplete(): HTMLElement | null {
+  return document.body.querySelector<HTMLElement>('[role="listbox"]');
 }
 
 function dispatchPaste(textarea: HTMLTextAreaElement, plainText: string): void {

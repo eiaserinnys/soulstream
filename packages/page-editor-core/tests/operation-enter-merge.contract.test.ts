@@ -148,7 +148,7 @@ describe("Serendipity-homologous Backspace/Delete fixtures", () => {
     expect(result.focus).toEqual({ target: existing("a"), selection: { anchor: 3, focus: 3 } });
   });
 
-  it("B-02 preserves current children after previous-block merge", () => {
+  it("B-02 preserves current children under the previous visible block after merge", () => {
     const snapshot = createSnapshot([
       { id: "a", text: "aaa" },
       { id: "a-child", parentId: "a" },
@@ -158,7 +158,9 @@ describe("Serendipity-homologous Backspace/Delete fixtures", () => {
     const result = planEditorOperation(snapshot, {
       type: "mergePrevious", blockId: "b", selection: { anchor: 0, focus: 0 },
     });
-    expect(project(snapshot, result.intents).childIds("a")).toEqual(["a-child", "b-child"]);
+    const state = project(snapshot, result.intents);
+    expect(state.childIds("a")).toEqual(["a-child"]);
+    expect(state.childIds("a-child")).toEqual(["b-child"]);
   });
 
   it("B-03 deletes an empty block and recovers focus on the previous block", () => {
@@ -212,5 +214,28 @@ describe("Serendipity-homologous Backspace/Delete fixtures", () => {
     expect(planEditorOperation(snapshot, {
       type: "mergeNext", blockId: "a", selection: { anchor: 1, focus: 1 }, isComposing: true,
     }).noopReason).toBe("composition");
+  });
+
+  it("B-09 merges into the previous visible descendant instead of its parent", () => {
+    const snapshot = createSnapshot([
+      { id: "parent", text: "Parent" },
+      { id: "child", parentId: "parent", text: "Child" },
+      { id: "after", text: "After" },
+    ]);
+
+    const result = planEditorOperation(snapshot, {
+      type: "mergePrevious",
+      blockId: "after",
+      selection: { anchor: 0, focus: 0 },
+    });
+
+    const state = project(snapshot, result.intents);
+    expect(state.text("parent")).toBe("Parent");
+    expect(state.text("child")).toBe("ChildAfter");
+    expect(state.childIds()).toEqual(["parent"]);
+    expect(result.focus).toEqual({
+      target: existing("child"),
+      selection: { anchor: 5, focus: 5 },
+    });
   });
 });

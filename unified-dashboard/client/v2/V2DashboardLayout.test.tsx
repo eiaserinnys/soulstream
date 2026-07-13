@@ -526,7 +526,7 @@ describe("V2DashboardLayout", () => {
 
     expect(useDashboardStore.getState().activeSessionKey).toBe("session-created");
     expect(container.querySelector('[data-testid="v2-session-creation-warnings"]')).toBeNull();
-    flushSync(() => container!.querySelector<HTMLElement>('[data-session-ref="session-other"]')!.click());
+    flushSync(() => container!.querySelector<HTMLButtonElement>('[data-session-ref-open="session-other"]')!.click());
     await settle();
     expect(useDashboardStore.getState().activeSessionKey).toBe("session-other");
     expect(container.querySelector('[data-testid="v2-session-creation-warnings"]')).toBeNull();

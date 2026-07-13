@@ -222,7 +222,22 @@ describe("browser page routes", () => {
         pageId: "page-1",
         kinds: ["mount", "block_ref"],
         cursor: "cursor-1",
+        includeSelf: false,
         limit: 3,
+      });
+
+      const backlinksWithSelf = await app.inject({
+        method: "GET",
+        url: "/api/pages/page-1/backlinks?include_self=true",
+        headers: { cookie: browserCookie },
+      });
+      expect(backlinksWithSelf.statusCode).toBe(200);
+      expect(service.getBrowserBacklinks).toHaveBeenLastCalledWith({
+        pageId: "page-1",
+        kinds: ["mount", "inline_page", "block_ref"],
+        cursor: undefined,
+        includeSelf: true,
+        limit: 20,
       });
     } finally {
       await app.close();
@@ -244,6 +259,7 @@ describe("browser page routes", () => {
         "/api/blocks/search?q=Block&limit=51",
         "/api/pages/page-1/backlinks?kinds=unknown",
         "/api/pages/page-1/backlinks?kinds=",
+        "/api/pages/page-1/backlinks?include_self=1",
       ]) {
         const response = await app.inject({
           method: "GET",

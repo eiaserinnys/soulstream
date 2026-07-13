@@ -110,6 +110,23 @@ describe("page MCP tools", () => {
       blocks: [expect.objectContaining({ text: "교체" })],
     }));
   });
+
+  it("excludes self backlinks by default and forwards the explicit opt-in", async () => {
+    const client = fakeClient();
+    const { call } = register(client);
+
+    await call("get_backlinks", { page_id: "page-1" });
+    await call("get_backlinks", { page_id: "page-1", include_self: true });
+
+    expect(client.getBacklinks).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      pageId: "page-1",
+      includeSelf: false,
+    }));
+    expect(client.getBacklinks).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      pageId: "page-1",
+      includeSelf: true,
+    }));
+  });
 });
 
 function register(client: ReturnType<typeof fakeClient>) {

@@ -164,6 +164,7 @@ export class PageRepository {
     pageId: string;
     kinds: readonly PageLinkKind[];
     cursor?: string;
+    includeSelf?: boolean;
     limit: number;
   }): Promise<PageBacklinkPage> {
     return await getPageBacklinks(await this.resolveSql(), input);
@@ -191,6 +192,7 @@ export class PageRepository {
     pageId: string;
     kinds: readonly PageLinkKind[];
     cursor?: string;
+    includeSelf?: boolean;
     limit: number;
   }): Promise<BrowserBacklinkPageDto> {
     return await getBrowserBacklinks(await this.resolveSql(), input);

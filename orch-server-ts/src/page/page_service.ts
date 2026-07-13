@@ -63,6 +63,7 @@ export interface PageServiceRepository extends PageYjsPersistenceRepository {
     pageId: string;
     kinds: readonly PageLinkKind[];
     cursor?: string;
+    includeSelf?: boolean;
     limit: number;
   }): Promise<PageBacklinkPage>;
   commitPageMutation(input: CommitPageMutationInput): Promise<PageMutationCommitResult>;
@@ -270,6 +271,7 @@ export class PageYjsService {
     pageId: string;
     kinds: readonly PageLinkKind[];
     cursor?: string;
+    includeSelf?: boolean;
     limit: number;
   }): Promise<{ items: BacklinkDto[]; next_cursor: string | null }> {
     return await this.config.repository.getPageBacklinks(input);

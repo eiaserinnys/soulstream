@@ -198,12 +198,14 @@ export async function getBrowserBacklinks(
     pageId: string;
     kinds: readonly PageLinkKind[];
     cursor?: string;
+    includeSelf?: boolean;
     limit: number;
   },
 ): Promise<BrowserBacklinkPageDto> {
   const kinds = canonicalKinds(input.kinds);
+  const includeSelf = input.includeSelf ?? false;
   const cursor = input.cursor
-    ? decodeBrowserBacklinkCursor(input.cursor, input.pageId, kinds)
+    ? decodeBrowserBacklinkCursor(input.cursor, input.pageId, kinds, includeSelf)
     : null;
   const cursorDate = cursor?.createdAt ?? null;
   const cursorId = cursor?.id ?? "";
@@ -223,6 +225,7 @@ export async function getBrowserBacklinks(
     LEFT JOIN blocks target ON target.id = link.target_block_id
     WHERE (link.target_page_id = ${input.pageId} OR target.page_id = ${input.pageId})
       AND link.link_kind = ANY(${sql.array(kinds)}::text[])
+      AND (${includeSelf}::boolean OR source.page_id <> ${input.pageId})
       AND (
         ${cursorDate}::text IS NULL
         OR (
@@ -241,7 +244,7 @@ export async function getBrowserBacklinks(
   return {
     items: visible.map(browserBacklinkDto),
     nextCursor: rows.length > input.limit && last
-      ? encodeBrowserBacklinkCursor(last.created_at_cursor, last.id, input.pageId, kinds)
+      ? encodeBrowserBacklinkCursor(last.created_at_cursor, last.id, input.pageId, kinds, includeSelf)
       : null,
   };
 }
@@ -252,9 +255,11 @@ export async function getPageBacklinks(
     pageId: string;
     kinds: readonly PageLinkKind[];
     cursor?: string;
+    includeSelf?: boolean;
     limit: number;
   },
 ): Promise<PageBacklinkPage> {
+  const includeSelf = input.includeSelf ?? false;
   const cursor = input.cursor ? decodeBacklinkCursor(input.cursor) : null;
   const cursorDate = cursor?.createdAt ?? null;
   const cursorId = cursor?.id ?? "";
@@ -268,6 +273,7 @@ export async function getPageBacklinks(
     LEFT JOIN blocks target ON target.id = link.target_block_id
     WHERE (link.target_page_id = ${input.pageId} OR target.page_id = ${input.pageId})
       AND link.link_kind = ANY(${sql.array(input.kinds)}::text[])
+      AND (${includeSelf}::boolean OR source.page_id <> ${input.pageId})
       AND (
         ${cursorDate}::timestamptz IS NULL
         OR (link.created_at, link.id) > (${cursorDate}::timestamptz, ${cursorId})
@@ -356,13 +362,15 @@ function encodeBrowserBacklinkCursor(
   id: string,
   pageId: string,
   kinds: readonly PageLinkKind[],
+  includeSelf: boolean,
 ): string {
   return Buffer.from(JSON.stringify([
-    1,
+    2,
     createdAt,
     id,
     pageId,
     canonicalKinds(kinds).join(","),
+    includeSelf,
   ]), "utf8").toString("base64url");
 }
 
@@ -370,13 +378,18 @@ function decodeBrowserBacklinkCursor(
   cursor: string,
   pageId: string,
   kinds: readonly PageLinkKind[],
+  includeSelf: boolean,
 ): { createdAt: string; id: string } {
   try {
     const bytes = Buffer.from(cursor, "base64url");
     if (!bytes.length || bytes.toString("base64url") !== cursor) throw new Error("encoding");
     const parsed = JSON.parse(bytes.toString("utf8")) as unknown;
+    const legacyDefaultCursor = Array.isArray(parsed) && parsed.length === 5 &&
+      parsed[0] === 1 && includeSelf === false;
+    const currentCursor = Array.isArray(parsed) && parsed.length === 6 &&
+      parsed[0] === 2 && parsed[5] === includeSelf;
     if (
-      !Array.isArray(parsed) || parsed.length !== 5 || parsed[0] !== 1 ||
+      (!legacyDefaultCursor && !currentCursor) ||
       typeof parsed[1] !== "string" || !isPostgresMicrosecondTimestamp(parsed[1]) ||
       typeof parsed[2] !== "string" || parsed[2].length === 0 ||
       parsed[3] !== pageId ||

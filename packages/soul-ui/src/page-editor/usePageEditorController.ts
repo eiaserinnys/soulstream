@@ -27,7 +27,7 @@ export interface PageEditorController {
   readonly state: PageEditorMutationState;
   readonly pendingFocus: ResolvedEditorFocus | null;
   readonly feedback: string | null;
-  run(operation: EditorOperation): Promise<void>;
+  run(operation: EditorOperation, options?: { restoreFocus?: boolean }): Promise<void>;
   createFirstBlock(): Promise<void>;
   convertToSessionReference(blockId: string, sessionId: string): Promise<void>;
   queueFocus(focus: ResolvedEditorFocus | null): void;
@@ -67,8 +67,8 @@ export function usePageEditorController({
   snapshotRef.current = snapshots;
 
   type QueuedCommand =
-    | { readonly kind: "operation"; readonly operation: EditorOperation }
-    | { readonly kind: "plan"; readonly plan: EditorOperationPlan };
+    | { readonly kind: "operation"; readonly operation: EditorOperation; readonly restoreFocus: boolean }
+    | { readonly kind: "plan"; readonly plan: EditorOperationPlan; readonly restoreFocus: boolean };
 
   const commandRuntime = useMemo(() => {
     let disposed = false;
@@ -99,13 +99,14 @@ export function usePageEditorController({
                 plan: command.plan,
                 idempotencyKey,
               });
+          const focus = command.restoreFocus ? result.focus : null;
           if (disposed) return "local-failure";
           if (result.mutationVersion > latest.current.mutationVersion) {
-            deferredFocus.current = result.focus;
+            deferredFocus.current = focus;
             awaitingVersion.current = result.mutationVersion;
             setState({ status: "pending", message: "Waiting for page sync…" });
           } else {
-            setPendingFocus(result.focus);
+            setPendingFocus(focus);
             setState({ status: "idle" });
           }
           return "executed";
@@ -172,8 +173,15 @@ export function usePageEditorController({
     commandQueue.notifyReady();
   }, [commandQueue, mutationVersion]);
 
-  const run = useCallback(async (operation: EditorOperation) => {
-    await commandQueue.enqueue({ kind: "operation", operation }).catch(() => undefined);
+  const run = useCallback(async (
+    operation: EditorOperation,
+    options: { restoreFocus?: boolean } = {},
+  ) => {
+    await commandQueue.enqueue({
+      kind: "operation",
+      operation,
+      restoreFocus: options.restoreFocus ?? true,
+    }).catch(() => undefined);
   }, [commandQueue]);
 
   const createFirstBlock = useCallback(async () => {
@@ -191,7 +199,7 @@ export function usePageEditorController({
       }],
       focus: { target: temporaryBlock(tempId), selection: { anchor: 0, focus: 0 } },
     };
-    await commandQueue.enqueue({ kind: "plan", plan }).catch(() => undefined);
+    await commandQueue.enqueue({ kind: "plan", plan, restoreFocus: true }).catch(() => undefined);
   }, [commandQueue]);
 
   const convertToSessionReference = useCallback(async (blockId: string, sessionId: string) => {
@@ -208,7 +216,7 @@ export function usePageEditorController({
       ],
       focus: null,
     };
-    await commandQueue.enqueue({ kind: "plan", plan }).catch(() => undefined);
+    await commandQueue.enqueue({ kind: "plan", plan, restoreFocus: false }).catch(() => undefined);
   }, [commandQueue]);
 
   return {
@@ -233,8 +241,8 @@ export function usePageEditorController({
 }
 
 function shouldSuppressCommand(
-  pending: { readonly kind: "operation"; readonly operation: EditorOperation } | { readonly kind: "plan"; readonly plan: EditorOperationPlan },
-  incoming: { readonly kind: "operation"; readonly operation: EditorOperation } | { readonly kind: "plan"; readonly plan: EditorOperationPlan },
+  pending: { readonly kind: "operation"; readonly operation: EditorOperation; readonly restoreFocus: boolean } | { readonly kind: "plan"; readonly plan: EditorOperationPlan; readonly restoreFocus: boolean },
+  incoming: { readonly kind: "operation"; readonly operation: EditorOperation; readonly restoreFocus: boolean } | { readonly kind: "plan"; readonly plan: EditorOperationPlan; readonly restoreFocus: boolean },
 ): boolean {
   if (pending.kind !== "operation" || incoming.kind !== "operation") return false;
   const left = pending.operation;

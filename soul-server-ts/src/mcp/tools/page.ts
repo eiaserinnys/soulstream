@@ -137,14 +137,16 @@ export function registerPageTools(server: McpServer, runtime: McpRuntime): void 
       kinds: z.array(z.enum(["mount", "inline_page", "block_ref"]))
         .min(1).default(["mount", "inline_page", "block_ref"]),
       cursor: id.optional(),
+      include_self: z.boolean().default(false),
       limit: z.number().int().min(1).max(200).default(50),
       caller_session_id: callerSessionId,
     },
-  }, async ({ page_id, kinds, cursor, limit }) => handle(runtime, async (client) =>
+  }, async ({ page_id, kinds, cursor, include_self, limit }) => handle(runtime, async (client) =>
     await client.getBacklinks({
       pageId: page_id,
       kinds: kinds as PageLinkKind[],
       cursor,
+      includeSelf: include_self ?? false,
       limit,
     })));
 

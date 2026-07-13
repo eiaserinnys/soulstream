@@ -6,6 +6,7 @@ import {
   type PageDocumentBlock,
   type SessionSummaryIndex,
 } from "../page";
+import type { SessionSummary } from "../shared/types";
 import { PageReferenceAutocomplete, type ReferenceAutocompleteOption } from "./PageReferenceAutocomplete";
 import { PageRichText } from "./PageRichText";
 import { findReferenceTrigger, parseInlineReferences, replaceReferenceTrigger, type ReferenceTrigger } from "./page-reference-parser";
@@ -32,6 +33,7 @@ export function PageBlockEditor({
   onOpenPage,
   onOpenBlock,
   focusRequested = false,
+  blockSelectionMode = false,
 }: {
   block: PageDocumentBlock;
   onKeyInput(input: PageBlockEditorKeyInput, event: React.KeyboardEvent<HTMLTextAreaElement>): void;
@@ -46,6 +48,7 @@ export function PageBlockEditor({
   onOpenPage?(pageId: string): void;
   onOpenBlock?(pageId: string, blockId: string): void;
   focusRequested?: boolean;
+  blockSelectionMode?: boolean;
 }) {
   const binding = useMemo(() => createPageTextBinding(block.text), [block.text]);
   const snapshot = useSyncExternalStore(binding.subscribe, binding.getSnapshot, binding.getSnapshot);
@@ -69,12 +72,12 @@ export function PageBlockEditor({
     if (focusRequested) setEditing(true);
   }, [focusRequested]);
   useLayoutEffect(() => {
-    if (!editing || !textarea.current) return;
+    if (!editing || blockSelectionMode || !textarea.current) return;
     if (document.activeElement !== textarea.current) {
       textarea.current.focus();
       textarea.current.setSelectionRange(snapshot.text.length, snapshot.text.length);
     }
-  }, [editing, snapshot.text.length]);
+  }, [blockSelectionMode, editing, snapshot.text.length]);
   useLayoutEffect(() => {
     const element = textarea.current;
     if (!element) return;
@@ -131,14 +134,9 @@ export function PageBlockEditor({
     const query = trigger.query.trim().toLocaleLowerCase();
     const sessions = trigger.kind === "page"
       ? [...sessionIndex.values()]
-          .filter((session) => sessionLabel(session).toLocaleLowerCase().includes(query))
+          .filter((session) => sessionSearchText(session).toLocaleLowerCase().includes(query))
           .slice(0, 8)
-          .map<ReferenceAutocompleteOption>((session) => ({
-            kind: "session",
-            id: session.agentSessionId,
-            label: sessionLabel(session),
-            detail: session.status,
-          }))
+          .map<ReferenceAutocompleteOption>(sessionAutocompleteOption)
       : [];
     const currentRequest = ++requestId.current;
     setAutocomplete({ trigger, options: sessions, activeIndex: 0, loading: query.length > 0 });
@@ -201,9 +199,14 @@ export function PageBlockEditor({
       placeholder="Type something…"
       onMouseDown={(event) => {
         extendFocus.current = event.shiftKey;
+        if (event.shiftKey) event.preventDefault();
         onSelectBlock(block.id, event.shiftKey);
       }}
       onFocus={() => {
+        if (blockSelectionMode) {
+          textarea.current?.blur();
+          return;
+        }
         setEditing(true);
         if (!extendFocus.current) onSelectBlock(block.id, false);
         extendFocus.current = false;
@@ -263,6 +266,7 @@ export function PageBlockEditor({
         options={autocomplete.options}
         activeIndex={autocomplete.activeIndex}
         loading={autocomplete.loading}
+        anchorElement={textarea.current}
         onChoose={chooseReference}
         onActiveIndexChange={(activeIndex) => setAutocomplete((current) => current ? { ...current, activeIndex } : null)}
       />
@@ -271,6 +275,48 @@ export function PageBlockEditor({
   );
 }
 
-function sessionLabel(session: SessionSummaryIndex extends ReadonlyMap<string, infer Value> ? Value : never): string {
-  return session.displayName || session.prompt || session.agentName || session.agentSessionId;
+function sessionAutocompleteOption(session: SessionSummary): ReferenceAutocompleteOption {
+  if (session.displayName) {
+    return {
+      kind: "session",
+      id: session.agentSessionId,
+      label: session.displayName,
+      detail: session.status,
+    };
+  }
+  const timestamp = session.createdAt ?? session.updatedAt;
+  const agent = session.agentName ?? session.agentId;
+  return {
+    kind: "session",
+    id: session.agentSessionId,
+    label: promptPreview(session.prompt) || "Untitled session",
+    detail: [timestamp ? relativeTime(timestamp) : null, agent].filter(Boolean).join(" · ") || session.status,
+  };
+}
+
+function sessionSearchText(session: SessionSummary): string {
+  return [
+    session.displayName,
+    session.prompt,
+    session.agentName,
+    session.agentId,
+    session.agentSessionId,
+  ].filter(Boolean).join(" ");
+}
+
+function promptPreview(prompt: string | undefined): string {
+  if (!prompt) return "";
+  const normalized = prompt.replace(/\s+/g, " ").trim();
+  return normalized.length > 40 ? `${normalized.slice(0, 40)}…` : normalized;
+}
+
+function relativeTime(value: string): string {
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return "";
+  const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60_000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
 }

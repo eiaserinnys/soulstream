@@ -118,6 +118,7 @@ export interface PageApiClient {
   getBacklinks(pageId: string, input?: {
     kinds?: readonly PageLinkKind[];
     cursor?: string;
+    includeSelf?: boolean;
     limit?: number;
   }): Promise<BrowserBacklinkPageDto>;
   getPage(pageId: string): Promise<PageReadResponse>;
@@ -179,6 +180,7 @@ export function createPageApiClient(options: {
       const query = new URLSearchParams();
       if (input.kinds !== undefined) query.set("kinds", input.kinds.join(","));
       if (input.cursor !== undefined) query.set("cursor", input.cursor);
+      if (input.includeSelf === true) query.set("include_self", "true");
       if (input.limit !== undefined) query.set("limit", String(input.limit));
       const suffix = query.size > 0 ? `?${query.toString()}` : "";
       return await request<BrowserBacklinkPageDto>(
