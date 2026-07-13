@@ -18,11 +18,11 @@ import {
 
 type ContextTab = "page" | "atom" | "session" | "guidance";
 
-const TABS: readonly { id: ContextTab; label: string }[] = [
-  { id: "page", label: "📄 페이지" },
-  { id: "atom", label: "🧠 atom" },
-  { id: "session", label: "💬 이전 세션" },
-  { id: "guidance", label: "📝 guidance" },
+const TABS: readonly { id: ContextTab; icon: string; label: string }[] = [
+  { id: "page", icon: "📄", label: "페이지" },
+  { id: "atom", icon: "🧠", label: "atom" },
+  { id: "session", icon: "💬", label: "이전 세션" },
+  { id: "guidance", icon: "📝", label: "guidance" },
 ];
 
 export function TaskContextPicker({
@@ -180,7 +180,10 @@ export function TaskContextPicker({
       <section className="v3-context-inherited">
         <strong>상속됨(프로젝트에서)</strong>
         <div>
-          {inheritedBlocks.map((block) => <span key={block.id}>{contextBlockLabel(block)}</span>)}
+          {inheritedBlocks.map((block) => {
+            const presentation = contextBlockPresentation(block);
+            return <span key={block.id}><span className="v3-emoji" aria-hidden="true">{presentation.icon}</span> {presentation.label}</span>;
+          })}
           {sessionDefaults?.agentId || sessionDefaults?.nodeId ? (
             <span>◉ 기본 에이전트 · {sessionDefaults.agentId ?? "미지정"}@{sessionDefaults.nodeId ?? "미지정"}</span>
           ) : null}
@@ -191,7 +194,7 @@ export function TaskContextPicker({
       <div className="v3-context-tabs" role="tablist" aria-label="컨텍스트 종류">
         {TABS.map((item) => (
           <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} className={tab === item.id ? "is-active" : ""} onClick={() => setTab(item.id)}>
-            {item.label}{item.id === "session" ? <small>요약</small> : null}
+            <span className="v3-emoji" aria-hidden="true">{item.icon}</span> {item.label}{item.id === "session" ? <small>요약</small> : null}
           </button>
         ))}
       </div>
@@ -254,7 +257,7 @@ function ContextOption({ icon, title, meta, selected, disabled = false, onClick 
 }) {
   return (
     <button type="button" className={`v3-context-option${selected ? " is-selected" : ""}`} disabled={disabled} aria-pressed={selected} onClick={onClick}>
-      <span>{icon}</span><span><strong>{title}</strong><small>{meta}</small></span><i aria-hidden="true" />
+      <span className="v3-emoji" aria-hidden="true">{icon}</span><span><strong>{title}</strong><small>{meta}</small></span><i aria-hidden="true" />
     </button>
   );
 }
@@ -280,10 +283,14 @@ function isInheritedContextBlock(block: BlockDto): boolean {
   return block.block_type === "atom_ref" || block.block_type === "guidance";
 }
 
-function contextBlockLabel(block: BlockDto): string {
-  if (block.block_type === "atom_ref") return `🧠 atom · ${stringProperty(block, "title") ?? stringProperty(block, "nodeId") ?? "컨텍스트"}`;
-  if (block.block_type === "guidance") return `📝 guidance · ${block.text.trim() || "실행 지침"}`;
-  return `📄 ${block.text.trim()}`;
+function contextBlockPresentation(block: BlockDto): { icon: string; label: string } {
+  if (block.block_type === "atom_ref") {
+    return { icon: "🧠", label: `atom · ${stringProperty(block, "title") ?? stringProperty(block, "nodeId") ?? "컨텍스트"}` };
+  }
+  if (block.block_type === "guidance") {
+    return { icon: "📝", label: `guidance · ${block.text.trim() || "실행 지침"}` };
+  }
+  return { icon: "📄", label: block.text.trim() };
 }
 
 function blockEstimateValue(block: BlockDto): string {
