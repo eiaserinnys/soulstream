@@ -114,6 +114,29 @@ describe("PageOutliner", () => {
 
   });
 
+  it("selects the exact /세션 command without mutating the page", async () => {
+    const doc = createPageDoc(1);
+    const block = doc.getMap<Y.Map<unknown>>("blocks").get("block-0")!;
+    (block.get("text") as Y.Text).delete(0, (block.get("text") as Y.Text).length);
+    (block.get("text") as Y.Text).insert(0, "/세션");
+    const api = createApi();
+    const onCreateSessionDraft = vi.fn();
+    const expectedVersion = readPageDocument(doc, "page-1").page.mutationVersion;
+    await render(doc, api, vi.fn(), { onCreateSessionDraft });
+
+    const target = editor("block-0");
+    target.setSelectionRange(3, 3);
+    flushSync(() => target.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    await settle();
+
+    expect(onCreateSessionDraft).toHaveBeenCalledWith(expect.objectContaining({
+      pageId: "page-1",
+      blockId: "block-0",
+      expectedVersion,
+    }));
+    expect(api.applyOperations).not.toHaveBeenCalled();
+  });
+
   it("maps start Enter to an empty current block followed by the original text", async () => {
     const doc = createPageDoc(1);
     const api = createApi();
@@ -790,7 +813,7 @@ describe("PageOutliner", () => {
     doc: Y.Doc,
     api: PageApiClient,
     onResync = vi.fn(),
-    sessionProps: Pick<React.ComponentProps<typeof PageOutliner>, "sessionIndex" | "onOpenSession" | "lens"> = {},
+    sessionProps: Pick<React.ComponentProps<typeof PageOutliner>, "sessionIndex" | "onOpenSession" | "lens" | "onCreateSessionDraft"> = {},
   ) {
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -802,7 +825,7 @@ describe("PageOutliner", () => {
     doc: Y.Doc,
     api: PageApiClient,
     onResync = vi.fn(),
-    sessionProps: Pick<React.ComponentProps<typeof PageOutliner>, "sessionIndex" | "onOpenSession" | "lens"> = {},
+    sessionProps: Pick<React.ComponentProps<typeof PageOutliner>, "sessionIndex" | "onOpenSession" | "lens" | "onCreateSessionDraft"> = {},
   ) {
     const snapshot = readPageDocument(doc, "page-1");
     flushSync(() => root!.render(

@@ -155,6 +155,10 @@ describe("TaskCreation", () => {
     expect(h.tasks.get(task.agentSessionId)).toBe(task);
     expect(h.assignSessionToFolder).toHaveBeenCalled();
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "folder-1");
+    expect(task.creationWarnings).toEqual([{
+      code: "PAGE_BINDING_PENDING",
+      message: "The session was created, but page binding status could not be confirmed. Check the page before retrying.",
+    }]);
     expect(logger.warn).toHaveBeenCalledWith(
       { err: hookError, sessionId: "sess-hook-failure" },
       "post-registration task creation hook failed",

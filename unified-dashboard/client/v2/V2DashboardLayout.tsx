@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { BookOpenText, MessageSquare, Settings } from "lucide-react";
 
 import {
@@ -21,6 +22,8 @@ import {
   useSessionListProvider,
   useSessionProvider,
   useUserPreferencesSync,
+  type SessionCreationWarning,
+  type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import {
   createPageApiClient,
@@ -33,12 +36,20 @@ import { ConfigModal } from "../components/ConfigModal";
 import { SearchModal } from "../components/SearchModal";
 import { useNodes } from "../hooks/useNodes";
 import { resolveActiveSessionSummary } from "../lib/active-session-summary";
+import { createDashboardSession } from "../lib/session-create";
 import { orchestratorSessionProvider } from "../providers";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { V2LeftNavigation } from "./V2LeftNavigation";
 import { V2LegacyFolderSurface, type V2LegacyFolderSurfaceState } from "./V2LegacyFolderSurface";
 import { V2MobileWorkspace } from "./V2MobileWorkspace";
 import { V2PageSurface } from "./V2PageSurface";
+import {
+  createInlineSessionDraft,
+  resolveInlineSessionDraftTarget,
+  V2InlineSessionDraftPanel,
+  V2SessionCreationWarnings,
+  type V2InlineSessionDraft,
+} from "./V2InlineSessionDraftPanel";
 import type { V2PageRouteController } from "./useV2PageRoute";
 import { useV2PageWorkspace } from "./useV2PageWorkspace";
 import { useV2LegacyBoardItems } from "./useV2LegacyBoardItems";
@@ -69,9 +80,16 @@ export function V2DashboardLayout({
     [injectedApiClient],
   );
   const workspace = useV2PageWorkspace({ apiClient, routeController, createPageClient });
+  const queryClient = useQueryClient();
   const [mobilePageOpenRequest, setMobilePageOpenRequest] = useState(0);
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [inlineDraft, setInlineDraft] = useState<V2InlineSessionDraft | null>(null);
+  const [creationWarningNotice, setCreationWarningNotice] = useState<{
+    sessionId: string;
+    warnings: SessionCreationWarning[];
+  } | null>(null);
+  const submittingDraftId = useRef<string | null>(null);
 
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
   const activeSessionSummary = useDashboardStore((state) => state.activeSessionSummary);
@@ -79,6 +97,7 @@ export function V2DashboardLayout({
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
   const setActiveSessionSummary = useDashboardStore((state) => state.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
+  const addOptimisticSession = useDashboardStore((state) => state.addOptimisticSession);
   const nodes = useOrchestratorStore((state) => state.nodes);
   const connectionStatus = useOrchestratorStore((state) => state.connectionStatus);
 
@@ -125,6 +144,87 @@ export function V2DashboardLayout({
     setActiveSession(session.agentSessionId);
     setActiveTab("chat");
   }, [setActiveSession, setActiveSessionSummary, setActiveTab]);
+  const connectedNodes = useMemo(
+    () => Array.from(nodes.values()).filter((node) => node.status === "connected"),
+    [nodes],
+  );
+  const updateInlineDraft = useCallback((patch: Partial<V2InlineSessionDraft>) => {
+    setInlineDraft((current) => current ? { ...current, ...patch } : current);
+  }, []);
+  const openInlineDraft = useCallback((anchor: { pageId: string; blockId: string }) => {
+    setCreationWarningNotice(null);
+    setInlineDraft(createInlineSessionDraft(anchor, connectedNodes));
+    setActiveTab("chat");
+  }, [connectedNodes, setActiveTab]);
+  const submitInlineDraft = useCallback(async () => {
+    const draft = inlineDraft;
+    if (!draft || draft.pending || submittingDraftId.current === draft.recoverySessionId) return;
+    const prompt = draft.prompt.trim();
+    if (!prompt) {
+      updateInlineDraft({ error: "Enter a first prompt before creating the session." });
+      return;
+    }
+    if (!draft.nodeId || !draft.agentId) {
+      updateInlineDraft({ error: "Choose both a connected node and an agent." });
+      return;
+    }
+    const pageState = workspace.pageState;
+    const target = resolveInlineSessionDraftTarget({
+      draft,
+      currentPage: pageState.status === "ready"
+        ? { id: pageState.page.id, version: pageState.page.version, blocks: pageState.blocks }
+        : null,
+      connectedNodeIds: new Set(connectedNodes.map((node) => node.nodeId)),
+    });
+    if (target.kind === "error") {
+      updateInlineDraft({ error: target.message });
+      return;
+    }
+    if (target.kind === "recovered") {
+        openSession(optimisticSessionSummary({
+          agentSessionId: target.sessionId,
+          nodeId: draft.nodeId,
+          agentId: draft.agentId,
+          prompt,
+        }));
+        setInlineDraft(null);
+        return;
+    }
+
+    submittingDraftId.current = draft.recoverySessionId;
+    updateInlineDraft({ pending: true, error: null });
+    try {
+      const result = await createDashboardSession({
+        queryClient,
+        addOptimisticSession,
+        agentSessionId: draft.recoverySessionId,
+        prompt,
+        nodeId: draft.nodeId,
+        agentId: draft.agentId,
+        pageAnchor: target.pageAnchor,
+      });
+      setCreationWarningNotice({
+        sessionId: result.agentSessionId,
+        warnings: result.warnings ?? [],
+      });
+      openSession(optimisticSessionSummary({
+        agentSessionId: result.agentSessionId,
+        nodeId: result.nodeId ?? draft.nodeId,
+        agentId: draft.agentId,
+        prompt,
+      }));
+      setInlineDraft(null);
+    } catch (error) {
+      updateInlineDraft({
+        pending: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      if (submittingDraftId.current === draft.recoverySessionId) {
+        submittingDraftId.current = null;
+      }
+    }
+  }, [addOptimisticSession, connectedNodes, inlineDraft, openSession, queryClient, updateInlineDraft, workspace.pageState]);
   const selectedLegacyFolderExists = workspace.selectedLegacyFolderId !== null
     && (catalog?.folders.some((folder) => folder.id === workspace.selectedLegacyFolderId) ?? false);
   const boardItemsLoad = useV2LegacyBoardItems({
@@ -132,6 +232,9 @@ export function V2DashboardLayout({
     folders: catalog?.folders ?? [],
     enabled: catalogLoad.status === "ready" && selectedLegacyFolderExists,
   });
+  const activeCreationWarnings = creationWarningNotice?.sessionId === activeSessionKey
+    ? creationWarningNotice.warnings
+    : [];
 
   const legacyState = useMemo<V2LegacyFolderSurfaceState>(() => {
     const folderId = workspace.selectedLegacyFolderId;
@@ -208,6 +311,7 @@ export function V2DashboardLayout({
       onLensChange={workspace.setLens}
       sessionIndex={sessionIndex}
       onOpenSession={openSession}
+      onCreateSessionDraft={openInlineDraft}
     />
   );
   const pageSurface = workspace.selectedLegacyFolderId ? (
@@ -234,8 +338,21 @@ export function V2DashboardLayout({
       leftPanel={navigation}
       centerPanel={pageSurface}
       rightPanel={(
-        <div data-v2-pane="right" className="h-full min-h-0">
-          <RightPanel chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} />
+        <div data-v2-pane="right" className="flex h-full min-h-0 flex-col">
+          <V2SessionCreationWarnings warnings={activeCreationWarnings} />
+          <div className="min-h-0 flex-1">
+            {inlineDraft ? (
+              <V2InlineSessionDraftPanel
+                draft={inlineDraft}
+                nodes={connectedNodes}
+                onChange={updateInlineDraft}
+                onSubmit={() => { void submitInlineDraft(); }}
+                onCancel={() => setInlineDraft(null)}
+              />
+            ) : (
+              <RightPanel chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} />
+            )}
+          </div>
         </div>
       )}
       connectionStatus={connectionStatus ?? sessionStatus}
@@ -256,11 +373,26 @@ export function V2DashboardLayout({
       mobileTabs={V2_MOBILE_TABS}
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={(
-        <ChatView
-          chatInputDisabled={chatInputDisabled}
-          fileUploadUrl={fileUploadUrl}
-          showHeader={false}
-        />
+        inlineDraft ? (
+          <V2InlineSessionDraftPanel
+            draft={inlineDraft}
+            nodes={connectedNodes}
+            onChange={updateInlineDraft}
+            onSubmit={() => { void submitInlineDraft(); }}
+            onCancel={() => setInlineDraft(null)}
+          />
+        ) : (
+          <div className="flex h-full min-h-0 flex-col">
+            <V2SessionCreationWarnings warnings={activeCreationWarnings} />
+            <div className="min-h-0 flex-1">
+              <ChatView
+                chatInputDisabled={chatInputDisabled}
+                fileUploadUrl={fileUploadUrl}
+                showHeader={false}
+              />
+            </div>
+          </div>
+        )
       )}
       mobileSettingsContent={(
         <div className="space-y-4 p-4">
@@ -284,4 +416,19 @@ export function V2DashboardLayout({
       )}
     />
   );
+}
+
+function optimisticSessionSummary(input: {
+  agentSessionId: string;
+  nodeId: string;
+  agentId: string;
+  prompt: string;
+}): SessionSummary {
+  return {
+    ...input,
+    status: "running",
+    eventCount: 0,
+    sessionType: "claude",
+    createdAt: new Date().toISOString(),
+  };
 }

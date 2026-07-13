@@ -39,6 +39,7 @@ export function V2PageSurface({
   onLensChange = () => undefined,
   sessionIndex = EMPTY_SESSION_INDEX,
   onOpenSession,
+  onCreateSessionDraft,
 }: {
   state: V2PageSurfaceState;
   onToggleStar(): void;
@@ -46,6 +47,7 @@ export function V2PageSurface({
   onLensChange?(lens: PageLens): void;
   sessionIndex?: SessionSummaryIndex;
   onOpenSession?(session: SessionSummary): void;
+  onCreateSessionDraft?(anchor: { pageId: string; blockId: string; expectedVersion: number }): void;
 }) {
   if (state.status !== "ready") {
     const Icon = state.status === "loading"
@@ -115,6 +117,7 @@ export function V2PageSurface({
           sessionIndex={sessionIndex}
           lens={lens}
           onOpenSession={onOpenSession}
+          onCreateSessionDraft={onCreateSessionDraft}
         />
       </div>
     </main>

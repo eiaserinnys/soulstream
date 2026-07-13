@@ -115,6 +115,91 @@ describe("session command HTTP route harness", () => {
     ).toMatchObject({ statusCode: 404 });
   });
 
+  it("preserves legacy whitespace-only prompts but rejects them for page-anchored creates", async () => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    const sent: Array<Record<string, unknown>> = [];
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: {
+        send: (data) => {
+          const message = JSON.parse(data) as Record<string, unknown>;
+          sent.push(message);
+          registry.receiveNodeMessage(
+            { nodeId: "fake-node", connectionId },
+            {
+              type: "session_created",
+              requestId: message.requestId,
+              agentSessionId: message.agentSessionId,
+            },
+          );
+        },
+      },
+    });
+    const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
+
+    const legacy = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { prompt: "   ", profile: "claude-roselin" },
+    });
+    const anchored = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: {
+        prompt: "   ",
+        profile: "claude-roselin",
+        pageAnchor: { pageId: "page-a", blockId: "block-a", expectedVersion: 7 },
+      },
+    });
+
+    expect(legacy.statusCode).toBe(201);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({ prompt: "   " });
+    expect(anchored.statusCode).toBe(400);
+  });
+
+  it("rejects malformed page anchors before dispatch", async () => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    const send = vi.fn((data: string) => {
+      const message = JSON.parse(data) as Record<string, unknown>;
+      registry.receiveNodeMessage(
+        { nodeId: "fake-node", connectionId },
+        {
+          type: "session_created",
+          requestId: message.requestId,
+          agentSessionId: message.agentSessionId,
+        },
+      );
+    });
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: { send },
+    });
+    const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
+    expect((await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: { prompt: "hello", profile: "claude-roselin", pageAnchor: { pageId: "page-a" } },
+    })).statusCode).toBe(400);
+    for (const pageAnchor of [
+      { pageId: "", blockId: "block-a", expectedVersion: 7 },
+      { pageId: "   ", blockId: "block-a", expectedVersion: 7 },
+      { pageId: "page-a", blockId: "", expectedVersion: 7 },
+      { pageId: "page-a", blockId: "   ", expectedVersion: 7 },
+    ]) {
+      expect((await app.inject({
+        method: "POST",
+        url: "/api/sessions",
+        payload: { prompt: "hello", profile: "claude-roselin", pageAnchor },
+      })).statusCode).toBe(400);
+    }
+    expect(send).not.toHaveBeenCalled();
+  });
+
   it("converts POST /api/sessions body into a create_session node command and returns the Python response shape", async () => {
     const { registry, transports, router, bridge } = createHarness();
     const connectionId = registerNode(registry);
@@ -171,6 +256,54 @@ describe("session command HTTP route harness", () => {
     });
     expect(sent[0]?.agentSessionId).not.toBe("client-selected-session");
   });
+
+  it("preserves pageAnchor, client recovery id, and non-fatal worker warnings", async () => {
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    const sent: Array<Record<string, unknown>> = [];
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: {
+        send: (data) => {
+          const message = JSON.parse(data) as Record<string, unknown>;
+          sent.push(message);
+          registry.receiveNodeMessage(
+            { nodeId: "fake-node", connectionId },
+            {
+              type: "session_created",
+              requestId: message.requestId,
+              agentSessionId: message.agentSessionId,
+              warnings: [{ code: "PAGE_BINDING_PENDING", message: "Binding will retry." }],
+            },
+          );
+        },
+      },
+    });
+    const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
+    const recoveryId = "8c55c4d8-625b-4b1f-92ec-81dcb52ae453";
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions",
+      payload: {
+        agentSessionId: recoveryId,
+        prompt: "hello",
+        profile: "claude-roselin",
+        pageAnchor: { pageId: "page-a", blockId: "block-a", expectedVersion: 7 },
+      },
+    });
+
+    expect(sent[0]).toMatchObject({
+      agentSessionId: recoveryId,
+      pageAnchor: { pageId: "page-a", blockId: "block-a", expectedVersion: 7 },
+    });
+    expect(response.json()).toMatchObject({
+      agentSessionId: recoveryId,
+      warnings: [{ code: "PAGE_BINDING_PENDING", message: "Binding will retry." }],
+    });
+  });
+
 
   it("rejects a create_session ack that changes the server-generated session id", async () => {
     const { registry, transports, router, bridge } = createHarness();

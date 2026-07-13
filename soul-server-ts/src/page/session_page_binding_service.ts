@@ -3,8 +3,12 @@ import type { Logger } from "pino";
 import type { BoardYjsService } from "../collaboration/board_yjs_service.js";
 import type { BoardYjsContainerRef, SessionDB } from "../db/session_db.js";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
-import type { TaskCreationHook, TaskCreationHookParams } from "../task/task_creation_hook.js";
-import type { LegacyProjectionHookParams } from "../task/task_creation_hook.js";
+import {
+  appendCreationWarning,
+  type LegacyProjectionHookParams,
+  type TaskCreationHook,
+  type TaskCreationHookParams,
+} from "../task/task_creation_hook.js";
 import { sessionBoardItemPosition } from "../task/runbook_session_position.js";
 import type { PageYjsHostClient } from "./page_host_client.js";
 import { decideSessionPageEnrollment } from "./session_page_enrollment_policy.js";
@@ -62,6 +66,18 @@ export class SessionPageBindingService implements TaskCreationHook {
       sourceRunbookItemId: params.sourceRunbookItemId ?? null,
     });
     await this.reconcileSession(task.agentSessionId, true);
+    const binding = await this.deps.repository.get(task.agentSessionId);
+    if (binding?.page_state === "manual_repair") {
+      appendCreationWarning(task, {
+        code: "PAGE_BINDING_MANUAL_REPAIR",
+        message: "The session was created, but its page block could not be converted automatically. Manual repair is required.",
+      });
+    } else if (binding?.page_state === "pending") {
+      appendCreationWarning(task, {
+        code: "PAGE_BINDING_PENDING",
+        message: "The session was created. Page binding is pending and will retry automatically.",
+      });
+    }
   }
 
   async afterLegacyProjection(params: LegacyProjectionHookParams): Promise<void> {
@@ -79,6 +95,13 @@ export class SessionPageBindingService implements TaskCreationHook {
         false,
       );
     });
+    const binding = await this.deps.repository.get(params.task.agentSessionId);
+    if (binding && binding.legacy_state !== "completed") {
+      appendCreationWarning(params.task, {
+        code: "LEGACY_PROJECTION_PENDING",
+        message: "The session was created. Its legacy folder projection is pending and will retry automatically.",
+      });
+    }
   }
 
   start(intervalMs = 30_000): void {

@@ -371,6 +371,42 @@ describe("CommandDispatcher.create_session", () => {
     });
   });
 
+  it("forwards pageAnchor before execution and returns non-fatal creation warnings", async () => {
+    const taskManager = {
+      createTask: vi.fn(async (params) => ({
+        agentSessionId: params.agentSessionId,
+        prompt: params.prompt,
+        status: "running" as const,
+        profileId: params.profileId,
+        creationWarnings: [{ code: "PAGE_BINDING_PENDING", message: "Binding will retry." }],
+        createdAt: new Date(),
+        lastEventId: 0,
+        lastReadEventId: 0,
+        interventionQueue: [],
+      })),
+    };
+    const { dispatcher, sent, te } = createDispatcher({ taskManager });
+
+    await dispatcher.dispatch({
+      type: "create_session",
+      agentSessionId: "sess-page",
+      prompt: "hi",
+      profile: "codex-default",
+      pageAnchor: { pageId: "page-a", blockId: "block-a", expectedVersion: 7 },
+      requestId: "cs-page",
+    });
+
+    expect(taskManager.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      pageAnchor: { pageId: "page-a", blockId: "block-a", expectedVersion: 7 },
+    }));
+    expect(te.startExecution).toHaveBeenCalledTimes(1);
+    expect(sent).toEqual([expect.objectContaining({
+      type: "session_created",
+      requestId: "cs-page",
+      warnings: [{ code: "PAGE_BINDING_PENDING", message: "Binding will retry." }],
+    })]);
+  });
+
   it("requestId 없으면 session_created ACK 발행 안 함 (atom c13f7826)", async () => {
     const { dispatcher, sent } = createDispatcher();
     await dispatcher.dispatch({

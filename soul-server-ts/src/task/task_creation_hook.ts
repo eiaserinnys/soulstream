@@ -1,5 +1,5 @@
 import type { CreateTaskParams } from "./task_creation.js";
-import type { Task } from "./task_models.js";
+import type { SessionCreationWarning, Task } from "./task_models.js";
 
 export interface TaskCreationHookParams {
   task: Task;
@@ -20,3 +20,8 @@ export interface TaskCreationHook {
 export const NOOP_TASK_CREATION_HOOK: TaskCreationHook = {
   async afterSessionRegistered(): Promise<void> {},
 };
+
+export function appendCreationWarning(task: Task, warning: SessionCreationWarning): void {
+  if (task.creationWarnings?.some((current) => current.code === warning.code)) return;
+  task.creationWarnings = [...(task.creationWarnings ?? []), warning];
+}

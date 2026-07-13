@@ -123,6 +123,13 @@ export interface SessionCreated {
   agentSessionId?: string;
   requestId?: string;
   /**
+   * ACK-only non-fatal page binding and legacy projection outcomes.
+   */
+  warnings?: {
+    code: "PAGE_BINDING_PENDING" | "PAGE_BINDING_MANUAL_REPAIR" | "LEGACY_PROJECTION_PENDING";
+    message: string;
+  }[];
+  /**
    * broadcast 경로에서 송신되는 세션 정보 (to_session_info 결과).
    */
   session?: {
@@ -1046,6 +1053,14 @@ export interface CreateSession {
    * Codex-only reasoning effort. Missing means codex adapter default xhigh.
    */
   reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+  /**
+   * Optional page block converted to the canonical primary session_ref before the first turn.
+   */
+  pageAnchor?: {
+    pageId: string;
+    blockId: string;
+    expectedVersion: number;
+  };
   [k: string]: unknown;
 }
 /**

@@ -52,6 +52,7 @@ interface CreateSessionCmd extends CommandLike {
    * system_prompt without renaming on the wire.
    */
   systemPrompt?: string;
+  pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
 }
 
 interface InterruptSessionCmd extends CommandLike {
@@ -182,6 +183,7 @@ async function handleCreateSession(
       systemPrompt: cmd.systemPrompt,
       extraContextItems: cmd.extra_context_items,
       attachmentPaths: cmd.attachment_paths,
+      pageAnchor: cmd.pageAnchor,
     });
   } catch (err) {
     if (err instanceof UnknownAgentProfileError) {
@@ -201,6 +203,7 @@ async function handleCreateSession(
       buildSessionCreatedAck({
         requestId,
         agentSessionId: task.agentSessionId,
+        warnings: task.creationWarnings,
       }),
     );
   }
