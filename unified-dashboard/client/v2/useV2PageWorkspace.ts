@@ -46,6 +46,7 @@ type PageRequestState =
 
 export interface V2PageWorkspace {
   readonly selectedPageId: string | null;
+  readonly focusBlockId: string | null;
   readonly selectedLegacyFolderId: string | null;
   readonly lens: PageLens;
   readonly pageState: V2PageSurfaceState;
@@ -54,6 +55,7 @@ export interface V2PageWorkspace {
   readonly starredError: string | null;
   openDaily(): void;
   openPage(pageId: string): void;
+  openBlock(pageId: string, blockId: string): void;
   openLegacyFolder(folderId: string): void;
   setLens(lens: PageLens): void;
   toggleCurrentPageStar(): Promise<void>;
@@ -305,6 +307,7 @@ export function useV2PageWorkspace({
 
   return {
     selectedPageId: route.kind === "page" ? route.pageId : null,
+    focusBlockId: route.kind === "page" ? route.blockId : null,
     selectedLegacyFolderId: route.kind === "legacy-folder" ? route.folderId : null,
     lens,
     pageState,
@@ -313,6 +316,7 @@ export function useV2PageWorkspace({
     starredError,
     openDaily: controller.navigateToDaily,
     openPage: controller.navigateToPage,
+    openBlock: controller.navigateToBlock,
     openLegacyFolder: controller.navigateToLegacyFolder,
     setLens: controller.setLens,
     async toggleCurrentPageStar() {

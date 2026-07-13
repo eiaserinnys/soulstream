@@ -97,6 +97,174 @@ describe("PageOutliner", () => {
     expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ agentSessionId: "session-a" }));
   });
 
+  it("offers page autocomplete and inserts only the canonical inline token", async () => {
+    const doc = createPageDoc(1);
+    const api = createApi({
+      searchPages: vi.fn(async () => ({ items: [{ pageId: "page-daily", title: "Daily note" }] })),
+    });
+    await render(doc, api);
+
+    changeEditor(editor("block-0"), "[[Dai");
+    await waitFor(() => container!.querySelector('[role="listbox"]')?.textContent?.includes("Daily note") === true);
+    expect(container!.querySelector('[role="listbox"]')?.textContent).toContain("Daily note");
+    dispatchKey(editor("block-0"), "Enter", 5);
+    await settle();
+
+    expect((doc.getMap<Y.Map<unknown>>("blocks").get("block-0")!.get("text") as Y.Text).toString())
+      .toBe("[[Daily note]]");
+    expect(api.applyOperations).not.toHaveBeenCalled();
+  });
+
+  it("offers block autocomplete and inserts the canonical block id token", async () => {
+    const doc = createPageDoc(1);
+    const api = createApi({
+      searchBlocks: vi.fn(async () => ({
+        items: [{ blockId: "block-target", pageId: "page-source", pageTitle: "Source", textPreview: "Decision" }],
+      })),
+    });
+    await render(doc, api);
+
+    changeEditor(editor("block-0"), "((Dec");
+    await waitFor(() => container!.querySelector('[role="listbox"]')?.textContent?.includes("Decision") === true);
+    dispatchKey(editor("block-0"), "Enter", 5);
+    await settle();
+
+    expect((doc.getMap<Y.Map<unknown>>("blocks").get("block-0")!.get("text") as Y.Text).toString())
+      .toBe("((block-target))");
+  });
+
+  it("focuses a deep-linked block after the virtual row is available", async () => {
+    await render(createPageDoc(4), createApi(), vi.fn(), { focusBlockId: "block-3" });
+    await settleFocus();
+    expect(document.activeElement).toBe(editor("block-3"));
+    expect(editor("block-3").selectionStart).toBe(0);
+  });
+
+  it("retries deep-link focus when a collapsed target becomes visible", async () => {
+    const doc = createPageDoc(2);
+    const blocks = doc.getMap<Y.Map<unknown>>("blocks");
+    blocks.get("block-0")!.set("collapsed", true);
+    blocks.get("block-1")!.set("parentId", "block-0");
+    const api = createApi();
+    await render(doc, api, vi.fn(), { focusBlockId: "block-1" });
+    expect(container!.querySelector('[data-block-id="block-1"]')).toBeNull();
+
+    flushSync(() => blocks.get("block-0")!.set("collapsed", false));
+    await rerender(doc, api, vi.fn(), { focusBlockId: "block-1" });
+    await settleFocus();
+    expect(document.activeElement).toBe(editor("block-1"));
+  });
+
+  it("converts a session autocomplete selection through the serialized mutation queue", async () => {
+    const doc = createPageDoc(1);
+    const api = createApi({ searchPages: vi.fn(async () => ({ items: [] })) });
+    await render(doc, api, vi.fn(), {
+      sessionIndex: createSessionSummaryIndex([{
+        agentSessionId: "session-a",
+        status: "completed",
+        eventCount: 1,
+        displayName: "Release review",
+      }]),
+    });
+
+    changeEditor(editor("block-0"), "[[Release");
+    await settle();
+    dispatchKey(editor("block-0"), "Enter", 9);
+    await settle();
+
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: [
+        { op: "update_block_text", block_id: "block-0", text: "" },
+        {
+          op: "update_block_type_and_properties",
+          block_id: "block-0",
+          block_type: "session_ref",
+          properties: { sessionId: "session-a", primary: false },
+        },
+      ],
+    }));
+  });
+
+  it("suppresses autocomplete confirmation while IME composition is active", async () => {
+    const api = createApi({
+      searchPages: vi.fn(async () => ({ items: [{ pageId: "page-korean", title: "한글" }] })),
+    });
+    await render(createPageDoc(1), api);
+    const target = editor("block-0");
+
+    flushSync(() => target.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+    changeEditor(target, "[[한");
+    dispatchKey(target, "Enter", 3);
+    await settle();
+    expect(container!.querySelector('[role="listbox"]')).toBeNull();
+    expect(api.applyOperations).not.toHaveBeenCalled();
+
+    flushSync(() => target.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true })));
+    await waitFor(() => container!.querySelector('[role="listbox"]')?.textContent?.includes("한글") === true);
+    expect(container!.querySelector('[role="listbox"]')?.textContent).toContain("한글");
+  });
+
+  it("does not reopen autocomplete when a dismissed search resolves late", async () => {
+    let resolveSearch!: (value: { items: Array<{ pageId: string; title: string }> }) => void;
+    const api = createApi({
+      searchPages: vi.fn(() => new Promise<{ items: Array<{ pageId: string; title: string }> }>((resolve) => {
+        resolveSearch = resolve;
+      })),
+    });
+    await render(createPageDoc(1), api);
+    const target = editor("block-0");
+
+    changeEditor(target, "[[Dai");
+    expect(container!.querySelector('[role="listbox"]')).not.toBeNull();
+    dispatchKey(target, "Escape", 5);
+    expect(container!.querySelector('[role="listbox"]')).toBeNull();
+
+    resolveSearch({ items: [{ pageId: "page-daily", title: "Daily note" }] });
+    await settle();
+    expect(container!.querySelector('[role="listbox"]')).toBeNull();
+  });
+
+  it("renders resolved tokens read-only, isolates missing targets, and re-enters textarea editing", async () => {
+    const doc = createPageDoc(1);
+    setBlockText(doc, "block-0", "See [[Daily note]] ((block-2)) ((deleted))");
+    const onOpenPage = vi.fn();
+    const onOpenBlock = vi.fn();
+    const api = createApi({
+      searchPages: vi.fn(async () => ({ items: [{ pageId: "page-daily", title: "Daily note" }] })),
+      getBlock: vi.fn(async (blockId) => {
+        if (blockId === "deleted") throw new Error("not found");
+        return { id: blockId, pageId: "page-source", pageTitle: "Source", parentId: null, positionKey: "a", blockType: "paragraph", text: "Decision", properties: {}, collapsed: false };
+      }),
+    });
+    await render(doc, api, vi.fn(), { onOpenPage, onOpenBlock });
+    await settle();
+
+    expect(container!.querySelector("textarea")).toBeNull();
+    const pageToken = container!.querySelector<HTMLButtonElement>('[data-reference-kind="page"]')!;
+    const blockToken = container!.querySelector<HTMLButtonElement>('[data-reference-value="block-2"]')!;
+    flushSync(() => pageToken.click());
+    flushSync(() => blockToken.click());
+    expect(onOpenPage).toHaveBeenCalledWith("page-daily");
+    expect(onOpenBlock).toHaveBeenCalledWith("page-source", "block-2");
+    expect(container!.querySelector('[data-reference-value="deleted"][data-reference-state="missing"]'))
+      .not.toBeNull();
+
+    flushSync(() => container!.querySelector<HTMLElement>('[data-page-rich-text="block-0"]')!.click());
+    await settle();
+    const editable = editor("block-0");
+    expect(editable.value).toBe("See [[Daily note]] ((block-2)) ((deleted))");
+
+    editable.setSelectionRange(4, 18);
+    const clipboard = clipboardTransfer();
+    const copyEvent = dispatchClipboard(editable, "copy", clipboard.transfer);
+    expect(copyEvent.defaultPrevented).toBe(false);
+    expect(editable.value.slice(editable.selectionStart, editable.selectionEnd)).toBe("[[Daily note]]");
+
+    changeEditor(editable, "See  ((block-2)) ((deleted))");
+    expect((doc.getMap<Y.Map<unknown>>("blocks").get("block-0")!.get("text") as Y.Text).toString())
+      .toBe("See  ((block-2)) ((deleted))");
+  });
+
   it("maps middle Enter to ordered split intents in one HTTP batch", async () => {
     const doc = createPageDoc(2);
     const api = createApi();
@@ -813,7 +981,7 @@ describe("PageOutliner", () => {
     doc: Y.Doc,
     api: PageApiClient,
     onResync = vi.fn(),
-    sessionProps: Pick<React.ComponentProps<typeof PageOutliner>, "sessionIndex" | "onOpenSession" | "lens" | "onCreateSessionDraft"> = {},
+    sessionProps: Pick<React.ComponentProps<typeof PageOutliner>, "sessionIndex" | "onOpenSession" | "lens" | "onCreateSessionDraft" | "onOpenPage" | "onOpenBlock" | "focusBlockId"> = {},
   ) {
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -825,7 +993,7 @@ describe("PageOutliner", () => {
     doc: Y.Doc,
     api: PageApiClient,
     onResync = vi.fn(),
-    sessionProps: Pick<React.ComponentProps<typeof PageOutliner>, "sessionIndex" | "onOpenSession" | "lens" | "onCreateSessionDraft"> = {},
+    sessionProps: Pick<React.ComponentProps<typeof PageOutliner>, "sessionIndex" | "onOpenSession" | "lens" | "onCreateSessionDraft" | "onOpenPage" | "onOpenBlock" | "focusBlockId"> = {},
   ) {
     const snapshot = readPageDocument(doc, "page-1");
     flushSync(() => root!.render(
@@ -895,12 +1063,23 @@ function createPageDoc(count: number): Y.Doc {
 function createApi(overrides: Partial<PageApiClient> = {}): PageApiClient {
   return {
     listPages: vi.fn(),
+    searchPages: vi.fn(async () => ({ items: [] })),
+    searchBlocks: vi.fn(async () => ({ items: [] })),
+    getBlock: vi.fn(async () => { throw new Error("not found"); }),
+    getBacklinks: vi.fn(async () => ({ items: [], nextCursor: null })),
     getPage: vi.fn(),
     getDailyPage: vi.fn(),
     setStarred: vi.fn(),
     applyOperations: vi.fn(async (_pageId: string, input: ApplyPageOperationsInput) => operationResponse(input)),
     ...overrides,
   } as PageApiClient;
+}
+
+function changeEditor(textarea: HTMLTextAreaElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+  setter?.call(textarea, value);
+  textarea.setSelectionRange(value.length, value.length);
+  flushSync(() => textarea.dispatchEvent(new Event("input", { bubbles: true })));
 }
 
 function operationResponse(input: ApplyPageOperationsInput) {

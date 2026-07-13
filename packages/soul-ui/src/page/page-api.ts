@@ -1,7 +1,28 @@
-import type { BlockDto, PageDto, PageListDto } from "@soulstream/page-model";
+import type {
+  BlockDto,
+  BrowserBacklinkPageDto,
+  BrowserBlockDto,
+  BrowserBlockSearchDto,
+  BrowserPageSearchDto,
+  PageDto,
+  PageLinkKind,
+  PageListDto,
+} from "@soulstream/page-model";
 
 export type PageApiErrorKind = "authentication" | "conflict" | "request" | "server" | "network";
-export type { BlockDto, PageDto, PageListDto } from "@soulstream/page-model";
+export type {
+  BlockDto,
+  BrowserBacklinkDto,
+  BrowserBacklinkPageDto,
+  BrowserBlockDto,
+  BrowserBlockSearchDto,
+  BrowserBlockSearchItemDto,
+  BrowserPageSearchDto,
+  BrowserPageSearchItemDto,
+  PageDto,
+  PageLinkKind,
+  PageListDto,
+} from "@soulstream/page-model";
 
 export class PageApiError extends Error {
   readonly name = "PageApiError";
@@ -91,6 +112,14 @@ export interface SetPageStarredInput {
 
 export interface PageApiClient {
   listPages(input?: { starred?: boolean; cursor?: string; limit?: number }): Promise<PageListDto>;
+  searchPages(query: string, limit?: number): Promise<BrowserPageSearchDto>;
+  searchBlocks(query: string, limit?: number): Promise<BrowserBlockSearchDto>;
+  getBlock(blockId: string): Promise<BrowserBlockDto>;
+  getBacklinks(pageId: string, input?: {
+    kinds?: readonly PageLinkKind[];
+    cursor?: string;
+    limit?: number;
+  }): Promise<BrowserBacklinkPageDto>;
   getPage(pageId: string): Promise<PageReadResponse>;
   getDailyPage(date?: string): Promise<PageDailyResponse>;
   applyOperations(pageId: string, input: ApplyPageOperationsInput): Promise<PageMutationResponse>;
@@ -140,6 +169,22 @@ export function createPageApiClient(options: {
       const suffix = query.size > 0 ? `?${query.toString()}` : "";
       return await request<PageListDto>(`/api/pages${suffix}`);
     },
+    searchPages: async (query, limit = 20) =>
+      await request<BrowserPageSearchDto>(searchPath("/api/pages/search", query, limit)),
+    searchBlocks: async (query, limit = 20) =>
+      await request<BrowserBlockSearchDto>(searchPath("/api/blocks/search", query, limit)),
+    getBlock: async (blockId) =>
+      await request<BrowserBlockDto>(`/api/blocks/${encodeURIComponent(blockId)}`),
+    getBacklinks: async (pageId, input = {}) => {
+      const query = new URLSearchParams();
+      if (input.kinds !== undefined) query.set("kinds", input.kinds.join(","));
+      if (input.cursor !== undefined) query.set("cursor", input.cursor);
+      if (input.limit !== undefined) query.set("limit", String(input.limit));
+      const suffix = query.size > 0 ? `?${query.toString()}` : "";
+      return await request<BrowserBacklinkPageDto>(
+        `/api/pages/${encodeURIComponent(pageId)}/backlinks${suffix}`,
+      );
+    },
     getPage: async (pageId) =>
       await request<PageReadResponse>(`/api/pages/${encodeURIComponent(pageId)}`),
     getDailyPage: async (date) => await request<PageDailyResponse>("/api/pages/daily", {
@@ -168,6 +213,11 @@ export function createPageApiClient(options: {
         }),
       }),
   };
+}
+
+function searchPath(path: string, queryValue: string, limit: number): string {
+  const query = new URLSearchParams({ q: queryValue, limit: String(limit) });
+  return `${path}?${query.toString()}`;
 }
 
 function encodeBase64(value: Uint8Array): string {

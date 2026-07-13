@@ -12,6 +12,7 @@ import { CircleAlert, LoaderCircle, LockKeyhole, Star } from "lucide-react";
 
 import { V2_TOKENS } from "./v2-token-fixture";
 import { V2PageLensControls } from "./V2PageLensControls";
+import { V2BacklinksPanel } from "./V2BacklinksPanel";
 
 const EMPTY_SESSION_INDEX: SessionSummaryIndex = new Map();
 
@@ -40,6 +41,9 @@ export function V2PageSurface({
   sessionIndex = EMPTY_SESSION_INDEX,
   onOpenSession,
   onCreateSessionDraft,
+  focusBlockId = null,
+  onOpenPage,
+  onOpenBlock,
 }: {
   state: V2PageSurfaceState;
   onToggleStar(): void;
@@ -48,6 +52,9 @@ export function V2PageSurface({
   sessionIndex?: SessionSummaryIndex;
   onOpenSession?(session: SessionSummary): void;
   onCreateSessionDraft?(anchor: { pageId: string; blockId: string; expectedVersion: number }): void;
+  focusBlockId?: string | null;
+  onOpenPage?(pageId: string): void;
+  onOpenBlock?(pageId: string, blockId: string): void;
 }) {
   if (state.status !== "ready") {
     const Icon = state.status === "loading"
@@ -118,6 +125,14 @@ export function V2PageSurface({
           lens={lens}
           onOpenSession={onOpenSession}
           onCreateSessionDraft={onCreateSessionDraft}
+          focusBlockId={focusBlockId}
+          onOpenPage={onOpenPage}
+          onOpenBlock={onOpenBlock}
+        />
+        <V2BacklinksPanel
+          pageId={state.page.id}
+          apiClient={state.editor.apiClient}
+          onOpenSource={(pageId, blockId) => onOpenBlock?.(pageId, blockId)}
         />
       </div>
     </main>

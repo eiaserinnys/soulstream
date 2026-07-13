@@ -3,7 +3,7 @@ import { isPageLens, type PageLens } from "@seosoyoung/soul-ui/page";
 
 export type V2PageRoute =
   | { readonly kind: "daily" }
-  | { readonly kind: "page"; readonly pageId: string }
+  | { readonly kind: "page"; readonly pageId: string; readonly blockId: string | null }
   | { readonly kind: "legacy-folder"; readonly folderId: string }
   | { readonly kind: "invalid"; readonly message: string };
 
@@ -22,14 +22,25 @@ export interface V2PageRouteController {
   getLensSnapshot(): PageLens;
   subscribe(listener: () => void): () => void;
   navigateToPage(pageId: string, options?: { replace?: boolean }): void;
+  navigateToBlock(pageId: string, blockId: string): void;
   navigateToLegacyFolder(folderId: string): void;
   navigateToDaily(): void;
   setLens(lens: PageLens): void;
   destroy(): void;
 }
 
-export function parseV2PageRoute(pathname: string): V2PageRoute {
-  if (pathname === "/v2" || pathname === "/v2/") return { kind: "daily" };
+export function parseV2PageRoute(pathname: string, search = ""): V2PageRoute {
+  if (pathname === "/v2" || pathname === "/v2/") {
+    const query = new URLSearchParams(search);
+    const pageId = query.get("page");
+    const blockId = query.get("block");
+    if (pageId !== null || blockId !== null) {
+      return validIdentifier(pageId) && validIdentifier(blockId)
+        ? { kind: "page", pageId, blockId }
+        : { kind: "invalid", message: `Invalid v2 reference route: ${pathname}${search}` };
+    }
+    return { kind: "daily" };
+  }
   const pageMatch = /^\/v2\/pages\/([^/]+)$/.exec(pathname);
   const legacyMatch = /^\/v2\/legacy-folders\/([^/]+)$/.exec(pathname);
   const match = pageMatch ?? legacyMatch;
@@ -43,7 +54,7 @@ export function parseV2PageRoute(pathname: string): V2PageRoute {
     const id = decodeURIComponent(match[1]!);
     if (!id || id.trim() !== id) throw new Error("invalid route id");
     return pageMatch
-      ? { kind: "page", pageId: id }
+      ? { kind: "page", pageId: id, blockId: null }
       : { kind: "legacy-folder", folderId: id };
   } catch {
     return {
@@ -65,6 +76,14 @@ export function formatV2PagePath(pageId: string): string {
   return `/v2/pages/${encodeURIComponent(pageId)}`;
 }
 
+export function formatV2BlockReferencePath(pageId: string, blockId: string): string {
+  if (!validIdentifier(pageId) || !validIdentifier(blockId)) {
+    throw new Error("pageId and blockId must be non-empty trimmed strings");
+  }
+  const query = new URLSearchParams({ page: pageId, block: blockId });
+  return `/v2?${query.toString()}`;
+}
+
 export function formatV2LegacyFolderPath(folderId: string): string {
   if (!folderId || folderId.trim() !== folderId) {
     throw new Error("folderId must be a non-empty trimmed string");
@@ -76,13 +95,13 @@ export function createV2PageRouteController(
   target: V2RouteTarget = window,
 ): V2PageRouteController {
   const listeners = new Set<() => void>();
-  let snapshot = parseV2PageRoute(target.location.pathname);
+  let snapshot = parseV2PageRoute(target.location.pathname, target.location.search ?? "");
   let lensSnapshot = parseV2Lens(target.location.search ?? "");
   let destroyed = false;
   let listening = false;
   const publishLocation = () => {
     if (destroyed) return;
-    snapshot = parseV2PageRoute(target.location.pathname);
+    snapshot = parseV2PageRoute(target.location.pathname, target.location.search ?? "");
     lensSnapshot = parseV2Lens(target.location.search ?? "");
     for (const listener of listeners) listener();
   };
@@ -116,6 +135,11 @@ export function createV2PageRouteController(
       else target.history.pushState(null, "", path);
       publishLocation();
     },
+    navigateToBlock(pageId, blockId) {
+      if (destroyed) throw new Error("v2 page route controller is destroyed");
+      target.history.pushState(null, "", withLens(formatV2BlockReferencePath(pageId, blockId), lensSnapshot));
+      publishLocation();
+    },
     navigateToLegacyFolder(folderId) {
       if (destroyed) throw new Error("v2 page route controller is destroyed");
       target.history.pushState(null, "", withLens(formatV2LegacyFolderPath(folderId), lensSnapshot));
@@ -128,7 +152,11 @@ export function createV2PageRouteController(
     },
     setLens(lens) {
       if (destroyed) throw new Error("v2 page route controller is destroyed");
-      target.history.pushState(null, "", withLens(target.location.pathname, lens));
+      target.history.pushState(
+        null,
+        "",
+        withLens(`${target.location.pathname}${target.location.search}`, lens),
+      );
       publishLocation();
     },
     destroy() {
@@ -138,6 +166,10 @@ export function createV2PageRouteController(
       stopListening();
     },
   };
+}
+
+function validIdentifier(value: string | null): value is string {
+  return value !== null && value.length > 0 && value.trim() === value;
 }
 
 export function useV2PageRoute(
@@ -163,6 +195,9 @@ export function useV2PageRoute(
   return [route, controller, lens] as const;
 }
 
-function withLens(pathname: string, lens: PageLens): string {
-  return lens === "default" ? pathname : `${pathname}?lens=${lens}`;
+function withLens(path: string, lens: PageLens): string {
+  const url = new URL(path, "https://soulstream.invalid");
+  if (lens === "default") url.searchParams.delete("lens");
+  else url.searchParams.set("lens", lens);
+  return `${url.pathname}${url.search}`;
 }

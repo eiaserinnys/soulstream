@@ -7,12 +7,24 @@ describe("page API client", () => {
     const fetch = vi.fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(jsonResponse({ items: [], next_cursor: null }))
       .mockResolvedValueOnce(jsonResponse({ page: page(), blocks: [], state_vector: "AA==" }))
-      .mockResolvedValueOnce(jsonResponse({ page: page(), created: false }));
+      .mockResolvedValueOnce(jsonResponse({ page: page(), created: false }))
+      .mockResolvedValueOnce(jsonResponse({ items: [{ pageId: "page-1", title: "Page" }] }))
+      .mockResolvedValueOnce(jsonResponse({ items: [{ blockId: "block-1", pageId: "page-1", pageTitle: "Page", textPreview: "Block" }] }))
+      .mockResolvedValueOnce(jsonResponse({ id: "block-1", pageId: "page-1" }))
+      .mockResolvedValueOnce(jsonResponse({ items: [], nextCursor: "next cursor" }));
     const client = createPageApiClient({ fetch });
 
     await client.listPages({ starred: true, cursor: "cursor 1", limit: 25 });
     await client.getPage("page/one");
     await client.getDailyPage("2026-07-12");
+    await client.searchPages("Daily note", 12);
+    await client.searchBlocks("Decision", 8);
+    await client.getBlock("block/one");
+    await client.getBacklinks("page/one", {
+      kinds: ["mount", "block_ref"],
+      cursor: "cursor 2",
+      limit: 15,
+    });
 
     expect(fetch).toHaveBeenNthCalledWith(1, "/api/pages?starred=true&cursor=cursor+1&limit=25", {
       credentials: "same-origin",
@@ -27,6 +39,23 @@ describe("page API client", () => {
       credentials: "same-origin",
       body: JSON.stringify({ date: "2026-07-12" }),
     }));
+    expect(fetch).toHaveBeenNthCalledWith(4, "/api/pages/search?q=Daily+note&limit=12", {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    });
+    expect(fetch).toHaveBeenNthCalledWith(5, "/api/blocks/search?q=Decision&limit=8", {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    });
+    expect(fetch).toHaveBeenNthCalledWith(6, "/api/blocks/block%2Fone", {
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+    });
+    expect(fetch).toHaveBeenNthCalledWith(
+      7,
+      "/api/pages/page%2Fone/backlinks?kinds=mount%2Cblock_ref&cursor=cursor+2&limit=15",
+      { credentials: "same-origin", headers: { Accept: "application/json" } },
+    );
   });
 
   it("keeps structural mutations on HTTP and encodes the Yjs state vector", async () => {

@@ -97,6 +97,10 @@ function createApi(): PageApiClient {
     listPages: vi.fn(async () => ({ items: [page], next_cursor: null })),
     getPage: vi.fn(async () => ({ page, blocks: [], state_vector: "" })),
     getDailyPage: vi.fn(async () => ({ page, created: false })),
+    searchPages: vi.fn(async () => ({ items: [], next_cursor: null })),
+    searchBlocks: vi.fn(async () => ({ items: [], next_cursor: null })),
+    getBlock: vi.fn(async () => { throw new Error("not found"); }),
+    getBacklinks: vi.fn(async () => ({ items: [], nextCursor: null })),
     applyOperations: vi.fn(),
     setStarred: vi.fn(),
   };

@@ -3,6 +3,7 @@ import {
   EditorOperationUnavailableError,
   StaleEditorTargetError,
   temporaryBlock,
+  existingBlock,
   type EditorBlockSnapshot,
   type EditorOperation,
   type EditorOperationPlan,
@@ -28,6 +29,7 @@ export interface PageEditorController {
   readonly feedback: string | null;
   run(operation: EditorOperation): Promise<void>;
   createFirstBlock(): Promise<void>;
+  convertToSessionReference(blockId: string, sessionId: string): Promise<void>;
   queueFocus(focus: ResolvedEditorFocus | null): void;
   clearFocus(focus: ResolvedEditorFocus): void;
   dismissError(): void;
@@ -192,12 +194,30 @@ export function usePageEditorController({
     await commandQueue.enqueue({ kind: "plan", plan }).catch(() => undefined);
   }, [commandQueue]);
 
+  const convertToSessionReference = useCallback(async (blockId: string, sessionId: string) => {
+    const target = existingBlock(blockId);
+    const plan: EditorOperationPlan = {
+      intents: [
+        { type: "update-text", target, text: "" },
+        {
+          type: "update-type-and-properties",
+          target,
+          blockType: "session_ref",
+          properties: { sessionId, primary: false },
+        },
+      ],
+      focus: null,
+    };
+    await commandQueue.enqueue({ kind: "plan", plan }).catch(() => undefined);
+  }, [commandQueue]);
+
   return {
     state,
     pendingFocus,
     feedback,
     run,
     createFirstBlock,
+    convertToSessionReference,
     queueFocus: setPendingFocus,
     clearFocus(focus) {
       setPendingFocus((current) => current === focus ? null : current);

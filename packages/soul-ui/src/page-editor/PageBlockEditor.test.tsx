@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 
-import type { PageDocumentBlock } from "../page";
+import type { PageApiClient, PageDocumentBlock } from "../page";
 import { PageBlockEditor } from "./PageBlockEditor";
 
 describe("PageBlockEditor auto height", () => {
@@ -40,6 +40,9 @@ describe("PageBlockEditor auto height", () => {
         onCutInput={vi.fn()}
         onSelectBlock={vi.fn()}
         onHeightChange={onHeightChange}
+        apiClient={apiClient()}
+        sessionIndex={new Map()}
+        onSelectSessionReference={vi.fn()}
       />,
     ));
     const textarea = container.querySelector("textarea")!;
@@ -73,6 +76,20 @@ function block(value: string): PageDocumentBlock {
     textValue: value,
     properties: {},
     collapsed: false,
+  };
+}
+
+function apiClient(): PageApiClient {
+  return {
+    listPages: vi.fn(),
+    searchPages: vi.fn(async () => ({ items: [] })),
+    searchBlocks: vi.fn(async () => ({ items: [] })),
+    getBlock: vi.fn(),
+    getBacklinks: vi.fn(async () => ({ items: [], nextCursor: null })),
+    getPage: vi.fn(),
+    getDailyPage: vi.fn(),
+    applyOperations: vi.fn(),
+    setStarred: vi.fn(),
   };
 }
 

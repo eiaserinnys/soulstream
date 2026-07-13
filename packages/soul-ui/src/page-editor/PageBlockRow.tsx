@@ -23,6 +23,11 @@ export function PageBlockRow({
   lens,
   onOpenSession,
   onCreateSessionDraft,
+  apiClient,
+  onSelectSessionReference,
+  onOpenPage,
+  onOpenBlock,
+  focusRequested,
 }: {
   block: PageDocumentBlock;
   depth: number;
@@ -37,6 +42,11 @@ export function PageBlockRow({
   lens: PageLens;
   onOpenSession?(session: SessionSummary): void;
   onCreateSessionDraft?(): void;
+  apiClient: import("../page").PageApiClient;
+  onSelectSessionReference(sessionId: string): void;
+  onOpenPage?(pageId: string): void;
+  onOpenBlock?(pageId: string, blockId: string): void;
+  focusRequested?: boolean;
 }) {
   if (block.type === "session_ref") {
     const sessionId = typeof block.properties.sessionId === "string"
@@ -98,6 +108,12 @@ export function PageBlockRow({
         onCutInput={onCutInput}
         onSelectBlock={onSelectBlock}
         onHeightChange={onEditorHeightChange}
+        apiClient={apiClient}
+        sessionIndex={sessionIndex}
+        onSelectSessionReference={onSelectSessionReference}
+        onOpenPage={onOpenPage}
+        onOpenBlock={onOpenBlock}
+        focusRequested={focusRequested}
       />
       {block.textValue.trim() === "/세션" && onCreateSessionDraft ? (
         <button
