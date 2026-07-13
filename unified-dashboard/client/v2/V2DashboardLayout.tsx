@@ -85,7 +85,10 @@ export function V2DashboardLayout({
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [inlineDraft, setInlineDraft] = useState<V2InlineSessionDraft | null>(null);
-  const [creationWarnings, setCreationWarnings] = useState<SessionCreationWarning[]>([]);
+  const [creationWarningNotice, setCreationWarningNotice] = useState<{
+    sessionId: string;
+    warnings: SessionCreationWarning[];
+  } | null>(null);
   const submittingDraftId = useRef<string | null>(null);
 
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
@@ -149,7 +152,7 @@ export function V2DashboardLayout({
     setInlineDraft((current) => current ? { ...current, ...patch } : current);
   }, []);
   const openInlineDraft = useCallback((anchor: { pageId: string; blockId: string }) => {
-    setCreationWarnings([]);
+    setCreationWarningNotice(null);
     setInlineDraft(createInlineSessionDraft(anchor, connectedNodes));
     setActiveTab("chat");
   }, [connectedNodes, setActiveTab]);
@@ -200,7 +203,10 @@ export function V2DashboardLayout({
         agentId: draft.agentId,
         pageAnchor: target.pageAnchor,
       });
-      setCreationWarnings(result.warnings ?? []);
+      setCreationWarningNotice({
+        sessionId: result.agentSessionId,
+        warnings: result.warnings ?? [],
+      });
       openSession(optimisticSessionSummary({
         agentSessionId: result.agentSessionId,
         nodeId: result.nodeId ?? draft.nodeId,
@@ -226,6 +232,9 @@ export function V2DashboardLayout({
     folders: catalog?.folders ?? [],
     enabled: catalogLoad.status === "ready" && selectedLegacyFolderExists,
   });
+  const activeCreationWarnings = creationWarningNotice?.sessionId === activeSessionKey
+    ? creationWarningNotice.warnings
+    : [];
 
   const legacyState = useMemo<V2LegacyFolderSurfaceState>(() => {
     const folderId = workspace.selectedLegacyFolderId;
@@ -330,7 +339,7 @@ export function V2DashboardLayout({
       centerPanel={pageSurface}
       rightPanel={(
         <div data-v2-pane="right" className="flex h-full min-h-0 flex-col">
-          <V2SessionCreationWarnings warnings={creationWarnings} />
+          <V2SessionCreationWarnings warnings={activeCreationWarnings} />
           <div className="min-h-0 flex-1">
             {inlineDraft ? (
               <V2InlineSessionDraftPanel
@@ -374,7 +383,7 @@ export function V2DashboardLayout({
           />
         ) : (
           <div className="flex h-full min-h-0 flex-col">
-            <V2SessionCreationWarnings warnings={creationWarnings} />
+            <V2SessionCreationWarnings warnings={activeCreationWarnings} />
             <div className="min-h-0 flex-1">
               <ChatView
                 chatInputDisabled={chatInputDisabled}

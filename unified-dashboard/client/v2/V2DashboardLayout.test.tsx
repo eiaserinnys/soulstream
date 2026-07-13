@@ -8,9 +8,10 @@ import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { PageApiClient, PageDto, PageYjsClient } from "@seosoyoung/soul-ui/page";
+import type { PageApiClient, PageDocumentBlock, PageDto, PageYjsClient } from "@seosoyoung/soul-ui/page";
 
 const sessionListProviderSpy = vi.hoisted(() => vi.fn());
+const createDashboardSessionSpy = vi.hoisted(() => vi.fn());
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@tanstack/react-query")>();
@@ -42,13 +43,22 @@ vi.mock("../components/ConfigButton", () => ({ ConfigButton: () => createElement
 vi.mock("../components/ConfigModal", () => ({ ConfigModal: () => null }));
 vi.mock("../components/SearchModal", () => ({ SearchModal: () => null }));
 vi.mock("../hooks/useNodes", () => ({ useNodes: vi.fn() }));
+vi.mock("../lib/session-create", () => ({ createDashboardSession: createDashboardSessionSpy }));
 vi.mock("../providers", () => ({ orchestratorSessionProvider: {} }));
 vi.mock("./useV2LegacyBoardItems", () => ({
   useV2LegacyBoardItems: () => ({ status: "ready", message: null }),
 }));
 vi.mock("../store/orchestrator-store", () => ({
   useOrchestratorStore: (selector: (state: Record<string, unknown>) => unknown) => selector({
-    nodes: new Map(),
+    nodes: new Map([["node-a", {
+      nodeId: "node-a",
+      host: "localhost",
+      port: 1,
+      status: "connected",
+      capabilities: {},
+      connectedAt: 1,
+      sessionCount: 0,
+    }]]),
     connectionStatus: "connected",
   }),
 }));
@@ -92,11 +102,11 @@ function createApi(): PageApiClient {
   };
 }
 
-function createClient(pageId: string): PageYjsClient {
+function createClient(pageId: string, blocks: readonly PageDocumentBlock[] = []): PageYjsClient {
   const runtimeSnapshot = { status: "ready", ready: true, connected: true, synced: true, error: null } as const;
   const documentSnapshot = {
     page: { id: pageId, title: page.title, dailyDate: page.daily_date, mutationVersion: 1, archived: false, metadata: { starred: true } },
-    blocks: [],
+    blocks,
   } as const;
   return {
     pageId,
@@ -109,6 +119,16 @@ function createClient(pageId: string): PageYjsClient {
     disconnect: vi.fn(),
     destroy: vi.fn(),
   };
+}
+
+function fakePageText(value: string): PageDocumentBlock["text"] {
+  return {
+    doc: null,
+    length: value.length,
+    toString: () => value,
+    observe: vi.fn(),
+    unobserve: vi.fn(),
+  } as unknown as PageDocumentBlock["text"];
 }
 
 async function settle() {
@@ -147,6 +167,7 @@ describe("V2DashboardLayout", () => {
       error: null,
       catalogLoad: { status: "ready", message: null },
     });
+    createDashboardSessionSpy.mockReset();
     useDashboardStore.getState().reset();
   });
 
@@ -304,6 +325,93 @@ describe("V2DashboardLayout", () => {
     expect(useDashboardStore.getState().activeSessionSummary?.agentSessionId).toBe("session-live");
     expect(useDashboardStore.getState().activeTab).toBe("chat");
     expect(container.querySelector('[data-testid="existing-chat-view"]')).not.toBeNull();
+    controller.destroy();
+  });
+
+  it("shows creation warnings only for the created session and clears them from the DOM after opening another session", async () => {
+    const blocks: readonly PageDocumentBlock[] = [
+      {
+        id: "block-draft",
+        parentId: null,
+        positionKey: "a",
+        type: "paragraph",
+        text: fakePageText("/세션"),
+        textValue: "/세션",
+        properties: {},
+        collapsed: false,
+      },
+      {
+        id: "block-other",
+        parentId: null,
+        positionKey: "b",
+        type: "session_ref",
+        text: fakePageText("[[Other]]"),
+        textValue: "[[Other]]",
+        properties: { sessionId: "session-other", primary: false },
+        collapsed: false,
+      },
+    ];
+    const otherSession = {
+      agentSessionId: "session-other",
+      status: "running" as const,
+      eventCount: 0,
+      prompt: "Other session",
+      folderId: null,
+      nodeId: "node-a",
+    };
+    sessionListProviderSpy.mockReturnValue({
+      sessions: [otherSession],
+      loading: false,
+      error: null,
+      catalogLoad: { status: "ready", message: null },
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      agents: [{ id: "agent-a", name: "Agent A" }],
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    createDashboardSessionSpy.mockResolvedValue({
+      agentSessionId: "session-created",
+      nodeId: "node-a",
+      warnings: [{ code: "LEGACY_PROJECTION_PENDING", message: "Legacy projection is pending." }],
+    });
+    const target = createTarget();
+    const controller = createV2PageRouteController(target);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(
+      <V2DashboardLayout
+        apiClient={createApi()}
+        routeController={controller}
+        createPageClient={(pageId) => createClient(pageId, blocks)}
+      />,
+    ));
+    await settle();
+
+    flushSync(() => container!.querySelector<HTMLButtonElement>(
+      '[data-testid="page-session-command-block-draft"]',
+    )!.click());
+    await settle();
+    await settle();
+    const agent = container.querySelector<HTMLSelectElement>('[aria-label="Session agent"]')!;
+    expect(agent.value).toBe("agent-a");
+    const prompt = container.querySelector<HTMLTextAreaElement>('[aria-label="First session prompt"]')!;
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!
+      .call(prompt, "Create from page");
+    flushSync(() => prompt.dispatchEvent(new Event("input", { bubbles: true })));
+    await settle();
+    expect(prompt.value).toBe("Create from page");
+    flushSync(() => container!.querySelector<HTMLButtonElement>('[data-testid="v2-inline-session-send"]')!.click());
+    await settle();
+    await settle();
+
+    expect(createDashboardSessionSpy).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[data-testid="v2-session-creation-warnings"]')?.textContent)
+      .toContain("Legacy projection is pending.");
+    flushSync(() => container!.querySelector<HTMLElement>('[data-session-ref="session-other"]')!.click());
+    await settle();
+    expect(useDashboardStore.getState().activeSessionKey).toBe("session-other");
+    expect(container.querySelector('[data-testid="v2-session-creation-warnings"]')).toBeNull();
+
     controller.destroy();
   });
 });

@@ -183,7 +183,9 @@ function createSessionPayload(
 function isPageAnchor(value: unknown): value is JsonObject {
   return isJsonObject(value)
     && typeof value.pageId === "string"
+    && value.pageId.trim().length > 0
     && typeof value.blockId === "string"
+    && value.blockId.trim().length > 0
     && Number.isInteger(value.expectedVersion)
     && Number(value.expectedVersion) > 0;
 }

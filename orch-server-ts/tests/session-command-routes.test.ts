@@ -161,13 +161,43 @@ describe("session command HTTP route harness", () => {
   });
 
   it("rejects malformed page anchors before dispatch", async () => {
-    const { router, bridge } = createHarness();
+    const { registry, transports, router, bridge } = createHarness();
+    const connectionId = registerNode(registry);
+    const send = vi.fn((data: string) => {
+      const message = JSON.parse(data) as Record<string, unknown>;
+      registry.receiveNodeMessage(
+        { nodeId: "fake-node", connectionId },
+        {
+          type: "session_created",
+          requestId: message.requestId,
+          agentSessionId: message.agentSessionId,
+        },
+      );
+    });
+    transports.attach({
+      nodeId: "fake-node",
+      connectionId,
+      transport: { send },
+    });
     const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
     expect((await app.inject({
       method: "POST",
       url: "/api/sessions",
       payload: { prompt: "hello", profile: "claude-roselin", pageAnchor: { pageId: "page-a" } },
     })).statusCode).toBe(400);
+    for (const pageAnchor of [
+      { pageId: "", blockId: "block-a", expectedVersion: 7 },
+      { pageId: "   ", blockId: "block-a", expectedVersion: 7 },
+      { pageId: "page-a", blockId: "", expectedVersion: 7 },
+      { pageId: "page-a", blockId: "   ", expectedVersion: 7 },
+    ]) {
+      expect((await app.inject({
+        method: "POST",
+        url: "/api/sessions",
+        payload: { prompt: "hello", profile: "claude-roselin", pageAnchor },
+      })).statusCode).toBe(400);
+    }
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("converts POST /api/sessions body into a create_session node command and returns the Python response shape", async () => {
