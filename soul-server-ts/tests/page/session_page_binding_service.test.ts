@@ -310,10 +310,35 @@ describe("SessionPageBindingService", () => {
       target_expected_version: 7,
     }));
     h.pageHost.batchPageOperations.mockRejectedValueOnce(new Error("page version conflict (409)"));
-    await h.service.reconcile(h.row(), true);
+    const task = { agentSessionId: "sess-1" } as never;
+    await h.service.afterSessionRegistered({
+      task,
+      params: {
+        agentSessionId: "sess-1",
+        prompt: "start",
+        pageAnchor: { pageId: "page-1", blockId: "block-1", expectedVersion: 7 },
+      },
+    });
     expect(h.repository.markFailure).toHaveBeenCalledWith(
       "sess-1", "page", "page version conflict (409)", true,
     );
+    expect(task).toMatchObject({
+      creationWarnings: [expect.objectContaining({ code: "PAGE_BINDING_MANUAL_REPAIR" })],
+    });
+  });
+
+  it("reports a failed legacy projection without cancelling the created task", async () => {
+    const h = harness(binding({ page_state: "bound" }));
+    const task = { agentSessionId: "sess-1" } as never;
+    await h.service.afterLegacyProjection({
+      task,
+      params: { agentSessionId: "sess-1", prompt: "start" },
+      assignedFolderId: null,
+      completed: false,
+    });
+    expect(task).toMatchObject({
+      creationWarnings: [expect.objectContaining({ code: "LEGACY_PROJECTION_PENDING" })],
+    });
   });
 
   it("serializes hook and stale background work per session and rereads durable state", async () => {

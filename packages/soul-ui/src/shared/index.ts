@@ -72,6 +72,7 @@ export type {
   EventTreeNode,
   CreateSessionRequest,
   CreateSessionResponse,
+  SessionCreationWarning,
   ReasoningEffort,
   SendMessageRequest,
   InterveneResponse,

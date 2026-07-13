@@ -38,6 +38,7 @@ export function PageOutliner({
   sessionIndex = EMPTY_SESSION_INDEX,
   lens = "default",
   onOpenSession,
+  onCreateSessionDraft,
 }: {
   pageId: string;
   doc: Y.Doc;
@@ -48,6 +49,7 @@ export function PageOutliner({
   sessionIndex?: SessionSummaryIndex;
   lens?: PageLens;
   onOpenSession?(session: SessionSummary): void;
+  onCreateSessionDraft?(anchor: { pageId: string; blockId: string; expectedVersion: number }): void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowElements = useRef(new Map<string, HTMLDivElement>());
@@ -101,6 +103,18 @@ export function PageOutliner({
   };
 
   const keyInput = (input: PageBlockEditorKeyInput, event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !input.isComposing &&
+      !event.nativeEvent.isComposing &&
+      input.block.textValue.trim() === "/세션" &&
+      onCreateSessionDraft
+    ) {
+      event.preventDefault();
+      onCreateSessionDraft({ pageId, blockId: input.block.id, expectedVersion: mutationVersion });
+      return;
+    }
     if (
       event.shiftKey &&
       (event.key === "ArrowUp" || event.key === "ArrowDown") &&
@@ -236,6 +250,13 @@ export function PageOutliner({
                     sessionIndex={sessionIndex}
                     lens={lens}
                     onOpenSession={onOpenSession}
+                    onCreateSessionDraft={onCreateSessionDraft
+                      ? () => onCreateSessionDraft({
+                          pageId,
+                          blockId: block.id,
+                          expectedVersion: mutationVersion,
+                        })
+                      : undefined}
                   />
                 </div>
               );

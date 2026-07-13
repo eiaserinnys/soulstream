@@ -17,6 +17,7 @@ import {
   buildClaudePermissionModeMetadataEntry,
 } from "./task_metadata.js";
 import {
+  appendCreationWarning,
   NOOP_TASK_CREATION_HOOK,
   type TaskCreationHook,
 } from "./task_creation_hook.js";
@@ -162,6 +163,10 @@ export class TaskCreation {
       await (this.deps.taskCreationHook ?? NOOP_TASK_CREATION_HOOK)
         .afterSessionRegistered({ task, params });
     } catch (err) {
+      appendCreationWarning(task, {
+        code: "PAGE_BINDING_PENDING",
+        message: "Page binding is pending and will retry automatically.",
+      });
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
         "post-registration task creation hook failed",

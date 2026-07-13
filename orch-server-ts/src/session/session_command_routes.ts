@@ -55,8 +55,11 @@ export function registerSessionCommandRoutes(
       return badRequest(reply, "Request body must be a JSON object");
     }
     const prompt = body.prompt;
-    if (typeof prompt !== "string") {
+    if (typeof prompt !== "string" || prompt.trim().length === 0) {
       return badRequest(reply, "prompt is required");
+    }
+    if (body.pageAnchor !== undefined && !isPageAnchor(body.pageAnchor)) {
+      return badRequest(reply, "pageAnchor must include pageId, blockId, and a positive expectedVersion");
     }
 
     try {
@@ -93,6 +96,7 @@ export function registerSessionCommandRoutes(
       return reply.code(201).send({
         agentSessionId,
         nodeId: routed.node.nodeId,
+        ...(Array.isArray(result.warnings) ? { warnings: result.warnings } : {}),
         ...taskFields,
       });
     } catch (error) {
@@ -159,14 +163,31 @@ function createSessionPayload(
     requestId: _requestId,
     fireAndForget: _fireAndForget,
     type: _type,
+    agentSessionId: requestedSessionId,
     ...rest
   } = body;
+  const agentSessionId = isPageAnchor(rest.pageAnchor) && isUuid(requestedSessionId)
+    ? requestedSessionId
+    : randomUUID();
   return {
     ...rest,
     type: "create_session",
     prompt,
-    agentSessionId: randomUUID(),
+    agentSessionId,
   };
+}
+
+function isPageAnchor(value: unknown): value is JsonObject {
+  return isJsonObject(value)
+    && typeof value.pageId === "string"
+    && typeof value.blockId === "string"
+    && Number.isInteger(value.expectedVersion)
+    && Number(value.expectedVersion) > 0;
+}
+
+function isUuid(value: unknown): value is string {
+  return typeof value === "string"
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function parseObjectBody(body: unknown): JsonObject | undefined {

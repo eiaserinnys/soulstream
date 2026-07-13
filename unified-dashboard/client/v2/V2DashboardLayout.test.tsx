@@ -12,6 +12,11 @@ import type { PageApiClient, PageDto, PageYjsClient } from "@seosoyoung/soul-ui/
 
 const sessionListProviderSpy = vi.hoisted(() => vi.fn());
 
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  return { ...actual, useQueryClient: () => ({}) };
+});
+
 vi.mock("@seosoyoung/soul-ui", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@seosoyoung/soul-ui")>();
   return {

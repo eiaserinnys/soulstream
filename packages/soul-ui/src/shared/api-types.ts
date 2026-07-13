@@ -58,6 +58,13 @@ export interface CreateSessionRequest {
   /** Task Tree parent task 아래 일반 New Session을 시작할 때 사용. */
   parentTaskId?: string;
   taskIdempotencyKey?: string;
+  /** Existing page block converted by the worker into the canonical primary session_ref. */
+  pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
+}
+
+export interface SessionCreationWarning {
+  code: "PAGE_BINDING_PENDING" | "PAGE_BINDING_MANUAL_REPAIR" | "LEGACY_PROJECTION_PENDING";
+  message: string;
 }
 
 /** POST /api/sessions 응답 */
@@ -67,6 +74,8 @@ export interface CreateSessionResponse {
   nodeId?: string;
   task?: TaskItem;
   taskLinkError?: { message: string; type: string };
+  warnings?: SessionCreationWarning[];
+  idempotent?: boolean;
 }
 
 /** POST /api/sessions/:id/intervene 요청 */

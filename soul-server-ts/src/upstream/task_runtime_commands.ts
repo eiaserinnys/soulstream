@@ -10,7 +10,7 @@ import type {
   TaskManager,
 } from "../task/task_manager.js";
 import type { TaskExecutor } from "../task/task_executor.js";
-import type { CallerInfo, Task } from "../task/task_models.js";
+import type { CallerInfo, SessionCreationWarning, Task } from "../task/task_models.js";
 
 interface TaskRuntimeCommandsDeps {
   agentRegistry: Pick<AgentRegistry, "get">;
@@ -39,6 +39,7 @@ export interface CreateSessionRuntimeParams {
   container?: BoardYjsContainerRef | null;
   sourceRunbookItemId?: string | null;
   systemPrompt?: string;
+  pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
 }
 
 export interface InterveneRuntimeParams {
@@ -54,6 +55,7 @@ export interface SessionCreatedAck {
   type: "session_created";
   requestId: string;
   agentSessionId: string;
+  warnings?: SessionCreationWarning[];
 }
 
 export type InterveneAck =
@@ -139,6 +141,7 @@ export class TaskRuntimeCommands {
       systemPrompt: params.systemPrompt,
       contextItems: params.extraContextItems,
       attachmentPaths: params.attachmentPaths,
+      pageAnchor: params.pageAnchor,
     });
 
     this.deps.taskExecutor.startExecution(task, agent);
@@ -190,11 +193,13 @@ export class TaskRuntimeCommands {
 export function buildSessionCreatedAck(params: {
   requestId: string;
   agentSessionId: string;
+  warnings?: SessionCreationWarning[];
 }): SessionCreatedAck {
   return {
     type: "session_created",
     agentSessionId: params.agentSessionId,
     requestId: params.requestId,
+    ...(params.warnings?.length ? { warnings: params.warnings } : {}),
   };
 }
 

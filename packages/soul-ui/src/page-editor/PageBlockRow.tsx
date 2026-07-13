@@ -22,6 +22,7 @@ export function PageBlockRow({
   sessionIndex,
   lens,
   onOpenSession,
+  onCreateSessionDraft,
 }: {
   block: PageDocumentBlock;
   depth: number;
@@ -35,6 +36,7 @@ export function PageBlockRow({
   sessionIndex: SessionSummaryIndex;
   lens: PageLens;
   onOpenSession?(session: SessionSummary): void;
+  onCreateSessionDraft?(): void;
 }) {
   if (block.type === "session_ref") {
     const sessionId = typeof block.properties.sessionId === "string"
@@ -97,6 +99,17 @@ export function PageBlockRow({
         onSelectBlock={onSelectBlock}
         onHeightChange={onEditorHeightChange}
       />
+      {block.textValue.trim() === "/세션" && onCreateSessionDraft ? (
+        <button
+          type="button"
+          data-testid={`page-session-command-${block.id}`}
+          className="mt-0.5 shrink-0 rounded-md border border-primary/40 px-2 py-1 text-xs font-medium text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onCreateSessionDraft}
+        >
+          세션 draft
+        </button>
+      ) : null}
     </div>
   );
 }

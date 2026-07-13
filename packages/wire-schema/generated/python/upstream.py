@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Literal, NotRequired, TypeAlias, TypedDict
 
+from typing_extensions import TypedDict
+
 
 class Agent(TypedDict):
     id: NotRequired[str]
@@ -51,6 +53,15 @@ class AppHeartbeatPong(TypedDict):
     sentAt: NotRequired[str]
 
 
+class Warning(TypedDict, closed=True):
+    code: Literal[
+        'PAGE_BINDING_PENDING',
+        'PAGE_BINDING_MANUAL_REPAIR',
+        'LEGACY_PROJECTION_PENDING',
+    ]
+    message: str
+
+
 class Session(TypedDict):
     """
     broadcast 경로에서 송신되는 세션 정보 (to_session_info 결과).
@@ -68,6 +79,7 @@ class SessionCreated(TypedDict):
     type: Literal['session_created']
     agentSessionId: NotRequired[str]
     requestId: NotRequired[str]
+    warnings: NotRequired[list[Warning]]
     session: NotRequired[Session]
     folderId: NotRequired[str | None]
     caller_source: NotRequired[dict[str, Any]]
@@ -326,6 +338,16 @@ class DownloadAttachmentResult(TypedDict):
     size: int
 
 
+class PageAnchor(TypedDict, closed=True):
+    """
+    Optional page block converted to the canonical primary session_ref before the first turn.
+    """
+
+    pageId: str
+    blockId: str
+    expectedVersion: int
+
+
 class CreateSession(TypedDict):
     """
     orch→노드: 세션 생성 명령. soul-server-ts dispatcher create_session wire + 실측 caller_info 키.
@@ -352,6 +374,7 @@ class CreateSession(TypedDict):
     notify_completion: NotRequired[bool]
     attachment_paths: NotRequired[list[str]]
     reasoningEffort: NotRequired[Literal['minimal', 'low', 'medium', 'high', 'xhigh']]
+    pageAnchor: NotRequired[PageAnchor]
 
 
 class Intervene(TypedDict):

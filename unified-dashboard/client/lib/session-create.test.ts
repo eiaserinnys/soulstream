@@ -145,4 +145,32 @@ describe("createDashboardSession", () => {
       sourceSessionId: "source-session",
     });
   });
+
+  it("sends a recoverable page-anchored create request without changing old callers", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson({
+      agentSessionId: "8c55c4d8-625b-4b1f-92ec-81dcb52ae453",
+      status: "running",
+      nodeId: "node-a",
+      warnings: [{ code: "LEGACY_PROJECTION_PENDING", message: "Legacy projection will retry." }],
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createDashboardSession({
+      queryClient,
+      addOptimisticSession: vi.fn(),
+      agentSessionId: "8c55c4d8-625b-4b1f-92ec-81dcb52ae453",
+      prompt: "first prompt",
+      nodeId: "node-a",
+      agentId: "roselin_codex",
+      pageAnchor: { pageId: "page-a", blockId: "block-a", expectedVersion: 7 },
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      agentSessionId: "8c55c4d8-625b-4b1f-92ec-81dcb52ae453",
+      pageAnchor: { pageId: "page-a", blockId: "block-a", expectedVersion: 7 },
+    });
+    expect(result.warnings).toEqual([
+      { code: "LEGACY_PROJECTION_PENDING", message: "Legacy projection will retry." },
+    ]);
+  });
 });

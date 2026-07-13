@@ -27,6 +27,11 @@ export type TaskStatus = "running" | "completed" | "error" | "interrupted";
 
 export type ReviewState = "not_required" | "needs_review" | "acknowledged";
 
+export interface SessionCreationWarning {
+  code: "PAGE_BINDING_PENDING" | "PAGE_BINDING_MANUAL_REPAIR" | "LEGACY_PROJECTION_PENDING";
+  message: string;
+}
+
 export type TerminationReason =
   | "completed_ok"
   | "killed"
@@ -204,6 +209,8 @@ export interface Task {
   /** Orthogonal user review axis. Old in-memory test fixtures may omit it. */
   reviewRequired?: boolean;
   reviewState?: ReviewState;
+  /** Runtime-only non-fatal projection outcomes returned by create_session ACK. */
+  creationWarnings?: SessionCreationWarning[];
 
   /** Agent registry 프로필 id (sessions.agent_id 컬럼). */
   profileId?: string;

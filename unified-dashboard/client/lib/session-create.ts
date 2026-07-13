@@ -43,6 +43,8 @@ export interface CreateDashboardSessionInput {
   parentTaskId?: string;
   taskIdempotencyKey?: string;
   boardPosition?: { x: number; y: number } | null;
+  agentSessionId?: string;
+  pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
 }
 
 export async function createDashboardSession(
@@ -50,6 +52,8 @@ export async function createDashboardSession(
 ): Promise<CreateSessionResponse> {
   const payload: CreateSessionRequest = {
     prompt: input.prompt,
+    ...(input.agentSessionId ? { agentSessionId: input.agentSessionId } : {}),
+    ...(input.pageAnchor ? { pageAnchor: input.pageAnchor } : {}),
     ...(input.nodeId ? { nodeId: input.nodeId } : {}),
     ...(input.attachmentPaths?.length ? { attachmentPaths: input.attachmentPaths } : {}),
     ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
