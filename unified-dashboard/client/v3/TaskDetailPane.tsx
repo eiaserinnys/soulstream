@@ -104,7 +104,7 @@ export function TaskDetailPane({
           <div className="v3-detail-section-head"><h3>컨텍스트</h3><span>{contexts.length + mountedContextTitles.length}개</span></div>
           <div className="v3-context-chips">
             {contexts.map((context) => <span key={context.id}>{context.icon} {context.label}</span>)}
-            {mountedContextTitles.map((document) => <span key={document.id}>📄 {document.title}</span>)}
+            {mountedContextTitles.map((document) => <span key={document.id}><span className="v3-emoji" aria-hidden="true">📄</span> {document.title}</span>)}
             {contexts.length + mountedContextTitles.length === 0 ? <small>연결된 컨텍스트가 없습니다.</small> : null}
             <button type="button" className="v3-context-add" aria-expanded={contextPickerOpen} onClick={() => setContextPickerOpen((value) => !value)}>＋ 컨텍스트</button>
           </div>
@@ -125,7 +125,7 @@ export function TaskDetailPane({
         </section>
 
         <section className="v3-detail-section">
-          <div className="v3-detail-section-head"><h3>📄 문서</h3><span>{task.mountedDocuments.length}개</span></div>
+          <div className="v3-detail-section-head"><h3><span className="v3-emoji" aria-hidden="true">📄</span> 문서</h3><span>{task.mountedDocuments.length}개</span></div>
           <div className="v3-task-documents">
             {task.mountedDocuments.map((document) => (
               <div key={document.blockId}>
@@ -146,7 +146,7 @@ export function TaskDetailPane({
         </section>
 
         {sessionDefaults?.agentId || sessionDefaults?.nodeId ? (
-          <div className="v3-session-defaults">👤 기본값: {sessionDefaults.agentId ?? "agent 미지정"}@{sessionDefaults.nodeId ?? "node 미지정"} <span>(상속)</span></div>
+          <div className="v3-session-defaults"><span className="v3-emoji" aria-hidden="true">👤</span> 기본값: {sessionDefaults.agentId ?? "agent 미지정"}@{sessionDefaults.nodeId ?? "node 미지정"} <span>(상속)</span></div>
         ) : null}
 
         <TaskRunHistory

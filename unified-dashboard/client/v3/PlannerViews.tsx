@@ -46,7 +46,7 @@ export function DailyPlannerView({
     <>
       {reviewSessions.length > 0 ? (
         <div className="v3-review-strip">
-          <strong>📥 검수 대기 {reviewSessions.length}</strong>
+          <strong><span className="v3-emoji" aria-hidden="true">📥</span> 검수 대기 {reviewSessions.length}</strong>
           {reviewSessions.map((session) => (
             <button type="button" key={session.agentSessionId} onClick={() => onOpenReview(session)}>
               {session.displayName ?? session.prompt ?? session.agentSessionId}
@@ -127,7 +127,7 @@ export function ProjectPlannerView({
       {state.status === "error" ? <LoadError message={state.message} /> : null}
       <section className="v3-documents">
         <div className="v3-section-head">
-          <h2>📄 문서</h2><span>{data?.documents.length ?? 0}개</span>
+          <h2><span className="v3-emoji" aria-hidden="true">📄</span> 문서</h2><span>{data?.documents.length ?? 0}개</span>
           <span className="v3-spacer" />
           <button type="button" className="v3-button v3-button--soft" onClick={onToggleNewDocument}>＋ 새 문서</button>
         </div>
@@ -145,7 +145,7 @@ export function ProjectPlannerView({
         <div className="v3-document-list">
           {data?.documents.map((document) => (
             <button type="button" key={document.id} onClick={() => onOpenDocument(document)}>
-              <span>📄 {document.title}</span><small>일반 페이지</small>
+              <span><span className="v3-emoji" aria-hidden="true">📄</span> {document.title}</span><small>일반 페이지</small>
             </button>
           ))}
         </div>

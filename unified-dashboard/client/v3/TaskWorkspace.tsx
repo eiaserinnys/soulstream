@@ -138,7 +138,7 @@ export function TaskWorkspace({
                   <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} />
                 ) : (
                   <div className="v3-chat-empty" data-testid="v3-chat-empty">
-                    <span aria-hidden="true">💬</span>
+                    <span className="v3-emoji" aria-hidden="true">💬</span>
                     <strong>이 업무에는 아직 run이 없습니다.</strong>
                     <p>업무 탭에서 새 세션을 시작하면 채팅이 열립니다.</p>
                     <button type="button" className="v3-button v3-button--soft" onClick={onCloseChat}>업무 탭으로</button>

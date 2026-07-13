@@ -3,10 +3,10 @@ import { useEffect, useState } from "react";
 import type { MobilePlannerTab } from "./mobile-planner-state";
 
 const MOBILE_PLANNER_QUERY = "(max-width: 760px)";
-const TABS: ReadonlyArray<{ id: MobilePlannerTab; label: string }> = [
-  { id: "today", label: "📅 오늘" },
-  { id: "task", label: "📋 업무" },
-  { id: "chat", label: "💬 채팅" },
+const TABS: ReadonlyArray<{ id: MobilePlannerTab; icon: string; label: string }> = [
+  { id: "today", icon: "📅", label: "오늘" },
+  { id: "task", icon: "📋", label: "업무" },
+  { id: "chat", icon: "💬", label: "채팅" },
 ];
 
 export function MobilePlannerTabs({
@@ -28,7 +28,7 @@ export function MobilePlannerTabs({
           data-testid={`v3-mobile-tab-${tab.id}`}
           onClick={() => onSelect(tab.id)}
         >
-          {tab.label}
+          <span className="v3-emoji" aria-hidden="true">{tab.icon}</span> {tab.label}
         </button>
       ))}
     </nav>

@@ -378,7 +378,10 @@ export function V3DashboardLayout() {
         <div className="v3-planner">
           <header className="v3-topbar">
             <span className="v3-eyebrow">DAILY PLANNER · PROJECT MOUNTS · RUN CHAT</span><span className="v3-spacer" />
-            <button type="button" className="v3-button v3-button--ghost v3-ritual-trigger" onClick={() => setRitualOpen(true)}>☀ 아침 정리</button>
+            <button type="button" className="v3-button v3-button--ghost v3-ritual-trigger" aria-label="아침 정리" onClick={() => setRitualOpen(true)}>
+              <span className="v3-ritual-trigger-icon v3-emoji" aria-hidden="true">☀</span>
+              <span className="v3-ritual-trigger-label">아침 정리</span>
+            </button>
             <button type="button" className="v3-button v3-button--primary" onClick={() => setCreateOpen(true)}>＋ 새 업무</button><ThemeToggle />
           </header>
           {createOpen ? <NewTaskForm projects={projects} initialProjectId={selectedProjectId} pending={createPending} onCreate={(title, projectId) => { void createTask(title, projectId); }} onCancel={() => setCreateOpen(false)} /> : null}

@@ -118,7 +118,7 @@ export function RitualModal({
     <div className="v3-ritual-overlay" role="dialog" aria-modal="true" aria-labelledby="v3-ritual-title">
       <section className="v3-ritual-modal">
         <header className="v3-ritual-head">
-          <span className="v3-ritual-icon" aria-hidden="true">☀️</span>
+          <span className="v3-ritual-icon v3-emoji" aria-hidden="true">☀️</span>
           <div>
             <h2 id="v3-ritual-title">어제에서 넘어온 것</h2>
             <p>하나씩 결정하면 오늘 플래너가 가벼워집니다.</p>
