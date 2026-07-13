@@ -166,6 +166,7 @@ async function main(): Promise<void> {
     }
     runtime.supervisorWakeScheduler?.dispose();
     runtime.sessionPageBindingService.stop();
+    runtime.checklistRunbookReconciler.stop();
     try {
       runtime.scheduleDispatcher.stop();
       await runtime.taskManager.shutdown();

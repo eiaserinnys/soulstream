@@ -91,6 +91,8 @@ describe("orch PageRepository", () => {
       expect.stringContaining("DELETE FROM blocks"),
       expect.stringContaining("INSERT INTO blocks"),
       expect.stringContaining("INSERT INTO blocks"),
+      expect.stringContaining("INSERT INTO checklist_runbook_projection_outbox"),
+      expect.stringContaining("UPDATE checklist_runbook_projection_outbox"),
       expect.stringContaining("SELECT source_block_id"),
       expect.stringContaining("DELETE FROM block_links"),
       expect.stringContaining("UPDATE block_links"),

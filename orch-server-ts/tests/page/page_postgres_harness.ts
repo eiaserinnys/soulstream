@@ -171,12 +171,38 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       CHECK (actor_kind <> 'agent' OR actor_session_id IS NOT NULL),
       CHECK (actor_kind <> 'user' OR actor_user_id IS NOT NULL)
     );
+    CREATE TABLE checklist_runbook_projection_outbox (
+      block_id TEXT PRIMARY KEY,
+      page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+      source_hash TEXT NOT NULL,
+      processed_hash TEXT,
+      actor_kind TEXT NOT NULL DEFAULT 'system'
+        CHECK (actor_kind IN ('agent','user','system')),
+      actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      actor_user_id TEXT,
+      routing_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+      last_error TEXT,
+      next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      lease_owner_node_id TEXT,
+      lease_expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (
+        (actor_kind = 'agent' AND actor_session_id IS NOT NULL AND actor_user_id IS NULL)
+        OR (actor_kind = 'user' AND actor_user_id IS NOT NULL)
+        OR (actor_kind = 'system' AND actor_user_id IS NULL)
+      )
+    );
     CREATE UNIQUE INDEX uq_pages_title_key ON pages(title_key);
     CREATE UNIQUE INDEX uq_pages_daily_date ON pages(daily_date) WHERE daily_date IS NOT NULL;
     CREATE INDEX idx_pages_title_prefix
       ON pages (title_key text_pattern_ops, id) WHERE archived = FALSE;
     CREATE INDEX idx_blocks_text_prefix
       ON blocks ((lower(text_plain)) text_pattern_ops, id);
+    CREATE INDEX idx_checklist_runbook_projection_due
+      ON checklist_runbook_projection_outbox(next_retry_at, updated_at, block_id)
+      WHERE processed_hash IS DISTINCT FROM source_hash;
     CREATE TABLE block_links (
       id TEXT PRIMARY KEY,
       source_block_id TEXT NOT NULL REFERENCES blocks(id) ON DELETE CASCADE,

@@ -11,6 +11,7 @@ import {
 import type { StorePageYjsStateInput } from "./page_yjs_persistence.js";
 import type { PageMutationApplication } from "./page_mutation_core.js";
 import { reconcilePageLinks } from "./page_link_projection.js";
+import { reconcileChecklistProjectionOutbox } from "./page_checklist_projection_outbox.js";
 import {
   findPageIdByDailyDate,
   findPageIdByTitle,
@@ -112,6 +113,7 @@ export class PageRepository {
       }
       await upsertPage(transaction, input.replica);
       await reconcileBlocks(transaction, input.replica);
+      await reconcileChecklistProjectionOutbox(transaction, input.replica);
       await reconcilePageLinks(transaction, input.replica);
     });
   }
@@ -215,6 +217,11 @@ export class PageRepository {
       await storeDocument(transaction, input.documentName, input.application.snapshot);
       const pageTimes = await upsertPage(transaction, input.application.replica, provenance);
       await reconcileBlocks(transaction, input.application.replica, provenance);
+      await reconcileChecklistProjectionOutbox(
+        transaction,
+        input.application.replica,
+        input.application.actor,
+      );
       await reconcilePageLinks(transaction, input.application.replica);
       const targetBlockId = input.application.targetBlockId &&
         input.application.replica.blocks.some((block) => block.id === input.application.targetBlockId)

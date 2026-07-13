@@ -104,6 +104,24 @@ describePostgres("Runbook creator enrollment", () => {
     expect(Number(countRows[0]?.count)).toBe(1);
   });
 
+  it("allows a page-backed runbook to skip creator-session enrollment", async () => {
+    const mover = { moveBoardItemToContainer: vi.fn(async () => undefined) };
+    const service = createServiceWithCreatorEnrollment({ mover });
+
+    await service.createRunbook({
+      runbookId: "page-runbook:page-1",
+      folderId: "folder-1",
+      title: "Page runbook",
+      actorSessionId: "sess-actor",
+      enrollCreator: false,
+    });
+
+    expect(mover.moveBoardItemToContainer).not.toHaveBeenCalled();
+    await expect(db.runbooks().getSnapshot("page-runbook:page-1")).resolves.toMatchObject({
+      runbook: { id: "page-runbook:page-1" },
+    });
+  });
+
   it("keeps runbook creation successful and logs a warning when creator enrollment fails", async () => {
     const mover = {
       moveBoardItemToContainer: vi.fn(async () => {

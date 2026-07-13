@@ -75,6 +75,7 @@ export class RunbookService {
     x?: number;
     y?: number;
     idempotencyKey?: string | null;
+    enrollCreator?: boolean;
   }): Promise<RunbookMutationResult> {
     const runbookId = params.runbookId ?? randomUUID();
     const boardItemId = `runbook:${runbookId}`;
@@ -124,12 +125,12 @@ export class RunbookService {
       }).catch(() => undefined);
       throw err;
     }
-    const creatorEnrolled = (await enrollRunbookCreatorSession({
-      mover: this.creatorBoardItemMover,
-      logger: this.logger,
-      actorSessionId: params.actorSessionId,
-      runbookId,
-    })) ?? false;
+    const creatorEnrolled = params.enrollCreator === false
+      ? false
+      : (await enrollRunbookCreatorSession({
+          mover: this.creatorBoardItemMover, logger: this.logger,
+          actorSessionId: params.actorSessionId, runbookId,
+        })) ?? false;
     if (!creatorEnrolled) await this.broadcastCatalog();
     return result;
   }

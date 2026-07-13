@@ -69,6 +69,21 @@ describe("PageRepository PostgreSQL replica integration", () => {
     const [firstDocument] = await sql<[{ updated_at: Date }]>`
       SELECT updated_at FROM board_yjs_documents WHERE name = 'page:page-1'
     `;
+    const [firstPending] = await sql<[{
+      source_hash: string;
+      processed_hash: string | null;
+      actor_kind: string;
+      updated_at: Date;
+    }]>`
+      SELECT source_hash, processed_hash, actor_kind, updated_at
+      FROM checklist_runbook_projection_outbox
+      WHERE block_id = 'child'
+    `;
+    expect(firstPending).toMatchObject({
+      source_hash: expect.stringMatching(/^reconcile:/),
+      processed_hash: null,
+      actor_kind: "system",
+    });
 
     await repository.storePageYjsState({
       documentName: "page:page-1",
@@ -111,6 +126,33 @@ describe("PageRepository PostgreSQL replica integration", () => {
     `;
     expect(secondPage?.updated_at).toEqual(firstPage?.updated_at);
     expect(secondDocument?.updated_at).toEqual(firstDocument?.updated_at);
+    const [repeatedPending] = await sql<[{ source_hash: string; updated_at: Date }]>`
+      SELECT source_hash, updated_at
+      FROM checklist_runbook_projection_outbox
+      WHERE block_id = 'child'
+    `;
+    expect(repeatedPending).toEqual({
+      source_hash: firstPending!.source_hash,
+      updated_at: firstPending!.updated_at,
+    });
+
+    await repository.storePageYjsState({
+      documentName: "page:page-1",
+      snapshot: new Uint8Array([8]),
+      replica: {
+        ...replica,
+        blocks: [
+          replica.blocks[0]!,
+          { ...replica.blocks[1]!, text: "Edited child", textDelta: [{ insert: "Edited child" }] },
+        ],
+      },
+    });
+    const [editedPending] = await sql<[{ source_hash: string }]>`
+      SELECT source_hash
+      FROM checklist_runbook_projection_outbox
+      WHERE block_id = 'child'
+    `;
+    expect(editedPending?.source_hash).not.toBe(firstPending?.source_hash);
 
     await repository.storePageYjsState({
       documentName: "page:page-1",
@@ -121,6 +163,12 @@ describe("PageRepository PostgreSQL replica integration", () => {
       SELECT COUNT(*)::int AS count FROM blocks
     `;
     expect(remainingBlocks).toBe(1);
+    const [archivedPending] = await sql<[{ source_hash: string }]>`
+      SELECT source_hash
+      FROM checklist_runbook_projection_outbox
+      WHERE block_id = 'child'
+    `;
+    expect(archivedPending?.source_hash).toBe("archive:child");
 
     await expect(repository.storePageYjsState({
       documentName: "page:page-2",

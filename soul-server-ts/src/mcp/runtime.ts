@@ -13,6 +13,7 @@ import type { CustomViewService } from "../custom_view/custom_view_service.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import type { PageYjsHostClient } from "../page/page_host_client.js";
+import type { ChecklistRunbookAdapter } from "../page/checklist_runbook_adapter.js";
 import type { RunbookService } from "../runbook/runbook_service.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
@@ -40,6 +41,7 @@ export interface McpRuntime {
   customViewService?: CustomViewService;
   /** Tests may inject the page host boundary; production constructs it from orch. */
   pageHostClient?: PageYjsHostClient;
+  checklistRunbookAdapter?: ChecklistRunbookAdapter;
   logger: Logger;
   /** default = full tool surface. supervisor_readonly hides and blocks mutation tools. */
   mcpToolProfile?: McpToolProfile;

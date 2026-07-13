@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DASHBOARD_AUTH_COOKIE_NAME } from "../../src/collaboration/board_yjs_auth.js";
 import { RunbookVersionConflict } from "../../src/runbook/runbook_models.js";
 import type { RunbookService } from "../../src/runbook/runbook_service.js";
+import type { ChecklistRunbookAdapter } from "../../src/page/checklist_runbook_adapter.js";
 import { buildServer, type ServerInstance } from "../../src/server.js";
 
 function createSilentLogger() {
@@ -142,6 +143,83 @@ describe("runbook HTTP write route", () => {
     });
   });
 
+  it("routes page-backed checklist completion through the production adapter", async () => {
+    const service = fakeRunbookService({
+      runbookId: "page-runbook:page-1",
+      itemId: "checklist:block-1",
+    });
+    const setChecked = vi.fn(async () => ({
+      projection: {
+        properties: { runbookId: "page-runbook:page-1", itemId: "checklist:block-1" },
+        status: "completed" as const,
+        checked: true,
+      },
+      mutation: {
+        eventId: 12,
+        idempotent: false,
+        operation: {
+          id: "op-1",
+          operation_type: "set_item_status",
+        },
+        snapshot: await service.getRunbook("page-runbook:page-1"),
+      },
+    }));
+    const server = await createServer(service, { setChecked });
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/runbooks/page-runbook%3Apage-1/items/checklist%3Ablock-1/status",
+      headers: {
+        cookie: `${DASHBOARD_AUTH_COOKIE_NAME}=${encodeURIComponent(signJwt({ sub: "operator@example.com" }, "jwt-secret"))}`,
+      },
+      payload: {
+        status: "completed",
+        expectedVersion: 1,
+        idempotencyKey: "checklist:block-1:complete",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(setChecked).toHaveBeenCalledWith({
+      runbookId: "page-runbook:page-1",
+      itemId: "checklist:block-1",
+      checked: true,
+      expectedVersion: 1,
+      actor: {
+        actorKind: "user",
+        actorSessionId: "sess-actor",
+        actorUserId: "operator@example.com",
+      },
+      reason: null,
+      idempotencyKey: "checklist:block-1:complete",
+    });
+    expect(service.setItemStatus).not.toHaveBeenCalled();
+  });
+
+  it("fails explicitly instead of bypassing a missing page checklist adapter", async () => {
+    const service = fakeRunbookService({
+      runbookId: "page-runbook:page-1",
+      itemId: "checklist:block-1",
+    });
+    const server = await createServer(service);
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/runbooks/page-runbook%3Apage-1/items/checklist%3Ablock-1/status",
+      headers: {
+        cookie: `${DASHBOARD_AUTH_COOKIE_NAME}=${encodeURIComponent(signJwt({ sub: "operator@example.com" }, "jwt-secret"))}`,
+      },
+      payload: {
+        status: "completed",
+        expectedVersion: 1,
+        idempotencyKey: "checklist:block-1:missing-adapter",
+      },
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(service.setItemStatus).not.toHaveBeenCalled();
+  });
+
   it("accepts review as a dashboard item status mutation", async () => {
     const service = fakeRunbookService();
     const server = await createServer(service);
@@ -214,7 +292,10 @@ describe("runbook HTTP write route", () => {
   });
 });
 
-async function createServer(service: ReturnType<typeof fakeRunbookService>): Promise<ServerInstance> {
+async function createServer(
+  service: ReturnType<typeof fakeRunbookService>,
+  checklistAdapter?: Pick<ChecklistRunbookAdapter, "setChecked">,
+): Promise<ServerInstance> {
   const server = await buildServer({
     host: "127.0.0.1",
     port: 0,
@@ -222,6 +303,7 @@ async function createServer(service: ReturnType<typeof fakeRunbookService>): Pro
     logger: createSilentLogger(),
     runbook: {
       service: service as unknown as RunbookService,
+      checklistAdapter,
       auth: {
         authBearerToken: "",
         environment: "production",
@@ -234,11 +316,11 @@ async function createServer(service: ReturnType<typeof fakeRunbookService>): Pro
   return server;
 }
 
-function fakeRunbookService() {
+function fakeRunbookService(options: { runbookId?: string; itemId?: string } = {}) {
   const snapshot = {
     runbook: {
-      id: "rb-1",
-      board_item_id: "runbook:rb-1",
+      id: options.runbookId ?? "rb-1",
+      board_item_id: `runbook:${options.runbookId ?? "rb-1"}`,
       folder_id: "f1",
       title: "Launch",
       status: "open",
@@ -257,7 +339,7 @@ function fakeRunbookService() {
     sections: [],
     items: [
       {
-        id: "item-1",
+        id: options.itemId ?? "item-1",
         section_id: "sec-1",
         position_key: "a",
         title: "Check",
