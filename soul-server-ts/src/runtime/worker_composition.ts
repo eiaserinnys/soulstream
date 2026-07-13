@@ -9,7 +9,9 @@ import { createBoardYjsRouting } from "../collaboration/board_yjs_routing.js";
 import type { Env } from "../config.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "../context/cogito_context.js";
 import { ExecutionContextBuilder } from "../context/context_builder.js";
-import { NO_PAGE_ANCHOR_CONTEXT_RESOLVER } from "../context/page_context_resolver.js";
+import { DefaultPageContextAssembler } from "../context/page_context_assembler.js";
+import { HostPageContextRepository } from "../context/page_context_repository.js";
+import { AncestorPageContextResolver } from "../context/page_context_resolver.js";
 import { CustomViewService } from "../custom_view/custom_view_service.js";
 import { EventPersistence } from "../db/event_persistence.js";
 import { SessionDB } from "../db/session_db.js";
@@ -150,14 +152,21 @@ export async function composeWorkerRuntime(
     },
     "Board Yjs host routing initialized",
   );
+  const sessionPageBindingRepository = db.sessionPageBindings();
+  const pageHost = new PageYjsHostClient({ orch: orchProxyConfig, logger });
   const sessionPageBindingService = new SessionPageBindingService({
     nodeId: env.SOULSTREAM_NODE_ID,
-    repository: db.sessionPageBindings(),
-    pageHost: new PageYjsHostClient({ orch: orchProxyConfig, logger }),
+    repository: sessionPageBindingRepository,
+    pageHost,
     legacyProjection: new SessionLegacyProjection(db, boardYjsService),
     logger,
   });
   sessionPageBindingService.start();
+  const pageContextResolver = new AncestorPageContextResolver(
+    new HostPageContextRepository(sessionPageBindingRepository, pageHost),
+    new DefaultPageContextAssembler(),
+    logger,
+  );
 
   const contextBuilder = new ExecutionContextBuilder(
     db,
@@ -176,7 +185,7 @@ export async function composeWorkerRuntime(
       },
     },
     logger,
-    NO_PAGE_ANCHOR_CONTEXT_RESOLVER,
+    pageContextResolver,
   );
   const taskManager = new TaskManager(
     env.SOULSTREAM_NODE_ID,

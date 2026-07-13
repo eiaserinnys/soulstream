@@ -84,7 +84,8 @@ function makeCogitoConfig(
 describe("ExecutionContextBuilder.build — 기본 흐름", () => {
   it("calls the injected page resolver once while preserving legacy context for no-page-anchor", async () => {
     const resolve = vi.fn().mockResolvedValue({ kind: "no-page-anchor" });
-    const cb = makeBuilder({}, undefined, false, undefined, { resolve });
+    const hasPageAnchor = vi.fn().mockResolvedValue(false);
+    const cb = makeBuilder({}, undefined, false, undefined, { hasPageAnchor, resolve });
     const task = makeTask();
 
     const ctx = await cb.build(task, codexAgent);
@@ -100,9 +101,162 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
   it("provides an explicit no-page-anchor default resolver", async () => {
     const resolver = new NoPageAnchorContextResolver();
 
+    await expect(resolver.hasPageAnchor(makeTask(), codexAgent)).resolves.toBe(false);
     await expect(resolver.resolve(makeTask(), codexAgent)).resolves.toEqual({
       kind: "no-page-anchor",
     });
+  });
+
+  it("page anchor replaces legacy folder/runbook context while retaining core context", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/tree/")) {
+        return new Response(JSON.stringify({ markdown: "# agent identity" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        status: "ok",
+        checked_at: "2026-07-13T00:00:00Z",
+        nodes: [],
+        warnings: [],
+      }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      const getSession = vi.fn().mockResolvedValue({ folder_id: "folder-1" });
+      const getFolderById = vi.fn().mockResolvedValue({
+        id: "folder-1",
+        name: "Legacy Folder",
+        sort_order: 0,
+        settings: {
+          folderPrompt: "legacy folder prompt",
+          atomContextNode: {
+            nodeId: "11111111-2222-3333-4444-555555555555",
+            depth: 2,
+          },
+        },
+      });
+      const getCatalog = vi.fn().mockResolvedValue({
+        folders: [{
+          id: "folder-1",
+          name: "Legacy Folder",
+          sortOrder: 0,
+          parentFolderId: null,
+          settings: { folderPrompt: "legacy folder prompt" },
+        }],
+        sessions: {},
+      });
+      const listRunningSessionsSummary = vi.fn().mockResolvedValue({
+        sessions: [{
+          session_id: "other",
+          display_name: "Other",
+          node_id: "node-B",
+          folder_id: null,
+          folder_name: null,
+          updated_at: new Date("2026-07-13T00:00:00Z"),
+        }],
+        total: 1,
+      });
+      const getPrimarySessionBoardItem = vi.fn().mockResolvedValue({
+        id: "session:sess-1",
+        folderId: "folder-1",
+        containerKind: "runbook",
+        containerId: "rb-1",
+        membershipKind: "primary",
+        sourceRunbookItemId: "item-1",
+        itemType: "session",
+        itemId: "sess-1",
+        x: 0,
+        y: 0,
+        metadata: {},
+      });
+      const pageContextItem = {
+        key: "page_context",
+        content: { items: [{ category: "guidance", text: "page guidance" }] },
+      };
+      const resolve = vi.fn().mockResolvedValue({
+        kind: "page-anchor",
+        contextItem: pageContextItem,
+      });
+      const hasPageAnchor = vi.fn().mockResolvedValue(true);
+      const agent: AgentProfile = {
+        ...codexAgent,
+        atom_contexts: [{
+          node_id: "22222222-3333-4444-5555-666666666666",
+          depth: 2,
+          titles_only: false,
+        }],
+      };
+      const cb = makeBuilder(
+        {
+          getSession,
+          getFolderById,
+          getCatalog,
+          listRunningSessionsSummary,
+          getPrimarySessionBoardItem,
+          runbooks: () => ({ getRunbook: async () => ({ title: "Runbook" }) }),
+        } as unknown as Partial<SessionDB>,
+        new AgentRegistry([agent]),
+        true,
+        makeCogitoConfig(),
+        { hasPageAnchor, resolve },
+      );
+
+      const ctx = await cb.build(makeTask({ systemPrompt: "task system" }), agent);
+      const keys = ctx.combinedContextItems.map((item) => item.key);
+      const sessionContent = ctx.combinedContextItems[0]?.content as Record<string, unknown>;
+
+      expect(ctx.effectiveSystemPrompt).toContain("# agent identity");
+      expect(ctx.effectiveSystemPrompt).toContain("task system");
+      expect(ctx.effectiveSystemPrompt).not.toContain("legacy folder prompt");
+      expect(keys).toContain("page_context");
+      expect(keys).toContain("running_sessions");
+      expect(keys).toContain("cogito_context");
+      expect(keys).not.toContain("board_workspace");
+      expect(keys).not.toContain("atom_context");
+      expect(sessionContent.container).toEqual({ kind: "runbook", id: "rb-1", title: "Runbook" });
+      expect(sessionContent).not.toHaveProperty("runbook_guidance");
+      expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) =>
+        String(url).includes("/api/tree/"))).toHaveLength(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("keeps no-page-anchor legacy context semantically identical", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-13T00:00:00Z"));
+    try {
+      const db = {
+        getSession: vi.fn().mockResolvedValue({ folder_id: "folder-1" }),
+        getFolderById: vi.fn().mockResolvedValue({
+          id: "folder-1",
+          name: "Folder",
+          sort_order: 0,
+          settings: { folderPrompt: "folder prompt" },
+        }),
+        getCatalog: vi.fn().mockResolvedValue({
+          folders: [{
+            id: "folder-1",
+            name: "Folder",
+            sortOrder: 0,
+            parentFolderId: null,
+            settings: { folderPrompt: "folder prompt" },
+          }],
+          sessions: {},
+        }),
+      } as unknown as Partial<SessionDB>;
+      const baseline = await makeBuilder(db).build(makeTask({ systemPrompt: "task" }), codexAgent);
+      const explicitNoAnchor = await makeBuilder(
+        db,
+        undefined,
+        false,
+        undefined,
+        new NoPageAnchorContextResolver(),
+      ).build(makeTask({ systemPrompt: "task" }), codexAgent);
+      expect(explicitNoAnchor).toEqual(baseline);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("folder 없음 → effectiveSystemPrompt undefined, soulstream_item만 combinedContextItems", async () => {
@@ -1251,6 +1405,30 @@ describe("ExecutionContextBuilder.buildSystemPrompt — Claude resume system pro
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;
+  });
+
+  it("uses the anchor-only seam instead of traversing page ancestry for suppression", async () => {
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "f-1" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "f-1",
+      name: "folder",
+      sort_order: 0,
+      settings: { folderPrompt: "legacy folder prompt" },
+    });
+    const hasPageAnchor = vi.fn().mockResolvedValue(true);
+    const resolve = vi.fn().mockRejectedValue(new Error("full traversal must not run"));
+    const cb = makeBuilder(
+      { getSession, getFolderById } as Partial<SessionDB>,
+      undefined,
+      false,
+      undefined,
+      { hasPageAnchor, resolve },
+    );
+    const task = makeTask({ systemPrompt: "task prompt" });
+
+    await expect(cb.buildSystemPrompt(task, codexAgent)).resolves.toBe("task prompt");
+    expect(hasPageAnchor).toHaveBeenCalledWith(task, codexAgent);
+    expect(resolve).not.toHaveBeenCalled();
   });
 
   it("agent atom_contexts + folderPrompt + task.systemPrompt만 조립하고 context item용 atomContextNode는 제외", async () => {

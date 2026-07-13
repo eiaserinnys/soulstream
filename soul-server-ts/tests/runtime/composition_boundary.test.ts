@@ -30,6 +30,15 @@ describe("worker composition boundary", () => {
     expect(supervisorComposition).toContain("new TaskExecutor");
   });
 
+  it("wires durable page ancestry through the existing orch host client", () => {
+    const workerComposition = source("runtime/worker_composition.ts");
+
+    expect(workerComposition).toContain("new HostPageContextRepository");
+    expect(workerComposition).toContain("new AncestorPageContextResolver");
+    expect(workerComposition).toContain("new DefaultPageContextAssembler");
+    expect(workerComposition).not.toContain("NO_PAGE_ANCHOR_CONTEXT_RESOLVER");
+  });
+
   it("keeps every production module touched by the extraction below 500 lines", () => {
     const files = [
       "main.ts",
@@ -38,6 +47,8 @@ describe("worker composition boundary", () => {
       "context/context_builder.ts",
       "context/context_builder_helpers.ts",
       "context/page_context_resolver.ts",
+      "context/page_context_repository.ts",
+      "context/page_context_assembler.ts",
       "task/task_creation.ts",
       "task/task_creation_hook.ts",
     ];
