@@ -131,6 +131,10 @@ export function V2DashboardLayout({
     () => resolveActiveSessionSummary(activeSessionKey, activeSessionSummary, sessions),
     [activeSessionKey, activeSessionSummary, sessions],
   );
+  const canonicalActiveSession = useMemo(
+    () => sessions.find((session) => session.agentSessionId === activeSessionKey),
+    [activeSessionKey, sessions],
+  );
   const chatInputDisabled = useMemo(() => {
     if (!activeSessionKey) return false;
     if (!activeSession?.nodeId) return true;
@@ -243,9 +247,10 @@ export function V2DashboardLayout({
     folders: catalog?.folders ?? [],
     enabled: catalogLoad.status === "ready" && selectedLegacyFolderExists,
   });
-  const activeCreationWarnings =
-    creationWarningNotice?.sessionId === activeSessionKey
-      && creationWarningNotice.warnings.length > 0
+  const activeCreationWarnings = canonicalActiveSession
+    ? canonicalActiveSession.bindingWarnings ?? []
+    : creationWarningNotice?.sessionId === activeSessionKey
+        && creationWarningNotice.warnings.length > 0
       ? creationWarningNotice.warnings
       : activeSession?.bindingWarnings ?? [];
   const acknowledgeActiveReview = useCallback((result: SessionReviewAcknowledgeResult) => {
