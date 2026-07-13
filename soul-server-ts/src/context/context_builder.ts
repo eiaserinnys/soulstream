@@ -2,13 +2,7 @@
  * ExecutionContextBuilder — B-6 풀세트, Python `service/execution_context_builder.py` 정본 이식.
  *
  * codex task 첫 turn 진입 전에 다음을 조립:
- *   1. _resolveFolder    — sessions.folder_id → folder chain settings (folderPrompt·atomContextNode)
- *   2. _fetchAgentAtomContext — agents.yaml atom_contexts → system prompt용 마크다운
- *   3. _fetchAtomContext — folder chain atomContextNode → context item용 마크다운
- *   4. _fetchCogitoContext — orchestrator cluster brief → 안전 요약 context item
- *   5. _resolveProfile   — agents.yaml profile에서 workspace_dir·max_turns·tools
- *   6. _assembleContext  — agent atom + folder_prompt + system_prompt + context items를
- *      합쳐 PreparedContext 반환
+ * 폴더·agent atom·page·cogito·profile을 조회하고 PreparedContext로 조립한다.
  *
  * 호출자(task_executor)는 codex SDK가 turn-level systemPrompt를 지원하지 않으므로 (분석 캐시
  * `20260517-2338-codex-ts-context-builder-B-6.md` §B), `composeFirstTurnPrompt` helper로
@@ -177,11 +171,12 @@ export class ExecutionContextBuilder {
    * task.contextItems는 user/context 영역이라 여기서 제외한다.
    */
   async buildSystemPrompt(task: Task, agent: AgentProfile): Promise<string | undefined> {
+    const pageContext = await this.pageContextResolver.resolve(task, agent);
     const { folderPrompt } = await this._resolveFolder(task);
     const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
     return this._composeSystemPrompt({
       agentAtomMarkdown,
-      folderPrompt,
+      folderPrompt: pageContext.kind === "page-anchor" ? undefined : folderPrompt,
       taskSystemPrompt: task.systemPrompt,
     });
   }
@@ -194,20 +189,21 @@ export class ExecutionContextBuilder {
    * (`task.resume_session_id is None`) 정합.
    */
   async build(task: Task, agent: AgentProfile): Promise<PreparedContext> {
-    await this.pageContextResolver.resolve(task, agent);
-    const { folderId, folderName, folderPrompt, atomContextSpecs } = await this._resolveFolder(task);
+    const pageContext = await this.pageContextResolver.resolve(task, agent);
+    const pageAnchored = pageContext.kind === "page-anchor";
+    const folder = await this._resolveFolder(task);
     const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
-    const atomMarkdown = await this._fetchAtomContext(atomContextSpecs);
-    const boardWorkspaceItem = await fetchBoardWorkspaceContextItem(
-      this.db,
-      this.logger,
-      folderId,
-    );
+    const atomMarkdown = pageAnchored
+      ? null
+      : await this._fetchAtomContext(folder.atomContextSpecs);
+    const boardWorkspaceItem = pageAnchored
+      ? null
+      : await fetchBoardWorkspaceContextItem(this.db, this.logger, folder.folderId);
     const primaryContainer = await resolvePrimarySessionContainerContext(
       this.db,
       this.logger,
       task.agentSessionId,
-      folderName,
+      folder.folderName,
     );
     const runningSessionsItem = await fetchRunningSessionsContextItem(
       this.db,
@@ -219,11 +215,13 @@ export class ExecutionContextBuilder {
     return this._assembleContext({
       task,
       agent,
-      folderName,
-      folderPrompt,
+      folderName: folder.folderName,
+      folderPrompt: pageAnchored ? undefined : folder.folderPrompt,
       agentAtomMarkdown,
       atomMarkdown,
       primaryContainer,
+      pageContextItem: pageAnchored ? pageContext.contextItem : null,
+      suppressRunbookGuidance: pageAnchored,
       boardWorkspaceItem,
       runningSessionsItem,
       cogitoContextItem,
@@ -407,6 +405,8 @@ export class ExecutionContextBuilder {
     agentAtomMarkdown: string | null;
     atomMarkdown: string | null;
     primaryContainer: PrimarySessionContainerContext | null;
+    pageContextItem: ContextItem | null;
+    suppressRunbookGuidance: boolean;
     boardWorkspaceItem: ContextItem | null;
     runningSessionsItem: ContextItem | null;
     cogitoContextItem: ContextItem | null;
@@ -431,10 +431,15 @@ export class ExecutionContextBuilder {
       callerInfo: args.task.callerInfo,
       container: args.primaryContainer?.container ?? null,
       sourceRunbookItemId: args.primaryContainer?.sourceRunbookItemId ?? null,
-      runbookGuidance: args.primaryContainer?.runbookGuidance ?? null,
+      runbookGuidance: args.suppressRunbookGuidance
+        ? null
+        : args.primaryContainer?.runbookGuidance ?? null,
     });
 
     const combinedContextItems: ContextItem[] = [soulstreamItem];
+    if (args.pageContextItem) {
+      combinedContextItems.push(args.pageContextItem);
+    }
     if (args.boardWorkspaceItem) {
       combinedContextItems.push(args.boardWorkspaceItem);
     }
