@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { V2_TOKEN_FIXTURE, V2_TOKENS } from "./v2-token-fixture";
+import { V2_LAYOUT_SPACING, V2_TOKEN_FIXTURE, V2_TOKENS } from "./v2-token-fixture";
 
 describe("v2 visual tokens", () => {
   it("uses the existing semantic token hierarchy without literal colors", () => {
@@ -26,5 +26,14 @@ describe("v2 visual tokens", () => {
       "state",
       "control",
     ]);
+  });
+
+  it("keeps navigation and measured-row spacing in one numeric scale", () => {
+    expect(V2_LAYOUT_SPACING).toEqual({
+      navigationSectionGapPx: 20,
+      legacyRowGapPx: 8,
+      legacyRowEstimatePx: 72,
+    });
+    expect(V2_LAYOUT_SPACING.legacyRowEstimatePx % V2_LAYOUT_SPACING.legacyRowGapPx).toBe(0);
   });
 });

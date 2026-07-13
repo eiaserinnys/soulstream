@@ -85,6 +85,36 @@ describe("SessionRefBlock", () => {
     })));
     expect(container.querySelector("[data-session-ref-unavailable='session-secret']")).not.toBeNull();
     expect(container.textContent).toContain("deleted or you may not have access");
+    const message = Array.from(container.querySelectorAll("p"))
+      .find((paragraph) => paragraph.textContent?.includes("deleted or you may not have access"));
+    expect(message?.classList.contains("truncate")).toBe(false);
     expect(container.querySelector("textarea")).toBeNull();
+  });
+
+  it("wraps every readable text line only when the caller opts into variable height", () => {
+    const resolution = ready("running");
+    flushSync(() => root.render(createElement(SessionRefBlock, {
+      resolution,
+      lensState: "neutral",
+      onOpen: vi.fn(),
+      wrapText: true,
+    })));
+
+    const wrapped = container.querySelector("[data-session-ref='session-a']")!;
+    expect(wrapped.getAttribute("data-session-ref-wrap")).toBe("true");
+    expect(wrapped.querySelectorAll(".truncate")).toHaveLength(0);
+    expect(wrapped.querySelectorAll(".whitespace-normal")).toHaveLength(3);
+    expect(wrapped.textContent).toContain("Find the root cause");
+    expect(wrapped.getAttribute("aria-label")).toContain("Find the root cause");
+    expect(wrapped.getAttribute("aria-label")).toContain("Roselin · eiaserinnys");
+
+    flushSync(() => root.render(createElement(SessionRefBlock, {
+      resolution,
+      lensState: "neutral",
+      onOpen: vi.fn(),
+    })));
+    const compact = container.querySelector("[data-session-ref='session-a']")!;
+    expect(compact.hasAttribute("data-session-ref-wrap")).toBe(false);
+    expect(compact.querySelectorAll(".truncate")).toHaveLength(3);
   });
 });

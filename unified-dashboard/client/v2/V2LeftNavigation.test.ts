@@ -49,4 +49,38 @@ describe("V2LeftNavigation", () => {
     expect(html).toContain("Starred pages could not be loaded.");
     expect(html).toContain('data-testid="v2-daily-entry"');
   });
+
+  it.each([
+    { name: "loading", loading: true, error: null, starredPages: [] },
+    { name: "empty", loading: false, error: null, starredPages: [] },
+    {
+      name: "list",
+      loading: false,
+      error: null,
+      starredPages: [
+        { id: "page-1", title: "A long starred page", daily_date: null, version: 1, archived: false, metadata: { starred: true }, created_at: "", updated_at: "" },
+      ],
+    },
+  ])("keeps the $name starred state from shrinking into legacy spaces", ({ loading, error, starredPages }) => {
+    const html = renderToStaticMarkup(createElement(V2LeftNavigation, {
+      selectedPageId: null,
+      starredPages,
+      loading,
+      error,
+      onOpenDaily: vi.fn(),
+      onOpenPage: vi.fn(),
+      onUnstarPage: vi.fn(),
+      legacyFolders: Array.from({ length: 40 }, (_, index) => ({
+        id: `legacy-${index}`,
+        name: `Legacy folder ${index}`,
+        sortOrder: index,
+      })),
+      legacyStatus: { status: "ready", message: null },
+      onOpenLegacyFolder: vi.fn(),
+    }));
+
+    expect(html.match(/data-v2-nav-section=/g)).toHaveLength(3);
+    expect(html.match(/data-v2-nav-section="[^"]+" class="[^"]*shrink-0/g)).toHaveLength(3);
+    expect(html).toContain("overflow-y-auto");
+  });
 });

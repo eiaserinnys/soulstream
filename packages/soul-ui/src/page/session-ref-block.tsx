@@ -8,11 +8,15 @@ export function SessionRefBlock({
   resolution,
   lensState,
   onOpen,
+  wrapText = false,
 }: {
   resolution: SessionReferenceResolution;
   lensState: SessionLensState;
   onOpen(): void;
+  wrapText?: boolean;
 }) {
+  const readableTextClass = wrapText ? "whitespace-normal break-words" : "truncate";
+  const unavailableMessageClass = wrapText ? "whitespace-normal break-words" : "";
   if (resolution.kind === "unavailable") {
     return (
       <div
@@ -22,8 +26,8 @@ export function SessionRefBlock({
       >
         <LockKeyhole aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium">Unavailable session · {resolution.sessionId}</p>
-          <p className="mt-0.5 text-xs">{resolution.message}</p>
+          <p className={`${readableTextClass} text-sm font-medium`}>Unavailable session · {resolution.sessionId}</p>
+          <p className={`mt-0.5 text-xs ${unavailableMessageClass}`}>{resolution.message}</p>
         </div>
       </div>
     );
@@ -34,6 +38,13 @@ export function SessionRefBlock({
   const identity = [summary.agentName ?? summary.agentId, summary.nodeId]
     .filter((value): value is string => Boolean(value))
     .join(" · ");
+  const accessibleLabel = wrapText
+    ? [
+        `Open session ${title}`,
+        summary.displayName && summary.prompt ? summary.prompt : null,
+        identity || null,
+      ].filter((value): value is string => Boolean(value)).join(". ")
+    : `Open session ${title}`;
   const activate = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
@@ -44,8 +55,9 @@ export function SessionRefBlock({
     <div
       role="button"
       tabIndex={0}
-      aria-label={`Open session ${title}`}
+      aria-label={accessibleLabel}
       data-session-ref={summary.agentSessionId}
+      data-session-ref-wrap={wrapText ? "true" : undefined}
       data-session-status={summary.status}
       data-lens-state={lensState}
       className={`flex min-w-0 flex-1 cursor-pointer items-start gap-3 rounded-lg border border-glass-border bg-glass-surface/55 px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
@@ -60,16 +72,16 @@ export function SessionRefBlock({
     >
       <MessageSquare aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <p className="truncate text-sm font-semibold text-foreground">{title}</p>
+        <div className={`flex min-w-0 gap-2 ${wrapText ? "items-start" : "items-center"}`}>
+          <p className={`min-w-0 flex-1 text-sm font-semibold text-foreground ${readableTextClass}`}>{title}</p>
           <span className="shrink-0 rounded-full border border-glass-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
             {summary.status}
           </span>
         </div>
         {summary.displayName && summary.prompt ? (
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">{summary.prompt}</p>
+          <p className={`mt-0.5 text-xs text-muted-foreground ${readableTextClass}`}>{summary.prompt}</p>
         ) : null}
-        {identity ? <p className="mt-1 truncate text-[11px] text-muted-foreground">{identity}</p> : null}
+        {identity ? <p className={`mt-1 text-[11px] text-muted-foreground ${readableTextClass}`}>{identity}</p> : null}
       </div>
     </div>
   );

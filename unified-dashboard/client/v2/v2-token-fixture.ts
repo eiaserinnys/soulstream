@@ -6,6 +6,12 @@ export const V2_TOKENS = Object.freeze({
   control: "rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
 });
 
+export const V2_LAYOUT_SPACING = Object.freeze({
+  navigationSectionGapPx: 20,
+  legacyRowGapPx: 8,
+  legacyRowEstimatePx: 72,
+});
+
 export const V2_TOKEN_FIXTURE = Object.freeze([
   { surface: "navigation", tokens: V2_TOKENS.navigation },
   { surface: "page", tokens: V2_TOKENS.pageSurface },
