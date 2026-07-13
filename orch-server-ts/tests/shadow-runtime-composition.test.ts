@@ -180,6 +180,7 @@ function createInertPageYjsRoutes() {
       searchBrowserBlocks: vi.fn(async () => ({ items: [] })),
       getBrowserBlock: vi.fn(async () => null),
       getBrowserBacklinks: vi.fn(async () => ({ items: [], nextCursor: null })),
+      resolvePageSessionDefaults: vi.fn(async () => null),
     },
     createService: () => ({
       handleConnection: vi.fn(),

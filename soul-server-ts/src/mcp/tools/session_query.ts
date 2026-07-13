@@ -13,6 +13,7 @@ import { z } from "zod";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { searchSessionEvents } from "../../search/session_search.js";
+import { buildSessionTurnExcerpt } from "../../context/session_turn_summary.js";
 
 const DEFAULT_DOWNLOAD_DIR = "/tmp/soulstream_sessions";
 const TOOL_TRUNCATE_DEFAULT = 500;
@@ -245,25 +246,11 @@ export function registerSessionQueryTools(
       if (!session) {
         return errorResult(`세션을 찾을 수 없습니다: ${session_id}`);
       }
-      const totalEvents = await runtime.db.countEvents(session_id);
-      // 본 카드는 단순 요약 — Python `_assemble_turns` 정밀 turn 합성은 후속 카드.
-      // user_message/assistant_message 이벤트만 추려 마지막 200개에서 텍스트 발췌.
-      const events = await runtime.db.readEvents(
+      const { totalEvents, turns } = await buildSessionTurnExcerpt(
+        runtime.db,
         session_id,
-        0,
-        Math.min(totalEvents, 200),
-        ["user_message", "assistant_message", "user_text", "assistant_text"],
+        max_response_chars ?? 500,
       );
-      const cap = max_response_chars ?? 500;
-      const turns = events.map((ev) => ({
-        event_id: ev.id,
-        event_type: ev.event_type,
-        text: truncate(
-          extractTextFromPayload(ev.payload),
-          cap > 0 ? cap : undefined,
-        ),
-        created_at: serializeDate(ev.created_at),
-      }));
       return jsonResult({
         session_id,
         display_name: session.display_name,
@@ -309,18 +296,4 @@ function applyToolContentPolicy(
     event: payload,
     created_at: ev.created_at instanceof Date ? ev.created_at.toISOString() : ev.created_at,
   };
-}
-
-function extractTextFromPayload(payload: Record<string, unknown>): string {
-  // 일반적 키 순서대로 시도. 없으면 JSON.stringify.
-  for (const key of ["text", "content", "message", "value"]) {
-    const v = payload[key];
-    if (typeof v === "string") return v;
-  }
-  return JSON.stringify(payload);
-}
-
-function truncate(s: string, limit?: number): string {
-  if (limit === undefined || limit === 0) return s;
-  return s.length > limit ? `${s.slice(0, limit)}…` : s;
 }

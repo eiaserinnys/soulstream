@@ -407,6 +407,23 @@ describe("CommandDispatcher.create_session", () => {
     })]);
   });
 
+  it("forwards predecessor_session_id into task creation", async () => {
+    const { dispatcher, tm } = createDispatcher();
+
+    await dispatcher.dispatch({
+      type: "create_session",
+      agentSessionId: "sess-next",
+      prompt: "continue",
+      profile: "codex-default",
+      predecessor_session_id: "sess-previous",
+      requestId: "cs-predecessor",
+    });
+
+    expect(tm.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      predecessorSessionId: "sess-previous",
+    }));
+  });
+
   it("requestId 없으면 session_created ACK 발행 안 함 (atom c13f7826)", async () => {
     const { dispatcher, sent } = createDispatcher();
     await dispatcher.dispatch({

@@ -37,7 +37,7 @@ export interface AppendRunbookOperationTxParams {
   operationType: string;
   actorKind: RunbookOperationActorKind;
   actorSessionId?: string | null;
-  actorEventId: number;
+  actorEventId: number | null;
   actorUserId?: string | null;
   idempotencyKey?: string | null;
   payload: Record<string, unknown>;

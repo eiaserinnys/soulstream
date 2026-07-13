@@ -19,6 +19,7 @@ import {
 import {
   PageBrowserBacklinkCursorError,
   PageListCursorError,
+  type PageSessionDefaultsDto,
 } from "./page_repository_reads.js";
 import type { PageYjsService } from "./page_service.js";
 import { registerPageBlockTransferRoute } from "./page_block_transfer_route.js";
@@ -27,6 +28,7 @@ export const pageBrowserRouteAuthRequirements = {
   "GET /api/pages": true,
   "GET /api/pages/search": true,
   "GET /api/pages/{pageId}": true,
+  "GET /api/pages/{pageId}/session-defaults": true,
   "GET /api/pages/{pageId}/backlinks": true,
   "GET /api/blocks/search": true,
   "GET /api/blocks/{blockId}": true,
@@ -65,6 +67,7 @@ export interface PageBrowserReads {
     includeSelf?: boolean;
     limit: number;
   }): Promise<BrowserBacklinkPageDto>;
+  resolvePageSessionDefaults(pageId: string): Promise<PageSessionDefaultsDto | null>;
 }
 
 const id = z.string().trim().min(1);
@@ -193,6 +196,21 @@ export function registerPageBrowserRoutes(
           : errorReply(reply, 404, "BLOCK_NOT_FOUND", `block not found: ${parsed.data}`);
       } catch (error) {
         return routeError(request, reply, error, "block-read");
+      }
+    },
+  );
+
+  app.get<{ Params: { pageId: string } }>(
+    "/api/pages/:pageId/session-defaults",
+    async (request, reply) => {
+      const userId = await resolveUserId(request, options);
+      if (!userId) return unauthorized(reply);
+      const pageId = id.safeParse(request.params.pageId);
+      if (!pageId.success) return invalid(reply, pageId.error.message);
+      try {
+        return reply.send(await options.reads.resolvePageSessionDefaults(pageId.data));
+      } catch (error) {
+        return routeError(request, reply, error, "session-defaults");
       }
     },
   );

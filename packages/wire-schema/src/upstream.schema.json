@@ -542,6 +542,10 @@
           "items": { "type": "object", "additionalProperties": true }
         },
         "caller_info": { "type": "object", "additionalProperties": true },
+        "predecessor_session_id": {
+          "type": ["string", "null"],
+          "description": "Optional predecessor session for explicit run succession."
+        },
         "notify_completion": {
           "type": "boolean",
           "description": "False suppresses caller completion relay for runbook-tracked fire-and-forget delegation. Missing defaults to true."

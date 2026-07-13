@@ -359,6 +359,41 @@ describe("orch PageRepository", () => {
       limit: 1,
     })).rejects.toMatchObject({ code: "PAGE_BROWSER_BACKLINK_CURSOR_INVALID" });
   });
+
+  it("resolves the nearest session defaults through reverse mount and physical ancestors", async () => {
+    const { sql, calls } = createMockSql((call) => {
+      if (call.query.includes("WITH RECURSIVE ancestors")) {
+        return [{
+          id: "defaults-parent",
+          page_id: "project-page",
+          position_key: "a",
+          properties: { scope: "run", agentId: "roselin", nodeId: "node-a" },
+        }];
+      }
+      if (call.query.includes("SELECT source.page_id")) {
+        return call.values.includes("work-page")
+          ? [{ page_id: "project-page", block_id: "mount-work", position_key: "b" }]
+          : [];
+      }
+      return [];
+    });
+    const repository = new PageRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+
+    await expect(repository.resolvePageSessionDefaults("work-page")).resolves.toEqual({
+      agentId: "roselin",
+      nodeId: "node-a",
+      sourcePageId: "project-page",
+      sourceBlockId: "defaults-parent",
+    });
+    expect(calls.map((call) => call.query)).toEqual([
+      expect.stringContaining("block_type = 'session_defaults'"),
+      expect.stringContaining("link.link_kind = 'mount'"),
+      expect.stringContaining("WITH RECURSIVE ancestors"),
+    ]);
+  });
 });
 
 function backlinkRow(id: string, createdAt: Date) {

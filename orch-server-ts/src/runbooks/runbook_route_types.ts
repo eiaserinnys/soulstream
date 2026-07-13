@@ -94,6 +94,7 @@ export class RunbookRouteError extends Error {
 }
 
 export const runbookRouteAuthRequirements = {
+  "POST /api/runbooks": true,
   "GET /api/runbooks/my-turn": true,
   "POST /api/runbooks/:runbook_id/items/:item_id/status": true,
   "POST /api/runbooks/:runbook_id/status": true,

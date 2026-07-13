@@ -176,6 +176,13 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
     family: "page_yjs",
   },
   {
+    methods: ["GET"],
+    path: "/api/pages/{pageId}/session-defaults",
+    name: "resolve_page_session_defaults",
+    authRequired: true,
+    family: "page_yjs",
+  },
+  {
     methods: ["POST"],
     path: "/api/pages/block-transfers",
     name: "transfer_page_blocks",
@@ -188,6 +195,14 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
     name: "acknowledge_session_review",
     authRequired: true,
     family: "session",
+  },
+  {
+    methods: ["POST"],
+    path: "/api/runbooks",
+    name: "create_runbook",
+    authRequired: true,
+    family: "runbook",
+    beforePath: "/api/runbooks/{runbook_id}",
   },
 ];
 

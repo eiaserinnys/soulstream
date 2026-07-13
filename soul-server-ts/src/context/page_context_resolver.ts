@@ -219,6 +219,29 @@ function toCandidate(
       scope,
     };
   }
+  if (block.block_type === "session_defaults") {
+    const scope = typeof block.properties.scope === "string"
+      ? block.properties.scope.trim()
+      : "";
+    if (!scope) return null;
+    const agentId = typeof block.properties.agentId === "string"
+      ? block.properties.agentId.trim()
+      : "";
+    const nodeId = typeof block.properties.nodeId === "string"
+      ? block.properties.nodeId.trim()
+      : "";
+    return {
+      category: "session_defaults",
+      semanticKey: `session_defaults:${scope}`,
+      pageId: block.page_id,
+      blockId: block.id,
+      positionKey: block.position_key,
+      distance,
+      scope,
+      ...(agentId ? { agentId } : {}),
+      ...(nodeId ? { nodeId } : {}),
+    };
+  }
   if (block.block_type !== "atom_ref") return null;
   const instance = block.properties.instance;
   const nodeId = block.properties.nodeId;

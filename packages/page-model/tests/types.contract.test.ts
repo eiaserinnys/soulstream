@@ -7,6 +7,8 @@ import {
   type ChecklistBlockProperties,
   type PageBlockProperties,
   type PageBlockType,
+  type RunbookRefBlockProperties,
+  type SessionDefaultsBlockProperties,
 } from "../src/types.js";
 
 describe("page model DTO contract", () => {
@@ -16,6 +18,8 @@ describe("page model DTO contract", () => {
       "session_ref",
       "atom_ref",
       "guidance",
+      "session_defaults",
+      "runbook_ref",
       "checklist",
       "custom_view",
       "image",
@@ -38,6 +42,12 @@ describe("page model DTO contract", () => {
 
   it("maps known block types to their minimum property contracts", () => {
     expectTypeOf<PageBlockProperties<"checklist">>().toEqualTypeOf<ChecklistBlockProperties>();
+    expectTypeOf<PageBlockProperties<"session_defaults">>().toEqualTypeOf<
+      SessionDefaultsBlockProperties
+    >();
+    expectTypeOf<PageBlockProperties<"runbook_ref">>().toEqualTypeOf<
+      RunbookRefBlockProperties
+    >();
     expectTypeOf<PageBlockProperties<"plugin/chart">>().toEqualTypeOf<
       Record<string, unknown>
     >();

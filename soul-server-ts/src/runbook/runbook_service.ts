@@ -17,6 +17,7 @@ import {
   updateRunbookBoardItemTitle,
   upsertRunbookBoardItem,
 } from "./runbook_board_items.js";
+import { mutateRunbookCreation } from "./runbook_creation_mutation.js";
 import type {
   RunbookActorParams,
   RunbookBroadcasterPort,
@@ -68,7 +69,8 @@ export class RunbookService {
     return await this.repo.listOperations(runbookId, limit);
   }
 
-  async createRunbook(params: RunbookActorParams & {
+  async createRunbook(params: Omit<RunbookActorParams, "actorSessionId"> & {
+    actorSessionId: string | null;
     runbookId?: string;
     folderId: string;
     title: string;
@@ -93,29 +95,12 @@ export class RunbookService {
     });
     let result: RunbookMutationResult;
     try {
-      result = await this.core.mutate({
+      result = await mutateRunbookCreation(this.core, this.repo, {
+        ...params,
         runbookId,
-        targetKind: "runbook",
-        targetId: runbookId,
-        operationType: "create_runbook",
-        actor: params,
-        idempotencyKey: params.idempotencyKey,
-        payload: {
-          board_item_id: boardItemId,
-          folder_id: params.folderId,
-          title: params.title,
-          x,
-          y,
-        },
-        apply: async (sql, eventId) => {
-          await this.repo.createRunbookTx(sql, {
-            id: runbookId,
-            boardItemId,
-            title: params.title,
-            createdSessionId: params.actorSessionId,
-            createdEventId: eventId,
-          });
-        },
+        boardItemId,
+        x,
+        y,
       });
     } catch (err) {
       await removeRunbookBoardItemIfUnlinked(this.repo, this.boardYjsService, {
@@ -125,7 +110,7 @@ export class RunbookService {
       }).catch(() => undefined);
       throw err;
     }
-    const creatorEnrolled = params.enrollCreator === false
+    const creatorEnrolled = params.enrollCreator === false || params.actorSessionId === null
       ? false
       : (await enrollRunbookCreatorSession({
           mover: this.creatorBoardItemMover, logger: this.logger,

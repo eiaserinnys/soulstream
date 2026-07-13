@@ -3,6 +3,8 @@ export const PAGE_BLOCK_TYPES = [
   "session_ref",
   "atom_ref",
   "guidance",
+  "session_defaults",
+  "runbook_ref",
   "checklist",
   "custom_view",
   "image",
@@ -26,6 +28,19 @@ export interface AtomRefBlockProperties {
 export interface GuidanceBlockProperties {
   enabled: boolean;
   scope: string;
+  [key: string]: unknown;
+}
+
+export interface SessionDefaultsBlockProperties {
+  agentId?: string;
+  nodeId?: string;
+  scope: string;
+  [key: string]: unknown;
+}
+
+export interface RunbookRefBlockProperties {
+  runbookId: string;
+  primary: boolean;
   [key: string]: unknown;
 }
 
@@ -60,6 +75,8 @@ export interface PageBlockPropertiesByType {
   session_ref: SessionRefBlockProperties;
   atom_ref: AtomRefBlockProperties;
   guidance: GuidanceBlockProperties;
+  session_defaults: SessionDefaultsBlockProperties;
+  runbook_ref: RunbookRefBlockProperties;
   checklist: ChecklistBlockProperties;
   custom_view: CustomViewBlockProperties;
   image: ImageBlockProperties;

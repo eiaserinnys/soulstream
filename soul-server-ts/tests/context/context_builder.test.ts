@@ -107,6 +107,64 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     });
   });
 
+  it("injects the predecessor away summary before falling back to turns", async () => {
+    const getSession = vi.fn(async (sessionId: string) =>
+      sessionId === "sess-current"
+        ? { session_id: sessionId, predecessor_session_id: "sess-previous", folder_id: null }
+        : {
+            session_id: sessionId,
+            predecessor_session_id: null,
+            folder_id: null,
+            away_summary: "이전 세션에서 서버 계약을 확정했다.",
+          });
+    const countEvents = vi.fn(async () => 0);
+    const cb = makeBuilder({ getSession, countEvents } as Partial<SessionDB>);
+
+    const ctx = await cb.build(makeTask({ agentSessionId: "sess-current" }), codexAgent);
+    const item = ctx.combinedContextItems.find(
+      (candidate) => candidate.key === "predecessor_session_summary",
+    );
+
+    expect(JSON.parse(String(item?.content))).toEqual({
+      session_id: "sess-previous",
+      source: "away_summary",
+      summary: "이전 세션에서 서버 계약을 확정했다.",
+    });
+    expect(countEvents).not.toHaveBeenCalled();
+  });
+
+  it("reuses the shared turn excerpt when the predecessor has no away summary", async () => {
+    const getSession = vi.fn(async (sessionId: string) =>
+      sessionId === "sess-current"
+        ? { session_id: sessionId, predecessor_session_id: "sess-previous", folder_id: null }
+        : {
+            session_id: sessionId,
+            predecessor_session_id: null,
+            folder_id: null,
+            away_summary: null,
+          });
+    const countEvents = vi.fn(async () => 1);
+    const readEvents = vi.fn(async () => [{
+      id: 7,
+      event_type: "assistant_message",
+      payload: { text: "완료 내용" },
+      created_at: new Date("2026-07-14T00:00:00.000Z"),
+    }]);
+    const cb = makeBuilder({ getSession, countEvents, readEvents } as Partial<SessionDB>);
+
+    const ctx = await cb.build(makeTask({ agentSessionId: "sess-current" }), codexAgent);
+    const item = ctx.combinedContextItems.find(
+      (candidate) => candidate.key === "predecessor_session_summary",
+    );
+
+    expect(JSON.parse(String(item?.content))).toMatchObject({
+      session_id: "sess-previous",
+      source: "turn_excerpt",
+      totalEvents: 1,
+      turns: [{ event_id: 7, text: "완료 내용" }],
+    });
+  });
+
   it("page anchor replaces legacy folder/runbook context while retaining core context", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async (input) => {

@@ -12,13 +12,10 @@
  * 일반 auto-resume·intervention turn은 매턴 갱신이 필요한 running_sessions와 짧은 delta만
  * user prompt 말미에 붙인다.
  */
-
 import type { Logger } from "pino";
-
 import type { AgentRegistry, AgentProfile } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { CallerInfo, Task } from "../task/task_models.js";
-
 import {
   fetchAtomContext,
   fetchAtomContexts,
@@ -54,6 +51,7 @@ import {
   NO_PAGE_ANCHOR_CONTEXT_RESOLVER,
   type PageContextResolver,
 } from "./page_context_resolver.js";
+import { buildPredecessorSummaryContextItem } from "./predecessor_summary_context.js";
 import { buildSoulstreamContextItem } from "./soulstream_item.js";
 
 /** Python `_PreparedContext` (execution_context_builder.py:24-34) TS 등가. */
@@ -210,6 +208,7 @@ export class ExecutionContextBuilder {
       this.logger,
       task.agentSessionId,
     );
+    const predecessorSummaryItem = await buildPredecessorSummaryContextItem(this.db, this.logger, task.agentSessionId);
     const cogitoContextItem = await this._fetchCogitoContext();
     const { workingDir, maxTurns } = this._resolveProfile(task);
     return this._assembleContext({
@@ -224,6 +223,7 @@ export class ExecutionContextBuilder {
       suppressRunbookGuidance: pageAnchored,
       boardWorkspaceItem,
       runningSessionsItem,
+      predecessorSummaryItem,
       cogitoContextItem,
       workingDir,
       maxTurns,
@@ -409,6 +409,7 @@ export class ExecutionContextBuilder {
     suppressRunbookGuidance: boolean;
     boardWorkspaceItem: ContextItem | null;
     runningSessionsItem: ContextItem | null;
+    predecessorSummaryItem: ContextItem | null;
     cogitoContextItem: ContextItem | null;
     workingDir?: string;
     maxTurns?: number;
@@ -442,6 +443,9 @@ export class ExecutionContextBuilder {
     }
     if (args.boardWorkspaceItem) {
       combinedContextItems.push(args.boardWorkspaceItem);
+    }
+    if (args.predecessorSummaryItem) {
+      combinedContextItems.push(args.predecessorSummaryItem);
     }
     if (args.runningSessionsItem) {
       combinedContextItems.push(args.runningSessionsItem);

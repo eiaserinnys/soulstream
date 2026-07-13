@@ -84,6 +84,40 @@ describe("browser page routes", () => {
     }
   });
 
+  it("returns effective session defaults without opening the page Y.Doc", async () => {
+    const service = serviceDouble();
+    vi.mocked(service.resolvePageSessionDefaults).mockResolvedValueOnce({
+      agentId: "roselin",
+      nodeId: "node-a",
+      sourcePageId: "project-page",
+      sourceBlockId: "defaults-1",
+    });
+    const app = Fastify({ logger: false });
+    registerPageBrowserRoutes(app, {
+      service,
+      reads: service,
+      resolveUser: cookieUserResolver(),
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/pages/work-page/session-defaults",
+        headers: { cookie: browserCookie },
+      });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        agentId: "roselin",
+        nodeId: "node-a",
+        sourcePageId: "project-page",
+        sourceBlockId: "defaults-1",
+      });
+      expect(service.resolvePageSessionDefaults).toHaveBeenCalledWith("work-page");
+      expect(service.getBrowserPage).not.toHaveBeenCalled();
+    } finally {
+      await app.close();
+    }
+  });
+
   it("requires state-vector CAS for structural batch and exposes explicit star mutation", async () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });
@@ -374,6 +408,7 @@ describe("browser page routes", () => {
       "GET /api/pages": true,
       "GET /api/pages/search": true,
       "GET /api/pages/{pageId}": true,
+      "GET /api/pages/{pageId}/session-defaults": true,
       "GET /api/pages/{pageId}/backlinks": true,
       "GET /api/blocks/search": true,
       "GET /api/blocks/{blockId}": true,
@@ -411,6 +446,7 @@ type BrowserServiceDouble = PageBrowserRouteOptions["service"] & {
   searchBrowserBlocks: ReturnType<typeof vi.fn>;
   getBrowserBlock: ReturnType<typeof vi.fn>;
   getBrowserBacklinks: ReturnType<typeof vi.fn>;
+  resolvePageSessionDefaults: ReturnType<typeof vi.fn>;
 };
 
 function serviceDouble(): BrowserServiceDouble {
@@ -454,5 +490,6 @@ function serviceDouble(): BrowserServiceDouble {
       collapsed: false,
     }),
     getBrowserBacklinks: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+    resolvePageSessionDefaults: vi.fn().mockResolvedValue(null),
   } as unknown as BrowserServiceDouble;
 }

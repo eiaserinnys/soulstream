@@ -28,6 +28,7 @@ describe("route coverage completeness gate", () => {
     "POST /api/pages/daily",
     "GET /api/pages/{pageId}",
     "GET /api/pages/{pageId}/backlinks",
+    "GET /api/pages/{pageId}/session-defaults",
     "GET /api/blocks/search",
     "GET /api/blocks/{blockId}",
     "POST /api/pages/block-transfers",
@@ -35,6 +36,7 @@ describe("route coverage completeness gate", () => {
     "PATCH /api/pages/{pageId}/starred",
   ];
   const reviewRouteKey = "POST /api/sessions/{session_id}/review/acknowledge";
+  const runbookCreateRouteKey = "POST /api/runbooks";
 
   it("covers every Python fixture route with opt-in TS registration and auth metadata", async () => {
     const registeredRouteKeys = await collectRegisteredFixtureRouteKeys(registry);
@@ -57,10 +59,10 @@ describe("route coverage completeness gate", () => {
     });
     expect(registeredRouteKeys).toHaveLength(registry.entries.length);
     expect(registry.entries.map((entry) => entry.key)).toEqual(
-      expect.arrayContaining([...browserRouteKeys, reviewRouteKey]),
+      expect.arrayContaining([...browserRouteKeys, reviewRouteKey, runbookCreateRouteKey]),
     );
     expect(registeredRouteKeys).toEqual(
-      expect.arrayContaining([...browserRouteKeys, reviewRouteKey]),
+      expect.arrayContaining([...browserRouteKeys, reviewRouteKey, runbookCreateRouteKey]),
     );
   });
 

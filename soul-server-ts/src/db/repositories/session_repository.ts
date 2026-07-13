@@ -59,7 +59,7 @@ export class SessionRepository {
   /** Python `session_register` stored procedure 호출 (schema.sql L196-218). */
   async registerSession(params: RegisterSessionParams): Promise<void> {
     await this.sql`
-      SELECT session_register_with_review(
+      SELECT session_register_with_predecessor(
         ${params.sessionId},
         ${params.nodeId},
         ${params.agentId},
@@ -73,7 +73,8 @@ export class SessionRepository {
         ${params.callerSessionId},
         ${params.notifyCompletion ?? true},
         ${params.reviewRequired ?? false},
-        ${params.reviewState ?? "not_required"}
+        ${params.reviewState ?? "not_required"},
+        ${params.predecessorSessionId ?? null}
       )
     `;
   }
@@ -225,20 +226,24 @@ export class SessionRepository {
         event_count: string | number;
         away_summary: string | null;
         caller_session_id: string | null;
+        predecessor_session_id: string | null;
         last_event_id: string | number | null;
         last_read_event_id: string | number | null;
         node_id: string | null;
         total_count: string | number;
       }>
     >`
-      SELECT * FROM session_list_summary(
+      SELECT summary.*, sessions.predecessor_session_id
+      FROM session_list_summary(
         ${params.search ?? null},
         ${null},
         ${params.limit},
         ${params.offset},
         ${params.folderId ?? null},
         ${params.nodeId ?? null}
-      )
+      ) AS summary
+      JOIN sessions ON sessions.session_id = summary.session_id
+      ORDER BY summary.updated_at DESC, summary.session_id DESC
     `;
     const total = rows.length > 0 && rows[0] ? Number(rows[0].total_count) : 0;
     const sessions = rows.map((r) => ({
@@ -251,6 +256,7 @@ export class SessionRepository {
       event_count: Number(r.event_count),
       away_summary: r.away_summary,
       caller_session_id: r.caller_session_id,
+      predecessor_session_id: r.predecessor_session_id,
       last_event_id: r.last_event_id == null ? null : Number(r.last_event_id),
       last_read_event_id:
         r.last_read_event_id == null ? null : Number(r.last_read_event_id),
@@ -280,6 +286,7 @@ export class SessionRepository {
         (SELECT COUNT(*)::int FROM events e WHERE e.session_id = s.session_id) AS event_count,
         s.away_summary,
         s.caller_session_id,
+        s.predecessor_session_id,
         s.last_event_id,
         s.last_read_event_id,
         s.node_id,

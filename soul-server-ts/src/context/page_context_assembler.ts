@@ -23,9 +23,17 @@ export interface AtomRefPageContextCandidate extends CandidateBase {
   nodeId: string;
 }
 
+export interface SessionDefaultsPageContextCandidate extends CandidateBase {
+  category: "session_defaults";
+  scope: string;
+  agentId?: string;
+  nodeId?: string;
+}
+
 export type PageContextCandidate =
   | GuidancePageContextCandidate
-  | AtomRefPageContextCandidate;
+  | AtomRefPageContextCandidate
+  | SessionDefaultsPageContextCandidate;
 
 export interface PageContextTraversalFailure {
   stage: "page" | "mounts" | "block";
@@ -44,6 +52,7 @@ export interface PageContextTraversal {
 export interface PageContextBudgets {
   guidanceChars: number;
   atomRefChars: number;
+  sessionDefaultsChars: number;
   totalChars: number;
 }
 
@@ -54,6 +63,7 @@ export interface PageContextAssembler {
 export const DEFAULT_PAGE_CONTEXT_BUDGETS: PageContextBudgets = {
   guidanceChars: 8_000,
   atomRefChars: 4_000,
+  sessionDefaultsChars: 0,
   totalChars: 10_000,
 };
 
@@ -69,10 +79,15 @@ export class DefaultPageContextAssembler implements PageContextAssembler {
     const usage = {
       guidance: { limit: this.budgets.guidanceChars, used: 0, omitted: 0 },
       atom_ref: { limit: this.budgets.atomRefChars, used: 0, omitted: 0 },
+      session_defaults: { limit: this.budgets.sessionDefaultsChars, used: 0, omitted: 0 },
       total: { limit: this.budgets.totalChars, used: 0, omitted: 0 },
     };
     const rendered: Array<Record<string, unknown> & { candidate: PageContextCandidate }> = [];
     for (const candidate of [...selected].sort(compareNearFirst)) {
+      if (candidate.category === "session_defaults") {
+        usage.session_defaults.omitted += 1;
+        continue;
+      }
       const category = usage[candidate.category];
       const categoryRemaining = Math.max(0, category.limit - category.used);
       const totalRemaining = Math.max(0, usage.total.limit - usage.total.used);
@@ -130,7 +145,11 @@ export class DefaultPageContextAssembler implements PageContextAssembler {
             truncated: traversal.truncated,
           },
           truncation: {
-            categories: { guidance: usage.guidance, atom_ref: usage.atom_ref },
+            categories: {
+              guidance: usage.guidance,
+              atom_ref: usage.atom_ref,
+              session_defaults: usage.session_defaults,
+            },
             total: usage.total,
           },
         },

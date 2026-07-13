@@ -25,6 +25,8 @@ import {
   listPages,
   searchBrowserBlocks,
   searchBrowserPages,
+  resolvePageSessionDefaults,
+  type PageSessionDefaultsDto,
   type PageBacklinkPage,
 } from "./page_repository_reads.js";
 import type {
@@ -207,6 +209,10 @@ export class PageRepository {
     limit: number;
   }): Promise<BrowserBacklinkPageDto> {
     return await getBrowserBacklinks(await this.resolveSql(), input);
+  }
+
+  async resolvePageSessionDefaults(pageId: string): Promise<PageSessionDefaultsDto | null> {
+    return await resolvePageSessionDefaults(await this.resolveSql(), pageId);
   }
 
   async commitPageMutation(input: CommitPageMutationInput): Promise<PageMutationCommitResult> {

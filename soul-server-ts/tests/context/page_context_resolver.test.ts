@@ -241,6 +241,38 @@ describe("AncestorPageContextResolver", () => {
     expect(content.items[0]).toMatchObject({ block_id: "near", text: "near" });
   });
 
+  it("resolves session defaults near-first without rendering them into the prompt", async () => {
+    const repo = repository({
+      pages: {
+        target: page("target", [
+          block("defaults-far", null, "session_defaults", "", {
+            scope: "run",
+            agentId: "agent-far",
+          }),
+          block("defaults-near", "defaults-far", "session_defaults", "", {
+            scope: "run",
+            agentId: "agent-near",
+            nodeId: "node-near",
+          }),
+          block("guidance", "defaults-near", "guidance", "visible", {
+            enabled: true,
+            scope: "visible",
+          }),
+          block("anchor", "guidance", "session_ref"),
+        ]),
+      },
+    });
+
+    const content = contentOf(await resolve(repo));
+    expect(content.items.map((entry: any) => entry.block_id)).toEqual(["guidance"]);
+    expect(content.metadata.deduplicated).toBe(1);
+    expect(content.metadata.truncation.categories.session_defaults).toEqual({
+      limit: 0,
+      used: 0,
+      omitted: 1,
+    });
+  });
+
   it("excludes prose, session_ref, checklist, and disabled guidance", async () => {
     const repo = repository({
       pages: {
