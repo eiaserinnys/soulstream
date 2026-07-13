@@ -30,6 +30,7 @@ export interface PageEditorController {
   run(operation: EditorOperation, options?: { restoreFocus?: boolean }): Promise<void>;
   createFirstBlock(): Promise<void>;
   convertToSessionReference(blockId: string, sessionId: string): Promise<void>;
+  noteLocalInput(): void;
   queueFocus(focus: ResolvedEditorFocus | null): void;
   clearFocus(focus: ResolvedEditorFocus): void;
   dismissError(): void;
@@ -60,6 +61,7 @@ export function usePageEditorController({
   const deferredFocus = useRef<ResolvedEditorFocus | null>(null);
   const blocked = useRef(false);
   const pendingCommandCount = useRef(0);
+  const localInputRevision = useRef(0);
   const latest = useRef({ doc, blocks, mutationVersion });
   latest.current = { doc, blocks, mutationVersion };
   const snapshots = useMemo(() => toEditorSnapshots(pageId, blocks), [blocks, pageId]);
@@ -67,8 +69,8 @@ export function usePageEditorController({
   snapshotRef.current = snapshots;
 
   type QueuedCommand =
-    | { readonly kind: "operation"; readonly operation: EditorOperation; readonly restoreFocus: boolean }
-    | { readonly kind: "plan"; readonly plan: EditorOperationPlan; readonly restoreFocus: boolean };
+    | { readonly kind: "operation"; readonly operation: EditorOperation; readonly restoreFocus: boolean; readonly focusRevision: number }
+    | { readonly kind: "plan"; readonly plan: EditorOperationPlan; readonly restoreFocus: boolean; readonly focusRevision: number };
 
   const commandRuntime = useMemo(() => {
     let disposed = false;
@@ -81,8 +83,8 @@ export function usePageEditorController({
         try {
           const context = latest.current;
           const idempotencyKey = pageEditorIdempotencyKey(pageId);
-          const result = command.kind === "operation"
-            ? await executePageEditorOperation({
+          const result = await retryTransientStructureSave(() => command.kind === "operation"
+            ? executePageEditorOperation({
                 apiClient,
                 pageId,
                 doc: context.doc,
@@ -91,15 +93,17 @@ export function usePageEditorController({
                 operation: command.operation,
                 idempotencyKey,
               })
-            : await executePageEditorPlan({
+            : executePageEditorPlan({
                 apiClient,
                 pageId,
                 doc: context.doc,
                 mutationVersion: context.mutationVersion,
                 plan: command.plan,
                 idempotencyKey,
-              });
-          const focus = command.restoreFocus ? result.focus : null;
+              }));
+          const focus = command.restoreFocus && command.focusRevision === localInputRevision.current
+            ? result.focus
+            : null;
           if (disposed) return "local-failure";
           if (result.mutationVersion > latest.current.mutationVersion) {
             deferredFocus.current = focus;
@@ -135,7 +139,10 @@ export function usePageEditorController({
             const continuation = laterCount === 0
               ? "No later edits are queued."
               : `${laterCount} later ${laterCount === 1 ? "edit" : "edits"} will continue with version checks.`;
-            setFeedback(`The previous edit could not be confirmed: ${detail} It was not retried. ${continuation} Repeat the failed edit after reviewing the page.`);
+            const retrySummary = isTransientStructureSaveError(error)
+              ? "One automatic retry also failed."
+              : "It was not retried.";
+            setFeedback(`The previous edit could not be confirmed: ${detail} ${retrySummary} ${continuation} Repeat the failed edit after reviewing the page.`);
             setState({ status: "idle" });
             return "external-failure";
           }
@@ -160,6 +167,7 @@ export function usePageEditorController({
     deferredFocus.current = null;
     blocked.current = false;
     pendingCommandCount.current = 0;
+    localInputRevision.current = 0;
     return () => commandRuntime.dispose();
   }, [commandRuntime]);
 
@@ -181,6 +189,7 @@ export function usePageEditorController({
       kind: "operation",
       operation,
       restoreFocus: options.restoreFocus ?? true,
+      focusRevision: localInputRevision.current,
     }).catch(() => undefined);
   }, [commandQueue]);
 
@@ -199,7 +208,12 @@ export function usePageEditorController({
       }],
       focus: { target: temporaryBlock(tempId), selection: { anchor: 0, focus: 0 } },
     };
-    await commandQueue.enqueue({ kind: "plan", plan, restoreFocus: true }).catch(() => undefined);
+    await commandQueue.enqueue({
+      kind: "plan",
+      plan,
+      restoreFocus: true,
+      focusRevision: localInputRevision.current,
+    }).catch(() => undefined);
   }, [commandQueue]);
 
   const convertToSessionReference = useCallback(async (blockId: string, sessionId: string) => {
@@ -216,7 +230,12 @@ export function usePageEditorController({
       ],
       focus: null,
     };
-    await commandQueue.enqueue({ kind: "plan", plan, restoreFocus: false }).catch(() => undefined);
+    await commandQueue.enqueue({
+      kind: "plan",
+      plan,
+      restoreFocus: false,
+      focusRevision: localInputRevision.current,
+    }).catch(() => undefined);
   }, [commandQueue]);
 
   return {
@@ -226,6 +245,11 @@ export function usePageEditorController({
     run,
     createFirstBlock,
     convertToSessionReference,
+    noteLocalInput() {
+      localInputRevision.current += 1;
+      deferredFocus.current = null;
+      setPendingFocus(null);
+    },
     queueFocus: setPendingFocus,
     clearFocus(focus) {
       setPendingFocus((current) => current === focus ? null : current);
@@ -241,8 +265,8 @@ export function usePageEditorController({
 }
 
 function shouldSuppressCommand(
-  pending: { readonly kind: "operation"; readonly operation: EditorOperation; readonly restoreFocus: boolean } | { readonly kind: "plan"; readonly plan: EditorOperationPlan; readonly restoreFocus: boolean },
-  incoming: { readonly kind: "operation"; readonly operation: EditorOperation; readonly restoreFocus: boolean } | { readonly kind: "plan"; readonly plan: EditorOperationPlan; readonly restoreFocus: boolean },
+  pending: { readonly kind: "operation"; readonly operation: EditorOperation; readonly restoreFocus: boolean; readonly focusRevision: number } | { readonly kind: "plan"; readonly plan: EditorOperationPlan; readonly restoreFocus: boolean; readonly focusRevision: number },
+  incoming: { readonly kind: "operation"; readonly operation: EditorOperation; readonly restoreFocus: boolean; readonly focusRevision: number } | { readonly kind: "plan"; readonly plan: EditorOperationPlan; readonly restoreFocus: boolean; readonly focusRevision: number },
 ): boolean {
   if (pending.kind !== "operation" || incoming.kind !== "operation") return false;
   const left = pending.operation;
@@ -279,4 +303,21 @@ function pageEditorIdempotencyKey(pageId: string): string {
     throw new Error("Page editor mutation requires crypto.randomUUID");
   }
   return `page-editor:${pageId}:${globalThis.crypto.randomUUID()}`;
+}
+
+async function retryTransientStructureSave<T>(save: () => Promise<T>): Promise<T> {
+  const attempts = 2;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await save();
+    } catch (error) {
+      if (!isTransientStructureSaveError(error) || attempt === attempts - 1) throw error;
+      await Promise.resolve();
+    }
+  }
+  throw new Error("unreachable page editor retry state");
+}
+
+function isTransientStructureSaveError(error: unknown): error is PageApiError {
+  return error instanceof PageApiError && (error.kind === "network" || error.kind === "server");
 }

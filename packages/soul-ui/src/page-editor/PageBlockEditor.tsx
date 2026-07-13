@@ -26,6 +26,7 @@ export function PageBlockEditor({
   onCopyInput,
   onCutInput,
   onSelectBlock,
+  onLocalInput,
   onHeightChange,
   apiClient,
   sessionIndex,
@@ -41,6 +42,7 @@ export function PageBlockEditor({
   onCopyInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
   onCutInput(input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>): void;
   onSelectBlock(blockId: string, extend: boolean): void;
+  onLocalInput(): void;
   onHeightChange(blockId: string): void;
   apiClient: PageApiClient;
   sessionIndex: SessionSummaryIndex;
@@ -212,6 +214,7 @@ export function PageBlockEditor({
         extendFocus.current = false;
       }}
       onChange={(event) => {
+        onLocalInput();
         binding.replaceText(event.currentTarget.value, {
           anchor: event.currentTarget.selectionStart ?? event.currentTarget.value.length,
           head: event.currentTarget.selectionEnd ?? event.currentTarget.value.length,

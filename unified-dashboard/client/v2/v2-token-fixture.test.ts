@@ -33,6 +33,10 @@ describe("v2 visual tokens", () => {
       navigationSectionGapPx: 20,
       legacyRowGapPx: 8,
       legacyRowEstimatePx: 72,
+      outlineRowMinHeightPx: 40,
+      outlineRowPaddingBlockPx: 4,
+      outlineRowPaddingInlinePx: 8,
+      outlineRowIndentStepPx: 24,
     });
     expect(V2_LAYOUT_SPACING.legacyRowEstimatePx % V2_LAYOUT_SPACING.legacyRowGapPx).toBe(0);
   });

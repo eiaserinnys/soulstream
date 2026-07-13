@@ -1,3 +1,5 @@
+import { PAGE_EDITOR_LAYOUT_SPACING } from "@seosoyoung/soul-ui/page-editor";
+
 export const V2_TOKENS = Object.freeze({
   navigation: "border border-glass-border glass-strong glass-chrome text-foreground",
   pageSurface: "border border-glass-border glass-strong text-foreground",
@@ -10,6 +12,10 @@ export const V2_LAYOUT_SPACING = Object.freeze({
   navigationSectionGapPx: 20,
   legacyRowGapPx: 8,
   legacyRowEstimatePx: 72,
+  outlineRowMinHeightPx: PAGE_EDITOR_LAYOUT_SPACING.rowMinHeightPx,
+  outlineRowPaddingBlockPx: PAGE_EDITOR_LAYOUT_SPACING.rowPaddingBlockPx,
+  outlineRowPaddingInlinePx: PAGE_EDITOR_LAYOUT_SPACING.rowPaddingInlinePx,
+  outlineRowIndentStepPx: PAGE_EDITOR_LAYOUT_SPACING.rowIndentStepPx,
 });
 
 export const V2_TOKEN_FIXTURE = Object.freeze([

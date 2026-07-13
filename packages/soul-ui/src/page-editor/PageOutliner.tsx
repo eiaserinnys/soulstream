@@ -3,7 +3,6 @@ import {
   type EditorOperation,
 } from "@soulstream/page-editor-core";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AlertTriangle, LoaderCircle, RefreshCw, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import type * as Y from "yjs";
 
@@ -16,8 +15,13 @@ import type {
 import type { SessionSummary } from "../shared/types";
 import { PageBlockRow } from "./PageBlockRow";
 import type { PageBlockEditorKeyInput } from "./PageBlockEditor";
+import { PageEditorFeedback, PageEditorMutationStatus } from "./PageEditorNotices";
 import { readPageEditorClipboard, writeBlockSelectionClipboard } from "./page-editor-clipboard";
 import { createContiguousBlockSelection } from "./page-editor-selection";
+import {
+  PAGE_EDITOR_LAYOUT_SPACING,
+  pageEditorSelectionSegment,
+} from "./page-editor-visual-tokens";
 import {
   crossesVerticalBlockEdge,
   cssEscape,
@@ -30,7 +34,7 @@ import {
 } from "./page-outliner-operations";
 import { toEditorSnapshots, usePageEditorController } from "./usePageEditorController";
 
-const ROW_HEIGHT = 40;
+const ROW_HEIGHT = PAGE_EDITOR_LAYOUT_SPACING.rowMinHeightPx;
 const EMPTY_SESSION_INDEX: SessionSummaryIndex = new Map();
 
 export function PageOutliner({
@@ -68,6 +72,7 @@ export function PageOutliner({
   const [, renderSelection] = useReducer((value) => value + 1, 0);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectionFocusId, setSelectionFocusId] = useState<string | null>(null);
+  const [armedAtomicDeleteId, setArmedAtomicDeleteId] = useState<string | null>(null);
   const lastTextSelections = useRef(new Map<string, { anchor: number; focus: number }>());
   const selection = useMemo(
     () => createContiguousBlockSelection(renderedBlocks.map((block) => block.id)),
@@ -138,6 +143,7 @@ export function PageOutliner({
   }, [focusBlockRow, selectionFocusId, selectionMode]);
 
   const selectBlock = (blockId: string, extend: boolean) => {
+    setArmedAtomicDeleteId(null);
     if (extend) {
       selection.extend(blockId);
       setSelectionMode(true);
@@ -154,12 +160,36 @@ export function PageOutliner({
   };
 
   const selectAtomicBlock = (blockId: string, extend: boolean, element: HTMLDivElement) => {
+    setArmedAtomicDeleteId(null);
     if (extend) selection.extend(blockId);
     else selection.select(blockId);
     setSelectionMode(true);
     setSelectionFocusId(blockId);
     renderSelection();
     element.focus();
+  };
+
+  const queueAdjacentFocus = (focus: { blockId: string; anchor: number; focus: number } | null) => {
+    if (!focus) {
+      editor.queueFocus(null);
+      return;
+    }
+    const target = renderedBlocks.find((block) => block.id === focus.blockId);
+    if (target?.type !== "session_ref") {
+      setArmedAtomicDeleteId(null);
+      editor.queueFocus(focus);
+      return;
+    }
+    selection.select(target.id);
+    setArmedAtomicDeleteId(null);
+    setSelectionMode(true);
+    setSelectionFocusId(target.id);
+    renderSelection();
+    const active = document.activeElement;
+    if (active instanceof HTMLTextAreaElement) active.blur();
+    const index = renderedBlocks.findIndex((block) => block.id === target.id);
+    virtualizer.scrollToIndex(index, { align: "auto" });
+    focusBlockRow(target.id);
   };
 
   const blockKeyInput = (
@@ -169,6 +199,7 @@ export function PageOutliner({
     const snapshot = selection.getSnapshot();
     if (event.key === "Escape") {
       event.preventDefault();
+      setArmedAtomicDeleteId(null);
       const restoreId = snapshot.anchorId ?? block.id;
       const restore = lastTextSelections.current.get(restoreId);
       selection.clear();
@@ -184,6 +215,7 @@ export function PageOutliner({
     }
     if (event.key === "ArrowUp" || event.key === "ArrowDown") {
       event.preventDefault();
+      setArmedAtomicDeleteId(null);
       const focusId = snapshot.focusId ?? block.id;
       const index = renderedBlocks.findIndex((candidate) => candidate.id === focusId);
       const target = renderedBlocks[index + (event.key === "ArrowUp" ? -1 : 1)];
@@ -210,6 +242,15 @@ export function PageOutliner({
     if (event.key !== "Tab" && event.key !== "Backspace" && event.key !== "Delete") return;
     event.preventDefault();
     const targets = snapshot.blockIds.includes(block.id) ? snapshot.blockIds : [block.id];
+    if ((event.key === "Backspace" || event.key === "Delete") && block.type === "session_ref" && targets.length === 1) {
+      if (armedAtomicDeleteId !== block.id) {
+        setArmedAtomicDeleteId(block.id);
+        return;
+      }
+      setArmedAtomicDeleteId(null);
+    } else {
+      setArmedAtomicDeleteId(null);
+    }
     const operation: EditorOperation = event.key === "Tab"
       ? { type: event.shiftKey ? "outdent" : "indent", blockIds: targets }
       : { type: "deleteSelection", blockIds: targets };
@@ -264,7 +305,7 @@ export function PageOutliner({
       if (focusId) focusBlockRow(focusId);
       return;
     }
-    if (handleArrowNavigation(input, event, renderedBlocks, editor.queueFocus)) return;
+    if (handleArrowNavigation(input, event, renderedBlocks, queueAdjacentFocus)) return;
     const selectedIds = selection.getSnapshot().blockIds;
     const targets = selectedIds.includes(input.block.id) ? selectedIds : [input.block.id];
     const operation = structuralOperation(input, event, targets);
@@ -324,8 +365,8 @@ export function PageOutliner({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="page-outliner">
-      <MutationStatus state={editor.state} onDismiss={editor.dismissError} onResync={editor.resync} />
-      <EditorFeedback message={editor.feedback} onDismiss={editor.dismissFeedback} />
+      <PageEditorMutationStatus state={editor.state} onDismiss={editor.dismissError} onResync={editor.resync} />
+      <PageEditorFeedback message={editor.feedback} onDismiss={editor.dismissFeedback} />
       {blocks.length === 0 ? (
         <div className="mx-auto mt-10 max-w-lg rounded-xl border border-glass-border bg-glass-surface/60 p-8 text-center">
           <p className="font-medium text-foreground">This page is empty.</p>
@@ -372,12 +413,20 @@ export function PageOutliner({
                     block={block}
                     depth={depths.get(block.id) ?? 0}
                     selected={selected.has(block.id)}
+                    deleteArmed={armedAtomicDeleteId === block.id}
+                    selectionSegment={pageEditorSelectionSegment(
+                      block.id,
+                      renderedBlocks[item.index - 1]?.id,
+                      renderedBlocks[item.index + 1]?.id,
+                      selected,
+                    )}
                     onKeyInput={keyInput}
                     onPasteInput={pasteInput}
                     onCopyInput={(input, event) => copyOrCutInput(input, event, false)}
                     onCutInput={(input, event) => copyOrCutInput(input, event, true)}
                     onSelectBlock={selectBlock}
                     onSelectAtomicBlock={selectAtomicBlock}
+                    onLocalInput={editor.noteLocalInput}
                     onBlockKeyInput={blockKeyInput}
                     onEditorHeightChange={remeasureEditorRow}
                     sessionIndex={sessionIndex}
@@ -402,53 +451,6 @@ export function PageOutliner({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function MutationStatus({ state, onDismiss, onResync }: {
-  state: ReturnType<typeof usePageEditorController>["state"];
-  onDismiss(): void;
-  onResync(): void;
-}) {
-  if (state.status === "idle") return null;
-  const pending = state.status === "pending" || state.status === "resyncing";
-  return (
-    <div
-      role={pending ? "status" : "alert"}
-      aria-live="polite"
-      data-editor-state={state.status}
-      className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-glass-border bg-glass-surface/80 px-3 py-2 text-sm text-foreground"
-    >
-      {pending ? <LoaderCircle aria-hidden="true" className="h-4 w-4 animate-spin" /> : <AlertTriangle aria-hidden="true" className="h-4 w-4 text-warning" />}
-      <span className="flex-1">{state.message}</span>
-      {state.status === "conflict" ? (
-        <button type="button" data-testid="page-editor-resync" className="inline-flex items-center gap-1 rounded px-2 py-1 focus-visible:ring-2 focus-visible:ring-primary" onClick={onResync}>
-          <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" /> Reload
-        </button>
-      ) : state.status === "error" ? (
-        <button type="button" aria-label="Dismiss editor error" className="rounded p-1 focus-visible:ring-2 focus-visible:ring-primary" onClick={onDismiss}>
-          <X aria-hidden="true" className="h-4 w-4" />
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function EditorFeedback({ message, onDismiss }: { message: string | null; onDismiss(): void }) {
-  if (!message) return null;
-  return (
-    <div
-      role="alert"
-      aria-live="polite"
-      data-editor-feedback="error"
-      className="mx-4 mt-3 flex items-center gap-2 rounded-lg border border-glass-border bg-glass-surface/80 px-3 py-2 text-sm text-foreground"
-    >
-      <AlertTriangle aria-hidden="true" className="h-4 w-4 text-warning" />
-      <span className="flex-1">{message}</span>
-      <button type="button" aria-label="Dismiss editor feedback" className="rounded p-1 focus-visible:ring-2 focus-visible:ring-primary" onClick={onDismiss}>
-        <X aria-hidden="true" className="h-4 w-4" />
-      </button>
     </div>
   );
 }
