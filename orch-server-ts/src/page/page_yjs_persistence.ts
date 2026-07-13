@@ -134,21 +134,24 @@ export function createPageYjsPersistence(
     store: async (payload: storePayload) => {
       const pageId = requirePageDocumentName(payload.documentName);
       const context = payload.context as {
+        pageLockHeld?: unknown;
         skipPagePersistence?: unknown;
       } | undefined;
-      if (context?.skipPagePersistence === true) return;
-      if (await isPersistedOperation(payload.transactionOrigin)) return;
+      const persistedOperation = await isPersistedOperation(payload.transactionOrigin);
+      const maySkipStore = context?.skipPagePersistence === true || persistedOperation;
       const update = takePendingUpdate(payload.documentName);
+      if (maySkipStore && update === undefined) return;
       activeStores += 1;
       try {
-        const stored = await runExclusive(pageId, async () =>
-          await storeWithRetry({
-            documentName: payload.documentName,
-            snapshot: payload.state,
-            ...(update === undefined ? {} : { update }),
-            replica: readPageYDocReplica(pageId, payload.document),
-          })
-        );
+        const persist = async () => await storeWithRetry({
+          documentName: payload.documentName,
+          snapshot: payload.state,
+          ...(update === undefined ? {} : { update }),
+          replica: readPageYDocReplica(pageId, payload.document),
+        });
+        const stored = persistedOperation || context?.pageLockHeld === true
+          ? await persist()
+          : await runExclusive(pageId, persist);
         if (!stored && update !== undefined) {
           mergePendingUpdate(payload.documentName, update);
         }

@@ -189,6 +189,7 @@ export class PageYjsService {
       const documentName = getPageYjsDocumentName(input.pageId);
       const operationId = this.createOperationId();
       const connectionContext = {
+        pageLockHeld: true,
         source: "page-operation",
         skipPagePersistence: false,
       };
@@ -228,6 +229,7 @@ export class PageYjsService {
     return await this.mutex.runExclusive(pageId, async () => {
       const documentName = getPageYjsDocumentName(pageId);
       const connection = await this.hocuspocus.openDirectConnection(documentName, {
+        pageLockHeld: true,
         source: "page-read",
         skipPagePersistence: true,
       });
@@ -317,6 +319,7 @@ export class PageYjsService {
 
   private async hydrateCommittedPage(documentName: string): Promise<void> {
     const connection = await this.hocuspocus.openDirectConnection(documentName, {
+      pageLockHeld: true,
       source: "page-operation",
       skipPagePersistence: true,
     });

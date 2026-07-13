@@ -1,8 +1,16 @@
+import Fastify from "fastify";
+import {
+  HocuspocusProvider,
+  type HocuspocusProviderConfiguration,
+} from "@hocuspocus/provider";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import WebSocket from "ws";
+import * as Y from "yjs";
 
 import { PageRepository } from "../../src/page/page_repository.js";
 import { PageYjsService } from "../../src/page/page_service.js";
 import { readPageYDocReplica } from "../../src/page/page_yjs_model.js";
+import { registerPageYjsRoutes } from "../../src/page/page_yjs_route.js";
 import { createLiveDbSqlResolver } from "../../src/runtime/live_db_sql.js";
 import {
   createPagePostgresHarness,
@@ -191,4 +199,157 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       page: { id: first.page.id, daily_date: "2026-07-12" },
     });
   }, 30_000);
+
+  it("persists client edits that race a durable server mutation exactly once", async () => {
+    const created = await service.createPage({
+      page: { id: "page-race", title: "Before", dailyDate: null, metadata: {} },
+      actor: { actorKind: "agent", actorSessionId: "agent-session" },
+      idempotencyKey: "create_page:agent-session:race",
+      initialCommand: {
+        type: "batch_operations",
+        operations: [{
+          op: "create_block",
+          tempId: "race-block",
+          parentId: null,
+          parentTempId: null,
+          afterBlockId: null,
+          afterTempId: null,
+          blockType: "paragraph",
+          text: "base",
+          properties: {},
+        }],
+      },
+    });
+    const blockId = created.temp_id_mapping["race-block"]!;
+
+    const app = Fastify({ logger: false });
+    const raceService = new PageYjsService({
+      repository,
+      auth: {
+        authBearerToken: "service-token",
+        environment: "production",
+        dashboardAuthEnabled: false,
+        verifyDashboardToken: async () => null,
+      },
+      logger: app.log,
+    });
+    registerPageYjsRoutes(app, {
+      createService: () => raceService,
+      authBearerToken: "service-token",
+    });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    const provider = connectProvider(address, "page-race");
+    const originalCommit = repository.commitPageMutation.bind(repository);
+    let releaseCommit!: () => void;
+    let markCommitStarted!: () => void;
+    const commitBarrier = new Promise<void>((resolve) => { releaseCommit = resolve; });
+    const commitStarted = new Promise<void>((resolve) => { markCommitStarted = resolve; });
+    let operationSnapshot: Uint8Array | null = null;
+    repository.commitPageMutation = async (input) => {
+      markCommitStarted();
+      await commitBarrier;
+      const result = await originalCommit(input);
+      operationSnapshot = input.application.snapshot;
+      return result;
+    };
+
+    try {
+      await waitForSync(provider);
+      const text = getEditableText(provider.document, blockId);
+      text.insert(text.length, "-A");
+      const mutation = raceService.mutatePage({
+        pageId: "page-race",
+        expectedVersion: 1,
+        actor: { actorKind: "agent", actorSessionId: "agent-session" },
+        idempotencyKey: "rename_page:agent-session:race",
+        command: { type: "rename_page", title: "Renamed" },
+      });
+      await commitStarted;
+      text.insert(text.length, "-B");
+      releaseCommit();
+      await mutation;
+
+      await waitForAsync(async () => {
+        const [row] = await harness.sql<[{ count: number }]>`
+          SELECT COUNT(*)::int AS count
+          FROM board_yjs_updates
+          WHERE document_name = 'page:page-race'
+        `;
+        return row?.count === 1 &&
+          raceService.getPersistenceDiagnostics().pendingUpdateDocuments === 0;
+      });
+
+      const finalSnapshot = await repository.getPageYjsSnapshot("page:page-race");
+      const finalReplica = readPageYDocReplica(
+        "page-race",
+        raceService.decodeSnapshot(finalSnapshot!),
+      );
+      expect(finalReplica.page.title).toBe("Renamed");
+      expect(finalReplica.blocks[0]?.text).toBe("base-A-B");
+      const [updateRow] = await harness.sql<[{ update: Uint8Array }]>`
+        SELECT update FROM board_yjs_updates
+        WHERE document_name = 'page:page-race'
+      `;
+      const replay = raceService.decodeSnapshot(operationSnapshot!);
+      Y.applyUpdate(replay, new Uint8Array(updateRow!.update));
+      expect(readPageYDocReplica("page-race", replay).blocks[0]?.text).toBe("base-A-B");
+
+      const reloadRepository = new PageRepository(
+        createLiveDbSqlResolver({ sql: harness.liveSql }),
+      );
+      const reloadService = new PageYjsService({ repository: reloadRepository });
+      try {
+        const reloaded = await reloadService.getPage("page-race");
+        expect(reloaded.page.title).toBe("Renamed");
+        expect(reloaded.blocks[0]?.text).toBe("base-A-B");
+      } finally {
+        await reloadService.close();
+      }
+    } finally {
+      repository.commitPageMutation = originalCommit;
+      releaseCommit();
+      await provider.destroy();
+      await app.close();
+    }
+  }, 30_000);
 });
+
+function connectProvider(address: string, pageId: string): HocuspocusProvider {
+  return new HocuspocusProvider({
+    url: `${address.replace("http", "ws")}/yjs/page/${pageId}`,
+    name: `page:${pageId}`,
+    document: new Y.Doc(),
+    token: "service-token",
+    WebSocketPolyfill: WebSocket,
+  } as HocuspocusProviderConfiguration & { WebSocketPolyfill: typeof WebSocket });
+}
+
+function waitForSync(provider: HocuspocusProvider): Promise<void> {
+  if (provider.isSynced) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("provider sync timed out")), 10_000);
+    provider.on("synced", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    provider.on("authenticationFailed", ({ reason }: { reason: string }) => {
+      clearTimeout(timer);
+      reject(new Error(reason));
+    });
+  });
+}
+
+function getEditableText(document: Y.Doc, blockId: string): Y.Text {
+  const block = document.getMap<Y.Map<unknown>>("blocks").get(blockId);
+  const text = block?.get("text");
+  if (!(text instanceof Y.Text)) throw new Error("editable block text missing");
+  return text;
+}
+
+async function waitForAsync(predicate: () => Promise<boolean>): Promise<void> {
+  const deadline = Date.now() + 10_000;
+  while (!await predicate()) {
+    if (Date.now() >= deadline) throw new Error("condition timed out");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
