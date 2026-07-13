@@ -173,4 +173,26 @@ describe("createDashboardSession", () => {
       { code: "LEGACY_PROJECTION_PENDING", message: "Legacy projection will retry." },
     ]);
   });
+
+  it("sends the explicit predecessor session for a successor run", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson({
+      agentSessionId: "session-successor",
+      status: "running",
+      nodeId: "node-a",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createDashboardSession({
+      queryClient,
+      addOptimisticSession: vi.fn(),
+      prompt: "새 run을 시작합니다",
+      nodeId: "node-a",
+      agentId: "roselin_codex",
+      predecessorSessionId: "session-predecessor",
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      predecessor_session_id: "session-predecessor",
+    });
+  });
 });
