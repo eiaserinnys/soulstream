@@ -280,6 +280,10 @@ export class UpstreamAdapter {
           logger: this.logger,
         }),
       );
+      // orch-server-ts는 heartbeat ping을 먼저 보내지 않으므로, 허브 ping을 기다리지 않고
+      // 등록 직후 노드 쪽에서 능동 시작해야 half-open 연결(원격 서버 리셋 등)을 감지할 수 있다.
+      // 양쪽 orch(Python/TS) 모두 노드발 ping에 pong으로 응답한다.
+      this.startAppHeartbeat(ws);
       await this.sendInitialSessions();
       await servePromise;
     } finally {

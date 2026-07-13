@@ -520,6 +520,63 @@ describe("UpstreamAdapter", () => {
     await adapter.shutdown();
   });
 
+  it("허브가 ping을 보내지 않아도 등록 직후 능동적으로 app_heartbeat_ping을 발신한다", async () => {
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+      },
+      silentLogger,
+      makeDeps(),
+    );
+
+    void adapter.run();
+    await waitFor(() =>
+      orch.receivedMessages.some(
+        (msg) => (msg as Record<string, unknown>).type === "app_heartbeat_ping",
+      ),
+    );
+
+    await adapter.shutdown();
+  });
+
+  it("허브가 ping도 pong도 보내지 않으면(half-open) 연결을 닫고 재연결 루프로 넘긴다", async () => {
+    const adapter = new UpstreamAdapter(
+      {
+        url: orch.url,
+        nodeId: "eias-shopping-ts",
+        host: "127.0.0.1",
+        port: 4205,
+        authBearerToken: "",
+        userName: "",
+        userPortraitPath: "",
+        isProduction: false,
+        heartbeatIntervalMs: 10,
+        heartbeatMaxMissed: 1,
+      },
+      silentLogger,
+      makeDeps(),
+    );
+
+    void adapter.run();
+    await waitFor(() => orch.sockets.length >= 1 && orch.receivedMessages.length >= 1);
+
+    await waitFor(
+      () =>
+        orch.sockets[0]!.readyState === orch.sockets[0]!.CLOSED ||
+        orch.sockets[0]!.readyState === orch.sockets[0]!.CLOSING,
+      500,
+    );
+
+    await adapter.shutdown();
+  });
+
   it("app heartbeat pong이 없으면 연결을 닫고 재연결 루프로 넘긴다", async () => {
     const adapter = new UpstreamAdapter(
       {
