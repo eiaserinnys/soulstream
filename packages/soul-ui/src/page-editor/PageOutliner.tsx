@@ -39,6 +39,9 @@ export function PageOutliner({
   lens = "default",
   onOpenSession,
   onCreateSessionDraft,
+  onOpenPage,
+  onOpenBlock,
+  focusBlockId = null,
 }: {
   pageId: string;
   doc: Y.Doc;
@@ -50,6 +53,9 @@ export function PageOutliner({
   lens?: PageLens;
   onOpenSession?(session: SessionSummary): void;
   onCreateSessionDraft?(anchor: { pageId: string; blockId: string; expectedVersion: number }): void;
+  onOpenPage?(pageId: string): void;
+  onOpenBlock?(pageId: string, blockId: string): void;
+  focusBlockId?: string | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const rowElements = useRef(new Map<string, HTMLDivElement>());
@@ -95,6 +101,24 @@ export function PageOutliner({
       if (applied) editor.clearFocus(focus);
     });
   }, [editor, focusApplier, renderedBlocks, virtualizer]);
+  const appliedExternalFocus = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusBlockId) {
+      appliedExternalFocus.current = null;
+      return;
+    }
+    const focusKey = `${pageId}:${focusBlockId}`;
+    if (appliedExternalFocus.current === focusKey) return;
+    const index = renderedBlocks.findIndex((block) => block.id === focusBlockId);
+    if (index < 0) {
+      editor.reportFailure("The linked block is unavailable, deleted, or hidden inside a collapsed outline.");
+      return;
+    }
+    appliedExternalFocus.current = focusKey;
+    editor.dismissError();
+    virtualizer.scrollToIndex(index, { align: "center" });
+    editor.queueFocus({ blockId: focusBlockId, anchor: 0, focus: 0 });
+  }, [editor, focusBlockId, pageId, renderedBlocks, virtualizer]);
 
   const selectBlock = (blockId: string, extend: boolean) => {
     if (extend) selection.extend(blockId);
@@ -257,6 +281,11 @@ export function PageOutliner({
                           expectedVersion: mutationVersion,
                         })
                       : undefined}
+                    apiClient={apiClient}
+                    onSelectSessionReference={(sessionId) => { void editor.convertToSessionReference(block.id, sessionId); }}
+                    onOpenPage={onOpenPage}
+                    onOpenBlock={onOpenBlock}
+                    focusRequested={focusBlockId === block.id}
                   />
                 </div>
               );

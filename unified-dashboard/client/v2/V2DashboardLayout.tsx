@@ -284,6 +284,10 @@ export function V2DashboardLayout({
     setMobilePageOpenRequest((value) => value + 1);
     workspace.openPage(pageId);
   };
+  const openBlock = (pageId: string, blockId: string) => {
+    setMobilePageOpenRequest((value) => value + 1);
+    workspace.openBlock(pageId, blockId);
+  };
   const openLegacyFolder = (folderId: string) => {
     setMobilePageOpenRequest((value) => value + 1);
     workspace.openLegacyFolder(folderId);
@@ -312,6 +316,9 @@ export function V2DashboardLayout({
       sessionIndex={sessionIndex}
       onOpenSession={openSession}
       onCreateSessionDraft={openInlineDraft}
+      focusBlockId={workspace.focusBlockId}
+      onOpenPage={openPage}
+      onOpenBlock={openBlock}
     />
   );
   const pageSurface = workspace.selectedLegacyFolderId ? (

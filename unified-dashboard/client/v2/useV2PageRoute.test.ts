@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createV2PageRouteController,
+  formatV2BlockReferencePath,
   formatV2LegacyFolderPath,
   formatV2PagePath,
   parseV2Lens,
@@ -50,8 +51,43 @@ describe("v2 page route", () => {
     expect(parseV2PageRoute("/v2/pages/page%3A2026-07-12")).toEqual({
       kind: "page",
       pageId: "page:2026-07-12",
+      blockId: null,
     });
     expect(formatV2PagePath("page:2026-07-12")).toBe("/v2/pages/page%3A2026-07-12");
+  });
+
+  it("changes the lens without dropping an additive page/block deep link", () => {
+    const target = createTarget("/v2?page=page-one&block=block-two&lens=running");
+    const controller = createV2PageRouteController(target);
+
+    controller.setLens("completed");
+
+    expect(target.history.pushState).toHaveBeenCalledWith(
+      null,
+      "",
+      "/v2?page=page-one&block=block-two&lens=completed",
+    );
+    expect(controller.getSnapshot()).toEqual({
+      kind: "page",
+      pageId: "page-one",
+      blockId: "block-two",
+    });
+  });
+
+  it("restores the additive page/block reference deep link and keeps the legacy page path", () => {
+    expect(parseV2PageRoute("/v2", "?page=page%3Aone&block=block%2Ftwo")).toEqual({
+      kind: "page",
+      pageId: "page:one",
+      blockId: "block/two",
+    });
+    expect(formatV2BlockReferencePath("page:one", "block/two")).toBe(
+      "/v2?page=page%3Aone&block=block%2Ftwo",
+    );
+    expect(parseV2PageRoute("/v2/pages/page-one")).toEqual({
+      kind: "page",
+      pageId: "page-one",
+      blockId: null,
+    });
   });
 
   it("restores legacy folders and the running/completed lens from history", () => {
@@ -95,11 +131,23 @@ describe("v2 page route", () => {
 
     controller.navigateToPage("page-one");
     expect(target.history.pushState).toHaveBeenCalledWith(null, "", "/v2/pages/page-one");
-    expect(controller.getSnapshot()).toEqual({ kind: "page", pageId: "page-one" });
+    expect(controller.getSnapshot()).toEqual({ kind: "page", pageId: "page-one", blockId: null });
+
+    controller.navigateToBlock("page-one", "block-two");
+    expect(target.history.pushState).toHaveBeenCalledWith(
+      null,
+      "",
+      "/v2?page=page-one&block=block-two",
+    );
+    expect(controller.getSnapshot()).toEqual({
+      kind: "page",
+      pageId: "page-one",
+      blockId: "block-two",
+    });
 
     target.restore("/v2/pages/page-two");
-    expect(controller.getSnapshot()).toEqual({ kind: "page", pageId: "page-two" });
-    expect(listener).toHaveBeenCalledTimes(2);
+    expect(controller.getSnapshot()).toEqual({ kind: "page", pageId: "page-two", blockId: null });
+    expect(listener).toHaveBeenCalledTimes(3);
 
     unsubscribe();
     controller.destroy();

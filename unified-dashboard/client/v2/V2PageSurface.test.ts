@@ -97,6 +97,10 @@ function editorBlock(id: string, parentId: string | null, positionKey: string, v
 function editorRuntime() {
   const apiClient = {
     listPages: vi.fn(),
+    searchPages: vi.fn(),
+    searchBlocks: vi.fn(),
+    getBlock: vi.fn(),
+    getBacklinks: vi.fn(async () => ({ items: [], nextCursor: null })),
     getPage: vi.fn(),
     getDailyPage: vi.fn(),
     applyOperations: vi.fn(),
