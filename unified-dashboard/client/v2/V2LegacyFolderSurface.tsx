@@ -10,9 +10,7 @@ import { CircleAlert, FileText, Folder, LoaderCircle, LockKeyhole } from "lucide
 import { useRef } from "react";
 
 import { V2PageLensControls } from "./V2PageLensControls";
-import { V2_TOKENS } from "./v2-token-fixture";
-
-const ROW_HEIGHT = 52;
+import { V2_LAYOUT_SPACING, V2_TOKENS } from "./v2-token-fixture";
 
 export type V2LegacyFolderSurfaceState =
   | { status: "loading" | "authentication" | "forbidden" | "error" | "missing" | "empty"; message: string }
@@ -79,7 +77,8 @@ function LegacyReadySurface({
   const virtualizer = useVirtualizer({
     count: projection.rows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => ROW_HEIGHT,
+    estimateSize: () => V2_LAYOUT_SPACING.legacyRowEstimatePx,
+    gap: V2_LAYOUT_SPACING.legacyRowGapPx,
     overscan: 8,
     getItemKey: (index) => projection.rows[index]?.id ?? index,
     initialRect: { width: 800, height: 600 },
@@ -120,8 +119,10 @@ function LegacyReadySurface({
               return (
                 <div
                   key={row.id}
+                  ref={virtualizer.measureElement}
                   role="treeitem"
                   aria-level={row.depth + 1}
+                  data-index={item.index}
                   data-legacy-row={row.id}
                   data-legacy-kind={row.kind}
                   className="absolute left-0 top-0 flex min-h-12 w-full items-start gap-2 px-2 py-1"
@@ -144,6 +145,7 @@ function LegacyReadySurface({
                       resolution={{ kind: "ready", sessionId: row.id, summary: row.session }}
                       lensState={sessionLensState(row.session.status, lens)}
                       onOpen={() => onOpenSession(row.session)}
+                      wrapText
                     />
                   ) : (
                     <div role="note" className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-glass-border bg-glass-surface/35 px-3 py-2 text-sm text-muted-foreground">

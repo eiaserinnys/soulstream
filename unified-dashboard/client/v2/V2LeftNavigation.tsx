@@ -2,7 +2,7 @@ import type { CatalogFolder } from "@seosoyoung/soul-ui";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
 import { CalendarDays, Folder, Star, X } from "lucide-react";
 
-import { V2_TOKENS } from "./v2-token-fixture";
+import { V2_LAYOUT_SPACING, V2_TOKENS } from "./v2-token-fixture";
 
 export interface V2LeftNavigationProps {
   selectedPageId: string | null;
@@ -36,10 +36,11 @@ export function V2LeftNavigation({
     <nav
       aria-label="Page navigation"
       data-v2-pane="left"
-      className={`flex h-full min-h-0 flex-col gap-5 overflow-y-auto p-3 ${V2_TOKENS.navigation}`}
+      className={`flex h-full min-h-0 flex-col overflow-y-auto p-3 ${V2_TOKENS.navigation}`}
+      style={{ gap: `${V2_LAYOUT_SPACING.navigationSectionGapPx}px` }}
       data-testid="v2-left-navigation"
     >
-      <div>
+      <div data-v2-nav-section="daily" className="shrink-0">
         <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           Daily
         </p>
@@ -54,7 +55,7 @@ export function V2LeftNavigation({
         </button>
       </div>
 
-      <div className="min-h-0">
+      <div data-v2-nav-section="starred" className="shrink-0">
         <p className="mb-2 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           <Star aria-hidden="true" className="h-3.5 w-3.5" />
           Starred
@@ -91,7 +92,7 @@ export function V2LeftNavigation({
         )}
       </div>
 
-      <div className="min-h-0">
+      <div data-v2-nav-section="legacy" className="shrink-0">
         <p className="mb-2 flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
           <Folder aria-hidden="true" className="h-3.5 w-3.5" />
           Legacy spaces
