@@ -27,6 +27,8 @@ export interface EnqueueSessionPageBinding {
   targetPageId: string | null;
   targetBlockId: string | null;
   targetExpectedVersion: number | null;
+  /** `bound` also completes a policy-excluded page stage; legacy replay stays independent. */
+  initialPageState: "pending" | "bound";
   dailyDate: string;
   sessionType: string;
   legacyFolderId: string | null;
@@ -43,12 +45,12 @@ export class SessionPageBindingRepository {
       INSERT INTO session_page_bindings (
         session_id, node_id, target_page_id, target_block_id, target_expected_version,
         daily_date, session_type, legacy_folder_id, legacy_container_kind,
-        legacy_container_id, source_runbook_item_id
+        legacy_container_id, source_runbook_item_id, page_state
       ) VALUES (
         ${input.sessionId}, ${input.nodeId}, ${input.targetPageId}, ${input.targetBlockId},
         ${input.targetExpectedVersion}, ${input.dailyDate}, ${input.sessionType},
         ${input.legacyFolderId}, ${input.legacyContainerKind}, ${input.legacyContainerId},
-        ${input.sourceRunbookItemId}
+        ${input.sourceRunbookItemId}, ${input.initialPageState}
       )
       ON CONFLICT (session_id) DO NOTHING
       RETURNING *
