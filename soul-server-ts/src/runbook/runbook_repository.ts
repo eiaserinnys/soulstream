@@ -323,7 +323,7 @@ export class RunbookRepository {
       boardItemId: string;
       title: string;
       createdSessionId: string | null;
-      createdEventId: number;
+      createdEventId: number | null;
     },
   ): Promise<RunbookRow> {
     const rows = await sql<RunbookRow[]>`

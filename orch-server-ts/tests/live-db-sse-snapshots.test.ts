@@ -101,6 +101,7 @@ describe("live DB SSE replay snapshots", () => {
           lastEventId: 7,
           lastReadEventId: 5,
           callerSessionId: "caller-1",
+          predecessorSessionId: null,
           agentId: "agent-a",
           agentName: "Agent A",
           agentPortraitUrl: "/api/nodes/node-a/agents/agent-a/portrait",

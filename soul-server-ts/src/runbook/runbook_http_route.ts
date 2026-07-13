@@ -13,6 +13,7 @@ import type {
 } from "../db/session_db_types.js";
 import type { ChecklistRunbookAdapter } from "../page/checklist_runbook_adapter.js";
 
+import { registerRunbookCreateHttpRoute } from "./runbook_create_http_route.js";
 import { RunbookVersionConflict } from "./runbook_models.js";
 import type { RunbookService } from "./runbook_service.js";
 
@@ -50,6 +51,8 @@ export function registerRunbookHttpRoutes(
   fastify: FastifyInstance,
   config: RunbookHttpRouteConfig,
 ): void {
+  registerRunbookCreateHttpRoute(fastify, config);
+
   fastify.post<{
     Params: RunbookStatusRouteParams;
     Body: StatusRequestBody;

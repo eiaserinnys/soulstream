@@ -137,6 +137,73 @@ async def test_session_review_migration_contract_is_mirrored_in_schema_sql():
         assert required in schema_sql
 
 
+async def test_session_predecessor_migration_contract_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("040_session_predecessor.sql")
+    schema_sql = _schema_sql()
+
+    for required in [
+        "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS predecessor_session_id TEXT",
+        "FOREIGN KEY (predecessor_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL",
+        "CREATE OR REPLACE FUNCTION session_register_with_predecessor(",
+        "p_predecessor_session_id TEXT",
+    ]:
+        assert required in migration_sql
+        assert required in schema_sql
+
+
+async def test_session_predecessor_schema_reapply_is_idempotent(test_db):
+    schema_sql = _schema_sql()
+    await test_db.execute(schema_sql)
+    await test_db.execute(schema_sql)
+
+    assert await test_db.fetchval(
+        """
+        SELECT COUNT(*)
+        FROM pg_constraint
+        WHERE conrelid = 'sessions'::regclass
+          AND conname = 'sessions_predecessor_session_id_fkey'
+        """
+    ) == 1
+
+
+async def test_session_predecessor_registration_and_delete_semantics(test_db):
+    now = _utc_now()
+    for session_id, predecessor_id in [
+        ("sess-parent", None),
+        ("sess-child", "sess-parent"),
+    ]:
+        await test_db.execute(
+            """
+            SELECT session_register_with_predecessor(
+              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+            )
+            """,
+            session_id,
+            "node-1",
+            "codex-default",
+            None,
+            "claude",
+            "prompt",
+            None,
+            "running",
+            now,
+            now,
+            None,
+            True,
+            False,
+            "not_required",
+            predecessor_id,
+        )
+
+    assert await test_db.fetchval(
+        "SELECT predecessor_session_id FROM sessions WHERE session_id = 'sess-child'"
+    ) == "sess-parent"
+    await test_db.execute("DELETE FROM sessions WHERE session_id = 'sess-parent'")
+    assert await test_db.fetchval(
+        "SELECT predecessor_session_id FROM sessions WHERE session_id = 'sess-child'"
+    ) is None
+
+
 async def test_page_prefix_search_indexes_are_additive_and_mirrored():
     migration_sql = _migration_sql("038_page_prefix_search_indexes.sql")
     schema_sql = _schema_sql()

@@ -34,6 +34,7 @@ export interface CreateTaskParams {
   llmModel?: string | null;
   llmUsage?: Record<string, number> | null;
   callerSessionId?: string | null;
+  predecessorSessionId?: string | null;
   callerInfo?: CallerInfo;
   notifyCompletion?: boolean;
   model?: string | null;
@@ -148,6 +149,7 @@ export class TaskCreation {
       createdAt: task.createdAt,
       updatedAt: task.createdAt,
       callerSessionId: task.callerSessionId ?? null,
+      predecessorSessionId: params.predecessorSessionId ?? null,
       notifyCompletion: task.notifyCompletion ?? true,
       reviewRequired: task.reviewRequired === true,
       reviewState: task.reviewState ?? "not_required",

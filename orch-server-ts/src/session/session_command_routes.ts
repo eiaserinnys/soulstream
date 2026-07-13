@@ -64,6 +64,14 @@ export function registerSessionCommandRoutes(
     if (body.pageAnchor !== undefined && prompt.trim().length === 0) {
       return badRequest(reply, "prompt is required for page-anchored session creation");
     }
+    if (
+      body.predecessor_session_id !== undefined &&
+      body.predecessor_session_id !== null &&
+      (typeof body.predecessor_session_id !== "string" ||
+        body.predecessor_session_id.trim().length === 0)
+    ) {
+      return badRequest(reply, "predecessor_session_id must be a non-empty string or null");
+    }
 
     try {
       const prepared = await prepareCreateSession(options.createSessionLifecycle, request, body);

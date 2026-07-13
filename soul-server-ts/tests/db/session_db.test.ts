@@ -101,7 +101,7 @@ describe("SessionDB.ensureStableSessionOrderIndex", () => {
 });
 
 describe("SessionDB.registerSession", () => {
-  it("review 필드를 포함한 additive stored proc에 14개 인자를 순서대로 전달", async () => {
+  it("review와 predecessor 필드를 포함한 additive stored proc에 15개 인자를 순서대로 전달", async () => {
     const { sql, calls } = createMockSql();
     const db = new SessionDB(sql);
 
@@ -121,6 +121,7 @@ describe("SessionDB.registerSession", () => {
       notifyCompletion: false,
       reviewRequired: true,
       reviewState: "not_required",
+      predecessorSessionId: "sess-previous",
     });
 
     expect(calls).toHaveLength(1);
@@ -140,8 +141,9 @@ describe("SessionDB.registerSession", () => {
       false,
       true,
       "not_required",
+      "sess-previous",
     ]);
-    expect(call.fragments.join("?")).toContain("session_register_with_review");
+    expect(call.fragments.join("?")).toContain("session_register_with_predecessor");
   });
 });
 
@@ -1337,6 +1339,7 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
         event_count: "5",
         away_summary: null,
         caller_session_id: null,
+        predecessor_session_id: "s0",
         last_event_id: "9",
         last_read_event_id: "4",
         node_id: "node-1",
@@ -1357,6 +1360,7 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
     expect(result.sessions[0].last_event_id).toBe(9);
     expect(result.sessions[0].last_read_event_id).toBe(4);
     expect(result.sessions[0].node_id).toBe("node-1");
+    expect(result.sessions[0].predecessor_session_id).toBe("s0");
     // 인자 순서: search, session_type(null), limit, offset, folderId, nodeId
     expect(calls[0].values).toEqual(["Hi", null, 20, 0, "claude", "node-1"]);
   });
@@ -1384,6 +1388,7 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
 
     expect(calls).toHaveLength(2);
     expect(calls[0].fragments.join("?")).toContain("s.agent_id");
+    expect(calls[0].fragments.join("?")).toContain("s.predecessor_session_id");
     expect(calls[0].fragments.join("?")).toContain("session_page_bindings");
     expect(calls[0].fragments.join("?")).toContain("AS event_count");
     expect(calls[0].fragments.join("?")).not.toContain("SELECT *");

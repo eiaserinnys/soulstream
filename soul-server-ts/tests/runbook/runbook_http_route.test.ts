@@ -28,6 +28,35 @@ afterEach(async () => {
 });
 
 describe("runbook HTTP write route", () => {
+  it("creates a browser runbook with user attribution and no session provenance", async () => {
+    const service = fakeRunbookService();
+    const server = await createServer(service);
+
+    const response = await server.inject({
+      method: "POST",
+      url: "/api/runbooks",
+      headers: {
+        cookie: `${DASHBOARD_AUTH_COOKIE_NAME}=${encodeURIComponent(signJwt({ sub: "operator@example.com" }, "jwt-secret"))}`,
+      },
+      payload: {
+        runbook_id: "rb-browser",
+        title: "Browser work",
+        folder_id: "folder-1",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(service.createRunbook).toHaveBeenCalledWith({
+      actorKind: "user",
+      actorSessionId: null,
+      actorUserId: "operator@example.com",
+      runbookId: "rb-browser",
+      title: "Browser work",
+      folderId: "folder-1",
+      enrollCreator: false,
+    });
+  });
+
   it("authenticates dashboard cookies and writes runbook-level user attribution", async () => {
     const service = fakeRunbookService();
     const server = await createServer(service);
@@ -351,6 +380,11 @@ function fakeRunbookService(options: { runbookId?: string; itemId?: string } = {
     ],
   };
   return {
+    createRunbook: vi.fn(async () => ({
+      eventId: 0,
+      operation: { id: "op-create", operation_type: "create_runbook" },
+      snapshot,
+    })),
     getRunbook: vi.fn(async () => snapshot),
     setRunbookStatus: vi.fn(async () => ({
       eventId: 11,

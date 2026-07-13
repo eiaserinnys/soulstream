@@ -6,6 +6,7 @@ import type { RepositorySql } from "../db/repositories/repository_helpers.js";
 import type {
   RunbookItemStatus,
   RunbookOperationRow,
+  RunbookOperationActorKind,
   RunbookOperationTargetKind,
   RunbookSnapshot,
   RunbookStatus,
@@ -31,6 +32,22 @@ export interface RunbookMutateParams {
   payload: Record<string, unknown>;
   preflight?: (sql: RepositorySql) => Promise<void>;
   apply: (sql: RepositorySql, eventId: number) => Promise<void>;
+  reason?: string | null;
+  idempotencyKey?: string | null;
+}
+
+export interface SessionlessRunbookMutateParams {
+  runbookId: string;
+  targetKind: RunbookOperationTargetKind;
+  targetId: string;
+  operationType: string;
+  actor: {
+    actorKind: Extract<RunbookOperationActorKind, "user" | "system">;
+    actorSessionId: null;
+    actorUserId?: string | null;
+  };
+  payload: Record<string, unknown>;
+  apply: (sql: RepositorySql) => Promise<void>;
   reason?: string | null;
   idempotencyKey?: string | null;
 }
@@ -81,6 +98,38 @@ export class RunbookMutationCore {
     };
     await this.broadcastMutation(params.actor.actorSessionId, result);
     return result;
+  }
+
+  async mutateWithoutSession(
+    params: SessionlessRunbookMutateParams,
+  ): Promise<RunbookMutationResult> {
+    const idempotent = await this.resolveIdempotent(params.idempotencyKey);
+    if (idempotent) return idempotent;
+
+    let operation!: RunbookOperationRow;
+    await this.repo.transaction(async (sql) => {
+      const operationId = randomUUID();
+      await params.apply(sql);
+      operation = await this.repo.appendOperationTx(sql, {
+        id: operationId,
+        runbookId: params.runbookId,
+        targetKind: params.targetKind,
+        targetId: params.targetId,
+        operationType: params.operationType,
+        actorKind: params.actor.actorKind,
+        actorSessionId: null,
+        actorEventId: null,
+        actorUserId: params.actor.actorUserId ?? null,
+        idempotencyKey: params.idempotencyKey,
+        payload: params.payload,
+        reason: params.reason,
+      });
+    });
+    return {
+      snapshot: await this.requireSnapshot(params.runbookId),
+      operation,
+      eventId: 0,
+    };
   }
 
   async setItemStatus(params: RunbookActorParams & {

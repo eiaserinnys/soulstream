@@ -99,6 +99,39 @@ describePostgres("RunbookService PostgreSQL integration", () => {
     expect(Number(rows[0]?.y)).toBe(240);
   });
 
+  it("creates browser-owned runbooks with user audit and no fabricated session event", async () => {
+    const result = await service.createRunbook({
+      runbookId: "rb-browser",
+      folderId: "folder-1",
+      title: "Browser Runbook",
+      actorKind: "user",
+      actorSessionId: null,
+      actorUserId: "operator@example.com",
+      enrollCreator: false,
+    });
+
+    const operation = await harness!.sql<Array<{
+      actor_kind: string;
+      actor_session_id: string | null;
+      actor_event_id: number | null;
+      actor_user_id: string | null;
+    }>>`
+      SELECT actor_kind, actor_session_id, actor_event_id, actor_user_id
+      FROM runbook_operations
+      WHERE runbook_id = 'rb-browser'
+    `;
+
+    expect(result.snapshot.runbook.created_session_id).toBeNull();
+    expect(result.snapshot.runbook.created_event_id).toBeNull();
+    expect(operation[0]).toEqual({
+      actor_kind: "user",
+      actor_session_id: null,
+      actor_event_id: null,
+      actor_user_id: "operator@example.com",
+    });
+    expect(emitRunbookUpdated).not.toHaveBeenCalled();
+  });
+
   it("keeps a runbook board item when later board Yjs changes persist", async () => {
     await service.createRunbook({
       runbookId: "rb-1",

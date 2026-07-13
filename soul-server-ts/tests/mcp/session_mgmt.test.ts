@@ -372,6 +372,29 @@ describe("agent profile backend boundary", () => {
     );
   });
 
+  it("create_agent_session은 predecessor_session_id를 로컬 task에 보존한다", async () => {
+    const runtime = makeRuntime(
+      { queued: true, queuePosition: 1 },
+      undefined,
+      [codexAgent, claudeAgent],
+    );
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "create_agent_session",
+      arguments: {
+        agent_id: "codex-default",
+        prompt: "continue work",
+        predecessor_session_id: "sess-previous",
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(runtime.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      predecessorSessionId: "sess-previous",
+    }));
+  });
+
   it("create_agent_session은 MCP 요청 header의 caller id를 로컬 task에 보존한다", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },

@@ -12,6 +12,11 @@ import type {
   PageListDto,
 } from "@soulstream/page-model";
 
+export {
+  resolvePageSessionDefaults,
+  type PageSessionDefaultsDto,
+} from "./page_session_defaults.js";
+
 export interface PageReadQuerySql {
   <T extends readonly Record<string, unknown>[] = readonly Record<string, unknown>[]>(
     strings: TemplateStringsArray,

@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
 import { filterRunbookOverviewForAccess } from "./runbook_access.js";
+import { registerRunbookCreateRoute } from "./runbook_create_route.js";
 import {
   resolveItemActorSessionId,
   resolveRunbookActorSessionId,
@@ -54,6 +55,8 @@ export function registerRunbookRoutes(
   app: FastifyInstance,
   options: RunbookRouteOptions,
 ): void {
+  registerRunbookCreateRoute(app, options);
+
   app.get("/api/runbooks/my-turn", async (request, reply) => {
     const limit = parseLimit(request.query);
     if (!limit.ok) return validationError(reply, limit);

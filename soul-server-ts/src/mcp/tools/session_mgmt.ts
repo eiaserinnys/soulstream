@@ -49,13 +49,14 @@ export function registerSessionMgmtTools(
         agent_id: z.string().optional(),
         prompt: z.string(),
         caller_session_id: z.string().optional(),
+        predecessor_session_id: z.string().min(1).optional(),
         notify_completion: z.boolean().optional(),
         folder_id: z.string().optional(),
         container: delegatedContainerSchema.optional(),
         source_runbook_item_id: z.string().optional(),
       },
     },
-    async ({ agent_id, prompt, caller_session_id, notify_completion, folder_id, container, source_runbook_item_id }) => {
+    async ({ agent_id, prompt, caller_session_id, predecessor_session_id, notify_completion, folder_id, container, source_runbook_item_id }) => {
       // agent_id가 미지정이면 첫 번째 등록 agent를 default로.
       const agents = runtime.agentRegistry.list();
       if (agents.length === 0) {
@@ -90,6 +91,7 @@ export function registerSessionMgmtTools(
           prompt,
           profileId: resolvedAgentId,
           callerSessionId: effectiveCallerSessionId ?? null,
+          predecessorSessionId: predecessor_session_id ?? null,
           callerInfo,
           notifyCompletion: notify_completion,
           folderId: resolvedContainer.folderId,

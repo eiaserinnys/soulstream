@@ -1059,6 +1059,10 @@ export interface CreateSession {
     [k: string]: unknown;
   };
   /**
+   * Optional predecessor session for explicit run succession.
+   */
+  predecessor_session_id?: string | null;
+  /**
    * False suppresses caller completion relay for runbook-tracked fire-and-forget delegation. Missing defaults to true.
    */
   notify_completion?: boolean;

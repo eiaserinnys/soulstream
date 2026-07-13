@@ -24,6 +24,7 @@ export interface CreateSessionRuntimeParams {
   prompt: string;
   profileId: string;
   callerSessionId?: string | null;
+  predecessorSessionId?: string | null;
   callerInfo?: CallerInfo;
   notifyCompletion?: boolean;
   attachmentPaths?: string[];
@@ -123,6 +124,7 @@ export class TaskRuntimeCommands {
       prompt,
       profileId: params.profileId,
       callerSessionId: params.callerSessionId ?? null,
+      predecessorSessionId: params.predecessorSessionId ?? null,
       callerInfo: params.callerInfo,
       notifyCompletion: params.notifyCompletion,
       model: params.model,

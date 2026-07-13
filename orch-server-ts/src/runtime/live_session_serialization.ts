@@ -44,6 +44,8 @@ export function serializeSessionRow(
       firstDefined(row, "last_read_event_id", "lastReadEventId") ?? 0,
     callerSessionId:
       firstDefined(row, "caller_session_id", "callerSessionId") ?? null,
+    predecessorSessionId:
+      firstDefined(row, "predecessor_session_id", "predecessorSessionId") ?? null,
     agentId: firstDefined(row, "agent_id", "agentId") ?? null,
     agentName: firstDefined(row, "agent_name", "agentName") ?? null,
     agentPortraitUrl:

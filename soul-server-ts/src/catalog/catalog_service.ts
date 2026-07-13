@@ -48,6 +48,7 @@ export interface BrowseFolderSessionDto {
   eventCount: number;
   awaySummary: string | null;
   callerSessionId: string | null;
+  predecessorSessionId: string | null;
   nodeId: string | null;
   lastEventId: number | null;
   lastReadEventId: number | null;
@@ -399,6 +400,7 @@ function toBrowseFolderSession(row: ListSessionSummaryRow): BrowseFolderSessionD
     eventCount: row.event_count,
     awaySummary: row.away_summary,
     callerSessionId: row.caller_session_id,
+    predecessorSessionId: row.predecessor_session_id,
     nodeId: row.node_id,
     lastEventId: row.last_event_id,
     lastReadEventId: row.last_read_event_id,

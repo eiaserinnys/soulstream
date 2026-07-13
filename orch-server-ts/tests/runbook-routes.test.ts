@@ -167,6 +167,7 @@ describe("runbook route harness", () => {
     const app = createApp({ config });
 
     for (const [method, url, payload] of [
+      ["POST", "/api/runbooks", { title: "Work", folder_id: "folder-a" }],
       ["GET", "/api/runbooks/my-turn", undefined],
       ["POST", "/api/runbooks/rb-1/items/item-1/status", { status: "review" }],
       ["POST", "/api/runbooks/rb-1/status", { status: "completed" }],
@@ -182,6 +183,7 @@ describe("runbook route harness", () => {
 
   it("registers Python auth contract rows for route inventory order 76-79", () => {
     expect(runbookRouteAuthRequirements).toEqual({
+      "POST /api/runbooks": true,
       "GET /api/runbooks/my-turn": true,
       "POST /api/runbooks/:runbook_id/items/:item_id/status": true,
       "POST /api/runbooks/:runbook_id/status": true,
@@ -205,6 +207,47 @@ describe("runbook route harness", () => {
       [78, "POST", "/api/runbooks/{runbook_id}/status", true],
       [79, "GET", "/api/runbooks/{runbook_id}", true],
     ]);
+  });
+
+  it("proxies browser runbook creation to a connected node after folder access", async () => {
+    const httpClient: RunbookMutationHttpClient = vi.fn(async () => ({
+      statusCode: 201,
+      headers: { "content-type": "application/json" },
+      body: { ok: true, runbookId: "rb-browser" },
+    }));
+    const { app, calls } = createAppWithRunbooks(
+      { restricted: true, allowedFolderIds: ["folder-a"] },
+      {},
+      httpClient,
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/runbooks",
+      headers: { cookie: "sid=test" },
+      payload: {
+        runbook_id: "rb-browser",
+        title: "Browser work",
+        folder_id: "folder-a-child",
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(calls).toEqual([["listFolders"], ["access"], ["listNodes"]]);
+    expect(httpClient).toHaveBeenCalledWith({
+      method: "POST",
+      url: "http://localhost:4106/api/runbooks",
+      upstreamPath: "/api/runbooks",
+      headers: { cookie: "sid=test" },
+      body: {
+        runbook_id: "rb-browser",
+        title: "Browser work",
+        folder_id: "folder-a-child",
+      },
+      target: fallbackNode,
+    });
+
+    await app.close();
   });
 
   it("keeps my-turn ahead of the dynamic runbook id route", async () => {
