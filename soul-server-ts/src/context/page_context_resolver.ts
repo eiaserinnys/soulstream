@@ -1,5 +1,9 @@
 import type { Logger } from "pino";
-import { compareLexicographically } from "@soulstream/fractional-position";
+import {
+  compareLexicographically,
+  comparePositionKeys,
+} from "@soulstream/fractional-position";
+import type { BlockDto } from "@soulstream/page-model";
 
 import type { AgentProfile } from "../agent_registry.js";
 import type { Task } from "../task/task_models.js";
@@ -28,10 +32,15 @@ export type PageContextResolution = NoPageAnchorContext | PageAnchorContext;
 
 /** Boundary for resolving page-owned context before the first engine turn. */
 export interface PageContextResolver {
+  hasPageAnchor(task: Task, agent: AgentProfile): Promise<boolean>;
   resolve(task: Task, agent: AgentProfile): Promise<PageContextResolution>;
 }
 
 export class NoPageAnchorContextResolver implements PageContextResolver {
+  async hasPageAnchor(_task: Task, _agent: AgentProfile): Promise<boolean> {
+    return false;
+  }
+
   async resolve(_task: Task, _agent: AgentProfile): Promise<NoPageAnchorContext> {
     return { kind: "no-page-anchor" };
   }
@@ -48,14 +57,12 @@ export class AncestorPageContextResolver implements PageContextResolver {
     private readonly maxPages = 64,
   ) {}
 
+  async hasPageAnchor(task: Task, _agent: AgentProfile): Promise<boolean> {
+    return (await this.lookupAnchor(task)) !== null;
+  }
+
   async resolve(task: Task, _agent: AgentProfile): Promise<PageContextResolution> {
-    let anchor: PageContextAnchor | null;
-    try {
-      anchor = await this.repository.getAnchor(task.agentSessionId);
-    } catch (err) {
-      this.logger.warn({ err, sessionId: task.agentSessionId }, "page context anchor lookup failed");
-      return { kind: "no-page-anchor" };
-    }
+    const anchor = await this.lookupAnchor(task);
     if (!anchor) return { kind: "no-page-anchor" };
 
     const candidates: PageContextCandidate[] = [];
@@ -64,37 +71,40 @@ export class AncestorPageContextResolver implements PageContextResolver {
     const queue: QueueEntry[] = [{ ...anchor, distance: 0 }];
     let truncated = false;
     while (queue.length > 0) {
-      const current = queue.shift()!;
-      if (visited.has(current.pageId)) continue;
+      const first = queue.shift()!;
+      const entries = takeEquivalentEntries(first, queue);
+      if (visited.has(first.pageId)) continue;
       if (visited.size >= this.maxPages) {
         truncated = true;
         break;
       }
-      visited.add(current.pageId);
-      let page;
+      visited.add(first.pageId);
       try {
-        page = await this.repository.getPage(current.pageId);
-      } catch (err) {
-        failures.push(failure("page", current.pageId, err));
-        this.logger.warn({ err, pageId: current.pageId }, "page context page read failed");
-        continue;
-      }
-      const byId = new Map(page.blocks.map((block) => [block.id, block]));
-      const entry = byId.get(current.blockId);
-      if (!entry) {
-        failures.push(failure("block", current.pageId, new Error("entry block missing"), current.blockId));
-        continue;
-      }
-      collectPhysicalAncestors(byId, entry.parent_id, current.distance + 1, candidates, failures);
-      try {
-        const parents = await this.repository.listMountParents(current.pageId);
-        truncated ||= parents.truncated;
-        for (const parent of [...parents.items].sort(compareParents)) {
-          queue.push({ ...parent, distance: current.distance + 1 });
+        const page = await this.repository.getPage(first.pageId);
+        const byId = new Map(page.blocks.map((block) => [block.id, block]));
+        const entry = selectCanonicalEntry(entries, byId, first.pageId, failures);
+        if (entry) {
+          collectPhysicalAncestors(
+            byId,
+            entry.parent_id,
+            first.distance + 1,
+            candidates,
+            failures,
+          );
         }
       } catch (err) {
-        failures.push(failure("mounts", current.pageId, err));
-        this.logger.warn({ err, pageId: current.pageId }, "page context mount lookup failed");
+        failures.push(failure("page", first.pageId, err));
+        this.logger.warn({ err, pageId: first.pageId }, "page context page read failed");
+      }
+      try {
+        const parents = await this.repository.listMountParents(first.pageId);
+        truncated ||= parents.truncated;
+        for (const parent of [...parents.items].sort(compareParents)) {
+          queue.push({ ...parent, distance: first.distance + 1 });
+        }
+      } catch (err) {
+        failures.push(failure("mounts", first.pageId, err));
+        this.logger.warn({ err, pageId: first.pageId }, "page context mount lookup failed");
       }
     }
     return {
@@ -107,14 +117,61 @@ export class AncestorPageContextResolver implements PageContextResolver {
       }),
     };
   }
+
+  private async lookupAnchor(task: Task): Promise<PageContextAnchor | null> {
+    try {
+      return await this.repository.getAnchor(task.agentSessionId);
+    } catch (err) {
+      this.logger.warn({ err, sessionId: task.agentSessionId }, "page context anchor lookup failed");
+      return null;
+    }
+  }
 }
 
 interface QueueEntry extends PageContextAnchor {
   distance: number;
 }
 
+function takeEquivalentEntries(first: QueueEntry, queue: QueueEntry[]): QueueEntry[] {
+  const entries = [first];
+  for (let index = queue.length - 1; index >= 0; index -= 1) {
+    const candidate = queue[index]!;
+    if (candidate.pageId === first.pageId && candidate.distance === first.distance) {
+      entries.push(candidate);
+      queue.splice(index, 1);
+    }
+  }
+  return entries;
+}
+
+function selectCanonicalEntry(
+  entries: QueueEntry[],
+  byId: Map<string, BlockDto>,
+  pageId: string,
+  failures: PageContextTraversalFailure[],
+): BlockDto | null {
+  const found = new Map<string, BlockDto>();
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (seen.has(entry.blockId)) continue;
+    seen.add(entry.blockId);
+    const block = byId.get(entry.blockId);
+    if (block) {
+      found.set(block.id, block);
+    } else {
+      failures.push(failure("block", pageId, new Error("entry block missing"), entry.blockId));
+    }
+  }
+  return [...found.values()].sort(compareEntryBlocks)[0] ?? null;
+}
+
+function compareEntryBlocks(a: BlockDto, b: BlockDto): number {
+  return comparePositionKeys(a.position_key, b.position_key)
+    || compareLexicographically(a.id, b.id);
+}
+
 function collectPhysicalAncestors(
-  byId: Map<string, { id: string; parent_id: string | null; position_key: string; block_type: string; text: string; properties: Record<string, unknown>; page_id: string }>,
+  byId: Map<string, BlockDto>,
   firstParentId: string | null,
   firstDistance: number,
   output: PageContextCandidate[],
@@ -143,7 +200,7 @@ function collectPhysicalAncestors(
 }
 
 function toCandidate(
-  block: { id: string; page_id: string; position_key: string; block_type: string; text: string; properties: Record<string, unknown> },
+  block: BlockDto,
   distance: number,
 ): PageContextCandidate | null {
   if (block.block_type === "guidance") {

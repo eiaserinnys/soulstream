@@ -171,12 +171,12 @@ export class ExecutionContextBuilder {
    * task.contextItems는 user/context 영역이라 여기서 제외한다.
    */
   async buildSystemPrompt(task: Task, agent: AgentProfile): Promise<string | undefined> {
-    const pageContext = await this.pageContextResolver.resolve(task, agent);
+    const pageAnchored = await this.pageContextResolver.hasPageAnchor(task, agent);
     const { folderPrompt } = await this._resolveFolder(task);
     const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);
     return this._composeSystemPrompt({
       agentAtomMarkdown,
-      folderPrompt: pageContext.kind === "page-anchor" ? undefined : folderPrompt,
+      folderPrompt: pageAnchored ? undefined : folderPrompt,
       taskSystemPrompt: task.systemPrompt,
     });
   }

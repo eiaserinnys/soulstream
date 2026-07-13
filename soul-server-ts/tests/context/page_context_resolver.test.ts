@@ -93,6 +93,23 @@ function contentOf(result: Awaited<ReturnType<typeof resolve>>): Record<string, 
 }
 
 describe("AncestorPageContextResolver", () => {
+  it("checks anchor presence without traversing page ancestry", async () => {
+    const repo = repository({ anchor: { pageId: "target", blockId: "anchor" } });
+    const resolver = new AncestorPageContextResolver(
+      repo,
+      new DefaultPageContextAssembler(),
+      logger,
+    );
+
+    await expect(resolver.hasPageAnchor(
+      { agentSessionId: "sess-1" } as never,
+      {} as never,
+    )).resolves.toBe(true);
+    expect(repo.getAnchor).toHaveBeenCalledOnce();
+    expect(repo.getPage).not.toHaveBeenCalled();
+    expect(repo.listMountParents).not.toHaveBeenCalled();
+  });
+
   it("renders physical three-depth explicit context root-to-leaf", async () => {
     const repo = repository({
       pages: {
@@ -144,6 +161,41 @@ describe("AncestorPageContextResolver", () => {
     expect(content.items.map((entry: any) => entry.block_id)).toEqual([
       "guidance-a", "guidance-b",
     ]);
+  });
+
+  it("chooses the canonical fractional mount path when one page mounts the target twice", async () => {
+    const repo = repository({
+      pages: {
+        target: page("target", [block("anchor", null, "session_ref")]),
+        parent: page("parent", [
+          block("guidance-by-id", null, "guidance", "wrong", {
+            enabled: true,
+            scope: "by-id",
+          }, "A"),
+          block("aaa-mount", "guidance-by-id", "paragraph", "[[target]]", {}, "a"),
+          block("guidance-by-position", null, "guidance", "right", {
+            enabled: true,
+            scope: "by-position",
+          }, "B"),
+          block("zzz-mount", "guidance-by-position", "paragraph", "[[target]]", {}, "Z"),
+        ]),
+      },
+      parents: {
+        target: {
+          items: [
+            { pageId: "parent", blockId: "zzz-mount" },
+            { pageId: "parent", blockId: "aaa-mount" },
+          ],
+          truncated: false,
+        },
+      },
+    });
+
+    const content = contentOf(await resolve(repo));
+    expect(content.items).toEqual([
+      expect.objectContaining({ block_id: "guidance-by-position", text: "right" }),
+    ]);
+    expect(repo.getPage).toHaveBeenCalledTimes(2);
   });
 
   it("deduplicates a diamond and terminates a mount cycle by page id", async () => {
@@ -237,6 +289,44 @@ describe("AncestorPageContextResolver", () => {
     ]);
     expect(content.metadata.traversal.failures).toEqual([
       expect.objectContaining({ stage: "page", page_id: "missing" }),
+    ]);
+  });
+
+  it("records a missing entry block and still traverses that page's reverse mount parents", async () => {
+    const repo = repository({
+      pages: {
+        target: page("target", [block("anchor", null, "session_ref")]),
+        parent: page("parent", [block("unrelated", null, "paragraph")]),
+        root: page("root", [
+          block("root-guidance", null, "guidance", "root", {
+            enabled: true,
+            scope: "root",
+          }, "A"),
+          block("root-mount", "root-guidance", "paragraph", "[[parent]]", {}, "B"),
+        ]),
+      },
+      parents: {
+        target: {
+          items: [{ pageId: "parent", blockId: "deleted-mount" }],
+          truncated: false,
+        },
+        parent: {
+          items: [{ pageId: "root", blockId: "root-mount" }],
+          truncated: false,
+        },
+      },
+    });
+
+    const content = contentOf(await resolve(repo));
+    expect(content.items).toEqual([
+      expect.objectContaining({ block_id: "root-guidance", text: "root" }),
+    ]);
+    expect(content.metadata.traversal.failures).toEqual([
+      expect.objectContaining({
+        stage: "block",
+        page_id: "parent",
+        block_id: "deleted-mount",
+      }),
     ]);
   });
 

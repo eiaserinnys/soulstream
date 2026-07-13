@@ -84,7 +84,8 @@ function makeCogitoConfig(
 describe("ExecutionContextBuilder.build — 기본 흐름", () => {
   it("calls the injected page resolver once while preserving legacy context for no-page-anchor", async () => {
     const resolve = vi.fn().mockResolvedValue({ kind: "no-page-anchor" });
-    const cb = makeBuilder({}, undefined, false, undefined, { resolve });
+    const hasPageAnchor = vi.fn().mockResolvedValue(false);
+    const cb = makeBuilder({}, undefined, false, undefined, { hasPageAnchor, resolve });
     const task = makeTask();
 
     const ctx = await cb.build(task, codexAgent);
@@ -100,6 +101,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
   it("provides an explicit no-page-anchor default resolver", async () => {
     const resolver = new NoPageAnchorContextResolver();
 
+    await expect(resolver.hasPageAnchor(makeTask(), codexAgent)).resolves.toBe(false);
     await expect(resolver.resolve(makeTask(), codexAgent)).resolves.toEqual({
       kind: "no-page-anchor",
     });
@@ -175,6 +177,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
         kind: "page-anchor",
         contextItem: pageContextItem,
       });
+      const hasPageAnchor = vi.fn().mockResolvedValue(true);
       const agent: AgentProfile = {
         ...codexAgent,
         atom_contexts: [{
@@ -195,7 +198,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
         new AgentRegistry([agent]),
         true,
         makeCogitoConfig(),
-        { resolve },
+        { hasPageAnchor, resolve },
       );
 
       const ctx = await cb.build(makeTask({ systemPrompt: "task system" }), agent);
@@ -1402,6 +1405,30 @@ describe("ExecutionContextBuilder.buildSystemPrompt — Claude resume system pro
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;
+  });
+
+  it("uses the anchor-only seam instead of traversing page ancestry for suppression", async () => {
+    const getSession = vi.fn().mockResolvedValue({ folder_id: "f-1" });
+    const getFolderById = vi.fn().mockResolvedValue({
+      id: "f-1",
+      name: "folder",
+      sort_order: 0,
+      settings: { folderPrompt: "legacy folder prompt" },
+    });
+    const hasPageAnchor = vi.fn().mockResolvedValue(true);
+    const resolve = vi.fn().mockRejectedValue(new Error("full traversal must not run"));
+    const cb = makeBuilder(
+      { getSession, getFolderById } as Partial<SessionDB>,
+      undefined,
+      false,
+      undefined,
+      { hasPageAnchor, resolve },
+    );
+    const task = makeTask({ systemPrompt: "task prompt" });
+
+    await expect(cb.buildSystemPrompt(task, codexAgent)).resolves.toBe("task prompt");
+    expect(hasPageAnchor).toHaveBeenCalledWith(task, codexAgent);
+    expect(resolve).not.toHaveBeenCalled();
   });
 
   it("agent atom_contexts + folderPrompt + task.systemPrompt만 조립하고 context item용 atomContextNode는 제외", async () => {
