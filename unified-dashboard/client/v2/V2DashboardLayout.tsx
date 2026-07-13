@@ -112,6 +112,16 @@ export function V2DashboardLayout({
   const { isDraining } = useServerStatus();
   useNodes();
 
+  const referencedSessionIds = useMemo(() => {
+    if (workspace.pageState.status !== "ready") return undefined;
+    return [...new Set(workspace.pageState.blocks.flatMap((block) => {
+      if (block.type !== "session_ref") return [];
+      const sessionId = block.properties.sessionId;
+      return typeof sessionId === "string" && sessionId.length > 0 ? [sessionId] : [];
+    }))].sort();
+  }, [workspace.pageState]);
+  const isLegacyFolder = workspace.selectedLegacyFolderId !== null;
+
   const {
     sessions,
     loading: sessionsLoading,
@@ -120,8 +130,10 @@ export function V2DashboardLayout({
     refetch: refetchSessions,
   } = useSessionListProvider({
     intervalMs: 5000,
+    enabled: isLegacyFolder || referencedSessionIds !== undefined,
     getSessionProvider: () => orchestratorSessionProvider,
     sessionScope: "all",
+    sessionIds: isLegacyFolder ? undefined : referencedSessionIds,
   });
   const { status: sessionStatus } = useSessionProvider({
     sessionKey: activeSessionKey,

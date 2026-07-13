@@ -141,6 +141,7 @@ export function useSessionStreamCacheSync(
               newSession.sessionType,
               folderId,
               catalogForCache,
+              newSession.agentSessionId,
             ),
         },
         (old) => {

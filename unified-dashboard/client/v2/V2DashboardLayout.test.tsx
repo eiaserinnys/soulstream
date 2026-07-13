@@ -316,9 +316,63 @@ describe("V2DashboardLayout", () => {
     expect(container.querySelector('[data-testid="mobile-main"]')).toBeNull();
     expect(api.getDailyPage).toHaveBeenCalledTimes(1);
     expect(target.location.pathname).toBe("/v2/pages/page-daily");
-    expect(container.textContent).toContain("Daily page");
+    await vi.waitFor(() => expect(container!.textContent).toContain("Daily page"));
     expect(container.textContent).toContain("Starred");
 
+    controller.destroy();
+  });
+
+  it("scopes session summary loading to the current page references", async () => {
+    const blocks: readonly PageDocumentBlock[] = [
+      {
+        id: "ref-b",
+        parentId: null,
+        positionKey: "a",
+        type: "session_ref",
+        text: fakePageText("[[B]]"),
+        textValue: "[[B]]",
+        properties: { sessionId: "session-b" },
+        collapsed: false,
+      },
+      {
+        id: "paragraph",
+        parentId: null,
+        positionKey: "b",
+        type: "paragraph",
+        text: fakePageText("text"),
+        textValue: "text",
+        properties: {},
+        collapsed: false,
+      },
+      {
+        id: "ref-a",
+        parentId: null,
+        positionKey: "c",
+        type: "session_ref",
+        text: fakePageText("[[A]]"),
+        textValue: "[[A]]",
+        properties: { sessionId: "session-a" },
+        collapsed: false,
+      },
+    ];
+    const target = createTarget("/v2/pages/page-daily");
+    const controller = createV2PageRouteController(target);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(
+      <V2DashboardLayout
+        apiClient={createApi()}
+        routeController={controller}
+        createPageClient={() => createClient(page.id, blocks)}
+      />,
+    ));
+    await settle();
+
+    expect(sessionListProviderSpy).toHaveBeenLastCalledWith(expect.objectContaining({
+      sessionScope: "all",
+      sessionIds: ["session-a", "session-b"],
+    }));
     controller.destroy();
   });
 

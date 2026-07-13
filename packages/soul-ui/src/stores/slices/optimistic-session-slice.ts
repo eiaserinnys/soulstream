@@ -71,6 +71,7 @@ export const createOptimisticSessionSlice: StateCreator<
             newSession.sessionType,
             folderId,
             catalog,
+            newSession.agentSessionId,
           ),
       },
       (old) => {

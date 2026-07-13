@@ -63,14 +63,17 @@ function Probe({
   onSessions,
   provider,
   sessionScope = "view",
+  sessionIds,
 }: {
   onSessions: (sessions: SessionSummary[]) => void;
   provider: SessionStorageProvider;
   sessionScope?: "view" | "all";
+  sessionIds?: readonly string[];
 }) {
   const { sessions } = useSessionListProvider({
     getSessionProvider: () => provider,
     sessionScope,
+    sessionIds,
     viewModeOverride: "feed",
     folderIdOverride: null,
     streamEnabled: false,
@@ -184,5 +187,63 @@ describe("useSessionListProvider query overrides", () => {
       expect(latest.map((session) => session.agentSessionId)).toEqual(["global-a", "global-b"]);
     });
     expect(provider.fetchSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it("requests only the session summaries referenced by a page", async () => {
+    const provider = makeProvider([makeSession("session-b")]);
+    let latest: SessionSummary[] = [];
+
+    flushSync(() => {
+      root.render(
+        createElement(
+          QueryClientProvider,
+          { client: queryClient },
+          createElement(Probe, {
+            provider,
+            sessionScope: "all",
+            sessionIds: ["session-b", "session-a", "session-b"],
+            onSessions: (value) => {
+              latest = value;
+            },
+          }),
+        ),
+      );
+    });
+
+    await waitFor(() => {
+      expect(provider.fetchSessions).toHaveBeenCalledWith({
+        offset: 0,
+        limit: 0,
+        sessionIds: ["session-a", "session-b"],
+      });
+    });
+    await waitFor(() => {
+      expect(latest.map((session) => session.agentSessionId)).toEqual(["session-b"]);
+    });
+  });
+
+  it("does not fetch the unbounded session list while a ready page has no references", async () => {
+    const provider = makeProvider([]);
+
+    flushSync(() => {
+      root.render(
+        createElement(
+          QueryClientProvider,
+          { client: queryClient },
+          createElement(Probe, {
+            provider,
+            sessionScope: "all",
+            sessionIds: [],
+            onSessions: () => undefined,
+          }),
+        ),
+      );
+    });
+
+    await waitFor(() => {
+      expect(queryClient.getQueryState(["sessions", "all", "ids", null, []])?.status)
+        .toBe("success");
+    });
+    expect(provider.fetchSessions).not.toHaveBeenCalled();
   });
 });

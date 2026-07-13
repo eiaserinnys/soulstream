@@ -20,23 +20,24 @@ import type {
 } from "@seosoyoung/soul-ui";
 import { buildFetchSessionsUrl, createSSESubscribe, toSessionSummary } from "@seosoyoung/soul-ui";
 
+const MAX_TARGETED_SESSION_URL_LENGTH = 6_000;
+
 export class OrchestratorSessionProvider implements SessionStorageProvider {
   async fetchSessions(options?: FetchSessionsOptions): Promise<SessionListResult> {
-    const res = await fetch(buildFetchSessionsUrl("/api/sessions", options));
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-    const data: {
-      sessions?: Array<Record<string, unknown>>;
-      sessionList?: Array<Record<string, unknown>>;
-      total: number;
-    } = await res.json();
-
-    const rows = data.sessions ?? data.sessionList ?? [];
-    const sessions = rows.map(toOrchestratorSessionSummary);
-
-    const total = data.total ?? sessions.length;
-    const loadedCount = (options?.offset ?? 0) + sessions.length;
-    return { sessions, total, hasMore: loadedCount < total };
+    if (options?.sessionIds !== undefined) {
+      const sessionIds = [...new Set(options.sessionIds)];
+      if (sessionIds.length === 0) return { sessions: [], total: 0, hasMore: false };
+      const batches = targetedSessionBatches(sessionIds, options);
+      const results = await Promise.all(batches.map((batch) =>
+        fetchSessionPage({ ...options, sessionIds: batch, offset: 0, limit: 0 })
+      ));
+      const sessions = [...new Map(
+        results.flatMap((result) => result.sessions)
+          .map((session) => [session.agentSessionId, session]),
+      ).values()];
+      return { sessions, total: sessions.length, hasMore: false };
+    }
+    return await fetchSessionPage(options);
   }
 
   async fetchFolderCounts(): Promise<Record<string, number>> {
@@ -75,6 +76,49 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
       debugPrefix,
     });
   }
+}
+
+async function fetchSessionPage(options?: FetchSessionsOptions): Promise<SessionListResult> {
+  const res = await fetch(buildFetchSessionsUrl("/api/sessions", options));
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+  const data: {
+    sessions?: Array<Record<string, unknown>>;
+    sessionList?: Array<Record<string, unknown>>;
+    total: number;
+  } = await res.json();
+
+  const rows = data.sessions ?? data.sessionList ?? [];
+  const sessions = rows.map(toOrchestratorSessionSummary);
+
+  const total = data.total ?? sessions.length;
+  const loadedCount = (options?.offset ?? 0) + sessions.length;
+  return { sessions, total, hasMore: loadedCount < total };
+}
+
+function targetedSessionBatches(
+  sessionIds: readonly string[],
+  options: FetchSessionsOptions,
+): string[][] {
+  const batches: string[][] = [];
+  let current: string[] = [];
+  for (const sessionId of sessionIds) {
+    const candidate = [...current, sessionId];
+    const candidateUrl = buildFetchSessionsUrl("/api/sessions", {
+      ...options,
+      sessionIds: candidate,
+      offset: 0,
+      limit: 0,
+    });
+    if (current.length > 0 && candidateUrl.length > MAX_TARGETED_SESSION_URL_LENGTH) {
+      batches.push(current);
+      current = [sessionId];
+    } else {
+      current = candidate;
+    }
+  }
+  if (current.length > 0) batches.push(current);
+  return batches;
 }
 
 function toOrchestratorSessionSummary(raw: Record<string, unknown>): SessionSummary {

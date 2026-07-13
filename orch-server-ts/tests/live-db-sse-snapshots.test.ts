@@ -165,6 +165,52 @@ describe("live DB SSE replay snapshots", () => {
     ]);
   });
 
+  it("omits inaccessible rows from a targeted session summary batch without failing visible refs", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("FROM sessions s") && text.includes("s.session_id = ANY")) {
+        return [
+          {
+            session_id: "visible-session",
+            status: "running",
+            folder_id: "child",
+            session_type: "claude",
+            created_at: new Date("2026-07-13T00:00:00.000Z"),
+            updated_at: new Date("2026-07-13T00:01:00.000Z"),
+          },
+          {
+            session_id: "hidden-session",
+            status: "running",
+            folder_id: "hidden",
+            session_type: "claude",
+            created_at: new Date("2026-07-13T00:00:00.000Z"),
+            updated_at: new Date("2026-07-13T00:01:00.000Z"),
+          },
+        ];
+      }
+      if (text.includes("FROM folders")) {
+        return [
+          { id: "root", parent_folder_id: null },
+          { id: "child", parent_folder_id: "root" },
+          { id: "hidden", parent_folder_id: null },
+        ];
+      }
+      if (text.includes("FROM session_page_bindings")) return [];
+      return [];
+    });
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    await expect(repository.listSessionSnapshots({
+      access: { restricted: true, allowedFolderIds: ["root"] },
+      sessionIds: ["visible-session", "hidden-session", "missing-session"],
+      offset: 0,
+      limit: 0,
+    })).resolves.toMatchObject({
+      sessions: [expect.objectContaining({ agentSessionId: "visible-session" })],
+      total: 1,
+      hasMore: false,
+    });
+  });
+
   it("loads task snapshots with linked session serialization", async () => {
     const harness = createSqlHarness((text) => {
       if (text.includes("COUNT(*)::int")) return [{ count: 1 }];

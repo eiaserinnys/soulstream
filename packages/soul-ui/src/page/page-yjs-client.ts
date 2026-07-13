@@ -2,6 +2,7 @@ import { HocuspocusProvider } from "@hocuspocus/provider";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
+import { createPendingMutationHandle } from "../pending-mutation-registry";
 import {
   createPageDocumentProjection,
   type PageDocumentProjection,
@@ -35,9 +36,11 @@ export interface PageProviderConfiguration {
   document: Y.Doc;
   awareness: Awareness;
   token: string;
+  autoConnect: false;
   onStatus(input: { status: "connecting" | "connected" | "disconnected" }): void;
   onSynced(input: { state: boolean }): void;
   onAuthenticationFailed(input: { reason: string }): void;
+  onUnsyncedChanges(input: { number: number }): void;
 }
 
 export interface PageProviderLike {
@@ -56,6 +59,41 @@ export interface PageYjsClient {
   connect(): Promise<void>;
   disconnect(): void;
   destroy(): void;
+}
+
+const SAFE_DESTROY_TIMEOUT_MS = 5_000;
+
+export async function destroyPageYjsClientSafely(
+  client: PageYjsClient,
+  timeoutMs = SAFE_DESTROY_TIMEOUT_MS,
+): Promise<void> {
+  if (isConnectionAttempt(client.getSnapshot().status)) {
+    await new Promise<void>((resolve) => {
+      let unsubscribe: () => void = () => undefined;
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        unsubscribe();
+        resolve();
+      };
+      const timeout = setTimeout(finish, timeoutMs);
+      try {
+        unsubscribe = client.subscribe(() => {
+          if (!isConnectionAttempt(client.getSnapshot().status)) finish();
+        });
+        if (!isConnectionAttempt(client.getSnapshot().status)) finish();
+      } catch {
+        finish();
+      }
+    });
+  }
+  client.destroy();
+}
+
+function isConnectionAttempt(status: PageYjsStatus): boolean {
+  return status === "connecting" || status === "reconnecting";
 }
 
 export function getPageYjsDocumentName(pageId: string): string {
@@ -86,6 +124,7 @@ export function createPageYjsClient(options: {
   let everSynced = false;
   let authenticationFailed = false;
   let projection: PageDocumentProjection | null = null;
+  const pendingMutation = createPendingMutationHandle();
   let snapshot = makeSnapshot("connecting", false, false, null);
   const publish = (
     status: PageYjsStatus,
@@ -103,6 +142,7 @@ export function createPageYjsClient(options: {
     document: doc,
     awareness,
     token: "cookie",
+    autoConnect: false,
     onStatus: ({ status }) => {
       if (destroyed) return;
       if (status === "connected") {
@@ -139,6 +179,9 @@ export function createPageYjsClient(options: {
         kind: "authentication",
         message: reason || "Page sync authentication failed.",
       });
+    },
+    onUnsyncedChanges: ({ number }) => {
+      if (!destroyed) pendingMutation.setPending(number > 0);
     },
   });
 
@@ -177,6 +220,7 @@ export function createPageYjsClient(options: {
       destroyed = true;
       listeners.clear();
       provider.destroy();
+      pendingMutation.dispose();
       awareness.destroy();
       projection?.destroy();
       doc.destroy();

@@ -50,6 +50,36 @@ describe("session snapshot route harness", () => {
     await app.close();
   });
 
+  it("passes more than 200 targeted IDs without silent truncation", async () => {
+    let captured: string[] | undefined;
+    const app = createApp({
+      config,
+      sessionSnapshotRoutes: {
+        snapshotService: {
+          listSessions(query) {
+            captured = query.session_ids;
+            return {
+              sessions: [],
+              sessionList: [],
+              total: 0,
+              cursor: null,
+              nextCursor: null,
+              hasMore: false,
+            };
+          },
+        },
+      },
+    });
+    const query = Array.from({ length: 250 }, (_, index) => `session_id=session-${index}`)
+      .join("&");
+
+    const response = await app.inject({ method: "GET", url: `/api/sessions?${query}` });
+
+    expect(response.statusCode).toBe(200);
+    expect(captured).toHaveLength(250);
+    await app.close();
+  });
+
   it("projects cached node sessions with Python-compatible list shape", async () => {
     const { app, registry } = createHarness(() => 1_700_000_000_000);
     const connectionId = registerNode(registry, "node-a");
@@ -198,6 +228,24 @@ describe("session snapshot route harness", () => {
     ).toEqual(["sess-c", "sess-a", "sess-b"]);
     expect(unbounded).toMatchObject({
       total: 3,
+      cursor: null,
+      nextCursor: null,
+      hasMore: false,
+    });
+
+    const targeted = (
+      await app.inject({
+        method: "GET",
+        url: "/api/sessions?session_id=sess-b&session_id=sess-c",
+      })
+    ).json();
+    expect(
+      targeted.sessions.map(
+        (session: Record<string, unknown>) => session.agent_session_id,
+      ),
+    ).toEqual(["sess-c", "sess-b"]);
+    expect(targeted).toMatchObject({
+      total: 2,
       cursor: null,
       nextCursor: null,
       hasMore: false,

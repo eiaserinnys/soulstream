@@ -355,6 +355,7 @@ export function createLiveOrchestratorProviderBundle(
             const access = await sessionResourceAccessProvider.resolveAccess({ request });
             return options.dependencies.dbCatalogRepository.listSessionSnapshots({
               access,
+              sessionIds: query.session_ids,
               feedOnly: query.feed_only === true,
               folderId,
               sessionType: query.session_type,

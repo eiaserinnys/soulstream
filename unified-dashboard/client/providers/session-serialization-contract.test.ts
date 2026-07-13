@@ -46,4 +46,34 @@ describe("OrchestratorSessionProvider session serialization contract", () => {
     );
     expect(result).toMatchObject({ total: 1, hasMore: false });
   });
+
+  it("loads 250 referenced sessions in URL-safe batches without dropping any", async () => {
+    const fixture = loadCase();
+    const sessionIds = Array.from({ length: 250 }, (_, index) =>
+      `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`
+    );
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input), "https://example.test");
+      const requested = url.searchParams.getAll("session_id");
+      return {
+        ok: true,
+        json: async () => ({
+          sessions: requested.map((sessionId) => ({
+            ...fixture.expectedOrchResponse,
+            agentSessionId: sessionId,
+            agent_session_id: sessionId,
+          })),
+          total: requested.length,
+        }),
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await new OrchestratorSessionProvider().fetchSessions({ sessionIds });
+
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
+    expect(fetchMock.mock.calls.every(([url]) => String(url).length <= 6_000)).toBe(true);
+    expect(result.sessions.map((session) => session.agentSessionId)).toEqual(sessionIds);
+    expect(result).toMatchObject({ total: 250, hasMore: false });
+  });
 });

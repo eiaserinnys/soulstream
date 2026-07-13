@@ -4,6 +4,7 @@ import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import { serializeSessionRow } from "../runtime/live_session_serialization.js";
 
 export type SessionSnapshotQuery = {
+  session_ids?: string[];
   folderId?: string;
   folder_id?: string;
   session_type?: string;
@@ -136,6 +137,12 @@ function matchesQuery(
   session: SessionSnapshotRecord,
   query: SessionSnapshotQuery,
 ): boolean {
+  if (
+    query.session_ids !== undefined &&
+    !query.session_ids.includes(session.agentSessionId)
+  ) {
+    return false;
+  }
   const folderId = query.folder_id ?? query.folderId;
   if (
     folderId !== undefined &&
