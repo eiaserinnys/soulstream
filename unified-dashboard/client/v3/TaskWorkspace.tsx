@@ -15,6 +15,7 @@ import {
 } from "./task-workspace-model";
 import { TaskDetailPane } from "./TaskDetailPane";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
+import type { MobilePlannerTab } from "./mobile-planner-state";
 
 export function TaskWorkspace({
   task,
@@ -25,6 +26,8 @@ export function TaskWorkspace({
   chatInputDisabled,
   fileUploadUrl,
   sessionDefaults,
+  mobileMode,
+  mobileTab,
   onReturnToPlanner,
   onCloseChat,
   onOpenBoard,
@@ -41,6 +44,8 @@ export function TaskWorkspace({
   chatInputDisabled: boolean;
   fileUploadUrl: string | undefined;
   sessionDefaults: PageSessionDefaults | null;
+  mobileMode: boolean;
+  mobileTab: MobilePlannerTab;
   onReturnToPlanner(): void;
   onCloseChat(): void;
   onOpenBoard(): void;
@@ -85,7 +90,8 @@ export function TaskWorkspace({
       <div
         ref={workspaceRef}
         className={`v3-workspace${chatOpen ? " is-chat-open" : ""}`}
-        style={chatOpen ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 4px)) 8px minmax(0, 1fr)` } : undefined}
+        data-mobile-view={mobileMode ? mobileTab : undefined}
+        style={chatOpen && !mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 4px)) 8px minmax(0, 1fr)` } : undefined}
       >
         <TaskDetailPane
           task={task}
@@ -122,13 +128,22 @@ export function TaskWorkspace({
             ><span /></div>
             <section className="v3-chat-pane" aria-label="Run 채팅">
               <header className="v3-chat-header">
-                <div><small>{projectTitle} › {task.page.title}</small><strong>{runLabel(task, activeSession, sessions)}</strong></div>
-                <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession?.status === "running" ? "실행 중" : "완료"}</span>
+                <div><small>{projectTitle} › {task.page.title}</small><strong>{activeSession ? runLabel(task, activeSession, sessions) : "선택된 run 없음"}</strong></div>
+                <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}</span>
                 <button type="button" aria-label="채팅 닫기" onClick={onCloseChat}>×</button>
               </header>
-              <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} />
+              {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
               <div className="v3-chat-content">
-                <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} />
+                {activeSession ? (
+                  <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} />
+                ) : (
+                  <div className="v3-chat-empty" data-testid="v3-chat-empty">
+                    <span aria-hidden="true">💬</span>
+                    <strong>이 업무에는 아직 run이 없습니다.</strong>
+                    <p>업무 탭에서 새 세션을 시작하면 채팅이 열립니다.</p>
+                    <button type="button" className="v3-button v3-button--soft" onClick={onCloseChat}>업무 탭으로</button>
+                  </div>
+                )}
               </div>
             </section>
           </>

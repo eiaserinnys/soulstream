@@ -350,6 +350,31 @@
   }
 }
 
+@media (max-width: 760px) {
+  .v3-new-task,
+  .v3-new-document {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .v3-task-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .v3-task-side {
+    width: 100%;
+    min-width: 0;
+    align-items: stretch;
+  }
+
+  .v3-progress {
+    width: 100%;
+  }
+
+  .v3-document-list button {
+    min-width: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .v3-shell *,
   .v3-shell *::before,

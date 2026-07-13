@@ -191,7 +191,7 @@
   font-size: 22px;
 }
 
-@media (max-width: 620px) {
+@media (max-width: 760px) {
   .v3-ritual-overlay {
     align-items: end;
     padding: 0;
