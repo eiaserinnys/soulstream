@@ -26,6 +26,7 @@ export interface ContiguousBlockSelectionSnapshot {
 export interface ContiguousBlockSelection {
   getSnapshot(): ContiguousBlockSelectionSnapshot;
   select(blockId: string): void;
+  selectAll(): void;
   extend(blockId: string): void;
   extendBy(delta: -1 | 1): void;
   replaceBlockOrder(blockIds: readonly string[]): void;
@@ -48,6 +49,10 @@ export function createContiguousBlockSelection(
       requireId(blockId);
       anchorId = blockId;
       focusId = blockId;
+    },
+    selectAll() {
+      anchorId = blockIds[0] ?? null;
+      focusId = blockIds.at(-1) ?? null;
     },
     extend(blockId) {
       requireId(blockId);

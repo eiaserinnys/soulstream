@@ -11,7 +11,13 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type * as Y from "yjs";
 
-import { PageApiError, type PageApiClient, type PageDocumentBlock } from "../page";
+import {
+  PageApiError,
+  type PageApiClient,
+  type PageDocumentBlock,
+  type TransferPageBlocksInput,
+  type TransferPageBlocksResponse,
+} from "../page";
 import {
   executePageEditorOperation,
   executePageEditorPlan,
@@ -31,6 +37,7 @@ export interface PageEditorController {
   run(operation: EditorOperation, options?: { restoreFocus?: boolean }): Promise<void>;
   createFirstBlock(): Promise<void>;
   convertToSessionReference(blockId: string, sessionId: string): Promise<void>;
+  transferBlocks(input: TransferPageBlocksInput): Promise<TransferPageBlocksResponse | null>;
   noteLocalInput(): void;
   queueFocus(focus: ResolvedEditorFocus | null): void;
   clearFocus(focus: ResolvedEditorFocus): void;
@@ -248,6 +255,50 @@ export function usePageEditorController({
     }).catch(() => undefined);
   }, [commandQueue]);
 
+  const transferBlocks = useCallback(async (
+    input: TransferPageBlocksInput,
+  ): Promise<TransferPageBlocksResponse | null> => {
+    if (
+      blocked.current ||
+      awaitingVersion.current !== null ||
+      pendingCommandCount.current > 0
+    ) {
+      setFeedback("Wait for the current page sync before moving another selection.");
+      return null;
+    }
+    pendingHandle.setPending(true);
+    setState({ status: "pending", message: "Moving selected blocks…" });
+    try {
+      const result = await retryTransientStructureSave(() => apiClient.transferBlocks(input));
+      const current = result.source.page.id === pageId ? result.source : result.target;
+      if (current.page.version > latest.current.mutationVersion) {
+        awaitingVersion.current = current.page.version;
+        deferredFocus.current = null;
+        setState({ status: "pending", message: "Waiting for page sync…" });
+      } else {
+        pendingHandle.setPending(false);
+        setState({ status: "idle" });
+      }
+      return result;
+    } catch (error) {
+      if (error instanceof PageApiError && error.kind === "conflict") {
+        blocked.current = true;
+        setState({
+          status: "conflict",
+          message: "A source or target page changed. Reload both pages before repeating the move.",
+        });
+      } else {
+        const detail = error instanceof Error && error.message
+          ? error.message
+          : "The selected blocks were not moved.";
+        setFeedback(`The page move failed atomically: ${detail}`);
+        setState({ status: "idle" });
+      }
+      pendingHandle.setPending(false);
+      return null;
+    }
+  }, [apiClient, pageId, pendingHandle]);
+
   return {
     state,
     pendingFocus,
@@ -255,6 +306,7 @@ export function usePageEditorController({
     run,
     createFirstBlock,
     convertToSessionReference,
+    transferBlocks,
     noteLocalInput() {
       localInputRevision.current += 1;
       deferredFocus.current = null;

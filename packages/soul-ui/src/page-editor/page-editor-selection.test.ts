@@ -46,4 +46,16 @@ describe("page editor contiguous selection", () => {
       blockIds: ["a", "b"],
     });
   });
+
+  it("selects every visible block from the first through the last boundary", () => {
+    const selection = createContiguousBlockSelection(ids);
+
+    selection.selectAll();
+
+    expect(selection.getSnapshot()).toEqual({
+      anchorId: "a",
+      focusId: "d",
+      blockIds: ["a", "b", "c", "d"],
+    });
+  });
 });

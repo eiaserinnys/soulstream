@@ -14,11 +14,6 @@ describe("Phase 3 binding warning browser projection PostgreSQL integration", ()
     await harness.sql.unsafe(`
       ALTER TABLE sessions ADD COLUMN status TEXT DEFAULT 'running';
       ALTER TABLE sessions ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
-      CREATE TABLE session_page_bindings (
-        session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
-        page_state TEXT NOT NULL,
-        legacy_state TEXT NOT NULL
-      );
       CREATE OR REPLACE FUNCTION session_count(p_filters JSONB DEFAULT NULL)
       RETURNS BIGINT LANGUAGE sql STABLE AS $$ SELECT COUNT(*) FROM sessions $$;
       CREATE OR REPLACE FUNCTION session_get_all(
@@ -40,8 +35,12 @@ describe("Phase 3 binding warning browser projection PostgreSQL integration", ()
       INSERT INTO sessions (session_id, status) VALUES ('sess-browser-recovery', 'completed')
     `;
     await harness.sql`
-      INSERT INTO session_page_bindings (session_id, page_state, legacy_state)
-      VALUES ('sess-browser-recovery', 'manual_repair', 'pending')
+      INSERT INTO session_page_bindings (
+        session_id, node_id, daily_date, session_type, page_state, legacy_state
+      ) VALUES (
+        'sess-browser-recovery', 'test-node', '2026-07-13', 'agent',
+        'manual_repair', 'pending'
+      )
     `;
     const repository = createLiveDbCatalogRepository({ sql: harness.liveSql });
 

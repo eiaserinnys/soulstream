@@ -8,9 +8,11 @@ import {
   BLOCKS_MAP,
   PAGE_META_MAP,
   createPageYDocSnapshot,
+  createPageYText,
   readPageYDocReplica,
   type PageYjsBlockInput,
   type PageYjsReplica,
+  type PageYjsTextDelta,
 } from "./page_yjs_model.js";
 import {
   PageMutationValidationError,
@@ -31,6 +33,7 @@ import {
 
 export { PageMutationValidationError } from "./page_mutation_validation.js";
 export {
+  PageMutationIdempotencyConflictError,
   PageMutationStateVectorConflictError,
   PageMutationVersionConflictError,
 } from "./page_mutation_helpers.js";
@@ -42,7 +45,7 @@ export interface PageMutationActor {
 }
 
 export type PageBatchOperation =
-  | ({ op: "create_block"; tempId: string } & PageBlockPlacement & PageBlockContent)
+  | ({ op: "create_block"; tempId: string; id?: string } & PageBlockPlacement & PageBlockContent)
   | { op: "update_block_text"; blockId: string; text: string }
   | {
       op: "update_block_type_and_properties";
@@ -85,6 +88,7 @@ interface PageBlockPlacement {
 interface PageBlockContent {
   blockType: string;
   text: string;
+  textDelta?: readonly PageYjsTextDelta[];
   properties: Record<string, unknown>;
   collapsed?: boolean;
 }
@@ -271,7 +275,7 @@ export class PageMutationCore {
 
     for (const operation of operations) {
       if (operation.op === "create_block") {
-        const id = this.createId();
+        const id = operation.id ?? this.createId();
         const parentId = resolvePlacement(operation.parentId, operation.parentTempId, resolve);
         const afterId = resolvePlacement(operation.afterBlockId, operation.afterTempId, resolve);
         createBlock(doc, id, operation, parentId, afterId);
@@ -349,9 +353,7 @@ function createBlock(
   block.set("parentId", parentId);
   block.set("positionKey", positionAfter(doc, parentId, afterBlockId));
   block.set("type", content.blockType);
-  const text = new Y.Text();
-  if (content.text) text.insert(0, content.text);
-  block.set("text", text);
+  block.set("text", createPageYText({ id, text: content.text, textDelta: content.textDelta }));
   block.set("properties", yMapFromRecord(content.properties));
   block.set("collapsed", content.collapsed ?? false);
   blocks.set(id, block);

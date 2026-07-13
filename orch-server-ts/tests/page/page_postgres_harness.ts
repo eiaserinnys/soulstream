@@ -151,6 +151,32 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       UNIQUE (page_id, id),
       FOREIGN KEY (page_id, parent_id) REFERENCES blocks(page_id, id) ON DELETE CASCADE
     );
+    CREATE UNIQUE INDEX uq_blocks_primary_session_ref
+      ON blocks ((properties ->> 'sessionId'))
+      WHERE block_type = 'session_ref'
+        AND properties ->> 'primary' = 'true';
+    CREATE TABLE session_page_bindings (
+      session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+      node_id TEXT NOT NULL,
+      target_page_id TEXT,
+      target_block_id TEXT,
+      target_expected_version INTEGER,
+      daily_date DATE NOT NULL,
+      session_type TEXT NOT NULL,
+      page_state TEXT NOT NULL DEFAULT 'pending'
+        CHECK (page_state IN ('pending','bound','manual_repair')),
+      legacy_state TEXT NOT NULL DEFAULT 'pending'
+        CHECK (legacy_state IN ('pending','completed','manual_repair')),
+      attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+      next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CHECK (
+        (target_page_id IS NULL AND target_block_id IS NULL AND target_expected_version IS NULL)
+        OR (target_page_id IS NOT NULL AND target_block_id IS NOT NULL
+          AND target_expected_version IS NOT NULL AND target_expected_version > 0)
+      )
+    );
     CREATE TABLE block_operations (
       id TEXT PRIMARY KEY,
       page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,

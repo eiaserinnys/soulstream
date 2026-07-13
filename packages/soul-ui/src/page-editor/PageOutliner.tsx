@@ -6,22 +6,15 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import type * as Y from "yjs";
 
-import type {
-  PageApiClient,
-  PageDocumentBlock,
-  PageLens,
-  SessionSummaryIndex,
-} from "../page";
+import type { PageApiClient, PageDocumentBlock, PageLens, SessionSummaryIndex } from "../page";
 import type { SessionSummary } from "../shared/types";
 import { PageBlockRow } from "./PageBlockRow";
+import { PageSelectionActions } from "./PageSelectionActions";
 import type { PageBlockEditorKeyInput } from "./PageBlockEditor";
 import { PageEditorFeedback, PageEditorMutationStatus } from "./PageEditorNotices";
-import { readPageEditorClipboard, writeBlockSelectionClipboard } from "./page-editor-clipboard";
+import { createPageEditorClipboardHandlers } from "./page-editor-clipboard-handlers";
 import { createContiguousBlockSelection } from "./page-editor-selection";
-import {
-  PAGE_EDITOR_LAYOUT_SPACING,
-  pageEditorSelectionSegment,
-} from "./page-editor-visual-tokens";
+import { PAGE_EDITOR_LAYOUT_SPACING, pageEditorSelectionSegment } from "./page-editor-visual-tokens";
 import {
   crossesVerticalBlockEdge,
   cssEscape,
@@ -29,10 +22,11 @@ import {
   outlineDepths,
   structuralOperation,
   toCoreFocus,
-  uniqueTempId,
   visibleOutlineBlocks,
 } from "./page-outliner-operations";
-import { toEditorSnapshots, usePageEditorController } from "./usePageEditorController";
+import { usePageEditorController } from "./usePageEditorController";
+import { usePageSelectionDrag } from "./usePageSelectionDrag";
+import { usePageBlockTransfers } from "./usePageBlockTransfers";
 
 const ROW_HEIGHT = PAGE_EDITOR_LAYOUT_SPACING.rowMinHeightPx;
 const EMPTY_SESSION_INDEX: SessionSummaryIndex = new Map();
@@ -83,6 +77,16 @@ export function PageOutliner({
   const selected = new Set(selectionMode ? selectionSnapshot.blockIds : []);
   const depths = useMemo(() => outlineDepths(renderedBlocks), [renderedBlocks]);
   const editor = usePageEditorController({ apiClient, pageId, doc, blocks, mutationVersion, onResync });
+  const transfers = usePageBlockTransfers({
+    apiClient,
+    pageId,
+    doc,
+    mutationVersion,
+    blocks,
+    transfer: editor.transferBlocks,
+    reportFailure: editor.reportFailure,
+    onOpenPage,
+  });
   const virtualizer = useVirtualizer({
     count: renderedBlocks.length,
     getScrollElement: () => scrollRef.current,
@@ -169,6 +173,40 @@ export function PageOutliner({
     element.focus();
   };
 
+  const selectionDrag = usePageSelectionDrag({
+    onStart(blockId) {
+      selection.select(blockId);
+      setArmedAtomicDeleteId(null);
+      setSelectionMode(true);
+      setSelectionFocusId(blockId);
+      renderSelection();
+    },
+    onEnter(blockId) {
+      selection.extend(blockId);
+      setArmedAtomicDeleteId(null);
+      setSelectionFocusId(blockId);
+      renderSelection();
+    },
+  });
+  const clearBlockSelection = () => {
+    selection.clear();
+    setSelectionMode(false);
+    setSelectionFocusId(null);
+    renderSelection();
+  };
+  const clipboard = createPageEditorClipboardHandlers({
+    pageId,
+    doc,
+    blocks,
+    mutationVersion,
+    selectionMode,
+    selection,
+    run: editor.run,
+    reportFailure: editor.reportFailure,
+    pasteCut: transfers.pasteCut,
+    clearSelection: clearBlockSelection,
+  });
+
   const queueAdjacentFocus = (focus: { blockId: string; anchor: number; focus: number } | null) => {
     if (!focus) {
       editor.queueFocus(null);
@@ -197,6 +235,15 @@ export function PageOutliner({
     event: React.KeyboardEvent<HTMLDivElement>,
   ) => {
     const snapshot = selection.getSnapshot();
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
+      event.preventDefault();
+      selection.selectAll();
+      setArmedAtomicDeleteId(null);
+      setSelectionMode(true);
+      setSelectionFocusId(selection.getSnapshot().focusId);
+      renderSelection();
+      return;
+    }
     if (event.key === "Escape") {
       event.preventDefault();
       setArmedAtomicDeleteId(null);
@@ -242,9 +289,13 @@ export function PageOutliner({
     if (event.key !== "Tab" && event.key !== "Backspace" && event.key !== "Delete") return;
     event.preventDefault();
     const targets = snapshot.blockIds.includes(block.id) ? snapshot.blockIds : [block.id];
-    if ((event.key === "Backspace" || event.key === "Delete") && block.type === "session_ref" && targets.length === 1) {
-      if (armedAtomicDeleteId !== block.id) {
-        setArmedAtomicDeleteId(block.id);
+    const targetFingerprint = targets.join("\u0000");
+    const containsAtomicBlock = targets.some((targetId) => (
+      renderedBlocks.find((candidate) => candidate.id === targetId)?.type === "session_ref"
+    ));
+    if ((event.key === "Backspace" || event.key === "Delete") && containsAtomicBlock) {
+      if (armedAtomicDeleteId !== targetFingerprint) {
+        setArmedAtomicDeleteId(targetFingerprint);
         return;
       }
       setArmedAtomicDeleteId(null);
@@ -314,59 +365,24 @@ export function PageOutliner({
     void editor.run(operation);
   };
 
-  const pasteInput = (input: PageBlockEditorKeyInput, event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    if (input.isComposing) return;
-    const selectedIds = selection.getSnapshot().blockIds;
-    event.preventDefault();
-    let payload;
-    try {
-      payload = readPageEditorClipboard(event.clipboardData);
-    } catch {
-      editor.reportFailure("The clipboard data could not be read. Nothing was changed.");
-      return;
-    }
-    const operation: EditorOperation = selectedIds.length > 1
-      ? {
-          type: "pasteOverSelection",
-          blockIds: selectedIds,
-          placeholderTempId: uniqueTempId("paste-selection"),
-          payload,
-          tempIdPrefix: uniqueTempId("paste-tree"),
-        }
-      : {
-          type: "paste",
-          blockId: input.block.id,
-          selection: { anchor: input.anchor, focus: input.focus },
-          payload,
-          tempIdPrefix: uniqueTempId("paste-tree"),
-        };
-    void editor.run(operation);
-  };
-
-  const copyOrCutInput = (
-    _input: PageBlockEditorKeyInput,
-    event: React.ClipboardEvent<HTMLTextAreaElement>,
-    cut: boolean,
-  ) => {
-    const selectedIds = selection.getSnapshot().blockIds;
-    if (selectedIds.length <= 1) return;
-    event.preventDefault();
-    const wrote = writeBlockSelectionClipboard(
-      event.clipboardData,
-      toEditorSnapshots(pageId, blocks),
-      selectedIds,
-    );
-    if (!wrote) {
-      editor.reportFailure("The clipboard could not be written. The selected blocks were not changed.");
-      return;
-    }
-    if (cut) void editor.run({ type: "deleteSelection", blockIds: selectedIds });
-  };
-
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-testid="page-outliner">
       <PageEditorMutationStatus state={editor.state} onDismiss={editor.dismissError} onResync={editor.resync} />
       <PageEditorFeedback message={editor.feedback} onDismiss={editor.dismissFeedback} />
+      {selectionMode && selectionSnapshot.blockIds.length > 0 ? (
+        <PageSelectionActions
+          apiClient={apiClient}
+          currentPageId={pageId}
+          defaultTitle={transfers.defaultTitle(selectionSnapshot.blockIds)}
+          disabled={editor.state.status !== "idle"}
+          onExtractNew={(title) => {
+            void transfers.extractNew(selectionSnapshot.blockIds, title);
+          }}
+          onExtractExisting={(targetPageId) => {
+            void transfers.extractExisting(selectionSnapshot.blockIds, targetPageId);
+          }}
+        />
+      ) : null}
       {blocks.length === 0 ? (
         <div className="mx-auto mt-10 max-w-lg rounded-xl border border-glass-border bg-glass-surface/60 p-8 text-center">
           <p className="font-medium text-foreground">This page is empty.</p>
@@ -388,6 +404,12 @@ export function PageOutliner({
           aria-label="Page outline editor"
           aria-multiselectable="true"
           className="min-h-0 flex-1 overflow-auto px-4 py-5"
+          onCopy={(event) => {
+            if (!event.defaultPrevented) clipboard.copyOrCutSelection(event, false);
+          }}
+          onCut={(event) => {
+            if (!event.defaultPrevented) clipboard.copyOrCutSelection(event, true);
+          }}
         >
           <div role="none" className="relative mx-auto w-full max-w-4xl" style={{ height: `${virtualizer.getTotalSize()}px` }}>
             {virtualizer.getVirtualItems().map((item) => {
@@ -413,7 +435,11 @@ export function PageOutliner({
                     block={block}
                     depth={depths.get(block.id) ?? 0}
                     selected={selected.has(block.id)}
-                    deleteArmed={armedAtomicDeleteId === block.id}
+                    deleteArmed={block.type === "session_ref" && armedAtomicDeleteId === (
+                      selectionSnapshot.blockIds.includes(block.id)
+                        ? selectionSnapshot.blockIds.join("\u0000")
+                        : block.id
+                    )}
                     selectionSegment={pageEditorSelectionSegment(
                       block.id,
                       renderedBlocks[item.index - 1]?.id,
@@ -421,11 +447,13 @@ export function PageOutliner({
                       selected,
                     )}
                     onKeyInput={keyInput}
-                    onPasteInput={pasteInput}
-                    onCopyInput={(input, event) => copyOrCutInput(input, event, false)}
-                    onCutInput={(input, event) => copyOrCutInput(input, event, true)}
+                    onPasteInput={clipboard.pasteInput}
+                    onCopyInput={clipboard.copyInput}
+                    onCutInput={clipboard.cutInput}
                     onSelectBlock={selectBlock}
                     onSelectAtomicBlock={selectAtomicBlock}
+                    onSelectionDragStart={selectionDrag.start}
+                    onSelectionDragEnter={selectionDrag.enter}
                     onLocalInput={editor.noteLocalInput}
                     onBlockKeyInput={blockKeyInput}
                     onEditorHeightChange={remeasureEditorRow}

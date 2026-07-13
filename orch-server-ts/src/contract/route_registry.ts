@@ -177,6 +177,13 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   },
   {
     methods: ["POST"],
+    path: "/api/pages/block-transfers",
+    name: "transfer_page_blocks",
+    authRequired: true,
+    family: "page_yjs",
+  },
+  {
+    methods: ["POST"],
     path: "/api/sessions/{session_id}/review/acknowledge",
     name: "acknowledge_session_review",
     authRequired: true,

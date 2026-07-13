@@ -21,6 +21,7 @@ import {
   PageListCursorError,
 } from "./page_repository_reads.js";
 import type { PageYjsService } from "./page_service.js";
+import { registerPageBlockTransferRoute } from "./page_block_transfer_route.js";
 
 export const pageBrowserRouteAuthRequirements = {
   "GET /api/pages": true,
@@ -30,6 +31,7 @@ export const pageBrowserRouteAuthRequirements = {
   "GET /api/blocks/search": true,
   "GET /api/blocks/{blockId}": true,
   "POST /api/pages/daily": true,
+  "POST /api/pages/block-transfers": true,
   "POST /api/pages/{pageId}/operations": true,
   "PATCH /api/pages/{pageId}/starred": true,
 } as const;
@@ -46,6 +48,7 @@ export interface PageBrowserRouteOptions {
     | "getBrowserPage"
     | "getDailyPage"
     | "mutatePage"
+    | "transferBlocks"
   >;
   reads: PageBrowserReads;
   resolveUser: (request: FastifyRequest) => Promise<PageBrowserUser | null>;
@@ -129,6 +132,7 @@ export function registerPageBrowserRoutes(
   app: FastifyInstance,
   options: PageBrowserRouteOptions,
 ): void {
+  registerPageBlockTransferRoute(app, options);
   app.get("/api/pages", async (request, reply) => {
     const userId = await resolveUserId(request, options);
     if (!userId) return unauthorized(reply);

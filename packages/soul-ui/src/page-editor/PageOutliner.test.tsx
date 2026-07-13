@@ -20,6 +20,7 @@ import {
   type PageMutationResponse,
 } from "../page";
 import { PageOutliner } from "./PageOutliner";
+import { hasPendingPageEditorMutations } from "./page-editor-pending-registry";
 
 describe("PageOutliner", () => {
   let root: Root | null = null;
@@ -230,6 +231,149 @@ describe("PageOutliner", () => {
     expect(first.style.minHeight).toBe("40px");
     expect(first.style.paddingTop).toBe("4px");
     expect(first.style.paddingBottom).toBe("4px");
+  });
+
+  it("extends a mixed text and session card range with Shift+click in both directions", async () => {
+    const doc = createPageDoc(3);
+    const card = doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!;
+    card.set("type", "session_ref");
+    (card.get("properties") as Y.Map<unknown>).set("sessionId", "session-a");
+    await render(doc, createApi());
+
+    flushSync(() => editor("block-0").dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+    const cardRow = container!.querySelector<HTMLElement>("[data-block-id='block-1']")!;
+    flushSync(() => cardRow.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true })));
+    expect(selectedRowIds()).toEqual(["block-0", "block-1"]);
+
+    flushSync(() => cardRow.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    flushSync(() => editor("block-0").dispatchEvent(new MouseEvent("mousedown", {
+      bubbles: true,
+      cancelable: true,
+      shiftKey: true,
+    })));
+    expect(selectedRowIds()).toEqual(["block-0", "block-1"]);
+  });
+
+  it("extends a mixed range by dragging the selection handles", async () => {
+    const doc = createPageDoc(3);
+    const card = doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!;
+    card.set("type", "session_ref");
+    (card.get("properties") as Y.Map<unknown>).set("sessionId", "session-a");
+    await render(doc, createApi());
+
+    const firstHandle = container!.querySelector<HTMLElement>("[data-page-selection-handle='block-0']")!;
+    const lastHandle = container!.querySelector<HTMLElement>("[data-page-selection-handle='block-2']")!;
+    expect(firstHandle).not.toBeNull();
+    expect(lastHandle).not.toBeNull();
+    flushSync(() => firstHandle.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0 })));
+    const projectedLastRow = container!.querySelector<HTMLElement>("[data-block-id='block-2']")!;
+    flushSync(() => projectedLastRow.dispatchEvent(new MouseEvent("mousemove", { bubbles: true })));
+    flushSync(() => document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true })));
+
+    expect(selectedRowIds()).toEqual(["block-0", "block-1", "block-2"]);
+  });
+
+  it("copies a mixed selection while the atomic card owns focus", async () => {
+    const doc = createPageDoc(2);
+    const card = doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!;
+    card.set("type", "session_ref");
+    (card.get("properties") as Y.Map<unknown>).set("sessionId", "session-a");
+    await render(doc, createApi());
+    flushSync(() => editor("block-0").dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+    const cardRow = container!.querySelector<HTMLElement>("[data-block-id='block-1']")!;
+    flushSync(() => cardRow.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true })));
+    const clipboard = clipboardTransfer();
+
+    const event = dispatchClipboard(cardRow, "copy", clipboard.transfer);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(clipboard.data.get("text/plain")).toBe("Block 0\nBlock 1");
+    expect(decodeStructuredClipboard(clipboard.data.get(PAGE_BLOCK_CLIPBOARD_MIME)!).blocks[1])
+      .toMatchObject({ type: "session_ref", properties: { sessionId: "session-a" } });
+  });
+
+  it("pastes a copied canonical session card as a non-primary reference", async () => {
+    const doc = createPageDoc(3);
+    const card = doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!;
+    card.set("type", "session_ref");
+    const properties = card.get("properties") as Y.Map<unknown>;
+    properties.set("sessionId", "session-primary");
+    properties.set("primary", true);
+    const api = createApi();
+    await render(doc, api);
+    const first = editor("block-0");
+    first.focus();
+    dispatchKey(first, "ArrowDown", first.value.length, { shiftKey: true });
+    const clipboard = clipboardTransfer();
+    dispatchClipboard(first, "copy", clipboard.transfer);
+
+    dispatchPasteData(editor("block-2"), Object.fromEntries(clipboard.data));
+    await settle();
+
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: expect.arrayContaining([expect.objectContaining({
+        op: "create_block",
+        block_type: "session_ref",
+        properties: { sessionId: "session-primary", primary: false },
+      })]),
+    }));
+    expect(api.transferBlocks).not.toHaveBeenCalled();
+  });
+
+  it("copies a single explicitly selected session card without hijacking native text copy", async () => {
+    const doc = createPageDoc(1);
+    const card = doc.getMap<Y.Map<unknown>>("blocks").get("block-0")!;
+    card.set("type", "session_ref");
+    const properties = card.get("properties") as Y.Map<unknown>;
+    properties.set("sessionId", "session-a");
+    properties.set("primary", false);
+    await render(doc, createApi());
+    const cardRow = container!.querySelector<HTMLElement>("[data-block-id='block-0']")!;
+    flushSync(() => cardRow.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const clipboard = clipboardTransfer();
+
+    const event = dispatchClipboard(cardRow, "copy", clipboard.transfer);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(decodeStructuredClipboard(clipboard.data.get(PAGE_BLOCK_CLIPBOARD_MIME)!).blocks)
+      .toEqual([expect.objectContaining({ type: "session_ref", properties: { sessionId: "session-a", primary: false } })]);
+  });
+
+  it("requires two-step confirmation before deleting a mixed selection containing a session card", async () => {
+    const doc = createPageDoc(3);
+    const card = doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!;
+    card.set("type", "session_ref");
+    (card.get("properties") as Y.Map<unknown>).set("sessionId", "session-a");
+    const api = createApi();
+    await render(doc, api);
+    flushSync(() => editor("block-0").dispatchEvent(new MouseEvent("mousedown", { bubbles: true })));
+    const cardRow = container!.querySelector<HTMLElement>("[data-block-id='block-1']")!;
+    flushSync(() => cardRow.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true })));
+
+    dispatchRowKey(cardRow, "Delete");
+    expect(api.applyOperations).not.toHaveBeenCalled();
+    expect(cardRow.dataset.deleteConfirmation).toBe("armed");
+    dispatchRowKey(cardRow, "Delete");
+    await settle();
+
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: [
+        { op: "delete_block_subtree", block_id: "block-0" },
+        { op: "delete_block_subtree", block_id: "block-1" },
+      ],
+    }));
+  });
+
+  it("selects the whole visible page from block selection mode", async () => {
+    await render(createPageDoc(4), createApi());
+    const first = editor("block-0");
+    first.focus();
+    dispatchKey(first, "Escape", 0);
+    const firstRow = container!.querySelector<HTMLElement>("[data-block-id='block-0']")!;
+
+    dispatchRowKey(firstRow, "a", { metaKey: true });
+
+    expect(selectedRowIds()).toEqual(["block-0", "block-1", "block-2", "block-3"]);
   });
 
   it("requires a visual confirmation before Backspace removes an atomic session_ref", async () => {
@@ -867,7 +1011,7 @@ describe("PageOutliner", () => {
     expect(clipboard.data.size).toBe(0);
   });
 
-  it("cuts only after both clipboard formats are written", async () => {
+  it("records a deferred atomic cut only after both clipboard formats are written", async () => {
     const api = createApi();
     await render(createPageDoc(3), api);
     const first = editor("block-0");
@@ -877,18 +1021,19 @@ describe("PageOutliner", () => {
     const clipboard = clipboardTransfer();
 
     dispatchClipboard(first, "cut", clipboard.transfer);
-    await settle();
-
     expect([...clipboard.data.keys()]).toEqual([PAGE_BLOCK_CLIPBOARD_MIME, "text/plain"]);
-    expect(api.applyOperations).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(api.applyOperations).mock.calls[0]?.[1].operations).toEqual([
-      { op: "delete_block_subtree", block_id: "block-0" },
-      { op: "delete_block_subtree", block_id: "block-1" },
-      { op: "delete_block_subtree", block_id: "block-2" },
-    ]);
+    expect(decodeStructuredClipboard(clipboard.data.get(PAGE_BLOCK_CLIPBOARD_MIME)!)).toMatchObject({
+      cut: {
+        sourcePageId: "page-1",
+        blockIds: ["block-0", "block-1", "block-2"],
+        expectedVersion: 3,
+      },
+    });
+    expect(api.applyOperations).not.toHaveBeenCalled();
+    expect(api.transferBlocks).not.toHaveBeenCalled();
   });
 
-  it("cuts a parent-child-sibling range once per structural root", async () => {
+  it("keeps a parent-child-sibling cut intact until its destination commits", async () => {
     const doc = createPageDoc(3);
     doc.getMap<Y.Map<unknown>>("blocks").get("block-1")!.set("parentId", "block-0");
     const api = createApi();
@@ -899,12 +1044,226 @@ describe("PageOutliner", () => {
     dispatchKey(first, "ArrowDown", 7, { shiftKey: true });
 
     dispatchClipboard(first, "cut", clipboardTransfer().transfer);
+    expect(api.applyOperations).not.toHaveBeenCalled();
+    expect(readPageDocument(doc, "page-1").blocks.map((block) => block.id))
+      .toEqual(["block-0", "block-1", "block-2"]);
+  });
+
+  it("commits a same-page cut and paste through one atomic transfer request", async () => {
+    const api = createApi({
+      transferBlocks: vi.fn(async () => transferResponse("page-1", "page-1")),
+    });
+    await render(createPageDoc(3), api);
+    const first = editor("block-0");
+    first.focus();
+    dispatchKey(first, "ArrowDown", first.value.length, { shiftKey: true });
+    const clipboard = clipboardTransfer();
+    dispatchClipboard(first, "cut", clipboard.transfer);
+
+    const destination = editor("block-2");
+    dispatchPasteData(destination, Object.fromEntries(clipboard.data));
     await settle();
 
-    expect(vi.mocked(api.applyOperations).mock.calls[0]?.[1].operations).toEqual([
-      { op: "delete_block_subtree", block_id: "block-0" },
-      { op: "delete_block_subtree", block_id: "block-2" },
-    ]);
+    expect(api.transferBlocks).toHaveBeenCalledWith(expect.objectContaining({
+      source: expect.objectContaining({ pageId: "page-1", blockIds: ["block-0", "block-1"] }),
+      target: expect.objectContaining({
+        kind: "existing",
+        pageId: "page-1",
+        afterBlockId: "block-2",
+      }),
+      reason: "page-editor-cut-paste",
+    }));
+    expect(api.applyOperations).not.toHaveBeenCalled();
+  });
+
+  it("keeps the page mutation registry pending until an atomic transfer is projected", async () => {
+    const doc = createPageDoc(3);
+    let resolveTransfer!: (value: ReturnType<typeof transferResponse>) => void;
+    const api = createApi({
+      transferBlocks: vi.fn(() => new Promise<ReturnType<typeof transferResponse>>((resolve) => {
+        resolveTransfer = resolve;
+      })),
+    });
+    await render(doc, api);
+    const first = editor("block-0");
+    first.focus();
+    dispatchKey(first, "ArrowDown", first.value.length, { shiftKey: true });
+    const clipboard = clipboardTransfer();
+    dispatchClipboard(first, "cut", clipboard.transfer);
+
+    dispatchPasteData(editor("block-2"), Object.fromEntries(clipboard.data));
+    await Promise.resolve();
+    expect(hasPendingPageEditorMutations()).toBe(true);
+
+    const response = transferResponse("page-1", "page-1");
+    response.source.page.version = 4;
+    response.target.page.version = 4;
+    resolveTransfer(response);
+    await settle();
+    expect(hasPendingPageEditorMutations()).toBe(true);
+
+    doc.getMap("pageMeta").set("mutationVersion", 4);
+    await rerender(doc, api);
+    expect(hasPendingPageEditorMutations()).toBe(false);
+  });
+
+  it("pastes a cut from another page through the cross-page atomic transfer", async () => {
+    const api = createApi({
+      transferBlocks: vi.fn(async () => transferResponse("source-page", "page-1")),
+    });
+    await render(createPageDoc(2), api);
+    const payload: StructuredClipboardPayload = {
+      schema: "soulstream-page-blocks",
+      version: 1,
+      blocks: [{ text: "Moved", type: "paragraph", properties: {}, collapsed: false, children: [] }],
+      cut: {
+        sourcePageId: "source-page",
+        blockIds: ["source-block"],
+        expectedVersion: 5,
+        expectedStateVector: "AA==",
+        idempotencyKey: "page-cut:source-page:request",
+      },
+    };
+
+    dispatchPasteData(editor("block-1"), {
+      [PAGE_BLOCK_CLIPBOARD_MIME]: encodeStructuredClipboard(payload),
+      "text/plain": "Moved",
+    });
+    await settle();
+
+    expect(api.transferBlocks).toHaveBeenCalledWith(expect.objectContaining({
+      source: expect.objectContaining({
+        pageId: "source-page",
+        blockIds: ["source-block"],
+        expectedVersion: 5,
+      }),
+      target: expect.objectContaining({
+        kind: "existing",
+        pageId: "page-1",
+        afterBlockId: "block-1",
+      }),
+      idempotencyKey: "page-cut:source-page:request",
+    }));
+    expect(api.applyOperations).not.toHaveBeenCalled();
+  });
+
+  it("falls back to text/plain when the custom cut MIME is malformed", async () => {
+    const api = createApi();
+    await render(createPageDoc(1), api);
+    const payload: StructuredClipboardPayload = {
+      schema: "soulstream-page-blocks",
+      version: 1,
+      blocks: [{ text: "Moved", children: [] }],
+      cut: {
+        sourcePageId: "source-page",
+        blockIds: ["source-block"],
+        expectedVersion: 5,
+        expectedStateVector: "not base64!",
+        idempotencyKey: "page-cut:source-page:bad",
+      },
+    };
+
+    dispatchPasteData(editor("block-0"), {
+      [PAGE_BLOCK_CLIPBOARD_MIME]: encodeStructuredClipboard(payload),
+      "text/plain": "Moved",
+      "text/html": "<ul><li>HTML must not win</li></ul>",
+    });
+    await settle();
+
+    expect(api.transferBlocks).not.toHaveBeenCalled();
+    expect(api.applyOperations).toHaveBeenCalledWith("page-1", expect.objectContaining({
+      operations: [expect.objectContaining({ op: "update_block_text", text: "MovedBlock 0" })],
+    }));
+    expect(container!.querySelector('[data-editor-feedback="error"]')).toBeNull();
+  });
+
+  it("extracts a selection to a new page and leaves an exact mount request", async () => {
+    const onOpenPage = vi.fn();
+    const api = createApi({
+      transferBlocks: vi.fn(async (input) => {
+        const targetId = input.target.pageId;
+        return transferResponse("page-1", targetId, true);
+      }),
+    });
+    await render(createPageDoc(2), api, vi.fn(), { onOpenPage });
+    const first = editor("block-0");
+    first.focus();
+    dispatchKey(first, "ArrowDown", first.value.length, { shiftKey: true });
+    flushSync(() => container!.querySelector<HTMLButtonElement>("[data-testid='page-selection-actions'] button")!.click());
+    const title = container!.querySelector<HTMLInputElement>("[aria-label='New page title']")!;
+    expect(title.value).toBe("Block 0");
+    flushSync(() => title.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    await settle();
+
+    expect(api.transferBlocks).toHaveBeenCalledWith(expect.objectContaining({
+      source: expect.objectContaining({ pageId: "page-1", blockIds: ["block-0", "block-1"] }),
+      target: expect.objectContaining({ kind: "new", title: "Block 0" }),
+      sourceMount: expect.objectContaining({ title: "Block 0" }),
+      reason: "page-editor-extract-new",
+    }));
+    expect(onOpenPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves a selection to a picked existing page and appends after its final root", async () => {
+    const onOpenPage = vi.fn();
+    const api = createApi({
+      searchPages: vi.fn(async () => ({ items: [{ pageId: "target-page", title: "Stale target title" }] })),
+      getPage: vi.fn(async () => ({
+        page: {
+          id: "target-page",
+          title: "Fresh target title",
+          daily_date: null,
+          version: 8,
+          archived: false,
+          metadata: {},
+          created_at: "",
+          updated_at: "",
+        },
+        blocks: [{
+          id: "target-root",
+          page_id: "target-page",
+          parent_id: null,
+          position_key: "a00000",
+          block_type: "paragraph",
+          text: "Existing",
+          properties: {},
+          collapsed: false,
+        }],
+        state_vector: "AA==",
+      })),
+      transferBlocks: vi.fn(async () => transferResponse("page-1", "target-page")),
+    });
+    await render(createPageDoc(2), api, vi.fn(), { onOpenPage });
+    const first = editor("block-0");
+    first.focus();
+    dispatchKey(first, "ArrowDown", first.value.length, { shiftKey: true });
+    const actions = container!.querySelector<HTMLElement>("[data-testid='page-selection-actions']")!;
+    const openPicker = [...actions.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "기존 페이지로 보내기")!;
+    flushSync(() => openPicker.click());
+    const query = container!.querySelector<HTMLInputElement>("[aria-label='Find target page']")!;
+    changeTextInput(query, "Target");
+    flushSync(() => query.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+    await settle();
+    await waitFor(() => [...actions.querySelectorAll<HTMLButtonElement>("button")]
+      .some((button) => button.textContent === "Stale target title"));
+    const target = [...actions.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Stale target title")!;
+    flushSync(() => target.click());
+    await settle();
+
+    expect(api.transferBlocks).toHaveBeenCalledWith(expect.objectContaining({
+      source: expect.objectContaining({ pageId: "page-1", blockIds: ["block-0", "block-1"] }),
+      target: expect.objectContaining({
+        kind: "existing",
+        pageId: "target-page",
+        expectedVersion: 8,
+        afterBlockId: "target-root",
+      }),
+      sourceMount: expect.objectContaining({ title: "Fresh target title" }),
+      reason: "page-editor-extract-existing",
+    }));
+    expect(onOpenPage).toHaveBeenCalledWith("target-page");
   });
 
   it("does not delete when clipboard writing fails and shows feedback", async () => {
@@ -1361,6 +1720,7 @@ function createApi(overrides: Partial<PageApiClient> = {}): PageApiClient {
     getDailyPage: vi.fn(),
     setStarred: vi.fn(),
     applyOperations: vi.fn(async (_pageId: string, input: ApplyPageOperationsInput) => operationResponse(input)),
+    transferBlocks: vi.fn(),
     ...overrides,
   } as PageApiClient;
 }
@@ -1372,6 +1732,12 @@ function changeEditor(textarea: HTMLTextAreaElement, value: string): void {
   flushSync(() => textarea.dispatchEvent(new Event("input", { bubbles: true })));
 }
 
+function changeTextInput(input: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+  setter?.call(input, value);
+  flushSync(() => input.dispatchEvent(new Event("input", { bubbles: true })));
+}
+
 function operationResponse(input: ApplyPageOperationsInput) {
   return {
     page: { id: "page-1", title: "Page", daily_date: null, version: input.expectedVersion + 1, archived: false, metadata: {}, created_at: "", updated_at: "" },
@@ -1379,6 +1745,16 @@ function operationResponse(input: ApplyPageOperationsInput) {
     operation: { id: `operation-${input.idempotencyKey}` },
     temp_id_mapping: Object.fromEntries(input.operations.flatMap((operation) => operation.op === "create_block" ? [[operation.temp_id, `created-${operation.temp_id}`]] : [])),
   };
+}
+
+function transferResponse(sourcePageId: string, targetPageId: string, targetCreated = false) {
+  const mutation = (pageId: string) => ({
+    page: { id: pageId, title: "Page", daily_date: null, version: 2, archived: false, metadata: {}, created_at: "", updated_at: "" },
+    blocks: [],
+    operation: { id: `operation-${pageId}` },
+    temp_id_mapping: {},
+  });
+  return { source: mutation(sourcePageId), target: mutation(targetPageId), target_created: targetCreated };
 }
 
 function setBlockText(doc: Y.Doc, blockId: string, value: string): void {
@@ -1407,13 +1783,15 @@ function dispatchKey(
 function dispatchRowKey(
   row: HTMLElement,
   key: string,
-  options: { shiftKey?: boolean } = {},
+  options: { shiftKey?: boolean; metaKey?: boolean; ctrlKey?: boolean } = {},
 ): KeyboardEvent {
   const event = new KeyboardEvent("keydown", {
     key,
     bubbles: true,
     cancelable: true,
     shiftKey: options.shiftKey,
+    metaKey: options.metaKey,
+    ctrlKey: options.ctrlKey,
   });
   flushSync(() => row.dispatchEvent(event));
   return event;
@@ -1457,13 +1835,13 @@ function clipboardTransfer(options: { failOn?: string } = {}) {
 }
 
 function dispatchClipboard(
-  textarea: HTMLTextAreaElement,
+  target: HTMLElement,
   type: "copy" | "cut",
   clipboardData: DataTransfer,
 ): Event {
   const event = new Event(type, { bubbles: true, cancelable: true });
   Object.defineProperty(event, "clipboardData", { value: clipboardData });
-  flushSync(() => textarea.dispatchEvent(event));
+  flushSync(() => target.dispatchEvent(event));
   return event;
 }
 

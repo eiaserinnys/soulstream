@@ -110,6 +110,34 @@ export interface SetPageStarredInput {
   reason?: string | null;
 }
 
+export interface TransferPageBlocksInput {
+  source: {
+    pageId: string;
+    expectedVersion: number;
+    expectedStateVector: Uint8Array;
+    blockIds: readonly string[];
+  };
+  target:
+    | {
+        kind: "existing";
+        pageId: string;
+        expectedVersion: number;
+        expectedStateVector: Uint8Array;
+        parentId: string | null;
+        afterBlockId: string | null;
+      }
+    | { kind: "new"; pageId: string; title: string };
+  sourceMount?: { title: string; tempId: string };
+  idempotencyKey: string;
+  reason?: string | null;
+}
+
+export interface TransferPageBlocksResponse {
+  source: PageMutationResponse;
+  target: PageMutationResponse;
+  target_created: boolean;
+}
+
 export interface PageApiClient {
   listPages(input?: { starred?: boolean; cursor?: string; limit?: number }): Promise<PageListDto>;
   searchPages(query: string, limit?: number): Promise<BrowserPageSearchDto>;
@@ -124,6 +152,7 @@ export interface PageApiClient {
   getPage(pageId: string): Promise<PageReadResponse>;
   getDailyPage(date?: string): Promise<PageDailyResponse>;
   applyOperations(pageId: string, input: ApplyPageOperationsInput): Promise<PageMutationResponse>;
+  transferBlocks(input: TransferPageBlocksInput): Promise<TransferPageBlocksResponse>;
   setStarred(pageId: string, input: SetPageStarredInput): Promise<PageMutationResponse>;
 }
 
@@ -204,6 +233,35 @@ export function createPageApiClient(options: {
           operations: input.operations,
         }),
       }),
+    transferBlocks: async (input) => await request<TransferPageBlocksResponse>(
+      "/api/pages/block-transfers",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          source: {
+            page_id: input.source.pageId,
+            expected_version: input.source.expectedVersion,
+            expected_state_vector: encodeBase64(input.source.expectedStateVector),
+            block_ids: input.source.blockIds,
+          },
+          target: input.target.kind === "new"
+            ? { kind: "new", page_id: input.target.pageId, title: input.target.title }
+            : {
+                kind: "existing",
+                page_id: input.target.pageId,
+                expected_version: input.target.expectedVersion,
+                expected_state_vector: encodeBase64(input.target.expectedStateVector),
+                parent_id: input.target.parentId,
+                after_block_id: input.target.afterBlockId,
+              },
+          ...(input.sourceMount === undefined
+            ? {}
+            : { source_mount: { title: input.sourceMount.title, temp_id: input.sourceMount.tempId } }),
+          idempotency_key: input.idempotencyKey,
+          ...(input.reason === undefined ? {} : { reason: input.reason }),
+        }),
+      },
+    ),
     setStarred: async (pageId, input) =>
       await request<PageMutationResponse>(`/api/pages/${encodeURIComponent(pageId)}/starred`, {
         method: "PATCH",

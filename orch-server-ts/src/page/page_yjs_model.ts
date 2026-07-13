@@ -75,7 +75,7 @@ export function createPageYDocSnapshot(input: {
       value.set("parentId", block.parentId);
       value.set("positionKey", block.positionKey);
       value.set("type", block.type);
-      value.set("text", createYText(block));
+      value.set("text", createPageYText(block));
       value.set("properties", createYMap(block.properties));
       value.set("collapsed", block.collapsed);
       blocks.set(block.id, value);
@@ -143,7 +143,9 @@ export function readPageYDocReplica(expectedPageId: string, doc: Y.Doc): PageYjs
   };
 }
 
-function createYText(block: PageYjsBlockInput): Y.Text {
+export function createPageYText(
+  block: Pick<PageYjsBlockInput, "id" | "text" | "textDelta">,
+): Y.Text {
   const text = new Y.Text();
   if (block.textDelta) {
     const plain = block.textDelta.map((part) => part.insert).join("");

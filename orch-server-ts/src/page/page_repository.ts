@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { isDeepStrictEqual } from "node:util";
 
 import type {
   LiveDbSqlResolver,
@@ -6,10 +7,13 @@ import type {
 } from "../runtime/live_db_sql.js";
 import {
   parsePageYjsDocumentName,
-  type PageYjsReplica,
 } from "./page_yjs_model.js";
 import type { StorePageYjsStateInput } from "./page_yjs_persistence.js";
 import type { PageMutationApplication } from "./page_mutation_core.js";
+import {
+  PageMutationIdempotencyConflictError,
+  PageMutationVersionConflictError,
+} from "./page_mutation_helpers.js";
 import { reconcilePageLinks } from "./page_link_projection.js";
 import { reconcileChecklistProjectionOutbox } from "./page_checklist_projection_outbox.js";
 import {
@@ -31,15 +35,12 @@ import type {
   PageLinkKind,
   PageListDto,
 } from "@soulstream/page-model";
-
-type PageQuerySql = {
-  <T extends readonly Record<string, unknown>[] = readonly Record<string, unknown>[]>(
-    strings: TemplateStringsArray,
-    ...values: unknown[]
-  ): Promise<T>;
-  readonly json: (value: unknown) => unknown;
-  readonly array: (values: readonly unknown[]) => unknown;
-};
+import {
+  reconcileBlockProjection,
+  storePageDocument,
+  upsertPageProjection,
+  type PageQuerySql,
+} from "./page_repository_projection.js";
 
 type PageSql = PageQuerySql & {
   readonly begin: <T>(callback: (sql: PageQuerySql) => Promise<T>) => Promise<T>;
@@ -80,6 +81,16 @@ export interface CommitPageMutationInput {
   operationId: string;
 }
 
+export interface CommitPageMutationsInput {
+  mutations: readonly CommitPageMutationInput[];
+  primaryBindings?: readonly {
+    sessionId: string;
+    blockId: string;
+    targetPageId: string;
+    targetVersion: number;
+  }[];
+}
+
 export class PageRepository {
   private sql?: Promise<PageSql>;
 
@@ -104,15 +115,15 @@ export class PageRepository {
     }
     const sql = await this.resolveSql();
     await sql.begin(async (transaction) => {
-      await storeDocument(transaction, input.documentName, input.snapshot);
+      await storePageDocument(transaction, input.documentName, input.snapshot);
       if (input.update) {
         await transaction`
           INSERT INTO board_yjs_updates (document_name, update)
           VALUES (${input.documentName}, ${Buffer.from(input.update)})
         `;
       }
-      await upsertPage(transaction, input.replica);
-      await reconcileBlocks(transaction, input.replica);
+      await upsertPageProjection(transaction, input.replica);
+      await reconcileBlockProjection(transaction, input.replica);
       await reconcileChecklistProjectionOutbox(transaction, input.replica);
       await reconcilePageLinks(transaction, input.replica);
     });
@@ -199,61 +210,57 @@ export class PageRepository {
   }
 
   async commitPageMutation(input: CommitPageMutationInput): Promise<PageMutationCommitResult> {
-    const pageId = requirePageDocumentName(input.documentName);
-    if (input.application.replica.page.id !== pageId) {
-      throw new Error(`page id mismatch: document ${pageId}, replica ${input.application.replica.page.id}`);
-    }
+    return (await this.commitPageMutations({ mutations: [input] }))[0]!;
+  }
+
+  async commitPageMutations(input: CommitPageMutationsInput): Promise<PageMutationCommitResult[]> {
+    if (input.mutations.length === 0) throw new Error("page mutation transaction must not be empty");
+    for (const mutation of input.mutations) assertMutationPageId(mutation);
     const sql = await this.resolveSql();
     return await sql.begin(async (transaction) => {
-      const existing = await findMutationByIdempotencyKey(
-        transaction,
-        input.application.idempotencyKey,
-      );
-      if (existing) return existing;
-
-      const eventId = await appendBlockOperationEvent(transaction, input);
-      const provenance = {
-        actorSessionId: input.application.actor.actorSessionId ?? null,
-        eventId,
-      };
-      await storeDocument(transaction, input.documentName, input.application.snapshot);
-      const pageTimes = await upsertPage(transaction, input.application.replica, provenance);
-      await reconcileBlocks(transaction, input.application.replica, provenance);
-      await reconcileChecklistProjectionOutbox(
-        transaction,
-        input.application.replica,
-        input.application.actor,
-      );
-      await reconcilePageLinks(transaction, input.application.replica);
-      const targetBlockId = input.application.targetBlockId &&
-        input.application.replica.blocks.some((block) => block.id === input.application.targetBlockId)
-        ? input.application.targetBlockId
-        : null;
-      const rows = await transaction<readonly PageOperationRecord[]>`
-        INSERT INTO block_operations (
-          id, page_id, target_block_id, operation_type,
-          actor_kind, actor_session_id, actor_event_id, actor_user_id,
-          idempotency_key, expected_version, result_version,
-          payload_json, reason
-        ) VALUES (
-          ${input.operationId}, ${pageId}, ${targetBlockId},
-          ${input.application.operationType}, ${input.application.actor.actorKind},
-          ${input.application.actor.actorSessionId ?? null}, ${eventId},
-          ${input.application.actor.actorUserId ?? null},
-          ${input.application.idempotencyKey}, ${input.application.expectedVersion},
-          ${input.application.resultVersion}, ${transaction.json(input.application.payload)}::jsonb,
-          ${input.application.reason}
-        )
-        RETURNING *
-      `;
-      const operation = rows[0];
-      if (!operation) throw new Error("block operation insert returned no row");
-      return {
-        operation,
-        pageCreatedAt: pageTimes.created_at,
-        pageUpdatedAt: pageTimes.updated_at,
-        idempotent: false,
-      };
+      const pageIds = [...new Set(input.mutations.map((mutation) => (
+        requirePageDocumentName(mutation.documentName)
+      )))].sort();
+      for (const pageId of pageIds) {
+        await transaction`
+          SELECT pg_advisory_xact_lock(hashtextextended(${pageId}, 0))
+        `;
+      }
+      const existing = await Promise.all(input.mutations.map((mutation) => (
+        findMutationByIdempotencyKey(transaction, mutation.application.idempotencyKey)
+      )));
+      if (existing.every((result) => result !== null)) {
+        const committed = existing as PageMutationCommitResult[];
+        assertTransferIdempotencyPayloads(input.mutations, committed);
+        return committed;
+      }
+      if (existing.some((result) => result !== null)) {
+        if (hasTransferIdentity(input.mutations)) {
+          throw new PageMutationIdempotencyConflictError();
+        }
+        throw new Error("partial page mutation transaction idempotency state");
+      }
+      for (const mutation of input.mutations) {
+        await assertDatabaseMutationVersion(transaction, mutation);
+      }
+      const results: PageMutationCommitResult[] = [];
+      for (const mutation of input.mutations) {
+        results.push(await commitPageMutationInTransaction(transaction, mutation));
+      }
+      for (const binding of input.primaryBindings ?? []) {
+        const rows = await transaction<readonly { session_id: string }[]>`
+          UPDATE session_page_bindings
+          SET target_page_id = ${binding.targetPageId},
+              target_block_id = ${binding.blockId},
+              target_expected_version = ${binding.targetVersion},
+              page_state = 'bound',
+              updated_at = NOW()
+          WHERE session_id = ${binding.sessionId}
+          RETURNING session_id
+        `;
+        if (!rows[0]) throw new Error(`primary session binding not found: ${binding.sessionId}`);
+      }
+      return results;
     });
   }
 
@@ -263,149 +270,90 @@ export class PageRepository {
   }
 }
 
-async function storeDocument(
-  sql: PageQuerySql,
-  documentName: string,
-  snapshot: Uint8Array,
-): Promise<void> {
-  await sql`
-    INSERT INTO board_yjs_documents (name, snapshot, updated_at)
-    VALUES (${documentName}, ${Buffer.from(snapshot)}, NOW())
-    ON CONFLICT (name) DO UPDATE
-    SET snapshot = EXCLUDED.snapshot,
-        updated_at = EXCLUDED.updated_at
-    WHERE board_yjs_documents.snapshot IS DISTINCT FROM EXCLUDED.snapshot
-  `;
-}
-
-interface MutationProvenance {
-  actorSessionId: string | null;
-  eventId: number | null;
-}
-
-async function upsertPage(
-  sql: PageQuerySql,
-  replica: PageYjsReplica,
-  provenance?: MutationProvenance,
-): Promise<{ created_at: Date; updated_at: Date }> {
-  const page = replica.page;
-  if (provenance) {
-    const rows = await sql<readonly { created_at: Date; updated_at: Date }[]>`
-      INSERT INTO pages (
-        id, title, daily_date, version, archived, metadata,
-        created_session_id, created_event_id, updated_session_id, updated_event_id,
-        updated_at
-      ) VALUES (
-        ${page.id}, ${page.title}, ${page.dailyDate}, ${page.mutationVersion},
-        ${page.archived}, ${sql.json(page.metadata)}::jsonb,
-        ${provenance.actorSessionId}, ${provenance.eventId},
-        ${provenance.actorSessionId}, ${provenance.eventId}, NOW()
-      )
-      ON CONFLICT (id) DO UPDATE
-      SET title = EXCLUDED.title,
-          daily_date = EXCLUDED.daily_date,
-          version = EXCLUDED.version,
-          archived = EXCLUDED.archived,
-          metadata = EXCLUDED.metadata,
-          updated_session_id = EXCLUDED.updated_session_id,
-          updated_event_id = EXCLUDED.updated_event_id,
-          updated_at = EXCLUDED.updated_at
-      RETURNING created_at, updated_at
-    `;
-    const row = rows[0];
-    if (!row) throw new Error("page upsert returned no row");
-    return row;
-  }
-  const rows = await sql<readonly { created_at: Date; updated_at: Date }[]>`
-    INSERT INTO pages (
-      id, title, daily_date, version, archived, metadata, updated_at
-    ) VALUES (
-      ${page.id}, ${page.title}, ${page.dailyDate}, ${page.mutationVersion},
-      ${page.archived}, ${sql.json(page.metadata)}::jsonb, NOW()
-    )
-    ON CONFLICT (id) DO UPDATE
-    SET title = EXCLUDED.title,
-        daily_date = EXCLUDED.daily_date,
-        version = EXCLUDED.version,
-        archived = EXCLUDED.archived,
-        metadata = EXCLUDED.metadata,
-        updated_at = EXCLUDED.updated_at
-    WHERE (pages.title, pages.daily_date, pages.version, pages.archived, pages.metadata)
-      IS DISTINCT FROM
-      (EXCLUDED.title, EXCLUDED.daily_date, EXCLUDED.version, EXCLUDED.archived, EXCLUDED.metadata)
-    RETURNING created_at, updated_at
-  `;
-  return rows[0] ?? { created_at: new Date(0), updated_at: new Date(0) };
-}
-
-async function reconcileBlocks(
-  sql: PageQuerySql,
-  replica: PageYjsReplica,
-  provenance?: MutationProvenance,
-): Promise<void> {
-  const blockIds = replica.blocks.map((block) => block.id);
-  if (blockIds.length === 0) {
-    await sql`DELETE FROM blocks WHERE page_id = ${replica.page.id}`;
-  } else {
-    await sql`
-      DELETE FROM blocks
-      WHERE page_id = ${replica.page.id}
-        AND id <> ALL(${sql.array(blockIds)})
-    `;
-  }
-  for (const block of replica.blocks) {
-    if (provenance) {
-      await sql`
-        INSERT INTO blocks (
-          id, page_id, parent_id, position_key, block_type,
-          text_plain, properties, collapsed,
-          created_session_id, created_event_id, updated_session_id, updated_event_id,
-          updated_at
-        ) VALUES (
-          ${block.id}, ${replica.page.id}, ${block.parentId}, ${block.positionKey},
-          ${block.type}, ${block.text}, ${sql.json(block.properties)}::jsonb,
-          ${block.collapsed}, ${provenance.actorSessionId}, ${provenance.eventId},
-          ${provenance.actorSessionId}, ${provenance.eventId}, NOW()
-        )
-        ON CONFLICT (page_id, id) DO UPDATE
-        SET parent_id = EXCLUDED.parent_id,
-            position_key = EXCLUDED.position_key,
-            block_type = EXCLUDED.block_type,
-            text_plain = EXCLUDED.text_plain,
-            properties = EXCLUDED.properties,
-            collapsed = EXCLUDED.collapsed,
-            updated_session_id = EXCLUDED.updated_session_id,
-            updated_event_id = EXCLUDED.updated_event_id,
-            updated_at = EXCLUDED.updated_at
-      `;
-      continue;
+function assertTransferIdempotencyPayloads(
+  mutations: readonly CommitPageMutationInput[],
+  committed: readonly PageMutationCommitResult[],
+): void {
+  for (const [index, mutation] of mutations.entries()) {
+    const identity = mutation.application.payload.transfer_identity;
+    if (
+      identity !== undefined &&
+      !isDeepStrictEqual(committed[index]?.operation.payload_json.transfer_identity, identity)
+    ) {
+      throw new PageMutationIdempotencyConflictError();
     }
-    await sql`
-      INSERT INTO blocks (
-        id, page_id, parent_id, position_key, block_type,
-        text_plain, properties, collapsed, updated_at
-      ) VALUES (
-        ${block.id}, ${replica.page.id}, ${block.parentId}, ${block.positionKey},
-        ${block.type}, ${block.text}, ${sql.json(block.properties)}::jsonb,
-        ${block.collapsed}, NOW()
-      )
-      ON CONFLICT (page_id, id) DO UPDATE
-      SET page_id = EXCLUDED.page_id,
-          parent_id = EXCLUDED.parent_id,
-          position_key = EXCLUDED.position_key,
-          block_type = EXCLUDED.block_type,
-          text_plain = EXCLUDED.text_plain,
-          properties = EXCLUDED.properties,
-          collapsed = EXCLUDED.collapsed,
-          updated_at = EXCLUDED.updated_at
-      WHERE (
-        blocks.page_id, blocks.parent_id, blocks.position_key, blocks.block_type,
-        blocks.text_plain, blocks.properties, blocks.collapsed
-      ) IS DISTINCT FROM (
-        EXCLUDED.page_id, EXCLUDED.parent_id, EXCLUDED.position_key, EXCLUDED.block_type,
-        EXCLUDED.text_plain, EXCLUDED.properties, EXCLUDED.collapsed
-      )
-    `;
+  }
+}
+
+function hasTransferIdentity(mutations: readonly CommitPageMutationInput[]): boolean {
+  return mutations.some((mutation) => mutation.application.payload.transfer_identity !== undefined);
+}
+
+async function assertDatabaseMutationVersion(
+  sql: PageQuerySql,
+  input: CommitPageMutationInput,
+): Promise<void> {
+  const pageId = requirePageDocumentName(input.documentName);
+  const rows = await sql<readonly { version: number }[]>`
+    SELECT version FROM pages WHERE id = ${pageId}
+  `;
+  const actualVersion = rows[0]?.version ?? 0;
+  if (actualVersion !== input.application.expectedVersion) {
+    throw new PageMutationVersionConflictError(
+      pageId,
+      input.application.expectedVersion,
+      actualVersion,
+    );
+  }
+}
+
+async function commitPageMutationInTransaction(
+  transaction: PageQuerySql,
+  input: CommitPageMutationInput,
+): Promise<PageMutationCommitResult> {
+  const pageId = requirePageDocumentName(input.documentName);
+  const eventId = await appendBlockOperationEvent(transaction, input);
+  const provenance = {
+    actorSessionId: input.application.actor.actorSessionId ?? null,
+    eventId,
+  };
+  await storePageDocument(transaction, input.documentName, input.application.snapshot);
+  const pageTimes = await upsertPageProjection(transaction, input.application.replica, provenance);
+  await reconcileBlockProjection(transaction, input.application.replica, provenance);
+  await reconcileChecklistProjectionOutbox(transaction, input.application.replica, input.application.actor);
+  await reconcilePageLinks(transaction, input.application.replica);
+  const targetBlockId = input.application.targetBlockId &&
+    input.application.replica.blocks.some((block) => block.id === input.application.targetBlockId)
+    ? input.application.targetBlockId
+    : null;
+  const rows = await transaction<readonly PageOperationRecord[]>`
+    INSERT INTO block_operations (
+      id, page_id, target_block_id, operation_type,
+      actor_kind, actor_session_id, actor_event_id, actor_user_id,
+      idempotency_key, expected_version, result_version, payload_json, reason
+    ) VALUES (
+      ${input.operationId}, ${pageId}, ${targetBlockId},
+      ${input.application.operationType}, ${input.application.actor.actorKind},
+      ${input.application.actor.actorSessionId ?? null}, ${eventId},
+      ${input.application.actor.actorUserId ?? null}, ${input.application.idempotencyKey},
+      ${input.application.expectedVersion}, ${input.application.resultVersion},
+      ${transaction.json(input.application.payload)}::jsonb, ${input.application.reason}
+    ) RETURNING *
+  `;
+  const operation = rows[0];
+  if (!operation) throw new Error("block operation insert returned no row");
+  return {
+    operation,
+    pageCreatedAt: pageTimes.created_at,
+    pageUpdatedAt: pageTimes.updated_at,
+    idempotent: false,
+  };
+}
+
+function assertMutationPageId(input: CommitPageMutationInput): void {
+  const pageId = requirePageDocumentName(input.documentName);
+  if (input.application.replica.page.id !== pageId) {
+    throw new Error(`page id mismatch: document ${pageId}, replica ${input.application.replica.page.id}`);
   }
 }
 

@@ -68,6 +68,52 @@ describe("Serendipity-homologous selection and IME fixtures", () => {
     });
   });
 
+  it("B-02 selects the whole visible page, including atomic card boundaries", () => {
+    const selection = createContiguousBlockSelection([
+      "session-card-first",
+      "text-middle",
+      "session-card-last",
+    ]);
+
+    selection.selectAll();
+
+    expect(selection.getSnapshot()).toEqual({
+      anchorId: "session-card-first",
+      focusId: "session-card-last",
+      blockIds: ["session-card-first", "text-middle", "session-card-last"],
+    });
+  });
+
+  it("B-03 ranges only across the visible order when a collapsed subtree is hidden", () => {
+    const selection = createContiguousBlockSelection([
+      "collapsed-parent",
+      "session-card-after-subtree",
+      "text-last",
+    ]);
+    selection.select("collapsed-parent");
+
+    selection.extend("session-card-after-subtree");
+
+    expect(selection.getSnapshot().blockIds).toEqual([
+      "collapsed-parent",
+      "session-card-after-subtree",
+    ]);
+  });
+
+  it("B-04 preserves a surviving anchor and clamps a removed focus after projection", () => {
+    const selection = createContiguousBlockSelection(["text-first", "session-card", "text-last"]);
+    selection.select("text-first");
+    selection.extend("session-card");
+
+    selection.replaceBlockOrder(["text-first", "text-last"]);
+
+    expect(selection.getSnapshot()).toEqual({
+      anchorId: "text-first",
+      focusId: "text-first",
+      blockIds: ["text-first"],
+    });
+  });
+
   it("S-01 applies focus by block id", () => {
     const target = control("abcdef");
     const host: FocusSelectionHost = { getTextControlByBlockId: (id) => id === "target" ? target : null };
