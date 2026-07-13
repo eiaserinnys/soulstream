@@ -173,6 +173,7 @@ describe("route registry", () => {
     }
     expect(validatePublicRouteAuthMatrix(runtimeRegistry).publicRouteKeys)
       .not.toContain("GET /api/pages");
+    expect(validateStaticBeforeDynamicPriority(runtimeRegistry).valid).toBe(true);
   });
 
   it("builds a planning-only owner manifest from the Python fixture without TS production owners", () => {

@@ -66,7 +66,7 @@ describe("browser page reads PostgreSQL integration", () => {
     const pagePlan = await harness.sql`
       EXPLAIN (COSTS OFF)
       SELECT id, title FROM pages
-      WHERE archived = FALSE AND title_key LIKE ${"100\\%\\_%"} ESCAPE '\\'
+      WHERE archived = FALSE AND title_key LIKE (lower(${"100\\%\\_"}) || '%') ESCAPE '\\'
       ORDER BY title_key ASC, id ASC LIMIT 20
     `;
     const blockPlan = await harness.sql`
@@ -74,7 +74,7 @@ describe("browser page reads PostgreSQL integration", () => {
       SELECT block.id FROM blocks block
       JOIN pages page ON page.id = block.page_id
       WHERE page.archived = FALSE
-        AND lower(block.text_plain) LIKE ${"100\\%\\_%"} ESCAPE '\\'
+        AND lower(block.text_plain) LIKE (lower(${"100\\%\\_"}) || '%') ESCAPE '\\'
       ORDER BY lower(block.text_plain) ASC, block.id ASC LIMIT 20
     `;
     expect(planText(pagePlan)).toContain("idx_pages_title_prefix");

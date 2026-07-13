@@ -239,7 +239,7 @@ describe("orch PageRepository", () => {
     });
     expect(calls[0]?.query).toContain("title_key LIKE");
     expect(calls[0]?.query).toContain("ORDER BY title_key ASC, id ASC");
-    expect(calls[0]?.values).toContain("100\\%\\_%");
+    expect(calls[0]?.values).toContain("100\\%\\_");
     expect(calls[1]?.query).toContain("ORDER BY lower(block.text_plain) ASC, block.id ASC");
   });
 
@@ -317,6 +317,12 @@ describe("orch PageRepository", () => {
     await expect(repository.getBrowserBacklinks({
       pageId: "target",
       kinds: ["block_ref"],
+      cursor: first.nextCursor!,
+      limit: 1,
+    })).rejects.toMatchObject({ code: "PAGE_BROWSER_BACKLINK_CURSOR_INVALID" });
+    await expect(repository.getBrowserBacklinks({
+      pageId: "different-target",
+      kinds: ["mount", "inline_page"],
       cursor: first.nextCursor!,
       limit: 1,
     })).rejects.toMatchObject({ code: "PAGE_BROWSER_BACKLINK_CURSOR_INVALID" });

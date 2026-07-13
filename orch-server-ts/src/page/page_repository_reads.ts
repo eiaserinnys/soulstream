@@ -133,12 +133,12 @@ export async function searchBrowserPages(
   sql: PageReadQuerySql,
   input: { query: string; limit: number },
 ): Promise<BrowserPageSearchDto> {
-  const pattern = escapeLikePrefix(input.query);
+  const prefix = escapeLikeQuery(input.query);
   const rows = await sql<readonly { page_id: string; title: string }[]>`
     SELECT id AS page_id, title
     FROM pages
     WHERE archived = FALSE
-      AND title_key LIKE ${pattern} ESCAPE '\\'
+      AND title_key LIKE (lower(${prefix}) || '%') ESCAPE '\\'
     ORDER BY title_key ASC, id ASC
     LIMIT ${input.limit}
   `;
@@ -149,7 +149,7 @@ export async function searchBrowserBlocks(
   sql: PageReadQuerySql,
   input: { query: string; limit: number },
 ): Promise<BrowserBlockSearchDto> {
-  const pattern = escapeLikePrefix(input.query);
+  const prefix = escapeLikeQuery(input.query);
   const rows = await sql<readonly {
     block_id: string;
     page_id: string;
@@ -161,7 +161,7 @@ export async function searchBrowserBlocks(
     FROM blocks block
     JOIN pages page ON page.id = block.page_id
     WHERE page.archived = FALSE
-      AND lower(block.text_plain) LIKE ${pattern} ESCAPE '\\'
+      AND lower(block.text_plain) LIKE (lower(${prefix}) || '%') ESCAPE '\\'
     ORDER BY lower(block.text_plain) ASC, block.id ASC
     LIMIT ${input.limit}
   `;
@@ -202,7 +202,9 @@ export async function getBrowserBacklinks(
   },
 ): Promise<BrowserBacklinkPageDto> {
   const kinds = canonicalKinds(input.kinds);
-  const cursor = input.cursor ? decodeBrowserBacklinkCursor(input.cursor, kinds) : null;
+  const cursor = input.cursor
+    ? decodeBrowserBacklinkCursor(input.cursor, input.pageId, kinds)
+    : null;
   const cursorDate = cursor?.createdAt ?? null;
   const cursorId = cursor?.id ?? "";
   const rows = await sql<readonly BrowserBacklinkRow[]>`
@@ -229,7 +231,7 @@ export async function getBrowserBacklinks(
   return {
     items: visible.map(browserBacklinkDto),
     nextCursor: rows.length > input.limit && last
-      ? encodeBrowserBacklinkCursor(last.created_at, last.id, kinds)
+      ? encodeBrowserBacklinkCursor(last.created_at, last.id, input.pageId, kinds)
       : null,
   };
 }
@@ -295,8 +297,8 @@ function decodeBacklinkCursor(cursor: string): { createdAt: string; id: string }
   }
 }
 
-function escapeLikePrefix(query: string): string {
-  return `${query.toLowerCase().replace(/[\\%_]/g, "\\$&")}%`;
+function escapeLikeQuery(query: string): string {
+  return query.replace(/[\\%_]/g, "\\$&");
 }
 
 function preview(text: string): string {
@@ -342,18 +344,21 @@ function canonicalKinds(kinds: readonly PageLinkKind[]): PageLinkKind[] {
 function encodeBrowserBacklinkCursor(
   createdAt: Date,
   id: string,
+  pageId: string,
   kinds: readonly PageLinkKind[],
 ): string {
   return Buffer.from(JSON.stringify([
     1,
     createdAt.toISOString(),
     id,
+    pageId,
     canonicalKinds(kinds).join(","),
   ]), "utf8").toString("base64url");
 }
 
 function decodeBrowserBacklinkCursor(
   cursor: string,
+  pageId: string,
   kinds: readonly PageLinkKind[],
 ): { createdAt: string; id: string } {
   try {
@@ -361,10 +366,11 @@ function decodeBrowserBacklinkCursor(
     if (!bytes.length || bytes.toString("base64url") !== cursor) throw new Error("encoding");
     const parsed = JSON.parse(bytes.toString("utf8")) as unknown;
     if (
-      !Array.isArray(parsed) || parsed.length !== 4 || parsed[0] !== 1 ||
+      !Array.isArray(parsed) || parsed.length !== 5 || parsed[0] !== 1 ||
       typeof parsed[1] !== "string" || new Date(parsed[1]).toISOString() !== parsed[1] ||
       typeof parsed[2] !== "string" || parsed[2].length === 0 ||
-      parsed[3] !== canonicalKinds(kinds).join(",")
+      parsed[3] !== pageId ||
+      parsed[4] !== canonicalKinds(kinds).join(",")
     ) throw new Error("shape");
     return { createdAt: parsed[1], id: parsed[2] };
   } catch {
