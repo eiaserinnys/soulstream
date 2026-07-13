@@ -30,9 +30,15 @@ import {
 } from "./page_yjs_model.js";
 import {
   createPageYjsPersistence,
+  type PageYjsPersistence,
   type PageYjsPersistenceRepository,
 } from "./page_yjs_persistence.js";
 import type { PageBacklinkPage } from "./page_repository_reads.js";
+import {
+  closePageYjsRuntime,
+  getPageYjsServiceDiagnostics,
+  type PageYjsServiceDiagnostics,
+} from "./page_service_lifecycle.js";
 
 export interface PageServiceRepository extends PageYjsPersistenceRepository {
   getPageMutationByIdempotencyKey(
@@ -119,13 +125,27 @@ export class PageYjsService {
   private readonly mutex = new PageAsyncMutex();
   private readonly dailyMutex = new PageAsyncMutex();
   private readonly hocuspocus: Hocuspocus;
+  private readonly persistence: PageYjsPersistence;
 
   constructor(private readonly config: PageYjsServiceConfig) {
     this.mutationCore = config.mutationCore ?? new PageMutationCore();
     this.createOperationId = config.createOperationId ?? randomUUID;
     this.createPageId = config.createPageId ?? randomUUID;
     this.now = config.now ?? (() => new Date());
-    const persistence = createPageYjsPersistence(config.repository, this.mutex);
+    this.persistence = createPageYjsPersistence(config.repository, this.mutex, {
+      onFailure: ({ documentName, attempts, error }) => {
+        config.logger?.error(
+          { err: error, documentName, attempts },
+          "Page Yjs persistence exhausted bounded retries",
+        );
+      },
+      onRetry: ({ documentName, attempt, error }) => {
+        config.logger?.warn(
+          { err: error, documentName, attempt },
+          "Page Yjs persistence retrying after failure",
+        );
+      },
+    });
     this.hocuspocus = new Hocuspocus({
       name: "soulstream-page-yjs",
       quiet: true,
@@ -135,8 +155,8 @@ export class PageYjsService {
         ...(config.auth === undefined
           ? []
           : [createPageYjsAuthExtension(config.auth, config.logger)]),
-        persistence.updateLog,
-        persistence.database,
+        this.persistence.updateCollector,
+        this.persistence.database,
       ],
     });
   }
@@ -157,7 +177,7 @@ export class PageYjsService {
         operationId,
       });
       if (committed.idempotent) return await this.resultFromCommit(committed);
-      await this.hydrateCommittedPage(documentName, operationId);
+      await this.hydrateCommittedPage(documentName);
       return toMutationResult(application.replica, application.tempIdMapping, committed);
     });
   }
@@ -168,10 +188,14 @@ export class PageYjsService {
       if (idempotent) return idempotent;
       const documentName = getPageYjsDocumentName(input.pageId);
       const operationId = this.createOperationId();
-      const connection = await this.hocuspocus.openDirectConnection(documentName, {
+      const connectionContext = {
         source: "page-operation",
-        pageOperationId: operationId,
-      });
+        skipPagePersistence: false,
+      };
+      const connection = await this.hocuspocus.openDirectConnection(
+        documentName,
+        connectionContext,
+      );
       try {
         const live = connection.document as unknown as Y.Doc | null;
         if (!live) throw new Error(`page Y.Doc direct connection closed: ${input.pageId}`);
@@ -183,8 +207,13 @@ export class PageYjsService {
         });
         if (committed.idempotent) return await this.resultFromCommit(committed);
         Y.applyUpdate(live, application.update, operationId);
+        const debounceId = `onStoreDocument-${documentName}`;
+        if (this.hocuspocus.debouncer.isDebounced(debounceId)) {
+          await this.hocuspocus.debouncer.executeNow(debounceId);
+        }
         return toMutationResult(application.replica, application.tempIdMapping, committed);
       } finally {
+        connectionContext.skipPagePersistence = true;
         await connection.disconnect();
       }
     });
@@ -279,14 +308,17 @@ export class PageYjsService {
   }
 
   async close(): Promise<void> {
-    await this.hocuspocus.hooks("onDestroy", { instance: this.hocuspocus });
-    this.hocuspocus.closeConnections();
+    await closePageYjsRuntime(this.hocuspocus, this.persistence);
   }
 
-  private async hydrateCommittedPage(documentName: string, operationId: string): Promise<void> {
+  getPersistenceDiagnostics(): PageYjsServiceDiagnostics {
+    return getPageYjsServiceDiagnostics(this.hocuspocus, this.persistence);
+  }
+
+  private async hydrateCommittedPage(documentName: string): Promise<void> {
     const connection = await this.hocuspocus.openDirectConnection(documentName, {
       source: "page-operation",
-      pageOperationId: operationId,
+      skipPagePersistence: true,
     });
     await connection.disconnect();
   }

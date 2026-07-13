@@ -99,14 +99,22 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       events: number;
       blocks: number;
       links: number;
+      yjs_updates: number;
     }]>`
       SELECT
         (SELECT COUNT(*)::int FROM block_operations) AS operations,
         (SELECT COUNT(*)::int FROM events WHERE event_type = 'block_operation') AS events,
         (SELECT COUNT(*)::int FROM blocks) AS blocks,
-        (SELECT COUNT(*)::int FROM block_links) AS links
+        (SELECT COUNT(*)::int FROM block_links) AS links,
+        (SELECT COUNT(*)::int FROM board_yjs_updates) AS yjs_updates
     `;
-    expect(counts).toEqual({ operations: 2, events: 2, blocks: 2, links: 1 });
+    expect(counts).toEqual({
+      operations: 2,
+      events: 2,
+      blocks: 2,
+      links: 1,
+      yjs_updates: 0,
+    });
     const [link] = await harness.sql<[{
       link_kind: string;
       target_page_id: string | null;
