@@ -41,6 +41,12 @@ describe("page model DTO contract", () => {
     expectTypeOf<PageBlockProperties<"plugin/chart">>().toEqualTypeOf<
       Record<string, unknown>
     >();
+
+    const boundChecklist: ChecklistBlockProperties = {
+      runbookId: "page-runbook:page-1",
+      itemId: "checklist:block-1",
+    };
+    expect(boundChecklist).not.toHaveProperty("checked");
   });
 
   it("exposes backlink DTOs with the canonical link kinds", () => {

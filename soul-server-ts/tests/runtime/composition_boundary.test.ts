@@ -39,6 +39,13 @@ describe("worker composition boundary", () => {
     expect(workerComposition).not.toContain("NO_PAGE_ANCHOR_CONTEXT_RESOLVER");
   });
 
+  it("wires the checklist adapter through the RunbookService public boundary", () => {
+    const workerComposition = source("runtime/worker_composition.ts");
+
+    expect(workerComposition).toContain("new ChecklistRunbookAdapter(runbookService)");
+    expect(workerComposition).toContain("checklistRunbookAdapter,");
+  });
+
   it("keeps every production module touched by the extraction below 500 lines", () => {
     const files = [
       "main.ts",
@@ -49,6 +56,8 @@ describe("worker composition boundary", () => {
       "context/page_context_resolver.ts",
       "context/page_context_repository.ts",
       "context/page_context_assembler.ts",
+      "page/checklist_runbook_adapter.ts",
+      "runbook/runbook_service.ts",
       "task/task_creation.ts",
       "task/task_creation_hook.ts",
     ];

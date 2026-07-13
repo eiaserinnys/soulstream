@@ -100,5 +100,6 @@ export function markdownToPageBlocks(
 
 function blockMarkdownText(block: BlockDto): string {
   if (block.block_type !== "checklist") return block.text;
-  return `- [${block.properties.checked === true ? "x" : " "}] ${block.text}`;
+  const checked = "checked" in block.properties && block.properties.checked === true;
+  return `- [${checked ? "x" : " "}] ${block.text}`;
 }

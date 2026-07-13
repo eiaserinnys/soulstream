@@ -32,6 +32,7 @@ import { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { RunbookHandoffNotifier } from "../runbook/runbook_handoff_notifier.js";
 import { RunbookService } from "../runbook/runbook_service.js";
 import { PageYjsHostClient } from "../page/page_host_client.js";
+import { ChecklistRunbookAdapter } from "../page/checklist_runbook_adapter.js";
 import {
   SessionLegacyProjection,
   SessionPageBindingService,
@@ -69,6 +70,7 @@ export interface WorkerComposition extends SupervisorComposition {
   mcpRuntime: McpRuntime;
   scheduleService: SoulstreamScheduleService;
   sessionPageBindingService: SessionPageBindingService;
+  checklistRunbookAdapter: ChecklistRunbookAdapter;
   createUpstreamAdapter(): UpstreamAdapter;
 }
 
@@ -287,6 +289,7 @@ export async function composeWorkerRuntime(
     catalogService,
     logger,
   );
+  const checklistRunbookAdapter = new ChecklistRunbookAdapter(runbookService);
   const customViewService = new CustomViewService(db, boardYjsService, broadcaster);
   const llmAdapters = {
     ...(env.LLM_OPENAI_API_KEY ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) } : {}),
@@ -322,6 +325,7 @@ export async function composeWorkerRuntime(
     mcpConfigService,
     catalogService,
     runbookService,
+    checklistRunbookAdapter,
     customViewService,
     logger,
     mcpToolProfile: env.MCP_TOOL_PROFILE,
@@ -404,6 +408,7 @@ export async function composeWorkerRuntime(
     mcpRuntime,
     scheduleService,
     sessionPageBindingService,
+    checklistRunbookAdapter,
     createUpstreamAdapter,
   };
 }

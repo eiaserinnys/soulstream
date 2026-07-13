@@ -29,10 +29,20 @@ export interface GuidanceBlockProperties {
   [key: string]: unknown;
 }
 
-export interface ChecklistBlockProperties {
+export interface LegacyChecklistBlockProperties {
   checked: boolean;
   [key: string]: unknown;
 }
+
+export interface ChecklistRunbookReference {
+  runbookId: string;
+  itemId: string;
+  [key: string]: unknown;
+}
+
+export type ChecklistBlockProperties =
+  | LegacyChecklistBlockProperties
+  | ChecklistRunbookReference;
 
 export interface CustomViewBlockProperties {
   customViewId: string;
