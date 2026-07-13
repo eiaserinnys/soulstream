@@ -198,6 +198,76 @@ describePostgres("SessionDB supervisor PostgreSQL integration", () => {
     });
   }, 30_000);
 
+  it("reprojects response-loss binding warnings from durable state after restart", async () => {
+    const now = new Date("2026-07-13T00:00:00Z");
+    await db.registerSession({
+      sessionId: "sess-response-lost",
+      nodeId: "node-review",
+      agentId: "codex-default",
+      claudeSessionId: null,
+      sessionType: "claude",
+      prompt: "recover me",
+      clientId: null,
+      status: "running",
+      createdAt: now,
+      updatedAt: now,
+      callerSessionId: null,
+      reviewRequired: true,
+      reviewState: "needs_review",
+    });
+    await db.sessionPageBindings().enqueue({
+      sessionId: "sess-response-lost",
+      nodeId: "node-review",
+      targetPageId: "page-target",
+      targetBlockId: "block-target",
+      targetExpectedVersion: 7,
+      initialPageState: "pending",
+      dailyDate: "2026-07-13",
+      sessionType: "claude",
+      legacyFolderId: null,
+      legacyContainerKind: null,
+      legacyContainerId: null,
+      sourceRunbookItemId: null,
+    });
+    await harness!.sql`
+      UPDATE session_page_bindings
+      SET page_state = 'manual_repair', legacy_state = 'pending'
+      WHERE session_id = 'sess-response-lost'
+    `;
+
+    const restarted = new SessionDB(harness!.sql);
+    const responseLostRead = await restarted.listSessionsForUpstreamDump({
+      limit: 10,
+      offset: 0,
+      nodeId: "node-review",
+    });
+    expect(responseLostRead.sessions.find(
+      (session) => session.session_id === "sess-response-lost",
+    )).toMatchObject({
+      session_id: "sess-response-lost",
+      review_required: true,
+      review_state: "needs_review",
+      binding_warnings: [
+        { code: "PAGE_BINDING_MANUAL_REPAIR" },
+        { code: "LEGACY_PROJECTION_PENDING" },
+      ],
+    });
+
+    await harness!.sql`
+      UPDATE session_page_bindings
+      SET page_state = 'bound', legacy_state = 'completed'
+      WHERE session_id = 'sess-response-lost'
+    `;
+    const replayed = await restarted.listSessionsForUpstreamDump({
+      limit: 10,
+      offset: 0,
+      nodeId: "node-review",
+    });
+    expect(replayed.sessions.find(
+      (session) => session.session_id === "sess-response-lost",
+    )).toMatchObject({ binding_warnings: [] });
+  }, 30_000);
+
   it("drops an invalid concurrent index remnant and recreates a valid one", async () => {
     const duplicateUpdatedAt = new Date("2026-06-14T00:00:00Z");
     await harness!.sql`

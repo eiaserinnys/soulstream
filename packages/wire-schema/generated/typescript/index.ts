@@ -135,6 +135,13 @@ export interface SessionCreated {
   session?: {
     review_required?: boolean;
     review_state?: "not_required" | "needs_review" | "acknowledged";
+    /**
+     * session_page_bindings durable state의 read projection. 응답 전용 복제 저장이 아니다.
+     */
+    binding_warnings?: {
+      code: "PAGE_BINDING_PENDING" | "PAGE_BINDING_MANUAL_REPAIR" | "LEGACY_PROJECTION_PENDING";
+      message: string;
+    }[];
     [k: string]: unknown;
   };
   folderId?: string | null;
@@ -783,6 +790,13 @@ export interface SessionsUpdate {
   sessions: {
     review_required?: boolean;
     review_state?: "not_required" | "needs_review" | "acknowledged";
+    /**
+     * session_page_bindings durable state의 read projection. 빈 배열은 미완료 binding 없음.
+     */
+    binding_warnings?: {
+      code: "PAGE_BINDING_PENDING" | "PAGE_BINDING_MANUAL_REPAIR" | "LEGACY_PROJECTION_PENDING";
+      message: string;
+    }[];
     [k: string]: unknown;
   }[];
   total?: number;

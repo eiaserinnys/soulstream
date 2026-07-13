@@ -1,5 +1,9 @@
 import type { InMemoryNodeRegistry } from "../node/registry.js";
 import {
+  projectSessionBindingWarnings,
+  type SessionBindingWarning,
+} from "@soulstream/page-model";
+import {
   normalizeBoardAccess,
   type BoardAccess,
   type BoardAccessFolderRecord,
@@ -184,9 +188,13 @@ export function createLiveDbCatalogRepository(
     const sessionRows = await sql`
       SELECT * FROM session_get_all(${filtersJson}::jsonb, ${limit}, ${offset})
     `;
+    const bindingWarnings = await loadSessionBindingWarnings(sql, sessionRows);
     return {
       sessions: sessionRows.map((row) =>
-        serializeSessionRow(row, { registry: options.registry }),
+        serializeSessionRow({
+          ...row,
+          binding_warnings: bindingWarnings.get(String(row.session_id ?? "")) ?? [],
+        }, { registry: options.registry }),
       ),
       total: numberValue(countRows[0]?.count) ?? sessionRows.length,
     };
@@ -253,6 +261,30 @@ export function createLiveDbCatalogRepository(
       await sqlResolver.close();
     },
   };
+}
+
+async function loadSessionBindingWarnings(
+  sql: LivePostgresSql,
+  sessionRows: readonly Record<string, unknown>[],
+): Promise<Map<string, SessionBindingWarning[]>> {
+  const sessionIds = sessionRows.flatMap((row) =>
+    typeof row.session_id === "string" && row.session_id.length > 0
+      ? [row.session_id]
+      : [],
+  );
+  if (sessionIds.length === 0) return new Map();
+  const rows = await sql`
+    SELECT session_id, page_state, legacy_state
+    FROM session_page_bindings
+    WHERE session_id = ANY(${sessionIds}::text[])
+  `;
+  return new Map(rows.flatMap((row) => {
+    if (typeof row.session_id !== "string") return [];
+    return [[row.session_id, projectSessionBindingWarnings({
+      pageState: row.page_state as "pending" | "bound" | "manual_repair" | null,
+      legacyState: row.legacy_state as "pending" | "completed" | "manual_repair" | null,
+    })]];
+  }));
 }
 
 function createSessionResourceAccessRepository(

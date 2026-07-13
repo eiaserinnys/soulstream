@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import type { SessionBindingWarning } from "@soulstream/page-model";
 
 import type { ReviewState, TaskStatus, TerminationReason } from "../task/task_models.js";
 import type { SupervisorWakeDispatchState } from "../supervisor/wake_dispatch_state.js";
@@ -179,6 +180,7 @@ export interface UpstreamSessionDumpRow extends ListSessionSummaryRow {
   client_id: string | null;
   review_required?: boolean;
   review_state?: ReviewState;
+  binding_warnings: SessionBindingWarning[];
 }
 
 export interface RegisterSessionParams {

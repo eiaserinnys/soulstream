@@ -215,6 +215,7 @@ export class SessionBroadcaster {
       terminationDetail: task.terminationDetail ?? null,
       review_required: task.reviewRequired === true,
       review_state: task.reviewState ?? "not_required",
+      binding_warnings: task.creationWarnings ?? [],
     };
     if (sessionType !== "claude") {
       info.llm_provider = task.llmProvider ?? null;

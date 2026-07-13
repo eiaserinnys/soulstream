@@ -180,6 +180,21 @@ def test_documented_message_inventory_counts_match_schema() -> None:
     assert expected in GENERATED_PY_PATH.read_text(encoding="utf-8")
 
 
+def test_session_binding_warnings_are_additive_on_created_and_reconnect_rows() -> None:
+    schema = _load_schema()
+    created = schema["$defs"]["SessionCreated"]["properties"]["session"]["properties"]
+    reconnect = schema["$defs"]["SessionsUpdate"]["properties"]["sessions"]["items"]["properties"]
+    for properties in (created, reconnect):
+        warning = properties["binding_warnings"]
+        assert warning["type"] == "array"
+        assert warning["items"]["required"] == ["code", "message"]
+        assert warning["items"]["properties"]["code"]["enum"] == [
+            "PAGE_BINDING_PENDING",
+            "PAGE_BINDING_MANUAL_REPAIR",
+            "LEGACY_PROJECTION_PENDING",
+        ]
+
+
 def test_node_register_has_supported_backends() -> None:
     """옵션 D Phase A — NodeRegister에 supported_backends 신규 필드가 박혀 있어야 한다."""
     schema = _load_schema()

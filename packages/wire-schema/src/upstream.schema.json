@@ -107,6 +107,22 @@
             "review_state": {
               "type": "string",
               "enum": ["not_required", "needs_review", "acknowledged"]
+            },
+            "binding_warnings": {
+              "type": "array",
+              "description": "session_page_bindings durable state의 read projection. 응답 전용 복제 저장이 아니다.",
+              "items": {
+                "type": "object",
+                "required": ["code", "message"],
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "enum": ["PAGE_BINDING_PENDING", "PAGE_BINDING_MANUAL_REPAIR", "LEGACY_PROJECTION_PENDING"]
+                  },
+                  "message": { "type": "string" }
+                }
+              }
             }
           }
         },
@@ -211,6 +227,22 @@
               "review_state": {
                 "type": "string",
                 "enum": ["not_required", "needs_review", "acknowledged"]
+              },
+              "binding_warnings": {
+                "type": "array",
+                "description": "session_page_bindings durable state의 read projection. 빈 배열은 미완료 binding 없음.",
+                "items": {
+                  "type": "object",
+                  "required": ["code", "message"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "enum": ["PAGE_BINDING_PENDING", "PAGE_BINDING_MANUAL_REPAIR", "LEGACY_PROJECTION_PENDING"]
+                    },
+                    "message": { "type": "string" }
+                  }
+                }
               }
             }
           }

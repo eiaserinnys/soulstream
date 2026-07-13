@@ -9,6 +9,7 @@ import type {
   UpstreamSessionDumpRow,
   AcknowledgeReviewOutcome,
 } from "../session_db_types.js";
+import { projectSessionBindingWarnings } from "@soulstream/page-model";
 
 /**
  * `session_update` stored procedure 화이트리스트 (schema.sql L257-262).
@@ -265,7 +266,10 @@ export class SessionRepository {
   }): Promise<{ sessions: UpstreamSessionDumpRow[]; total: number }> {
     // Reconnect inventory needs the Python session wire inputs, not the smaller
     // dashboard summary and not private session columns such as claude_session_id.
-    const sessions = await this.sql<UpstreamSessionDumpRow[]>`
+    const rows = await this.sql<Array<UpstreamSessionDumpRow & {
+      binding_page_state: "pending" | "bound" | "manual_repair" | null;
+      binding_legacy_state: "pending" | "completed" | "manual_repair" | null;
+    }>>`
       SELECT
         s.session_id,
         s.display_name,
@@ -286,12 +290,26 @@ export class SessionRepository {
         s.last_message,
         s.client_id,
         s.review_required,
-        s.review_state
+        s.review_state,
+        spb.page_state AS binding_page_state,
+        spb.legacy_state AS binding_legacy_state
       FROM sessions s
+      LEFT JOIN session_page_bindings spb ON spb.session_id = s.session_id
       WHERE s.node_id = ${params.nodeId}
       ORDER BY s.updated_at DESC, s.session_id DESC
       LIMIT ${params.limit} OFFSET ${params.offset}
     `;
+    const sessions = rows.map((row) => {
+      const {
+        binding_page_state: pageState,
+        binding_legacy_state: legacyState,
+        ...session
+      } = row;
+      return {
+        ...session,
+        binding_warnings: projectSessionBindingWarnings({ pageState, legacyState }),
+      };
+    });
     const counts = await this.sql<Array<{ count: string | number }>>`
       SELECT COUNT(*) AS count
       FROM sessions

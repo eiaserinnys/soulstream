@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { acknowledgeSessionReview } from "./session-review";
+import {
+  SessionReviewAcknowledgeError,
+  acknowledgeSessionReview,
+} from "./session-review";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -36,8 +39,26 @@ describe("acknowledgeSessionReview", () => {
       }),
     }));
 
-    await expect(acknowledgeSessionReview("sess-1")).rejects.toThrow(
-      "REVIEW_NOT_REQUIRED: not human-owned",
-    );
+    const error = await acknowledgeSessionReview("sess-1").catch((caught) => caught);
+    expect(error).toBeInstanceOf(SessionReviewAcknowledgeError);
+    expect(error).toMatchObject({
+      status: 409,
+      code: "REVIEW_NOT_REQUIRED",
+      message: "REVIEW_NOT_REQUIRED: not human-owned",
+    });
+  });
+
+  it("keeps a malformed server failure distinguishable from a network failure", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => { throw new Error("invalid json"); },
+    }));
+
+    const error = await acknowledgeSessionReview("missing").catch((caught) => caught);
+    expect(error).toMatchObject({
+      status: 404,
+      code: "REVIEW_ACKNOWLEDGE_FAILED",
+    });
   });
 });
