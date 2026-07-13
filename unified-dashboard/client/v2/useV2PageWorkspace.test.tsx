@@ -54,6 +54,7 @@ function createApi(overrides: Partial<PageApiClient> = {}): PageApiClient {
       temp_id_mapping: {},
     })),
     ...overrides,
+    transferBlocks: overrides.transferBlocks ?? vi.fn(),
   };
 }
 

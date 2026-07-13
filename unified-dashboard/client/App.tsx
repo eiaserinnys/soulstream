@@ -21,9 +21,18 @@ const V2DashboardLayout = lazy(() =>
     default: mod.V2DashboardLayout,
   })),
 );
+const V3DashboardLayout = lazy(() =>
+  import("./v3/V3DashboardLayout").then((mod) => ({
+    default: mod.V3DashboardLayout,
+  })),
+);
 
 export function isV2Pathname(pathname: string): boolean {
   return pathname === "/v2" || pathname.startsWith("/v2/");
+}
+
+export function isV3Pathname(pathname: string): boolean {
+  return pathname === "/v3" || pathname.startsWith("/v3/");
 }
 
 export function App() {
@@ -47,6 +56,13 @@ export function App() {
   }, [config.mode, config.nodeId]);
 
   if (config.mode === "orchestrator") {
+    if (isV3Pathname(pathname)) {
+      return (
+        <Suspense fallback={null}>
+          <V3DashboardLayout />
+        </Suspense>
+      );
+    }
     if (isV2Pathname(pathname)) {
       return (
         <Suspense fallback={null}>

@@ -93,6 +93,7 @@ function createApi(): PageApiClient {
     getPage: vi.fn(),
     getDailyPage: vi.fn(),
     applyOperations: vi.fn(),
+    transferBlocks: vi.fn(),
     setStarred: vi.fn(),
   } as PageApiClient;
 }
