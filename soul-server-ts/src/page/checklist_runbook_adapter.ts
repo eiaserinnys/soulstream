@@ -12,7 +12,10 @@ import type {
   RunbookSnapshot,
 } from "../db/session_db_types.js";
 import { RunbookVersionConflict } from "../runbook/runbook_models.js";
-import type { RunbookActorParams } from "../runbook/runbook_service_models.js";
+import type {
+  RunbookActorParams,
+  RunbookMutationResult,
+} from "../runbook/runbook_service_models.js";
 import type { RunbookService } from "../runbook/runbook_service.js";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
 
@@ -55,6 +58,21 @@ export interface ChecklistToggleInput {
   itemId: string;
   actor: RunbookActorParams;
   idempotencyKey: string;
+}
+
+export interface ChecklistSetCheckedInput {
+  runbookId: string;
+  itemId: string;
+  checked: boolean;
+  expectedVersion: number;
+  actor: RunbookActorParams;
+  reason: string | null;
+  idempotencyKey: string;
+}
+
+export interface ChecklistStatusMutationResult {
+  projection: ChecklistProjection;
+  mutation: RunbookMutationResult;
 }
 
 export class ChecklistBindingMismatchError extends Error {
@@ -174,6 +192,34 @@ export class ChecklistRunbookAdapter {
         }
       }
       throw new Error("unreachable checklist toggle retry state");
+    });
+  }
+
+  /** Dashboard toggle seam. The Runbook item status remains the only checked-state source. */
+  async setChecked(input: ChecklistSetCheckedInput): Promise<ChecklistStatusMutationResult> {
+    return await this.withItemLock(input.itemId, async () => {
+      await this.requireBoundSnapshot(input.runbookId, input.itemId);
+      const mutation = await this.runbooks.setItemStatus({
+        ...input.actor,
+        itemId: input.itemId,
+        expectedVersion: input.expectedVersion,
+        status: input.checked ? "completed" : "pending",
+        reason: input.reason,
+        idempotencyKey: input.idempotencyKey,
+      });
+      const item = requireItem(mutation.snapshot, input.itemId);
+      if (mutation.snapshot.runbook.id !== input.runbookId) {
+        throw new ChecklistBindingMismatchError(
+          `checklist item ${input.itemId} belongs to ${mutation.snapshot.runbook.id}`,
+        );
+      }
+      return {
+        projection: projection(
+          { runbookId: input.runbookId, itemId: input.itemId },
+          item,
+        ),
+        mutation,
+      };
     });
   }
 

@@ -11,12 +11,14 @@ import type {
   RunbookSectionRow,
   RunbookStatus,
 } from "../db/session_db_types.js";
+import type { ChecklistRunbookAdapter } from "../page/checklist_runbook_adapter.js";
 
 import { RunbookVersionConflict } from "./runbook_models.js";
 import type { RunbookService } from "./runbook_service.js";
 
 export interface RunbookHttpRouteConfig {
   service: RunbookService;
+  checklistAdapter?: Pick<ChecklistRunbookAdapter, "setChecked">;
   auth: BoardYjsAuthConfig;
 }
 
@@ -224,10 +226,32 @@ export function registerRunbookHttpRoutes(
     }
 
     try {
-      const result = await config.service.setItemStatus({
-        actorKind: "user",
+      const actor = {
+        actorKind: "user" as const,
         actorSessionId,
         actorUserId: userId,
+      };
+      const isPageChecklistMutation = isPageChecklistStatusMutation(
+        snapshot.runbook.id,
+        item.id,
+        parsed.value.status,
+      );
+      if (isPageChecklistMutation && !config.checklistAdapter) {
+        throw new Error("page checklist adapter is not configured");
+      }
+      const checklistMutation = isPageChecklistMutation
+        ? await config.checklistAdapter!.setChecked({
+            runbookId: snapshot.runbook.id,
+            itemId: item.id,
+            checked: parsed.value.status === "completed",
+            expectedVersion: parsed.value.expectedVersion,
+            actor,
+            reason: parsed.value.reason,
+            idempotencyKey: parsed.value.idempotencyKey,
+          })
+        : null;
+      const result = checklistMutation?.mutation ?? await config.service.setItemStatus({
+        ...actor,
         itemId: request.params.itemId,
         expectedVersion: parsed.value.expectedVersion,
         status: parsed.value.status,
@@ -272,6 +296,16 @@ export function registerRunbookHttpRoutes(
       });
     }
   });
+}
+
+function isPageChecklistStatusMutation(
+  runbookId: string,
+  itemId: string,
+  status: MutableRunbookItemStatus,
+): boolean {
+  return runbookId.startsWith("page-runbook:")
+    && itemId.startsWith("checklist:")
+    && (status === "pending" || status === "completed");
 }
 
 function parseRunbookStatusBody(body: StatusRequestBody): {

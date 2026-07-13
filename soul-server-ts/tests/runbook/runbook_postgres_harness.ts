@@ -52,7 +52,8 @@ export async function createRunbookPostgresHarness(): Promise<RunbookPostgresHar
 
 export async function resetRunbookData(sql: SqlClient): Promise<void> {
   await sql`
-    TRUNCATE runbook_operations, runbook_items, runbook_sections, runbooks,
+    TRUNCATE checklist_runbook_projection_outbox, pages,
+      runbook_operations, runbook_items, runbook_sections, runbooks,
       board_yjs_catalog_cache, board_yjs_updates, board_yjs_documents,
       board_items, markdown_documents, folders, events, sessions
     RESTART IDENTITY CASCADE
@@ -280,6 +281,36 @@ async function createRunbookSchema(sql: SqlClient): Promise<void> {
       title TEXT NOT NULL,
       body TEXT NOT NULL DEFAULT '',
       version INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE TABLE pages (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      version INTEGER NOT NULL DEFAULT 1,
+      metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE TABLE checklist_runbook_projection_outbox (
+      block_id TEXT PRIMARY KEY,
+      page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+      source_hash TEXT NOT NULL,
+      processed_hash TEXT,
+      actor_kind TEXT NOT NULL DEFAULT 'system'
+        CHECK (actor_kind IN ('agent','user','system')),
+      actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      actor_user_id TEXT,
+      routing_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+      last_error TEXT,
+      next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      lease_owner_node_id TEXT,
+      lease_expires_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )

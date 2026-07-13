@@ -9,6 +9,7 @@ import { DEFAULT_FOLDERS as SYSTEM_DEFAULT_FOLDERS } from "../system_folders.js"
 import { RunbookRepository } from "../runbook/runbook_repository.js";
 import { SoulstreamScheduleRepository } from "../schedule/schedule_repository.js";
 import { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
+import { ChecklistRunbookProjectionRepository } from "../page/checklist_runbook_projection_repository.js";
 import { TaskTreeRepository } from "../task_tree/task_tree_repository.js";
 import { BoardRepository } from "./repositories/board_repository.js";
 import { BoardYjsRepository } from "./repositories/board_yjs_repository.js";
@@ -35,6 +36,7 @@ export class SessionDB extends SupervisorSessionDbFacade {
   private taskTreeRepository?: TaskTreeRepository;
   private scheduleRepository?: SoulstreamScheduleRepository;
   private sessionPageBindingRepository?: SessionPageBindingRepository;
+  private checklistRunbookProjectionRepository?: ChecklistRunbookProjectionRepository;
   private readonly sessionRepository: SessionRepository;
   private readonly boardRepository: BoardRepository;
   private readonly catalogRepository: CatalogRepository;
@@ -107,6 +109,11 @@ export class SessionDB extends SupervisorSessionDbFacade {
   sessionPageBindings(): SessionPageBindingRepository {
     this.sessionPageBindingRepository ??= new SessionPageBindingRepository(this.sql);
     return this.sessionPageBindingRepository;
+  }
+
+  checklistRunbookProjections(): ChecklistRunbookProjectionRepository {
+    this.checklistRunbookProjectionRepository ??= new ChecklistRunbookProjectionRepository(this.sql);
+    return this.checklistRunbookProjectionRepository;
   }
 
   async registerSession(params: RegisterSessionParams): Promise<void> {

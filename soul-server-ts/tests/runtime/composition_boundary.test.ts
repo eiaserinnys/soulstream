@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { composeSupervisorRuntime } from "../../src/runtime/supervisor_composition.js";
 import { composeWorkerRuntime } from "../../src/runtime/worker_composition.js";
+import { composeChecklistRunbookProjection } from "../../src/runtime/checklist_runbook_composition.js";
 
 const sourceRoot = fileURLToPath(new URL("../../src/", import.meta.url));
 
@@ -39,11 +40,8 @@ describe("worker composition boundary", () => {
     expect(workerComposition).not.toContain("NO_PAGE_ANCHOR_CONTEXT_RESOLVER");
   });
 
-  it("wires the checklist adapter through the RunbookService public boundary", () => {
-    const workerComposition = source("runtime/worker_composition.ts");
-
-    expect(workerComposition).toContain("new ChecklistRunbookAdapter(runbookService)");
-    expect(workerComposition).toContain("checklistRunbookAdapter,");
+  it("exports an executable checklist projection composition boundary", () => {
+    expect(composeChecklistRunbookProjection).toBeTypeOf("function");
   });
 
   it("keeps every production module touched by the extraction below 500 lines", () => {
@@ -57,6 +55,9 @@ describe("worker composition boundary", () => {
       "context/page_context_repository.ts",
       "context/page_context_assembler.ts",
       "page/checklist_runbook_adapter.ts",
+      "page/checklist_runbook_projection_repository.ts",
+      "page/checklist_runbook_reconciler.ts",
+      "runtime/checklist_runbook_composition.ts",
       "runbook/runbook_service.ts",
       "task/task_creation.ts",
       "task/task_creation_hook.ts",

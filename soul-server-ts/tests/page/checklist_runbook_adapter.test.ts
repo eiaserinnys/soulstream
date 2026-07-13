@@ -339,6 +339,38 @@ describe("ChecklistRunbookAdapter", () => {
     expect(h.snapshot()?.items[0]?.status).toBe("pending");
   });
 
+  it("routes an explicit checked value through one versioned Runbook mutation", async () => {
+    const h = harness();
+    await h.adapter.reconcile(legacyInput(false));
+
+    const result = await h.adapter.setChecked({
+      runbookId: "page-runbook:page-1",
+      itemId: "checklist:block-1",
+      checked: true,
+      expectedVersion: 1,
+      actor,
+      reason: "dashboard toggle",
+      idempotencyKey: "checklist-set:browser:one",
+    });
+
+    expect(h.port.setItemStatus).toHaveBeenCalledWith({
+      ...actor,
+      itemId: "checklist:block-1",
+      expectedVersion: 1,
+      status: "completed",
+      reason: "dashboard toggle",
+      idempotencyKey: "checklist-set:browser:one",
+    });
+    expect(result.projection).toEqual({
+      properties: {
+        runbookId: "page-runbook:page-1",
+        itemId: "checklist:block-1",
+      },
+      status: "completed",
+      checked: true,
+    });
+  });
+
   it("does not apply the same toggle idempotency key twice", async () => {
     const h = harness();
     await h.adapter.reconcile(legacyInput(false));

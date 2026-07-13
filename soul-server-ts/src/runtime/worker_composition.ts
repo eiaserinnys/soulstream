@@ -32,7 +32,8 @@ import { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { RunbookHandoffNotifier } from "../runbook/runbook_handoff_notifier.js";
 import { RunbookService } from "../runbook/runbook_service.js";
 import { PageYjsHostClient } from "../page/page_host_client.js";
-import { ChecklistRunbookAdapter } from "../page/checklist_runbook_adapter.js";
+import type { ChecklistRunbookAdapter } from "../page/checklist_runbook_adapter.js";
+import type { ChecklistRunbookReconciler } from "../page/checklist_runbook_reconciler.js";
 import {
   SessionLegacyProjection,
   SessionPageBindingService,
@@ -49,6 +50,7 @@ import {
   composeSupervisorRuntime,
   type SupervisorComposition,
 } from "./supervisor_composition.js";
+import { composeChecklistRunbookProjection } from "./checklist_runbook_composition.js";
 
 export interface WorkerCompositionParams {
   env: Env;
@@ -71,6 +73,7 @@ export interface WorkerComposition extends SupervisorComposition {
   scheduleService: SoulstreamScheduleService;
   sessionPageBindingService: SessionPageBindingService;
   checklistRunbookAdapter: ChecklistRunbookAdapter;
+  checklistRunbookReconciler: ChecklistRunbookReconciler;
   createUpstreamAdapter(): UpstreamAdapter;
 }
 
@@ -289,7 +292,17 @@ export async function composeWorkerRuntime(
     catalogService,
     logger,
   );
-  const checklistRunbookAdapter = new ChecklistRunbookAdapter(runbookService);
+  const {
+    checklistRunbookAdapter,
+    checklistRunbookReconciler,
+  } = composeChecklistRunbookProjection({
+    nodeId: env.SOULSTREAM_NODE_ID,
+    db,
+    runbookService,
+    pageHost,
+    logger,
+  });
+  checklistRunbookReconciler.start();
   const customViewService = new CustomViewService(db, boardYjsService, broadcaster);
   const llmAdapters = {
     ...(env.LLM_OPENAI_API_KEY ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) } : {}),
@@ -359,7 +372,11 @@ export async function composeWorkerRuntime(
       : undefined,
     boardYjs: { service: localBoardYjsService },
     boardYjsHost: { service: localBoardYjsService, auth: boardYjsAuth },
-    runbook: { service: runbookService, auth: boardYjsAuth },
+    runbook: {
+      service: runbookService,
+      checklistAdapter: checklistRunbookAdapter,
+      auth: boardYjsAuth,
+    },
     boardItem: { service: catalogService, auth: boardYjsAuth },
     markdownDocument: { service: catalogService, auth: boardYjsAuth },
   });
@@ -409,6 +426,7 @@ export async function composeWorkerRuntime(
     scheduleService,
     sessionPageBindingService,
     checklistRunbookAdapter,
+    checklistRunbookReconciler,
     createUpstreamAdapter,
   };
 }

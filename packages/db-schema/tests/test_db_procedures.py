@@ -194,6 +194,61 @@ async def test_page_prefix_search_indexes_apply_to_fresh_schema_and_are_idempote
             assert fragment in migrated_indexes[index_name]
 
 
+async def test_checklist_projection_outbox_migration_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("039_checklist_runbook_projection_outbox.sql").strip()
+
+    assert migration_sql in _schema_sql()
+
+
+async def test_checklist_projection_outbox_upgrade_backfills_and_reapplies(test_db):
+    await test_db.execute(
+        """
+        INSERT INTO pages (id, title, version)
+        VALUES ('page-outbox-upgrade', 'Outbox upgrade', 1)
+        """
+    )
+    await test_db.execute(
+        """
+        INSERT INTO blocks (
+          id, page_id, position_key, block_type, text_plain, properties
+        ) VALUES (
+          'block-outbox-upgrade', 'page-outbox-upgrade', 'a',
+          'checklist', 'Legacy checked', '{"checked": true}'::jsonb
+        )
+        """
+    )
+    await test_db.execute("DROP TABLE checklist_runbook_projection_outbox")
+
+    migration_sql = _migration_sql("039_checklist_runbook_projection_outbox.sql")
+    await test_db.execute(migration_sql)
+    await test_db.execute(migration_sql)
+
+    row = await test_db.fetchrow(
+        """
+        SELECT page_id, actor_kind, processed_hash, attempts
+        FROM checklist_runbook_projection_outbox
+        WHERE block_id = 'block-outbox-upgrade'
+        """
+    )
+    assert dict(row) == {
+        "page_id": "page-outbox-upgrade",
+        "actor_kind": "system",
+        "processed_hash": None,
+        "attempts": 0,
+    }
+    indexes = await test_db.fetch(
+        """
+        SELECT indexname
+        FROM pg_indexes
+        WHERE schemaname = current_schema()
+          AND tablename = 'checklist_runbook_projection_outbox'
+        """
+    )
+    assert "idx_checklist_runbook_projection_due" in {
+        row["indexname"] for row in indexes
+    }
+
+
 async def test_session_review_schema_and_atomic_transitions(test_db):
     columns = {
         row["column_name"]: row

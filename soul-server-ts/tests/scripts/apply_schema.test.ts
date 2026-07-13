@@ -272,6 +272,7 @@ describe("apply-schema.mjs", () => {
       `).rejects.toMatchObject({ code: "23514" });
 
       await sql.unsafe(`
+        DROP TABLE checklist_runbook_projection_outbox;
         DROP TABLE block_links;
         DROP TABLE block_operations;
         DROP TABLE blocks;

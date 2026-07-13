@@ -139,6 +139,26 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       SELECT version, updated_session_id FROM pages WHERE id = 'page-1'
     `;
     expect(page).toEqual({ version: 2, updated_session_id: "agent-session" });
+    const checklistBlockId = mutated.temp_id_mapping.check!;
+    const projectionRows = await harness.sql<Array<{
+      actor_kind: string;
+      actor_session_id: string | null;
+      actor_user_id: string | null;
+      routing_session_id: string | null;
+      processed_hash: string | null;
+    }>>`
+      SELECT actor_kind, actor_session_id, actor_user_id, routing_session_id, processed_hash
+      FROM checklist_runbook_projection_outbox
+      WHERE block_id = ${checklistBlockId}
+    `;
+    const projection = projectionRows[0];
+    expect(projection).toEqual({
+      actor_kind: "agent",
+      actor_session_id: "agent-session",
+      actor_user_id: null,
+      routing_session_id: "agent-session",
+      processed_hash: null,
+    });
     const snapshot = await repository.getPageYjsSnapshot("page:page-1");
     expect(snapshot).not.toBeNull();
     expect(readPageYDocReplica("page-1", service.decodeSnapshot(snapshot!)).page.mutationVersion)
@@ -254,7 +274,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
     };
 
     try {
-      await waitForSync(provider);
+      await connectAndWaitForSync(provider);
       const text = getEditableText(provider.document, blockId);
       text.insert(text.length, "-A");
       const mutation = raceService.mutatePage({
@@ -321,13 +341,14 @@ function connectProvider(address: string, pageId: string): HocuspocusProvider {
     document: new Y.Doc(),
     token: "service-token",
     WebSocketPolyfill: WebSocket,
+    autoConnect: false,
   } as HocuspocusProviderConfiguration & { WebSocketPolyfill: typeof WebSocket });
 }
 
 function waitForSync(provider: HocuspocusProvider): Promise<void> {
   if (provider.isSynced) return Promise.resolve();
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("provider sync timed out")), 20_000);
+    const timer = setTimeout(() => reject(new Error("provider sync timed out")), 7_000);
     provider.on("synced", () => {
       clearTimeout(timer);
       resolve();
@@ -341,6 +362,20 @@ function waitForSync(provider: HocuspocusProvider): Promise<void> {
       resolve();
     }
   });
+}
+
+async function connectAndWaitForSync(provider: HocuspocusProvider): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await Promise.all([provider.connect(), waitForSync(provider)]);
+      return;
+    } catch (error) {
+      lastError = error;
+      provider.disconnect();
+    }
+  }
+  throw lastError;
 }
 
 function getEditableText(document: Y.Doc, blockId: string): Y.Text {
