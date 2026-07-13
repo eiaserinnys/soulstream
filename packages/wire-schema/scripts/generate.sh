@@ -44,6 +44,24 @@ datamodel-codegen \
   --formatters black isort \
   --disable-timestamp
 
+# datamodel-code-generator가 실행 Python 버전에 따라 TypedDict를 typing과
+# typing_extensions 양쪽에서 동시에 import하는 경우가 있다. closed TypedDict가 하나라도
+# 있으면 typing_extensions가 정본이므로 중복 표면을 제거해 CI(3.11)와 dev(3.12) 출력을
+# byte-for-byte 동일하게 유지한다.
+node - "$PY_OUT" <<'NODE'
+const { readFileSync, writeFileSync } = require("node:fs");
+
+const outputPath = process.argv[2];
+let source = readFileSync(outputPath, "utf8");
+if (source.includes("from typing_extensions import TypedDict")) {
+  source = source.replace(
+    /from typing import ([^\n]+), TypedDict\n/,
+    "from typing import $1\n",
+  );
+}
+writeFileSync(outputPath, source);
+NODE
+
 PY_TMP="$(mktemp)"
 {
   echo "# AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh"

@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, NotRequired, TypeAlias, TypedDict
+from typing import Any, Literal, NotRequired, TypeAlias
 
 from typing_extensions import TypedDict
 
