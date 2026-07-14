@@ -167,12 +167,6 @@ function V3DashboardContent() {
   const setActiveSessionSummary = useDashboardStore((state) => state.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
   const nodes = useOrchestratorStore((state) => state.nodes);
-  const { sessions: catalogSessions } = useSessionListProvider({
-    intervalMs: 5000,
-    enabled: true,
-    getSessionProvider: () => orchestratorSessionProvider,
-    sessionScope: "all",
-  });
   const currentTasks = useMemo(
     () => [...(daily.data?.tasks ?? []), ...(project.data?.tasks ?? [])],
     [daily.data?.tasks, project.data?.tasks],
@@ -187,7 +181,6 @@ function V3DashboardContent() {
   } = useSessionListProvider({
     enabled: plannerSessionIds.length > 0,
     getSessionProvider: () => orchestratorSessionProvider,
-    sessionScope: "all",
     sessionIds: plannerSessionIds,
     streamEnabled: false,
     initialCatalogLoadEnabled: false,
@@ -195,10 +188,10 @@ function V3DashboardContent() {
   });
   const runSessionResolution = useMemo(() => resolveRunSessions({
     sessionIds: plannerSessionIds,
-    catalogSessions,
+    catalogSessions: [],
     targetedSessions: targetedRunSessions,
     targetedLoading: targetedRunSessionsLoading,
-  }), [catalogSessions, plannerSessionIds, targetedRunSessions, targetedRunSessionsLoading]);
+  }), [plannerSessionIds, targetedRunSessions, targetedRunSessionsLoading]);
   const sessions = runSessionResolution.sessions;
   useSessionProvider({
     sessionKey: activeSessionKey,

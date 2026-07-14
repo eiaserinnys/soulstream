@@ -36,7 +36,8 @@ export type SessionSnapshotServiceOptions = {
 };
 
 const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 200;
+export const SESSION_SNAPSHOT_MAX_LIMIT = 200;
+export const SESSION_SNAPSHOT_MAX_TARGET_IDS = SESSION_SNAPSHOT_MAX_LIMIT;
 
 export class SessionSnapshotService {
   private readonly registry: InMemoryNodeRegistry;
@@ -48,18 +49,21 @@ export class SessionSnapshotService {
   listSessions(query: SessionSnapshotQuery = {}): SessionSnapshotListResponse {
     const offset = resolveSessionSnapshotOffset(query);
     const limit = resolveSessionSnapshotLimit(query.limit);
+    const normalizedQuery = {
+      ...query,
+      session_ids: resolveSessionSnapshotIds(query.session_ids),
+    };
     const filtered = this.registry.sessionCache
       .listSessions()
       .map((session) => ({
         session,
         snapshot: this.projectSession(session),
       }))
-      .filter(({ snapshot }) => matchesQuery(snapshot, query))
+      .filter(({ snapshot }) => matchesQuery(snapshot, normalizedQuery))
       .sort((left, right) => compareSessions(left.session, right.session));
-    const page = (limit === 0
-      ? filtered.slice(offset)
-      : filtered.slice(offset, offset + limit)
-    ).map((entry) => entry.snapshot);
+    const page = filtered
+      .slice(offset, offset + limit)
+      .map((entry) => entry.snapshot);
     return buildSessionSnapshotListResponse(page, filtered.length, offset, limit);
   }
 
@@ -111,7 +115,14 @@ export function resolveSessionSnapshotOffset(query: SessionSnapshotQuery): numbe
 export function resolveSessionSnapshotLimit(limit: number | undefined): number {
   if (limit === undefined) return DEFAULT_LIMIT;
   if (!Number.isInteger(limit) || limit < 0) return DEFAULT_LIMIT;
-  return Math.min(limit, MAX_LIMIT);
+  if (limit === 0) return SESSION_SNAPSHOT_MAX_LIMIT;
+  return Math.min(limit, SESSION_SNAPSHOT_MAX_LIMIT);
+}
+
+export function resolveSessionSnapshotIds(
+  sessionIds: string[] | undefined,
+): string[] | undefined {
+  return sessionIds?.slice(0, SESSION_SNAPSHOT_MAX_TARGET_IDS);
 }
 
 export function buildSessionSnapshotListResponse(

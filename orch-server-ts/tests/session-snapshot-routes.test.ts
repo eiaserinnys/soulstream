@@ -5,6 +5,8 @@ import {
   InMemoryNodeRegistry,
   loadContractFixtures,
   parseOrchServerConfig,
+  SESSION_SNAPSHOT_MAX_LIMIT,
+  SESSION_SNAPSHOT_MAX_TARGET_IDS,
   SessionSnapshotService,
   sessionSnapshotRouteAuthRequirements,
 } from "../src/index.js";
@@ -50,7 +52,7 @@ describe("session snapshot route harness", () => {
     await app.close();
   });
 
-  it("passes more than 200 targeted IDs without silent truncation", async () => {
+  it("rejects targeted ID requests above the per-request bound", async () => {
     let captured: string[] | undefined;
     const app = createApp({
       config,
@@ -75,8 +77,43 @@ describe("session snapshot route harness", () => {
 
     const response = await app.inject({ method: "GET", url: `/api/sessions?${query}` });
 
+    expect(response.statusCode).toBe(422);
+    expect(response.json()).toEqual({
+      detail: `session_id must contain at most ${SESSION_SNAPSHOT_MAX_TARGET_IDS} values`,
+    });
+    expect(captured).toBeUndefined();
+    await app.close();
+  });
+
+  it("keeps a 10,000-session limit=0 response within the row and byte budgets", async () => {
+    const { app, registry } = createHarness(() => 1_700_000_000_000);
+    const connectionId = registerNode(registry, "node-a");
+    registry.receiveNodeMessage(
+      { nodeId: "node-a", connectionId },
+      {
+        type: "sessions_update",
+        sessions: Array.from({ length: 10_000 }, (_, index) => ({
+          agentSessionId: `session-${String(index).padStart(5, "0")}`,
+          status: "completed",
+          prompt: "bounded-regression-payload",
+        })),
+      },
+    );
+
+    const response = await app.inject({ method: "GET", url: "/api/sessions?limit=0" });
+    const body = response.json();
+
     expect(response.statusCode).toBe(200);
-    expect(captured).toHaveLength(250);
+    expect(body.sessions).toHaveLength(SESSION_SNAPSHOT_MAX_LIMIT);
+    expect(body.sessionList).toHaveLength(SESSION_SNAPSHOT_MAX_LIMIT);
+    expect(body).toMatchObject({
+      total: 10_000,
+      cursor: String(SESSION_SNAPSHOT_MAX_LIMIT),
+      nextCursor: String(SESSION_SNAPSHOT_MAX_LIMIT),
+      hasMore: true,
+    });
+    expect(Buffer.byteLength(response.body, "utf8")).toBeLessThan(5 * 1024 * 1024);
+
     await app.close();
   });
 

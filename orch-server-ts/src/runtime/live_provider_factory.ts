@@ -76,7 +76,11 @@ import { createLiveAtomHttpClient } from "./live_atom_route_provider.js";
 import { createLiveAttachmentRouteProviders } from "./live_attachment_route_provider.js";
 import { broadcastCatalogSnapshot } from "./live_folder_mutation_broadcaster.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
-import { resolveSessionSnapshotLimit, resolveSessionSnapshotOffset } from "../session/session_snapshot_service.js";
+import {
+  resolveSessionSnapshotIds,
+  resolveSessionSnapshotLimit,
+  resolveSessionSnapshotOffset,
+} from "../session/session_snapshot_service.js";
 import {
   liveProviderWiringInventory,
   type LiveProviderPath,
@@ -355,7 +359,7 @@ export function createLiveOrchestratorProviderBundle(
             const access = await sessionResourceAccessProvider.resolveAccess({ request });
             return options.dependencies.dbCatalogRepository.listSessionSnapshots({
               access,
-              sessionIds: query.session_ids,
+              sessionIds: resolveSessionSnapshotIds(query.session_ids),
               feedOnly: query.feed_only === true,
               folderId,
               sessionType: query.session_type,

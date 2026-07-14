@@ -52,26 +52,32 @@ describe("supervisor ingest service", () => {
   });
 
   it("uses direct session change last_event_id as the idempotency key", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-14T13:00:00.000Z"));
     const repository = new FakeSupervisorRepository();
     const service = new SupervisorIngestService({ repository });
+    try {
+      await service.appendNodeChange({
+        type: "node_session_session_updated",
+        nodeId: "node-a",
+        data: {
+          agentSessionId: "session-a",
+          last_event_id: 12,
+          status: "running",
+        },
+      });
 
-    await service.appendNodeChange({
-      type: "node_session_session_updated",
-      nodeId: "node-a",
-      data: {
-        agentSessionId: "session-a",
-        last_event_id: 12,
-        status: "running",
-      },
-    });
-
-    expect(repository.appendCalls[0]).toMatchObject({
-      sourceNode: "node-a",
-      sourceSessionId: "session-a",
-      sourceEventId: 12,
-      eventType: "session_updated",
-      payload: { type: "session_updated", status: "running" },
-    });
+      expect(repository.appendCalls[0]).toMatchObject({
+        sourceNode: "node-a",
+        sourceSessionId: "session-a",
+        sourceEventId: 12,
+        eventType: "session_updated",
+        payload: { type: "session_updated", status: "running" },
+        createdAt: new Date("2026-07-14T13:00:00.000Z"),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("matches Python int parsing for string event ids", async () => {
