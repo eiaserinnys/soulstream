@@ -77,7 +77,12 @@ import {
   saveTaskDescription,
   type PageSessionDefaults,
 } from "./task-workspace-api";
-import { buildRunTree, type RunTreeNode } from "./task-workspace-model";
+import {
+  activateRunSession,
+  buildRunTree,
+  resolveRunSessions,
+  type RunTreeNode,
+} from "./task-workspace-model";
 import "./v3-planner.css";
 import "./v3-planner-surfaces.css";
 import "./v3-task-workspace.css";
@@ -150,14 +155,41 @@ function V3DashboardContent() {
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
   const selectFolder = useDashboardStore((state) => state.selectFolder);
   const nodes = useOrchestratorStore((state) => state.nodes);
-  const { sessions } = useSessionListProvider({
+  const { sessions: catalogSessions } = useSessionListProvider({
     intervalMs: 5000,
     enabled: true,
     getSessionProvider: () => orchestratorSessionProvider,
     sessionScope: "all",
   });
+  const currentTasks = useMemo(
+    () => [...(daily.data?.tasks ?? []), ...(project.data?.tasks ?? [])],
+    [daily.data?.tasks, project.data?.tasks],
+  );
+  const plannerSessionIds = useMemo(
+    () => [...new Set(currentTasks.flatMap((task) => task.sessionIds))].sort(),
+    [currentTasks],
+  );
+  const {
+    sessions: targetedRunSessions,
+    loading: targetedRunSessionsLoading,
+  } = useSessionListProvider({
+    enabled: plannerSessionIds.length > 0,
+    getSessionProvider: () => orchestratorSessionProvider,
+    sessionScope: "all",
+    sessionIds: plannerSessionIds,
+    streamEnabled: false,
+    initialCatalogLoadEnabled: false,
+    folderCountsEnabled: false,
+  });
+  const runSessionResolution = useMemo(() => resolveRunSessions({
+    sessionIds: plannerSessionIds,
+    catalogSessions,
+    targetedSessions: targetedRunSessions,
+    targetedLoading: targetedRunSessionsLoading,
+  }), [catalogSessions, plannerSessionIds, targetedRunSessions, targetedRunSessionsLoading]);
+  const sessions = runSessionResolution.sessions;
   useSessionProvider({
-    sessionKey: chatOpen ? activeSessionKey : null,
+    sessionKey: activeSessionKey,
     getSessionProvider: () => orchestratorSessionProvider,
   });
 
@@ -195,10 +227,6 @@ function V3DashboardContent() {
     return () => { active = false; };
   }, [api, dataDependencies, refreshKey, selectedProject]);
 
-  const currentTasks = useMemo(
-    () => [...(daily.data?.tasks ?? []), ...(project.data?.tasks ?? [])],
-    [daily.data?.tasks, project.data?.tasks],
-  );
   const selectedTask = currentTasks.find((task) => task.page.id === selectedTaskId) ?? selectedTaskSnapshot;
   const mobileTaskOptions = useMemo(
     () => buildMobileTaskOptions(currentTasks, sessions),
@@ -238,9 +266,12 @@ function V3DashboardContent() {
     }
     if (next.selectedRunId !== activeSessionKey) {
       const session = sessions.find((candidate) => candidate.agentSessionId === next.selectedRunId) ?? null;
-      setActiveSessionSummary(session);
-      setActiveSession(session?.agentSessionId ?? null);
-      if (session) setActiveTab("chat");
+      if (session) {
+        activateRunSession(session, { setActiveSessionSummary, setActiveSession, setActiveTab });
+      } else {
+        setActiveSessionSummary(null);
+        setActiveSession(null);
+      }
     }
     if (next.activeTab === "today") {
       setSelectedProjectId(null);
@@ -304,9 +335,7 @@ function V3DashboardContent() {
     if (mobileMode) setMobileTab("task");
   };
   const openSession = useCallback((session: SessionSummary) => {
-    setActiveSessionSummary(session);
-    setActiveSession(session.agentSessionId);
-    setActiveTab("chat");
+    activateRunSession(session, { setActiveSessionSummary, setActiveSession, setActiveTab });
     setWorkspaceOpen(true);
     setChatOpen(true);
     if (mobileMode && selectedTaskId) setMobileTab("chat");
@@ -432,7 +461,7 @@ function V3DashboardContent() {
         </div>
       </main>
       {workspaceOpen && selectedTask ? (
-        <TaskWorkspace task={selectedTask} projectTitle={projectTitle} sessions={sessions} activeSession={activeSession} chatOpen={chatOpen} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} sessionDefaults={sessionDefaults} mobileMode={mobileMode} mobileTab={mobileTab} onReturnToPlanner={returnToPlanner} onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }} onOpenBoard={openBoard} onOpenSession={openSession} onSaveDescription={saveDescription} onPromoteDocument={promoteDocument} onAcknowledgedReview={acknowledgeReview} />
+        <TaskWorkspace task={selectedTask} projectTitle={projectTitle} sessions={sessions} runSessionLoadStates={runSessionResolution.loadStateById} activeSession={activeSession} chatOpen={chatOpen} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} sessionDefaults={sessionDefaults} mobileMode={mobileMode} mobileTab={mobileTab} onReturnToPlanner={returnToPlanner} onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }} onOpenBoard={openBoard} onOpenSession={openSession} onSaveDescription={saveDescription} onPromoteDocument={promoteDocument} onAcknowledgedReview={acknowledgeReview} />
       ) : null}
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
       <RitualModal open={ritualOpen} today={today} sessions={sessions} onClose={() => setRitualOpen(false)} onRefresh={() => setRefreshKey((value) => value + 1)} />

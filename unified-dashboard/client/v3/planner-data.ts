@@ -98,8 +98,13 @@ export async function loadDailyPlanner(
   const tasks = (await Promise.all(mountedPages.map(async (mounted) => {
     const classification = classifyMountedPage(mounted.blocks);
     if (classification.kind === "document") return null;
-    const projectPageId = await findMountedProject(api, mounted.page.id, projectIds);
-    return await buildTask(mounted, classification.runbookId, projectPageId, allPages, dependencies);
+    return await buildTask(
+      mounted,
+      classification.runbookId,
+      findMountedProject(api, mounted.page.id, projectIds),
+      allPages,
+      dependencies,
+    );
   }))).filter((task): task is PlannerTask => task !== null);
   return {
     daily,
@@ -121,33 +126,36 @@ export async function loadProjectPlanner(
     listAllPages(api),
   ]);
   const mountedPages = (await readMountedPages(api, projectRead.blocks, allPages)).reverse();
-  const tasks: PlannerTask[] = [];
-  const documents: PageDto[] = [];
-  for (const mounted of mountedPages) {
+  const entries = await Promise.all(mountedPages.map(async (mounted) => {
     const classification = classifyMountedPage(mounted.blocks);
     if (classification.kind === "document") {
-      documents.push(mounted.page);
-      continue;
+      return { kind: "document" as const, page: mounted.page };
     }
-    tasks.push(await buildTask(
-      mounted,
-      classification.runbookId,
-      project.id,
-      allPages,
-      dependencies,
-    ));
-  }
+    return {
+      kind: "task" as const,
+      task: await buildTask(
+        mounted,
+        classification.runbookId,
+        project.id,
+        allPages,
+        dependencies,
+      ),
+    };
+  }));
+  const tasks = entries.flatMap((entry) => entry.kind === "task" ? [entry.task] : []);
+  const documents = entries.flatMap((entry) => entry.kind === "document" ? [entry.page] : []);
   return { project, tasks, documents };
 }
 
 async function buildTask(
   mounted: PageReadResponse,
   runbookId: string,
-  projectPageId: string | null,
+  projectPageId: string | null | Promise<string | null>,
   allPages: readonly PageDto[],
   dependencies: PlannerDataDependencies,
 ): Promise<PlannerTask> {
-  const [runbook, sessionIds] = await Promise.all([
+  const [resolvedProjectPageId, runbook, sessionIds] = await Promise.all([
+    projectPageId,
     dependencies.fetchRunbook(runbookId).catch((error: unknown) => {
       console.warn(`[v3 planner] Runbook ${runbookId} could not be loaded`, error);
       return null;
@@ -167,7 +175,7 @@ async function buildTask(
     assignee: taskAssignee(runbook),
     contextCount: taskContextCount(mounted.blocks),
     progress: plannerProgress(runbook),
-    projectPageId,
+    projectPageId: resolvedProjectPageId,
     sessionIds,
     mountedDocuments: mountedTaskDocuments(mounted, allPages),
   };

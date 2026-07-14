@@ -1,15 +1,17 @@
 import { describe, expect, it } from "vitest";
 
 import type { BlockDto, PageDto } from "@seosoyoung/soul-ui/page";
-import type { SessionSummary } from "@seosoyoung/soul-ui";
+import { useDashboardStore, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
   DEFAULT_WORKSPACE_SPLIT,
+  activateRunSession,
   buildDescriptionMutation,
   buildRunTree,
   clampWorkspaceSplit,
   descriptionMarkdown,
   reduceWorkspaceEscape,
+  resolveRunSessions,
   workspaceSplitForKey,
 } from "./task-workspace-model";
 
@@ -47,6 +49,71 @@ describe("run tree projection", () => {
     expect(tree[0]?.children[0]?.session.agentSessionId).toBe("delegate-child");
     expect(tree[0]?.children[0]?.children[0]?.session.agentSessionId).toBe("delegate-grandchild");
     expect(JSON.stringify(tree)).not.toContain("unrelated");
+  });
+
+  it("projects catalog hits, targeted loading misses, and terminal misses separately", () => {
+    const catalog = [session("catalog-hit", "2026-07-13T10:00:00Z")];
+    const loading = resolveRunSessions({
+      sessionIds: ["catalog-hit", "targeted-hit", "missing"],
+      catalogSessions: catalog,
+      targetedSessions: [],
+      targetedLoading: true,
+    });
+
+    expect(loading.loadStateById.get("catalog-hit")).toBe("ready");
+    expect(loading.loadStateById.get("targeted-hit")).toBe("loading");
+    expect(loading.loadStateById.get("missing")).toBe("loading");
+
+    const resolved = resolveRunSessions({
+      sessionIds: ["catalog-hit", "targeted-hit", "missing"],
+      catalogSessions: catalog,
+      targetedSessions: [{
+        ...session("targeted-hit", "2026-07-13T11:00:00Z"),
+        displayName: "상세 조회 성공",
+      }],
+      targetedLoading: false,
+    });
+
+    expect(resolved.loadStateById.get("targeted-hit")).toBe("ready");
+    expect(resolved.loadStateById.get("missing")).toBe("failed");
+    expect(resolved.sessions.find((item) => item.agentSessionId === "targeted-hit")?.displayName)
+      .toBe("상세 조회 성공");
+
+    const tree = buildRunTree(
+      ["catalog-hit", "targeted-hit", "missing"],
+      resolved.sessions,
+      resolved.loadStateById,
+    );
+    expect(tree.find((node) => node.session.agentSessionId === "missing")).toMatchObject({
+      loadState: "failed",
+      session: { status: "unknown" },
+    });
+  });
+});
+
+describe("run session activation", () => {
+  it("uses the v1 selection order and clears the previous session tree", () => {
+    useDashboardStore.setState({
+      activeSessionKey: "old-session",
+      activeSessionSummary: session("old-session", "2026-07-13T09:00:00Z"),
+      tree: { stale: true } as never,
+    });
+    const next = session("next-session", "2026-07-13T12:00:00Z");
+    const state = useDashboardStore.getState();
+
+    activateRunSession(next, {
+      setActiveSessionSummary: state.setActiveSessionSummary,
+      setActiveSession: state.setActiveSession,
+      setActiveTab: state.setActiveTab,
+    });
+
+    expect(useDashboardStore.getState()).toMatchObject({
+      activeSessionKey: "next-session",
+      activeSessionSummary: next,
+      tree: null,
+      activeRightTab: "chat",
+    });
+    useDashboardStore.getState().clearActiveSession();
   });
 });
 

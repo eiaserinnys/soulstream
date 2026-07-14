@@ -4,7 +4,7 @@ import { useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
 import type { PlannerTask } from "./planner-data";
 import { plannerStatusPresentation } from "./planner-model";
 import type { PageSessionDefaults } from "./task-workspace-api";
-import { descriptionMarkdown } from "./task-workspace-model";
+import { descriptionMarkdown, type RunSessionLoadState } from "./task-workspace-model";
 import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 import { TaskContextPicker } from "./TaskContextPicker";
 import { TaskRunHistory } from "./TaskRunHistory";
@@ -13,6 +13,7 @@ import "./v3-context-succession.css";
 export function TaskDetailPane({
   task,
   sessions,
+  runSessionLoadStates,
   sessionDefaults,
   onReturnToPlanner,
   onOpenBoard,
@@ -22,6 +23,7 @@ export function TaskDetailPane({
 }: {
   task: PlannerTask;
   sessions: readonly SessionSummary[];
+  runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
   sessionDefaults: PageSessionDefaults | null;
   onReturnToPlanner(): void;
   onOpenBoard(): void;
@@ -164,6 +166,7 @@ export function TaskDetailPane({
           predecessorSessionId={predecessorSessionId}
           sessionIds={allSessionIds}
           sessions={allSessions}
+          runSessionLoadStates={runSessionLoadStates}
           onOpenSession={onOpenSession}
           onSessionCreated={(session) => {
             setCreatedSessions((current) => [...current, session]);
