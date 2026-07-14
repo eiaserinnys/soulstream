@@ -24,6 +24,11 @@
   width: calc(100vw - var(--v3-navigation-width, 264px) - 32px);
 }
 
+.v3-workspace.is-board-open {
+  display: block;
+  width: calc(100vw - var(--v3-navigation-width, 264px) - 32px);
+}
+
 @keyframes v3-workspace-enter {
   from { opacity: 0; transform: translateX(36px); }
   to { opacity: 1; transform: translateX(0); }
@@ -41,6 +46,21 @@
 .v3-detail-pane {
   display: flex;
   flex-direction: column;
+}
+
+.v3-board-pane {
+  background: var(--background);
+}
+
+.v3-full-board {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.v3-full-board > * {
+  width: 100%;
+  height: 100%;
 }
 
 .v3-workspace-toolbar,
@@ -406,7 +426,8 @@
   }
 
   .v3-workspace,
-  .v3-workspace.is-chat-open {
+  .v3-workspace.is-chat-open,
+  .v3-workspace.is-board-open {
     display: block;
     width: 100%;
     height: 100%;

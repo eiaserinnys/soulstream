@@ -13,7 +13,9 @@ import {
   setProjectStarred,
 } from "./project-star-actions";
 import {
+  applyAllProjectChanges,
   applyProjectStarChanges,
+  projectStarredState,
   resolveSelectedProject,
   type ProjectStarChange,
 } from "./project-star-store";
@@ -145,6 +147,24 @@ describe("project star navigation projection", () => {
 
     expect(applyProjectStarChanges([first, second], changes)).toEqual([second]);
     expect(resolveSelectedProject([first, second], changes, first.id)).toEqual(first);
+  });
+
+  it("keeps unstarred pages in the all-projects projection while applying live changes", () => {
+    const starred = page("project-1", "Starred", 1, { starred: true });
+    const plain = page("project-2", "Plain", 1);
+    const renamed = page("project-2", "Renamed", 2);
+    const created = page("project-3", "Created", 1, { starred: true });
+    const changes: ProjectStarChange[] = [
+      { page: renamed, starred: false },
+      { page: created, starred: true },
+    ];
+
+    expect(applyAllProjectChanges([starred, plain], changes)).toEqual([
+      starred,
+      renamed,
+      created,
+    ]);
+    expect(projectStarredState(plain.id, [], plain.metadata.starred === true)).toBe(false);
   });
 });
 

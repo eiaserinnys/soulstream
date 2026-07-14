@@ -6,6 +6,7 @@ export type PlannerTaskCreationPhase =
 
 export interface PlannerTaskCreationInput {
   title: string;
+  description: string;
   dailyPageId: string;
   projectPageId: string;
   folderId: string;
@@ -13,7 +14,7 @@ export interface PlannerTaskCreationInput {
 
 export interface PlannerTaskCreationPort {
   /** Creates the task page and atomically leaves its first mount on the daily page. */
-  createTaskPage(input: { title: string; sourcePageId: string }): Promise<{ pageId: string }>;
+  createTaskPage(input: { title: string; description: string; sourcePageId: string }): Promise<{ pageId: string }>;
   createRunbook(input: { title: string; folderId: string }): Promise<{ runbookId: string }>;
   addPrimaryRunbookReference(input: { pageId: string; runbookId: string }): Promise<void>;
   mountPage(input: { sourcePageId: string; title: string }): Promise<void>;
@@ -36,6 +37,7 @@ export async function createPlannerTask(
 ): Promise<{ pageId: string; runbookId: string }> {
   const page = await runPhase("page", () => port.createTaskPage({
     title: input.title,
+    description: input.description,
     sourcePageId: input.dailyPageId,
   }));
   const runbook = await runPhase("runbook", () => port.createRunbook({

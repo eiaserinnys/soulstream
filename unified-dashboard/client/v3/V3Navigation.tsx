@@ -4,7 +4,9 @@ import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
 
 import { createStarredProject, renameProjectPage, setProjectStarred } from "./project-star-actions";
 import {
+  applyAllProjectChanges,
   applyProjectStarChanges,
+  projectStarredState,
   publishProjectStarChange,
   useProjectStarChanges,
 } from "./project-star-store";
@@ -15,6 +17,8 @@ export interface PlannerDateNavItem {
   date: string;
   label: string;
 }
+
+type ProjectListKind = "starred" | "all";
 
 export function V3Navigation({
   dates,
@@ -37,12 +41,22 @@ export function V3Navigation({
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
   const api = useMemo(() => createPageApiClient(), []);
   const starChanges = useProjectStarChanges();
-  const visibleProjects = applyProjectStarChanges(projects, starChanges);
+  const allProjects = applyAllProjectChanges(projects, starChanges)
+    .filter((project) => !project.daily_date && !project.archived);
+  const starredProjects = applyProjectStarChanges(
+    projects.filter((project) => project.metadata.starred === true),
+    starChanges,
+  );
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
   const [pendingStarId, setPendingStarId] = useState<string | null>(null);
-  const [contextMenu, setContextMenu] = useState<{ target: V3ContextMenuTarget; project: PageDto } | null>(null);
+  const [editingRow, setEditingRow] = useState<{ key: string; project: PageDto; title: string } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    target: V3ContextMenuTarget;
+    project: PageDto;
+    listKind: ProjectListKind;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const createProject = async () => {
@@ -62,31 +76,95 @@ export function V3Navigation({
     }
   };
 
-  const removeProjectStar = async (project: PageDto) => {
+  const toggleProjectStar = async (project: PageDto) => {
     if (pendingStarId) return;
-    if (!window.confirm(`“${project.title}” 프로젝트의 별표를 해제할까요?\n내비게이션에서 제거됩니다.`)) return;
+    const starred = isProjectStarred(project, starChanges);
+    if (starred && !window.confirm(`“${project.title}” 프로젝트를 ★ 작업에서 숨길까요?\n전체 프로젝트에는 계속 남습니다.`)) return;
     setPendingStarId(project.id);
     setError(null);
     try {
-      const updated = await setProjectStarred(api, project.id, false);
-      publishProjectStarChange({ page: updated, starred: false });
+      const updated = await setProjectStarred(api, project.id, !starred);
+      publishProjectStarChange({ page: updated, starred: !starred });
     } catch (cause) {
-      setError(`별표 해제 실패 · ${errorText(cause)}`);
+      setError(`별표 변경 실패 · ${errorText(cause)}`);
     } finally {
       setPendingStarId(null);
     }
   };
 
-  const renameProject = async (project: PageDto) => {
-    const title = window.prompt("프로젝트 이름", project.title)?.trim();
-    if (!title || title === project.title) return;
+  const startRename = (project: PageDto, listKind: ProjectListKind) => {
+    setEditingRow({ key: `${listKind}:${project.id}`, project, title: project.title });
+    setError(null);
+  };
+
+  const commitRename = async () => {
+    if (!editingRow) return;
+    const current = editingRow;
+    const title = current.title.trim();
+    setEditingRow(null);
+    if (!title || title === current.project.title) return;
     setError(null);
     try {
-      const updated = await renameProjectPage(api, project.id, title);
-      publishProjectStarChange({ page: updated, starred: true });
+      const updated = await renameProjectPage(api, current.project.id, title);
+      publishProjectStarChange({
+        page: updated,
+        starred: isProjectStarred(current.project, starChanges),
+      });
     } catch (cause) {
       setError(`프로젝트 이름 변경 실패 · ${errorText(cause)}`);
     }
+  };
+
+  const renderProject = (project: PageDto, listKind: ProjectListKind) => {
+    const rowKey = `${listKind}:${project.id}`;
+    const editing = editingRow?.key === rowKey;
+    const starred = isProjectStarred(project, starChanges);
+    return (
+      <div
+        key={project.id}
+        className={`v3-project-nav-row${selectedProjectId === project.id ? " is-active" : ""}`}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setContextMenu({ target: { x: event.clientX, y: event.clientY }, project, listKind });
+        }}
+      >
+        {editing ? (
+          <input
+            autoFocus
+            className="v3-project-rename-input"
+            aria-label={`${project.title} 이름 변경`}
+            value={editingRow.title}
+            onChange={(event) => setEditingRow({ ...editingRow, title: event.target.value })}
+            onBlur={() => { void commitRename(); }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") { event.preventDefault(); void commitRename(); }
+              if (event.key === "Escape") { event.preventDefault(); setEditingRow(null); }
+            }}
+          />
+        ) : (
+          <button
+            type="button"
+            className={`v3-project-nav-link${selectedProjectId === project.id ? " is-active" : ""}`}
+            onClick={() => onSelectProject(project.id)}
+            onDoubleClick={() => startRename(project, listKind)}
+          >
+            <span className="v3-project-bullet" aria-hidden="true">◆</span>
+            <span>{project.title}</span>
+          </button>
+        )}
+        <button
+          type="button"
+          className="v3-project-star-toggle"
+          aria-label={`${project.title} ${starred ? "별표 해제" : "별표 추가"}`}
+          title={starred ? "★ 작업에서 숨기기" : "★ 작업에 추가"}
+          disabled={pendingStarId === project.id}
+          onClick={() => { void toggleProjectStar(project); }}
+          onDoubleClick={(event) => event.stopPropagation()}
+        >
+          {starred ? "★" : "☆"}
+        </button>
+      </div>
+    );
   };
 
   return (
@@ -96,7 +174,6 @@ export function V3Navigation({
       data-liquid-glass-webgl={webglActive ? "true" : undefined}
       aria-label="플래너 내비게이션"
     >
-      <div className="v3-brand"><span className="v3-emoji" aria-hidden="true">🌊</span><strong>소울스트림</strong></div>
       <h2>데일리</h2>
       <div className="v3-nav-list">
         {dates.map((item) => (
@@ -111,38 +188,17 @@ export function V3Navigation({
           </button>
         ))}
       </div>
-      <h2>★ 프로젝트</h2>
-      <div className="v3-nav-list">
-        {visibleProjects.map((project) => (
-          <div
-            key={project.id}
-            className={`v3-project-nav-row${selectedProjectId === project.id ? " is-active" : ""}`}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              setContextMenu({ target: { x: event.clientX, y: event.clientY }, project });
-            }}
-          >
-            <button
-              type="button"
-              className={`v3-project-nav-link${selectedProjectId === project.id ? " is-active" : ""}`}
-              onClick={() => onSelectProject(project.id)}
-            >
-              <span className="v3-project-bullet" aria-hidden="true">◆</span>
-              <span>{project.title}</span>
-            </button>
-            <button
-              type="button"
-              className="v3-project-star-toggle"
-              aria-label={`${project.title} 별표 해제`}
-              title="별표 해제"
-              disabled={pendingStarId === project.id}
-              onClick={() => { void removeProjectStar(project); }}
-            >
-              ★
-            </button>
-          </div>
-        ))}
-        {visibleProjects.length === 0 ? <p>별표 프로젝트가 없습니다.</p> : null}
+
+      <h2>★ 작업</h2>
+      <div className="v3-nav-list" data-testid="v3-starred-projects">
+        {starredProjects.map((project) => renderProject(project, "starred"))}
+        {starredProjects.length === 0 ? <p>별표 프로젝트가 없습니다.</p> : null}
+      </div>
+
+      <h2>전체 프로젝트</h2>
+      <div className="v3-nav-list" data-testid="v3-all-projects">
+        {allProjects.map((project) => renderProject(project, "all"))}
+        {allProjects.length === 0 ? <p>프로젝트가 없습니다.</p> : null}
         <button
           type="button"
           className="v3-new-project-trigger"
@@ -174,14 +230,18 @@ export function V3Navigation({
         ) : null}
         {error ? <p className="v3-project-star-error" role="alert">{error}</p> : null}
       </div>
+
       <V3ContextMenu
         target={contextMenu?.target ?? null}
         onClose={() => setContextMenu(null)}
         actions={contextMenu ? [
           { label: "프로젝트 열기", onSelect: () => onSelectProject(contextMenu.project.id) },
           { label: "페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(contextMenu.project.id) },
-          { label: "이름 변경", onSelect: () => renameProject(contextMenu.project), separatorBefore: true },
-          { label: "별표 해제", onSelect: () => removeProjectStar(contextMenu.project) },
+          { label: "이름 변경", onSelect: () => startRename(contextMenu.project, contextMenu.listKind), separatorBefore: true },
+          {
+            label: isProjectStarred(contextMenu.project, starChanges) ? "별표 해제" : "별표 추가",
+            onSelect: () => toggleProjectStar(contextMenu.project),
+          },
           { label: "새 업무", onSelect: () => onCreateTask(contextMenu.project.id), separatorBefore: true },
         ] : []}
       />
@@ -191,6 +251,10 @@ export function V3Navigation({
       </div>
     </nav>
   );
+}
+
+function isProjectStarred(project: PageDto, changes: readonly { page: PageDto; starred: boolean }[]): boolean {
+  return projectStarredState(project.id, changes, project.metadata.starred === true);
 }
 
 function errorText(error: unknown): string {

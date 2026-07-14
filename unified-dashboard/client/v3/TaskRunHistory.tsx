@@ -85,7 +85,7 @@ export function TaskRunHistory({
     <section className="v3-detail-section v3-runs">
       <div className="v3-detail-section-head">
         <h3>Run 히스토리</h3><span>{tree.length}회</span><span className="v3-spacer" />
-        <button type="button" className="v3-button v3-button--soft" onClick={() => setSuccessionOpen(true)}>▶ 새 세션</button>
+        <button type="button" className="v3-button v3-button--soft" onClick={() => setSuccessionOpen(true)}>＋ 새 세션</button>
       </div>
       {tree.length === 0 ? <p className="v3-detail-empty">아직 실행된 세션이 없습니다.</p> : null}
       <div className="v3-run-list">
@@ -121,7 +121,7 @@ export function TaskRunHistory({
         resolveSessionIds={(sessionId) => [sessionId]}
         extraActions={[
           {
-            label: "▶ 이어서 새 세션 (승계)",
+            label: "＋ 이어서 새 세션 (승계)",
             onClick: () => {
               if (!contextMenu) return;
               setTargetedSuccessionId(contextMenu.sessionId);
