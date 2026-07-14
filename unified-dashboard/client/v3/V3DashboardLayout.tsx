@@ -58,6 +58,11 @@ import {
 } from "./mobile-planner-state";
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import {
+  applyProjectStarChanges,
+  resolveSelectedProject,
+  useProjectStarChanges,
+} from "./project-star-store";
+import {
   createPlannerDataDependencies,
   loadDailyPlanner,
   loadProjectPlanner,
@@ -213,8 +218,10 @@ function V3DashboardContent() {
     return () => { active = false; };
   }, [api, dataDependencies, refreshKey, selectedDate]);
 
-  const projects = daily.data?.projects ?? [];
-  const selectedProject = projects.find((item) => item.id === selectedProjectId) ?? null;
+  const projectStarChanges = useProjectStarChanges();
+  const storedProjects = daily.data?.projects ?? [];
+  const projects = applyProjectStarChanges(storedProjects, projectStarChanges);
+  const selectedProject = resolveSelectedProject(storedProjects, projectStarChanges, selectedProjectId);
   useEffect(() => {
     if (!selectedProject) return;
     let active = true;

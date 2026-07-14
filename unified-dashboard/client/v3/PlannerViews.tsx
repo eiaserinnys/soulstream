@@ -1,9 +1,16 @@
-import { useRef } from "react";
-import type { PageDto } from "@seosoyoung/soul-ui/page";
+import { useMemo, useRef, useState } from "react";
+import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
 import { useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import { DailyMemo } from "./DailyMemo";
 import { PlannerTaskCard } from "./PlannerTaskCard";
+import { setProjectStarred } from "./project-star-actions";
+import {
+  applyProjectStarChanges,
+  projectStarredState,
+  publishProjectStarChange,
+  useProjectStarChanges,
+} from "./project-star-store";
 import type {
   DailyPlannerData,
   PlannerTask,
@@ -37,12 +44,20 @@ export function DailyPlannerView({
   const reviewSurfaceRef = useRef<HTMLDivElement>(null);
   const reviewWebglActive = useGlassSurface(reviewSurfaceRef, { enabled: true });
   const data = state.data;
+  const starChanges = useProjectStarChanges();
+  const visibleProjects = applyProjectStarChanges(data?.projects ?? [], starChanges);
+  const visibleProjectIds = new Set(visibleProjects.map((project) => project.id));
   const groups = data ? [
-    ...data.projects.map((project) => ({
+    ...visibleProjects.map((project) => ({
       project,
       tasks: data.tasks.filter((task) => task.projectPageId === project.id),
     })),
-    { project: null, tasks: data.tasks.filter((task) => task.projectPageId === null) },
+    {
+      project: null,
+      tasks: data.tasks.filter((task) => (
+        task.projectPageId === null || !visibleProjectIds.has(task.projectPageId)
+      )),
+    },
   ].filter((group) => group.tasks.length > 0) : [];
 
   return (
@@ -124,14 +139,48 @@ export function ProjectPlannerView({
   const documentSurfaceRef = useRef<HTMLElement>(null);
   const documentWebglActive = useGlassSurface(documentSurfaceRef, { enabled: true });
   const data = state.data;
+  const api = useMemo(() => createPageApiClient(), []);
+  const starChanges = useProjectStarChanges();
+  const starred = data ? projectStarredState(data.project.id, starChanges) : true;
+  const [starPending, setStarPending] = useState(false);
+  const [starMessage, setStarMessage] = useState<string | null>(null);
+
+  const toggleProjectStar = async () => {
+    if (!data || starPending) return;
+    const next = !starred;
+    if (!next && !window.confirm(`“${data.project.title}” 프로젝트의 별표를 해제할까요?\n내비게이션에서 제거됩니다.`)) return;
+    setStarPending(true);
+    setStarMessage(null);
+    try {
+      const updated = await setProjectStarred(api, data.project.id, next);
+      publishProjectStarChange({ page: updated, starred: next });
+      setStarMessage(next ? "프로젝트 별표를 다시 켰습니다." : "별표를 해제해 내비게이션에서 제거했습니다.");
+    } catch (cause) {
+      setStarMessage(`별표 변경 실패 · ${errorText(cause)}`);
+    } finally {
+      setStarPending(false);
+    }
+  };
+
   return (
     <>
       <div className="v3-date-head v3-project-title">
         <div>
           <button type="button" className="v3-button v3-button--ghost" onClick={onBack}>← 오늘</button>
           <h1>{data?.project.title ?? "프로젝트"}</h1>
+          <button
+            type="button"
+            className={`v3-button v3-project-header-star ${starred ? "v3-button--soft" : "v3-button--ghost"}`}
+            aria-pressed={starred}
+            disabled={!data || starPending}
+            onClick={() => { void toggleProjectStar(); }}
+          >
+            {starred ? "★ 별표됨" : "☆ 별표하기"}
+          </button>
         </div>
-        <p>프로젝트에 누적된 업무와 문서 · 최근순</p>
+        <p className={starMessage?.includes("실패") ? "v3-project-star-error" : undefined}>
+          {starMessage ?? "프로젝트에 누적된 업무와 문서 · 최근순"}
+        </p>
       </div>
       {state.status === "error" ? <LoadError message={state.message} /> : null}
       <section
@@ -182,6 +231,10 @@ function LoadError({ message }: { message: string }) {
 
 function EmptyState({ text }: { text: string }) {
   return <div className="v3-empty">{text}</div>;
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : String(error);
 }
 
 function formatLongDate(value: string): string {
