@@ -1,0 +1,80 @@
+.v3-inline-board-list {
+  display: grid;
+  gap: 8px;
+}
+
+.v3-inline-board-item {
+  overflow: hidden;
+  border: 1px solid var(--lg-line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--lg-card) 84%, transparent);
+}
+
+.v3-inline-board-item > button,
+.v3-inline-board-item > a,
+.v3-inline-board-item > div:first-child {
+  display: flex;
+  width: 100%;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  text-align: left;
+}
+
+.v3-inline-board-item > button:hover,
+.v3-inline-board-item > a:hover {
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+}
+
+.v3-inline-board-item small {
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+.v3-inline-markdown {
+  max-height: 320px;
+  overflow: auto;
+  border-top: 1px solid var(--lg-line);
+  padding: 14px;
+}
+
+.v3-inline-custom-view {
+  display: block;
+  width: 100%;
+  height: 320px;
+  border: 0;
+  border-top: 1px solid var(--lg-line);
+  background: white;
+}
+
+.v3-inline-board-error {
+  padding: 10px 12px;
+  color: var(--destructive);
+}
+
+.v3-run-move-targets {
+  display: grid;
+  gap: 8px;
+}
+
+.v3-run-move-targets button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--lg-line);
+  border-radius: 12px;
+  text-align: left;
+}
+
+.v3-run-move-targets button:hover {
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+}
+
+.v3-run-move-targets small {
+  color: var(--muted-foreground);
+}

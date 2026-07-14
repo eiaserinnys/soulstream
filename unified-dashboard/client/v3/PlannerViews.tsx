@@ -31,6 +31,8 @@ export function DailyPlannerView({
   onSaveMemo,
   onOpenProject,
   onOpenTask,
+  onCompleteTask,
+  onToggleTaskToday,
 }: {
   state: PlannerLoadState<DailyPlannerData>;
   selectedDate: string;
@@ -40,6 +42,8 @@ export function DailyPlannerView({
   onSaveMemo(blockId: string | null, text: string): void;
   onOpenProject(projectId: string): void;
   onOpenTask(task: PlannerTask): void;
+  onCompleteTask(task: PlannerTask): Promise<void>;
+  onToggleTaskToday(task: PlannerTask): Promise<void>;
 }) {
   const reviewSurfaceRef = useRef<HTMLDivElement>(null);
   const reviewWebglActive = useGlassSurface(reviewSurfaceRef, { enabled: true });
@@ -101,6 +105,8 @@ export function DailyPlannerView({
                 task={task}
                 sessions={sessions}
                 onOpen={() => onOpenTask(task)}
+                onComplete={() => onCompleteTask(task)}
+                onToggleToday={() => onToggleTaskToday(task)}
               />
             ))}
           </div>
@@ -120,6 +126,8 @@ export function ProjectPlannerView({
   newDocumentTitle,
   onBack,
   onOpenTask,
+  onCompleteTask,
+  onToggleTaskToday,
   onOpenDocument,
   onToggleNewDocument,
   onNewDocumentTitle,
@@ -131,6 +139,8 @@ export function ProjectPlannerView({
   newDocumentTitle: string;
   onBack(): void;
   onOpenTask(task: PlannerTask): void;
+  onCompleteTask(task: PlannerTask): Promise<void>;
+  onToggleTaskToday(task: PlannerTask): Promise<void>;
   onOpenDocument(page: PageDto): void;
   onToggleNewDocument(): void;
   onNewDocumentTitle(value: string): void;
@@ -215,7 +225,14 @@ export function ProjectPlannerView({
       <div className="v3-section-head"><h2>역대 업무</h2><span>{data?.tasks.length ?? 0}개</span></div>
       <div className="v3-task-list">
         {data?.tasks.map((task) => (
-          <PlannerTaskCard key={task.page.id} task={task} sessions={sessions} onOpen={() => onOpenTask(task)} />
+          <PlannerTaskCard
+            key={task.page.id}
+            task={task}
+            sessions={sessions}
+            onOpen={() => onOpenTask(task)}
+            onComplete={() => onCompleteTask(task)}
+            onToggleToday={() => onToggleTaskToday(task)}
+          />
         ))}
       </div>
       {state.status === "ready" && data?.tasks.length === 0 ? (

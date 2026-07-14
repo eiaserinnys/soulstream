@@ -6,6 +6,26 @@ import type {
 
 export type ProjectOperationIdFactory = (prefix: string) => string;
 
+export async function renameProjectPage(
+  api: PageApiClient,
+  pageId: string,
+  titleValue: string,
+  idFactory: ProjectOperationIdFactory = operationId,
+): Promise<PageDto> {
+  const title = titleValue.trim();
+  if (!title) throw new Error("프로젝트 제목을 입력해야 합니다");
+  const current = await api.getPage(pageId);
+  if (current.page.title === title) return current.page;
+  const updated = await api.applyOperations(pageId, {
+    expectedVersion: current.page.version,
+    expectedStateVector: decodeStateVector(current.state_vector),
+    idempotencyKey: idFactory("project-rename"),
+    reason: "v3 planner project rename",
+    operations: [{ op: "rename_page", title }],
+  });
+  return updated.page;
+}
+
 export async function setProjectStarred(
   api: PageApiClient,
   pageId: string,

@@ -292,6 +292,52 @@ const runSessions: Record<string, string[]> = {
   "rb-carry": [],
 };
 
+function runbookSummary(id: string) {
+  const snapshot = runbooks[id] as {
+    runbook: Record<string, unknown> & { status: string };
+    items: Array<{ status: string; assignee_agent_id: string | null }>;
+  };
+  const itemCounts = snapshot.items.reduce<Record<string, number>>((counts, item) => {
+    counts[item.status] = (counts[item.status] ?? 0) + 1;
+    return counts;
+  }, {});
+  return {
+    ...snapshot.runbook,
+    item_counts: itemCounts,
+    item_total: snapshot.items.length,
+    completed_item_count: itemCounts.completed ?? 0,
+    assignee: snapshot.items.find((item) => item.assignee_agent_id)?.assignee_agent_id ?? null,
+  };
+}
+
+function plannerTaskPayload(taskPage: typeof pages.taskAlpha, runbookId: string) {
+  return {
+    page: taskPage,
+    blocks: pageReads[taskPage.id].blocks,
+    runbook_id: runbookId,
+    runbook: runbookSummary(runbookId),
+    project_page_id: pages.project.id,
+    sessions: (runSessions[runbookId] ?? []).map((agentSessionId) => ({ agent_session_id: agentSessionId })),
+    mounted_documents: taskPage.id === pages.taskAlpha.id
+      ? [{ block_id: "alpha-doc", page: pages.document }]
+      : [],
+  };
+}
+
+function boardItem(itemType: string, itemId: string, runbookId: string, y: number, metadata: Record<string, unknown> = {}) {
+  return {
+    id: `${itemType}:${itemId}`,
+    folderId: "folder-amber",
+    containerKind: "runbook",
+    containerId: runbookId,
+    itemType,
+    itemId,
+    x: 24,
+    y,
+    metadata,
+  };
+}
+
 async function fulfillJson(route: Route, body: Json, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
@@ -431,6 +477,33 @@ export async function installV3VisualQaRoutes(
       const selected = body.date === "2026-07-13" ? pages.yesterday : pages.today;
       return fulfillJson(route, { page: selected, created: false });
     }
+    if (path === "/api/planner/today" && request.method() === "GET") {
+      await delay(options.plannerDelayMs);
+      const yesterday = url.searchParams.get("date") === "2026-07-13";
+      const daily = yesterday ? pageReads[pages.yesterday.id] : pageReads[pages.today.id];
+      return fulfillJson(route, {
+        daily,
+        projects: [pages.project, pages.projectOps],
+        tasks: yesterday
+          ? [plannerTaskPayload(pages.carryover, "rb-carry")]
+          : [plannerTaskPayload(pages.taskAlpha, "rb-alpha"), plannerTaskPayload(pages.taskBeta, "rb-beta")],
+        memo_blocks: daily.blocks.filter((item) => !item.text.startsWith("[[")),
+      });
+    }
+    const plannerProjectMatch = /^\/api\/planner\/projects\/([^/]+)$/.exec(path);
+    if (plannerProjectMatch && request.method() === "GET") {
+      await delay(options.plannerDelayMs);
+      return fulfillJson(route, {
+        project: pages.project,
+        tasks: [
+          plannerTaskPayload(pages.taskAlpha, "rb-alpha"),
+          plannerTaskPayload(pages.taskBeta, "rb-beta"),
+          plannerTaskPayload(pages.taskDone, "rb-done"),
+          plannerTaskPayload(pages.carryover, "rb-carry"),
+        ],
+        documents: [pages.document, pages.documentTwo],
+      });
+    }
     if (path === "/api/pages" && request.method() === "GET") {
       const items = url.searchParams.get("starred") === "true"
         ? [pages.project, pages.projectOps]
@@ -489,8 +562,43 @@ export async function installV3VisualQaRoutes(
     if (path === "/api/board-items") {
       await delay(options.plannerDelayMs);
       const runbookId = url.searchParams.get("container_id") ?? "";
+      const inlineItems = runbookId === "rb-alpha" ? [
+        boardItem("markdown", "doc-inline", runbookId, 160, { title: "PR-O 결정 로그" }),
+        boardItem("custom_view", "view-inline", runbookId, 240, { title: "검증 현황" }),
+        boardItem("asset", "asset-inline", runbookId, 320, { originalName: "context-menu-map.png", sourceUrl: "/context-menu-map.png" }),
+      ] : [];
       return fulfillJson(route, {
-        boardItems: (runSessions[runbookId] ?? []).map((itemId) => ({ itemType: "session", itemId })),
+        boardItems: [
+          ...(runSessions[runbookId] ?? []).map((itemId, index) => boardItem("session", itemId, runbookId, index * 72)),
+          ...inlineItems,
+        ],
+      });
+    }
+    const boardMoveMatch = /^\/api\/board-items\/([^/]+)\/container$/.exec(path);
+    if (boardMoveMatch && request.method() === "PATCH") {
+      const boardItemId = decodeURIComponent(boardMoveMatch[1]);
+      const sessionId = boardItemId.startsWith("session:") ? boardItemId.slice("session:".length) : boardItemId;
+      const body = request.postDataJSON() as { container?: { kind?: string; id?: string } };
+      const targetRunbookId = body.container?.kind === "runbook" ? body.container.id : null;
+      if (!targetRunbookId || !runSessions[targetRunbookId]) return fulfillJson(route, { detail: "target not found" }, 404);
+      for (const ids of Object.values(runSessions)) {
+        const index = ids.indexOf(sessionId);
+        if (index >= 0) ids.splice(index, 1);
+      }
+      runSessions[targetRunbookId].push(sessionId);
+      return fulfillJson(route, { ok: true, boardItem: boardItem("session", sessionId, targetRunbookId, 0) });
+    }
+    if (path === "/api/markdown-documents/doc-inline") {
+      return fulfillJson(route, { id: "doc-inline", title: "PR-O 결정 로그", body: "# 인라인 보드\n\n마크다운 본문은 행을 연 뒤에만 불러옵니다.", version: 2 });
+    }
+    if (path === "/api/custom-views/view-inline") {
+      return fulfillJson(route, {
+        id: "view-inline",
+        boardItemId: "custom_view:view-inline",
+        folderId: "folder-amber",
+        title: "검증 현황",
+        html: "<main style='font:16px system-ui;padding:16px;color:#172033'><strong>Sandbox custom view</strong><p>4개 메뉴 연결 완료</p></main>",
+        revision: 3,
       });
     }
 
@@ -500,5 +608,6 @@ export async function installV3VisualQaRoutes(
 
 export const fixtureTitles = {
   primaryTask: pages.taskAlpha.title,
+  secondaryTask: pages.taskBeta.title,
   project: pages.project.title,
 };
