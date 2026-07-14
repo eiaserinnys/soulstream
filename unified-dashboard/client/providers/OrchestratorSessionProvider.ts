@@ -21,6 +21,7 @@ import type {
 import { buildFetchSessionsUrl, createSSESubscribe, toSessionSummary } from "@seosoyoung/soul-ui";
 
 const MAX_TARGETED_SESSION_URL_LENGTH = 6_000;
+const MAX_TARGETED_SESSION_IDS = 200;
 
 export class OrchestratorSessionProvider implements SessionStorageProvider {
   async fetchSessions(options?: FetchSessionsOptions): Promise<SessionListResult> {
@@ -29,7 +30,12 @@ export class OrchestratorSessionProvider implements SessionStorageProvider {
       if (sessionIds.length === 0) return { sessions: [], total: 0, hasMore: false };
       const batches = targetedSessionBatches(sessionIds, options);
       const results = await Promise.all(batches.map((batch) =>
-        fetchSessionPage({ ...options, sessionIds: batch, offset: 0, limit: 0 })
+        fetchSessionPage({
+          ...options,
+          sessionIds: batch,
+          offset: 0,
+          limit: MAX_TARGETED_SESSION_IDS,
+        })
       ));
       const sessions = [...new Map(
         results.flatMap((result) => result.sessions)
@@ -108,9 +114,13 @@ function targetedSessionBatches(
       ...options,
       sessionIds: candidate,
       offset: 0,
-      limit: 0,
+      limit: MAX_TARGETED_SESSION_IDS,
     });
-    if (current.length > 0 && candidateUrl.length > MAX_TARGETED_SESSION_URL_LENGTH) {
+    if (
+      current.length > 0 &&
+      (candidate.length > MAX_TARGETED_SESSION_IDS ||
+        candidateUrl.length > MAX_TARGETED_SESSION_URL_LENGTH)
+    ) {
       batches.push(current);
       current = [sessionId];
     } else {

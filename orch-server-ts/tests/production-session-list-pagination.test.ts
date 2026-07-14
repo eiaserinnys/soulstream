@@ -18,7 +18,7 @@ type SseFrame = {
 };
 
 describe("production session list pagination parity", () => {
-  it("returns only feed-eligible sessions for feed_only limit=0", async () => {
+  it("clamps feed_only limit=0 to the 200-row snapshot bound", async () => {
     const harness = await createProductionHarness();
     try {
       const response = await harness.application.app.inject({
@@ -40,7 +40,7 @@ describe("production session list pagination parity", () => {
       expect(sessionListCalls(harness.calls)).toEqual([
         {
           filters: { feed_only: true },
-          limit: null,
+          limit: 200,
           offset: null,
         },
       ]);

@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 
 import {
+  SESSION_SNAPSHOT_MAX_TARGET_IDS,
+  resolveSessionSnapshotIds,
   type SessionSnapshotListResponse,
   type SessionSnapshotQuery,
 } from "./session_snapshot_service.js";
@@ -24,12 +26,21 @@ export function registerSessionSnapshotRoutes(
   app: FastifyInstance,
   options: SessionSnapshotRouteOptions,
 ): void {
-  app.get("/api/sessions", async (request) =>
-    options.snapshotService.listSessions(
-      parseSessionSnapshotQuery(request.query),
+  app.get("/api/sessions", async (request, reply) => {
+    const query = parseSessionSnapshotQuery(request.query);
+    if ((query.session_ids?.length ?? 0) > SESSION_SNAPSHOT_MAX_TARGET_IDS) {
+      return reply.code(422).send({
+        detail: `session_id must contain at most ${SESSION_SNAPSHOT_MAX_TARGET_IDS} values`,
+      });
+    }
+    return options.snapshotService.listSessions(
+      {
+        ...query,
+        session_ids: resolveSessionSnapshotIds(query.session_ids),
+      },
       request,
-    ),
-  );
+    );
+  });
 }
 
 function parseSessionSnapshotQuery(query: unknown): SessionSnapshotQuery {

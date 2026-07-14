@@ -73,6 +73,11 @@ describe("OrchestratorSessionProvider session serialization contract", () => {
 
     expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
     expect(fetchMock.mock.calls.every(([url]) => String(url).length <= 6_000)).toBe(true);
+    expect(fetchMock.mock.calls.every(([input]) => {
+      const url = new URL(String(input), "https://example.test");
+      return url.searchParams.get("limit") === "200" &&
+        url.searchParams.getAll("session_id").length <= 200;
+    })).toBe(true);
     expect(result.sessions.map((session) => session.agentSessionId)).toEqual(sessionIds);
     expect(result).toMatchObject({ total: 250, hasMore: false });
   });

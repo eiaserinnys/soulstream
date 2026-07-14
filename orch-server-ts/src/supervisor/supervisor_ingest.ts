@@ -135,7 +135,7 @@ export class SupervisorIngestService {
       sourceEventId,
       eventType,
       payload,
-      createdAt: null,
+      createdAt: new Date(),
     });
   }
 
