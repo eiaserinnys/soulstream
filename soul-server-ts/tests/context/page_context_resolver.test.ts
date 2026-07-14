@@ -1,6 +1,7 @@
 import pino from "pino";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { AtomFetchConfig } from "../../src/context/atom_context.js";
 import { DefaultPageContextAssembler } from "../../src/context/page_context_assembler.js";
 import type {
   MountParentResult,
@@ -12,6 +13,16 @@ import { AncestorPageContextResolver } from "../../src/context/page_context_reso
 import type { BlockDto } from "@soulstream/page-model";
 
 const logger = pino({ level: "silent" });
+const disabledAtomConfig: AtomFetchConfig = {
+  enabled: false,
+  serverUrl: "",
+  apiKey: "",
+};
+const enabledAtomConfig: AtomFetchConfig = {
+  enabled: true,
+  serverUrl: "https://atom.test",
+  apiKey: "key",
+};
 
 function block(
   id: string,
@@ -78,13 +89,17 @@ function repository(input: {
   };
 }
 
-function resolve(repo: PageContextRepository, maxPages = 64) {
+function resolve(
+  repo: PageContextRepository,
+  maxPages = 64,
+  atomConfig: AtomFetchConfig = disabledAtomConfig,
+) {
   return new AncestorPageContextResolver(
     repo,
     new DefaultPageContextAssembler(),
     logger,
     maxPages,
-  ).resolve({ agentSessionId: "sess-1" } as never, {} as never);
+  ).resolve({ agentSessionId: "sess-1" } as never, {} as never, atomConfig);
 }
 
 function contentOf(result: Awaited<ReturnType<typeof resolve>>): Record<string, any> {
@@ -93,6 +108,16 @@ function contentOf(result: Awaited<ReturnType<typeof resolve>>): Record<string, 
 }
 
 describe("AncestorPageContextResolver", () => {
+  const originalFetch = globalThis.fetch;
+
+  beforeEach(() => {
+    globalThis.fetch = vi.fn() as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
   it("checks anchor presence without traversing page ancestry", async () => {
     const repo = repository({ anchor: { pageId: "target", blockId: "anchor" } });
     const resolver = new AncestorPageContextResolver(
@@ -111,6 +136,12 @@ describe("AncestorPageContextResolver", () => {
   });
 
   it("renders physical three-depth explicit context root-to-leaf", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ markdown: "# compiled node" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
     const repo = repository({
       pages: {
         target: page("target", [
@@ -122,7 +153,7 @@ describe("AncestorPageContextResolver", () => {
       },
     });
 
-    const content = contentOf(await resolve(repo));
+    const content = contentOf(await resolve(repo, 64, enabledAtomConfig));
     expect(content.items.map((entry: any) => entry.block_id)).toEqual([
       "root", "middle", "leaf",
     ]);
@@ -130,6 +161,126 @@ describe("AncestorPageContextResolver", () => {
       category: "atom_ref",
       instance: "atom",
       node_id: "node-1",
+      depth: 3,
+      titles_only: false,
+      markdown: expect.stringContaining("# compiled node"),
+    });
+  });
+
+  it("parses atom_ref depth and titlesOnly, clamps depth, and compiles selected refs", async () => {
+    vi.mocked(globalThis.fetch).mockImplementation(async () =>
+      new Response(JSON.stringify({ markdown: "compiled" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    const repo = repository({
+      pages: {
+        target: page("target", [
+          block("max", null, "atom_ref", "", {
+            instance: "atom",
+            nodeId: "node-max",
+            depth: 99,
+            titlesOnly: true,
+          }),
+          block("default", "max", "atom_ref", "", {
+            instance: "atom",
+            nodeId: "node-default",
+            depth: "not-a-number",
+            titlesOnly: "true",
+          }),
+          block("min", "default", "atom_ref", "", {
+            instance: "atom",
+            nodeId: "node-min",
+            depth: -4,
+          }),
+          block("anchor", "min", "session_ref"),
+        ]),
+      },
+    });
+
+    const content = contentOf(await resolve(repo, 64, enabledAtomConfig));
+    expect(content.items.map((entry: any) => ({
+      nodeId: entry.node_id,
+      depth: entry.depth,
+      titlesOnly: entry.titles_only,
+    }))).toEqual([
+      { nodeId: "node-max", depth: 5, titlesOnly: true },
+      { nodeId: "node-default", depth: 3, titlesOnly: false },
+      { nodeId: "node-min", depth: 1, titlesOnly: false },
+    ]);
+    const urls = vi.mocked(globalThis.fetch).mock.calls.map(
+      (call) => new URL(call[0].toString()),
+    );
+    expect(urls.map((url) => url.searchParams.get("depth"))).toEqual(["1", "3", "5"]);
+    expect(urls.map((url) => url.searchParams.has("titles_only"))).toEqual([
+      false,
+      false,
+      true,
+    ]);
+  });
+
+  it("compiles only the nearest duplicate atom_ref and preserves its depth", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ markdown: "nearest" }), { status: 200 }),
+    );
+    const repo = repository({
+      pages: {
+        target: page("target", [
+          block("far", null, "atom_ref", "", {
+            instance: "atom",
+            nodeId: "same-node",
+            depth: 5,
+          }),
+          block("near", "far", "atom_ref", "", {
+            instance: "atom",
+            nodeId: "same-node",
+            depth: 2,
+          }),
+          block("anchor", "near", "session_ref"),
+        ]),
+      },
+    });
+
+    const content = contentOf(await resolve(repo, 64, enabledAtomConfig));
+    expect(globalThis.fetch).toHaveBeenCalledOnce();
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("depth=2"),
+      expect.any(Object),
+    );
+    expect(content.items).toEqual([
+      expect.objectContaining({ block_id: "near", depth: 2, markdown: expect.stringContaining("nearest") }),
+    ]);
+    expect(content.metadata.deduplicated).toBe(1);
+  });
+
+  it("gracefully skips a failed atom compile while retaining other page context", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response("unavailable", { status: 503 }),
+    );
+    const repo = repository({
+      pages: {
+        target: page("target", [
+          block("guidance", null, "guidance", "kept", {
+            enabled: true,
+            scope: "kept",
+          }),
+          block("atom", "guidance", "atom_ref", "", {
+            instance: "atom",
+            nodeId: "node-down",
+          }),
+          block("anchor", "atom", "session_ref"),
+        ]),
+      },
+    });
+
+    const content = contentOf(await resolve(repo, 64, enabledAtomConfig));
+    expect(content.items).toEqual([
+      expect.objectContaining({ block_id: "guidance", text: "kept" }),
+    ]);
+    expect(content.metadata.truncation.categories.atom_ref).toMatchObject({
+      used: 0,
+      omitted: 1,
     });
   });
 

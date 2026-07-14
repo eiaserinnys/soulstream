@@ -7,6 +7,8 @@
 
 import type { Logger } from "pino";
 
+type AtomContextLogger = Pick<Logger, "warn">;
+
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
 /**
@@ -72,7 +74,7 @@ export async function fetchAtomContext(
   nodeId: string,
   depth: number,
   titlesOnly: boolean,
-  logger: Logger,
+  logger: AtomContextLogger,
 ): Promise<string | null> {
   const markdown = await fetchAtomMarkdown(
     config,
@@ -85,7 +87,7 @@ export async function fetchAtomContext(
 export async function fetchAtomContexts(
   config: AtomFetchConfig,
   specs: AtomContextSpec[],
-  logger: Logger,
+  logger: AtomContextLogger,
 ): Promise<string | null> {
   if (specs.length === 0) return null;
   const sections: string[] = [];
@@ -108,7 +110,7 @@ export async function fetchAtomContexts(
 async function fetchAtomMarkdown(
   config: AtomFetchConfig,
   spec: AtomContextSpec,
-  logger: Logger,
+  logger: AtomContextLogger,
 ): Promise<string | null> {
   if (!config.enabled || !config.serverUrl) return null;
   const url = new URL(

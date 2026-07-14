@@ -91,7 +91,11 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     const ctx = await cb.build(task, codexAgent);
 
     expect(resolve).toHaveBeenCalledOnce();
-    expect(resolve).toHaveBeenCalledWith(task, codexAgent);
+    expect(resolve).toHaveBeenCalledWith(task, codexAgent, {
+      enabled: false,
+      serverUrl: "",
+      apiKey: "",
+    });
     expect(ctx.effectiveSystemPrompt).toBeUndefined();
     expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
       "soulstream_session",

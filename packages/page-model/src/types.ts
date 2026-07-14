@@ -22,6 +22,8 @@ export interface SessionRefBlockProperties {
 export interface AtomRefBlockProperties {
   instance: "atom" | "atom-nl";
   nodeId: string;
+  depth?: number;
+  titlesOnly?: boolean;
   [key: string]: unknown;
 }
 

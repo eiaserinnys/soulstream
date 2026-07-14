@@ -21,6 +21,9 @@ export interface AtomRefPageContextCandidate extends CandidateBase {
   category: "atom_ref";
   instance: "atom" | "atom-nl";
   nodeId: string;
+  depth: number;
+  titlesOnly: boolean;
+  compiledText?: string;
 }
 
 export interface SessionDefaultsPageContextCandidate extends CandidateBase {
@@ -62,9 +65,9 @@ export interface PageContextAssembler {
 
 export const DEFAULT_PAGE_CONTEXT_BUDGETS: PageContextBudgets = {
   guidanceChars: 8_000,
-  atomRefChars: 4_000,
+  atomRefChars: 52_000,
   sessionDefaultsChars: 0,
-  totalChars: 10_000,
+  totalChars: 60_000,
 };
 
 export class DefaultPageContextAssembler implements PageContextAssembler {
@@ -75,7 +78,7 @@ export class DefaultPageContextAssembler implements PageContextAssembler {
   }
 
   assemble(anchor: PageContextAnchor, traversal: PageContextTraversal): ContextItem {
-    const selected = selectNearest(traversal.candidates);
+    const selected = selectNearestPageContextCandidates(traversal.candidates);
     const usage = {
       guidance: { limit: this.budgets.guidanceChars, used: 0, omitted: 0 },
       atom_ref: { limit: this.budgets.atomRefChars, used: 0, omitted: 0 },
@@ -88,14 +91,19 @@ export class DefaultPageContextAssembler implements PageContextAssembler {
         usage.session_defaults.omitted += 1;
         continue;
       }
+      if (candidate.category === "atom_ref" && !candidate.compiledText) {
+        usage.atom_ref.omitted += 1;
+        usage.total.omitted += 1;
+        continue;
+      }
       const category = usage[candidate.category];
       const categoryRemaining = Math.max(0, category.limit - category.used);
       const totalRemaining = Math.max(0, usage.total.limit - usage.total.used);
       const cost = candidate.category === "guidance"
         ? candidate.text.length
-        : candidate.nodeId.length;
+        : candidate.compiledText!.length;
       const available = Math.min(categoryRemaining, totalRemaining);
-      if (available <= 0 || (candidate.category === "atom_ref" && available < cost)) {
+      if (available <= 0) {
         category.omitted += 1;
         usage.total.omitted += 1;
         continue;
@@ -120,7 +128,14 @@ export class DefaultPageContextAssembler implements PageContextAssembler {
               text: candidate.text.slice(0, used),
               ...(truncated ? { truncated: true } : {}),
             }
-          : { instance: candidate.instance, node_id: candidate.nodeId }),
+          : {
+              instance: candidate.instance,
+              node_id: candidate.nodeId,
+              depth: candidate.depth,
+              titles_only: candidate.titlesOnly,
+              markdown: candidate.compiledText!.slice(0, used),
+              ...(truncated ? { truncated: true } : {}),
+            }),
       });
     }
     const items = rendered
@@ -158,7 +173,9 @@ export class DefaultPageContextAssembler implements PageContextAssembler {
   }
 }
 
-function selectNearest(candidates: PageContextCandidate[]): PageContextCandidate[] {
+export function selectNearestPageContextCandidates(
+  candidates: PageContextCandidate[],
+): PageContextCandidate[] {
   const selected = new Map<string, PageContextCandidate>();
   for (const candidate of [...candidates].sort(compareNearFirst)) {
     if (!selected.has(candidate.semanticKey)) selected.set(candidate.semanticKey, candidate);
