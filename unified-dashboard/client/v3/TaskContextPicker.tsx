@@ -26,6 +26,7 @@ const TABS: readonly { id: ContextTab; icon: string; label: string }[] = [
 ];
 
 export function TaskContextPicker({
+  mode = "context",
   taskPageId,
   taskBlocks,
   projectPageId,
@@ -37,6 +38,7 @@ export function TaskContextPicker({
   onPredecessorChanged,
   onClose,
 }: {
+  mode?: "context" | "document";
   taskPageId: string;
   taskBlocks: readonly BlockDto[];
   projectPageId: string | null;
@@ -48,6 +50,7 @@ export function TaskContextPicker({
   onPredecessorChanged(sessionId: string | null): void;
   onClose(): void;
 }) {
+  const documentMode = mode === "document";
   const api = useMemo(() => createPageApiClient(), []);
   const mutationPort = useMemo(() => new BrowserPlannerMutationPort(api), [api]);
   const [tab, setTab] = useState<ContextTab>("page");
@@ -131,8 +134,10 @@ export function TaskContextPicker({
   };
 
   const apply = async () => {
-    const choices = selectedValues.filter((selection) => !existing.has(selection.key));
-    if (guidanceSelection && !choices.some((selection) => selection.key === guidanceSelection.key)) {
+    const choices = selectedValues.filter((selection) => (
+      !existing.has(selection.key) && (!documentMode || selection.kind === "page")
+    ));
+    if (!documentMode && guidanceSelection && !choices.some((selection) => selection.key === guidanceSelection.key)) {
       choices.push(guidanceSelection);
     }
     setPending(true);
@@ -140,7 +145,7 @@ export function TaskContextPicker({
     try {
       const result = await addTaskContextBlocks(api, taskPageId, choices);
       onBlocksChanged(result.blocks);
-      onPredecessorChanged(draftPredecessorSessionId);
+      if (!documentMode) onPredecessorChanged(draftPredecessorSessionId);
       onClose();
     } catch (caught) {
       setError(errorText(caught));
@@ -176,8 +181,8 @@ export function TaskContextPicker({
     : null;
 
   return (
-    <div className="v3-context-picker">
-      <section className="v3-context-inherited">
+    <div className={`v3-context-picker${documentMode ? " v3-context-picker--document" : ""}`}>
+      {!documentMode ? <section className="v3-context-inherited">
         <strong>상속됨(프로젝트에서)</strong>
         <div>
           {inheritedBlocks.map((block) => {
@@ -189,15 +194,15 @@ export function TaskContextPicker({
           ) : null}
           {inheritedBlocks.length === 0 && !sessionDefaults ? <small>상속된 컨텍스트가 없습니다.</small> : null}
         </div>
-      </section>
+      </section> : null}
 
-      <div className="v3-context-tabs" role="tablist" aria-label="컨텍스트 종류">
+      {!documentMode ? <div className="v3-context-tabs" role="tablist" aria-label="컨텍스트 종류">
         {TABS.map((item) => (
           <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} className={tab === item.id ? "is-active" : ""} onClick={() => setTab(item.id)}>
             <span className="v3-emoji" aria-hidden="true">{item.icon}</span> {item.label}{item.id === "session" ? <small>요약</small> : null}
           </button>
         ))}
-      </div>
+      </div> : null}
 
       <div className="v3-context-panel" role="tabpanel">
         {tab === "page" ? (
@@ -240,8 +245,8 @@ export function TaskContextPicker({
 
       {error ? <div className="v3-context-error" role="alert">{error}</div> : null}
       <footer className="v3-context-footer">
-        <span>이 세션이 받는 것: {estimate.count}건 · {estimate.label}</span>
-        <button type="button" className="v3-button v3-button--soft" disabled={pending} onClick={() => { void apply(); }}>{pending ? "추가 중…" : "선택 추가"}</button>
+        <span>{documentMode ? `선택한 문서 ${selectedValues.filter((selection) => selection.kind === "page").length}개` : `이 세션이 받는 것: ${estimate.count}건 · ${estimate.label}`}</span>
+        <button type="button" className="v3-button v3-button--soft" disabled={pending} onClick={() => { void apply(); }}>{pending ? "추가 중…" : documentMode ? "선택 문서 마운트" : "선택 추가"}</button>
       </footer>
     </div>
   );

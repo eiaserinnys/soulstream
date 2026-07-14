@@ -50,5 +50,8 @@ describe("TaskRunHistory", () => {
     expect(html).toContain("aria-busy=\"true\"");
     expect(html).toContain("run #3");
     expect(html).toContain("조회 실패");
+    expect(html).not.toContain(">재개<");
+    expect(html).not.toContain("aria-label=\"라이브 코디네이터 세션 요약\"");
+    expect(html).not.toContain("v3-run-summary");
   });
 });

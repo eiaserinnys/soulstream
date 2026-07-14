@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
+import { Button, useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import type { PlannerTask } from "./planner-data";
 import { plannerStatusPresentation } from "./planner-model";
@@ -15,21 +15,25 @@ export function TaskDetailPane({
   sessions,
   runSessionLoadStates,
   sessionDefaults,
-  onReturnToPlanner,
+  onReturnToToday,
+  onCloseWorkspace,
   onOpenBoard,
   onOpenSession,
   onSaveDescription,
   onPromoteDocument,
+  onTaskBlocksChanged,
 }: {
   task: PlannerTask;
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
   sessionDefaults: PageSessionDefaults | null;
-  onReturnToPlanner(): void;
+  onReturnToToday(): void;
+  onCloseWorkspace(): void;
   onOpenBoard(): void;
   onOpenSession(session: SessionSummary): void;
   onSaveDescription(markdown: string): Promise<void>;
   onPromoteDocument(blockId: string): Promise<void>;
+  onTaskBlocksChanged(): void;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
@@ -40,12 +44,14 @@ export function TaskDetailPane({
   const status = plannerStatusPresentation(task.status);
   const [promotingId, setPromotingId] = useState<string | null>(null);
   const [contextPickerOpen, setContextPickerOpen] = useState(false);
+  const [documentPickerOpen, setDocumentPickerOpen] = useState(false);
   const [contextBlocks, setContextBlocks] = useState(task.blocks);
   const [predecessorSessionId, setPredecessorSessionId] = useState<string | null>(null);
   const [createdSessions, setCreatedSessions] = useState<SessionSummary[]>([]);
   useEffect(() => {
     setContextBlocks(task.blocks);
     setContextPickerOpen(false);
+    setDocumentPickerOpen(false);
     setPredecessorSessionId(null);
     setCreatedSessions([]);
   }, [task.blocks, task.page.id]);
@@ -85,9 +91,9 @@ export function TaskDetailPane({
       data-liquid-glass-webgl={webglActive ? "true" : undefined}
     >
       <header className="v3-workspace-toolbar">
-        <button type="button" className="v3-workspace-back" onClick={onReturnToPlanner}>← 오늘로</button>
+        <button type="button" className="v3-workspace-back" onClick={onReturnToToday}>← 오늘로</button>
         <span className="v3-spacer" />
-        <button type="button" className="v3-workspace-close" aria-label="업무 상세 닫기" onClick={onReturnToPlanner}>×</button>
+        <button type="button" className="v3-workspace-close" aria-label="업무 상세 닫기" onClick={onCloseWorkspace}>×</button>
       </header>
       <div className="v3-detail-scroll">
         <div className="v3-detail-title">
@@ -114,7 +120,7 @@ export function TaskDetailPane({
             {contexts.map((context) => <span key={context.id}>{context.icon} {context.label}</span>)}
             {mountedContextTitles.map((document) => <span key={document.id}><span className="v3-emoji" aria-hidden="true">📄</span> {document.title}</span>)}
             {contexts.length + mountedContextTitles.length === 0 ? <small>연결된 컨텍스트가 없습니다.</small> : null}
-            <button type="button" className="v3-context-add" aria-expanded={contextPickerOpen} onClick={() => setContextPickerOpen((value) => !value)}>＋ 컨텍스트</button>
+            <button type="button" className="v3-context-add" aria-expanded={contextPickerOpen} onClick={() => { setDocumentPickerOpen(false); setContextPickerOpen((value) => !value); }}>＋ 컨텍스트</button>
           </div>
           {contextPickerOpen ? (
             <TaskContextPicker
@@ -125,7 +131,7 @@ export function TaskDetailPane({
               sessions={allSessions}
               sessionDefaults={sessionDefaults}
               predecessorSessionId={predecessorSessionId}
-              onBlocksChanged={setContextBlocks}
+              onBlocksChanged={(blocks) => { setContextBlocks(blocks); onTaskBlocksChanged(); }}
               onPredecessorChanged={setPredecessorSessionId}
               onClose={() => setContextPickerOpen(false)}
             />
@@ -133,7 +139,19 @@ export function TaskDetailPane({
         </section>
 
         <section className="v3-detail-section">
-          <div className="v3-detail-section-head"><h3><span className="v3-emoji" aria-hidden="true">📄</span> 문서</h3><span>{task.mountedDocuments.length}개</span></div>
+          <div className="v3-detail-section-head">
+            <h3><span className="v3-emoji" aria-hidden="true">📄</span> 문서</h3><span>{task.mountedDocuments.length}개</span>
+            <span className="v3-spacer" />
+            <Button
+              size="xs"
+              variant="glass"
+              className="h-7 rounded-full px-2.5 text-xs sm:h-7"
+              aria-expanded={documentPickerOpen}
+              onClick={() => { setContextPickerOpen(false); setDocumentPickerOpen((value) => !value); }}
+            >
+              ＋ 문서
+            </Button>
+          </div>
           <div className="v3-task-documents">
             {task.mountedDocuments.map((document) => (
               <div key={document.blockId}>
@@ -151,6 +169,21 @@ export function TaskDetailPane({
             ))}
             {task.mountedDocuments.length === 0 ? <p className="v3-detail-empty">마운트된 문서가 없습니다.</p> : null}
           </div>
+          {documentPickerOpen ? (
+            <TaskContextPicker
+              mode="document"
+              taskPageId={task.page.id}
+              taskBlocks={contextBlocks}
+              projectPageId={task.projectPageId}
+              sessionIds={allSessionIds}
+              sessions={allSessions}
+              sessionDefaults={sessionDefaults}
+              predecessorSessionId={predecessorSessionId}
+              onBlocksChanged={(blocks) => { setContextBlocks(blocks); onTaskBlocksChanged(); }}
+              onPredecessorChanged={setPredecessorSessionId}
+              onClose={() => setDocumentPickerOpen(false)}
+            />
+          ) : null}
         </section>
 
         {sessionDefaults?.agentId || sessionDefaults?.nodeId ? (
