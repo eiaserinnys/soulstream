@@ -163,6 +163,8 @@ describe("route registry", () => {
       ["GET", "/api/blocks/{blockId}"],
       ["POST", "/api/pages/{pageId}/operations"],
       ["PATCH", "/api/pages/{pageId}/starred"],
+      ["GET", "/api/planner/today"],
+      ["GET", "/api/planner/projects/{pageId}"],
     ] as const;
 
     for (const [method, path] of browserRoutes) {

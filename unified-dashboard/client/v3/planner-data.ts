@@ -5,14 +5,8 @@ import type {
   PageReadResponse,
 } from "@seosoyoung/soul-ui/page";
 import type { RunbookSnapshot } from "@seosoyoung/soul-ui/stores/runbook-store";
-import { fetchRunbookSnapshot } from "@seosoyoung/soul-ui/stores/runbook-api";
 
 import {
-  classifyMountedPage,
-  derivePlannerTaskStatus,
-  parseSingleMountTitle,
-  plannerProgress,
-  taskAssignee,
   taskContextCount,
   type PlannerTaskStatus,
 } from "./planner-model";
@@ -51,180 +45,147 @@ export interface ProjectPlannerData {
 }
 
 export interface PlannerDataDependencies {
-  fetchRunbook(runbookId: string): Promise<RunbookSnapshot | null>;
-  fetchRunbookSessionIds(runbookId: string): Promise<string[]>;
+  fetchPlanner(path: string): Promise<unknown>;
 }
 
 export function createPlannerDataDependencies(
   fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
 ): PlannerDataDependencies {
   return {
-    fetchRunbook: fetchRunbookSnapshot,
-    fetchRunbookSessionIds: async (runbookId) => {
-      const query = new URLSearchParams({
-        container_kind: "runbook",
-        container_id: runbookId,
-      });
-      const response = await fetchImplementation(`/api/board-items?${query.toString()}`, {
+    fetchPlanner: async (path) => {
+      const response = await fetchImplementation(path, {
         credentials: "same-origin",
         headers: { Accept: "application/json" },
       });
-      if (!response.ok) throw new Error(`Run 목록을 불러오지 못했습니다 (${response.status})`);
-      const payload = await response.json() as { boardItems?: unknown[] };
-      return (payload.boardItems ?? []).flatMap((item) => {
-        if (!item || typeof item !== "object") return [];
-        const record = item as Record<string, unknown>;
-        return record.itemType === "session" && typeof record.itemId === "string"
-          ? [record.itemId]
-          : [];
-      });
+      if (!response.ok) throw new Error(`플래너를 불러오지 못했습니다 (${response.status})`);
+      return await response.json();
     },
   };
 }
 
 export async function loadDailyPlanner(
-  api: PageApiClient,
+  _api: PageApiClient,
   date: string,
   dependencies: PlannerDataDependencies,
 ): Promise<DailyPlannerData> {
-  const dailyResponse = await api.getDailyPage(date);
-  const [daily, projects, allPages] = await Promise.all([
-    api.getPage(dailyResponse.page.id),
-    listAllPages(api, true),
-    listAllPages(api),
-  ]);
-  const mountedPages = await readMountedPages(api, daily.blocks, allPages);
-  const projectIds = new Set(projects.map((project) => project.id));
-  const tasks = (await Promise.all(mountedPages.map(async (mounted) => {
-    const classification = classifyMountedPage(mounted.blocks);
-    if (classification.kind === "document") return null;
-    return await buildTask(
-      mounted,
-      classification.runbookId,
-      findMountedProject(api, mounted.page.id, projectIds),
-      allPages,
-      dependencies,
-    );
-  }))).filter((task): task is PlannerTask => task !== null);
+  const query = new URLSearchParams({ date });
+  const payload = await dependencies.fetchPlanner(
+    `/api/planner/today?${query.toString()}`,
+  ) as PlannerTodayPayload;
   return {
-    daily,
-    projects,
-    tasks,
-    memoBlocks: daily.blocks.filter((block) => (
-      block.block_type === "paragraph" && parseSingleMountTitle(block) === null
-    )),
+    daily: payload.daily,
+    projects: payload.projects,
+    tasks: payload.tasks.map(plannerTask),
+    memoBlocks: payload.memo_blocks,
   };
 }
 
 export async function loadProjectPlanner(
-  api: PageApiClient,
+  _api: PageApiClient,
   project: PageDto,
   dependencies: PlannerDataDependencies,
 ): Promise<ProjectPlannerData> {
-  const [projectRead, allPages] = await Promise.all([
-    api.getPage(project.id),
-    listAllPages(api),
-  ]);
-  const mountedPages = (await readMountedPages(api, projectRead.blocks, allPages)).reverse();
-  const entries = await Promise.all(mountedPages.map(async (mounted) => {
-    const classification = classifyMountedPage(mounted.blocks);
-    if (classification.kind === "document") {
-      return { kind: "document" as const, page: mounted.page };
-    }
-    return {
-      kind: "task" as const,
-      task: await buildTask(
-        mounted,
-        classification.runbookId,
-        project.id,
-        allPages,
-        dependencies,
-      ),
-    };
-  }));
-  const tasks = entries.flatMap((entry) => entry.kind === "task" ? [entry.task] : []);
-  const documents = entries.flatMap((entry) => entry.kind === "document" ? [entry.page] : []);
-  return { project, tasks, documents };
-}
-
-async function buildTask(
-  mounted: PageReadResponse,
-  runbookId: string,
-  projectPageId: string | null | Promise<string | null>,
-  allPages: readonly PageDto[],
-  dependencies: PlannerDataDependencies,
-): Promise<PlannerTask> {
-  const [resolvedProjectPageId, runbook, sessionIds] = await Promise.all([
-    projectPageId,
-    dependencies.fetchRunbook(runbookId).catch((error: unknown) => {
-      console.warn(`[v3 planner] Runbook ${runbookId} could not be loaded`, error);
-      return null;
-    }),
-    dependencies.fetchRunbookSessionIds(runbookId).catch((error: unknown) => {
-      console.warn(`[v3 planner] Run list for ${runbookId} could not be loaded`, error);
-      return [];
-    }),
-  ]);
+  const payload = await dependencies.fetchPlanner(
+    `/api/planner/projects/${encodeURIComponent(project.id)}`,
+  ) as PlannerProjectPayload;
   return {
-    page: mounted.page,
-    blocks: mounted.blocks,
-    stateVector: mounted.state_vector,
-    runbookId,
-    runbook,
-    status: runbook ? derivePlannerTaskStatus(runbook) : "open",
-    assignee: taskAssignee(runbook),
-    contextCount: taskContextCount(mounted.blocks),
-    progress: plannerProgress(runbook),
-    projectPageId: resolvedProjectPageId,
-    sessionIds,
-    mountedDocuments: mountedTaskDocuments(mounted, allPages),
+    project: payload.project,
+    tasks: payload.tasks.map(plannerTask),
+    documents: payload.documents,
   };
 }
 
-function mountedTaskDocuments(
-  task: PageReadResponse,
-  pages: readonly PageDto[],
-): MountedTaskDocument[] {
-  const pageByTitle = new Map<string, PageDto>();
-  for (const page of pages) {
-    if (!pageByTitle.has(page.title)) pageByTitle.set(page.title, page);
-  }
-  return task.blocks.flatMap((block) => {
-    const title = parseSingleMountTitle(block);
-    const page = title ? pageByTitle.get(title) : undefined;
-    return page && page.id !== task.page.id ? [{ blockId: block.id, page }] : [];
-  });
+function plannerTask(payload: PlannerTaskPayload): PlannerTask {
+  const runbook = payload.runbook ? minimalRunbook(payload.runbook) : null;
+  return {
+    page: payload.page,
+    blocks: payload.blocks,
+    stateVector: "",
+    runbookId: payload.runbook_id,
+    runbook,
+    status: plannerSummaryStatus(payload.runbook),
+    assignee: payload.runbook?.assignee ?? (payload.runbook ? "담당 미지정" : "담당 미확인"),
+    contextCount: taskContextCount(payload.blocks),
+    progress: plannerSummaryProgress(payload.runbook),
+    projectPageId: payload.project_page_id,
+    sessionIds: payload.sessions.map((session) => session.agent_session_id),
+    mountedDocuments: payload.mounted_documents.map((document) => ({
+      blockId: document.block_id,
+      page: document.page,
+    })),
+  };
 }
 
-async function readMountedPages(
-  api: PageApiClient,
-  blocks: readonly BlockDto[],
-  pages: readonly PageDto[],
-): Promise<PageReadResponse[]> {
-  const pageByTitle = new Map<string, PageDto>();
-  for (const page of pages) {
-    if (!pageByTitle.has(page.title)) pageByTitle.set(page.title, page);
-  }
-  const mountedIds = blocks.flatMap((block) => {
-    const title = parseSingleMountTitle(block);
-    const page = title ? pageByTitle.get(title) : undefined;
-    return page ? [page.id] : [];
-  });
-  return await Promise.all([...new Set(mountedIds)].map((pageId) => api.getPage(pageId)));
+function plannerSummaryStatus(summary: PlannerRunbookSummaryPayload | null): PlannerTaskStatus {
+  if (!summary) return "open";
+  if (summary.status === "completed") return "completed";
+  if ((summary.item_counts.review ?? 0) > 0) return "review";
+  if ((summary.item_counts.in_progress ?? 0) > 0) return "in_progress";
+  return "open";
 }
 
-async function findMountedProject(
-  api: PageApiClient,
-  taskPageId: string,
-  projectIds: ReadonlySet<string>,
-): Promise<string | null> {
-  try {
-    const backlinks = await api.getBacklinks(taskPageId, { kinds: ["mount"], limit: 50 });
-    return backlinks.items.find((item) => projectIds.has(item.sourcePageId))?.sourcePageId ?? null;
-  } catch (error) {
-    console.warn(`[v3 planner] Project backlink for ${taskPageId} could not be loaded`, error);
-    return null;
-  }
+function plannerSummaryProgress(summary: PlannerRunbookSummaryPayload | null): number | null {
+  if (!summary || summary.item_total === 0) return null;
+  return Math.round((summary.completed_item_count / summary.item_total) * 100);
+}
+
+function minimalRunbook(summary: PlannerRunbookSummaryPayload): RunbookSnapshot {
+  return {
+    runbook: {
+      id: summary.id,
+      board_item_id: summary.board_item_id,
+      title: summary.title,
+      status: summary.status === "completed" ? "completed" : "open",
+      archived: summary.archived,
+      version: summary.version,
+      created_session_id: summary.created_session_id,
+      created_event_id: summary.created_event_id,
+      created_at: summary.created_at,
+      updated_at: summary.updated_at,
+    },
+    sections: [],
+    items: [],
+  };
+}
+
+interface PlannerRunbookSummaryPayload {
+  id: string;
+  board_item_id: string;
+  title: string;
+  status: string;
+  archived: boolean;
+  version: number;
+  created_session_id: string | null;
+  created_event_id: number | null;
+  created_at: string;
+  updated_at: string;
+  item_counts: Record<string, number>;
+  item_total: number;
+  completed_item_count: number;
+  assignee: string | null;
+}
+
+interface PlannerTaskPayload {
+  page: PageDto;
+  blocks: BlockDto[];
+  runbook_id: string;
+  runbook: PlannerRunbookSummaryPayload | null;
+  project_page_id: string | null;
+  sessions: Array<{ agent_session_id: string }>;
+  mounted_documents: Array<{ block_id: string; page: PageDto }>;
+}
+
+interface PlannerTodayPayload {
+  daily: PageReadResponse;
+  projects: PageDto[];
+  memo_blocks: BlockDto[];
+  tasks: PlannerTaskPayload[];
+}
+
+interface PlannerProjectPayload {
+  project: PageDto;
+  tasks: PlannerTaskPayload[];
+  documents: PageDto[];
 }
 
 export async function listAllPages(api: PageApiClient, starred?: boolean): Promise<PageDto[]> {

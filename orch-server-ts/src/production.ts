@@ -8,6 +8,7 @@ import { BoardYjsRepository } from "./board-yjs/board_yjs_repository.js";
 import { BoardYjsService } from "./board-yjs/board_yjs_service.js";
 import { PageRepository } from "./page/page_repository.js";
 import { PageYjsService } from "./page/page_service.js";
+import { PlannerRepository } from "./planner/planner_repository.js";
 import { extractDashboardJwtCookieToken } from "./runtime/live_authenticated_user_resolver.js";
 import {
   createEnvironmentConfigProvider,
@@ -123,6 +124,7 @@ export async function createLiveProductionApplication(
   const registry = new InMemoryNodeRegistry();
   const boardYjsRepository = new BoardYjsRepository(sqlResolver);
   const pageRepository = new PageRepository(sqlResolver);
+  const plannerRepository = new PlannerRepository(sqlResolver);
   const boardAssetStorage = await resolveLiveBoardAssetStorageFromConfig(config);
   warnForPartialR2Config(config, context.warn);
   const dbCatalogRepository = createLiveDbCatalogRepository({
@@ -179,6 +181,7 @@ export async function createLiveProductionApplication(
     pageYjsRoutes: {
       authBearerToken: config.auth_bearer_token,
       browserReads: pageRepository,
+      plannerReads: plannerRepository,
       resolveBrowserUser: async (request) => {
         const token = extractDashboardJwtCookieToken(request, AUTH_COOKIE_NAME);
         return token ? await providers.authRoutes.jwt.verifyToken(token) : null;

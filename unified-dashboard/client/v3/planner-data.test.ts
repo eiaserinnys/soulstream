@@ -1,180 +1,129 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type {
-  BlockDto,
-  PageApiClient,
-  PageDto,
-  PageReadResponse,
-} from "@seosoyoung/soul-ui/page";
+import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
 import {
+  createPlannerDataDependencies,
   loadDailyPlanner,
   loadProjectPlanner,
   type PlannerDataDependencies,
 } from "./planner-data";
 
-describe("planner data concurrency", () => {
-  it("starts a task backlink, runbook, and run-session lookup together", async () => {
-    const backlink = deferred<Awaited<ReturnType<PageApiClient["getBacklinks"]>>>();
-    const runbook = deferred<null>();
-    const sessionIds = deferred<string[]>();
-    const api = dailyApi([taskRead("task-a", "업무 A", "rb-a")], backlink.promise);
-    const dependencies = dependenciesFor({
-      fetchRunbook: vi.fn(() => runbook.promise),
-      fetchRunbookSessionIds: vi.fn(() => sessionIds.promise),
-    });
+describe("planner BFF data", () => {
+  it("loads today in one request without calling the page API fanout", async () => {
+    const api = pageApiThatMustStayIdle();
+    const fetchPlanner = vi.fn(async () => ({
+      daily: { page: page("daily", "2026-07-14"), blocks: [], state_vector: "" },
+      projects: [page("project", "프로젝트")],
+      memo_blocks: [],
+      tasks: [taskPayload()],
+    }));
 
-    const pending = loadDailyPlanner(api, "2026-07-14", dependencies);
-    await vi.waitFor(() => {
-      expect(api.getBacklinks).toHaveBeenCalledWith("task-a", { kinds: ["mount"], limit: 50 });
-      expect(dependencies.fetchRunbook).toHaveBeenCalledWith("rb-a");
-      expect(dependencies.fetchRunbookSessionIds).toHaveBeenCalledWith("rb-a");
-    });
-    expect(api.getBacklinks).toHaveBeenCalledTimes(1);
-    expect(dependencies.fetchRunbook).toHaveBeenCalledTimes(1);
-    expect(dependencies.fetchRunbookSessionIds).toHaveBeenCalledTimes(1);
-
-    backlink.resolve({ items: [{ sourcePageId: "project-a" }] } as never);
-    runbook.resolve(null);
-    sessionIds.resolve(["session-a"]);
-    await expect(pending).resolves.toMatchObject({
-      tasks: [{ projectPageId: "project-a", sessionIds: ["session-a"] }],
-    });
+    await expect(loadDailyPlanner(api, "2026-07-14", { fetchPlanner }))
+      .resolves.toMatchObject({
+        daily: { page: { id: "daily" } },
+        projects: [{ id: "project" }],
+        tasks: [{
+          page: { id: "task" },
+          runbookId: "runbook",
+          status: "in_progress",
+          assignee: "roselin",
+          progress: 25,
+          sessionIds: ["session-a"],
+          projectPageId: "project",
+        }],
+      });
+    expect(fetchPlanner).toHaveBeenCalledOnce();
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/today?date=2026-07-14");
+    expectNoPageCalls(api);
   });
 
-  it("loads every project task without waiting for the previous task", async () => {
-    const runbooks = new Map([
-      ["rb-a", deferred<null>()],
-      ["rb-b", deferred<null>()],
-    ]);
-    const sessions = new Map([
-      ["rb-a", deferred<string[]>()],
-      ["rb-b", deferred<string[]>()],
-    ]);
-    const project = page("project-a", "프로젝트 A", { starred: true });
-    const tasks = [
-      taskRead("task-a", "업무 A", "rb-a"),
-      taskRead("task-b", "업무 B", "rb-b"),
-    ];
-    const api = projectApi(project, tasks);
-    const dependencies = dependenciesFor({
-      fetchRunbook: vi.fn((id: string) => runbooks.get(id)!.promise),
-      fetchRunbookSessionIds: vi.fn((id: string) => sessions.get(id)!.promise),
-    });
+  it("loads a 22-task project through one request", async () => {
+    const api = pageApiThatMustStayIdle();
+    const project = page("project/a", "프로젝트");
+    const tasks = Array.from({ length: 22 }, (_, index) => taskPayload(index));
+    const fetchPlanner = vi.fn(async () => ({ project, tasks, documents: [] }));
 
-    const pending = loadProjectPlanner(api, project, dependencies);
-    await vi.waitFor(() => {
-      expect(dependencies.fetchRunbook).toHaveBeenCalledTimes(2);
-      expect(dependencies.fetchRunbookSessionIds).toHaveBeenCalledTimes(2);
-    });
+    const result = await loadProjectPlanner(api, project, { fetchPlanner });
 
-    runbooks.get("rb-a")!.resolve(null);
-    runbooks.get("rb-b")!.resolve(null);
-    sessions.get("rb-a")!.resolve(["session-a"]);
-    sessions.get("rb-b")!.resolve(["session-b"]);
-    await expect(pending).resolves.toMatchObject({
-      tasks: expect.arrayContaining([
-        expect.objectContaining({ runbookId: "rb-a", sessionIds: ["session-a"] }),
-        expect.objectContaining({ runbookId: "rb-b", sessionIds: ["session-b"] }),
-      ]),
-    });
+    expect(result.tasks).toHaveLength(22);
+    expect(fetchPlanner).toHaveBeenCalledOnce();
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa");
+    expectNoPageCalls(api);
+  });
+
+  it("uses one authenticated JSON fetch in the production dependency", async () => {
+    const response = { daily: { page: { id: "daily" } } };
+    const fetchImplementation = vi.fn(async () => ({
+      ok: true,
+      json: async () => response,
+    })) as unknown as typeof globalThis.fetch;
+    const dependencies = createPlannerDataDependencies(fetchImplementation);
+
+    await expect(dependencies.fetchPlanner("/api/planner/today?date=2026-07-14"))
+      .resolves.toBe(response);
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      "/api/planner/today?date=2026-07-14",
+      {
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      },
+    );
   });
 });
 
-function dailyApi(
-  tasks: PageReadResponse[],
-  backlinkPromise: Promise<Awaited<ReturnType<PageApiClient["getBacklinks"]>>>,
-): PageApiClient {
-  const project = page("project-a", "프로젝트 A", { starred: true });
-  const daily = pageRead("daily", "2026-07-14", tasks.map((task, index) => (
-    block(`mount-${index}`, "paragraph", `[[${task.page.title}]]`)
-  )));
-  const byId = new Map([daily, ...tasks].map((item) => [item.page.id, item]));
+function pageApiThatMustStayIdle(): PageApiClient {
   return {
-    getDailyPage: vi.fn(async () => ({ page: daily.page })),
-    getPage: vi.fn(async (id: string) => byId.get(id)!),
-    listPages: vi.fn(async ({ starred }: { starred?: boolean }) => ({
-      items: starred ? [project] : tasks.map((task) => task.page),
-      next_cursor: null,
-    })),
-    getBacklinks: vi.fn(() => backlinkPromise),
+    getDailyPage: vi.fn(),
+    getPage: vi.fn(),
+    listPages: vi.fn(),
+    getBacklinks: vi.fn(),
   } as unknown as PageApiClient;
 }
 
-function projectApi(project: PageDto, tasks: PageReadResponse[]): PageApiClient {
-  const projectRead = pageRead(project.id, project.title, tasks.map((task, index) => (
-    block(`mount-${index}`, "paragraph", `[[${task.page.title}]]`)
-  )), project.metadata);
-  const byId = new Map([projectRead, ...tasks].map((item) => [item.page.id, item]));
-  return {
-    getPage: vi.fn(async (id: string) => byId.get(id)!),
-    listPages: vi.fn(async () => ({
-      items: tasks.map((task) => task.page),
-      next_cursor: null,
-    })),
-  } as unknown as PageApiClient;
+function expectNoPageCalls(api: PageApiClient): void {
+  expect(api.getDailyPage).not.toHaveBeenCalled();
+  expect(api.getPage).not.toHaveBeenCalled();
+  expect(api.listPages).not.toHaveBeenCalled();
+  expect(api.getBacklinks).not.toHaveBeenCalled();
 }
 
-function dependenciesFor(overrides: Partial<PlannerDataDependencies>): PlannerDataDependencies {
+function taskPayload(index = 0) {
   return {
-    fetchRunbook: async () => null,
-    fetchRunbookSessionIds: async () => [],
-    ...overrides,
+    page: page(`task${index || ""}`, `업무 ${index}`),
+    blocks: [],
+    runbook_id: "runbook",
+    runbook: {
+      id: "runbook",
+      board_item_id: "runbook:runbook",
+      title: "업무",
+      status: "open",
+      archived: false,
+      version: 2,
+      created_session_id: null,
+      created_event_id: null,
+      created_at: "2026-07-14T00:00:00.000Z",
+      updated_at: "2026-07-14T00:00:00.000Z",
+      item_counts: { pending: 3, in_progress: 1 },
+      item_total: 4,
+      completed_item_count: 1,
+      assignee: "roselin",
+    },
+    project_page_id: "project",
+    sessions: [{ agent_session_id: "session-a" }],
+    mounted_documents: [],
   };
 }
 
-function taskRead(id: string, title: string, runbookId: string): PageReadResponse {
-  return pageRead(id, title, [
-    block(`${id}-runbook`, "runbook_ref", "", { runbookId, primary: true }),
-  ]);
-}
-
-function pageRead(
-  id: string,
-  title: string,
-  blocks: BlockDto[],
-  metadata: Record<string, unknown> = {},
-): PageReadResponse {
-  return {
-    page: page(id, title, metadata),
-    blocks,
-    state_vector: "",
-  };
-}
-
-function page(id: string, title: string, metadata: Record<string, unknown> = {}): PageDto {
+function page(id: string, title: string): PageDto {
   return {
     id,
     title,
     daily_date: null,
     version: 1,
     archived: false,
-    metadata,
-    created_at: "2026-07-14T00:00:00Z",
-    updated_at: "2026-07-14T00:00:00Z",
+    metadata: {},
+    created_at: "2026-07-14T00:00:00.000Z",
+    updated_at: "2026-07-14T00:00:00.000Z",
   };
-}
-
-function block(
-  id: string,
-  blockType: string,
-  text: string,
-  properties: Record<string, unknown> = {},
-): BlockDto {
-  return {
-    id,
-    page_id: "page",
-    parent_id: null,
-    position_key: id,
-    block_type: blockType,
-    text,
-    properties,
-    collapsed: false,
-  };
-}
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
-  return { promise, resolve };
 }
