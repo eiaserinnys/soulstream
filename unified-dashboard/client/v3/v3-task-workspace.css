@@ -253,109 +253,6 @@
   opacity: .72;
 }
 
-.v3-run-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.v3-run-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--card) 72%, transparent);
-}
-
-.v3-run-row:hover {
-  border-color: var(--glass-border);
-}
-
-.v3-run-open {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  align-items: center;
-  gap: 9px;
-  border: 0;
-  padding: 9px 4px 9px 10px;
-  color: var(--foreground);
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
-.v3-run-open > span:not(.v3-run-status) {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-}
-
-.v3-run-open strong {
-  overflow: hidden;
-  font-size: var(--font-size-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v3-run-open small {
-  color: var(--muted-foreground);
-  font-size: var(--font-size-xs);
-}
-
-.v3-run-status {
-  width: 7px;
-  height: 7px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--muted-foreground);
-}
-
-.v3-run-status--running { background: var(--success); }
-.v3-run-status--error,
-.v3-run-status--interrupted { background: var(--destructive); }
-.v3-run-status--completed { background: var(--info); }
-
-.v3-run-action {
-  flex: none;
-  border: 0;
-  padding: 6px;
-  color: var(--muted-foreground);
-  background: transparent;
-  font-size: var(--font-size-xs);
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.v3-run-action:hover { color: var(--info-foreground); }
-
-.v3-run-children {
-  position: relative;
-  margin-left: 16px;
-  padding-left: 10px;
-}
-
-.v3-run-children::before {
-  position: absolute;
-  top: 0;
-  bottom: 8px;
-  left: 0;
-  width: 1px;
-  background: var(--border);
-  content: "";
-}
-
-.v3-run-summary {
-  margin: 3px 8px 7px 26px;
-  border-left: 2px solid var(--info);
-  padding: 6px 9px;
-  color: var(--muted-foreground);
-  background: var(--muted);
-  font-size: var(--font-size-xs);
-  line-height: 1.55;
-}
-
 .v3-workspace-divider {
   position: relative;
   z-index: 3;
@@ -561,7 +458,4 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .v3-run-summary {
-    margin-left: 18px;
-  }
 }

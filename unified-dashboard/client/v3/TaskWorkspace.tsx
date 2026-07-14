@@ -12,6 +12,7 @@ import {
   DEFAULT_WORKSPACE_SPLIT,
   buildRunTree,
   clampWorkspaceSplit,
+  type RunSessionLoadState,
   workspaceSplitForKey,
 } from "./task-workspace-model";
 import { TaskDetailPane } from "./TaskDetailPane";
@@ -22,6 +23,7 @@ export function TaskWorkspace({
   task,
   projectTitle,
   sessions,
+  runSessionLoadStates,
   activeSession,
   chatOpen,
   chatInputDisabled,
@@ -40,6 +42,7 @@ export function TaskWorkspace({
   task: PlannerTask;
   projectTitle: string;
   sessions: readonly SessionSummary[];
+  runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
   activeSession: SessionSummary | undefined;
   chatOpen: boolean;
   chatInputDisabled: boolean;
@@ -99,6 +102,7 @@ export function TaskWorkspace({
         <TaskDetailPane
           task={task}
           sessions={sessions}
+          runSessionLoadStates={runSessionLoadStates}
           sessionDefaults={sessionDefaults}
           onReturnToPlanner={onReturnToPlanner}
           onOpenBoard={onOpenBoard}

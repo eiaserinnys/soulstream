@@ -18,7 +18,21 @@ export const WORKSPACE_SPLIT_STEP = 2;
 export interface RunTreeNode {
   session: SessionSummary;
   runNumber: number | null;
+  loadState: RunSessionLoadState;
   children: RunTreeNode[];
+}
+
+export type RunSessionLoadState = "ready" | "loading" | "failed";
+
+export interface RunSessionResolution {
+  sessions: SessionSummary[];
+  loadStateById: ReadonlyMap<string, RunSessionLoadState>;
+}
+
+export interface RunSessionActivationPort {
+  setActiveSessionSummary(session: SessionSummary): void;
+  setActiveSession(sessionId: string): void;
+  setActiveTab(tab: "chat"): void;
 }
 
 export interface WorkspaceVisibility {
@@ -53,15 +67,21 @@ export function reduceWorkspaceEscape(state: WorkspaceVisibility): WorkspaceVisi
 export function buildRunTree(
   containerSessionIds: readonly string[],
   sessions: readonly SessionSummary[],
+  loadStateById?: ReadonlyMap<string, RunSessionLoadState>,
 ): RunTreeNode[] {
   const byId = new Map(sessions.map((session) => [session.agentSessionId, session]));
   const rootIds = new Set(containerSessionIds);
-  const chronologicalRoots = containerSessionIds
-    .map((sessionId) => byId.get(sessionId))
-    .filter((session): session is SessionSummary => session !== undefined)
-    .sort(compareSessionTime);
+  const roots = containerSessionIds.flatMap((sessionId) => {
+    const session = byId.get(sessionId);
+    if (session) return [{ session, loadState: "ready" as const }];
+    const loadState = loadStateById?.get(sessionId);
+    return loadState ? [{ session: missingSession(sessionId), loadState }] : [];
+  });
+  const chronologicalRoots = roots.every((root) => root.loadState === "ready")
+    ? [...roots].sort((left, right) => compareSessionTime(left.session, right.session))
+    : roots;
   const runNumberById = new Map(
-    chronologicalRoots.map((session, index) => [session.agentSessionId, index + 1]),
+    chronologicalRoots.map(({ session }, index) => [session.agentSessionId, index + 1]),
   );
   const childrenByParent = new Map<string, SessionSummary[]>();
   for (const session of sessions) {
@@ -77,17 +97,54 @@ export function buildRunTree(
     session: SessionSummary,
     runNumber: number | null,
     ancestors: ReadonlySet<string>,
+    loadState: RunSessionLoadState = "ready",
   ): RunTreeNode => {
     const nextAncestors = new Set(ancestors).add(session.agentSessionId);
     const children = (childrenByParent.get(session.agentSessionId) ?? [])
       .filter((child) => !nextAncestors.has(child.agentSessionId))
       .map((child) => project(child, null, nextAncestors));
-    return { session, runNumber, children };
+    return { session, runNumber, loadState, children };
   };
 
   return [...chronologicalRoots]
     .reverse()
-    .map((session) => project(session, runNumberById.get(session.agentSessionId) ?? null, new Set()));
+    .map(({ session, loadState }) => project(
+      session,
+      runNumberById.get(session.agentSessionId) ?? null,
+      new Set(),
+      loadState,
+    ));
+}
+
+export function resolveRunSessions({
+  sessionIds,
+  catalogSessions,
+  targetedSessions,
+  targetedLoading,
+}: {
+  sessionIds: readonly string[];
+  catalogSessions: readonly SessionSummary[];
+  targetedSessions: readonly SessionSummary[];
+  targetedLoading: boolean;
+}): RunSessionResolution {
+  const byId = new Map(catalogSessions.map((session) => [session.agentSessionId, session]));
+  for (const session of targetedSessions) byId.set(session.agentSessionId, session);
+  const loadStateById = new Map<string, RunSessionLoadState>();
+  for (const sessionId of sessionIds) {
+    loadStateById.set(sessionId, byId.has(sessionId)
+      ? "ready"
+      : targetedLoading ? "loading" : "failed");
+  }
+  return { sessions: [...byId.values()], loadStateById };
+}
+
+export function activateRunSession(
+  session: SessionSummary,
+  port: RunSessionActivationPort,
+): void {
+  port.setActiveSessionSummary(session);
+  port.setActiveSession(session.agentSessionId);
+  port.setActiveTab("chat");
 }
 
 export function descriptionMarkdown(page: PageDto, blocks: readonly BlockDto[]): string {
@@ -198,4 +255,12 @@ function compareSessionTimeDescending(left: SessionSummary, right: SessionSummar
 function sessionTimestamp(session: SessionSummary): number {
   const parsed = Date.parse(session.createdAt ?? session.updatedAt ?? "");
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function missingSession(agentSessionId: string): SessionSummary {
+  return {
+    agentSessionId,
+    status: "unknown",
+    eventCount: 0,
+  };
 }

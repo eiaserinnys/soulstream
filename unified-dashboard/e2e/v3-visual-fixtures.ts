@@ -6,6 +6,13 @@ const YESTERDAY = "2026-07-13T08:20:00.000Z";
 type Json = Record<string, unknown> | unknown[] | string | number | boolean | null;
 let blockSequence = 0;
 
+export interface V3VisualQaRouteOptions {
+  catalogDelayMs?: number;
+  plannerDelayMs?: number;
+  timelineEventCount?: number;
+  liveEventText?: string;
+}
+
 function page(
   id: string,
   title: string,
@@ -198,6 +205,11 @@ const sessions = [
     completedAt: "2026-07-13T11:20:00.000Z",
     displayName: "밀도 기준 정리",
     awaySummary: "카드 계층과 간격 토큰을 목업에 맞춰 정리했습니다.",
+    lastMessage: {
+      type: "assistant",
+      preview: "카드 계층과 간격 토큰을 목업에 맞춰 정리했습니다.",
+      timestamp: "2026-07-13T11:20:00.000Z",
+    },
     nodeId: "eiaserinnys",
     agentId: "roselin_codex",
     agentName: "로젤린",
@@ -210,6 +222,11 @@ const sessions = [
     createdAt: "2026-07-14T00:30:00.000Z",
     updatedAt: NOW,
     displayName: "시각 QA 순회",
+    lastMessage: {
+      type: "assistant",
+      preview: "다크·라이트 실제 픽셀 순회를 진행하고 있습니다.",
+      timestamp: NOW,
+    },
     nodeId: "eiaserinnys",
     agentId: "roselin_codex",
     agentName: "로젤린",
@@ -223,6 +240,11 @@ const sessions = [
     updatedAt: "2026-07-14T01:10:00.000Z",
     displayName: "대비 확인",
     awaySummary: "라이트 모드의 입력 영역 대비를 점검했습니다.",
+    lastMessage: {
+      type: "assistant",
+      preview: "라이트 모드의 입력 영역 대비를 점검했습니다.",
+      timestamp: "2026-07-14T01:10:00.000Z",
+    },
     callerSessionId: "run-alpha-2",
     nodeId: "eiaserinnys",
     agentId: "roselin_codex",
@@ -237,6 +259,11 @@ const sessions = [
     updatedAt: "2026-07-13T13:15:00.000Z",
     displayName: "모바일 탭 구현",
     awaySummary: "모바일 세 탭의 선택 상태 유지 로직을 구현했습니다.",
+    lastMessage: {
+      type: "assistant",
+      preview: "모바일 세 탭의 선택 상태 유지 로직을 구현했습니다.",
+      timestamp: "2026-07-13T13:15:00.000Z",
+    },
     nodeId: "eiaserinnys",
     agentId: "roselin_codex",
     agentName: "로젤린",
@@ -269,7 +296,58 @@ async function fulfillJson(route: Route, body: Json, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-export async function installV3VisualQaRoutes(pageInstance: Page): Promise<void> {
+async function delay(ms: number | undefined): Promise<void> {
+  if (!ms) return;
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function timelinePage(sessionId: string, eventCount: number, before: string | null): Json {
+  const upper = before ? Number(before.replace("cursor-", "")) : eventCount;
+  const lower = Math.max(1, upper - 99);
+  return {
+    messages: Array.from({ length: upper - lower + 1 }, (_, index) => {
+      const id = upper - index;
+      return {
+        id,
+        parent_event_id: null,
+        event_type: "assistant_message",
+        payload: {
+          timestamp: id,
+          content: `히스토리 ${sessionId} #${id}`,
+          tool_use_id: `${sessionId}-${id}`,
+          _final_for_live_stream: true,
+        },
+        created_at: new Date(Date.parse(YESTERDAY) + id * 1_000).toISOString(),
+      };
+    }),
+    next_cursor: lower > 1 ? `cursor-${lower - 1}` : null,
+  };
+}
+
+function sessionEventsBody(sessionId: string, eventCount: number, liveEventText: string): string {
+  const liveEventId = eventCount + 1;
+  return [
+    "event: history_sync",
+    `data: ${JSON.stringify({ type: "history_sync", last_event_id: eventCount, is_live: true, status: "running" })}`,
+    "",
+    `id: ${liveEventId}`,
+    "event: assistant_message",
+    `data: ${JSON.stringify({
+      type: "assistant_message",
+      timestamp: liveEventId,
+      content: `${liveEventText} ${sessionId}`,
+      tool_use_id: `${sessionId}-live`,
+      _final_for_live_stream: true,
+    })}`,
+    "",
+    "",
+  ].join("\n");
+}
+
+export async function installV3VisualQaRoutes(
+  pageInstance: Page,
+  options: V3VisualQaRouteOptions = {},
+): Promise<void> {
   await pageInstance.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -304,15 +382,47 @@ export async function installV3VisualQaRoutes(pageInstance: Page): Promise<void>
       return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": visual-qa\n\n" });
     }
     if (/^\/api\/sessions\/[^/]+\/events$/.test(path)) {
-      return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": empty session\n\n" });
+      const sessionId = decodeURIComponent(path.split("/")[3] ?? "");
+      const body = options.liveEventText
+        ? sessionEventsBody(sessionId, options.timelineEventCount ?? 0, options.liveEventText)
+        : ": empty session\n\n";
+      return route.fulfill({ status: 200, contentType: "text/event-stream", body });
+    }
+    const timelineMatch = /^\/api\/sessions\/([^/]+)\/timeline$/.exec(path);
+    if (timelineMatch && options.timelineEventCount) {
+      return fulfillJson(
+        route,
+        timelinePage(
+          decodeURIComponent(timelineMatch[1]),
+          options.timelineEventCount,
+          url.searchParams.get("before"),
+        ),
+      );
     }
     if (path === "/api/sessions" && request.method() === "GET") {
-      return fulfillJson(route, { sessions, total: sessions.length });
+      const requestedIds = url.searchParams.getAll("session_id");
+      if (requestedIds.length === 0) await delay(options.catalogDelayMs);
+      const selectedSessions = requestedIds.length > 0
+        ? sessions.filter((session) => requestedIds.includes(session.agentSessionId))
+        : sessions;
+      return fulfillJson(route, { sessions: selectedSessions, total: selectedSessions.length });
     }
     if (path === "/api/sessions/folder-counts") return fulfillJson(route, { counts: {} });
     if (/^\/api\/nodes\/[^/]+\/agents$/.test(path)) return fulfillJson(route, {
-      agents: [{ id: "roselin_codex", name: "로젤린", backend: "codex", portraitUrl: null }],
+      agents: [{
+        id: "roselin_codex",
+        name: "로젤린",
+        backend: "codex",
+        portraitUrl: "/api/nodes/eiaserinnys/agents/roselin_codex/portrait",
+      }],
     });
+    if (/^\/api\/nodes\/[^/]+\/agents\/[^/]+\/portrait$/.test(path)) {
+      return route.fulfill({
+        status: 200,
+        contentType: "image/svg+xml",
+        body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#2563eb"/><circle cx="32" cy="25" r="12" fill="#dbeafe"/><path d="M14 57c2-13 10-19 18-19s16 6 18 19" fill="#dbeafe"/></svg>',
+      });
+    }
     if (path === "/api/pages/daily" && request.method() === "POST") {
       const body = request.postDataJSON() as { date?: string };
       const selected = body.date === "2026-07-13" ? pages.yesterday : pages.today;
@@ -338,6 +448,7 @@ export async function installV3VisualQaRoutes(pageInstance: Page): Promise<void>
       return result ? fulfillJson(route, result) : fulfillJson(route, { detail: "page not found" }, 404);
     }
     if (/^\/api\/pages\/[^/]+\/backlinks$/.test(path)) {
+      await delay(options.plannerDelayMs);
       const taskId = decodeURIComponent(path.split("/")[3] ?? "");
       const sourcePageId = [pages.taskAlpha.id, pages.taskBeta.id, pages.taskDone.id, pages.carryover.id].includes(taskId)
         ? pages.project.id
@@ -368,10 +479,12 @@ export async function installV3VisualQaRoutes(pageInstance: Page): Promise<void>
     }
     const runbookMatch = /^\/api\/runbooks\/([^/]+)$/.exec(path);
     if (runbookMatch) {
+      await delay(options.plannerDelayMs);
       const snapshot = runbooks[decodeURIComponent(runbookMatch[1])];
       return snapshot ? fulfillJson(route, snapshot) : fulfillJson(route, { detail: "runbook not found" }, 404);
     }
     if (path === "/api/board-items") {
+      await delay(options.plannerDelayMs);
       const runbookId = url.searchParams.get("container_id") ?? "";
       return fulfillJson(route, {
         boardItems: (runSessions[runbookId] ?? []).map((itemId) => ({ itemType: "session", itemId })),
