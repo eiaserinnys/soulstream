@@ -16,12 +16,14 @@ import {
   workspaceSplitForKey,
 } from "./task-workspace-model";
 import { TaskDetailPane } from "./TaskDetailPane";
+import { TaskBoardPane } from "./TaskBoardPane";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
 import type { MobilePlannerTab } from "./mobile-planner-state";
 
 export function TaskWorkspace({
   task,
   projectTitle,
+  projectFolderId,
   sessions,
   runSessionLoadStates,
   activeSession,
@@ -47,6 +49,7 @@ export function TaskWorkspace({
 }: {
   task: PlannerTask;
   projectTitle: string;
+  projectFolderId: string | null;
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
   activeSession: SessionSummary | undefined;
@@ -75,6 +78,9 @@ export function TaskWorkspace({
   const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: chatOpen });
   const draggingPointer = useRef<number | null>(null);
   const [splitPercent, setSplitPercent] = useState(DEFAULT_WORKSPACE_SPLIT);
+  const [boardOpen, setBoardOpen] = useState(false);
+
+  useEffect(() => { setBoardOpen(false); }, [task.page.id]);
 
   useEffect(() => {
     if (!chatOpen) draggingPointer.current = null;
@@ -107,28 +113,38 @@ export function TaskWorkspace({
     <div className={`v3-workspace-scrim${chatOpen ? " is-chat-open" : ""}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}>
       <div
         ref={workspaceRef}
-        className={`v3-workspace${chatOpen ? " is-chat-open" : ""}`}
+        className={`v3-workspace${boardOpen ? " is-board-open" : chatOpen ? " is-chat-open" : ""}`}
         data-mobile-view={mobileMode ? mobileTab : undefined}
-        style={chatOpen && !mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 4px)) 8px minmax(0, 1fr)` } : undefined}
+        style={chatOpen && !boardOpen && !mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 4px)) 8px minmax(0, 1fr)` } : undefined}
       >
-        <TaskDetailPane
-          task={task}
-          sessions={sessions}
-          runSessionLoadStates={runSessionLoadStates}
-          sessionDefaults={sessionDefaults}
-          taskMoveTargets={taskMoveTargets}
-          onReturnToToday={onReturnToToday}
-          onCloseWorkspace={onCloseWorkspace}
-          onOpenSession={onOpenSession}
-          onSaveDescription={onSaveDescription}
-          onPromoteDocument={onPromoteDocument}
-          onUnmountDocument={onUnmountDocument}
-          onRenameSession={onRenameSession}
-          onDeleteSessions={onDeleteSessions}
-          onMoveSession={onMoveSession}
-          onTaskBlocksChanged={onTaskBlocksChanged}
-        />
-        {chatOpen ? (
+        {boardOpen ? (
+          <TaskBoardPane
+            runbookId={task.runbookId}
+            projectFolderId={projectFolderId}
+            sessions={sessions}
+            onClose={onCloseWorkspace}
+          />
+        ) : (
+          <TaskDetailPane
+            task={task}
+            sessions={sessions}
+            runSessionLoadStates={runSessionLoadStates}
+            sessionDefaults={sessionDefaults}
+            taskMoveTargets={taskMoveTargets}
+            onReturnToToday={onReturnToToday}
+            onOpenBoard={() => setBoardOpen(true)}
+            onCloseWorkspace={onCloseWorkspace}
+            onOpenSession={onOpenSession}
+            onSaveDescription={onSaveDescription}
+            onPromoteDocument={onPromoteDocument}
+            onUnmountDocument={onUnmountDocument}
+            onRenameSession={onRenameSession}
+            onDeleteSessions={onDeleteSessions}
+            onMoveSession={onMoveSession}
+            onTaskBlocksChanged={onTaskBlocksChanged}
+          />
+        )}
+        {chatOpen && !boardOpen ? (
           <>
             <div
               className="v3-workspace-divider"
@@ -169,8 +185,8 @@ export function TaskWorkspace({
                 ) : (
                   <div className="v3-chat-empty" data-testid="v3-chat-empty">
                     <span className="v3-emoji" aria-hidden="true">💬</span>
-                    <strong>이 업무에는 아직 run이 없습니다.</strong>
-                    <p>업무 탭에서 새 세션을 시작하면 채팅이 열립니다.</p>
+                    <strong>선택된 run이 없습니다.</strong>
+                    <p>업무 탭에서 run을 선택하거나 새 세션을 시작하세요.</p>
                     <button type="button" className="v3-button v3-button--soft" onClick={onCloseChat}>업무 탭으로</button>
                   </div>
                 )}

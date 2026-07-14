@@ -33,6 +33,15 @@ export function applyProjectStarChanges(
   return [...byId.values()];
 }
 
+export function applyAllProjectChanges(
+  projects: readonly PageDto[],
+  changes: readonly ProjectStarChange[],
+): PageDto[] {
+  const byId = new Map(projects.map((project) => [project.id, project]));
+  for (const change of changes) byId.set(change.page.id, change.page);
+  return [...byId.values()];
+}
+
 export function projectStarredState(
   projectId: string,
   changes: readonly ProjectStarChange[],

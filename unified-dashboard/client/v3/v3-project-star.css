@@ -31,6 +31,21 @@
   white-space: nowrap;
 }
 
+.v3-project-rename-input {
+  width: calc(100% - 6px);
+  min-width: 0;
+  margin-left: 3px;
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  padding: 6px 8px;
+  color: var(--foreground);
+  background: var(--background);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  font-weight: 680;
+  outline: 2px solid color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
 .v3-nav-list .v3-project-star-toggle {
   display: grid;
   width: 30px;
@@ -46,6 +61,10 @@
 .v3-project-nav-row:focus-within .v3-project-star-toggle,
 .v3-project-star-toggle:disabled {
   opacity: 1;
+}
+
+.v3-project-star-toggle[title="★ 작업에 추가"] {
+  color: var(--muted-foreground);
 }
 
 .v3-project-star-toggle:not(:disabled):hover {

@@ -145,6 +145,53 @@
   padding: 12px;
 }
 
+.v3-new-task-dialog {
+  display: grid;
+  gap: 16px;
+}
+
+.v3-new-task-dialog label {
+  display: grid;
+  gap: 7px;
+  color: var(--foreground);
+  font-size: var(--font-size-sm);
+  font-weight: 750;
+}
+
+.v3-new-task-dialog label > span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.v3-new-task-dialog small,
+.v3-new-task-dialog p {
+  color: var(--muted-foreground);
+  font-size: var(--font-size-xs);
+  font-weight: 650;
+}
+
+.v3-new-task-dialog input,
+.v3-new-task-dialog select,
+.v3-new-task-dialog textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--foreground);
+  background: var(--background);
+  font: inherit;
+}
+
+.v3-new-task-dialog textarea {
+  resize: vertical;
+}
+
+.v3-new-task-dialog p {
+  margin: 0;
+}
+
 .v3-new-task input,
 .v3-new-task select,
 .v3-new-document input {
@@ -169,6 +216,57 @@
   margin: 10px 0 24px;
   border-radius: 12px;
   padding: 16px;
+}
+
+.v3-project-context {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 18px;
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--card) 55%, transparent);
+  font-size: var(--font-size-sm);
+}
+
+.v3-project-context-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.v3-project-context-row > strong {
+  margin-right: 4px;
+  color: var(--foreground);
+}
+
+.v3-project-context-chip {
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--accent) 70%, transparent);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+}
+
+.v3-project-guidance summary {
+  width: fit-content;
+  color: var(--foreground);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.v3-project-guidance pre {
+  overflow: auto;
+  margin: 9px 0 0;
+  border-left: 2px solid var(--primary);
+  padding: 2px 0 2px 11px;
+  color: var(--foreground);
+  font: inherit;
+  white-space: pre-wrap;
 }
 
 .v3-new-document {

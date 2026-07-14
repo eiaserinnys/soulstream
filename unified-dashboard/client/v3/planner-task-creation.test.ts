@@ -24,6 +24,7 @@ describe("createPlannerTask", () => {
 
     await expect(createPlannerTask({
       title: "새 업무",
+      description: "## 첫 설명\n\n업무 배경",
       dailyPageId: "daily",
       projectPageId: "project",
       folderId: "folder",
@@ -32,6 +33,7 @@ describe("createPlannerTask", () => {
     expect(calls).toEqual(["page", "runbook", "reference", "project-mount"]);
     expect(port.createTaskPage).toHaveBeenCalledWith({
       title: "새 업무",
+      description: "## 첫 설명\n\n업무 배경",
       sourcePageId: "daily",
     });
     expect(port.addPrimaryRunbookReference).toHaveBeenCalledWith({
@@ -54,6 +56,7 @@ describe("createPlannerTask", () => {
 
     const failure = await createPlannerTask({
       title: "새 업무",
+      description: "",
       dailyPageId: "daily",
       projectPageId: "project",
       folderId: "folder",

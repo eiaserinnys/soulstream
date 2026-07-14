@@ -6,6 +6,7 @@ import type {
 
 import { parseSingleMountTitle } from "./planner-model";
 import type { PlannerTaskCreationPort } from "./planner-task-creation";
+import { saveTaskDescription } from "./task-workspace-api";
 
 export class BrowserPlannerMutationPort implements PlannerTaskCreationPort {
   constructor(
@@ -13,8 +14,12 @@ export class BrowserPlannerMutationPort implements PlannerTaskCreationPort {
     private readonly fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
   ) {}
 
-  async createTaskPage(input: { title: string; sourcePageId: string }) {
-    return await this.createMountedPage(input);
+  async createTaskPage(input: { title: string; description: string; sourcePageId: string }) {
+    const page = await this.createMountedPage(input);
+    if (input.description.trim()) {
+      await saveTaskDescription(this.api, page.pageId, input.description);
+    }
+    return page;
   }
 
   async createDocument(input: { title: string; sourcePageId: string }) {

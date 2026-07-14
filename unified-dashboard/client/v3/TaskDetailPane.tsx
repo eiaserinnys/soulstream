@@ -18,6 +18,7 @@ export function TaskDetailPane({
   runSessionLoadStates,
   sessionDefaults,
   onReturnToToday,
+  onOpenBoard,
   onCloseWorkspace,
   taskMoveTargets,
   onOpenSession,
@@ -34,6 +35,7 @@ export function TaskDetailPane({
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
   sessionDefaults: PageSessionDefaults | null;
   onReturnToToday(): void;
+  onOpenBoard(): void;
   onCloseWorkspace(): void;
   taskMoveTargets: readonly PlannerTask[];
   onOpenSession(session: SessionSummary): void;
@@ -105,6 +107,7 @@ export function TaskDetailPane({
       <header className="v3-workspace-toolbar">
         <button type="button" className="v3-workspace-back" onClick={onReturnToToday}>← 오늘로</button>
         <span className="v3-spacer" />
+        <button type="button" className="v3-button v3-button--soft" onClick={onOpenBoard}>▦ 보드</button>
         <button type="button" className="v3-workspace-close" aria-label="업무 상세 닫기" onClick={onCloseWorkspace}>×</button>
       </header>
       <div className="v3-detail-scroll">
