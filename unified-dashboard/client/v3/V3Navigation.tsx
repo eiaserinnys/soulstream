@@ -1,6 +1,14 @@
-import { useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useGlassSurface } from "@seosoyoung/soul-ui";
-import type { PageDto } from "@seosoyoung/soul-ui/page";
+import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
+
+import { createStarredProject, setProjectStarred } from "./project-star-actions";
+import {
+  applyProjectStarChanges,
+  publishProjectStarChange,
+  useProjectStarChanges,
+} from "./project-star-store";
+import "./v3-project-star.css";
 
 export interface PlannerDateNavItem {
   date: string;
@@ -24,6 +32,46 @@ export function V3Navigation({
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
+  const api = useMemo(() => createPageApiClient(), []);
+  const starChanges = useProjectStarChanges();
+  const visibleProjects = applyProjectStarChanges(projects, starChanges);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [newProjectTitle, setNewProjectTitle] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [pendingStarId, setPendingStarId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const createProject = async () => {
+    const title = newProjectTitle.trim();
+    if (!title || creatingProject) return;
+    setCreatingProject(true);
+    setError(null);
+    try {
+      const project = await createStarredProject(api, { title, date: selectedDate });
+      publishProjectStarChange({ page: project, starred: true });
+      setNewProjectTitle("");
+      setNewProjectOpen(false);
+    } catch (cause) {
+      setError(`새 프로젝트 생성 실패 · ${errorText(cause)}`);
+    } finally {
+      setCreatingProject(false);
+    }
+  };
+
+  const removeProjectStar = async (project: PageDto) => {
+    if (pendingStarId) return;
+    if (!window.confirm(`“${project.title}” 프로젝트의 별표를 해제할까요?\n내비게이션에서 제거됩니다.`)) return;
+    setPendingStarId(project.id);
+    setError(null);
+    try {
+      const updated = await setProjectStarred(api, project.id, false);
+      publishProjectStarChange({ page: updated, starred: false });
+    } catch (cause) {
+      setError(`별표 해제 실패 · ${errorText(cause)}`);
+    } finally {
+      setPendingStarId(null);
+    }
+  };
 
   return (
     <nav
@@ -49,19 +97,62 @@ export function V3Navigation({
       </div>
       <h2>★ 프로젝트</h2>
       <div className="v3-nav-list">
-        {projects.map((project) => (
-          <button
-            type="button"
+        {visibleProjects.map((project) => (
+          <div
             key={project.id}
-            className={selectedProjectId === project.id ? "is-active" : ""}
-            onClick={() => onSelectProject(project.id)}
+            className={`v3-project-nav-row${selectedProjectId === project.id ? " is-active" : ""}`}
           >
-            <span className="v3-project-bullet" aria-hidden="true">◆</span>
-            <span>{project.title}</span>
-            <span className="v3-nav-star" aria-hidden="true">★</span>
-          </button>
+            <button
+              type="button"
+              className={`v3-project-nav-link${selectedProjectId === project.id ? " is-active" : ""}`}
+              onClick={() => onSelectProject(project.id)}
+            >
+              <span className="v3-project-bullet" aria-hidden="true">◆</span>
+              <span>{project.title}</span>
+            </button>
+            <button
+              type="button"
+              className="v3-project-star-toggle"
+              aria-label={`${project.title} 별표 해제`}
+              title="별표 해제"
+              disabled={pendingStarId === project.id}
+              onClick={() => { void removeProjectStar(project); }}
+            >
+              ★
+            </button>
+          </div>
         ))}
-        {projects.length === 0 ? <p>별표 프로젝트가 없습니다.</p> : null}
+        {visibleProjects.length === 0 ? <p>별표 프로젝트가 없습니다.</p> : null}
+        <button
+          type="button"
+          className="v3-new-project-trigger"
+          aria-expanded={newProjectOpen}
+          onClick={() => { setNewProjectOpen((value) => !value); setError(null); }}
+        >
+          ＋ 새 프로젝트
+        </button>
+        {newProjectOpen ? (
+          <div className="v3-new-project-form">
+            <input
+              autoFocus
+              value={newProjectTitle}
+              placeholder="프로젝트 제목…"
+              aria-label="새 프로젝트 제목"
+              disabled={creatingProject}
+              onChange={(event) => setNewProjectTitle(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Enter") void createProject(); }}
+            />
+            <button
+              type="button"
+              className="v3-button v3-button--primary"
+              disabled={creatingProject || !newProjectTitle.trim()}
+              onClick={() => { void createProject(); }}
+            >
+              {creatingProject ? "…" : "만들기"}
+            </button>
+          </div>
+        ) : null}
+        {error ? <p className="v3-project-star-error" role="alert">{error}</p> : null}
       </div>
       <div className="v3-nav-foot">
         업무는 프로젝트에 누적되고,<br />세션은 업무를 수행하는 run.
@@ -69,4 +160,8 @@ export function V3Navigation({
       </div>
     </nav>
   );
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : String(error);
 }

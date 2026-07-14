@@ -1,0 +1,98 @@
+.v3-project-nav-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  align-items: center;
+  border-radius: 9px;
+}
+
+.v3-project-nav-row:hover,
+.v3-project-nav-row:focus-within,
+.v3-project-nav-row.is-active {
+  background: var(--accent);
+}
+
+.v3-project-nav-row.is-active {
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.v3-nav-list .v3-project-nav-link {
+  min-width: 0;
+  background: transparent;
+}
+
+.v3-nav-list .v3-project-nav-link:hover,
+.v3-nav-list .v3-project-nav-link.is-active {
+  background: transparent;
+}
+
+.v3-project-nav-link > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-nav-list .v3-project-star-toggle {
+  display: grid;
+  width: 30px;
+  min-height: 30px;
+  place-items: center;
+  padding: 0;
+  color: var(--warning);
+  opacity: 0;
+  transition: opacity .16s, color .16s, transform .16s;
+}
+
+.v3-project-nav-row:hover .v3-project-star-toggle,
+.v3-project-nav-row:focus-within .v3-project-star-toggle,
+.v3-project-star-toggle:disabled {
+  opacity: 1;
+}
+
+.v3-project-star-toggle:not(:disabled):hover {
+  color: var(--warning-foreground);
+  transform: scale(1.08);
+}
+
+.v3-nav-list .v3-new-project-trigger {
+  margin-top: 3px;
+  border: 1px dashed var(--glass-border);
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--card) 42%, transparent);
+}
+
+.v3-new-project-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.v3-new-project-form input {
+  min-width: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 9px;
+  padding: 7px 8px;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--card) 72%, transparent);
+  font-size: var(--font-size-sm);
+}
+
+.v3-new-project-form .v3-button {
+  min-height: 34px;
+  padding-inline: 9px;
+}
+
+.v3-project-star-error {
+  color: var(--destructive-foreground) !important;
+}
+
+.v3-project-header-star {
+  flex: none;
+}
+
+@media (max-width: 760px) {
+  .v3-project-title > div {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}
