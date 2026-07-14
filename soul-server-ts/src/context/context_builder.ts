@@ -187,7 +187,7 @@ export class ExecutionContextBuilder {
    * (`task.resume_session_id is None`) 정합.
    */
   async build(task: Task, agent: AgentProfile): Promise<PreparedContext> {
-    const pageContext = await this.pageContextResolver.resolve(task, agent);
+    const pageContext = await this.pageContextResolver.resolve(task, agent, this.cfg.atom);
     const pageAnchored = pageContext.kind === "page-anchor";
     const folder = await this._resolveFolder(task);
     const agentAtomMarkdown = await this._fetchAgentAtomContext(agent);

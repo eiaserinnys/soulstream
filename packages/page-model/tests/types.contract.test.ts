@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   PAGE_BLOCK_TYPES,
+  type AtomRefBlockProperties,
   type BacklinkDto,
   type BlockDto,
   type ChecklistBlockProperties,
@@ -41,6 +42,12 @@ describe("page model DTO contract", () => {
   });
 
   it("maps known block types to their minimum property contracts", () => {
+    expectTypeOf<AtomRefBlockProperties["depth"]>().toEqualTypeOf<
+      number | undefined
+    >();
+    expectTypeOf<AtomRefBlockProperties["titlesOnly"]>().toEqualTypeOf<
+      boolean | undefined
+    >();
     expectTypeOf<PageBlockProperties<"checklist">>().toEqualTypeOf<ChecklistBlockProperties>();
     expectTypeOf<PageBlockProperties<"session_defaults">>().toEqualTypeOf<
       SessionDefaultsBlockProperties

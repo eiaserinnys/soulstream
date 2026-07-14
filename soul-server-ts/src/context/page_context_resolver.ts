@@ -8,11 +8,17 @@ import type { BlockDto } from "@soulstream/page-model";
 import type { AgentProfile } from "../agent_registry.js";
 import type { Task } from "../task/task_models.js";
 import type { ContextItem } from "./prompt_assembler.js";
+import {
+  fetchAtomContext,
+  type AtomFetchConfig,
+} from "./atom_context.js";
 import type {
+  AtomRefPageContextCandidate,
   PageContextAssembler,
   PageContextCandidate,
   PageContextTraversalFailure,
 } from "./page_context_assembler.js";
+import { selectNearestPageContextCandidates } from "./page_context_assembler.js";
 import type {
   PageContextAnchor,
   PageContextRepository,
@@ -33,7 +39,11 @@ export type PageContextResolution = NoPageAnchorContext | PageAnchorContext;
 /** Boundary for resolving page-owned context before the first engine turn. */
 export interface PageContextResolver {
   hasPageAnchor(task: Task, agent: AgentProfile): Promise<boolean>;
-  resolve(task: Task, agent: AgentProfile): Promise<PageContextResolution>;
+  resolve(
+    task: Task,
+    agent: AgentProfile,
+    atomConfig?: AtomFetchConfig,
+  ): Promise<PageContextResolution>;
 }
 
 export class NoPageAnchorContextResolver implements PageContextResolver {
@@ -41,7 +51,11 @@ export class NoPageAnchorContextResolver implements PageContextResolver {
     return false;
   }
 
-  async resolve(_task: Task, _agent: AgentProfile): Promise<NoPageAnchorContext> {
+  async resolve(
+    _task: Task,
+    _agent: AgentProfile,
+    _atomConfig?: AtomFetchConfig,
+  ): Promise<NoPageAnchorContext> {
     return { kind: "no-page-anchor" };
   }
 }
@@ -61,7 +75,11 @@ export class AncestorPageContextResolver implements PageContextResolver {
     return (await this.lookupAnchor(task)) !== null;
   }
 
-  async resolve(task: Task, _agent: AgentProfile): Promise<PageContextResolution> {
+  async resolve(
+    task: Task,
+    _agent: AgentProfile,
+    atomConfig?: AtomFetchConfig,
+  ): Promise<PageContextResolution> {
     const anchor = await this.lookupAnchor(task);
     if (!anchor) return { kind: "no-page-anchor" };
 
@@ -107,10 +125,15 @@ export class AncestorPageContextResolver implements PageContextResolver {
         this.logger.warn({ err, pageId: first.pageId }, "page context mount lookup failed");
       }
     }
+    const enrichedCandidates = await enrichAtomRefCandidates(
+      candidates,
+      atomConfig,
+      this.logger,
+    );
     return {
       kind: "page-anchor",
       contextItem: this.assembler.assemble(anchor, {
-        candidates,
+        candidates: enrichedCandidates,
         visitedPages: visited.size,
         failures,
         truncated,
@@ -244,8 +267,9 @@ function toCandidate(
   }
   if (block.block_type !== "atom_ref") return null;
   const instance = block.properties.instance;
-  const nodeId = block.properties.nodeId;
-  if ((instance !== "atom" && instance !== "atom-nl") || typeof nodeId !== "string" || !nodeId) {
+  const rawNodeId = block.properties.nodeId;
+  const nodeId = typeof rawNodeId === "string" ? rawNodeId.trim() : "";
+  if ((instance !== "atom" && instance !== "atom-nl") || !nodeId) {
     return null;
   }
   return {
@@ -257,7 +281,52 @@ function toCandidate(
     distance,
     instance,
     nodeId,
+    depth: normalizeAtomDepth(block.properties.depth),
+    titlesOnly: block.properties.titlesOnly === true,
   };
+}
+
+async function enrichAtomRefCandidates(
+  candidates: PageContextCandidate[],
+  atomConfig: AtomFetchConfig | undefined,
+  logger: Pick<Logger, "warn">,
+): Promise<PageContextCandidate[]> {
+  if (!atomConfig) return candidates;
+  const selected = selectNearestPageContextCandidates(candidates).filter(
+    (candidate): candidate is AtomRefPageContextCandidate => candidate.category === "atom_ref",
+  );
+  const compiled = await Promise.all(selected.map(async (candidate) => {
+    try {
+      const text = await fetchAtomContext(
+        atomConfig,
+        candidate.nodeId,
+        candidate.depth,
+        candidate.titlesOnly,
+        logger,
+      );
+      return [candidate, text] as const;
+    } catch (err) {
+      logger.warn(
+        { err, nodeId: candidate.nodeId, instance: candidate.instance },
+        "page atom context compile failed",
+      );
+      return [candidate, null] as const;
+    }
+  }));
+  const byCandidate = new Map<AtomRefPageContextCandidate, string>();
+  for (const [candidate, text] of compiled) {
+    if (text) byCandidate.set(candidate, text);
+  }
+  return candidates.map((candidate) => {
+    if (candidate.category !== "atom_ref") return candidate;
+    const compiledText = byCandidate.get(candidate);
+    return compiledText ? { ...candidate, compiledText } : candidate;
+  });
+}
+
+function normalizeAtomDepth(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 3;
+  return Math.min(5, Math.max(1, Math.trunc(value)));
 }
 
 function failure(
