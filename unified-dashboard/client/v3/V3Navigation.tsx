@@ -1,3 +1,5 @@
+import { useRef } from "react";
+import { useGlassSurface } from "@seosoyoung/soul-ui";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
 
 export interface PlannerDateNavItem {
@@ -20,8 +22,16 @@ export function V3Navigation({
   onSelectDate(date: string): void;
   onSelectProject(projectId: string): void;
 }) {
+  const surfaceRef = useRef<HTMLElement>(null);
+  const webglActive = useGlassSurface(surfaceRef, { enabled: true });
+
   return (
-    <nav className="v3-navigation" aria-label="플래너 내비게이션">
+    <nav
+      ref={surfaceRef}
+      className="v3-navigation border border-glass-border glass-strong glass-chrome lg-rim"
+      data-liquid-glass-webgl={webglActive ? "true" : undefined}
+      aria-label="플래너 내비게이션"
+    >
       <div className="v3-brand"><span className="v3-emoji" aria-hidden="true">🌊</span><strong>소울스트림</strong></div>
       <h2>데일리</h2>
       <div className="v3-nav-list">

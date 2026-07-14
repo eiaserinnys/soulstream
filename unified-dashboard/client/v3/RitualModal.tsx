@@ -4,7 +4,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type { SessionSummary } from "@seosoyoung/soul-ui";
+import { useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { createPlannerDataDependencies } from "./planner-data";
@@ -44,6 +44,8 @@ export function RitualModal({
   const [actionError, setActionError] = useState<string | null>(null);
   const [chatDestination, setChatDestination] = useState<string | null>(null);
   const closeButton = useRef<HTMLButtonElement | null>(null);
+  const modalRef = useRef<HTMLElement>(null);
+  const modalWebglActive = useGlassSurface(modalRef, { enabled: open });
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -116,7 +118,11 @@ export function RitualModal({
 
   return (
     <div className="v3-ritual-overlay" role="dialog" aria-modal="true" aria-labelledby="v3-ritual-title">
-      <section className="v3-ritual-modal">
+      <section
+        ref={modalRef}
+        className="v3-ritual-modal border border-glass-border glass-strong glass-chrome lg-rim"
+        data-liquid-glass-webgl={modalWebglActive ? "true" : undefined}
+      >
         <header className="v3-ritual-head">
           <span className="v3-ritual-icon v3-emoji" aria-hidden="true">☀️</span>
           <div>

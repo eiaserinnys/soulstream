@@ -1,5 +1,6 @@
+import { useRef } from "react";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
-import type { SessionSummary } from "@seosoyoung/soul-ui";
+import { useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import { DailyMemo } from "./DailyMemo";
 import { PlannerTaskCard } from "./PlannerTaskCard";
@@ -33,6 +34,8 @@ export function DailyPlannerView({
   onOpenProject(projectId: string): void;
   onOpenTask(task: PlannerTask): void;
 }) {
+  const reviewSurfaceRef = useRef<HTMLDivElement>(null);
+  const reviewWebglActive = useGlassSurface(reviewSurfaceRef, { enabled: true });
   const data = state.data;
   const groups = data ? [
     ...data.projects.map((project) => ({
@@ -45,7 +48,11 @@ export function DailyPlannerView({
   return (
     <>
       {reviewSessions.length > 0 ? (
-        <div className="v3-review-strip">
+        <div
+          ref={reviewSurfaceRef}
+          className="v3-review-strip border border-glass-border glass-strong glass-chrome lg-rim"
+          data-liquid-glass-webgl={reviewWebglActive ? "true" : undefined}
+        >
           <strong><span className="v3-emoji" aria-hidden="true">📥</span> 검수 대기 {reviewSessions.length}</strong>
           {reviewSessions.map((session) => (
             <button type="button" key={session.agentSessionId} onClick={() => onOpenReview(session)}>
@@ -114,6 +121,8 @@ export function ProjectPlannerView({
   onNewDocumentTitle(value: string): void;
   onCreateDocument(): void;
 }) {
+  const documentSurfaceRef = useRef<HTMLElement>(null);
+  const documentWebglActive = useGlassSurface(documentSurfaceRef, { enabled: true });
   const data = state.data;
   return (
     <>
@@ -125,7 +134,11 @@ export function ProjectPlannerView({
         <p>프로젝트에 누적된 업무와 문서 · 최근순</p>
       </div>
       {state.status === "error" ? <LoadError message={state.message} /> : null}
-      <section className="v3-documents">
+      <section
+        ref={documentSurfaceRef}
+        className="v3-documents border border-glass-border glass-strong glass-chrome lg-rim"
+        data-liquid-glass-webgl={documentWebglActive ? "true" : undefined}
+      >
         <div className="v3-section-head">
           <h2><span className="v3-emoji" aria-hidden="true">📄</span> 문서</h2><span>{data?.documents.length ?? 0}개</span>
           <span className="v3-spacer" />

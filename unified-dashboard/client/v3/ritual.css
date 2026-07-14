@@ -13,10 +13,7 @@
 .v3-ritual-modal {
   width: min(520px, 100%);
   overflow: hidden;
-  border: 1px solid var(--glass-border);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--lg-card) 94%, var(--background));
-  box-shadow: var(--lg-shadow);
 }
 
 .v3-ritual-head {
@@ -44,14 +41,15 @@
 }
 
 .v3-ritual-head h2 {
-  font-size: 18px;
+  font-size: var(--font-size-xl);
+  line-height: var(--font-size-xl--line-height);
   letter-spacing: -.02em;
 }
 
 .v3-ritual-head p {
   margin-top: 4px;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .v3-ritual-head > button {
@@ -95,7 +93,7 @@
   min-width: 42px;
   color: var(--muted-foreground);
   text-align: right;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .v3-ritual-card {
@@ -113,13 +111,14 @@
   padding: 4px 8px;
   color: var(--warning-foreground);
   background: color-mix(in srgb, var(--warning) 13%, transparent);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 850;
 }
 
 .v3-ritual-card h3 {
   margin: 18px 0 8px;
-  font-size: 21px;
+  font-size: var(--font-size-xl);
+  line-height: var(--font-size-xl--line-height);
   letter-spacing: -.025em;
 }
 
@@ -127,7 +126,7 @@
   min-height: 44px;
   margin: 0;
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   line-height: 1.65;
 }
 
@@ -135,7 +134,7 @@
   display: block;
   margin-top: 20px;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 720;
 }
 
@@ -153,7 +152,7 @@
 .v3-ritual-error {
   margin: 10px 2px 0;
   color: var(--destructive-foreground);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .v3-ritual-message,
@@ -171,7 +170,7 @@
 .v3-ritual-done p {
   margin: 0;
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .v3-ritual-done > span {
@@ -188,7 +187,8 @@
 
 .v3-ritual-done h3 {
   margin: 2px 0 0;
-  font-size: 22px;
+  font-size: var(--font-size-xl);
+  line-height: var(--font-size-xl--line-height);
 }
 
 @media (max-width: 760px) {

@@ -7,6 +7,9 @@ import {
   type CSSProperties,
 } from "react";
 import {
+  DragHandle,
+  LiquidGlassCanvas,
+  LiquidGlassProvider,
   ThemeToggle,
   WallpaperLayer,
   initTheme,
@@ -15,10 +18,17 @@ import {
   useReadPositionSync,
   useSessionListProvider,
   useSessionProvider,
+  useGlassSurface,
   useUserPreferencesSync,
   type SessionReviewAcknowledgeResult,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
+import {
+  clampDashboardLeftSidebarWidth,
+  DASHBOARD_LEFT_SIDEBAR_DEFAULT_WIDTH,
+  readDashboardLeftSidebarWidth,
+  writeDashboardLeftSidebarWidth,
+} from "@seosoyoung/soul-ui/components/dashboard-sidebar-collapse";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import {
   DASHBOARD_CARD_GAP_PX,
@@ -81,6 +91,14 @@ const CREATION_ERROR_LABEL: Record<PlannerTaskCreationPhase, string> = {
 const NEEDS_REVIEW: ReviewState = "needs_review";
 
 export function V3DashboardLayout() {
+  return (
+    <LiquidGlassProvider renderDefaultCanvas={false}>
+      <V3DashboardContent />
+    </LiquidGlassProvider>
+  );
+}
+
+function V3DashboardContent() {
   const today = useMemo(() => dateKey(new Date()), []);
   const dates = useMemo(() => recentDates(today), [today]);
   const api = useMemo(() => createPageApiClient(), []);
@@ -103,7 +121,19 @@ export function V3DashboardLayout() {
   const [newDocumentTitle, setNewDocumentTitle] = useState("");
   const [sessionDefaults, setSessionDefaults] = useState<PageSessionDefaults | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [navigationWidth, setNavigationWidth] = useState(() => readDashboardLeftSidebarWidth());
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const plannerSurfaceRef = useRef<HTMLDivElement>(null);
+  const plannerWebglActive = useGlassSurface(plannerSurfaceRef, { enabled: true });
+
+  const resizeNavigation = useCallback((deltaPercent: number) => {
+    const deltaPx = document.documentElement.clientWidth * deltaPercent / 100;
+    setNavigationWidth((current) => {
+      const next = clampDashboardLeftSidebarWidth(current + deltaPx);
+      writeDashboardLeftSidebarWidth(next);
+      return next;
+    });
+  }, []);
 
   useEffect(() => { initTheme(); }, []);
   const { user } = useAuth();
@@ -367,15 +397,24 @@ export function V3DashboardLayout() {
   const shellStyle = {
     "--v3-card-gap": `${DASHBOARD_CARD_GAP_PX}px`,
     "--v3-panel-gap": `${DASHBOARD_PANEL_GAP_PX}px`,
+    "--v3-navigation-width": `${navigationWidth || DASHBOARD_LEFT_SIDEBAR_DEFAULT_WIDTH}px`,
   } as CSSProperties;
   const projectTitle = projects.find((item) => item.id === selectedTask?.projectPageId)?.title ?? "미분류";
 
   return (
-    <div className="v3-shell" data-mobile-tab={mobileTab} style={shellStyle}>
+    <div className="v3-shell isolate font-sans" data-mobile-tab={mobileTab} style={shellStyle}>
       <WallpaperLayer />
+      <LiquidGlassCanvas />
       <V3Navigation dates={dates} selectedDate={selectedDate} projects={projects} selectedProjectId={selectedProjectId} onSelectDate={(date) => { setSelectedProjectId(null); setSelectedDate(date); }} onSelectProject={(projectId) => { setSelectedProjectId(projectId); setNewDocumentOpen(false); }} />
+      <div className="v3-navigation-resize" data-testid="v3-navigation-resize-handle" aria-hidden="true">
+        <DragHandle onDrag={resizeNavigation} widthPx={DASHBOARD_PANEL_GAP_PX} />
+      </div>
       <main className="v3-main">
-        <div className="v3-planner">
+        <div
+          ref={plannerSurfaceRef}
+          className="v3-planner border border-glass-border glass-strong glass-chrome lg-rim"
+          data-liquid-glass-webgl={plannerWebglActive ? "true" : undefined}
+        >
           <header className="v3-topbar">
             <span className="v3-eyebrow">DAILY PLANNER · PROJECT MOUNTS · RUN CHAT</span><span className="v3-spacer" />
             <button type="button" className="v3-button v3-button--ghost v3-ritual-trigger" aria-label="아침 정리" onClick={() => setRitualOpen(true)}>
