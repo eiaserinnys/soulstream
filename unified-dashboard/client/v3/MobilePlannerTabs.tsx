@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useGlassSurface } from "@seosoyoung/soul-ui";
 
 import type { MobilePlannerTab } from "./mobile-planner-state";
 
@@ -16,8 +17,17 @@ export function MobilePlannerTabs({
   activeTab: MobilePlannerTab;
   onSelect(tab: MobilePlannerTab): void;
 }) {
+  const surfaceRef = useRef<HTMLElement>(null);
+  const webglActive = useGlassSurface(surfaceRef, { enabled: true });
+
   return (
-    <nav className="v3-mobile-tabs" aria-label="모바일 화면 탭" role="tablist">
+    <nav
+      ref={surfaceRef}
+      className="v3-mobile-tabs border border-glass-border glass-strong glass-chrome"
+      data-liquid-glass-webgl={webglActive ? "true" : undefined}
+      aria-label="모바일 화면 탭"
+      role="tablist"
+    >
       {TABS.map((tab) => (
         <button
           key={tab.id}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ChatView,
+  useGlassSurface,
   type SessionReviewAcknowledgeResult,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
@@ -55,6 +56,8 @@ export function TaskWorkspace({
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
 }) {
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const chatSurfaceRef = useRef<HTMLElement>(null);
+  const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: chatOpen });
   const draggingPointer = useRef<number | null>(null);
   const [splitPercent, setSplitPercent] = useState(DEFAULT_WORKSPACE_SPLIT);
 
@@ -126,7 +129,12 @@ export function TaskWorkspace({
                 setSplitPercent(next);
               }}
             ><span /></div>
-            <section className="v3-chat-pane" aria-label="Run 채팅">
+            <section
+              ref={chatSurfaceRef}
+              className="v3-chat-pane border border-glass-border glass-strong glass-chrome lg-rim"
+              data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
+              aria-label="Run 채팅"
+            >
               <header className="v3-chat-header">
                 <div><small>{projectTitle} › {task.page.title}</small><strong>{activeSession ? runLabel(task, activeSession, sessions) : "선택된 run 없음"}</strong></div>
                 <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}</span>

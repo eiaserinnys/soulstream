@@ -40,7 +40,7 @@
   gap: 5px;
   border-radius: 999px;
   padding: 2px 8px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 830;
 }
 
@@ -66,13 +66,14 @@
 
 .v3-task-id {
   color: var(--muted-foreground);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 750;
 }
 
 .v3-task-card h3 {
   margin: 0 0 10px;
-  font-size: 16px;
+  font-size: var(--font-size-base);
+  line-height: var(--font-size-base--line-height);
   line-height: 1.35;
   letter-spacing: -.012em;
 }
@@ -80,7 +81,7 @@
 .v3-task-meta {
   flex-wrap: wrap;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .v3-agent-dot {
@@ -91,7 +92,7 @@
   border-radius: 50%;
   color: var(--info-foreground);
   background: color-mix(in srgb, var(--info) 13%, transparent);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 900;
 }
 
@@ -106,7 +107,7 @@
 
 .v3-run-line {
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   white-space: nowrap;
 }
@@ -140,10 +141,8 @@
   grid-template-columns: minmax(0, 1fr) 190px auto auto;
   gap: 8px;
   margin-bottom: 16px;
-  border: 1px dashed var(--info);
   border-radius: 12px;
   padding: 12px;
-  background: color-mix(in srgb, var(--info) 10%, var(--card));
 }
 
 .v3-new-task input,
@@ -155,24 +154,21 @@
   padding: 9px 11px;
   color: var(--foreground);
   background: var(--background);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .v3-new-task p {
   grid-column: 1 / -1;
   margin: 0;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
 }
 
 .v3-documents {
   margin: 10px 0 24px;
-  border: 1px solid var(--glass-border);
   border-radius: 12px;
   padding: 16px;
-  background: color-mix(in srgb, var(--lg-card) 82%, var(--background));
-  box-shadow: var(--lg-shadow);
 }
 
 .v3-new-document {
@@ -209,7 +205,7 @@
 .v3-document-list small {
   margin-left: auto;
   color: var(--muted-foreground);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .v3-empty,
@@ -220,7 +216,7 @@
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--card) 70%, transparent);
   text-align: center;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .v3-load-error {
@@ -252,7 +248,7 @@
   display: flex;
   align-items: center;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   letter-spacing: .06em;
   text-transform: uppercase;
@@ -269,13 +265,14 @@
 
 .v3-detail-placeholder h2 {
   margin: 34px 0 8px;
-  font-size: 24px;
+  font-size: var(--font-size-xl);
+  line-height: var(--font-size-xl--line-height);
   letter-spacing: -.025em;
 }
 
 .v3-detail-placeholder > p {
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 
 .v3-placeholder-card {
@@ -291,7 +288,7 @@
 
 .v3-placeholder-card span {
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   line-height: 1.65;
 }
 
@@ -306,7 +303,7 @@
   color: var(--primary-foreground);
   background: var(--primary);
   box-shadow: var(--lg-shadow);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 750;
   opacity: 0;
   pointer-events: none;
@@ -320,10 +317,6 @@
 }
 
 @media (max-width: 980px) {
-  .v3-shell {
-    grid-template-columns: 210px minmax(0, 1fr);
-  }
-
   .v3-planner {
     width: min(940px, calc(100% - 28px));
   }

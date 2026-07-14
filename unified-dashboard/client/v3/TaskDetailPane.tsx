@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import type { SessionSummary } from "@seosoyoung/soul-ui";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import type { PlannerTask } from "./planner-data";
 import { plannerStatusPresentation } from "./planner-model";
@@ -29,6 +29,8 @@ export function TaskDetailPane({
   onSaveDescription(markdown: string): Promise<void>;
   onPromoteDocument(blockId: string): Promise<void>;
 }) {
+  const surfaceRef = useRef<HTMLElement>(null);
+  const webglActive = useGlassSurface(surfaceRef, { enabled: true });
   const description = useMemo(
     () => descriptionMarkdown(task.page, task.blocks),
     [task.blocks, task.page],
@@ -75,7 +77,11 @@ export function TaskDetailPane({
   };
 
   return (
-    <article className="v3-detail-pane">
+    <article
+      ref={surfaceRef}
+      className="v3-detail-pane border border-glass-border glass-strong glass-chrome lg-rim"
+      data-liquid-glass-webgl={webglActive ? "true" : undefined}
+    >
       <header className="v3-workspace-toolbar">
         <button type="button" className="v3-workspace-back" onClick={onReturnToPlanner}>← 오늘로</button>
         <span className="v3-spacer" />

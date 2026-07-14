@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useGlassSurface } from "@seosoyoung/soul-ui";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
 
 export function NewTaskForm({
@@ -17,6 +18,8 @@ export function NewTaskForm({
   const [title, setTitle] = useState("");
   const [projectId, setProjectId] = useState(initialProjectId ?? projects[0]?.id ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const webglActive = useGlassSurface(surfaceRef, { enabled: true });
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   const selected = projects.find((project) => project.id === projectId);
@@ -27,7 +30,13 @@ export function NewTaskForm({
   };
 
   return (
-    <div className="v3-new-task" role="group" aria-label="새 업무 만들기">
+    <div
+      ref={surfaceRef}
+      className="v3-new-task border border-glass-border glass-strong glass-chrome lg-rim"
+      data-liquid-glass-webgl={webglActive ? "true" : undefined}
+      role="group"
+      aria-label="새 업무 만들기"
+    >
       <input
         ref={inputRef}
         value={title}

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useDashboardStore,
+  useGlassSurface,
   type AgentInfo,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
@@ -61,6 +62,8 @@ export function SessionSuccessionModal({
   const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createTaskPageAnchor>> | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const modalRef = useRef<HTMLElement>(null);
+  const modalWebglActive = useGlassSurface(modalRef, { enabled: true });
 
   useEffect(() => {
     if (selectedNodeId && aliveNodes.some((node) => node.nodeId === selectedNodeId)) return;
@@ -147,7 +150,14 @@ export function SessionSuccessionModal({
 
   return (
     <div className="v3-succession-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) onClose(); }}>
-      <section className="v3-succession-modal" role="dialog" aria-modal="true" aria-labelledby="v3-succession-title">
+      <section
+        ref={modalRef}
+        className="v3-succession-modal border border-glass-border glass-strong glass-chrome lg-rim"
+        data-liquid-glass-webgl={modalWebglActive ? "true" : undefined}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="v3-succession-title"
+      >
         <header>
           <span>↗</span>
           <div><h2 id="v3-succession-title">새 세션 · 승계 미리보기</h2><p>체크를 모두 끄면 빈 세션으로 시작합니다.</p></div>

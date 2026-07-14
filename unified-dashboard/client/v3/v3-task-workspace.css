@@ -17,19 +17,17 @@
 
 .v3-workspace {
   display: block;
-  width: min(520px, 100vw);
+  width: min(520px, calc(100vw - 32px));
   min-width: 0;
-  height: 100%;
-  overflow: hidden;
-  border-left: 1px solid var(--glass-border);
-  background: var(--background);
-  box-shadow: var(--lg-shadow);
+  height: calc(100% - 32px);
+  margin: 16px;
+  overflow: visible;
   animation: v3-workspace-enter .2s ease-out;
 }
 
 .v3-workspace.is-chat-open {
   display: grid;
-  width: calc(100vw - 236px);
+  width: calc(100vw - var(--v3-navigation-width, 264px) - 32px);
 }
 
 @keyframes v3-workspace-enter {
@@ -42,6 +40,8 @@
   min-width: 0;
   min-height: 0;
   height: 100%;
+  overflow: hidden;
+  border-radius: 24px;
 }
 
 .v3-detail-pane {
@@ -58,9 +58,7 @@
   gap: 10px;
   border-bottom: 1px solid var(--border);
   padding: 0 18px;
-  background: color-mix(in srgb, var(--card) 86%, transparent);
-  -webkit-backdrop-filter: blur(18px) saturate(140%);
-  backdrop-filter: blur(18px) saturate(140%);
+  background: transparent;
 }
 
 .v3-workspace-back,
@@ -101,8 +99,8 @@
 .v3-detail-title h2 {
   width: 100%;
   margin: 3px 0 2px;
-  font-size: clamp(23px, 3vw, 30px);
-  line-height: 1.2;
+  font-size: var(--font-size-xl);
+  line-height: var(--font-size-xl--line-height);
   letter-spacing: -.035em;
 }
 
@@ -125,13 +123,13 @@
 
 .v3-detail-section-head h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-size-sm);
   letter-spacing: -.01em;
 }
 
 .v3-detail-section-head > span:not(.v3-spacer) {
   color: var(--muted-foreground);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
 }
 
 .v3-description-preview {
@@ -164,7 +162,7 @@
 .v3-description-empty,
 .v3-detail-empty {
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .v3-description-editor textarea {
@@ -206,7 +204,7 @@
   padding: 5px 9px;
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--card) 78%, transparent);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -229,7 +227,7 @@
   border-radius: 9px;
   padding: 8px 10px;
   background: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .v3-task-documents > div > span {
@@ -247,7 +245,7 @@
   padding: 9px 11px;
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--info) 7%, transparent);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 730;
 }
 
@@ -296,14 +294,14 @@
 
 .v3-run-open strong {
   overflow: hidden;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .v3-run-open small {
   color: var(--muted-foreground);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 .v3-run-status {
@@ -325,7 +323,7 @@
   padding: 6px;
   color: var(--muted-foreground);
   background: transparent;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   cursor: pointer;
 }
@@ -354,7 +352,7 @@
   padding: 6px 9px;
   color: var(--muted-foreground);
   background: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.55;
 }
 
@@ -387,7 +385,6 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--background);
 }
 
 .v3-chat-header {
@@ -404,19 +401,19 @@
 .v3-chat-header small {
   overflow: hidden;
   color: var(--muted-foreground);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.v3-chat-header strong { font-size: 13px; }
+.v3-chat-header strong { font-size: var(--font-size-sm); }
 
 .v3-chat-status {
   border-radius: 999px;
   padding: 3px 8px;
   color: var(--muted-foreground);
   background: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
 }
 
@@ -449,13 +446,13 @@
 
 .v3-chat-empty strong {
   color: var(--foreground);
-  font-size: 15px;
+  font-size: var(--font-size-base);
 }
 
 .v3-chat-empty p {
   max-width: 280px;
   margin: 6px 0 16px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   line-height: 1.6;
 }
 
@@ -483,21 +480,17 @@
   margin: 0;
 }
 
-.v3-review-banner strong { font-size: 11px; }
-.v3-review-banner small { font-size: 10px; }
+.v3-review-banner strong { font-size: var(--font-size-xs); }
+.v3-review-banner small { font-size: var(--font-size-xs); }
 .v3-review-banner button {
   border: 1px solid currentColor;
   border-radius: 8px;
   padding: 5px 8px;
   color: inherit;
   background: transparent;
-  font-size: 10px;
+  font-size: var(--font-size-xs);
   font-weight: 800;
   cursor: pointer;
-}
-
-@media (max-width: 980px) {
-  .v3-workspace.is-chat-open { width: calc(100vw - 210px); }
 }
 
 @media (max-width: 760px) {
@@ -514,6 +507,7 @@
     display: block;
     width: 100%;
     height: 100%;
+    margin: 0;
     border: 0;
     box-shadow: none;
     animation: none;
@@ -528,6 +522,12 @@
     display: flex;
     width: 100%;
     border-left: 0;
+  }
+
+  .v3-detail-pane,
+  .v3-chat-pane {
+    border: 0;
+    border-radius: 0;
   }
 
   .v3-detail-scroll {
