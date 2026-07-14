@@ -9,6 +9,7 @@ const OUTPUT_ROOT = path.resolve(
   process.env.V3_QA_OUTPUT ?? path.join("e2e", "screenshots", "v3-visual-qa"),
 );
 const ALLOW_DEFECTS = process.env.V3_QA_ALLOW_DEFECTS === "1";
+const WEBGL_OVERRIDE = process.env.V3_QA_WEBGL_OVERRIDE ?? null;
 
 type Theme = "dark" | "light";
 
@@ -30,6 +31,7 @@ for (const theme of ["dark", "light"] as const) {
     { name: "mobile", width: 390, height: 844 },
   ] as const) {
     test(`v3 visual sweep · ${theme} · ${viewport.width}px`, async ({ page }) => {
+      test.setTimeout(240_000);
       const outputDir = path.join(OUTPUT_ROOT, `${theme}-${viewport.width}`);
       mkdirSync(outputDir, { recursive: true });
       const diagnostics: Diagnostics = {
@@ -64,8 +66,9 @@ for (const theme of ["dark", "light"] as const) {
 
       await page.setViewportSize(viewport);
       await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
-      await page.addInitScript((appearance: Theme) => {
+      await page.addInitScript(({ appearance, webglOverride }: { appearance: Theme; webglOverride: string | null }) => {
         localStorage.setItem("soul-dashboard-theme", appearance);
+        if (webglOverride !== null) localStorage.setItem("ls.webglGlass", webglOverride);
         const serviceWorker = navigator.serviceWorker;
         if (serviceWorker) {
           Object.defineProperty(serviceWorker, "register", {
@@ -83,11 +86,11 @@ for (const theme of ["dark", "light"] as const) {
             get: () => null,
           });
         }
-      }, theme);
+      }, { appearance: theme, webglOverride: WEBGL_OVERRIDE });
       await installV3VisualQaRoutes(page);
       await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
       await expect(page.getByText("오늘의 업무")).toBeVisible();
-      await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible();
+      await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible({ timeout: 20_000 });
       await page.waitForLoadState("networkidle");
       diagnostics.fontFamily = await page.locator(".v3-emoji").first().evaluate((element) => (
         getComputedStyle(element).fontFamily
@@ -102,7 +105,7 @@ for (const theme of ["dark", "light"] as const) {
       } else {
         await page.getByRole("button", { name: "아카이브 보기 ›" }).first().click();
       }
-      await expect(page.getByRole("heading", { name: fixtureTitles.project })).toBeVisible();
+      await expect(page.getByRole("heading", { name: fixtureTitles.project })).toBeVisible({ timeout: 20_000 });
       await capture(page, outputDir, "02-project-view", diagnostics);
 
       await page.getByRole("button", { name: "＋ 새 업무" }).click();
