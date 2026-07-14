@@ -62,17 +62,14 @@ function makeProvider(sessions: SessionSummary[]): SessionStorageProvider {
 function Probe({
   onSessions,
   provider,
-  sessionScope = "view",
   sessionIds,
 }: {
   onSessions: (sessions: SessionSummary[]) => void;
   provider: SessionStorageProvider;
-  sessionScope?: "view" | "all";
   sessionIds?: readonly string[];
 }) {
   const { sessions } = useSessionListProvider({
     getSessionProvider: () => provider,
-    sessionScope,
     sessionIds,
     viewModeOverride: "feed",
     folderIdOverride: null,
@@ -162,33 +159,6 @@ describe("useSessionListProvider query overrides", () => {
     );
   });
 
-  it("loads the all-sessions index once with limit=0 through the existing query path", async () => {
-    const provider = makeProvider([makeSession("global-a"), makeSession("global-b")]);
-    let latest: SessionSummary[] = [];
-
-    flushSync(() => {
-      root.render(
-        createElement(
-          QueryClientProvider,
-          { client: queryClient },
-          createElement(Probe, {
-            provider,
-            sessionScope: "all",
-            onSessions: (value) => {
-              latest = value;
-            },
-          }),
-        ),
-      );
-    });
-
-    await waitFor(() => {
-      expect(provider.fetchSessions).toHaveBeenCalledWith({ offset: 0, limit: 0 });
-      expect(latest.map((session) => session.agentSessionId)).toEqual(["global-a", "global-b"]);
-    });
-    expect(provider.fetchSessions).toHaveBeenCalledTimes(1);
-  });
-
   it("requests only the session summaries referenced by a page", async () => {
     const provider = makeProvider([makeSession("session-b")]);
     let latest: SessionSummary[] = [];
@@ -200,7 +170,6 @@ describe("useSessionListProvider query overrides", () => {
           { client: queryClient },
           createElement(Probe, {
             provider,
-            sessionScope: "all",
             sessionIds: ["session-b", "session-a", "session-b"],
             onSessions: (value) => {
               latest = value;
@@ -213,7 +182,7 @@ describe("useSessionListProvider query overrides", () => {
     await waitFor(() => {
       expect(provider.fetchSessions).toHaveBeenCalledWith({
         offset: 0,
-        limit: 0,
+        limit: 50,
         sessionIds: ["session-a", "session-b"],
       });
     });
@@ -232,7 +201,6 @@ describe("useSessionListProvider query overrides", () => {
           { client: queryClient },
           createElement(Probe, {
             provider,
-            sessionScope: "all",
             sessionIds: [],
             onSessions: () => undefined,
           }),

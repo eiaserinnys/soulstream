@@ -66,6 +66,11 @@ export interface PlannerTaskDto {
   mounted_documents: PlannerMountedDocumentDto[];
 }
 
+export interface PlannerPageSlice<T> {
+  items: T[];
+  next_cursor: string | null;
+}
+
 export interface PlannerTodayDto {
   daily: {
     page: PlannerPageDto;
@@ -75,15 +80,40 @@ export interface PlannerTodayDto {
   projects: PlannerPageDto[];
   memo_blocks: PlannerBlockDto[];
   tasks: PlannerTaskDto[];
+  review_session_ids: string[];
 }
 
 export interface PlannerProjectDto {
   project: PlannerPageDto;
-  tasks: PlannerTaskDto[];
-  documents: PlannerPageDto[];
+  tasks: PlannerPageSlice<PlannerTaskDto>;
+  documents: PlannerPageSlice<PlannerPageDto>;
+}
+
+export interface PlannerDailyHistoryDto {
+  dates: string[];
+}
+
+export interface PlannerTaskRunPageDto extends PlannerPageSlice<{
+  agent_session_id: string;
+}> {
+  total: number;
 }
 
 export interface PlannerReadProvider {
+  getProjectIndex(input: { cursor?: string; limit: number }): Promise<PlannerPageSlice<PlannerPageDto>>;
+  getDailyHistory(input: { before: string; limit: number }): Promise<PlannerDailyHistoryDto>;
   getToday(date: string): Promise<PlannerTodayDto | null>;
-  getProject(pageId: string): Promise<PlannerProjectDto | null>;
+  getProject(pageId: string, input: { limit: number }): Promise<PlannerProjectDto | null>;
+  getProjectTasks(
+    pageId: string,
+    input: { cursor?: string; limit: number },
+  ): Promise<PlannerPageSlice<PlannerTaskDto> | null>;
+  getProjectDocuments(
+    pageId: string,
+    input: { cursor?: string; limit: number },
+  ): Promise<PlannerPageSlice<PlannerPageDto> | null>;
+  getTaskRuns(
+    pageId: string,
+    input: { cursor?: string; limit: number },
+  ): Promise<PlannerTaskRunPageDto | null>;
 }

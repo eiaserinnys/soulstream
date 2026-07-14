@@ -101,7 +101,9 @@ for (const theme of ["dark", "light"] as const) {
       await capture(page, outputDir, "01b-today-primary-hover", diagnostics);
 
       if (viewport.name === "desktop") {
-        await page.getByRole("button", { name: fixtureTitles.project }).click();
+        await page.getByTestId("v3-all-projects")
+          .getByRole("button", { name: fixtureTitles.project, exact: true })
+          .click();
       } else {
         await page.getByRole("button", { name: "아카이브 보기 ›" }).first().click();
       }
@@ -147,7 +149,9 @@ for (const theme of ["dark", "light"] as const) {
         await expect(page.getByText("오늘의 업무")).toBeVisible();
         await page.waitForLoadState("networkidle");
         navigationInProgress = false;
-        await page.getByRole("button", { name: fixtureTitles.project }).click();
+        await page.getByTestId("v3-all-projects")
+          .getByRole("button", { name: fixtureTitles.project, exact: true })
+          .click();
         await page.getByTestId("v3-task-task-alpha").click();
         await page.locator(".v3-run-open").filter({ hasText: "run #2" }).click();
         await expect(page.getByRole("separator", { name: "상세와 채팅 너비 조절" })).toHaveAttribute("aria-valuenow", "60");
@@ -155,7 +159,7 @@ for (const theme of ["dark", "light"] as const) {
       }
 
       await page.getByRole("button", { name: "채팅 닫기" }).click();
-      await page.getByRole("button", { name: "▶ 새 세션" }).click();
+      await page.getByRole("button", { name: "＋ 새 세션" }).click();
       await expect(page.getByRole("dialog", { name: "새 세션 · 승계 미리보기" })).toBeVisible();
       await capture(page, outputDir, "07-session-succession", diagnostics);
       await page.getByRole("button", { name: "승계 닫기" }).click();

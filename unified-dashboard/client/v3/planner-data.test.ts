@@ -4,8 +4,13 @@ import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
 import {
   createPlannerDataDependencies,
+  loadDailyHistoryDates,
   loadDailyPlanner,
+  loadProjectDocumentPage,
+  loadProjectIndex,
   loadProjectPlanner,
+  loadProjectTaskPage,
+  loadTaskRunHistory,
   type PlannerDataDependencies,
 } from "./planner-data";
 
@@ -17,12 +22,14 @@ describe("planner BFF data", () => {
       projects: [page("project", "프로젝트")],
       memo_blocks: [],
       tasks: [taskPayload()],
+      review_session_ids: ["review-session"],
     }));
 
     await expect(loadDailyPlanner(api, "2026-07-14", { fetchPlanner }))
       .resolves.toMatchObject({
         daily: { page: { id: "daily" } },
         projects: [{ id: "project" }],
+        reviewSessionIds: ["review-session"],
         tasks: [{
           page: { id: "task" },
           runbookId: "runbook",
@@ -42,14 +49,60 @@ describe("planner BFF data", () => {
     const api = pageApiThatMustStayIdle();
     const project = page("project/a", "프로젝트");
     const tasks = Array.from({ length: 22 }, (_, index) => taskPayload(index));
-    const fetchPlanner = vi.fn(async () => ({ project, tasks, documents: [] }));
+    const fetchPlanner = vi.fn(async () => ({
+      project,
+      tasks: { items: tasks, next_cursor: "task-next" },
+      documents: { items: [], next_cursor: "document-next" },
+    }));
 
     const result = await loadProjectPlanner(api, project, { fetchPlanner });
 
     expect(result.tasks).toHaveLength(22);
+    expect(result.nextTaskCursor).toBe("task-next");
+    expect(result.nextDocumentCursor).toBe("document-next");
     expect(fetchPlanner).toHaveBeenCalledOnce();
     expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa");
     expectNoPageCalls(api);
+  });
+
+  it("loads bounded project, daily, task, document, and run pages through dedicated planner routes", async () => {
+    const fetchPlanner = vi.fn(async (path: string) => {
+      if (path.startsWith("/api/planner/project-index")) {
+        return { items: [page("project", "프로젝트")], next_cursor: "project-next" };
+      }
+      if (path.startsWith("/api/planner/daily-history")) {
+        return { dates: ["2026-07-13", "2026-07-11"] };
+      }
+      if (path.includes("/tasks?")) {
+        return { items: [taskPayload()], next_cursor: "task-next" };
+      }
+      if (path.includes("/documents?")) {
+        return { items: [page("document", "문서")], next_cursor: null };
+      }
+      return {
+        items: [{ agent_session_id: "session-a" }],
+        next_cursor: "run-next",
+        total: 61,
+      };
+    });
+    const dependencies = { fetchPlanner } satisfies PlannerDataDependencies;
+
+    await expect(loadProjectIndex(dependencies, { cursor: "cursor-a", limit: 50 }))
+      .resolves.toMatchObject({ items: [{ id: "project" }], nextCursor: "project-next" });
+    await expect(loadDailyHistoryDates(dependencies, "2026-07-14", 2))
+      .resolves.toEqual(["2026-07-13", "2026-07-11"]);
+    await expect(loadProjectTaskPage(dependencies, "project/a", "cursor-b", 20))
+      .resolves.toMatchObject({ items: [{ page: { id: "task" } }], nextCursor: "task-next" });
+    await expect(loadProjectDocumentPage(dependencies, "project/a", "cursor-c", 20))
+      .resolves.toMatchObject({ items: [{ id: "document" }], nextCursor: null });
+    await expect(loadTaskRunHistory(dependencies, "task/a", "cursor-d", 20))
+      .resolves.toEqual({ sessionIds: ["session-a"], nextCursor: "run-next", total: 61 });
+
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/project-index?cursor=cursor-a&limit=50");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/daily-history?before=2026-07-14&limit=2");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/tasks?cursor=cursor-b&limit=20");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/documents?cursor=cursor-c&limit=20");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/tasks/task%2Fa/runs?cursor=cursor-d&limit=20");
   });
 
   it("uses one authenticated JSON fetch in the production dependency", async () => {
@@ -110,7 +163,7 @@ function taskPayload(index = 0) {
       assignee: "roselin",
     },
     project_page_id: "project",
-    sessions: [{ agent_session_id: "session-a" }],
+    sessions: [{ agent_session_id: `session-${index || "a"}` }],
     mounted_documents: [],
   };
 }

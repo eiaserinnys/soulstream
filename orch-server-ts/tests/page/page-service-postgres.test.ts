@@ -830,16 +830,15 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
     const commitBarrier = new Promise<void>((resolve) => { releaseCommit = resolve; });
     const commitStarted = new Promise<void>((resolve) => { markCommitStarted = resolve; });
     let operationSnapshot: Uint8Array | null = null;
-    repository.commitPageMutation = async (input) => {
-      markCommitStarted();
-      await commitBarrier;
-      const result = await originalCommit(input);
-      operationSnapshot = input.application.snapshot;
-      return result;
-    };
-
     try {
       await connectAndWaitForSync(provider);
+      repository.commitPageMutation = async (input) => {
+        markCommitStarted();
+        await commitBarrier;
+        const result = await originalCommit(input);
+        operationSnapshot = input.application.snapshot;
+        return result;
+      };
       const text = getEditableText(provider.document, blockId);
       text.insert(text.length, "-A");
       const mutation = raceService.mutatePage({

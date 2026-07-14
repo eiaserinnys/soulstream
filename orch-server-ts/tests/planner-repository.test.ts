@@ -9,7 +9,7 @@ describe("planner repository", () => {
   it("reads a project with one SQL statement over replica tables only", async () => {
     const payload = {
       project: page("project"),
-      tasks: [{
+      tasks: { items: [{
         page: page("task"),
         blocks: [],
         runbook_id: "runbook",
@@ -17,13 +17,23 @@ describe("planner repository", () => {
         project_page_id: "project",
         sessions: [],
         mounted_documents: [],
-      }],
-      documents: [],
+      }], next_cursor: null },
+      documents: { items: [], next_cursor: null },
     };
-    const harness = createSqlHarness([[{ payload }]]);
+    const harness = createSqlHarness([[{
+      payload: {
+        project: payload.project,
+        tasks: payload.tasks.items,
+        documents: payload.documents.items,
+      },
+      next_task_position: null,
+      next_task_id: null,
+      next_document_position: null,
+      next_document_id: null,
+    }]]);
     const repository = new PlannerRepository(resolverFor(harness.sql));
 
-    await expect(repository.getProject("project")).resolves.toEqual(payload);
+    await expect(repository.getProject("project", { limit: 20 })).resolves.toEqual(payload);
     expect(harness.calls).toHaveLength(1);
     expect(harness.calls[0]?.values).toEqual(expect.arrayContaining(["project", "project"]));
     const query = normalizeSql(harness.calls[0]?.text);
@@ -35,7 +45,8 @@ describe("planner repository", () => {
     }
     expect(query).not.toContain("board_yjs_documents");
     expect(query).not.toContain("board_yjs_updates");
-    expect(query).toContain("jsonb_agg(task.payload ORDER BY task.mount_position DESC, task.page_id)");
+    expect(query).toContain("LIMIT ?");
+    expect(query).toContain("ORDER BY session.updated_at DESC, session.session_id DESC LIMIT 1");
   });
 
   it("reads a daily planner with one SQL statement and returns null on a replica miss", async () => {
@@ -44,6 +55,7 @@ describe("planner repository", () => {
       projects: [],
       memo_blocks: [],
       tasks: [],
+      review_session_ids: ["review-session"],
     };
     const harness = createSqlHarness([[{ payload: daily }], [{ payload: null }]]);
     const repository = new PlannerRepository(resolverFor(harness.sql));
@@ -57,6 +69,49 @@ describe("planner repository", () => {
     expect(normalizeSql(harness.calls[0]?.text)).toContain(
       "jsonb_agg(task.payload ORDER BY task.mount_position ASC, task.page_id)",
     );
+    expect(normalizeSql(harness.calls[0]?.text)).toContain("session.review_state = 'needs_review'");
+    expect(normalizeSql(harness.calls[0]?.text)).toContain("LIMIT 50");
+  });
+
+  it("uses explicit project metadata, keyset limits, and lazy run history queries", async () => {
+    const harness = createSqlHarness([
+      [
+        { payload: page("project-a"), updated_at_cursor: "2026-07-14T00:00:00.000Z", id: "project-a" },
+        { payload: page("project-b"), updated_at_cursor: "2026-07-13T00:00:00.000Z", id: "project-b" },
+      ],
+      [{ daily_date: "2026-07-13" }, { daily_date: "2026-07-11" }],
+      [{
+        runbook_id: "runbook-a",
+        runs: [
+          { agent_session_id: "session-a", updated_at_cursor: "2026-07-14T00:00:00.000Z" },
+          { agent_session_id: "session-b", updated_at_cursor: "2026-07-13T00:00:00.000Z" },
+        ],
+        total: 61,
+      }],
+    ]);
+    const repository = new PlannerRepository(resolverFor(harness.sql));
+
+    const projects = await repository.getProjectIndex({ limit: 1 });
+    const history = await repository.getDailyHistory({ before: "2026-07-14", limit: 2 });
+    const runs = await repository.getTaskRuns("task-a", { limit: 1 });
+
+    expect(projects).toMatchObject({ items: [{ id: "project-a" }] });
+    expect(projects.next_cursor).toEqual(expect.any(String));
+    expect(history).toEqual({ dates: ["2026-07-13", "2026-07-11"] });
+    expect(runs).toMatchObject({
+      items: [{ agent_session_id: "session-a" }],
+      total: 61,
+      next_cursor: expect.any(String),
+    });
+
+    const projectQuery = normalizeSql(harness.calls[0]?.text);
+    expect(projectQuery).toContain("jsonb_typeof(p.metadata->'starred') = 'boolean'");
+    expect(projectQuery).toContain("LIMIT ?");
+    expect(harness.calls[0]?.values).toContain(2);
+    const runQuery = normalizeSql(harness.calls[2]?.text);
+    expect(runQuery).toContain("container_kind = 'runbook'");
+    expect(runQuery).toContain("ORDER BY updated_at DESC, session_id DESC");
+    expect(harness.calls[2]?.values).toContain(2);
   });
 });
 

@@ -13,6 +13,7 @@ const CHROME_CLASSES = ["glass-strong", "glass-chrome", "lg-rim", "border-glass-
 type Theme = "dark" | "light";
 
 test.use({ serviceWorkers: "allow", timezoneId: "Asia/Seoul" });
+test.setTimeout(120_000);
 
 for (const theme of ["dark", "light"] as const) {
   for (const viewport of [

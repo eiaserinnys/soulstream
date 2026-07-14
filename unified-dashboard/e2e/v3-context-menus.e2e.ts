@@ -30,7 +30,9 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible();
     await expectNoHorizontalOverflow(page);
 
-    const projectRow = page.locator(".v3-project-nav-row").filter({ hasText: fixtureTitles.project });
+    const projectRow = page.getByTestId("v3-all-projects")
+      .locator(".v3-project-nav-row")
+      .filter({ hasText: fixtureTitles.project });
     await projectRow.click({ button: "right" });
     await expect(page.getByRole("menuitem", { name: "프로젝트 열기" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "페이지 ID 복사" })).toBeVisible();
@@ -68,14 +70,14 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByRole("menuitem", { name: "세션 ID 복사" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "이름 변경" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "삭제" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "▶ 이어서 새 세션 (승계)" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "＋ 이어서 새 세션 (승계)" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "다른 업무로 이동" })).toBeVisible();
     await capture(page, theme, "04-run-context-menu");
     await page.getByRole("menuitem", { name: "세션 ID 복사" }).click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe("run-alpha-2");
 
     await alphaRun.click({ button: "right" });
-    await page.getByRole("menuitem", { name: "▶ 이어서 새 세션 (승계)" }).click();
+    await page.getByRole("menuitem", { name: "＋ 이어서 새 세션 (승계)" }).click();
     await expect(page.getByRole("heading", { name: "새 세션 · 승계 미리보기" })).toBeVisible();
     await expect(page.getByText(/run-alpha-2… 요약/)).toBeVisible();
     await capture(page, theme, "05-targeted-succession");

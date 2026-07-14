@@ -55,7 +55,9 @@ for (const theme of ["dark", "light"] as const) {
     await capture(page, theme, "01-today-planner");
     await setWebgl(page, false);
 
-    await page.getByRole("button", { name: fixtureTitles.project, exact: true }).click();
+    await page.getByTestId("v3-all-projects")
+      .getByRole("button", { name: fixtureTitles.project, exact: true })
+      .click();
     await expect(page.getByRole("heading", { name: fixtureTitles.project })).toBeVisible({ timeout: 30_000 });
     await page.getByTestId("v3-task-task-alpha").click();
     await expect(page.getByRole("heading", { name: fixtureTitles.primaryTask, level: 2 })).toBeVisible({ timeout: 30_000 });

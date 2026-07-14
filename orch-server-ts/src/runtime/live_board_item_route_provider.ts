@@ -1,6 +1,5 @@
 import {
   BoardItemRouteError,
-  type BoardContainerTarget,
   type BoardItemRecord,
   type BoardItemRouteProvider,
 } from "../board/board_item_routes.js";
@@ -36,9 +35,20 @@ export function createLiveBoardItemRouteProvider(
     },
     async resolveBoardContainerFolderId(container) {
       if (container.kind === "folder") return container.id;
-      return runbookContainerFolderId(
-        container,
-        await listAllBoardItems(sqlResolver),
+      const sql = await sqlResolver.resolveSql();
+      const rows = await sql`
+        SELECT folder_id
+        FROM board_yjs_catalog_cache
+        WHERE container_kind = 'runbook'
+          AND container_id = ${container.id}
+        LIMIT 1
+      `;
+      const folderId = stringValue(rows[0]?.folder_id);
+      if (folderId !== null) return folderId;
+      throw new BoardItemRouteError(
+        "BOARD_CONTAINER_NOT_FOUND",
+        "Runbook board container not found",
+        404,
       );
     },
     async getCatalogSnapshot() {
@@ -58,25 +68,6 @@ async function listAllBoardItems(
     SELECT * FROM board_item_get_all()
   `;
   return rows.flatMap(serializeBoardItemRow);
-}
-
-function runbookContainerFolderId(
-  container: BoardContainerTarget,
-  boardItems: readonly BoardItemRecord[],
-): string {
-  const item = boardItems.find(
-    (candidate) =>
-      candidate.itemType === "runbook" &&
-      candidate.itemId === container.id &&
-      typeof candidate.folderId === "string" &&
-      candidate.folderId.length > 0,
-  );
-  if (item?.folderId !== undefined && item.folderId !== null) return item.folderId;
-  throw new BoardItemRouteError(
-    "BOARD_CONTAINER_NOT_FOUND",
-    "Runbook board container not found",
-    404,
-  );
 }
 
 function serializeBoardItemRow(row: Record<string, unknown>): BoardItemRecord[] {

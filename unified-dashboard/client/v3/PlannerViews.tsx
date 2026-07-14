@@ -128,6 +128,10 @@ export function ProjectPlannerView({
   sessions,
   newDocumentOpen,
   newDocumentTitle,
+  tasksLoadingMore,
+  documentsLoadingMore,
+  onLoadMoreTasks,
+  onLoadMoreDocuments,
   onBack,
   onOpenTask,
   onCompleteTask,
@@ -141,6 +145,10 @@ export function ProjectPlannerView({
   sessions: readonly SessionSummary[];
   newDocumentOpen: boolean;
   newDocumentTitle: string;
+  tasksLoadingMore: boolean;
+  documentsLoadingMore: boolean;
+  onLoadMoreTasks(): void;
+  onLoadMoreDocuments(): void;
   onBack(): void;
   onOpenTask(task: PlannerTask): void;
   onCompleteTask(task: PlannerTask): Promise<void>;
@@ -246,6 +254,17 @@ export function ProjectPlannerView({
             </button>
           ))}
         </div>
+        {data?.nextDocumentCursor ? (
+          <button
+            type="button"
+            className="v3-button v3-button--soft"
+            data-testid="v3-load-more-project-documents"
+            disabled={documentsLoadingMore}
+            onClick={onLoadMoreDocuments}
+          >
+            {documentsLoadingMore ? "문서 불러오는 중…" : "이전 문서 더 보기"}
+          </button>
+        ) : null}
       </section>
       <div className="v3-section-head"><h2>역대 업무</h2><span>{data?.tasks.length ?? 0}개</span></div>
       <div className="v3-task-list">
@@ -260,6 +279,17 @@ export function ProjectPlannerView({
           />
         ))}
       </div>
+      {data?.nextTaskCursor ? (
+        <button
+          type="button"
+          className="v3-button v3-button--soft"
+          data-testid="v3-load-more-project-tasks"
+          disabled={tasksLoadingMore}
+          onClick={onLoadMoreTasks}
+        >
+          {tasksLoadingMore ? "업무 불러오는 중…" : "이전 업무 더 보기"}
+        </button>
+      ) : null}
       {state.status === "ready" && data?.tasks.length === 0 ? (
         <EmptyState text="이 프로젝트에 누적된 업무가 없습니다." />
       ) : null}

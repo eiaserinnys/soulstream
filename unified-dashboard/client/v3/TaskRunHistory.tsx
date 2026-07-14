@@ -32,6 +32,10 @@ export function TaskRunHistory({
   sessionIds,
   sessions,
   runSessionLoadStates,
+  runHistoryTotal,
+  runHistoryHasMore,
+  runHistoryLoading,
+  onLoadMoreRuns,
   moveTargets,
   onOpenSession,
   onSessionCreated,
@@ -48,6 +52,10 @@ export function TaskRunHistory({
   sessionIds: readonly string[];
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
+  runHistoryTotal: number;
+  runHistoryHasMore: boolean;
+  runHistoryLoading: boolean;
+  onLoadMoreRuns(): void;
   moveTargets: readonly PlannerTask[];
   onOpenSession(session: SessionSummary): void;
   onSessionCreated(session: SessionSummary): void;
@@ -84,7 +92,7 @@ export function TaskRunHistory({
   return (
     <section className="v3-detail-section v3-runs">
       <div className="v3-detail-section-head">
-        <h3>Run 히스토리</h3><span>{tree.length}회</span><span className="v3-spacer" />
+        <h3>Run 히스토리</h3><span>{runHistoryTotal > tree.length ? `${tree.length}/${runHistoryTotal}회` : `${tree.length}회`}</span><span className="v3-spacer" />
         <button type="button" className="v3-button v3-button--soft" onClick={() => setSuccessionOpen(true)}>＋ 새 세션</button>
       </div>
       {tree.length === 0 ? <p className="v3-detail-empty">아직 실행된 세션이 없습니다.</p> : null}
@@ -99,6 +107,17 @@ export function TaskRunHistory({
           />
         ))}
       </div>
+      {runHistoryHasMore ? (
+        <button
+          type="button"
+          className="v3-button v3-button--soft"
+          data-testid="v3-load-more-runs"
+          disabled={runHistoryLoading}
+          onClick={onLoadMoreRuns}
+        >
+          {runHistoryLoading ? "Run 불러오는 중…" : "이전 Run 더 보기"}
+        </button>
+      ) : null}
       {successionOpen ? (
         <SessionSuccessionModal
           taskTitle={taskTitle}

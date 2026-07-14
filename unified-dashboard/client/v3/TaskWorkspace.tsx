@@ -26,6 +26,10 @@ export function TaskWorkspace({
   projectFolderId,
   sessions,
   runSessionLoadStates,
+  runHistoryTotal,
+  runHistoryHasMore,
+  runHistoryLoading,
+  onLoadMoreRuns,
   activeSession,
   chatOpen,
   chatInputDisabled,
@@ -52,6 +56,10 @@ export function TaskWorkspace({
   projectFolderId: string | null;
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
+  runHistoryTotal: number;
+  runHistoryHasMore: boolean;
+  runHistoryLoading: boolean;
+  onLoadMoreRuns(): void;
   activeSession: SessionSummary | undefined;
   chatOpen: boolean;
   chatInputDisabled: boolean;
@@ -129,6 +137,10 @@ export function TaskWorkspace({
             task={task}
             sessions={sessions}
             runSessionLoadStates={runSessionLoadStates}
+            runHistoryTotal={runHistoryTotal}
+            runHistoryHasMore={runHistoryHasMore}
+            runHistoryLoading={runHistoryLoading}
+            onLoadMoreRuns={onLoadMoreRuns}
             sessionDefaults={sessionDefaults}
             taskMoveTargets={taskMoveTargets}
             onReturnToToday={onReturnToToday}

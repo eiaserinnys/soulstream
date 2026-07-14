@@ -30,25 +30,32 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("textbox", { name: "새 프로젝트 제목" }).fill(PROJECT_TITLE);
     await page.getByRole("button", { name: "만들기" }).click();
 
-    const projectLink = page.getByRole("button", { name: PROJECT_TITLE, exact: true });
-    await expect(projectLink).toBeVisible({ timeout: 15_000 });
+    const projectLinks = page.locator("button.v3-project-nav-link").filter({ hasText: PROJECT_TITLE });
+    await expect(projectLinks).toHaveCount(2, { timeout: 15_000 });
+    const projectLink = projectLinks.first();
     await capture(page, `${theme}-01-created.png`);
 
-    await projectLink.dispatchEvent("click");
+    await page.evaluate((title) => {
+      const project = [...document.querySelectorAll<HTMLButtonElement>("button.v3-project-nav-link")]
+        .find((button) => button.textContent?.replace("◆", "").trim() === title);
+      if (!project) throw new Error(`프로젝트 링크를 찾지 못했습니다: ${title}`);
+      project.click();
+    }, PROJECT_TITLE);
+    await expect.poll(() => mutationState.plannerProjectIds.at(-1)).toBe(mutationState.createdProjectId());
     await expect(page.getByRole("heading", { name: PROJECT_TITLE })).toBeVisible();
     await expect(page.getByRole("button", { name: "★ 별표됨" })).toBeVisible();
 
     const navigationRow = projectLink.locator("..");
     await navigationRow.hover();
-    const navigationUnstar = page.getByRole("button", { name: `${PROJECT_TITLE} 별표 해제` });
+    const navigationUnstar = page.getByRole("button", { name: `${PROJECT_TITLE} 별표 해제` }).first();
     await expect(navigationUnstar).toHaveCSS("opacity", "1");
     await navigationUnstar.dispatchEvent("click");
-    await expect(projectLink).toHaveCount(0, { timeout: 15_000 });
+    await expect(projectLinks).toHaveCount(1, { timeout: 15_000 });
     await expect(page.getByRole("button", { name: "☆ 별표하기" })).toBeVisible({ timeout: 15_000 });
     await capture(page, `${theme}-02-unstarred.png`);
 
     await page.getByRole("button", { name: "☆ 별표하기" }).dispatchEvent("click");
-    await expect(page.getByRole("button", { name: PROJECT_TITLE, exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(projectLinks).toHaveCount(2, { timeout: 15_000 });
     await expect(page.getByRole("button", { name: "★ 별표됨" })).toBeVisible({ timeout: 15_000 });
     await capture(page, `${theme}-03-restarred.png`);
 
@@ -68,7 +75,7 @@ async function preparePage(page: Page, theme: Theme): Promise<void> {
   await page.addInitScript((appearance: Theme) => {
     localStorage.setItem("soul-dashboard-theme", appearance);
     localStorage.setItem("soul-wallpaper", JSON.stringify({ mode: "bokeh" }));
-    localStorage.setItem("ls.webglGlass", "1");
+    localStorage.setItem("ls.webglGlass", "false");
     const serviceWorker = navigator.serviceWorker;
     if (!serviceWorker) return;
     Object.defineProperty(serviceWorker, "register", {
@@ -89,10 +96,30 @@ async function preparePage(page: Page, theme: Theme): Promise<void> {
   await installV3VisualQaRoutes(page);
 }
 
-async function installProjectMutationRoutes(page: Page): Promise<{ casVersions: number[] }> {
+async function installProjectMutationRoutes(page: Page): Promise<{
+  casVersions: number[];
+  plannerProjectIds: string[];
+  createdProjectId(): string | null;
+}> {
   const casVersions: number[] = [];
+  const plannerProjectIds: string[] = [];
   let createdPage: ReturnType<typeof pageDto> | null = null;
   const starredIds = new Set(["project-amber", "project-ops"]);
+
+  await page.route("**/api/planner/projects/**", async (route) => {
+    const request = route.request();
+    const apiPath = new URL(request.url()).pathname;
+    const createdPlannerMatch = /^\/api\/planner\/projects\/([^/]+)$/.exec(apiPath);
+    if (!createdPlannerMatch || request.method() !== "GET") return route.fallback();
+    const projectId = decodeURIComponent(createdPlannerMatch[1]);
+    plannerProjectIds.push(projectId);
+    if (createdPage?.id !== projectId) return route.fallback();
+    return fulfillJson(route, {
+      project: createdPage,
+      tasks: { items: [], next_cursor: null },
+      documents: { items: [], next_cursor: null },
+    });
+  });
 
   await page.route("**/api/pages**", async (route) => {
     const request = route.request();
@@ -156,7 +183,11 @@ async function installProjectMutationRoutes(page: Page): Promise<{ casVersions: 
     return route.fallback();
   });
 
-  return { casVersions };
+  return {
+    casVersions,
+    plannerProjectIds,
+    createdProjectId: () => createdPage?.id ?? null,
+  };
 }
 
 function pageDto(

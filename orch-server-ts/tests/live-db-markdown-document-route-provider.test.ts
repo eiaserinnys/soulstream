@@ -98,18 +98,12 @@ describe("live DB markdown document route provider", () => {
     });
   });
 
-  it("uses the board item provider semantics for runbook container folders", async () => {
+  it("uses the board item provider indexed lookup for runbook container folders", async () => {
+    let cacheCalls = 0;
     const harness = createSqlHarness((text) => {
-      if (text.includes("board_item_get_all")) {
-        return [
-          {
-            ...boardItemRow(),
-            id: "runbook-card",
-            folder_id: "folder-a",
-            item_type: "runbook",
-            item_id: "runbook-1",
-          },
-        ];
+      if (text.includes("board_yjs_catalog_cache")) {
+        cacheCalls += 1;
+        return cacheCalls === 1 ? [{ folder_id: "folder-a" }] : [];
       }
       return [];
     });
@@ -139,6 +133,13 @@ describe("live DB markdown document route provider", () => {
         404,
       ),
     );
+    const runbookCalls = harness.calls.filter((call) =>
+      call.text.includes("board_yjs_catalog_cache")
+    );
+    expect(runbookCalls).toHaveLength(2);
+    expect(runbookCalls[0]?.text).toContain("container_kind = 'runbook'");
+    expect(runbookCalls[0]?.text).not.toContain("board_item_get_all");
+    expect(runbookCalls[0]?.values).toEqual(["runbook-1"]);
   });
 });
 
@@ -150,25 +151,6 @@ function folderRow(overrides: Record<string, unknown> = {}): Record<string, unkn
     parent_folder_id: null,
     settings: {},
     created_at: new Date("2026-07-09T00:00:00.000Z"),
-    ...overrides,
-  };
-}
-
-function boardItemRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    id: "item-a",
-    folder_id: "folder-a",
-    container_kind: "folder",
-    container_id: "folder-a",
-    membership_kind: "primary",
-    source_runbook_item_id: null,
-    item_type: "session",
-    item_id: "sess-1",
-    x: 20,
-    y: 40,
-    metadata: {},
-    created_at: new Date("2026-07-09T00:00:00.000Z"),
-    updated_at: new Date("2026-07-09T00:00:00.000Z"),
     ...overrides,
   };
 }

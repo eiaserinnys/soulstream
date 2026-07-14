@@ -33,6 +33,10 @@ describe("TaskRunHistory", () => {
         sessionIds={["catalog-hit", "loading-miss", "failed-miss"]}
         sessions={[richSession]}
         moveTargets={[]}
+        runHistoryTotal={61}
+        runHistoryHasMore
+        runHistoryLoading={false}
+        onLoadMoreRuns={vi.fn()}
         runSessionLoadStates={new Map([
           ["catalog-hit", "ready"],
           ["loading-miss", "loading"],
@@ -58,6 +62,8 @@ describe("TaskRunHistory", () => {
     expect(html).not.toContain("aria-label=\"라이브 코디네이터 세션 요약\"");
     expect(html).not.toContain("v3-run-summary");
     expect(html).toContain("＋ 새 세션");
+    expect(html).toContain("3/61회");
+    expect(html).toContain("이전 Run 더 보기");
     expect(html).not.toContain("▶ 새 세션");
   });
 });

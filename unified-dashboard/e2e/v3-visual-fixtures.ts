@@ -7,6 +7,7 @@ type Json = Record<string, unknown> | unknown[] | string | number | boolean | nu
 let blockSequence = 0;
 
 export interface V3VisualQaRouteOptions {
+  alphaRunHistoryPages?: boolean;
   catalogDelayMs?: number;
   plannerDelayMs?: number;
   timelineEventCount?: number;
@@ -52,8 +53,8 @@ function block(
 }
 
 const pages = {
-  project: page("project-amber", "Amber & Blade", null, { folderId: "folder-amber" }),
-  projectOps: page("project-ops", "Soulstream 운영", null, { folderId: "folder-ops" }),
+  project: page("project-amber", "Amber & Blade", null, { folderId: "folder-amber", starred: true }),
+  projectOps: page("project-ops", "Soulstream 운영", null, { folderId: "folder-ops", starred: true }),
   today: page("daily-2026-07-14", "2026-07-14", "2026-07-14"),
   yesterday: page("daily-2026-07-13", "2026-07-13", "2026-07-13"),
   taskAlpha: page("task-alpha", "업무 카드 밀도와 계층 최종 QA"),
@@ -317,7 +318,7 @@ function plannerTaskPayload(taskPage: typeof pages.taskAlpha, runbookId: string)
     runbook_id: runbookId,
     runbook: runbookSummary(runbookId),
     project_page_id: pages.project.id,
-    sessions: (runSessions[runbookId] ?? []).map((agentSessionId) => ({ agent_session_id: agentSessionId })),
+    sessions: (runSessions[runbookId] ?? []).slice(-1).map((agentSessionId) => ({ agent_session_id: agentSessionId })),
     mounted_documents: taskPage.id === pages.taskAlpha.id
       ? [{ block_id: "alpha-doc", page: pages.document }]
       : [],
@@ -427,7 +428,22 @@ export async function installV3VisualQaRoutes(
         sessionCount: sessions.length,
       }],
     });
-    if (path === "/api/nodes/stream" || path === "/api/sessions/stream") {
+    if (path === "/api/nodes/stream") {
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: `event: snapshot\ndata: ${JSON.stringify([{
+          nodeId: "eiaserinnys",
+          host: "localhost",
+          port: 3105,
+          status: "connected",
+          capabilities: {},
+          connectedAt: Date.parse(YESTERDAY),
+          sessionCount: sessions.length,
+        }])}\n\n`,
+      });
+    }
+    if (path === "/api/sessions/stream") {
       return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": visual-qa\n\n" });
     }
     if (/^\/api\/sessions\/[^/]+\/events$/.test(path)) {
@@ -488,6 +504,34 @@ export async function installV3VisualQaRoutes(
           ? [plannerTaskPayload(pages.carryover, "rb-carry")]
           : [plannerTaskPayload(pages.taskAlpha, "rb-alpha"), plannerTaskPayload(pages.taskBeta, "rb-beta")],
         memo_blocks: daily.blocks.filter((item) => !item.text.startsWith("[[")),
+        review_session_ids: yesterday ? [] : ["review-session"],
+      });
+    }
+    if (path === "/api/planner/project-index" && request.method() === "GET") {
+      return fulfillJson(route, { items: [pages.project, pages.projectOps], next_cursor: null });
+    }
+    if (path === "/api/planner/daily-history" && request.method() === "GET") {
+      return fulfillJson(route, { dates: ["2026-07-13"] });
+    }
+    const plannerTaskRunsMatch = /^\/api\/planner\/tasks\/([^/]+)\/runs$/.exec(path);
+    if (plannerTaskRunsMatch && request.method() === "GET") {
+      const taskId = decodeURIComponent(plannerTaskRunsMatch[1]);
+      if (options.alphaRunHistoryPages && taskId === pages.taskAlpha.id) {
+        const olderPage = url.searchParams.get("cursor") === "alpha-older";
+        return fulfillJson(route, {
+          items: [{ agent_session_id: olderPage ? "run-alpha-1" : "run-alpha-2" }],
+          next_cursor: olderPage ? null : "alpha-older",
+          total: 2,
+        });
+      }
+      const runbookId = taskId === pages.taskAlpha.id
+        ? "rb-alpha"
+        : taskId === pages.taskBeta.id ? "rb-beta" : taskId === pages.taskDone.id ? "rb-done" : "rb-carry";
+      const ids = [...(runSessions[runbookId] ?? [])].reverse();
+      return fulfillJson(route, {
+        items: ids.map((agentSessionId) => ({ agent_session_id: agentSessionId })),
+        next_cursor: null,
+        total: ids.length,
       });
     }
     const plannerProjectMatch = /^\/api\/planner\/projects\/([^/]+)$/.exec(path);
@@ -495,14 +539,23 @@ export async function installV3VisualQaRoutes(
       await delay(options.plannerDelayMs);
       return fulfillJson(route, {
         project: pages.project,
-        tasks: [
-          plannerTaskPayload(pages.taskAlpha, "rb-alpha"),
-          plannerTaskPayload(pages.taskBeta, "rb-beta"),
-          plannerTaskPayload(pages.taskDone, "rb-done"),
-          plannerTaskPayload(pages.carryover, "rb-carry"),
-        ],
-        documents: [pages.document, pages.documentTwo],
+        tasks: {
+          items: [
+            plannerTaskPayload(pages.taskAlpha, "rb-alpha"),
+            plannerTaskPayload(pages.taskBeta, "rb-beta"),
+            plannerTaskPayload(pages.taskDone, "rb-done"),
+            plannerTaskPayload(pages.carryover, "rb-carry"),
+          ],
+          next_cursor: null,
+        },
+        documents: { items: [pages.document, pages.documentTwo], next_cursor: null },
       });
+    }
+    const plannerProjectSliceMatch = /^\/api\/planner\/projects\/([^/]+)\/(tasks|documents)$/.exec(path);
+    if (plannerProjectSliceMatch && request.method() === "GET") {
+      return plannerProjectSliceMatch[2] === "tasks"
+        ? fulfillJson(route, { items: [], next_cursor: null })
+        : fulfillJson(route, { items: [], next_cursor: null });
     }
     if (path === "/api/pages" && request.method() === "GET") {
       const items = url.searchParams.get("starred") === "true"
