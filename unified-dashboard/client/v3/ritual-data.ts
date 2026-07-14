@@ -2,13 +2,12 @@ import type { SessionSummary } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
 import {
-  listAllPages,
+  loadDailyHistoryDates,
   loadDailyPlanner,
   type PlannerDataDependencies,
 } from "./planner-data";
 import {
   buildMorningRitualQueue,
-  selectHistoricalDailyDates,
   type RitualQueueItem,
 } from "./ritual-model";
 
@@ -23,8 +22,11 @@ export async function loadMorningRitualData(input: {
   sessions: readonly SessionSummary[];
   plannerDependencies: PlannerDataDependencies;
 }): Promise<MorningRitualData> {
-  const pages = await listAllPages(input.api);
-  const historicalDates = selectHistoricalDailyDates(pages, input.today);
+  const historicalDates = await loadDailyHistoryDates(
+    input.plannerDependencies,
+    input.today,
+    2,
+  );
   const [todayPlanner, ...historicalPlanners] = await Promise.all([
     loadDailyPlanner(input.api, input.today, input.plannerDependencies),
     ...historicalDates.map((date) => (

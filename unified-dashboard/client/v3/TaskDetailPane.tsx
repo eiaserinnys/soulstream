@@ -16,6 +16,10 @@ export function TaskDetailPane({
   task,
   sessions,
   runSessionLoadStates,
+  runHistoryTotal,
+  runHistoryHasMore,
+  runHistoryLoading,
+  onLoadMoreRuns,
   sessionDefaults,
   onReturnToToday,
   onOpenBoard,
@@ -33,6 +37,10 @@ export function TaskDetailPane({
   task: PlannerTask;
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
+  runHistoryTotal: number;
+  runHistoryHasMore: boolean;
+  runHistoryLoading: boolean;
+  onLoadMoreRuns(): void;
   sessionDefaults: PageSessionDefaults | null;
   onReturnToToday(): void;
   onOpenBoard(): void;
@@ -231,6 +239,13 @@ export function TaskDetailPane({
           sessionIds={allSessionIds}
           sessions={allSessions}
           runSessionLoadStates={runSessionLoadStates}
+          runHistoryTotal={Math.max(
+            runHistoryTotal + createdSessions.filter((session) => !task.sessionIds.includes(session.agentSessionId)).length,
+            allSessionIds.length,
+          )}
+          runHistoryHasMore={runHistoryHasMore}
+          runHistoryLoading={runHistoryLoading}
+          onLoadMoreRuns={onLoadMoreRuns}
           moveTargets={taskMoveTargets}
           onOpenSession={onOpenSession}
           onRenameSession={onRenameSession}

@@ -41,6 +41,7 @@ describe("planner routes", () => {
       projects: [page("project")],
       memo_blocks: [],
       tasks: [],
+      review_session_ids: ["review-session"],
     });
     const app = Fastify({ logger: false });
     registerPlannerRoutes(app, { provider, resolveUser: cookieUserResolver() });
@@ -54,6 +55,7 @@ describe("planner routes", () => {
       expect(response.json()).toMatchObject({
         daily: { page: { id: "daily" } },
         projects: [{ id: "project" }],
+        review_session_ids: ["review-session"],
       });
       expect(provider.getToday).toHaveBeenCalledOnce();
       expect(provider.getToday).toHaveBeenCalledWith("2026-07-14");
@@ -65,7 +67,11 @@ describe("planner routes", () => {
   it("returns a project aggregate and maps missing replica pages to 404", async () => {
     const provider = providerDouble();
     vi.mocked(provider.getProject)
-      .mockResolvedValueOnce({ project: page("project"), tasks: [], documents: [] })
+      .mockResolvedValueOnce({
+        project: page("project"),
+        tasks: { items: [], next_cursor: null },
+        documents: { items: [], next_cursor: null },
+      })
       .mockResolvedValueOnce(null);
     const app = Fastify({ logger: false });
     registerPlannerRoutes(app, { provider, resolveUser: cookieUserResolver() });
@@ -77,6 +83,7 @@ describe("planner routes", () => {
       });
       expect(found.statusCode).toBe(200);
       expect(found.json()).toMatchObject({ project: { id: "project" } });
+      expect(provider.getProject).toHaveBeenNthCalledWith(1, "project", { limit: 20 });
 
       const missing = await app.inject({
         method: "GET",
@@ -90,10 +97,64 @@ describe("planner routes", () => {
     }
   });
 
-  it("declares both aggregate routes as authenticated", () => {
+  it("serves bounded project indexes, daily history, project slices, and lazy task runs", async () => {
+    const provider = providerDouble();
+    vi.mocked(provider.getProjectIndex).mockResolvedValueOnce({
+      items: [page("project")],
+      next_cursor: "project-next",
+    });
+    vi.mocked(provider.getDailyHistory).mockResolvedValueOnce({
+      dates: ["2026-07-13", "2026-07-11"],
+    });
+    vi.mocked(provider.getProjectTasks).mockResolvedValueOnce({
+      items: [],
+      next_cursor: "task-next",
+    });
+    vi.mocked(provider.getProjectDocuments).mockResolvedValueOnce({
+      items: [page("document")],
+      next_cursor: null,
+    });
+    vi.mocked(provider.getTaskRuns).mockResolvedValueOnce({
+      items: [{ agent_session_id: "session-a" }],
+      next_cursor: "run-next",
+      total: 61,
+    });
+    const app = Fastify({ logger: false });
+    registerPlannerRoutes(app, { provider, resolveUser: cookieUserResolver() });
+    try {
+      const headers = { cookie: browserCookie };
+      const [projects, history, tasks, documents, runs] = await Promise.all([
+        app.inject({ method: "GET", url: "/api/planner/project-index?cursor=project-cursor&limit=25", headers }),
+        app.inject({ method: "GET", url: "/api/planner/daily-history?before=2026-07-14&limit=2", headers }),
+        app.inject({ method: "GET", url: "/api/planner/projects/project/tasks?cursor=task-cursor&limit=10", headers }),
+        app.inject({ method: "GET", url: "/api/planner/projects/project/documents?limit=8", headers }),
+        app.inject({ method: "GET", url: "/api/planner/tasks/task/runs?cursor=run-cursor&limit=20", headers }),
+      ]);
+
+      expect(projects.json()).toMatchObject({ next_cursor: "project-next" });
+      expect(history.json()).toEqual({ dates: ["2026-07-13", "2026-07-11"] });
+      expect(tasks.json()).toMatchObject({ next_cursor: "task-next" });
+      expect(documents.json()).toMatchObject({ items: [{ id: "document" }] });
+      expect(runs.json()).toMatchObject({ total: 61, next_cursor: "run-next" });
+      expect(provider.getProjectIndex).toHaveBeenCalledWith({ cursor: "project-cursor", limit: 25 });
+      expect(provider.getDailyHistory).toHaveBeenCalledWith({ before: "2026-07-14", limit: 2 });
+      expect(provider.getProjectTasks).toHaveBeenCalledWith("project", { cursor: "task-cursor", limit: 10 });
+      expect(provider.getProjectDocuments).toHaveBeenCalledWith("project", { cursor: undefined, limit: 8 });
+      expect(provider.getTaskRuns).toHaveBeenCalledWith("task", { cursor: "run-cursor", limit: 20 });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("declares every planner read route as authenticated", () => {
     expect(plannerRouteAuthRequirements).toEqual({
       "GET /api/planner/today": true,
+      "GET /api/planner/project-index": true,
+      "GET /api/planner/daily-history": true,
       "GET /api/planner/projects/{pageId}": true,
+      "GET /api/planner/projects/{pageId}/tasks": true,
+      "GET /api/planner/projects/{pageId}/documents": true,
+      "GET /api/planner/tasks/{pageId}/runs": true,
     });
   });
 });
@@ -101,10 +162,20 @@ describe("planner routes", () => {
 function providerDouble(): PlannerReadProvider & {
   getToday: ReturnType<typeof vi.fn>;
   getProject: ReturnType<typeof vi.fn>;
+  getProjectIndex: ReturnType<typeof vi.fn>;
+  getDailyHistory: ReturnType<typeof vi.fn>;
+  getProjectTasks: ReturnType<typeof vi.fn>;
+  getProjectDocuments: ReturnType<typeof vi.fn>;
+  getTaskRuns: ReturnType<typeof vi.fn>;
 } {
   return {
     getToday: vi.fn(async () => null),
     getProject: vi.fn(async () => null),
+    getProjectIndex: vi.fn(async () => ({ items: [], next_cursor: null })),
+    getDailyHistory: vi.fn(async () => ({ dates: [] })),
+    getProjectTasks: vi.fn(async () => null),
+    getProjectDocuments: vi.fn(async () => null),
+    getTaskRuns: vi.fn(async () => null),
   };
 }
 

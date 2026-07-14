@@ -96,18 +96,13 @@ describe("live DB board item route provider", () => {
     expect(harness.calls[0]?.values).toEqual(["runbook", "runbook-1"]);
   });
 
-  it("resolves runbook container folders from the catalog snapshot", async () => {
+  it("resolves a runbook container folder with one indexed catalog-cache lookup", async () => {
+    let cacheCalls = 0;
     const harness = createSqlHarness((text) => {
       if (text.includes("folder_get_all")) return [folderRow()];
-      if (text.includes("board_item_get_all")) {
-        return [
-          boardItemRow({
-            id: "runbook-card",
-            item_type: "runbook",
-            item_id: "runbook-1",
-            folder_id: "folder-a",
-          }),
-        ];
+      if (text.includes("board_yjs_catalog_cache")) {
+        cacheCalls += 1;
+        return cacheCalls === 1 ? [{ folder_id: "folder-a" }] : [];
       }
       return [];
     });
@@ -137,6 +132,15 @@ describe("live DB board item route provider", () => {
         404,
       ),
     );
+    const runbookCalls = harness.calls.filter((call) =>
+      call.text.includes("board_yjs_catalog_cache")
+    );
+    expect(runbookCalls).toHaveLength(2);
+    expect(runbookCalls[0]?.text).toContain("container_kind = 'runbook'");
+    expect(runbookCalls[0]?.text).toContain("container_id =");
+    expect(runbookCalls[0]?.text).toContain("LIMIT 1");
+    expect(runbookCalls[0]?.text).not.toContain("board_item_get_all");
+    expect(runbookCalls[0]?.values).toEqual(["runbook-1"]);
   });
 });
 

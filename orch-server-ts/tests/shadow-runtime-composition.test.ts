@@ -183,8 +183,13 @@ function createInertPageYjsRoutes() {
       resolvePageSessionDefaults: vi.fn(async () => null),
     },
     plannerReads: {
+      getProjectIndex: vi.fn(async () => ({ items: [], next_cursor: null })),
+      getDailyHistory: vi.fn(async () => ({ dates: [] })),
       getToday: vi.fn(async () => null),
       getProject: vi.fn(async () => null),
+      getProjectTasks: vi.fn(async () => null),
+      getProjectDocuments: vi.fn(async () => null),
+      getTaskRuns: vi.fn(async () => null),
     },
     createService: () => ({
       handleConnection: vi.fn(),

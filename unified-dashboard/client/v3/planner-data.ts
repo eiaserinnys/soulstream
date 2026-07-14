@@ -36,12 +36,26 @@ export interface DailyPlannerData {
   projects: PageDto[];
   memoBlocks: BlockDto[];
   tasks: PlannerTask[];
+  reviewSessionIds: string[];
 }
 
 export interface ProjectPlannerData {
   project: PageDto;
   tasks: PlannerTask[];
   documents: PageDto[];
+  nextTaskCursor: string | null;
+  nextDocumentCursor: string | null;
+}
+
+export interface PlannerPage<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+export interface TaskRunHistoryPage {
+  sessionIds: string[];
+  nextCursor: string | null;
+  total: number;
 }
 
 export interface PlannerDataDependencies {
@@ -77,6 +91,7 @@ export async function loadDailyPlanner(
     projects: payload.projects,
     tasks: payload.tasks.map(plannerTask),
     memoBlocks: payload.memo_blocks,
+    reviewSessionIds: payload.review_session_ids,
   };
 }
 
@@ -90,9 +105,88 @@ export async function loadProjectPlanner(
   ) as PlannerProjectPayload;
   return {
     project: payload.project,
-    tasks: payload.tasks.map(plannerTask),
-    documents: payload.documents,
+    tasks: payload.tasks.items.map(plannerTask),
+    documents: payload.documents.items,
+    nextTaskCursor: payload.tasks.next_cursor,
+    nextDocumentCursor: payload.documents.next_cursor,
   };
+}
+
+export async function loadProjectIndex(
+  dependencies: PlannerDataDependencies,
+  input: { cursor?: string; limit: number },
+): Promise<PlannerPage<PageDto>> {
+  const query = pageQuery(input.cursor, input.limit);
+  const payload = await dependencies.fetchPlanner(
+    `/api/planner/project-index?${query.toString()}`,
+  ) as PageSlicePayload<PageDto>;
+  return plannerPage(payload);
+}
+
+export async function loadDailyHistoryDates(
+  dependencies: PlannerDataDependencies,
+  before: string,
+  limit: number,
+): Promise<string[]> {
+  const query = new URLSearchParams({ before, limit: String(limit) });
+  const payload = await dependencies.fetchPlanner(
+    `/api/planner/daily-history?${query.toString()}`,
+  ) as { dates: string[] };
+  return payload.dates;
+}
+
+export async function loadProjectTaskPage(
+  dependencies: PlannerDataDependencies,
+  projectPageId: string,
+  cursor: string | undefined,
+  limit: number,
+): Promise<PlannerPage<PlannerTask>> {
+  const payload = await dependencies.fetchPlanner(
+    `/api/planner/projects/${encodeURIComponent(projectPageId)}/tasks?${pageQuery(cursor, limit).toString()}`,
+  ) as PageSlicePayload<PlannerTaskPayload>;
+  return {
+    items: payload.items.map(plannerTask),
+    nextCursor: payload.next_cursor,
+  };
+}
+
+export async function loadProjectDocumentPage(
+  dependencies: PlannerDataDependencies,
+  projectPageId: string,
+  cursor: string | undefined,
+  limit: number,
+): Promise<PlannerPage<PageDto>> {
+  const payload = await dependencies.fetchPlanner(
+    `/api/planner/projects/${encodeURIComponent(projectPageId)}/documents?${pageQuery(cursor, limit).toString()}`,
+  ) as PageSlicePayload<PageDto>;
+  return plannerPage(payload);
+}
+
+export async function loadTaskRunHistory(
+  dependencies: PlannerDataDependencies,
+  taskPageId: string,
+  cursor: string | undefined,
+  limit: number,
+): Promise<TaskRunHistoryPage> {
+  const payload = await dependencies.fetchPlanner(
+    `/api/planner/tasks/${encodeURIComponent(taskPageId)}/runs?${pageQuery(cursor, limit).toString()}`,
+  ) as PageSlicePayload<{ agent_session_id: string }> & { total: number };
+  return {
+    sessionIds: payload.items.map((item) => item.agent_session_id),
+    nextCursor: payload.next_cursor,
+    total: payload.total,
+  };
+}
+
+function pageQuery(cursor: string | undefined, limit: number): URLSearchParams {
+  const query = new URLSearchParams();
+  if (cursor) query.set("cursor", cursor);
+  query.set("limit", String(limit));
+  return query;
+}
+
+function plannerPage<T>(payload: PageSlicePayload<T>): PlannerPage<T> {
+  return { items: payload.items, nextCursor: payload.next_cursor };
 }
 
 function plannerTask(payload: PlannerTaskPayload): PlannerTask {
@@ -180,25 +274,16 @@ interface PlannerTodayPayload {
   projects: PageDto[];
   memo_blocks: BlockDto[];
   tasks: PlannerTaskPayload[];
+  review_session_ids: string[];
 }
 
 interface PlannerProjectPayload {
   project: PageDto;
-  tasks: PlannerTaskPayload[];
-  documents: PageDto[];
+  tasks: PageSlicePayload<PlannerTaskPayload>;
+  documents: PageSlicePayload<PageDto>;
 }
 
-export async function listAllPages(api: PageApiClient, starred?: boolean): Promise<PageDto[]> {
-  const pages: PageDto[] = [];
-  const visited = new Set<string>();
-  let cursor: string | undefined;
-  do {
-    const response = await api.listPages({ starred, cursor, limit: 100 });
-    pages.push(...response.items);
-    const next = response.next_cursor ?? undefined;
-    if (!next || visited.has(next)) break;
-    visited.add(next);
-    cursor = next;
-  } while (cursor);
-  return pages;
+interface PageSlicePayload<T> {
+  items: T[];
+  next_cursor: string | null;
 }

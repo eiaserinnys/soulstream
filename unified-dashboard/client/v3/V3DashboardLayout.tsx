@@ -28,7 +28,7 @@ import {
   readDashboardLeftSidebarWidth,
   writeDashboardLeftSidebarWidth,
 } from "@seosoyoung/soul-ui/components/dashboard-sidebar-collapse";
-import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
+import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import {
   DASHBOARD_CARD_GAP_PX,
   DASHBOARD_PANEL_GAP_PX,
@@ -44,7 +44,6 @@ import { NewTaskForm } from "./NewTaskForm";
 import {
   DailyPlannerView,
   ProjectPlannerView,
-  type PlannerLoadState,
 } from "./PlannerViews";
 import { MobilePlannerTabs, useMobilePlannerMode } from "./MobilePlannerTabs";
 import { RitualModal } from "./RitualModal";
@@ -59,19 +58,10 @@ import {
   type MobilePlannerTab,
 } from "./mobile-planner-state";
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
-import {
-  applyAllProjectChanges,
-  resolveSelectedProject,
-  useProjectStarChanges,
-} from "./project-star-store";
+import { useProjectStarChanges } from "./project-star-store";
 import {
   createPlannerDataDependencies,
-  loadDailyPlanner,
-  loadProjectPlanner,
-  listAllPages,
-  type DailyPlannerData,
   type PlannerTask,
-  type ProjectPlannerData,
 } from "./planner-data";
 import { resolveProjectFolderId } from "./planner-model";
 import {
@@ -95,6 +85,10 @@ import {
   errorText,
   recentDates,
 } from "./v3-dashboard-utils";
+import {
+  usePlannerCollections,
+  useTaskRunHistory,
+} from "./use-v3-planner-reads";
 import "./v3-planner.css";
 import "./v3-planner-surfaces.css";
 import "./v3-task-workspace.css";
@@ -123,9 +117,6 @@ function V3DashboardContent() {
   const mutationPort = useMemo(() => new BrowserPlannerMutationPort(api), [api]);
   const [selectedDate, setSelectedDate] = useState(today);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [daily, setDaily] = useState<PlannerLoadState<DailyPlannerData>>({ status: "loading", data: null, message: null });
-  const [project, setProject] = useState<PlannerLoadState<ProjectPlannerData>>({ status: "loading", data: null, message: null });
-  const [allProjectPages, setAllProjectPages] = useState<PageDto[] | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [ritualOpen, setRitualOpen] = useState(false);
@@ -169,13 +160,60 @@ function V3DashboardContent() {
   const setActiveSessionSummary = useDashboardStore((state) => state.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
   const nodes = useOrchestratorStore((state) => state.nodes);
+  const notify = useCallback((message: string) => {
+    setToast(message);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3200);
+  }, []);
+  const plannerActions = useV3PlannerActions({ api, setRefreshKey, notify });
+  useEffect(() => () => {
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+  }, []);
+
+  const projectStarChanges = useProjectStarChanges();
+  const {
+    daily,
+    project,
+    projects,
+    selectedProject,
+    projectIndexHasMore,
+    projectIndexLoading,
+    projectIndexLoadingMore,
+    projectTasksLoadingMore,
+    projectDocumentsLoadingMore,
+    loadMoreProjects,
+    loadMoreProjectTasks,
+    loadMoreProjectDocuments,
+  } = usePlannerCollections({
+    api,
+    dependencies: dataDependencies,
+    selectedDate,
+    selectedProjectId,
+    projectStarChanges,
+    refreshKey,
+    notify,
+  });
   const currentTasks = useMemo(
-    () => [...(daily.data?.tasks ?? []), ...(project.data?.tasks ?? [])],
-    [daily.data?.tasks, project.data?.tasks],
+    () => [
+      ...(daily.data?.tasks ?? []),
+      ...(selectedProject ? (project.data?.tasks ?? []) : []),
+    ],
+    [daily.data?.tasks, project.data?.tasks, selectedProject],
   );
+  const selectedTask = currentTasks.find((task) => task.page.id === selectedTaskId) ?? selectedTaskSnapshot;
+  const runHistory = useTaskRunHistory({
+    dependencies: dataDependencies,
+    task: selectedTask,
+    workspaceOpen,
+    notify,
+  });
   const plannerSessionIds = useMemo(
-    () => [...new Set(currentTasks.flatMap((task) => task.sessionIds))].sort(),
-    [currentTasks],
+    () => [...new Set([
+      ...currentTasks.flatMap((task) => task.sessionIds),
+      ...(daily.data?.reviewSessionIds ?? []),
+      ...runHistory.sessionIds,
+    ])].sort(),
+    [currentTasks, daily.data?.reviewSessionIds, runHistory.sessionIds],
   );
   const {
     sessions: targetedRunSessions,
@@ -199,55 +237,6 @@ function V3DashboardContent() {
     sessionKey: activeSessionKey,
     getSessionProvider: () => orchestratorSessionProvider,
   });
-
-  const notify = useCallback((message: string) => {
-    setToast(message);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 3200);
-  }, []);
-  const plannerActions = useV3PlannerActions({ api, setRefreshKey, notify });
-  useEffect(() => () => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    void listAllPages(api).then((pages) => {
-      if (active) setAllProjectPages(pages.filter((page) => !page.daily_date && !page.archived));
-    }).catch((error: unknown) => {
-      if (active) notify(`전체 프로젝트 조회 실패 · ${errorText(error)}`);
-    });
-    return () => { active = false; };
-  }, [api, notify]);
-
-  useEffect(() => {
-    let active = true;
-    setDaily((current) => ({ status: "loading", data: current.data, message: null }));
-    void loadDailyPlanner(api, selectedDate, dataDependencies).then((data) => {
-      if (active) setDaily({ status: "ready", data, message: null });
-    }).catch((error: unknown) => {
-      if (active) setDaily((current) => ({ status: "error", data: current.data, message: errorText(error) }));
-    });
-    return () => { active = false; };
-  }, [api, dataDependencies, refreshKey, selectedDate]);
-
-  const projectStarChanges = useProjectStarChanges();
-  const storedProjects = allProjectPages ?? daily.data?.projects ?? [];
-  const projects = applyAllProjectChanges(storedProjects, projectStarChanges);
-  const selectedProject = resolveSelectedProject(storedProjects, projectStarChanges, selectedProjectId);
-  useEffect(() => {
-    if (!selectedProject) return;
-    let active = true;
-    setProject((current) => ({ status: "loading", data: current.data?.project.id === selectedProject.id ? current.data : null, message: null }));
-    void loadProjectPlanner(api, selectedProject, dataDependencies).then((data) => {
-      if (active) setProject({ status: "ready", data, message: null });
-    }).catch((error: unknown) => {
-      if (active) setProject((current) => ({ status: "error", data: current.data, message: errorText(error) }));
-    });
-    return () => { active = false; };
-  }, [api, dataDependencies, refreshKey, selectedProject]);
-
-  const selectedTask = currentTasks.find((task) => task.page.id === selectedTaskId) ?? selectedTaskSnapshot;
   const mobileTaskOptions = useMemo(
     () => buildMobileTaskOptions(currentTasks, sessions),
     [currentTasks, sessions],
@@ -445,8 +434,9 @@ function V3DashboardContent() {
     "--v3-panel-gap": `${DASHBOARD_PANEL_GAP_PX}px`,
     "--v3-navigation-width": `${navigationWidth || DASHBOARD_LEFT_SIDEBAR_DEFAULT_WIDTH}px`,
   } as CSSProperties;
-  const projectTitle = projects.find((item) => item.id === selectedTask?.projectPageId)?.title ?? "미분류";
-  const selectedTaskProject = projects.find((item) => item.id === selectedTask?.projectPageId) ?? null;
+  const workspaceTask = selectedTask ? { ...selectedTask, sessionIds: runHistory.sessionIds } : null;
+  const projectTitle = projects.find((item) => item.id === workspaceTask?.projectPageId)?.title ?? "미분류";
+  const selectedTaskProject = projects.find((item) => item.id === workspaceTask?.projectPageId) ?? null;
   const projectFolderId = selectedTaskProject
     ? resolveProjectFolderId(selectedTaskProject, catalog?.folders ?? [])
     : null;
@@ -461,7 +451,7 @@ function V3DashboardContent() {
         onOpenRitual={() => setRitualOpen(true)}
         onOpenSearch={() => setSearchOpen(true)}
       />
-      <V3Navigation dates={dates} selectedDate={selectedDate} projects={projects} selectedProjectId={selectedProjectId} onSelectDate={(date) => { setSelectedProjectId(null); setSelectedDate(date); }} onSelectProject={(projectId) => { setSelectedProjectId(projectId); setNewDocumentOpen(false); }} onCreateTask={(projectId) => { setSelectedProjectId(projectId); setCreateOpen(true); }} />
+      <V3Navigation dates={dates} selectedDate={selectedDate} projects={projects} selectedProjectId={selectedProjectId} projectIndexHasMore={projectIndexHasMore} projectIndexLoading={projectIndexLoading || projectIndexLoadingMore} onLoadMoreProjects={() => { void loadMoreProjects(); }} onSelectDate={(date) => { setSelectedProjectId(null); setSelectedDate(date); }} onSelectProject={(projectId) => { setSelectedProjectId(projectId); setNewDocumentOpen(false); }} onCreateTask={(projectId) => { setSelectedProjectId(projectId); setCreateOpen(true); }} />
       <div className="v3-navigation-resize" data-testid="v3-navigation-resize-handle" aria-hidden="true">
         <DragHandle onDrag={resizeNavigation} widthPx={DASHBOARD_PANEL_GAP_PX} />
       </div>
@@ -473,14 +463,14 @@ function V3DashboardContent() {
         >
           {createOpen ? <NewTaskForm projects={projects} initialProjectId={selectedProjectId} pending={createPending} onCreate={(title, projectId, description) => { void createTask(title, projectId, description); }} onCancel={() => setCreateOpen(false)} /> : null}
           {selectedProject ? (
-            <ProjectPlannerView state={project} sessions={sessions} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} onBack={() => setSelectedProjectId(null)} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onOpenDocument={(page) => window.location.assign(`/v2/pages/${encodeURIComponent(page.id)}`)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
+            <ProjectPlannerView state={project} sessions={sessions} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={() => setSelectedProjectId(null)} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onOpenDocument={(page) => window.location.assign(`/v2/pages/${encodeURIComponent(page.id)}`)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
           ) : (
             <DailyPlannerView state={daily} selectedDate={selectedDate} reviewSessions={reviewSessions} sessions={sessions} onOpenReview={openSession} onSaveMemo={(blockId, text) => { void saveMemo(blockId, text); }} onOpenProject={setSelectedProjectId} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} />
           )}
         </div>
       </main>
-      {workspaceOpen && selectedTask ? (
-        <TaskWorkspace task={selectedTask} projectTitle={projectTitle} projectFolderId={projectFolderId} sessions={sessions} runSessionLoadStates={runSessionResolution.loadStateById} activeSession={activeSession} chatOpen={chatOpen} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} sessionDefaults={sessionDefaults} mobileMode={mobileMode} mobileTab={mobileTab} taskMoveTargets={currentTasks} onReturnToToday={returnToPlanner} onCloseWorkspace={closeWorkspace} onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }} onOpenSession={openSession} onSaveDescription={saveDescription} onPromoteDocument={promoteDocument} onUnmountDocument={(blockId) => plannerActions.unmountDocument(selectedTask, blockId)} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onMoveSession={plannerActions.moveSession} onTaskBlocksChanged={() => setRefreshKey((value) => value + 1)} onAcknowledgedReview={acknowledgeReview} />
+      {workspaceOpen && workspaceTask ? (
+        <TaskWorkspace task={workspaceTask} projectTitle={projectTitle} projectFolderId={projectFolderId} sessions={sessions} runSessionLoadStates={runSessionResolution.loadStateById} runHistoryTotal={runHistory.total} runHistoryHasMore={runHistory.hasMore} runHistoryLoading={runHistory.loading} onLoadMoreRuns={() => { void runHistory.loadMore(); }} activeSession={activeSession} chatOpen={chatOpen} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} sessionDefaults={sessionDefaults} mobileMode={mobileMode} mobileTab={mobileTab} taskMoveTargets={currentTasks} onReturnToToday={returnToPlanner} onCloseWorkspace={closeWorkspace} onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }} onOpenSession={openSession} onSaveDescription={saveDescription} onPromoteDocument={promoteDocument} onUnmountDocument={(blockId) => plannerActions.unmountDocument(workspaceTask, blockId)} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onMoveSession={plannerActions.moveSession} onTaskBlocksChanged={() => setRefreshKey((value) => value + 1)} onAcknowledgedReview={acknowledgeReview} />
       ) : null}
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
       <RitualModal open={ritualOpen} today={today} sessions={sessions} onClose={() => setRitualOpen(false)} onRefresh={() => setRefreshKey((value) => value + 1)} />

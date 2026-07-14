@@ -22,7 +22,7 @@ interface RequestMark {
 test.use({ serviceWorkers: "allow", timezoneId: "Asia/Seoul" });
 test.setTimeout(90_000);
 
-test("PR-J: planner fanout, targeted run hydration, long-history sync, and repeated switching", async ({ page }) => {
+test("PR-J/R: bounded planner reads, targeted run hydration, long-history sync, and repeated switching", async ({ page }) => {
   mkdirSync(OUTPUT_ROOT, { recursive: true });
   const startedAt = Date.now();
   const requests: RequestMark[] = [];
@@ -54,8 +54,8 @@ test("PR-J: planner fanout, targeted run hydration, long-history sync, and repea
   const domContentLoadedAtMs = Date.now() - startedAt;
   await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible" });
   const plannerVisibleAtMs = Date.now() - startedAt;
-  const plannerRequestStartedAtMs = requests.find((mark) => mark.path === "/api/pages/daily")?.startedAtMs;
-  if (plannerRequestStartedAtMs === undefined) throw new Error("daily planner request was not observed");
+  const plannerRequestStartedAtMs = requests.find((mark) => mark.path === "/api/planner/today")?.startedAtMs;
+  if (plannerRequestStartedAtMs === undefined) throw new Error("today planner request was not observed");
   const plannerReadyMs = plannerVisibleAtMs - plannerRequestStartedAtMs;
   const domContentLoadedToPlannerReadyMs = plannerVisibleAtMs - domContentLoadedAtMs;
   const coldNavigationPlannerReadyMs = Date.now() - navigationStartedAt;
@@ -81,17 +81,17 @@ test("PR-J: planner fanout, targeted run hydration, long-history sync, and repea
     "targeted session response should complete before delayed catalog",
   ).toBe(true);
 
-  const alphaFanout = requestTimes(requests, [
-    "/api/pages/task-alpha/backlinks",
-    "/api/runbooks/rb-alpha",
+  const taskOpenReads = requestTimes(requests, [
+    "/api/planner/tasks/task-alpha/runs",
     "/api/board-items?container_kind=runbook&container_id=rb-alpha",
   ]);
-  expect(Math.max(...alphaFanout) - Math.min(...alphaFanout), "task-internal requests fan out together").toBeLessThan(150);
-  const taskBacklinks = requestTimes(requests, [
-    "/api/pages/task-alpha/backlinks",
-    "/api/pages/task-beta/backlinks",
-  ]);
-  expect(Math.max(...taskBacklinks) - Math.min(...taskBacklinks), "tasks fan out together").toBeLessThan(150);
+  expect(
+    Math.max(...taskOpenReads) - Math.min(...taskOpenReads),
+    "task detail lazy reads start together",
+  ).toBeLessThan(150);
+  expect(requests.some((mark) => mark.path.includes("/backlinks"))).toBe(false);
+  expect(requests.some((mark) => mark.path.startsWith("/api/runbooks/"))).toBe(false);
+  expect(requests.some((mark) => mark.path.includes("task-beta") && mark.path !== "/api/pages/task-beta")).toBe(false);
 
   await page.screenshot({
     path: path.join(OUTPUT_ROOT, "01-rich-run-row-targeted-before-catalog.png"),
@@ -137,8 +137,7 @@ test("PR-J: planner fanout, targeted run hydration, long-history sync, and repea
   await switchRun(page, timelineRequests, "run #1", "run-alpha-1", "run-alpha-2");
 
   const plannerRequests = requests.filter((mark) => (
-    mark.path.includes("/backlinks") ||
-    mark.path.startsWith("/api/runbooks/") ||
+    mark.path.startsWith("/api/planner/") ||
     mark.path === "/api/board-items"
   ));
   const metrics = {
@@ -156,19 +155,20 @@ test("PR-J: planner fanout, targeted run hydration, long-history sync, and repea
       runAlpha2TimelinePageCountAfterSwitches: timelineCount(timelineRequests, "run-alpha-2"),
       timelineEventCount: TIMELINE_EVENT_COUNT,
       runSwitchCount: 3,
-      alphaTaskFanoutSpreadMs: Math.max(...alphaFanout) - Math.min(...alphaFanout),
-      crossTaskFanoutSpreadMs: Math.max(...taskBacklinks) - Math.min(...taskBacklinks),
+      taskOpenLazyReadSpreadMs: Math.max(...taskOpenReads) - Math.min(...taskOpenReads),
+      unboundedPageRequestCount: requests.filter((mark) => mark.path === "/api/pages" && mark.query.includes("limit=")).length,
+      projectIndexRequestCount: requests.filter((mark) => mark.path === "/api/planner/project-index").length,
+      taskRunHistoryRequestCount: requests.filter((mark) => mark.path === "/api/planner/tasks/task-alpha/runs").length,
     },
     comparison: {
-      basis: "pre-change source waterfall versus this Chromium request trace",
-      plannerTaskRoundTripsBefore: plannerRequests.length,
-      plannerTaskRoundTripsAfter: plannerRequests.length,
+      basis: "bounded planner BFF and lazy task-detail request trace",
       dailyTaskCriticalPathWavesBefore: 2,
       dailyTaskCriticalPathWavesAfter: 1,
       projectTaskCriticalPathWavesBefore: 2,
       projectTaskCriticalPathWavesAfter: 1,
       delayedCatalogMs: CATALOG_DELAY_MS,
       targetedRowsResolvedBeforeCatalog: true,
+      nonSelectedTaskReadsDeferred: true,
     },
     requests,
     sessionResponseMarks,
@@ -179,6 +179,7 @@ test("PR-J: planner fanout, targeted run hydration, long-history sync, and repea
 async function disableServiceWorker(page: Page): Promise<void> {
   await page.addInitScript(() => {
     localStorage.setItem("soul-dashboard-theme", "dark");
+    localStorage.setItem("ls.webglGlass", "0");
     const serviceWorker = navigator.serviceWorker;
     if (!serviceWorker) return;
     Object.defineProperty(serviceWorker, "register", {

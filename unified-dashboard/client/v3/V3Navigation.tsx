@@ -25,6 +25,9 @@ export function V3Navigation({
   selectedDate,
   projects,
   selectedProjectId,
+  projectIndexHasMore,
+  projectIndexLoading,
+  onLoadMoreProjects,
   onSelectDate,
   onSelectProject,
   onCreateTask,
@@ -33,6 +36,9 @@ export function V3Navigation({
   selectedDate: string;
   projects: readonly PageDto[];
   selectedProjectId: string | null;
+  projectIndexHasMore: boolean;
+  projectIndexLoading: boolean;
+  onLoadMoreProjects(): void;
   onSelectDate(date: string): void;
   onSelectProject(projectId: string): void;
   onCreateTask(projectId: string): void;
@@ -198,7 +204,18 @@ export function V3Navigation({
       <h2>전체 프로젝트</h2>
       <div className="v3-nav-list" data-testid="v3-all-projects">
         {allProjects.map((project) => renderProject(project, "all"))}
-        {allProjects.length === 0 ? <p>프로젝트가 없습니다.</p> : null}
+        {allProjects.length === 0 ? <p>{projectIndexLoading ? "프로젝트를 불러오는 중…" : "프로젝트가 없습니다."}</p> : null}
+        {projectIndexHasMore ? (
+          <button
+            type="button"
+            className="v3-new-project-trigger"
+            data-testid="v3-load-more-projects"
+            disabled={projectIndexLoading}
+            onClick={onLoadMoreProjects}
+          >
+            {projectIndexLoading ? "불러오는 중…" : "프로젝트 더 보기"}
+          </button>
+        ) : null}
         <button
           type="button"
           className="v3-new-project-trigger"

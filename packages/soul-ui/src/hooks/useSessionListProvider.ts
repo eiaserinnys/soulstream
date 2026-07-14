@@ -68,9 +68,7 @@ export interface UseSessionListProviderOptions {
   initialCatalogLoadEnabled?: boolean;
   /** 폴더 카운트 조회 활성화. 기본 true */
   folderCountsEnabled?: boolean;
-  /** 전역 session_ref/legacy projection용 무제한 목록. 기존 Query/SSE 캐시 경로를 그대로 쓴다. */
-  sessionScope?: "view" | "all";
-  /** sessionScope=all에서 page session_ref가 가리키는 요약만 조회한다. */
+  /** page/run history가 가리키는 세션 요약만 조회한다. */
   sessionIds?: readonly string[];
 }
 
@@ -87,7 +85,6 @@ export function useSessionListProvider(
     streamEnabled = true,
     initialCatalogLoadEnabled = true,
     folderCountsEnabled = true,
-    sessionScope = "view",
     sessionIds,
   } = options;
 
@@ -120,12 +117,10 @@ export function useSessionListProvider(
   const queryKey = useMemo<SessionListQueryKey>(
     () => normalizedSessionIds !== undefined
       ? ["sessions", "all", "ids", null, normalizedSessionIds]
-      : sessionScope === "all"
-        ? ["sessions", "all", "all", null]
-        : ["sessions", sessionTypeFilter, viewMode, effectiveFolderId],
-    [normalizedSessionIds, sessionScope, sessionTypeFilter, viewMode, effectiveFolderId],
+      : ["sessions", sessionTypeFilter, viewMode, effectiveFolderId],
+    [normalizedSessionIds, sessionTypeFilter, viewMode, effectiveFolderId],
   );
-  const pageSize = sessionScope === "all" ? 0 : DEFAULT_PAGE_SIZE;
+  const pageSize = DEFAULT_PAGE_SIZE;
 
   // --- TanStack Query ---
 
@@ -174,7 +169,6 @@ export function useSessionListProvider(
     },
     initialPageParam: 0,
     getNextPageParam: (_lastPage, allPages) => {
-      if (sessionScope === "all") return undefined;
       const loaded = countLoadedSessionsForQuery(
         allPages,
         queryKey,
