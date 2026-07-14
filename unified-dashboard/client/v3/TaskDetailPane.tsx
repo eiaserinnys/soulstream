@@ -7,7 +7,9 @@ import type { PageSessionDefaults } from "./task-workspace-api";
 import { descriptionMarkdown, type RunSessionLoadState } from "./task-workspace-model";
 import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 import { TaskContextPicker } from "./TaskContextPicker";
+import { TaskInlineBoard } from "./TaskInlineBoard";
 import { TaskRunHistory } from "./TaskRunHistory";
+import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import "./v3-context-succession.css";
 
 export function TaskDetailPane({
@@ -17,10 +19,14 @@ export function TaskDetailPane({
   sessionDefaults,
   onReturnToToday,
   onCloseWorkspace,
-  onOpenBoard,
+  taskMoveTargets,
   onOpenSession,
   onSaveDescription,
   onPromoteDocument,
+  onUnmountDocument,
+  onRenameSession,
+  onDeleteSessions,
+  onMoveSession,
   onTaskBlocksChanged,
 }: {
   task: PlannerTask;
@@ -29,10 +35,14 @@ export function TaskDetailPane({
   sessionDefaults: PageSessionDefaults | null;
   onReturnToToday(): void;
   onCloseWorkspace(): void;
-  onOpenBoard(): void;
+  taskMoveTargets: readonly PlannerTask[];
   onOpenSession(session: SessionSummary): void;
   onSaveDescription(markdown: string): Promise<void>;
   onPromoteDocument(blockId: string): Promise<void>;
+  onUnmountDocument(blockId: string): Promise<void>;
+  onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
+  onDeleteSessions(sessionIds: string[]): Promise<void>;
+  onMoveSession(sessionId: string, targetTask: PlannerTask): Promise<void>;
   onTaskBlocksChanged(): void;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
@@ -43,6 +53,7 @@ export function TaskDetailPane({
   );
   const status = plannerStatusPresentation(task.status);
   const [promotingId, setPromotingId] = useState<string | null>(null);
+  const [documentMenu, setDocumentMenu] = useState<{ target: V3ContextMenuTarget; blockId: string; pageId: string } | null>(null);
   const [contextPickerOpen, setContextPickerOpen] = useState(false);
   const [documentPickerOpen, setDocumentPickerOpen] = useState(false);
   const [contextBlocks, setContextBlocks] = useState(task.blocks);
@@ -54,6 +65,7 @@ export function TaskDetailPane({
     setDocumentPickerOpen(false);
     setPredecessorSessionId(null);
     setCreatedSessions([]);
+    setDocumentMenu(null);
   }, [task.blocks, task.page.id]);
   const contexts = contextBlocks.flatMap((block) => {
     if (block.block_type === "atom_ref") {
@@ -99,14 +111,6 @@ export function TaskDetailPane({
         <div className="v3-detail-title">
           <span className={`v3-status-chip v3-status-chip--${task.status}`}>{status.icon} {status.label}</span>
           <h2>{task.page.title}</h2>
-          <button
-            type="button"
-            className="v3-button v3-button--soft"
-            title="이행 기간에는 기존 v1 보드 폴더에서 엽니다"
-            onClick={onOpenBoard}
-          >
-            ▦ 보드로 보기
-          </button>
         </div>
 
         <section className="v3-detail-section">
@@ -154,7 +158,18 @@ export function TaskDetailPane({
           </div>
           <div className="v3-task-documents">
             {task.mountedDocuments.map((document) => (
-              <div key={document.blockId}>
+              <div
+                key={document.blockId}
+                data-testid={`v3-mounted-document-${document.page.id}`}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  setDocumentMenu({
+                    target: { x: event.clientX, y: event.clientY },
+                    blockId: document.blockId,
+                    pageId: document.page.id,
+                  });
+                }}
+              >
                 <span>{document.page.title}</span>
                 <button
                   type="button"
@@ -186,6 +201,19 @@ export function TaskDetailPane({
           ) : null}
         </section>
 
+        <V3ContextMenu
+          target={documentMenu?.target ?? null}
+          onClose={() => setDocumentMenu(null)}
+          actions={documentMenu ? [
+            { label: "문서 열기", onSelect: () => window.location.assign(`/v2/pages/${encodeURIComponent(documentMenu.pageId)}`) },
+            { label: "페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(documentMenu.pageId) },
+            { label: "업무에서 마운트 해제", onSelect: () => onUnmountDocument(documentMenu.blockId), separatorBefore: true, destructive: true },
+            { label: "프로젝트로 승격", onSelect: () => promote(documentMenu.blockId), disabled: !task.projectPageId },
+          ] : []}
+        />
+
+        <TaskInlineBoard runbookId={task.runbookId} />
+
         {sessionDefaults?.agentId || sessionDefaults?.nodeId ? (
           <div className="v3-session-defaults"><span className="v3-emoji" aria-hidden="true">👤</span> 기본값: {sessionDefaults.agentId ?? "agent 미지정"}@{sessionDefaults.nodeId ?? "node 미지정"} <span>(상속)</span></div>
         ) : null}
@@ -200,7 +228,11 @@ export function TaskDetailPane({
           sessionIds={allSessionIds}
           sessions={allSessions}
           runSessionLoadStates={runSessionLoadStates}
+          moveTargets={taskMoveTargets}
           onOpenSession={onOpenSession}
+          onRenameSession={onRenameSession}
+          onDeleteSessions={onDeleteSessions}
+          onMoveSession={onMoveSession}
           onSessionCreated={(session) => {
             setCreatedSessions((current) => [...current, session]);
             setPredecessorSessionId(null);

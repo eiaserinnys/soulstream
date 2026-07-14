@@ -9,6 +9,7 @@ import {
 
 import {
   createStarredProject,
+  renameProjectPage,
   setProjectStarred,
 } from "./project-star-actions";
 import {
@@ -112,6 +113,26 @@ describe("project star actions", () => {
       expectedVersion: 9,
       idempotencyKey: "project-star-id",
       reason: "v3 planner project creation",
+    });
+  });
+
+  it("renames a project through the page operation CAS contract", async () => {
+    const current = pageRead(page("project-1", "Before", 7), "AQ==");
+    const updated = mutation(page("project-1", "After", 8));
+    const api = {
+      getPage: vi.fn(async () => current),
+      applyOperations: vi.fn(async () => updated),
+    } as unknown as PageApiClient;
+
+    await expect(renameProjectPage(api, "project-1", "  After  ", () => "rename-1"))
+      .resolves.toEqual(updated.page);
+
+    expect(api.applyOperations).toHaveBeenCalledWith("project-1", {
+      expectedVersion: 7,
+      expectedStateVector: new Uint8Array([1]),
+      idempotencyKey: "rename-1",
+      reason: "v3 planner project rename",
+      operations: [{ op: "rename_page", title: "After" }],
     });
   });
 });

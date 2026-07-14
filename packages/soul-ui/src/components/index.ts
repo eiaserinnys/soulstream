@@ -29,6 +29,19 @@ export type { FolderSettingsDialogProps } from "./FolderSettingsDialog";
 export { ChatInput } from "./ChatInput";
 export { RightPanel } from "./RightPanel";
 export { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
+export { MarkdownContent } from "./MarkdownContent";
+export { SessionContextMenu } from "./SessionContextMenu";
+export type {
+  SessionContextMenuExtraAction,
+  SessionContextMenuProps,
+  SessionContextMenuState,
+} from "./SessionContextMenu";
+export { CustomViewIframe } from "../custom-view/CustomViewRenderer";
+export type {
+  CustomViewBindingData,
+  CustomViewBindingRecord,
+} from "../custom-view/CustomViewRenderer";
+export { useCustomViewBindings } from "../custom-view/use-custom-view-bindings";
 export { BoardAssetCard } from "./BoardAssetCard";
 export type { BoardAssetCardProps } from "./BoardAssetCard";
 export { DetailView } from "./DetailView";

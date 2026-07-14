@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from "react";
+import { useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 
@@ -7,16 +7,22 @@ import {
   plannerStatusPresentation,
 } from "./planner-model";
 import type { PlannerTask } from "./planner-data";
+import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 
 export function PlannerTaskCard({
   task,
   sessions,
   onOpen,
+  onComplete,
+  onToggleToday,
 }: {
   task: PlannerTask;
   sessions: readonly SessionSummary[];
   onOpen(): void;
+  onComplete(): Promise<void>;
+  onToggleToday(): Promise<void>;
 }) {
+  const [contextMenu, setContextMenu] = useState<V3ContextMenuTarget | null>(null);
   const status = plannerStatusPresentation(task.status);
   const run = latestRun(task.sessionIds, sessions);
   const runState = run?.session.status === "running" ? "실행 중" : run ? "완료" : "시작 전";
@@ -24,6 +30,11 @@ export function PlannerTaskCard({
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
     onOpen();
+  };
+  const openContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({ x: event.clientX, y: event.clientY });
   };
 
   return (
@@ -35,6 +46,7 @@ export function PlannerTaskCard({
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={openFromKeyboard}
+      onContextMenu={openContextMenu}
       data-testid={`v3-task-${task.page.id}`}
     >
       <div className="v3-task-main">
@@ -71,6 +83,16 @@ export function PlannerTaskCard({
           </span>
         )}
       </div>
+      <V3ContextMenu
+        target={contextMenu}
+        onClose={() => setContextMenu(null)}
+        actions={[
+          { label: "업무 열기", onSelect: onOpen },
+          { label: "업무 페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(task.page.id) },
+          { label: "완료 처리", onSelect: onComplete, disabled: task.status === "completed", separatorBefore: true },
+          { label: "오늘 플래너에 추가·제거", onSelect: onToggleToday },
+        ]}
+      />
     </LiquidGlassCard>
   );
 }

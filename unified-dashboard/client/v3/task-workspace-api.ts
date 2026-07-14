@@ -139,6 +139,25 @@ export async function promoteMountedDocument(
   });
 }
 
+export async function unmountTaskDocument(
+  api: PageApiClient,
+  taskPageId: string,
+  mountBlockId: string,
+  idFactory: () => string = () => `v3-document-unmount-${crypto.randomUUID()}`,
+): Promise<void> {
+  const current = await api.getPage(taskPageId);
+  if (!current.blocks.some((block) => block.id === mountBlockId)) {
+    throw new Error("해제할 문서 마운트를 찾을 수 없습니다");
+  }
+  await api.applyOperations(taskPageId, {
+    expectedVersion: current.page.version,
+    expectedStateVector: decodeBase64(current.state_vector),
+    idempotencyKey: idFactory(),
+    reason: "v3 task document unmount",
+    operations: [{ op: "delete_block_subtree", block_id: mountBlockId }],
+  });
+}
+
 function decodeBase64(value: string): Uint8Array {
   const binary = atob(value);
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));

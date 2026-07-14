@@ -2,12 +2,13 @@ import { useMemo, useRef, useState } from "react";
 import { useGlassSurface } from "@seosoyoung/soul-ui";
 import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
 
-import { createStarredProject, setProjectStarred } from "./project-star-actions";
+import { createStarredProject, renameProjectPage, setProjectStarred } from "./project-star-actions";
 import {
   applyProjectStarChanges,
   publishProjectStarChange,
   useProjectStarChanges,
 } from "./project-star-store";
+import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import "./v3-project-star.css";
 
 export interface PlannerDateNavItem {
@@ -22,6 +23,7 @@ export function V3Navigation({
   selectedProjectId,
   onSelectDate,
   onSelectProject,
+  onCreateTask,
 }: {
   dates: readonly PlannerDateNavItem[];
   selectedDate: string;
@@ -29,6 +31,7 @@ export function V3Navigation({
   selectedProjectId: string | null;
   onSelectDate(date: string): void;
   onSelectProject(projectId: string): void;
+  onCreateTask(projectId: string): void;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
@@ -39,6 +42,7 @@ export function V3Navigation({
   const [newProjectTitle, setNewProjectTitle] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
   const [pendingStarId, setPendingStarId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ target: V3ContextMenuTarget; project: PageDto } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const createProject = async () => {
@@ -73,6 +77,18 @@ export function V3Navigation({
     }
   };
 
+  const renameProject = async (project: PageDto) => {
+    const title = window.prompt("프로젝트 이름", project.title)?.trim();
+    if (!title || title === project.title) return;
+    setError(null);
+    try {
+      const updated = await renameProjectPage(api, project.id, title);
+      publishProjectStarChange({ page: updated, starred: true });
+    } catch (cause) {
+      setError(`프로젝트 이름 변경 실패 · ${errorText(cause)}`);
+    }
+  };
+
   return (
     <nav
       ref={surfaceRef}
@@ -101,6 +117,10 @@ export function V3Navigation({
           <div
             key={project.id}
             className={`v3-project-nav-row${selectedProjectId === project.id ? " is-active" : ""}`}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setContextMenu({ target: { x: event.clientX, y: event.clientY }, project });
+            }}
           >
             <button
               type="button"
@@ -154,6 +174,17 @@ export function V3Navigation({
         ) : null}
         {error ? <p className="v3-project-star-error" role="alert">{error}</p> : null}
       </div>
+      <V3ContextMenu
+        target={contextMenu?.target ?? null}
+        onClose={() => setContextMenu(null)}
+        actions={contextMenu ? [
+          { label: "프로젝트 열기", onSelect: () => onSelectProject(contextMenu.project.id) },
+          { label: "페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(contextMenu.project.id) },
+          { label: "이름 변경", onSelect: () => renameProject(contextMenu.project), separatorBefore: true },
+          { label: "별표 해제", onSelect: () => removeProjectStar(contextMenu.project) },
+          { label: "새 업무", onSelect: () => onCreateTask(contextMenu.project.id), separatorBefore: true },
+        ] : []}
+      />
       <div className="v3-nav-foot">
         업무는 프로젝트에 누적되고,<br />세션은 업무를 수행하는 run.
         <div><kbd>C</kbd> 새 업무 · <kbd>Esc</kbd> 닫기</div>

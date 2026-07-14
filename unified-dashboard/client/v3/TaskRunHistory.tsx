@@ -1,5 +1,15 @@
-import { useMemo, useState } from "react";
-import { ProfileAvatar, type SessionSummary } from "@seosoyoung/soul-ui";
+import { useMemo, useState, type MouseEvent } from "react";
+import {
+  Dialog,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+  ProfileAvatar,
+  SessionContextMenu,
+  type SessionContextMenuState,
+  type SessionSummary,
+} from "@seosoyoung/soul-ui";
 
 import {
   buildRunTree,
@@ -8,6 +18,7 @@ import {
 } from "./task-workspace-model";
 import { latestTaskRun } from "./session-succession-model";
 import type { PageSessionDefaults } from "./task-workspace-api";
+import type { PlannerTask } from "./planner-data";
 import { SessionSuccessionModal } from "./SessionSuccessionModal";
 import "./v3-run-history.css";
 
@@ -21,8 +32,12 @@ export function TaskRunHistory({
   sessionIds,
   sessions,
   runSessionLoadStates,
+  moveTargets,
   onOpenSession,
   onSessionCreated,
+  onRenameSession,
+  onDeleteSessions,
+  onMoveSession,
 }: {
   taskTitle: string;
   taskPageId: string;
@@ -33,8 +48,12 @@ export function TaskRunHistory({
   sessionIds: readonly string[];
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
+  moveTargets: readonly PlannerTask[];
   onOpenSession(session: SessionSummary): void;
   onSessionCreated(session: SessionSummary): void;
+  onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
+  onDeleteSessions(sessionIds: string[]): Promise<void>;
+  onMoveSession(sessionId: string, targetTask: PlannerTask): Promise<void>;
 }) {
   const tree = useMemo(
     () => buildRunTree(sessionIds, sessions, runSessionLoadStates),
@@ -42,6 +61,25 @@ export function TaskRunHistory({
   );
   const currentSession = useMemo(() => latestTaskRun(sessionIds, sessions), [sessionIds, sessions]);
   const [successionOpen, setSuccessionOpen] = useState(false);
+  const [targetedSuccessionId, setTargetedSuccessionId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<SessionContextMenuState | null>(null);
+  const [moveSessionId, setMoveSessionId] = useState<string | null>(null);
+  const [movePending, setMovePending] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const targetedSuccession = targetedSuccessionId
+    ? sessions.find((session) => session.agentSessionId === targetedSuccessionId) ?? null
+    : currentSession;
+  const visibleMoveTargets = [...new Map(
+    moveTargets
+      .filter((task) => task.runbookId !== runbookId)
+      .map((task) => [task.runbookId, task]),
+  ).values()];
+
+  const openRunContextMenu = (session: SessionSummary, event: MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setContextMenu({ x: event.clientX, y: event.clientY, sessionId: session.agentSessionId });
+  };
 
   return (
     <section className="v3-detail-section v3-runs">
@@ -57,6 +95,7 @@ export function TaskRunHistory({
             node={node}
             depth={0}
             onOpenSession={onOpenSession}
+            onContextMenu={openRunContextMenu}
           />
         ))}
       </div>
@@ -67,12 +106,69 @@ export function TaskRunHistory({
           runbookId={runbookId}
           contextCount={contextCount}
           pageDefaults={sessionDefaults}
-          currentSession={currentSession}
-          predecessorSessionId={predecessorSessionId}
-          onClose={() => setSuccessionOpen(false)}
+          currentSession={targetedSuccession}
+          predecessorSessionId={targetedSuccessionId ?? predecessorSessionId}
+          onClose={() => { setSuccessionOpen(false); setTargetedSuccessionId(null); }}
           onCreated={onSessionCreated}
         />
       ) : null}
+      <SessionContextMenu
+        contextMenu={contextMenu}
+        onClose={() => setContextMenu(null)}
+        onRenameSession={onRenameSession}
+        onDeleteSessions={onDeleteSessions}
+        getSessionName={(sessionId) => sessionTitle(sessions.find((session) => session.agentSessionId === sessionId) ?? ({ agentSessionId: sessionId } as SessionSummary))}
+        resolveSessionIds={(sessionId) => [sessionId]}
+        extraActions={[
+          {
+            label: "▶ 이어서 새 세션 (승계)",
+            onClick: () => {
+              if (!contextMenu) return;
+              setTargetedSuccessionId(contextMenu.sessionId);
+              setContextMenu(null);
+              setSuccessionOpen(true);
+            },
+          },
+          {
+            label: "다른 업무로 이동",
+            disabled: visibleMoveTargets.length === 0,
+            onClick: () => {
+              if (!contextMenu) return;
+              setMoveSessionId(contextMenu.sessionId);
+              setMoveError(null);
+              setContextMenu(null);
+            },
+          },
+        ]}
+      />
+      <Dialog open={moveSessionId !== null} onOpenChange={(open) => { if (!open && !movePending) setMoveSessionId(null); }}>
+        <DialogPopup className="max-w-sm">
+          <DialogHeader><DialogTitle>다른 업무로 이동</DialogTitle></DialogHeader>
+          <DialogPanel>
+            <div className="v3-run-move-targets">
+              {visibleMoveTargets.map((target) => (
+                <button
+                  type="button"
+                  key={target.runbookId}
+                  disabled={movePending}
+                  onClick={() => {
+                    if (!moveSessionId) return;
+                    setMovePending(true);
+                    setMoveError(null);
+                    void onMoveSession(moveSessionId, target)
+                      .then(() => setMoveSessionId(null))
+                      .catch((error: unknown) => setMoveError(error instanceof Error ? error.message : String(error)))
+                      .finally(() => setMovePending(false));
+                  }}
+                >
+                  <strong>{target.page.title}</strong><small>{target.runbookId.slice(0, 8)}</small>
+                </button>
+              ))}
+            </div>
+            {moveError ? <p className="v3-load-error" role="alert">{moveError}</p> : null}
+          </DialogPanel>
+        </DialogPopup>
+      </Dialog>
     </section>
   );
 }
@@ -81,10 +177,12 @@ function RunNode({
   node,
   depth,
   onOpenSession,
+  onContextMenu,
 }: {
   node: RunTreeNode;
   depth: number;
   onOpenSession(session: SessionSummary): void;
+  onContextMenu(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
   const { session } = node;
   if (node.loadState === "loading") {
@@ -110,7 +208,13 @@ function RunNode({
     : session.lastMessage?.preview?.trim() || session.prompt?.trim() || "아직 표시할 메시지가 없습니다.";
   return (
     <div className={depth > 0 ? "v3-run-children" : undefined}>
-      <div className={`v3-run-row${failed ? " v3-run-row--failed" : ""}`} data-depth={depth} data-load-state={node.loadState}>
+      <div
+        className={`v3-run-row${failed ? " v3-run-row--failed" : ""}`}
+        data-depth={depth}
+        data-load-state={node.loadState}
+        data-session-id={failed ? undefined : session.agentSessionId}
+        onContextMenu={failed ? undefined : (event) => onContextMenu(session, event)}
+      >
         <button type="button" className="v3-run-open" disabled={failed} onClick={() => onOpenSession(session)}>
           <span className="v3-run-avatar">
             <ProfileAvatar role="assistant" hasPortrait={Boolean(portraitUrl)} portraitUrl={portraitUrl} fallbackEmoji="🤖" />
@@ -141,6 +245,7 @@ function RunNode({
           node={child}
           depth={depth + 1}
           onOpenSession={onOpenSession}
+          onContextMenu={onContextMenu}
         />
       ))}
     </div>

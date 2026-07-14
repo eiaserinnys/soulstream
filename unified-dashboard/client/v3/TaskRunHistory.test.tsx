@@ -32,6 +32,7 @@ describe("TaskRunHistory", () => {
         predecessorSessionId={null}
         sessionIds={["catalog-hit", "loading-miss", "failed-miss"]}
         sessions={[richSession]}
+        moveTargets={[]}
         runSessionLoadStates={new Map([
           ["catalog-hit", "ready"],
           ["loading-miss", "loading"],
@@ -39,6 +40,9 @@ describe("TaskRunHistory", () => {
         ])}
         onOpenSession={vi.fn()}
         onSessionCreated={vi.fn()}
+        onRenameSession={vi.fn()}
+        onDeleteSessions={vi.fn()}
+        onMoveSession={vi.fn()}
       />,
     );
 

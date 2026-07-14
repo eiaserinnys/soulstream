@@ -51,6 +51,7 @@ import { RitualModal } from "./RitualModal";
 import { TaskWorkspace } from "./TaskWorkspace";
 import { V3Navigation } from "./V3Navigation";
 import { V3GlobalToolbar } from "./V3GlobalToolbar";
+import { useV3PlannerActions } from "./use-v3-planner-actions";
 import {
   reduceMobilePlannerEscape,
   selectMobilePlannerTab,
@@ -165,7 +166,6 @@ function V3DashboardContent() {
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
   const setActiveSessionSummary = useDashboardStore((state) => state.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
-  const selectFolder = useDashboardStore((state) => state.selectFolder);
   const nodes = useOrchestratorStore((state) => state.nodes);
   const { sessions: catalogSessions } = useSessionListProvider({
     intervalMs: 5000,
@@ -210,6 +210,7 @@ function V3DashboardContent() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 3200);
   }, []);
+  const plannerActions = useV3PlannerActions({ api, setRefreshKey, notify });
   useEffect(() => () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
@@ -423,16 +424,6 @@ function V3DashboardContent() {
       throw error;
     }
   };
-  const openBoard = () => {
-    if (!selectedTask) return;
-    const projectPage = projects.find((item) => item.id === selectedTask.projectPageId);
-    const folderId = projectPage ? resolveProjectFolderId(projectPage, catalog?.folders ?? []) : null;
-    if (!folderId) { notify("연결된 v1 보드 폴더를 찾을 수 없습니다"); return; }
-    selectFolder(folderId);
-    setActiveTab("folder");
-    window.history.pushState(null, "", "/");
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  };
   const acknowledgeReview = (result: SessionReviewAcknowledgeResult) => {
     const state = useDashboardStore.getState();
     const current = state.activeSessionSummary;
@@ -459,7 +450,7 @@ function V3DashboardContent() {
         onOpenRitual={() => setRitualOpen(true)}
         onOpenSearch={() => setSearchOpen(true)}
       />
-      <V3Navigation dates={dates} selectedDate={selectedDate} projects={projects} selectedProjectId={selectedProjectId} onSelectDate={(date) => { setSelectedProjectId(null); setSelectedDate(date); }} onSelectProject={(projectId) => { setSelectedProjectId(projectId); setNewDocumentOpen(false); }} />
+      <V3Navigation dates={dates} selectedDate={selectedDate} projects={projects} selectedProjectId={selectedProjectId} onSelectDate={(date) => { setSelectedProjectId(null); setSelectedDate(date); }} onSelectProject={(projectId) => { setSelectedProjectId(projectId); setNewDocumentOpen(false); }} onCreateTask={(projectId) => { setSelectedProjectId(projectId); setCreateOpen(true); }} />
       <div className="v3-navigation-resize" data-testid="v3-navigation-resize-handle" aria-hidden="true">
         <DragHandle onDrag={resizeNavigation} widthPx={DASHBOARD_PANEL_GAP_PX} />
       </div>
@@ -471,14 +462,14 @@ function V3DashboardContent() {
         >
           {createOpen ? <NewTaskForm projects={projects} initialProjectId={selectedProjectId} pending={createPending} onCreate={(title, projectId) => { void createTask(title, projectId); }} onCancel={() => setCreateOpen(false)} /> : null}
           {selectedProject ? (
-            <ProjectPlannerView state={project} sessions={sessions} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} onBack={() => setSelectedProjectId(null)} onOpenTask={openTask} onOpenDocument={(page) => window.location.assign(`/v2/pages/${encodeURIComponent(page.id)}`)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
+            <ProjectPlannerView state={project} sessions={sessions} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} onBack={() => setSelectedProjectId(null)} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onOpenDocument={(page) => window.location.assign(`/v2/pages/${encodeURIComponent(page.id)}`)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
           ) : (
-            <DailyPlannerView state={daily} selectedDate={selectedDate} reviewSessions={reviewSessions} sessions={sessions} onOpenReview={openSession} onSaveMemo={(blockId, text) => { void saveMemo(blockId, text); }} onOpenProject={setSelectedProjectId} onOpenTask={openTask} />
+            <DailyPlannerView state={daily} selectedDate={selectedDate} reviewSessions={reviewSessions} sessions={sessions} onOpenReview={openSession} onSaveMemo={(blockId, text) => { void saveMemo(blockId, text); }} onOpenProject={setSelectedProjectId} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} />
           )}
         </div>
       </main>
       {workspaceOpen && selectedTask ? (
-        <TaskWorkspace task={selectedTask} projectTitle={projectTitle} sessions={sessions} runSessionLoadStates={runSessionResolution.loadStateById} activeSession={activeSession} chatOpen={chatOpen} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} sessionDefaults={sessionDefaults} mobileMode={mobileMode} mobileTab={mobileTab} onReturnToToday={returnToPlanner} onCloseWorkspace={closeWorkspace} onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }} onOpenBoard={openBoard} onOpenSession={openSession} onSaveDescription={saveDescription} onPromoteDocument={promoteDocument} onTaskBlocksChanged={() => setRefreshKey((value) => value + 1)} onAcknowledgedReview={acknowledgeReview} />
+        <TaskWorkspace task={selectedTask} projectTitle={projectTitle} sessions={sessions} runSessionLoadStates={runSessionResolution.loadStateById} activeSession={activeSession} chatOpen={chatOpen} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} sessionDefaults={sessionDefaults} mobileMode={mobileMode} mobileTab={mobileTab} taskMoveTargets={currentTasks} onReturnToToday={returnToPlanner} onCloseWorkspace={closeWorkspace} onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }} onOpenSession={openSession} onSaveDescription={saveDescription} onPromoteDocument={promoteDocument} onUnmountDocument={(blockId) => plannerActions.unmountDocument(selectedTask, blockId)} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onMoveSession={plannerActions.moveSession} onTaskBlocksChanged={() => setRefreshKey((value) => value + 1)} onAcknowledgedReview={acknowledgeReview} />
       ) : null}
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
       <RitualModal open={ritualOpen} today={today} sessions={sessions} onClose={() => setRitualOpen(false)} onRefresh={() => setRefreshKey((value) => value + 1)} />

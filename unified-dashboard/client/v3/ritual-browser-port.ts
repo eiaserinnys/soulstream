@@ -16,25 +16,37 @@ export class BrowserRitualActionPort implements RitualActionPort {
   }
 
   async mountToday(input: { taskTitle: string }) {
-    await this.plannerPort.mountPage({
-      sourcePageId: this.dailyPageId,
-      title: input.taskTitle,
-    });
+    await mountRitualTaskToday(this.plannerPort, this.dailyPageId, input.taskTitle);
   }
 
   async completeRunbook(input: { runbookId: string; expectedVersion: number }) {
-    await postRunbookStatus({
-      runbookId: input.runbookId,
-      expectedVersion: input.expectedVersion,
-      idempotencyKey: ritualOperationId("runbook-complete"),
-      status: "completed",
-      reason: "v3 morning ritual completion",
-    });
+    await completeRitualRunbook(input);
   }
 
   async acknowledgeReview(sessionId: string) {
     await acknowledgeSessionReview(sessionId);
   }
+}
+
+export async function mountRitualTaskToday(
+  plannerPort: Pick<BrowserPlannerMutationPort, "mountPage">,
+  dailyPageId: string,
+  taskTitle: string,
+): Promise<void> {
+  await plannerPort.mountPage({ sourcePageId: dailyPageId, title: taskTitle });
+}
+
+export async function completeRitualRunbook(input: {
+  runbookId: string;
+  expectedVersion: number;
+}): Promise<void> {
+  await postRunbookStatus({
+    runbookId: input.runbookId,
+    expectedVersion: input.expectedVersion,
+    idempotencyKey: ritualOperationId("runbook-complete"),
+    status: "completed",
+    reason: "v3 morning ritual completion",
+  });
 }
 
 function ritualOperationId(prefix: string): string {

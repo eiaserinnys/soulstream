@@ -31,13 +31,17 @@ export function TaskWorkspace({
   sessionDefaults,
   mobileMode,
   mobileTab,
+  taskMoveTargets,
   onReturnToToday,
   onCloseWorkspace,
   onCloseChat,
-  onOpenBoard,
   onOpenSession,
   onSaveDescription,
   onPromoteDocument,
+  onUnmountDocument,
+  onRenameSession,
+  onDeleteSessions,
+  onMoveSession,
   onTaskBlocksChanged,
   onAcknowledgedReview,
 }: {
@@ -52,13 +56,17 @@ export function TaskWorkspace({
   sessionDefaults: PageSessionDefaults | null;
   mobileMode: boolean;
   mobileTab: MobilePlannerTab;
+  taskMoveTargets: readonly PlannerTask[];
   onReturnToToday(): void;
   onCloseWorkspace(): void;
   onCloseChat(): void;
-  onOpenBoard(): void;
   onOpenSession(session: SessionSummary): void;
   onSaveDescription(markdown: string): Promise<void>;
   onPromoteDocument(blockId: string): Promise<void>;
+  onUnmountDocument(blockId: string): Promise<void>;
+  onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
+  onDeleteSessions(sessionIds: string[]): Promise<void>;
+  onMoveSession(sessionId: string, targetTask: PlannerTask): Promise<void>;
   onTaskBlocksChanged(): void;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
 }) {
@@ -108,12 +116,16 @@ export function TaskWorkspace({
           sessions={sessions}
           runSessionLoadStates={runSessionLoadStates}
           sessionDefaults={sessionDefaults}
+          taskMoveTargets={taskMoveTargets}
           onReturnToToday={onReturnToToday}
           onCloseWorkspace={onCloseWorkspace}
-          onOpenBoard={onOpenBoard}
           onOpenSession={onOpenSession}
           onSaveDescription={onSaveDescription}
           onPromoteDocument={onPromoteDocument}
+          onUnmountDocument={onUnmountDocument}
+          onRenameSession={onRenameSession}
+          onDeleteSessions={onDeleteSessions}
+          onMoveSession={onMoveSession}
           onTaskBlocksChanged={onTaskBlocksChanged}
         />
         {chatOpen ? (
