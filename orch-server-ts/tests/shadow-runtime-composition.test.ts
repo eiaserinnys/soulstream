@@ -182,6 +182,10 @@ function createInertPageYjsRoutes() {
       getBrowserBacklinks: vi.fn(async () => ({ items: [], nextCursor: null })),
       resolvePageSessionDefaults: vi.fn(async () => null),
     },
+    plannerReads: {
+      getToday: vi.fn(async () => null),
+      getProject: vi.fn(async () => null),
+    },
     createService: () => ({
       handleConnection: vi.fn(),
       assertWebsocketAuthConfigured: vi.fn(),

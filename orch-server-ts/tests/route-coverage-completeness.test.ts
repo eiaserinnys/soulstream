@@ -34,6 +34,8 @@ describe("route coverage completeness gate", () => {
     "POST /api/pages/block-transfers",
     "POST /api/pages/{pageId}/operations",
     "PATCH /api/pages/{pageId}/starred",
+    "GET /api/planner/today",
+    "GET /api/planner/projects/{pageId}",
   ];
   const reviewRouteKey = "POST /api/sessions/{session_id}/review/acknowledge";
   const runbookCreateRouteKey = "POST /api/runbooks";
@@ -156,6 +158,10 @@ function createAllOptInRouteApp() {
         searchBrowserBlocks: async () => ({ items: [] }),
         getBrowserBlock: async () => null,
         getBrowserBacklinks: async () => ({ items: [], nextCursor: null }),
+      },
+      plannerReads: {
+        getToday: async () => null,
+        getProject: async () => null,
       },
       createService: () => ({
         handleConnection: () => undefined,

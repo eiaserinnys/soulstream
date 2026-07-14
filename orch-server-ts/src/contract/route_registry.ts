@@ -190,6 +190,20 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
     family: "page_yjs",
   },
   {
+    methods: ["GET"],
+    path: "/api/planner/today",
+    name: "read_today_planner",
+    authRequired: true,
+    family: "page_yjs",
+  },
+  {
+    methods: ["GET"],
+    path: "/api/planner/projects/{pageId}",
+    name: "read_project_planner",
+    authRequired: true,
+    family: "page_yjs",
+  },
+  {
     methods: ["POST"],
     path: "/api/sessions/{session_id}/review/acknowledge",
     name: "acknowledge_session_review",
@@ -340,6 +354,7 @@ export function classifyRouteFamily(path: string): RouteFamily {
     path === "/api/pages" ||
     path.startsWith("/api/pages/") ||
     path.startsWith("/api/blocks/") ||
+    path.startsWith("/api/planner/") ||
     path.startsWith("/api/page-yjs/") ||
     path.startsWith("/yjs/page/")
   ) {

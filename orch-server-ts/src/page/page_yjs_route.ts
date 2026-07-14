@@ -7,6 +7,10 @@ import {
 } from "./page_browser_routes.js";
 import { registerPageYjsHostOperationRoutes } from "./page_host_operations.js";
 import type { PageYjsService } from "./page_service.js";
+import {
+  registerPlannerRoutes,
+  type PlannerRouteOptions,
+} from "../planner/planner_routes.js";
 
 export const pageYjsRouteAuthRequirements = {
   "WEBSOCKET /yjs/page/{pageId}": false,
@@ -18,6 +22,7 @@ export interface PageYjsRouteOptions {
   authBearerToken: string;
   resolveBrowserUser?: PageBrowserRouteOptions["resolveUser"];
   browserReads?: PageBrowserRouteOptions["reads"];
+  plannerReads?: PlannerRouteOptions["provider"];
 }
 
 export function registerPageYjsRoutes(
@@ -39,6 +44,12 @@ export function registerPageYjsRoutes(
       reads: options.browserReads,
       resolveUser: options.resolveBrowserUser,
     });
+    if (options.plannerReads) {
+      registerPlannerRoutes(app, {
+        provider: options.plannerReads,
+        resolveUser: options.resolveBrowserUser,
+      });
+    }
   }
   registerWebsocketPlugin(app);
   app.after(() => {

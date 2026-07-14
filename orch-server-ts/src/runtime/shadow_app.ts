@@ -214,6 +214,10 @@ export const shadowRouteCompositionRequirements = [
     owner: "page.browser",
     paths: ["runtime.pageYjsRoutes.resolveBrowserUser"],
   },
+  {
+    owner: "planner",
+    paths: ["runtime.pageYjsRoutes.plannerReads"],
+  },
   { owner: "node.agent-profiles", paths: ["nodeAgentProfileRoutes.provider"] },
   {
     owner: "node.claude-auth",

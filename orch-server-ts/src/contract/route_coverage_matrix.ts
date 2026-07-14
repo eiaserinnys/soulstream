@@ -30,6 +30,7 @@ import { userBackgroundRouteAuthRequirements } from "../user/user_background_rou
 import { userPreferencesRouteAuthRequirements } from "../user/user_preferences_routes.js";
 import { pageYjsRouteAuthRequirements } from "../page/page_yjs_route.js";
 import { pageBrowserRouteAuthRequirements } from "../page/page_browser_routes.js";
+import { plannerRouteAuthRequirements } from "../planner/planner_routes.js";
 import type { RouteCoverageOwner } from "./route_coverage.js";
 
 export const routeCoverageOwners = [
@@ -46,6 +47,7 @@ export const routeCoverageOwners = [
   { owner: "markdown.documents", authRequirements: markdownDocumentRouteAuthRequirements },
   { owner: "page.yjs", authRequirements: pageYjsRouteAuthRequirements },
   { owner: "page.browser", authRequirements: pageBrowserRouteAuthRequirements },
+  { owner: "planner", authRequirements: plannerRouteAuthRequirements },
   { owner: "node.agent-profiles", authRequirements: nodeAgentProfileRouteAuthRequirements },
   { owner: "node.claude-auth", authRequirements: nodeClaudeAuthRouteAuthRequirements },
   { owner: "node.snapshot", authRequirements: nodeSnapshotRouteAuthRequirements },
