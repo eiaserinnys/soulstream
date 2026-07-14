@@ -10,7 +10,6 @@ import {
   DragHandle,
   LiquidGlassCanvas,
   LiquidGlassProvider,
-  ThemeToggle,
   WallpaperLayer,
   initTheme,
   useAuth,
@@ -37,6 +36,8 @@ import {
 import type { ReviewState } from "@seosoyoung/soul-ui/shared/session-types";
 
 import { useNodes } from "../hooks/useNodes";
+import { ConfigModal } from "../components/ConfigModal";
+import { SearchModal } from "../components/SearchModal";
 import { orchestratorSessionProvider } from "../providers";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { NewTaskForm } from "./NewTaskForm";
@@ -48,13 +49,13 @@ import {
 import { MobilePlannerTabs, useMobilePlannerMode } from "./MobilePlannerTabs";
 import { RitualModal } from "./RitualModal";
 import { TaskWorkspace } from "./TaskWorkspace";
-import { V3Navigation, type PlannerDateNavItem } from "./V3Navigation";
+import { V3Navigation } from "./V3Navigation";
+import { V3GlobalToolbar } from "./V3GlobalToolbar";
 import {
   reduceMobilePlannerEscape,
   selectMobilePlannerTab,
   type MobilePlannerState,
   type MobilePlannerTab,
-  type MobilePlannerTaskOption,
 } from "./mobile-planner-state";
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import {
@@ -84,10 +85,14 @@ import {
 } from "./task-workspace-api";
 import {
   activateRunSession,
-  buildRunTree,
   resolveRunSessions,
-  type RunTreeNode,
 } from "./task-workspace-model";
+import {
+  buildMobileTaskOptions,
+  dateKey,
+  errorText,
+  recentDates,
+} from "./v3-dashboard-utils";
 import "./v3-planner.css";
 import "./v3-planner-surfaces.css";
 import "./v3-task-workspace.css";
@@ -121,6 +126,8 @@ function V3DashboardContent() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [ritualOpen, setRitualOpen] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [mobileTab, setMobileTab] = useState<MobilePlannerTab>("today");
   const [createPending, setCreatePending] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -303,6 +310,11 @@ function V3DashboardContent() {
     setSelectedProjectId(null);
     setSelectedDate(today);
   }, [today]);
+  const closeWorkspace = useCallback(() => {
+    setMobileTab("today");
+    setChatOpen(false);
+    setWorkspaceOpen(false);
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -326,13 +338,13 @@ function V3DashboardContent() {
           chatOpen,
         }));
       }
-      else if (workspaceOpen) returnToPlanner();
+      else if (workspaceOpen) closeWorkspace();
       else if (selectedProjectId) setSelectedProjectId(null);
       else if (selectedDate !== today) setSelectedDate(today);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeSessionKey, applyMobileState, chatOpen, createOpen, mobileMode, mobileTab, newDocumentOpen, returnToPlanner, selectedDate, selectedProjectId, selectedTaskId, today, workspaceOpen]);
+  }, [activeSessionKey, applyMobileState, chatOpen, closeWorkspace, createOpen, mobileMode, mobileTab, newDocumentOpen, selectedDate, selectedProjectId, selectedTaskId, today, workspaceOpen]);
 
   const openTask = (task: PlannerTask) => {
     setSelectedTaskId(task.page.id);
@@ -441,6 +453,12 @@ function V3DashboardContent() {
     <div className="v3-shell isolate font-sans" data-mobile-tab={mobileTab} style={shellStyle}>
       <WallpaperLayer />
       <LiquidGlassCanvas />
+      <V3GlobalToolbar
+        onOpenConfig={() => setConfigOpen(true)}
+        onOpenNewTask={() => setCreateOpen(true)}
+        onOpenRitual={() => setRitualOpen(true)}
+        onOpenSearch={() => setSearchOpen(true)}
+      />
       <V3Navigation dates={dates} selectedDate={selectedDate} projects={projects} selectedProjectId={selectedProjectId} onSelectDate={(date) => { setSelectedProjectId(null); setSelectedDate(date); }} onSelectProject={(projectId) => { setSelectedProjectId(projectId); setNewDocumentOpen(false); }} />
       <div className="v3-navigation-resize" data-testid="v3-navigation-resize-handle" aria-hidden="true">
         <DragHandle onDrag={resizeNavigation} widthPx={DASHBOARD_PANEL_GAP_PX} />
@@ -451,14 +469,6 @@ function V3DashboardContent() {
           className="v3-planner border border-glass-border glass-strong glass-chrome lg-rim"
           data-liquid-glass-webgl={plannerWebglActive ? "true" : undefined}
         >
-          <header className="v3-topbar">
-            <span className="v3-eyebrow">DAILY PLANNER · PROJECT MOUNTS · RUN CHAT</span><span className="v3-spacer" />
-            <button type="button" className="v3-button v3-button--ghost v3-ritual-trigger" aria-label="아침 정리" onClick={() => setRitualOpen(true)}>
-              <span className="v3-ritual-trigger-icon v3-emoji" aria-hidden="true">☀</span>
-              <span className="v3-ritual-trigger-label">아침 정리</span>
-            </button>
-            <button type="button" className="v3-button v3-button--primary" onClick={() => setCreateOpen(true)}>＋ 새 업무</button><ThemeToggle />
-          </header>
           {createOpen ? <NewTaskForm projects={projects} initialProjectId={selectedProjectId} pending={createPending} onCreate={(title, projectId) => { void createTask(title, projectId); }} onCancel={() => setCreateOpen(false)} /> : null}
           {selectedProject ? (
             <ProjectPlannerView state={project} sessions={sessions} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} onBack={() => setSelectedProjectId(null)} onOpenTask={openTask} onOpenDocument={(page) => window.location.assign(`/v2/pages/${encodeURIComponent(page.id)}`)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
@@ -468,49 +478,13 @@ function V3DashboardContent() {
         </div>
       </main>
       {workspaceOpen && selectedTask ? (
-        <TaskWorkspace task={selectedTask} projectTitle={projectTitle} sessions={sessions} runSessionLoadStates={runSessionResolution.loadStateById} activeSession={activeSession} chatOpen={chatOpen} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} sessionDefaults={sessionDefaults} mobileMode={mobileMode} mobileTab={mobileTab} onReturnToPlanner={returnToPlanner} onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }} onOpenBoard={openBoard} onOpenSession={openSession} onSaveDescription={saveDescription} onPromoteDocument={promoteDocument} onAcknowledgedReview={acknowledgeReview} />
+        <TaskWorkspace task={selectedTask} projectTitle={projectTitle} sessions={sessions} runSessionLoadStates={runSessionResolution.loadStateById} activeSession={activeSession} chatOpen={chatOpen} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} sessionDefaults={sessionDefaults} mobileMode={mobileMode} mobileTab={mobileTab} onReturnToToday={returnToPlanner} onCloseWorkspace={closeWorkspace} onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }} onOpenBoard={openBoard} onOpenSession={openSession} onSaveDescription={saveDescription} onPromoteDocument={promoteDocument} onTaskBlocksChanged={() => setRefreshKey((value) => value + 1)} onAcknowledgedReview={acknowledgeReview} />
       ) : null}
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
       <RitualModal open={ritualOpen} today={today} sessions={sessions} onClose={() => setRitualOpen(false)} onRefresh={() => setRefreshKey((value) => value + 1)} />
+      <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
+      <SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} />
       <div className={`v3-toast${toast ? " is-visible" : ""}`} role="status" aria-live="polite">{toast}</div>
     </div>
   );
-}
-
-function recentDates(today: string): PlannerDateNavItem[] {
-  const base = new Date(`${today}T12:00:00`);
-  return [0, 1, 2].map((offset) => {
-    const value = new Date(base);
-    value.setDate(base.getDate() - offset);
-    return { date: dateKey(value), label: offset === 0 ? "오늘" : offset === 1 ? "어제" : new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric", weekday: "short" }).format(value) };
-  });
-}
-
-function dateKey(value: Date): string {
-  return [value.getFullYear(), String(value.getMonth() + 1).padStart(2, "0"), String(value.getDate()).padStart(2, "0")].join("-");
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error && error.message ? error.message : String(error);
-}
-
-function buildMobileTaskOptions(
-  tasks: readonly PlannerTask[],
-  sessions: readonly SessionSummary[],
-): MobilePlannerTaskOption[] {
-  const seen = new Set<string>();
-  return tasks.flatMap((task) => {
-    if (seen.has(task.page.id)) return [];
-    seen.add(task.page.id);
-    const roots = buildRunTree(task.sessionIds, sessions);
-    return [{
-      taskId: task.page.id,
-      runIds: roots.flatMap(flattenRunIds),
-      latestRunId: roots[0]?.session.agentSessionId ?? null,
-    }];
-  });
-}
-
-function flattenRunIds(node: RunTreeNode): string[] {
-  return [node.session.agentSessionId, ...node.children.flatMap(flattenRunIds)];
 }

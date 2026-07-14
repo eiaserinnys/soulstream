@@ -3,7 +3,6 @@ import { ProfileAvatar, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
   buildRunTree,
-  isRunResumable,
   type RunSessionLoadState,
   type RunTreeNode,
 } from "./task-workspace-model";
@@ -42,7 +41,6 @@ export function TaskRunHistory({
     [runSessionLoadStates, sessionIds, sessions],
   );
   const currentSession = useMemo(() => latestTaskRun(sessionIds, sessions), [sessionIds, sessions]);
-  const [expandedSummary, setExpandedSummary] = useState<string | null>(null);
   const [successionOpen, setSuccessionOpen] = useState(false);
 
   return (
@@ -58,8 +56,6 @@ export function TaskRunHistory({
             key={node.session.agentSessionId}
             node={node}
             depth={0}
-            expandedSummary={expandedSummary}
-            onToggleSummary={(sessionId) => setExpandedSummary((current) => current === sessionId ? null : sessionId)}
             onOpenSession={onOpenSession}
           />
         ))}
@@ -84,14 +80,10 @@ export function TaskRunHistory({
 function RunNode({
   node,
   depth,
-  expandedSummary,
-  onToggleSummary,
   onOpenSession,
 }: {
   node: RunTreeNode;
   depth: number;
-  expandedSummary: string | null;
-  onToggleSummary(sessionId: string): void;
   onOpenSession(session: SessionSummary): void;
 }) {
   const { session } = node;
@@ -112,7 +104,6 @@ function RunNode({
   const failed = node.loadState === "failed";
   const title = failed ? runNumberLabel(node.runNumber) : sessionTitle(session);
   const status = failed ? "조회 실패" : statusLabel(session.status);
-  const expanded = expandedSummary === session.agentSessionId;
   const portraitUrl = failed ? null : sessionPortraitUrl(session);
   const preview = failed
     ? "세션 정보를 불러오지 못했습니다."
@@ -143,21 +134,12 @@ function RunNode({
             <time>{failed ? "" : formatRelativeSessionTime(session)}</time>
           </span>
         </button>
-        {!failed && isRunResumable(session) ? (
-          <button type="button" className="v3-run-action" onClick={() => onOpenSession(session)}>재개</button>
-        ) : null}
-        {!failed ? (
-          <button type="button" className="v3-run-action" aria-label={`${title} 요약`} aria-expanded={expanded} onClick={() => onToggleSummary(session.agentSessionId)}>ⓘ</button>
-        ) : null}
       </div>
-      {expanded ? <div className="v3-run-summary">{session.awaySummary?.trim() || "요약 없음"}</div> : null}
       {node.children.map((child) => (
         <RunNode
           key={child.session.agentSessionId}
           node={child}
           depth={depth + 1}
-          expandedSummary={expandedSummary}
-          onToggleSummary={onToggleSummary}
           onOpenSession={onOpenSession}
         />
       ))}

@@ -65,7 +65,7 @@ export function TaskDescriptionPanel({
   return (
     <button type="button" className="v3-description-preview" onClick={() => setEditing(true)}>
       <span className="v3-description-edit" aria-hidden="true">✎</span>
-      {markdown ? <MarkdownContent content={markdown} /> : <span className="v3-description-empty">클릭해 업무 설명을 작성하세요.</span>}
+      {markdown ? <MarkdownContent content={markdown} /> : <span className="v3-description-empty">클릭해서 업무 설명을 작성하세요.</span>}
     </button>
   );
 }

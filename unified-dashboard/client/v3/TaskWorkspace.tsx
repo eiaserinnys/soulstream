@@ -31,12 +31,14 @@ export function TaskWorkspace({
   sessionDefaults,
   mobileMode,
   mobileTab,
-  onReturnToPlanner,
+  onReturnToToday,
+  onCloseWorkspace,
   onCloseChat,
   onOpenBoard,
   onOpenSession,
   onSaveDescription,
   onPromoteDocument,
+  onTaskBlocksChanged,
   onAcknowledgedReview,
 }: {
   task: PlannerTask;
@@ -50,12 +52,14 @@ export function TaskWorkspace({
   sessionDefaults: PageSessionDefaults | null;
   mobileMode: boolean;
   mobileTab: MobilePlannerTab;
-  onReturnToPlanner(): void;
+  onReturnToToday(): void;
+  onCloseWorkspace(): void;
   onCloseChat(): void;
   onOpenBoard(): void;
   onOpenSession(session: SessionSummary): void;
   onSaveDescription(markdown: string): Promise<void>;
   onPromoteDocument(blockId: string): Promise<void>;
+  onTaskBlocksChanged(): void;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
 }) {
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -92,7 +96,7 @@ export function TaskWorkspace({
   };
 
   return (
-    <div className={`v3-workspace-scrim${chatOpen ? " is-chat-open" : ""}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onReturnToPlanner(); }}>
+    <div className={`v3-workspace-scrim${chatOpen ? " is-chat-open" : ""}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}>
       <div
         ref={workspaceRef}
         className={`v3-workspace${chatOpen ? " is-chat-open" : ""}`}
@@ -104,11 +108,13 @@ export function TaskWorkspace({
           sessions={sessions}
           runSessionLoadStates={runSessionLoadStates}
           sessionDefaults={sessionDefaults}
-          onReturnToPlanner={onReturnToPlanner}
+          onReturnToToday={onReturnToToday}
+          onCloseWorkspace={onCloseWorkspace}
           onOpenBoard={onOpenBoard}
           onOpenSession={onOpenSession}
           onSaveDescription={onSaveDescription}
           onPromoteDocument={onPromoteDocument}
+          onTaskBlocksChanged={onTaskBlocksChanged}
         />
         {chatOpen ? (
           <>

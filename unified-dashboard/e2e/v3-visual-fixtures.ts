@@ -360,6 +360,9 @@ export async function installV3VisualQaRoutes(
       auth: { enabled: false },
       features: { configModal: true, searchModal: true, nodePanel: true, nodeGuard: false },
     });
+    if (path === "/api/config/settings" && request.method() === "GET") {
+      return fulfillJson(route, { categories: [] });
+    }
     if (path === "/api/folders") return fulfillJson(route, {
       folders: [
         { id: "folder-amber", name: pages.project.title, parent_id: null },
