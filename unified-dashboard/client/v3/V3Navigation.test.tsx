@@ -16,13 +16,19 @@ describe("V3Navigation frame contract", () => {
         starredTasks={[]}
         starredTasksHasMore={false}
         starredTasksLoading={false}
+        todayTaskIds={new Set()}
+        completedTaskIds={new Set()}
         onLoadMoreStarredTasks={vi.fn()}
         onSelectDate={vi.fn()}
         onOpenReviewQueue={vi.fn()}
         onSelectFolder={vi.fn()}
         onSelectTask={vi.fn()}
+        onCompleteTask={vi.fn(async () => undefined)}
+        onToggleTaskToday={vi.fn(async () => undefined)}
         onCreateProject={vi.fn(async () => undefined)}
         onCreateTask={vi.fn()}
+        onRenameSession={vi.fn(async () => undefined)}
+        onDeleteSessions={vi.fn(async () => undefined)}
       />,
     );
 

@@ -1,11 +1,11 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { PageApiClient } from "@seosoyoung/soul-ui/page";
+import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
 import { moveBoardItemToContainer } from "../lib/board-workspace-operations";
 import { deleteSessions as deleteSessionRecords } from "../lib/delete-session";
 import { renameSessionOptimistic } from "../lib/rename-session";
-import type { PlannerTask } from "./planner-data";
+import { loadStarredPlannerTask, type PlannerTask } from "./planner-data";
 import type { TaskMoveTarget } from "./task-move-targets";
 import { completePlannerTask, togglePlannerTaskToday } from "./task-card-actions";
 import { publishTaskStarChange } from "./task-star-store";
@@ -72,6 +72,23 @@ export function useV3PlannerActions({
     });
   }, [api, invalidate, notify, setTaskTodayPresence, todayTaskIds]);
 
+  const resolveStarredTask = useCallback(async (page: PageDto) => {
+    try {
+      return await loadStarredPlannerTask(api, page);
+    } catch (error) {
+      notify(`별표 업무 불러오기 실패 · ${errorText(error)}`);
+      throw error;
+    }
+  }, [api, notify]);
+
+  const completeStarredTask = useCallback(async (page: PageDto) => {
+    await completeTask(await resolveStarredTask(page));
+  }, [completeTask, resolveStarredTask]);
+
+  const toggleStarredTaskToday = useCallback(async (page: PageDto) => {
+    await toggleTaskToday(await resolveStarredTask(page));
+  }, [resolveStarredTask, toggleTaskToday]);
+
   const renameSession = useCallback(async (sessionId: string, displayName: string | null) => {
     try {
       await renameSessionOptimistic(sessionId, displayName, { queryClient });
@@ -133,5 +150,5 @@ export function useV3PlannerActions({
     }
   }, [api, invalidate, notify]);
 
-  return { completeTask, toggleTaskToday, renameTaskTitle, renameSession, deleteSessions, moveSession, unmountDocument };
+  return { completeTask, toggleTaskToday, completeStarredTask, toggleStarredTaskToday, renameTaskTitle, renameSession, deleteSessions, moveSession, unmountDocument };
 }

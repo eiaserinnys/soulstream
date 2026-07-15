@@ -12,6 +12,7 @@ import { TaskInlineBoard } from "./TaskInlineBoard";
 import { TaskRunHistory } from "./TaskRunHistory";
 import { TaskTitleEditor } from "./TaskTitleEditor";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
+import { buildDocumentContextMenuActions } from "./context-menu-model";
 import "./v3-context-succession.css";
 import { useTaskStar } from "./use-task-star";
 
@@ -229,12 +230,13 @@ export function TaskDetailPane({
         <V3ContextMenu
           target={documentMenu?.target ?? null}
           onClose={() => setDocumentMenu(null)}
-          actions={documentMenu ? [
-            { label: "문서 열기", onSelect: () => onOpenDocument(documentMenu.pageId) },
-            { label: "페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(documentMenu.pageId) },
-            { label: "업무에서 마운트 해제", onSelect: () => onUnmountDocument(documentMenu.blockId), separatorBefore: true, destructive: true },
-            { label: "프로젝트로 승격", onSelect: () => promote(documentMenu.blockId), disabled: !task.projectPageId },
-          ] : []}
+          actions={documentMenu ? buildDocumentContextMenuActions({
+            open: () => onOpenDocument(documentMenu.pageId),
+            copyId: () => navigator.clipboard.writeText(documentMenu.pageId),
+            unmount: () => onUnmountDocument(documentMenu.blockId),
+            promote: () => promote(documentMenu.blockId),
+            canPromote: Boolean(task.projectPageId),
+          }) : []}
         />
 
         <TaskInlineBoard runbookId={task.runbookId} />

@@ -9,17 +9,11 @@ import {
   useIsMobile,
 } from "@seosoyoung/soul-ui";
 
+import type { V3ContextMenuAction } from "./context-menu-model";
+
 export interface V3ContextMenuTarget {
   x: number;
   y: number;
-}
-
-export interface V3ContextMenuAction {
-  label: string;
-  onSelect(): void | Promise<void>;
-  disabled?: boolean;
-  destructive?: boolean;
-  separatorBefore?: boolean;
 }
 
 export function V3ContextMenu({
