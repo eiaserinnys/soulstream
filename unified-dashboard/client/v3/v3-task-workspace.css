@@ -133,16 +133,16 @@
   display: flex;
   width: 100%;
   min-height: 92px;
-  border: 1px solid transparent;
-  border-radius: 11px;
-  padding: 12px 34px 12px 12px;
-  color: var(--foreground);
-  background: color-mix(in srgb, var(--muted) 72%, transparent);
   align-items: flex-start;
   justify-content: flex-start;
+  flex-direction: column;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  padding: 12px 12px 44px;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--muted) 72%, transparent);
   text-align: left;
   line-height: 1.65;
-  cursor: text;
 }
 
 .v3-description-preview:hover {
@@ -150,11 +150,23 @@
   background: var(--muted);
 }
 
-.v3-description-edit {
+.v3-description-content {
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: text;
+}
+
+.v3-description-actions {
   position: absolute;
-  top: 10px;
-  right: 12px;
-  color: var(--muted-foreground);
+  right: 8px;
+  bottom: 7px;
+  display: flex;
+  gap: 2px;
 }
 
 .v3-description-empty,
@@ -385,15 +397,9 @@
 
 .v3-review-banner strong { font-size: var(--font-size-xs); }
 .v3-review-banner small { font-size: var(--font-size-xs); }
-.v3-review-banner button {
-  border: 1px solid currentColor;
-  border-radius: 8px;
-  padding: 5px 8px;
-  color: inherit;
-  background: transparent;
+.v3-review-banner [data-slot="button"] {
   font-size: var(--font-size-xs);
   font-weight: 800;
-  cursor: pointer;
 }
 
 @media (max-width: 760px) {

@@ -1,10 +1,18 @@
 import {
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
-import { useGlassSurface } from "@seosoyoung/soul-ui";
+import {
+  Button,
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogPanel,
+  DialogPopup,
+  DialogTitle,
+} from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { createPlannerDataDependencies } from "./planner-data";
@@ -15,6 +23,7 @@ import {
   type RitualAction,
   type RitualQueueItem,
 } from "./ritual-model";
+import { V3ErrorNotice } from "./V3ErrorNotice";
 import "./ritual.css";
 
 type RitualLoadState =
@@ -44,11 +53,6 @@ export function RitualModal({
   const [index, setIndex] = useState(0);
   const [processing, setProcessing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const closeButton = useRef<HTMLButtonElement | null>(null);
-  const modalRef = useRef<HTMLElement>(null);
-  const modalWebglActive = useGlassSurface(modalRef, { enabled: open });
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open || loadState.status !== "idle") return;
@@ -60,24 +64,10 @@ export function RitualModal({
     }).then((data) => {
       setLoadState({ status: "ready", data });
     }).catch((error: unknown) => {
+      console.error("[v3/ritual] 아침 정리 조회 실패", error);
       setLoadState({ status: "error", message: errorText(error) });
     });
   }, [api, loadState.status, open, plannerDependencies, today]);
-
-  useEffect(() => {
-    if (!open) return;
-    closeButton.current?.focus();
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      onCloseRef.current();
-    };
-    document.addEventListener("keydown", handleKeyDown, true);
-    return () => document.removeEventListener("keydown", handleKeyDown, true);
-  }, [open]);
-
-  if (!open) return null;
 
   const data = loadState.status === "ready" ? loadState.data : null;
   const item = data?.items[index] ?? null;
@@ -98,6 +88,7 @@ export function RitualModal({
       );
       setIndex((value) => value + 1);
     } catch (error) {
+      console.error("[v3/ritual] 이월 업무 변경 실패", error);
       setActionError(errorText(error));
     } finally {
       setProcessing(false);
@@ -117,25 +108,25 @@ export function RitualModal({
   };
 
   return (
-    <div className="v3-ritual-overlay" role="dialog" aria-modal="true" aria-labelledby="v3-ritual-title">
-      <section
-        ref={modalRef}
-        className="v3-ritual-modal border border-glass-border glass-strong glass-chrome lg-rim"
-        data-liquid-glass-webgl={modalWebglActive ? "true" : undefined}
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogPopup
+        className="v3-ritual-modal max-w-[520px]"
+        closeProps={{ "aria-label": "아침 정리 닫기" }}
       >
-        <header className="v3-ritual-head">
+        <DialogHeader className="v3-ritual-head">
           <span className="v3-ritual-icon v3-emoji" aria-hidden="true">☀️</span>
           <div>
-            <h2 id="v3-ritual-title">어제에서 넘어온 것</h2>
-            <p>하나씩 결정하면 오늘 플래너가 가벼워집니다.</p>
+            <DialogTitle>어제에서 넘어온 것</DialogTitle>
+            <DialogDescription>하나씩 결정하면 오늘 플래너가 가벼워집니다.</DialogDescription>
           </div>
-          <button ref={closeButton} type="button" aria-label="아침 정리 닫기" onClick={onClose}>×</button>
-        </header>
-        <div className="v3-ritual-body">
+        </DialogHeader>
+        <DialogPanel className="v3-ritual-body" scrollFade={false}>
           {loadState.status === "loading" ? <RitualMessage text="이월할 항목을 모으는 중…" /> : null}
           {loadState.status === "error" ? (
-            <RitualMessage text={`아침 정리를 불러오지 못했습니다 · ${loadState.message}`}>
-              <button type="button" className="v3-button v3-button--primary" onClick={() => setLoadState({ status: "idle" })}>다시 시도</button>
+            <RitualMessage>
+              <V3ErrorNotice message="아침 정리를 불러오지 못했습니다." detail={loadState.message}>
+                <Button onClick={() => setLoadState({ status: "idle" })}>다시 시도</Button>
+              </V3ErrorNotice>
             </RitualMessage>
           ) : null}
           {data ? (
@@ -146,9 +137,9 @@ export function RitualModal({
                   <h3>오늘 준비 완료</h3>
                   <p>결정한 이월 업무를 오늘 플래너에 반영했습니다.</p>
                   {reviewCount > 0 ? (
-                    <button type="button" className="v3-ritual-review-link" onClick={openReviewQueue}>
+                    <Button variant="link" className="v3-ritual-review-link" onClick={openReviewQueue}>
                       검수 대기 {reviewCount}건 → 검수 패널
-                    </button>
+                    </Button>
                   ) : null}
                 </div>
               ) : item ? (
@@ -159,9 +150,9 @@ export function RitualModal({
               ) : null}
             </>
           ) : null}
-        </div>
+        </DialogPanel>
         {data ? (
-          <footer className="v3-ritual-footer">
+          <DialogFooter className="v3-ritual-footer">
             <div className="v3-ritual-progress-row">
               <div className="v3-ritual-progress" role="progressbar" aria-label="아침 정리 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={complete ? 100 : progress}>
                 <span style={{ width: `${complete ? 100 : progress}%` }} />
@@ -169,9 +160,9 @@ export function RitualModal({
               <strong>{complete ? `${data.items.length} / ${data.items.length}` : `${index + 1} / ${data.items.length}`}</strong>
             </div>
             {complete ? (
-              <button type="button" className="v3-button v3-button--primary v3-ritual-finish" onClick={finish}>
+              <Button className="v3-ritual-finish" onClick={finish}>
                 플래너 열기
-              </button>
+              </Button>
             ) : item ? (
               <RitualActions
                 item={item}
@@ -179,10 +170,10 @@ export function RitualModal({
                 onAction={(action) => { void handleAction(action); }}
               />
             ) : null}
-          </footer>
+          </DialogFooter>
         ) : null}
-      </section>
-    </div>
+      </DialogPopup>
+    </Dialog>
   );
 }
 
@@ -201,7 +192,7 @@ function RitualItemCard({
         <p>{item.description}</p>
         <small>◉ {item.agentLabel}</small>
       </article>
-      {error ? <p className="v3-ritual-error" role="alert">{error}</p> : null}
+      {error ? <V3ErrorNotice className="v3-ritual-error" message="업무 상태를 바꾸지 못했습니다." detail={error} /> : null}
     </>
   );
 }
@@ -217,15 +208,15 @@ function RitualActions({
 }) {
   return (
     <div className="v3-ritual-actions">
-      <button type="button" disabled={processing} className="v3-button v3-button--primary" onClick={() => onAction("today")}>오늘로</button>
-      <button type="button" disabled={processing} className="v3-button v3-button--ghost" onClick={() => onAction("later")}>미루기</button>
-      <button type="button" disabled={processing} className="v3-button v3-button--soft" onClick={() => onAction("done")}>완료 처리</button>
+      <Button disabled={processing} onClick={() => onAction("today")}>오늘로</Button>
+      <Button disabled={processing} variant="ghost" onClick={() => onAction("later")}>미루기</Button>
+      <Button disabled={processing} variant="success" onClick={() => onAction("done")}>완료 처리</Button>
     </div>
   );
 }
 
-function RitualMessage({ text, children }: { text: string; children?: React.ReactNode }) {
-  return <div className="v3-ritual-message"><p>{text}</p>{children}</div>;
+function RitualMessage({ text, children }: { text?: string; children?: React.ReactNode }) {
+  return <div className="v3-ritual-message">{text ? <p>{text}</p> : null}{children}</div>;
 }
 
 function errorText(error: unknown): string {

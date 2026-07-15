@@ -117,16 +117,16 @@ export function TaskDetailPane({
       <header className="v3-workspace-toolbar">
         <button type="button" className="v3-workspace-back" onClick={onReturnToToday}>← 오늘로</button>
         <span className="v3-spacer" />
-        <button
-          type="button"
-          className="v3-button v3-button--ghost v3-task-detail-star"
+        <Button
+          variant="ghost"
+          className="v3-task-detail-star"
           aria-pressed={taskStar.starred}
           disabled={taskStar.pending}
           title={taskStar.error ?? undefined}
           onClick={() => { void taskStar.toggle(); }}
         >
           {taskStar.starred ? "★ 별표됨" : "☆ 별표하기"}
-        </button>
+        </Button>
         <button type="button" className="v3-button v3-button--soft" onClick={onOpenBoard}>▦ 보드</button>
         <button type="button" className="v3-workspace-close" aria-label="업무 상세 닫기" onClick={onCloseWorkspace}>×</button>
       </header>
@@ -194,15 +194,15 @@ export function TaskDetailPane({
                 }}
               >
                 <span>{document.page.title}</span>
-                <button
-                  type="button"
-                  className="v3-button v3-button--ghost"
+                <Button
+                  variant="secondary"
+                  size="sm"
                   disabled={!task.projectPageId || promotingId === document.blockId}
                   title={task.projectPageId ? "업무의 문서 마운트를 프로젝트 페이지로 이동합니다" : "프로젝트에 속한 업무만 승격할 수 있습니다"}
                   onClick={() => { void promote(document.blockId); }}
                 >
                   {promotingId === document.blockId ? "승격 중…" : "프로젝트로 승격"}
-                </button>
+                </Button>
               </div>
             ))}
             {task.mountedDocuments.length === 0 ? <p className="v3-detail-empty">마운트된 문서가 없습니다.</p> : null}

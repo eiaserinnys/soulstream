@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Button,
   Dialog,
   DialogDescription,
   DialogFooter,
@@ -150,10 +151,10 @@ export function NewTaskForm({
           </div>
         </DialogPanel>
         <DialogFooter>
-          <button type="button" className="v3-button v3-button--ghost" onClick={onCancel} disabled={pending}>취소</button>
-          <button type="button" className="v3-button v3-button--primary" onClick={submit} disabled={pending || !title.trim() || !folderId}>
+          <Button variant="ghost" onClick={onCancel} disabled={pending}>취소</Button>
+          <Button onClick={submit} disabled={pending || !title.trim() || !folderId}>
             {pending ? "만드는 중…" : "업무 만들기"}
-          </button>
+          </Button>
         </DialogFooter>
       </DialogPopup>
     </Dialog>

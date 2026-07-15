@@ -123,6 +123,17 @@ describe("planner BFF data", () => {
       },
     );
   });
+
+  it("preserves the server detail for the collapsed planner error disclosure", async () => {
+    const fetchImplementation = vi.fn(async () => new Response(
+      JSON.stringify({ detail: "PostgreSQL connection refused at internal-host:5432" }),
+      { status: 503, headers: { "Content-Type": "application/json" } },
+    ));
+    const dependencies = createPlannerDataDependencies(fetchImplementation);
+
+    await expect(dependencies.fetchPlanner("/api/planner/today?date=2026-07-14"))
+      .rejects.toThrow("PostgreSQL connection refused at internal-host:5432");
+  });
 });
 
 function pageApiThatMustStayIdle(): PageApiClient {

@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
-import type { SessionSummary } from "@seosoyoung/soul-ui";
+import { Button, type SessionSummary } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 
 import {
@@ -8,7 +8,12 @@ import {
 } from "./planner-model";
 import type { PlannerTask } from "./planner-data";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
+import {
+  singleLinePreview,
+  TASK_TITLE_PREVIEW_LENGTH,
+} from "./session-preview";
 import { useTaskStar } from "./use-task-star";
+import "./v3-content-boundary.css";
 
 export function PlannerTaskCard({
   task,
@@ -58,7 +63,13 @@ export function PlannerTaskCard({
           </span>
           <span className="v3-task-id">{task.runbookId.slice(0, 8)}</span>
         </div>
-        <h3>{task.page.title}</h3>
+        <h3
+          className="v3-text-clamp-2"
+          aria-label={task.page.title}
+          title={task.page.title}
+        >
+          {singleLinePreview(task.page.title, TASK_TITLE_PREVIEW_LENGTH)}
+        </h3>
         <div className="v3-task-meta">
           <span className="v3-agent-dot" aria-hidden="true">
             {task.assignee.slice(0, 1)}
@@ -68,8 +79,9 @@ export function PlannerTaskCard({
         </div>
       </div>
       <div className="v3-task-side">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-sm"
           className="v3-task-star-toggle"
           aria-label={`${task.page.title} ${taskStar.starred ? "별표 해제" : "별표 추가"}`}
           aria-pressed={taskStar.starred}
@@ -77,7 +89,7 @@ export function PlannerTaskCard({
           onClick={(event) => { event.stopPropagation(); void taskStar.toggle(); }}
         >
           {taskStar.starred ? "★" : "☆"}
-        </button>
+        </Button>
         <span className="v3-run-line">
           {run ? `run #${run.number} ${runState}` : "run 0 · 시작 전"}
           {run?.session.status === "running" ? <i aria-label="실행 중" /> : null}

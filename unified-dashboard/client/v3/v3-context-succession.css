@@ -219,23 +219,12 @@
   gap: 6px;
 }
 
-.v3-context-create-page button {
-  border: 1px solid var(--glass-border);
-  border-radius: 8px;
-  color: var(--foreground);
-  background: var(--muted);
+.v3-context-create-page [data-slot="button"] {
   font-size: var(--font-size-xs);
   font-weight: 760;
-  cursor: pointer;
 }
 
-.v3-context-create-page button:disabled {
-  opacity: .5;
-  cursor: default;
-}
-
-.v3-context-error,
-.v3-succession-error {
+.v3-context-error {
   margin: 0 10px 8px;
   border: 1px solid color-mix(in srgb, var(--destructive) 35%, var(--border));
   border-radius: 8px;
@@ -246,13 +235,7 @@
 }
 
 .v3-succession-error {
-  position: fixed;
-  z-index: 130;
-  right: 24px;
-  bottom: 24px;
-  max-width: min(420px, calc(100vw - 48px));
-  margin: 0;
-  box-shadow: var(--lg-shadow);
+  margin-top: 10px;
 }
 
 .v3-context-footer {
@@ -270,35 +253,20 @@
   font-size: var(--font-size-xs);
 }
 
-.v3-succession-overlay {
-  position: fixed;
-  z-index: 120;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 18px;
-  background: color-mix(in srgb, var(--background) 45%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-}
-
 .v3-succession-modal {
-  width: min(520px, 100%);
-  max-height: calc(100vh - 36px);
-  overflow-y: auto;
   border-radius: 17px;
 }
 
-.v3-succession-modal > header {
+.v3-succession-head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 11px;
   border-bottom: 1px solid var(--border);
-  padding: 15px 17px;
+  padding: 15px 52px 15px 17px;
 }
 
-.v3-succession-modal > header > span {
+.v3-succession-head > span {
   display: grid;
   width: 34px;
   height: 34px;
@@ -319,18 +287,10 @@
   line-height: var(--font-size-xl--line-height);
 }
 
-.v3-succession-modal header p {
+.v3-succession-head p {
   margin-top: 3px;
   color: var(--muted-foreground);
   font-size: var(--font-size-xs);
-}
-
-.v3-succession-modal header button {
-  border: 0;
-  color: var(--muted-foreground);
-  background: transparent;
-  font-size: 22px;
-  cursor: pointer;
 }
 
 .v3-succession-body {
@@ -429,7 +389,7 @@
   margin-top: 8px;
 }
 
-.v3-succession-modal > footer {
+.v3-succession-footer {
   display: flex;
   justify-content: flex-end;
   gap: 8px;

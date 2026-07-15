@@ -76,10 +76,43 @@ export function createPlannerDataDependencies(
         credentials: "same-origin",
         headers: { Accept: "application/json" },
       });
-      if (!response.ok) throw new Error(`플래너를 불러오지 못했습니다 (${response.status})`);
+      if (!response.ok) {
+        const detail = await plannerResponseDetail(response);
+        throw new Error([
+          `플래너 요청 실패 (${response.status})`,
+          detail,
+        ].filter(Boolean).join("\n"));
+      }
       return await response.json();
     },
   };
+}
+
+async function plannerResponseDetail(response: Response): Promise<string | null> {
+  let raw: string;
+  try {
+    raw = await response.text();
+  } catch {
+    return null;
+  }
+  if (!raw.trim()) return null;
+  try {
+    const payload = JSON.parse(raw) as unknown;
+    if (typeof payload === "string") return payload;
+    if (!payload || typeof payload !== "object") return raw;
+    const record = payload as Record<string, unknown>;
+    const detail = record.detail;
+    if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object") {
+      const message = (detail as Record<string, unknown>).message;
+      if (typeof message === "string") return message;
+    }
+    if (typeof record.error === "string") return record.error;
+    if (typeof record.message === "string") return record.message;
+    return raw;
+  } catch {
+    return raw;
+  }
 }
 
 export async function loadDailyPlanner(

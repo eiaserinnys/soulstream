@@ -1,5 +1,6 @@
 import { useMemo, useState, type MouseEvent } from "react";
 import {
+  Button,
   Dialog,
   DialogHeader,
   DialogPanel,
@@ -166,9 +167,10 @@ export function TaskRunHistory({
           <DialogPanel>
             <div className="v3-run-move-targets">
               {visibleMoveTargets.map((target) => (
-                <button
-                  type="button"
+                <Button
                   key={target.runbookId}
+                  variant="choice"
+                  className="min-h-11 w-full justify-between px-3 py-2.5"
                   disabled={movePending}
                   onClick={() => {
                     if (!moveSessionId) return;
@@ -181,7 +183,7 @@ export function TaskRunHistory({
                   }}
                 >
                   <strong>{target.page.title}</strong><small>{target.runbookId.slice(0, 8)}</small>
-                </button>
+                </Button>
               ))}
             </div>
             {moveError ? <p className="v3-load-error" role="alert">{moveError}</p> : null}

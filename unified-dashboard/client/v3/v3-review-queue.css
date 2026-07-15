@@ -20,7 +20,7 @@
   gap: 6px;
 }
 
-.v3-review-queue-list .v3-run-row-actions .v3-button {
+.v3-review-queue-list .v3-run-row-actions [data-slot="button"] {
   min-height: 32px;
   white-space: nowrap;
 }

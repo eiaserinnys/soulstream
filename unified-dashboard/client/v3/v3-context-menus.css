@@ -61,19 +61,10 @@
 }
 
 .v3-run-move-targets button {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--lg-line);
-  border-radius: 12px;
   text-align: left;
-}
-
-.v3-run-move-targets button:hover {
-  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 .v3-run-move-targets small {

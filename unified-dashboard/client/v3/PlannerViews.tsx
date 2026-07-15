@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
-import { useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
+import { Button, useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import { DailyMemo } from "./DailyMemo";
 import { PlannerTaskCard } from "./PlannerTaskCard";
@@ -14,6 +14,7 @@ import type {
   PlannerTask,
   ProjectPlannerData,
 } from "./planner-data";
+import { V3ErrorNotice } from "./V3ErrorNotice";
 
 export type PlannerLoadState<T> =
   | { status: "loading"; data: T | null; message: null }
@@ -155,6 +156,7 @@ export function ProjectPlannerView({
     void fetchProjectPageDetails(projectId).then((loaded) => {
       if (active) setDetails({ status: "ready", data: loaded, message: null });
     }).catch((error: unknown) => {
+      console.error("[v3/planner] 프로젝트 컨텍스트 조회 실패", error);
       if (active) setDetails({ status: "error", data: null, message: errorText(error) });
     });
     return () => { active = false; };
@@ -175,7 +177,11 @@ export function ProjectPlannerView({
       ) : details.status === "loading" ? (
         <section className="v3-project-context" aria-busy="true">프로젝트 컨텍스트를 불러오는 중…</section>
       ) : details.status === "error" ? (
-        <section className="v3-project-context v3-project-star-error" role="alert">{details.message}</section>
+        <V3ErrorNotice
+          className="v3-project-context v3-project-star-error"
+          message="프로젝트 컨텍스트를 불러오지 못했습니다."
+          detail={details.message}
+        />
       ) : null}
       <section
         ref={documentSurfaceRef}
@@ -195,7 +201,7 @@ export function ProjectPlannerView({
               onChange={(event) => onNewDocumentTitle(event.target.value)}
               onKeyDown={(event) => { if (event.key === "Enter") onCreateDocument(); }}
             />
-            <button type="button" className="v3-button v3-button--primary" onClick={onCreateDocument}>만들기</button>
+            <Button onClick={onCreateDocument}>만들기</Button>
           </div>
         ) : null}
         <div className="v3-document-list">
@@ -258,7 +264,13 @@ export function EmptyProjectPlannerView({ title }: { title: string }) {
 }
 
 function LoadError({ message }: { message: string }) {
-  return <div className="v3-load-error" role="alert">{message}</div>;
+  return (
+    <V3ErrorNotice
+      className="v3-load-error"
+      message="플래너를 불러오지 못했습니다."
+      detail={message}
+    />
+  );
 }
 
 function EmptyState({ text }: { text: string }) {
