@@ -9,18 +9,9 @@ const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
 const outputRoot = path.resolve(
   process.env.PR_AI_QA_OUTPUT ?? path.join("e2e", "screenshots", "v3-succession-picker"),
 );
-const playwrightModule = process.env.PR_AI_PLAYWRIGHT_MODULE;
-const launchBrowser = playwrightModule
-  ? async (launchOptions: Record<string, unknown>) => {
-      const { chromium } = await import(playwrightModule);
-      return chromium.launch(launchOptions);
-    }
-  : undefined;
-
 const result = await runPlaywrightLifecycle({
   lockName: "pr-ai-v3-succession-picker",
   timeoutMs: 180_000,
-  ...(launchBrowser ? { launchBrowser } : {}),
 }, async ({ browser }) => ({
   dark: await verifyTheme(browser, "dark"),
   light: await verifyTheme(browser, "light"),
