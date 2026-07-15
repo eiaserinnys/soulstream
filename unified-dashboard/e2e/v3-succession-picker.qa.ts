@@ -9,10 +9,18 @@ const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
 const outputRoot = path.resolve(
   process.env.PR_AI_QA_OUTPUT ?? path.join("e2e", "screenshots", "v3-succession-picker"),
 );
+const playwrightModule = process.env.PR_AI_PLAYWRIGHT_MODULE;
+const launchBrowser = playwrightModule
+  ? async (launchOptions: Record<string, unknown>) => {
+      const { chromium } = await import(playwrightModule);
+      return chromium.launch(launchOptions);
+    }
+  : undefined;
 
 const result = await runPlaywrightLifecycle({
   lockName: "pr-ai-v3-succession-picker",
   timeoutMs: 180_000,
+  ...(launchBrowser ? { launchBrowser } : {}),
 }, async ({ browser }) => ({
   dark: await verifyTheme(browser, "dark"),
   light: await verifyTheme(browser, "light"),
@@ -53,7 +61,14 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible" });
     await page.getByTestId("v3-task-task-alpha").click();
-    await page.getByRole("heading", { name: fixtureTitles.primaryTask, level: 2 }).waitFor({ state: "visible" });
+    try {
+      await page.locator(".v3-task-title-button").filter({ hasText: fixtureTitles.primaryTask }).waitFor({ state: "visible", timeout: 10_000 });
+    } catch (error) {
+      console.error(`[pr-ai/qa] 업무 진입 실패 URL · ${page.url()}`);
+      console.error(`[pr-ai/qa] 업무 진입 실패 본문 · ${(await page.locator("body").textContent() ?? "").slice(0, 2_000)}`);
+      await capture(page, theme, "diagnostic-task-open-failure");
+      throw error;
+    }
     await page.locator(".v3-run-row").filter({ hasText: "run #3" }).waitFor({ state: "visible" });
     await page.getByRole("button", { name: "＋ 새 세션" }).click();
 
@@ -83,14 +98,19 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       "승계 링크로 기록됨",
     ]) assert(!modalText.includes(forbidden), `삭제 대상 문구가 남았습니다: ${forbidden}`);
 
+    await page.getByRole("combobox", { name: "기본 실행 에이전트" })
+      .locator('option[value="roselin_codex"]')
+      .filter({ hasText: "로젤린" })
+      .waitFor({ state: "attached" });
     await installMutationCounters(page);
     const agentRequestsBeforeObservation = agentRequests.length;
     const sessionRequestsBeforeObservation = sessionListRequests;
     await page.waitForTimeout(31_000);
     const mutations = await readMutationCounters(page);
+    const agentRefetchesDuringObservation = agentRequests.length - agentRequestsBeforeObservation;
     assert(mutations.agent === 0, `에이전트 콤보 DOM 변이 ${mutations.agent}회`);
     assert(mutations.runs === 0, `배경 run 목록 DOM 변이 ${mutations.runs}회`);
-    assert(agentRequests.length === agentRequestsBeforeObservation, `에이전트 목록 재조회 ${agentRequests.length - agentRequestsBeforeObservation}회`);
+    assert(agentRefetchesDuringObservation === 0, `에이전트 목록 재조회 ${agentRefetchesDuringObservation}회`);
 
     await page.getByRole("combobox", { name: "기본 실행 노드" }).selectOption("qa-node");
     await page.getByRole("combobox", { name: "기본 실행 에이전트" }).selectOption("qa-agent");
@@ -110,7 +130,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       observedMs: 31_000,
       agentMutations: mutations.agent,
       runMutations: mutations.runs,
-      agentRefetches: agentRequests.length - agentRequestsBeforeObservation,
+      agentRefetchesDuringObservation,
       sessionRequestsDuringObservation: sessionListRequests - sessionRequestsBeforeObservation,
       predecessorRoundtrip: createPayload?.predecessor_session_id,
       nodeChangeAgentRefresh: agentRequests.at(-1),
