@@ -7,6 +7,8 @@ const LAYOUT_PATH = fileURLToPath(new URL("./V3DashboardLayout.tsx", import.meta
 const PLANNER_CSS_PATH = fileURLToPath(new URL("./v3-planner.css", import.meta.url));
 const WORKSPACE_CSS_PATH = fileURLToPath(new URL("./v3-task-workspace.css", import.meta.url));
 const BOARD_CSS_PATH = fileURLToPath(new URL("./v3-task-board.css", import.meta.url));
+const RUN_HISTORY_PATH = fileURLToPath(new URL("./TaskRunHistory.tsx", import.meta.url));
+const CONTEXT_CSS_PATH = fileURLToPath(new URL("./v3-context-succession.css", import.meta.url));
 
 function ruleBody(css: string, selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -60,5 +62,14 @@ describe("v3 panel scroll contract", () => {
     expect(ruleBody(boardCss, ".v3-full-board")).toMatch(/overflow:\s*hidden/);
     expect(ruleBody(css, ".v3-chat-content")).toMatch(/min-height:\s*0/);
     expect(ruleBody(css, ".v3-chat-content")).toMatch(/flex:\s*1/);
+  });
+
+  it("raises the nested run move dialog above the task workspace", () => {
+    const source = readFileSync(RUN_HISTORY_PATH, "utf8");
+    const css = readFileSync(CONTEXT_CSS_PATH, "utf8");
+
+    expect(source).toContain('className="v3-run-move-dialog max-w-md"');
+    expect(css).toMatch(/body:has\(\.v3-run-move-dialog\)[^{]*dialog-backdrop[^}]*z-index:\s*90/s);
+    expect(css).toMatch(/body:has\(\.v3-run-move-dialog\)[^{]*dialog-viewport[^}]*z-index:\s*90/s);
   });
 });
