@@ -198,8 +198,8 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   },
   {
     methods: ["GET"],
-    path: "/api/planner/project-index",
-    name: "list_planner_projects",
+    path: "/api/planner/starred-tasks",
+    name: "list_planner_starred_tasks",
     authRequired: true,
     family: "page_yjs",
   },

@@ -1,20 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
+import { useEffect, useRef, useState } from "react";
+import type { PageDto } from "@seosoyoung/soul-ui/page";
 import { useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import { DailyMemo } from "./DailyMemo";
 import { PlannerTaskCard } from "./PlannerTaskCard";
-import { setProjectStarred } from "./project-star-actions";
 import {
   fetchProjectPageDetails,
-  type ProjectPageDetails,
+  type ProjectPageSnapshot,
 } from "./project-page-details";
-import {
-  applyProjectStarChanges,
-  projectStarredState,
-  publishProjectStarChange,
-  useProjectStarChanges,
-} from "./project-star-store";
+import { ProjectContextEditor } from "./ProjectContextEditor";
 import type {
   DailyPlannerData,
   PlannerTask,
@@ -29,9 +23,7 @@ export type PlannerLoadState<T> =
 export function DailyPlannerView({
   state,
   selectedDate,
-  reviewSessions,
   sessions,
-  onOpenReview,
   onSaveMemo,
   onOpenProject,
   onOpenTask,
@@ -40,20 +32,15 @@ export function DailyPlannerView({
 }: {
   state: PlannerLoadState<DailyPlannerData>;
   selectedDate: string;
-  reviewSessions: readonly SessionSummary[];
   sessions: readonly SessionSummary[];
-  onOpenReview(session: SessionSummary): void;
   onSaveMemo(blockId: string | null, text: string): void;
   onOpenProject(projectId: string): void;
   onOpenTask(task: PlannerTask): void;
   onCompleteTask(task: PlannerTask): Promise<void>;
   onToggleTaskToday(task: PlannerTask): Promise<void>;
 }) {
-  const reviewSurfaceRef = useRef<HTMLDivElement>(null);
-  const reviewWebglActive = useGlassSurface(reviewSurfaceRef, { enabled: true });
   const data = state.data;
-  const starChanges = useProjectStarChanges();
-  const visibleProjects = applyProjectStarChanges(data?.projects ?? [], starChanges);
+  const visibleProjects = data?.projects ?? [];
   const visibleProjectIds = new Set(visibleProjects.map((project) => project.id));
   const groups = data ? [
     ...visibleProjects.map((project) => ({
@@ -70,20 +57,6 @@ export function DailyPlannerView({
 
   return (
     <>
-      {reviewSessions.length > 0 ? (
-        <div
-          ref={reviewSurfaceRef}
-          className="v3-review-strip border border-glass-border glass-strong glass-chrome lg-rim"
-          data-liquid-glass-webgl={reviewWebglActive ? "true" : undefined}
-        >
-          <strong><span className="v3-emoji" aria-hidden="true">📥</span> 검수 대기 {reviewSessions.length}</strong>
-          {reviewSessions.map((session) => (
-            <button type="button" key={session.agentSessionId} onClick={() => onOpenReview(session)}>
-              {session.displayName ?? session.prompt ?? session.agentSessionId}
-            </button>
-          ))}
-        </div>
-      ) : null}
       <div className="v3-date-head">
         <div><span>DAILY</span><h1>{formatLongDate(selectedDate)}</h1></div>
         <p>{state.status === "loading" ? "플래너를 불러오는 중…" : `${data?.tasks.length ?? 0}개의 업무`}</p>
@@ -161,23 +134,21 @@ export function ProjectPlannerView({
   const documentSurfaceRef = useRef<HTMLElement>(null);
   const documentWebglActive = useGlassSurface(documentSurfaceRef, { enabled: true });
   const data = state.data;
-  const api = useMemo(() => createPageApiClient(), []);
-  const starChanges = useProjectStarChanges();
-  const starred = data
-    ? projectStarredState(data.project.id, starChanges, data.project.metadata.starred === true)
-    : false;
-  const [starPending, setStarPending] = useState(false);
-  const [starMessage, setStarMessage] = useState<string | null>(null);
   const [details, setDetails] = useState<{
     status: "loading" | "ready" | "error";
-    data: ProjectPageDetails | null;
+    data: ProjectPageSnapshot | null;
     message: string | null;
   }>({ status: "loading", data: null, message: null });
 
+  const refreshDetails = async () => {
+    if (!data) return;
+    const loaded = await fetchProjectPageDetails(data.project.id);
+    setDetails({ status: "ready", data: loaded, message: null });
+  };
   useEffect(() => {
+    let active = true;
     const projectId = data?.project.id;
     if (!projectId) return;
-    let active = true;
     setDetails({ status: "loading", data: null, message: null });
     void fetchProjectPageDetails(projectId).then((loaded) => {
       if (active) setDetails({ status: "ready", data: loaded, message: null });
@@ -187,45 +158,23 @@ export function ProjectPlannerView({
     return () => { active = false; };
   }, [data?.project.id]);
 
-  const toggleProjectStar = async () => {
-    if (!data || starPending) return;
-    const next = !starred;
-    if (!next && !window.confirm(`“${data.project.title}” 프로젝트를 ★ 작업에서 숨길까요?\n전체 프로젝트에는 계속 남습니다.`)) return;
-    setStarPending(true);
-    setStarMessage(null);
-    try {
-      const updated = await setProjectStarred(api, data.project.id, next);
-      publishProjectStarChange({ page: updated, starred: next });
-      setStarMessage(next ? "★ 작업에 추가했습니다." : "★ 작업에서 숨겼습니다. 전체 프로젝트에는 남아 있습니다.");
-    } catch (cause) {
-      setStarMessage(`별표 변경 실패 · ${errorText(cause)}`);
-    } finally {
-      setStarPending(false);
-    }
-  };
-
   return (
     <>
       <div className="v3-date-head v3-project-title">
         <div>
           <button type="button" className="v3-button v3-button--ghost" onClick={onBack}>← 오늘</button>
           <h1>{data?.project.title ?? "프로젝트"}</h1>
-          <button
-            type="button"
-            className={`v3-button v3-project-header-star ${starred ? "v3-button--soft" : "v3-button--ghost"}`}
-            aria-pressed={starred}
-            disabled={!data || starPending}
-            onClick={() => { void toggleProjectStar(); }}
-          >
-            {starred ? "★ 별표됨" : "☆ 별표하기"}
-          </button>
         </div>
-        <p className={starMessage?.includes("실패") ? "v3-project-star-error" : undefined}>
-          {starMessage ?? "프로젝트에 누적된 업무와 문서 · 최근순"}
-        </p>
+        <p>프로젝트에 누적된 업무와 문서 · 최근순</p>
       </div>
       {state.status === "error" ? <LoadError message={state.message} /> : null}
-      {data ? <ProjectContextSummary state={details} /> : null}
+      {data && details.status === "ready" && details.data ? (
+        <ProjectContextEditor pageId={data.project.id} snapshot={details.data} onChanged={refreshDetails} />
+      ) : details.status === "loading" ? (
+        <section className="v3-project-context" aria-busy="true">프로젝트 컨텍스트를 불러오는 중…</section>
+      ) : details.status === "error" ? (
+        <section className="v3-project-context v3-project-star-error" role="alert">{details.message}</section>
+      ) : null}
       <section
         ref={documentSurfaceRef}
         className="v3-documents border border-glass-border glass-strong glass-chrome lg-rim"
@@ -297,48 +246,11 @@ export function ProjectPlannerView({
   );
 }
 
-function ProjectContextSummary({
-  state,
-}: {
-  state: {
-    status: "loading" | "ready" | "error";
-    data: ProjectPageDetails | null;
-    message: string | null;
-  };
-}) {
-  if (state.status === "loading") {
-    return <section className="v3-project-context" aria-busy="true">프로젝트 컨텍스트를 불러오는 중…</section>;
-  }
-  if (state.status === "error") {
-    return <section className="v3-project-context v3-project-star-error" role="alert">{state.message}</section>;
-  }
-  const data = state.data;
-  if (!data) return null;
-  const empty = data.guidance.length + data.atomReferences.length + data.sessionDefaults.length === 0;
+export function EmptyProjectPlannerView({ title }: { title: string }) {
   return (
-    <section className="v3-project-context" data-testid="v3-project-context">
-      <div className="v3-project-context-row">
-        <strong>프로젝트 컨텍스트</strong>
-        {data.atomReferences.map((reference) => (
-          <span className="v3-project-context-chip" key={reference.nodeId}>
-            ⚛ {reference.nodeTitle}
-            {reference.depth === null ? "" : ` · depth ${reference.depth}`}
-            {reference.titlesOnly === null ? "" : ` · titlesOnly ${reference.titlesOnly ? "on" : "off"}`}
-          </span>
-        ))}
-        {data.sessionDefaults.map((defaults, index) => (
-          <span className="v3-project-context-chip" key={`${defaults.agentId}:${defaults.nodeId}:${index}`}>
-            👤 {defaults.agentId ?? "agent 미지정"}@{defaults.nodeId ?? "node 미지정"}
-          </span>
-        ))}
-        {empty ? <small>연결된 guidance · atom · 실행 기본값이 없습니다.</small> : null}
-      </div>
-      {data.guidance.length > 0 ? (
-        <details className="v3-project-guidance">
-          <summary>guidance {data.guidance.length}개</summary>
-          {data.guidance.map((guidance, index) => <pre key={`${index}:${guidance}`}>{guidance}</pre>)}
-        </details>
-      ) : null}
+    <section className="v3-load-error" data-testid="v3-empty-project-view">
+      <h1>{title}</h1>
+      <p>프로젝트 페이지가 비어 있거나 아직 연결되지 않았습니다.</p>
     </section>
   );
 }

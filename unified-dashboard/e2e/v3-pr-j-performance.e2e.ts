@@ -157,7 +157,7 @@ test("PR-J/R: bounded planner reads, targeted run hydration, long-history sync, 
       runSwitchCount: 3,
       taskOpenLazyReadSpreadMs: Math.max(...taskOpenReads) - Math.min(...taskOpenReads),
       unboundedPageRequestCount: requests.filter((mark) => mark.path === "/api/pages" && mark.query.includes("limit=")).length,
-      projectIndexRequestCount: requests.filter((mark) => mark.path === "/api/planner/project-index").length,
+      starredTaskIndexRequestCount: requests.filter((mark) => mark.path === "/api/planner/starred-tasks").length,
       taskRunHistoryRequestCount: requests.filter((mark) => mark.path === "/api/planner/tasks/task-alpha/runs").length,
     },
     comparison: {

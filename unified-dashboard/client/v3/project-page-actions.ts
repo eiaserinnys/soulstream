@@ -1,56 +1,56 @@
-import type {
-  BlockDto,
-  PageApiClient,
-  PageDto,
-} from "@seosoyoung/soul-ui/page";
+import type { CatalogFolder } from "@seosoyoung/soul-ui";
+import type { BlockDto, PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
+
+import { classifyMountedPage } from "./planner-model";
 
 export type ProjectOperationIdFactory = (prefix: string) => string;
 
-export async function renameProjectPage(
+export function normalizeProjectTitle(value: string): string {
+  return value
+    .trim()
+    .replace(/^[^\p{L}\p{N}]+/u, "")
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("ko-KR");
+}
+
+export async function findExistingProjectPage(
   api: PageApiClient,
-  pageId: string,
+  folder: CatalogFolder,
+  knownPages: readonly PageDto[],
+): Promise<PageDto | null> {
+  const explicit = knownPages.find((page) => (
+    page.metadata.folderId === folder.id || page.metadata.folder_id === folder.id
+  ));
+  if (explicit) return explicit;
+
+  const title = normalizeProjectTitle(folder.name);
+  const known = knownPages.find((page) => isPageCandidate(page, title));
+  if (known) {
+    const snapshot = await api.getPage(known.id);
+    if (classifyMountedPage(snapshot.blocks).kind === "document") return snapshot.page;
+  }
+
+  const queries = [...new Set([folder.name.trim(), title].filter(Boolean))];
+  const searches = await Promise.all(queries.map(async (query) => await api.searchPages(query, 50)));
+  const pageIds = [...new Set(searches.flatMap((result) => (
+    result.items.map((item) => item.pageId)
+  )))];
+  for (const pageId of pageIds) {
+    const snapshot = await api.getPage(pageId);
+    if (!isPageCandidate(snapshot.page, title)) continue;
+    if (classifyMountedPage(snapshot.blocks).kind === "document") return snapshot.page;
+  }
+  return null;
+}
+
+export async function createProjectPage(
+  api: PageApiClient,
   titleValue: string,
   idFactory: ProjectOperationIdFactory = operationId,
 ): Promise<PageDto> {
   const title = titleValue.trim();
   if (!title) throw new Error("프로젝트 제목을 입력해야 합니다");
-  const current = await api.getPage(pageId);
-  if (current.page.title === title) return current.page;
-  const updated = await api.applyOperations(pageId, {
-    expectedVersion: current.page.version,
-    expectedStateVector: decodeStateVector(current.state_vector),
-    idempotencyKey: idFactory("project-rename"),
-    reason: "v3 planner project rename",
-    operations: [{ op: "rename_page", title }],
-  });
-  return updated.page;
-}
-
-export async function setProjectStarred(
-  api: PageApiClient,
-  pageId: string,
-  starred: boolean,
-  idFactory: ProjectOperationIdFactory = operationId,
-): Promise<PageDto> {
-  const current = await api.getPage(pageId);
-  const updated = await api.setStarred(pageId, {
-    starred,
-    expectedVersion: current.page.version,
-    idempotencyKey: idFactory("project-star"),
-    reason: "v3 planner project star toggle",
-  });
-  return updated.page;
-}
-
-export async function createStarredProject(
-  api: PageApiClient,
-  input: { title: string; date: string },
-  idFactory: ProjectOperationIdFactory = operationId,
-): Promise<PageDto> {
-  const title = input.title.trim();
-  if (!title) throw new Error("프로젝트 제목을 입력해야 합니다");
-
-  const daily = await api.getDailyPage(input.date);
+  const daily = await api.getDailyPage();
   const source = await api.getPage(daily.page.id);
   const seedTempId = idFactory("project-seed");
   const seeded = await api.applyOperations(source.page.id, {
@@ -80,23 +80,27 @@ export async function createStarredProject(
       expectedStateVector: decodeStateVector(currentSource.state_vector),
       blockIds: [seedBlockId],
     },
-    target: {
-      kind: "new",
-      pageId: idFactory("project"),
-      title,
-    },
+    target: { kind: "new", pageId: idFactory("project"), title },
     idempotencyKey: idFactory("project-create"),
     reason: "v3 planner standalone project creation",
   });
   if (!created.target_created) throw new Error("새 프로젝트가 생성되지 않았습니다");
+  return created.target.page;
+}
 
-  const starred = await api.setStarred(created.target.page.id, {
-    starred: true,
-    expectedVersion: created.target.page.version,
-    idempotencyKey: idFactory("project-star"),
-    reason: "v3 planner project creation",
-  });
-  return starred.page;
+export async function resolveOrCreateProjectPage(
+  api: PageApiClient,
+  folder: CatalogFolder,
+  knownPages: readonly PageDto[],
+): Promise<PageDto> {
+  return await findExistingProjectPage(api, folder, knownPages)
+    ?? await createProjectPage(api, folder.name);
+}
+
+function isPageCandidate(page: PageDto, normalizedTitle: string): boolean {
+  return !page.archived
+    && page.daily_date === null
+    && normalizeProjectTitle(page.title) === normalizedTitle;
 }
 
 function lastRootBlockId(blocks: readonly BlockDto[]): string | null {

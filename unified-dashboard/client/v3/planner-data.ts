@@ -5,8 +5,13 @@ import type {
   PageReadResponse,
 } from "@seosoyoung/soul-ui/page";
 import type { RunbookSnapshot } from "@seosoyoung/soul-ui/stores/runbook-store";
+import { fetchRunbookSnapshot } from "@seosoyoung/soul-ui";
 
 import {
+  classifyMountedPage,
+  derivePlannerTaskStatus,
+  plannerProgress,
+  taskAssignee,
   taskContextCount,
   type PlannerTaskStatus,
 } from "./planner-model";
@@ -112,13 +117,13 @@ export async function loadProjectPlanner(
   };
 }
 
-export async function loadProjectIndex(
+export async function loadStarredTasks(
   dependencies: PlannerDataDependencies,
   input: { cursor?: string; limit: number },
 ): Promise<PlannerPage<PageDto>> {
   const query = pageQuery(input.cursor, input.limit);
   const payload = await dependencies.fetchPlanner(
-    `/api/planner/project-index?${query.toString()}`,
+    `/api/planner/starred-tasks?${query.toString()}`,
   ) as PageSlicePayload<PageDto>;
   return plannerPage(payload);
 }
@@ -176,6 +181,42 @@ export async function loadTaskRunHistory(
     nextCursor: payload.next_cursor,
     total: payload.total,
   };
+}
+
+export async function loadStarredPlannerTask(
+  api: PageApiClient,
+  taskPage: PageDto,
+): Promise<PlannerTask> {
+  const snapshot = await api.getPage(taskPage.id);
+  const classification = classifyMountedPage(snapshot.blocks);
+  if (classification.kind !== "task") throw new Error("별표 페이지가 runbook 업무가 아닙니다");
+  const runbook = await fetchRunbookSnapshot(classification.runbookId);
+  const backlinks = await api.getBacklinks(taskPage.id, { kinds: ["mount"], limit: 50 });
+  const projectPageId = await firstProjectPageId(api, backlinks.items.map((item) => item.sourcePageId));
+  return {
+    page: snapshot.page,
+    blocks: snapshot.blocks,
+    stateVector: snapshot.state_vector,
+    runbookId: classification.runbookId,
+    runbook,
+    status: runbook ? derivePlannerTaskStatus(runbook) : "open",
+    assignee: taskAssignee(runbook),
+    contextCount: taskContextCount(snapshot.blocks),
+    progress: plannerProgress(runbook),
+    projectPageId,
+    sessionIds: [],
+    mountedDocuments: [],
+  };
+}
+
+async function firstProjectPageId(api: PageApiClient, sourcePageIds: readonly string[]): Promise<string | null> {
+  for (const pageId of [...new Set(sourcePageIds)]) {
+    const source = await api.getPage(pageId);
+    if (source.page.daily_date === null && classifyMountedPage(source.blocks).kind === "document") {
+      return source.page.id;
+    }
+  }
+  return null;
 }
 
 function pageQuery(cursor: string | undefined, limit: number): URLSearchParams {

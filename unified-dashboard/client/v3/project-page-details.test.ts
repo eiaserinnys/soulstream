@@ -15,14 +15,20 @@ describe("project page details", () => {
       }),
       block("session_defaults", "", { agentId: "roselin_codex", nodeId: "eiaserinnys" }),
     ])).toEqual({
-      guidance: ["프로젝트 지침"],
+      guidance: [{ blockId: "guidance-프로젝트 지침", text: "프로젝트 지침" }],
       atomReferences: [{
+        blockId: "atom_ref-block",
+        instance: "atom",
         nodeId: "node-soulstream",
         nodeTitle: "소울스트림",
         depth: 3,
         titlesOnly: false,
       }],
-      sessionDefaults: [{ agentId: "roselin_codex", nodeId: "eiaserinnys" }],
+      sessionDefaults: [{
+        blockId: "session_defaults-block",
+        agentId: "roselin_codex",
+        nodeId: "eiaserinnys",
+      }],
     });
   });
 
@@ -34,7 +40,9 @@ describe("project page details", () => {
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
 
     await expect(fetchProjectPageDetails("project/one", fetch)).resolves.toMatchObject({
-      guidance: ["실제 지침"],
+      guidance: [{ blockId: "guidance-실제 지침", text: "실제 지침" }],
+      page: { id: "project/one", version: 1 },
+      stateVector: "AA==",
     });
     expect(fetch).toHaveBeenCalledOnce();
     expect(fetch).toHaveBeenCalledWith("/api/pages/project%2Fone?include_blocks=true", {

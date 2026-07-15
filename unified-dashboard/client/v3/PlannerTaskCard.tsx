@@ -8,6 +8,7 @@ import {
 } from "./planner-model";
 import type { PlannerTask } from "./planner-data";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
+import { useTaskStar } from "./use-task-star";
 
 export function PlannerTaskCard({
   task,
@@ -23,6 +24,7 @@ export function PlannerTaskCard({
   onToggleToday(): Promise<void>;
 }) {
   const [contextMenu, setContextMenu] = useState<V3ContextMenuTarget | null>(null);
+  const taskStar = useTaskStar(task.page);
   const status = plannerStatusPresentation(task.status);
   const run = latestRun(task.sessionIds, sessions);
   const runState = run?.session.status === "running" ? "실행 중" : run ? "완료" : "시작 전";
@@ -66,6 +68,16 @@ export function PlannerTaskCard({
         </div>
       </div>
       <div className="v3-task-side">
+        <button
+          type="button"
+          className="v3-task-star-toggle"
+          aria-label={`${task.page.title} ${taskStar.starred ? "별표 해제" : "별표 추가"}`}
+          aria-pressed={taskStar.starred}
+          disabled={taskStar.pending}
+          onClick={(event) => { event.stopPropagation(); void taskStar.toggle(); }}
+        >
+          {taskStar.starred ? "★" : "☆"}
+        </button>
         <span className="v3-run-line">
           {run ? `run #${run.number} ${runState}` : "run 0 · 시작 전"}
           {run?.session.status === "running" ? <i aria-label="실행 중" /> : null}
@@ -89,7 +101,8 @@ export function PlannerTaskCard({
         actions={[
           { label: "업무 열기", onSelect: onOpen },
           { label: "업무 페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(task.page.id) },
-          { label: "완료 처리", onSelect: onComplete, disabled: task.status === "completed", separatorBefore: true },
+          { label: taskStar.starred ? "별표 해제" : "별표 추가", onSelect: taskStar.toggle, separatorBefore: true },
+          { label: "완료 처리", onSelect: onComplete, disabled: task.status === "completed" },
           { label: "오늘 플래너에 추가·제거", onSelect: onToggleToday },
         ]}
       />

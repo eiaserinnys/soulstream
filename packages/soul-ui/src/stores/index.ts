@@ -29,3 +29,6 @@ export { placeInTree, handleTextStart } from "./tree-placer";
 
 // === Session Updater ===
 export { shouldNotify, deriveSessionStatus } from "./session-updater";
+
+// === Runbook Reads ===
+export { fetchRunbookSnapshot } from "./runbook-api";

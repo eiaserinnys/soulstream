@@ -45,6 +45,9 @@ describe("planner repository", () => {
     }
     expect(query).not.toContain("board_yjs_documents");
     expect(query).not.toContain("board_yjs_updates");
+    expect(query).not.toContain("jsonb_typeof(p.metadata->'starred')");
+    expect(query).toContain("NOT EXISTS ( SELECT 1 FROM blocks task_ref");
+    expect(query).toContain("project_link.link_kind = 'mount'");
     expect(query).toContain("LIMIT ?");
     expect(query).toContain("ORDER BY session.updated_at DESC, session.session_id DESC LIMIT 1");
   });
@@ -73,7 +76,7 @@ describe("planner repository", () => {
     expect(normalizeSql(harness.calls[0]?.text)).toContain("LIMIT 50");
   });
 
-  it("uses explicit project metadata, keyset limits, and lazy run history queries", async () => {
+  it("indexes only starred primary-runbook task pages with keyset limits", async () => {
     const harness = createSqlHarness([
       [
         { payload: page("project-a"), updated_at_cursor: "2026-07-14T00:00:00.000Z", id: "project-a" },
@@ -91,12 +94,12 @@ describe("planner repository", () => {
     ]);
     const repository = new PlannerRepository(resolverFor(harness.sql));
 
-    const projects = await repository.getProjectIndex({ limit: 1 });
+    const tasks = await repository.getStarredTasks({ limit: 1 });
     const history = await repository.getDailyHistory({ before: "2026-07-14", limit: 2 });
     const runs = await repository.getTaskRuns("task-a", { limit: 1 });
 
-    expect(projects).toMatchObject({ items: [{ id: "project-a" }] });
-    expect(projects.next_cursor).toEqual(expect.any(String));
+    expect(tasks).toMatchObject({ items: [{ id: "project-a" }] });
+    expect(tasks.next_cursor).toEqual(expect.any(String));
     expect(history).toEqual({ dates: ["2026-07-13", "2026-07-11"] });
     expect(runs).toMatchObject({
       items: [{ agent_session_id: "session-a" }],
@@ -104,9 +107,12 @@ describe("planner repository", () => {
       next_cursor: expect.any(String),
     });
 
-    const projectQuery = normalizeSql(harness.calls[0]?.text);
-    expect(projectQuery).toContain("jsonb_typeof(p.metadata->'starred') = 'boolean'");
-    expect(projectQuery).toContain("LIMIT ?");
+    const taskQuery = normalizeSql(harness.calls[0]?.text);
+    expect(taskQuery).toContain("COALESCE((p.metadata->>'starred')::boolean, FALSE)");
+    expect(taskQuery).toContain("b.block_type = 'runbook_ref'");
+    expect(taskQuery).toContain("COALESCE((b.properties->>'primary')::boolean, FALSE)");
+    expect(taskQuery).toContain("NULLIF(b.properties->>'runbookId', '') IS NOT NULL");
+    expect(taskQuery).toContain("LIMIT ?");
     expect(harness.calls[0]?.values).toContain(2);
     const runQuery = normalizeSql(harness.calls[2]?.text);
     expect(runQuery).toContain("container_kind = 'runbook'");

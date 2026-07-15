@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import type { SessionSummary } from "@seosoyoung/soul-ui";
 
 import type { PlannerTask } from "./planner-data";
 import {
@@ -46,7 +45,6 @@ describe("buildMorningRitualQueue", () => {
         },
       ],
       todayTaskPageIds: new Set(["task-today"]),
-      sessions: [],
     });
 
     expect(queue.map((item) => item.id)).toEqual([
@@ -57,36 +55,13 @@ describe("buildMorningRitualQueue", () => {
     expect(queue[1]).toMatchObject({ kind: "task", sourceDate: older });
   });
 
-  it("appends only needs-review sessions from the planner session source", () => {
+  it("never includes needs-review sessions in the carryover ritual", () => {
     const queue = buildMorningRitualQueue({
       historicalDays: [],
       todayTaskPageIds: new Set(),
-      sessions: [
-        session("review-me", "needs_review"),
-        session("already-seen", "acknowledged"),
-      ],
     });
 
-    expect(queue.map((item) => item.id)).toEqual(["review:review-me"]);
-  });
-
-  it("turns an unnamed session prompt into a single-line title preview capped at 120 code points", () => {
-    const prompt = `  ${"장문 프롬프트와 JSON 조각\n".repeat(40)}  `;
-    const queue = buildMorningRitualQueue({
-      historicalDays: [],
-      todayTaskPageIds: new Set(),
-      sessions: [{
-        ...session("long-review", "needs_review"),
-        displayName: "  ",
-        prompt,
-      }],
-    });
-
-    expect(queue).toHaveLength(1);
-    expect(queue[0]?.title).not.toContain("\n");
-    expect(Array.from(queue[0]?.title ?? "")).toHaveLength(120);
-    expect(queue[0]?.title.endsWith("…")).toBe(true);
-    expect(queue[0]?.title).not.toBe(prompt);
+    expect(queue).toEqual([]);
   });
 });
 
@@ -96,7 +71,6 @@ describe("dispatchRitualAction", () => {
     const item = buildMorningRitualQueue({
       historicalDays: [{ date: "2026-07-13", tasks: [task("task-1", "업무", "open")] }],
       todayTaskPageIds: new Set(),
-      sessions: [],
     })[0];
 
     await dispatchRitualAction(item, "today", port);
@@ -107,7 +81,6 @@ describe("dispatchRitualAction", () => {
     await dispatchRitualAction(item, "later", port);
     expect(port.mountToday).toHaveBeenCalledTimes(1);
     expect(port.completeRunbook).not.toHaveBeenCalled();
-    expect(port.acknowledgeReview).not.toHaveBeenCalled();
 
     await dispatchRitualAction(item, "done", port);
     expect(port.completeRunbook).toHaveBeenCalledWith({
@@ -116,22 +89,6 @@ describe("dispatchRitualAction", () => {
     });
   });
 
-  it("defers review chat navigation and dispatches review acknowledgement", async () => {
-    const port = mockPort();
-    const item = buildMorningRitualQueue({
-      historicalDays: [],
-      todayTaskPageIds: new Set(),
-      sessions: [session("review-me", "needs_review")],
-    })[0];
-
-    await expect(dispatchRitualAction(item, "chat", port)).resolves.toEqual({
-      openSessionId: "review-me",
-    });
-    expect(port.acknowledgeReview).not.toHaveBeenCalled();
-
-    await dispatchRitualAction(item, "acknowledge", port);
-    expect(port.acknowledgeReview).toHaveBeenCalledWith("review-me");
-  });
 });
 
 function task(pageId: string, title: string, status: string): PlannerTask {
@@ -175,21 +132,9 @@ function task(pageId: string, title: string, status: string): PlannerTask {
   };
 }
 
-function session(agentSessionId: string, reviewState: "needs_review" | "acknowledged"): SessionSummary {
-  return {
-    agentSessionId,
-    status: "completed",
-    reviewState,
-    eventCount: 1,
-    displayName: "검수 세션",
-    agentName: "서소영",
-  };
-}
-
 function mockPort(): RitualActionPort {
   return {
     mountToday: vi.fn(async () => undefined),
     completeRunbook: vi.fn(async () => undefined),
-    acknowledgeReview: vi.fn(async () => undefined),
   };
 }

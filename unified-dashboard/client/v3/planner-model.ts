@@ -102,7 +102,18 @@ export function resolveProjectFolderId(
   const explicit = nonEmptyString(page.metadata.folderId)
     ?? nonEmptyString(page.metadata.folder_id);
   if (explicit) return explicit;
-  return folders.find((folder) => folder.name.trim() === page.title.trim())?.id ?? null;
+  const exact = folders.find((folder) => folder.name.trim() === page.title.trim());
+  if (exact) return exact.id;
+  const normalizedTitle = normalizeProjectTitle(page.title);
+  return folders.find((folder) => normalizeProjectTitle(folder.name) === normalizedTitle)?.id ?? null;
+}
+
+export function normalizeProjectTitle(value: string): string {
+  return value
+    .trim()
+    .replace(/^[^\p{L}\p{N}]+/u, "")
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("ko-KR");
 }
 
 function preferredAssigneeItem(items: readonly RunbookItemRow[]): RunbookItemRow | null {

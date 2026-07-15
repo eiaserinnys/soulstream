@@ -1,5 +1,4 @@
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
-import { acknowledgeSessionReview } from "@seosoyoung/soul-ui/lib/session-review";
 import { postRunbookStatus } from "@seosoyoung/soul-ui/stores/runbook-api";
 
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
@@ -21,10 +20,6 @@ export class BrowserRitualActionPort implements RitualActionPort {
 
   async completeRunbook(input: { runbookId: string; expectedVersion: number }) {
     await completeRitualRunbook(input);
-  }
-
-  async acknowledgeReview(sessionId: string) {
-    await acknowledgeSessionReview(sessionId);
   }
 }
 

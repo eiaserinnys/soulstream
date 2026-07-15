@@ -35,7 +35,7 @@ describe("route coverage completeness gate", () => {
     "POST /api/pages/{pageId}/operations",
     "PATCH /api/pages/{pageId}/starred",
     "GET /api/planner/today",
-    "GET /api/planner/project-index",
+    "GET /api/planner/starred-tasks",
     "GET /api/planner/daily-history",
     "GET /api/planner/projects/{pageId}",
     "GET /api/planner/projects/{pageId}/tasks",
