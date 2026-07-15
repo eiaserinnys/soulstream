@@ -12,8 +12,8 @@ describe("Phase 3 binding warning browser projection PostgreSQL integration", ()
   beforeAll(async () => {
     harness = await createPagePostgresHarness();
     await harness.sql.unsafe(`
-      ALTER TABLE sessions ADD COLUMN status TEXT DEFAULT 'running';
-      ALTER TABLE sessions ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW();
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'running';
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
       CREATE OR REPLACE FUNCTION session_count(p_filters JSONB DEFAULT NULL)
       RETURNS BIGINT LANGUAGE sql STABLE AS $$ SELECT COUNT(*) FROM sessions $$;
       CREATE OR REPLACE FUNCTION session_get_all(
