@@ -300,16 +300,14 @@
   text-transform: uppercase;
 }
 
-.v3-daily-memo textarea {
-  width: 100%;
-  resize: vertical;
-  border: 0;
-  padding: 4px 0;
-  color: var(--foreground);
+.v3-daily-memo .v3-description-preview {
+  border-color: transparent;
   background: transparent;
-  font-size: var(--font-size-sm);
-  line-height: 1.7;
-  outline: 0;
+}
+
+.v3-daily-memo .v3-description-preview:hover {
+  border-color: var(--glass-border);
+  background: color-mix(in srgb, var(--muted) 62%, transparent);
 }
 
 .v3-section-head {

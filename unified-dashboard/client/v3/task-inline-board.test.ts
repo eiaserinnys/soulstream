@@ -5,6 +5,7 @@ import {
   fetchInlineMarkdown,
   fetchTaskBoardContainerItems,
   fetchTaskBoardItems,
+  saveInlineMarkdown,
 } from "./task-inline-board-api";
 
 describe("task inline board API", () => {
@@ -64,6 +65,42 @@ describe("task inline board API", () => {
       "/api/markdown-documents/doc-1",
       "/api/custom-views/view-1",
     ]);
+  });
+
+  it("saves inline markdown through the existing v1 PUT contract", async () => {
+    const fetchMock = vi.fn(async () => json({
+      id: "doc-1",
+      title: "결정",
+      body: "# 수정 본문",
+      version: 3,
+    }));
+
+    await expect(saveInlineMarkdown({
+      documentId: "doc-1",
+      title: "결정",
+      body: "# 수정 본문",
+      expectedVersion: 2,
+    }, fetchMock as typeof globalThis.fetch)).resolves.toMatchObject({ version: 3 });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/markdown-documents/doc-1",
+      expect.objectContaining({
+        method: "PUT",
+        credentials: "same-origin",
+        body: JSON.stringify({ title: "결정", body: "# 수정 본문", expectedVersion: 2 }),
+      }),
+    );
+  });
+
+  it("rejects a stale inline markdown save so the shared editor keeps its draft", async () => {
+    const fetchMock = vi.fn(async () => new Response("conflict", { status: 409 }));
+
+    await expect(saveInlineMarkdown({
+      documentId: "doc-1",
+      title: "결정",
+      body: "# 수정 본문",
+      expectedVersion: 2,
+    }, fetchMock as typeof globalThis.fetch)).rejects.toThrow("다른 곳에서 변경");
   });
 });
 

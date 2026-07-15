@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import {
   CustomViewIframe,
-  MarkdownContent,
   useCustomViewBindings,
   type CatalogBoardItem,
   type CustomViewDocument,
@@ -12,7 +11,9 @@ import {
   fetchInlineCustomView,
   fetchInlineMarkdown,
   fetchTaskBoardItems,
+  saveInlineMarkdown,
 } from "./task-inline-board-api";
+import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 import "./v3-context-menus.css";
 import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
 
@@ -85,6 +86,7 @@ function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; i
   const [error, setError] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
+    setError(false);
     void fetchInlineMarkdown(documentId, (input, init) => globalThis.fetch(input, { ...init, signal: controller.signal }))
       .then(setDocument)
       .catch((cause: unknown) => {
@@ -94,7 +96,24 @@ function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; i
   }, [documentId, invalidationKey]);
   if (error) return <p className="v3-inline-board-error">문서 본문을 불러오지 못했습니다.</p>;
   if (!document) return <p className="v3-detail-empty">본문을 불러오는 중…</p>;
-  return <div className="v3-inline-markdown" data-testid="v3-inline-markdown"><MarkdownContent content={document.body || "빈 문서"} /></div>;
+  return (
+    <div className="v3-inline-markdown" data-testid="v3-inline-markdown">
+      <TaskDescriptionPanel
+        markdown={document.body}
+        ariaLabel={`${document.title} 문서`}
+        emptyText="클릭해서 문서 본문을 작성하세요."
+        onSave={async (body) => {
+          const updated = await saveInlineMarkdown({
+            documentId,
+            title: document.title,
+            body,
+            expectedVersion: document.version,
+          });
+          setDocument(updated);
+        }}
+      />
+    </div>
+  );
 }
 
 function InlineCustomView({ customViewId, invalidationKey }: { customViewId: string; invalidationKey: number }) {

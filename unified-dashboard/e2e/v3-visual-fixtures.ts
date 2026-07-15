@@ -430,6 +430,12 @@ export async function installV3VisualQaRoutes(
   pageInstance: Page,
   options: V3VisualQaRouteOptions = {},
 ): Promise<void> {
+  let inlineMarkdownDocument = {
+    id: "doc-inline",
+    title: "PR-O 결정 로그",
+    body: "# 인라인 보드\n\n마크다운 본문은 행을 연 뒤에만 불러옵니다.",
+    version: 2,
+  };
   await pageInstance.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -688,7 +694,19 @@ export async function installV3VisualQaRoutes(
       return fulfillJson(route, { ok: true, boardItem: boardItem("session", sessionId, targetRunbookId, 0) });
     }
     if (path === "/api/markdown-documents/doc-inline") {
-      return fulfillJson(route, { id: "doc-inline", title: "PR-O 결정 로그", body: "# 인라인 보드\n\n마크다운 본문은 행을 연 뒤에만 불러옵니다.", version: 2 });
+      if (request.method() === "PUT") {
+        const input = request.postDataJSON() as { title: string; body: string; expectedVersion: number };
+        if (input.expectedVersion !== inlineMarkdownDocument.version) {
+          return fulfillJson(route, { detail: "Document changed elsewhere" }, 409);
+        }
+        inlineMarkdownDocument = {
+          ...inlineMarkdownDocument,
+          title: input.title,
+          body: input.body,
+          version: inlineMarkdownDocument.version + 1,
+        };
+      }
+      return fulfillJson(route, inlineMarkdownDocument);
     }
     if (path === "/api/custom-views/view-inline") {
       return fulfillJson(route, {

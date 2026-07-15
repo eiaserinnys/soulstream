@@ -1,12 +1,14 @@
 import type { BlockDto } from "@seosoyoung/soul-ui/page";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 
+import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
+
 export function DailyMemo({
   blocks,
   onSave,
 }: {
   blocks: readonly BlockDto[];
-  onSave(blockId: string | null, text: string): void;
+  onSave(blockId: string | null, text: string): Promise<void>;
 }) {
   const editable = blocks.length > 0 ? blocks : [null];
   return (
@@ -17,13 +19,14 @@ export function DailyMemo({
     >
       <span className="v3-memo-label">오늘 메모</span>
       {editable.map((block, index) => (
-        <textarea
+        <TaskDescriptionPanel
           key={block?.id ?? "empty-memo"}
-          defaultValue={block?.text ?? ""}
-          rows={block?.text ? Math.max(2, block.text.split("\n").length) : 3}
-          aria-label={index === 0 ? "오늘 메모" : `오늘 메모 ${index + 1}`}
-          placeholder={index === 0 ? "오늘 기억해 둘 내용을 적으세요." : undefined}
-          onBlur={(event) => onSave(block?.id ?? null, event.currentTarget.value)}
+          markdown={block?.text ?? ""}
+          ariaLabel={index === 0 ? "오늘 메모" : `오늘 메모 ${index + 1}`}
+          emptyText={index === 0 ? "오늘 기억해 둘 내용을 적으세요." : "메모를 작성하세요."}
+          variant="compact"
+          collapsible={false}
+          onSave={(text) => onSave(block?.id ?? null, text)}
         />
       ))}
     </LiquidGlassCard>
