@@ -15,6 +15,7 @@ import {
   buildRunTree,
   clampWorkspaceSplit,
   type RunSessionLoadState,
+  workspaceInspectorKind,
   workspaceSplitForKey,
 } from "./task-workspace-model";
 import { TaskDetailPane } from "./TaskDetailPane";
@@ -43,6 +44,7 @@ export function TaskWorkspace({
   onReturnToToday,
   onCloseWorkspace,
   onCloseChat,
+  onOpenDocument,
   onOpenSession,
   onSaveDescription,
   onPromoteDocument,
@@ -73,6 +75,7 @@ export function TaskWorkspace({
   onReturnToToday(): void;
   onCloseWorkspace(): void;
   onCloseChat(): void;
+  onOpenDocument(documentId: string): void;
   onOpenSession(session: SessionSummary): void;
   onSaveDescription(markdown: string): Promise<void>;
   onPromoteDocument(blockId: string): Promise<void>;
@@ -91,6 +94,7 @@ export function TaskWorkspace({
   const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: chatOpen && !boardOpen });
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
   const activeBoardDocumentId = useDashboardStore((state) => state.activeBoardDocumentId);
+  const inspectorKind = workspaceInspectorKind(activeBoardDocumentId, activeSessionKey);
 
   useEffect(() => { setBoardOpen(false); }, [task.page.id]);
 
@@ -125,6 +129,10 @@ export function TaskWorkspace({
     const state = useDashboardStore.getState();
     state.clearActiveSession();
     state.setActiveBoardDocument(null);
+  };
+  const closeWorkspaceInspector = () => {
+    if (inspectorKind === "document") useDashboardStore.getState().setActiveBoardDocument(null);
+    onCloseChat();
   };
 
   const divider = (label: string) => (
@@ -232,6 +240,7 @@ export function TaskWorkspace({
               setBoardOpen(true);
             }}
             onCloseWorkspace={onCloseWorkspace}
+            onOpenDocument={onOpenDocument}
             onOpenSession={onOpenSession}
             onSaveDescription={onSaveDescription}
             onPromoteDocument={onPromoteDocument}
@@ -254,26 +263,28 @@ export function TaskWorkspace({
               ref={chatSurfaceRef}
               className="v3-chat-pane border border-glass-border glass-strong glass-chrome lg-rim"
               data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
-              aria-label="Run 채팅"
+              aria-label={inspectorKind === "document" ? "마크다운 문서" : "Run 채팅"}
             >
               <header className="v3-chat-header">
-                <div><small>{projectTitle} › {task.page.title}</small><strong>{activeSession ? runLabel(task, activeSession, sessions) : "선택된 run 없음"}</strong></div>
-                <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}</span>
-                <button type="button" aria-label="채팅 닫기" onClick={onCloseChat}>×</button>
+                <div><small>{projectTitle} › {task.page.title}</small><strong>{inspectorKind === "document" ? "마크다운 문서" : activeSession ? runLabel(task, activeSession, sessions) : "선택된 run 없음"}</strong></div>
+                {inspectorKind !== "document" ? <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}</span> : null}
+                <button type="button" aria-label="우측 패널 닫기" onClick={closeWorkspaceInspector}>×</button>
               </header>
-              {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
-              <div className="v3-chat-content">
-                {activeSession ? (
+              {inspectorKind === "chat" && activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
+              {inspectorKind === "document" ? (
+                <div className="v3-board-document-content"><MarkdownDocumentPanel /></div>
+              ) : <div className="v3-chat-content">
+                {inspectorKind === "chat" && activeSession ? (
                   <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} />
                 ) : (
                   <div className="v3-chat-empty" data-testid="v3-chat-empty">
                     <span className="v3-emoji" aria-hidden="true">💬</span>
                     <strong>선택된 run이 없습니다.</strong>
                     <p>업무 탭에서 run을 선택하거나 새 세션을 시작하세요.</p>
-                    <button type="button" className="v3-button v3-button--soft" onClick={onCloseChat}>업무 탭으로</button>
+                    <button type="button" className="v3-button v3-button--soft" onClick={closeWorkspaceInspector}>업무 탭으로</button>
                   </div>
                 )}
-              </div>
+              </div>}
             </section>
           </>
         ) : null}

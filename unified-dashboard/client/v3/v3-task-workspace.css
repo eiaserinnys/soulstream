@@ -24,6 +24,11 @@
   width: calc(100vw - var(--v3-navigation-width, 264px) - 32px);
 }
 
+.v3-standalone-inspector-scrim .v3-workspace {
+  display: block;
+  width: min(520px, calc(100vw - 32px));
+}
+
 @keyframes v3-workspace-enter {
   from { opacity: 0; transform: translateX(36px); }
   to { opacity: 1; transform: translateX(0); }

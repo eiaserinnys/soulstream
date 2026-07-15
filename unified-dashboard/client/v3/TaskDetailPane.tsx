@@ -25,6 +25,7 @@ export function TaskDetailPane({
   onReturnToToday,
   onOpenBoard,
   onCloseWorkspace,
+  onOpenDocument,
   taskMoveTargets,
   onOpenSession,
   onSaveDescription,
@@ -46,6 +47,7 @@ export function TaskDetailPane({
   onReturnToToday(): void;
   onOpenBoard(): void;
   onCloseWorkspace(): void;
+  onOpenDocument(documentId: string): void;
   taskMoveTargets: readonly PlannerTask[];
   onOpenSession(session: SessionSummary): void;
   onSaveDescription(markdown: string): Promise<void>;
@@ -228,7 +230,7 @@ export function TaskDetailPane({
           target={documentMenu?.target ?? null}
           onClose={() => setDocumentMenu(null)}
           actions={documentMenu ? [
-            { label: "문서 열기", onSelect: () => window.location.assign(`/v2/pages/${encodeURIComponent(documentMenu.pageId)}`) },
+            { label: "문서 열기", onSelect: () => onOpenDocument(documentMenu.pageId) },
             { label: "페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(documentMenu.pageId) },
             { label: "업무에서 마운트 해제", onSelect: () => onUnmountDocument(documentMenu.blockId), separatorBefore: true, destructive: true },
             { label: "프로젝트로 승격", onSelect: () => promote(documentMenu.blockId), disabled: !task.projectPageId },

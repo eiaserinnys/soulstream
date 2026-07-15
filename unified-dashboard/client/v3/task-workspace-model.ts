@@ -40,6 +40,8 @@ export interface WorkspaceVisibility {
   chatOpen: boolean;
 }
 
+export type WorkspaceInspectorKind = "document" | "chat" | "empty";
+
 export interface DescriptionMutation {
   operations: PageStructureOperation[];
   preservedBlockIds: string[];
@@ -62,6 +64,14 @@ export function reduceWorkspaceEscape(state: WorkspaceVisibility): WorkspaceVisi
     return { workspaceOpen: false, chatOpen: false, handled: true };
   }
   return { ...state, handled: false };
+}
+
+export function workspaceInspectorKind(
+  activeBoardDocumentId: string | null,
+  activeSessionKey: string | null,
+): WorkspaceInspectorKind {
+  if (activeBoardDocumentId) return "document";
+  return activeSessionKey ? "chat" : "empty";
 }
 
 export function buildRunTree(

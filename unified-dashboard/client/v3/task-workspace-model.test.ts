@@ -12,6 +12,7 @@ import {
   descriptionMarkdown,
   reduceWorkspaceEscape,
   resolveRunSessions,
+  workspaceInspectorKind,
   workspaceSplitForKey,
 } from "./task-workspace-model";
 
@@ -165,6 +166,14 @@ describe("workspace Escape hierarchy", () => {
       chatOpen: false,
       handled: false,
     });
+  });
+});
+
+describe("workspace inspector priority", () => {
+  it("keeps an opened document in the v3 right pane ahead of a stale chat selection", () => {
+    expect(workspaceInspectorKind("doc-a", "session-a")).toBe("document");
+    expect(workspaceInspectorKind(null, "session-a")).toBe("chat");
+    expect(workspaceInspectorKind(null, null)).toBe("empty");
   });
 });
 
