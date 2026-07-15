@@ -420,8 +420,10 @@ describe("live provider factory boundary", () => {
       boardYjsHostProxyRoutes: runtimeServices.routeOptions.boardYjsHostProxyRoutes,
       nodeSnapshotRoutes: runtimeServices.routeOptions.nodeSnapshotRoutes,
       nodeWsRoute: runtimeServices.routeOptions.nodeWsRoute,
-      sessionActionCommandRoutes:
-        runtimeServices.routeOptions.sessionActionCommandRoutes,
+      sessionActionCommandRoutes: {
+        ...runtimeServices.routeOptions.sessionActionCommandRoutes,
+        resolveCallerInfo: expect.any(Function),
+      },
       sessionBackgroundScheduleRoutes:
         runtimeServices.routeOptions.sessionBackgroundScheduleRoutes,
       sessionCommandRoutes: {

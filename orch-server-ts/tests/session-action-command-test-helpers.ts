@@ -18,6 +18,7 @@ export type ActionHarnessOptions = {
   attachTransport?: boolean;
   createSession?: boolean;
   bridgeOverride?: Partial<SessionCommandTransportBridge>;
+  resolveCallerInfo?: SessionActionCommandRouteOptions["resolveCallerInfo"];
 };
 
 export function createHarnessCore(): {
@@ -89,6 +90,9 @@ export function createActionHarness(options: ActionHarnessOptions = {}): {
             bridge.sendFireAndForgetCommand.bind(bridge),
         } as SessionCommandTransportBridge)
       : bridge,
+    ...(options.resolveCallerInfo === undefined
+      ? {}
+      : { resolveCallerInfo: options.resolveCallerInfo }),
   };
   const app = createApp({
     config: {

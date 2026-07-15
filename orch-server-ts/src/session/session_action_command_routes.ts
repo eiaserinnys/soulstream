@@ -19,12 +19,21 @@ import {
   toolApprovalPayload,
   type ApprovalParams,
   type InterruptNodeCommandPayload,
+  type JsonObject,
   type AcknowledgeSessionReviewNodeCommandPayload,
   type SessionParams,
 } from "./session_action_command_payloads.js";
 
+export type SessionActionCallerInfoResolver = (
+  request: FastifyRequest,
+  bodyCallerInfo: JsonObject | undefined,
+  targetSessionId: string,
+) => Promise<JsonObject> | JsonObject;
+
 export type SessionActionCommandRouteOptions =
-  SessionActionCommandDispatchOptions;
+  SessionActionCommandDispatchOptions & {
+    resolveCallerInfo?: SessionActionCallerInfoResolver;
+  };
 
 export const sessionActionCommandRouteAuthRequirements = {
   "POST /api/sessions/:session_id/intervene": true,
@@ -50,8 +59,16 @@ export function registerSessionActionCommandRoutes(
         return badRequest(reply, "Request body must be a JSON object");
       }
 
-      const payload = intervenePayload(sessionParams(request).session_id, body);
+      const targetSessionId = sessionParams(request).session_id;
+      const payload = intervenePayload(targetSessionId, body);
       if (!payload.ok) return badRequest(reply, payload.message);
+      if (options.resolveCallerInfo !== undefined) {
+        payload.value.caller_info = await options.resolveCallerInfo(
+          request,
+          payload.value.caller_info,
+          targetSessionId,
+        );
+      }
 
       return sendActionCommand(reply, options, payload.value, sendGenericStatusError);
     },
