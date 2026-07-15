@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { SessionSummary } from "@seosoyoung/soul-ui";
+import { Button, type SessionSummary } from "@seosoyoung/soul-ui";
 import {
   createPageApiClient,
   type BlockDto,
@@ -217,7 +217,7 @@ export function TaskContextPicker({
             </div>
             <div className="v3-context-create-page">
               <input value={newPageTitle} onChange={(event) => setNewPageTitle(event.target.value)} placeholder="새 페이지 제목…" aria-label="첨부할 새 페이지 제목" />
-              <button type="button" disabled={pending || !newPageTitle.trim()} onClick={() => { void createPage(); }}>＋ 새 페이지 만들며 첨부</button>
+              <Button variant="secondary" size="sm" disabled={pending || !newPageTitle.trim()} onClick={() => { void createPage(); }}>＋ 새 페이지 만들며 첨부</Button>
             </div>
           </>
         ) : null}
@@ -246,7 +246,7 @@ export function TaskContextPicker({
       {error ? <div className="v3-context-error" role="alert">{error}</div> : null}
       <footer className="v3-context-footer">
         <span>{documentMode ? `선택한 문서 ${selectedValues.filter((selection) => selection.kind === "page").length}개` : `이 세션이 받는 것: ${estimate.count}건 · ${estimate.label}`}</span>
-        <button type="button" className="v3-button v3-button--soft" disabled={pending} onClick={() => { void apply(); }}>{pending ? "추가 중…" : documentMode ? "선택 문서 마운트" : "선택 추가"}</button>
+        <Button disabled={pending} onClick={() => { void apply(); }}>{pending ? "추가 중…" : documentMode ? "선택 문서 마운트" : "선택 추가"}</Button>
       </footer>
     </div>
   );

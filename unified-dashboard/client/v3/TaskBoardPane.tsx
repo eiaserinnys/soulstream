@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import {
+  Button,
   useDashboardStore,
   useSessionListProvider,
   type CatalogBoardItem,
@@ -20,6 +21,7 @@ import {
   extractTaskBoardSessionIds,
   mergeTaskBoardSessions,
 } from "./task-board-model";
+import { V3ErrorNotice } from "./V3ErrorNotice";
 import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
 import "./v3-task-board.css";
 
@@ -70,7 +72,8 @@ export function TaskBoardPane({
       setBoardItems(next);
       setLoadError(null);
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "보드 항목을 불러오지 못했습니다");
+      console.error("[v3/task-board] 보드 항목 재조회 실패", error);
+      setLoadError(errorText(error));
     }
   }, [runbookId]);
 
@@ -84,7 +87,8 @@ export function TaskBoardPane({
       setLoadError(null);
     }).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      setLoadError(error instanceof Error ? error.message : "보드 항목을 불러오지 못했습니다");
+      console.error("[v3/task-board] 보드 항목 조회 실패", error);
+      setLoadError(errorText(error));
     });
     if (invalidationKey > 0) void refetchBoardSessions();
     return () => controller.abort();
@@ -159,11 +163,9 @@ export function TaskBoardPane({
       </header>
       <div className="v3-full-board">
         {loadError ? (
-          <div className="v3-board-load-state" role="alert">
-            <strong>업무 보드를 열지 못했습니다.</strong>
-            <p>{loadError}</p>
-            <button type="button" className="v3-button v3-button--soft" onClick={() => { void reloadBoardItems(); }}>다시 시도</button>
-          </div>
+          <V3ErrorNotice className="v3-board-load-state" message="업무 보드를 열지 못했습니다." detail={loadError}>
+            <Button variant="secondary" onClick={() => { void reloadBoardItems(); }}>다시 시도</Button>
+          </V3ErrorNotice>
         ) : boardItems === null ? (
           <div className="v3-board-load-state" data-testid="v3-task-board-loading">런북 내용을 불러오는 중…</div>
         ) : (
@@ -172,4 +174,8 @@ export function TaskBoardPane({
       </div>
     </article>
   );
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : String(error);
 }

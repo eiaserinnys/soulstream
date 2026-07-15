@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Button,
   SessionReviewAcknowledgeError,
   acknowledgeSessionReview,
   type SessionReviewAcknowledgeResult,
@@ -53,7 +54,7 @@ export function V3SessionReviewBanner({
     <div className={`v3-review-banner${message ? " has-message" : ""}`} role="status">
       <span aria-hidden="true">{message ? "✓" : "◆"}</span>
       <p><strong>{message ? "검수 상태" : "검수 대기"}</strong><small>{message ?? "이 세션의 결과 확인이 필요합니다."}</small></p>
-      {!message ? <button type="button" disabled={pending} onClick={() => { void acknowledge(); }}>{pending ? "처리 중…" : "확인"}</button> : null}
+      {!message ? <Button variant="outline" size="sm" disabled={pending} onClick={() => { void acknowledge(); }}>{pending ? "처리 중…" : "확인"}</Button> : null}
     </div>
   );
 }

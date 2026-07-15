@@ -1,0 +1,65 @@
+.v3-text-clamp-2 {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.v3-bounded-markdown {
+  max-height: 12rem;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+[data-expanded="true"] > .v3-bounded-markdown {
+  max-height: none;
+  overflow: visible;
+}
+
+.v3-error-notice {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--destructive) 32%, var(--border));
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--destructive-foreground);
+  background: color-mix(in srgb, var(--destructive) 8%, transparent);
+  font-size: var(--font-size-xs);
+  overflow-wrap: anywhere;
+}
+
+.v3-error-notice > strong {
+  color: var(--foreground);
+}
+
+.v3-error-notice details {
+  min-width: 0;
+}
+
+.v3-error-notice summary {
+  width: fit-content;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.v3-error-notice pre {
+  max-height: 12rem;
+  overflow: auto;
+  margin: 8px 0 0;
+  border-radius: 8px;
+  padding: 9px 10px;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--background) 78%, transparent);
+  font: 500 var(--font-size-xs)/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.v3-error-notice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

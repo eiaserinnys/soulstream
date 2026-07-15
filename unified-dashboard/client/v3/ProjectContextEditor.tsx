@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { AtomNodeSelector } from "@seosoyoung/soul-ui";
+import { AtomNodeSelector, Button } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { AgentNodeAssignmentFields } from "./AgentNodeAssignmentFields";
@@ -159,10 +159,10 @@ export function ProjectContextEditor({
 function EditorActions({ pending, onCancel, onSave, onDelete }: { pending: boolean; onCancel(): void; onSave(): void; onDelete?: () => void }) {
   return (
     <div className="v3-project-context-editor-actions">
-      {onDelete ? <button type="button" className="v3-button v3-button--ghost" disabled={pending} onClick={onDelete}>삭제</button> : null}
+      {onDelete ? <Button variant="destructive-outline" disabled={pending} onClick={onDelete}>삭제</Button> : null}
       <span />
-      <button type="button" className="v3-button v3-button--ghost" disabled={pending} onClick={onCancel}>취소</button>
-      <button type="button" className="v3-button v3-button--primary" disabled={pending} onClick={onSave}>{pending ? "저장 중…" : "저장"}</button>
+      <Button variant="ghost" disabled={pending} onClick={onCancel}>취소</Button>
+      <Button disabled={pending} onClick={onSave}>{pending ? "저장 중…" : "저장"}</Button>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  Button,
   Dialog,
   DialogHeader,
   DialogPanel,
@@ -70,22 +71,22 @@ export function ReviewQueuePanel({
                 onOpen={(selected) => { onClose(); onOpenSession(selected); }}
                 actions={(
                   <>
-                    <button
-                      type="button"
-                      className="v3-button v3-button--ghost"
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       onClick={() => { onClose(); onOpenSession(session); }}
                     >
                       채팅 열기
-                    </button>
-                    <button
-                      type="button"
-                      className="v3-button v3-button--soft"
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       disabled={pendingId !== null}
                       aria-label={`${reviewSessionTitle(session)} 확인 처리`}
                       onClick={() => { void acknowledge(session); }}
                     >
                       {pendingId === session.agentSessionId ? "처리 중…" : "확인 처리"}
-                    </button>
+                    </Button>
                   </>
                 )}
               />
