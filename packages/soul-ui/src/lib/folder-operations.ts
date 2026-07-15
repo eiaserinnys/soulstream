@@ -55,7 +55,10 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
     const { addFolder } = useDashboardStore.getState();
 
     try {
-      const body: { name: string; parentFolderId?: string | null } = { name };
+      const body: { name: string; parentFolderId?: string | null; idempotencyKey: string } = {
+        name,
+        idempotencyKey: operationId(),
+      };
       if (parentFolderId !== undefined) {
         body.parentFolderId = parentFolderId;
       }
@@ -95,7 +98,7 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
       const res = await fetch(config.updateUrl(folderId), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, idempotencyKey: operationId() }),
       });
       if (!res.ok) throw new Error(`Rename folder failed: ${res.status}`);
     } catch (err) {
@@ -144,6 +147,7 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
     try {
       const res = await fetch(config.deleteUrl(folderId), {
         method: "DELETE",
+        headers: { "Idempotency-Key": operationId() },
       });
       if (!res.ok) throw new Error(`Delete folder failed: ${res.status}`);
     } catch (err) {
@@ -222,4 +226,9 @@ export function createFolderOperations(config: FolderApiConfig): FolderOperation
   }
 
   return { createFolder, renameFolderOptimistic, deleteFolderOptimistic, updateFolderSettingsOptimistic, reorderFoldersOptimistic };
+}
+
+function operationId(): string {
+  if (!globalThis.crypto?.randomUUID) throw new Error("브라우저 randomUUID 지원이 필요합니다");
+  return globalThis.crypto.randomUUID();
 }

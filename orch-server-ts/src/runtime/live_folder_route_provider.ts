@@ -106,6 +106,7 @@ function serializeFolderRow(row: Record<string, unknown>): FolderRecord[] {
     name: String(row.name ?? ""),
     sortOrder: numberValue(row.sort_order ?? row.sortOrder) ?? 0,
     parentFolderId: stringOrNull(row.parent_folder_id ?? row.parentFolderId),
+    projectPageId: stringOrNull(row.project_page_id ?? row.projectPageId),
     settings: objectValue(row.settings),
   };
   const createdAt = timestampString(row.created_at ?? row.createdAt);
@@ -182,7 +183,7 @@ async function validateFolderParentUpdates(
   if ([...parentUpdates.values()].every((parentId) => parentId === null)) return;
   const sql = await sqlResolver.resolveSql();
   const rows = await sql`
-    SELECT id, parent_folder_id FROM folders
+    SELECT id, parent_folder_id FROM folders WHERE archived = FALSE
   `;
   const existingParents = new Map<string, string | null>();
   for (const row of rows) {

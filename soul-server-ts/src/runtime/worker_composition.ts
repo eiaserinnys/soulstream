@@ -32,6 +32,7 @@ import { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { RunbookHandoffNotifier } from "../runbook/runbook_handoff_notifier.js";
 import { RunbookService } from "../runbook/runbook_service.js";
 import { RunbookTaskIdentityHostClient } from "../runbook/runbook_task_identity_host_client.js";
+import { FolderProjectIdentityHostClient } from "../folder/folder_project_identity_host_client.js";
 import { PageYjsHostClient } from "../page/page_host_client.js";
 import type { ChecklistRunbookAdapter } from "../page/checklist_runbook_adapter.js";
 import type { ChecklistRunbookReconciler } from "../page/checklist_runbook_reconciler.js";
@@ -164,6 +165,10 @@ export async function composeWorkerRuntime(
     orch: orchProxyConfig,
     logger,
   });
+  const folderProjectIdentityHost = new FolderProjectIdentityHostClient({
+    orch: orchProxyConfig,
+    logger,
+  });
   const sessionPageBindingService = new SessionPageBindingService({
     nodeId: env.SOULSTREAM_NODE_ID,
     repository: sessionPageBindingRepository,
@@ -277,7 +282,12 @@ export async function composeWorkerRuntime(
     orchProxyConfig,
   });
 
-  const catalogService = new CatalogService(db, broadcaster, boardYjsService);
+  const catalogService = new CatalogService(
+    db,
+    broadcaster,
+    boardYjsService,
+    folderProjectIdentityHost,
+  );
   const runbookHandoffNotifier = new RunbookHandoffNotifier(
     db.runbooks(),
     {

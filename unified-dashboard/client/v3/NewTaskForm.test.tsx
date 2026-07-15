@@ -9,8 +9,20 @@ import {
 describe("new task inheritance preview", () => {
   it("matches the selected folder to its existing project page", () => {
     const folders = [
-      { id: "folder-soulstream", name: "소울스트림", parentFolderId: null, sortOrder: 0 },
-      { id: "folder-empty", name: "빈 프로젝트", parentFolderId: null, sortOrder: 1 },
+      {
+        id: "folder-soulstream",
+        name: "소울스트림",
+        parentFolderId: null,
+        sortOrder: 0,
+        projectPageId: "project-soulstream",
+      },
+      {
+        id: "folder-empty",
+        name: "빈 프로젝트",
+        parentFolderId: null,
+        sortOrder: 1,
+        projectPageId: "project-empty",
+      },
     ];
     const pages = [
       projectPage("project-empty", "빈 프로젝트", { folderId: "folder-empty" }),

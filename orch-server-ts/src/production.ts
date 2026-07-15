@@ -8,6 +8,8 @@ import { BoardYjsRepository } from "./board-yjs/board_yjs_repository.js";
 import { BoardYjsService } from "./board-yjs/board_yjs_service.js";
 import { PageRepository } from "./page/page_repository.js";
 import { PageYjsService } from "./page/page_service.js";
+import { SqlFolderProjectIdentityRepository } from "./folders/folder_project_identity_repository.js";
+import { FolderProjectIdentityService } from "./folders/folder_project_identity_service.js";
 import { PlannerRepository } from "./planner/planner_repository.js";
 import { SqlRunbookTaskIdentityRepository } from "./runbooks/runbook_task_identity_repository.js";
 import { RunbookTaskIdentityService } from "./runbooks/runbook_task_identity_service.js";
@@ -30,6 +32,7 @@ import {
 } from "./runtime/composition.js";
 import { resolveLiveBoardAssetStorageFromConfig } from "./runtime/live_board_asset_storage.js";
 import { createLiveDbCatalogRepository } from "./runtime/live_db_catalog_repository.js";
+import { broadcastCatalogSnapshot } from "./runtime/live_folder_mutation_broadcaster.js";
 import {
   createLiveDbSqlResolver,
   type LiveDbSqlResolver,
@@ -127,6 +130,7 @@ export async function createLiveProductionApplication(
   const boardYjsRepository = new BoardYjsRepository(sqlResolver);
   const pageRepository = new PageRepository(sqlResolver);
   const taskIdentityRepository = new SqlRunbookTaskIdentityRepository(sqlResolver);
+  const folderProjectIdentityRepository = new SqlFolderProjectIdentityRepository(sqlResolver);
   const plannerRepository = new PlannerRepository(sqlResolver);
   const boardAssetStorage = await resolveLiveBoardAssetStorageFromConfig(config);
   warnForPartialR2Config(config, context.warn);
@@ -156,6 +160,7 @@ export async function createLiveProductionApplication(
   let boardYjsService: BoardYjsService | undefined;
   let pageYjsService: PageYjsService | undefined;
   let taskIdentityService: RunbookTaskIdentityService | undefined;
+  let folderProjectIdentityService: FolderProjectIdentityService | undefined;
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
@@ -197,6 +202,8 @@ export async function createLiveProductionApplication(
         logger,
         mutateTaskIdentity: async (input) =>
           await taskIdentityService?.mutateFromPage(input) ?? null,
+        mutateProjectIdentity: async (input) =>
+          await folderProjectIdentityService?.mutateFromPage(input) ?? null,
         auth: {
           authBearerToken: config.auth_bearer_token,
           environment: config.environment,
@@ -237,12 +244,26 @@ export async function createLiveProductionApplication(
     await dbCatalogRepository.close();
     throw error;
   }
+  folderProjectIdentityService = new FolderProjectIdentityService({
+    repository: folderProjectIdentityRepository,
+    hydratePage: async (pageId) => {
+      if (!pageYjsService) throw new Error("Page Yjs service is not initialized");
+      await pageYjsService.hydrateCommittedPage(`page:${pageId}`);
+    },
+    onCommitted: async () => {
+      await broadcastCatalogSnapshot(
+        providers.folderRoutes.provider,
+        runtimeServices.sessionBroadcaster,
+      );
+    },
+  });
   const app = createApp(buildProductionRouteOptions(
     appConfig,
     runtimeServices,
     providers,
     config.cors_allowed_origins,
     taskIdentityService,
+    folderProjectIdentityService,
   ));
   let resourcesClosed = false;
   return {
@@ -274,6 +295,7 @@ export function buildProductionRouteOptions(
   providers: LiveOrchestratorProviderBundle,
   corsAllowedOrigins: readonly string[] = [],
   taskIdentityService?: RunbookTaskIdentityService,
+  folderProjectIdentityService?: FolderProjectIdentityService,
 ): CreateAppOptions {
   return {
     config,
@@ -295,7 +317,17 @@ export function buildProductionRouteOptions(
     pageYjsRoutes: runtime.routeOptions.pageYjsRoutes,
     cogitoRoutes: providers.cogitoRoutes,
     executeProxyRoutes: providers.executeProxyRoutes,
-    folderRoutes: providers.folderRoutes,
+    folderRoutes: {
+      ...providers.folderRoutes,
+      authBearerToken: config.authBearerToken,
+      resolveDashboardUserId: async (request) => {
+        const token = extractDashboardJwtCookieToken(request, AUTH_COOKIE_NAME);
+        return token ? (await providers.authRoutes.jwt.verifyToken(token))?.email ?? null : null;
+      },
+      ...(folderProjectIdentityService
+        ? { projectIdentityService: folderProjectIdentityService }
+        : {}),
+    },
     markdownDocumentRoutes: {
       ...providers.markdownDocumentRoutes,
       hostProxy: providers.runtime.boardYjsHostProxyRoutes,

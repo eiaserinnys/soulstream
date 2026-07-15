@@ -29,6 +29,7 @@ export interface CatalogFolder {
   name: string;
   sortOrder: number;
   parentFolderId?: string | null;
+  projectPageId?: string | null;
   settings?: FolderSettings;
   createdAt?: string;
   updatedAt?: string;

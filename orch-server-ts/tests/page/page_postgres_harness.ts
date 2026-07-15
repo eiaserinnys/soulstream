@@ -266,7 +266,12 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
     );
     CREATE TABLE folders (
       id TEXT PRIMARY KEY,
-      name TEXT NOT NULL
+      name TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      settings JSONB NOT NULL DEFAULT '{}'::jsonb,
+      parent_folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL,
+      project_page_id TEXT UNIQUE REFERENCES pages(id) ON DELETE RESTRICT,
+      archived BOOLEAN NOT NULL DEFAULT FALSE
     );
     CREATE TABLE markdown_documents (
       id TEXT PRIMARY KEY,
@@ -345,6 +350,18 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       actor_event_id INTEGER,
       actor_user_id TEXT,
       idempotency_key TEXT UNIQUE,
+      payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE folder_project_operations (
+      id TEXT PRIMARY KEY,
+      folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE RESTRICT,
+      operation_type TEXT NOT NULL,
+      actor_kind TEXT NOT NULL CHECK (actor_kind IN ('agent','user','system')),
+      actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      actor_user_id TEXT,
+      idempotency_key TEXT NOT NULL UNIQUE,
       payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
       reason TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

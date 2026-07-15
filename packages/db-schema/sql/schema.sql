@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS folders (
     name        TEXT NOT NULL,
     sort_order  INTEGER NOT NULL DEFAULT 0,
     parent_folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL,
+    project_page_id TEXT,
+    archived    BOOLEAN NOT NULL DEFAULT FALSE,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -20,6 +22,9 @@ ALTER TABLE folders ADD COLUMN IF NOT EXISTS settings JSONB NOT NULL DEFAULT '{}
 ALTER TABLE folders ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 -- 기존 테이블에 parent_folder_id 컬럼 추가 (멱등)
 ALTER TABLE folders ADD COLUMN IF NOT EXISTS parent_folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL;
+-- 사용자 폴더는 프로젝트 페이지와 한 객체다. legacy NULL은 승인된 백필 전까지만 허용한다.
+ALTER TABLE folders ADD COLUMN IF NOT EXISTS project_page_id TEXT;
+ALTER TABLE folders ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS idx_folders_parent_folder_id ON folders(parent_folder_id);
 
@@ -2392,27 +2397,33 @@ $$;
 CREATE OR REPLACE FUNCTION folder_get(
     p_id TEXT
 ) RETURNS SETOF folders LANGUAGE sql STABLE AS $$
-    SELECT * FROM folders WHERE id = p_id;
+    SELECT * FROM folders WHERE id = p_id AND archived = FALSE;
 $$;
 
 -- 25. folder_delete
 CREATE OR REPLACE FUNCTION folder_delete(
     p_id TEXT
-) RETURNS void LANGUAGE sql AS $$
-    DELETE FROM folders WHERE id = p_id;
+) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE sessions SET folder_id = NULL WHERE folder_id = p_id;
+    UPDATE folders SET parent_folder_id = NULL WHERE parent_folder_id = p_id;
+    DELETE FROM board_items WHERE folder_id = p_id;
+    DELETE FROM board_items WHERE item_type = 'subfolder' AND item_id = p_id;
+    UPDATE folders SET archived = TRUE WHERE id = p_id;
+END;
 $$;
 
 -- 26. folder_get_all
 CREATE OR REPLACE FUNCTION folder_get_all()
 RETURNS SETOF folders LANGUAGE sql STABLE AS $$
-    SELECT * FROM folders ORDER BY sort_order, name;
+    SELECT * FROM folders WHERE archived = FALSE ORDER BY sort_order, name;
 $$;
 
 -- 27. folder_get_default
 CREATE OR REPLACE FUNCTION folder_get_default(
     p_name TEXT
 ) RETURNS SETOF folders LANGUAGE sql STABLE AS $$
-    SELECT * FROM folders WHERE name = p_name;
+    SELECT * FROM folders WHERE name = p_name AND archived = FALSE;
 $$;
 
 -- 28. folder_ensure_defaults
@@ -3182,6 +3193,29 @@ ALTER TABLE pages DROP CONSTRAINT IF EXISTS pages_updated_event_fkey;
 ALTER TABLE pages ADD CONSTRAINT pages_updated_event_fkey
     FOREIGN KEY (updated_session_id, updated_event_id)
     REFERENCES events(session_id, id) ON DELETE SET NULL;
+
+ALTER TABLE folders DROP CONSTRAINT IF EXISTS folders_project_page_id_fkey;
+ALTER TABLE folders ADD CONSTRAINT folders_project_page_id_fkey
+    FOREIGN KEY (project_page_id) REFERENCES pages(id) ON DELETE RESTRICT;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_folders_project_page_id
+    ON folders(project_page_id) WHERE project_page_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS folder_project_operations (
+    id               TEXT PRIMARY KEY,
+    folder_id        TEXT NOT NULL REFERENCES folders(id) ON DELETE RESTRICT,
+    operation_type   TEXT NOT NULL,
+    actor_kind       TEXT NOT NULL CHECK (actor_kind IN ('agent','user','system')),
+    actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+    actor_user_id    TEXT,
+    idempotency_key  TEXT NOT NULL,
+    payload_json     JSONB NOT NULL DEFAULT '{}'::JSONB,
+    reason           TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_folder_project_ops_idem
+    ON folder_project_operations(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_folder_project_ops_folder
+    ON folder_project_operations(folder_id, created_at);
 
 -- One task identity has a runbook execution aspect and a page document aspect.
 -- New rows use task_page_id = id; legacy rows remain NULL until canonical Y.Doc backfill.

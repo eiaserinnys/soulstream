@@ -24,15 +24,14 @@ describe("classifyMountedPage", () => {
 });
 
 describe("project folder bridge", () => {
-  it("prefers metadata folderId and falls back to emoji-normalized titles", () => {
+  it("resolves only the explicit immutable project page binding", () => {
     const folders = [
-      { id: "folder-explicit", name: "다른 프로젝트", sortOrder: 0 },
-      { id: "folder-soul", name: "✨ 소울스트림", sortOrder: 1 },
+      { id: "folder-explicit", name: "다른 프로젝트", sortOrder: 0, projectPageId: "page-explicit" },
+      { id: "folder-soul", name: "✨ 소울스트림", sortOrder: 1, projectPageId: "page-soul" },
     ];
-    expect(resolveProjectFolderId({ title: "무관", metadata: { folderId: "folder-explicit" } }, folders))
+    expect(resolveProjectFolderId({ id: "page-explicit" }, folders))
       .toBe("folder-explicit");
-    expect(resolveProjectFolderId({ title: "소울스트림", metadata: {} }, folders))
-      .toBe("folder-soul");
+    expect(resolveProjectFolderId({ id: "missing" }, folders)).toBeNull();
   });
 });
 

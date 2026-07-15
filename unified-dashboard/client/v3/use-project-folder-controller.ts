@@ -4,7 +4,7 @@ import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
 import { createFolder } from "../lib/folder-operations";
 import { resolveProjectFolderId } from "./planner-model";
-import { resolveOrCreateProjectPage } from "./project-page-actions";
+import { resolveProjectPage } from "./project-page-actions";
 
 export function useProjectFolderController() {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -19,7 +19,7 @@ export function useProjectFolderController() {
     setSelectedFolderId(folder.id);
     setSelectedProject(null);
     try {
-      setSelectedProject(await resolveOrCreateProjectPage(api, folder, knownPages));
+      setSelectedProject(await resolveProjectPage(api, folder, knownPages));
     } catch (error) {
       notify(`프로젝트 페이지 연결 실패 · ${errorText(error)}`);
     }

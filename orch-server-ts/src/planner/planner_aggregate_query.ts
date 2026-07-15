@@ -28,19 +28,8 @@ export async function plannerQuery(
     root_folder AS (
       SELECT folder.id
       FROM root_page root
-      JOIN folders folder ON (
-        COALESCE(NULLIF(root.metadata->>'folderId', ''),
-                 NULLIF(root.metadata->>'folder_id', '')) = folder.id
-        OR (
-          NULLIF(root.metadata->>'folderId', '') IS NULL
-          AND NULLIF(root.metadata->>'folder_id', '') IS NULL
-          AND btrim(root.title) = btrim(folder.name)
-        )
-      )
-      WHERE ${kind} = 'project'
-      ORDER BY (COALESCE(NULLIF(root.metadata->>'folderId', ''),
-                         NULLIF(root.metadata->>'folder_id', '')) = folder.id) DESC,
-               folder.id
+      JOIN folders folder ON folder.project_page_id = root.id
+      WHERE ${kind} = 'project' AND folder.archived = FALSE
       LIMIT 1
     ),
     root_blocks AS (

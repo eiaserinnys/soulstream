@@ -96,24 +96,10 @@ export function latestRun(
 }
 
 export function resolveProjectFolderId(
-  page: Pick<PageDto, "title" | "metadata">,
+  page: Pick<PageDto, "id">,
   folders: readonly CatalogFolder[],
 ): string | null {
-  const explicit = nonEmptyString(page.metadata.folderId)
-    ?? nonEmptyString(page.metadata.folder_id);
-  if (explicit) return explicit;
-  const exact = folders.find((folder) => folder.name.trim() === page.title.trim());
-  if (exact) return exact.id;
-  const normalizedTitle = normalizeProjectTitle(page.title);
-  return folders.find((folder) => normalizeProjectTitle(folder.name) === normalizedTitle)?.id ?? null;
-}
-
-export function normalizeProjectTitle(value: string): string {
-  return value
-    .trim()
-    .replace(/^[^\p{L}\p{N}]+/u, "")
-    .replace(/\s+/g, " ")
-    .toLocaleLowerCase("ko-KR");
+  return folders.find((folder) => folder.projectPageId === page.id)?.id ?? null;
 }
 
 function preferredAssigneeItem(items: readonly RunbookItemRow[]): RunbookItemRow | null {

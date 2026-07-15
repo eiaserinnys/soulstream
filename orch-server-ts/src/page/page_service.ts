@@ -88,6 +88,9 @@ export interface PageYjsServiceConfig {
   mutateTaskIdentity?: (
     input: PageMutationInput,
   ) => Promise<PageServiceMutationResult | null>;
+  mutateProjectIdentity?: (
+    input: PageMutationInput,
+  ) => Promise<PageServiceMutationResult | null>;
 }
 
 export interface PageServicePageDto {
@@ -201,6 +204,8 @@ export class PageYjsService {
   async mutatePage(input: PageMutationInput): Promise<PageServiceMutationResult> {
     const taskIdentityResult = await this.config.mutateTaskIdentity?.(input);
     if (taskIdentityResult) return taskIdentityResult;
+    const projectIdentityResult = await this.config.mutateProjectIdentity?.(input);
+    if (projectIdentityResult) return projectIdentityResult;
     return await this.mutex.runExclusive(input.pageId, async () => {
       const idempotent = await this.resolveIdempotent(input.idempotencyKey);
       if (idempotent) return idempotent;
@@ -465,7 +470,6 @@ export function toMutationResult(
     ...(committed.idempotent ? { idempotent: true } : {}),
   };
 }
-
 function toReadResult(
   replica: PageYjsReplica,
   createdAt: Date,
