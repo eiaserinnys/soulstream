@@ -26,10 +26,16 @@
   background: transparent;
 }
 
-.v3-project-nav-link > span:nth-child(2) {
+.v3-project-nav-link > span:last-child,
+.v3-review-nav-link > span:last-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.v3-nav-list .v3-review-nav-link {
+  min-width: 0;
+  width: 100%;
 }
 
 .v3-nav-list .v3-starred-task-link {

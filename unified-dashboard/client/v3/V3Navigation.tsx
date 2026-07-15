@@ -105,6 +105,7 @@ export function V3Navigation({
       data-liquid-glass-webgl={webglActive ? "true" : undefined}
       aria-label="플래너 내비게이션"
     >
+      <div className="v3-navigation-scroll" data-testid="v3-navigation-scroll">
       <h2>데일리</h2>
       <div className="v3-nav-list">
         {dates.map((item) => (
@@ -123,8 +124,8 @@ export function V3Navigation({
       <h2>검수 대기</h2>
       <div className="v3-nav-list" data-testid="v3-review-navigation">
         {reviewNavigation.map((session) => (
-          <button type="button" key={session.agentSessionId} onClick={onOpenReviewQueue}>
-            <span aria-hidden="true">◆</span><span>{reviewSessionTitle(session)}</span>
+          <button type="button" className="v3-review-nav-link" key={session.agentSessionId} onClick={onOpenReviewQueue}>
+            <span>{reviewSessionTitle(session)}</span>
           </button>
         ))}
         {reviewSessions.length === 0 ? <p>검수 대기가 없습니다.</p> : null}
@@ -186,7 +187,6 @@ export function V3Navigation({
               aria-level={depth + 1}
               onClick={() => onSelectFolder(folder)}
             >
-              <span className="v3-project-bullet" aria-hidden="true">◆</span>
               <span>{folder.name}</span>
             </button>
           </div>
@@ -218,6 +218,7 @@ export function V3Navigation({
         ) : null}
         {error ? <p className="v3-project-star-error" role="alert">{error}</p> : null}
       </div>
+      </div>
 
       <V3ContextMenu
         target={contextMenu?.target ?? null}
@@ -237,7 +238,6 @@ export function V3Navigation({
         ] : []}
       />
       <div className="v3-nav-foot">
-        업무는 프로젝트에 누적되고,<br />세션은 업무를 수행하는 run.
         <div><kbd>C</kbd> 새 업무 · <kbd>Esc</kbd> 닫기</div>
       </div>
     </nav>
