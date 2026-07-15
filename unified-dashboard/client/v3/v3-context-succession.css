@@ -35,14 +35,6 @@
   box-shadow: none;
 }
 
-body:has(.v3-run-move-dialog) [data-slot="dialog-backdrop"] {
-  z-index: 90;
-}
-
-body:has(.v3-run-move-dialog) [data-slot="dialog-viewport"] {
-  z-index: 90;
-}
-
 .v3-context-inherited {
   padding: 12px;
   background: color-mix(in srgb, var(--info) 7%, transparent);

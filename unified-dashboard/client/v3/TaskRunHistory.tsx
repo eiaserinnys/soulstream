@@ -201,7 +201,7 @@ export function TaskRunHistory({
         ]}
       />
       <Dialog open={moveSessionId !== null} onOpenChange={(open) => { if (!open && !movePending) setMoveSessionId(null); }}>
-        <DialogPopup className="v3-run-move-dialog max-w-md">
+        <DialogPopup className="max-w-md">
           <DialogHeader><DialogTitle>다른 업무로 이동</DialogTitle></DialogHeader>
           <DialogPanel>
             <div className="v3-context-picker v3-run-move-picker">
