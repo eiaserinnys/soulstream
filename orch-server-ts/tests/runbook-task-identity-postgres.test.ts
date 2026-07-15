@@ -128,6 +128,9 @@ describe("Runbook task identity PostgreSQL transaction", () => {
         actor: { actorKind: "user", actorUserId: "user@example.com" },
         idempotencyKey: "task-identity:v1-projection:project",
       });
+      await harness.sql`
+        UPDATE folders SET project_page_id = ${projectPageId} WHERE id = ${folderId}
+      `;
       const service = createService(
         new TransactionBoardPort(),
         taskId,

@@ -28,4 +28,35 @@ describe("folder project backfill plan", () => {
     });
     expect(plan.create.every((entry) => entry.folderId === entry.pageId)).toBe(true);
   });
+
+  it("blocks shared-title guesses and unavailable same-ID page collisions", () => {
+    const plan = planFolderProjectBackfill([
+      { id: "folder-a", name: "중복 프로젝트" },
+      { id: "folder-b", name: "중복 프로젝트" },
+      { id: "folder-c", name: "충돌 프로젝트" },
+    ], [
+      {
+        id: "page-shared",
+        title: "중복 프로젝트",
+        daily: false,
+        taskIdentity: false,
+        boundFolderId: null,
+      },
+      {
+        id: "folder-c",
+        title: "다른 문서",
+        daily: true,
+        taskIdentity: false,
+        boundFolderId: null,
+      },
+    ]);
+
+    expect(plan.reuse).toEqual([]);
+    expect(plan.create).toEqual([]);
+    expect(plan.ambiguous).toEqual([
+      expect.objectContaining({ folderId: "folder-a", reason: "shared-title-match" }),
+      expect.objectContaining({ folderId: "folder-b", reason: "shared-title-match" }),
+      expect.objectContaining({ folderId: "folder-c", reason: "folder-id-collision" }),
+    ]);
+  });
 });

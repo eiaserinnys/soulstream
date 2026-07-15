@@ -101,8 +101,8 @@ export class FolderProjectIdentityService {
       | { op: "rename_page"; title: string }
       | { op: "set_page_archived"; archived: boolean }
     > = [];
-    if (title !== binding.name) operations.push({ op: "rename_page", title });
-    if (archived !== binding.archived) {
+    if (typeof update.name === "string") operations.push({ op: "rename_page", title });
+    if (input.archived !== undefined) {
       operations.push({ op: "set_page_archived", archived });
     }
     if (operations.length === 0) {
@@ -132,6 +132,10 @@ export class FolderProjectIdentityService {
 
   async mutateFromPage(input: PageMutationInput): Promise<PageServiceMutationResult | null> {
     if (!isIdentityCommand(input.command)) return null;
+    const idempotent = await this.config.repository.findMutationByIdempotencyKey(
+      input.idempotencyKey,
+    );
+    if (idempotent) return await this.pageResultFromIdentityMutation(idempotent);
     const binding = await this.config.repository.findByPageId(input.pageId);
     if (!binding) return null;
     const pageApplication = await this.pageMutation(binding, input);
@@ -163,6 +167,21 @@ export class FolderProjectIdentityService {
     actor: PageMutationActor;
     idempotencyKey: string;
   }): Promise<LegacyFolderBackfillResult> {
+    const idempotent = await this.config.repository.findMutationByIdempotencyKey(
+      input.idempotencyKey,
+    );
+    if (idempotent) {
+      const payload = recordValue(idempotent.operation.payload_json);
+      await this.config.hydratePage(idempotent.pageId);
+      return {
+        folderId: idempotent.id,
+        pageId: idempotent.pageId,
+        createdPage: payload.created_page === true,
+        operation: idempotent.operation,
+        pageCommit: idempotent.pageCommit,
+        idempotent: true,
+      };
+    }
     const folders = await this.config.repository.listLegacyFolders();
     const folder = folders.find((candidate) => candidate.folderId === input.folderId);
     if (!folder) throw new Error(`legacy folder not found: ${input.folderId}`);
@@ -244,6 +263,20 @@ export class FolderProjectIdentityService {
     if (!result.idempotent) await this.config.onCommitted?.();
     return result;
   }
+
+  private async pageResultFromIdentityMutation(
+    result: FolderProjectIdentityMutationResult,
+  ): Promise<PageServiceMutationResult> {
+    const document = await loadDocument(
+      result.pageId,
+      this.config.repository.readPageSnapshot.bind(this.config.repository),
+    );
+    await this.config.hydratePage(result.pageId);
+    return {
+      ...toMutationResult(readPageYDocReplica(result.pageId, document), {}, result.pageCommit),
+      idempotent: true,
+    };
+  }
 }
 
 async function loadDocument(
@@ -279,4 +312,10 @@ function isIdentityCommand(command: PageMutationInput["command"]): boolean {
   return command.type === "batch_operations" && command.operations.some((operation) =>
     operation.op === "rename_page" || operation.op === "set_page_archived"
   );
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
 }

@@ -470,7 +470,6 @@ export function toMutationResult(
     ...(committed.idempotent ? { idempotent: true } : {}),
   };
 }
-
 function toReadResult(
   replica: PageYjsReplica,
   createdAt: Date,

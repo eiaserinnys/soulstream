@@ -284,14 +284,33 @@ async function bindingRows(
   id: string,
   forUpdate = false,
 ): Promise<FolderProjectBinding[]> {
-  const rows = await sql<readonly Record<string, unknown>[]>`
-    SELECT f.id, f.name, f.sort_order, f.settings, f.parent_folder_id,
-           f.project_page_id, f.archived, p.version AS page_version
-    FROM folders f
-    JOIN pages p ON p.id = f.project_page_id
-    WHERE ${by === "folder" ? sql`f.id = ${id}` : sql`f.project_page_id = ${id}`}
-    ${forUpdate ? sql`FOR UPDATE OF f, p` : sql``}
-  `;
+  const rows = by === "folder"
+    ? forUpdate
+      ? await sql<readonly Record<string, unknown>[]>`
+          SELECT f.id, f.name, f.sort_order, f.settings, f.parent_folder_id,
+                 f.project_page_id, f.archived, p.version AS page_version
+          FROM folders f JOIN pages p ON p.id = f.project_page_id
+          WHERE f.id = ${id} FOR UPDATE OF f, p
+        `
+      : await sql<readonly Record<string, unknown>[]>`
+          SELECT f.id, f.name, f.sort_order, f.settings, f.parent_folder_id,
+                 f.project_page_id, f.archived, p.version AS page_version
+          FROM folders f JOIN pages p ON p.id = f.project_page_id
+          WHERE f.id = ${id}
+        `
+    : forUpdate
+      ? await sql<readonly Record<string, unknown>[]>`
+          SELECT f.id, f.name, f.sort_order, f.settings, f.parent_folder_id,
+                 f.project_page_id, f.archived, p.version AS page_version
+          FROM folders f JOIN pages p ON p.id = f.project_page_id
+          WHERE f.project_page_id = ${id} FOR UPDATE OF f, p
+        `
+      : await sql<readonly Record<string, unknown>[]>`
+          SELECT f.id, f.name, f.sort_order, f.settings, f.parent_folder_id,
+                 f.project_page_id, f.archived, p.version AS page_version
+          FROM folders f JOIN pages p ON p.id = f.project_page_id
+          WHERE f.project_page_id = ${id}
+        `;
   return rows.flatMap(bindingRow);
 }
 

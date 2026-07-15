@@ -82,9 +82,10 @@ describe("CatalogService.listFolders", () => {
         sortOrder: 1,
         settings: { x: 1 },
         parentFolderId: null,
+        projectPageId: null,
         createdAt: "2026-06-03T00:00:00.000Z",
       },
-      { id: "f2", name: "F2", sortOrder: 2, settings: {}, parentFolderId: "f1" },
+      { id: "f2", name: "F2", sortOrder: 2, settings: {}, parentFolderId: "f1", projectPageId: null },
     ]);
   });
 });
@@ -111,6 +112,43 @@ describe("CatalogService.createFolder", () => {
 
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
+
+  it("uses the orch identity host for MCP create/rename/delete without a local DB fallback", async () => {
+    const { sql, calls } = setupSqlWithCatalog();
+    const db = new SessionDB(sql);
+    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
+    const identityId = "00000000-0000-4000-8000-0000000000af";
+    const host = {
+      create: vi.fn(async (input: { name: string; sortOrder: number; parentFolderId: string | null }) => ({
+        id: identityId,
+        pageId: identityId,
+        folder: {
+          id: identityId,
+          name: input.name,
+          sortOrder: input.sortOrder,
+          settings: {},
+          parentFolderId: input.parentFolderId,
+          projectPageId: identityId,
+        },
+      })),
+      rename: vi.fn(async () => ({})),
+      archive: vi.fn(async () => ({})),
+    };
+    const svc = new CatalogService(db, broadcaster, undefined, host as never);
+
+    await expect(svc.createFolder("MCP 프로젝트", 4, null)).resolves.toMatchObject({
+      id: identityId,
+      projectPageId: identityId,
+    });
+    await svc.renameFolder(identityId, "MCP 이름 변경");
+    await svc.deleteFolder(identityId);
+
+    expect(host.create).toHaveBeenCalledTimes(1);
+    expect(host.rename).toHaveBeenCalledTimes(1);
+    expect(host.archive).toHaveBeenCalledTimes(1);
+    expect(calls.some((call) => call.fragments.join("|").includes("folder_create"))).toBe(false);
+    expect(emitCatalogUpdated).not.toHaveBeenCalled();
+  });
 });
 
 describe("CatalogService.listChildFolders", () => {
@@ -126,8 +164,8 @@ describe("CatalogService.listChildFolders", () => {
     const svc = new CatalogService(db, broadcaster);
 
     await expect(svc.listChildFolders("root")).resolves.toEqual([
-      { id: "child-a", name: "Child A", sortOrder: 1, settings: {}, parentFolderId: "root" },
-      { id: "child-b", name: "Child B", sortOrder: 2, settings: {}, parentFolderId: "root" },
+      { id: "child-a", name: "Child A", sortOrder: 1, settings: {}, parentFolderId: "root", projectPageId: null },
+      { id: "child-b", name: "Child B", sortOrder: 2, settings: {}, parentFolderId: "root", projectPageId: null },
     ]);
   });
 });

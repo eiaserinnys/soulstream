@@ -84,10 +84,97 @@ describe("FolderProjectIdentityService", () => {
       archived: false,
     }));
   });
+
+  it("returns a committed page result before recalculating an idempotent page retry", async () => {
+    const repository = createRepository();
+    const committed = mutationResult({
+      id: identityId,
+      pageId: identityId,
+      name: "이미 바뀐 이름",
+      idempotent: true,
+    });
+    vi.mocked(repository.findMutationByIdempotencyKey).mockResolvedValue(committed);
+    vi.mocked(repository.readPageSnapshot).mockResolvedValue(
+      createPageSnapshot("이미 바뀐 이름"),
+    );
+    const hydratePage = vi.fn();
+    const service = new FolderProjectIdentityService({ repository, hydratePage });
+
+    await expect(service.mutateFromPage({
+      pageId: identityId,
+      expectedVersion: 1,
+      command: { type: "rename_page", title: "이미 바뀐 이름" },
+      actor: { actorKind: "user", actorUserId: "user@example.com" },
+      idempotencyKey: "retry-page-af",
+    })).resolves.toMatchObject({
+      page: { id: identityId, title: "이미 바뀐 이름" },
+      idempotent: true,
+    });
+
+    expect(repository.findByPageId).not.toHaveBeenCalled();
+    expect(repository.mutate).not.toHaveBeenCalled();
+    expect(hydratePage).toHaveBeenCalledWith(identityId);
+  });
+
+  it("returns the stored backfill outcome before listing legacy folders on retry", async () => {
+    const repository = createRepository();
+    const committed = mutationResult({
+      id: identityId,
+      pageId: identityId,
+      name: "기존 프로젝트",
+      idempotent: true,
+      operation: { payload_json: { created_page: true } },
+    });
+    vi.mocked(repository.findMutationByIdempotencyKey).mockResolvedValue(committed);
+    const service = new FolderProjectIdentityService({
+      repository,
+      hydratePage: vi.fn(),
+    });
+
+    await expect(service.backfillLegacyFolder({
+      folderId: identityId,
+      actor: { actorKind: "system" },
+      idempotencyKey: "retry-backfill-af",
+    })).resolves.toMatchObject({
+      folderId: identityId,
+      pageId: identityId,
+      createdPage: true,
+      idempotent: true,
+    });
+
+    expect(repository.listLegacyFolders).not.toHaveBeenCalled();
+    expect(repository.createLegacyPageAndBind).not.toHaveBeenCalled();
+  });
 });
 
 function createRepository(): FolderProjectIdentityRepository {
-  const result = (input: { id: string; pageId: string; name: string }): FolderProjectIdentityMutationResult => ({
+  const result = (input: { id: string; pageId: string; name: string }): FolderProjectIdentityMutationResult =>
+    mutationResult(input);
+  return {
+    findMutationByIdempotencyKey: vi.fn(async () => null),
+    create: vi.fn(async (input) => result(input)),
+    mutate: vi.fn(async (input) => result({
+      id: input.binding.folderId,
+      pageId: input.binding.pageId,
+      name: input.title,
+    })),
+    findByFolderId: vi.fn(async () => null),
+    findByPageId: vi.fn(async () => null),
+    readPageSnapshot: vi.fn(async () => null),
+    listLegacyFolders: vi.fn(async () => []),
+    bindLegacyPage: vi.fn(),
+    createLegacyPageAndBind: vi.fn(),
+  };
+}
+
+function mutationResult(input: {
+  id: string;
+  pageId: string;
+  name: string;
+  idempotent?: boolean;
+  operation?: Record<string, unknown>;
+}): FolderProjectIdentityMutationResult {
+  return {
     id: input.id,
     pageId: input.pageId,
     folder: {
@@ -98,7 +185,7 @@ function createRepository(): FolderProjectIdentityRepository {
       parentFolderId: null,
       projectPageId: input.pageId,
     },
-    operation: { id: "folder-operation" },
+    operation: input.operation ?? { id: "folder-operation" },
     pageCommit: {
       operation: {
         id: "page-operation",
@@ -118,29 +205,14 @@ function createRepository(): FolderProjectIdentityRepository {
       },
       pageCreatedAt: new Date(),
       pageUpdatedAt: new Date(),
-      idempotent: false,
+      idempotent: input.idempotent ?? false,
     },
-  });
-  return {
-    findMutationByIdempotencyKey: vi.fn(async () => null),
-    create: vi.fn(async (input) => result(input)),
-    mutate: vi.fn(async (input) => result({
-      id: input.binding.folderId,
-      pageId: input.binding.pageId,
-      name: input.title,
-    })),
-    findByFolderId: vi.fn(async () => null),
-    findByPageId: vi.fn(async () => null),
-    readPageSnapshot: vi.fn(async () => null),
-    listLegacyFolders: vi.fn(async () => []),
-    bindLegacyPage: vi.fn(),
-    createLegacyPageAndBind: vi.fn(),
   };
 }
 
-function createPageSnapshot(): Uint8Array {
+function createPageSnapshot(title = "이전 이름"): Uint8Array {
   return new PageMutationCore().createPage({
-    page: { id: identityId, title: "이전 이름", dailyDate: null },
+    page: { id: identityId, title, dailyDate: null },
     actor: { actorKind: "system" },
     idempotencyKey: "test:system:snapshot-af",
   }).snapshot;

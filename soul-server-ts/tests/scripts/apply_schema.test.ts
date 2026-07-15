@@ -273,6 +273,7 @@ describe("apply-schema.mjs", () => {
 
       await sql.unsafe(`
         ALTER TABLE runbooks DROP CONSTRAINT runbooks_task_page_id_fkey;
+        ALTER TABLE folders DROP CONSTRAINT folders_project_page_id_fkey;
         DROP TABLE checklist_runbook_projection_outbox;
         DROP TABLE block_links;
         DROP TABLE block_operations;

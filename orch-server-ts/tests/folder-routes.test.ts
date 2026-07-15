@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import type { FolderProjectIdentityService } from "../src/folders/folder_project_identity_service.js";
 
 import {
   FolderRouteError,
@@ -213,6 +215,145 @@ describe("folder route harness", () => {
       ["listFolders"],
       ["create", "New child", 0, { parentFolderId: "folder-a-child" }],
     ]);
+
+    await app.close();
+  });
+
+  it("routes browser create, compound rename, and delete through one project identity service", async () => {
+    const harness = createHarness();
+    const create = vi.fn(async () => ({
+      folder: {
+        id: "00000000-0000-4000-8000-0000000000af",
+        name: "Project",
+        sortOrder: 0,
+        settings: {},
+        parentFolderId: null,
+        projectPageId: "00000000-0000-4000-8000-0000000000af",
+      },
+    }));
+    const mutateFromFolder = vi.fn(async () => ({}));
+    const projectIdentityService = {
+      create,
+      mutateFromFolder,
+      backfillLegacyFolder: vi.fn(),
+    } as unknown as Pick<
+      FolderProjectIdentityService,
+      "create" | "mutateFromFolder" | "backfillLegacyFolder"
+    >;
+    const app = createApp({
+      config,
+      folderRoutes: {
+        provider: harness.provider,
+        accessProvider: createAccessProvider({ restricted: false }, harness.calls),
+        resolveDashboardUserId: () => "user@example.com",
+        projectIdentityService,
+      },
+    });
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/folders",
+      payload: { name: "Project", idempotencyKey: "browser:create:af" },
+    });
+    const updated = await app.inject({
+      method: "PUT",
+      url: "/api/folders/folder-a",
+      payload: {
+        name: "Renamed",
+        settings: { color: "red" },
+        parentFolderId: null,
+        idempotencyKey: "browser:update:af",
+      },
+    });
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: "/api/folders/folder-a",
+      headers: { "idempotency-key": "browser:delete:af" },
+    });
+
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({
+      id: "00000000-0000-4000-8000-0000000000af",
+      projectPageId: "00000000-0000-4000-8000-0000000000af",
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(deleted.statusCode).toBe(200);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      actor: { actorKind: "user", actorUserId: "user@example.com" },
+      idempotencyKey: "browser:create:af",
+    }));
+    expect(mutateFromFolder).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      update: { name: "Renamed", settings: { color: "red" }, parentFolderId: null },
+      idempotencyKey: "browser:update:af",
+    }));
+    expect(mutateFromFolder).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      archived: true,
+      idempotencyKey: "browser:delete:af",
+    }));
+    expect(harness.calls.filter(([kind]) => ["create", "update", "delete"].includes(kind)))
+      .toEqual([]);
+
+    await app.close();
+  });
+
+  it("accepts the soul MCP host create payload only with the service bearer", async () => {
+    const harness = createHarness();
+    const create = vi.fn(async () => ({
+      folder: {
+        id: "00000000-0000-4000-8000-0000000000af",
+        name: "MCP Project",
+        sortOrder: 0,
+        settings: {},
+        parentFolderId: null,
+        projectPageId: "00000000-0000-4000-8000-0000000000af",
+      },
+    }));
+    const projectIdentityService = {
+      create,
+      mutateFromFolder: vi.fn(),
+      backfillLegacyFolder: vi.fn(),
+    } as unknown as Pick<
+      FolderProjectIdentityService,
+      "create" | "mutateFromFolder" | "backfillLegacyFolder"
+    >;
+    const app = createApp({
+      config,
+      folderRoutes: {
+        provider: harness.provider,
+        accessProvider: createAccessProvider({ restricted: false }, harness.calls),
+        projectIdentityService,
+        authBearerToken: "test-token",
+      },
+    });
+    const payload = {
+      name: "MCP Project",
+      sort_order: 0,
+      parent_folder_id: null,
+      actor_kind: "system",
+      idempotency_key: "mcp:create:folder-af",
+    };
+
+    expect((await app.inject({
+      method: "POST",
+      url: "/api/folder-project-identities/host/create",
+      payload,
+    })).statusCode).toBe(401);
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/folder-project-identities/host/create",
+      headers: { authorization: "Bearer test-token" },
+      payload,
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().folder).toMatchObject({
+      id: "00000000-0000-4000-8000-0000000000af",
+      projectPageId: "00000000-0000-4000-8000-0000000000af",
+    });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      actor: { actorKind: "system" },
+      idempotencyKey: "mcp:create:folder-af",
+    }));
 
     await app.close();
   });

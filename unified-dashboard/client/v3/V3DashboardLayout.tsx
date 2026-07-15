@@ -366,7 +366,6 @@ function V3DashboardContent() {
       setInspectorOpen: () => { setChatOpen(true); if (mobileMode) setMobileTab("chat"); },
     });
   }, [mobileMode, setActiveBoardDocument]);
-
   const createTask = async (title: string, folderId: string, description: string) => {
     const folder = catalog?.folders.find((item) => item.id === folderId);
     if (!folder) { notify("선택한 프로젝트를 찾을 수 없습니다"); return; }
@@ -387,7 +386,6 @@ function V3DashboardContent() {
       setCreatePending(false);
     }
   };
-
   const saveMemo = async (blockId: string | null, text: string) => {
     if (!daily.data) return;
     try {
@@ -441,7 +439,6 @@ function V3DashboardContent() {
     }
     invalidateLocal();
   };
-
   const reviewSessions = reviewQueueSessions(sessions)
     .filter((session) => !acknowledgedReviewIds.has(session.agentSessionId));
   const selectedFolderName = catalog?.folders.find((folder) => folder.id === selectedFolderId)?.name ?? "프로젝트";
