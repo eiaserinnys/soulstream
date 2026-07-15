@@ -295,7 +295,7 @@ function hasTransferIdentity(mutations: readonly CommitPageMutationInput[]): boo
   return mutations.some((mutation) => mutation.application.payload.transfer_identity !== undefined);
 }
 
-async function assertDatabaseMutationVersion(
+export async function assertDatabaseMutationVersion(
   sql: PageQuerySql,
   input: CommitPageMutationInput,
 ): Promise<void> {
@@ -313,7 +313,7 @@ async function assertDatabaseMutationVersion(
   }
 }
 
-async function commitPageMutationInTransaction(
+export async function commitPageMutationInTransaction(
   transaction: PageQuerySql,
   input: CommitPageMutationInput,
 ): Promise<PageMutationCommitResult> {

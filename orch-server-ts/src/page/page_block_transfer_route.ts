@@ -27,7 +27,12 @@ const targetSchema = z.discriminatedUnion("kind", [
     parent_id: id.nullable(),
     after_block_id: id.nullable(),
   }),
-  z.object({ kind: z.literal("new"), page_id: id, title: id }),
+  z.object({
+    kind: z.literal("new"),
+    page_id: id,
+    title: id,
+    folder_id: id.optional(),
+  }),
 ]);
 const transferSchema = z.object({
   source: sourceSchema,
@@ -71,7 +76,14 @@ export function registerPageBlockTransferRoute(
           blockIds: parsed.data.source.block_ids,
         },
         target: parsed.data.target.kind === "new"
-          ? { kind: "new", pageId: parsed.data.target.page_id, title: parsed.data.target.title }
+          ? {
+              kind: "new",
+              pageId: parsed.data.target.page_id,
+              title: parsed.data.target.title,
+              ...(parsed.data.target.folder_id === undefined
+                ? {}
+                : { folderId: parsed.data.target.folder_id }),
+            }
           : {
               kind: "existing",
               pageId: parsed.data.target.page_id,

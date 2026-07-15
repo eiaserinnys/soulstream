@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
 import { filterRunbookOverviewForAccess } from "./runbook_access.js";
 import { registerRunbookCreateRoute } from "./runbook_create_route.js";
+import { registerRunbookTaskIdentityHostRoute } from "./runbook_task_identity_host_route.js";
 import {
   resolveItemActorSessionId,
   resolveRunbookActorSessionId,
@@ -56,6 +57,12 @@ export function registerRunbookRoutes(
   options: RunbookRouteOptions,
 ): void {
   registerRunbookCreateRoute(app, options);
+  if (options.taskIdentityService && options.authBearerToken) {
+    registerRunbookTaskIdentityHostRoute(app, {
+      service: options.taskIdentityService,
+      authBearerToken: options.authBearerToken,
+    });
+  }
 
   app.get("/api/runbooks/my-turn", async (request, reply) => {
     const limit = parseLimit(request.query);

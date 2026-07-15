@@ -60,11 +60,20 @@ describe("project page bridge", () => {
       setStarred: vi.fn(),
     } as unknown as PageApiClient;
 
-    await expect(createProjectPage(api, "새 프로젝트", () => "project-seed-id"))
+    await expect(createProjectPage(
+      api,
+      { title: "새 프로젝트", folderId: "folder-project" },
+      () => "project-seed-id",
+    ))
       .resolves.toEqual(created);
     expect(api.setStarred).not.toHaveBeenCalled();
     expect(api.transferBlocks).toHaveBeenCalledWith(expect.objectContaining({
-      target: { kind: "new", pageId: "project-seed-id", title: "새 프로젝트" },
+      target: {
+        kind: "new",
+        pageId: "project-seed-id",
+        title: "새 프로젝트",
+        folderId: "folder-project",
+      },
     }));
   });
 });

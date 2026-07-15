@@ -42,7 +42,12 @@ export interface PageBlockTransferInput {
         parentId: string | null;
         afterBlockId: string | null;
       }
-    | { kind: "new"; pageId: string; title: string };
+    | {
+        kind: "new";
+        pageId: string;
+        title: string;
+        folderId?: string;
+      };
   sourceMount?: { title: string; tempId: string };
   actor: PageMutationActor;
   idempotencyKey: string;
@@ -202,7 +207,12 @@ async function transferLocked(
 
     const targetApplication = withTransferIdentity(input.target.kind === "new"
       ? runtime.mutationCore.createPage({
-          page: { id: input.target.pageId, title: input.target.title, dailyDate: null, metadata: {} },
+          page: {
+            id: input.target.pageId,
+            title: input.target.title,
+            dailyDate: null,
+            metadata: input.target.folderId ? { folderId: input.target.folderId } : {},
+          },
           actor: input.actor,
           idempotencyKey: keys[1]!,
           reason: input.reason,

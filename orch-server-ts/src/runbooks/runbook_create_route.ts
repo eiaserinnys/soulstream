@@ -1,15 +1,16 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { randomUUID } from "node:crypto";
+
+import type { FastifyInstance } from "fastify";
 
 import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
-import type {
-  RunbookMutationHttpResponse,
-  RunbookRouteOptions,
-} from "./runbook_route_types.js";
+import type { RunbookRouteOptions } from "./runbook_route_types.js";
 
 interface CreateRunbookBody {
   runbook_id?: string;
   title: string;
+  description?: string;
   folder_id: string;
+  idempotency_key?: string;
 }
 
 export function registerRunbookCreateRoute(
@@ -28,26 +29,43 @@ export function registerRunbookCreateRoute(
     if (!isBoardFolderAllowed(access, folders, body.value.folder_id)) {
       return reply.code(403).send({ detail: "Folder access denied" });
     }
-    const target = options.provider.listConnectedNodes?.()[0];
-    if (!target) {
-      return reply.code(503).send({
-        detail: "No connected soul-server node available for runbook mutation",
-      });
+    if (!options.taskIdentityService) {
+      return reply.code(503).send({ detail: "Task identity service is not configured" });
     }
     try {
-      const response = await options.httpClient({
-        method: "POST",
-        url: `http://${target.host}:${target.port}/api/runbooks`,
-        upstreamPath: "/api/runbooks",
-        headers: forwardAuthHeaders(request),
-        body: body.value,
-        target,
+      const userId = await options.resolveDashboardUserId?.(request);
+      if (!userId) return reply.code(401).send({ detail: "Dashboard user is required" });
+      const result = await options.taskIdentityService.create({
+        title: body.value.title,
+        description: body.value.description,
+        folderId: body.value.folder_id,
+        runbookId: body.value.runbook_id,
+        actor: { actorKind: "user", actorUserId: userId },
+        idempotencyKey: body.value.idempotency_key ?? `create_runbook:${userId}:${randomUUID()}`,
       });
-      return sendNodeResponse(reply, response);
-    } catch {
-      return reply.code(502).send();
+      return reply.code(201).send({
+        ok: true,
+        id: result.id,
+        pageId: result.pageId,
+        runbookId: result.runbookId,
+        operation: result.operation,
+        pageOperation: result.pageOperation,
+        snapshot: result.snapshot,
+      });
+    } catch (error) {
+      request.log.error({ err: error }, "Task identity creation failed");
+      return reply.code(taskIdentityCreateErrorStatus(error)).send({
+        detail: error instanceof Error ? error.message : "Task identity creation failed",
+      });
     }
   });
+}
+
+function taskIdentityCreateErrorStatus(error: unknown): 409 | 422 | 500 {
+  if (!(error instanceof Error)) return 500;
+  if (error.message === "new task identity id must be a UUID") return 422;
+  if (error.message.startsWith("task identity already exists:")) return 409;
+  return 500;
 }
 
 function parseCreateRunbookBody(body: unknown):
@@ -58,17 +76,26 @@ function parseCreateRunbookBody(body: unknown):
   if (!title.ok) return title;
   const folderId = nonEmptyString(body.folder_id, "folder_id");
   if (!folderId.ok) return folderId;
-  if (body.runbook_id === undefined) {
-    return { ok: true, value: { title: title.value, folder_id: folderId.value } };
-  }
-  const runbookId = nonEmptyString(body.runbook_id, "runbook_id");
-  if (!runbookId.ok) return runbookId;
+  const description = body.description === undefined
+    ? undefined
+    : typeof body.description === "string" ? body.description : null;
+  if (description === null) return { ok: false, message: "description must be a string" };
+  const runbookId = body.runbook_id === undefined
+    ? undefined
+    : nonEmptyString(body.runbook_id, "runbook_id");
+  if (runbookId && !runbookId.ok) return runbookId;
+  const idempotencyKey = body.idempotency_key === undefined
+    ? undefined
+    : nonEmptyString(body.idempotency_key, "idempotency_key");
+  if (idempotencyKey && !idempotencyKey.ok) return idempotencyKey;
   return {
     ok: true,
     value: {
-      runbook_id: runbookId.value,
+      ...(runbookId ? { runbook_id: runbookId.value } : {}),
       title: title.value,
+      ...(description !== undefined ? { description } : {}),
       folder_id: folderId.value,
+      ...(idempotencyKey ? { idempotency_key: idempotencyKey.value } : {}),
     },
   };
 }
@@ -80,44 +107,6 @@ function nonEmptyString(value: unknown, key: string):
     return { ok: false, message: `${key} must be a non-empty string` };
   }
   return { ok: true, value: value.trim() };
-}
-
-function sendNodeResponse(
-  reply: FastifyReply,
-  response: RunbookMutationHttpResponse,
-): FastifyReply {
-  const contentType = headerValue(response.headers, "content-type");
-  if (contentType !== undefined) reply.header("content-type", contentType);
-  if (contentType?.toLowerCase().includes("application/json")) {
-    return reply.code(response.statusCode).send(response.body ?? null);
-  }
-  if (response.body === undefined) return reply.code(response.statusCode).send();
-  return reply.code(response.statusCode).send(response.body);
-}
-
-function forwardAuthHeaders(request: FastifyRequest): Record<string, string> {
-  const headers: Record<string, string> = {};
-  const cookie = firstHeaderValue(request.headers.cookie);
-  if (cookie !== undefined) headers.cookie = cookie;
-  const authorization = firstHeaderValue(request.headers.authorization);
-  if (authorization !== undefined) headers.authorization = authorization;
-  return headers;
-}
-
-function firstHeaderValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
-function headerValue(
-  headers: Record<string, string | undefined> | undefined,
-  name: string,
-): string | undefined {
-  if (headers === undefined) return undefined;
-  const targetName = name.toLowerCase();
-  for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === targetName) return value;
-  }
-  return undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

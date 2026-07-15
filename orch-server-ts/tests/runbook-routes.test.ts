@@ -9,6 +9,7 @@ import {
   type RunbookAccessProvider,
   type RunbookMutationHttpClient,
   type RunbookRouteProvider,
+  type RunbookRouteOptions,
 } from "../src/index.js";
 
 const config = parseOrchServerConfig({
@@ -22,6 +23,39 @@ const folders = [
   { id: "folder-a-child", parentFolderId: "folder-a", name: "Child" },
   { id: "folder-b", parentFolderId: null, name: "Beta" },
 ];
+
+function createTaskIdentityResult() {
+  const id = "00000000-0000-4000-8000-0000000000ae";
+  return {
+    id,
+    pageId: id,
+    runbookId: id,
+    operation: { id: "runbook-operation" },
+    pageOperation: { id: "page-operation" },
+    pageCommit: {
+      operation: {
+        id: "page-operation",
+        page_id: id,
+        target_block_id: null,
+        operation_type: "create_page",
+        actor_kind: "agent" as const,
+        actor_session_id: "session-a",
+        actor_event_id: 1,
+        actor_user_id: null,
+        idempotency_key: "mcp:create:one:page",
+        expected_version: 0,
+        result_version: 1,
+        payload_json: {},
+        reason: null,
+        created_at: new Date(),
+      },
+      pageCreatedAt: new Date(),
+      pageUpdatedAt: new Date(),
+      idempotent: false,
+    },
+    snapshot: { runbook: { id }, sections: [], items: [] },
+  };
+}
 
 const overview = {
   my_turn_items: [
@@ -143,6 +177,43 @@ function createAppWithRunbooks(
     headers: { "content-type": "application/json" },
     body: { ok: true },
   })),
+  taskIdentityService: NonNullable<RunbookRouteOptions["taskIdentityService"]> = {
+    create: vi.fn(async (input: { runbookId?: string; title: string }) => {
+      const id = input.runbookId ?? "00000000-0000-4000-8000-0000000000ae";
+      return {
+        id,
+        pageId: id,
+        runbookId: id,
+        operation: { id: "runbook-operation" },
+        pageOperation: { id: "page-operation" },
+        pageCommit: {
+          operation: {
+            id: "page-operation",
+            page_id: id,
+            target_block_id: null,
+            operation_type: "batch_operations",
+            actor_kind: "user" as const,
+            actor_session_id: null,
+            actor_event_id: null,
+            actor_user_id: "user@example.com",
+            idempotency_key: "create-task-identity-route",
+            expected_version: 0,
+            result_version: 1,
+            payload_json: {},
+            reason: null,
+            created_at: new Date(),
+          },
+          pageCreatedAt: new Date(),
+          pageUpdatedAt: new Date(),
+          idempotent: false,
+        },
+        snapshot: { runbook: { id, title: input.title }, sections: [], items: [] },
+      };
+    }),
+    promoteExistingPage: vi.fn(),
+    mutateFromRunbook: vi.fn(),
+    backfillLegacyRunbook: vi.fn(),
+  },
 ) {
   const harness = createHarness(overrides);
   const app = createApp({
@@ -155,6 +226,8 @@ function createAppWithRunbooks(
         harness.calls.push(["user"]);
         return "user@example.com";
       },
+      taskIdentityService,
+      authBearerToken: "service-token",
     },
   });
   return { app, calls: harness.calls, httpClient };
@@ -209,16 +282,50 @@ describe("runbook route harness", () => {
     ]);
   });
 
-  it("proxies browser runbook creation to a connected node after folder access", async () => {
-    const httpClient: RunbookMutationHttpClient = vi.fn(async () => ({
-      statusCode: 201,
-      headers: { "content-type": "application/json" },
-      body: { ok: true, runbookId: "rb-browser" },
-    }));
+  it("creates one task identity in orch after folder access", async () => {
+    const taskIdentityService = {
+      create: vi.fn(async (input: { title: string }) => ({
+        id: "00000000-0000-4000-8000-0000000000ae",
+        pageId: "00000000-0000-4000-8000-0000000000ae",
+        runbookId: "00000000-0000-4000-8000-0000000000ae",
+        operation: { id: "runbook-operation" },
+        pageOperation: { id: "page-operation" },
+        pageCommit: {
+          operation: {
+            id: "page-operation",
+            page_id: "00000000-0000-4000-8000-0000000000ae",
+            target_block_id: null,
+            operation_type: "batch_operations",
+            actor_kind: "user" as const,
+            actor_session_id: null,
+            actor_event_id: null,
+            actor_user_id: "user@example.com",
+            idempotency_key: "create_runbook:user:browser:page",
+            expected_version: 0,
+            result_version: 1,
+            payload_json: {},
+            reason: null,
+            created_at: new Date(),
+          },
+          pageCreatedAt: new Date(),
+          pageUpdatedAt: new Date(),
+          idempotent: false,
+        },
+        snapshot: {
+          runbook: { id: "00000000-0000-4000-8000-0000000000ae", title: input.title },
+          sections: [],
+          items: [],
+        },
+      })),
+      promoteExistingPage: vi.fn(),
+      mutateFromRunbook: vi.fn(),
+      backfillLegacyRunbook: vi.fn(),
+    };
     const { app, calls } = createAppWithRunbooks(
       { restricted: true, allowedFolderIds: ["folder-a"] },
       {},
-      httpClient,
+      undefined,
+      taskIdentityService,
     );
 
     const response = await app.inject({
@@ -226,27 +333,76 @@ describe("runbook route harness", () => {
       url: "/api/runbooks",
       headers: { cookie: "sid=test" },
       payload: {
-        runbook_id: "rb-browser",
+        runbook_id: "00000000-0000-4000-8000-0000000000ae",
         title: "Browser work",
+        description: "One object",
         folder_id: "folder-a-child",
+        idempotency_key: "create_runbook:user:browser",
       },
     });
 
     expect(response.statusCode).toBe(201);
-    expect(calls).toEqual([["listFolders"], ["access"], ["listNodes"]]);
-    expect(httpClient).toHaveBeenCalledWith({
-      method: "POST",
-      url: "http://localhost:4106/api/runbooks",
-      upstreamPath: "/api/runbooks",
-      headers: { cookie: "sid=test" },
-      body: {
-        runbook_id: "rb-browser",
-        title: "Browser work",
-        folder_id: "folder-a-child",
-      },
-      target: fallbackNode,
+    expect(response.json()).toMatchObject({
+      id: "00000000-0000-4000-8000-0000000000ae",
+      pageId: "00000000-0000-4000-8000-0000000000ae",
+      runbookId: "00000000-0000-4000-8000-0000000000ae",
+    });
+    expect(calls).toEqual([["listFolders"], ["access"], ["user"]]);
+    expect(taskIdentityService.create).toHaveBeenCalledWith({
+      actor: { actorKind: "user", actorUserId: "user@example.com" },
+      description: "One object",
+      folderId: "folder-a-child",
+      idempotencyKey: "create_runbook:user:browser",
+      runbookId: "00000000-0000-4000-8000-0000000000ae",
+      title: "Browser work",
     });
 
+    await app.close();
+  });
+
+  it("accepts a service-authenticated MCP creation through the same identity service", async () => {
+    const taskIdentityService = {
+      create: vi.fn(async () => createTaskIdentityResult()),
+      promoteExistingPage: vi.fn(),
+      mutateFromRunbook: vi.fn(),
+      backfillLegacyRunbook: vi.fn(),
+    };
+    const { app } = createAppWithRunbooks(
+      { restricted: false },
+      {},
+      undefined,
+      taskIdentityService,
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/runbook-task-identities/host/create",
+      headers: { authorization: "Bearer service-token" },
+      payload: {
+        title: "MCP 업무",
+        folder_id: "folder-a",
+        actor_kind: "agent",
+        actor_session_id: "session-a",
+        idempotency_key: "mcp:create:one",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      id: "00000000-0000-4000-8000-0000000000ae",
+      pageId: "00000000-0000-4000-8000-0000000000ae",
+      runbookId: "00000000-0000-4000-8000-0000000000ae",
+    });
+    expect(taskIdentityService.create).toHaveBeenCalledWith({
+      title: "MCP 업무",
+      description: undefined,
+      folderId: "folder-a",
+      runbookId: undefined,
+      x: undefined,
+      y: undefined,
+      actor: { actorKind: "agent", actorSessionId: "session-a", actorUserId: undefined },
+      idempotencyKey: "mcp:create:one",
+    });
     await app.close();
   });
 

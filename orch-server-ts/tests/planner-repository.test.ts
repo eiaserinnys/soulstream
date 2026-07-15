@@ -48,6 +48,9 @@ describe("planner repository", () => {
     expect(query).not.toContain("jsonb_typeof(p.metadata->'starred')");
     expect(query).toContain("NOT EXISTS ( SELECT 1 FROM blocks task_ref");
     expect(query).toContain("project_link.link_kind = 'mount'");
+    expect(query).toContain("folder_task_mounts AS");
+    expect(query).toContain("board_item.membership_kind = 'primary'");
+    expect(query).toContain("runbook.task_page_id IS NOT NULL");
     expect(query).toContain("LIMIT ?");
     expect(query).toContain("ORDER BY session.updated_at DESC, session.session_id DESC LIMIT 1");
   });

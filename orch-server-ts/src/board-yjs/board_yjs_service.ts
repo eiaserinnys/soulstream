@@ -14,6 +14,7 @@ import {
   deleteMarkdownYjsDocument,
   deleteMovedBoardYjsItem,
   getBoardYjsContainerDocumentName,
+  readBoardYDocReplica,
   readMovableBoardYjsItem,
   updateMarkdownYjsDocument,
   upsertBoardYjsItem,
@@ -44,6 +45,7 @@ export interface BoardYjsServiceConfig {
 
 export class BoardYjsService {
   private readonly hocuspocus: Hocuspocus | undefined;
+  private readonly taskIdentityTails = new Map<string, Promise<void>>();
 
   constructor(private readonly config: BoardYjsServiceConfig) {
     if (config.hostMode !== "orch") return;
@@ -153,6 +155,72 @@ export class BoardYjsService {
     return await this.withDirectConnection(input.folderId, (doc) =>
       upsertRunbookYjsBoardItem(doc, input)
     );
+  }
+
+  /**
+   * Stages a runbook board mutation off-document. The live Y.Doc is updated only
+   * after the caller's database transaction commits successfully.
+   */
+  async withRunbookBoardApplication<T>(input: {
+    folderId: string;
+    boardItemId: string;
+    runbookId: string;
+    title: string;
+    archived: boolean;
+    x: number;
+    y: number;
+  }, persist: (application: {
+    documentName: string;
+    scope: {
+      folderId: string;
+      containerKind: "folder";
+      containerId: string;
+    };
+    snapshot: Uint8Array;
+    replica: ReturnType<typeof readBoardYDocReplica>;
+  }) => Promise<T>): Promise<T> {
+    return await this.withTaskIdentityLock(input.folderId, async () => {
+      const hocuspocus = this.requireOrchHostMode();
+      const scope = {
+        folderId: input.folderId,
+        containerKind: "folder" as const,
+        containerId: input.folderId,
+      };
+      const documentName = getBoardYjsContainerDocumentName(scope);
+      const connection = await hocuspocus.openDirectConnection(documentName, {
+        ...scope,
+        source: "runbook-task-identity",
+      });
+      try {
+        const live = connection.document as unknown as Y.Doc | null;
+        if (!live) throw new Error(`board Y.Doc direct connection closed: ${documentName}`);
+        const staged = new Y.Doc();
+        Y.applyUpdate(staged, Y.encodeStateAsUpdate(live));
+        upsertRunbookYjsBoardItem(staged, {
+          folderId: input.folderId,
+          boardItemId: input.boardItemId,
+          runbookId: input.runbookId,
+          title: input.title,
+          x: input.x,
+          y: input.y,
+          metadata: { archived: input.archived },
+        });
+        const update = Y.encodeStateAsUpdate(staged, Y.encodeStateVector(live));
+        const snapshot = Y.encodeStateAsUpdate(staged);
+        const result = await persist({
+          documentName,
+          scope,
+          snapshot,
+          replica: readBoardYDocReplica(scope, staged),
+        });
+        await connection.transact((document) => {
+          Y.applyUpdate(document as unknown as Y.Doc, update);
+        });
+        return result;
+      } finally {
+        await connection.disconnect();
+      }
+    });
   }
 
   async upsertCustomViewBoardItem(input: {
@@ -335,6 +403,21 @@ export class BoardYjsService {
   private requireHocuspocus(): Hocuspocus {
     if (!this.hocuspocus) throw new Error("board Yjs Hocuspocus service is not active");
     return this.hocuspocus;
+  }
+
+  private async withTaskIdentityLock<T>(key: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.taskIdentityTails.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => gate, () => gate);
+    this.taskIdentityTails.set(key, tail);
+    await previous.catch(() => undefined);
+    try {
+      return await work();
+    } finally {
+      release();
+      if (this.taskIdentityTails.get(key) === tail) this.taskIdentityTails.delete(key);
+    }
   }
 }
 

@@ -159,6 +159,35 @@ describe("page API client", () => {
     }));
   });
 
+  it("sends a new page folder identity through the block-transfer boundary", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(jsonResponse({
+      source: { page: page(), blocks: [], operation: { id: "source-op" }, temp_id_mapping: {} },
+      target: { page: { ...page(), id: "project" }, blocks: [], operation: { id: "target-op" }, temp_id_mapping: {} },
+      target_created: true,
+    }));
+    const client = createPageApiClient({ fetch });
+
+    await client.transferBlocks({
+      source: {
+        pageId: "source",
+        expectedVersion: 3,
+        expectedStateVector: Uint8Array.of(0, 1),
+        blockIds: ["block-1"],
+      },
+      target: { kind: "new", pageId: "project", title: "Project", folderId: "folder-a" },
+      idempotencyKey: "transfer-project",
+    });
+
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body))).toMatchObject({
+      target: {
+        kind: "new",
+        page_id: "project",
+        title: "Project",
+        folder_id: "folder-a",
+      },
+    });
+  });
+
   it("surfaces authentication and conflict failures without fallback", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(jsonResponse({ detail: "Authentication required" }, 401))

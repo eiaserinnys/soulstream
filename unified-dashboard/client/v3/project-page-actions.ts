@@ -45,10 +45,10 @@ export async function findExistingProjectPage(
 
 export async function createProjectPage(
   api: PageApiClient,
-  titleValue: string,
+  input: { title: string; folderId: string },
   idFactory: ProjectOperationIdFactory = operationId,
 ): Promise<PageDto> {
-  const title = titleValue.trim();
+  const title = input.title.trim();
   if (!title) throw new Error("프로젝트 제목을 입력해야 합니다");
   const daily = await api.getDailyPage();
   const source = await api.getPage(daily.page.id);
@@ -80,7 +80,12 @@ export async function createProjectPage(
       expectedStateVector: decodeStateVector(currentSource.state_vector),
       blockIds: [seedBlockId],
     },
-    target: { kind: "new", pageId: idFactory("project"), title },
+    target: {
+      kind: "new",
+      pageId: idFactory("project"),
+      title,
+      folderId: input.folderId,
+    },
     idempotencyKey: idFactory("project-create"),
     reason: "v3 planner standalone project creation",
   });
@@ -94,7 +99,7 @@ export async function resolveOrCreateProjectPage(
   knownPages: readonly PageDto[],
 ): Promise<PageDto> {
   return await findExistingProjectPage(api, folder, knownPages)
-    ?? await createProjectPage(api, folder.name);
+    ?? await createProjectPage(api, { title: folder.name, folderId: folder.id });
 }
 
 function isPageCandidate(page: PageDto, normalizedTitle: string): boolean {

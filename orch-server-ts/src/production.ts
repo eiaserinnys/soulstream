@@ -9,6 +9,8 @@ import { BoardYjsService } from "./board-yjs/board_yjs_service.js";
 import { PageRepository } from "./page/page_repository.js";
 import { PageYjsService } from "./page/page_service.js";
 import { PlannerRepository } from "./planner/planner_repository.js";
+import { SqlRunbookTaskIdentityRepository } from "./runbooks/runbook_task_identity_repository.js";
+import { RunbookTaskIdentityService } from "./runbooks/runbook_task_identity_service.js";
 import { extractDashboardJwtCookieToken } from "./runtime/live_authenticated_user_resolver.js";
 import {
   createEnvironmentConfigProvider,
@@ -124,6 +126,7 @@ export async function createLiveProductionApplication(
   const registry = new InMemoryNodeRegistry();
   const boardYjsRepository = new BoardYjsRepository(sqlResolver);
   const pageRepository = new PageRepository(sqlResolver);
+  const taskIdentityRepository = new SqlRunbookTaskIdentityRepository(sqlResolver);
   const plannerRepository = new PlannerRepository(sqlResolver);
   const boardAssetStorage = await resolveLiveBoardAssetStorageFromConfig(config);
   warnForPartialR2Config(config, context.warn);
@@ -150,6 +153,9 @@ export async function createLiveProductionApplication(
     foregroundObservers,
   });
   let providers: LiveOrchestratorProviderBundle;
+  let boardYjsService: BoardYjsService | undefined;
+  let pageYjsService: PageYjsService | undefined;
+  let taskIdentityService: RunbookTaskIdentityService | undefined;
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
@@ -165,7 +171,7 @@ export async function createLiveProductionApplication(
       (events) => supervisorIngest.accept(events),
     ],
     boardYjsRoutes: {
-      createService: (logger) => new BoardYjsService({
+      createService: (logger) => boardYjsService ??= new BoardYjsService({
         repository: boardYjsRepository,
         logger,
         hostMode: config.board_yjs_host_mode,
@@ -186,9 +192,11 @@ export async function createLiveProductionApplication(
         const token = extractDashboardJwtCookieToken(request, AUTH_COOKIE_NAME);
         return token ? await providers.authRoutes.jwt.verifyToken(token) : null;
       },
-      createService: (logger) => new PageYjsService({
+      createService: (logger) => pageYjsService ??= new PageYjsService({
         repository: pageRepository,
         logger,
+        mutateTaskIdentity: async (input) =>
+          await taskIdentityService?.mutateFromPage(input) ?? null,
         auth: {
           authBearerToken: config.auth_bearer_token,
           environment: config.environment,
@@ -197,6 +205,19 @@ export async function createLiveProductionApplication(
             await providers.authRoutes.jwt.verifyToken(token),
         },
       }),
+    },
+  });
+  taskIdentityService = new RunbookTaskIdentityService({
+    board: {
+      async withRunbookBoardApplication(input, persist) {
+        if (!boardYjsService) throw new Error("Board Yjs service is not initialized");
+        return await boardYjsService.withRunbookBoardApplication(input, persist);
+      },
+    },
+    repository: taskIdentityRepository,
+    hydratePage: async (pageId) => {
+      if (!pageYjsService) throw new Error("Page Yjs service is not initialized");
+      await pageYjsService.hydrateCommittedPage(`page:${pageId}`);
     },
   });
   const dependencies: LiveProviderDependencies = {
@@ -221,6 +242,7 @@ export async function createLiveProductionApplication(
     runtimeServices,
     providers,
     config.cors_allowed_origins,
+    taskIdentityService,
   ));
   let resourcesClosed = false;
   return {
@@ -251,6 +273,7 @@ export function buildProductionRouteOptions(
   runtime: OrchestratorRuntimeServices,
   providers: LiveOrchestratorProviderBundle,
   corsAllowedOrigins: readonly string[] = [],
+  taskIdentityService?: RunbookTaskIdentityService,
 ): CreateAppOptions {
   return {
     config,
@@ -290,7 +313,11 @@ export function buildProductionRouteOptions(
       configProvider: providers.configProviders.publicStatusRoutes.configProvider,
     },
     pushRoutes: providers.pushRoutes,
-    runbookRoutes: providers.runbookRoutes,
+    runbookRoutes: {
+      ...providers.runbookRoutes,
+      authBearerToken: config.authBearerToken,
+      ...(taskIdentityService ? { taskIdentityService } : {}),
+    },
     sessionActionCommandRoutes: providers.runtime.sessionActionCommandRoutes,
     sessionBackgroundScheduleRoutes:
       providers.runtime.sessionBackgroundScheduleRoutes,
