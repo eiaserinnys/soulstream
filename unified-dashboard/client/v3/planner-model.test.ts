@@ -4,6 +4,7 @@ import {
   classifyMountedPage,
   derivePlannerTaskStatus,
   plannerStatusPresentation,
+  resolveProjectFolderId,
 } from "./planner-model";
 
 describe("classifyMountedPage", () => {
@@ -19,6 +20,19 @@ describe("classifyMountedPage", () => {
     expect(classifyMountedPage([
       block("runbook_ref", { runbookId: "rb-secondary", primary: false }),
     ])).toEqual({ kind: "document" });
+  });
+});
+
+describe("project folder bridge", () => {
+  it("prefers metadata folderId and falls back to emoji-normalized titles", () => {
+    const folders = [
+      { id: "folder-explicit", name: "다른 프로젝트", sortOrder: 0 },
+      { id: "folder-soul", name: "✨ 소울스트림", sortOrder: 1 },
+    ];
+    expect(resolveProjectFolderId({ title: "무관", metadata: { folderId: "folder-explicit" } }, folders))
+      .toBe("folder-explicit");
+    expect(resolveProjectFolderId({ title: "소울스트림", metadata: {} }, folders))
+      .toBe("folder-soul");
   });
 });
 

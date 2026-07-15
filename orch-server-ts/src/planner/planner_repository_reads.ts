@@ -12,7 +12,7 @@ export class PlannerCursorError extends Error {
   readonly code = "PLANNER_CURSOR_INVALID";
 }
 
-interface ProjectIndexRow extends Record<string, unknown> {
+interface StarredTaskRow extends Record<string, unknown> {
   id: string;
   updated_at_cursor: string;
   payload: PlannerPageDto;
@@ -29,11 +29,11 @@ export interface PlannerMountCursor {
   id: string;
 }
 
-export async function listProjectIndex(
+export async function listStarredTasks(
   sql: LivePostgresSql,
   input: { cursor?: string; limit: number },
 ): Promise<PlannerPageSlice<PlannerPageDto>> {
-  const cursor = input.cursor ? decodeCursor(input.cursor, "project") : null;
+  const cursor = input.cursor ? decodeCursor(input.cursor, "starred-task") : null;
   const updatedAt = cursor?.first ?? null;
   const cursorId = cursor?.second ?? "";
   const rows = await sql`
@@ -53,20 +53,28 @@ export async function listProjectIndex(
     FROM pages p
     WHERE p.archived = FALSE
       AND p.daily_date IS NULL
-      AND jsonb_typeof(p.metadata->'starred') = 'boolean'
+      AND COALESCE((p.metadata->>'starred')::boolean, FALSE)
+      AND EXISTS (
+        SELECT 1
+        FROM blocks b
+        WHERE b.page_id = p.id
+          AND b.block_type = 'runbook_ref'
+          AND COALESCE((b.properties->>'primary')::boolean, FALSE)
+          AND NULLIF(b.properties->>'runbookId', '') IS NOT NULL
+      )
       AND (
         ${updatedAt}::text IS NULL
         OR (p.updated_at, p.id) < (${updatedAt}::timestamptz, ${cursorId})
       )
     ORDER BY p.updated_at DESC, p.id DESC
     LIMIT ${input.limit + 1}
-  ` as readonly ProjectIndexRow[];
+  ` as readonly StarredTaskRow[];
   const visible = rows.slice(0, input.limit);
   const last = visible.at(-1);
   return {
     items: visible.map((row) => row.payload),
     next_cursor: rows.length > input.limit && last
-      ? encodeCursor("project", last.updated_at_cursor, last.id)
+      ? encodeCursor("starred-task", last.updated_at_cursor, last.id)
       : null,
   };
 }

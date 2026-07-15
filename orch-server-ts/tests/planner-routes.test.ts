@@ -97,11 +97,11 @@ describe("planner routes", () => {
     }
   });
 
-  it("serves bounded project indexes, daily history, project slices, and lazy task runs", async () => {
+  it("serves bounded starred tasks, daily history, project slices, and lazy task runs", async () => {
     const provider = providerDouble();
-    vi.mocked(provider.getProjectIndex).mockResolvedValueOnce({
-      items: [page("project")],
-      next_cursor: "project-next",
+    vi.mocked(provider.getStarredTasks).mockResolvedValueOnce({
+      items: [page("task")],
+      next_cursor: "task-next",
     });
     vi.mocked(provider.getDailyHistory).mockResolvedValueOnce({
       dates: ["2026-07-13", "2026-07-11"],
@@ -123,20 +123,20 @@ describe("planner routes", () => {
     registerPlannerRoutes(app, { provider, resolveUser: cookieUserResolver() });
     try {
       const headers = { cookie: browserCookie };
-      const [projects, history, tasks, documents, runs] = await Promise.all([
-        app.inject({ method: "GET", url: "/api/planner/project-index?cursor=project-cursor&limit=25", headers }),
+      const [starred, history, tasks, documents, runs] = await Promise.all([
+        app.inject({ method: "GET", url: "/api/planner/starred-tasks?cursor=task-cursor&limit=25", headers }),
         app.inject({ method: "GET", url: "/api/planner/daily-history?before=2026-07-14&limit=2", headers }),
         app.inject({ method: "GET", url: "/api/planner/projects/project/tasks?cursor=task-cursor&limit=10", headers }),
         app.inject({ method: "GET", url: "/api/planner/projects/project/documents?limit=8", headers }),
         app.inject({ method: "GET", url: "/api/planner/tasks/task/runs?cursor=run-cursor&limit=20", headers }),
       ]);
 
-      expect(projects.json()).toMatchObject({ next_cursor: "project-next" });
+      expect(starred.json()).toMatchObject({ next_cursor: "task-next" });
       expect(history.json()).toEqual({ dates: ["2026-07-13", "2026-07-11"] });
       expect(tasks.json()).toMatchObject({ next_cursor: "task-next" });
       expect(documents.json()).toMatchObject({ items: [{ id: "document" }] });
       expect(runs.json()).toMatchObject({ total: 61, next_cursor: "run-next" });
-      expect(provider.getProjectIndex).toHaveBeenCalledWith({ cursor: "project-cursor", limit: 25 });
+      expect(provider.getStarredTasks).toHaveBeenCalledWith({ cursor: "task-cursor", limit: 25 });
       expect(provider.getDailyHistory).toHaveBeenCalledWith({ before: "2026-07-14", limit: 2 });
       expect(provider.getProjectTasks).toHaveBeenCalledWith("project", { cursor: "task-cursor", limit: 10 });
       expect(provider.getProjectDocuments).toHaveBeenCalledWith("project", { cursor: undefined, limit: 8 });
@@ -149,7 +149,7 @@ describe("planner routes", () => {
   it("declares every planner read route as authenticated", () => {
     expect(plannerRouteAuthRequirements).toEqual({
       "GET /api/planner/today": true,
-      "GET /api/planner/project-index": true,
+      "GET /api/planner/starred-tasks": true,
       "GET /api/planner/daily-history": true,
       "GET /api/planner/projects/{pageId}": true,
       "GET /api/planner/projects/{pageId}/tasks": true,
@@ -162,7 +162,7 @@ describe("planner routes", () => {
 function providerDouble(): PlannerReadProvider & {
   getToday: ReturnType<typeof vi.fn>;
   getProject: ReturnType<typeof vi.fn>;
-  getProjectIndex: ReturnType<typeof vi.fn>;
+  getStarredTasks: ReturnType<typeof vi.fn>;
   getDailyHistory: ReturnType<typeof vi.fn>;
   getProjectTasks: ReturnType<typeof vi.fn>;
   getProjectDocuments: ReturnType<typeof vi.fn>;
@@ -171,7 +171,7 @@ function providerDouble(): PlannerReadProvider & {
   return {
     getToday: vi.fn(async () => null),
     getProject: vi.fn(async () => null),
-    getProjectIndex: vi.fn(async () => ({ items: [], next_cursor: null })),
+    getStarredTasks: vi.fn(async () => ({ items: [], next_cursor: null })),
     getDailyHistory: vi.fn(async () => ({ dates: [] })),
     getProjectTasks: vi.fn(async () => null),
     getProjectDocuments: vi.fn(async () => null),

@@ -4,7 +4,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
+import { useGlassSurface } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { createPlannerDataDependencies } from "./planner-data";
@@ -26,15 +26,17 @@ type RitualLoadState =
 export function RitualModal({
   open,
   today,
-  sessions,
+  reviewCount,
   onClose,
   onRefresh,
+  onOpenReviewQueue,
 }: {
   open: boolean;
   today: string;
-  sessions: readonly SessionSummary[];
+  reviewCount: number;
   onClose(): void;
   onRefresh(): void;
+  onOpenReviewQueue(): void;
 }) {
   const api = useMemo(() => createPageApiClient(), []);
   const plannerDependencies = useMemo(() => createPlannerDataDependencies(), []);
@@ -42,7 +44,6 @@ export function RitualModal({
   const [index, setIndex] = useState(0);
   const [processing, setProcessing] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [chatDestination, setChatDestination] = useState<string | null>(null);
   const closeButton = useRef<HTMLButtonElement | null>(null);
   const modalRef = useRef<HTMLElement>(null);
   const modalWebglActive = useGlassSurface(modalRef, { enabled: open });
@@ -55,14 +56,13 @@ export function RitualModal({
     void loadMorningRitualData({
       api,
       today,
-      sessions,
       plannerDependencies,
     }).then((data) => {
       setLoadState({ status: "ready", data });
     }).catch((error: unknown) => {
       setLoadState({ status: "error", message: errorText(error) });
     });
-  }, [api, loadState.status, open, plannerDependencies, sessions, today]);
+  }, [api, loadState.status, open, plannerDependencies, today]);
 
   useEffect(() => {
     if (!open) return;
@@ -91,12 +91,11 @@ export function RitualModal({
     setProcessing(true);
     setActionError(null);
     try {
-      const result = await dispatchRitualAction(
+      await dispatchRitualAction(
         item,
         action,
         new BrowserRitualActionPort(data.dailyPageId, api),
       );
-      if (result.openSessionId) setChatDestination(result.openSessionId);
       setIndex((value) => value + 1);
     } catch (error) {
       setActionError(errorText(error));
@@ -106,14 +105,15 @@ export function RitualModal({
   };
 
   const finish = () => {
-    const destination = chatDestination;
     onRefresh();
     onClose();
     setLoadState({ status: "idle" });
     setIndex(0);
     setActionError(null);
-    setChatDestination(null);
-    if (destination) window.location.assign(`/#${encodeURIComponent(destination)}`);
+  };
+  const openReviewQueue = () => {
+    finish();
+    onOpenReviewQueue();
   };
 
   return (
@@ -144,7 +144,12 @@ export function RitualModal({
                 <div className="v3-ritual-done">
                   <span aria-hidden="true">✓</span>
                   <h3>오늘 준비 완료</h3>
-                  <p>결정한 업무와 검수 항목을 오늘 플래너에 반영했습니다.</p>
+                  <p>결정한 이월 업무를 오늘 플래너에 반영했습니다.</p>
+                  {reviewCount > 0 ? (
+                    <button type="button" className="v3-ritual-review-link" onClick={openReviewQueue}>
+                      검수 대기 {reviewCount}건 → 검수 패널
+                    </button>
+                  ) : null}
                 </div>
               ) : item ? (
                 <RitualItemCard
@@ -165,7 +170,7 @@ export function RitualModal({
             </div>
             {complete ? (
               <button type="button" className="v3-button v3-button--primary v3-ritual-finish" onClick={finish}>
-                {chatDestination ? "선택한 채팅 열기" : "플래너 열기"}
+                플래너 열기
               </button>
             ) : item ? (
               <RitualActions
@@ -191,7 +196,7 @@ function RitualItemCard({
   return (
     <>
       <article className="v3-ritual-card">
-        <span>{item.kind === "task" ? "미완 업무" : "검수 대기 세션"}</span>
+        <span>미완 업무</span>
         <h3>{item.title}</h3>
         <p>{item.description}</p>
         <small>◉ {item.agentLabel}</small>
@@ -212,19 +217,9 @@ function RitualActions({
 }) {
   return (
     <div className="v3-ritual-actions">
-      {item.kind === "task" ? (
-        <>
-          <button type="button" disabled={processing} className="v3-button v3-button--primary" onClick={() => onAction("today")}>오늘로</button>
-          <button type="button" disabled={processing} className="v3-button v3-button--ghost" onClick={() => onAction("later")}>미루기</button>
-          <button type="button" disabled={processing} className="v3-button v3-button--soft" onClick={() => onAction("done")}>완료 처리</button>
-        </>
-      ) : (
-        <>
-          <button type="button" disabled={processing} className="v3-button v3-button--primary" onClick={() => onAction("chat")}>채팅 열기</button>
-          <button type="button" disabled={processing} className="v3-button v3-button--soft" onClick={() => onAction("acknowledge")}>확인 처리</button>
-          <button type="button" disabled={processing} className="v3-button v3-button--ghost" onClick={() => onAction("later")}>미루기</button>
-        </>
-      )}
+      <button type="button" disabled={processing} className="v3-button v3-button--primary" onClick={() => onAction("today")}>오늘로</button>
+      <button type="button" disabled={processing} className="v3-button v3-button--ghost" onClick={() => onAction("later")}>미루기</button>
+      <button type="button" disabled={processing} className="v3-button v3-button--soft" onClick={() => onAction("done")}>완료 처리</button>
     </div>
   );
 }

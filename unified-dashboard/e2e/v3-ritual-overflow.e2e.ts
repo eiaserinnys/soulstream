@@ -12,7 +12,7 @@ const OUTPUT_ROOT = path.resolve(
 test.use({ serviceWorkers: "allow", timezoneId: "Asia/Seoul" });
 
 for (const theme of ["dark", "light"] as const) {
-  test(`keeps a long-prompt ritual card and footer inside the viewport · ${theme}`, async ({ page }) => {
+  test(`keeps carryover ritual bounded and moves long review previews to the queue · ${theme}`, async ({ page }) => {
     test.setTimeout(120_000);
     const outputDir = path.join(OUTPUT_ROOT, theme);
     mkdirSync(outputDir, { recursive: true });
@@ -46,19 +46,11 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("button", { name: "아침 정리", exact: true }).click();
     await expect(page.getByRole("dialog", { name: "어제에서 넘어온 것" })).toBeVisible();
 
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      if (await page.getByText("검수 대기 세션", { exact: true }).count() > 0) break;
-      await page.getByRole("button", { name: "미루기" }).click();
-    }
-
-    await expect(page.getByText("검수 대기 세션", { exact: true })).toBeVisible();
+    await expect(page.getByText("미완 업무", { exact: true })).toBeVisible();
+    await expect(page.getByText("검수 대기 세션", { exact: true })).toHaveCount(0);
     const title = page.locator(".v3-ritual-card h3");
     const footer = page.locator(".v3-ritual-footer");
-    const reviewAction = page.getByRole("button", { name: "확인 처리", exact: true });
     await expect(title).toBeVisible();
-    await expect(reviewAction).toBeVisible();
-    expect(Array.from(await title.innerText())).toHaveLength(120);
-    expect(await title.innerText()).not.toContain("\n");
 
     const bounds = await page.evaluate(() => {
       const modal = document.querySelector<HTMLElement>(".v3-ritual-modal")!;
@@ -90,7 +82,7 @@ for (const theme of ["dark", "light"] as const) {
 
     writeFileSync(
       path.join(outputDir, "metrics.json"),
-      `${JSON.stringify({ titleCodePoints: Array.from(await title.innerText()).length, ...bounds }, null, 2)}\n`,
+      `${JSON.stringify({ ritualTitleCodePoints: Array.from(await title.innerText()).length, ...bounds }, null, 2)}\n`,
       "utf8",
     );
 
@@ -99,12 +91,28 @@ for (const theme of ["dark", "light"] as const) {
       animations: "disabled",
     });
 
-    await page.getByRole("button", { name: "미루기" }).click();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const later = page.getByRole("button", { name: "미루기", exact: true });
+      if (await later.count() === 0) break;
+      await later.click();
+    }
     const finishAction = page.getByRole("button", { name: "플래너 열기", exact: true });
     await expect(finishAction).toBeVisible();
+    const reviewLink = page.getByRole("button", { name: "검수 대기 6건 → 검수 패널" });
+    await expect(reviewLink).toBeVisible();
     await expect(footer).toBeVisible();
     await page.screenshot({
       path: path.join(outputDir, "02-complete-button-visible.png"),
+      animations: "disabled",
+    });
+    await reviewLink.click();
+    await expect(page.getByRole("dialog", { name: "검수 대기" })).toBeVisible();
+    await expect(page.getByTestId("v3-review-queue-list").locator(".v3-run-row")).toHaveCount(6);
+    const reviewTitle = await page.getByTestId("v3-review-queue-list").locator(".v3-run-title-line strong").first().innerText();
+    expect(reviewTitle).not.toContain("\n");
+    expect(Array.from(reviewTitle).length).toBeLessThanOrEqual(120);
+    await page.screenshot({
+      path: path.join(outputDir, "03-review-panel-long-preview-clamped.png"),
       animations: "disabled",
     });
   });

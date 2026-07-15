@@ -1,4 +1,3 @@
-import type { SessionSummary } from "@seosoyoung/soul-ui";
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
 import {
@@ -19,7 +18,6 @@ export interface MorningRitualData {
 export async function loadMorningRitualData(input: {
   api: PageApiClient;
   today: string;
-  sessions: readonly SessionSummary[];
   plannerDependencies: PlannerDataDependencies;
 }): Promise<MorningRitualData> {
   const historicalDates = await loadDailyHistoryDates(
@@ -42,7 +40,6 @@ export async function loadMorningRitualData(input: {
         tasks: historicalPlanners[index]?.tasks ?? [],
       })),
       todayTaskPageIds: new Set(todayPlanner.tasks.map((task) => task.page.id)),
-      sessions: input.sessions,
     }),
   };
 }

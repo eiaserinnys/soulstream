@@ -32,6 +32,13 @@
 
 .v3-run-open:disabled { cursor: default; }
 
+.v3-run-row-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding-right: 10px;
+}
+
 .v3-run-avatar {
   display: grid;
   width: 32px;

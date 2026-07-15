@@ -2,15 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
 import type { PlannerLoadState } from "./PlannerViews";
-import {
-  applyAllProjectChanges,
-  resolveSelectedProject,
-  type ProjectStarChange,
-} from "./project-star-store";
+import { applyStarredTaskChanges, type TaskStarChange } from "./task-star-store";
 import {
   loadDailyPlanner,
   loadProjectDocumentPage,
-  loadProjectIndex,
+  loadStarredTasks,
   loadProjectPlanner,
   loadProjectTaskPage,
   loadTaskRunHistory,
@@ -21,7 +17,7 @@ import {
   type ProjectPlannerData,
 } from "./planner-data";
 
-const PROJECT_INDEX_PAGE_SIZE = 50;
+const STARRED_TASK_PAGE_SIZE = 50;
 const PROJECT_CONTENT_PAGE_SIZE = 20;
 const RUN_HISTORY_PAGE_SIZE = 20;
 const EMPTY_SESSION_IDS: string[] = [];
@@ -30,40 +26,40 @@ export function usePlannerCollections({
   api,
   dependencies,
   selectedDate,
-  selectedProjectId,
-  projectStarChanges,
+  selectedProject,
+  taskStarChanges,
   refreshKey,
   notify,
 }: {
   api: PageApiClient;
   dependencies: PlannerDataDependencies;
   selectedDate: string;
-  selectedProjectId: string | null;
-  projectStarChanges: readonly ProjectStarChange[];
+  selectedProject: PageDto | null;
+  taskStarChanges: readonly TaskStarChange[];
   refreshKey: number;
   notify(message: string): void;
 }) {
   const [daily, setDaily] = useState<PlannerLoadState<DailyPlannerData>>({ status: "loading", data: null, message: null });
   const [project, setProject] = useState<PlannerLoadState<ProjectPlannerData>>({ status: "loading", data: null, message: null });
-  const [projectIndex, setProjectIndex] = useState<PlannerLoadState<PlannerPage<PageDto>>>({ status: "loading", data: null, message: null });
-  const [projectIndexLoadingMore, setProjectIndexLoadingMore] = useState(false);
+  const [starredTaskIndex, setStarredTaskIndex] = useState<PlannerLoadState<PlannerPage<PageDto>>>({ status: "loading", data: null, message: null });
+  const [starredTasksLoadingMore, setStarredTasksLoadingMore] = useState(false);
   const [projectTasksLoadingMore, setProjectTasksLoadingMore] = useState(false);
   const [projectDocumentsLoadingMore, setProjectDocumentsLoadingMore] = useState(false);
 
   useEffect(() => {
     let active = true;
-    setProjectIndex((current) => ({ status: "loading", data: current.data, message: null }));
-    void loadProjectIndex(dependencies, { limit: PROJECT_INDEX_PAGE_SIZE }).then((data) => {
-      if (active) setProjectIndex({ status: "ready", data, message: null });
+    setStarredTaskIndex((current) => ({ status: "loading", data: current.data, message: null }));
+    void loadStarredTasks(dependencies, { limit: STARRED_TASK_PAGE_SIZE }).then((data) => {
+      if (active) setStarredTaskIndex({ status: "ready", data, message: null });
     }).catch((error: unknown) => {
       if (active) {
         const message = errorText(error);
-        setProjectIndex((current) => ({ status: "error", data: current.data, message }));
-        notify(`프로젝트 인덱스 조회 실패 · ${message}`);
+        setStarredTaskIndex((current) => ({ status: "error", data: current.data, message }));
+        notify(`별표 업무 조회 실패 · ${message}`);
       }
     });
     return () => { active = false; };
-  }, [dependencies, notify]);
+  }, [dependencies, notify, refreshKey]);
 
   useEffect(() => {
     let active = true;
@@ -76,17 +72,13 @@ export function usePlannerCollections({
     return () => { active = false; };
   }, [api, dependencies, refreshKey, selectedDate]);
 
-  const storedProjects = useMemo(
-    () => mergePages(projectIndex.data?.items ?? [], daily.data?.projects ?? []),
-    [daily.data?.projects, projectIndex.data?.items],
-  );
   const projects = useMemo(
-    () => applyAllProjectChanges(storedProjects, projectStarChanges),
-    [projectStarChanges, storedProjects],
+    () => mergePages(daily.data?.projects ?? [], selectedProject ? [selectedProject] : []),
+    [daily.data?.projects, selectedProject],
   );
-  const selectedProject = useMemo(
-    () => resolveSelectedProject(storedProjects, projectStarChanges, selectedProjectId),
-    [projectStarChanges, selectedProjectId, storedProjects],
+  const starredTasks = useMemo(
+    () => applyStarredTaskChanges(starredTaskIndex.data?.items ?? [], taskStarChanges),
+    [starredTaskIndex.data?.items, taskStarChanges],
   );
 
   useEffect(() => {
@@ -107,23 +99,23 @@ export function usePlannerCollections({
     return () => { active = false; };
   }, [api, dependencies, refreshKey, selectedProject]);
 
-  const loadMoreProjects = useCallback(async () => {
-    const cursor = projectIndex.data?.nextCursor;
-    if (!cursor || projectIndexLoadingMore) return;
-    setProjectIndexLoadingMore(true);
+  const loadMoreStarredTasks = useCallback(async () => {
+    const cursor = starredTaskIndex.data?.nextCursor;
+    if (!cursor || starredTasksLoadingMore) return;
+    setStarredTasksLoadingMore(true);
     try {
-      const next = await loadProjectIndex(dependencies, { cursor, limit: PROJECT_INDEX_PAGE_SIZE });
-      setProjectIndex((current) => current.data ? {
+      const next = await loadStarredTasks(dependencies, { cursor, limit: STARRED_TASK_PAGE_SIZE });
+      setStarredTaskIndex((current) => current.data ? {
         status: "ready",
         data: { items: mergePages(current.data.items, next.items), nextCursor: next.nextCursor },
         message: null,
       } : current);
     } catch (error) {
-      notify(`프로젝트 더 보기 실패 · ${errorText(error)}`);
+      notify(`별표 업무 더 보기 실패 · ${errorText(error)}`);
     } finally {
-      setProjectIndexLoadingMore(false);
+      setStarredTasksLoadingMore(false);
     }
-  }, [dependencies, notify, projectIndex.data?.nextCursor, projectIndexLoadingMore]);
+  }, [dependencies, notify, starredTaskIndex.data?.nextCursor, starredTasksLoadingMore]);
 
   const loadMoreProjectTasks = useCallback(async () => {
     const data = project.data;
@@ -166,12 +158,13 @@ export function usePlannerCollections({
     project,
     projects,
     selectedProject,
-    projectIndexHasMore: Boolean(projectIndex.data?.nextCursor),
-    projectIndexLoading: projectIndex.status === "loading" && !projectIndex.data,
-    projectIndexLoadingMore,
+    starredTasks,
+    starredTasksHasMore: Boolean(starredTaskIndex.data?.nextCursor),
+    starredTasksLoading: starredTaskIndex.status === "loading" && !starredTaskIndex.data,
+    starredTasksLoadingMore,
     projectTasksLoadingMore,
     projectDocumentsLoadingMore,
-    loadMoreProjects,
+    loadMoreStarredTasks,
     loadMoreProjectTasks,
     loadMoreProjectDocuments,
   };

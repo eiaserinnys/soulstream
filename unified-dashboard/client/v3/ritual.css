@@ -230,6 +230,19 @@
   line-height: var(--font-size-xl--line-height);
 }
 
+.v3-ritual-review-link {
+  border: 0;
+  padding: 0;
+  color: var(--primary);
+  background: transparent;
+  font-weight: 760;
+  cursor: pointer;
+}
+
+.v3-ritual-review-link:hover {
+  text-decoration: underline;
+}
+
 @media (max-width: 760px) {
   .v3-ritual-overlay {
     align-items: end;

@@ -11,6 +11,7 @@ import { TaskInlineBoard } from "./TaskInlineBoard";
 import { TaskRunHistory } from "./TaskRunHistory";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import "./v3-context-succession.css";
+import { useTaskStar } from "./use-task-star";
 
 export function TaskDetailPane({
   task,
@@ -62,6 +63,7 @@ export function TaskDetailPane({
     [task.blocks, task.page],
   );
   const status = plannerStatusPresentation(task.status);
+  const taskStar = useTaskStar(task.page);
   const [promotingId, setPromotingId] = useState<string | null>(null);
   const [documentMenu, setDocumentMenu] = useState<{ target: V3ContextMenuTarget; blockId: string; pageId: string } | null>(null);
   const [contextPickerOpen, setContextPickerOpen] = useState(false);
@@ -115,6 +117,16 @@ export function TaskDetailPane({
       <header className="v3-workspace-toolbar">
         <button type="button" className="v3-workspace-back" onClick={onReturnToToday}>← 오늘로</button>
         <span className="v3-spacer" />
+        <button
+          type="button"
+          className="v3-button v3-button--ghost v3-task-detail-star"
+          aria-pressed={taskStar.starred}
+          disabled={taskStar.pending}
+          title={taskStar.error ?? undefined}
+          onClick={() => { void taskStar.toggle(); }}
+        >
+          {taskStar.starred ? "★ 별표됨" : "☆ 별표하기"}
+        </button>
         <button type="button" className="v3-button v3-button--soft" onClick={onOpenBoard}>▦ 보드</button>
         <button type="button" className="v3-workspace-close" aria-label="업무 상세 닫기" onClick={onCloseWorkspace}>×</button>
       </header>

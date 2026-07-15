@@ -30,7 +30,6 @@ describe("morning ritual data", () => {
     await expect(loadMorningRitualData({
       api,
       today: "2026-07-14",
-      sessions: [],
       plannerDependencies: { fetchPlanner },
     })).resolves.toEqual({ dailyPageId: "today", items: [] });
 

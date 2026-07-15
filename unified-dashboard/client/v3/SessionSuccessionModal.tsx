@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useDashboardStore,
@@ -9,7 +9,7 @@ import {
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { createDashboardSession } from "../lib/session-create";
-import { useOrchestratorStore } from "../store/orchestrator-store";
+import { AgentNodeAssignmentFields } from "./AgentNodeAssignmentFields";
 import {
   buildSuccessionCreateOptions,
   resolveRunAssignmentDefaults,
@@ -44,11 +44,6 @@ export function SessionSuccessionModal({
 }) {
   const api = useMemo(() => createPageApiClient(), []);
   const queryClient = useQueryClient();
-  const nodes = useOrchestratorStore((state) => state.nodes);
-  const aliveNodes = useMemo(
-    () => [...nodes.values()].filter((node) => node.status === "connected"),
-    [nodes],
-  );
   const resolvedDefaults = useMemo(() => resolveRunAssignmentDefaults({
     pageDefaults,
     currentSession,
@@ -58,46 +53,12 @@ export function SessionSuccessionModal({
   const [inheritSummary, setInheritSummary] = useState(Boolean(predecessorId));
   const [selectedNodeId, setSelectedNodeId] = useState(resolvedDefaults.nodeId ?? "");
   const [selectedAgentId, setSelectedAgentId] = useState(resolvedDefaults.agentId ?? "");
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<AgentInfo | null>(null);
   const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createTaskPageAnchor>> | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const modalRef = useRef<HTMLElement>(null);
   const modalWebglActive = useGlassSurface(modalRef, { enabled: true });
-
-  useEffect(() => {
-    if (selectedNodeId && aliveNodes.some((node) => node.nodeId === selectedNodeId)) return;
-    const preferred = resolvedDefaults.nodeId
-      ? aliveNodes.find((node) => node.nodeId === resolvedDefaults.nodeId)
-      : null;
-    setSelectedNodeId(preferred?.nodeId ?? aliveNodes[0]?.nodeId ?? "");
-  }, [aliveNodes, resolvedDefaults.nodeId, selectedNodeId]);
-
-  useEffect(() => {
-    setAgents([]);
-    if (!selectedNodeId) return;
-    let active = true;
-    void fetch(`/api/nodes/${encodeURIComponent(selectedNodeId)}/agents`, {
-      credentials: "same-origin",
-      headers: { Accept: "application/json" },
-    }).then(async (response) => {
-      if (!response.ok) throw new Error(`에이전트 목록을 불러오지 못했습니다 (${response.status})`);
-      return await response.json() as { agents?: AgentInfo[] };
-    }).then((payload) => {
-      if (!active) return;
-      const next = payload.agents ?? [];
-      setAgents(next);
-      const preferredAgentId = resolvedDefaults.agentId;
-      setSelectedAgentId((current) => {
-        if (current && next.some((agent) => agent.id === current)) return current;
-        if (preferredAgentId && next.some((agent) => agent.id === preferredAgentId)) return preferredAgentId;
-        return next[0]?.id ?? "";
-      });
-    }).catch((caught: unknown) => {
-      if (active) setError(errorText(caught));
-    });
-    return () => { active = false; };
-  }, [resolvedDefaults.agentId, selectedNodeId]);
 
   const selectedCount = (inheritCard ? 2 : 0) + (inheritSummary && predecessorId ? 1 : 0);
   const start = async () => {
@@ -115,7 +76,6 @@ export function SessionSuccessionModal({
         pageAnchor,
         predecessorSessionId: predecessorId,
       });
-      const selectedAgent = agents.find((agent) => agent.id === selectedAgentId) ?? null;
       const result = await createDashboardSession({
         queryClient,
         addOptimisticSession: useDashboardStore.getState().addOptimisticSession,
@@ -171,14 +131,11 @@ export function SessionSuccessionModal({
             <li><label><input type="checkbox" checked={inheritCard} disabled /><span><strong>컨텍스트 슬롯</strong><small>{contextCount}건 · 업무 카드 본문에 포함</small></span></label></li>
           </ol>
           <div className="v3-succession-choice">{selectedCount}개 선택 · {selectedCount ? "승계 세션" : "빈 세션"}</div>
-          <div className="v3-succession-assignment">
-            <label>실행 에이전트<select value={selectedAgentId} aria-label="새 run 실행 에이전트" onChange={(event) => setSelectedAgentId(event.target.value)}>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name ?? agent.id}</option>)}</select></label>
-            <label>실행 노드<select value={selectedNodeId} aria-label="새 run 실행 노드" onChange={(event) => setSelectedNodeId(event.target.value)}>{aliveNodes.map((node) => <option key={node.nodeId} value={node.nodeId}>{node.nodeId}</option>)}</select></label>
-          </div>
+          <AgentNodeAssignmentFields agentId={selectedAgentId} nodeId={selectedNodeId} preferredAgentId={resolvedDefaults.agentId} preferredNodeId={resolvedDefaults.nodeId} fallbackToAvailable onAgentIdChange={setSelectedAgentId} onNodeIdChange={setSelectedNodeId} onAgentInfoChange={setSelectedAgent} onError={setError} />
           <small className="v3-succession-default-source">기본값: {resolvedDefaults.source === "page-defaults" ? "프로젝트 상속" : resolvedDefaults.source === "current-session" ? "현재 run" : "직접 선택"}</small>
         </div>
         {error ? <div className="v3-succession-error" role="alert">세션 시작 실패 · {error}</div> : null}
-        <footer><button type="button" className="v3-button v3-button--ghost" disabled={pending} onClick={onClose}>취소</button><button type="button" className="v3-button v3-button--primary" disabled={pending || !selectedNodeId || !selectedAgentId || !agents.some((agent) => agent.id === selectedAgentId)} onClick={() => { void start(); }}>{pending ? "시작 중…" : "시작"}</button></footer>
+        <footer><button type="button" className="v3-button v3-button--ghost" disabled={pending} onClick={onClose}>취소</button><button type="button" className="v3-button v3-button--primary" disabled={pending || !selectedNodeId || !selectedAgentId || selectedAgent?.id !== selectedAgentId} onClick={() => { void start(); }}>{pending ? "시작 중…" : "시작"}</button></footer>
       </section>
     </div>
   );

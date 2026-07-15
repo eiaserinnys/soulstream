@@ -1,15 +1,15 @@
-import { useMemo, useRef, useState } from "react";
-import { useGlassSurface } from "@seosoyoung/soul-ui";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
+import { useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
 
-import { createStarredProject, renameProjectPage, setProjectStarred } from "./project-star-actions";
+import { flattenProjectFolders } from "./project-folders";
+import { reviewNavigationSessions, reviewSessionTitle } from "./review-queue-model";
+import { setTaskStarred } from "./task-star-actions";
 import {
-  applyAllProjectChanges,
-  applyProjectStarChanges,
-  projectStarredState,
-  publishProjectStarChange,
-  useProjectStarChanges,
-} from "./project-star-store";
+  publishTaskStarChange,
+  taskStarredState,
+  useTaskStarChanges,
+} from "./task-star-store";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import "./v3-project-star.css";
 
@@ -18,51 +18,54 @@ export interface PlannerDateNavItem {
   label: string;
 }
 
-type ProjectListKind = "starred" | "all";
+type MenuState =
+  | { target: V3ContextMenuTarget; kind: "task"; task: PageDto }
+  | { target: V3ContextMenuTarget; kind: "folder"; folder: CatalogFolder };
 
 export function V3Navigation({
   dates,
   selectedDate,
-  projects,
-  selectedProjectId,
-  projectIndexHasMore,
-  projectIndexLoading,
-  onLoadMoreProjects,
+  folders,
+  selectedFolderId,
+  reviewSessions,
+  starredTasks,
+  starredTasksHasMore,
+  starredTasksLoading,
+  onLoadMoreStarredTasks,
   onSelectDate,
-  onSelectProject,
+  onOpenReviewQueue,
+  onSelectFolder,
+  onSelectTask,
+  onCreateProject,
   onCreateTask,
 }: {
   dates: readonly PlannerDateNavItem[];
   selectedDate: string;
-  projects: readonly PageDto[];
-  selectedProjectId: string | null;
-  projectIndexHasMore: boolean;
-  projectIndexLoading: boolean;
-  onLoadMoreProjects(): void;
+  folders: readonly CatalogFolder[];
+  selectedFolderId: string | null;
+  reviewSessions: readonly SessionSummary[];
+  starredTasks: readonly PageDto[];
+  starredTasksHasMore: boolean;
+  starredTasksLoading: boolean;
+  onLoadMoreStarredTasks(): void;
   onSelectDate(date: string): void;
-  onSelectProject(projectId: string): void;
-  onCreateTask(projectId: string): void;
+  onOpenReviewQueue(): void;
+  onSelectFolder(folder: CatalogFolder): void;
+  onSelectTask(task: PageDto): void;
+  onCreateProject(title: string): Promise<void>;
+  onCreateTask(folderId: string): void;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
   const api = useMemo(() => createPageApiClient(), []);
-  const starChanges = useProjectStarChanges();
-  const allProjects = applyAllProjectChanges(projects, starChanges)
-    .filter((project) => !project.daily_date && !project.archived);
-  const starredProjects = applyProjectStarChanges(
-    projects.filter((project) => project.metadata.starred === true),
-    starChanges,
-  );
+  const taskStarChanges = useTaskStarChanges();
+  const projectFolders = useMemo(() => flattenProjectFolders(folders), [folders]);
+  const reviewNavigation = useMemo(() => reviewNavigationSessions(reviewSessions), [reviewSessions]);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
-  const [pendingStarId, setPendingStarId] = useState<string | null>(null);
-  const [editingRow, setEditingRow] = useState<{ key: string; project: PageDto; title: string } | null>(null);
-  const [contextMenu, setContextMenu] = useState<{
-    target: V3ContextMenuTarget;
-    project: PageDto;
-    listKind: ProjectListKind;
-  } | null>(null);
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<MenuState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const createProject = async () => {
@@ -71,8 +74,7 @@ export function V3Navigation({
     setCreatingProject(true);
     setError(null);
     try {
-      const project = await createStarredProject(api, { title, date: selectedDate });
-      publishProjectStarChange({ page: project, starred: true });
+      await onCreateProject(title);
       setNewProjectTitle("");
       setNewProjectOpen(false);
     } catch (cause) {
@@ -82,95 +84,18 @@ export function V3Navigation({
     }
   };
 
-  const toggleProjectStar = async (project: PageDto) => {
-    if (pendingStarId) return;
-    const starred = isProjectStarred(project, starChanges);
-    if (starred && !window.confirm(`“${project.title}” 프로젝트를 ★ 작업에서 숨길까요?\n전체 프로젝트에는 계속 남습니다.`)) return;
-    setPendingStarId(project.id);
+  const clearTaskStar = async (task: PageDto) => {
+    if (pendingTaskId) return;
+    setPendingTaskId(task.id);
     setError(null);
     try {
-      const updated = await setProjectStarred(api, project.id, !starred);
-      publishProjectStarChange({ page: updated, starred: !starred });
+      const updated = await setTaskStarred(api, task.id, false);
+      publishTaskStarChange({ page: updated, starred: false });
     } catch (cause) {
       setError(`별표 변경 실패 · ${errorText(cause)}`);
     } finally {
-      setPendingStarId(null);
+      setPendingTaskId(null);
     }
-  };
-
-  const startRename = (project: PageDto, listKind: ProjectListKind) => {
-    setEditingRow({ key: `${listKind}:${project.id}`, project, title: project.title });
-    setError(null);
-  };
-
-  const commitRename = async () => {
-    if (!editingRow) return;
-    const current = editingRow;
-    const title = current.title.trim();
-    setEditingRow(null);
-    if (!title || title === current.project.title) return;
-    setError(null);
-    try {
-      const updated = await renameProjectPage(api, current.project.id, title);
-      publishProjectStarChange({
-        page: updated,
-        starred: isProjectStarred(current.project, starChanges),
-      });
-    } catch (cause) {
-      setError(`프로젝트 이름 변경 실패 · ${errorText(cause)}`);
-    }
-  };
-
-  const renderProject = (project: PageDto, listKind: ProjectListKind) => {
-    const rowKey = `${listKind}:${project.id}`;
-    const editing = editingRow?.key === rowKey;
-    const starred = isProjectStarred(project, starChanges);
-    return (
-      <div
-        key={project.id}
-        className={`v3-project-nav-row${selectedProjectId === project.id ? " is-active" : ""}`}
-        onContextMenu={(event) => {
-          event.preventDefault();
-          setContextMenu({ target: { x: event.clientX, y: event.clientY }, project, listKind });
-        }}
-      >
-        {editing ? (
-          <input
-            autoFocus
-            className="v3-project-rename-input"
-            aria-label={`${project.title} 이름 변경`}
-            value={editingRow.title}
-            onChange={(event) => setEditingRow({ ...editingRow, title: event.target.value })}
-            onBlur={() => { void commitRename(); }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") { event.preventDefault(); void commitRename(); }
-              if (event.key === "Escape") { event.preventDefault(); setEditingRow(null); }
-            }}
-          />
-        ) : (
-          <button
-            type="button"
-            className={`v3-project-nav-link${selectedProjectId === project.id ? " is-active" : ""}`}
-            onClick={() => onSelectProject(project.id)}
-            onDoubleClick={() => startRename(project, listKind)}
-          >
-            <span className="v3-project-bullet" aria-hidden="true">◆</span>
-            <span>{project.title}</span>
-          </button>
-        )}
-        <button
-          type="button"
-          className="v3-project-star-toggle"
-          aria-label={`${project.title} ${starred ? "별표 해제" : "별표 추가"}`}
-          title={starred ? "★ 작업에서 숨기기" : "★ 작업에 추가"}
-          disabled={pendingStarId === project.id}
-          onClick={() => { void toggleProjectStar(project); }}
-          onDoubleClick={(event) => event.stopPropagation()}
-        >
-          {starred ? "★" : "☆"}
-        </button>
-      </div>
-    );
   };
 
   return (
@@ -186,7 +111,7 @@ export function V3Navigation({
           <button
             type="button"
             key={item.date}
-            className={selectedProjectId === null && selectedDate === item.date ? "is-active" : ""}
+            className={selectedFolderId === null && selectedDate === item.date ? "is-active" : ""}
             onClick={() => onSelectDate(item.date)}
           >
             <span className="v3-emoji" aria-hidden="true">{item.date === dates[0]?.date ? "📅" : ""}</span>
@@ -195,27 +120,78 @@ export function V3Navigation({
         ))}
       </div>
 
+      <h2>검수 대기</h2>
+      <div className="v3-nav-list" data-testid="v3-review-navigation">
+        {reviewNavigation.map((session) => (
+          <button type="button" key={session.agentSessionId} onClick={onOpenReviewQueue}>
+            <span aria-hidden="true">◆</span><span>{reviewSessionTitle(session)}</span>
+          </button>
+        ))}
+        {reviewSessions.length === 0 ? <p>검수 대기가 없습니다.</p> : null}
+        {reviewSessions.length > reviewNavigation.length ? (
+          <button type="button" className="v3-new-project-trigger" onClick={onOpenReviewQueue}>
+            전체 {reviewSessions.length}건 보기
+          </button>
+        ) : reviewSessions.length > 0 ? (
+          <button type="button" className="v3-new-project-trigger" onClick={onOpenReviewQueue}>검수 패널 열기</button>
+        ) : null}
+      </div>
+
       <h2>★ 작업</h2>
-      <div className="v3-nav-list" data-testid="v3-starred-projects">
-        {starredProjects.map((project) => renderProject(project, "starred"))}
-        {starredProjects.length === 0 ? <p>별표 프로젝트가 없습니다.</p> : null}
+      <div className="v3-nav-list" data-testid="v3-starred-tasks">
+        {starredTasks.map((task) => (
+          <button
+            type="button"
+            key={task.id}
+            className="v3-starred-task-link"
+            disabled={pendingTaskId === task.id}
+            onClick={() => onSelectTask(task)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setContextMenu({ target: { x: event.clientX, y: event.clientY }, kind: "task", task });
+            }}
+          >
+            <span aria-hidden="true">★</span><span>{task.title}</span>
+          </button>
+        ))}
+        {starredTasks.length === 0 ? <p>{starredTasksLoading ? "업무를 불러오는 중…" : "별표 업무가 없습니다."}</p> : null}
+        {starredTasksHasMore ? (
+          <button
+            type="button"
+            className="v3-new-project-trigger"
+            data-testid="v3-load-more-starred-tasks"
+            disabled={starredTasksLoading}
+            onClick={onLoadMoreStarredTasks}
+          >
+            {starredTasksLoading ? "불러오는 중…" : "별표 업무 더 보기"}
+          </button>
+        ) : null}
       </div>
 
       <h2>전체 프로젝트</h2>
       <div className="v3-nav-list" data-testid="v3-all-projects">
-        {allProjects.map((project) => renderProject(project, "all"))}
-        {allProjects.length === 0 ? <p>{projectIndexLoading ? "프로젝트를 불러오는 중…" : "프로젝트가 없습니다."}</p> : null}
-        {projectIndexHasMore ? (
-          <button
-            type="button"
-            className="v3-new-project-trigger"
-            data-testid="v3-load-more-projects"
-            disabled={projectIndexLoading}
-            onClick={onLoadMoreProjects}
+        {projectFolders.map(({ folder, depth }) => (
+          <div
+            key={folder.id}
+            className={`v3-project-nav-row${selectedFolderId === folder.id ? " is-active" : ""}`}
+            style={{ "--v3-project-depth": depth } as CSSProperties}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setContextMenu({ target: { x: event.clientX, y: event.clientY }, kind: "folder", folder });
+            }}
           >
-            {projectIndexLoading ? "불러오는 중…" : "프로젝트 더 보기"}
-          </button>
-        ) : null}
+            <button
+              type="button"
+              className={`v3-project-nav-link${selectedFolderId === folder.id ? " is-active" : ""}`}
+              aria-level={depth + 1}
+              onClick={() => onSelectFolder(folder)}
+            >
+              <span className="v3-project-bullet" aria-hidden="true">◆</span>
+              <span>{folder.name}</span>
+            </button>
+          </div>
+        ))}
+        {projectFolders.length === 0 ? <p>프로젝트가 없습니다.</p> : null}
         <button
           type="button"
           className="v3-new-project-trigger"
@@ -235,12 +211,7 @@ export function V3Navigation({
               onChange={(event) => setNewProjectTitle(event.target.value)}
               onKeyDown={(event) => { if (event.key === "Enter") void createProject(); }}
             />
-            <button
-              type="button"
-              className="v3-button v3-button--primary"
-              disabled={creatingProject || !newProjectTitle.trim()}
-              onClick={() => { void createProject(); }}
-            >
+            <button type="button" className="v3-button v3-button--primary" disabled={creatingProject || !newProjectTitle.trim()} onClick={() => { void createProject(); }}>
               {creatingProject ? "…" : "만들기"}
             </button>
           </div>
@@ -251,15 +222,18 @@ export function V3Navigation({
       <V3ContextMenu
         target={contextMenu?.target ?? null}
         onClose={() => setContextMenu(null)}
-        actions={contextMenu ? [
-          { label: "프로젝트 열기", onSelect: () => onSelectProject(contextMenu.project.id) },
-          { label: "페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(contextMenu.project.id) },
-          { label: "이름 변경", onSelect: () => startRename(contextMenu.project, contextMenu.listKind), separatorBefore: true },
+        actions={contextMenu?.kind === "task" ? [
+          { label: "업무 열기", onSelect: () => onSelectTask(contextMenu.task) },
+          { label: "업무 페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(contextMenu.task.id) },
           {
-            label: isProjectStarred(contextMenu.project, starChanges) ? "별표 해제" : "별표 추가",
-            onSelect: () => toggleProjectStar(contextMenu.project),
+            label: taskStarredState(contextMenu.task.id, taskStarChanges, true) ? "별표 해제" : "별표 추가",
+            onSelect: () => clearTaskStar(contextMenu.task),
+            separatorBefore: true,
           },
-          { label: "새 업무", onSelect: () => onCreateTask(contextMenu.project.id), separatorBefore: true },
+        ] : contextMenu?.kind === "folder" ? [
+          { label: "프로젝트 열기", onSelect: () => onSelectFolder(contextMenu.folder) },
+          { label: "폴더 ID 복사", onSelect: () => navigator.clipboard.writeText(contextMenu.folder.id) },
+          { label: "새 업무", onSelect: () => onCreateTask(contextMenu.folder.id), separatorBefore: true },
         ] : []}
       />
       <div className="v3-nav-foot">
@@ -268,10 +242,6 @@ export function V3Navigation({
       </div>
     </nav>
   );
-}
-
-function isProjectStarred(project: PageDto, changes: readonly { page: PageDto; starred: boolean }[]): boolean {
-  return projectStarredState(project.id, changes, project.metadata.starred === true);
 }
 
 function errorText(error: unknown): string {

@@ -7,7 +7,7 @@ import {
   loadDailyHistoryDates,
   loadDailyPlanner,
   loadProjectDocumentPage,
-  loadProjectIndex,
+  loadStarredTasks,
   loadProjectPlanner,
   loadProjectTaskPage,
   loadTaskRunHistory,
@@ -67,8 +67,8 @@ describe("planner BFF data", () => {
 
   it("loads bounded project, daily, task, document, and run pages through dedicated planner routes", async () => {
     const fetchPlanner = vi.fn(async (path: string) => {
-      if (path.startsWith("/api/planner/project-index")) {
-        return { items: [page("project", "프로젝트")], next_cursor: "project-next" };
+      if (path.startsWith("/api/planner/starred-tasks")) {
+        return { items: [page("task-starred", "별표 업무")], next_cursor: "task-next" };
       }
       if (path.startsWith("/api/planner/daily-history")) {
         return { dates: ["2026-07-13", "2026-07-11"] };
@@ -87,8 +87,8 @@ describe("planner BFF data", () => {
     });
     const dependencies = { fetchPlanner } satisfies PlannerDataDependencies;
 
-    await expect(loadProjectIndex(dependencies, { cursor: "cursor-a", limit: 50 }))
-      .resolves.toMatchObject({ items: [{ id: "project" }], nextCursor: "project-next" });
+    await expect(loadStarredTasks(dependencies, { cursor: "cursor-a", limit: 50 }))
+      .resolves.toMatchObject({ items: [{ id: "task-starred" }], nextCursor: "task-next" });
     await expect(loadDailyHistoryDates(dependencies, "2026-07-14", 2))
       .resolves.toEqual(["2026-07-13", "2026-07-11"]);
     await expect(loadProjectTaskPage(dependencies, "project/a", "cursor-b", 20))
@@ -98,7 +98,7 @@ describe("planner BFF data", () => {
     await expect(loadTaskRunHistory(dependencies, "task/a", "cursor-d", 20))
       .resolves.toEqual({ sessionIds: ["session-a"], nextCursor: "run-next", total: 61 });
 
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/project-index?cursor=cursor-a&limit=50");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/starred-tasks?cursor=cursor-a&limit=50");
     expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/daily-history?before=2026-07-14&limit=2");
     expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/tasks?cursor=cursor-b&limit=20");
     expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/documents?cursor=cursor-c&limit=20");

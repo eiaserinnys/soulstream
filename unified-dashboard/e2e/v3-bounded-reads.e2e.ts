@@ -56,7 +56,7 @@ for (const theme of ["dark", "light"] as const) {
     await page.waitForLoadState("networkidle");
     await capture(page, outputDir, "01-entry");
 
-    expect(apiRequests(requests, "/api/planner/project-index")).toHaveLength(1);
+    expect(apiRequests(requests, "/api/planner/starred-tasks")).toHaveLength(1);
     expect(requests.some((url) => /\/api\/pages\?.*limit=/.test(url))).toBe(false);
     expect(apiRequests(requests, "/api/nodes")).toHaveLength(0);
     expect(requests.some((url) => /\/api\/sessions\?.*(?:limit=0|sessionScope=all)/.test(url))).toBe(false);

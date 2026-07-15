@@ -51,6 +51,8 @@ export { ProfileAvatar } from "./ProfileAvatar";
 export { ContextContentRenderer } from "./ContextContentRenderer";
 export { WallpaperLayer } from "./WallpaperLayer";
 export { LiquidGlassCanvas, LiquidGlassProvider, useGlassSurface } from "./LiquidGlassProvider";
+export { AtomNodeSelector } from "./AtomNodeSelector";
+export type { AtomNodeSelectorProps } from "./AtomNodeSelector";
 
 // === Dashboard Components (extracted from soul-dashboard) ===
 export { SessionsTopBar } from "./SessionsTopBar";

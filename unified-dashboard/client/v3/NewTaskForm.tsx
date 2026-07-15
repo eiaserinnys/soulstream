@@ -8,30 +8,30 @@ import {
   DialogPopup,
   DialogTitle,
 } from "@seosoyoung/soul-ui";
-import type { PageDto } from "@seosoyoung/soul-ui/page";
+import type { CatalogFolder } from "@seosoyoung/soul-ui";
 
 export function NewTaskForm({
-  projects,
-  initialProjectId,
+  folders,
+  initialFolderId,
   pending,
   onCreate,
   onCancel,
 }: {
-  projects: readonly PageDto[];
-  initialProjectId: string | null;
+  folders: readonly CatalogFolder[];
+  initialFolderId: string | null;
   pending: boolean;
-  onCreate(title: string, projectId: string, description: string): void;
+  onCreate(title: string, folderId: string, description: string): void;
   onCancel(): void;
 }) {
   const [title, setTitle] = useState("");
-  const [projectId, setProjectId] = useState(initialProjectId ?? projects[0]?.id ?? "");
+  const [folderId, setFolderId] = useState(initialFolderId ?? folders[0]?.id ?? "");
   const [description, setDescription] = useState("");
 
-  const selected = projects.find((project) => project.id === projectId);
+  const selected = folders.find((folder) => folder.id === folderId);
   const submit = () => {
     const normalized = title.trim();
-    if (!normalized || !projectId || pending) return;
-    onCreate(normalized, projectId, description);
+    if (!normalized || !folderId || pending) return;
+    onCreate(normalized, folderId, description);
   };
 
   return (
@@ -46,12 +46,12 @@ export function NewTaskForm({
             <label>
               <span>프로젝트</span>
               <select
-                value={projectId}
+                value={folderId}
                 disabled={pending}
                 aria-label="프로젝트 선택"
-                onChange={(event) => setProjectId(event.target.value)}
+                onChange={(event) => setFolderId(event.target.value)}
               >
-                {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
+                {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
               </select>
             </label>
             <label>
@@ -79,12 +79,12 @@ export function NewTaskForm({
                 onChange={(event) => setDescription(event.target.value)}
               />
             </label>
-            <p>상속 미리보기: {selected?.title ?? "프로젝트"}의 guidance · atom · 실행 기본값</p>
+            <p>상속 미리보기: {selected?.name ?? "프로젝트"}의 guidance · atom · 실행 기본값</p>
           </div>
         </DialogPanel>
         <DialogFooter>
           <button type="button" className="v3-button v3-button--ghost" onClick={onCancel} disabled={pending}>취소</button>
-          <button type="button" className="v3-button v3-button--primary" onClick={submit} disabled={pending || !title.trim() || !projectId}>
+          <button type="button" className="v3-button v3-button--primary" onClick={submit} disabled={pending || !title.trim() || !folderId}>
             {pending ? "만드는 중…" : "업무 만들기"}
           </button>
         </DialogFooter>

@@ -1,0 +1,46 @@
+.v3-review-queue-popup {
+  width: min(760px, calc(100vw - 32px));
+  max-height: min(760px, calc(100dvh - 48px));
+}
+
+.v3-review-queue-popup [data-slot="dialog-panel"] {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.v3-review-queue-intro {
+  margin: 0 0 12px;
+  color: var(--muted-foreground);
+  font-size: var(--font-size-sm);
+}
+
+.v3-review-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.v3-review-queue-list .v3-run-row-actions .v3-button {
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+.v3-review-queue-list .v3-run-row-actions {
+  gap: 6px;
+}
+
+@media (max-width: 640px) {
+  .v3-review-queue-popup {
+    width: calc(100vw - 16px);
+  }
+
+  .v3-review-queue-list .v3-run-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .v3-review-queue-list .v3-run-row-actions {
+    justify-content: flex-end;
+    padding: 0 10px 10px;
+  }
+}

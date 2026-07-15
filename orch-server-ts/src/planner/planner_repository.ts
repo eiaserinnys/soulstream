@@ -11,7 +11,7 @@ import type {
 import {
   encodeMountCursor,
   listDailyHistory,
-  listProjectIndex,
+  listStarredTasks,
   listTaskRuns,
   type PlannerMountCursor,
 } from "./planner_repository_reads.js";
@@ -26,8 +26,8 @@ import {
 export class PlannerRepository implements PlannerReadProvider {
   constructor(private readonly resolver: LiveDbSqlResolver) {}
 
-  async getProjectIndex(input: { cursor?: string; limit: number }) {
-    return await listProjectIndex(await this.resolver.resolveSql(), input);
+  async getStarredTasks(input: { cursor?: string; limit: number }) {
+    return await listStarredTasks(await this.resolver.resolveSql(), input);
   }
 
   async getDailyHistory(input: { before: string; limit: number }) {

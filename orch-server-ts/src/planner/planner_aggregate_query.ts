@@ -95,7 +95,22 @@ export async function plannerQuery(
       FROM pages p
       WHERE p.archived = FALSE
         AND p.daily_date IS NULL
-        AND jsonb_typeof(p.metadata->'starred') = 'boolean'
+        AND NOT EXISTS (
+          SELECT 1
+          FROM blocks task_ref
+          WHERE task_ref.page_id = p.id
+            AND task_ref.block_type = 'runbook_ref'
+            AND COALESCE((task_ref.properties->>'primary')::boolean, FALSE)
+            AND NULLIF(task_ref.properties->>'runbookId', '') IS NOT NULL
+        )
+        AND EXISTS (
+          SELECT 1
+          FROM blocks source
+          JOIN block_links project_link
+            ON project_link.source_block_id = source.id
+           AND project_link.link_kind = 'mount'
+          WHERE source.page_id = p.id
+        )
     ),
     task_rows AS (
       SELECT mounted.id AS page_id,

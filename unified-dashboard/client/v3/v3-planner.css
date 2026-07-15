@@ -224,43 +224,6 @@
   background: color-mix(in srgb, var(--info) 12%, transparent);
 }
 
-.v3-review-strip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  overflow-x: auto;
-  margin: var(--v3-panel-gap) 0;
-  border-radius: 12px;
-  padding: var(--v3-card-gap) 12px;
-}
-
-.v3-review-strip strong {
-  display: inline-flex;
-  min-height: 28px;
-  flex: none;
-  align-items: center;
-  color: var(--warning-foreground);
-  font-size: var(--font-size-xs);
-}
-
-.v3-review-strip button {
-  min-height: 28px;
-  flex: none;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 5px 10px;
-  color: var(--muted-foreground);
-  background: var(--muted);
-  font-size: var(--font-size-xs);
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.v3-review-strip button:hover {
-  border-color: var(--warning);
-  color: var(--warning-foreground);
-}
-
 .v3-date-head {
   display: flex;
   align-items: flex-end;
@@ -466,10 +429,6 @@
 
   .v3-date-head p {
     margin: 0;
-  }
-
-  .v3-review-strip {
-    border-radius: 9px;
   }
 
   .v3-mobile-tabs {

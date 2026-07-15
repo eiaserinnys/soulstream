@@ -61,11 +61,11 @@ function block(
 }
 
 const pages = {
-  project: page("project-amber", "Amber & Blade", null, { folderId: "folder-amber", starred: true }),
-  projectOps: page("project-ops", "Soulstream 운영", null, { folderId: "folder-ops", starred: true }),
+  project: page("project-amber", "Amber & Blade", null, { folderId: "folder-amber" }),
+  projectOps: page("project-ops", "Soulstream 운영", null, { folderId: "folder-ops" }),
   today: page("daily-2026-07-14", "2026-07-14", "2026-07-14"),
   yesterday: page("daily-2026-07-13", "2026-07-13", "2026-07-13"),
-  taskAlpha: page("task-alpha", "업무 카드 밀도와 계층 최종 QA"),
+  taskAlpha: page("task-alpha", "업무 카드 밀도와 계층 최종 QA", null, { starred: true }),
   taskBeta: page("task-beta", "모바일 3탭 선택 상태 검증"),
   taskDone: page("task-done", "완료한 접근성 정리"),
   carryover: page("task-carryover", "이월 업무: 모달 간격 확인"),
@@ -292,6 +292,21 @@ const sessions = [
     agentId: "roselin_codex",
     agentName: "로젤린",
   },
+  ...Array.from({ length: 5 }, (_, index) => ({
+    agentSessionId: `review-session-${index + 2}`,
+    status: "completed" as const,
+    reviewRequired: true,
+    reviewState: "needs_review" as const,
+    sessionType: "claude",
+    createdAt: `2026-07-13T${String(12 + index).padStart(2, "0")}:00:00.000Z`,
+    updatedAt: `2026-07-13T${String(13 + index).padStart(2, "0")}:00:00.000Z`,
+    completedAt: `2026-07-13T${String(13 + index).padStart(2, "0")}:00:00.000Z`,
+    displayName: `추가 검수 세션 ${index + 2}`,
+    awaySummary: `검수 패널 전체 목록 ${index + 2}번 항목입니다.`,
+    nodeId: "eiaserinnys",
+    agentId: "roselin_codex",
+    agentName: "로젤린",
+  })),
 ];
 
 const runSessions: Record<string, string[]> = {
@@ -420,8 +435,8 @@ export async function installV3VisualQaRoutes(
     }
     if (path === "/api/folders") return fulfillJson(route, {
       folders: [
-        { id: "folder-amber", name: pages.project.title, parent_id: null },
-        { id: "folder-ops", name: pages.projectOps.title, parent_id: null },
+        { id: "folder-amber", name: pages.project.title, sortOrder: 0, parentFolderId: null },
+        { id: "folder-ops", name: pages.projectOps.title, sortOrder: 1, parentFolderId: null },
       ],
       sessions: {},
     });
@@ -512,11 +527,13 @@ export async function installV3VisualQaRoutes(
           ? [plannerTaskPayload(pages.carryover, "rb-carry")]
           : [plannerTaskPayload(pages.taskAlpha, "rb-alpha"), plannerTaskPayload(pages.taskBeta, "rb-beta")],
         memo_blocks: daily.blocks.filter((item) => !item.text.startsWith("[[")),
-        review_session_ids: yesterday ? [] : ["review-session"],
+        review_session_ids: yesterday ? [] : sessions
+          .filter((session) => session.reviewState === "needs_review")
+          .map((session) => session.agentSessionId),
       });
     }
-    if (path === "/api/planner/project-index" && request.method() === "GET") {
-      return fulfillJson(route, { items: [pages.project, pages.projectOps], next_cursor: null });
+    if (path === "/api/planner/starred-tasks" && request.method() === "GET") {
+      return fulfillJson(route, { items: [pages.taskAlpha], next_cursor: null });
     }
     if (path === "/api/planner/daily-history" && request.method() === "GET") {
       return fulfillJson(route, { dates: ["2026-07-13"] });
@@ -567,7 +584,7 @@ export async function installV3VisualQaRoutes(
     }
     if (path === "/api/pages" && request.method() === "GET") {
       const items = url.searchParams.get("starred") === "true"
-        ? [pages.project, pages.projectOps]
+        ? [pages.taskAlpha]
         : allPages;
       return fulfillJson(route, { items, next_cursor: null });
     }
@@ -612,6 +629,15 @@ export async function installV3VisualQaRoutes(
         nodeId: "eiaserinnys",
         sourcePageId: pages.project.id,
         sourceBlockId: "project-guidance",
+      });
+    }
+    const reviewAcknowledgeMatch = /^\/api\/sessions\/([^/]+)\/review\/acknowledge$/.exec(path);
+    if (reviewAcknowledgeMatch && request.method() === "POST") {
+      return fulfillJson(route, {
+        status: "ok",
+        agentSessionId: decodeURIComponent(reviewAcknowledgeMatch[1]),
+        reviewState: "acknowledged",
+        changed: true,
       });
     }
     const runbookMatch = /^\/api\/runbooks\/([^/]+)$/.exec(path);

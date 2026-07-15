@@ -7,7 +7,7 @@ import { PlannerCursorError } from "./planner_repository_reads.js";
 
 export const plannerRouteAuthRequirements = {
   "GET /api/planner/today": true,
-  "GET /api/planner/project-index": true,
+  "GET /api/planner/starred-tasks": true,
   "GET /api/planner/daily-history": true,
   "GET /api/planner/projects/{pageId}": true,
   "GET /api/planner/projects/{pageId}/tasks": true,
@@ -23,7 +23,7 @@ export interface PlannerRouteOptions {
 const id = z.string().trim().min(1);
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const todayQuery = z.object({ date });
-const projectIndexQuery = z.object({
+const starredTasksQuery = z.object({
   cursor: id.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
@@ -54,14 +54,14 @@ export function registerPlannerRoutes(
     }
   });
 
-  app.get("/api/planner/project-index", async (request, reply) => {
+  app.get("/api/planner/starred-tasks", async (request, reply) => {
     if (!await options.resolveUser(request)) return unauthorized(reply);
-    const parsed = projectIndexQuery.safeParse(request.query);
+    const parsed = starredTasksQuery.safeParse(request.query);
     if (!parsed.success) return invalid(reply, parsed.error.message);
     try {
-      return reply.send(await options.provider.getProjectIndex(parsed.data));
+      return reply.send(await options.provider.getStarredTasks(parsed.data));
     } catch (error) {
-      return failed(request, reply, error, "project-index");
+      return failed(request, reply, error, "starred-tasks");
     }
   });
 

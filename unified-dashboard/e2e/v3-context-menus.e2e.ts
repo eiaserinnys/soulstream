@@ -35,9 +35,7 @@ for (const theme of ["dark", "light"] as const) {
       .filter({ hasText: fixtureTitles.project });
     await projectRow.click({ button: "right" });
     await expect(page.getByRole("menuitem", { name: "프로젝트 열기" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "페이지 ID 복사" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "이름 변경" })).toBeVisible();
-    await expect(page.getByRole("menuitem", { name: "별표 해제" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "폴더 ID 복사" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "새 업무" })).toBeVisible();
     await capture(page, theme, "01-project-context-menu");
     await page.keyboard.press("Escape");
@@ -45,6 +43,7 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByTestId("v3-task-task-alpha").click({ button: "right" });
     await expect(page.getByRole("menuitem", { name: "업무 열기" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "업무 페이지 ID 복사" })).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "별표 해제" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "완료 처리" })).toBeVisible();
     await expect(page.getByRole("menuitem", { name: "오늘 플래너에 추가·제거" })).toBeVisible();
     await capture(page, theme, "02-task-context-menu");
