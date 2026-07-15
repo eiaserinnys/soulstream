@@ -111,8 +111,9 @@ describePostgres("checklist production projection PostgreSQL integration", () =>
     await restartedProcess.reconcileDue();
     expect(batchPageOperations).toHaveBeenCalledTimes(writesAfterRecovery);
 
-    const leftAdapter = new ChecklistRunbookAdapter(service);
-    const rightAdapter = new ChecklistRunbookAdapter(service);
+    const existingIdentity = { promoteExistingPage: vi.fn() };
+    const leftAdapter = new ChecklistRunbookAdapter(service, existingIdentity);
+    const rightAdapter = new ChecklistRunbookAdapter(service, existingIdentity);
     await Promise.all([
       leftAdapter.toggle({
         runbookId: "page-runbook:page-1",

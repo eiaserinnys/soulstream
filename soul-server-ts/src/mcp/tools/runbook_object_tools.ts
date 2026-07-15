@@ -4,6 +4,8 @@ import { z } from "zod";
 import type { RunbookStatus } from "../../db/session_db_types.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
+import { SOULSTREAM_AGENT_SESSION_HEADER } from "../request_context.js";
+import { resolveEffectiveCallerSessionId } from "./caller_session.js";
 
 import {
   callerSessionIdSchema,
@@ -37,9 +39,10 @@ export function registerRunbookObjectTools(
         caller_session_id: callerSessionIdSchema,
       },
     },
-    async (input) =>
-      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
-        service.createRunbook({
+    async (input) => taskIdentityMutation(
+      runtime,
+      input.caller_session_id,
+      (client, actorSessionId) => client.create({
           actorKind: "agent",
           actorSessionId,
           folderId: input.folder_id,
@@ -92,9 +95,10 @@ export function registerRunbookObjectTools(
         caller_session_id: callerSessionIdSchema,
       },
     },
-    async (input) =>
-      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
-        service.patchRunbook({
+    async (input) => taskIdentityMutation(
+      runtime,
+      input.caller_session_id,
+      (client, actorSessionId) => client.update({
           actorKind: "agent",
           actorSessionId,
           runbookId: input.runbook_id,
@@ -217,9 +221,10 @@ function registerRunbookArchiveTool(
         caller_session_id: callerSessionIdSchema,
       },
     },
-    async (input) =>
-      mutation(runtime, input.caller_session_id, (service, actorSessionId) =>
-        service.patchRunbook({
+    async (input) => taskIdentityMutation(
+      runtime,
+      input.caller_session_id,
+      (client, actorSessionId) => client.update({
           actorKind: "agent",
           actorSessionId,
           runbookId: input.runbook_id,
@@ -230,4 +235,28 @@ function registerRunbookArchiveTool(
         }),
       ),
   );
+}
+
+async function taskIdentityMutation(
+  runtime: McpRuntime,
+  explicitCallerSessionId: string | null | undefined,
+  mutateIdentity: (
+    client: NonNullable<McpRuntime["runbookTaskIdentityHostClient"]>,
+    actorSessionId: string,
+  ) => Promise<unknown>,
+) {
+  try {
+    const actorSessionId = resolveEffectiveCallerSessionId(explicitCallerSessionId);
+    if (!actorSessionId) {
+      throw new Error(
+        `caller session id is required for runbook mutation tools. Send ${SOULSTREAM_AGENT_SESSION_HEADER}.`,
+      );
+    }
+    if (!runtime.runbookTaskIdentityHostClient) {
+      throw new Error("runbook task identity host client is not configured");
+    }
+    return jsonResult(await mutateIdentity(runtime.runbookTaskIdentityHostClient, actorSessionId));
+  } catch (err) {
+    return errorResult(errorMessage(err));
+  }
 }

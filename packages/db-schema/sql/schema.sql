@@ -3183,6 +3183,15 @@ ALTER TABLE pages ADD CONSTRAINT pages_updated_event_fkey
     FOREIGN KEY (updated_session_id, updated_event_id)
     REFERENCES events(session_id, id) ON DELETE SET NULL;
 
+-- One task identity has a runbook execution aspect and a page document aspect.
+-- New rows use task_page_id = id; legacy rows remain NULL until canonical Y.Doc backfill.
+ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS task_page_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_runbooks_task_page_id
+    ON runbooks(task_page_id) WHERE task_page_id IS NOT NULL;
+ALTER TABLE runbooks DROP CONSTRAINT IF EXISTS runbooks_task_page_id_fkey;
+ALTER TABLE runbooks ADD CONSTRAINT runbooks_task_page_id_fkey
+    FOREIGN KEY (task_page_id) REFERENCES pages(id) ON DELETE RESTRICT;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pages_title_key ON pages(title_key);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pages_daily_date
     ON pages(daily_date) WHERE daily_date IS NOT NULL;

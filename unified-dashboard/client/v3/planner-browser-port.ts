@@ -6,7 +6,6 @@ import type {
 
 import { parseSingleMountTitle } from "./planner-model";
 import type { PlannerTaskCreationPort } from "./planner-task-creation";
-import { saveTaskDescription } from "./task-workspace-api";
 
 export class BrowserPlannerMutationPort implements PlannerTaskCreationPort {
   constructor(
@@ -16,48 +15,35 @@ export class BrowserPlannerMutationPort implements PlannerTaskCreationPort {
     private readonly fetchImplementation: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
   ) {}
 
-  async createTaskPage(input: { title: string; description: string; sourcePageId: string }) {
-    const page = await this.createMountedPage(input);
-    if (input.description.trim()) {
-      await saveTaskDescription(this.api, page.pageId, input.description);
-    }
-    return page;
-  }
-
   async createDocument(input: { title: string; sourcePageId: string }) {
     return await this.createMountedPage(input);
   }
 
-  async createRunbook(input: { title: string; folderId: string }) {
+  async createTaskIdentity(input: { title: string; description: string; folderId: string }) {
     const response = await this.fetchImplementation("/api/runbooks", {
       method: "POST",
       credentials: "same-origin",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ title: input.title, folder_id: input.folderId }),
+      body: JSON.stringify({
+        title: input.title,
+        description: input.description,
+        folder_id: input.folderId,
+      }),
     });
     const payload = await readPayload(response);
     if (!response.ok) {
-      throw new Error(responseMessage(payload, `런북을 만들지 못했습니다 (${response.status})`));
+      throw new Error(responseMessage(payload, `업무를 만들지 못했습니다 (${response.status})`));
     }
-    const runbookId = extractRunbookId(payload);
-    if (!runbookId) throw new Error("런북 생성 응답에 runbook ID가 없습니다");
-    return { runbookId };
-  }
-
-  async addPrimaryRunbookReference(input: { pageId: string; runbookId: string }) {
-    const snapshot = await this.api.getPage(input.pageId);
-    const existing = snapshot.blocks.some((block) => {
-      const properties = block.properties as Record<string, unknown>;
-      return block.block_type === "runbook_ref"
-        && properties.primary === true
-        && properties.runbookId === input.runbookId;
-    });
-    if (existing) return;
-    await this.appendBlock(snapshot, {
-      blockType: "runbook_ref",
-      text: "",
-      properties: { runbookId: input.runbookId, primary: true },
-    });
+    const ids = extractTaskIdentityIds(payload);
+    if (!ids.id) throw new Error("업무 생성 응답에 ID가 없습니다");
+    if (
+      (ids.pageId && ids.pageId !== ids.id)
+      || (ids.runbookId && ids.runbookId !== ids.id)
+      || (ids.pageId && ids.runbookId && ids.pageId !== ids.runbookId)
+    ) {
+      throw new Error("업무 생성 응답의 ID가 일치하지 않습니다");
+    }
+    return { id: ids.id };
   }
 
   async mountPage(input: { sourcePageId: string; title: string }) {
@@ -181,14 +167,26 @@ async function readPayload(response: Response): Promise<unknown> {
   }
 }
 
-function extractRunbookId(payload: unknown): string | null {
-  if (!payload || typeof payload !== "object") return null;
+function extractTaskIdentityIds(payload: unknown): {
+  id: string | null;
+  pageId: string | null;
+  runbookId: string | null;
+} {
+  if (!payload || typeof payload !== "object") {
+    return { id: null, pageId: null, runbookId: null };
+  }
   const record = payload as Record<string, unknown>;
-  const direct = stringValue(record.runbook_id) ?? stringValue(record.id);
-  if (direct) return direct;
   const runbook = objectValue(record.runbook)
     ?? objectValue(objectValue(record.snapshot)?.runbook);
-  return stringValue(runbook?.id);
+  const runbookId = stringValue(record.runbookId)
+    ?? stringValue(record.runbook_id)
+    ?? stringValue(runbook?.id);
+  const pageId = stringValue(record.pageId) ?? stringValue(record.page_id);
+  return {
+    id: stringValue(record.id) ?? pageId ?? runbookId,
+    pageId,
+    runbookId,
+  };
 }
 
 function responseMessage(payload: unknown, fallback: string): string {

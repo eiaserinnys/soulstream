@@ -7,19 +7,14 @@ import {
 } from "./planner-task-creation";
 
 describe("createPlannerTask", () => {
-  it("creates the mounted page, runbook reference, and project mount in order", async () => {
+  it("creates one task identity, then mounts the same page on daily and project", async () => {
     const calls: string[] = [];
     const port: PlannerTaskCreationPort = {
-      createTaskPage: vi.fn(async () => {
-        calls.push("page");
-        return { pageId: "page-task" };
+      createTaskIdentity: vi.fn(async () => {
+        calls.push("identity");
+        return { id: "task-uuid" };
       }),
-      createRunbook: vi.fn(async () => {
-        calls.push("runbook");
-        return { runbookId: "rb-task" };
-      }),
-      addPrimaryRunbookReference: vi.fn(async () => { calls.push("reference"); }),
-      mountPage: vi.fn(async () => { calls.push("project-mount"); }),
+      mountPage: vi.fn(async ({ sourcePageId }) => { calls.push(`${sourcePageId}-mount`); }),
     };
 
     await expect(createPlannerTask({
@@ -28,19 +23,19 @@ describe("createPlannerTask", () => {
       dailyPageId: "daily",
       projectPageId: "project",
       folderId: "folder",
-    }, port)).resolves.toEqual({ pageId: "page-task", runbookId: "rb-task" });
+    }, port)).resolves.toEqual({ pageId: "task-uuid", runbookId: "task-uuid" });
 
-    expect(calls).toEqual(["page", "runbook", "reference", "project-mount"]);
-    expect(port.createTaskPage).toHaveBeenCalledWith({
+    expect(calls).toEqual(["identity", "daily-mount", "project-mount"]);
+    expect(port.createTaskIdentity).toHaveBeenCalledWith({
       title: "새 업무",
       description: "## 첫 설명\n\n업무 배경",
+      folderId: "folder",
+    });
+    expect(port.mountPage).toHaveBeenNthCalledWith(1, {
       sourcePageId: "daily",
+      title: "새 업무",
     });
-    expect(port.addPrimaryRunbookReference).toHaveBeenCalledWith({
-      pageId: "page-task",
-      runbookId: "rb-task",
-    });
-    expect(port.mountPage).toHaveBeenCalledWith({
+    expect(port.mountPage).toHaveBeenNthCalledWith(2, {
       sourcePageId: "project",
       title: "새 업무",
     });
@@ -48,9 +43,7 @@ describe("createPlannerTask", () => {
 
   it("reports the exact failed phase", async () => {
     const port: PlannerTaskCreationPort = {
-      createTaskPage: vi.fn(async () => ({ pageId: "page-task" })),
-      createRunbook: vi.fn(async () => { throw new Error("offline"); }),
-      addPrimaryRunbookReference: vi.fn(),
+      createTaskIdentity: vi.fn(async () => { throw new Error("offline"); }),
       mountPage: vi.fn(),
     };
 
@@ -64,6 +57,6 @@ describe("createPlannerTask", () => {
 
     expect(failure).toBeInstanceOf(PlannerTaskCreationError);
     expect(failure).toMatchObject({ phase: "runbook" });
-    expect(port.addPrimaryRunbookReference).not.toHaveBeenCalled();
+    expect(port.mountPage).not.toHaveBeenCalled();
   });
 });

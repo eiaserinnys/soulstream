@@ -67,6 +67,7 @@ function createSilentLogger() {
 function makeRuntime(params: {
   catalogService?: Record<string, unknown>;
   runbookService?: Record<string, unknown>;
+  runbookTaskIdentityHostClient?: Record<string, unknown>;
   customViewService?: Record<string, unknown>;
 } = {}): McpRuntime {
   return {
@@ -81,6 +82,7 @@ function makeRuntime(params: {
     agentRegistry: new AgentRegistry([]),
     catalogService: (params.catalogService ?? {}) as CatalogService,
     runbookService: params.runbookService as never,
+    runbookTaskIdentityHostClient: params.runbookTaskIdentityHostClient as never,
     customViewService: params.customViewService as never,
     logger: createSilentLogger(),
   };
@@ -293,8 +295,12 @@ describe("runbook MCP tools", () => {
 
   it("prefers explicit caller_session_id over the caller session header", async () => {
     const service = fakeRunbookService();
+    const taskIdentityHost = fakeTaskIdentityHost();
     const client = await createClient(
-      makeRuntime({ runbookService: service }),
+      makeRuntime({
+        runbookService: service,
+        runbookTaskIdentityHostClient: taskIdentityHost,
+      }),
       { "x-soulstream-agent-session-id": "sess-header" },
     );
 
@@ -310,7 +316,7 @@ describe("runbook MCP tools", () => {
     });
 
     expect(result.isError).not.toBe(true);
-    expect(service.patchRunbook).toHaveBeenCalledWith({
+    expect(taskIdentityHost.update).toHaveBeenCalledWith({
       actorKind: "agent",
       actorSessionId: "sess-explicit",
       runbookId: "rb-1",
@@ -383,8 +389,12 @@ describe("runbook MCP tools", () => {
 
   it("creates runbooks through folder-scoped board item input", async () => {
     const service = fakeRunbookService();
+    const taskIdentityHost = fakeTaskIdentityHost();
     const client = await createClient(
-      makeRuntime({ runbookService: service }),
+      makeRuntime({
+        runbookService: service,
+        runbookTaskIdentityHostClient: taskIdentityHost,
+      }),
       { "x-soulstream-agent-session-id": "sess-caller" },
     );
 
@@ -395,20 +405,20 @@ describe("runbook MCP tools", () => {
         title: "Launch runbook",
         x: 120,
         y: 240,
-        runbook_id: "rb-1",
+        runbook_id: "00000000-0000-4000-8000-0000000000ae",
         idempotency_key: "idem-create-1",
       },
     });
 
     expect(result.isError).not.toBe(true);
-    expect(service.createRunbook).toHaveBeenCalledWith({
+    expect(taskIdentityHost.create).toHaveBeenCalledWith({
       actorKind: "agent",
       actorSessionId: "sess-caller",
       folderId: "folder-1",
       title: "Launch runbook",
       x: 120,
       y: 240,
-      runbookId: "rb-1",
+      runbookId: "00000000-0000-4000-8000-0000000000ae",
       idempotencyKey: "idem-create-1",
     });
   });
@@ -438,8 +448,12 @@ describe("runbook MCP tools", () => {
 
   it("routes runbook archive symmetry through explicit tools", async () => {
     const service = fakeRunbookService();
+    const taskIdentityHost = fakeTaskIdentityHost();
     const client = await createClient(
-      makeRuntime({ runbookService: service }),
+      makeRuntime({
+        runbookService: service,
+        runbookTaskIdentityHostClient: taskIdentityHost,
+      }),
       { "x-soulstream-agent-session-id": "sess-caller" },
     );
 
@@ -461,7 +475,7 @@ describe("runbook MCP tools", () => {
       },
     });
 
-    expect(service.patchRunbook).toHaveBeenNthCalledWith(1, {
+    expect(taskIdentityHost.update).toHaveBeenNthCalledWith(1, {
       actorKind: "agent",
       actorSessionId: "sess-caller",
       runbookId: "rb-1",
@@ -470,7 +484,7 @@ describe("runbook MCP tools", () => {
       reason: undefined,
       idempotencyKey: "idem-archive-runbook",
     });
-    expect(service.patchRunbook).toHaveBeenNthCalledWith(2, {
+    expect(taskIdentityHost.update).toHaveBeenNthCalledWith(2, {
       actorKind: "agent",
       actorSessionId: "sess-caller",
       runbookId: "rb-1",
@@ -752,6 +766,22 @@ function fakeRunbookService() {
     getRunbook: vi.fn(async () => mutationResult.snapshot),
     listMyTurnItems: vi.fn(async () => []),
     listOperations: vi.fn(async () => []),
+  };
+}
+
+function fakeTaskIdentityHost() {
+  const result = {
+    id: "00000000-0000-4000-8000-0000000000ae",
+    pageId: "00000000-0000-4000-8000-0000000000ae",
+    runbookId: "00000000-0000-4000-8000-0000000000ae",
+    snapshot: { runbook: {}, sections: [], items: [] },
+    operation: { id: "op-identity" },
+    pageOperation: { id: "op-page" },
+  };
+  return {
+    create: vi.fn(async () => result),
+    update: vi.fn(async () => result),
+    promoteExistingPage: vi.fn(async () => result),
   };
 }
 

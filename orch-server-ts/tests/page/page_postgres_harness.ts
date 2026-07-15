@@ -105,6 +105,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
     CREATE TABLE board_yjs_documents (
       name TEXT PRIMARY KEY,
       snapshot BYTEA NOT NULL,
+      synced_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
@@ -252,6 +253,82 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
           AND target_block_ref IS NOT NULL
           AND target_title IS NULL AND target_title_key IS NULL)
       )
+    );
+    CREATE TABLE folders (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL
+    );
+    CREATE TABLE markdown_documents (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      version INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE board_items (
+      id TEXT PRIMARY KEY,
+      folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+      container_kind TEXT NOT NULL DEFAULT 'folder',
+      container_id TEXT NOT NULL,
+      membership_kind TEXT NOT NULL DEFAULT 'primary',
+      source_runbook_item_id TEXT,
+      item_type TEXT NOT NULL,
+      item_id TEXT NOT NULL,
+      x DOUBLE PRECISION NOT NULL DEFAULT 0,
+      y DOUBLE PRECISION NOT NULL DEFAULT 0,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE board_yjs_catalog_cache (
+      folder_id TEXT NOT NULL,
+      container_kind TEXT NOT NULL,
+      container_id TEXT NOT NULL,
+      board_items JSONB NOT NULL DEFAULT '[]'::jsonb,
+      markdown_documents JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (container_kind, container_id)
+    );
+    CREATE TABLE runbooks (
+      id TEXT PRIMARY KEY,
+      board_item_id TEXT NOT NULL UNIQUE REFERENCES board_items(id) ON DELETE CASCADE,
+      task_page_id TEXT UNIQUE REFERENCES pages(id) ON DELETE RESTRICT,
+      title TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open',
+      archived BOOLEAN NOT NULL DEFAULT FALSE,
+      version INTEGER NOT NULL DEFAULT 1,
+      created_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      created_event_id INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE runbook_sections (
+      id TEXT PRIMARY KEY,
+      runbook_id TEXT NOT NULL REFERENCES runbooks(id) ON DELETE CASCADE,
+      position_key TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE runbook_items (
+      id TEXT PRIMARY KEY,
+      section_id TEXT NOT NULL REFERENCES runbook_sections(id) ON DELETE CASCADE,
+      position_key TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE TABLE runbook_operations (
+      id TEXT PRIMARY KEY,
+      runbook_id TEXT REFERENCES runbooks(id) ON DELETE CASCADE,
+      target_kind TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      operation_type TEXT NOT NULL,
+      actor_kind TEXT NOT NULL,
+      actor_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
+      actor_event_id INTEGER,
+      actor_user_id TEXT,
+      idempotency_key TEXT UNIQUE,
+      payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      reason TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `);
 }

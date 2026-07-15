@@ -3,10 +3,12 @@ import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 
-describe("BrowserPlannerMutationPort.createRunbook", () => {
-  it("uses the PR-A browser contract and extracts the created runbook id", async () => {
+describe("BrowserPlannerMutationPort.createTaskIdentity", () => {
+  it("uses one server call and requires the page and runbook aliases to match", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      snapshot: { runbook: { id: "rb-created" } },
+      id: "task-uuid",
+      pageId: "task-uuid",
+      runbookId: "task-uuid",
     }), {
       status: 201,
       headers: { "Content-Type": "application/json" },
@@ -16,16 +18,39 @@ describe("BrowserPlannerMutationPort.createRunbook", () => {
       fetchMock as typeof globalThis.fetch,
     );
 
-    await expect(port.createRunbook({
+    await expect(port.createTaskIdentity({
       title: "새 업무",
+      description: "업무 설명",
       folderId: "folder-project",
-    })).resolves.toEqual({ runbookId: "rb-created" });
+    })).resolves.toEqual({ id: "task-uuid" });
 
     expect(fetchMock).toHaveBeenCalledWith("/api/runbooks", expect.objectContaining({
       method: "POST",
       credentials: "same-origin",
-      body: JSON.stringify({ title: "새 업무", folder_id: "folder-project" }),
+      body: JSON.stringify({
+        title: "새 업무",
+        description: "업무 설명",
+        folder_id: "folder-project",
+      }),
     }));
+  });
+
+  it("rejects a response that represents two identities", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      id: "page-id",
+      pageId: "page-id",
+      runbookId: "runbook-id",
+    }), { status: 201, headers: { "Content-Type": "application/json" } }));
+    const port = new BrowserPlannerMutationPort(
+      {} as PageApiClient,
+      fetchMock as typeof globalThis.fetch,
+    );
+
+    await expect(port.createTaskIdentity({
+      title: "분리된 업무",
+      description: "",
+      folderId: "folder-project",
+    })).rejects.toThrow("업무 생성 응답의 ID가 일치하지 않습니다");
   });
 });
 
@@ -39,14 +64,19 @@ describe("BrowserPlannerMutationPort default fetch binding", () => {
         throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
       }
       return Promise.resolve(new Response(JSON.stringify({
-        snapshot: { runbook: { id: "rb-bound" } },
+        id: "task-bound",
+        pageId: "task-bound",
+        runbookId: "task-bound",
       }), { status: 201, headers: { "Content-Type": "application/json" } }));
     }
     globalThis.fetch = strictFetch as unknown as typeof globalThis.fetch;
     try {
       const port = new BrowserPlannerMutationPort({} as PageApiClient);
-      await expect(port.createRunbook({ title: "바인딩 검증", folderId: "folder-x" }))
-        .resolves.toEqual({ runbookId: "rb-bound" });
+      await expect(port.createTaskIdentity({
+        title: "바인딩 검증",
+        description: "",
+        folderId: "folder-x",
+      })).resolves.toEqual({ id: "task-bound" });
     } finally {
       globalThis.fetch = originalFetch;
     }

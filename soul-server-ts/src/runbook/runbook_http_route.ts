@@ -16,9 +16,11 @@ import type { ChecklistRunbookAdapter } from "../page/checklist_runbook_adapter.
 import { registerRunbookCreateHttpRoute } from "./runbook_create_http_route.js";
 import { RunbookVersionConflict } from "./runbook_models.js";
 import type { RunbookService } from "./runbook_service.js";
+import type { RunbookTaskIdentityHostClient } from "./runbook_task_identity_host_client.js";
 
 export interface RunbookHttpRouteConfig {
   service: RunbookService;
+  taskIdentityHost: RunbookTaskIdentityHostClient;
   checklistAdapter?: Pick<ChecklistRunbookAdapter, "setChecked">;
   auth: BoardYjsAuthConfig;
 }
@@ -302,12 +304,11 @@ export function registerRunbookHttpRoutes(
 }
 
 function isPageChecklistStatusMutation(
-  runbookId: string,
+  _runbookId: string,
   itemId: string,
   status: MutableRunbookItemStatus,
 ): boolean {
-  return runbookId.startsWith("page-runbook:")
-    && itemId.startsWith("checklist:")
+  return itemId.startsWith("checklist:")
     && (status === "pending" || status === "completed");
 }
 

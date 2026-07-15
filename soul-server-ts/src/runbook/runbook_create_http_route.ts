@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { FastifyInstance } from "fastify";
 
 import {
@@ -5,17 +7,19 @@ import {
   type BoardYjsAuthConfig,
 } from "../collaboration/board_yjs_auth.js";
 
-import type { RunbookService } from "./runbook_service.js";
+import type { RunbookTaskIdentityHostClient } from "./runbook_task_identity_host_client.js";
 
 interface CreateRunbookRequestBody {
   runbook_id?: unknown;
   title?: unknown;
+  description?: unknown;
   folder_id?: unknown;
+  idempotency_key?: unknown;
 }
 
 export function registerRunbookCreateHttpRoute(
   fastify: FastifyInstance,
-  config: { service: RunbookService; auth: BoardYjsAuthConfig },
+  config: { taskIdentityHost: RunbookTaskIdentityHostClient; auth: BoardYjsAuthConfig },
 ): void {
   fastify.post<{ Body: CreateRunbookRequestBody }>(
     "/api/runbooks",
@@ -50,18 +54,22 @@ export function registerRunbookCreateHttpRoute(
       }
 
       try {
-        const result = await config.service.createRunbook({
+        const result = await config.taskIdentityHost.create({
           actorKind: "user",
           actorSessionId: null,
           actorUserId: userId,
           runbookId: parsed.value.runbookId,
           title: parsed.value.title,
+          description: parsed.value.description,
           folderId: parsed.value.folderId,
-          enrollCreator: false,
+          idempotencyKey: parsed.value.idempotencyKey
+            ?? `create_runbook:${userId}:${randomUUID()}`,
         });
         return reply.status(201).send({
           ok: true,
-          runbookId: result.snapshot.runbook.id,
+          id: result.id,
+          pageId: result.pageId,
+          runbookId: result.runbookId,
           operation: result.operation,
           snapshot: result.snapshot,
         });
@@ -81,7 +89,13 @@ export function registerRunbookCreateHttpRoute(
 }
 
 function parseCreateRunbookBody(body: CreateRunbookRequestBody):
-  | { ok: true; value: { runbookId?: string; title: string; folderId: string } }
+  | { ok: true; value: {
+    runbookId?: string;
+    title: string;
+    description?: string;
+    folderId: string;
+    idempotencyKey?: string;
+  } }
   | { ok: false; error: string } {
   if (typeof body.title !== "string" || body.title.trim().length === 0) {
     return { ok: false, error: "title must be a non-empty string" };
@@ -95,11 +109,24 @@ function parseCreateRunbookBody(body: CreateRunbookRequestBody):
   ) {
     return { ok: false, error: "runbook_id must be a non-empty string when provided" };
   }
+  if (body.description !== undefined && typeof body.description !== "string") {
+    return { ok: false, error: "description must be a string when provided" };
+  }
+  if (
+    body.idempotency_key !== undefined
+    && (typeof body.idempotency_key !== "string" || body.idempotency_key.trim().length === 0)
+  ) {
+    return { ok: false, error: "idempotency_key must be a non-empty string when provided" };
+  }
   return {
     ok: true,
     value: {
       title: body.title.trim(),
+      ...(typeof body.description === "string" ? { description: body.description } : {}),
       folderId: body.folder_id.trim(),
+      ...(typeof body.idempotency_key === "string"
+        ? { idempotencyKey: body.idempotency_key.trim() }
+        : {}),
       ...(typeof body.runbook_id === "string"
         ? { runbookId: body.runbook_id.trim() }
         : {}),

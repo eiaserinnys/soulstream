@@ -31,6 +31,7 @@ import type { McpConfigService } from "../mcp_config_service.js";
 import { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { RunbookHandoffNotifier } from "../runbook/runbook_handoff_notifier.js";
 import { RunbookService } from "../runbook/runbook_service.js";
+import { RunbookTaskIdentityHostClient } from "../runbook/runbook_task_identity_host_client.js";
 import { PageYjsHostClient } from "../page/page_host_client.js";
 import type { ChecklistRunbookAdapter } from "../page/checklist_runbook_adapter.js";
 import type { ChecklistRunbookReconciler } from "../page/checklist_runbook_reconciler.js";
@@ -159,6 +160,10 @@ export async function composeWorkerRuntime(
   );
   const sessionPageBindingRepository = db.sessionPageBindings();
   const pageHost = new PageYjsHostClient({ orch: orchProxyConfig, logger });
+  const runbookTaskIdentityHost = new RunbookTaskIdentityHostClient({
+    orch: orchProxyConfig,
+    logger,
+  });
   const sessionPageBindingService = new SessionPageBindingService({
     nodeId: env.SOULSTREAM_NODE_ID,
     repository: sessionPageBindingRepository,
@@ -299,6 +304,7 @@ export async function composeWorkerRuntime(
     nodeId: env.SOULSTREAM_NODE_ID,
     db,
     runbookService,
+    runbookTaskIdentityHost,
     pageHost,
     logger,
   });
@@ -338,6 +344,7 @@ export async function composeWorkerRuntime(
     mcpConfigService,
     catalogService,
     runbookService,
+    runbookTaskIdentityHostClient: runbookTaskIdentityHost,
     checklistRunbookAdapter,
     customViewService,
     logger,
@@ -374,6 +381,7 @@ export async function composeWorkerRuntime(
     boardYjsHost: { service: localBoardYjsService, auth: boardYjsAuth },
     runbook: {
       service: runbookService,
+      taskIdentityHost: runbookTaskIdentityHost,
       checklistAdapter: checklistRunbookAdapter,
       auth: boardYjsAuth,
     },

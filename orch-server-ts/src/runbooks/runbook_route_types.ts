@@ -4,6 +4,7 @@ import type {
   BoardAccess,
   BoardAccessFolderRecord,
 } from "../board/board_access.js";
+import type { RunbookTaskIdentityService } from "./runbook_task_identity_service.js";
 
 export type RunbookFolderRecord = BoardAccessFolderRecord & {
   [key: string]: unknown;
@@ -79,6 +80,11 @@ export type RunbookRouteOptions = {
   resolveDashboardUserId?: (
     request: FastifyRequest,
   ) => Promise<string | null> | string | null;
+  taskIdentityService?: Pick<
+    RunbookTaskIdentityService,
+    "create" | "promoteExistingPage" | "mutateFromRunbook" | "backfillLegacyRunbook"
+  >;
+  authBearerToken?: string;
 };
 
 export class RunbookRouteError extends Error {

@@ -156,7 +156,7 @@ export class BoardYjsRepository {
       return;
     }
     await sql.begin(async (transaction) => {
-      await this.syncBoardYjsReplicaWithSql(transaction, scope, replica, canonicalName);
+      await syncBoardYjsReplicaWithSql(transaction, scope, replica, canonicalName);
     });
   }
 
@@ -212,12 +212,26 @@ export class BoardYjsRepository {
     return rows.map(toCatalogBoardItemRow);
   }
 
-  private async syncBoardYjsReplicaWithSql(
+  private async hasBoardYjsDocumentSynced(
     sql: BoardYjsQuerySql,
-    scope: BoardYjsContainerScope,
-    replica: BoardYjsReplica,
     documentName: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
+    const rows = await sql<readonly { synced: boolean }[]>`
+      SELECT synced_at IS NOT NULL AS synced
+      FROM board_yjs_documents
+      WHERE name = ${documentName}
+      LIMIT 1
+    `;
+    return rows[0]?.synced === true;
+  }
+}
+
+export async function syncBoardYjsReplicaWithSql(
+  sql: BoardYjsQuerySql,
+  scope: BoardYjsContainerScope,
+  replica: BoardYjsReplica,
+  documentName: string,
+): Promise<void> {
     await sql`SELECT pg_advisory_xact_lock(hashtext(${BOARD_ITEMS_ADVISORY_LOCK_KEY})::bigint)`;
     const boardItemIds = replica.boardItems.map((item) => item.id);
     if (boardItemIds.length === 0) {
@@ -290,20 +304,6 @@ export class BoardYjsRepository {
       SET synced_at = COALESCE(synced_at, NOW())
       WHERE name = ${documentName}
     `;
-  }
-
-  private async hasBoardYjsDocumentSynced(
-    sql: BoardYjsQuerySql,
-    documentName: string,
-  ): Promise<boolean> {
-    const rows = await sql<readonly { synced: boolean }[]>`
-      SELECT synced_at IS NOT NULL AS synced
-      FROM board_yjs_documents
-      WHERE name = ${documentName}
-      LIMIT 1
-    `;
-    return rows[0]?.synced === true;
-  }
 }
 
 interface BoardItemDbRow extends Record<string, unknown> {

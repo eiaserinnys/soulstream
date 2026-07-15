@@ -10,6 +10,7 @@ import {
   checklistRunbookId,
   checklistSectionId,
   type ChecklistRunbookPort,
+  type ChecklistTaskIdentityPort,
 } from "../../src/page/checklist_runbook_adapter.js";
 import { RunbookVersionConflict } from "../../src/runbook/runbook_models.js";
 import type { RunbookMutationResult } from "../../src/runbook/runbook_service_models.js";
@@ -64,13 +65,12 @@ function harness() {
   let conflictStatusOnce = false;
   const statusResults = new Map<string, RunbookMutationResult>();
 
-  const port = {
-    getRunbook: vi.fn(async () => snapshot),
-    createRunbook: vi.fn(async (params) => {
+  const taskIdentities = {
+    promoteExistingPage: vi.fn(async (params) => {
       snapshot ??= {
         runbook: {
-          id: params.runbookId!,
-          board_item_id: `runbook:${params.runbookId}`,
+          id: params.pageId,
+          board_item_id: `runbook:${params.pageId}`,
           title: params.title,
           status: "open",
           archived: false,
@@ -88,8 +88,11 @@ function harness() {
         sections: [],
         items: [],
       };
-      return mutation(snapshot);
+      return { id: params.pageId, pageId: params.pageId, runbookId: params.pageId } as never;
     }),
+  } satisfies ChecklistTaskIdentityPort;
+  const port = {
+    getRunbook: vi.fn(async () => snapshot),
     createSection: vi.fn(async (params) => {
       if (failCreateSectionOnce) {
         failCreateSectionOnce = false;
@@ -165,7 +168,8 @@ function harness() {
 
   return {
     port,
-    adapter: new ChecklistRunbookAdapter(port),
+    taskIdentities,
+    adapter: new ChecklistRunbookAdapter(port, taskIdentities),
     snapshot: () => snapshot,
     failNextSectionCreate: () => { failCreateSectionOnce = true; },
     conflictNextStatus: () => { conflictStatusOnce = true; },
@@ -207,14 +211,13 @@ describe("ChecklistRunbookAdapter", () => {
     const result = await h.adapter.reconcile(legacyInput(true));
 
     expect(result).toEqual({
-      properties: { runbookId: "page-runbook:page-1", itemId: "checklist:block-1" },
+      properties: { runbookId: "page-1", itemId: "checklist:block-1" },
       status: "completed",
       checked: true,
     });
-    expect(h.port.createRunbook).toHaveBeenCalledWith(expect.objectContaining({
-      runbookId: checklistRunbookId("page-1"),
+    expect(h.taskIdentities.promoteExistingPage).toHaveBeenCalledWith(expect.objectContaining({
+      pageId: checklistRunbookId("page-1"),
       folderId: "folder-1",
-      enrollCreator: false,
     }));
     expect(h.port.createSection).toHaveBeenCalledWith(expect.objectContaining({
       sectionId: checklistSectionId("page-1"),
@@ -234,7 +237,9 @@ describe("ChecklistRunbookAdapter", () => {
       page: { id: "page-1", title: "프로젝트", metadata: {} },
     }));
 
-    expect(h.port.createRunbook).toHaveBeenCalledWith(expect.objectContaining({ folderId: "claude" }));
+    expect(h.taskIdentities.promoteExistingPage).toHaveBeenCalledWith(
+      expect.objectContaining({ folderId: "claude" }),
+    );
   });
 
   it("treats a bound reference as canonical and ignores a leftover legacy checked value", async () => {
@@ -271,17 +276,17 @@ describe("ChecklistRunbookAdapter", () => {
     h.failNextSectionCreate();
     await expect(h.adapter.reconcile(legacyInput(false))).rejects.toThrow("temporary section failure");
 
-    const restarted = new ChecklistRunbookAdapter(h.port);
+    const restarted = new ChecklistRunbookAdapter(h.port, h.taskIdentities);
     const result = await restarted.reconcile(legacyInput(false));
     await restarted.reconcile(legacyInput(false));
 
     expect(result.properties).toEqual({
-      runbookId: "page-runbook:page-1",
+      runbookId: "page-1",
       itemId: "checklist:block-1",
     });
     expect(h.snapshot()?.sections).toHaveLength(1);
     expect(h.snapshot()?.items).toHaveLength(1);
-    expect(h.port.createRunbook).toHaveBeenCalledTimes(1);
+    expect(h.taskIdentities.promoteExistingPage).toHaveBeenCalledTimes(1);
     expect(h.port.createItem).toHaveBeenCalledTimes(1);
   });
 
@@ -293,7 +298,7 @@ describe("ChecklistRunbookAdapter", () => {
       block: {
         id: "block-1",
         text: "운영 배포 확인",
-        properties: { runbookId: "page-runbook:page-1", itemId: "checklist:block-1" },
+        properties: { runbookId: "page-1", itemId: "checklist:block-1" },
       },
     });
     await h.adapter.archive({ pageId: "page-1", blockId: "block-1", actor });
@@ -322,13 +327,13 @@ describe("ChecklistRunbookAdapter", () => {
 
     const [first, second] = await Promise.all([
       h.adapter.toggle({
-        runbookId: "page-runbook:page-1",
+        runbookId: "page-1",
         itemId: "checklist:block-1",
         actor,
         idempotencyKey: "checklist-toggle:browser:one",
       }),
       h.adapter.toggle({
-        runbookId: "page-runbook:page-1",
+        runbookId: "page-1",
         itemId: "checklist:block-1",
         actor,
         idempotencyKey: "checklist-toggle:browser:two",
@@ -344,7 +349,7 @@ describe("ChecklistRunbookAdapter", () => {
     await h.adapter.reconcile(legacyInput(false));
 
     const result = await h.adapter.setChecked({
-      runbookId: "page-runbook:page-1",
+      runbookId: "page-1",
       itemId: "checklist:block-1",
       checked: true,
       expectedVersion: 1,
@@ -363,7 +368,7 @@ describe("ChecklistRunbookAdapter", () => {
     });
     expect(result.projection).toEqual({
       properties: {
-        runbookId: "page-runbook:page-1",
+        runbookId: "page-1",
         itemId: "checklist:block-1",
       },
       status: "completed",
@@ -375,7 +380,7 @@ describe("ChecklistRunbookAdapter", () => {
     const h = harness();
     await h.adapter.reconcile(legacyInput(false));
     const input = {
-      runbookId: "page-runbook:page-1",
+      runbookId: "page-1",
       itemId: "checklist:block-1",
       actor,
       idempotencyKey: "checklist-toggle:browser:retry",
@@ -395,7 +400,7 @@ describe("ChecklistRunbookAdapter", () => {
 
     for (const suffix of ["first", "second"]) {
       await h.adapter.toggle({
-        runbookId: "page-runbook:page-1",
+        runbookId: "page-1",
         itemId: "checklist:block-1",
         actor,
         idempotencyKey: `checklist-toggle:browser:${suffix}`,
@@ -414,7 +419,7 @@ describe("ChecklistRunbookAdapter", () => {
     h.conflictNextStatus();
 
     const result = await h.adapter.toggle({
-      runbookId: "page-runbook:page-1",
+      runbookId: "page-1",
       itemId: "checklist:block-1",
       actor,
       idempotencyKey: "checklist-toggle:browser:conflict",

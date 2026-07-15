@@ -30,7 +30,8 @@ afterEach(async () => {
 describe("runbook HTTP write route", () => {
   it("creates a browser runbook with user attribution and no session provenance", async () => {
     const service = fakeRunbookService();
-    const server = await createServer(service);
+    const taskIdentityHost = fakeTaskIdentityHost();
+    const server = await createServer(service, undefined, taskIdentityHost);
 
     const response = await server.inject({
       method: "POST",
@@ -39,21 +40,22 @@ describe("runbook HTTP write route", () => {
         cookie: `${DASHBOARD_AUTH_COOKIE_NAME}=${encodeURIComponent(signJwt({ sub: "operator@example.com" }, "jwt-secret"))}`,
       },
       payload: {
-        runbook_id: "rb-browser",
+        runbook_id: "00000000-0000-4000-8000-0000000000ae",
         title: "Browser work",
         folder_id: "folder-1",
       },
     });
 
     expect(response.statusCode).toBe(201);
-    expect(service.createRunbook).toHaveBeenCalledWith({
+    expect(taskIdentityHost.create).toHaveBeenCalledWith({
       actorKind: "user",
       actorSessionId: null,
       actorUserId: "operator@example.com",
-      runbookId: "rb-browser",
+      runbookId: "00000000-0000-4000-8000-0000000000ae",
       title: "Browser work",
+      description: undefined,
       folderId: "folder-1",
-      enrollCreator: false,
+      idempotencyKey: expect.stringMatching(/^create_runbook:operator@example\.com:/),
     });
   });
 
@@ -324,6 +326,7 @@ describe("runbook HTTP write route", () => {
 async function createServer(
   service: ReturnType<typeof fakeRunbookService>,
   checklistAdapter?: Pick<ChecklistRunbookAdapter, "setChecked">,
+  taskIdentityHost = fakeTaskIdentityHost(),
 ): Promise<ServerInstance> {
   const server = await buildServer({
     host: "127.0.0.1",
@@ -332,6 +335,7 @@ async function createServer(
     logger: createSilentLogger(),
     runbook: {
       service: service as unknown as RunbookService,
+      taskIdentityHost: taskIdentityHost as never,
       checklistAdapter,
       auth: {
         authBearerToken: "",
@@ -343,6 +347,20 @@ async function createServer(
   });
   openServers.push(server);
   return server;
+}
+
+function fakeTaskIdentityHost() {
+  const id = "00000000-0000-4000-8000-0000000000ae";
+  return {
+    create: vi.fn(async () => ({
+      id,
+      pageId: id,
+      runbookId: id,
+      operation: { id: "op-create" },
+      pageOperation: { id: "op-page" },
+      snapshot: { runbook: { id }, sections: [], items: [] },
+    })),
+  };
 }
 
 function fakeRunbookService(options: { runbookId?: string; itemId?: string } = {}) {

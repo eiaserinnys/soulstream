@@ -85,6 +85,9 @@ export interface PageYjsServiceConfig {
   now?: () => Date;
   auth?: BoardYjsAuthConfig;
   logger?: FastifyBaseLogger;
+  mutateTaskIdentity?: (
+    input: PageMutationInput,
+  ) => Promise<PageServiceMutationResult | null>;
 }
 
 export interface PageServicePageDto {
@@ -196,6 +199,10 @@ export class PageYjsService {
   }
 
   async mutatePage(input: PageMutationInput): Promise<PageServiceMutationResult> {
+    const taskIdentityIdempotent = await this.resolveIdempotent(input.idempotencyKey);
+    if (taskIdentityIdempotent) return taskIdentityIdempotent;
+    const taskIdentityResult = await this.config.mutateTaskIdentity?.(input);
+    if (taskIdentityResult) return taskIdentityResult;
     return await this.mutex.runExclusive(input.pageId, async () => {
       const idempotent = await this.resolveIdempotent(input.idempotencyKey);
       if (idempotent) return idempotent;
@@ -344,7 +351,7 @@ export class PageYjsService {
     return getPageYjsServiceDiagnostics(this.hocuspocus, this.persistence);
   }
 
-  private async hydrateCommittedPage(documentName: string): Promise<void> {
+  async hydrateCommittedPage(documentName: string): Promise<void> {
     const connection = await this.hocuspocus.openDirectConnection(documentName, {
       pageLockHeld: true,
       source: "page-operation",

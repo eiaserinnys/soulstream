@@ -17,6 +17,7 @@ import type {
   RunbookMutationResult,
 } from "../runbook/runbook_service_models.js";
 import type { RunbookService } from "../runbook/runbook_service.js";
+import type { RunbookTaskIdentityHostClient } from "../runbook/runbook_task_identity_host_client.js";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
 
 const CHECKLIST_SECTION_TITLE = "체크리스트";
@@ -25,11 +26,15 @@ const MAX_CAS_ATTEMPTS = 3;
 export type ChecklistRunbookPort = Pick<
   RunbookService,
   | "getRunbook"
-  | "createRunbook"
   | "createSection"
   | "createItem"
   | "patchItem"
   | "setItemStatus"
+>;
+
+export type ChecklistTaskIdentityPort = Pick<
+  RunbookTaskIdentityHostClient,
+  "promoteExistingPage"
 >;
 
 export interface ChecklistAdapterPage
@@ -89,24 +94,29 @@ export class ChecklistBindingMismatchError extends Error {
 export class ChecklistRunbookAdapter {
   private readonly itemTails = new Map<string, Promise<void>>();
 
-  constructor(private readonly runbooks: ChecklistRunbookPort) {}
+  constructor(
+    private readonly runbooks: ChecklistRunbookPort,
+    private readonly taskIdentities: ChecklistTaskIdentityPort,
+  ) {}
 
   async reconcile(input: ChecklistReconcileInput): Promise<ChecklistProjection> {
-    const reference = expectedReference(input.page.id, input.block.id);
+    const expected = expectedReference(input.page.id, input.block.id);
     const existingReference = checklistReference(input.block.properties);
-    if (existingReference && (
-      existingReference.runbookId !== reference.runbookId
-      || existingReference.itemId !== reference.itemId
+    if (existingReference && !isCompatibleReference(
+      existingReference,
+      input.page.id,
+      expected.itemId,
     )) {
       throw new ChecklistBindingMismatchError(
         `checklist ${input.block.id} binding does not match its deterministic page identity`,
       );
     }
+    const reference = existingReference ?? expected;
     const adoptChecked = existingReference || typeof input.block.properties.checked !== "boolean"
       ? undefined
       : input.block.properties.checked;
     return await this.withItemLock(reference.itemId, async () => {
-      let snapshot = await this.ensureHierarchy(input, reference);
+      let snapshot = await this.ensureHierarchy(input, reference, existingReference !== null);
       let item = requireItem(snapshot, reference.itemId);
       const needsPatch = item.title !== input.block.text || item.archived;
       if (needsPatch) {
@@ -152,7 +162,7 @@ export class ChecklistRunbookAdapter {
     blockId: string;
     actor: RunbookActorParams;
   }): Promise<void> {
-    const reference = expectedReference(input.pageId, input.blockId);
+    const reference = await this.resolveExistingReference(input.pageId, input.blockId);
     await this.withItemLock(reference.itemId, async () => {
       const snapshot = await this.runbooks.getRunbook(reference.runbookId);
       const item = snapshot?.items.find((candidate) => candidate.id === reference.itemId);
@@ -226,18 +236,28 @@ export class ChecklistRunbookAdapter {
   private async ensureHierarchy(
     input: ChecklistReconcileInput,
     reference: ChecklistRunbookReference,
+    hasStoredReference: boolean,
   ): Promise<RunbookSnapshot> {
     let snapshot = await this.runbooks.getRunbook(reference.runbookId);
     if (!snapshot) {
-      const result = await this.runbooks.createRunbook({
-        ...input.actor,
-        runbookId: reference.runbookId,
+      if (hasStoredReference) {
+        throw new ChecklistBindingMismatchError(
+          `stored checklist runbook not found: ${reference.runbookId}`,
+        );
+      }
+      await this.taskIdentities.promoteExistingPage({
+        actorKind: input.actor.actorKind ?? "agent",
+        actorSessionId: input.actor.actorSessionId,
+        actorUserId: input.actor.actorUserId,
+        pageId: input.page.id,
         folderId: pageRunbookFolder(input.page.metadata),
         title: input.page.title,
-        enrollCreator: false,
         idempotencyKey: `checklist-adapter:${input.page.id}:create-runbook`,
       });
-      snapshot = result.snapshot;
+      snapshot = await this.runbooks.getRunbook(reference.runbookId);
+      if (!snapshot) {
+        throw new Error(`promoted task identity is not readable: ${reference.runbookId}`);
+      }
     }
     const sectionId = checklistSectionId(input.page.id);
     if (!snapshot.sections.some((section) => section.id === sectionId)) {
@@ -262,6 +282,18 @@ export class ChecklistRunbookAdapter {
       snapshot = result.snapshot;
     }
     return snapshot;
+  }
+
+  private async resolveExistingReference(
+    pageId: string,
+    blockId: string,
+  ): Promise<ChecklistRunbookReference> {
+    const itemId = checklistItemId(blockId);
+    for (const runbookId of [checklistRunbookId(pageId), legacyChecklistRunbookId(pageId)]) {
+      const snapshot = await this.runbooks.getRunbook(runbookId);
+      if (snapshot?.items.some((item) => item.id === itemId)) return { runbookId, itemId };
+    }
+    return { runbookId: checklistRunbookId(pageId), itemId };
   }
 
   private async setStatusWithRetry(input: RunbookActorParams & {
@@ -313,6 +345,10 @@ export class ChecklistRunbookAdapter {
 }
 
 export function checklistRunbookId(pageId: string): string {
+  return pageId;
+}
+
+function legacyChecklistRunbookId(pageId: string): string {
   return `page-runbook:${pageId}`;
 }
 
@@ -334,6 +370,15 @@ function checklistReference(
   return typeof properties.runbookId === "string" && typeof properties.itemId === "string"
     ? { runbookId: properties.runbookId, itemId: properties.itemId }
     : null;
+}
+
+function isCompatibleReference(
+  reference: ChecklistRunbookReference,
+  pageId: string,
+  itemId: string,
+): boolean {
+  return reference.itemId === itemId
+    && (reference.runbookId === pageId || reference.runbookId === legacyChecklistRunbookId(pageId));
 }
 
 function pageRunbookFolder(metadata: Record<string, unknown>): string {
