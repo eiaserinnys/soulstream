@@ -6,7 +6,9 @@
 
 import { createRenameSessionOperation } from "@seosoyoung/soul-ui";
 
-export const { renameSessionOptimistic } = createRenameSessionOperation({
+export const renameSessionOperation = createRenameSessionOperation({
   url: (sessionId) => `/api/sessions/${sessionId}/display-name`,
   method: "PATCH",
 });
+
+export const { renameSessionOptimistic } = renameSessionOperation;

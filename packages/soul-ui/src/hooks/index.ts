@@ -21,6 +21,7 @@ export { useSessionStreamSSE } from "./useSessionStreamSSE";
 export type { UseSessionStreamSSEOptions } from "./useSessionStreamSSE";
 export { useSessionProvider } from "./useSessionProvider";
 export type { UseSessionProviderOptions } from "./useSessionProvider";
+export { useRenameSessionOperation } from "./useRenameSessionOperation";
 export { useReadPositionSync } from "./useReadPositionSync";
 export { useNotification } from "./useNotification";
 export { useUrlSync } from "./useUrlSync";

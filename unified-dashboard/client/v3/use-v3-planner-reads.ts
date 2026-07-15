@@ -174,11 +174,13 @@ export function useTaskRunHistory({
   dependencies,
   task,
   workspaceOpen,
+  refreshKey,
   notify,
 }: {
   dependencies: PlannerDataDependencies;
   task: PlannerTask | null;
   workspaceOpen: boolean;
+  refreshKey: number;
   notify(message: string): void;
 }) {
   const latestRunKey = task?.sessionIds.join("\0") ?? "";
@@ -219,7 +221,7 @@ export function useTaskRunHistory({
       notify(`Run 히스토리 조회 실패 · ${errorText(error)}`);
     });
     return () => { active = false; };
-  }, [dependencies, latestRunKey, notify, task?.page.id, workspaceOpen]);
+  }, [dependencies, latestRunKey, notify, refreshKey, task?.page.id, workspaceOpen]);
 
   const loadMore = useCallback(async () => {
     if (!task || !state?.nextCursor || state.loading || state.taskPageId !== task.page.id) return;

@@ -136,7 +136,7 @@ export function TaskRunHistory({
         onClose={() => setContextMenu(null)}
         onRenameSession={onRenameSession}
         onDeleteSessions={onDeleteSessions}
-        getSessionName={(sessionId) => sessionTitle(sessions.find((session) => session.agentSessionId === sessionId) ?? ({ agentSessionId: sessionId } as SessionSummary))}
+        getSessionName={(sessionId) => getRunSessionRenamePrefill(sessions, sessionId)}
         resolveSessionIds={(sessionId) => [sessionId]}
         extraActions={[
           {
@@ -241,10 +241,9 @@ function RunNode({
   );
 }
 
-function sessionTitle(session: SessionSummary): string {
-  const title = (session as SessionSummary & { title?: string }).title;
-  return session.displayName?.trim()
-    || title?.trim()
-    || session.prompt?.replace(/\s+/g, " ").trim()
-    || session.agentSessionId;
+export function getRunSessionRenamePrefill(
+  sessions: readonly SessionSummary[],
+  sessionId: string,
+): string {
+  return sessions.find((session) => session.agentSessionId === sessionId)?.displayName ?? "";
 }

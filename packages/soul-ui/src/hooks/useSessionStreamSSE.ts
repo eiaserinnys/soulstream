@@ -26,6 +26,7 @@ import type {
   SessionCreatedStreamEvent,
   SessionDeletedStreamEvent,
   SessionListStreamEvent,
+  SessionStreamEvent,
   SessionUpdatedStreamEvent,
   StreamMetaStreamEvent,
 } from "../shared/stream-events";
@@ -79,6 +80,8 @@ export interface UseSessionStreamSSEOptions {
   onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
   onStreamMeta?: (event: StreamMetaStreamEvent) => void;
   onReplayGap?: (event: ReplayGapStreamEvent) => void;
+  /** 타입별 캐시 처리가 끝난 뒤 호출되는 통합 관찰자. */
+  onEvent?: (event: SessionStreamEvent) => void;
 }
 
 /**

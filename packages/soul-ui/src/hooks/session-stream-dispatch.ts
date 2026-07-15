@@ -20,6 +20,8 @@ import type {
 } from "../shared/stream-events";
 
 export interface SessionStreamHandlers {
+  /** 타입별 처리가 끝난 뒤 모든 stream event를 한 경계에서 관찰한다. */
+  onEvent?: (event: SessionStreamEvent) => void;
   onSessionList?: (event: SessionListStreamEvent) => void;
   onSessionCreated?: (event: SessionCreatedStreamEvent) => void;
   onSessionUpdated?: (event: SessionUpdatedStreamEvent) => void;
@@ -71,6 +73,7 @@ export function dispatchSessionStreamEvent(
       handlers.onReplayGap?.(event);
       break;
   }
+  handlers.onEvent?.(event);
 }
 
 /**

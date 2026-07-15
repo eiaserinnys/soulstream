@@ -35,6 +35,7 @@ function makeHandlers(): SessionStreamHandlers & {
     onCustomViewUpdated: vi.fn(),
     onStreamMeta: vi.fn(),
     onReplayGap: vi.fn(),
+    onEvent: vi.fn(),
   };
   return { ...spies, __spies: spies };
 }
@@ -54,6 +55,7 @@ describe("dispatchSessionStreamEvent", () => {
     expect(handlers.__spies.onStreamMeta).toHaveBeenCalledWith(event);
     expect(handlers.__spies.onSessionList).not.toHaveBeenCalled();
     expect(handlers.__spies.onReplayGap).not.toHaveBeenCalled();
+    expect(handlers.__spies.onEvent).toHaveBeenCalledWith(event);
   });
 
   it("replay_gap 이벤트는 onReplayGap 핸들러로 라우팅된다", () => {
@@ -69,6 +71,7 @@ describe("dispatchSessionStreamEvent", () => {
     expect(handlers.__spies.onReplayGap).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onReplayGap).toHaveBeenCalledWith(event);
     expect(handlers.__spies.onStreamMeta).not.toHaveBeenCalled();
+    expect(handlers.__spies.onEvent).toHaveBeenCalledWith(event);
   });
 
   it("핸들러가 미제공이면 silent skip (throw 없음)", () => {
@@ -128,6 +131,7 @@ describe("dispatchSessionStreamEvent", () => {
     expect(handlers.__spies.onMetadataUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onRunbookUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onCustomViewUpdated).toHaveBeenCalledTimes(1);
+    expect(handlers.__spies.onEvent).toHaveBeenCalledTimes(events.length);
     // stream_meta/replay_gap은 호출되지 않아야 함
     expect(handlers.__spies.onStreamMeta).not.toHaveBeenCalled();
     expect(handlers.__spies.onReplayGap).not.toHaveBeenCalled();
