@@ -475,7 +475,7 @@ function V3DashboardContent() {
           data-liquid-glass-webgl={plannerWebglActive ? "true" : undefined}
         >
           <div className="v3-planner-scroll" data-testid="v3-planner-scroll">
-            {createOpen ? <NewTaskForm folders={catalog?.folders ?? []} initialFolderId={selectedFolderId} pending={createPending} onCreate={(title, folderId, description) => { void createTask(title, folderId, description); }} onCancel={() => setCreateOpen(false)} /> : null}
+            {createOpen ? <NewTaskForm folders={catalog?.folders ?? []} projectPages={projects} initialFolderId={selectedFolderId} pending={createPending} onCreate={(title, folderId, description) => { void createTask(title, folderId, description); }} onCancel={() => setCreateOpen(false)} /> : null}
             {selectedFolderId && !selectedProject ? (
               <EmptyProjectPlannerView title={selectedFolderName} />
             ) : selectedProject ? (

@@ -4,6 +4,10 @@ import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { AgentNodeAssignmentFields } from "./AgentNodeAssignmentFields";
 import {
+  ProjectAtomChip,
+  ProjectSessionDefaultChip,
+} from "./ProjectContextChips";
+import {
   deleteProjectContextBlock,
   saveProjectAtomReference,
   saveProjectGuidance,
@@ -85,10 +89,9 @@ export function ProjectContextEditor({
       <div className="v3-project-context-row">
         <strong>프로젝트 컨텍스트</strong>
         {snapshot.atomReferences.map((reference) => (
-          <button
-            type="button"
-            className="v3-project-context-chip"
+          <ProjectAtomChip
             key={reference.blockId}
+            reference={reference}
             onClick={() => setEditor({
               kind: "atom",
               blockId: reference.blockId,
@@ -98,24 +101,19 @@ export function ProjectContextEditor({
               depth: reference.depth ?? 3,
               titlesOnly: reference.titlesOnly ?? false,
             })}
-          >
-            ⚛ {reference.nodeTitle} · depth {reference.depth ?? 3} · titlesOnly {(reference.titlesOnly ?? false) ? "on" : "off"}
-          </button>
+          />
         ))}
         {snapshot.sessionDefaults.map((defaults) => (
-          <button
-            type="button"
-            className="v3-project-context-chip"
+          <ProjectSessionDefaultChip
             key={defaults.blockId}
+            defaults={defaults}
             onClick={() => setEditor({
               kind: "defaults",
               blockId: defaults.blockId,
               agentId: defaults.agentId ?? "",
               nodeId: defaults.nodeId ?? "",
             })}
-          >
-            👤 {defaults.agentId ?? "agent 미지정"}@{defaults.nodeId ?? "node 미지정"}
-          </button>
+          />
         ))}
         {empty ? <small>연결된 guidance · atom · 실행 기본값이 없습니다.</small> : null}
       </div>

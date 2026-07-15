@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Dialog,
   DialogDescription,
@@ -9,15 +9,41 @@ import {
   DialogTitle,
 } from "@seosoyoung/soul-ui";
 import type { CatalogFolder } from "@seosoyoung/soul-ui";
+import type { PageDto } from "@seosoyoung/soul-ui/page";
+
+import {
+  fetchProjectPageDetails,
+  type ProjectPageDetails,
+} from "./project-page-details";
+import { resolveProjectFolderId } from "./planner-model";
+import {
+  ProjectAtomChip,
+  ProjectSessionDefaultChip,
+} from "./ProjectContextChips";
+import { singleLinePreview } from "./session-preview";
+
+const GUIDANCE_PREVIEW_LENGTH = 240;
+const EMPTY_PROJECT_CONTEXT: ProjectPageDetails = {
+  guidance: [],
+  atomReferences: [],
+  sessionDefaults: [],
+};
+
+type ProjectInheritancePreviewState =
+  | { status: "loading"; data: null; message: null }
+  | { status: "ready"; data: ProjectPageDetails; message: null }
+  | { status: "error"; data: null; message: string };
 
 export function NewTaskForm({
   folders,
+  projectPages,
   initialFolderId,
   pending,
   onCreate,
   onCancel,
 }: {
   folders: readonly CatalogFolder[];
+  projectPages: readonly PageDto[];
   initialFolderId: string | null;
   pending: boolean;
   onCreate(title: string, folderId: string, description: string): void;
@@ -26,8 +52,46 @@ export function NewTaskForm({
   const [title, setTitle] = useState("");
   const [folderId, setFolderId] = useState(initialFolderId ?? folders[0]?.id ?? "");
   const [description, setDescription] = useState("");
+  const selectedProjectPage = useMemo(
+    () => findProjectPageForFolder(folderId, folders, projectPages),
+    [folderId, folders, projectPages],
+  );
+  const [inheritance, setInheritance] = useState<ProjectInheritancePreviewState>({
+    status: "loading",
+    data: null,
+    message: null,
+  });
 
   const selected = folders.find((folder) => folder.id === folderId);
+  useEffect(() => {
+    if (!selectedProjectPage) {
+      setInheritance({ status: "ready", data: EMPTY_PROJECT_CONTEXT, message: null });
+      return;
+    }
+    let active = true;
+    setInheritance({ status: "loading", data: null, message: null });
+    void fetchProjectPageDetails(selectedProjectPage.id).then((snapshot) => {
+      if (!active) return;
+      setInheritance({
+        status: "ready",
+        data: {
+          guidance: snapshot.guidance,
+          atomReferences: snapshot.atomReferences,
+          sessionDefaults: snapshot.sessionDefaults,
+        },
+        message: null,
+      });
+    }).catch((error: unknown) => {
+      if (!active) return;
+      setInheritance({
+        status: "error",
+        data: null,
+        message: error instanceof Error && error.message ? error.message : String(error),
+      });
+    });
+    return () => { active = false; };
+  }, [selectedProjectPage?.id]);
+
   const submit = () => {
     const normalized = title.trim();
     if (!normalized || !folderId || pending) return;
@@ -79,7 +143,10 @@ export function NewTaskForm({
                 onChange={(event) => setDescription(event.target.value)}
               />
             </label>
-            <p>상속 미리보기: {selected?.name ?? "프로젝트"}의 guidance · atom · 실행 기본값</p>
+            <ProjectInheritancePreview
+              projectName={selected?.name ?? "프로젝트"}
+              state={inheritance}
+            />
           </div>
         </DialogPanel>
         <DialogFooter>
@@ -90,5 +157,62 @@ export function NewTaskForm({
         </DialogFooter>
       </DialogPopup>
     </Dialog>
+  );
+}
+
+export function findProjectPageForFolder(
+  folderId: string,
+  folders: readonly CatalogFolder[],
+  projectPages: readonly PageDto[],
+): PageDto | null {
+  return projectPages.find((page) => resolveProjectFolderId(page, folders) === folderId) ?? null;
+}
+
+export function ProjectInheritancePreview({
+  projectName,
+  state,
+}: {
+  projectName: string;
+  state: ProjectInheritancePreviewState;
+}) {
+  return (
+    <section
+      className="v3-project-context"
+      data-testid="new-task-inheritance-preview"
+      aria-live="polite"
+    >
+      <strong>상속 미리보기 · {projectName}</strong>
+      {state.status === "loading" ? <small>프로젝트 컨텍스트를 불러오는 중…</small> : null}
+      {state.status === "error" ? <small role="alert">불러오기 실패 · {state.message}</small> : null}
+      {state.status === "ready" ? (
+        <>
+          <div className="v3-project-context-row" data-testid="inheritance-guidance">
+            <strong>guidance</strong>
+            {state.data.guidance.length > 0 ? state.data.guidance.map((guidance) => (
+              <details className="v3-project-guidance" key={guidance.blockId}>
+                <summary aria-label="guidance 프리뷰 펼치기">
+                  <span className="line-clamp-3" data-testid="inheritance-guidance-preview">
+                    {singleLinePreview(guidance.text, GUIDANCE_PREVIEW_LENGTH)}
+                  </span>
+                </summary>
+                <pre data-testid="inheritance-guidance-full">{guidance.text}</pre>
+              </details>
+            )) : <small>없음</small>}
+          </div>
+          <div className="v3-project-context-row" data-testid="inheritance-atom">
+            <strong>atom</strong>
+            {state.data.atomReferences.length > 0 ? state.data.atomReferences.map((reference) => (
+              <ProjectAtomChip key={reference.blockId} reference={reference} />
+            )) : <small>없음</small>}
+          </div>
+          <div className="v3-project-context-row" data-testid="inheritance-defaults">
+            <strong>실행 기본값</strong>
+            {state.data.sessionDefaults.length > 0 ? state.data.sessionDefaults.map((defaults) => (
+              <ProjectSessionDefaultChip key={defaults.blockId} defaults={defaults} />
+            )) : <small>없음</small>}
+          </div>
+        </>
+      ) : null}
+    </section>
   );
 }
