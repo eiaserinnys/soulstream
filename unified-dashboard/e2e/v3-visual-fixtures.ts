@@ -2,6 +2,14 @@ import type { Page, Route } from "@playwright/test";
 
 const NOW = "2026-07-14T01:30:00.000Z";
 const YESTERDAY = "2026-07-13T08:20:00.000Z";
+const LONG_RITUAL_PROMPT = JSON.stringify({
+  source: "XOPS",
+  instructions: "수집된 원문을 처리하고 결과를 JSON으로 반환한다. ".repeat(160),
+  items: Array.from({ length: 24 }, (_, index) => ({
+    id: `fixture-${index}`,
+    payload: "장문 세션 prompt 회귀 픽스처 ".repeat(12),
+  })),
+});
 
 type Json = Record<string, unknown> | unknown[] | string | number | boolean | null;
 let blockSequence = 0;
@@ -278,8 +286,8 @@ const sessions = [
     createdAt: "2026-07-13T18:00:00.000Z",
     updatedAt: "2026-07-13T20:00:00.000Z",
     completedAt: "2026-07-13T20:00:00.000Z",
-    displayName: "PR-G /v2 셸 파기 검수",
-    awaySummary: "리다이렉트와 v1 diff 0을 확인했습니다.",
+    prompt: LONG_RITUAL_PROMPT,
+    awaySummary: "리다이렉트와 v1 diff 0을 확인했습니다. ".repeat(30),
     nodeId: "eiaserinnys",
     agentId: "roselin_codex",
     agentName: "로젤린",

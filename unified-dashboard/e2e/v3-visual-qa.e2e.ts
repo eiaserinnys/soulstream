@@ -97,7 +97,7 @@ for (const theme of ["dark", "light"] as const) {
       ));
 
       await capture(page, outputDir, "01-today-planner", diagnostics);
-      await page.getByRole("button", { name: "＋ 새 업무" }).hover();
+      await page.getByRole("button", { name: "새 업무", exact: true }).hover();
       await capture(page, outputDir, "01b-today-primary-hover", diagnostics);
 
       if (viewport.name === "desktop") {
@@ -110,8 +110,8 @@ for (const theme of ["dark", "light"] as const) {
       await expect(page.getByRole("heading", { name: fixtureTitles.project })).toBeVisible({ timeout: 20_000 });
       await capture(page, outputDir, "02-project-view", diagnostics);
 
-      await page.getByRole("button", { name: "＋ 새 업무" }).click();
-      await expect(page.getByRole("group", { name: "새 업무 만들기" })).toBeVisible();
+      await page.getByRole("button", { name: "새 업무", exact: true }).click();
+      await expect(page.getByRole("dialog", { name: "새 업무" })).toBeVisible();
       await capture(page, outputDir, "03-new-task-form-focus", diagnostics);
       await page.getByRole("button", { name: "취소" }).click();
 
