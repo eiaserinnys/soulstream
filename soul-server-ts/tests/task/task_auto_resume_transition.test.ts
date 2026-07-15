@@ -202,7 +202,7 @@ describe("AutoResumeTransition", () => {
       last_event_id: 12,
       termination_reason: "limit_hit",
       termination_detail: "fresh limit",
-      review_state: "not_required",
+      review_state: "acknowledged",
     });
   });
 

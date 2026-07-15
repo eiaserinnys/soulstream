@@ -113,7 +113,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
       last_event_id: 8,
       termination_reason: "completed_ok",
       termination_detail: null,
-      review_state: "not_required",
+      review_state: "acknowledged",
     });
     expect(emitSessionUpdated).toHaveBeenCalledWith(task);
     expect(emitSessionUpdated).toHaveBeenCalledTimes(1);
@@ -215,7 +215,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
       last_event_id: 8,
       termination_reason: "completed_ok",
       termination_detail: null,
-      review_state: "not_required",
+      review_state: "acknowledged",
     });
   });
 
@@ -234,7 +234,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
       last_event_id: 8,
       termination_reason: "unknown",
       termination_detail: null,
-      review_state: "not_required",
+      review_state: "acknowledged",
     });
   });
 
@@ -254,6 +254,26 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
     );
     expect(emitSessionUpdated).toHaveBeenCalledWith(
       expect.objectContaining({ reviewState: "needs_review" }),
+    );
+  });
+
+  it("auto-acknowledges a non-user terminal result", async () => {
+    const { transition, updateSession, emitSessionUpdated } = makeMocks();
+    const task = makeTask({
+      callerInfo: { source: "agent", agent_id: "delegator" },
+      reviewRequired: false,
+      reviewState: "not_required",
+    });
+
+    await transition.finalizeExternalTask(task, { result: "delegated result" });
+
+    expect(task.reviewState).toBe("acknowledged");
+    expect(updateSession).toHaveBeenCalledWith(
+      "sess-1",
+      expect.objectContaining({ review_state: "acknowledged" }),
+    );
+    expect(emitSessionUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ reviewState: "acknowledged" }),
     );
   });
 
@@ -295,7 +315,7 @@ describe("TaskLifecycleTransition.finalizeExternalTask", () => {
       last_event_id: 8,
       termination_reason: "limit_hit",
       termination_detail: "rate limit",
-      review_state: "not_required",
+      review_state: "acknowledged",
     });
   });
 });
@@ -315,7 +335,7 @@ describe("TaskLifecycleTransition.persistExecutorFinalState", () => {
       last_event_id: 8,
       termination_reason: "unknown",
       termination_detail: null,
-      review_state: "not_required",
+      review_state: "acknowledged",
     });
     expect(emitSessionUpdated).toHaveBeenCalledWith(task);
   });
@@ -348,7 +368,7 @@ describe("TaskLifecycleTransition shutdown/delete interrupt helpers", () => {
       last_event_id: 8,
       termination_reason: "killed",
       termination_detail: "shutdown",
-      review_state: "not_required",
+      review_state: "acknowledged",
     });
     expect(emitSessionUpdated).toHaveBeenCalledWith(task);
   });
