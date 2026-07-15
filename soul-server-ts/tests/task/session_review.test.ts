@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   initialSessionReview,
+  isUserInitiatedSession,
   reviewStateAfterFollowup,
   reviewStateAfterTerminal,
 } from "../../src/task/session_review.js";
 
 describe("session review policy", () => {
-  it.each(["slack", "browser", "soul-app"])(
+  it.each(["slack", "soul-app"])(
     "marks %s-created sessions as human-owned",
     (source) => {
       expect(initialSessionReview({ source })).toEqual({
@@ -17,7 +18,40 @@ describe("session review policy", () => {
     },
   );
 
-  it.each(["agent", "api", "llm", "system", "execute-proxy", undefined, null])(
+  it.each([
+    { source: "browser", user_id: "user@example.com" },
+    { source: "browser", email: "user@example.com" },
+    { source: "browser", display_name: "Alice" },
+  ])("marks an identified browser caller as user-initiated", (callerInfo) => {
+    expect(isUserInitiatedSession(callerInfo)).toBe(true);
+    expect(initialSessionReview(callerInfo)).toEqual({
+      reviewRequired: true,
+      reviewState: "not_required",
+    });
+  });
+
+  it.each([
+    { source: "browser" },
+    { source: "browser", user_id: "", email: "  ", display_name: null },
+    { source: "browser", ip: "127.0.0.1", user_agent: "automation-client" },
+  ])("keeps an anonymous browser caller out of review", (callerInfo) => {
+    expect(isUserInitiatedSession(callerInfo)).toBe(false);
+    expect(initialSessionReview(callerInfo)).toEqual({
+      reviewRequired: false,
+      reviewState: "not_required",
+    });
+  });
+
+  it.each([
+    "agent",
+    "api",
+    "channel_observer",
+    "llm",
+    "system",
+    "execute-proxy",
+    undefined,
+    null,
+  ])(
     "keeps non-human source %s out of review",
     (source) => {
       expect(initialSessionReview(source === undefined ? undefined : { source })).toEqual({
@@ -29,7 +63,10 @@ describe("session review policy", () => {
 
   it("moves human-owned terminal results to needs_review", () => {
     expect(reviewStateAfterTerminal(true)).toBe("needs_review");
-    expect(reviewStateAfterTerminal(false)).toBe("not_required");
+  });
+
+  it("auto-acknowledges non-user terminal results", () => {
+    expect(reviewStateAfterTerminal(false)).toBe("acknowledged");
   });
 
   it("auto-acknowledges only a pending previous result on follow-up", () => {
