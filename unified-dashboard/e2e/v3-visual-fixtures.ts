@@ -21,6 +21,8 @@ export interface V3VisualQaRouteOptions {
   failTaskTitleRenameOnce?: boolean;
   successionPickerRuns?: boolean;
   plannerDelayMs?: number;
+  projectResolutionDelayMs?: number;
+  projectResolutionMode?: "delayed" | "fail-once" | "unlinked";
   timelineEventCount?: number;
   liveEventText?: string;
   contextMenuParity?: boolean;
@@ -454,6 +456,7 @@ export async function installV3VisualQaRoutes(
 ): Promise<void> {
   if (options.contextMenuParity) resetContextMenuParityState();
   let shouldFailTaskTitleRename = options.failTaskTitleRenameOnce === true;
+  let shouldFailProjectResolution = options.projectResolutionMode === "fail-once";
   let inlineMarkdownDocument = {
     id: "doc-inline",
     title: "PR-O 결정 로그",
@@ -477,7 +480,13 @@ export async function installV3VisualQaRoutes(
     }
     if (path === "/api/folders") return fulfillJson(route, {
       folders: [
-        { id: "folder-amber", name: pages.project.title, sortOrder: 0, parentFolderId: null, projectPageId: pages.project.id },
+        {
+          id: "folder-amber",
+          name: pages.project.title,
+          sortOrder: 0,
+          parentFolderId: null,
+          projectPageId: options.projectResolutionMode === "unlinked" ? null : pages.project.id,
+        },
         { id: "folder-ops", name: pages.projectOps.title, sortOrder: 1, parentFolderId: null, projectPageId: pages.projectOps.id },
       ],
       sessions: {},
@@ -578,7 +587,7 @@ export async function installV3VisualQaRoutes(
       const daily = yesterday ? pageReads[pages.yesterday.id] : pageReads[pages.today.id];
       return fulfillJson(route, {
         daily,
-        projects: [pages.project, pages.projectOps],
+        projects: options.projectResolutionMode ? [] : [pages.project, pages.projectOps],
         tasks: yesterday
           ? [plannerTaskPayload(pages.carryover, "rb-carry")]
           : [
@@ -662,7 +671,15 @@ export async function installV3VisualQaRoutes(
     }
     const pageMatch = /^\/api\/pages\/([^/]+)$/.exec(path);
     if (pageMatch && request.method() === "GET") {
-      const result = pageReads[decodeURIComponent(pageMatch[1])];
+      const pageId = decodeURIComponent(pageMatch[1]);
+      if (pageId === pages.project.id) {
+        await delay(options.projectResolutionDelayMs);
+        if (shouldFailProjectResolution) {
+          shouldFailProjectResolution = false;
+          return fulfillJson(route, { detail: "fixture project resolution failure" }, 500);
+        }
+      }
+      const result = pageReads[pageId];
       return result ? fulfillJson(route, result) : fulfillJson(route, { detail: "page not found" }, 404);
     }
     const pageOperationsMatch = /^\/api\/pages\/([^/]+)\/operations$/.exec(path);
