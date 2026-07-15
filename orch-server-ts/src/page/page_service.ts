@@ -199,8 +199,6 @@ export class PageYjsService {
   }
 
   async mutatePage(input: PageMutationInput): Promise<PageServiceMutationResult> {
-    const taskIdentityIdempotent = await this.resolveIdempotent(input.idempotencyKey);
-    if (taskIdentityIdempotent) return taskIdentityIdempotent;
     const taskIdentityResult = await this.config.mutateTaskIdentity?.(input);
     if (taskIdentityResult) return taskIdentityResult;
     return await this.mutex.runExclusive(input.pageId, async () => {

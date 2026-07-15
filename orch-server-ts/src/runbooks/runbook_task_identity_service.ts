@@ -190,6 +190,24 @@ export class RunbookTaskIdentityService {
     reason?: string | null;
   }): Promise<PageServiceMutationResult | null> {
     if (!isIdentityPageCommand(input.command)) return null;
+    const idempotent = await this.config.repository.findMutationByIdempotencyKey(
+      input.idempotencyKey,
+    );
+    if (idempotent) {
+      const document = await loadPageDocument(
+        idempotent.pageId,
+        (pageId) => this.config.repository.readPageSnapshot(pageId),
+      );
+      const replica = readPageYDocReplica(idempotent.pageId, document);
+      const payload = idempotent.pageCommit.operation.payload_json;
+      const tempIdMapping = isRecord(payload.temp_id_mapping)
+        ? Object.fromEntries(
+            Object.entries(payload.temp_id_mapping)
+              .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+          )
+        : {};
+      return toMutationResult(replica, tempIdMapping, idempotent.pageCommit);
+    }
     const binding = await this.config.repository.findByPageId(input.pageId);
     if (!binding) return null;
     const snapshot = await loadPageDocument(
@@ -377,4 +395,8 @@ export class RunbookTaskIdentityService {
     return result;
   }
 
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

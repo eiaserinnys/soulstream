@@ -78,6 +78,13 @@ describe("Runbook task identity PostgreSQL transaction", () => {
       actor: { actorKind: "user", actorUserId: "user@example.com" },
       idempotencyKey: "task-identity:archive:page-surface",
     });
+    await expect(service.mutateFromPage({
+      pageId: id,
+      expectedVersion: 2,
+      command: { type: "archive_page" },
+      actor: { actorKind: "user", actorUserId: "user@example.com" },
+      idempotencyKey: "task-identity:archive:page-surface",
+    })).resolves.toMatchObject({ idempotent: true });
     const synchronized = await harness.sql<Array<{
       runbook_title: string;
       page_title: string;
