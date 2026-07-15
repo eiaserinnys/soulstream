@@ -11,7 +11,9 @@ import { saveTaskDescription } from "./task-workspace-api";
 export class BrowserPlannerMutationPort implements PlannerTaskCreationPort {
   constructor(
     private readonly api: PageApiClient,
-    private readonly fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
+    // fetch를 unbound로 저장하면 this.fetchImplementation() 호출 시 this가 인스턴스가 되어
+    // "Illegal invocation"이 발생한다 — 반드시 globalThis에 bind한 기본값을 쓴다.
+    private readonly fetchImplementation: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
   ) {}
 
   async createTaskPage(input: { title: string; description: string; sourcePageId: string }) {
