@@ -6,7 +6,7 @@
     calc(var(--v3-navigation-width, 264px) + 22px)
     var(--v3-panel-gap, 8px)
     minmax(0, 1fr);
-  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   color: var(--foreground);
   background: transparent;
@@ -165,16 +165,32 @@
 .v3-main {
   position: relative;
   z-index: 1;
+  display: flex;
   min-width: 0;
-  overflow-y: auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .v3-planner {
+  box-sizing: border-box;
+  display: flex;
   width: min(940px, calc(100% - 48px));
-  min-height: calc(100vh - 98px);
+  min-height: 0;
+  height: calc(100dvh - 98px);
+  flex-direction: column;
+  overflow: hidden;
   margin: 76px auto 22px;
   border-radius: 24px;
-  padding: 20px 24px 90px;
+  padding: 20px 0 0;
+}
+
+.v3-planner-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 24px 90px;
+  scrollbar-gutter: stable;
 }
 
 .v3-spacer {
@@ -378,7 +394,7 @@
 
   .v3-main {
     height: calc(100dvh - 58px);
-    overflow-y: auto;
+    overflow: hidden;
   }
 
   .v3-shell[data-mobile-tab="task"] .v3-main,
@@ -388,10 +404,15 @@
 
   .v3-planner {
     width: calc(100% - 28px);
-    min-height: calc(100dvh - 146px);
+    min-height: 0;
+    height: calc(100dvh - 146px);
     margin: 72px auto 12px;
     border-radius: 20px;
-    padding: 12px 14px 76px;
+    padding: 12px 0 0;
+  }
+
+  .v3-planner-scroll {
+    padding: 0 14px 76px;
   }
 
   .v3-global-toolbar {

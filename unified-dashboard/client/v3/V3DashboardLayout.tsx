@@ -452,9 +452,7 @@ function V3DashboardContent() {
   const workspaceTask = selectedTask ? { ...selectedTask, sessionIds: runHistory.sessionIds } : null;
   const projectTitle = projects.find((item) => item.id === workspaceTask?.projectPageId)?.title ?? "미분류";
   const selectedTaskProject = projects.find((item) => item.id === workspaceTask?.projectPageId) ?? null;
-  const projectFolderId = selectedTaskProject
-    ? resolveProjectFolderId(selectedTaskProject, catalog?.folders ?? [])
-    : null;
+  const projectFolderId = selectedTaskProject ? resolveProjectFolderId(selectedTaskProject, catalog?.folders ?? []) : null;
 
   return (
     <div className="v3-shell isolate font-sans" data-mobile-tab={mobileTab} style={shellStyle}>
@@ -476,14 +474,16 @@ function V3DashboardContent() {
           className="v3-planner border border-glass-border glass-strong glass-chrome lg-rim"
           data-liquid-glass-webgl={plannerWebglActive ? "true" : undefined}
         >
-          {createOpen ? <NewTaskForm folders={catalog?.folders ?? []} initialFolderId={selectedFolderId} pending={createPending} onCreate={(title, folderId, description) => { void createTask(title, folderId, description); }} onCancel={() => setCreateOpen(false)} /> : null}
-          {selectedFolderId && !selectedProject ? (
-            <EmptyProjectPlannerView title={selectedFolderName} />
-          ) : selectedProject ? (
-            <ProjectPlannerView state={project} sessions={sessions} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onOpenDocument={(page) => window.location.assign(`/v2/pages/${encodeURIComponent(page.id)}`)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
-          ) : (
-            <DailyPlannerView state={daily} selectedDate={selectedDate} sessions={sessions} onSaveMemo={(blockId, text) => { void saveMemo(blockId, text); }} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} />
-          )}
+          <div className="v3-planner-scroll" data-testid="v3-planner-scroll">
+            {createOpen ? <NewTaskForm folders={catalog?.folders ?? []} initialFolderId={selectedFolderId} pending={createPending} onCreate={(title, folderId, description) => { void createTask(title, folderId, description); }} onCancel={() => setCreateOpen(false)} /> : null}
+            {selectedFolderId && !selectedProject ? (
+              <EmptyProjectPlannerView title={selectedFolderName} />
+            ) : selectedProject ? (
+              <ProjectPlannerView state={project} sessions={sessions} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onOpenDocument={(page) => window.location.assign(`/v2/pages/${encodeURIComponent(page.id)}`)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
+            ) : (
+              <DailyPlannerView state={daily} selectedDate={selectedDate} sessions={sessions} onSaveMemo={(blockId, text) => { void saveMemo(blockId, text); }} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} />
+            )}
+          </div>
         </div>
       </main>
       {workspaceOpen && workspaceTask ? (
