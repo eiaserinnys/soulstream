@@ -51,8 +51,7 @@ import { resolveProjectFolderId } from "./planner-model";
 import { resolveProjectPage } from "./project-page-actions";
 import {
   createPlannerTask,
-  PlannerTaskCreationError,
-  type PlannerTaskCreationPhase,
+  plannerTaskCreationErrorLabel,
 } from "./planner-task-creation";
 import {
   fetchPageSessionDefaults,
@@ -79,23 +78,12 @@ import { reviewQueueSessions } from "./review-queue-model";
 import { invalidateV3, useV3InvalidationKey } from "./v3-live-invalidation-plane";
 import { useV3LiveDataPlane } from "./use-v3-live-data-plane";
 import { openDocumentInV3, openSessionInV3 } from "./v3-inspector-model";
-import { runOptimisticTodayMutation } from "./today-task-state";
 import "./v3-planner.css";
 import "./v3-planner-surfaces.css";
 import "./v3-task-workspace.css";
 
-const CREATION_ERROR_LABEL: Record<PlannerTaskCreationPhase, string> = {
-  page: "업무 페이지 생성",
-  runbook: "런북 생성",
-  reference: "업무-런북 연결",
-  project_mount: "프로젝트 편입",
-};
 export function V3DashboardLayout() {
-  return (
-    <LiquidGlassProvider renderDefaultCanvas={false}>
-      <V3DashboardContent />
-    </LiquidGlassProvider>
-  );
+  return <LiquidGlassProvider renderDefaultCanvas={false}><V3DashboardContent /></LiquidGlassProvider>;
 }
 
 function V3DashboardContent() {
@@ -163,7 +151,6 @@ function V3DashboardContent() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 3200);
   }, []);
-  const plannerActions = useV3PlannerActions({ api, invalidate: invalidateLocal, notify });
   useEffect(() => () => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
   }, []);
@@ -194,28 +181,9 @@ function V3DashboardContent() {
     refreshKey,
     notify,
   });
-  const completeTask = useCallback(async (task: PlannerTask) => {
-    const wasInToday = todayTaskIds.has(task.page.id);
-    await runOptimisticTodayMutation({
-      taskId: task.page.id,
-      wasInToday,
-      optimisticInToday: false,
-      setPresence: setTaskTodayPresence,
-      mutate: () => plannerActions.completeTask(task),
-      finalPresence: () => false,
-    });
-  }, [plannerActions.completeTask, setTaskTodayPresence, todayTaskIds]);
-  const toggleTaskToday = useCallback(async (task: PlannerTask) => {
-    const wasInToday = todayTaskIds.has(task.page.id);
-    await runOptimisticTodayMutation({
-      taskId: task.page.id,
-      wasInToday,
-      optimisticInToday: !wasInToday,
-      setPresence: setTaskTodayPresence,
-      mutate: () => plannerActions.toggleTaskToday(task),
-      finalPresence: (result) => result === "added",
-    });
-  }, [plannerActions.toggleTaskToday, setTaskTodayPresence, todayTaskIds]);
+  const plannerActions = useV3PlannerActions({
+    api, invalidate: invalidateLocal, notify, todayTaskIds, setTaskTodayPresence,
+  });
   const currentTasks = useMemo(
     () => [
       ...(daily.data?.tasks ?? []),
@@ -410,7 +378,7 @@ function V3DashboardContent() {
       invalidateLocal();
       notify(`새 업무 생성 · ${title}`);
     } catch (error) {
-      const label = error instanceof PlannerTaskCreationError ? CREATION_ERROR_LABEL[error.phase] : "새 업무 생성";
+      const label = plannerTaskCreationErrorLabel(error);
       notify(`${label} 실패 · ${errorText(error)}`);
     } finally {
       setCreatePending(false);
@@ -508,9 +476,9 @@ function V3DashboardContent() {
             {selectedFolderId && !selectedProject ? (
               <EmptyProjectPlannerView title={selectedFolderName} />
             ) : selectedProject ? (
-              <ProjectPlannerView state={project} sessions={sessions} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={completeTask} onToggleTaskToday={toggleTaskToday} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
+              <ProjectPlannerView state={project} sessions={sessions} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
             ) : (
-              <DailyPlannerView state={daily} selectedDate={selectedDate} isTodayView={selectedDate === today} todayTaskIds={todayTaskIds} sessions={sessions} onSaveMemo={saveMemo} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={completeTask} onToggleTaskToday={toggleTaskToday} />
+              <DailyPlannerView state={daily} selectedDate={selectedDate} isTodayView={selectedDate === today} todayTaskIds={todayTaskIds} sessions={sessions} onSaveMemo={saveMemo} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} />
             )}
           </div>
         </div>

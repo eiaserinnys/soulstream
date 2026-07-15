@@ -29,6 +29,19 @@ export class PlannerTaskCreationError extends Error {
   }
 }
 
+const CREATION_ERROR_LABEL: Record<PlannerTaskCreationPhase, string> = {
+  page: "업무 페이지 생성",
+  runbook: "런북 생성",
+  reference: "업무-런북 연결",
+  project_mount: "프로젝트 편입",
+};
+
+export function plannerTaskCreationErrorLabel(error: unknown): string {
+  return error instanceof PlannerTaskCreationError
+    ? CREATION_ERROR_LABEL[error.phase]
+    : "새 업무 생성";
+}
+
 export async function createPlannerTask(
   input: PlannerTaskCreationInput,
   port: PlannerTaskCreationPort,
