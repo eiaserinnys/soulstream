@@ -3,9 +3,21 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
-import { TaskRunHistory } from "./TaskRunHistory";
+import { getRunSessionRenamePrefill, TaskRunHistory } from "./TaskRunHistory";
 
 describe("TaskRunHistory", () => {
+  it("uses only displayName for rename prefill and never falls back to the prompt", () => {
+    const promptOnly = {
+      agentSessionId: "prompt-only",
+      prompt: "전체 사용자 프롬프트",
+    } as SessionSummary;
+
+    expect(getRunSessionRenamePrefill([promptOnly], "prompt-only")).toBe("");
+    expect(getRunSessionRenamePrefill([
+      { ...promptOnly, displayName: "표시 이름" },
+    ], "prompt-only")).toBe("표시 이름");
+  });
+
   it("renders rich catalog data, a loading skeleton, and a run-number failure fallback", () => {
     const richSession: SessionSummary = {
       agentSessionId: "catalog-hit",

@@ -7,16 +7,14 @@
  * 모바일: Dialog 하단 시트 (bottomStickOnMobile)
  * 데스크탑: base-ui Menu 프리미티브 (VirtualElement anchor + scale/opacity 진입·퇴장 전환)
  */
-
 import { useState, useCallback, useMemo } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useIsMobile } from "../hooks/use-mobile";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel, DialogFooter } from "./ui/dialog";
 import { Menu, MenuPopup, MenuItem, MenuSeparator } from "./ui/menu";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
 import { cn } from "../lib/cn";
-
+import { RenameSessionDialog } from "./RenameSessionDialog";
 export interface SessionContextMenuState {
   x: number;
   y: number;
@@ -49,14 +47,12 @@ export interface SessionContextMenuProps {
    */
   resolveSessionIds: (sessionId: string) => string[];
 }
-
 export interface SessionContextMenuExtraAction {
   label: string;
   onClick: () => void | Promise<void>;
   disabled?: boolean;
   className?: string;
 }
-
 /** 메뉴 항목 리스트 (모바일/데스크탑 공용) */
 function MenuItems({
   onCopyId,
@@ -231,7 +227,12 @@ export function SessionContextMenu({
     if (!onRenameSession) return;
     const { sessionId } = renameDialog;
     setRenameDialog((d) => ({ ...d, open: false }));
-    await onRenameSession(sessionId, renameInput.trim() || null);
+    try {
+      await onRenameSession(sessionId, renameInput.trim() || null);
+    } catch {
+      // 호출 표면이 오류 UX를 소유한다. v1은 기존처럼 조용히 rollback하고,
+      // v3는 planner action이 toast를 표시한다.
+    }
   }, [onRenameSession, renameDialog, renameInput]);
 
   const handleMoveClick = useCallback(() => {
@@ -371,44 +372,15 @@ export function SessionContextMenu({
         </Menu>
       )}
 
-      {/* 이름 변경 모달 */}
-      {onRenameSession && (
-        <Dialog
+      {onRenameSession ? (
+        <RenameSessionDialog
           open={renameDialog.open}
-          onOpenChange={(open) => setRenameDialog((d) => ({ ...d, open }))}
-        >
-          <DialogPopup className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>세션 이름 변경</DialogTitle>
-            </DialogHeader>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleRenameSubmit();
-              }}
-            >
-              <DialogPanel>
-                <Input
-                  autoFocus
-                  placeholder="세션 이름 (비워두면 기본 이름으로 초기화)"
-                  value={renameInput}
-                  onChange={(e) => setRenameInput(e.target.value)}
-                />
-              </DialogPanel>
-              <DialogFooter variant="bare">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setRenameDialog((d) => ({ ...d, open: false }))}
-                >
-                  취소
-                </Button>
-                <Button type="submit">변경</Button>
-              </DialogFooter>
-            </form>
-          </DialogPopup>
-        </Dialog>
-      )}
+          input={renameInput}
+          onOpenChange={(open) => setRenameDialog((dialog) => ({ ...dialog, open }))}
+          onInputChange={setRenameInput}
+          onSubmit={() => { void handleRenameSubmit(); }}
+        />
+      ) : null}
 
       {/* 이어 시작 실패 모달 */}
       {onContinueSession && (

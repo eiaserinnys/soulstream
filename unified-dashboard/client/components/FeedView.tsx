@@ -9,9 +9,10 @@ import {
   type SessionSummary,
   shouldLoadMoreAfterSessionMove,
   useDashboardStore,
+  useRenameSessionOperation,
 } from "@seosoyoung/soul-ui";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
-import { renameSessionOptimistic } from "client/lib/rename-session";
+import { renameSessionOperation } from "client/lib/rename-session";
 
 interface FeedViewWrapperProps {
   onNewSession?: () => void;
@@ -31,6 +32,7 @@ export function FeedView({
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
+  const renameSession = useRenameSessionOperation(renameSessionOperation);
 
   const handleMoveSessions = useCallback(
     async (sessionIds: string[], targetFolderId: string | null) => {
@@ -52,7 +54,7 @@ export function FeedView({
   return (
     <SoulUIFeedView
       onMoveSessions={handleMoveSessions}
-      onRenameSession={renameSessionOptimistic}
+      onRenameSession={renameSession}
       onNewSession={onNewSession}
       placement={placement}
       onLoadMore={onLoadMore}

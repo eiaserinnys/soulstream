@@ -14,16 +14,21 @@ import {
   fetchTaskBoardItems,
 } from "./task-inline-board-api";
 import "./v3-context-menus.css";
+import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
 
 export function TaskInlineBoard({ runbookId }: { runbookId: string }) {
   const [items, setItems] = useState<CatalogBoardItem[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const invalidationKey = useV3InvalidationKey([
+    "catalog", "runbook", "custom_view", "page", "replay", "local",
+  ]);
+
+  useEffect(() => setExpandedId(null), [runbookId]);
 
   useEffect(() => {
     const controller = new AbortController();
     setStatus("loading");
-    setExpandedId(null);
     void fetchTaskBoardItems(runbookId, (input, init) => globalThis.fetch(input, {
       ...init,
       signal: controller.signal,
@@ -35,7 +40,7 @@ export function TaskInlineBoard({ runbookId }: { runbookId: string }) {
       setStatus("error");
     });
     return () => controller.abort();
-  }, [runbookId]);
+  }, [invalidationKey, runbookId]);
 
   return (
     <section className="v3-detail-section v3-inline-board" data-testid="v3-inline-board">
@@ -54,7 +59,7 @@ export function TaskInlineBoard({ runbookId }: { runbookId: string }) {
                 <button type="button" onClick={() => setExpandedId(expanded ? null : item.id)}>
                   <span>📄 {metadataText(item, "title") || "제목 없는 문서"}</span><small>{expanded ? "접기" : "펼치기"}</small>
                 </button>
-                {expanded ? <InlineMarkdown documentId={item.itemId} /> : null}
+                {expanded ? <InlineMarkdown documentId={item.itemId} invalidationKey={invalidationKey} /> : null}
               </article>
             );
           }
@@ -64,7 +69,7 @@ export function TaskInlineBoard({ runbookId }: { runbookId: string }) {
                 <button type="button" onClick={() => setExpandedId(expanded ? null : item.id)}>
                   <span>▦ {metadataText(item, "title") || "Custom view"}</span><small>{expanded ? "접기" : "펼치기"}</small>
                 </button>
-                {expanded ? <InlineCustomView customViewId={item.itemId} /> : null}
+                {expanded ? <InlineCustomView customViewId={item.itemId} invalidationKey={invalidationKey} /> : null}
               </article>
             );
           }
@@ -75,7 +80,7 @@ export function TaskInlineBoard({ runbookId }: { runbookId: string }) {
   );
 }
 
-function InlineMarkdown({ documentId }: { documentId: string }) {
+function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; invalidationKey: number }) {
   const [document, setDocument] = useState<MarkdownDocument | null>(null);
   const [error, setError] = useState(false);
   useEffect(() => {
@@ -86,13 +91,13 @@ function InlineMarkdown({ documentId }: { documentId: string }) {
         if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(true);
       });
     return () => controller.abort();
-  }, [documentId]);
+  }, [documentId, invalidationKey]);
   if (error) return <p className="v3-inline-board-error">문서 본문을 불러오지 못했습니다.</p>;
   if (!document) return <p className="v3-detail-empty">본문을 불러오는 중…</p>;
   return <div className="v3-inline-markdown" data-testid="v3-inline-markdown"><MarkdownContent content={document.body || "빈 문서"} /></div>;
 }
 
-function InlineCustomView({ customViewId }: { customViewId: string }) {
+function InlineCustomView({ customViewId, invalidationKey }: { customViewId: string; invalidationKey: number }) {
   const bindings = useCustomViewBindings();
   const [document, setDocument] = useState<CustomViewDocument | null>(null);
   const [error, setError] = useState(false);
@@ -104,7 +109,7 @@ function InlineCustomView({ customViewId }: { customViewId: string }) {
         if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(true);
       });
     return () => controller.abort();
-  }, [customViewId]);
+  }, [customViewId, invalidationKey]);
   if (error) return <p className="v3-inline-board-error">커스텀 뷰를 불러오지 못했습니다.</p>;
   if (!document) return <p className="v3-detail-empty">커스텀 뷰를 불러오는 중…</p>;
   return (

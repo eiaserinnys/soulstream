@@ -29,6 +29,7 @@ import type {
   SessionCreatedStreamEvent,
   SessionDeletedStreamEvent,
   SessionUpdatedStreamEvent,
+  SessionStreamEvent,
   StreamMetaStreamEvent,
 } from "../shared/stream-events";
 import {
@@ -77,6 +78,13 @@ export interface UseSessionStreamCacheSyncOptions {
   onRunbookUpdated?: (event: RunbookUpdatedStreamEvent) => void;
   /** custom_view_updated 수신 시 호출 (커스텀 뷰 projection 갱신용). */
   onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
+  /** 모든 stream event의 타입별 캐시 처리가 끝난 뒤 호출한다. */
+  onStreamEvent?: (event: SessionStreamEvent) => void;
+  /** scoped surface가 catalog projection을 제한할 때만 결과를 반환한다. */
+  transformCatalogUpdate?: (
+    incoming: CatalogState,
+    current: CatalogState | null,
+  ) => CatalogState | undefined;
 }
 
 export function useSessionStreamCacheSync(
@@ -91,6 +99,8 @@ export function useSessionStreamCacheSync(
     onReplayGap,
     onRunbookUpdated: onRunbookUpdatedOption,
     onCustomViewUpdated: onCustomViewUpdatedOption,
+    onStreamEvent,
+    transformCatalogUpdate,
   } = options;
   const queryClient = useQueryClient();
   const setActiveSessionSummary = useDashboardStore(
@@ -243,7 +253,9 @@ export function useSessionStreamCacheSync(
     (event: CatalogUpdatedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
       const store = useDashboardStore.getState();
-      const catalog = preserveCatalogSessionList(event.catalog as CatalogState, store.catalog);
+      const incoming = event.catalog as CatalogState;
+      const catalog = transformCatalogUpdate?.(incoming, store.catalog)
+        ?? preserveCatalogSessionList(incoming, store.catalog);
       store.setCatalog(catalog);
       for (const [cacheQueryKey, data] of queryClient.getQueriesData<
         InfiniteData<SessionPage>
@@ -256,7 +268,7 @@ export function useSessionStreamCacheSync(
       }
       void queryClient.invalidateQueries({ queryKey: ["sessions"], exact: false });
     },
-    [queryClient, onEventIdAdvance],
+    [queryClient, onEventIdAdvance, transformCatalogUpdate],
   );
 
   const onMetadataUpdated = useCallback(
@@ -306,5 +318,6 @@ export function useSessionStreamCacheSync(
     onCustomViewUpdated,
     onStreamMeta,
     onReplayGap,
+    onEvent: onStreamEvent,
   });
 }

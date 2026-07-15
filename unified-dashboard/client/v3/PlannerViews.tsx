@@ -103,6 +103,7 @@ export function ProjectPlannerView({
   newDocumentTitle,
   tasksLoadingMore,
   documentsLoadingMore,
+  invalidationKey,
   onLoadMoreTasks,
   onLoadMoreDocuments,
   onBack,
@@ -120,6 +121,7 @@ export function ProjectPlannerView({
   newDocumentTitle: string;
   tasksLoadingMore: boolean;
   documentsLoadingMore: boolean;
+  invalidationKey: number;
   onLoadMoreTasks(): void;
   onLoadMoreDocuments(): void;
   onBack(): void;
@@ -156,7 +158,7 @@ export function ProjectPlannerView({
       if (active) setDetails({ status: "error", data: null, message: errorText(error) });
     });
     return () => { active = false; };
-  }, [data?.project.id]);
+  }, [data?.project.id, invalidationKey]);
 
   return (
     <>

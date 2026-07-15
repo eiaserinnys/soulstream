@@ -3,6 +3,7 @@ import {
   FolderWorkspaceView as SoulUIFolderWorkspaceView,
   shouldLoadMoreAfterSessionMove,
   useDashboardStore,
+  useRenameSessionOperation,
 } from "@seosoyoung/soul-ui";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
@@ -14,7 +15,7 @@ import {
 } from "client/lib/folder-operations";
 import { deleteSessions } from "client/lib/delete-session";
 import { moveSessionsOptimistic } from "client/lib/move-sessions";
-import { renameSessionOptimistic } from "client/lib/rename-session";
+import { renameSessionOperation } from "client/lib/rename-session";
 import {
   moveBoardItemToContainer,
   uploadBoardAsset,
@@ -35,6 +36,7 @@ export function FolderWorkspaceView({
   const viewMode = useDashboardStore((s) => s.viewMode);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
+  const renameSession = useRenameSessionOperation(renameSessionOperation);
   const { continueSession, getContinueSessionDisabledReason } = useContinueSession(sessions);
 
   const handleMoveSessions = useCallback(
@@ -58,7 +60,7 @@ export function FolderWorkspaceView({
     <SoulUIFolderWorkspaceView
       sessions={sessions}
       onMoveSessions={handleMoveSessions}
-      onRenameSession={renameSessionOptimistic}
+      onRenameSession={renameSession}
       onDeleteSessions={deleteSessions}
       onContinueSession={continueSession}
       getContinueSessionDisabledReason={getContinueSessionDisabledReason}

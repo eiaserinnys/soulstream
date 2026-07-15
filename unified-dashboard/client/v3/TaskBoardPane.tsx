@@ -6,11 +6,8 @@ import {
   useState,
 } from "react";
 import {
-  useCustomViewStore,
   useDashboardStore,
-  useRunbookStore,
   useSessionListProvider,
-  useSessionStreamSSE,
   type CatalogBoardItem,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
@@ -22,8 +19,8 @@ import {
   buildTaskBoardCatalog,
   extractTaskBoardSessionIds,
   mergeTaskBoardSessions,
-  scopeCatalogUpdateToTaskBoard,
 } from "./task-board-model";
+import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
 import "./v3-task-board.css";
 
 export function TaskBoardPane({
@@ -47,13 +44,9 @@ export function TaskBoardPane({
     () => extractTaskBoardSessionIds(boardItems ?? []),
     [boardItems],
   );
-  const sessionIdSet = useMemo(() => new Set(sessionIds), [sessionIds]);
-  const customViewIdSet = useMemo(
-    () => new Set((boardItems ?? [])
-      .filter((item) => item.itemType === "custom_view")
-      .map((item) => item.itemId)),
-    [boardItems],
-  );
+  const invalidationKey = useV3InvalidationKey([
+    "session", "catalog", "runbook", "custom_view", "page", "replay", "local",
+  ]);
   const {
     sessions: boardSessions,
     loading: boardSessionsLoading,
@@ -93,8 +86,9 @@ export function TaskBoardPane({
       if (error instanceof DOMException && error.name === "AbortError") return;
       setLoadError(error instanceof Error ? error.message : "보드 항목을 불러오지 못했습니다");
     });
+    if (invalidationKey > 0) void refetchBoardSessions();
     return () => controller.abort();
-  }, [runbookId]);
+  }, [invalidationKey, refetchBoardSessions, runbookId]);
 
   useEffect(() => {
     const state = useDashboardStore.getState();
@@ -146,42 +140,6 @@ export function TaskBoardPane({
       catalogInitializedRef.current = true;
     }
   }, [boardItems, displaySessions, projectFolderId, projectTitle, runbookId]);
-
-  useSessionStreamSSE({
-    enabled: boardItems !== null,
-    urlBuilder: () => "/api/sessions/stream?limit=50",
-    onSessionCreated: () => { void reloadBoardItems(); },
-    onSessionUpdated: (event) => {
-      if (sessionIdSet.has(event.agent_session_id)) void refetchBoardSessions();
-    },
-    onSessionDeleted: (event) => {
-      if (!sessionIdSet.has(event.agent_session_id)) return;
-      void reloadBoardItems();
-      void refetchBoardSessions();
-    },
-    onCatalogUpdated: (event) => {
-      const state = useDashboardStore.getState();
-      if (state.activeBoardContainer?.kind !== "runbook" || state.activeBoardContainer.id !== runbookId) return;
-      if (!state.catalog) return;
-      const scoped = scopeCatalogUpdateToTaskBoard(state.catalog, event.catalog, runbookId);
-      state.setCatalog(scoped);
-      setBoardItems(scoped.boardItems ?? []);
-    },
-    onRunbookUpdated: (event) => {
-      if (event.runbookId === runbookId) {
-        void useRunbookStore.getState().handleRunbookUpdated(event);
-      }
-    },
-    onCustomViewUpdated: (event) => {
-      if (customViewIdSet.has(event.customViewId)) {
-        void useCustomViewStore.getState().handleCustomViewUpdated(event);
-      }
-    },
-    onReplayGap: () => {
-      void reloadBoardItems();
-      void refetchBoardSessions();
-    },
-  });
 
   return (
     <article

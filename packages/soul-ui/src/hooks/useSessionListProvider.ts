@@ -19,6 +19,8 @@ import { useRunbookStore } from "../stores/runbook-store";
 import { useCustomViewStore } from "../stores/custom-view-store";
 import type { DashboardState } from "../stores/dashboard-store-types";
 import type { SessionSummary } from "../shared/types";
+import type { CatalogState } from "../shared/types";
+import type { SessionStreamEvent } from "../shared/stream-events";
 import type { SessionStorageProvider } from "../providers/types";
 import { useInitialCatalogLoad } from "./useInitialCatalogLoad";
 import { useSessionStreamCacheSync } from "./useSessionStreamCacheSync";
@@ -70,6 +72,15 @@ export interface UseSessionListProviderOptions {
   folderCountsEnabled?: boolean;
   /** page/run history가 가리키는 세션 요약만 조회한다. */
   sessionIds?: readonly string[];
+  /** 캐시/store 처리 뒤 stream event를 상위 invalidation plane에 전달한다. */
+  onStreamEvent?: (event: SessionStreamEvent) => void;
+  /** stream 불연속으로 query refetch가 필요할 때 상위 plane도 재검증한다. */
+  onStreamReset?: () => void;
+  /** 현재 surface가 scoped catalog를 소유할 때만 projection을 반환한다. */
+  transformCatalogUpdate?: (
+    incoming: CatalogState,
+    current: CatalogState | null,
+  ) => CatalogState | undefined;
 }
 
 export function useSessionListProvider(
@@ -86,6 +97,9 @@ export function useSessionListProvider(
     initialCatalogLoadEnabled = true,
     folderCountsEnabled = true,
     sessionIds,
+    onStreamEvent,
+    onStreamReset,
+    transformCatalogUpdate,
   } = options;
 
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
@@ -231,7 +245,10 @@ export function useSessionListProvider(
       if (!update) return;
       instanceIdRef.current = update.nextInstanceId;
       lastEventIdRef.current = update.nextLastEventId;
-      if (update.shouldRefetch) queryRefetch();
+      if (update.shouldRefetch) {
+        queryRefetch();
+        onStreamReset?.();
+      }
     },
     onReplayGap: (e) => {
       const update = reconcileReplayGap(e);
@@ -240,6 +257,8 @@ export function useSessionListProvider(
     },
     onRunbookUpdated: handleRunbookUpdated,
     onCustomViewUpdated: handleCustomViewUpdated,
+    onStreamEvent,
+    transformCatalogUpdate,
   });
 
   return {
