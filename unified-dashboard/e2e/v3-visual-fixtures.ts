@@ -10,6 +10,7 @@ const LONG_RITUAL_PROMPT = JSON.stringify({
     payload: "장문 세션 prompt 회귀 픽스처 ".repeat(12),
   })),
 });
+const LONG_PROJECT_GUIDANCE = "프로젝트의 결정을 실제 근거와 함께 기록하고, 구현 후 다크·라이트 화면을 모두 검증한다. ".repeat(12).trim();
 
 type Json = Record<string, unknown> | unknown[] | string | number | boolean | null;
 let blockSequence = 0;
@@ -61,7 +62,7 @@ function block(
 }
 
 const pages = {
-  project: page("project-amber", "Amber & Blade", null, { folderId: "folder-amber" }),
+  project: page("project-amber", "소울스트림", null, { folderId: "folder-amber" }),
   projectOps: page("project-ops", "Soulstream 운영", null, { folderId: "folder-ops" }),
   today: page("daily-2026-07-14", "2026-07-14", "2026-07-14"),
   yesterday: page("daily-2026-07-13", "2026-07-13", "2026-07-13"),
@@ -94,7 +95,18 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
     page: pages.project,
     state_vector: "AA==",
     blocks: [
-      block("project-guidance", pages.project.id, "guidance", "리테이크가 필요 없는 완성도를 우선한다.", { enabled: true, scope: "session" }),
+      block("project-guidance", pages.project.id, "guidance", LONG_PROJECT_GUIDANCE, { enabled: true, scope: "session" }),
+      block("project-atom", pages.project.id, "atom_ref", "", {
+        instance: "atom",
+        nodeId: "soulstream-project-node",
+        nodeTitle: "soulstream",
+        depth: 5,
+        titlesOnly: false,
+      }),
+      block("project-defaults", pages.project.id, "session_defaults", "", {
+        agentId: "roselin_codex",
+        nodeId: "eiaserinnys",
+      }),
       block("project-doc-2", pages.project.id, "paragraph", `[[${pages.documentTwo.title}]]`),
       block("project-done", pages.project.id, "paragraph", `[[${pages.taskDone.title}]]`),
       block("project-carry", pages.project.id, "paragraph", `[[${pages.carryover.title}]]`),
