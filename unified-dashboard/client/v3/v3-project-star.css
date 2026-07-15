@@ -108,6 +108,28 @@
   margin-top: 8px;
 }
 
+.v3-project-guidance-list {
+  display: grid;
+  gap: 8px;
+}
+
+.v3-project-context-popover-trigger {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.v3-project-context-popover {
+  width: min(380px, calc(100vw - 24px));
+}
+
+.v3-project-context-popover .v3-project-context-editor {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
 .v3-project-context-actions > button {
   max-width: min(100%, 480px);
   overflow: hidden;

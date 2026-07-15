@@ -394,7 +394,10 @@ function V3DashboardContent() {
       await mutationPort.saveMemo({ pageId: daily.data.daily.page.id, blockId, text });
       invalidateLocal();
       notify("오늘 메모 저장됨");
-    } catch (error) { notify(`오늘 메모 저장 실패 · ${errorText(error)}`); }
+    } catch (error) {
+      notify(`오늘 메모 저장 실패 · ${errorText(error)}`);
+      throw error;
+    }
   };
   const createDocument = async () => {
     const title = newDocumentTitle.trim();
@@ -480,7 +483,7 @@ function V3DashboardContent() {
             ) : selectedProject ? (
               <ProjectPlannerView state={project} sessions={sessions} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
             ) : (
-              <DailyPlannerView state={daily} selectedDate={selectedDate} sessions={sessions} onSaveMemo={(blockId, text) => { void saveMemo(blockId, text); }} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} />
+              <DailyPlannerView state={daily} selectedDate={selectedDate} sessions={sessions} onSaveMemo={saveMemo} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} />
             )}
           </div>
         </div>

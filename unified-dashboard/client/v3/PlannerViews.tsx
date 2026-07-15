@@ -34,7 +34,7 @@ export function DailyPlannerView({
   state: PlannerLoadState<DailyPlannerData>;
   selectedDate: string;
   sessions: readonly SessionSummary[];
-  onSaveMemo(blockId: string | null, text: string): void;
+  onSaveMemo(blockId: string | null, text: string): Promise<void>;
   onOpenProject(projectId: string): void;
   onOpenTask(task: PlannerTask): void;
   onCompleteTask(task: PlannerTask): Promise<void>;

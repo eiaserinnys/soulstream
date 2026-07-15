@@ -10,11 +10,25 @@ import "./v3-content-boundary.css";
 export function TaskDescriptionPanel({
   markdown,
   onSave,
+  ariaLabel = "업무 설명",
+  emptyText = "클릭해서 업무 설명을 작성하세요.",
+  variant = "default",
+  collapsible = true,
+  initialEditing = false,
+  onEditingChange,
+  testId,
 }: {
   markdown: string;
   onSave(markdown: string): Promise<void>;
+  ariaLabel?: string;
+  emptyText?: string;
+  variant?: "default" | "compact";
+  collapsible?: boolean;
+  initialEditing?: boolean;
+  onEditingChange?(editing: boolean): void;
+  testId?: string;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(initialEditing);
   const [draft, setDraft] = useState(markdown);
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState(false);
@@ -27,22 +41,27 @@ export function TaskDescriptionPanel({
     }
   }, [editing, markdown]);
 
-  const expandable = hasCodePointOverflow(
+  const expandable = collapsible && hasCodePointOverflow(
     markdown,
     TASK_DESCRIPTION_COLLAPSE_LENGTH,
   );
 
+  const changeEditing = (next: boolean) => {
+    setEditing(next);
+    onEditingChange?.(next);
+  };
+
   const finish = async () => {
     if (savingRef.current) return;
     if (draft === markdown) {
-      setEditing(false);
+      changeEditing(false);
       return;
     }
     savingRef.current = true;
     setSaving(true);
     try {
       await onSave(draft);
-      setEditing(false);
+      changeEditing(false);
     } catch {
       // Keep the editor and unsaved draft visible so the user can retry.
     } finally {
@@ -53,11 +72,11 @@ export function TaskDescriptionPanel({
 
   if (editing) {
     return (
-      <div className="v3-description-editor">
+      <div className="v3-description-editor" data-editor-variant={variant} data-testid={testId}>
         <textarea
           autoFocus
           value={draft}
-          aria-label="업무 설명 마크다운"
+          aria-label={`${ariaLabel} 마크다운`}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={() => { void finish(); }}
           onKeyDown={(event) => {
@@ -81,15 +100,17 @@ export function TaskDescriptionPanel({
     <div
       className="v3-description-preview"
       data-expanded={expanded}
-      onClick={(event) => { if (event.target === event.currentTarget) setEditing(true); }}
+      data-editor-variant={variant}
+      data-testid={testId}
+      onClick={(event) => { if (event.target === event.currentTarget) changeEditing(true); }}
     >
       <button
         type="button"
         className="v3-description-content v3-bounded-markdown"
-        aria-label="업무 설명 편집"
-        onClick={() => setEditing(true)}
+        aria-label={`${ariaLabel} 편집`}
+        onClick={() => changeEditing(true)}
       >
-        {markdown ? <MarkdownContent content={markdown} /> : <span className="v3-description-empty">클릭해서 업무 설명을 작성하세요.</span>}
+        {markdown ? <MarkdownContent content={markdown} /> : <span className="v3-description-empty">{emptyText}</span>}
       </button>
       <div className="v3-description-actions">
         {expandable ? (
@@ -97,7 +118,7 @@ export function TaskDescriptionPanel({
             {expanded ? "접기" : "전체 보기"}
           </Button>
         ) : null}
-        <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>편집</Button>
+        <Button variant="ghost" size="sm" onClick={() => changeEditing(true)}>편집</Button>
       </div>
     </div>
   );

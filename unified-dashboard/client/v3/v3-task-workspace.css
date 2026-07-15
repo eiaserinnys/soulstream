@@ -205,6 +205,15 @@
   color: var(--muted-foreground);
 }
 
+.v3-description-preview[data-editor-variant="compact"] {
+  min-height: 82px;
+  padding: 9px 10px 38px;
+}
+
+.v3-description-editor[data-editor-variant="compact"] textarea {
+  min-height: 48px;
+}
+
 .v3-context-chips {
   display: flex;
   flex-wrap: wrap;

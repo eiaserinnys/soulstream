@@ -31,4 +31,21 @@ describe("TaskDescriptionPanel", () => {
     expect(html).not.toContain("전체 보기");
     expect(html).toContain("편집");
   });
+
+  it("exposes the description editor as the reusable compact markdown surface", () => {
+    const html = renderToStaticMarkup(
+      <TaskDescriptionPanel
+        markdown="오늘 기억할 내용"
+        onSave={vi.fn()}
+        ariaLabel="오늘 메모"
+        emptyText="오늘 기억해 둘 내용을 적으세요."
+        variant="compact"
+        collapsible={false}
+      />,
+    );
+
+    expect(html).toContain('data-editor-variant="compact"');
+    expect(html).toContain('aria-label="오늘 메모 편집"');
+    expect(html).not.toContain("전체 보기");
+  });
 });
