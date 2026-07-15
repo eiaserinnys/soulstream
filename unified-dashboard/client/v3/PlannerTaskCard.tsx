@@ -13,17 +13,20 @@ import {
   TASK_TITLE_PREVIEW_LENGTH,
 } from "./session-preview";
 import { useTaskStar } from "./use-task-star";
+import { todayPlannerMenuLabel } from "./today-task-state";
 import "./v3-content-boundary.css";
 
 export function PlannerTaskCard({
   task,
   sessions,
+  isInToday,
   onOpen,
   onComplete,
   onToggleToday,
 }: {
   task: PlannerTask;
   sessions: readonly SessionSummary[];
+  isInToday: boolean;
   onOpen(): void;
   onComplete(): Promise<void>;
   onToggleToday(): Promise<void>;
@@ -115,7 +118,7 @@ export function PlannerTaskCard({
           { label: "업무 페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(task.page.id) },
           { label: taskStar.starred ? "별표 해제" : "별표 추가", onSelect: taskStar.toggle, separatorBefore: true },
           { label: "완료 처리", onSelect: onComplete, disabled: task.status === "completed" },
-          { label: "오늘 플래너에 추가·제거", onSelect: onToggleToday },
+          { label: todayPlannerMenuLabel(isInToday), onSelect: onToggleToday },
         ]}
       />
     </LiquidGlassCard>

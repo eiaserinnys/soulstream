@@ -20,7 +20,7 @@ describe("project page identity", () => {
     expect(api.getPage).not.toHaveBeenCalled();
   });
 
-  it("fetches a stale-list binding by ID and rejects legacy NULL bindings", async () => {
+  it("fetches a stale-list binding by ID and treats legacy NULL as unconnected", async () => {
     const bound = page("folder-project", "프로젝트");
     const api = {
       getPage: vi.fn(async () => ({ page: bound, blocks: [], state_vector: "AA==" })),
@@ -37,7 +37,7 @@ describe("project page identity", () => {
       name: "레거시",
       sortOrder: 0,
       projectPageId: null,
-    }, [])).rejects.toThrow("프로젝트 페이지 바인딩이 없습니다");
+    }, [])).resolves.toBeNull();
   });
 });
 

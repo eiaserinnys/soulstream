@@ -6,43 +6,71 @@ import { moveBoardItemToContainer } from "../lib/board-workspace-operations";
 import { deleteSessions as deleteSessionRecords } from "../lib/delete-session";
 import { renameSessionOptimistic } from "../lib/rename-session";
 import type { PlannerTask } from "./planner-data";
+import type { TaskMoveTarget } from "./task-move-targets";
 import { completePlannerTask, togglePlannerTaskToday } from "./task-card-actions";
 import { publishTaskStarChange } from "./task-star-store";
 import { renameTaskTitle as renameTaskIdentityTitle, unmountTaskDocument } from "./task-workspace-api";
+import { runOptimisticTodayMutation } from "./today-task-state";
 import { errorText } from "./v3-dashboard-utils";
 
 export function useV3PlannerActions({
   api,
   invalidate,
   notify,
+  todayTaskIds,
+  setTaskTodayPresence,
 }: {
   api: PageApiClient;
   invalidate(): void;
   notify(message: string): void;
+  todayTaskIds: ReadonlySet<string>;
+  setTaskTodayPresence(taskId: string, present: boolean): void;
 }) {
   const queryClient = useQueryClient();
 
   const completeTask = useCallback(async (task: PlannerTask) => {
-    try {
-      await completePlannerTask(task);
-      invalidate();
-      notify(`업무 완료 · ${task.page.title}`);
-    } catch (error) {
-      notify(`업무 완료 실패 · ${errorText(error)}`);
-      throw error;
-    }
-  }, [invalidate, notify]);
+    const taskId = task.page.id;
+    await runOptimisticTodayMutation({
+      taskId,
+      wasInToday: todayTaskIds.has(taskId),
+      optimisticInToday: false,
+      setPresence: setTaskTodayPresence,
+      mutate: async () => {
+        try {
+          await completePlannerTask(task);
+          invalidate();
+          notify(`업무 완료 · ${task.page.title}`);
+        } catch (error) {
+          notify(`업무 완료 실패 · ${errorText(error)}`);
+          throw error;
+        }
+      },
+      finalPresence: () => false,
+    });
+  }, [invalidate, notify, setTaskTodayPresence, todayTaskIds]);
 
   const toggleTaskToday = useCallback(async (task: PlannerTask) => {
-    try {
-      const result = await togglePlannerTaskToday(task, api);
-      invalidate();
-      notify(result === "added" ? "오늘 플래너에 추가했습니다" : "오늘 플래너에서 제거했습니다");
-    } catch (error) {
-      notify(`오늘 플래너 변경 실패 · ${errorText(error)}`);
-      throw error;
-    }
-  }, [api, invalidate, notify]);
+    const taskId = task.page.id;
+    const wasInToday = todayTaskIds.has(taskId);
+    await runOptimisticTodayMutation({
+      taskId,
+      wasInToday,
+      optimisticInToday: !wasInToday,
+      setPresence: setTaskTodayPresence,
+      mutate: async () => {
+        try {
+          const result = await togglePlannerTaskToday(task, api);
+          invalidate();
+          notify(result === "added" ? "오늘 플래너에 추가했습니다" : "오늘 플래너에서 제거했습니다");
+          return result;
+        } catch (error) {
+          notify(`오늘 플래너 변경 실패 · ${errorText(error)}`);
+          throw error;
+        }
+      },
+      finalPresence: (result) => result === "added",
+    });
+  }, [api, invalidate, notify, setTaskTodayPresence, todayTaskIds]);
 
   const renameSession = useCallback(async (sessionId: string, displayName: string | null) => {
     try {
@@ -79,7 +107,7 @@ export function useV3PlannerActions({
     }
   }, [invalidate, notify]);
 
-  const moveSession = useCallback(async (sessionId: string, targetTask: PlannerTask) => {
+  const moveSession = useCallback(async (sessionId: string, targetTask: TaskMoveTarget) => {
     try {
       await moveBoardItemToContainer({
         boardItemId: `session:${sessionId}`,

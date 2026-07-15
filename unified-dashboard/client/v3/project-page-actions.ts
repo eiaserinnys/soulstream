@@ -5,9 +5,9 @@ export async function resolveProjectPage(
   api: PageApiClient,
   folder: CatalogFolder,
   knownPages: readonly PageDto[],
-): Promise<PageDto> {
+): Promise<PageDto | null> {
   const pageId = folder.projectPageId;
-  if (!pageId) throw new Error(`프로젝트 페이지 바인딩이 없습니다: ${folder.id}`);
+  if (!pageId) return null;
   if (pageId !== folder.id) {
     const legacy = knownPages.find((page) => page.id === pageId);
     return legacy ?? (await api.getPage(pageId)).page;

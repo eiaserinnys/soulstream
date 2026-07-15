@@ -12,18 +12,25 @@ import {
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 
-import { reviewQueueSessions, reviewSessionPreview, reviewSessionTitle } from "./review-queue-model";
+import {
+  reviewDialogModal,
+  reviewQueueSessions,
+  reviewSessionPreview,
+  reviewSessionTitle,
+} from "./review-queue-model";
 import { RichSessionRow } from "./RichSessionRow";
 import "./v3-review-queue.css";
 
 export function ReviewQueuePanel({
   open,
+  companionOpen,
   sessions,
   onClose,
   onOpenSession,
   onAcknowledged,
 }: {
   open: boolean;
+  companionOpen: boolean;
   sessions: readonly SessionSummary[];
   onClose(): void;
   onOpenSession(session: SessionSummary): void;
@@ -54,8 +61,12 @@ export function ReviewQueuePanel({
   };
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { if (!next && !pendingId) onClose(); }}>
-      <DialogPopup className="v3-review-queue-popup">
+    <Dialog
+      open={open}
+      modal={reviewDialogModal(companionOpen)}
+      onOpenChange={(next) => { if (!next && !pendingId) onClose(); }}
+    >
+      <DialogPopup className={`v3-review-queue-popup${companionOpen ? " is-companion-open" : ""}`}>
         <DialogHeader>
           <DialogTitle>검수 대기</DialogTitle>
           <span>{visible.length}건</span>
@@ -68,13 +79,13 @@ export function ReviewQueuePanel({
                 key={session.agentSessionId}
                 session={session}
                 preview={reviewSessionPreview(session)}
-                onOpen={(selected) => { onClose(); onOpenSession(selected); }}
+                onOpen={onOpenSession}
                 actions={(
                   <>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => { onClose(); onOpenSession(session); }}
+                      onClick={() => onOpenSession(session)}
                     >
                       채팅 열기
                     </Button>

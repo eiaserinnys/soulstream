@@ -177,7 +177,6 @@ export function ProjectContextEditor({
             ariaLabel="프로젝트 guidance"
             emptyText="프로젝트 guidance를 작성하세요."
             variant="compact"
-            collapsible={false}
             testId={`v3-project-guidance-${guidance.blockId}`}
             onSave={(text) => commitGuidance(guidance.blockId, text)}
           />
@@ -188,7 +187,6 @@ export function ProjectContextEditor({
             ariaLabel="새 프로젝트 guidance"
             emptyText="프로젝트 guidance를 작성하세요."
             variant="compact"
-            collapsible={false}
             initialEditing
             onEditingChange={(editing) => { if (!editing) setAddingGuidance(false); }}
             onSave={(text) => commitGuidance(null, text)}

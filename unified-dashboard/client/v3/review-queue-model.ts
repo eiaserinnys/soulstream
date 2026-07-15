@@ -5,6 +5,10 @@ import { singleLinePreview } from "./session-preview";
 export const REVIEW_NAV_LIMIT = 5;
 export const REVIEW_PREVIEW_LENGTH = 120;
 
+export function reviewDialogModal(companionOpen: boolean): boolean {
+  return !companionOpen;
+}
+
 export function reviewQueueSessions(
   sessions: readonly SessionSummary[],
 ): SessionSummary[] {

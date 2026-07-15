@@ -26,6 +26,7 @@ export function usePlannerCollections({
   api,
   dependencies,
   selectedDate,
+  today,
   selectedProject,
   taskStarChanges,
   refreshKey,
@@ -34,12 +35,14 @@ export function usePlannerCollections({
   api: PageApiClient;
   dependencies: PlannerDataDependencies;
   selectedDate: string;
+  today: string;
   selectedProject: PageDto | null;
   taskStarChanges: readonly TaskStarChange[];
   refreshKey: number;
   notify(message: string): void;
 }) {
   const [daily, setDaily] = useState<PlannerLoadState<DailyPlannerData>>({ status: "loading", data: null, message: null });
+  const [todayTaskIds, setTodayTaskIds] = useState<ReadonlySet<string>>(() => new Set());
   const [project, setProject] = useState<PlannerLoadState<ProjectPlannerData>>({ status: "loading", data: null, message: null });
   const [starredTaskIndex, setStarredTaskIndex] = useState<PlannerLoadState<PlannerPage<PageDto>>>({ status: "loading", data: null, message: null });
   const [starredTasksLoadingMore, setStarredTasksLoadingMore] = useState(false);
@@ -65,12 +68,37 @@ export function usePlannerCollections({
     let active = true;
     setDaily((current) => ({ status: "loading", data: current.data, message: null }));
     void loadDailyPlanner(api, selectedDate, dependencies).then((data) => {
-      if (active) setDaily({ status: "ready", data, message: null });
+      if (active) {
+        setDaily({ status: "ready", data, message: null });
+        if (selectedDate === today) {
+          setTodayTaskIds(new Set(data.tasks.map((task) => task.page.id)));
+        }
+      }
     }).catch((error: unknown) => {
       if (active) setDaily((current) => ({ status: "error", data: current.data, message: errorText(error) }));
     });
     return () => { active = false; };
-  }, [api, dependencies, refreshKey, selectedDate]);
+  }, [api, dependencies, refreshKey, selectedDate, today]);
+
+  useEffect(() => {
+    if (selectedDate === today) return;
+    let active = true;
+    void loadDailyPlanner(api, today, dependencies).then((data) => {
+      if (active) setTodayTaskIds(new Set(data.tasks.map((task) => task.page.id)));
+    }).catch(() => {
+      // The selected planner remains usable; its own error surface handles load failures.
+    });
+    return () => { active = false; };
+  }, [api, dependencies, refreshKey, selectedDate, today]);
+
+  const setTaskTodayPresence = useCallback((taskId: string, present: boolean) => {
+    setTodayTaskIds((current) => {
+      const next = new Set(current);
+      if (present) next.add(taskId);
+      else next.delete(taskId);
+      return next;
+    });
+  }, []);
 
   const projects = useMemo(
     () => mergePages(daily.data?.projects ?? [], selectedProject ? [selectedProject] : []),
@@ -155,6 +183,8 @@ export function usePlannerCollections({
 
   return {
     daily,
+    todayTaskIds,
+    setTaskTodayPresence,
     project,
     projects,
     selectedProject,

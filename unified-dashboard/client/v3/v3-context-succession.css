@@ -30,6 +30,11 @@
   box-shadow: var(--md-shadow);
 }
 
+.v3-run-move-picker {
+  margin-top: 0;
+  box-shadow: none;
+}
+
 .v3-context-inherited {
   padding: 12px;
   background: color-mix(in srgb, var(--info) 7%, transparent);

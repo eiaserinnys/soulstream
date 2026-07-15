@@ -258,13 +258,9 @@
 .v3-description-editor > div {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
   margin-top: 7px;
-}
-
-.v3-description-editor small {
-  flex: 1;
-  color: var(--muted-foreground);
 }
 
 .v3-description-preview[data-editor-variant="compact"] {
@@ -273,7 +269,8 @@
 }
 
 .v3-description-editor[data-editor-variant="compact"] textarea {
-  min-height: 48px;
+  min-height: 82px;
+  padding: 9px 10px;
 }
 
 .v3-context-chips {

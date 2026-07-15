@@ -310,6 +310,10 @@
   background: color-mix(in srgb, var(--muted) 62%, transparent);
 }
 
+.v3-daily-memo .v3-description-editor {
+  margin: 4px 0 2px;
+}
+
 .v3-section-head {
   display: flex;
   align-items: center;

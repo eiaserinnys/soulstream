@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  buildFolderTreeOptions,
   Button,
   Dialog,
   DialogDescription,
@@ -9,7 +10,7 @@ import {
   DialogPopup,
   DialogTitle,
 } from "@seosoyoung/soul-ui";
-import type { CatalogFolder } from "@seosoyoung/soul-ui";
+import type { CatalogFolder, FolderTreeOption } from "@seosoyoung/soul-ui";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
 
 import {
@@ -50,8 +51,11 @@ export function NewTaskForm({
   onCreate(title: string, folderId: string, description: string): void;
   onCancel(): void;
 }) {
+  const folderOptions = useMemo(() => newTaskFolderOptions(folders), [folders]);
   const [title, setTitle] = useState("");
-  const [folderId, setFolderId] = useState(initialFolderId ?? folders[0]?.id ?? "");
+  const [folderId, setFolderId] = useState(
+    initialFolderId ?? folderOptions[0]?.folder.id ?? "",
+  );
   const [description, setDescription] = useState("");
   const selectedProjectPage = useMemo(
     () => findProjectPageForFolder(folderId, folders, projectPages),
@@ -116,7 +120,11 @@ export function NewTaskForm({
                 aria-label="프로젝트 선택"
                 onChange={(event) => setFolderId(event.target.value)}
               >
-                {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
+                {folderOptions.map(({ folder, depth }) => (
+                  <option key={folder.id} value={folder.id}>
+                    {`${"　".repeat(depth)}${folder.name}`}
+                  </option>
+                ))}
               </select>
             </label>
             <label>
@@ -159,6 +167,12 @@ export function NewTaskForm({
       </DialogPopup>
     </Dialog>
   );
+}
+
+export function newTaskFolderOptions(
+  folders: readonly CatalogFolder[],
+): FolderTreeOption[] {
+  return buildFolderTreeOptions(folders);
 }
 
 export function findProjectPageForFolder(

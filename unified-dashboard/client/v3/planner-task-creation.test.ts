@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   PlannerTaskCreationError,
   createPlannerTask,
+  plannerTaskCreationErrorLabel,
   type PlannerTaskCreationPort,
 } from "./planner-task-creation";
 
@@ -58,5 +59,11 @@ describe("createPlannerTask", () => {
     expect(failure).toBeInstanceOf(PlannerTaskCreationError);
     expect(failure).toMatchObject({ phase: "runbook" });
     expect(port.mountPage).not.toHaveBeenCalled();
+  });
+
+  it("owns the user-facing label for each creation phase", () => {
+    expect(plannerTaskCreationErrorLabel(new PlannerTaskCreationError("project_mount", "offline")))
+      .toBe("프로젝트 편입");
+    expect(plannerTaskCreationErrorLabel(new Error("offline"))).toBe("새 업무 생성");
   });
 });

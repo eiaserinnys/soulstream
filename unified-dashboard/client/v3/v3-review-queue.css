@@ -3,6 +3,22 @@
   max-height: min(760px, calc(100dvh - 48px));
 }
 
+[data-slot="dialog-backdrop"]:has(+ [data-slot="dialog-viewport"] .v3-review-queue-popup.is-companion-open) {
+  pointer-events: none;
+  opacity: 0;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+[data-slot="dialog-viewport"]:has(.v3-review-queue-popup.is-companion-open) {
+  right: min(552px, calc(100vw - 320px));
+  pointer-events: none;
+}
+
+.v3-review-queue-popup.is-companion-open {
+  pointer-events: auto;
+}
+
 .v3-review-queue-popup [data-slot="dialog-panel"] {
   min-height: 0;
   overflow-y: auto;
