@@ -18,6 +18,7 @@ let blockSequence = 0;
 export interface V3VisualQaRouteOptions {
   alphaRunHistoryPages?: boolean;
   catalogDelayMs?: number;
+  failTaskTitleRenameOnce?: boolean;
   plannerDelayMs?: number;
   timelineEventCount?: number;
   liveEventText?: string;
@@ -430,6 +431,7 @@ export async function installV3VisualQaRoutes(
   pageInstance: Page,
   options: V3VisualQaRouteOptions = {},
 ): Promise<void> {
+  let shouldFailTaskTitleRename = options.failTaskTitleRenameOnce === true;
   let inlineMarkdownDocument = {
     id: "doc-inline",
     title: "PR-O 결정 로그",
@@ -618,6 +620,33 @@ export async function installV3VisualQaRoutes(
     if (pageMatch && request.method() === "GET") {
       const result = pageReads[decodeURIComponent(pageMatch[1])];
       return result ? fulfillJson(route, result) : fulfillJson(route, { detail: "page not found" }, 404);
+    }
+    const pageOperationsMatch = /^\/api\/pages\/([^/]+)\/operations$/.exec(path);
+    if (pageOperationsMatch && request.method() === "POST") {
+      const pageId = decodeURIComponent(pageOperationsMatch[1]);
+      const current = pageReads[pageId];
+      if (!current) return fulfillJson(route, { detail: "page not found" }, 404);
+      const input = request.postDataJSON() as {
+        operations?: Array<{ op?: string; title?: string }>;
+      };
+      const rename = input.operations?.find((operation) => operation.op === "rename_page");
+      if (rename?.title && pageId === pages.taskAlpha.id) {
+        if (shouldFailTaskTitleRename) {
+          shouldFailTaskTitleRename = false;
+          return fulfillJson(route, { detail: "fixture rename failure" }, 500);
+        }
+        pages.taskAlpha.title = rename.title;
+        pages.taskAlpha.version += 1;
+        const snapshot = runbooks["rb-alpha"] as ReturnType<typeof runbook>;
+        snapshot.runbook.title = rename.title;
+        snapshot.runbook.version += 1;
+      }
+      return fulfillJson(route, {
+        page: current.page,
+        blocks: current.blocks,
+        operation: { id: `fixture-operation-${pageId}-${current.page.version}` },
+        temp_id_mapping: {},
+      });
     }
     if (/^\/api\/pages\/[^/]+\/backlinks$/.test(path)) {
       await delay(options.plannerDelayMs);

@@ -64,10 +64,12 @@ export function TaskTitleEditor({
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
+              event.stopPropagation();
               void finish();
             }
             if (event.key === "Escape") {
               event.preventDefault();
+              event.stopPropagation();
               cancel();
             }
           }}
