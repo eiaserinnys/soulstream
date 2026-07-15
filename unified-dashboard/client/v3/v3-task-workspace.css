@@ -276,6 +276,8 @@
 .v3-context-chips {
   display: flex;
   flex-wrap: wrap;
+  /* 칩·추가 버튼·빈 상태 문구의 높이가 달라도 세로 중앙 정렬 유지 */
+  align-items: center;
   gap: 7px;
 }
 

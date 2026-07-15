@@ -370,6 +370,8 @@
 .v3-succession-context-chips {
   display: flex;
   flex-flow: row wrap;
+  /* 업무 창 칩 행(.v3-context-chips)과 동일 준거 — 세로 중앙 정렬 */
+  align-items: center;
   gap: 5px;
   margin-top: 7px;
 }
