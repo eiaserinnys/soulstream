@@ -17,6 +17,7 @@ describe("V3Navigation frame contract", () => {
         starredTasksHasMore={false}
         starredTasksLoading={false}
         todayTaskIds={new Set()}
+        completedTaskIds={new Set()}
         onLoadMoreStarredTasks={vi.fn()}
         onSelectDate={vi.fn()}
         onOpenReviewQueue={vi.fn()}

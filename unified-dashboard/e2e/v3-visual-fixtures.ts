@@ -23,6 +23,7 @@ export interface V3VisualQaRouteOptions {
   plannerDelayMs?: number;
   timelineEventCount?: number;
   liveEventText?: string;
+  contextMenuParity?: boolean;
   onAgentListRequest?: (nodeId: string) => void;
   onSessionCreate?: (payload: Record<string, unknown>) => void;
   onSessionListRequest?: () => void;
@@ -451,6 +452,7 @@ export async function installV3VisualQaRoutes(
   pageInstance: Page,
   options: V3VisualQaRouteOptions = {},
 ): Promise<void> {
+  if (options.contextMenuParity) resetContextMenuParityState();
   let shouldFailTaskTitleRename = options.failTaskTitleRenameOnce === true;
   let inlineMarkdownDocument = {
     id: "doc-inline",
@@ -579,7 +581,12 @@ export async function installV3VisualQaRoutes(
         projects: [pages.project, pages.projectOps],
         tasks: yesterday
           ? [plannerTaskPayload(pages.carryover, "rb-carry")]
-          : [plannerTaskPayload(pages.taskAlpha, "rb-alpha"), plannerTaskPayload(pages.taskBeta, "rb-beta")],
+          : [
+              ...(options.contextMenuParity && !hasDailyTaskMount(pages.taskAlpha.title)
+                ? []
+                : [plannerTaskPayload(pages.taskAlpha, "rb-alpha")]),
+              plannerTaskPayload(pages.taskBeta, "rb-beta"),
+            ],
         memo_blocks: daily.blocks.filter((item) => !item.text.startsWith("[[")),
         review_session_ids: yesterday ? [] : sessions
           .filter((session) => session.reviewState === "needs_review")
@@ -664,7 +671,16 @@ export async function installV3VisualQaRoutes(
       const current = pageReads[pageId];
       if (!current) return fulfillJson(route, { detail: "page not found" }, 404);
       const input = request.postDataJSON() as {
-        operations?: Array<{ op?: string; title?: string; temp_id?: string }>;
+        operations?: Array<{
+          op?: string;
+          title?: string;
+          temp_id?: string;
+          block_id?: string;
+          block_type?: string;
+          text?: string;
+          properties?: Record<string, unknown>;
+          parent_id?: string | null;
+        }>;
       };
       const rename = input.operations?.find((operation) => operation.op === "rename_page");
       if (rename?.title && pageId === pages.taskAlpha.id) {
@@ -683,6 +699,24 @@ export async function installV3VisualQaRoutes(
           .filter((operation) => operation.op === "create_block" && operation.temp_id)
           .map((operation) => [operation.temp_id as string, `fixture-${operation.temp_id}`]),
       );
+      if (options.contextMenuParity && pageId === pages.today.id) {
+        for (const operation of input.operations ?? []) {
+          if (operation.op === "delete_block_subtree" && operation.block_id) {
+            current.blocks = current.blocks.filter((candidate) => candidate.id !== operation.block_id);
+          }
+          if (operation.op === "create_block" && operation.temp_id) {
+            current.blocks.push(block(
+              tempIdMapping[operation.temp_id] ?? operation.temp_id,
+              pageId,
+              operation.block_type ?? "paragraph",
+              operation.text ?? "",
+              operation.properties ?? {},
+              operation.parent_id ?? null,
+            ));
+          }
+        }
+        current.page.version += 1;
+      }
       return fulfillJson(route, {
         page: current.page,
         blocks: current.blocks,
@@ -728,6 +762,15 @@ export async function installV3VisualQaRoutes(
         reviewState: "acknowledged",
         changed: true,
       });
+    }
+    const runbookStatusMatch = /^\/api\/runbooks\/([^/]+)\/status$/.exec(path);
+    if (runbookStatusMatch && request.method() === "POST") {
+      const snapshot = runbooks[decodeURIComponent(runbookStatusMatch[1])] as ReturnType<typeof runbook> | undefined;
+      if (!snapshot) return fulfillJson(route, { detail: "runbook not found" }, 404);
+      const payload = request.postDataJSON() as { status?: string };
+      snapshot.runbook.status = payload.status ?? snapshot.runbook.status;
+      snapshot.runbook.version += 1;
+      return fulfillJson(route, { ok: true, snapshot });
     }
     const runbookMatch = /^\/api\/runbooks\/([^/]+)$/.exec(path);
     if (runbookMatch) {
@@ -794,8 +837,23 @@ export async function installV3VisualQaRoutes(
   });
 }
 
+function hasDailyTaskMount(title: string): boolean {
+  return pageReads[pages.today.id].blocks.some((candidate) => candidate.text === `[[${title}]]`);
+}
+
+function resetContextMenuParityState(): void {
+  const daily = pageReads[pages.today.id];
+  daily.blocks = daily.blocks.filter((candidate) => candidate.text !== `[[${pages.taskAlpha.title}]]`);
+  daily.blocks.push(block("today-alpha", pages.today.id, "paragraph", `[[${pages.taskAlpha.title}]]`));
+  daily.page.version = 4;
+  const alpha = runbooks["rb-alpha"] as ReturnType<typeof runbook>;
+  alpha.runbook.status = "open";
+  alpha.runbook.version = 7;
+}
+
 export const fixtureTitles = {
   primaryTask: pages.taskAlpha.title,
   secondaryTask: pages.taskBeta.title,
   project: pages.project.title,
+  document: pages.document.title,
 };

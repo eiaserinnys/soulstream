@@ -42,6 +42,7 @@ export function V3Navigation({
   starredTasksHasMore,
   starredTasksLoading,
   todayTaskIds,
+  completedTaskIds,
   onLoadMoreStarredTasks,
   onSelectDate,
   onOpenReviewQueue,
@@ -63,6 +64,7 @@ export function V3Navigation({
   starredTasksHasMore: boolean;
   starredTasksLoading: boolean;
   todayTaskIds: ReadonlySet<string>;
+  completedTaskIds: ReadonlySet<string>;
   onLoadMoreStarredTasks(): void;
   onSelectDate(date: string): void;
   onOpenReviewQueue(): void;
@@ -256,7 +258,7 @@ export function V3Navigation({
         onClose={() => setContextMenu(null)}
         actions={contextMenu?.kind === "task" ? buildTaskContextMenuActions({
           starred: taskStarredState(contextMenu.task.id, taskStarChanges, true),
-          completed: false,
+          completed: completedTaskIds.has(contextMenu.task.id),
           inToday: todayTaskIds.has(contextMenu.task.id),
         }, {
           open: () => onSelectTask(contextMenu.task),
