@@ -283,15 +283,6 @@ export function ProjectPlannerView({
   );
 }
 
-export function EmptyProjectPlannerView({ title }: { title: string }) {
-  return (
-    <section className="v3-load-error" data-testid="v3-empty-project-view">
-      <h1>{title}</h1>
-      <p>프로젝트 페이지가 비어 있거나 아직 연결되지 않았습니다.</p>
-    </section>
-  );
-}
-
 function LoadError({ message }: { message: string }) {
   return (
     <V3ErrorNotice

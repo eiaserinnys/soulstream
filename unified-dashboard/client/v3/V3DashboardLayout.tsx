@@ -25,7 +25,8 @@ import { SearchModal } from "../components/SearchModal";
 import { orchestratorSessionProvider } from "../providers";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { NewTaskForm } from "./NewTaskForm";
-import { DailyPlannerView, EmptyProjectPlannerView, ProjectPlannerView } from "./PlannerViews";
+import { DailyPlannerView, ProjectPlannerView } from "./PlannerViews";
+import { ProjectFolderResolutionView } from "./ProjectFolderResolutionView";
 import { MobilePlannerTabs, useMobilePlannerMode } from "./MobilePlannerTabs";
 import { RitualModal } from "./RitualModal";
 import { ReviewQueuePanel } from "./ReviewQueuePanel";
@@ -94,7 +95,7 @@ function V3DashboardContent() {
   const mutationPort = useMemo(() => new BrowserPlannerMutationPort(api), [api]);
   const [selectedDate, setSelectedDate] = useState(today);
   const projectSelection = useProjectFolderController();
-  const { selectedFolderId, selectedProject, clearProject } = projectSelection;
+  const { resolution, selectedFolderId, selectedProject, clearProject } = projectSelection;
   const selectedProjectId = selectedProject?.id ?? null;
   const refreshKey = useV3InvalidationKey(["session", "catalog", "runbook", "page", "replay", "local"]);
   const projectContextInvalidationKey = useV3InvalidationKey(["page", "replay", "local"]);
@@ -473,10 +474,10 @@ function V3DashboardContent() {
         >
           <div className="v3-planner-scroll" data-testid="v3-planner-scroll">
             {createOpen ? <NewTaskForm folders={catalog?.folders ?? []} projectPages={projects} initialFolderId={selectedFolderId} pending={createPending} onCreate={(title, folderId, description) => { void createTask(title, folderId, description); }} onCancel={() => setCreateOpen(false)} /> : null}
-            {selectedFolderId && !selectedProject ? (
-              <EmptyProjectPlannerView title={selectedFolderName} />
-            ) : selectedProject ? (
+            {selectedProject ? (
               <ProjectPlannerView state={project} sessions={sessions} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
+            ) : selectedFolderId ? (
+              <ProjectFolderResolutionView state={resolution} title={selectedFolderName} onRetry={() => { void projectSelection.retry(); }} />
             ) : (
               <DailyPlannerView state={daily} selectedDate={selectedDate} isTodayView={selectedDate === today} todayTaskIds={todayTaskIds} sessions={sessions} onSaveMemo={saveMemo} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} />
             )}
