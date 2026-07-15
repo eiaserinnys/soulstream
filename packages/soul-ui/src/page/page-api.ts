@@ -126,7 +126,12 @@ export interface TransferPageBlocksInput {
         parentId: string | null;
         afterBlockId: string | null;
       }
-    | { kind: "new"; pageId: string; title: string };
+    | {
+        kind: "new";
+        pageId: string;
+        title: string;
+        folderId?: string;
+      };
   sourceMount?: { title: string; tempId: string };
   idempotencyKey: string;
   reason?: string | null;
@@ -245,7 +250,12 @@ export function createPageApiClient(options: {
             block_ids: input.source.blockIds,
           },
           target: input.target.kind === "new"
-            ? { kind: "new", page_id: input.target.pageId, title: input.target.title }
+            ? {
+                kind: "new",
+                page_id: input.target.pageId,
+                title: input.target.title,
+                ...(input.target.folderId === undefined ? {} : { folder_id: input.target.folderId }),
+              }
             : {
                 kind: "existing",
                 page_id: input.target.pageId,

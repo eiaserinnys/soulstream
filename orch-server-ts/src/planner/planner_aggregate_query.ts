@@ -1,36 +1,10 @@
 import type { LivePostgresSql } from "../runtime/live_db_sql.js";
 import type {
-  PlannerPageDto,
-  PlannerTaskDto,
-  PlannerTodayDto,
-} from "./planner_contract.js";
+  PlannerKind,
+  PlannerPayloadRow,
+  ProjectReadInput,
+} from "./planner_aggregate_types.js";
 import { decodeMountCursor } from "./planner_repository_reads.js";
-
-export type PlannerKind = "today" | "project";
-
-export interface RawPlannerProjectDto {
-  project: PlannerPageDto;
-  tasks: PlannerTaskDto[];
-  documents: PlannerPageDto[];
-}
-
-export interface PlannerPayloadRow extends Record<string, unknown> {
-  payload: PlannerTodayDto | RawPlannerProjectDto | null;
-  next_task_position: string | null;
-  next_task_id: string | null;
-  next_document_position: string | null;
-  next_document_id: string | null;
-}
-
-export interface ProjectReadInput {
-  taskCursor?: string;
-  documentCursor?: string;
-  taskLimit: number;
-  documentLimit: number;
-  includeTasks: boolean;
-  includeDocuments: boolean;
-}
-
 export async function plannerQuery(
   sql: LivePostgresSql,
   kind: PlannerKind,
@@ -51,12 +25,30 @@ export async function plannerQuery(
         )
       LIMIT 1
     ),
+    root_folder AS (
+      SELECT folder.id
+      FROM root_page root
+      JOIN folders folder ON (
+        COALESCE(NULLIF(root.metadata->>'folderId', ''),
+                 NULLIF(root.metadata->>'folder_id', '')) = folder.id
+        OR (
+          NULLIF(root.metadata->>'folderId', '') IS NULL
+          AND NULLIF(root.metadata->>'folder_id', '') IS NULL
+          AND btrim(root.title) = btrim(folder.name)
+        )
+      )
+      WHERE ${kind} = 'project'
+      ORDER BY (COALESCE(NULLIF(root.metadata->>'folderId', ''),
+                         NULLIF(root.metadata->>'folder_id', '')) = folder.id) DESC,
+               folder.id
+      LIMIT 1
+    ),
     root_blocks AS (
       SELECT b.*
       FROM blocks b
       JOIN root_page root ON root.id = b.page_id
     ),
-    root_mounts AS (
+    physical_root_mounts AS (
       SELECT DISTINCT ON (source.id)
              source.id AS source_block_id,
              source.position_key,
@@ -69,6 +61,33 @@ export async function plannerQuery(
         ON target.id = link.target_page_id
        AND target.archived = FALSE
       ORDER BY source.id, link.ordinal
+    ),
+    folder_task_mounts AS (
+      SELECT board_item.id AS source_block_id,
+             '~board:' || board_item.id AS position_key,
+             runbook.task_page_id AS page_id
+      FROM root_folder folder
+      JOIN board_items board_item ON board_item.folder_id = folder.id
+       AND board_item.container_kind = 'folder'
+       AND board_item.container_id = folder.id
+       AND board_item.membership_kind = 'primary'
+       AND board_item.item_type = 'runbook'
+      JOIN runbooks runbook ON runbook.id = board_item.item_id
+       AND runbook.board_item_id = board_item.id
+       AND runbook.task_page_id IS NOT NULL
+       AND runbook.archived = FALSE
+      JOIN pages task_page ON task_page.id = runbook.task_page_id
+                          AND task_page.archived = FALSE
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM physical_root_mounts mounted
+        WHERE mounted.page_id = runbook.task_page_id
+      )
+    ),
+    root_mounts AS (
+      SELECT * FROM physical_root_mounts
+      UNION ALL
+      SELECT * FROM folder_task_mounts
     ),
     mounted_pages AS (
       SELECT target.*, mount.source_block_id, mount.position_key AS mount_position

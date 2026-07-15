@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 
+import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { PageRepository } from "../src/page/page_repository.js";
+import { PageYjsService } from "../src/page/page_service.js";
+import { PlannerRepository } from "../src/planner/planner_repository.js";
+import { registerRunbookCreateRoute } from "../src/runbooks/runbook_create_route.js";
 import type {
   RunbookTaskIdentityBoardApplication,
   RunbookTaskIdentityBoardPort,
@@ -102,6 +107,81 @@ describe("Runbook task identity PostgreSQL transaction", () => {
       runbook_archived: true,
       page_archived: true,
     });
+  });
+
+  it("projects a v1 board-created identity into its v3 project immediately", async () => {
+    const folderId = "folder-v1-projection";
+    const projectPageId = "project-v1-projection";
+    const taskId = "00000000-0000-4000-8000-0000000000c0";
+    await harness.sql`INSERT INTO folders (id, name) VALUES (${folderId}, 'V1 projection')`;
+    const resolver = createLiveDbSqlResolver({ sql: harness.liveSql });
+    const pages = new PageYjsService({ repository: new PageRepository(resolver) });
+    const app = Fastify({ logger: false });
+    try {
+      await pages.createPage({
+        page: {
+          id: projectPageId,
+          title: "V1 projection",
+          dailyDate: null,
+          metadata: { folderId },
+        },
+        actor: { actorKind: "user", actorUserId: "user@example.com" },
+        idempotencyKey: "task-identity:v1-projection:project",
+      });
+      const service = createService(
+        new TransactionBoardPort(),
+        taskId,
+        ["runbook-op-v1-projection", "page-op-v1-projection"],
+      );
+      registerRunbookCreateRoute(app, {
+        provider: { listFolders: () => [{ id: folderId, name: "V1 projection" }] },
+        accessProvider: { resolveAccess: () => ({ restricted: false }) },
+        httpClient: async () => ({ statusCode: 501 }),
+        resolveDashboardUserId: () => "user@example.com",
+        taskIdentityService: service,
+      });
+      const created = await app.inject({
+        method: "POST",
+        url: "/api/runbooks",
+        payload: {
+          title: "v1에서 만든 업무",
+          folder_id: folderId,
+          idempotency_key: "task-identity:v1-projection:create",
+        },
+      });
+      expect(created.statusCode).toBe(201);
+      expect(created.json()).toMatchObject({ id: taskId, pageId: taskId, runbookId: taskId });
+
+      const planner = await new PlannerRepository(resolver).getProject(projectPageId, { limit: 20 });
+      expect(planner?.tasks.items).toEqual([
+        expect.objectContaining({
+          page: expect.objectContaining({ id: taskId, title: "v1에서 만든 업무" }),
+          runbook_id: taskId,
+          project_page_id: projectPageId,
+        }),
+      ]);
+      const project = await pages.getBrowserPage(projectPageId);
+      await pages.mutatePage({
+        pageId: projectPageId,
+        expectedVersion: project.page.version,
+        command: {
+          type: "create_block",
+          parentId: null,
+          afterBlockId: null,
+          blockType: "paragraph",
+          text: "[[v1에서 만든 업무]]",
+          properties: {},
+        },
+        actor: { actorKind: "user", actorUserId: "user@example.com" },
+        idempotencyKey: "task-identity:v1-projection:physical-mount",
+      });
+      const physicallyMounted = await new PlannerRepository(resolver)
+        .getProject(projectPageId, { limit: 20 });
+      expect(physicallyMounted?.tasks.items.map((item) => item.page.id)).toEqual([taskId]);
+    } finally {
+      await app.close();
+      await pages.close();
+    }
   });
 
   it("rolls back board, page, and runbook records together when provenance fails", async () => {

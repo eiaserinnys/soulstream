@@ -66,7 +66,17 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
   await sql.unsafe(`
     CREATE TABLE sessions (
       session_id TEXT PRIMARY KEY,
-      last_event_id INTEGER NOT NULL DEFAULT 0
+      folder_id TEXT,
+      display_name TEXT,
+      node_id TEXT,
+      session_type TEXT,
+      status TEXT,
+      agent_id TEXT,
+      predecessor_session_id TEXT,
+      review_state TEXT NOT NULL DEFAULT 'not_required',
+      last_event_id INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE events (
       session_id TEXT NOT NULL REFERENCES sessions(session_id) ON DELETE CASCADE,
@@ -307,12 +317,21 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       id TEXT PRIMARY KEY,
       runbook_id TEXT NOT NULL REFERENCES runbooks(id) ON DELETE CASCADE,
       position_key TEXT NOT NULL,
+      assignee_agent_id TEXT,
+      assignee_user_id TEXT,
+      assignee_session_id TEXT,
+      archived BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE runbook_items (
       id TEXT PRIMARY KEY,
       section_id TEXT NOT NULL REFERENCES runbook_sections(id) ON DELETE CASCADE,
       position_key TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      assignee_agent_id TEXT,
+      assignee_user_id TEXT,
+      assignee_session_id TEXT,
+      archived BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     CREATE TABLE runbook_operations (
