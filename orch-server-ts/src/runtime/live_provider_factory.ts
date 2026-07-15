@@ -70,7 +70,10 @@ import {
 import { withFolderMutationBroadcasts } from "./live_folder_mutation_broadcaster.js";
 import { withSessionCatalogMutationBroadcasts } from "./live_session_catalog_mutation_broadcaster.js";
 import { withBoardAssetMutationBroadcasts } from "./live_board_asset_mutation_broadcaster.js";
-import { createLiveAuthenticatedUserResolvers } from "./live_authenticated_user_resolver.js";
+import {
+  createLiveAuthenticatedUserResolvers,
+  type LiveCallerInfoResolver,
+} from "./live_authenticated_user_resolver.js";
 import { createLiveAdminUsersRouteProvider } from "./live_admin_users_route_provider.js";
 import { createLiveAtomHttpClient } from "./live_atom_route_provider.js";
 import { createLiveAttachmentRouteProviders } from "./live_attachment_route_provider.js";
@@ -345,6 +348,7 @@ export function createLiveOrchestratorProviderBundle(
       options.runtimeServices,
       sessionResourceAccessProvider,
       sessionStreamEventFilter,
+      authenticatedUserResolvers.resolveCallerInfo,
       sessionCreateLifecycle,
       {
         snapshotService: {
@@ -437,6 +441,7 @@ function buildLiveRuntimeProviderBundle(
   services: OrchestratorRuntimeServices,
   accessProvider: SessionResourceAccessProvider,
   sessionStreamEventFilter: SessionStreamEventFilter,
+  resolveCallerInfo: LiveCallerInfoResolver,
   sessionCreateLifecycle: SessionCreateLifecycle,
   sessionSnapshotRoutes: OrchestratorRuntimeServices["routeOptions"]["sessionSnapshotRoutes"],
   loadSessionSnapshot: (request: FastifyRequest) => Promise<SessionStreamSnapshot>,
@@ -451,11 +456,19 @@ function buildLiveRuntimeProviderBundle(
     boardYjsHostProxyRoutes: services.routeOptions.boardYjsHostProxyRoutes,
     nodeSnapshotRoutes: services.routeOptions.nodeSnapshotRoutes,
     nodeWsRoute: services.routeOptions.nodeWsRoute,
-    sessionActionCommandRoutes: requireRuntimeRouteOption(
-      services.routeOptions.sessionActionCommandRoutes,
-      "session.actions",
-      "runtime",
-    ),
+    sessionActionCommandRoutes: {
+      ...requireRuntimeRouteOption(
+        services.routeOptions.sessionActionCommandRoutes,
+        "session.actions",
+        "runtime",
+      ),
+      resolveCallerInfo: (request, bodyCallerInfo, targetSessionId) =>
+        resolveCallerInfo(
+          request,
+          bodyCallerInfo,
+          services.registry.findSessionOwner(targetSessionId)?.nodeId ?? "",
+        ),
+    },
     sessionBackgroundScheduleRoutes: requireRuntimeRouteOption(
       services.routeOptions.sessionBackgroundScheduleRoutes,
       "session.background-schedule",

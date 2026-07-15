@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   PendingNodeCommandTimeoutError,
@@ -127,6 +127,58 @@ describe("session action command HTTP route harness", () => {
       extra_context_items: [{ type: "note", text: "extra" }],
       caller_info: { source: "browser", display_name: "서소영" },
     });
+
+    await app.close();
+  });
+
+  it("resolves caller_info per intervention across user → relay → user", async () => {
+    const browserCaller = {
+      source: "browser",
+      display_name: "서소영",
+      user_id: "eiaserinnys@gmail.com",
+      avatar_url: "https://example.test/user.png",
+    };
+    const relayCaller = {
+      source: "agent",
+      display_name: "로젤린 (codex)",
+      user_id: "roselin_codex",
+      agent_id: "roselin_codex",
+      agent_node: "eiaserinnys",
+    };
+    const resolveCallerInfo = vi.fn(
+      async (
+        _request,
+        bodyCallerInfo: Record<string, unknown> | undefined,
+        _targetSessionId: string,
+      ) =>
+        bodyCallerInfo ?? browserCaller,
+    );
+    const { app, sent } = createActionHarness({ resolveCallerInfo });
+
+    for (const payload of [
+      { text: "첫 사용자 메시지", user: "dashboard" },
+      { text: "피위임자 완료 보고", user: "agent", caller_info: relayCaller },
+      { text: "둘째 사용자 메시지", user: "dashboard" },
+    ]) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/sessions/sess-contract/intervene",
+        payload,
+      });
+      expect(response.statusCode).toBe(200);
+    }
+
+    expect(resolveCallerInfo).toHaveBeenCalledTimes(3);
+    expect(resolveCallerInfo.mock.calls.map((call) => call[2])).toEqual([
+      "sess-contract",
+      "sess-contract",
+      "sess-contract",
+    ]);
+    expect(sent.map((message) => message.caller_info)).toEqual([
+      browserCaller,
+      relayCaller,
+      browserCaller,
+    ]);
 
     await app.close();
   });
