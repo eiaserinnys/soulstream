@@ -6,6 +6,7 @@ import { moveBoardItemToContainer } from "../lib/board-workspace-operations";
 import { deleteSessions as deleteSessionRecords } from "../lib/delete-session";
 import { renameSessionOptimistic } from "../lib/rename-session";
 import type { PlannerTask } from "./planner-data";
+import type { TaskMoveTarget } from "./task-move-targets";
 import { completePlannerTask, togglePlannerTaskToday } from "./task-card-actions";
 import { publishTaskStarChange } from "./task-star-store";
 import { renameTaskTitle as renameTaskIdentityTitle, unmountTaskDocument } from "./task-workspace-api";
@@ -80,7 +81,7 @@ export function useV3PlannerActions({
     }
   }, [invalidate, notify]);
 
-  const moveSession = useCallback(async (sessionId: string, targetTask: PlannerTask) => {
+  const moveSession = useCallback(async (sessionId: string, targetTask: TaskMoveTarget) => {
     try {
       await moveBoardItemToContainer({
         boardItemId: `session:${sessionId}`,

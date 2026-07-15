@@ -1,6 +1,5 @@
-import { useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
-  Button,
   Dialog,
   DialogHeader,
   DialogPanel,
@@ -10,6 +9,7 @@ import {
   type SessionContextMenuState,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
+import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
 import {
   buildRunTree,
@@ -18,7 +18,11 @@ import {
 } from "./task-workspace-model";
 import { latestTaskRun } from "./session-succession-model";
 import type { PageSessionDefaults } from "./task-workspace-api";
-import type { PlannerTask } from "./planner-data";
+import {
+  defaultTaskMoveTargets,
+  searchTaskMoveTargets,
+  type TaskMoveTarget,
+} from "./task-move-targets";
 import { SessionSuccessionModal } from "./SessionSuccessionModal";
 import { RichSessionRow } from "./RichSessionRow";
 import "./v3-run-history.css";
@@ -57,13 +61,14 @@ export function TaskRunHistory({
   runHistoryHasMore: boolean;
   runHistoryLoading: boolean;
   onLoadMoreRuns(): void;
-  moveTargets: readonly PlannerTask[];
+  moveTargets: readonly TaskMoveTarget[];
   onOpenSession(session: SessionSummary): void;
   onSessionCreated(session: SessionSummary): void;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
-  onMoveSession(sessionId: string, targetTask: PlannerTask): Promise<void>;
+  onMoveSession(sessionId: string, targetTask: TaskMoveTarget): Promise<void>;
 }) {
+  const api = useMemo(() => createPageApiClient(), []);
   const tree = useMemo(
     () => buildRunTree(sessionIds, sessions, runSessionLoadStates),
     [runSessionLoadStates, sessionIds, sessions],
@@ -75,14 +80,49 @@ export function TaskRunHistory({
   const [moveSessionId, setMoveSessionId] = useState<string | null>(null);
   const [movePending, setMovePending] = useState(false);
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [moveQuery, setMoveQuery] = useState("");
+  const [searchedMoveTargets, setSearchedMoveTargets] = useState<TaskMoveTarget[]>([]);
+  const [moveSearchPending, setMoveSearchPending] = useState(false);
+  const [moveSearchError, setMoveSearchError] = useState<string | null>(null);
   const targetedSuccession = targetedSuccessionId
     ? sessions.find((session) => session.agentSessionId === targetedSuccessionId) ?? null
     : currentSession;
-  const visibleMoveTargets = [...new Map(
-    moveTargets
-      .filter((task) => task.runbookId !== runbookId)
-      .map((task) => [task.runbookId, task]),
-  ).values()];
+  const visibleMoveTargets = useMemo(
+    () => defaultTaskMoveTargets(moveTargets, runbookId),
+    [moveTargets, runbookId],
+  );
+  const normalizedMoveQuery = moveQuery.trim();
+  const moveOptions = normalizedMoveQuery ? searchedMoveTargets : visibleMoveTargets;
+
+  useEffect(() => {
+    if (!moveSessionId || !normalizedMoveQuery) {
+      setSearchedMoveTargets([]);
+      setMoveSearchPending(false);
+      setMoveSearchError(null);
+      return;
+    }
+    let active = true;
+    setMoveSearchPending(true);
+    setMoveSearchError(null);
+    void searchTaskMoveTargets(api, normalizedMoveQuery, runbookId).then((targets) => {
+      if (active) setSearchedMoveTargets(targets);
+    }).catch((error: unknown) => {
+      if (active) setMoveSearchError(error instanceof Error ? error.message : String(error));
+    }).finally(() => {
+      if (active) setMoveSearchPending(false);
+    });
+    return () => { active = false; };
+  }, [api, moveSessionId, normalizedMoveQuery, runbookId]);
+
+  const moveSession = (target: TaskMoveTarget) => {
+    if (!moveSessionId) return;
+    setMovePending(true);
+    setMoveError(null);
+    void onMoveSession(moveSessionId, target)
+      .then(() => setMoveSessionId(null))
+      .catch((error: unknown) => setMoveError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setMovePending(false));
+  };
 
   const openRunContextMenu = (session: SessionSummary, event: MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -151,7 +191,6 @@ export function TaskRunHistory({
           },
           {
             label: "다른 업무로 이동",
-            disabled: visibleMoveTargets.length === 0,
             onClick: () => {
               if (!contextMenu) return;
               setMoveSessionId(contextMenu.sessionId);
@@ -162,30 +201,40 @@ export function TaskRunHistory({
         ]}
       />
       <Dialog open={moveSessionId !== null} onOpenChange={(open) => { if (!open && !movePending) setMoveSessionId(null); }}>
-        <DialogPopup className="max-w-sm">
+        <DialogPopup className="max-w-md">
           <DialogHeader><DialogTitle>다른 업무로 이동</DialogTitle></DialogHeader>
           <DialogPanel>
-            <div className="v3-run-move-targets">
-              {visibleMoveTargets.map((target) => (
-                <Button
-                  key={target.runbookId}
-                  variant="choice"
-                  className="min-h-11 w-full justify-between px-3 py-2.5"
+            <div className="v3-context-picker v3-run-move-picker">
+              <div className="v3-context-panel">
+                <input
+                  type="search"
+                  value={moveQuery}
                   disabled={movePending}
-                  onClick={() => {
-                    if (!moveSessionId) return;
-                    setMovePending(true);
-                    setMoveError(null);
-                    void onMoveSession(moveSessionId, target)
-                      .then(() => setMoveSessionId(null))
-                      .catch((error: unknown) => setMoveError(error instanceof Error ? error.message : String(error)))
-                      .finally(() => setMovePending(false));
-                  }}
-                >
-                  <strong>{target.page.title}</strong><small>{target.runbookId.slice(0, 8)}</small>
-                </Button>
-              ))}
+                  aria-label="이동할 업무 검색"
+                  placeholder="전체 업무 검색…"
+                  onChange={(event) => setMoveQuery(event.target.value)}
+                />
+                <div className="v3-context-options" data-testid="v3-run-move-targets">
+                  {moveOptions.map((target) => (
+                    <button
+                      type="button"
+                      className="v3-context-option"
+                      key={target.runbookId}
+                      disabled={movePending}
+                      onClick={() => moveSession(target)}
+                    >
+                      <span className="v3-emoji" aria-hidden="true">↪</span>
+                      <span><strong>{target.page.title}</strong><small>업무 · {target.runbookId.slice(0, 8)}</small></span>
+                    </button>
+                  ))}
+                  {moveSearchPending ? <p>업무를 검색하는 중…</p> : null}
+                  {!moveSearchPending && moveOptions.length === 0 ? (
+                    <p>{normalizedMoveQuery ? "일치하는 업무가 없습니다." : "이동할 업무를 검색하세요."}</p>
+                  ) : null}
+                </div>
+              </div>
             </div>
+            {moveSearchError ? <p className="v3-load-error" role="alert">업무 검색 실패 · {moveSearchError}</p> : null}
             {moveError ? <p className="v3-load-error" role="alert">{moveError}</p> : null}
           </DialogPanel>
         </DialogPopup>

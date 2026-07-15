@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button, useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import type { PlannerTask } from "./planner-data";
+import type { TaskMoveTarget } from "./task-move-targets";
 import { plannerStatusPresentation } from "./planner-model";
 import type { PageSessionDefaults } from "./task-workspace-api";
 import { descriptionMarkdown, type RunSessionLoadState } from "./task-workspace-model";
@@ -58,7 +59,7 @@ export function TaskDetailPane({
   onUnmountDocument(blockId: string): Promise<void>;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
-  onMoveSession(sessionId: string, targetTask: PlannerTask): Promise<void>;
+  onMoveSession(sessionId: string, targetTask: TaskMoveTarget): Promise<void>;
   onTaskBlocksChanged(): void;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
