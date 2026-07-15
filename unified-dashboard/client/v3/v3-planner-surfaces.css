@@ -252,21 +252,28 @@
   font-weight: 700;
 }
 
-.v3-project-guidance summary {
-  width: fit-content;
-  color: var(--foreground);
-  font-weight: 750;
-  cursor: pointer;
+.v3-project-guidance {
+  display: grid;
+  gap: 4px;
+  width: 100%;
 }
 
-.v3-project-guidance pre {
-  overflow: auto;
-  margin: 9px 0 0;
-  border-left: 2px solid var(--primary);
-  padding: 2px 0 2px 11px;
+.v3-project-guidance > span {
   color: var(--foreground);
-  font: inherit;
+  line-height: 1.55;
   white-space: pre-wrap;
+}
+
+.v3-project-guidance > small,
+.v3-project-context-sourced > small {
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+
+.v3-project-context-sourced {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .v3-new-document {

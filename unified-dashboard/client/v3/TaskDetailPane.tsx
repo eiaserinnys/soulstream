@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
+import { Button, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import type { PlannerTask } from "./planner-data";
 import type { TaskMoveTarget } from "./task-move-targets";
@@ -15,9 +15,18 @@ import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import { buildDocumentContextMenuActions } from "./context-menu-model";
 import "./v3-context-succession.css";
 import { useTaskStar } from "./use-task-star";
+import {
+  buildPageContextSourcesMarker,
+  mergeProjectContextPages,
+} from "./project-context-inheritance";
+import { parseProjectPageDetails } from "./project-page-details";
+import { useProjectContextInheritance } from "./use-project-context-inheritance";
 
 export function TaskDetailPane({
   task,
+  projectFolderId,
+  folders,
+  contextInvalidationKey,
   sessions,
   runSessionLoadStates,
   runHistoryTotal,
@@ -41,6 +50,9 @@ export function TaskDetailPane({
   onTaskBlocksChanged,
 }: {
   task: PlannerTask;
+  projectFolderId: string | null;
+  folders: readonly CatalogFolder[];
+  contextInvalidationKey: number;
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
   runHistoryTotal: number;
@@ -78,6 +90,11 @@ export function TaskDetailPane({
   const [contextBlocks, setContextBlocks] = useState(task.blocks);
   const [predecessorSessionId, setPredecessorSessionId] = useState<string | null>(null);
   const [createdSessions, setCreatedSessions] = useState<SessionSummary[]>([]);
+  const inheritedContext = useProjectContextInheritance({
+    folderId: projectFolderId ?? "",
+    folders,
+    invalidationKey: contextInvalidationKey,
+  });
   useEffect(() => {
     setContextBlocks(task.blocks);
     setContextPickerOpen(false);
@@ -86,20 +103,42 @@ export function TaskDetailPane({
     setCreatedSessions([]);
     setDocumentMenu(null);
   }, [task.blocks, task.page.id]);
-  const contextItems = useMemo(() => contextBlocks.flatMap((block) => {
-    if (block.block_type === "atom_ref") {
-      const label = stringProperty(block.properties, "title")
-        ?? stringProperty(block.properties, "label")
-        ?? stringProperty(block.properties, "nodeId")
-        ?? "atom 컨텍스트";
-      return [{ id: block.id, icon: "⚛", label }];
-    }
-    if (block.block_type === "guidance") {
-      return [{ id: block.id, icon: "✦", label: block.text.trim() || "실행 지침" }];
-    }
-    const match = /^\[\[([^\[\]]+)\]\]$/.exec(block.text.trim());
-    return match ? [{ id: block.id, icon: "📄", label: match[1] }] : [];
-  }), [contextBlocks]);
+  const effectiveContext = useMemo(() => mergeProjectContextPages([
+    ...(inheritedContext.status === "ready" ? inheritedContext.data.pages : []),
+    {
+      source: { folderId: task.page.id, folderName: "이 업무", pageId: task.page.id },
+      details: parseProjectPageDetails(contextBlocks),
+    },
+  ]), [contextBlocks, inheritedContext, task.page.id]);
+  const contextItems = useMemo(() => [
+    ...effectiveContext.guidance.map((guidance) => ({
+      id: `${guidance.source.pageId}:${guidance.blockId}`,
+      icon: "✦",
+      label: `${guidance.text} · ${contextSourceLabel(guidance.source.folderName)}`,
+    })),
+    ...effectiveContext.atomReferences.map((reference) => ({
+      id: `${reference.source.pageId}:${reference.blockId}`,
+      icon: "⚛",
+      label: `${reference.nodeTitle} · ${contextSourceLabel(reference.source.folderName)}`,
+    })),
+    ...contextBlocks.flatMap((block) => {
+      const match = /^\[\[([^\[\]]+)\]\]$/.exec(block.text.trim());
+      return match ? [{ id: block.id, icon: "📄", label: match[1] }] : [];
+    }),
+  ], [contextBlocks, effectiveContext]);
+  const inheritedDefaults = effectiveContext.sessionDefaults.at(-1);
+  const effectiveSessionDefaults = inheritedDefaults ? {
+    agentId: inheritedDefaults.agentId,
+    nodeId: inheritedDefaults.nodeId,
+    sourcePageId: inheritedDefaults.source.pageId,
+    sourceBlockId: inheritedDefaults.blockId,
+  } : sessionDefaults;
+  const pageContextSources = buildPageContextSourcesMarker(
+    inheritedContext.status === "ready"
+      ? inheritedContext.data
+      : mergeProjectContextPages([]),
+    task.page.id,
+  );
   const allSessions = [...sessions, ...createdSessions.filter((created) => !sessions.some((session) => session.agentSessionId === created.agentSessionId))];
   const allSessionIds = [...task.sessionIds, ...createdSessions.map((session) => session.agentSessionId)];
 
@@ -241,8 +280,8 @@ export function TaskDetailPane({
 
         <TaskInlineBoard runbookId={task.runbookId} />
 
-        {sessionDefaults?.agentId || sessionDefaults?.nodeId ? (
-          <div className="v3-session-defaults"><span className="v3-emoji" aria-hidden="true">👤</span> 기본값: {sessionDefaults.agentId ?? "agent 미지정"}@{sessionDefaults.nodeId ?? "node 미지정"} <span>(상속)</span></div>
+        {effectiveSessionDefaults?.agentId || effectiveSessionDefaults?.nodeId ? (
+          <div className="v3-session-defaults"><span className="v3-emoji" aria-hidden="true">👤</span> 기본값: {effectiveSessionDefaults.agentId ?? "agent 미지정"}@{effectiveSessionDefaults.nodeId ?? "node 미지정"} <span>(상속)</span></div>
         ) : null}
 
         <TaskRunHistory
@@ -250,7 +289,9 @@ export function TaskDetailPane({
           taskPageId={task.page.id}
           runbookId={task.runbookId}
           contextItems={contextItems}
-          sessionDefaults={sessionDefaults}
+          pageContextSources={pageContextSources}
+          contextPending={inheritedContext.status === "loading"}
+          sessionDefaults={effectiveSessionDefaults}
           predecessorSessionId={predecessorSessionId}
           sessionIds={allSessionIds}
           sessions={allSessions}
@@ -278,7 +319,6 @@ export function TaskDetailPane({
   );
 }
 
-function stringProperty(properties: Record<string, unknown>, key: string): string | null {
-  const value = properties[key];
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+function contextSourceLabel(folderName: string): string {
+  return folderName === "이 업무" ? folderName : `${folderName}에서 상속`;
 }

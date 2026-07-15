@@ -36,6 +36,8 @@ export interface PageAnchorContext {
 
 export type PageContextResolution = NoPageAnchorContext | PageAnchorContext;
 
+export const PAGE_CONTEXT_SOURCES_KEY = "page_context_sources";
+
 /** Boundary for resolving page-owned context before the first engine turn. */
 export interface PageContextResolver {
   hasPageAnchor(task: Task, agent: AgentProfile): Promise<boolean>;
@@ -85,14 +87,26 @@ export class AncestorPageContextResolver implements PageContextResolver {
 
     const candidates: PageContextCandidate[] = [];
     const failures: PageContextTraversalFailure[] = [];
+    const explicitPageIds = pageContextSourceIds(task.contextItems).slice(
+      0,
+      Math.max(0, this.maxPages - 1),
+    );
+    await collectExplicitPageContexts(
+      this.repository,
+      explicitPageIds,
+      candidates,
+      failures,
+      this.logger,
+    );
     const visited = new Set<string>();
     const queue: QueueEntry[] = [{ ...anchor, distance: 0 }];
+    const traversalLimit = Math.max(1, this.maxPages - explicitPageIds.length);
     let truncated = false;
     while (queue.length > 0) {
       const first = queue.shift()!;
       const entries = takeEquivalentEntries(first, queue);
       if (visited.has(first.pageId)) continue;
-      if (visited.size >= this.maxPages) {
+      if (visited.size >= traversalLimit) {
         truncated = true;
         break;
       }
@@ -134,7 +148,7 @@ export class AncestorPageContextResolver implements PageContextResolver {
       kind: "page-anchor",
       contextItem: this.assembler.assemble(anchor, {
         candidates: enrichedCandidates,
-        visitedPages: visited.size,
+        visitedPages: new Set([...visited, ...explicitPageIds]).size,
         failures,
         truncated,
       }),
@@ -147,6 +161,46 @@ export class AncestorPageContextResolver implements PageContextResolver {
     } catch (err) {
       this.logger.warn({ err, sessionId: task.agentSessionId }, "page context anchor lookup failed");
       return null;
+    }
+  }
+}
+
+export function isPageContextSourcesItem(item: ContextItem): boolean {
+  return item.key === PAGE_CONTEXT_SOURCES_KEY;
+}
+
+function pageContextSourceIds(items: ContextItem[] | undefined): string[] {
+  const marker = items?.find(isPageContextSourcesItem);
+  if (!marker || !isRecord(marker.content) || !Array.isArray(marker.content.pages)) return [];
+  const seen = new Set<string>();
+  return marker.content.pages.flatMap((entry) => {
+    if (!isRecord(entry)) return [];
+    const pageId = typeof entry.page_id === "string" ? entry.page_id.trim() : "";
+    if (!pageId || seen.has(pageId)) return [];
+    seen.add(pageId);
+    return [pageId];
+  });
+}
+
+async function collectExplicitPageContexts(
+  repository: PageContextRepository,
+  pageIds: readonly string[],
+  output: PageContextCandidate[],
+  failures: PageContextTraversalFailure[],
+  logger: Pick<Logger, "warn">,
+): Promise<void> {
+  for (const [index, pageId] of pageIds.entries()) {
+    try {
+      const page = await repository.getPage(pageId);
+      const distance = pageIds.length - index;
+      for (const block of page.blocks) {
+        if (block.parent_id !== null) continue;
+        const candidate = toCandidate(block, distance);
+        if (candidate) output.push(candidate);
+      }
+    } catch (err) {
+      failures.push(failure("page", pageId, err));
+      logger.warn({ err, pageId }, "explicit page context read failed");
     }
   }
 }
@@ -346,4 +400,8 @@ function failure(
 function compareParents(a: PageContextAnchor, b: PageContextAnchor): number {
   return compareLexicographically(a.pageId, b.pageId)
     || compareLexicographically(a.blockId, b.blockId);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

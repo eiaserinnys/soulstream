@@ -33,12 +33,15 @@ import {
 import { RichSessionRow } from "./RichSessionRow";
 import { buildTaskSessionExtraActions } from "./context-menu-model";
 import "./v3-run-history.css";
+import type { PageContextSourcesMarker } from "./project-context-inheritance";
 
 export function TaskRunHistory({
   taskTitle,
   taskPageId,
   runbookId,
   contextItems,
+  pageContextSources,
+  contextPending,
   sessionDefaults,
   predecessorSessionId,
   sessionIds,
@@ -59,6 +62,8 @@ export function TaskRunHistory({
   taskPageId: string;
   runbookId: string;
   contextItems: readonly SuccessionContextItem[];
+  pageContextSources: PageContextSourcesMarker;
+  contextPending: boolean;
   sessionDefaults: PageSessionDefaults | null;
   predecessorSessionId: string | null;
   sessionIds: readonly string[];
@@ -176,6 +181,8 @@ export function TaskRunHistory({
           taskPageId={taskPageId}
           runbookId={runbookId}
           contextItems={contextItems}
+          pageContextSources={pageContextSources}
+          contextPending={contextPending}
           predecessorOptions={predecessorOptions}
           pageDefaults={sessionDefaults}
           currentSession={targetedSuccession}

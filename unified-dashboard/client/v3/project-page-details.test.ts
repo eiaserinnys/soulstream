@@ -5,17 +5,18 @@ import { fetchProjectPageDetails, parseProjectPageDetails } from "./project-page
 describe("project page details", () => {
   it("extracts guidance, atom references, and session defaults from project blocks", () => {
     expect(parseProjectPageDetails([
-      block("guidance", "프로젝트 지침", { enabled: true }),
+      block("guidance", "프로젝트 지침", { enabled: true, scope: "project" }),
       block("guidance", "비활성 지침", { enabled: false }),
       block("atom_ref", "", {
+        instance: "atom",
         nodeId: "node-soulstream",
         nodeTitle: "소울스트림",
         depth: 3,
         titlesOnly: false,
       }),
-      block("session_defaults", "", { agentId: "roselin_codex", nodeId: "eiaserinnys" }),
+      block("session_defaults", "", { scope: "project", agentId: "roselin_codex", nodeId: "eiaserinnys" }),
     ])).toEqual({
-      guidance: [{ blockId: "guidance-프로젝트 지침", text: "프로젝트 지침" }],
+      guidance: [{ blockId: "guidance-프로젝트 지침", text: "프로젝트 지침", scope: "project" }],
       atomReferences: [{
         blockId: "atom_ref-block",
         instance: "atom",
@@ -26,6 +27,7 @@ describe("project page details", () => {
       }],
       sessionDefaults: [{
         blockId: "session_defaults-block",
+        scope: "project",
         agentId: "roselin_codex",
         nodeId: "eiaserinnys",
       }],
@@ -35,12 +37,12 @@ describe("project page details", () => {
   it("loads project blocks once through the include_blocks page endpoint", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(JSON.stringify({
       page: { id: "project/one", title: "Project", version: 1 },
-      blocks: [block("guidance", "실제 지침", { enabled: true })],
+      blocks: [block("guidance", "실제 지침", { enabled: true, scope: "project" })],
       state_vector: "AA==",
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
 
     await expect(fetchProjectPageDetails("project/one", fetch)).resolves.toMatchObject({
-      guidance: [{ blockId: "guidance-실제 지침", text: "실제 지침" }],
+      guidance: [{ blockId: "guidance-실제 지침", text: "실제 지침", scope: "project" }],
       page: { id: "project/one", version: 1 },
       stateVector: "AA==",
     });

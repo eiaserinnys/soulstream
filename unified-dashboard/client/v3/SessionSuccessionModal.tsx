@@ -26,6 +26,7 @@ import {
   type PageSessionDefaults,
 } from "./task-workspace-api";
 import { V3ErrorNotice } from "./V3ErrorNotice";
+import type { PageContextSourcesMarker } from "./project-context-inheritance";
 
 const SUCCESSOR_PROMPT = "새 업무 run을 시작하고 사용자의 다음 지시를 기다려주세요.";
 
@@ -40,6 +41,8 @@ export function SessionSuccessionModal({
   taskPageId,
   runbookId,
   contextItems,
+  pageContextSources,
+  contextPending,
   predecessorOptions,
   pageDefaults,
   currentSession,
@@ -51,6 +54,8 @@ export function SessionSuccessionModal({
   taskPageId: string;
   runbookId: string;
   contextItems: readonly SuccessionContextItem[];
+  pageContextSources: PageContextSourcesMarker;
+  contextPending: boolean;
   predecessorOptions: readonly SuccessionSessionOption[];
   pageDefaults: PageSessionDefaults | null;
   currentSession: SessionSummary | null;
@@ -112,6 +117,7 @@ export function SessionSuccessionModal({
         agentId: selectedAgentId,
         agent: selectedAgent,
         container: { kind: "runbook", id: runbookId },
+        contextItems: inheritCard ? [pageContextSources] : undefined,
         ...succession,
       });
       const now = new Date().toISOString();
@@ -214,7 +220,7 @@ export function SessionSuccessionModal({
         </DialogPanel>
         <DialogFooter className="v3-succession-footer">
           <Button variant="ghost" disabled={pending} onClick={onClose}>취소</Button>
-          <Button disabled={pending || !selectedNodeId || !selectedAgentId || selectedAgent?.id !== selectedAgentId} onClick={() => { void start(); }}>{pending ? "시작 중…" : "시작"}</Button>
+          <Button disabled={pending || contextPending || !selectedNodeId || !selectedAgentId || selectedAgent?.id !== selectedAgentId} onClick={() => { void start(); }}>{pending ? "시작 중…" : contextPending ? "컨텍스트 확인 중…" : "시작"}</Button>
         </DialogFooter>
       </DialogPopup>
     </Dialog>

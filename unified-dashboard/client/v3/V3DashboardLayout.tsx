@@ -448,8 +448,9 @@ function V3DashboardContent() {
   } as CSSProperties;
   const workspaceTask = selectedTask ? { ...selectedTask, sessionIds: runHistory.sessionIds } : null;
   const projectTitle = projects.find((item) => item.id === workspaceTask?.projectPageId)?.title ?? "미분류";
-  const selectedTaskProject = projects.find((item) => item.id === workspaceTask?.projectPageId) ?? null;
-  const projectFolderId = selectedTaskProject ? resolveProjectFolderId(selectedTaskProject, catalog?.folders ?? []) : null;
+  const projectFolderId = catalog?.folders.find(
+    (folder) => folder.projectPageId === workspaceTask?.projectPageId,
+  )?.id ?? null;
   const inspectorSession = activeSessionSummary?.agentSessionId === activeSessionKey ? activeSessionSummary : activeSession;
 
   return (
@@ -473,7 +474,7 @@ function V3DashboardContent() {
           data-liquid-glass-webgl={plannerWebglActive ? "true" : undefined}
         >
           <div className="v3-planner-scroll" data-testid="v3-planner-scroll">
-            {createOpen ? <NewTaskForm folders={catalog?.folders ?? []} projectPages={projects} initialFolderId={selectedFolderId} pending={createPending} onCreate={(title, folderId, description) => { void createTask(title, folderId, description); }} onCancel={() => setCreateOpen(false)} /> : null}
+            {createOpen ? <NewTaskForm folders={catalog?.folders ?? []} invalidationKey={projectContextInvalidationKey} initialFolderId={selectedFolderId} pending={createPending} onCreate={(title, folderId, description) => { void createTask(title, folderId, description); }} onCancel={() => setCreateOpen(false)} /> : null}
             {selectedProject ? (
               <ProjectPlannerView state={project} sessions={sessions} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
             ) : selectedFolderId ? (
@@ -485,7 +486,41 @@ function V3DashboardContent() {
         </div>
       </main>
       {workspaceOpen && workspaceTask ? (
-        <TaskWorkspace task={workspaceTask} projectTitle={projectTitle} projectFolderId={projectFolderId} sessions={sessions} runSessionLoadStates={runSessionResolution.loadStateById} runHistoryTotal={runHistory.total} runHistoryHasMore={runHistory.hasMore} runHistoryLoading={runHistory.loading} onLoadMoreRuns={() => { void runHistory.loadMore(); }} activeSession={activeSession} chatOpen={chatOpen} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} sessionDefaults={sessionDefaults} mobileMode={mobileMode} mobileTab={mobileTab} taskMoveTargets={currentTasks} onReturnToToday={returnToPlanner} onCloseWorkspace={closeWorkspace} onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }} onOpenDocument={openTaskDocument} onOpenSession={openSession} onRenameTaskTitle={(title) => plannerActions.renameTaskTitle(workspaceTask, title)} onSaveDescription={saveDescription} onPromoteDocument={promoteDocument} onUnmountDocument={(blockId) => plannerActions.unmountDocument(workspaceTask, blockId)} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onMoveSession={plannerActions.moveSession} onTaskBlocksChanged={invalidateLocal} onAcknowledgedReview={acknowledgeReview} />
+        <TaskWorkspace
+          task={workspaceTask}
+          projectTitle={projectTitle}
+          projectFolderId={projectFolderId}
+          folders={catalog?.folders ?? []}
+          contextInvalidationKey={projectContextInvalidationKey}
+          sessions={sessions}
+          runSessionLoadStates={runSessionResolution.loadStateById}
+          runHistoryTotal={runHistory.total}
+          runHistoryHasMore={runHistory.hasMore}
+          runHistoryLoading={runHistory.loading}
+          onLoadMoreRuns={() => { void runHistory.loadMore(); }}
+          activeSession={activeSession}
+          chatOpen={chatOpen}
+          chatInputDisabled={chatInputDisabled}
+          fileUploadUrl={fileUploadUrl}
+          sessionDefaults={sessionDefaults}
+          mobileMode={mobileMode}
+          mobileTab={mobileTab}
+          taskMoveTargets={currentTasks}
+          onReturnToToday={returnToPlanner}
+          onCloseWorkspace={closeWorkspace}
+          onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }}
+          onOpenDocument={openTaskDocument}
+          onOpenSession={openSession}
+          onRenameTaskTitle={(title) => plannerActions.renameTaskTitle(workspaceTask, title)}
+          onSaveDescription={saveDescription}
+          onPromoteDocument={promoteDocument}
+          onUnmountDocument={(blockId) => plannerActions.unmountDocument(workspaceTask, blockId)}
+          onRenameSession={plannerActions.renameSession}
+          onDeleteSessions={plannerActions.deleteSessions}
+          onMoveSession={plannerActions.moveSession}
+          onTaskBlocksChanged={invalidateLocal}
+          onAcknowledgedReview={acknowledgeReview}
+        />
       ) : null}
       <V3StandaloneInspector open={inspectorOpen} session={inspectorSession} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} onClose={() => setInspectorOpen(false)} onAcknowledgedReview={acknowledgeReview} />
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />

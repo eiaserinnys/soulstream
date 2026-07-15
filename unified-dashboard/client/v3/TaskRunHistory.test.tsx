@@ -40,6 +40,12 @@ describe("TaskRunHistory", () => {
         taskPageId="page-pr-j"
         runbookId="rb-pr-j"
         contextItems={[]}
+        pageContextSources={{
+          key: "page_context_sources",
+          label: "Project and task page context sources",
+          content: { pages: [{ page_id: "page-pr-j" }] },
+        }}
+        contextPending={false}
         sessionDefaults={null}
         predecessorSessionId={null}
         sessionIds={["catalog-hit", "loading-miss", "failed-miss"]}

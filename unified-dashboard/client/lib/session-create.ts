@@ -46,6 +46,7 @@ export interface CreateDashboardSessionInput {
   agentSessionId?: string;
   pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
   predecessorSessionId?: string | null;
+  contextItems?: Array<{ key: string; label?: string; content: unknown }>;
 }
 
 export async function createDashboardSession(
@@ -56,6 +57,7 @@ export async function createDashboardSession(
     ...(input.agentSessionId ? { agentSessionId: input.agentSessionId } : {}),
     ...(input.pageAnchor ? { pageAnchor: input.pageAnchor } : {}),
     ...(input.predecessorSessionId ? { predecessor_session_id: input.predecessorSessionId } : {}),
+    ...(input.contextItems?.length ? { extra_context_items: input.contextItems } : {}),
     ...(input.nodeId ? { nodeId: input.nodeId } : {}),
     ...(input.attachmentPaths?.length ? { attachmentPaths: input.attachmentPaths } : {}),
     ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
