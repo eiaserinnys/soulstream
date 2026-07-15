@@ -87,7 +87,7 @@ describePostgres("checklist production projection PostgreSQL integration", () =>
       processed_hash: null,
       last_error: "temporary page host failure",
     });
-    await expect(service.getRunbook("page-runbook:page-1")).resolves.toMatchObject({
+    await expect(service.getRunbook("page-1")).resolves.toMatchObject({
       items: [expect.objectContaining({ status: "completed", archived: false })],
     });
 
@@ -99,7 +99,7 @@ describePostgres("checklist production projection PostgreSQL integration", () =>
     const restartedProcess = createReconciler(pageHost, logger);
     await restartedProcess.reconcileDue();
     expect(currentBlock?.properties).toEqual({
-      runbookId: "page-runbook:page-1",
+      runbookId: "page-1",
       itemId: "checklist:block-1",
     });
     expect(await readOutbox()).toMatchObject({
@@ -116,26 +116,26 @@ describePostgres("checklist production projection PostgreSQL integration", () =>
     const rightAdapter = new ChecklistRunbookAdapter(service, existingIdentity);
     await Promise.all([
       leftAdapter.toggle({
-        runbookId: "page-runbook:page-1",
+        runbookId: "page-1",
         itemId: "checklist:block-1",
         actor: { actorKind: "agent", actorSessionId: "sess-actor" },
         idempotencyKey: "toggle:left",
       }),
       rightAdapter.toggle({
-        runbookId: "page-runbook:page-1",
+        runbookId: "page-1",
         itemId: "checklist:block-1",
         actor: { actorKind: "agent", actorSessionId: "sess-actor" },
         idempotencyKey: "toggle:right",
       }),
     ]);
-    await expect(service.getRunbook("page-runbook:page-1")).resolves.toMatchObject({
+    await expect(service.getRunbook("page-1")).resolves.toMatchObject({
       items: [expect.objectContaining({ status: "completed" })],
     });
 
     currentBlock = null;
     await enqueue("archive:block-1");
     await createReconciler(pageHost, logger).reconcileDue();
-    await expect(service.getRunbook("page-runbook:page-1")).resolves.toMatchObject({
+    await expect(service.getRunbook("page-1")).resolves.toMatchObject({
       items: [expect.objectContaining({ archived: true })],
     });
 
@@ -143,7 +143,7 @@ describePostgres("checklist production projection PostgreSQL integration", () =>
     currentBlock.text = "Recreated task";
     await enqueue("reconcile:recreated");
     await createReconciler(pageHost, logger).reconcileDue();
-    await expect(service.getRunbook("page-runbook:page-1")).resolves.toMatchObject({
+    await expect(service.getRunbook("page-1")).resolves.toMatchObject({
       items: [expect.objectContaining({
         title: "Recreated task",
         archived: false,
@@ -151,7 +151,7 @@ describePostgres("checklist production projection PostgreSQL integration", () =>
       })],
     });
     expect(currentBlock.properties).toEqual({
-      runbookId: "page-runbook:page-1",
+      runbookId: "page-1",
       itemId: "checklist:block-1",
     });
   }, 30_000);
@@ -167,6 +167,25 @@ describePostgres("checklist production projection PostgreSQL integration", () =>
       nodeId: "node-1",
       db,
       runbookService: service,
+      runbookTaskIdentityHost: {
+        promoteExistingPage: vi.fn(async (input) => {
+          await service.createRunbook({
+            actorKind: input.actorKind,
+            actorSessionId: input.actorSessionId,
+            actorUserId: input.actorUserId,
+            runbookId: input.pageId,
+            folderId: input.folderId,
+            title: input.title,
+            enrollCreator: false,
+            idempotencyKey: input.idempotencyKey,
+          });
+          return {
+            id: input.pageId,
+            pageId: input.pageId,
+            runbookId: input.pageId,
+          } as never;
+        }),
+      },
       pageHost: pageHost as never,
       logger: logger as never,
     }).checklistRunbookReconciler;
