@@ -477,8 +477,8 @@ export async function installV3VisualQaRoutes(
     }
     if (path === "/api/folders") return fulfillJson(route, {
       folders: [
-        { id: "folder-amber", name: pages.project.title, sortOrder: 0, parentFolderId: null },
-        { id: "folder-ops", name: pages.projectOps.title, sortOrder: 1, parentFolderId: null },
+        { id: "folder-amber", name: pages.project.title, sortOrder: 0, parentFolderId: null, projectPageId: pages.project.id },
+        { id: "folder-ops", name: pages.projectOps.title, sortOrder: 1, parentFolderId: null, projectPageId: pages.projectOps.id },
       ],
       sessions: {},
     });
