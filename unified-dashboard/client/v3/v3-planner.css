@@ -286,7 +286,8 @@
   display: flex;
   min-height: 106px;
   flex-direction: column;
-  gap: 3px;
+  /* 라벨↔본문 간격은 프로젝트 컨텍스트 카드(.v3-project-context gap: 10px) 준거 */
+  gap: 10px;
   margin-bottom: 24px;
   border: 1px solid var(--glass-border);
   padding: 14px 18px;
@@ -311,7 +312,8 @@
 }
 
 .v3-daily-memo .v3-description-editor {
-  margin: 4px 0 2px;
+  /* 카드 gap(10px)이 간격 정본 — 편집기 자체 마진은 두지 않는다 */
+  margin: 0;
 }
 
 .v3-section-head {
