@@ -14,6 +14,14 @@ export async function fetchTaskBoardItems(
   runbookId: string,
   fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<CatalogBoardItem[]> {
+  return (await fetchTaskBoardContainerItems(runbookId, fetchImplementation))
+    .filter((item) => INLINE_TYPES.has(item.itemType));
+}
+
+export async function fetchTaskBoardContainerItems(
+  runbookId: string,
+  fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
+): Promise<CatalogBoardItem[]> {
   const query = new URLSearchParams({
     container_kind: "runbook",
     container_id: runbookId,
@@ -24,8 +32,7 @@ export async function fetchTaskBoardItems(
   });
   if (!response.ok) throw new Error(`보드 항목을 불러오지 못했습니다 (${response.status})`);
   const payload = await response.json() as { boardItems?: CatalogBoardItem[] };
-  return (payload.boardItems ?? [])
-    .filter((item) => INLINE_TYPES.has(item.itemType));
+  return payload.boardItems ?? [];
 }
 
 export async function fetchInlineMarkdown(
