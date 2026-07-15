@@ -1,19 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, MarkdownContent } from "@seosoyoung/soul-ui";
 
-import {
-  hasCodePointOverflow,
-  TASK_DESCRIPTION_COLLAPSE_LENGTH,
-} from "./session-preview";
-import "./v3-content-boundary.css";
-
 export function TaskDescriptionPanel({
   markdown,
   onSave,
   ariaLabel = "업무 설명",
   emptyText = "클릭해서 업무 설명을 작성하세요.",
   variant = "default",
-  collapsible = true,
   initialEditing = false,
   onEditingChange,
   testId,
@@ -23,7 +16,6 @@ export function TaskDescriptionPanel({
   ariaLabel?: string;
   emptyText?: string;
   variant?: "default" | "compact";
-  collapsible?: boolean;
   initialEditing?: boolean;
   onEditingChange?(editing: boolean): void;
   testId?: string;
@@ -31,7 +23,6 @@ export function TaskDescriptionPanel({
   const [editing, setEditing] = useState(initialEditing);
   const [draft, setDraft] = useState(markdown);
   const [saving, setSaving] = useState(false);
-  const [expanded, setExpanded] = useState(false);
   const [editorMinHeight, setEditorMinHeight] = useState<number | null>(null);
   const savingRef = useRef(false);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -39,14 +30,8 @@ export function TaskDescriptionPanel({
   useEffect(() => {
     if (!editing) {
       setDraft(markdown);
-      setExpanded(false);
     }
   }, [editing, markdown]);
-
-  const expandable = collapsible && hasCodePointOverflow(
-    markdown,
-    TASK_DESCRIPTION_COLLAPSE_LENGTH,
-  );
 
   const changeEditing = (next: boolean) => {
     if (next && !editing) {
@@ -100,7 +85,6 @@ export function TaskDescriptionPanel({
             }}
           />
           <div>
-            <small>마크다운 · ⌘/Ctrl + Enter로 완료</small>
             <Button variant="secondary" disabled={saving} onMouseDown={(event) => event.preventDefault()} onClick={() => { void finish(); }}>
               {saving ? "저장 중…" : "완료"}
             </Button>
@@ -110,24 +94,18 @@ export function TaskDescriptionPanel({
         <div
           ref={previewRef}
           className="v3-description-preview"
-          data-expanded={expanded}
           data-editor-variant={variant}
           onClick={(event) => { if (event.target === event.currentTarget) changeEditing(true); }}
         >
           <button
             type="button"
-            className="v3-description-content v3-bounded-markdown"
+            className="v3-description-content"
             aria-label={`${ariaLabel} 편집`}
             onClick={() => changeEditing(true)}
           >
             {markdown ? <MarkdownContent content={markdown} /> : <span className="v3-description-empty">{emptyText}</span>}
           </button>
           <div className="v3-description-actions">
-            {expandable ? (
-              <Button variant="link" size="sm" onClick={() => setExpanded((value) => !value)}>
-                {expanded ? "접기" : "전체 보기"}
-              </Button>
-            ) : null}
             <Button variant="ghost" size="sm" onClick={() => changeEditing(true)}>편집</Button>
           </div>
         </div>

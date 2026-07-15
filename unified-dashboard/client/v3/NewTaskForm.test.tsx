@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   findProjectPageForFolder,
+  newTaskFolderOptions,
   ProjectInheritancePreview,
 } from "./NewTaskForm";
 
@@ -31,6 +32,23 @@ describe("new task inheritance preview", () => {
 
     expect(findProjectPageForFolder("folder-soulstream", folders, pages)?.id)
       .toBe("project-soulstream");
+  });
+
+  it("reuses the v1 emoji-insensitive recursive folder order", () => {
+    const folders = [
+      folder("child-z", "🧰 Zeta", "root-a"),
+      folder("root-z", "📒 Zebra", null),
+      folder("child-a", "  📱 Alpha", "root-a"),
+      folder("root-a", "✨ Alpha", null),
+    ];
+
+    expect(newTaskFolderOptions(folders).map(({ folder: item, depth }) => [item.id, depth]))
+      .toEqual([
+        ["root-a", 0],
+        ["child-a", 1],
+        ["child-z", 1],
+        ["root-z", 0],
+      ]);
   });
 
   it("renders real guidance, atom chips, and agent@node defaults", () => {
@@ -99,5 +117,15 @@ function projectPage(id: string, title: string, metadata: Record<string, unknown
     metadata,
     created_at: "2026-07-15T00:00:00Z",
     updated_at: "2026-07-15T00:00:00Z",
+  };
+}
+
+function folder(id: string, name: string, parentFolderId: string | null) {
+  return {
+    id,
+    name,
+    parentFolderId,
+    sortOrder: 0,
+    projectPageId: id,
   };
 }

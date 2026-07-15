@@ -38,6 +38,7 @@ export function useV3PlannerActions({
       const result = await togglePlannerTaskToday(task, api);
       invalidate();
       notify(result === "added" ? "오늘 플래너에 추가했습니다" : "오늘 플래너에서 제거했습니다");
+      return result;
     } catch (error) {
       notify(`오늘 플래너 변경 실패 · ${errorText(error)}`);
       throw error;

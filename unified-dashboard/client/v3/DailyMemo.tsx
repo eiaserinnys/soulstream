@@ -25,7 +25,6 @@ export function DailyMemo({
           ariaLabel={index === 0 ? "오늘 메모" : `오늘 메모 ${index + 1}`}
           emptyText={index === 0 ? "오늘 기억해 둘 내용을 적으세요." : "메모를 작성하세요."}
           variant="compact"
-          collapsible={false}
           onSave={(text) => onSave(block?.id ?? null, text)}
         />
       ))}

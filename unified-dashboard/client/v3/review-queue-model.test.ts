@@ -4,11 +4,17 @@ import type { SessionSummary } from "@seosoyoung/soul-ui";
 import {
   reviewNavigationSessions,
   reviewQueueSessions,
+  reviewDialogModal,
   reviewSessionPreview,
   reviewSessionTitle,
 } from "./review-queue-model";
 
 describe("review queue model", () => {
+  it("becomes non-modal while the companion chat is open", () => {
+    expect(reviewDialogModal(false)).toBe(true);
+    expect(reviewDialogModal(true)).toBe(false);
+  });
+
   it("shows the five most recently updated needs-review sessions in navigation", () => {
     const sessions = [
       ...Array.from({ length: 7 }, (_, index) => session(`review-${index}`, "needs_review", index)),

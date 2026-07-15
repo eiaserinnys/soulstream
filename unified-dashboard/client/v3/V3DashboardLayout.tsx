@@ -79,6 +79,7 @@ import { reviewQueueSessions } from "./review-queue-model";
 import { invalidateV3, useV3InvalidationKey } from "./v3-live-invalidation-plane";
 import { useV3LiveDataPlane } from "./use-v3-live-data-plane";
 import { openDocumentInV3, openSessionInV3 } from "./v3-inspector-model";
+import { runOptimisticTodayMutation } from "./today-task-state";
 import "./v3-planner.css";
 import "./v3-planner-surfaces.css";
 import "./v3-task-workspace.css";
@@ -170,6 +171,8 @@ function V3DashboardContent() {
   const taskStarChanges = useTaskStarChanges();
   const {
     daily,
+    todayTaskIds,
+    setTaskTodayPresence,
     project,
     projects,
     starredTasks,
@@ -185,11 +188,34 @@ function V3DashboardContent() {
     api,
     dependencies: dataDependencies,
     selectedDate,
+    today,
     selectedProject,
     taskStarChanges,
     refreshKey,
     notify,
   });
+  const completeTask = useCallback(async (task: PlannerTask) => {
+    const wasInToday = todayTaskIds.has(task.page.id);
+    await runOptimisticTodayMutation({
+      taskId: task.page.id,
+      wasInToday,
+      optimisticInToday: false,
+      setPresence: setTaskTodayPresence,
+      mutate: () => plannerActions.completeTask(task),
+      finalPresence: () => false,
+    });
+  }, [plannerActions.completeTask, setTaskTodayPresence, todayTaskIds]);
+  const toggleTaskToday = useCallback(async (task: PlannerTask) => {
+    const wasInToday = todayTaskIds.has(task.page.id);
+    await runOptimisticTodayMutation({
+      taskId: task.page.id,
+      wasInToday,
+      optimisticInToday: !wasInToday,
+      setPresence: setTaskTodayPresence,
+      mutate: () => plannerActions.toggleTaskToday(task),
+      finalPresence: (result) => result === "added",
+    });
+  }, [plannerActions.toggleTaskToday, setTaskTodayPresence, todayTaskIds]);
   const currentTasks = useMemo(
     () => [
       ...(daily.data?.tasks ?? []),
@@ -372,6 +398,10 @@ function V3DashboardContent() {
     setCreatePending(true);
     try {
       const projectPage = await resolveProjectPage(api, folder, projects);
+      if (!projectPage) {
+        notify("이 폴더는 프로젝트에 연결되지 않아 새 업무를 만들 수 없습니다");
+        return;
+      }
       const dailyPage = selectedDate === today && daily.data ? daily.data.daily.page : (await api.getDailyPage(today)).page;
       await createPlannerTask({ title, description, dailyPageId: dailyPage.id, projectPageId: projectPage.id, folderId }, mutationPort);
       setCreateOpen(false);
@@ -478,9 +508,9 @@ function V3DashboardContent() {
             {selectedFolderId && !selectedProject ? (
               <EmptyProjectPlannerView title={selectedFolderName} />
             ) : selectedProject ? (
-              <ProjectPlannerView state={project} sessions={sessions} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
+              <ProjectPlannerView state={project} sessions={sessions} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={completeTask} onToggleTaskToday={toggleTaskToday} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
             ) : (
-              <DailyPlannerView state={daily} selectedDate={selectedDate} sessions={sessions} onSaveMemo={saveMemo} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} />
+              <DailyPlannerView state={daily} selectedDate={selectedDate} isTodayView={selectedDate === today} todayTaskIds={todayTaskIds} sessions={sessions} onSaveMemo={saveMemo} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={completeTask} onToggleTaskToday={toggleTaskToday} />
             )}
           </div>
         </div>
@@ -491,7 +521,7 @@ function V3DashboardContent() {
       <V3StandaloneInspector open={inspectorOpen} session={inspectorSession} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} onClose={() => setInspectorOpen(false)} onAcknowledgedReview={acknowledgeReview} />
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
       <RitualModal open={ritualOpen} today={today} reviewCount={reviewSessions.length} onClose={() => setRitualOpen(false)} onRefresh={invalidateLocal} onOpenReviewQueue={() => setReviewQueueOpen(true)} />
-      <ReviewQueuePanel open={reviewQueueOpen} sessions={reviewSessions} onClose={() => setReviewQueueOpen(false)} onOpenSession={openReviewSession} onAcknowledged={acknowledgeReview} />
+      <ReviewQueuePanel open={reviewQueueOpen} companionOpen={inspectorOpen} sessions={reviewSessions} onClose={() => setReviewQueueOpen(false)} onOpenSession={openReviewSession} onAcknowledged={acknowledgeReview} />
       <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
       <SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} />
       <div className={`v3-toast${toast ? " is-visible" : ""}`} role="status" aria-live="polite">{toast}</div>

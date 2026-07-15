@@ -14,6 +14,7 @@ import type {
   PlannerTask,
   ProjectPlannerData,
 } from "./planner-data";
+import { visibleDailyTasks } from "./today-task-state";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 
 export type PlannerLoadState<T> =
@@ -24,6 +25,8 @@ export type PlannerLoadState<T> =
 export function DailyPlannerView({
   state,
   selectedDate,
+  isTodayView,
+  todayTaskIds,
   sessions,
   onSaveMemo,
   onOpenProject,
@@ -33,6 +36,8 @@ export function DailyPlannerView({
 }: {
   state: PlannerLoadState<DailyPlannerData>;
   selectedDate: string;
+  isTodayView: boolean;
+  todayTaskIds: ReadonlySet<string>;
   sessions: readonly SessionSummary[];
   onSaveMemo(blockId: string | null, text: string): Promise<void>;
   onOpenProject(projectId: string): void;
@@ -41,16 +46,17 @@ export function DailyPlannerView({
   onToggleTaskToday(task: PlannerTask): Promise<void>;
 }) {
   const data = state.data;
+  const visibleTasks = visibleDailyTasks(data?.tasks ?? [], isTodayView, todayTaskIds);
   const visibleProjects = data?.projects ?? [];
   const visibleProjectIds = new Set(visibleProjects.map((project) => project.id));
   const groups = data ? [
     ...visibleProjects.map((project) => ({
       project,
-      tasks: data.tasks.filter((task) => task.projectPageId === project.id),
+      tasks: visibleTasks.filter((task) => task.projectPageId === project.id),
     })),
     {
       project: null,
-      tasks: data.tasks.filter((task) => (
+      tasks: visibleTasks.filter((task) => (
         task.projectPageId === null || !visibleProjectIds.has(task.projectPageId)
       )),
     },
@@ -60,12 +66,12 @@ export function DailyPlannerView({
     <>
       <div className="v3-date-head">
         <div><span>DAILY</span><h1>{formatLongDate(selectedDate)}</h1></div>
-        <p>{state.status === "loading" ? "플래너를 불러오는 중…" : `${data?.tasks.length ?? 0}개의 업무`}</p>
+        <p>{state.status === "loading" ? "플래너를 불러오는 중…" : `${visibleTasks.length}개의 업무`}</p>
       </div>
       {state.status === "error" ? <LoadError message={state.message} /> : null}
       {data ? <DailyMemo blocks={data.memoBlocks} onSave={onSaveMemo} /> : null}
       <div className="v3-section-head">
-        <h2>오늘의 업무</h2><span>{data?.tasks.length ?? 0}개</span>
+        <h2>오늘의 업무</h2><span>{visibleTasks.length}개</span>
         <span className="v3-spacer" /><small><kbd>C</kbd> 새 업무</small>
       </div>
       {groups.map((group) => (
@@ -82,6 +88,7 @@ export function DailyPlannerView({
                 key={task.page.id}
                 task={task}
                 sessions={sessions}
+                isInToday={todayTaskIds.has(task.page.id)}
                 onOpen={() => onOpenTask(task)}
                 onComplete={() => onCompleteTask(task)}
                 onToggleToday={() => onToggleTaskToday(task)}
@@ -100,6 +107,7 @@ export function DailyPlannerView({
 export function ProjectPlannerView({
   state,
   sessions,
+  todayTaskIds,
   newDocumentOpen,
   newDocumentTitle,
   tasksLoadingMore,
@@ -118,6 +126,7 @@ export function ProjectPlannerView({
 }: {
   state: PlannerLoadState<ProjectPlannerData>;
   sessions: readonly SessionSummary[];
+  todayTaskIds: ReadonlySet<string>;
   newDocumentOpen: boolean;
   newDocumentTitle: string;
   tasksLoadingMore: boolean;
@@ -230,6 +239,7 @@ export function ProjectPlannerView({
             key={task.page.id}
             task={task}
             sessions={sessions}
+            isInToday={todayTaskIds.has(task.page.id)}
             onOpen={() => onOpenTask(task)}
             onComplete={() => onCompleteTask(task)}
             onToggleToday={() => onToggleTaskToday(task)}
