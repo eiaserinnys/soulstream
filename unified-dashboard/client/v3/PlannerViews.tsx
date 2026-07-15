@@ -16,6 +16,8 @@ import type {
 } from "./planner-data";
 import { visibleDailyTasks } from "./today-task-state";
 import { V3ErrorNotice } from "./V3ErrorNotice";
+import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
+import { buildDocumentContextMenuActions } from "./context-menu-model";
 
 export type PlannerLoadState<T> =
   | { status: "loading"; data: T | null; message: null }
@@ -146,6 +148,7 @@ export function ProjectPlannerView({
   const documentSurfaceRef = useRef<HTMLElement>(null);
   const documentWebglActive = useGlassSurface(documentSurfaceRef, { enabled: true });
   const data = state.data;
+  const [documentMenu, setDocumentMenu] = useState<{ target: V3ContextMenuTarget; page: PageDto } | null>(null);
   const [details, setDetails] = useState<{
     status: "loading" | "ready" | "error";
     data: ProjectPageSnapshot | null;
@@ -215,11 +218,27 @@ export function ProjectPlannerView({
         ) : null}
         <div className="v3-document-list">
           {data?.documents.map((document) => (
-            <button type="button" key={document.id} onClick={() => onOpenDocument(document)}>
+            <button
+              type="button"
+              key={document.id}
+              onClick={() => onOpenDocument(document)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setDocumentMenu({ target: { x: event.clientX, y: event.clientY }, page: document });
+              }}
+            >
               <span><span className="v3-emoji" aria-hidden="true">📄</span> {document.title}</span><small>일반 페이지</small>
             </button>
           ))}
         </div>
+        <V3ContextMenu
+          target={documentMenu?.target ?? null}
+          onClose={() => setDocumentMenu(null)}
+          actions={documentMenu ? buildDocumentContextMenuActions({
+            open: () => onOpenDocument(documentMenu.page),
+            copyId: () => navigator.clipboard.writeText(documentMenu.page.id),
+          }) : []}
+        />
         {data?.nextDocumentCursor ? (
           <button
             type="button"

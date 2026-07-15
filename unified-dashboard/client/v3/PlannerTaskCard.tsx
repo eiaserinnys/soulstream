@@ -8,12 +8,12 @@ import {
 } from "./planner-model";
 import type { PlannerTask } from "./planner-data";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
+import { buildTaskContextMenuActions } from "./context-menu-model";
 import {
   singleLinePreview,
   TASK_TITLE_PREVIEW_LENGTH,
 } from "./session-preview";
 import { useTaskStar } from "./use-task-star";
-import { todayPlannerMenuLabel } from "./today-task-state";
 import "./v3-content-boundary.css";
 
 export function PlannerTaskCard({
@@ -113,13 +113,17 @@ export function PlannerTaskCard({
       <V3ContextMenu
         target={contextMenu}
         onClose={() => setContextMenu(null)}
-        actions={[
-          { label: "업무 열기", onSelect: onOpen },
-          { label: "업무 페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(task.page.id) },
-          { label: taskStar.starred ? "별표 해제" : "별표 추가", onSelect: taskStar.toggle, separatorBefore: true },
-          { label: "완료 처리", onSelect: onComplete, disabled: task.status === "completed" },
-          { label: todayPlannerMenuLabel(isInToday), onSelect: onToggleToday },
-        ]}
+        actions={buildTaskContextMenuActions({
+          starred: taskStar.starred,
+          completed: task.status === "completed",
+          inToday: isInToday,
+        }, {
+          open: onOpen,
+          copyId: () => navigator.clipboard.writeText(task.page.id),
+          toggleStar: taskStar.toggle,
+          complete: onComplete,
+          toggleToday: onToggleToday,
+        })}
       />
     </LiquidGlassCard>
   );

@@ -31,6 +31,7 @@ import {
   type SuccessionContextItem,
 } from "./SessionSuccessionModal";
 import { RichSessionRow } from "./RichSessionRow";
+import { buildTaskSessionExtraActions } from "./context-menu-model";
 import "./v3-run-history.css";
 
 export function TaskRunHistory({
@@ -190,26 +191,20 @@ export function TaskRunHistory({
         onDeleteSessions={onDeleteSessions}
         getSessionName={(sessionId) => getRunSessionRenamePrefill(sessions, sessionId)}
         resolveSessionIds={(sessionId) => [sessionId]}
-        extraActions={[
-          {
-            label: "＋ 이어서 새 세션 (승계)",
-            onClick: () => {
-              if (!contextMenu) return;
-              setTargetedSuccessionId(contextMenu.sessionId);
-              setContextMenu(null);
-              setSuccessionOpen(true);
-            },
+        extraActions={buildTaskSessionExtraActions({
+          continueFromSession: () => {
+            if (!contextMenu) return;
+            setTargetedSuccessionId(contextMenu.sessionId);
+            setContextMenu(null);
+            setSuccessionOpen(true);
           },
-          {
-            label: "다른 업무로 이동",
-            onClick: () => {
-              if (!contextMenu) return;
-              setMoveSessionId(contextMenu.sessionId);
-              setMoveError(null);
-              setContextMenu(null);
-            },
+          moveToTask: () => {
+            if (!contextMenu) return;
+            setMoveSessionId(contextMenu.sessionId);
+            setMoveError(null);
+            setContextMenu(null);
           },
-        ]}
+        })}
       />
       <Dialog open={moveSessionId !== null} onOpenChange={(open) => { if (!open && !movePending) setMoveSessionId(null); }}>
         <DialogPopup className="max-w-md">

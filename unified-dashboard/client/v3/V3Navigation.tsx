@@ -1,5 +1,11 @@
 import { useMemo, useRef, useState, type CSSProperties } from "react";
-import { useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import {
+  SessionContextMenu,
+  useGlassSurface,
+  type CatalogFolder,
+  type SessionContextMenuState,
+  type SessionSummary,
+} from "@seosoyoung/soul-ui";
 import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
 
 import { flattenProjectFolders } from "./project-folders";
@@ -11,6 +17,10 @@ import {
   useTaskStarChanges,
 } from "./task-star-store";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
+import {
+  buildProjectContextMenuActions,
+  buildTaskContextMenuActions,
+} from "./context-menu-model";
 import "./v3-project-star.css";
 
 export interface PlannerDateNavItem {
@@ -31,13 +41,18 @@ export function V3Navigation({
   starredTasks,
   starredTasksHasMore,
   starredTasksLoading,
+  todayTaskIds,
   onLoadMoreStarredTasks,
   onSelectDate,
   onOpenReviewQueue,
   onSelectFolder,
   onSelectTask,
+  onCompleteTask,
+  onToggleTaskToday,
   onCreateProject,
   onCreateTask,
+  onRenameSession,
+  onDeleteSessions,
 }: {
   dates: readonly PlannerDateNavItem[];
   selectedDate: string;
@@ -47,13 +62,18 @@ export function V3Navigation({
   starredTasks: readonly PageDto[];
   starredTasksHasMore: boolean;
   starredTasksLoading: boolean;
+  todayTaskIds: ReadonlySet<string>;
   onLoadMoreStarredTasks(): void;
   onSelectDate(date: string): void;
   onOpenReviewQueue(): void;
   onSelectFolder(folder: CatalogFolder): void;
   onSelectTask(task: PageDto): void;
+  onCompleteTask(task: PageDto): Promise<void>;
+  onToggleTaskToday(task: PageDto): Promise<void>;
   onCreateProject(title: string): Promise<void>;
   onCreateTask(folderId: string): void;
+  onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
+  onDeleteSessions(sessionIds: string[]): Promise<void>;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
@@ -66,6 +86,7 @@ export function V3Navigation({
   const [creatingProject, setCreatingProject] = useState(false);
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<MenuState | null>(null);
+  const [sessionMenu, setSessionMenu] = useState<SessionContextMenuState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const createProject = async () => {
@@ -124,7 +145,17 @@ export function V3Navigation({
       <h2>검수 대기</h2>
       <div className="v3-nav-list" data-testid="v3-review-navigation">
         {reviewNavigation.map((session) => (
-          <button type="button" className="v3-review-nav-link" key={session.agentSessionId} onClick={onOpenReviewQueue}>
+          <button
+            type="button"
+            className="v3-review-nav-link"
+            key={session.agentSessionId}
+            onClick={onOpenReviewQueue}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setSessionMenu({ x: event.clientX, y: event.clientY, sessionId: session.agentSessionId });
+            }}
+          >
             <span>{reviewSessionTitle(session)}</span>
           </button>
         ))}
@@ -223,19 +254,29 @@ export function V3Navigation({
       <V3ContextMenu
         target={contextMenu?.target ?? null}
         onClose={() => setContextMenu(null)}
-        actions={contextMenu?.kind === "task" ? [
-          { label: "업무 열기", onSelect: () => onSelectTask(contextMenu.task) },
-          { label: "업무 페이지 ID 복사", onSelect: () => navigator.clipboard.writeText(contextMenu.task.id) },
-          {
-            label: taskStarredState(contextMenu.task.id, taskStarChanges, true) ? "별표 해제" : "별표 추가",
-            onSelect: () => clearTaskStar(contextMenu.task),
-            separatorBefore: true,
-          },
-        ] : contextMenu?.kind === "folder" ? [
-          { label: "프로젝트 열기", onSelect: () => onSelectFolder(contextMenu.folder) },
-          { label: "폴더 ID 복사", onSelect: () => navigator.clipboard.writeText(contextMenu.folder.id) },
-          { label: "새 업무", onSelect: () => onCreateTask(contextMenu.folder.id), separatorBefore: true },
-        ] : []}
+        actions={contextMenu?.kind === "task" ? buildTaskContextMenuActions({
+          starred: taskStarredState(contextMenu.task.id, taskStarChanges, true),
+          completed: false,
+          inToday: todayTaskIds.has(contextMenu.task.id),
+        }, {
+          open: () => onSelectTask(contextMenu.task),
+          copyId: () => navigator.clipboard.writeText(contextMenu.task.id),
+          toggleStar: () => clearTaskStar(contextMenu.task),
+          complete: () => onCompleteTask(contextMenu.task),
+          toggleToday: () => onToggleTaskToday(contextMenu.task),
+        }) : contextMenu?.kind === "folder" ? buildProjectContextMenuActions({
+          open: () => onSelectFolder(contextMenu.folder),
+          copyId: () => navigator.clipboard.writeText(contextMenu.folder.id),
+          createTask: () => onCreateTask(contextMenu.folder.id),
+        }) : []}
+      />
+      <SessionContextMenu
+        contextMenu={sessionMenu}
+        onClose={() => setSessionMenu(null)}
+        onRenameSession={onRenameSession}
+        onDeleteSessions={onDeleteSessions}
+        getSessionName={(sessionId) => reviewSessions.find((session) => session.agentSessionId === sessionId)?.displayName ?? ""}
+        resolveSessionIds={(sessionId) => [sessionId]}
       />
       <div className="v3-nav-foot">
         <div><kbd>C</kbd> 새 업무 · <kbd>Esc</kbd> 닫기</div>
