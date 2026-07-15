@@ -16,14 +16,20 @@ import {
   type RunSessionLoadState,
   type RunTreeNode,
 } from "./task-workspace-model";
-import { latestTaskRun } from "./session-succession-model";
+import {
+  buildSuccessionSessionOptions,
+  latestTaskRun,
+} from "./session-succession-model";
 import type { PageSessionDefaults } from "./task-workspace-api";
 import {
   defaultTaskMoveTargets,
   searchTaskMoveTargets,
   type TaskMoveTarget,
 } from "./task-move-targets";
-import { SessionSuccessionModal } from "./SessionSuccessionModal";
+import {
+  SessionSuccessionModal,
+  type SuccessionContextItem,
+} from "./SessionSuccessionModal";
 import { RichSessionRow } from "./RichSessionRow";
 import "./v3-run-history.css";
 
@@ -31,7 +37,7 @@ export function TaskRunHistory({
   taskTitle,
   taskPageId,
   runbookId,
-  contextCount,
+  contextItems,
   sessionDefaults,
   predecessorSessionId,
   sessionIds,
@@ -51,7 +57,7 @@ export function TaskRunHistory({
   taskTitle: string;
   taskPageId: string;
   runbookId: string;
-  contextCount: number;
+  contextItems: readonly SuccessionContextItem[];
   sessionDefaults: PageSessionDefaults | null;
   predecessorSessionId: string | null;
   sessionIds: readonly string[];
@@ -74,6 +80,10 @@ export function TaskRunHistory({
     [runSessionLoadStates, sessionIds, sessions],
   );
   const currentSession = useMemo(() => latestTaskRun(sessionIds, sessions), [sessionIds, sessions]);
+  const predecessorOptions = useMemo(
+    () => buildSuccessionSessionOptions(tree),
+    [tree],
+  );
   const [successionOpen, setSuccessionOpen] = useState(false);
   const [targetedSuccessionId, setTargetedSuccessionId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<SessionContextMenuState | null>(null);
@@ -164,7 +174,8 @@ export function TaskRunHistory({
           taskTitle={taskTitle}
           taskPageId={taskPageId}
           runbookId={runbookId}
-          contextCount={contextCount}
+          contextItems={contextItems}
+          predecessorOptions={predecessorOptions}
           pageDefaults={sessionDefaults}
           currentSession={targetedSuccession}
           predecessorSessionId={targetedSuccessionId ?? predecessorSessionId}

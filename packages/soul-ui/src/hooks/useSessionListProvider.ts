@@ -13,7 +13,7 @@
  */
 
 import { useCallback, useRef, useState, useMemo } from "react";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { replaceEqualDeep, useInfiniteQuery } from "@tanstack/react-query";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useRunbookStore } from "../stores/runbook-store";
 import { useCustomViewStore } from "../stores/custom-view-store";
@@ -43,6 +43,13 @@ const DEFAULT_PAGE_SIZE = 50;
 interface SessionPage {
   sessions: SessionSummary[];
   total: number;
+}
+
+export function retainEqualSessions(
+  previous: SessionSummary[],
+  next: SessionSummary[],
+): SessionSummary[] {
+  return replaceEqualDeep(previous, next);
 }
 
 export interface UseSessionListProviderOptions {
@@ -86,6 +93,7 @@ export interface UseSessionListProviderOptions {
 export function useSessionListProvider(
   options: UseSessionListProviderOptions
 ) {
+  const stableSessionsRef = useRef<SessionSummary[]>([]);
   const {
     intervalMs = 5000,
     enabled = true,
@@ -198,10 +206,11 @@ export function useSessionListProvider(
   });
 
   // TanStack Query 데이터에서 sessions 추출
-  const sessions = useMemo(
-    () => data?.pages.flatMap((page) => page.sessions) ?? [],
-    [data],
-  );
+  const sessions = useMemo(() => {
+    const next = data?.pages.flatMap((page) => page.sessions) ?? [];
+    stableSessionsRef.current = retainEqualSessions(stableSessionsRef.current, next);
+    return stableSessionsRef.current;
+  }, [data]);
 
   // sessionsTotal: 마지막 페이지의 total
   const sessionsTotal =

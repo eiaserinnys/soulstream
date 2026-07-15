@@ -160,7 +160,7 @@ for (const theme of ["dark", "light"] as const) {
 
       await page.getByRole("button", { name: "채팅 닫기" }).click();
       await page.getByRole("button", { name: "＋ 새 세션" }).click();
-      await expect(page.getByRole("dialog", { name: "새 세션 · 승계 미리보기" })).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "새 세션", exact: true })).toBeVisible();
       await capture(page, outputDir, "07-session-succession", diagnostics);
       await page.getByRole("button", { name: "승계 닫기" }).click();
 

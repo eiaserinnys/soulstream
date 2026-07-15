@@ -85,7 +85,7 @@ export function TaskDetailPane({
     setCreatedSessions([]);
     setDocumentMenu(null);
   }, [task.blocks, task.page.id]);
-  const contexts = contextBlocks.flatMap((block) => {
+  const contextItems = useMemo(() => contextBlocks.flatMap((block) => {
     if (block.block_type === "atom_ref") {
       const label = stringProperty(block.properties, "title")
         ?? stringProperty(block.properties, "label")
@@ -96,12 +96,9 @@ export function TaskDetailPane({
     if (block.block_type === "guidance") {
       return [{ id: block.id, icon: "✦", label: block.text.trim() || "실행 지침" }];
     }
-    return [];
-  });
-  const mountedContextTitles = contextBlocks.flatMap((block) => {
     const match = /^\[\[([^\[\]]+)\]\]$/.exec(block.text.trim());
-    return match ? [{ id: block.id, title: match[1] }] : [];
-  });
+    return match ? [{ id: block.id, icon: "📄", label: match[1] }] : [];
+  }), [contextBlocks]);
   const allSessions = [...sessions, ...createdSessions.filter((created) => !sessions.some((session) => session.agentSessionId === created.agentSessionId))];
   const allSessionIds = [...task.sessionIds, ...createdSessions.map((session) => session.agentSessionId)];
 
@@ -148,11 +145,10 @@ export function TaskDetailPane({
         </section>
 
         <section className="v3-detail-section">
-          <div className="v3-detail-section-head"><h3>컨텍스트</h3><span>{contexts.length + mountedContextTitles.length}개</span></div>
+          <div className="v3-detail-section-head"><h3>컨텍스트</h3><span>{contextItems.length}개</span></div>
           <div className="v3-context-chips">
-            {contexts.map((context) => <span key={context.id}>{context.icon} {context.label}</span>)}
-            {mountedContextTitles.map((document) => <span key={document.id}><span className="v3-emoji" aria-hidden="true">📄</span> {document.title}</span>)}
-            {contexts.length + mountedContextTitles.length === 0 ? <small>연결된 컨텍스트가 없습니다.</small> : null}
+            {contextItems.map((context) => <span key={context.id}><span className="v3-emoji" aria-hidden="true">{context.icon}</span> {context.label}</span>)}
+            {contextItems.length === 0 ? <small>연결된 컨텍스트가 없습니다.</small> : null}
             <button type="button" className="v3-context-add" aria-expanded={contextPickerOpen} onClick={() => { setDocumentPickerOpen(false); setContextPickerOpen((value) => !value); }}>＋ 컨텍스트</button>
           </div>
           {contextPickerOpen ? (
@@ -251,7 +247,7 @@ export function TaskDetailPane({
           taskTitle={task.page.title}
           taskPageId={task.page.id}
           runbookId={task.runbookId}
-          contextCount={contexts.length + mountedContextTitles.length}
+          contextItems={contextItems}
           sessionDefaults={sessionDefaults}
           predecessorSessionId={predecessorSessionId}
           sessionIds={allSessionIds}

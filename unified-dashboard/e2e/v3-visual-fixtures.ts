@@ -19,9 +19,13 @@ export interface V3VisualQaRouteOptions {
   alphaRunHistoryPages?: boolean;
   catalogDelayMs?: number;
   failTaskTitleRenameOnce?: boolean;
+  successionPickerRuns?: boolean;
   plannerDelayMs?: number;
   timelineEventCount?: number;
   liveEventText?: string;
+  onAgentListRequest?: (nodeId: string) => void;
+  onSessionCreate?: (payload: Record<string, unknown>) => void;
+  onSessionListRequest?: () => void;
 }
 
 function page(
@@ -254,6 +258,22 @@ const sessions = [
     agentName: "로젤린",
   },
   {
+    agentSessionId: "run-alpha-3",
+    status: "completed",
+    reviewState: "not_required",
+    sessionType: "claude",
+    createdAt: "2026-07-14T01:20:00.000Z",
+    updatedAt: "2026-07-14T01:25:00.000Z",
+    lastMessage: {
+      type: "user_message",
+      preview: "🧭 다음 검증은 이전 실행을 골라 이어서 진행해 주세요.",
+      timestamp: "2026-07-14T01:25:00.000Z",
+    },
+    nodeId: "eiaserinnys",
+    agentId: "roselin_codex",
+    agentName: "로젤린",
+  },
+  {
     agentSessionId: "run-alpha-child",
     status: "completed",
     reviewState: "not_required",
@@ -460,8 +480,7 @@ export async function installV3VisualQaRoutes(
       ],
       sessions: {},
     });
-    if (path === "/api/nodes") return fulfillJson(route, {
-      nodes: [{
+    const qaNodes = [{
         nodeId: "eiaserinnys",
         host: "localhost",
         port: 3105,
@@ -469,21 +488,21 @@ export async function installV3VisualQaRoutes(
         capabilities: {},
         connectedAt: Date.parse(YESTERDAY),
         sessionCount: sessions.length,
-      }],
-    });
+      }, ...(options.successionPickerRuns ? [{
+        nodeId: "qa-node",
+        host: "localhost",
+        port: 4105,
+        status: "connected",
+        capabilities: {},
+        connectedAt: Date.parse(YESTERDAY),
+        sessionCount: 0,
+      }] : [])];
+    if (path === "/api/nodes") return fulfillJson(route, { nodes: qaNodes });
     if (path === "/api/nodes/stream") {
       return route.fulfill({
         status: 200,
         contentType: "text/event-stream",
-        body: `event: snapshot\ndata: ${JSON.stringify([{
-          nodeId: "eiaserinnys",
-          host: "localhost",
-          port: 3105,
-          status: "connected",
-          capabilities: {},
-          connectedAt: Date.parse(YESTERDAY),
-          sessionCount: sessions.length,
-        }])}\n\n`,
+        body: `event: snapshot\ndata: ${JSON.stringify(qaNodes)}\n\n`,
       });
     }
     if (path === "/api/sessions/stream") {
@@ -508,6 +527,7 @@ export async function installV3VisualQaRoutes(
       );
     }
     if (path === "/api/sessions" && request.method() === "GET") {
+      options.onSessionListRequest?.();
       const requestedIds = url.searchParams.getAll("session_id");
       if (requestedIds.length === 0) await delay(options.catalogDelayMs);
       const selectedSessions = requestedIds.length > 0
@@ -515,15 +535,29 @@ export async function installV3VisualQaRoutes(
         : sessions;
       return fulfillJson(route, { sessions: selectedSessions, total: selectedSessions.length });
     }
+    if (path === "/api/sessions" && request.method() === "POST") {
+      const payload = request.postDataJSON() as Record<string, unknown>;
+      options.onSessionCreate?.(payload);
+      return fulfillJson(route, { agentSessionId: "run-alpha-successor", nodeId: payload.nodeId ?? "eiaserinnys" });
+    }
     if (path === "/api/sessions/folder-counts") return fulfillJson(route, { counts: {} });
-    if (/^\/api\/nodes\/[^/]+\/agents$/.test(path)) return fulfillJson(route, {
-      agents: [{
-        id: "roselin_codex",
-        name: "로젤린",
-        backend: "codex",
-        portraitUrl: "/api/nodes/eiaserinnys/agents/roselin_codex/portrait",
-      }],
-    });
+    if (/^\/api\/nodes\/[^/]+\/agents$/.test(path)) {
+      const nodeId = decodeURIComponent(path.split("/")[3] ?? "");
+      options.onAgentListRequest?.(nodeId);
+      return fulfillJson(route, {
+        agents: nodeId === "qa-node" ? [{
+          id: "qa-agent",
+          name: "QA 에이전트",
+          backend: "codex",
+          portraitUrl: null,
+        }] : [{
+          id: "roselin_codex",
+          name: "로젤린",
+          backend: "codex",
+          portraitUrl: "/api/nodes/eiaserinnys/agents/roselin_codex/portrait",
+        }],
+      });
+    }
     if (/^\/api\/nodes\/[^/]+\/agents\/[^/]+\/portrait$/.test(path)) {
       return route.fulfill({
         status: 200,
@@ -572,7 +606,10 @@ export async function installV3VisualQaRoutes(
       const runbookId = taskId === pages.taskAlpha.id
         ? "rb-alpha"
         : taskId === pages.taskBeta.id ? "rb-beta" : taskId === pages.taskDone.id ? "rb-done" : "rb-carry";
-      const ids = [...(runSessions[runbookId] ?? [])].reverse();
+      const baseIds = runSessions[runbookId] ?? [];
+      const ids = [...(options.successionPickerRuns && runbookId === "rb-alpha"
+        ? [...baseIds, "run-alpha-3"]
+        : baseIds)].reverse();
       return fulfillJson(route, {
         items: ids.map((agentSessionId) => ({ agent_session_id: agentSessionId })),
         next_cursor: null,
@@ -627,7 +664,7 @@ export async function installV3VisualQaRoutes(
       const current = pageReads[pageId];
       if (!current) return fulfillJson(route, { detail: "page not found" }, 404);
       const input = request.postDataJSON() as {
-        operations?: Array<{ op?: string; title?: string }>;
+        operations?: Array<{ op?: string; title?: string; temp_id?: string }>;
       };
       const rename = input.operations?.find((operation) => operation.op === "rename_page");
       if (rename?.title && pageId === pages.taskAlpha.id) {
@@ -641,11 +678,16 @@ export async function installV3VisualQaRoutes(
         snapshot.runbook.title = rename.title;
         snapshot.runbook.version += 1;
       }
+      const tempIdMapping = Object.fromEntries(
+        (input.operations ?? [])
+          .filter((operation) => operation.op === "create_block" && operation.temp_id)
+          .map((operation) => [operation.temp_id as string, `fixture-${operation.temp_id}`]),
+      );
       return fulfillJson(route, {
         page: current.page,
         blocks: current.blocks,
         operation: { id: `fixture-operation-${pageId}-${current.page.version}` },
-        temp_id_mapping: {},
+        temp_id_mapping: tempIdMapping,
       });
     }
     if (/^\/api\/pages\/[^/]+\/backlinks$/.test(path)) {

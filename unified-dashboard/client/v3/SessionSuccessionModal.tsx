@@ -1,9 +1,8 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
   Dialog,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogPanel,
@@ -20,6 +19,7 @@ import { AgentNodeAssignmentFields } from "./AgentNodeAssignmentFields";
 import {
   buildSuccessionCreateOptions,
   resolveRunAssignmentDefaults,
+  type SuccessionSessionOption,
 } from "./session-succession-model";
 import {
   createTaskPageAnchor,
@@ -29,11 +29,18 @@ import { V3ErrorNotice } from "./V3ErrorNotice";
 
 const SUCCESSOR_PROMPT = "새 업무 run을 시작하고 사용자의 다음 지시를 기다려주세요.";
 
+export interface SuccessionContextItem {
+  id: string;
+  icon: string;
+  label: string;
+}
+
 export function SessionSuccessionModal({
   taskTitle,
   taskPageId,
   runbookId,
-  contextCount,
+  contextItems,
+  predecessorOptions,
   pageDefaults,
   currentSession,
   predecessorSessionId,
@@ -43,7 +50,8 @@ export function SessionSuccessionModal({
   taskTitle: string;
   taskPageId: string;
   runbookId: string;
-  contextCount: number;
+  contextItems: readonly SuccessionContextItem[];
+  predecessorOptions: readonly SuccessionSessionOption[];
   pageDefaults: PageSessionDefaults | null;
   currentSession: SessionSummary | null;
   predecessorSessionId: string | null;
@@ -56,7 +64,18 @@ export function SessionSuccessionModal({
     pageDefaults,
     currentSession,
   }), [currentSession, pageDefaults]);
-  const predecessorId = predecessorSessionId ?? currentSession?.agentSessionId ?? null;
+  const defaultPredecessorId = predecessorSessionId
+    ?? currentSession?.agentSessionId
+    ?? predecessorOptions[0]?.sessionId
+    ?? null;
+  const [selectedPredecessorId, setSelectedPredecessorId] = useState(defaultPredecessorId);
+  const selectedPredecessor = predecessorOptions.find(
+    (option) => option.sessionId === selectedPredecessorId,
+  ) ?? predecessorOptions[0] ?? null;
+  const selectedPredecessorIndex = selectedPredecessor
+    ? predecessorOptions.indexOf(selectedPredecessor)
+    : -1;
+  const predecessorId = selectedPredecessor?.sessionId ?? null;
   const [inheritCard, setInheritCard] = useState(true);
   const [inheritSummary, setInheritSummary] = useState(Boolean(predecessorId));
   const [selectedNodeId, setSelectedNodeId] = useState(resolvedDefaults.nodeId ?? "");
@@ -65,8 +84,11 @@ export function SessionSuccessionModal({
   const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createTaskPageAnchor>> | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const handleAssignmentError = useCallback((message: string) => {
+    console.error("[v3/session-succession] 실행 대상 조회 실패", message);
+    setError(message);
+  }, []);
 
-  const selectedCount = (inheritCard ? 2 : 0) + (inheritSummary && predecessorId ? 1 : 0);
   const start = async () => {
     if (!selectedNodeId || !selectedAgentId) return;
     setPending(true);
@@ -123,13 +145,10 @@ export function SessionSuccessionModal({
       >
         <DialogHeader className="v3-succession-head">
           <span aria-hidden="true">↗</span>
-          <div>
-            <DialogTitle>새 세션 · 승계 미리보기</DialogTitle>
-            <DialogDescription>체크를 모두 끄면 빈 세션으로 시작합니다.</DialogDescription>
-          </div>
+          <DialogTitle>새 세션</DialogTitle>
         </DialogHeader>
         <DialogPanel className="v3-succession-body" scrollFade={false}>
-          <p><strong>{taskTitle}</strong>의 새 run이 이어받을 것</p>
+          <p>새 세션의 컨텍스트</p>
           {error ? (
             <V3ErrorNotice
               className="v3-succession-error"
@@ -138,13 +157,60 @@ export function SessionSuccessionModal({
             />
           ) : null}
           <ol>
-            <li><label><input type="checkbox" checked={inheritCard} onChange={(event) => setInheritCard(event.target.checked)} /><span><strong>업무 카드 본문</strong><small>목표·완료 조건·현재 결정</small></span></label></li>
-            <li><label><input type="checkbox" checked={inheritSummary} disabled={!predecessorId} onChange={(event) => setInheritSummary(event.target.checked)} /><span><strong>직전 run 요약</strong><small>{predecessorId ? `${predecessorId.slice(0, 12)}… 요약` : "직전 run 없음"}</small>{predecessorId ? <em>승계 링크로 기록됨</em> : null}</span></label></li>
-            <li><label><input type="checkbox" checked={inheritCard} disabled /><span><strong>컨텍스트 슬롯</strong><small>{contextCount}건 · 업무 카드 본문에 포함</small></span></label></li>
+            <li>
+              <label>
+                <input
+                  type="checkbox"
+                  aria-label="업무 카드 본문과 컨텍스트 포함"
+                  checked={inheritCard}
+                  onChange={(event) => setInheritCard(event.target.checked)}
+                />
+                <span>
+                  <strong>업무 카드 본문</strong>
+                  <span className="v3-succession-context-chips">
+                    {contextItems.map((context) => (
+                      <span key={context.id}><span aria-hidden="true">{context.icon}</span> {context.label}</span>
+                    ))}
+                    {contextItems.length === 0 ? <small>연결된 컨텍스트 없음</small> : null}
+                  </span>
+                </span>
+              </label>
+            </li>
+            <li>
+              <label>
+                <input
+                  type="checkbox"
+                  aria-label="이전 세션 이어받기"
+                  checked={inheritSummary}
+                  disabled={!predecessorId}
+                  onChange={(event) => setInheritSummary(event.target.checked)}
+                />
+                <span>
+                  <strong>이전 세션</strong>
+                  <select
+                    aria-label="이어받을 이전 세션"
+                    value={selectedPredecessorIndex < 0 ? "" : String(selectedPredecessorIndex)}
+                    disabled={!inheritSummary || predecessorOptions.length === 0}
+                    onChange={(event) => {
+                      const option = predecessorOptions[Number(event.target.value)];
+                      setSelectedPredecessorId(option?.sessionId ?? null);
+                    }}
+                  >
+                    {predecessorOptions.length === 0 ? <option value="">이전 세션 없음</option> : null}
+                    {predecessorOptions.map((option, index) => (
+                      <option key={option.sessionId} value={String(index)}>
+                        {option.label}{option.runNumber === null ? "" : ` · run #${option.runNumber}`}
+                      </option>
+                    ))}
+                  </select>
+                  {predecessorId ? (
+                    <small>이전 세션을 이어 받을 경우 세션을 승계한 것으로 간주됩니다.</small>
+                  ) : null}
+                </span>
+              </label>
+            </li>
           </ol>
-          <div className="v3-succession-choice">{selectedCount}개 선택 · {selectedCount ? "승계 세션" : "빈 세션"}</div>
-          <AgentNodeAssignmentFields agentId={selectedAgentId} nodeId={selectedNodeId} preferredAgentId={resolvedDefaults.agentId} preferredNodeId={resolvedDefaults.nodeId} fallbackToAvailable onAgentIdChange={setSelectedAgentId} onNodeIdChange={setSelectedNodeId} onAgentInfoChange={setSelectedAgent} onError={(message) => { console.error("[v3/session-succession] 실행 대상 조회 실패", message); setError(message); }} />
-          <small className="v3-succession-default-source">기본값: {resolvedDefaults.source === "page-defaults" ? "프로젝트 상속" : resolvedDefaults.source === "current-session" ? "현재 run" : "직접 선택"}</small>
+          <AgentNodeAssignmentFields agentId={selectedAgentId} nodeId={selectedNodeId} preferredAgentId={resolvedDefaults.agentId} preferredNodeId={resolvedDefaults.nodeId} fallbackToAvailable onAgentIdChange={setSelectedAgentId} onNodeIdChange={setSelectedNodeId} onAgentInfoChange={setSelectedAgent} onError={handleAssignmentError} />
         </DialogPanel>
         <DialogFooter className="v3-succession-footer">
           <Button variant="ghost" disabled={pending} onClick={onClose}>취소</Button>
