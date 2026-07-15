@@ -69,6 +69,25 @@ describe("buildMorningRitualQueue", () => {
 
     expect(queue.map((item) => item.id)).toEqual(["review:review-me"]);
   });
+
+  it("turns an unnamed session prompt into a single-line title preview capped at 120 code points", () => {
+    const prompt = `  ${"장문 프롬프트와 JSON 조각\n".repeat(40)}  `;
+    const queue = buildMorningRitualQueue({
+      historicalDays: [],
+      todayTaskPageIds: new Set(),
+      sessions: [{
+        ...session("long-review", "needs_review"),
+        displayName: "  ",
+        prompt,
+      }],
+    });
+
+    expect(queue).toHaveLength(1);
+    expect(queue[0]?.title).not.toContain("\n");
+    expect(Array.from(queue[0]?.title ?? "")).toHaveLength(120);
+    expect(queue[0]?.title.endsWith("…")).toBe(true);
+    expect(queue[0]?.title).not.toBe(prompt);
+  });
 });
 
 describe("dispatchRitualAction", () => {

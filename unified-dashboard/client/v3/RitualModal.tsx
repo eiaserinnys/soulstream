@@ -140,32 +140,42 @@ export function RitualModal({
           ) : null}
           {data ? (
             <>
-              <div className="v3-ritual-progress-row">
-                <div className="v3-ritual-progress" role="progressbar" aria-label="아침 정리 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={complete ? 100 : progress}>
-                  <span style={{ width: `${complete ? 100 : progress}%` }} />
-                </div>
-                <strong>{complete ? `${data.items.length} / ${data.items.length}` : `${index + 1} / ${data.items.length}`}</strong>
-              </div>
               {complete ? (
                 <div className="v3-ritual-done">
                   <span aria-hidden="true">✓</span>
                   <h3>오늘 준비 완료</h3>
                   <p>결정한 업무와 검수 항목을 오늘 플래너에 반영했습니다.</p>
-                  <button type="button" className="v3-button v3-button--primary" onClick={finish}>
-                    {chatDestination ? "선택한 채팅 열기" : "플래너 열기"}
-                  </button>
                 </div>
               ) : item ? (
                 <RitualItemCard
                   item={item}
-                  processing={processing}
                   error={actionError}
-                  onAction={(action) => { void handleAction(action); }}
                 />
               ) : null}
             </>
           ) : null}
         </div>
+        {data ? (
+          <footer className="v3-ritual-footer">
+            <div className="v3-ritual-progress-row">
+              <div className="v3-ritual-progress" role="progressbar" aria-label="아침 정리 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={complete ? 100 : progress}>
+                <span style={{ width: `${complete ? 100 : progress}%` }} />
+              </div>
+              <strong>{complete ? `${data.items.length} / ${data.items.length}` : `${index + 1} / ${data.items.length}`}</strong>
+            </div>
+            {complete ? (
+              <button type="button" className="v3-button v3-button--primary v3-ritual-finish" onClick={finish}>
+                {chatDestination ? "선택한 채팅 열기" : "플래너 열기"}
+              </button>
+            ) : item ? (
+              <RitualActions
+                item={item}
+                processing={processing}
+                onAction={(action) => { void handleAction(action); }}
+              />
+            ) : null}
+          </footer>
+        ) : null}
       </section>
     </div>
   );
@@ -173,14 +183,10 @@ export function RitualModal({
 
 function RitualItemCard({
   item,
-  processing,
   error,
-  onAction,
 }: {
   item: RitualQueueItem;
-  processing: boolean;
   error: string | null;
-  onAction(action: RitualAction): void;
 }) {
   return (
     <>
@@ -191,22 +197,35 @@ function RitualItemCard({
         <small>◉ {item.agentLabel}</small>
       </article>
       {error ? <p className="v3-ritual-error" role="alert">{error}</p> : null}
-      <div className="v3-ritual-actions">
-        {item.kind === "task" ? (
-          <>
-            <button type="button" disabled={processing} className="v3-button v3-button--primary" onClick={() => onAction("today")}>오늘로</button>
-            <button type="button" disabled={processing} className="v3-button v3-button--ghost" onClick={() => onAction("later")}>미루기</button>
-            <button type="button" disabled={processing} className="v3-button v3-button--soft" onClick={() => onAction("done")}>완료 처리</button>
-          </>
-        ) : (
-          <>
-            <button type="button" disabled={processing} className="v3-button v3-button--primary" onClick={() => onAction("chat")}>채팅 열기</button>
-            <button type="button" disabled={processing} className="v3-button v3-button--soft" onClick={() => onAction("acknowledge")}>확인 처리</button>
-            <button type="button" disabled={processing} className="v3-button v3-button--ghost" onClick={() => onAction("later")}>미루기</button>
-          </>
-        )}
-      </div>
     </>
+  );
+}
+
+function RitualActions({
+  item,
+  processing,
+  onAction,
+}: {
+  item: RitualQueueItem;
+  processing: boolean;
+  onAction(action: RitualAction): void;
+}) {
+  return (
+    <div className="v3-ritual-actions">
+      {item.kind === "task" ? (
+        <>
+          <button type="button" disabled={processing} className="v3-button v3-button--primary" onClick={() => onAction("today")}>오늘로</button>
+          <button type="button" disabled={processing} className="v3-button v3-button--ghost" onClick={() => onAction("later")}>미루기</button>
+          <button type="button" disabled={processing} className="v3-button v3-button--soft" onClick={() => onAction("done")}>완료 처리</button>
+        </>
+      ) : (
+        <>
+          <button type="button" disabled={processing} className="v3-button v3-button--primary" onClick={() => onAction("chat")}>채팅 열기</button>
+          <button type="button" disabled={processing} className="v3-button v3-button--soft" onClick={() => onAction("acknowledge")}>확인 처리</button>
+          <button type="button" disabled={processing} className="v3-button v3-button--ghost" onClick={() => onAction("later")}>미루기</button>
+        </>
+      )}
+    </div>
   );
 }
 

@@ -11,7 +11,11 @@
 }
 
 .v3-ritual-modal {
+  display: flex;
+  min-height: 0;
   width: min(520px, 100%);
+  max-height: calc(100dvh - 40px);
+  flex-direction: column;
   overflow: hidden;
   border-radius: 18px;
 }
@@ -23,6 +27,11 @@
   gap: 12px;
   border-bottom: 1px solid var(--border);
   padding: 18px 20px;
+  flex: 0 0 auto;
+}
+
+.v3-ritual-head > div {
+  min-width: 0;
 }
 
 .v3-ritual-icon {
@@ -63,14 +72,25 @@
 }
 
 .v3-ritual-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 20px;
+  scrollbar-gutter: stable;
+}
+
+.v3-ritual-footer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  padding: 16px 20px 20px;
+  background: color-mix(in srgb, var(--card) 62%, transparent);
 }
 
 .v3-ritual-progress-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .v3-ritual-progress {
@@ -97,7 +117,10 @@
 }
 
 .v3-ritual-card {
-  min-height: 190px;
+  display: flex;
+  height: 244px;
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   padding: 22px;
@@ -116,15 +139,23 @@
 }
 
 .v3-ritual-card h3 {
+  display: -webkit-box;
+  overflow: hidden;
   margin: 18px 0 8px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   font-size: var(--font-size-xl);
   line-height: var(--font-size-xl--line-height);
   letter-spacing: -.025em;
 }
 
 .v3-ritual-card p {
-  min-height: 44px;
+  display: -webkit-box;
+  min-height: 0;
+  overflow: hidden;
   margin: 0;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
   color: var(--muted-foreground);
   font-size: var(--font-size-sm);
   line-height: 1.65;
@@ -132,20 +163,28 @@
 
 .v3-ritual-card small {
   display: block;
-  margin-top: 20px;
+  overflow: hidden;
+  margin-top: auto;
+  padding-top: 20px;
   color: var(--muted-foreground);
   font-size: var(--font-size-xs);
   font-weight: 720;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .v3-ritual-actions {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  margin-top: 14px;
 }
 
 .v3-ritual-actions .v3-button {
+  min-height: 38px;
+}
+
+.v3-ritual-finish {
+  width: 100%;
   min-height: 38px;
 }
 
@@ -199,11 +238,13 @@
 
   .v3-ritual-modal {
     width: 100%;
+    max-height: 100dvh;
     border-radius: 18px 18px 0 0;
   }
 
   .v3-ritual-head,
-  .v3-ritual-body {
+  .v3-ritual-body,
+  .v3-ritual-footer {
     padding: 16px;
   }
 

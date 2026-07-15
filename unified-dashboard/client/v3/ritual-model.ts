@@ -30,6 +30,8 @@ export interface RitualReviewItem {
 export type RitualQueueItem = RitualTaskItem | RitualReviewItem;
 export type RitualAction = "today" | "later" | "done" | "chat" | "acknowledge";
 
+const RITUAL_TITLE_PREVIEW_LENGTH = 120;
+
 export interface RitualActionPort {
   mountToday(input: { taskTitle: string }): Promise<void>;
   completeRunbook(input: { runbookId: string; expectedVersion: number }): Promise<void>;
@@ -83,7 +85,9 @@ export function buildMorningRitualQueue(
     .map<RitualReviewItem>((session) => ({
       kind: "review",
       id: `review:${session.agentSessionId}`,
-      title: session.displayName ?? session.prompt ?? session.agentSessionId,
+      title: nonBlank(session.displayName)
+        ?? singleLinePreview(session.prompt, RITUAL_TITLE_PREVIEW_LENGTH)
+        ?? session.agentSessionId,
       description: session.awaySummary
         ?? session.lastMessage?.preview
         ?? "완료된 세션이 검수를 기다리고 있습니다.",
@@ -140,4 +144,20 @@ function isTerminalTask(task: PlannerTask): boolean {
 function displayDate(date: string): string {
   return new Intl.DateTimeFormat("ko-KR", { month: "numeric", day: "numeric" })
     .format(new Date(`${date}T12:00:00`));
+}
+
+function nonBlank(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function singleLinePreview(
+  value: string | null | undefined,
+  maxLength: number,
+): string | null {
+  const normalized = value?.replace(/\s+/gu, " ").trim();
+  if (!normalized) return null;
+  const codePoints = Array.from(normalized);
+  if (codePoints.length <= maxLength) return normalized;
+  return `${codePoints.slice(0, maxLength - 1).join("")}…`;
 }
