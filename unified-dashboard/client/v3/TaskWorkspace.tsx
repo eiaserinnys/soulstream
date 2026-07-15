@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ChatView,
+  MarkdownDocumentPanel,
+  useDashboardStore,
   useGlassSurface,
   type SessionReviewAcknowledgeResult,
   type SessionSummary,
@@ -83,10 +85,12 @@ export function TaskWorkspace({
 }) {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const chatSurfaceRef = useRef<HTMLElement>(null);
-  const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: chatOpen });
   const draggingPointer = useRef<number | null>(null);
   const [splitPercent, setSplitPercent] = useState(DEFAULT_WORKSPACE_SPLIT);
   const [boardOpen, setBoardOpen] = useState(false);
+  const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: chatOpen && !boardOpen });
+  const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
+  const activeBoardDocumentId = useDashboardStore((state) => state.activeBoardDocumentId);
 
   useEffect(() => { setBoardOpen(false); }, [task.page.id]);
 
@@ -117,20 +121,99 @@ export function TaskWorkspace({
     }
   };
 
+  const closeBoardInspector = () => {
+    const state = useDashboardStore.getState();
+    state.clearActiveSession();
+    state.setActiveBoardDocument(null);
+  };
+
+  const divider = (label: string) => (
+    <div
+      className="v3-workspace-divider"
+      role="separator"
+      tabIndex={0}
+      aria-label={label}
+      aria-orientation="vertical"
+      aria-valuemin={25}
+      aria-valuemax={75}
+      aria-valuenow={Math.round(splitPercent)}
+      onPointerDown={beginDrag}
+      onPointerMove={moveDrag}
+      onPointerUp={finishDrag}
+      onPointerCancel={finishDrag}
+      onDoubleClick={() => setSplitPercent(DEFAULT_WORKSPACE_SPLIT)}
+      onKeyDown={(event) => {
+        const next = workspaceSplitForKey(splitPercent, event.key);
+        if (next === null) return;
+        event.preventDefault();
+        setSplitPercent(next);
+      }}
+    ><span /></div>
+  );
+
+  const boardInspector = activeBoardDocumentId ? (
+    <section
+      ref={chatSurfaceRef}
+      className="v3-chat-pane v3-board-inspector border border-glass-border glass-strong glass-chrome lg-rim"
+      data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
+      data-testid="v3-board-document-panel"
+      aria-label="업무 보드 문서"
+    >
+      <header className="v3-chat-header">
+        <div><small>{projectTitle} › {task.page.title}</small><strong>마크다운 문서</strong></div>
+        <button type="button" aria-label="보드로 돌아가기" onClick={closeBoardInspector}>×</button>
+      </header>
+      <div className="v3-board-document-content"><MarkdownDocumentPanel /></div>
+    </section>
+  ) : activeSessionKey && activeSession ? (
+    <section
+      ref={chatSurfaceRef}
+      className="v3-chat-pane v3-board-inspector border border-glass-border glass-strong glass-chrome lg-rim"
+      data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
+      data-testid="v3-board-chat-panel"
+      aria-label="업무 보드 세션 채팅"
+    >
+      <header className="v3-chat-header">
+        <div><small>{projectTitle} › {task.page.title}</small><strong>{activeSession.displayName ?? activeSession.agentName ?? "세션"}</strong></div>
+        <span className={`v3-chat-status v3-chat-status--${activeSession.status}`}>{activeSession.status === "running" ? "실행 중" : "완료"}</span>
+        <button type="button" aria-label="보드로 돌아가기" onClick={closeBoardInspector}>×</button>
+      </header>
+      <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} />
+      <div className="v3-chat-content">
+        <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} />
+      </div>
+    </section>
+  ) : (
+    <section
+      ref={chatSurfaceRef}
+      className="v3-chat-pane v3-board-inspector border border-glass-border glass-strong glass-chrome lg-rim"
+      data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
+      data-testid="v3-board-inspector-empty"
+      aria-label="업무 보드 선택 항목"
+    >
+      <div className="v3-chat-empty">
+        <span className="v3-emoji" aria-hidden="true">🧭</span>
+        <strong>보드에서 항목을 선택하세요.</strong>
+        <p>세션은 채팅으로, 마크다운은 문서 패널로 열립니다.</p>
+      </div>
+    </section>
+  );
+
   return (
-    <div className={`v3-workspace-scrim${chatOpen ? " is-chat-open" : ""}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}>
+    <div className={`v3-workspace-scrim${chatOpen || boardOpen ? " is-chat-open" : ""}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}>
       <div
         ref={workspaceRef}
-        className={`v3-workspace${boardOpen ? " is-board-open" : chatOpen ? " is-chat-open" : ""}`}
+        className={`v3-workspace${boardOpen ? " is-board-open" : chatOpen ? " is-chat-open" : ""}${boardOpen && (activeBoardDocumentId || activeSessionKey) ? " has-board-selection" : ""}`}
         data-mobile-view={mobileMode ? mobileTab : undefined}
-        style={chatOpen && !boardOpen && !mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 4px)) 8px minmax(0, 1fr)` } : undefined}
+        style={(chatOpen || boardOpen) && !mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 4px)) 8px minmax(0, 1fr)` } : undefined}
       >
         {boardOpen ? (
           <TaskBoardPane
             runbookId={task.runbookId}
             projectFolderId={projectFolderId}
+            projectTitle={projectTitle}
             sessions={sessions}
-            onClose={onCloseWorkspace}
+            onClose={() => setBoardOpen(false)}
           />
         ) : (
           <TaskDetailPane
@@ -144,7 +227,10 @@ export function TaskWorkspace({
             sessionDefaults={sessionDefaults}
             taskMoveTargets={taskMoveTargets}
             onReturnToToday={onReturnToToday}
-            onOpenBoard={() => setBoardOpen(true)}
+            onOpenBoard={() => {
+              setSplitPercent(64);
+              setBoardOpen(true);
+            }}
             onCloseWorkspace={onCloseWorkspace}
             onOpenSession={onOpenSession}
             onSaveDescription={onSaveDescription}
@@ -156,29 +242,14 @@ export function TaskWorkspace({
             onTaskBlocksChanged={onTaskBlocksChanged}
           />
         )}
-        {chatOpen && !boardOpen ? (
+        {boardOpen ? (
           <>
-            <div
-              className="v3-workspace-divider"
-              role="separator"
-              tabIndex={0}
-              aria-label="상세와 채팅 너비 조절"
-              aria-orientation="vertical"
-              aria-valuemin={25}
-              aria-valuemax={75}
-              aria-valuenow={Math.round(splitPercent)}
-              onPointerDown={beginDrag}
-              onPointerMove={moveDrag}
-              onPointerUp={finishDrag}
-              onPointerCancel={finishDrag}
-              onDoubleClick={() => setSplitPercent(DEFAULT_WORKSPACE_SPLIT)}
-              onKeyDown={(event) => {
-                const next = workspaceSplitForKey(splitPercent, event.key);
-                if (next === null) return;
-                event.preventDefault();
-                setSplitPercent(next);
-              }}
-            ><span /></div>
+            {divider("보드와 선택 항목 너비 조절")}
+            {boardInspector}
+          </>
+        ) : chatOpen ? (
+          <>
+            {divider("상세와 채팅 너비 조절")}
             <section
               ref={chatSurfaceRef}
               className="v3-chat-pane border border-glass-border glass-strong glass-chrome lg-rim"

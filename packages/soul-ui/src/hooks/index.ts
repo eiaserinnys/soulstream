@@ -17,6 +17,8 @@ export type { UseFileUploadOptions, UseFileUploadReturn, UploadedFile } from "./
 export { useSessionListProvider } from "./useSessionListProvider";
 export type { UseSessionListProviderOptions } from "./useSessionListProvider";
 export { useInitialCatalogLoad } from "./useInitialCatalogLoad";
+export { useSessionStreamSSE } from "./useSessionStreamSSE";
+export type { UseSessionStreamSSEOptions } from "./useSessionStreamSSE";
 export { useSessionProvider } from "./useSessionProvider";
 export type { UseSessionProviderOptions } from "./useSessionProvider";
 export { useReadPositionSync } from "./useReadPositionSync";

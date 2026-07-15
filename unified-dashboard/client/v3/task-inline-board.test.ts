@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   fetchInlineCustomView,
   fetchInlineMarkdown,
+  fetchTaskBoardContainerItems,
   fetchTaskBoardItems,
 } from "./task-inline-board-api";
 
@@ -29,6 +30,24 @@ describe("task inline board API", () => {
       "/api/board-items?container_kind=runbook&container_id=rb-a",
       expect.objectContaining({ credentials: "same-origin" }),
     );
+  });
+
+  it("keeps every board item for the full runbook board", async () => {
+    const fetchMock = vi.fn(async () => json({
+      boardItems: [
+        boardItem("session", "run-1"),
+        boardItem("markdown", "doc-1"),
+        boardItem("custom_view", "view-1"),
+      ],
+    }));
+
+    await expect(fetchTaskBoardContainerItems("rb-a", fetchMock as typeof globalThis.fetch))
+      .resolves.toMatchObject([
+        { itemType: "session", itemId: "run-1" },
+        { itemType: "markdown", itemId: "doc-1" },
+        { itemType: "custom_view", itemId: "view-1" },
+      ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("loads markdown and custom view documents only through their existing routes", async () => {
