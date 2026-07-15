@@ -1,6 +1,16 @@
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
+import { singleLinePreview } from "./session-preview";
+import type { RunTreeNode } from "./task-workspace-model";
 import type { PageSessionDefaults } from "./task-workspace-api";
+
+const SUCCESSION_SESSION_LABEL_LENGTH = 80;
+
+export interface SuccessionSessionOption {
+  sessionId: string;
+  label: string;
+  runNumber: number | null;
+}
 
 export interface SessionPageAnchor {
   pageId: string;
@@ -50,6 +60,30 @@ export function latestTaskRun(
   return sessions
     .filter((session) => allowed.has(session.agentSessionId))
     .sort((left, right) => sessionTime(right) - sessionTime(left))[0] ?? null;
+}
+
+export function buildSuccessionSessionOptions(
+  tree: readonly RunTreeNode[],
+): SuccessionSessionOption[] {
+  const options: SuccessionSessionOption[] = [];
+  const visit = (node: RunTreeNode) => {
+    if (node.loadState === "ready") {
+      options.push({
+        sessionId: node.session.agentSessionId,
+        label: singleLinePreview(
+          node.session.displayName,
+          SUCCESSION_SESSION_LABEL_LENGTH,
+        ) ?? singleLinePreview(
+          node.session.lastMessage?.preview,
+          SUCCESSION_SESSION_LABEL_LENGTH,
+        ) ?? "제목 없는 세션",
+        runNumber: node.runNumber,
+      });
+    }
+    node.children.forEach(visit);
+  };
+  tree.forEach(visit);
+  return options;
 }
 
 function sessionTime(session: SessionSummary): number {

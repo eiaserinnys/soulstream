@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AgentInfo } from "@seosoyoung/soul-ui";
 
 import { useOrchestratorStore } from "../store/orchestrator-store";
@@ -32,6 +32,9 @@ export function AgentNodeAssignmentFields({
     [nodes],
   );
   const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [loadedNodeId, setLoadedNodeId] = useState<string | null>(null);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   useEffect(() => {
     if (nodeId && (aliveNodes.some((node) => node.nodeId === nodeId) || !fallbackToAvailable)) return;
@@ -42,9 +45,11 @@ export function AgentNodeAssignmentFields({
   }, [aliveNodes, fallbackToAvailable, nodeId, onNodeIdChange, preferredNodeId]);
 
   useEffect(() => {
-    setAgents([]);
-    onAgentInfoChange?.(null);
-    if (!nodeId) return;
+    if (!nodeId) {
+      setAgents([]);
+      setLoadedNodeId(null);
+      return;
+    }
     let active = true;
     void fetch(`/api/nodes/${encodeURIComponent(nodeId)}/agents`, {
       credentials: "same-origin",
@@ -56,16 +61,27 @@ export function AgentNodeAssignmentFields({
       if (!active) return;
       const next = payload.agents ?? [];
       setAgents(next);
-      const current = next.find((agent) => agent.id === agentId);
-      const preferred = next.find((agent) => agent.id === preferredAgentId);
-      const selected = current ?? preferred ?? (fallbackToAvailable ? next[0] : null) ?? null;
-      if (selected?.id !== agentId && (selected || fallbackToAvailable)) onAgentIdChange(selected?.id ?? "");
-      onAgentInfoChange?.(selected);
+      setLoadedNodeId(nodeId);
     }).catch((caught: unknown) => {
-      if (active) onError?.(caught instanceof Error ? caught.message : String(caught));
+      if (active) onErrorRef.current?.(caught instanceof Error ? caught.message : String(caught));
     });
     return () => { active = false; };
-  }, [agentId, fallbackToAvailable, nodeId, onAgentIdChange, onAgentInfoChange, onError, preferredAgentId]);
+  }, [nodeId]);
+
+  useEffect(() => {
+    if (!nodeId) {
+      onAgentInfoChange?.(null);
+      return;
+    }
+    if (loadedNodeId !== nodeId) return;
+    const current = agents.find((agent) => agent.id === agentId);
+    const preferred = agents.find((agent) => agent.id === preferredAgentId);
+    const selected = current ?? preferred ?? (fallbackToAvailable ? agents[0] : null) ?? null;
+    if (selected?.id !== agentId && (selected || fallbackToAvailable)) {
+      onAgentIdChange(selected?.id ?? "");
+    }
+    onAgentInfoChange?.(selected);
+  }, [agentId, agents, fallbackToAvailable, loadedNodeId, nodeId, onAgentIdChange, onAgentInfoChange, preferredAgentId]);
 
   const nodeOptions = nodeId && !aliveNodes.some((node) => node.nodeId === nodeId)
     ? [{ nodeId }, ...aliveNodes]

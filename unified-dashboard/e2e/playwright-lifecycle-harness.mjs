@@ -67,7 +67,13 @@ export async function runPlaywrightLifecycle(options, callback) {
     const launchOptions = options.launchOptions ?? { headless: true };
     if (options.launchBrowser) return options.launchBrowser(launchOptions);
 
-    const { chromium } = await import("playwright");
+    // Playwright 모듈 해석 오버라이드(정본은 이 폴백 하나):
+    // 이 리포는 playwright를 선언 의존성으로 갖지 않으므로, 실행 환경에서
+    // 해석되지 않을 때 PLAYWRIGHT_MODULE 환경변수로 모듈 경로를 지정할 수 있다.
+    const modulePath = process.env.PLAYWRIGHT_MODULE;
+    const { chromium } = modulePath
+      ? await import(modulePath)
+      : await import("playwright");
     return chromium.launch(launchOptions);
   });
   const executionPromise = launchPromise.then(async (launchedBrowser) => {

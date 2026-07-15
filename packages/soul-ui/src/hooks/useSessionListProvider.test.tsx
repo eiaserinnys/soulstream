@@ -15,7 +15,10 @@ import type {
 } from "../shared/types";
 import type { SessionStorageProvider } from "../providers/types";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { useSessionListProvider } from "./useSessionListProvider";
+import {
+  retainEqualSessions,
+  useSessionListProvider,
+} from "./useSessionListProvider";
 
 const initialCatalogLoadSpy = vi.hoisted(() => vi.fn());
 const streamCacheSyncSpy = vi.hoisted(() => vi.fn());
@@ -60,16 +63,20 @@ function makeProvider(sessions: SessionSummary[]): SessionStorageProvider {
 }
 
 function Probe({
+  external,
   onSessions,
   provider,
   sessionIds,
 }: {
+  external?: boolean;
   onSessions: (sessions: SessionSummary[]) => void;
   provider: SessionStorageProvider;
   sessionIds?: readonly string[];
 }) {
   const { sessions } = useSessionListProvider({
+    intervalMs: 10,
     getSessionProvider: () => provider,
+    externalProvider: external ? provider : undefined,
     sessionIds,
     viewModeOverride: "feed",
     folderIdOverride: null,
@@ -213,5 +220,63 @@ describe("useSessionListProvider query overrides", () => {
         .toBe("success");
     });
     expect(provider.fetchSessions).not.toHaveBeenCalled();
+  });
+
+  it("keeps one sessions identity across six equivalent external-provider polls", async () => {
+    const source = [makeSession("session-a"), makeSession("session-b")];
+    const provider = makeProvider(source);
+    provider.fetchSessions = vi.fn(async () => ({
+      sessions: source.map((session) => ({ ...session })),
+      total: source.length,
+      hasMore: false,
+    }));
+    const observed: SessionSummary[][] = [];
+
+    flushSync(() => {
+      root.render(
+        createElement(
+          QueryClientProvider,
+          { client: queryClient },
+          createElement(Probe, {
+            external: true,
+            provider,
+            onSessions: (value) => observed.push(value),
+          }),
+        ),
+      );
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 90));
+    expect(vi.mocked(provider.fetchSessions).mock.calls.length).toBeGreaterThanOrEqual(6);
+    const populated = observed.filter((sessions) => sessions.length > 0);
+    expect(populated.length).toBeGreaterThan(0);
+    expect(new Set(populated).size).toBe(1);
+  });
+});
+
+describe("session list structural sharing", () => {
+  it("keeps the array and unchanged session identities across equivalent polling responses", () => {
+    const previous = [makeSession("session-a"), makeSession("session-b")];
+    const equivalent = previous.map((session) => ({ ...session }));
+
+    const retained = retainEqualSessions(previous, equivalent);
+
+    expect(retained).toBe(previous);
+    expect(retained[0]).toBe(previous[0]);
+    expect(retained[1]).toBe(previous[1]);
+  });
+
+  it("reuses unchanged rows while replacing a session whose visible summary changed", () => {
+    const previous = [makeSession("session-a"), makeSession("session-b")];
+    const changed = [
+      { ...previous[0], displayName: "새 제목" },
+      { ...previous[1] },
+    ];
+
+    const retained = retainEqualSessions(previous, changed);
+
+    expect(retained).not.toBe(previous);
+    expect(retained[0]).not.toBe(previous[0]);
+    expect(retained[1]).toBe(previous[1]);
   });
 });

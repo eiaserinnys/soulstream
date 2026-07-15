@@ -77,8 +77,10 @@ for (const theme of ["dark", "light"] as const) {
 
     await alphaRun.click({ button: "right" });
     await page.getByRole("menuitem", { name: "＋ 이어서 새 세션 (승계)" }).click();
-    await expect(page.getByRole("heading", { name: "새 세션 · 승계 미리보기" })).toBeVisible();
-    await expect(page.getByText(/run-alpha-2… 요약/)).toBeVisible();
+    await expect(page.getByRole("heading", { name: "새 세션", exact: true })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: "이어받을 이전 세션" })).toHaveValue("0");
+    await expect(page.locator(".v3-succession-modal")).toContainText("시각 QA 순회 · run #2");
+    await expect(page.locator(".v3-succession-modal")).not.toContainText("run-alpha-2");
     await capture(page, theme, "05-targeted-succession");
     await page.getByRole("button", { name: "승계 닫기" }).click();
 

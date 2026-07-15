@@ -344,32 +344,47 @@
   font-size: var(--font-size-xs);
 }
 
-.v3-succession-body li small,
-.v3-succession-default-source {
+.v3-succession-body li small {
   color: var(--muted-foreground);
   font-size: var(--font-size-xs);
 }
 
-.v3-succession-body li em {
-  width: fit-content;
-  margin-top: 4px;
-  border-radius: 999px;
-  padding: 2px 5px;
-  color: var(--info-foreground);
-  background: color-mix(in srgb, var(--info) 12%, transparent);
+.v3-succession-body li select {
+  width: 100%;
+  min-width: 0;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 8px;
+  color: var(--foreground);
+  background: var(--background);
+  font: inherit;
   font-size: var(--font-size-xs);
-  font-style: normal;
-  font-weight: 780;
 }
 
-.v3-succession-choice {
-  border-radius: 9px;
-  padding: 8px 10px;
-  color: var(--info-foreground);
-  background: color-mix(in srgb, var(--info) 10%, transparent);
+.v3-succession-body li select:focus {
+  border-color: var(--info);
+  outline: 2px solid color-mix(in srgb, var(--info) 18%, transparent);
+}
+
+.v3-succession-context-chips {
+  display: flex;
+  flex-flow: row wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.v3-succession-context-chips > span {
+  display: inline-flex;
+  width: fit-content;
+  flex-direction: row;
+  align-items: center;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  padding: 3px 6px;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--info) 7%, transparent);
   font-size: var(--font-size-xs);
-  font-weight: 800;
-  text-align: center;
 }
 
 .v3-succession-assignment {
@@ -387,11 +402,6 @@
   color: var(--muted-foreground);
   font-size: var(--font-size-xs);
   font-weight: 750;
-}
-
-.v3-succession-default-source {
-  display: block;
-  margin-top: 8px;
 }
 
 .v3-succession-footer {
