@@ -25,4 +25,11 @@ describe("standalone Playwright source policy", () => {
 
     expect(directLaunches).toEqual([HARNESS_FILE]);
   });
+
+  it("loads Playwright only inside the default launcher fallback", () => {
+    const harnessSource = readFileSync(join(E2E_DIRECTORY, HARNESS_FILE), "utf8");
+
+    expect(harnessSource).toContain('await import("playwright")');
+    expect(harnessSource).not.toMatch(/^import\s+.+\s+from\s+["']playwright["'];?$/m);
+  });
 });

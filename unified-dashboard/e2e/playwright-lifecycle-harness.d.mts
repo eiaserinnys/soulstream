@@ -1,5 +1,3 @@
-import type { Browser, LaunchOptions } from "playwright";
-
 export interface BrowserProcessInfo {
   pid: number;
   ppid: number;
@@ -11,17 +9,17 @@ export interface BrowserLike {
   close(): Promise<void>;
 }
 
-export interface PlaywrightLifecycleOptions<TBrowser extends BrowserLike = Browser> {
+export interface PlaywrightLifecycleOptions<TBrowser extends BrowserLike = BrowserLike> {
   lockName: string;
   timeoutMs?: number;
   closeTimeoutMs?: number;
   residualTimeoutMs?: number;
   lockRoot?: string;
-  launchOptions?: LaunchOptions;
-  launchBrowser?: (options: LaunchOptions) => Promise<TBrowser>;
+  launchOptions?: Record<string, unknown>;
+  launchBrowser?: (options: Record<string, unknown>) => Promise<TBrowser>;
 }
 
-export interface PlaywrightLifecycleContext<TBrowser extends BrowserLike = Browser> {
+export interface PlaywrightLifecycleContext<TBrowser extends BrowserLike = BrowserLike> {
   browser: TBrowser;
   signal: AbortSignal;
 }
@@ -46,7 +44,7 @@ export class HarnessResidualProcessError extends Error {
   readonly processes: BrowserProcessInfo[];
 }
 
-export function runPlaywrightLifecycle<T, TBrowser extends BrowserLike = Browser>(
+export function runPlaywrightLifecycle<T, TBrowser extends BrowserLike = BrowserLike>(
   options: PlaywrightLifecycleOptions<TBrowser>,
   callback: (context: PlaywrightLifecycleContext<TBrowser>) => Promise<T> | T,
 ): Promise<T>;

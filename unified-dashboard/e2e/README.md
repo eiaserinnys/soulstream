@@ -8,6 +8,8 @@
 
 runner 밖에서 Chromium이 필요한 진단은 `playwright-lifecycle-harness.mjs`의 `runPlaywrightLifecycle`만 사용한다.
 
+리포와 lockfile은 standalone용 `playwright`를 설치하지 않는다. 기본 launcher와 데모는 기존 공식 E2E와 마찬가지로 실행 환경에서 Playwright를 해석할 수 있을 때만 동작한다. 모듈 자체와 launcher를 주입하는 단위 테스트는 Playwright 없이 로드·실행할 수 있다.
+
 ```js
 import { runPlaywrightLifecycle } from "./playwright-lifecycle-harness.mjs";
 

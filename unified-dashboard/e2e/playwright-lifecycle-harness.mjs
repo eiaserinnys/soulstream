@@ -4,8 +4,6 @@ import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { chromium } from "playwright";
-
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_CLOSE_TIMEOUT_MS = 5_000;
 const DEFAULT_RESIDUAL_TIMEOUT_MS = 5_000;
@@ -65,11 +63,13 @@ export async function runPlaywrightLifecycle(options, callback) {
   let primaryError;
   let cleanupError;
 
-  const launchPromise = Promise.resolve().then(() =>
-    options.launchBrowser
-      ? options.launchBrowser(options.launchOptions ?? { headless: true })
-      : chromium.launch(options.launchOptions ?? { headless: true }),
-  );
+  const launchPromise = Promise.resolve().then(async () => {
+    const launchOptions = options.launchOptions ?? { headless: true };
+    if (options.launchBrowser) return options.launchBrowser(launchOptions);
+
+    const { chromium } = await import("playwright");
+    return chromium.launch(launchOptions);
+  });
   const executionPromise = launchPromise.then(async (launchedBrowser) => {
     browser = launchedBrowser;
     observeNewBrowserProcesses(baseline, observed);
