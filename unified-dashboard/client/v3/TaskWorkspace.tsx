@@ -46,6 +46,7 @@ export function TaskWorkspace({
   onCloseChat,
   onOpenDocument,
   onOpenSession,
+  onRenameTaskTitle,
   onSaveDescription,
   onPromoteDocument,
   onUnmountDocument,
@@ -77,6 +78,7 @@ export function TaskWorkspace({
   onCloseChat(): void;
   onOpenDocument(documentId: string): void;
   onOpenSession(session: SessionSummary): void;
+  onRenameTaskTitle(title: string): Promise<string>;
   onSaveDescription(markdown: string): Promise<void>;
   onPromoteDocument(blockId: string): Promise<void>;
   onUnmountDocument(blockId: string): Promise<void>;
@@ -91,12 +93,16 @@ export function TaskWorkspace({
   const draggingPointer = useRef<number | null>(null);
   const [splitPercent, setSplitPercent] = useState(DEFAULT_WORKSPACE_SPLIT);
   const [boardOpen, setBoardOpen] = useState(false);
+  const [visibleTitle, setVisibleTitle] = useState(task.page.title);
   const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: chatOpen && !boardOpen });
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
   const activeBoardDocumentId = useDashboardStore((state) => state.activeBoardDocumentId);
   const inspectorKind = workspaceInspectorKind(activeBoardDocumentId, activeSessionKey);
 
-  useEffect(() => { setBoardOpen(false); }, [task.page.id]);
+  useEffect(() => {
+    setBoardOpen(false);
+    setVisibleTitle(task.page.title);
+  }, [task.page.id, task.page.title]);
 
   useEffect(() => {
     if (!chatOpen) draggingPointer.current = null;
@@ -168,7 +174,7 @@ export function TaskWorkspace({
       aria-label="업무 보드 문서"
     >
       <header className="v3-chat-header">
-        <div><small>{projectTitle} › {task.page.title}</small><strong>마크다운 문서</strong></div>
+        <div><small>{projectTitle} › {visibleTitle}</small><strong>마크다운 문서</strong></div>
         <button type="button" aria-label="보드로 돌아가기" onClick={closeBoardInspector}>×</button>
       </header>
       <div className="v3-board-document-content"><MarkdownDocumentPanel /></div>
@@ -182,7 +188,7 @@ export function TaskWorkspace({
       aria-label="업무 보드 세션 채팅"
     >
       <header className="v3-chat-header">
-        <div><small>{projectTitle} › {task.page.title}</small><strong>{activeSession.displayName ?? activeSession.agentName ?? "세션"}</strong></div>
+        <div><small>{projectTitle} › {visibleTitle}</small><strong>{activeSession.displayName ?? activeSession.agentName ?? "세션"}</strong></div>
         <span className={`v3-chat-status v3-chat-status--${activeSession.status}`}>{activeSession.status === "running" ? "실행 중" : "완료"}</span>
         <button type="button" aria-label="보드로 돌아가기" onClick={closeBoardInspector}>×</button>
       </header>
@@ -225,7 +231,7 @@ export function TaskWorkspace({
           />
         ) : (
           <TaskDetailPane
-            task={task}
+            task={visibleTitle === task.page.title ? task : { ...task, page: { ...task.page, title: visibleTitle } }}
             sessions={sessions}
             runSessionLoadStates={runSessionLoadStates}
             runHistoryTotal={runHistoryTotal}
@@ -242,6 +248,10 @@ export function TaskWorkspace({
             onCloseWorkspace={onCloseWorkspace}
             onOpenDocument={onOpenDocument}
             onOpenSession={onOpenSession}
+            onRenameTaskTitle={async (title) => {
+              const renamedTitle = await onRenameTaskTitle(title);
+              setVisibleTitle(renamedTitle);
+            }}
             onSaveDescription={onSaveDescription}
             onPromoteDocument={onPromoteDocument}
             onUnmountDocument={onUnmountDocument}
@@ -266,7 +276,7 @@ export function TaskWorkspace({
               aria-label={inspectorKind === "document" ? "마크다운 문서" : "Run 채팅"}
             >
               <header className="v3-chat-header">
-                <div><small>{projectTitle} › {task.page.title}</small><strong>{inspectorKind === "document" ? "마크다운 문서" : activeSession ? runLabel(task, activeSession, sessions) : "선택된 run 없음"}</strong></div>
+                <div><small>{projectTitle} › {visibleTitle}</small><strong>{inspectorKind === "document" ? "마크다운 문서" : activeSession ? runLabel(task, activeSession, sessions) : "선택된 run 없음"}</strong></div>
                 {inspectorKind !== "document" ? <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}</span> : null}
                 <button type="button" aria-label="우측 패널 닫기" onClick={closeWorkspaceInspector}>×</button>
               </header>

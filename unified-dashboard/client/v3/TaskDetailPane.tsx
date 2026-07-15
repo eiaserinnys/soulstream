@@ -9,6 +9,7 @@ import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 import { TaskContextPicker } from "./TaskContextPicker";
 import { TaskInlineBoard } from "./TaskInlineBoard";
 import { TaskRunHistory } from "./TaskRunHistory";
+import { TaskTitleEditor } from "./TaskTitleEditor";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import "./v3-context-succession.css";
 import { useTaskStar } from "./use-task-star";
@@ -28,6 +29,7 @@ export function TaskDetailPane({
   onOpenDocument,
   taskMoveTargets,
   onOpenSession,
+  onRenameTaskTitle,
   onSaveDescription,
   onPromoteDocument,
   onUnmountDocument,
@@ -50,6 +52,7 @@ export function TaskDetailPane({
   onOpenDocument(documentId: string): void;
   taskMoveTargets: readonly PlannerTask[];
   onOpenSession(session: SessionSummary): void;
+  onRenameTaskTitle(title: string): Promise<void>;
   onSaveDescription(markdown: string): Promise<void>;
   onPromoteDocument(blockId: string): Promise<void>;
   onUnmountDocument(blockId: string): Promise<void>;
@@ -135,7 +138,7 @@ export function TaskDetailPane({
       <div className="v3-detail-scroll">
         <div className="v3-detail-title">
           <span className={`v3-status-chip v3-status-chip--${task.status}`}>{status.icon} {status.label}</span>
-          <h2>{task.page.title}</h2>
+          <TaskTitleEditor title={task.page.title} onRename={onRenameTaskTitle} />
         </div>
 
         <section className="v3-detail-section">

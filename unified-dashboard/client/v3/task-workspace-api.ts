@@ -1,4 +1,4 @@
-import type { PageApiClient } from "@seosoyoung/soul-ui/page";
+import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
 import {
   buildContextBlockOperations,
@@ -12,6 +12,26 @@ export interface PageSessionDefaults {
   nodeId: string | null;
   sourcePageId: string;
   sourceBlockId: string;
+}
+
+export async function renameTaskTitle(
+  api: PageApiClient,
+  pageId: string,
+  titleValue: string,
+  idFactory: () => string = () => `v3-task-title-${crypto.randomUUID()}`,
+): Promise<PageDto> {
+  const title = titleValue.trim();
+  if (!title) throw new Error("업무 제목을 입력해야 합니다");
+  const current = await api.getPage(pageId);
+  if (title === current.page.title) return current.page;
+  const result = await api.applyOperations(pageId, {
+    expectedVersion: current.page.version,
+    expectedStateVector: decodeBase64(current.state_vector),
+    idempotencyKey: idFactory(),
+    reason: "v3 task identity title rename",
+    operations: [{ op: "rename_page", title }],
+  });
+  return result.page;
 }
 
 export async function fetchPageSessionDefaults(
