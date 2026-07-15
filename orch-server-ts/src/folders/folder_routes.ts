@@ -1,4 +1,9 @@
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+
+import type { PageMutationActor } from "../page/page_mutation_core.js";
+import { registerFolderProjectIdentityHostRoute } from "./folder_project_identity_host_route.js";
+import type { FolderProjectIdentityService } from "./folder_project_identity_service.js";
 
 export type FolderRecord = {
   id: string;
@@ -55,6 +60,14 @@ export type FolderAccessProvider = {
 export type FolderRouteOptions = {
   provider: FolderRouteProvider;
   accessProvider: FolderAccessProvider;
+  resolveDashboardUserId?: (
+    request: FastifyRequest,
+  ) => Promise<string | null> | string | null;
+  projectIdentityService?: Pick<
+    FolderProjectIdentityService,
+    "create" | "mutateFromFolder" | "backfillLegacyFolder"
+  >;
+  authBearerToken?: string;
 };
 
 export class FolderRouteError extends Error {
@@ -91,6 +104,12 @@ export function registerFolderRoutes(
   app: FastifyInstance,
   options: FolderRouteOptions,
 ): void {
+  if (options.projectIdentityService && options.authBearerToken) {
+    registerFolderProjectIdentityHostRoute(app, {
+      service: options.projectIdentityService,
+      authBearerToken: options.authBearerToken,
+    });
+  }
   app.get("/api/folders", async (request, reply) => {
     const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
     const folders = [...(await options.provider.listFolders())];
@@ -113,6 +132,8 @@ export function registerFolderRoutes(
     if (!sortOrder.ok) return badRequest(reply, sortOrder.message);
     const parentFolderId = optionalStringOrNull(body.value, "parentFolderId");
     if (!parentFolderId.ok) return badRequest(reply, parentFolderId.message);
+    const idempotencyKey = optionalStringOrNull(body.value, "idempotencyKey");
+    if (!idempotencyKey.ok) return badRequest(reply, idempotencyKey.message);
 
     const access = normalizeAccess(await options.accessProvider.resolveAccess(request));
     const folders = [...(await options.provider.listFolders())];
@@ -120,9 +141,17 @@ export function registerFolderRoutes(
     if (!isFolderAllowed(access, folders, parentId)) return folderAccessDenied(reply);
 
     try {
-      const folder = await options.provider.createFolder(name.value, sortOrder.value, {
-        parentFolderId: parentId,
-      });
+      const folder = options.projectIdentityService
+        ? (await options.projectIdentityService.create({
+            name: name.value,
+            sortOrder: sortOrder.value,
+            parentFolderId: parentId,
+            actor: await dashboardActor(request, options),
+            idempotencyKey: idempotencyKey.value ?? randomUUID(),
+          })).folder
+        : await options.provider.createFolder(name.value, sortOrder.value, {
+            parentFolderId: parentId,
+          });
       return reply.code(201).send(folder);
     } catch (error) {
       return sendProviderError(reply, error, 400);
@@ -179,7 +208,16 @@ export function registerFolderRoutes(
       }
 
       try {
-        await options.provider.updateFolder(folderId, update.value);
+        if (options.projectIdentityService && typeof update.value.name === "string") {
+          await options.projectIdentityService.mutateFromFolder({
+            folderId,
+            update: update.value,
+            actor: await dashboardActor(request, options),
+            idempotencyKey: requestIdempotencyKey(request, body.value),
+          });
+        } else {
+          await options.provider.updateFolder(folderId, update.value);
+        }
         return reply.send({ success: true });
       } catch (error) {
         return sendProviderError(reply, error, 400);
@@ -199,13 +237,43 @@ export function registerFolderRoutes(
       if (systemGuard !== null) return badRequest(reply, systemGuard);
 
       try {
-        await options.provider.deleteFolder(folderId);
+        if (options.projectIdentityService) {
+          await options.projectIdentityService.mutateFromFolder({
+            folderId,
+            archived: true,
+            actor: await dashboardActor(request, options),
+            idempotencyKey: requestIdempotencyKey(request, {}),
+          });
+        } else {
+          await options.provider.deleteFolder(folderId);
+        }
         return reply.send({ success: true });
       } catch (error) {
         return sendProviderError(reply, error, 400);
       }
     },
   );
+}
+
+async function dashboardActor(
+  request: FastifyRequest,
+  options: FolderRouteOptions,
+): Promise<PageMutationActor> {
+  const userId = await options.resolveDashboardUserId?.(request) ?? null;
+  return userId
+    ? { actorKind: "user", actorUserId: userId }
+    : { actorKind: "system" };
+}
+
+function requestIdempotencyKey(
+  request: FastifyRequest,
+  body: Record<string, unknown>,
+): string {
+  const supplied = body.idempotencyKey;
+  if (typeof supplied === "string" && supplied.trim()) return supplied.trim();
+  const header = request.headers["idempotency-key"];
+  if (typeof header === "string" && header.trim()) return header.trim();
+  return randomUUID();
 }
 
 function parseUpdateBody(body: Record<string, unknown>): Validation<FolderUpdateInput> {

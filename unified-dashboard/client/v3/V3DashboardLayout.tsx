@@ -48,7 +48,7 @@ import {
   type PlannerTask,
 } from "./planner-data";
 import { resolveProjectFolderId } from "./planner-model";
-import { resolveOrCreateProjectPage } from "./project-page-actions";
+import { resolveProjectPage } from "./project-page-actions";
 import {
   createPlannerTask,
   PlannerTaskCreationError,
@@ -372,7 +372,7 @@ function V3DashboardContent() {
     if (!folder) { notify("선택한 프로젝트를 찾을 수 없습니다"); return; }
     setCreatePending(true);
     try {
-      const projectPage = await resolveOrCreateProjectPage(api, folder, projects);
+      const projectPage = await resolveProjectPage(api, folder, projects);
       const dailyPage = selectedDate === today && daily.data ? daily.data.daily.page : (await api.getDailyPage(today)).page;
       await createPlannerTask({ title, description, dailyPageId: dailyPage.id, projectPageId: projectPage.id, folderId }, mutationPort);
       setCreateOpen(false);

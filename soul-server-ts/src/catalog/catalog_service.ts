@@ -21,6 +21,7 @@ import type {
   SessionDB,
 } from "../db/session_db.js";
 import { assertMutableFolder } from "../system_folders.js";
+import type { FolderProjectIdentityHostClient } from "../folder/folder_project_identity_host_client.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
   CatalogBoardItemService,
@@ -34,6 +35,7 @@ export interface CatalogFolderDto {
   sortOrder: number;
   settings: Record<string, unknown>;
   parentFolderId: string | null;
+  projectPageId?: string | null;
   createdAt?: string;
 }
 
@@ -93,6 +95,10 @@ export class CatalogService {
     private readonly db: SessionDB,
     private readonly broadcaster: SessionBroadcaster,
     boardYjsService?: CatalogBoardYjsPort,
+    private readonly folderProjectIdentityHost?: Pick<
+      FolderProjectIdentityHostClient,
+      "create" | "rename" | "archive"
+    >,
   ) {
     this.boardItems = new CatalogBoardItemService(
       db,
@@ -111,6 +117,7 @@ export class CatalogService {
         sortOrder: f.sort_order,
         settings: f.settings ?? {},
         parentFolderId: f.parent_folder_id,
+        projectPageId: f.project_page_id ?? null,
         ...(createdAt ? { createdAt } : {}),
       };
     });
@@ -187,21 +194,44 @@ export class CatalogService {
     sortOrder = 0,
     parentFolderId: string | null = null,
   ): Promise<CatalogFolderDto> {
+    if (this.folderProjectIdentityHost) {
+      return (await this.folderProjectIdentityHost.create({
+        name,
+        sortOrder,
+        parentFolderId,
+        idempotencyKey: randomUUID(),
+      })).folder;
+    }
     const id = randomUUID();
     await this.assertParentAllowed(id, parentFolderId);
     await this.db.createFolder(id, name, sortOrder, parentFolderId);
     await this.broadcastCatalog();
-    return { id, name, sortOrder, settings: {}, parentFolderId };
+    return { id, name, sortOrder, settings: {}, parentFolderId, projectPageId: null };
   }
 
   async renameFolder(folderId: string, name: string): Promise<void> {
     assertMutableFolder(folderId, "renamed");
+    if (this.folderProjectIdentityHost) {
+      await this.folderProjectIdentityHost.rename({
+        folderId,
+        name,
+        idempotencyKey: randomUUID(),
+      });
+      return;
+    }
     await this.db.updateFolder(folderId, ["name"], [name]);
     await this.broadcastCatalog();
   }
 
   async deleteFolder(folderId: string): Promise<void> {
     assertMutableFolder(folderId, "deleted");
+    if (this.folderProjectIdentityHost) {
+      await this.folderProjectIdentityHost.archive({
+        folderId,
+        idempotencyKey: randomUUID(),
+      });
+      return;
+    }
     await this.db.deleteFolderById(folderId);
     await this.broadcastCatalog();
   }
