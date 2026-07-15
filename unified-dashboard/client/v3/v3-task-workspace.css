@@ -104,6 +104,53 @@
   letter-spacing: -.035em;
 }
 
+.v3-task-title-editor {
+  width: 100%;
+  min-width: 0;
+}
+
+.v3-task-title-button {
+  max-width: 100%;
+  overflow: hidden;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: text;
+}
+
+.v3-task-title-button:hover {
+  border-bottom-color: var(--glass-border);
+}
+
+.v3-task-title-input {
+  width: 100%;
+  min-width: 0;
+  margin: 3px 0 2px;
+  border: 1px solid var(--primary);
+  border-radius: 9px;
+  padding: 5px 8px;
+  color: var(--foreground);
+  background: var(--background);
+  font-size: var(--font-size-xl);
+  line-height: var(--font-size-xl--line-height);
+  font-weight: 760;
+  letter-spacing: -.035em;
+  outline: 2px solid color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+.v3-task-title-error {
+  margin: 5px 0 0;
+  color: var(--destructive-foreground);
+  font-size: var(--font-size-xs);
+}
+
 .v3-detail-title .v3-button {
   margin-left: auto;
 }

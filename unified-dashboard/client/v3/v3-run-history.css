@@ -68,8 +68,8 @@
 
 .v3-run-open strong {
   overflow: hidden;
-  font-size: var(--font-size-xs);
-  line-height: var(--font-size-xs--line-height);
+  font-size: 14.5px;
+  line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -107,8 +107,8 @@
 .v3-run-open small {
   display: block;
   color: var(--muted-foreground);
-  font-size: var(--font-size-xs);
-  line-height: var(--font-size-xs--line-height);
+  font-size: var(--font-size-sm);
+  line-height: 1.55;
 }
 
 .v3-run-trailing {

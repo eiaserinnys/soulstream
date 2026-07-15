@@ -7,7 +7,8 @@ import { deleteSessions as deleteSessionRecords } from "../lib/delete-session";
 import { renameSessionOptimistic } from "../lib/rename-session";
 import type { PlannerTask } from "./planner-data";
 import { completePlannerTask, togglePlannerTaskToday } from "./task-card-actions";
-import { unmountTaskDocument } from "./task-workspace-api";
+import { publishTaskStarChange } from "./task-star-store";
+import { renameTaskTitle as renameTaskIdentityTitle, unmountTaskDocument } from "./task-workspace-api";
 import { errorText } from "./v3-dashboard-utils";
 
 export function useV3PlannerActions({
@@ -54,6 +55,19 @@ export function useV3PlannerActions({
     }
   }, [invalidate, notify, queryClient]);
 
+  const renameTaskTitle = useCallback(async (task: PlannerTask, title: string) => {
+    try {
+      const page = await renameTaskIdentityTitle(api, task.page.id, title);
+      publishTaskStarChange({ page, starred: page.metadata.starred === true });
+      invalidate();
+      notify("업무 제목을 변경했습니다");
+      return page.title;
+    } catch (error) {
+      notify(`업무 제목 변경 실패 · ${errorText(error)}`);
+      throw error;
+    }
+  }, [api, invalidate, notify]);
+
   const deleteSessions = useCallback(async (sessionIds: string[]) => {
     try {
       await deleteSessionRecords(sessionIds);
@@ -91,5 +105,5 @@ export function useV3PlannerActions({
     }
   }, [api, invalidate, notify]);
 
-  return { completeTask, toggleTaskToday, renameSession, deleteSessions, moveSession, unmountDocument };
+  return { completeTask, toggleTaskToday, renameTaskTitle, renameSession, deleteSessions, moveSession, unmountDocument };
 }
