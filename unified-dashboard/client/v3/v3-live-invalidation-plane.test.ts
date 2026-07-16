@@ -6,6 +6,7 @@ import {
   invalidateV3,
   resetV3InvalidationForTest,
   selectV3InvalidationKey,
+  selectV3PlannerInvalidationKeys,
   trackedV3PageIds,
 } from "./v3-live-invalidation-plane";
 
@@ -39,12 +40,68 @@ describe("v3 live invalidation plane", () => {
     invalidateV3("local");
 
     const snapshot = getV3InvalidationSnapshot();
-    expect(selectV3InvalidationKey(snapshot, ["session"])).toBe(1);
+    expect(selectV3InvalidationKey(snapshot, ["session_updated"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["catalog"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["runbook"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["custom_view"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["replay"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["page", "local"])).toBe(2);
+  });
+
+  it("invalidates only planner queries that consume each event kind", () => {
+    const initial = selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot());
+
+    acceptV3SessionStreamEvent({
+      type: "session_updated",
+      agent_session_id: "session-a",
+      status: "running",
+      updated_at: "2026-07-15T00:00:00Z",
+    });
+    acceptV3SessionStreamEvent({
+      type: "metadata_updated",
+      session_id: "session-a",
+      entry: { key: "display", value: "same" },
+      metadata: [],
+    });
+    acceptV3SessionStreamEvent({
+      type: "catalog_updated",
+      catalog: { folders: [], sessions: {} } as never,
+    });
+    expect(selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot())).toEqual(initial);
+
+    acceptV3SessionStreamEvent({
+      type: "session_created",
+      session: { agentSessionId: "session-b" } as never,
+    });
+    expect(selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot())).toEqual({
+      daily: 1,
+      project: 1,
+      starred: 0,
+      runHistory: 1,
+      pageDetail: 0,
+    });
+
+    acceptV3SessionStreamEvent({
+      type: "runbook_updated",
+      runbookId: "rb-a",
+      boardItemId: "runbook:rb-a",
+    });
+    expect(selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot())).toEqual({
+      daily: 2,
+      project: 2,
+      starred: 0,
+      runHistory: 1,
+      pageDetail: 0,
+    });
+
+    invalidateV3("page");
+    expect(selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot())).toEqual({
+      daily: 3,
+      project: 3,
+      starred: 1,
+      runHistory: 1,
+      pageDetail: 1,
+    });
   });
 
   it("does not invalidate on session_list or stream_meta handshakes", () => {
