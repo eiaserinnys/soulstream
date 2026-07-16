@@ -186,142 +186,30 @@ function makeHarness(options: {
 }
 
 describe("TaskTreeService", () => {
-  it("clears an existing active task before creating a new active task", async () => {
-    const h = makeHarness();
-
-    await h.service.createTaskItem({
-      sessionId: "parent-session",
-      title: "Active task",
-      setActive: true,
-    });
-
-    expect(h.repo.clearActiveTaskForSession).toHaveBeenCalledWith("parent-session");
-    expect(h.repo.clearActiveTaskForSession.mock.invocationCallOrder[0]).toBeLessThan(
-      h.repo.createTaskItem.mock.invocationCallOrder[0],
-    );
-  });
-
-  it("creates a historical linked task with row navigation on the linked session top", async () => {
-    const h = makeHarness();
-
-    const result = await h.service.createTaskItem({
-      sessionId: "parent-session",
-      title: "Historical child",
-      linkedSessionId: "historical-session",
-      linkedNodeId: "node-child",
-      status: "verified_done",
-    });
-
-    expect(result.task).toMatchObject({
-      linked_session_id: "historical-session",
-      linked_node_id: "node-child",
-      navigation_session_id: "historical-session",
-      navigation_node_id: "node-child",
-      navigation_event_id: null,
-      created_from_event_id: 101,
-    });
-  });
-
-  it("marks delegated child tasks as the delegated session active task", async () => {
-    const h = makeHarness();
-
-    const result = await h.service.delegateTaskItem({
-      sessionId: "parent-session",
-      parentTaskId: "task-parent",
-      title: "Child task",
-      prompt: "Do the work",
-      agentId: "child-agent",
-      notifyCompletion: false,
-    });
-
-    expect(h.runtime.taskManager.createTask).toHaveBeenCalledWith(
-      expect.objectContaining({
-        agentSessionId: result.delegated_session_id,
-        callerSessionId: "parent-session",
-        profileId: "child-agent",
+  it.each([
+    ["createTaskItem", (h: ReturnType<typeof makeHarness>) =>
+      h.service.createTaskItem({
+        sessionId: "parent-session",
+        title: "New task",
+      })],
+    ["delegateTaskItem", (h: ReturnType<typeof makeHarness>) =>
+      h.service.delegateTaskItem({
+        sessionId: "parent-session",
+        parentTaskId: "task-parent",
+        title: "Child task",
         prompt: "Do the work",
-        notifyCompletion: false,
-      }),
+        agentId: "child-agent",
+      })],
+  ])("%s blocks v1 task creation before any side effect", async (_name, run) => {
+    const h = makeHarness();
+
+    await expect(run(h)).rejects.toThrow(
+      "업무는 create_runbook으로 생성하세요 — folder_id 지정이 필수입니다",
     );
-    expect(h.repo.patchTaskItem).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({
-        active_for_session_id: result.delegated_session_id,
-        linked_session_id: result.delegated_session_id,
-        navigation_session_id: result.delegated_session_id,
-        navigation_event_id: 101,
-      }),
-    );
-    expect(result.task?.active_for_session_id).toBe(result.delegated_session_id);
-    expect(h.runtime.taskExecutor.startExecution).toHaveBeenCalledTimes(1);
-  });
-
-  it("inherits caller session folder when delegate folderId is omitted", async () => {
-    const h = makeHarness({ callerFolderId: "caller-folder" });
-
-    await h.service.delegateTaskItem({
-      sessionId: "parent-session",
-      parentTaskId: "task-parent",
-      title: "Child task",
-      prompt: "Do the work",
-      agentId: "child-agent",
-    });
-
-    expect(h.createdSessions[0]).toEqual(
-      expect.objectContaining({ folderId: "caller-folder" }),
-    );
-  });
-
-  it("inherits caller runbook primary membership when delegate folderId is omitted", async () => {
-    const h = makeHarness({
-      callerFolderId: "root",
-      callerBoardItems: [{
-        id: "session:parent-session",
-        folderId: "root",
-        containerKind: "runbook",
-        containerId: "rb-1",
-        membershipKind: "primary",
-        itemType: "session",
-        itemId: "parent-session",
-        x: 0,
-        y: 160,
-        metadata: {},
-      }],
-    });
-
-    await h.service.delegateTaskItem({
-      sessionId: "parent-session",
-      parentTaskId: "task-parent",
-      title: "Child task",
-      prompt: "Do the work",
-      agentId: "child-agent",
-      sourceRunbookItemId: "runbook-item-1",
-    });
-
-    expect(h.createdSessions[0]).toEqual(
-      expect.objectContaining({
-        folderId: "root",
-        container: { containerKind: "runbook", containerId: "rb-1" },
-        sourceRunbookItemId: "runbook-item-1",
-      }),
-    );
-  });
-
-  it("preserves explicit null delegate folderId as root", async () => {
-    const h = makeHarness({ callerFolderId: "caller-folder" });
-
-    await h.service.delegateTaskItem({
-      sessionId: "parent-session",
-      parentTaskId: "task-parent",
-      title: "Child task",
-      prompt: "Do the work",
-      agentId: "child-agent",
-      folderId: null,
-    });
-
-    expect(h.createdSessions[0]).toEqual(
-      expect.objectContaining({ folderId: null }),
-    );
+    expect(h.repo.createTaskItem).not.toHaveBeenCalled();
+    expect(h.repo.clearActiveTaskForSession).not.toHaveBeenCalled();
+    expect(h.runtime.taskManager.createTask).not.toHaveBeenCalled();
+    expect(h.runtime.taskExecutor.startExecution).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -4,6 +4,7 @@ import re
 from datetime import datetime, timezone
 
 import pytest
+from fastapi import HTTPException
 
 from soulstream_server.api.tasks import (
     ArchiveRequest,
@@ -277,24 +278,23 @@ async def test_link_without_navigation_event_targets_linked_session_top():
 
 
 @pytest.mark.asyncio
-async def test_create_with_linked_session_defaults_navigation_to_linked_session_top():
+async def test_create_task_returns_v1_deprecation_alternative_without_db_write():
     endpoint = _endpoint("/api/tasks", method="POST")
 
-    result = await endpoint(
-        CreateTaskRequest(
-            sessionId="parent-session",
-            title="Completed historical task",
-            status="verified_done",
-            linkedSessionId="historical-session",
-            linkedNodeId="node-linked",
-        ),
-    )
+    with pytest.raises(HTTPException) as caught:
+        await endpoint(
+            CreateTaskRequest(
+                sessionId="parent-session",
+                title="Completed historical task",
+                status="verified_done",
+                linkedSessionId="historical-session",
+                linkedNodeId="node-linked",
+            ),
+        )
 
-    assert result["task"]["linkedSessionId"] == "historical-session"
-    assert result["task"]["navigationSessionId"] == "historical-session"
-    assert result["task"]["navigationNodeId"] == "node-linked"
-    assert result["task"]["navigationEventId"] is None
-    assert result["task"]["createdFromEventId"] == 101
+    assert caught.value.status_code == 410
+    assert "create_runbook" in caught.value.detail
+    assert "folder_id 지정이 필수" in caught.value.detail
 
 
 @pytest.mark.asyncio

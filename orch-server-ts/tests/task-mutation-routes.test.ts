@@ -130,7 +130,7 @@ describe("Task mutation route harness", () => {
     expect(Object.keys(taskMutationRouteAuthRequirements)).not.toContain("POST /api/execute");
   });
 
-  it("passes create payload aliases and Python defaults to the provider", async () => {
+  it("keeps the create signature but returns the v1 deprecation alternative", async () => {
     const provider = createMutationProvider();
     const app = createApp({
       config,
@@ -158,25 +158,14 @@ describe("Task mutation route harness", () => {
       payload: { prompt: "still hidden" },
     });
 
-    expect(response.statusCode).toBe(201);
-    expect(response.json()).toEqual(mutationResult);
-    expect(executeResponse.statusCode).toBe(404);
-    expect(provider.createTask).toHaveBeenCalledWith({
-      sessionId: "parent-session",
-      title: "New task",
-      description: "",
-      acceptanceCriteria: "",
-      verificationOwner: "agent",
-      parentTaskId: "parent-task",
-      status: "open",
-      setActive: false,
-      idempotencyKey: "idem-create",
-      linkedSessionId: "linked-session",
-      linkedNodeId: "node-linked",
-      navigationSessionId: "nav-session",
-      navigationNodeId: "node-nav",
-      navigationEventId: 77,
+    expect(response.statusCode).toBe(410);
+    expect(response.json()).toEqual({
+      detail: expect.stringContaining(
+        "업무는 create_runbook으로 생성하세요 — folder_id 지정이 필수입니다",
+      ),
     });
+    expect(executeResponse.statusCode).toBe(404);
+    expect(provider.createTask).not.toHaveBeenCalled();
 
     await app.close();
   });

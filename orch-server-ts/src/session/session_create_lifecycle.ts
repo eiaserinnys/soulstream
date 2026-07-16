@@ -10,6 +10,7 @@ import type {
   TaskMutationResponse,
 } from "../tasks/task_mutation_routes.js";
 import type { SerializedTaskItem } from "../tasks/task_read_routes.js";
+import { TASK_CREATION_DEPRECATED_DETAIL } from "../tasks/task_creation_deprecation.js";
 import {
   firstAllowedSessionFolderId,
   type SessionResourceAccessProvider,
@@ -148,6 +149,13 @@ async function prepareSessionCreate(
 ): Promise<PreparedSessionCreate> {
   const body = input.body;
   const parentTaskId = optionalString(body, "parentTaskId") || undefined;
+  if (parentTaskId !== undefined) {
+    throw new SessionCreateLifecycleError(
+      "TASK_TREE_CREATION_DEPRECATED",
+      TASK_CREATION_DEPRECATED_DETAIL,
+      410,
+    );
+  }
   const idempotencyKey = optionalString(body, "taskIdempotencyKey") || undefined;
   const taskScope = await prepareTaskScope(
     options.tasks,

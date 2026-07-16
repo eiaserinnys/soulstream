@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import type { SerializedTaskItem } from "./task_read_routes.js";
+import { TASK_CREATION_DEPRECATED_DETAIL } from "./task_creation_deprecation.js";
 import {
   parseArchiveTaskPayload,
   parseCreateTaskPayload,
@@ -123,7 +124,7 @@ export function registerTaskMutationRoutes(
   app.post("/api/tasks", async (request, reply) => {
     const payload = parseCreateTaskPayload(request.body);
     if (!payload.ok) return validationError(reply, payload);
-    return sendMutationResult(reply, 201, () => options.provider.createTask(payload.value));
+    return reply.code(410).send({ detail: TASK_CREATION_DEPRECATED_DETAIL });
   });
 
   app.post<{ Params: TaskParams }>("/api/tasks/:task_id/status", async (request, reply) => {

@@ -3,7 +3,10 @@ import { z } from "zod";
 
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
-import { TaskTreeService } from "../../task_tree/task_tree_service.js";
+import {
+  TASK_CREATION_DEPRECATED_MESSAGE,
+  TaskTreeService,
+} from "../../task_tree/task_tree_service.js";
 import { TASK_STATUSES } from "../../task_tree/task_tree_repository.js";
 
 const taskStatusSchema = z.enum(TASK_STATUSES);
@@ -27,7 +30,7 @@ export function registerTaskTreeTools(
     "create_task_item",
     {
       description:
-        "명시적으로 Task Tree item을 생성한다. linked_session_id가 있으면 기본 row navigation은 linked session top으로 잡고, operation provenance는 별도 event로 남긴다.",
+        `DEPRECATED: ${TASK_CREATION_DEPRECATED_MESSAGE}`,
       inputSchema: {
         session_id: z.string(),
         title: z.string().min(1),
@@ -75,7 +78,7 @@ export function registerTaskTreeTools(
     "delegate_task_item",
     {
       description:
-        "parent task 아래 child task를 생성하고 새 agent session을 만들어 child task에 link한다. 실패 시 task를 삭제하지 않고 blocked/failure operation으로 남긴다. notify_completion=false는 런북 기반 워크플로우에서 런북을 추적 표면으로 쓸 때 권장.",
+        `DEPRECATED: ${TASK_CREATION_DEPRECATED_MESSAGE}`,
       inputSchema: {
         session_id: z.string(),
         parent_task_id: z.string(),
@@ -485,7 +488,7 @@ export function registerTaskTreeTools(
     "list_task_delegate_agents",
     {
       description:
-        "delegate_task_item에 사용할 수 있는 agent id 목록을 조회한다. 잘못된 agent_id로 blocked child를 만들기 전 discovery에 사용한다.",
+        "DEPRECATED: delegate_task_item 신규 생성이 중단되어 위임 준비에 사용하지 않는다. 기존 v1 Task Tree 호환 조회만 유지한다.",
       inputSchema: {},
     },
     async () => {

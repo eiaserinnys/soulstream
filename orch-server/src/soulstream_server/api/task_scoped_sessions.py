@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from soul_common.db.session_db import PostgresSessionDB
 from soulstream_server.api.tasks import (
+    TASK_CREATION_DEPRECATED_DETAIL,
     _idempotent_result,
     _mutation_response,
     _next_position_key,
@@ -37,6 +38,8 @@ async def prepare_task_scoped_session_request(
     parent_task_id: str | None,
     idempotency_key: str | None,
 ) -> TaskScopedSessionRequest:
+    if parent_task_id:
+        raise HTTPException(status_code=410, detail=TASK_CREATION_DEPRECATED_DETAIL)
     existing = await get_existing_task_scoped_session(
         db,
         idempotency_key if parent_task_id else None,

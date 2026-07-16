@@ -36,6 +36,12 @@ TaskStatus = Literal[
 ]
 VerificationOwner = Literal["agent", "user", "both"]
 
+TASK_CREATION_DEPRECATED_DETAIL = (
+    "v1 Task Tree 신규 생성은 중단되었습니다. "
+    "업무는 create_runbook으로 생성하세요 — folder_id 지정이 필수입니다. "
+    "기존 task는 조회·상태 갱신·아카이브만 사용할 수 있습니다."
+)
+
 
 class CreateTaskRequest(BaseModel):
     session_id: str = Field(alias="sessionId")
@@ -204,92 +210,8 @@ def create_tasks_router(
 
     @router.post("", status_code=201)
     async def create_task(body: CreateTaskRequest) -> dict[str, Any]:
-        existing = await _idempotent_result(db, body.idempotency_key, node_manager=node_manager)
-        if existing:
-            return existing
-
-        position_key = await _next_position_key(db, body.parent_task_id)
-        task_id = str(uuid4())
-        if body.set_active:
-            await db.pool.execute(
-                """
-                UPDATE task_items
-                SET active_for_session_id = NULL,
-                    updated_at = NOW(),
-                    version = version + 1
-                WHERE active_for_session_id = $1
-                """,
-                body.session_id,
-            )
-        navigation_session_id = (
-            body.navigation_session_id
-            or body.linked_session_id
-            or body.session_id
-        )
-        navigation_node_id = (
-            body.navigation_node_id
-            or (body.linked_node_id if navigation_session_id == body.linked_session_id else None)
-        )
-        task = await db.pool.fetchrow(
-            """
-            INSERT INTO task_items (
-                id, parent_id, position_key, title, description,
-                acceptance_criteria, verification_owner, status,
-                linked_session_id, linked_node_id,
-                active_for_session_id, created_from_session_id,
-                navigation_session_id, navigation_node_id, navigation_event_id
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-            RETURNING *
-            """,
-            task_id,
-            body.parent_task_id,
-            position_key,
-            body.title,
-            body.description,
-            body.acceptance_criteria,
-            body.verification_owner,
-            body.status,
-            body.linked_session_id,
-            body.linked_node_id,
-            body.session_id if body.set_active else None,
-            body.session_id,
-            navigation_session_id,
-            navigation_node_id,
-            body.navigation_event_id,
-        )
-        operation, event_id = await _record_operation(
-            db,
-            actor_session_id=body.session_id,
-            task=task,
-            operation_type="create_task_item",
-            payload={
-                "title": body.title,
-                "parent_task_id": body.parent_task_id,
-                "linked_session_id": body.linked_session_id,
-                "linked_node_id": body.linked_node_id,
-                "navigation_session_id": navigation_session_id,
-                "navigation_node_id": navigation_node_id,
-                "navigation_event_id": body.navigation_event_id,
-            },
-            idempotency_key=body.idempotency_key,
-        )
-        should_use_create_operation_anchor = (
-            body.linked_session_id is None
-            and body.navigation_session_id is None
-            and body.navigation_event_id is None
-        )
-        task = await _patch_task(
-            db,
-            task_id,
-            {
-                "created_from_event_id": event_id,
-                "navigation_event_id": event_id
-                if should_use_create_operation_anchor
-                else body.navigation_event_id,
-            },
-        )
-        return await _mutation_response(db, task, operation, event_id, node_manager=node_manager)
+        del body
+        raise HTTPException(status_code=410, detail=TASK_CREATION_DEPRECATED_DETAIL)
 
     @router.post("/{task_id}/status")
     async def set_status(task_id: str, body: StatusRequest) -> dict[str, Any]:

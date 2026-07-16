@@ -346,28 +346,18 @@ class TestCreateSession:
         assert resp.status_code == 201
         mock_catalog_service.broadcast_catalog.assert_awaited_once()
 
-    async def test_create_session_with_parent_task_creates_linked_child_task(
+    async def test_create_session_with_parent_task_returns_v1_deprecation_without_dispatch(
         self, client, mock_db, node_manager
     ):
-        """Task Tree 하위 대화 시작은 세션 생성과 child task link를 서버에서 묶는다."""
+        """Task Tree 하위 대화는 세션이나 child task를 새로 만들지 않는다."""
         mock_db.pool = FakeTaskScopedPool()
-        mock_db.append_event = AsyncMock(return_value=303)
         ws = AsyncMock()
         ws.send_json = AsyncMock()
         ws.close = AsyncMock()
-        node = await node_manager.register_node(
+        await node_manager.register_node(
             ws,
             {"node_id": "api-node", **DEFAULT_AGENT_REGISTRATION},
         )
-
-        async def resolve_on_send(data):
-            assert data["extra_context_items"][0]["key"] == "task_tree_parent"
-            assert "Parent task" in data["extra_context_items"][0]["content"]
-            req_id = data.get("requestId")
-            if req_id and req_id in node._pending:
-                node._pending[req_id].set_result({"agentSessionId": "child-session"})
-
-        ws.send_json.side_effect = resolve_on_send
 
         resp = await client.post(
             "/api/sessions",
@@ -378,14 +368,11 @@ class TestCreateSession:
             },
         )
 
-        assert resp.status_code == 201
+        assert resp.status_code == 410
         body = resp.json()
-        assert body["agentSessionId"] == "child-session"
-        assert body["task"]["parentId"] == "parent-task"
-        assert body["task"]["linkedSessionId"] == "child-session"
-        assert body["task"]["status"] == "in_progress"
-        assert body["task"]["verificationOwner"] == "both"
-        assert body["taskOperation"]["operationType"] == "start_child_session"
+        assert "create_runbook" in body["detail"]
+        assert "folder_id 지정이 필수" in body["detail"]
+        ws.send_json.assert_not_awaited()
 
     async def test_continue_session_inherits_source_runbook_container(
         self, client, mock_db, node_manager

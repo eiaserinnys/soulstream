@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { buildCallerInfoFromCallerSession } from "../caller_info.js";
 import type { McpRuntime } from "../mcp/runtime.js";
-import { type DelegatedContainerRef, resolveDelegatedContainer } from "../session_folder_fallback.js";
+import type { DelegatedContainerRef } from "../session_folder_fallback.js";
 
 import type {
   TaskItemRow,
@@ -16,6 +15,16 @@ export interface TaskMutationResult {
   operation: TaskOperationRow;
   event_id: number;
   idempotent?: boolean;
+}
+
+export const TASK_CREATION_DEPRECATED_MESSAGE =
+  "v1 Task Tree 신규 생성은 중단되었습니다. 업무는 create_runbook으로 생성하세요 — folder_id 지정이 필수입니다. 기존 task는 조회·상태 갱신·아카이브만 사용할 수 있습니다.";
+
+export class TaskCreationDeprecatedError extends Error {
+  constructor() {
+    super(TASK_CREATION_DEPRECATED_MESSAGE);
+    this.name = "TaskCreationDeprecatedError";
+  }
 }
 
 export class TaskTreeService {
@@ -41,63 +50,8 @@ export class TaskTreeService {
     navigationNodeId?: string | null;
     navigationEventId?: number | null;
   }): Promise<TaskMutationResult> {
-    const idempotent = await this.resolveIdempotent(params.idempotencyKey);
-    if (idempotent) return idempotent;
-
-    if (params.setActive) {
-      await this.repo.clearActiveTaskForSession(params.sessionId);
-    }
-    const positionKey = await this.repo.nextPositionKey(params.parentTaskId ?? null);
-    const linkedNodeId = params.linkedNodeId ?? (params.linkedSessionId ? this.runtime.nodeId : null);
-    const navigationSessionId =
-      params.navigationSessionId ?? params.linkedSessionId ?? params.sessionId;
-    const navigationNodeId =
-      params.navigationNodeId ??
-      (navigationSessionId === params.linkedSessionId ? linkedNodeId : this.runtime.nodeId);
-    let task = await this.repo.createTaskItem({
-      id: randomUUID(),
-      parentId: params.parentTaskId ?? null,
-      positionKey,
-      title: params.title,
-      description: params.description,
-      acceptanceCriteria: params.acceptanceCriteria,
-      verificationOwner: params.verificationOwner,
-      status: params.status ?? "open",
-      linkedSessionId: params.linkedSessionId ?? null,
-      linkedNodeId,
-      activeForSessionId: params.setActive ? params.sessionId : null,
-      createdFromSessionId: params.sessionId,
-      navigationSessionId,
-      navigationNodeId,
-      navigationEventId: params.navigationEventId ?? null,
-    });
-    const recorded = await this.recordOperation({
-      task,
-      operationType: "create_task_item",
-      actorSessionId: params.sessionId,
-      idempotencyKey: params.idempotencyKey,
-      payload: {
-        parent_task_id: params.parentTaskId ?? null,
-        title: params.title,
-        status: task.status,
-        linked_session_id: params.linkedSessionId ?? null,
-        linked_node_id: linkedNodeId,
-        navigation_session_id: navigationSessionId,
-        navigation_node_id: navigationNodeId,
-        navigation_event_id: params.navigationEventId ?? null,
-      },
-    });
-    const shouldUseCreateOperationAnchor =
-      !params.linkedSessionId &&
-      params.navigationSessionId === undefined &&
-      params.navigationEventId === undefined;
-    task = await this.repo.patchTaskItem(task.id, {
-      created_from_event_id: recorded.event_id,
-      navigation_event_id: shouldUseCreateOperationAnchor
-        ? recorded.event_id
-        : params.navigationEventId ?? null,
-    });
-    return { ...recorded, task };
+    void params;
+    throw new TaskCreationDeprecatedError();
   }
 
   async delegateTaskItem(params: {
@@ -115,123 +69,8 @@ export class TaskTreeService {
     container?: DelegatedContainerRef | null;
     sourceRunbookItemId?: string | null;
   }): Promise<TaskMutationResult & { delegated_session_id?: string }> {
-    const idempotent = await this.resolveIdempotent(params.idempotencyKey);
-    if (idempotent) {
-      return { ...idempotent, delegated_session_id: idempotent.task?.linked_session_id ?? undefined };
-    }
-
-    const positionKey = await this.repo.nextPositionKey(params.parentTaskId);
-    let task = await this.repo.createTaskItem({
-      id: randomUUID(),
-      parentId: params.parentTaskId,
-      positionKey,
-      title: params.title,
-      description: params.description,
-      acceptanceCriteria: params.acceptanceCriteria,
-      verificationOwner: params.verificationOwner,
-      status: "in_progress",
-      createdFromSessionId: params.sessionId,
-      navigationSessionId: params.sessionId,
-      navigationNodeId: this.runtime.nodeId,
-    });
-
-    const agents = this.runtime.agentRegistry.list();
-    const defaultAgent = agents[0];
-    const resolvedAgentId = params.agentId ?? defaultAgent?.id;
-    const agent = resolvedAgentId
-      ? this.runtime.agentRegistry.get(resolvedAgentId)
-      : undefined;
-
-    if (!agent || !resolvedAgentId) {
-      task = await this.repo.patchTaskItem(task.id, { status: "blocked" });
-      const failure = await this.recordOperation({
-        task,
-        operationType: "delegate_task_failed",
-        actorSessionId: params.sessionId,
-        idempotencyKey: params.idempotencyKey,
-        payload: {
-          parent_task_id: params.parentTaskId,
-          title: params.title,
-          error: `agent_id를 찾을 수 없습니다: ${params.agentId ?? "(default)"}`,
-        },
-      });
-      return { ...failure, task };
-    }
-
-    const delegatedSessionId = randomUUID();
-    try {
-      const callerInfo = buildCallerInfoFromCallerSession(
-        this.runtime,
-        params.sessionId,
-      );
-      const resolvedContainer = await resolveDelegatedContainer(this.runtime, {
-        callerSessionId: params.sessionId,
-        ...(Object.prototype.hasOwnProperty.call(params, "folderId")
-          ? { folderId: params.folderId }
-          : {}),
-        container: params.container ?? null,
-      });
-      const childSession = await this.runtime.taskManager.createTask({
-        agentSessionId: delegatedSessionId,
-        prompt: params.prompt,
-        profileId: resolvedAgentId,
-        callerSessionId: params.sessionId,
-        callerInfo,
-        notifyCompletion: params.notifyCompletion,
-        folderId: resolvedContainer.folderId,
-        container: resolvedContainer.container,
-        sourceRunbookItemId: params.sourceRunbookItemId ?? null,
-      });
-      this.runtime.taskExecutor.startExecution(childSession, agent);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      task = await this.repo.patchTaskItem(task.id, { status: "blocked" });
-      const failure = await this.recordOperation({
-        task,
-        operationType: "delegate_task_failed",
-        actorSessionId: params.sessionId,
-        idempotencyKey: params.idempotencyKey,
-        payload: {
-          parent_task_id: params.parentTaskId,
-          title: params.title,
-          delegated_session_id: delegatedSessionId,
-          error: message,
-        },
-      });
-      return { ...failure, task, delegated_session_id: delegatedSessionId };
-    }
-
-    const linkedEventId = await this.appendLinkedSessionEvent({
-      linkedSessionId: delegatedSessionId,
-      task,
-      operationType: "delegate_task",
-      actorSessionId: params.sessionId,
-      payload: {
-        parent_task_id: params.parentTaskId,
-        title: params.title,
-        delegated_session_id: delegatedSessionId,
-      },
-    });
-    task = await this.repo.patchTaskItem(task.id, {
-      linked_session_id: delegatedSessionId,
-      linked_node_id: this.runtime.nodeId,
-      active_for_session_id: delegatedSessionId,
-      navigation_session_id: delegatedSessionId,
-      navigation_node_id: this.runtime.nodeId,
-      navigation_event_id: linkedEventId,
-    });
-    const recorded = await this.recordOperation({
-      task,
-      operationType: "delegate_task",
-      actorSessionId: params.sessionId,
-      idempotencyKey: params.idempotencyKey,
-      payload: {
-        parent_task_id: params.parentTaskId,
-        title: params.title,
-        delegated_session_id: delegatedSessionId,
-      },
-    });
-    return { ...recorded, task, delegated_session_id: delegatedSessionId };
+    void params;
+    throw new TaskCreationDeprecatedError();
   }
 
   async updateTaskItem(params: {
@@ -589,36 +428,6 @@ export class TaskTreeService {
       operation,
       event_id: eventId,
     };
-  }
-
-  private async appendLinkedSessionEvent(params: {
-    linkedSessionId: string;
-    task: TaskItemRow;
-    operationType: string;
-    actorSessionId: string;
-    payload: Record<string, unknown>;
-  }): Promise<number | null> {
-    try {
-      return await this.runtime.db.appendEvent({
-        sessionId: params.linkedSessionId,
-        eventType: "task_operation",
-        payload: JSON.stringify({
-          operation_type: params.operationType,
-          task_id: params.task.id,
-          task: params.task,
-          payload: params.payload,
-          source_session_id: params.actorSessionId,
-        }),
-        searchableText: this.operationSearchText(params.operationType, params.task),
-        createdAt: new Date(),
-      });
-    } catch (err) {
-      this.runtime.logger.warn(
-        { err, linkedSessionId: params.linkedSessionId, taskId: params.task.id },
-        "failed to append linked task_operation event",
-      );
-      return null;
-    }
   }
 
   private async updateNavigationToOperation(

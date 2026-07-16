@@ -91,7 +91,7 @@ describe("session create lifecycle", () => {
     })).rejects.toMatchObject({ statusCode: 403, code: "SESSION_ACCESS_DENIED" });
   });
 
-  it("returns an existing task-scoped session before node dispatch", async () => {
+  it("blocks task-scoped creation before idempotency lookup", async () => {
     const tasks = taskProvider({
       existing: {
         task: {
@@ -112,27 +112,23 @@ describe("session create lifecycle", () => {
       tasks,
     });
 
-    const prepared = await lifecycle.prepare({
+    await expect(lifecycle.prepare({
       request: request(),
       body: {
         prompt: "child",
         parentTaskId: "parent-task",
         taskIdempotencyKey: "idem-child",
       },
+    })).rejects.toMatchObject({
+      statusCode: 410,
+      code: "TASK_TREE_CREATION_DEPRECATED",
+      message: expect.stringContaining("create_runbook"),
     });
-
-    expect(prepared.existingResponse).toEqual({
-      agentSessionId: "child-session",
-      nodeId: "node-a",
-      task: expect.objectContaining({ id: "child-task" }),
-      taskOperation: expect.objectContaining({ operationType: "start_child_session" }),
-      taskEventId: 303,
-      idempotent: true,
-    });
+    expect(tasks.findTaskScopedSession).not.toHaveBeenCalled();
     expect(tasks.getTask).not.toHaveBeenCalled();
   });
 
-  it("adds parent context before dispatch and links the child after the node ack", async () => {
+  it("blocks task-scoped creation before parent lookup or child creation", async () => {
     const tasks = taskProvider({
       parent: {
         id: "parent-task",
@@ -150,43 +146,16 @@ describe("session create lifecycle", () => {
       access: accessProvider({ restricted: false, allowedFolderIds: [] }),
       tasks,
     });
-    const prepared = await lifecycle.prepare({
+    await expect(lifecycle.prepare({
       request: request(),
       body: {
         prompt: "하위 대화 내용",
         parentTaskId: "parent-task",
         taskIdempotencyKey: "idem-child",
       },
-    });
-
-    expect(prepared.payload.extra_context_items).toEqual([
-      expect.objectContaining({
-        key: "task_tree_parent",
-        label: "Task Tree parent",
-        content: expect.stringContaining("Parent task"),
-      }),
-    ]);
-
-    await expect(lifecycle.complete({
-      prepared,
-      childSessionId: "child-session",
-      childNodeId: "node-a",
-      prompt: "하위 대화 내용",
-    })).resolves.toEqual({
-      task: expect.objectContaining({
-        id: "created-child-task",
-        parentId: "parent-task",
-        linkedSessionId: "child-session",
-      }),
-      taskOperation: expect.objectContaining({ operationType: "start_child_session" }),
-      taskEventId: 404,
-    });
-    expect(tasks.createTaskScopedChild).toHaveBeenCalledWith(expect.objectContaining({
-      parentTask: expect.objectContaining({ id: "parent-task" }),
-      childSessionId: "child-session",
-      childNodeId: "node-a",
-      idempotencyKey: "idem-child",
-    }));
+    })).rejects.toMatchObject({ statusCode: 410 });
+    expect(tasks.getTask).not.toHaveBeenCalled();
+    expect(tasks.createTaskScopedChild).not.toHaveBeenCalled();
   });
 });
 
