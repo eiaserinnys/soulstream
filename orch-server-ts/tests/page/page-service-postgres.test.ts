@@ -763,8 +763,10 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
 
   it("derives the omitted daily date in KST and returns the same page idempotently", async () => {
     const actor = { actorKind: "user" as const, actorUserId: "user@example.com" };
-    const first = await service.getDailyPage({ actor });
-    const second = await service.getDailyPage({ actor });
+    const [first, second] = await Promise.all([
+      service.getDailyPage({ actor }),
+      service.getDailyPage({ actor }),
+    ]);
 
     expect(first).toMatchObject({
       created: true,

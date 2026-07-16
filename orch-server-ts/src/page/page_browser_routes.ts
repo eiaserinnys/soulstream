@@ -43,6 +43,11 @@ export interface PageBrowserUser {
   sub?: string;
 }
 
+export function pageBrowserUserId(user: PageBrowserUser | null): string | null {
+  const value = user?.email || user?.sub;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 export interface PageBrowserRouteOptions {
   service: Pick<
     PageYjsService,
@@ -339,9 +344,7 @@ async function resolveUserId(
   request: FastifyRequest,
   options: PageBrowserRouteOptions,
 ): Promise<string | null> {
-  const user = await options.resolveUser(request);
-  const value = user?.email || user?.sub;
-  return typeof value === "string" && value.trim() ? value.trim() : null;
+  return pageBrowserUserId(await options.resolveUser(request));
 }
 
 function userActor(userId: string) {
