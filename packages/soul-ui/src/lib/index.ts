@@ -9,6 +9,7 @@ export { flattenTree } from "./flatten-tree";
 export type { ChatMessage } from "./flatten-tree";
 export { submitInputResponse } from "./input-request-actions";
 export { formatTime } from "./input-request-utils";
+export { retainEqualSet, retainEqualValue } from "./structural-sharing";
 
 // === Folder / Session Operations ===
 export { createFolderOperations } from "./folder-operations";

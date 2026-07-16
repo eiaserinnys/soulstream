@@ -77,7 +77,7 @@ import {
 } from "./use-v3-planner-reads";
 import { useProjectFolderController } from "./use-project-folder-controller";
 import { reviewQueueSessions } from "./review-queue-model";
-import { invalidateV3, useV3InvalidationKey } from "./v3-live-invalidation-plane";
+import { invalidateV3, useV3PlannerInvalidationKeys } from "./v3-live-invalidation-plane";
 import { useV3LiveDataPlane } from "./use-v3-live-data-plane";
 import { openDocumentInV3, openSessionInV3 } from "./v3-inspector-model";
 import "./v3-planner.css";
@@ -98,8 +98,8 @@ function V3DashboardContent() {
   const projectSelection = useProjectFolderController();
   const { resolution, selectedFolderId, selectedProject, clearProject } = projectSelection;
   const selectedProjectId = selectedProject?.id ?? null;
-  const refreshKey = useV3InvalidationKey(["session", "catalog", "runbook", "page", "replay", "local"]);
-  const projectContextInvalidationKey = useV3InvalidationKey(["page", "replay", "local"]);
+  const plannerInvalidationKeys = useV3PlannerInvalidationKeys();
+  const projectContextInvalidationKey = plannerInvalidationKeys.pageDetail;
   const invalidateLocal = useCallback(() => invalidateV3("local"), []);
   const [createOpen, setCreateOpen] = useState(false);
   const [ritualOpen, setRitualOpen] = useState(false);
@@ -170,7 +170,7 @@ function V3DashboardContent() {
     today,
     selectedProject,
     taskStarChanges,
-    refreshKey,
+    refreshKeys: plannerInvalidationKeys,
     notify,
   });
   const plannerActions = useV3PlannerActions({
@@ -188,12 +188,15 @@ function V3DashboardContent() {
     ],
     [daily.data?.tasks, project.data?.tasks, selectedProject],
   );
-  const selectedTask = currentTasks.find((task) => task.page.id === selectedTaskId) ?? selectedTaskSnapshot;
+  const selectedTask = useMemo(
+    () => currentTasks.find((task) => task.page.id === selectedTaskId) ?? selectedTaskSnapshot,
+    [currentTasks, selectedTaskId, selectedTaskSnapshot],
+  );
   const runHistory = useTaskRunHistory({
     dependencies: dataDependencies,
     task: selectedTask,
     workspaceOpen,
-    refreshKey,
+    refreshKey: plannerInvalidationKeys.runHistory,
     notify,
   });
   const plannerSessionIds = useMemo(
@@ -434,15 +437,21 @@ function V3DashboardContent() {
     }
     invalidateLocal();
   };
-  const reviewSessions = reviewQueueSessions(sessions)
-    .filter((session) => !acknowledgedReviewIds.has(session.agentSessionId));
+  const reviewSessions = useMemo(
+    () => reviewQueueSessions(sessions)
+      .filter((session) => !acknowledgedReviewIds.has(session.agentSessionId)),
+    [acknowledgedReviewIds, sessions],
+  );
   const selectedFolderName = catalog?.folders.find((folder) => folder.id === selectedFolderId)?.name ?? "프로젝트";
   const shellStyle = {
     "--v3-card-gap": `${DASHBOARD_CARD_GAP_PX}px`,
     "--v3-panel-gap": `${DASHBOARD_PANEL_GAP_PX}px`,
     "--v3-navigation-width": `${navigationWidth || DASHBOARD_LEFT_SIDEBAR_DEFAULT_WIDTH}px`,
   } as CSSProperties;
-  const workspaceTask = selectedTask ? { ...selectedTask, sessionIds: runHistory.sessionIds } : null;
+  const workspaceTask = useMemo(
+    () => selectedTask ? { ...selectedTask, sessionIds: runHistory.sessionIds } : null,
+    [runHistory.sessionIds, selectedTask],
+  );
   const projectTitle = projects.find((item) => item.id === workspaceTask?.projectPageId)?.title ?? "미분류";
   const projectFolderId = catalog?.folders.find(
     (folder) => folder.projectPageId === workspaceTask?.projectPageId,

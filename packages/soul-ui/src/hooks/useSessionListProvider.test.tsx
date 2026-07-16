@@ -13,7 +13,11 @@ import type {
   SessionSummary,
   SoulSSEEvent,
 } from "../shared/types";
-import type { SessionStorageProvider } from "../providers/types";
+import type {
+  FetchSessionsOptions,
+  SessionListResult,
+  SessionStorageProvider,
+} from "../providers/types";
 import { retainEqualValue } from "../lib/structural-sharing";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useSessionListProvider } from "./useSessionListProvider";
@@ -254,11 +258,14 @@ describe("useSessionListProvider query overrides", () => {
   it("does not publish an unconfirmed empty list while a new ids query is pending", async () => {
     const sessionA = makeSession("session-a");
     const sessionB = makeSession("session-b");
-    let resolveSecond: ((value: { sessions: SessionSummary[]; total: number; hasMore: boolean }) => void) | null = null;
+    let resolveSecond!: (value: SessionListResult) => void;
+    const secondResponse = new Promise<SessionListResult>((resolve) => {
+      resolveSecond = resolve;
+    });
     const provider = makeProvider([sessionA]);
-    provider.fetchSessions = vi.fn(async (options) => {
+    provider.fetchSessions = vi.fn(async (options: FetchSessionsOptions = {}) => {
       if (options.sessionIds?.includes("session-b")) {
-        return await new Promise((resolve) => { resolveSecond = resolve; });
+        return await secondResponse;
       }
       return { sessions: [sessionA], total: 1, hasMore: false };
     });
@@ -286,7 +293,7 @@ describe("useSessionListProvider query overrides", () => {
     await Promise.resolve();
     expect(latest.map((session) => session.agentSessionId)).toEqual(["session-a"]);
 
-    resolveSecond?.({ sessions: [sessionA, sessionB], total: 2, hasMore: false });
+    resolveSecond({ sessions: [sessionA, sessionB], total: 2, hasMore: false });
     await waitFor(() => expect(latest.map((session) => session.agentSessionId)).toEqual(["session-a", "session-b"]));
   });
 });

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   CustomViewIframe,
+  retainEqualValue,
   useCustomViewBindings,
   type CatalogBoardItem,
   type CustomViewDocument,
@@ -16,32 +17,47 @@ import {
 import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 import "./v3-context-menus.css";
 import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
+import { loadConfirmedResult } from "./planner-query-state";
 
 export function TaskInlineBoard({ runbookId }: { runbookId: string }) {
   const [items, setItems] = useState<CatalogBoardItem[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const invalidationKey = useV3InvalidationKey([
-    "catalog", "runbook", "custom_view", "page", "replay", "local",
-  ]);
+  const itemInvalidationKey = useV3InvalidationKey(["catalog", "runbook", "replay", "local"]);
+  const pageInvalidationKey = useV3InvalidationKey(["page", "replay", "local"]);
+  const customViewInvalidationKey = useV3InvalidationKey(["custom_view", "replay", "local"]);
+  const itemsRef = useRef(items);
+  const loadedRunbookIdRef = useRef<string | null>(null);
+  itemsRef.current = items;
 
   useEffect(() => setExpandedId(null), [runbookId]);
 
   useEffect(() => {
     const controller = new AbortController();
-    setStatus("loading");
-    void fetchTaskBoardItems(runbookId, (input, init) => globalThis.fetch(input, {
-      ...init,
-      signal: controller.signal,
-    })).then((next) => {
-      setItems(next);
+    const sameRunbook = loadedRunbookIdRef.current === runbookId;
+    const previous = sameRunbook ? itemsRef.current : null;
+    if (!sameRunbook) {
+      setItems([]);
+      setStatus("loading");
+    }
+    const load = () => fetchTaskBoardItems(runbookId, (input, init) => globalThis.fetch(input, {
+        ...init,
+        signal: controller.signal,
+      }));
+    void loadConfirmedResult({
+      previous,
+      load,
+      clearsVisibleContent: (current, next) => current.length > 0 && next.length === 0,
+    }).then((next) => {
+      loadedRunbookIdRef.current = runbookId;
+      setItems((current) => retainEqualValue(current, next));
       setStatus("ready");
     }).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setStatus("error");
     });
     return () => controller.abort();
-  }, [invalidationKey, runbookId]);
+  }, [itemInvalidationKey, runbookId]);
 
   return (
     <section className="v3-detail-section v3-inline-board" data-testid="v3-inline-board">
@@ -60,7 +76,7 @@ export function TaskInlineBoard({ runbookId }: { runbookId: string }) {
                 <button type="button" onClick={() => setExpandedId(expanded ? null : item.id)}>
                   <span>📄 {metadataText(item, "title") || "제목 없는 문서"}</span><small>{expanded ? "접기" : "펼치기"}</small>
                 </button>
-                {expanded ? <InlineMarkdown documentId={item.itemId} invalidationKey={invalidationKey} /> : null}
+                {expanded ? <InlineMarkdown documentId={item.itemId} invalidationKey={pageInvalidationKey} /> : null}
               </article>
             );
           }
@@ -70,7 +86,7 @@ export function TaskInlineBoard({ runbookId }: { runbookId: string }) {
                 <button type="button" onClick={() => setExpandedId(expanded ? null : item.id)}>
                   <span>▦ {metadataText(item, "title") || "Custom view"}</span><small>{expanded ? "접기" : "펼치기"}</small>
                 </button>
-                {expanded ? <InlineCustomView customViewId={item.itemId} invalidationKey={invalidationKey} /> : null}
+                {expanded ? <InlineCustomView customViewId={item.itemId} invalidationKey={customViewInvalidationKey} /> : null}
               </article>
             );
           }
@@ -88,7 +104,7 @@ function InlineMarkdown({ documentId, invalidationKey }: { documentId: string; i
     const controller = new AbortController();
     setError(false);
     void fetchInlineMarkdown(documentId, (input, init) => globalThis.fetch(input, { ...init, signal: controller.signal }))
-      .then(setDocument)
+      .then((next) => setDocument((current) => retainEqualValue(current ?? undefined, next)))
       .catch((cause: unknown) => {
         if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(true);
       });
@@ -123,7 +139,7 @@ function InlineCustomView({ customViewId, invalidationKey }: { customViewId: str
   useEffect(() => {
     const controller = new AbortController();
     void fetchInlineCustomView(customViewId, (input, init) => globalThis.fetch(input, { ...init, signal: controller.signal }))
-      .then(setDocument)
+      .then((next) => setDocument((current) => retainEqualValue(current ?? undefined, next)))
       .catch((cause: unknown) => {
         if (!(cause instanceof DOMException && cause.name === "AbortError")) setError(true);
       });

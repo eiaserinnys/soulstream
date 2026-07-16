@@ -7,6 +7,7 @@ import {
 } from "react";
 import {
   Button,
+  retainEqualValue,
   useDashboardStore,
   useSessionListProvider,
   type CatalogBoardItem,
@@ -23,6 +24,7 @@ import {
 } from "./task-board-model";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
+import { loadConfirmedResult } from "./planner-query-state";
 import "./v3-task-board.css";
 
 export function TaskBoardPane({
@@ -42,17 +44,19 @@ export function TaskBoardPane({
   const [loadError, setLoadError] = useState<string | null>(null);
   const previousStoreRef = useRef<Partial<ReturnType<typeof useDashboardStore.getState>> | null>(null);
   const catalogInitializedRef = useRef(false);
+  const boardItemsRef = useRef(boardItems);
+  const loadedRunbookIdRef = useRef<string | null>(null);
+  boardItemsRef.current = boardItems;
   const sessionIds = useMemo(
     () => extractTaskBoardSessionIds(boardItems ?? []),
     [boardItems],
   );
   const invalidationKey = useV3InvalidationKey([
-    "session", "catalog", "runbook", "custom_view", "page", "replay", "local",
+    "catalog", "runbook", "replay", "local",
   ]);
   const {
     sessions: boardSessions,
     loading: boardSessionsLoading,
-    refetch: refetchBoardSessions,
   } = useSessionListProvider({
     enabled: boardItems !== null && sessionIds.length > 0,
     getSessionProvider: () => orchestratorSessionProvider,
@@ -68,8 +72,13 @@ export function TaskBoardPane({
 
   const reloadBoardItems = useCallback(async () => {
     try {
-      const next = await fetchTaskBoardContainerItems(runbookId);
-      setBoardItems(next);
+      const next = await loadConfirmedResult({
+        previous: boardItemsRef.current,
+        load: () => fetchTaskBoardContainerItems(runbookId),
+        clearsVisibleContent: (current, result) => current.length > 0 && result.length === 0,
+      });
+      loadedRunbookIdRef.current = runbookId;
+      setBoardItems((current) => retainEqualValue(current ?? undefined, next));
       setLoadError(null);
     } catch (error) {
       console.error("[v3/task-board] 보드 항목 재조회 실패", error);
@@ -79,20 +88,27 @@ export function TaskBoardPane({
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetchTaskBoardContainerItems(runbookId, (input, init) => globalThis.fetch(input, {
-      ...init,
-      signal: controller.signal,
-    })).then((next) => {
-      setBoardItems(next);
+    const sameRunbook = loadedRunbookIdRef.current === runbookId;
+    if (!sameRunbook) setBoardItems(null);
+    const load = () => fetchTaskBoardContainerItems(runbookId, (input, init) => globalThis.fetch(input, {
+        ...init,
+        signal: controller.signal,
+      }));
+    void loadConfirmedResult({
+      previous: sameRunbook ? boardItemsRef.current : null,
+      load,
+      clearsVisibleContent: (current, result) => current.length > 0 && result.length === 0,
+    }).then((next) => {
+      loadedRunbookIdRef.current = runbookId;
+      setBoardItems((current) => retainEqualValue(current ?? undefined, next));
       setLoadError(null);
     }).catch((error: unknown) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
       console.error("[v3/task-board] 보드 항목 조회 실패", error);
       setLoadError(errorText(error));
     });
-    if (invalidationKey > 0) void refetchBoardSessions();
     return () => controller.abort();
-  }, [invalidationKey, refetchBoardSessions, runbookId]);
+  }, [invalidationKey, runbookId]);
 
   useEffect(() => {
     const state = useDashboardStore.getState();

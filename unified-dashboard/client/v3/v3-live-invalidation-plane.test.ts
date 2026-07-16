@@ -60,7 +60,7 @@ describe("v3 live invalidation plane", () => {
     acceptV3SessionStreamEvent({
       type: "metadata_updated",
       session_id: "session-a",
-      entry: { key: "display", value: "same" },
+      entry: { type: "display", value: "same" },
       metadata: [],
     });
     acceptV3SessionStreamEvent({
