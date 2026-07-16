@@ -352,26 +352,61 @@ export class TaskTreeService {
     includeArchived?: boolean;
     limit?: number;
   }): Promise<Array<{ task: TaskItemRow; path: TaskItemRow[] }>> {
-    const tasks =
-      params.rootTaskId || params.linkedSessionId || params.includeArchived
-        ? await this.repo.listTaskItems({
-            rootTaskId: params.rootTaskId,
-            linkedSessionId: params.linkedSessionId,
-            status: params.status,
-            includeArchived: params.includeArchived,
-            limit: params.limit,
-          })
-        : await this.repo.searchTaskItems(params);
-    return await Promise.all(
+    return (await this.searchTaskItemsPage(params)).items;
+  }
+
+  async searchTaskItemsPage(params: {
+    query?: string;
+    status?: TaskTreeStatus;
+    rootTaskId?: string;
+    linkedSessionId?: string;
+    includeArchived?: boolean;
+    limit?: number;
+  }): Promise<{
+    items: Array<{ task: TaskItemRow; path: TaskItemRow[] }>;
+    total: number;
+  }> {
+    const usesStructuredList = Boolean(
+      params.rootTaskId || params.linkedSessionId || params.includeArchived,
+    );
+    const listParams = {
+      rootTaskId: params.rootTaskId,
+      linkedSessionId: params.linkedSessionId,
+      status: params.status,
+      includeArchived: params.includeArchived,
+      limit: params.limit,
+    };
+    const [tasks, total] = usesStructuredList
+      ? await Promise.all([
+          this.repo.listTaskItems(listParams),
+          this.repo.countTaskItems(listParams),
+        ])
+      : await Promise.all([
+          this.repo.searchTaskItems(params),
+          this.repo.countSearchTaskItems(params),
+        ]);
+    const items = await Promise.all(
       tasks.map(async (task) => ({
         task,
         path: await this.repo.getTaskPath(task.id),
       })),
     );
+    return { items, total };
   }
 
   async listOperations(taskId: string, limit?: number): Promise<TaskOperationRow[]> {
     return await this.repo.listTaskOperations(taskId, limit);
+  }
+
+  async listOperationsPage(
+    taskId: string,
+    params: { limit: number; offset: number },
+  ): Promise<{ operations: TaskOperationRow[]; total: number }> {
+    const [operations, total] = await Promise.all([
+      this.repo.listTaskOperations(taskId, params.limit, params.offset),
+      this.repo.countTaskOperations(taskId),
+    ]);
+    return { operations, total };
   }
 
   private async resolveIdempotent(

@@ -188,6 +188,40 @@ export class TaskTreeRepository {
     `;
   }
 
+  async countTaskItems(params: {
+    includeArchived?: boolean;
+    status?: TaskTreeStatus;
+    linkedSessionId?: string;
+    rootTaskId?: string;
+  } = {}): Promise<number> {
+    if (params.rootTaskId) {
+      const rows = await this.sql<Array<{ count: number }>>`
+        WITH RECURSIVE subtree AS (
+          SELECT * FROM task_items WHERE id = ${params.rootTaskId}
+          UNION ALL
+          SELECT child.*
+          FROM task_items child
+          JOIN subtree parent ON child.parent_id = parent.id
+        )
+        SELECT COUNT(*)::int AS count
+        FROM subtree
+        WHERE (${params.includeArchived ?? false} OR archived = FALSE)
+          AND (${params.status ?? null}::text IS NULL OR status = ${params.status ?? null})
+          AND (${params.linkedSessionId ?? null}::text IS NULL OR linked_session_id = ${params.linkedSessionId ?? null})
+      `;
+      return Number(rows[0]?.count ?? 0);
+    }
+
+    const rows = await this.sql<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM task_items
+      WHERE (${params.includeArchived ?? false} OR archived = FALSE)
+        AND (${params.status ?? null}::text IS NULL OR status = ${params.status ?? null})
+        AND (${params.linkedSessionId ?? null}::text IS NULL OR linked_session_id = ${params.linkedSessionId ?? null})
+    `;
+    return Number(rows[0]?.count ?? 0);
+  }
+
   async searchTaskItems(params: {
     query?: string;
     status?: TaskTreeStatus;
@@ -210,6 +244,27 @@ export class TaskTreeRepository {
       ORDER BY updated_at DESC
       LIMIT ${limit}
     `;
+  }
+
+  async countSearchTaskItems(params: {
+    query?: string;
+    status?: TaskTreeStatus;
+  }): Promise<number> {
+    const query = params.query?.trim();
+    const like = query ? `%${query}%` : null;
+    const rows = await this.sql<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM task_items
+      WHERE archived = FALSE
+        AND (${params.status ?? null}::text IS NULL OR status = ${params.status ?? null})
+        AND (
+          ${like}::text IS NULL
+          OR title ILIKE ${like}
+          OR description ILIKE ${like}
+          OR acceptance_criteria ILIKE ${like}
+        )
+    `;
+    return Number(rows[0]?.count ?? 0);
   }
 
   async patchTaskItem(
@@ -374,6 +429,7 @@ export class TaskTreeRepository {
   async listTaskOperations(
     taskId: string,
     limit = 50,
+    offset = 0,
   ): Promise<TaskOperationRow[]> {
     return (
       await this.sql<TaskOperationRow[]>`
@@ -381,8 +437,18 @@ export class TaskTreeRepository {
         WHERE task_id = ${taskId}
         ORDER BY created_at DESC
         LIMIT ${Math.min(Math.max(limit, 1), 200)}
+        OFFSET ${Math.max(offset, 0)}
       `
     ).map(normalizeOperation);
+  }
+
+  async countTaskOperations(taskId: string): Promise<number> {
+    const rows = await this.sql<Array<{ count: number }>>`
+      SELECT COUNT(*)::int AS count
+      FROM task_operations
+      WHERE task_id = ${taskId}
+    `;
+    return Number(rows[0]?.count ?? 0);
   }
 }
 
