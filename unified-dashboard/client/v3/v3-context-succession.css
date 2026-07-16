@@ -71,7 +71,7 @@
 
 .v3-context-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
@@ -410,6 +410,77 @@
   white-space: nowrap;
 }
 
+.v3-succession-context-editor {
+  display: grid;
+  gap: 9px;
+  margin: 11px 0;
+}
+
+.v3-succession-context-editor > section,
+.v3-succession-context-editor > label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--background) 72%, transparent);
+}
+
+.v3-succession-context-editor strong {
+  font-size: var(--font-size-xs);
+}
+
+.v3-succession-document-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.v3-succession-document-options label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted-foreground);
+  font-size: var(--font-size-xs);
+}
+
+.v3-succession-document-options label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-succession-document-options input {
+  accent-color: var(--info);
+}
+
+.v3-succession-document-options small {
+  grid-column: 1 / -1;
+  color: var(--muted-foreground);
+  font-size: var(--font-size-xs);
+}
+
+.v3-succession-context-editor textarea {
+  min-width: 0;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 9px;
+  color: var(--foreground);
+  background: var(--background);
+  font: inherit;
+  font-size: var(--font-size-xs);
+}
+
+.v3-succession-context-editor textarea:focus-visible {
+  border-color: var(--info);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 18%, transparent);
+}
+
 .v3-succession-assignment {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -440,4 +511,5 @@
   .v3-context-tabs button:nth-child(2) { border-right: 0; }
   .v3-context-tabs button:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
   .v3-succession-assignment { grid-template-columns: 1fr; }
+  .v3-succession-document-options { grid-template-columns: 1fr; }
 }

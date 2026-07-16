@@ -133,9 +133,13 @@ describe("TaskInitialMessagePublisher", () => {
     expect(userEvent.context).toBeUndefined();
   });
 
-  it("uses task contextItems for user_message context when prepared context is absent", async () => {
+  it("uses user contextItems but hides resolver markers when prepared context is absent", async () => {
     const task = makeTask({
-      contextItems: [{ key: "handover", label: "Handover", content: "done" }],
+      contextItems: [
+        { key: "page_context_sources", content: { pages: [] } },
+        { key: "atom_context_sources", content: { nodes: [] } },
+        { key: "handover", label: "Handover", content: "done" },
+      ],
     });
     const { publisher, persistEvent, emitEventEnvelope } = makeSubject();
 

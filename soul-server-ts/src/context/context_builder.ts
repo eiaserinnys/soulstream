@@ -48,13 +48,16 @@ import {
   type PrimarySessionContainerContext,
 } from "./session_container_context.js";
 import {
-  NO_PAGE_ANCHOR_CONTEXT_RESOLVER, withoutPageContextSources,
+  NO_PAGE_ANCHOR_CONTEXT_RESOLVER,
   type PageContextResolver,
 } from "./page_context_resolver.js";
+import {
+  extractAtomContextSourceSpecs,
+  withoutSessionContextSourceMarkers,
+} from "./session_context_sources.js";
 import { buildPredecessorSummaryContextItem } from "./predecessor_summary_context.js";
 import { buildSoulstreamContextItem } from "./soulstream_item.js";
 
-/** Python `_PreparedContext` (execution_context_builder.py:24-34) TS 등가. */
 export interface PreparedContext {
   /** agent atom context + folder_prompt + task.systemPrompt. */
   effectiveSystemPrompt?: string;
@@ -194,6 +197,9 @@ export class ExecutionContextBuilder {
     const atomMarkdown = pageAnchored
       ? null
       : await this._fetchAtomContext(folder.atomContextSpecs);
+    const taskAtomMarkdown = await this._fetchAtomContext(
+      extractAtomContextSourceSpecs(task.contextItems),
+    );
     const boardWorkspaceItem = pageAnchored
       ? null
       : await fetchBoardWorkspaceContextItem(this.db, this.logger, folder.folderId);
@@ -218,6 +224,7 @@ export class ExecutionContextBuilder {
       folderPrompt: pageAnchored ? undefined : folder.folderPrompt,
       agentAtomMarkdown,
       atomMarkdown,
+      taskAtomMarkdown,
       primaryContainer,
       pageContextItem: pageAnchored ? pageContext.contextItem : null,
       suppressRunbookGuidance: pageAnchored,
@@ -318,12 +325,7 @@ export class ExecutionContextBuilder {
     }
   }
 
-  /**
-   * folder chain의 settings.atomContextNode가 dict이면 atom API 호출.
-   *
-   * `{nodeId, depth?, titlesOnly?}` 형식. nodeId 누락 또는 atom 비활성 → null.
-   * 실패는 graceful — turn 시작 차단하지 않음 (Python try/except).
-   */
+  /** Fetches configured atom specs without blocking the turn on failure. */
   private async _fetchAtomContext(
     specs?: AtomContextSpec[],
   ): Promise<string | null> {
@@ -387,16 +389,6 @@ export class ExecutionContextBuilder {
     };
   }
 
-  /**
-   * 최종 PreparedContext 조립 (Python L137-202).
-   *
-   *   effectiveSystemPrompt = agent.atom_contexts + folder_prompt + task.systemPrompt
-   *                           (있는 값만 "\n\n"로 연결)
-   *   effectiveWorkspaceDir = profile.workspace_dir ?? agent.workspace_dir
-   *   combinedContextItems  = [soulstream_item] + [cogito_context if configured]
-   *                           + [atom_context if present] + task.contextItems
-   *   assembledPrompt       = assemblePrompt(task.prompt, task.context) — 현재 task.context 없음
-   */
   private _assembleContext(args: {
     task: Task;
     agent: AgentProfile;
@@ -404,6 +396,7 @@ export class ExecutionContextBuilder {
     folderPrompt?: string;
     agentAtomMarkdown: string | null;
     atomMarkdown: string | null;
+    taskAtomMarkdown: string | null;
     primaryContainer: PrimarySessionContainerContext | null;
     pageContextItem: ContextItem | null;
     suppressRunbookGuidance: boolean;
@@ -460,7 +453,14 @@ export class ExecutionContextBuilder {
         content: args.atomMarkdown,
       });
     }
-    combinedContextItems.push(...withoutPageContextSources(args.task.contextItems));
+    if (args.taskAtomMarkdown) {
+      combinedContextItems.push({
+        key: "session_atom_context",
+        label: "선택한 atom 노드",
+        content: args.taskAtomMarkdown,
+      });
+    }
+    combinedContextItems.push(...withoutSessionContextSourceMarkers(args.task.contextItems));
 
     const assembledPrompt = assemblePrompt(args.task.prompt, undefined);
 

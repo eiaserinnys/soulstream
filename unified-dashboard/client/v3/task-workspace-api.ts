@@ -75,12 +75,12 @@ export async function addTaskContextBlocks(
   selections: readonly ContextPickerSelection[],
 ): Promise<{ blocks: Awaited<ReturnType<PageApiClient["getPage"]>>["blocks"] }> {
   const current = await api.getPage(pageId);
-  const mutation = buildContextBlockOperations({
+  const operations = buildContextBlockOperations({
     selections,
     afterBlockId: [...current.blocks].reverse().find((block) => block.parent_id === null)?.id ?? null,
     createTempId: () => `v3-context-${crypto.randomUUID()}`,
   });
-  if (mutation.operations.length === 0) {
+  if (operations.length === 0) {
     return { blocks: current.blocks };
   }
   const result = await api.applyOperations(pageId, {
@@ -88,7 +88,7 @@ export async function addTaskContextBlocks(
     expectedStateVector: decodeBase64(current.state_vector),
     idempotencyKey: `v3-context-apply-${crypto.randomUUID()}`,
     reason: "v3 task context picker apply",
-    operations: mutation.operations,
+    operations,
   });
   return { blocks: result.blocks };
 }

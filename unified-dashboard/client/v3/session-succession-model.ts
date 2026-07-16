@@ -19,18 +19,18 @@ export interface SessionPageAnchor {
 }
 
 export function buildSuccessionCreateOptions({
-  inheritCard,
+  includePageContext,
   inheritSummary,
   pageAnchor,
   predecessorSessionId,
 }: {
-  inheritCard: boolean;
+  includePageContext: boolean;
   inheritSummary: boolean;
   pageAnchor: SessionPageAnchor | null;
   predecessorSessionId: string | null;
 }): { pageAnchor?: SessionPageAnchor; predecessorSessionId?: string } {
   return {
-    ...(inheritCard && pageAnchor ? { pageAnchor } : {}),
+    ...(includePageContext && pageAnchor ? { pageAnchor } : {}),
     ...(inheritSummary && predecessorSessionId ? { predecessorSessionId } : {}),
   };
 }

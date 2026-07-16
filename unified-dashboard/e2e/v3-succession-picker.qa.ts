@@ -47,6 +47,19 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     onSessionCreate: (payload) => { createPayloads.push(payload); },
     onSessionListRequest: () => { sessionListRequests += 1; },
   });
+  await page.route("**/api/atom/nodes", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        children: [{
+          id: "qa-atom-node",
+          card_id: "qa-atom-card",
+          card: { title: "QA atom 컨텍스트", card_type: "knowledge" },
+        }],
+      }),
+    });
+  });
 
   try {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
@@ -60,7 +73,15 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       await capture(page, theme, "diagnostic-task-open-failure");
       throw error;
     }
-    await page.locator(".v3-run-row").filter({ hasText: "run #3" }).waitFor({ state: "visible" });
+    await page.locator(".v3-run-row").filter({ hasText: "세션 #3" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "＋ 컨텍스트" }).click();
+    const sharedPicker = page.locator(".v3-context-picker").filter({ has: page.getByRole("tab", { name: "atom" }) });
+    const sharedTabs = await sharedPicker.getByRole("tab").allTextContents();
+    assert(JSON.stringify(sharedTabs) === JSON.stringify(["📄 페이지", "🧠 atom"]), `공통 픽커 탭이 잘못됐습니다: ${JSON.stringify(sharedTabs)}`);
+    assert(!(await sharedPicker.textContent() ?? "").includes("상속됨(프로젝트에서)"), "공통 픽커에 중복 상속 표시가 남았습니다.");
+    await sharedPicker.getByRole("tab", { name: "atom" }).click();
+    await sharedPicker.getByRole("button", { name: /노드 선택/ }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "＋ 컨텍스트" }).click();
     await page.getByRole("button", { name: "＋ 새 세션" }).click();
 
     const modal = page.locator(".v3-succession-modal");
@@ -78,6 +99,9 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       "플래너 UX 원칙",
       "대비와 잘림을 실제 픽셀로 확인",
       "디자인 검수 메모",
+      "보드 문서",
+      "atom 노드",
+      "기본 지침",
       "이전 세션을 이어 받을 경우 세션을 승계한 것으로 간주됩니다.",
     ]) assert(modalText.includes(required), `필수 문구/컨텍스트가 없습니다: ${required}`);
     for (const forbidden of [
@@ -88,6 +112,11 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       "업무 카드 본문에 포함",
       "승계 링크로 기록됨",
     ]) assert(!modalText.includes(forbidden), `삭제 대상 문구가 남았습니다: ${forbidden}`);
+
+    await modal.getByRole("checkbox", { name: "디자인 검수 메모" }).check();
+    await modal.locator(".v3-succession-context-editor > label button").first().click();
+    await page.getByRole("button", { name: "QA atom 컨텍스트", exact: true }).click();
+    await modal.getByRole("textbox", { name: "기본 지침" }).fill("결과부터 간결하게 보고한다.");
 
     await page.getByRole("combobox", { name: "기본 실행 에이전트" })
       .locator('option[value="roselin_codex"]')
@@ -115,6 +144,25 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.getByRole("heading", { name: "새 세션", exact: true }).waitFor({ state: "detached" });
     const createPayload = createPayloads.at(-1);
     assert(createPayload?.predecessor_session_id === "run-alpha-1", "비직전 predecessor가 생성 요청에 전달되지 않았습니다.");
+    const extraContextItems = createPayload?.extra_context_items as Array<{
+      key?: string;
+      content?: { pages?: Array<{ page_id?: string }>; nodes?: Array<{ node_id?: string }> } | string;
+    }> | undefined;
+    assert(Array.isArray(extraContextItems), "세션별 contextItems가 생성 요청에 없습니다.");
+    const pageSources = extraContextItems.find((item) => item.key === "page_context_sources");
+    const pageIds = typeof pageSources?.content === "object"
+      ? pageSources.content.pages?.map((pageEntry) => pageEntry.page_id)
+      : [];
+    assert(pageIds?.includes("doc-release"), "선택한 보드 문서가 page context source에 없습니다.");
+    const atomSources = extraContextItems.find((item) => item.key === "atom_context_sources");
+    const atomNodeId = typeof atomSources?.content === "object"
+      ? atomSources.content.nodes?.[0]?.node_id
+      : undefined;
+    assert(atomNodeId === "qa-atom-node", "선택한 atom 노드가 context source에 없습니다.");
+    assert(extraContextItems.some((item) => (
+      item.key === "session_guidance" && item.content === "결과부터 간결하게 보고한다."
+    )), "기본 지침이 세션 context에 없습니다.");
+    assert(typeof createPayload?.pageAnchor === "object", "선택한 보드 문서용 page anchor가 없습니다.");
 
     return {
       options: optionLabels.length,
@@ -124,6 +172,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       agentRefetchesDuringObservation,
       sessionRequestsDuringObservation: sessionListRequests - sessionRequestsBeforeObservation,
       predecessorRoundtrip: createPayload?.predecessor_session_id,
+      contextItemKeys: extraContextItems.map((item) => item.key),
       nodeChangeAgentRefresh: agentRequests.at(-1),
     };
   } finally {

@@ -30,6 +30,7 @@ import {
 import {
   SessionSuccessionModal,
   type SuccessionContextItem,
+  type SuccessionDocumentOption,
 } from "./SessionSuccessionModal";
 import { RichSessionRow } from "./RichSessionRow";
 import { buildTaskSessionExtraActions } from "./context-menu-model";
@@ -41,10 +42,10 @@ export function TaskRunHistory({
   taskPageId,
   runbookId,
   contextItems,
+  documentOptions,
   pageContextSources,
   contextPending,
   sessionDefaults,
-  predecessorSessionId,
   sessionIds,
   sessions,
   runSessionLoadStates,
@@ -63,10 +64,10 @@ export function TaskRunHistory({
   taskPageId: string;
   runbookId: string;
   contextItems: readonly SuccessionContextItem[];
+  documentOptions: readonly SuccessionDocumentOption[];
   pageContextSources: PageContextSourcesMarker;
   contextPending: boolean;
   sessionDefaults: PageSessionDefaults | null;
-  predecessorSessionId: string | null;
   sessionIds: readonly string[];
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
@@ -196,12 +197,12 @@ export function TaskRunHistory({
           taskPageId={taskPageId}
           runbookId={runbookId}
           contextItems={contextItems}
+          documentOptions={documentOptions}
           pageContextSources={pageContextSources}
           contextPending={contextPending}
           predecessorOptions={predecessorOptions}
           pageDefaults={sessionDefaults}
           currentSession={targetedSuccession}
-          predecessorSessionId={targetedSuccessionId ?? predecessorSessionId}
           onClose={() => { setSuccessionOpen(false); setTargetedSuccessionId(null); }}
           onCreated={onSessionCreated}
         />

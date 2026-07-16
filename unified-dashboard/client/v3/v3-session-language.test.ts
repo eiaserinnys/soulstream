@@ -22,4 +22,24 @@ describe("v3 session language", () => {
 
     expect(source).not.toMatch(/Run 히스토리|이전 Run|Run 불러오는|Run 채팅|선택된 run|run #|run 0|마지막 run|새 업무 run|run 이동|\} run`/);
   });
+
+  it("keeps shared context and per-session context on their canonical surfaces", () => {
+    const picker = readFileSync(
+      fileURLToPath(new URL("./TaskContextPicker.tsx", import.meta.url)),
+      "utf8",
+    );
+    const succession = readFileSync(
+      fileURLToPath(new URL("./SessionSuccessionModal.tsx", import.meta.url)),
+      "utf8",
+    );
+
+    expect(picker).toContain("AtomNodeSelector");
+    expect(picker).not.toContain("상속됨(프로젝트에서)");
+    expect(picker).not.toContain('id: "session"');
+    expect(picker).not.toContain('id: "guidance"');
+    expect(picker).not.toContain("atom nodeId 입력");
+    expect(succession).toContain("보드 문서");
+    expect(succession).toContain("atom 노드");
+    expect(succession).toContain("기본 지침");
+  });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Button, type SessionSummary } from "@seosoyoung/soul-ui";
+import { AtomNodeSelector, Button } from "@seosoyoung/soul-ui";
 import {
   createPageApiClient,
   type BlockDto,
@@ -11,43 +11,26 @@ import {
   estimateContextPayload,
   type ContextPickerSelection,
 } from "./context-picker-model";
-import {
-  addTaskContextBlocks,
-  type PageSessionDefaults,
-} from "./task-workspace-api";
+import { addTaskContextBlocks } from "./task-workspace-api";
 
-type ContextTab = "page" | "atom" | "session" | "guidance";
+type ContextTab = "page" | "atom";
 
 const TABS: readonly { id: ContextTab; icon: string; label: string }[] = [
   { id: "page", icon: "📄", label: "페이지" },
   { id: "atom", icon: "🧠", label: "atom" },
-  { id: "session", icon: "💬", label: "이전 세션" },
-  { id: "guidance", icon: "📝", label: "guidance" },
 ];
 
 export function TaskContextPicker({
   mode = "context",
   taskPageId,
   taskBlocks,
-  projectPageId,
-  sessionIds,
-  sessions,
-  sessionDefaults,
-  predecessorSessionId,
   onBlocksChanged,
-  onPredecessorChanged,
   onClose,
 }: {
   mode?: "context" | "document";
   taskPageId: string;
   taskBlocks: readonly BlockDto[];
-  projectPageId: string | null;
-  sessionIds: readonly string[];
-  sessions: readonly SessionSummary[];
-  sessionDefaults: PageSessionDefaults | null;
-  predecessorSessionId: string | null;
   onBlocksChanged(blocks: BlockDto[]): void;
-  onPredecessorChanged(sessionId: string | null): void;
   onClose(): void;
 }) {
   const documentMode = mode === "document";
@@ -57,12 +40,9 @@ export function TaskContextPicker({
   const [selected, setSelected] = useState<Map<string, ContextPickerSelection>>(() => new Map());
   const [pageQuery, setPageQuery] = useState("");
   const [pages, setPages] = useState<BrowserPageSearchItemDto[]>([]);
-  const [inheritedBlocks, setInheritedBlocks] = useState<BlockDto[]>([]);
   const [atomNodeId, setAtomNodeId] = useState("");
-  const [atomLabel, setAtomLabel] = useState("");
-  const [guidance, setGuidance] = useState("");
+  const [atomTitle, setAtomTitle] = useState("");
   const [newPageTitle, setNewPageTitle] = useState("");
-  const [draftPredecessorSessionId, setDraftPredecessorSessionId] = useState(predecessorSessionId);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,46 +62,15 @@ export function TaskContextPicker({
     return () => { active = false; };
   }, [api, pageQuery, taskPageId]);
 
-  useEffect(() => {
-    if (!projectPageId) { setInheritedBlocks([]); return; }
-    let active = true;
-    void api.getPage(projectPageId).then((result) => {
-      if (active) setInheritedBlocks(result.blocks.filter(isInheritedContextBlock));
-    }).catch((caught: unknown) => {
-      if (active) setError(`상속 컨텍스트 조회 실패 · ${errorText(caught)}`);
-    });
-    return () => { active = false; };
-  }, [api, projectPageId]);
-
-  const runIds = useMemo(() => new Set(sessionIds), [sessionIds]);
-  const completedSessions = useMemo(() => sessions
-    .filter((session) => runIds.has(session.agentSessionId) && session.status === "completed")
-    .sort((left, right) => sessionTime(right) - sessionTime(left)), [runIds, sessions]);
   const existing = useMemo(() => existingContextKeys(taskBlocks), [taskBlocks]);
   const selectedValues = [...selected.values()];
-  const draftPredecessor = completedSessions.find(
-    (session) => session.agentSessionId === draftPredecessorSessionId,
-  ) ?? null;
-  const guidanceSelection = guidance.trim() && !existing.has(`guidance:${guidance.trim()}`)
-    ? ({ key: `guidance:${guidance.trim()}`, kind: "guidance", text: guidance.trim() } as const)
-    : null;
   const estimateValues = [
-    ...inheritedBlocks.map(blockEstimateValue),
     ...taskBlocks.filter(isSpecialContextBlock).map(blockEstimateValue),
     ...selectedValues.map(selectionEstimateValue),
-    ...(draftPredecessor ? [sessionEstimateValue(draftPredecessor)] : []),
-    ...(guidanceSelection && !selected.has(guidanceSelection.key) ? [guidanceSelection.text] : []),
-    ...(sessionDefaults?.agentId || sessionDefaults?.nodeId
-      ? [`${sessionDefaults.agentId ?? ""}@${sessionDefaults.nodeId ?? ""}`]
-      : []),
   ];
   const estimate = estimateContextPayload(estimateValues);
 
   const toggle = (selection: ContextPickerSelection) => {
-    if (selection.kind === "session") {
-      setDraftPredecessorSessionId((current) => current === selection.sessionId ? null : selection.sessionId);
-      return;
-    }
     setSelected((current) => {
       const next = new Map(current);
       if (next.has(selection.key)) {
@@ -137,15 +86,11 @@ export function TaskContextPicker({
     const choices = selectedValues.filter((selection) => (
       !existing.has(selection.key) && (!documentMode || selection.kind === "page")
     ));
-    if (!documentMode && guidanceSelection && !choices.some((selection) => selection.key === guidanceSelection.key)) {
-      choices.push(guidanceSelection);
-    }
     setPending(true);
     setError(null);
     try {
       const result = await addTaskContextBlocks(api, taskPageId, choices);
       onBlocksChanged(result.blocks);
-      if (!documentMode) onPredecessorChanged(draftPredecessorSessionId);
       onClose();
     } catch (caught) {
       setError(errorText(caught));
@@ -171,35 +116,26 @@ export function TaskContextPicker({
     }
   };
 
-  const atomSelection = atomNodeId.trim()
-    ? ({
-        key: `atom:${atomNodeId.trim()}`,
-        kind: "atom",
-        nodeId: atomNodeId.trim(),
-        label: atomLabel.trim() || atomNodeId.trim(),
-      } as const)
-    : null;
+  const selectAtomNode = (nodeId: string, title: string) => {
+    setAtomNodeId(nodeId);
+    setAtomTitle(title);
+    const normalized = nodeId.trim();
+    if (!normalized || existing.has(`atom:${normalized}`)) return;
+    const selection = {
+      key: `atom:${normalized}`,
+      kind: "atom" as const,
+      nodeId: normalized,
+      label: title.trim() || normalized,
+    };
+    setSelected((current) => new Map(current).set(selection.key, selection));
+  };
 
   return (
     <div className={`v3-context-picker${documentMode ? " v3-context-picker--document" : ""}`}>
-      {!documentMode ? <section className="v3-context-inherited">
-        <strong>상속됨(프로젝트에서)</strong>
-        <div>
-          {inheritedBlocks.map((block) => {
-            const presentation = contextBlockPresentation(block);
-            return <span key={block.id}><span className="v3-emoji" aria-hidden="true">{presentation.icon}</span> {presentation.label}</span>;
-          })}
-          {sessionDefaults?.agentId || sessionDefaults?.nodeId ? (
-            <span>◉ 기본 에이전트 · {sessionDefaults.agentId ?? "미지정"}@{sessionDefaults.nodeId ?? "미지정"}</span>
-          ) : null}
-          {inheritedBlocks.length === 0 && !sessionDefaults ? <small>상속된 컨텍스트가 없습니다.</small> : null}
-        </div>
-      </section> : null}
-
       {!documentMode ? <div className="v3-context-tabs" role="tablist" aria-label="컨텍스트 종류">
         {TABS.map((item) => (
           <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} className={tab === item.id ? "is-active" : ""} onClick={() => setTab(item.id)}>
-            <span className="v3-emoji" aria-hidden="true">{item.icon}</span> {item.label}{item.id === "session" ? <small>요약</small> : null}
+            <span className="v3-emoji" aria-hidden="true">{item.icon}</span> {item.label}
           </button>
         ))}
       </div> : null}
@@ -223,29 +159,25 @@ export function TaskContextPicker({
         ) : null}
         {tab === "atom" ? (
           <>
-            <input value={atomNodeId} onChange={(event) => setAtomNodeId(event.target.value)} placeholder="atom nodeId 입력…" aria-label="atom nodeId" />
-            <input value={atomLabel} onChange={(event) => setAtomLabel(event.target.value)} placeholder="표시 이름(선택)…" aria-label="atom 표시 이름" />
-            {atomSelection ? <ContextOption icon="🧠" title={atomSelection.label} meta={atomSelection.nodeId} selected={selected.has(atomSelection.key)} disabled={existing.has(atomSelection.key)} onClick={() => toggle(atomSelection)} /> : null}
+            <AtomNodeSelector
+              value={atomNodeId}
+              selectedTitle={atomTitle}
+              disabled={pending}
+              onChange={selectAtomNode}
+            />
+            <div className="v3-context-options">
+              {selectedValues.filter((selection) => selection.kind === "atom").map((selection) => (
+                <ContextOption key={selection.key} icon="🧠" title={selection.label} meta={selection.nodeId} selected onClick={() => toggle(selection)} />
+              ))}
+              {atomNodeId && existing.has(`atom:${atomNodeId}`) ? <p>이미 연결된 atom 노드입니다.</p> : null}
+            </div>
           </>
-        ) : null}
-        {tab === "session" ? (
-          <div className="v3-context-options">
-            {completedSessions.map((session) => {
-              const label = session.displayName ?? session.agentName ?? session.agentSessionId.slice(0, 12);
-              const selection = { key: `session:${session.agentSessionId}`, kind: "session", sessionId: session.agentSessionId, label, summary: session.awaySummary } as const;
-              return <ContextOption key={selection.key} icon="💬" title={label} meta="마지막 세션 요약 첨부" selected={draftPredecessorSessionId === session.agentSessionId} onClick={() => toggle(selection)} />;
-            })}
-            {completedSessions.length === 0 ? <p>완료된 이전 세션이 없습니다.</p> : null}
-          </div>
-        ) : null}
-        {tab === "guidance" ? (
-          <input value={guidance} onChange={(event) => setGuidance(event.target.value)} placeholder="이 세션에 적용할 guidance 한 줄…" aria-label="guidance 입력" />
         ) : null}
       </div>
 
       {error ? <div className="v3-context-error" role="alert">{error}</div> : null}
       <footer className="v3-context-footer">
-        <span>{documentMode ? `선택한 문서 ${selectedValues.filter((selection) => selection.kind === "page").length}개` : `이 세션이 받는 것: ${estimate.count}건 · ${estimate.label}`}</span>
+        <span>{documentMode ? `선택한 문서 ${selectedValues.filter((selection) => selection.kind === "page").length}개` : `업무 컨텍스트 ${estimate.count}건 · ${estimate.label}`}</span>
         <Button disabled={pending} onClick={() => { void apply(); }}>{pending ? "추가 중…" : documentMode ? "선택 문서 마운트" : "선택 추가"}</Button>
       </footer>
     </div>
@@ -273,7 +205,6 @@ function existingContextKeys(blocks: readonly BlockDto[]): Set<string> {
     const mount = /^\[\[([^\[\]]+)\]\]$/.exec(block.text.trim());
     if (mount) keys.add(`page:${mount[1]}`);
     if (block.block_type === "atom_ref" && typeof block.properties.nodeId === "string") keys.add(`atom:${block.properties.nodeId}`);
-    if (block.block_type === "guidance" && block.text.trim()) keys.add(`guidance:${block.text.trim()}`);
   }
   return keys;
 }
@@ -284,43 +215,13 @@ function isSpecialContextBlock(block: BlockDto): boolean {
     || /^\[\[[^\[\]]+\]\]$/.test(block.text.trim());
 }
 
-function isInheritedContextBlock(block: BlockDto): boolean {
-  return block.block_type === "atom_ref" || block.block_type === "guidance";
-}
-
-function contextBlockPresentation(block: BlockDto): { icon: string; label: string } {
-  if (block.block_type === "atom_ref") {
-    return { icon: "🧠", label: `atom · ${stringProperty(block, "title") ?? stringProperty(block, "nodeId") ?? "컨텍스트"}` };
-  }
-  if (block.block_type === "guidance") {
-    return { icon: "📝", label: `guidance · ${block.text.trim() || "실행 지침"}` };
-  }
-  return { icon: "📄", label: block.text.trim() };
-}
-
 function blockEstimateValue(block: BlockDto): string {
   return `${block.block_type}\n${block.text}\n${JSON.stringify(block.properties)}`;
 }
 
 function selectionEstimateValue(selection: ContextPickerSelection): string {
   if (selection.kind === "page") return selection.title;
-  if (selection.kind === "atom") return `${selection.nodeId}\n${selection.label}`;
-  if (selection.kind === "guidance") return selection.text;
-  return `${selection.label}\n${selection.summary ?? ""}`;
-}
-
-function sessionEstimateValue(session: SessionSummary): string {
-  return `${session.displayName ?? session.agentName ?? session.agentSessionId}\n${session.awaySummary ?? ""}`;
-}
-
-function stringProperty(block: BlockDto, key: string): string | null {
-  const value = block.properties[key];
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function sessionTime(session: SessionSummary): number {
-  const parsed = Date.parse(session.completedAt ?? session.updatedAt ?? session.createdAt ?? "");
-  return Number.isFinite(parsed) ? parsed : 0;
+  return `${selection.nodeId}\n${selection.label}`;
 }
 
 function errorText(error: unknown): string {
