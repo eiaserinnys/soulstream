@@ -908,41 +908,43 @@ function connectProvider(address: string, pageId: string): HocuspocusProvider {
     document: new Y.Doc(),
     token: "service-token",
     WebSocketPolyfill: WebSocket,
-    autoConnect: false,
   } as HocuspocusProviderConfiguration & { WebSocketPolyfill: typeof WebSocket });
 }
 
-function waitForSync(provider: HocuspocusProvider): Promise<void> {
+function waitForSync(
+  provider: HocuspocusProvider,
+  timeoutMs = 30_000,
+): Promise<void> {
   if (provider.isSynced) return Promise.resolve();
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("provider sync timed out")), 7_000);
-    provider.on("synced", () => {
+    let timer: ReturnType<typeof setTimeout>;
+    const cleanup = () => {
       clearTimeout(timer);
+      provider.off("synced", onSynced);
+      provider.off("authenticationFailed", onAuthenticationFailed);
+    };
+    const onSynced = () => {
+      cleanup();
       resolve();
-    });
-    provider.on("authenticationFailed", ({ reason }: { reason: string }) => {
-      clearTimeout(timer);
+    };
+    const onAuthenticationFailed = ({ reason }: { reason: string }) => {
+      cleanup();
       reject(new Error(reason));
-    });
+    };
+    timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("provider sync timed out"));
+    }, timeoutMs);
+    provider.on("synced", onSynced);
+    provider.on("authenticationFailed", onAuthenticationFailed);
     if (provider.isSynced) {
-      clearTimeout(timer);
-      resolve();
+      onSynced();
     }
   });
 }
 
 async function connectAndWaitForSync(provider: HocuspocusProvider): Promise<void> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      await Promise.all([provider.connect(), waitForSync(provider)]);
-      return;
-    } catch (error) {
-      lastError = error;
-      provider.disconnect();
-    }
-  }
-  throw lastError;
+  await waitForSync(provider);
 }
 
 function getEditableText(document: Y.Doc, blockId: string): Y.Text {
