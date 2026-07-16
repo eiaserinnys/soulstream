@@ -23,6 +23,7 @@ import {
 } from "./task_creation_hook.js";
 import { initialSessionReview } from "./session_review.js";
 import { sessionBoardItemPosition } from "./runbook_session_position.js";
+import { resolveStructuralCallerSessionId } from "./delegation_relationship.js";
 
 export interface CreateTaskParams {
   agentSessionId: string;
@@ -104,6 +105,10 @@ export class TaskCreation {
     );
     const sessionType = params.sessionType ?? "claude";
     const review = initialSessionReview(params.callerInfo);
+    const structuralCallerSessionId = resolveStructuralCallerSessionId(
+      params.callerSessionId,
+      params.notifyCompletion,
+    );
     const task: Task = {
       agentSessionId: params.agentSessionId,
       prompt: params.prompt,
@@ -115,7 +120,7 @@ export class TaskCreation {
       llmProvider: params.llmProvider ?? null,
       llmModel: params.llmModel ?? null,
       llmUsage: params.llmUsage ?? null,
-      callerSessionId: params.callerSessionId ?? undefined,
+      callerSessionId: structuralCallerSessionId ?? undefined,
       callerInfo: params.callerInfo,
       notifyCompletion: params.notifyCompletion ?? true,
       metadata,

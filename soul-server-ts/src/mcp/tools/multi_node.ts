@@ -10,6 +10,7 @@ import { z } from "zod";
 import { AgentProfileSchema } from "../../agent_registry.js";
 import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
 import { resolveDelegatedContainer } from "../../session_folder_fallback.js";
+import { resolveStructuralCallerSessionId } from "../../task/delegation_relationship.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { requireRemoteCallerSessionId } from "./caller_session.js";
@@ -288,7 +289,13 @@ export function registerMultiNodeTools(
       if (notify_completion !== undefined) {
         body.notify_completion = notify_completion;
       }
-      body.caller_session_id = callerSession.callerSessionId;
+      const structuralCallerSessionId = resolveStructuralCallerSessionId(
+        callerSession.callerSessionId,
+        notify_completion,
+      );
+      if (structuralCallerSessionId !== null) {
+        body.caller_session_id = structuralCallerSessionId;
+      }
       body.caller_info = callerInfo;
 
       try {

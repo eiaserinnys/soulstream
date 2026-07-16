@@ -236,6 +236,52 @@ describe("TaskCreation", () => {
     );
   });
 
+  it("keeps fire-and-forget caller metadata and runbook placement without a structural parent link", async () => {
+    const h = makeHarness();
+
+    const task = await h.creation.createTask({
+      agentSessionId: "sess-fire-and-forget",
+      prompt: "independent runbook work",
+      profileId: "roselin_codex",
+      callerSessionId: "sess-coordinator",
+      callerInfo: {
+        source: "agent",
+        agent_node: "node-1",
+        agent_id: "coordinator",
+        display_name: "Coordinator",
+      },
+      notifyCompletion: false,
+      container: { containerKind: "runbook", containerId: "rb-1" },
+      sourceRunbookItemId: "runbook-item-1",
+    });
+
+    expect(task).toMatchObject({
+      callerSessionId: undefined,
+      notifyCompletion: false,
+      callerInfo: expect.objectContaining({
+        source: "agent",
+        agent_id: "coordinator",
+      }),
+    });
+    expect(h.registerSession).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: "sess-fire-and-forget",
+      callerSessionId: null,
+      notifyCompletion: false,
+    }));
+    expect(h.appendMetadata).toHaveBeenCalledWith("sess-fire-and-forget", {
+      type: "caller_info",
+      value: expect.objectContaining({
+        source: "agent",
+        agent_id: "coordinator",
+      }),
+    });
+    expect(h.upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
+      container: { containerKind: "runbook", containerId: "rb-1" },
+      sessionId: "sess-fire-and-forget",
+      sourceRunbookItemId: "runbook-item-1",
+    }));
+  });
+
   it("uses the session type default folder when no folderId is provided", async () => {
     const h = makeHarness();
     h.getFolderById.mockResolvedValueOnce({
