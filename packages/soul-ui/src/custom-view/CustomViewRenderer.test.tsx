@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   CUSTOM_VIEW_CSP,
+  CUSTOM_VIEW_FRAME_ORIGINS,
   CustomViewIframe,
   renderCustomViewFragment,
   renderCustomViewSrcDoc,
@@ -25,6 +26,9 @@ describe("CustomViewRenderer", () => {
 
     expect(srcDoc).toContain("http-equiv=\"Content-Security-Policy\"");
     expect(srcDoc).toContain(CUSTOM_VIEW_CSP);
+    expect(CUSTOM_VIEW_FRAME_ORIGINS).toEqual(["https://pages.eiaserinnys.me"]);
+    expect(CUSTOM_VIEW_CSP).toContain("frame-src https://pages.eiaserinnys.me;");
+    expect(CUSTOM_VIEW_CSP).not.toMatch(/(?:^|; )frame-src https:(?:;|$)/);
   });
 
   it("escapes whitelisted soul-bind values before srcdoc injection", () => {
