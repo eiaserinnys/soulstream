@@ -70,6 +70,7 @@ try {
   });
   registerPlannerRoutes(app, {
     provider: new PlannerRepository(resolver),
+    dailyPages: pages,
     resolveUser: async () => ({ email: "local@example.com" }),
   });
   registerRunbookTaskIdentityHostRoute(app, {

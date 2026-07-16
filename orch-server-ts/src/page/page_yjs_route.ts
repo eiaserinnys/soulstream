@@ -47,6 +47,7 @@ export function registerPageYjsRoutes(
     if (options.plannerReads) {
       registerPlannerRoutes(app, {
         provider: options.plannerReads,
+        dailyPages: service,
         resolveUser: options.resolveBrowserUser,
       });
     }

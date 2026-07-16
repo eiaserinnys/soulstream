@@ -1,7 +1,11 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
-import type { PageBrowserUser } from "../page/page_browser_routes.js";
+import {
+  pageBrowserUserId,
+  type PageBrowserUser,
+} from "../page/page_browser_routes.js";
+import type { PageYjsService } from "../page/page_service.js";
 import type { PlannerReadProvider } from "./planner_contract.js";
 import { PlannerCursorError } from "./planner_repository_reads.js";
 
@@ -17,6 +21,7 @@ export const plannerRouteAuthRequirements = {
 
 export interface PlannerRouteOptions {
   provider: PlannerReadProvider;
+  dailyPages: Pick<PageYjsService, "getDailyPage">;
   resolveUser: (request: FastifyRequest) => Promise<PageBrowserUser | null>;
 }
 
@@ -41,11 +46,19 @@ export function registerPlannerRoutes(
   options: PlannerRouteOptions,
 ): void {
   app.get("/api/planner/today", async (request, reply) => {
-    if (!await options.resolveUser(request)) return unauthorized(reply);
+    const actorUserId = pageBrowserUserId(await options.resolveUser(request));
+    if (!actorUserId) return unauthorized(reply);
     const parsed = todayQuery.safeParse(request.query);
     if (!parsed.success) return invalid(reply, parsed.error.message);
     try {
-      const planner = await options.provider.getToday(parsed.data.date);
+      let planner = await options.provider.getToday(parsed.data.date);
+      if (!planner) {
+        await options.dailyPages.getDailyPage({
+          date: parsed.data.date,
+          actor: { actorKind: "user", actorUserId },
+        });
+        planner = await options.provider.getToday(parsed.data.date);
+      }
       return planner
         ? reply.send(planner)
         : notFound(reply, `daily page not found: ${parsed.data.date}`);
