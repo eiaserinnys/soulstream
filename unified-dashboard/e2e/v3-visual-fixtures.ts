@@ -28,10 +28,14 @@ export interface V3VisualQaRouteOptions {
   contextMenuParity?: boolean;
   contextChainPreview?: boolean;
   emptyPlannerProjectsWhen?: () => boolean;
+  emptyProjectPlannerWhen?: () => boolean;
+  includeAlphaThirdRunWhen?: () => boolean;
   onAgentListRequest?: (nodeId: string) => void;
   onSessionCreate?: (payload: Record<string, unknown>) => void;
   onSessionListRequest?: () => void;
   onPlannerTodayRequest?: (requestNumber: number) => void;
+  onPlannerProjectRequest?: (requestNumber: number) => void;
+  onRunHistoryRequest?: (requestNumber: number) => void;
 }
 
 function page(
@@ -380,14 +384,18 @@ function runbookSummary(id: string) {
   };
 }
 
-function plannerTaskPayload(taskPage: typeof pages.taskAlpha, runbookId: string) {
+function plannerTaskPayload(
+  taskPage: typeof pages.taskAlpha,
+  runbookId: string,
+  sessionIds: readonly string[] = runSessions[runbookId] ?? [],
+) {
   return {
     page: taskPage,
     blocks: pageReads[taskPage.id].blocks,
     runbook_id: runbookId,
     runbook: runbookSummary(runbookId),
     project_page_id: pages.project.id,
-    sessions: (runSessions[runbookId] ?? []).slice(-1).map((agentSessionId) => ({ agent_session_id: agentSessionId })),
+    sessions: sessionIds.slice(-1).map((agentSessionId) => ({ agent_session_id: agentSessionId })),
     mounted_documents: taskPage.id === pages.taskAlpha.id
       ? [{ block_id: "alpha-doc", page: pages.document }]
       : [],
@@ -468,6 +476,12 @@ export async function installV3VisualQaRoutes(
   let shouldFailTaskTitleRename = options.failTaskTitleRenameOnce === true;
   let shouldFailProjectResolution = options.projectResolutionMode === "fail-once";
   let plannerTodayRequests = 0;
+  let plannerProjectRequests = 0;
+  let runHistoryRequests = 0;
+  const alphaRunIds = () => [
+    ...runSessions["rb-alpha"],
+    ...(options.includeAlphaThirdRunWhen?.() === true ? ["run-alpha-3"] : []),
+  ];
   let inlineMarkdownDocument = {
     id: "doc-inline",
     title: "PR-O 결정 로그",
@@ -569,6 +583,15 @@ export async function installV3VisualQaRoutes(
       options.onSessionCreate?.(payload);
       return fulfillJson(route, { agentSessionId: "run-alpha-successor", nodeId: payload.nodeId ?? "eiaserinnys" });
     }
+    const sessionRenameMatch = /^\/api\/sessions\/([^/]+)\/display-name$/.exec(path);
+    if (sessionRenameMatch && request.method() === "PATCH") {
+      const sessionId = decodeURIComponent(sessionRenameMatch[1]);
+      const payload = request.postDataJSON() as { displayName?: string | null };
+      const target = sessions.find((session) => session.agentSessionId === sessionId);
+      if (!target) return fulfillJson(route, { detail: "session not found" }, 404);
+      target.displayName = payload.displayName ?? undefined;
+      return fulfillJson(route, { status: "ok" });
+    }
     if (path === "/api/sessions/folder-counts") return fulfillJson(route, { counts: {} });
     if (/^\/api\/nodes\/[^/]+\/agents$/.test(path)) {
       const nodeId = decodeURIComponent(path.split("/")[3] ?? "");
@@ -618,7 +641,7 @@ export async function installV3VisualQaRoutes(
               ...(options.contextMenuParity && !hasDailyTaskMount(pages.taskAlpha.title)
                 ? []
                 : [{
-                    ...plannerTaskPayload(pages.taskAlpha, "rb-alpha"),
+                    ...plannerTaskPayload(pages.taskAlpha, "rb-alpha", alphaRunIds()),
                     ...(options.contextChainPreview
                       ? { project_page_id: pages.projectDashboard.id }
                       : {}),
@@ -639,6 +662,8 @@ export async function installV3VisualQaRoutes(
     }
     const plannerTaskRunsMatch = /^\/api\/planner\/tasks\/([^/]+)\/runs$/.exec(path);
     if (plannerTaskRunsMatch && request.method() === "GET") {
+      runHistoryRequests += 1;
+      options.onRunHistoryRequest?.(runHistoryRequests);
       const taskId = decodeURIComponent(plannerTaskRunsMatch[1]);
       if (options.alphaRunHistoryPages && taskId === pages.taskAlpha.id) {
         const olderPage = url.searchParams.get("cursor") === "alpha-older";
@@ -651,8 +676,8 @@ export async function installV3VisualQaRoutes(
       const runbookId = taskId === pages.taskAlpha.id
         ? "rb-alpha"
         : taskId === pages.taskBeta.id ? "rb-beta" : taskId === pages.taskDone.id ? "rb-done" : "rb-carry";
-      const baseIds = runSessions[runbookId] ?? [];
-      const ids = [...(options.successionPickerRuns && runbookId === "rb-alpha"
+      const baseIds = runbookId === "rb-alpha" ? alphaRunIds() : (runSessions[runbookId] ?? []);
+      const ids = [...new Set(options.successionPickerRuns && runbookId === "rb-alpha"
         ? [...baseIds, "run-alpha-3"]
         : baseIds)].reverse();
       return fulfillJson(route, {
@@ -663,19 +688,22 @@ export async function installV3VisualQaRoutes(
     }
     const plannerProjectMatch = /^\/api\/planner\/projects\/([^/]+)$/.exec(path);
     if (plannerProjectMatch && request.method() === "GET") {
+      plannerProjectRequests += 1;
+      options.onPlannerProjectRequest?.(plannerProjectRequests);
       await delay(options.plannerDelayMs);
+      const empty = options.emptyProjectPlannerWhen?.() === true;
       return fulfillJson(route, {
         project: pages.project,
         tasks: {
-          items: [
-            plannerTaskPayload(pages.taskAlpha, "rb-alpha"),
+          items: empty ? [] : [
+            plannerTaskPayload(pages.taskAlpha, "rb-alpha", alphaRunIds()),
             plannerTaskPayload(pages.taskBeta, "rb-beta"),
             plannerTaskPayload(pages.taskDone, "rb-done"),
             plannerTaskPayload(pages.carryover, "rb-carry"),
           ],
           next_cursor: null,
         },
-        documents: { items: [pages.document, pages.documentTwo], next_cursor: null },
+        documents: { items: empty ? [] : [pages.document, pages.documentTwo], next_cursor: null },
       });
     }
     const plannerProjectSliceMatch = /^\/api\/planner\/projects\/([^/]+)\/(tasks|documents)$/.exec(path);

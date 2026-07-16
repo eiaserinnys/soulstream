@@ -118,7 +118,7 @@ export function ReviewQueuePanel({
                       <Button
                         variant="secondary"
                         size="sm"
-                        disabled={pendingId !== null}
+                        disabled={pendingId === session.agentSessionId}
                         aria-label={`${reviewSessionTitle(session)} 확인 처리`}
                         onClick={() => { void acknowledge(session); }}
                       >
