@@ -11,6 +11,7 @@
 
 .v3-session-panel-scroll {
   height: 100%;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 18px 12px;
   scrollbar-width: thin;
@@ -34,7 +35,12 @@
 }
 
 .v3-session-group header > span { font-size: 11px; }
-.v3-session-list { display: grid; gap: 4px; }
+.v3-session-list {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  gap: 4px;
+}
 .v3-session-list > p {
   margin: 0;
   padding: 9px 8px;
@@ -43,7 +49,30 @@
 }
 
 .v3-session-row {
+  min-width: 0;
+  max-width: 100%;
   border-radius: 10px;
+}
+
+.v3-session-row .v3-run-agent-line span {
+  min-width: 0;
+}
+
+.v3-session-row .v3-run-trailing {
+  min-width: 0;
+  max-width: 68px;
+}
+
+.v3-session-row .v3-run-trailing > * {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-session-row .v3-run-row-actions {
+  min-width: 0;
+  padding-right: 6px;
 }
 
 .v3-session-row.is-active .v3-run-row {
@@ -52,11 +81,15 @@
 }
 
 .v3-session-acknowledge {
+  max-width: 64px;
+  overflow: hidden;
   padding: 4px 7px;
   border: 1px solid var(--border);
   border-radius: 7px;
   color: var(--muted-foreground);
   font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .v3-session-acknowledge:hover { color: var(--foreground); background: color-mix(in srgb, var(--background) 45%, transparent); }

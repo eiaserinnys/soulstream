@@ -185,12 +185,12 @@
 .v3-planner {
   box-sizing: border-box;
   display: flex;
-  width: min(940px, calc(100% - 48px));
+  width: 100%;
   min-height: 0;
   height: calc(100dvh - 98px);
   flex-direction: column;
   overflow: hidden;
-  margin: 76px auto 22px;
+  margin: 76px 0 22px;
   border-radius: 24px;
   padding: 20px 0 0;
 }
@@ -202,6 +202,12 @@
   overscroll-behavior: contain;
   padding: 0 24px 90px;
   scrollbar-gutter: stable;
+}
+
+.v3-planner-scroll > * {
+  width: 100%;
+  max-width: 892px;
+  margin-inline: auto;
 }
 
 .v3-spacer {
