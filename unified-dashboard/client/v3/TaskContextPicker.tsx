@@ -233,7 +233,7 @@ export function TaskContextPicker({
             {completedSessions.map((session) => {
               const label = session.displayName ?? session.agentName ?? session.agentSessionId.slice(0, 12);
               const selection = { key: `session:${session.agentSessionId}`, kind: "session", sessionId: session.agentSessionId, label, summary: session.awaySummary } as const;
-              return <ContextOption key={selection.key} icon="💬" title={label} meta="마지막 run 요약 첨부" selected={draftPredecessorSessionId === session.agentSessionId} onClick={() => toggle(selection)} />;
+              return <ContextOption key={selection.key} icon="💬" title={label} meta="마지막 세션 요약 첨부" selected={draftPredecessorSessionId === session.agentSessionId} onClick={() => toggle(selection)} />;
             })}
             {completedSessions.length === 0 ? <p>완료된 이전 세션이 없습니다.</p> : null}
           </div>

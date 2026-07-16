@@ -248,7 +248,7 @@ export function useTaskRunHistory({
     }).catch((error: unknown) => {
       if (!active) return;
       setState((current) => current?.taskPageId === taskPageId ? { ...current, loading: false } : current);
-      notify(`Run 히스토리 조회 실패 · ${errorText(error)}`);
+      notify(`세션 히스토리 조회 실패 · ${errorText(error)}`);
     });
     return () => { active = false; };
   }, [dependencies, latestRunKey, notify, refreshKey, task?.page.id, workspaceOpen]);
@@ -268,7 +268,7 @@ export function useTaskRunHistory({
       } : current);
     } catch (error) {
       setState((current) => current ? { ...current, loading: false } : current);
-      notify(`이전 Run 더 보기 실패 · ${errorText(error)}`);
+      notify(`이전 세션 더 보기 실패 · ${errorText(error)}`);
     }
   }, [dependencies, notify, state, task]);
 

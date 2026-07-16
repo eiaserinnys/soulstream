@@ -94,6 +94,24 @@ describe("createDashboardSession", () => {
     expect(addOptimisticSession).not.toHaveBeenCalled();
   });
 
+  it("preserves a 401 status for the v3 write failure boundary", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(errorJson(401, {
+      detail: "Dashboard user is required",
+    })));
+
+    await expect(createDashboardSession({
+      queryClient,
+      addOptimisticSession: vi.fn(),
+      prompt: "hello",
+      folderId: "folder-a",
+      nodeId: "node-a",
+      agentId: "roselin_codex",
+    })).rejects.toMatchObject({
+      message: "Dashboard user is required",
+      status: 401,
+    });
+  });
+
   it("sends explicit null folder id when the source session has no folder", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okJson({
       agentSessionId: "session-new",

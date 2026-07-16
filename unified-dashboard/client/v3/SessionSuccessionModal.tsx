@@ -28,7 +28,7 @@ import {
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import type { PageContextSourcesMarker } from "./project-context-inheritance";
 
-const SUCCESSOR_PROMPT = "새 업무 run을 시작하고 사용자의 다음 지시를 기다려주세요.";
+const SUCCESSOR_PROMPT = "새 업무 세션을 시작하고 사용자의 다음 지시를 기다려주세요.";
 
 export interface SuccessionContextItem {
   id: string;
@@ -127,7 +127,7 @@ export function SessionSuccessionModal({
         eventCount: 0,
         createdAt: now,
         updatedAt: now,
-        displayName: `${taskTitle} run`,
+        displayName: `${taskTitle} 세션`,
         nodeId: result.nodeId ?? selectedNodeId,
         agentId: selectedAgentId,
         agentName: selectedAgent?.name ?? selectedAgentId,
@@ -208,7 +208,7 @@ export function SessionSuccessionModal({
                     {predecessorOptions.length === 0 ? <option value="">이전 세션 없음</option> : null}
                     {predecessorOptions.map((option, index) => (
                       <option key={option.sessionId} value={String(index)}>
-                        {option.label}{option.runNumber === null ? "" : ` · run #${option.runNumber}`}
+                        {option.label}{option.runNumber === null ? "" : ` · 세션 #${option.runNumber}`}
                       </option>
                     ))}
                   </select>

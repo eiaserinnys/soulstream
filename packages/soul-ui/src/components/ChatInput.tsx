@@ -221,7 +221,8 @@ export function ChatInput({ additionalDisabled = false, isOtherNodeSession = fal
 
       <div
         ref={composerRef}
-        className="relative flex items-end gap-2 rounded-[25px] border border-glass-border glass-strong glass-shadow-md px-2 py-2"
+        data-slot="chat-input-composer"
+        className="relative flex items-end gap-2 rounded-[25px] border border-glass-border glass-strong glass-shadow-md px-2 py-2 ring-ring/50 transition-shadow has-focus-visible:ring-[3px]"
         data-liquid-glass-webgl={composerWebglActive ? "true" : undefined}
       >
         {showInterrupt && (

@@ -29,6 +29,12 @@ export interface RunSessionResolution {
   loadStateById: ReadonlyMap<string, RunSessionLoadState>;
 }
 
+export interface TaskSessionReconciliation {
+  sessionIds: string[];
+  sessions: SessionSummary[];
+  optimisticOnlyCount: number;
+}
+
 export interface RunSessionActivationPort {
   setActiveSessionSummary(session: SessionSummary): void;
   setActiveSession(sessionId: string): void;
@@ -146,6 +152,37 @@ export function resolveRunSessions({
       : targetedLoading ? "loading" : "failed");
   }
   return { sessions: [...byId.values()], loadStateById };
+}
+
+export function reconcileTaskSessions({
+  serverSessionIds,
+  serverSessions,
+  optimisticSessions,
+}: {
+  serverSessionIds: readonly string[];
+  serverSessions: readonly SessionSummary[];
+  optimisticSessions: readonly SessionSummary[];
+}): TaskSessionReconciliation {
+  const serverById = new Map<string, SessionSummary>();
+  for (const session of serverSessions) {
+    if (!serverById.has(session.agentSessionId)) {
+      serverById.set(session.agentSessionId, session);
+    }
+  }
+  const optimisticById = new Map<string, SessionSummary>();
+  for (const session of optimisticSessions) {
+    if (!optimisticById.has(session.agentSessionId)) {
+      optimisticById.set(session.agentSessionId, session);
+    }
+  }
+  const optimisticOnly = [...optimisticById.values()].filter(
+    (session) => !serverById.has(session.agentSessionId),
+  );
+  return {
+    sessionIds: [...new Set([...serverSessionIds, ...optimisticById.keys()])],
+    sessions: [...serverById.values(), ...optimisticOnly],
+    optimisticOnlyCount: optimisticOnly.length,
+  };
 }
 
 export function activateRunSession(

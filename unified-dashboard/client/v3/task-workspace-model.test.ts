@@ -11,10 +11,35 @@ import {
   clampWorkspaceSplit,
   descriptionMarkdown,
   reduceWorkspaceEscape,
+  reconcileTaskSessions,
   resolveRunSessions,
   workspaceInspectorKind,
   workspaceSplitForKey,
 } from "./task-workspace-model";
+
+describe("task session reconciliation", () => {
+  it("replaces an optimistic session with the server session and keeps every id unique", () => {
+    const serverSession = {
+      ...session("session-real", "2026-07-13T10:00:00Z"),
+      displayName: "서버 정본",
+    };
+    const optimisticDuplicate = {
+      ...session("session-real", "2026-07-13T10:00:00Z"),
+      displayName: "낙관 항목",
+    };
+    const optimisticOnly = session("session-new", "2026-07-13T11:00:00Z");
+
+    expect(reconcileTaskSessions({
+      serverSessionIds: ["session-real"],
+      serverSessions: [serverSession],
+      optimisticSessions: [optimisticDuplicate, optimisticOnly, optimisticOnly],
+    })).toEqual({
+      sessionIds: ["session-real", "session-new"],
+      sessions: [serverSession, optimisticOnly],
+      optimisticOnlyCount: 1,
+    });
+  });
+});
 
 describe("task workspace split", () => {
   it("clamps pointer percentages, resets Home, and moves arrow keys by two percent", () => {

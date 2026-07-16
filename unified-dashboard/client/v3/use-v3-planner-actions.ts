@@ -17,12 +17,14 @@ export function useV3PlannerActions({
   api,
   invalidate,
   notify,
+  notifyWriteFailure,
   todayTaskIds,
   setTaskTodayPresence,
 }: {
   api: PageApiClient;
   invalidate(): void;
   notify(message: string): void;
+  notifyWriteFailure(action: string, error: unknown): void;
   todayTaskIds: ReadonlySet<string>;
   setTaskTodayPresence(taskId: string, present: boolean): void;
 }) {
@@ -41,13 +43,13 @@ export function useV3PlannerActions({
           invalidate();
           notify(`업무 완료 · ${task.page.title}`);
         } catch (error) {
-          notify(`업무 완료 실패 · ${errorText(error)}`);
+          notifyWriteFailure("업무 완료", error);
           throw error;
         }
       },
       finalPresence: () => false,
     });
-  }, [invalidate, notify, setTaskTodayPresence, todayTaskIds]);
+  }, [invalidate, notify, notifyWriteFailure, setTaskTodayPresence, todayTaskIds]);
 
   const toggleTaskToday = useCallback(async (task: PlannerTask) => {
     const taskId = task.page.id;
@@ -64,13 +66,13 @@ export function useV3PlannerActions({
           notify(result === "added" ? "오늘 플래너에 추가했습니다" : "오늘 플래너에서 제거했습니다");
           return result;
         } catch (error) {
-          notify(`오늘 플래너 변경 실패 · ${errorText(error)}`);
+          notifyWriteFailure("오늘 플래너 변경", error);
           throw error;
         }
       },
       finalPresence: (result) => result === "added",
     });
-  }, [api, invalidate, notify, setTaskTodayPresence, todayTaskIds]);
+  }, [api, invalidate, notify, notifyWriteFailure, setTaskTodayPresence, todayTaskIds]);
 
   const resolveStarredTask = useCallback(async (page: PageDto) => {
     try {
@@ -95,10 +97,10 @@ export function useV3PlannerActions({
       invalidate();
       notify("세션 이름을 변경했습니다");
     } catch (error) {
-      notify(`세션 이름 변경 실패 · ${errorText(error)}`);
+      notifyWriteFailure("세션 이름 변경", error);
       throw error;
     }
-  }, [invalidate, notify, queryClient]);
+  }, [invalidate, notify, notifyWriteFailure, queryClient]);
 
   const renameTaskTitle = useCallback(async (task: PlannerTask, title: string) => {
     try {
@@ -108,10 +110,10 @@ export function useV3PlannerActions({
       notify("업무 제목을 변경했습니다");
       return page.title;
     } catch (error) {
-      notify(`업무 제목 변경 실패 · ${errorText(error)}`);
+      notifyWriteFailure("업무 제목 변경", error);
       throw error;
     }
-  }, [api, invalidate, notify]);
+  }, [api, invalidate, notify, notifyWriteFailure]);
 
   const deleteSessions = useCallback(async (sessionIds: string[]) => {
     try {
@@ -119,10 +121,10 @@ export function useV3PlannerActions({
       invalidate();
       notify("세션을 삭제했습니다");
     } catch (error) {
-      notify(`세션 삭제 실패 · ${errorText(error)}`);
+      notifyWriteFailure("세션 삭제", error);
       throw error;
     }
-  }, [invalidate, notify]);
+  }, [invalidate, notify, notifyWriteFailure]);
 
   const moveSession = useCallback(async (sessionId: string, targetTask: TaskMoveTarget) => {
     try {
@@ -132,12 +134,12 @@ export function useV3PlannerActions({
         idempotencyKey: `v3-run-move-${crypto.randomUUID()}`,
       });
       invalidate();
-      notify(`run 이동 · ${targetTask.page.title}`);
+      notify(`세션 이동 · ${targetTask.page.title}`);
     } catch (error) {
-      notify(`run 이동 실패 · ${errorText(error)}`);
+      notifyWriteFailure("세션 이동", error);
       throw error;
     }
-  }, [invalidate, notify]);
+  }, [invalidate, notify, notifyWriteFailure]);
 
   const unmountDocument = useCallback(async (task: PlannerTask, blockId: string) => {
     try {
@@ -145,10 +147,10 @@ export function useV3PlannerActions({
       invalidate();
       notify("문서 마운트를 해제했습니다");
     } catch (error) {
-      notify(`문서 마운트 해제 실패 · ${errorText(error)}`);
+      notifyWriteFailure("문서 마운트 해제", error);
       throw error;
     }
-  }, [api, invalidate, notify]);
+  }, [api, invalidate, notify, notifyWriteFailure]);
 
   return { completeTask, toggleTaskToday, completeStarredTask, toggleStarredTaskToday, renameTaskTitle, renameSession, deleteSessions, moveSession, unmountDocument };
 }
