@@ -9,7 +9,7 @@ import { loadStarredPlannerTask, type PlannerTask } from "./planner-data";
 import type { TaskMoveTarget } from "./task-move-targets";
 import { completePlannerTask, togglePlannerTaskToday } from "./task-card-actions";
 import { publishTaskStarChange } from "./task-star-store";
-import { renameTaskTitle as renameTaskIdentityTitle, unmountTaskDocument } from "./task-workspace-api";
+import { renameTaskTitle as renameTaskIdentityTitle } from "./task-workspace-api";
 import { runOptimisticTodayMutation } from "./today-task-state";
 import { errorText } from "./v3-dashboard-utils";
 
@@ -23,7 +23,6 @@ export function useV3PlannerActions({
   patchTask,
   removeSessionsFromPlanner,
   moveSessionInPlanner,
-  refreshTask,
 }: {
   api: PageApiClient;
   notify(message: string): void;
@@ -34,7 +33,6 @@ export function useV3PlannerActions({
   patchTask(taskId: string, update: (task: PlannerTask) => PlannerTask): void;
   removeSessionsFromPlanner(sessionIds: readonly string[]): void;
   moveSessionInPlanner(sessionId: string, targetTaskId: string): void;
-  refreshTask(taskId: string): void;
 }) {
   const queryClient = useQueryClient();
 
@@ -150,16 +148,5 @@ export function useV3PlannerActions({
     }
   }, [moveSessionInPlanner, notify, notifyWriteFailure]);
 
-  const unmountDocument = useCallback(async (task: PlannerTask, blockId: string) => {
-    try {
-      await unmountTaskDocument(api, task.page.id, blockId);
-      refreshTask(task.page.id);
-      notify("문서 마운트를 해제했습니다");
-    } catch (error) {
-      notifyWriteFailure("문서 마운트 해제", error);
-      throw error;
-    }
-  }, [api, notify, notifyWriteFailure, refreshTask]);
-
-  return { completeTask, toggleTaskToday, completeStarredTask, toggleStarredTaskToday, renameTaskTitle, renameSession, deleteSessions, moveSession, unmountDocument };
+  return { completeTask, toggleTaskToday, completeStarredTask, toggleStarredTaskToday, renameTaskTitle, renameSession, deleteSessions, moveSession };
 }

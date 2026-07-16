@@ -873,7 +873,10 @@ export async function installV3VisualQaRoutes(
       }
       const runbookId = url.searchParams.get("container_id") ?? "";
       const inlineItems = runbookId === "rb-alpha" ? [
-        boardItem("markdown", "doc-inline", runbookId, 160, { title: "PR-O 결정 로그" }),
+        boardItem("markdown", "doc-inline", runbookId, 160, {
+          title: inlineMarkdownDocument.title,
+          version: inlineMarkdownDocument.version,
+        }),
         boardItem("custom_view", "view-inline", runbookId, 240, { title: "검증 현황" }),
         boardItem("asset", "asset-inline", runbookId, 320, { originalName: "context-menu-map.png", sourceUrl: "/context-menu-map.png" }),
       ] : [];
@@ -900,14 +903,14 @@ export async function installV3VisualQaRoutes(
     }
     if (path === "/api/markdown-documents/doc-inline") {
       if (request.method() === "PUT") {
-        const input = request.postDataJSON() as { title: string; body: string; expectedVersion: number };
+        const input = request.postDataJSON() as { title?: string; body?: string; expectedVersion: number };
         if (input.expectedVersion !== inlineMarkdownDocument.version) {
           return fulfillJson(route, { detail: "Document changed elsewhere" }, 409);
         }
         inlineMarkdownDocument = {
           ...inlineMarkdownDocument,
-          title: input.title,
-          body: input.body,
+          title: input.title ?? inlineMarkdownDocument.title,
+          body: input.body ?? inlineMarkdownDocument.body,
           version: inlineMarkdownDocument.version + 1,
         };
       }

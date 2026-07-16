@@ -9,7 +9,7 @@ import { taskContextCount } from "./planner-model";
 import { resolveProjectPage } from "./project-page-actions";
 import { createPlannerTask, plannerTaskCreationErrorLabel } from "./planner-task-creation";
 import type { RitualAction, RitualQueueItem } from "./ritual-model";
-import { promoteMountedDocument, saveTaskDescription } from "./task-workspace-api";
+import { saveTaskDescription } from "./task-workspace-api";
 
 export function useV3DashboardMutations({
   api,
@@ -134,19 +134,6 @@ export function useV3DashboardMutations({
     }
   }, [api, notify, notifyWriteFailure, refreshTask, selectedTask]);
 
-  const promoteDocument = useCallback(async (blockId: string) => {
-    if (!selectedTask?.projectPageId) throw new Error("프로젝트가 연결되지 않은 업무입니다");
-    try {
-      await promoteMountedDocument(api, selectedTask.page.id, selectedTask.projectPageId, blockId);
-      refreshTask(selectedTask.page.id);
-      refreshProject();
-      notify("문서를 프로젝트로 승격했습니다");
-    } catch (error) {
-      notifyWriteFailure("문서 승격", error);
-      throw error;
-    }
-  }, [api, notify, notifyWriteFailure, refreshProject, refreshTask, selectedTask]);
-
   const acknowledgeReview = useCallback((result: SessionReviewAcknowledgeResult) => {
     setAcknowledgedReviewIds((current) => new Set([...current, result.agentSessionId]));
     const state = useDashboardStore.getState();
@@ -178,7 +165,6 @@ export function useV3DashboardMutations({
     saveMemo,
     createDocument,
     saveDescription,
-    promoteDocument,
     acknowledgeReview,
     applyTaskBlocks,
     applyRitualAction,

@@ -206,7 +206,6 @@ function V3DashboardContent() {
     patchTask: patchPlannerTask,
     removeSessionsFromPlanner,
     moveSessionInPlanner,
-    refreshTask,
   });
   const plannerSessionIds = useMemo(
     () => [...new Set([
@@ -355,18 +354,11 @@ function V3DashboardContent() {
   const openProjectDocument = useCallback((documentId: string) => {
     openDocumentInV3(documentId, { setActiveBoardDocument, setInspectorOpen: setDocumentInspectorOpen });
   }, [setActiveBoardDocument]);
-  const openTaskDocument = useCallback((documentId: string) => {
-    openDocumentInV3(documentId, {
-      setActiveBoardDocument,
-      setInspectorOpen: () => { setChatOpen(true); if (mobileMode) setMobileTab("chat"); },
-    });
-  }, [mobileMode, setActiveBoardDocument]);
   const {
     createTask,
     saveMemo,
     createDocument,
     saveDescription,
-    promoteDocument,
     acknowledgeReview,
     applyTaskBlocks,
     applyRitualAction,
@@ -475,12 +467,9 @@ function V3DashboardContent() {
           onToggleTaskToday={() => workspaceTask ? plannerActions.toggleTaskToday(workspaceTask) : Promise.reject(new Error("연결된 업무가 없습니다"))}
           onCloseWorkspace={closeWorkspace}
           onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }}
-          onOpenDocument={openTaskDocument}
           onOpenSession={openSession}
           onRenameTaskTitle={(title) => workspaceTask ? plannerActions.renameTaskTitle(workspaceTask, title) : Promise.reject(new Error("연결된 업무가 없습니다"))}
           onSaveDescription={saveDescription}
-          onPromoteDocument={promoteDocument}
-          onUnmountDocument={(blockId) => workspaceTask ? plannerActions.unmountDocument(workspaceTask, blockId) : Promise.reject(new Error("연결된 업무가 없습니다"))}
           onRenameSession={plannerActions.renameSession}
           onDeleteSessions={plannerActions.deleteSessions}
           onMoveSession={plannerActions.moveSession}

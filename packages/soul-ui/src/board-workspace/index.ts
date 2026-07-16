@@ -14,6 +14,9 @@ export {
   getRootFolders,
 } from "./board-workspace-helpers";
 export {
+  BOARD_RUNBOOK_FIXED_CARD_RECT,
+  BOARD_TILE_HEIGHT,
+  BOARD_TILE_WIDTH,
   buildBoardWorkspaceItems,
   computeBoardCanvasSize,
   findFirstOpenBoardPosition,

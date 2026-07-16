@@ -10,7 +10,6 @@
   background: color-mix(in srgb, var(--lg-card) 84%, transparent);
 }
 
-.v3-inline-board-item > button,
 .v3-inline-board-item > a,
 .v3-inline-board-item > div:first-child {
   display: flex;
@@ -23,9 +22,59 @@
   text-align: left;
 }
 
-.v3-inline-board-item > button:hover,
 .v3-inline-board-item > a:hover {
   background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+}
+
+.v3-inline-board-row {
+  display: flex;
+  align-items: center;
+}
+
+.v3-inline-board-expand {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+
+.v3-inline-board-expand:hover,
+.v3-inline-board-rename-button:hover {
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+}
+
+.v3-inline-board-rename-button {
+  flex: none;
+  border-left: 1px solid var(--lg-line);
+  color: var(--muted-foreground);
+  font-size: var(--font-size-xs);
+}
+
+.v3-inline-board-rename {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+}
+
+.v3-inline-board-rename input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid var(--accent-blue);
+  border-radius: 8px;
+  background: var(--lg-card);
+  padding: 5px 8px;
+  color: var(--foreground);
+}
+
+.v3-inline-board-rename button {
+  flex: none;
+  color: var(--accent-blue);
+  font-size: var(--font-size-xs);
 }
 
 .v3-inline-board-item small {

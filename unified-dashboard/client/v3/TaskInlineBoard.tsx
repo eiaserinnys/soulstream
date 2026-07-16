@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
+  Button,
   CustomViewIframe,
+  renameMarkdownDocument,
   retainEqualValue,
+  useBoardYjsRuntime,
   useCustomViewBindings,
   type CatalogBoardItem,
+  type CatalogState,
   type CustomViewDocument,
   type MarkdownDocument,
 } from "@seosoyoung/soul-ui";
@@ -18,10 +22,40 @@ import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 import "./v3-context-menus.css";
 import { useV3InvalidationKey } from "./v3-live-invalidation-plane";
 import { loadConfirmedResult } from "./planner-query-state";
+import {
+  boardMarkdownDocuments,
+  findTaskMarkdownPlacement,
+  metadataText,
+  metadataVersion,
+  patchBoardMarkdownTitle,
+  type TaskBoardMarkdownDocument,
+} from "./task-inline-board-model";
 
-export function TaskInlineBoard({ runbookId }: { runbookId: string }) {
+interface MarkdownRenameState {
+  documentId: string;
+  input: string;
+  pending: boolean;
+  error: string;
+}
+
+const INLINE_ITEM_TYPES = new Set<CatalogBoardItem["itemType"]>([
+  "markdown",
+  "custom_view",
+  "asset",
+]);
+
+export function TaskInlineBoard({
+  runbookId,
+  folderId,
+  onMarkdownDocumentsChanged,
+}: {
+  runbookId: string;
+  folderId: string | null;
+  onMarkdownDocumentsChanged(documents: TaskBoardMarkdownDocument[]): void;
+}) {
   const [items, setItems] = useState<CatalogBoardItem[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [renameState, setRenameState] = useState<MarkdownRenameState | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const itemInvalidationKey = useV3InvalidationKey(["catalog", "runbook", "replay"]);
   const pageInvalidationKey = useV3InvalidationKey(["page", "replay"]);
@@ -29,8 +63,23 @@ export function TaskInlineBoard({ runbookId }: { runbookId: string }) {
   const itemsRef = useRef(items);
   const loadedRunbookIdRef = useRef<string | null>(null);
   itemsRef.current = items;
+  const boardCatalog = useMemo<CatalogState>(() => ({
+    folders: [],
+    sessions: {},
+    boardItems: items,
+    sessionList: [],
+  }), [items]);
+  const boardSync = useBoardYjsRuntime({
+    container: status === "ready" ? { kind: "runbook", id: runbookId } : null,
+    resolvedFolderId: folderId ?? items[0]?.folderId ?? runbookId,
+    catalog: boardCatalog,
+    selectionItemId: null,
+  });
 
-  useEffect(() => setExpandedId(null), [runbookId]);
+  useEffect(() => {
+    setExpandedId(null);
+    setRenameState(null);
+  }, [runbookId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -59,10 +108,102 @@ export function TaskInlineBoard({ runbookId }: { runbookId: string }) {
     return () => controller.abort();
   }, [itemInvalidationKey, runbookId]);
 
+  useEffect(() => {
+    if (!boardSync.hasSynced || !boardSync.boardItems) return;
+    setItems((current) => retainEqualValue(current, mergeRuntimeItems(boardSync.boardItems ?? [], current)));
+  }, [boardSync.boardItems, boardSync.hasSynced]);
+
+  useEffect(() => {
+    onMarkdownDocumentsChanged(boardMarkdownDocuments(items));
+  }, [items, onMarkdownDocumentsChanged]);
+
+  const createMarkdown = () => {
+    if (!boardSync.runtime || !boardSync.hasSynced) return;
+    const placement = findTaskMarkdownPlacement(items);
+    const result = boardSync.runtime.createMarkdownDocument({
+      title: "제목 없는 문서",
+      body: "",
+      ...placement,
+    });
+    setItems((current) => retainEqualValue(current, [...current, result.boardItem]));
+    setRenameState({
+      documentId: result.document.id,
+      input: result.document.title,
+      pending: false,
+      error: "",
+    });
+  };
+
+  const beginRename = (item: CatalogBoardItem) => {
+    setRenameState({
+      documentId: item.itemId,
+      input: metadataText(item, "title") || "제목 없는 문서",
+      pending: false,
+      error: "",
+    });
+  };
+
+  const commitRename = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!renameState || renameState.pending) return;
+    const item = itemsRef.current.find((candidate) => (
+      candidate.itemType === "markdown" && candidate.itemId === renameState.documentId
+    ));
+    if (!item) {
+      setRenameState(null);
+      return;
+    }
+    const version = metadataVersion(item);
+    if (version === null) {
+      setRenameState((current) => current ? {
+        ...current,
+        error: "문서 정보를 새로 불러온 뒤 다시 시도하세요.",
+      } : null);
+      return;
+    }
+    const previousTitle = metadataText(item, "title") || "제목 없는 문서";
+    const title = renameState.input.trim() || "제목 없는 문서";
+    if (title === previousTitle) {
+      setRenameState(null);
+      return;
+    }
+    setItems((current) => patchBoardMarkdownTitle(current, item.itemId, title));
+    setRenameState((current) => current ? { ...current, pending: true, error: "" } : null);
+    try {
+      const updated = await renameMarkdownDocument({
+        documentId: item.itemId,
+        title,
+        expectedVersion: version,
+      });
+      if (boardSync.runtime && !boardSync.runtime.isProviderBacked) {
+        boardSync.runtime.updateMarkdownTitle(item.itemId, updated.title);
+      }
+      setItems((current) => patchBoardMarkdownTitle(current, item.itemId, updated.title, updated.version));
+      setRenameState(null);
+    } catch (error) {
+      setItems((current) => patchBoardMarkdownTitle(current, item.itemId, previousTitle, version));
+      setRenameState((current) => current ? {
+        ...current,
+        input: previousTitle,
+        pending: false,
+        error: error instanceof Error ? error.message : "문서 이름을 바꾸지 못했습니다.",
+      } : null);
+    }
+  };
+
   return (
     <section className="v3-detail-section v3-inline-board" data-testid="v3-inline-board">
       <div className="v3-detail-section-head">
         <h3>▦ 보드</h3><span>{status === "ready" ? `${items.length}개` : ""}</span>
+        <span className="v3-spacer" />
+        <Button
+          size="xs"
+          variant="glass"
+          disabled={!boardSync.runtime || !boardSync.hasSynced}
+          onClick={createMarkdown}
+        >
+          ＋ 마크다운
+        </Button>
       </div>
       {status === "loading" ? <p className="v3-detail-empty">보드 항목을 불러오는 중…</p> : null}
       {status === "error" ? <p className="v3-inline-board-error" role="alert">보드 항목을 불러오지 못했습니다.</p> : null}
@@ -71,11 +212,39 @@ export function TaskInlineBoard({ runbookId }: { runbookId: string }) {
         {items.map((item) => {
           const expanded = expandedId === item.id;
           if (item.itemType === "markdown") {
+            const title = metadataText(item, "title") || "제목 없는 문서";
+            const activeRename = renameState?.documentId === item.itemId ? renameState : null;
             return (
               <article key={item.id} className="v3-inline-board-item" data-board-kind="markdown">
-                <button type="button" onClick={() => setExpandedId(expanded ? null : item.id)}>
-                  <span>📄 {metadataText(item, "title") || "제목 없는 문서"}</span><small>{expanded ? "접기" : "펼치기"}</small>
-                </button>
+                <div className="v3-inline-board-row">
+                  {activeRename ? (
+                    <form className="v3-inline-board-rename" onSubmit={(event) => { void commitRename(event); }}>
+                      <span aria-hidden="true">📄</span>
+                      <input
+                        autoFocus
+                        aria-label="마크다운 이름"
+                        value={activeRename.input}
+                        disabled={activeRename.pending}
+                        onChange={(event) => setRenameState((current) => current ? { ...current, input: event.target.value, error: "" } : null)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            event.stopPropagation();
+                            setRenameState(null);
+                          }
+                        }}
+                      />
+                      <button type="submit" disabled={activeRename.pending}>{activeRename.pending ? "저장 중…" : "저장"}</button>
+                    </form>
+                  ) : (
+                    <button type="button" className="v3-inline-board-expand" onClick={() => setExpandedId(expanded ? null : item.id)}>
+                      <span>📄 {title}</span><small>{expanded ? "접기" : "펼치기"}</small>
+                    </button>
+                  )}
+                  {!activeRename ? (
+                    <button type="button" className="v3-inline-board-rename-button" aria-label={`${title} 이름 수정`} onClick={() => beginRename(item)}>이름 수정</button>
+                  ) : null}
+                </div>
+                {activeRename?.error ? <p className="v3-inline-board-error" role="alert">{activeRename.error}</p> : null}
                 {expanded ? <InlineMarkdown documentId={item.itemId} invalidationKey={pageInvalidationKey} /> : null}
               </article>
             );
@@ -167,7 +336,17 @@ function InlineAsset({ item }: { item: CatalogBoardItem }) {
   );
 }
 
-function metadataText(item: CatalogBoardItem, key: string): string {
-  const value = item.metadata?.[key];
-  return typeof value === "string" ? value.trim() : "";
+function mergeRuntimeItems(
+  runtimeItems: readonly CatalogBoardItem[],
+  currentItems: readonly CatalogBoardItem[],
+): CatalogBoardItem[] {
+  const currentById = new Map(currentItems.map((item) => [item.id, item]));
+  return runtimeItems.filter((item) => INLINE_ITEM_TYPES.has(item.itemType)).map((item) => {
+    if (item.itemType !== "asset") return item;
+    const current = currentById.get(item.id);
+    const signedUrl = current?.metadata?.signedUrl;
+    return typeof signedUrl === "string"
+      ? { ...item, metadata: { ...(item.metadata ?? {}), signedUrl } }
+      : item;
+  });
 }
