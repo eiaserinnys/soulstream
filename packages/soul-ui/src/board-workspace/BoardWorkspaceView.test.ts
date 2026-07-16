@@ -12,6 +12,10 @@ import { useDashboardStore } from "../stores/dashboard-store";
 import { useRunbookStore } from "../stores/runbook-store";
 import { BoardWorkspaceView, resolveEffectiveBoardCatalog } from "./BoardWorkspaceView";
 import { FolderWorkspaceView } from "./FolderWorkspaceView";
+import {
+  BOARD_RUNBOOK_FIXED_CARD_HEIGHT,
+  BOARD_RUNBOOK_FIXED_CARD_WIDTH,
+} from "./board-workspace-items";
 import { writeFolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 
 const catalog: CatalogState = {
@@ -745,6 +749,49 @@ describe("BoardWorkspaceView", () => {
     expect(container.textContent).not.toContain("아직 이 런북 보드에 배치된 항목이 없음");
     expect(findButtonByText(container, "Folder")).toBeUndefined();
     expect(findButtonByText(container, "New")).not.toBeUndefined();
+  });
+
+  it("arranges runbook board cards below the fixed checklist through the Y.Doc path", async () => {
+    seedRunbookProjection();
+    const onUpdateBoardItemPosition = vi.fn().mockResolvedValue(undefined);
+    ({ container, root } = renderBoard({ onUpdateBoardItemPosition }, {
+      catalog: {
+        ...catalog,
+        boardItems: [
+          {
+            id: "markdown:runbook-doc",
+            folderId: "root",
+            containerKind: "runbook",
+            containerId: "rb-1",
+            itemType: "markdown",
+            itemId: "runbook-doc",
+            x: 0,
+            y: 0,
+            metadata: { title: "Runbook note" },
+          },
+        ],
+      },
+    }));
+
+    flushSync(() => {
+      useDashboardStore.getState().openRunbookBoard("rb-1", "root");
+    });
+    const fixedCard = container.querySelector<HTMLElement>('[data-testid="runbook-board-fixed-card"]');
+    expect(fixedCard?.style.width).toBe(`${BOARD_RUNBOOK_FIXED_CARD_WIDTH}px`);
+    expect(fixedCard?.style.height).toBe(`${BOARD_RUNBOOK_FIXED_CARD_HEIGHT}px`);
+
+    const button = container.querySelector<HTMLButtonElement>('[data-testid="board-declutter-button"]');
+    expect(button?.disabled).toBe(false);
+    flushSync(() => {
+      button!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await Promise.resolve();
+
+    const byId = new Map(
+      (useDashboardStore.getState().catalog?.boardItems ?? []).map((item) => [item.id, item]),
+    );
+    expect(byId.get("markdown:runbook-doc")!.y).toBeGreaterThanOrEqual(BOARD_RUNBOOK_FIXED_CARD_HEIGHT + 20);
+    expect(onUpdateBoardItemPosition).not.toHaveBeenCalled();
   });
 
   it("opens new sessions from a runbook board with runbook container defaults", () => {
