@@ -8,6 +8,7 @@ import {
   TaskTreeService,
 } from "../../task_tree/task_tree_service.js";
 import { TASK_STATUSES } from "../../task_tree/task_tree_repository.js";
+import { registerTaskTreeQueryTools } from "./task_tree_query_tools.js";
 
 const taskStatusSchema = z.enum(TASK_STATUSES);
 const verificationOwnerSchema = z.enum(["agent", "user", "both"]);
@@ -25,6 +26,7 @@ export function registerTaskTreeTools(
     service ??= new TaskTreeService(runtime);
     return service;
   };
+  registerTaskTreeQueryTools(server, getService);
 
   server.registerTool(
     "create_task_item",
@@ -112,54 +114,6 @@ export function registerTaskTreeTools(
             folderId: input.folder_id,
             container: input.container ?? null,
             sourceRunbookItemId: input.source_runbook_item_id,
-          }),
-        );
-      } catch (err) {
-        return errorResult(errorMessage(err));
-      }
-    },
-  );
-
-  server.registerTool(
-    "get_task_context",
-    {
-      description:
-        "세션의 active task, path, linked tasks를 조회한다. 컴팩션/resume 후 parent task 복구에 사용한다.",
-      inputSchema: { session_id: z.string() },
-    },
-    async ({ session_id }) => {
-      try {
-        return jsonResult(await getService().getTaskContext(session_id));
-      } catch (err) {
-        return errorResult(errorMessage(err));
-      }
-    },
-  );
-
-  server.registerTool(
-    "search_task_items",
-    {
-      description:
-        "Task Tree item을 검색하거나 root/linked session 기준으로 path와 함께 조회한다.",
-      inputSchema: {
-        query: z.string().optional(),
-        status: taskStatusSchema.optional(),
-        root_task_id: z.string().optional(),
-        linked_session_id: z.string().optional(),
-        include_archived: z.boolean().default(false),
-        limit: z.number().int().min(1).max(200).default(50),
-      },
-    },
-    async (input) => {
-      try {
-        return jsonResult(
-          await getService().searchTaskItems({
-            query: input.query,
-            status: input.status,
-            rootTaskId: input.root_task_id,
-            linkedSessionId: input.linked_session_id,
-            includeArchived: input.include_archived,
-            limit: input.limit,
           }),
         );
       } catch (err) {
@@ -506,24 +460,6 @@ export function registerTaskTreeTools(
     },
   );
 
-  server.registerTool(
-    "list_task_operations",
-    {
-      description:
-        "Task item의 append-only operation 이력을 최신순으로 조회한다.",
-      inputSchema: {
-        task_id: z.string(),
-        limit: z.number().int().min(1).max(200).default(50),
-      },
-    },
-    async ({ task_id, limit }) => {
-      try {
-        return jsonResult(await getService().listOperations(task_id, limit));
-      } catch (err) {
-        return errorResult(errorMessage(err));
-      }
-    },
-  );
 }
 
 function errorMessage(err: unknown): string {

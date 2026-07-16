@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { errorResult, jsonResult } from "../../src/mcp/result.js";
+import {
+  errorResult,
+  jsonResult,
+  paginatedArrayResult,
+} from "../../src/mcp/result.js";
 
 describe("jsonResult", () => {
   it("text content와 structuredContent를 함께 노출", () => {
@@ -27,6 +31,31 @@ describe("jsonResult", () => {
       { type: "text", text: JSON.stringify("ok", null, 2) },
     ]);
     expect(result.structuredContent).toEqual({ result: "ok" });
+  });
+});
+
+describe("paginatedArrayResult", () => {
+  it("keeps the legacy array payload and adds structured pagination metadata", () => {
+    const result = paginatedArrayResult(
+      [1, 2],
+      { total: 3, truncated: true, next_offset: 2 },
+      "3건 중 2건 표시. offset=2로 계속 조회하세요.",
+    );
+
+    expect(result.content[0]).toEqual({
+      type: "text",
+      text: JSON.stringify([1, 2], null, 2),
+    });
+    expect(result.content[1]).toEqual({
+      type: "text",
+      text: "3건 중 2건 표시. offset=2로 계속 조회하세요.",
+    });
+    expect(result.structuredContent).toEqual({
+      result: [1, 2],
+      total: 3,
+      truncated: true,
+      next_offset: 2,
+    });
   });
 });
 

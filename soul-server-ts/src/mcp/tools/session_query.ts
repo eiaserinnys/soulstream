@@ -122,11 +122,22 @@ export function registerSessionQueryTools(
         ),
       );
       const last = events[events.length - 1];
+      const nextCursor = hasMore && last ? last.id : null;
       return jsonResult({
         session_id,
         total: totalEvents,
         events: processed,
-        next_cursor: hasMore && last ? last.id : null,
+        cursor: cur,
+        limit: lim,
+        truncated: hasMore,
+        next_cursor: nextCursor,
+        ...(nextCursor === null
+          ? {}
+          : {
+              notice:
+                `${totalEvents}건 중 cursor ${cur}부터 ${events.length}건 표시. `
+                + `cursor=${nextCursor}로 계속 조회하세요.`,
+            }),
       });
     },
   );

@@ -23,6 +23,24 @@ export function jsonResult(value: unknown): CallToolResult {
   };
 }
 
+export function paginatedArrayResult<T>(
+  values: T[],
+  metadata: Record<string, unknown>,
+  notice?: string,
+): CallToolResult {
+  const result = jsonResult(values);
+  return {
+    ...result,
+    content: notice
+      ? [...result.content, { type: "text", text: notice }]
+      : result.content,
+    structuredContent: {
+      ...result.structuredContent,
+      ...metadata,
+    },
+  };
+}
+
 export function errorResult(message: string): CallToolResult {
   return {
     isError: true,

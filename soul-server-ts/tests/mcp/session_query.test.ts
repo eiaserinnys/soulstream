@@ -44,6 +44,7 @@ function createSilentLogger() {
 function makeRuntime(params: {
   searchEvents?: ReturnType<typeof vi.fn>;
   searchEventsBySessionId?: ReturnType<typeof vi.fn>;
+  db?: Record<string, unknown>;
 }): McpRuntime {
   return {
     nodeId: "node-test",
@@ -51,6 +52,7 @@ function makeRuntime(params: {
     db: {
       searchEvents: params.searchEvents ?? vi.fn(async () => []),
       searchEventsBySessionId: params.searchEventsBySessionId ?? vi.fn(async () => []),
+      ...params.db,
     } as unknown as SessionDB,
     taskManager: {} as TaskManager,
     taskExecutor: {} as TaskExecutor,
@@ -102,6 +104,41 @@ afterEach(async () => {
       // ignore cleanup failures
     }
   }
+});
+
+describe("list_session_events", () => {
+  it("marks truncated pages and gives the exact next cursor instruction", async () => {
+    const events = [1, 2, 3].map((id) => ({
+      id,
+      event_type: "assistant_message",
+      payload: { text: `message ${id}` },
+      created_at: new Date("2026-07-16T00:00:00.000Z"),
+    }));
+    const runtime = makeRuntime({
+      db: {
+        getSession: vi.fn(async () => ({ session_id: "sess-1" })),
+        readEvents: vi.fn(async () => events),
+        countEvents: vi.fn(async () => 7),
+      },
+    });
+    const client = await createClient(runtime);
+
+    const result = await client.callTool({
+      name: "list_session_events",
+      arguments: { session_id: "sess-1", cursor: 0, limit: 2 },
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      session_id: "sess-1",
+      total: 7,
+      limit: 2,
+      cursor: 0,
+      truncated: true,
+      next_cursor: 2,
+      notice: "7건 중 cursor 0부터 2건 표시. cursor=2로 계속 조회하세요.",
+    });
+    expect(result.structuredContent?.events).toHaveLength(2);
+  });
 });
 
 describe("search_session_history", () => {
