@@ -16,6 +16,7 @@ import { TaskContextPicker } from "./TaskContextPicker";
 import { TaskInlineBoard } from "./TaskInlineBoard";
 import { TaskRunHistory } from "./TaskRunHistory";
 import { TaskTitleEditor } from "./TaskTitleEditor";
+import { TaskTodayToggle } from "./TaskTodayToggle";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import { buildDocumentContextMenuActions } from "./context-menu-model";
 import "./v3-context-succession.css";
@@ -40,6 +41,8 @@ export function TaskDetailPane({
   onLoadMoreRuns,
   sessionDefaults,
   onReturnToToday,
+  taskInToday,
+  onToggleTaskToday,
   onOpenBoard,
   onCloseWorkspace,
   onOpenDocument,
@@ -66,6 +69,8 @@ export function TaskDetailPane({
   onLoadMoreRuns(): void;
   sessionDefaults: PageSessionDefaults | null;
   onReturnToToday(): void;
+  taskInToday: boolean;
+  onToggleTaskToday(): Promise<void>;
   onOpenBoard(): void;
   onCloseWorkspace(): void;
   onOpenDocument(documentId: string): void;
@@ -187,6 +192,7 @@ export function TaskDetailPane({
         >
           {taskStar.starred ? "★ 별표됨" : "☆ 별표하기"}
         </Button>
+        <TaskTodayToggle inToday={taskInToday} onToggle={onToggleTaskToday} />
         <button type="button" className="v3-button v3-button--soft" onClick={onOpenBoard}>▦ 보드</button>
         <button type="button" className="v3-workspace-close" aria-label="업무 상세 닫기" onClick={onCloseWorkspace}>×</button>
       </header>

@@ -19,6 +19,7 @@ export function useV3PlannerActions({
   notifyWriteFailure,
   todayTaskIds,
   setTaskTodayPresence,
+  addTaskToToday,
   patchTask,
   removeSessionsFromPlanner,
   moveSessionInPlanner,
@@ -29,6 +30,7 @@ export function useV3PlannerActions({
   notifyWriteFailure(action: string, error: unknown): void;
   todayTaskIds: ReadonlySet<string>;
   setTaskTodayPresence(taskId: string, present: boolean): void;
+  addTaskToToday(task: PlannerTask): void;
   patchTask(taskId: string, update: (task: PlannerTask) => PlannerTask): void;
   removeSessionsFromPlanner(sessionIds: readonly string[]): void;
   moveSessionInPlanner(sessionId: string, targetTaskId: string): void;
@@ -64,7 +66,10 @@ export function useV3PlannerActions({
       taskId,
       wasInToday,
       optimisticInToday: !wasInToday,
-      setPresence: setTaskTodayPresence,
+      setPresence: (changedTaskId, present) => {
+        if (present) addTaskToToday(task);
+        else setTaskTodayPresence(changedTaskId, false);
+      },
       mutate: async () => {
         try {
           const result = await togglePlannerTaskToday(task, api);
@@ -77,7 +82,7 @@ export function useV3PlannerActions({
       },
       finalPresence: (result) => result === "added",
     });
-  }, [api, notify, notifyWriteFailure, setTaskTodayPresence, todayTaskIds]);
+  }, [addTaskToToday, api, notify, notifyWriteFailure, setTaskTodayPresence, todayTaskIds]);
 
   const resolveStarredTask = useCallback(async (page: PageDto) => {
     try {
