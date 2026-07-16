@@ -95,11 +95,27 @@ function createMockSql() {
     const call = { fragments: Array.from(strings), values };
     calls.push(call);
     const text = call.fragments.join("|");
-    if (text.includes("FROM folders WHERE id")) {
+    if (text.includes("FROM folders") && text.includes("WHERE id")) {
       const id = values[0];
       const folders = [
-        { id: "root", name: "Root", sort_order: 0, settings: {}, parent_folder_id: null },
-        { id: "child", name: "Child", sort_order: 1, settings: {}, parent_folder_id: "root" },
+        {
+          id: "root",
+          name: "Root",
+          sort_order: 0,
+          settings: {},
+          parent_folder_id: null,
+          project_page_id: "page-root",
+          created_at: null,
+        },
+        {
+          id: "child",
+          name: "Child",
+          sort_order: 1,
+          settings: {},
+          parent_folder_id: "root",
+          project_page_id: "page-child",
+          created_at: null,
+        },
       ];
       return Promise.resolve(folders.filter((folder) => folder.id === id));
     }
@@ -111,6 +127,8 @@ function createMockSql() {
           sort_order: 0,
           settings: {},
           parent_folder_id: null,
+          project_page_id: "page-root",
+          archived: false,
           created_at: null,
         },
         {
@@ -119,6 +137,8 @@ function createMockSql() {
           sort_order: 1,
           settings: {},
           parent_folder_id: "root",
+          project_page_id: "page-child",
+          archived: false,
           created_at: null,
         },
       ]);

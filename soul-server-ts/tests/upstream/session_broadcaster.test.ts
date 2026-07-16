@@ -303,7 +303,13 @@ describe("SessionBroadcaster.emitCatalogUpdated (B-5)", () => {
     const send = vi.fn().mockResolvedValue(undefined);
     const b = new SessionBroadcaster(send, makeRegistry(), "node-A");
     const catalog = {
-      folders: [{ id: "f1", name: "F1", sortOrder: 0, settings: {} }],
+      folders: [{
+        id: "f1",
+        name: "F1",
+        sortOrder: 0,
+        settings: {},
+        projectPageId: "page-f1",
+      }],
       sessions: { "s1": { folderId: "f1", displayName: null } },
     };
     await b.emitCatalogUpdated(catalog);

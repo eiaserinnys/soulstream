@@ -1144,8 +1144,25 @@ describe("SessionDB folder ops (B-5)", () => {
   it("getCatalog → catalog cache 우선 + legacy read-only fallback으로 boardItems를 합성", async () => {
     const createdAt = new Date("2026-06-03T00:00:00.000Z");
     const folderRows = [
-      { id: "f1", name: "F1", sort_order: 1, settings: { excludeFromFeed: true }, parent_folder_id: null, created_at: createdAt },
-      { id: "f2", name: "F2", sort_order: 2, settings: null, parent_folder_id: "f1" },
+      {
+        id: "f1",
+        name: "F1",
+        sort_order: 1,
+        settings: { excludeFromFeed: true },
+        parent_folder_id: null,
+        project_page_id: "page-f1",
+        archived: false,
+        created_at: createdAt,
+      },
+      {
+        id: "f2",
+        name: "F2",
+        sort_order: 2,
+        settings: null,
+        parent_folder_id: "f1",
+        project_page_id: null,
+        archived: false,
+      },
     ];
     const sessionRows = [
       { session_id: "s1", folder_id: "f1", display_name: "Hello" },
@@ -1193,9 +1210,17 @@ describe("SessionDB folder ops (B-5)", () => {
         sortOrder: 1,
         settings: { excludeFromFeed: true },
         parentFolderId: null,
+        projectPageId: "page-f1",
         createdAt: "2026-06-03T00:00:00.000Z",
       },
-      { id: "f2", name: "F2", sortOrder: 2, settings: {}, parentFolderId: "f1" },  // null settings → 빈 객체로 정규화
+      {
+        id: "f2",
+        name: "F2",
+        sortOrder: 2,
+        settings: {},
+        parentFolderId: "f1",
+        projectPageId: null,
+      },  // null settings → 빈 객체로 정규화
     ]);
     expect(catalog.sessions).toEqual({
       s1: { folderId: "f1", displayName: "Hello" },
@@ -1437,13 +1462,43 @@ describe("SessionDB MCP cogito 메서드 (본 카드 신규)", () => {
 
   it("getAllFolders → folder_get_all 행 그대로 + settings null 정규화", async () => {
     const { sql } = createMockSql(() => [
-      { id: "f1", name: "F1", sort_order: 0, settings: { x: 1 }, parent_folder_id: null },
-      { id: "f2", name: "F2", sort_order: 1, settings: null, parent_folder_id: "f1" },
+      {
+        id: "f1",
+        name: "F1",
+        sort_order: 0,
+        settings: { x: 1 },
+        parent_folder_id: null,
+        project_page_id: "page-f1",
+        archived: false,
+      },
+      {
+        id: "f2",
+        name: "F2",
+        sort_order: 1,
+        settings: null,
+        parent_folder_id: "f1",
+        project_page_id: null,
+        archived: false,
+      },
     ]);
     const folders = await new SessionDB(sql).getAllFolders();
     expect(folders).toEqual([
-      { id: "f1", name: "F1", sort_order: 0, settings: { x: 1 }, parent_folder_id: null },
-      { id: "f2", name: "F2", sort_order: 1, settings: {}, parent_folder_id: "f1" },
+      {
+        id: "f1",
+        name: "F1",
+        sort_order: 0,
+        settings: { x: 1 },
+        parent_folder_id: null,
+        project_page_id: "page-f1",
+      },
+      {
+        id: "f2",
+        name: "F2",
+        sort_order: 1,
+        settings: {},
+        parent_folder_id: "f1",
+        project_page_id: null,
+      },
     ]);
   });
 
