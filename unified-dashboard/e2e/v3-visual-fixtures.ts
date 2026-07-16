@@ -26,9 +26,12 @@ export interface V3VisualQaRouteOptions {
   timelineEventCount?: number;
   liveEventText?: string;
   contextMenuParity?: boolean;
+  contextChainPreview?: boolean;
+  emptyPlannerProjectsWhen?: () => boolean;
   onAgentListRequest?: (nodeId: string) => void;
   onSessionCreate?: (payload: Record<string, unknown>) => void;
   onSessionListRequest?: () => void;
+  onPlannerTodayRequest?: (requestNumber: number) => void;
 }
 
 function page(
@@ -72,6 +75,7 @@ function block(
 const pages = {
   project: page("project-amber", "소울스트림", null, { folderId: "folder-amber" }),
   projectOps: page("project-ops", "Soulstream 운영", null, { folderId: "folder-ops" }),
+  projectDashboard: page("project-dashboard", "대시보드", null, { folderId: "folder-dashboard" }),
   today: page("daily-2026-07-14", "2026-07-14", "2026-07-14"),
   yesterday: page("daily-2026-07-13", "2026-07-13", "2026-07-13"),
   taskAlpha: page("task-alpha", "업무 카드 밀도와 계층 최종 QA", null, { starred: true }),
@@ -103,7 +107,7 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
     page: pages.project,
     state_vector: "AA==",
     blocks: [
-      block("project-guidance", pages.project.id, "guidance", LONG_PROJECT_GUIDANCE, { enabled: true, scope: "session" }),
+      block("project-guidance", pages.project.id, "guidance", LONG_PROJECT_GUIDANCE, { enabled: true, scope: "project" }),
       block("project-atom", pages.project.id, "atom_ref", "", {
         instance: "atom",
         nodeId: "soulstream-project-node",
@@ -114,6 +118,7 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
       block("project-defaults", pages.project.id, "session_defaults", "", {
         agentId: "roselin_codex",
         nodeId: "eiaserinnys",
+        scope: "project",
       }),
       block("project-doc-2", pages.project.id, "paragraph", `[[${pages.documentTwo.title}]]`),
       block("project-done", pages.project.id, "paragraph", `[[${pages.taskDone.title}]]`),
@@ -125,6 +130,11 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
   },
   [pages.projectOps.id]: {
     page: pages.projectOps,
+    state_vector: "AA==",
+    blocks: [],
+  },
+  [pages.projectDashboard.id]: {
+    page: pages.projectDashboard,
     state_vector: "AA==",
     blocks: [],
   },
@@ -457,6 +467,7 @@ export async function installV3VisualQaRoutes(
   if (options.contextMenuParity) resetContextMenuParityState();
   let shouldFailTaskTitleRename = options.failTaskTitleRenameOnce === true;
   let shouldFailProjectResolution = options.projectResolutionMode === "fail-once";
+  let plannerTodayRequests = 0;
   let inlineMarkdownDocument = {
     id: "doc-inline",
     title: "PR-O 결정 로그",
@@ -487,6 +498,13 @@ export async function installV3VisualQaRoutes(
           parentFolderId: null,
           projectPageId: options.projectResolutionMode === "unlinked" ? null : pages.project.id,
         },
+        ...(options.contextChainPreview ? [{
+          id: "folder-dashboard",
+          name: pages.projectDashboard.title,
+          sortOrder: 0,
+          parentFolderId: "folder-amber",
+          projectPageId: pages.projectDashboard.id,
+        }] : []),
         { id: "folder-ops", name: pages.projectOps.title, sortOrder: 1, parentFolderId: null, projectPageId: pages.projectOps.id },
       ],
       sessions: {},
@@ -582,18 +600,29 @@ export async function installV3VisualQaRoutes(
       return fulfillJson(route, { page: selected, created: false });
     }
     if (path === "/api/planner/today" && request.method() === "GET") {
+      plannerTodayRequests += 1;
+      options.onPlannerTodayRequest?.(plannerTodayRequests);
       await delay(options.plannerDelayMs);
       const yesterday = url.searchParams.get("date") === "2026-07-13";
       const daily = yesterday ? pageReads[pages.yesterday.id] : pageReads[pages.today.id];
       return fulfillJson(route, {
         daily,
-        projects: options.projectResolutionMode ? [] : [pages.project, pages.projectOps],
+        projects: options.projectResolutionMode || options.emptyPlannerProjectsWhen?.() === true ? [] : [
+          pages.project,
+          ...(options.contextChainPreview ? [pages.projectDashboard] : []),
+          pages.projectOps,
+        ],
         tasks: yesterday
           ? [plannerTaskPayload(pages.carryover, "rb-carry")]
           : [
               ...(options.contextMenuParity && !hasDailyTaskMount(pages.taskAlpha.title)
                 ? []
-                : [plannerTaskPayload(pages.taskAlpha, "rb-alpha")]),
+                : [{
+                    ...plannerTaskPayload(pages.taskAlpha, "rb-alpha"),
+                    ...(options.contextChainPreview
+                      ? { project_page_id: pages.projectDashboard.id }
+                      : {}),
+                  }]),
               plannerTaskPayload(pages.taskBeta, "rb-beta"),
             ],
         memo_blocks: daily.blocks.filter((item) => !item.text.startsWith("[[")),

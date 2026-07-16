@@ -2,38 +2,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import {
-  findProjectPageForFolder,
   newTaskFolderOptions,
   ProjectInheritancePreview,
 } from "./NewTaskForm";
+import { mergeProjectContextPages } from "./project-context-inheritance";
 
 describe("new task inheritance preview", () => {
-  it("matches the selected folder to its existing project page", () => {
-    const folders = [
-      {
-        id: "folder-soulstream",
-        name: "소울스트림",
-        parentFolderId: null,
-        sortOrder: 0,
-        projectPageId: "project-soulstream",
-      },
-      {
-        id: "folder-empty",
-        name: "빈 프로젝트",
-        parentFolderId: null,
-        sortOrder: 1,
-        projectPageId: "project-empty",
-      },
-    ];
-    const pages = [
-      projectPage("project-empty", "빈 프로젝트", { folderId: "folder-empty" }),
-      projectPage("project-soulstream", "소울스트림", { folderId: "folder-soulstream" }),
-    ];
-
-    expect(findProjectPageForFolder("folder-soulstream", folders, pages)?.id)
-      .toBe("project-soulstream");
-  });
-
   it("reuses the v1 emoji-insensitive recursive folder order", () => {
     const folders = [
       folder("child-z", "🧰 Zeta", "root-a"),
@@ -58,8 +32,11 @@ describe("new task inheritance preview", () => {
         projectName="소울스트림"
         state={{
           status: "ready",
-          data: {
-            guidance: [{ blockId: "guidance-1", text: guidance }],
+          folderId: "folder-soulstream",
+          data: mergeProjectContextPages([{
+            source: { folderId: "folder-soulstream", folderName: "소울스트림", pageId: "project-soulstream" },
+            details: {
+            guidance: [{ blockId: "guidance-1", text: guidance, scope: "project" }],
             atomReferences: [{
               blockId: "atom-1",
               instance: "atom",
@@ -70,19 +47,23 @@ describe("new task inheritance preview", () => {
             }],
             sessionDefaults: [{
               blockId: "defaults-1",
+              scope: "project",
               agentId: "roselin_codex",
               nodeId: "eiaserinnys",
             }],
-          },
+            },
+          }]),
           message: null,
         }}
       />,
     );
 
-    expect(html).toContain("상속 미리보기 · 소울스트림");
+    expect(html).toContain("컨텍스트 미리보기 · 소울스트림");
     expect(html).toContain("line-clamp-3");
-    expect(html).toContain("…</span>");
-    expect(html).toContain(`data-testid="inheritance-guidance-full">${guidance}</pre>`);
+    expect(html).toContain(guidance);
+    expect(html).not.toContain("<details");
+    expect(html).not.toContain("<strong>guidance</strong>");
+    expect(html).toContain("소울스트림에서 상속");
     expect(html).toContain("v3-project-context-chip");
     expect(html).toContain("⚛ soulstream · depth 5 · titlesOnly off");
     expect(html).toContain("👤 roselin_codex@eiaserinnys");
@@ -94,31 +75,18 @@ describe("new task inheritance preview", () => {
         projectName="빈 프로젝트"
         state={{
           status: "ready",
-          data: { guidance: [], atomReferences: [], sessionDefaults: [] },
+          folderId: "folder-empty",
+          data: mergeProjectContextPages([]),
           message: null,
         }}
       />,
     );
 
-    expect(html).toContain("guidance");
-    expect(html).toContain("atom");
+    expect(html).toContain("지식");
     expect(html).toContain("실행 기본값");
     expect(html.match(/없음/g)).toHaveLength(3);
   });
 });
-
-function projectPage(id: string, title: string, metadata: Record<string, unknown>) {
-  return {
-    id,
-    title,
-    daily_date: null,
-    version: 1,
-    archived: false,
-    metadata,
-    created_at: "2026-07-15T00:00:00Z",
-    updated_at: "2026-07-15T00:00:00Z",
-  };
-}
 
 function folder(id: string, name: string, parentFolderId: string | null) {
   return {

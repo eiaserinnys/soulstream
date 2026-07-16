@@ -931,6 +931,26 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     expect(ctx.combinedContextItems[1]).toEqual(attachmentContext);
   });
 
+  it("page context source marker는 resolver 전용이며 모델 context에는 노출하지 않음", async () => {
+    const cb = makeBuilder({}, undefined, false, undefined, {
+      hasPageAnchor: vi.fn().mockResolvedValue(true),
+      resolve: vi.fn().mockResolvedValue({
+        kind: "page-anchor",
+        contextItem: { key: "page_context", content: { items: [] } },
+      }),
+    });
+    const ctx = await cb.build(makeTask({
+      contextItems: [
+        { key: "page_context_sources", content: { pages: [{ page_id: "project-root" }] } },
+        { key: "attached_files", content: "- /tmp/a.png" },
+      ],
+    }), codexAgent);
+
+    expect(ctx.combinedContextItems.map((item) => item.key)).toContain("page_context");
+    expect(ctx.combinedContextItems.map((item) => item.key)).toContain("attached_files");
+    expect(ctx.combinedContextItems.map((item) => item.key)).not.toContain("page_context_sources");
+  });
+
   it("현재 폴더의 직접 자식만 board_workspace context item에 최소 필드로 주입", async () => {
     const getSession = vi.fn().mockResolvedValue({ folder_id: "root" });
     const getFolderById = vi.fn().mockResolvedValue({

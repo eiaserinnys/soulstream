@@ -167,6 +167,72 @@ describe("AncestorPageContextResolver", () => {
     });
   });
 
+  it("resolves explicit project pages root-to-leaf and lets the task page override shared scope", async () => {
+    const repo = repository({
+      pages: {
+        target: page("target", [block("anchor", null, "session_ref")]),
+        "project-root": page("project-root", [
+          block("root-shared", null, "guidance", "root shared", { enabled: true, scope: "project" }, "a"),
+          block("root-only", null, "guidance", "root only", { enabled: true, scope: "root" }, "b"),
+        ]),
+        "task-page": page("task-page", [
+          block("task-shared", null, "guidance", "task shared", { enabled: true, scope: "project" }, "a"),
+        ]),
+      },
+    });
+    const task = {
+      agentSessionId: "sess-1",
+      contextItems: [{
+        key: "page_context_sources",
+        content: { pages: [{ page_id: "project-root" }, { page_id: "task-page" }] },
+      }],
+    } as never;
+    const resolver = new AncestorPageContextResolver(
+      repo,
+      new DefaultPageContextAssembler(),
+      logger,
+    );
+
+    const result = await resolver.resolve(task, {} as never, disabledAtomConfig);
+    const content = contentOf(result);
+
+    expect(content.items.map((entry: any) => [entry.block_id, entry.text])).toEqual([
+      ["root-only", "root only"],
+      ["task-shared", "task shared"],
+    ]);
+    expect(repo.getPage).toHaveBeenCalledWith("project-root");
+    expect(repo.getPage).toHaveBeenCalledWith("task-page");
+  });
+
+  it("keeps the nearest explicit sources when the bounded traversal budget is exhausted", async () => {
+    const repo = repository({
+      pages: {
+        target: page("target", [block("anchor", null, "session_ref")]),
+        root: page("root", [block("root", null, "guidance", "root", { enabled: true, scope: "root" })]),
+        child: page("child", [block("child", null, "guidance", "child", { enabled: true, scope: "child" })]),
+        task: page("task", [block("task", null, "guidance", "task", { enabled: true, scope: "task" })]),
+      },
+    });
+    const task = {
+      agentSessionId: "sess-1",
+      contextItems: [{
+        key: "page_context_sources",
+        content: { pages: [{ page_id: "root" }, { page_id: "child" }, { page_id: "task" }] },
+      }],
+    } as never;
+    const resolver = new AncestorPageContextResolver(
+      repo,
+      new DefaultPageContextAssembler(),
+      logger,
+      3,
+    );
+
+    const content = contentOf(await resolver.resolve(task, {} as never, disabledAtomConfig));
+
+    expect(content.items.map((entry: any) => entry.block_id)).toEqual(["child", "task"]);
+    expect(repo.getPage).not.toHaveBeenCalledWith("root");
+  });
+
   it("parses atom_ref depth and titlesOnly, clamps depth, and compiles selected refs", async () => {
     vi.mocked(globalThis.fetch).mockImplementation(async () =>
       new Response(JSON.stringify({ markdown: "compiled" }), {

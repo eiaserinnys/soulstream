@@ -4,6 +4,7 @@ import {
   MarkdownDocumentPanel,
   useDashboardStore,
   useGlassSurface,
+  type CatalogFolder,
   type SessionReviewAcknowledgeResult,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
@@ -28,6 +29,8 @@ export function TaskWorkspace({
   task,
   projectTitle,
   projectFolderId,
+  folders,
+  contextInvalidationKey,
   sessions,
   runSessionLoadStates,
   runHistoryTotal,
@@ -60,6 +63,8 @@ export function TaskWorkspace({
   task: PlannerTask;
   projectTitle: string;
   projectFolderId: string | null;
+  folders: readonly CatalogFolder[];
+  contextInvalidationKey: number;
   sessions: readonly SessionSummary[];
   runSessionLoadStates: ReadonlyMap<string, RunSessionLoadState>;
   runHistoryTotal: number;
@@ -233,6 +238,9 @@ export function TaskWorkspace({
         ) : (
           <TaskDetailPane
             task={visibleTitle === task.page.title ? task : { ...task, page: { ...task.page, title: visibleTitle } }}
+            projectFolderId={projectFolderId}
+            folders={folders}
+            contextInvalidationKey={contextInvalidationKey}
             sessions={sessions}
             runSessionLoadStates={runSessionLoadStates}
             runHistoryTotal={runHistoryTotal}

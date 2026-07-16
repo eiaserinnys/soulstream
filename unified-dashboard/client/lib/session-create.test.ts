@@ -195,4 +195,32 @@ describe("createDashboardSession", () => {
       predecessor_session_id: "session-predecessor",
     });
   });
+
+  it("forwards explicit page context sources for the first task session", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okJson({
+      agentSessionId: "session-context",
+      status: "running",
+      nodeId: "node-a",
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createDashboardSession({
+      queryClient,
+      addOptimisticSession: vi.fn(),
+      prompt: "새 업무 run을 시작합니다",
+      nodeId: "node-a",
+      agentId: "roselin_codex",
+      contextItems: [{
+        key: "page_context_sources",
+        content: { pages: [{ page_id: "project-root" }, { page_id: "task-page" }] },
+      }],
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)).toMatchObject({
+      extra_context_items: [{
+        key: "page_context_sources",
+        content: { pages: [{ page_id: "project-root" }, { page_id: "task-page" }] },
+      }],
+    });
+  });
 });

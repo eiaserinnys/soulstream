@@ -1969,6 +1969,27 @@ describe("TaskExecutor initial message publishing — contextBuilder 미주입 (
     expect(first.caller_info).toBeUndefined();
   });
 
+  it("context builder가 없어도 내부 page source marker는 user_message에 노출하지 않는다", async () => {
+    const mocks = makeMocks();
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([{ type: "complete", usage: {}, timestamp: 1 } as SSEEventPayload]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.contextItems = [
+      { key: "page_context_sources", label: "internal", content: { pages: [{ page_id: "page-1" }] } },
+      { key: "visible", label: "Visible", content: "keep" },
+    ];
+    executor.startExecution(task, agent);
+    await task.executionPromise;
+
+    const first = mocks.persistEvent.mock.calls[0][1] as Record<string, unknown>;
+    expect(first.context).toEqual([{ key: "visible", label: "Visible", content: "keep" }]);
+  });
+
   it("persistEvent throw 시 격리 — engine.execute는 정상 진행", async () => {
     const mocks = makeMocks();
     mocks.persistEvent.mockImplementationOnce(async () => {

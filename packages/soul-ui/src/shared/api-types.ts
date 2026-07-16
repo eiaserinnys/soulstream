@@ -64,6 +64,8 @@ export interface CreateSessionRequest {
   taskIdempotencyKey?: string;
   /** Existing page block converted by the worker into the canonical primary session_ref. */
   pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
+  /** 첫 turn에만 주입할 구조화 context item. 서버 command wire 정본 이름을 유지한다. */
+  extra_context_items?: Array<{ key: string; label?: string; content: unknown }>;
 }
 
 export type SessionCreationWarning = SessionBindingWarning;

@@ -2,21 +2,28 @@ import type { BlockDto, PageDto } from "@seosoyoung/soul-ui/page";
 
 export interface ProjectAtomReference {
   blockId: string;
-  instance: string;
+  instance: "atom" | "atom-nl";
   nodeId: string;
   nodeTitle: string;
   depth: number | null;
   titlesOnly: boolean | null;
 }
 
+export interface ProjectGuidance {
+  blockId: string;
+  text: string;
+  scope: string;
+}
+
 export interface ProjectSessionDefault {
   blockId: string;
+  scope: string;
   agentId: string | null;
   nodeId: string | null;
 }
 
 export interface ProjectPageDetails {
-  guidance: Array<{ blockId: string; text: string }>;
+  guidance: ProjectGuidance[];
   atomReferences: ProjectAtomReference[];
   sessionDefaults: ProjectSessionDefault[];
 }
@@ -30,28 +37,35 @@ export interface ProjectPageSnapshot extends ProjectPageDetails {
 export function parseProjectPageDetails(blocks: readonly BlockDto[]): ProjectPageDetails {
   return {
     guidance: blocks.flatMap((block) => {
-      if (block.block_type !== "guidance" || block.properties.enabled === false) return [];
+      if (block.block_type !== "guidance" || block.properties.enabled !== true) return [];
       const text = block.text.trim();
-      return text ? [{ blockId: block.id, text }] : [];
+      const scope = stringProperty(block.properties, "scope") ?? block.id;
+      return text ? [{ blockId: block.id, text, scope }] : [];
     }),
     atomReferences: blocks.flatMap((block) => {
       if (block.block_type !== "atom_ref") return [];
+      const instance = stringProperty(block.properties, "instance") ?? "atom";
+      if (instance !== "atom" && instance !== "atom-nl") return [];
       const nodeId = stringProperty(block.properties, "nodeId");
       if (!nodeId) return [];
       return [{
         blockId: block.id,
-        instance: stringProperty(block.properties, "instance") ?? "atom",
+        instance,
         nodeId,
-        nodeTitle: stringProperty(block.properties, "nodeTitle") ?? nodeId,
-        depth: numberProperty(block.properties, "depth"),
-        titlesOnly: booleanProperty(block.properties, "titlesOnly"),
+        nodeTitle: stringProperty(block.properties, "nodeTitle")
+          ?? stringProperty(block.properties, "title")
+          ?? stringProperty(block.properties, "label")
+          ?? nodeId,
+        depth: normalizeAtomDepth(block.properties.depth),
+        titlesOnly: block.properties.titlesOnly === true,
       }];
     }),
     sessionDefaults: blocks.flatMap((block) => {
       if (block.block_type !== "session_defaults") return [];
+      const scope = stringProperty(block.properties, "scope");
       const agentId = stringProperty(block.properties, "agentId");
       const nodeId = stringProperty(block.properties, "nodeId");
-      return agentId || nodeId ? [{ blockId: block.id, agentId, nodeId }] : [];
+      return scope && (agentId || nodeId) ? [{ blockId: block.id, scope, agentId, nodeId }] : [];
     }),
   };
 }
@@ -84,12 +98,7 @@ function stringProperty(properties: Record<string, unknown>, key: string): strin
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function numberProperty(properties: Record<string, unknown>, key: string): number | null {
-  const value = properties[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function booleanProperty(properties: Record<string, unknown>, key: string): boolean | null {
-  const value = properties[key];
-  return typeof value === "boolean" ? value : null;
+function normalizeAtomDepth(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 3;
+  return Math.min(5, Math.max(1, Math.trunc(value)));
 }
