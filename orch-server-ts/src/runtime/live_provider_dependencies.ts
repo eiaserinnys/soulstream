@@ -26,6 +26,7 @@ import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 import type { LiveTaskChangeListener } from "./live_task_change_listener.js";
 import type { LiveSystemPortraitAssetBoundary } from "./live_system_config_route_provider.js";
 import type { LiveAdminUsersRepository } from "./live_admin_users_route_provider.js";
+import type { SessionReviewAcknowledgeRepository } from "../session/session_review_acknowledge_fallback.js";
 
 export const liveProviderDependencyCategories = [
   "dbCatalogRepository",
@@ -62,6 +63,7 @@ export type LiveDbCatalogRepositoryBoundary = {
   readonly loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   readonly sessionHistoryProvider: SessionHistoryProvider;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
+  readonly sessionReviewRepository: SessionReviewAcknowledgeRepository;
   readonly taskReadProvider: TaskReadRouteProvider;
   readonly taskMutationProvider: LiveTaskMutationProvider;
   readonly userPreferencesRepository: UserBackgroundRepository;

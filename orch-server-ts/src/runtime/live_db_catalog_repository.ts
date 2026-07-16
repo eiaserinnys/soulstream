@@ -67,6 +67,8 @@ import {
   createLiveAdminUsersRepository,
   type LiveAdminUsersRepository,
 } from "./live_admin_users_route_provider.js";
+import { createLiveSessionReviewRepository } from "./live_session_review_repository.js";
+import type { SessionReviewAcknowledgeRepository } from "../session/session_review_acknowledge_fallback.js";
 
 export type LiveDbCatalogRepository = {
   readonly adminUsersRepository: LiveAdminUsersRepository;
@@ -79,6 +81,7 @@ export type LiveDbCatalogRepository = {
   readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly sessionHistoryProvider: ReturnType<typeof createLiveSessionHistoryProvider>;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
+  readonly sessionReviewRepository: SessionReviewAcknowledgeRepository;
   readonly taskReadProvider: TaskReadRouteProvider;
   readonly taskMutationProvider: LiveTaskMutationProvider;
   readonly userPreferencesRepository: UserBackgroundRepository;
@@ -158,6 +161,10 @@ export function createLiveDbCatalogRepository(
   });
   const sessionResourceAccessRepository =
     createSessionResourceAccessRepository(sqlResolver);
+  const sessionReviewRepository = createLiveSessionReviewRepository({
+    sqlResolver,
+    registry: options.registry,
+  });
   const taskReadProvider = createLiveTaskReadProvider({
     sqlResolver,
     registry: options.registry,
@@ -264,6 +271,7 @@ export function createLiveDbCatalogRepository(
     sessionCatalogProvider: createSessionCatalogProvider(sqlResolver),
     sessionHistoryProvider,
     sessionResourceAccessRepository,
+    sessionReviewRepository,
     taskReadProvider,
     taskMutationProvider,
     userPreferencesRepository: createLiveUserPreferencesRepository({ sqlResolver }),

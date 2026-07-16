@@ -7,6 +7,42 @@ import {
 } from "../src/index.js";
 
 describe("live DB SSE replay snapshots", () => {
+  it("reuses the durable review transition and returns the serialized DB row", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("session_acknowledge_review")) {
+        return [{ outcome: "acknowledged" }];
+      }
+      if (text.includes("FROM session_get")) {
+        return [{
+          session_id: "sess-review",
+          status: "completed",
+          review_required: true,
+          review_state: "acknowledged",
+          created_at: new Date("2026-07-16T00:00:00.000Z"),
+          updated_at: new Date("2026-07-16T00:01:00.000Z"),
+        }];
+      }
+      return [];
+    });
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    await expect(
+      repository.sessionReviewRepository.acknowledgeSessionReview("sess-review"),
+    ).resolves.toMatchObject({
+      outcome: "acknowledged",
+      session: {
+        agentSessionId: "sess-review",
+        status: "completed",
+        reviewRequired: true,
+        reviewState: "acknowledged",
+      },
+    });
+    expect(harness.normalizedCalls()).toEqual([
+      "SELECT session_acknowledge_review(?, ?) AS outcome",
+      "SELECT * FROM session_get(?) LIMIT 1",
+    ]);
+  });
+
   it("loads session snapshots from DB with Python session response wire keys", async () => {
     const registry = new InMemoryNodeRegistry();
     registry.registerNode({

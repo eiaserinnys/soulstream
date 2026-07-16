@@ -19,6 +19,8 @@ export type ActionHarnessOptions = {
   createSession?: boolean;
   bridgeOverride?: Partial<SessionCommandTransportBridge>;
   resolveCallerInfo?: SessionActionCommandRouteOptions["resolveCallerInfo"];
+  reviewAcknowledgeFallback?:
+    SessionActionCommandRouteOptions["reviewAcknowledgeFallback"];
 };
 
 export function createHarnessCore(): {
@@ -93,6 +95,9 @@ export function createActionHarness(options: ActionHarnessOptions = {}): {
     ...(options.resolveCallerInfo === undefined
       ? {}
       : { resolveCallerInfo: options.resolveCallerInfo }),
+    ...(options.reviewAcknowledgeFallback === undefined
+      ? {}
+      : { reviewAcknowledgeFallback: options.reviewAcknowledgeFallback }),
   };
   const app = createApp({
     config: {
