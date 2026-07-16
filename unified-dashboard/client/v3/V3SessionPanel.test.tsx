@@ -9,6 +9,9 @@ const acknowledgeSessionReview = vi.hoisted(() => vi.fn());
 
 vi.mock("@seosoyoung/soul-ui", () => ({
   acknowledgeSessionReview,
+  ProfileAvatar: ({ fallbackEmoji }: { fallbackEmoji: string }) => (
+    <span data-testid="profile-avatar">{fallbackEmoji}</span>
+  ),
   SessionContextMenu: () => null,
   SessionReviewAcknowledgeError: class SessionReviewAcknowledgeError extends Error {},
   useGlassSurface: () => false,
@@ -22,7 +25,7 @@ describe("V3SessionPanel", () => {
     document.body.replaceChildren();
   });
 
-  it("shows running and review groups and opens the selected session", () => {
+  it("renders catalog sessions through the rich row and opens the selected session", () => {
     const onOpenSession = vi.fn();
     const host = document.createElement("div");
     document.body.append(host);
@@ -41,9 +44,17 @@ describe("V3SessionPanel", () => {
       );
     });
 
-    expect(host.querySelector('[data-testid="v3-session-group-running"]')?.textContent).toContain("running-1");
+    const runningRow = host.querySelector('[data-testid="v3-session-row-running-1"]');
+    expect(runningRow?.querySelector(".v3-run-row")).not.toBeNull();
+    expect(runningRow?.textContent).toContain("running-1");
+    expect(runningRow?.textContent).toContain("로젤린");
+    expect(runningRow?.textContent).toContain("eiaserinnys");
+    expect(runningRow?.textContent).toContain("마지막 진행 메시지");
+    expect(runningRow?.textContent).toContain("실행 중");
+    expect(runningRow?.querySelector('[data-testid="profile-avatar"]')).not.toBeNull();
+    expect(runningRow?.querySelector(".v3-run-trailing time")?.textContent).toMatch(/전$/);
     expect(host.querySelector('[data-testid="v3-session-group-review"]')?.textContent).toContain("review-1");
-    flushSync(() => { host.querySelector<HTMLButtonElement>('[data-session-id="running-1"]')?.click(); });
+    flushSync(() => { runningRow?.querySelector<HTMLButtonElement>(".v3-run-open")?.click(); });
     expect(onOpenSession).toHaveBeenCalledWith(expect.objectContaining({ agentSessionId: "running-1" }));
     flushSync(() => { root.unmount(); });
   });
@@ -97,5 +108,14 @@ function session(agentSessionId: string, status: "running" | "completed"): Sessi
     reviewState: status === "completed" ? "needs_review" : null,
     eventCount: 1,
     createdAt: "2026-07-16T00:00:00Z",
+    updatedAt: "2026-07-16T00:05:00Z",
+    lastMessage: {
+      type: "assistant",
+      preview: "마지막 진행 메시지",
+      timestamp: "2026-07-16T00:05:00Z",
+    },
+    nodeId: "eiaserinnys",
+    agentId: "roselin_codex",
+    agentName: "로젤린",
   } as SessionSummary;
 }

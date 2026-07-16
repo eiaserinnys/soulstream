@@ -18,6 +18,7 @@ import {
 } from "@seosoyoung/soul-ui";
 
 import { sessionPanelGroups, sessionPanelTitle } from "./v3-session-panel-model";
+import { RichSessionRow } from "./RichSessionRow";
 import "./v3-session-panel.css";
 
 interface V3SessionPanelProps {
@@ -184,28 +185,23 @@ const SessionPanelRow = memo(function SessionPanelRow({
     <div
       className={`v3-session-row${active ? " is-active" : ""}`}
       data-testid={`v3-session-row-${session.agentSessionId}`}
-      onContextMenu={(event) => onContextMenu(session, event)}
     >
-      <button
-        type="button"
-        className="v3-session-open"
-        data-session-id={session.agentSessionId}
-        onClick={() => onOpenSession(session)}
-      >
-        <span className={`v3-session-state v3-session-state--${session.status}`} aria-hidden="true" />
-        <span>{sessionPanelTitle(session)}</span>
-      </button>
-      {review ? (
-        <button
-          type="button"
-          className="v3-session-acknowledge"
-          disabled={pending}
-          aria-label={`${sessionPanelTitle(session)} 확인 처리`}
-          onClick={() => { void onAcknowledge(session); }}
-        >
-          {pending ? "…" : "확인"}
-        </button>
-      ) : null}
+      <RichSessionRow
+        session={session}
+        onOpen={onOpenSession}
+        onContextMenu={onContextMenu}
+        actions={review ? (
+          <button
+            type="button"
+            className="v3-session-acknowledge"
+            disabled={pending}
+            aria-label={`${sessionPanelTitle(session)} 확인 처리`}
+            onClick={() => { void onAcknowledge(session); }}
+          >
+            {pending ? "…" : "확인"}
+          </button>
+        ) : undefined}
+      />
     </div>
   );
 });

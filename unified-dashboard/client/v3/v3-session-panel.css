@@ -43,45 +43,15 @@
 }
 
 .v3-session-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
   border-radius: 10px;
 }
 
-.v3-session-row:hover,
-.v3-session-row.is-active { background: color-mix(in srgb, var(--accent) 56%, transparent); }
-
-.v3-session-open {
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr);
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-  padding: 9px 8px;
-  color: inherit;
-  text-align: left;
+.v3-session-row.is-active .v3-run-row {
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--glass-border));
+  background: color-mix(in srgb, var(--accent) 56%, transparent);
 }
-
-.v3-session-open > span:last-child {
-  overflow: hidden;
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v3-session-state {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--muted-foreground);
-}
-
-.v3-session-state--running { background: var(--success); box-shadow: 0 0 8px color-mix(in srgb, var(--success) 54%, transparent); }
-.v3-session-state--completed { background: var(--primary); }
 
 .v3-session-acknowledge {
-  margin-right: 5px;
   padding: 4px 7px;
   border: 1px solid var(--border);
   border-radius: 7px;
@@ -94,6 +64,7 @@
 .v3-session-panel-error { margin: 12px 8px 0; color: var(--destructive); font-size: 12px; }
 
 .v3-session-panel-resize { position: relative; z-index: 3; min-width: 0; }
+.v3-session-panel-resize > div { height: 100%; }
 
 @media (max-width: 760px) {
   .v3-session-panel,
