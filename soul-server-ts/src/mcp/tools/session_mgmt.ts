@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
 import { resolveDelegatedContainer } from "../../session_folder_fallback.js";
+import { resolveStructuralCallerSessionId } from "../../task/delegation_relationship.js";
 import { sendMessageToSession } from "../../task/session_message_sender.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
@@ -90,7 +91,10 @@ export function registerSessionMgmtTools(
           agentSessionId: sessionId,
           prompt,
           profileId: resolvedAgentId,
-          callerSessionId: effectiveCallerSessionId ?? null,
+          callerSessionId: resolveStructuralCallerSessionId(
+            effectiveCallerSessionId,
+            notify_completion,
+          ),
           predecessorSessionId: predecessor_session_id ?? null,
           callerInfo,
           notifyCompletion: notify_completion,

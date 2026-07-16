@@ -345,11 +345,24 @@ describe("agent profile backend boundary", () => {
     );
   });
 
-  it("create_agent_session은 notify_completion=false를 로컬 task에 보존한다", async () => {
+  it("create_agent_session은 notify_completion=false에서 caller 표시는 유지하고 구조 링크만 비운다", async () => {
     const runtime = makeRuntime(
       { queued: true, queuePosition: 1 },
       undefined,
       [codexAgent, claudeAgent],
+      "root",
+      [{
+        id: "session:caller-sess-1",
+        folderId: "root",
+        containerKind: "runbook",
+        containerId: "rb-1",
+        membershipKind: "primary",
+        itemType: "session",
+        itemId: "caller-sess-1",
+        x: 0,
+        y: 160,
+        metadata: {},
+      }],
     );
     const client = await createClient(runtime);
 
@@ -366,8 +379,15 @@ describe("agent profile backend boundary", () => {
     expect(result.isError).not.toBe(true);
     expect(runtime.createTask).toHaveBeenCalledWith(
       expect.objectContaining({
-        callerSessionId: "caller-sess-1",
+        callerSessionId: null,
+        callerInfo: expect.objectContaining({
+          source: "agent",
+          agent_node: "node-test",
+          agent_id: "codex-default",
+        }),
         notifyCompletion: false,
+        folderId: "root",
+        container: { containerKind: "runbook", containerId: "rb-1" },
       }),
     );
   });
@@ -677,7 +697,7 @@ describe("create_remote_agent_session", () => {
       expect(body.profile).toBe("roselin_codex");
       expect(body.nodeId).toBe("node-remote");
       expect(body.folderId).toBe("folder-1");
-      expect(body.caller_session_id).toBe("caller-sess-1");
+      expect(body).not.toHaveProperty("caller_session_id");
       expect(body.notify_completion).toBe(false);
       expect(body.caller_info.agent_id).toBe("codex-default");
       expect(body.caller_info.agent_node).toBe("node-test");
@@ -818,7 +838,7 @@ describe("create_remote_agent_session", () => {
     }
   });
 
-  it("folder_id를 명시하지 않으면 caller의 runbook primary membership을 remote body에 상속한다", async () => {
+  it("notify_completion=false도 caller의 runbook은 상속하고 구조 링크만 remote body에서 생략한다", async () => {
     const capture = await createOrchCapture(200, (req) => {
       if (req.method === "GET" && req.url === "/api/nodes/node-remote/agents") {
         return { body: { agents: [{ id: "roselin_codex", name: "로젤린", backend: "codex" }] } };
@@ -856,6 +876,7 @@ describe("create_remote_agent_session", () => {
           agent_id: "roselin_codex",
           prompt: "delegate",
           caller_session_id: "caller-sess-1",
+          notify_completion: false,
         },
       });
 
@@ -863,6 +884,13 @@ describe("create_remote_agent_session", () => {
       const body = JSON.parse(capture.requests[1]!.body);
       expect(body.folderId).toBe("root");
       expect(body.container).toEqual({ kind: "runbook", id: "rb-1" });
+      expect(body.notify_completion).toBe(false);
+      expect(body).not.toHaveProperty("caller_session_id");
+      expect(body.caller_info).toEqual(expect.objectContaining({
+        source: "agent",
+        agent_node: "node-test",
+        agent_id: "codex-default",
+      }));
     } finally {
       await capture.close();
     }
