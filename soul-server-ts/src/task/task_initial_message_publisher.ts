@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 
 import type { PreparedContext } from "../context/context_builder.js";
-import { isPageContextSourcesItem } from "../context/page_context_resolver.js";
+import { withoutSessionContextSourceMarkers } from "../context/session_context_sources.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
@@ -118,7 +118,7 @@ export class TaskInitialMessagePublisher {
   ): Record<string, unknown> {
     const contextItems = ctx
       ? ctx.combinedContextItems
-      : (task.contextItems ?? []).filter((item) => !isPageContextSourcesItem(item));
+      : withoutSessionContextSourceMarkers(task.contextItems);
     const event: Record<string, unknown> = {
       type: "user_message",
       user: task.callerInfo?.display_name ?? task.callerInfo?.user_id ?? "unknown",

@@ -98,7 +98,6 @@ export function TaskDetailPane({
   const [contextPickerOpen, setContextPickerOpen] = useState(false);
   const [documentPickerOpen, setDocumentPickerOpen] = useState(false);
   const [contextBlocks, setContextBlocks] = useState(task.blocks);
-  const [predecessorSessionId, setPredecessorSessionId] = useState<string | null>(null);
   const [createdSessions, setCreatedSessions] = useState<SessionSummary[]>([]);
   const reconciledSessionsRef = useRef<ReturnType<typeof reconcileTaskSessions> | null>(null);
   const inheritedContext = useProjectContextInheritance({
@@ -110,7 +109,6 @@ export function TaskDetailPane({
     setContextBlocks(task.blocks);
     setContextPickerOpen(false);
     setDocumentPickerOpen(false);
-    setPredecessorSessionId(null);
     setCreatedSessions([]);
     setDocumentMenu(null);
   }, [task.blocks, task.page.id]);
@@ -218,13 +216,7 @@ export function TaskDetailPane({
             <TaskContextPicker
               taskPageId={task.page.id}
               taskBlocks={contextBlocks}
-              projectPageId={task.projectPageId}
-              sessionIds={allSessionIds}
-              sessions={allSessions}
-              sessionDefaults={sessionDefaults}
-              predecessorSessionId={predecessorSessionId}
               onBlocksChanged={(blocks) => { setContextBlocks(blocks); onTaskBlocksChanged(blocks); }}
-              onPredecessorChanged={setPredecessorSessionId}
               onClose={() => setContextPickerOpen(false)}
             />
           ) : null}
@@ -277,13 +269,7 @@ export function TaskDetailPane({
               mode="document"
               taskPageId={task.page.id}
               taskBlocks={contextBlocks}
-              projectPageId={task.projectPageId}
-              sessionIds={allSessionIds}
-              sessions={allSessions}
-              sessionDefaults={sessionDefaults}
-              predecessorSessionId={predecessorSessionId}
               onBlocksChanged={(blocks) => { setContextBlocks(blocks); onTaskBlocksChanged(blocks); }}
-              onPredecessorChanged={setPredecessorSessionId}
               onClose={() => setDocumentPickerOpen(false)}
             />
           ) : null}
@@ -312,10 +298,13 @@ export function TaskDetailPane({
           taskPageId={task.page.id}
           runbookId={task.runbookId}
           contextItems={contextItems}
+          documentOptions={task.mountedDocuments.map((document) => ({
+            pageId: document.page.id,
+            title: document.page.title,
+          }))}
           pageContextSources={pageContextSources}
           contextPending={inheritedContext.status === "loading"}
           sessionDefaults={effectiveSessionDefaults}
-          predecessorSessionId={predecessorSessionId}
           sessionIds={allSessionIds}
           sessions={allSessions}
           runSessionLoadStates={runSessionLoadStates}
@@ -336,7 +325,6 @@ export function TaskDetailPane({
               ...current.filter((candidate) => candidate.agentSessionId !== session.agentSessionId),
               session,
             ]);
-            setPredecessorSessionId(null);
             onOpenSession(session);
           }}
         />

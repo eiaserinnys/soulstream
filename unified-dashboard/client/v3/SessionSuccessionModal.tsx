@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
+  AtomNodeSelector,
   Dialog,
   DialogFooter,
   DialogHeader,
@@ -27,6 +28,7 @@ import {
 } from "./task-workspace-api";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import type { PageContextSourcesMarker } from "./project-context-inheritance";
+import { buildSessionContextSelection } from "./session-context-items";
 
 const SUCCESSOR_PROMPT = "새 업무 세션을 시작하고 사용자의 다음 지시를 기다려주세요.";
 
@@ -36,17 +38,22 @@ export interface SuccessionContextItem {
   label: string;
 }
 
+export interface SuccessionDocumentOption {
+  pageId: string;
+  title: string;
+}
+
 export function SessionSuccessionModal({
   taskTitle,
   taskPageId,
   runbookId,
   contextItems,
+  documentOptions,
   pageContextSources,
   contextPending,
   predecessorOptions,
   pageDefaults,
   currentSession,
-  predecessorSessionId,
   onClose,
   onCreated,
 }: {
@@ -54,12 +61,12 @@ export function SessionSuccessionModal({
   taskPageId: string;
   runbookId: string;
   contextItems: readonly SuccessionContextItem[];
+  documentOptions: readonly SuccessionDocumentOption[];
   pageContextSources: PageContextSourcesMarker;
   contextPending: boolean;
   predecessorOptions: readonly SuccessionSessionOption[];
   pageDefaults: PageSessionDefaults | null;
   currentSession: SessionSummary | null;
-  predecessorSessionId: string | null;
   onClose(): void;
   onCreated(session: SessionSummary): void;
 }) {
@@ -69,8 +76,7 @@ export function SessionSuccessionModal({
     pageDefaults,
     currentSession,
   }), [currentSession, pageDefaults]);
-  const defaultPredecessorId = predecessorSessionId
-    ?? currentSession?.agentSessionId
+  const defaultPredecessorId = currentSession?.agentSessionId
     ?? predecessorOptions[0]?.sessionId
     ?? null;
   const [selectedPredecessorId, setSelectedPredecessorId] = useState(defaultPredecessorId);
@@ -83,12 +89,25 @@ export function SessionSuccessionModal({
   const predecessorId = selectedPredecessor?.sessionId ?? null;
   const [inheritCard, setInheritCard] = useState(true);
   const [inheritSummary, setInheritSummary] = useState(Boolean(predecessorId));
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(() => new Set());
+  const [atomNodeId, setAtomNodeId] = useState("");
+  const [atomNodeTitle, setAtomNodeTitle] = useState("");
+  const [guidance, setGuidance] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState(resolvedDefaults.nodeId ?? "");
   const [selectedAgentId, setSelectedAgentId] = useState(resolvedDefaults.agentId ?? "");
   const [selectedAgent, setSelectedAgent] = useState<AgentInfo | null>(null);
   const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createTaskPageAnchor>> | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const contextSelection = useMemo(() => buildSessionContextSelection({
+    inheritCard,
+    pageContextSources,
+    documentPageIds: documentOptions
+      .filter((document) => selectedDocumentIds.has(document.pageId))
+      .map((document) => document.pageId),
+    atomNode: atomNodeId ? { nodeId: atomNodeId, title: atomNodeTitle } : null,
+    guidance,
+  }), [atomNodeId, atomNodeTitle, documentOptions, guidance, inheritCard, pageContextSources, selectedDocumentIds]);
   const handleAssignmentError = useCallback((message: string) => {
     console.error("[v3/session-succession] 실행 대상 조회 실패", message);
     setError(message);
@@ -99,12 +118,12 @@ export function SessionSuccessionModal({
     setPending(true);
     setError(null);
     try {
-      const pageAnchor = inheritCard
+      const pageAnchor = contextSelection.needsPageAnchor
         ? preparedPageAnchor ?? await createTaskPageAnchor(api, taskPageId)
         : null;
       if (pageAnchor && !preparedPageAnchor) setPreparedPageAnchor(pageAnchor);
       const succession = buildSuccessionCreateOptions({
-        inheritCard,
+        includePageContext: contextSelection.needsPageAnchor,
         inheritSummary,
         pageAnchor,
         predecessorSessionId: predecessorId,
@@ -117,7 +136,9 @@ export function SessionSuccessionModal({
         agentId: selectedAgentId,
         agent: selectedAgent,
         container: { kind: "runbook", id: runbookId },
-        contextItems: inheritCard ? [pageContextSources] : undefined,
+        contextItems: contextSelection.contextItems.length > 0
+          ? contextSelection.contextItems
+          : undefined,
         ...succession,
       });
       const now = new Date().toISOString();
@@ -146,7 +167,7 @@ export function SessionSuccessionModal({
   return (
     <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose(); }}>
       <DialogPopup
-        className="v3-succession-modal max-w-[520px]"
+        className="v3-succession-modal max-w-[640px]"
         closeProps={{ "aria-label": "승계 닫기", disabled: pending }}
       >
         <DialogHeader className="v3-succession-head">
@@ -219,6 +240,48 @@ export function SessionSuccessionModal({
               </label>
             </li>
           </ol>
+          <div className="v3-succession-context-editor">
+            <section>
+              <strong>보드 문서</strong>
+              <div className="v3-succession-document-options">
+                {documentOptions.map((document) => (
+                  <label key={document.pageId}>
+                    <input
+                      type="checkbox"
+                      checked={selectedDocumentIds.has(document.pageId)}
+                      onChange={() => setSelectedDocumentIds((current) => {
+                        const next = new Set(current);
+                        if (next.has(document.pageId)) next.delete(document.pageId);
+                        else next.add(document.pageId);
+                        return next;
+                      })}
+                    />
+                    <span>{document.title}</span>
+                  </label>
+                ))}
+                {documentOptions.length === 0 ? <small>업무에 마운트된 보드 문서가 없습니다.</small> : null}
+              </div>
+            </section>
+            <label>
+              <strong>atom 노드</strong>
+              <AtomNodeSelector
+                value={atomNodeId}
+                selectedTitle={atomNodeTitle}
+                disabled={pending}
+                onChange={(nodeId, title) => { setAtomNodeId(nodeId); setAtomNodeTitle(title); }}
+              />
+            </label>
+            <label>
+              <strong>기본 지침</strong>
+              <textarea
+                value={guidance}
+                disabled={pending}
+                rows={3}
+                placeholder="이 세션에만 적용할 지침…"
+                onChange={(event) => setGuidance(event.target.value)}
+              />
+            </label>
+          </div>
           <AgentNodeAssignmentFields agentId={selectedAgentId} nodeId={selectedNodeId} preferredAgentId={resolvedDefaults.agentId} preferredNodeId={resolvedDefaults.nodeId} fallbackToAvailable onAgentIdChange={setSelectedAgentId} onNodeIdChange={setSelectedNodeId} onAgentInfoChange={setSelectedAgent} onError={handleAssignmentError} />
         </DialogPanel>
         <DialogFooter className="v3-succession-footer">

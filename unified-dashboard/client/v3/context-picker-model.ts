@@ -2,14 +2,7 @@ import type { PageStructureOperation } from "@seosoyoung/soul-ui/page";
 
 export type ContextPickerSelection =
   | { key: string; kind: "page"; pageId: string; title: string }
-  | { key: string; kind: "atom"; nodeId: string; label: string }
-  | { key: string; kind: "session"; sessionId: string; label: string; summary?: string | null }
-  | { key: string; kind: "guidance"; text: string };
-
-export interface ContextBlockMutation {
-  operations: PageStructureOperation[];
-  predecessorSessionId: string | null;
-}
+  | { key: string; kind: "atom"; nodeId: string; label: string };
 
 export function buildContextBlockOperations({
   selections,
@@ -19,16 +12,11 @@ export function buildContextBlockOperations({
   selections: readonly ContextPickerSelection[];
   afterBlockId: string | null;
   createTempId(): string;
-}): ContextBlockMutation {
+}): PageStructureOperation[] {
   const operations: PageStructureOperation[] = [];
   let previousTempId: string | null = null;
-  let predecessorSessionId: string | null = null;
 
   for (const selection of selections) {
-    if (selection.kind === "session") {
-      predecessorSessionId = selection.sessionId;
-      continue;
-    }
     const tempId = createTempId();
     const common = {
       op: "create_block" as const,
@@ -45,25 +33,18 @@ export function buildContextBlockOperations({
         text: `[[${selection.title}]]`,
         properties: {},
       });
-    } else if (selection.kind === "atom") {
+    } else {
       operations.push({
         ...common,
         block_type: "atom_ref",
         text: "",
         properties: { instance: "atom", nodeId: selection.nodeId, title: selection.label },
       });
-    } else {
-      operations.push({
-        ...common,
-        block_type: "guidance",
-        text: selection.text,
-        properties: { enabled: true, scope: "run" },
-      });
     }
     previousTempId = tempId;
   }
 
-  return { operations, predecessorSessionId };
+  return operations;
 }
 
 export function estimateContextPayload(values: readonly string[]): {

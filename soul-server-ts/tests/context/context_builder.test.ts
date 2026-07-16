@@ -951,6 +951,33 @@ describe("ExecutionContextBuilder.build — atom_context fetch", () => {
     expect(ctx.combinedContextItems.map((item) => item.key)).not.toContain("page_context_sources");
   });
 
+  it("session atom source marker를 컴파일하고 예약 마커는 모델 context에 노출하지 않음", async () => {
+    vi.mocked(globalThis.fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ markdown: "# 선택한 atom 컨텍스트" }), { status: 200 }),
+    );
+    const cb = makeBuilder({}, undefined, true);
+    const ctx = await cb.build(makeTask({
+      contextItems: [
+        {
+          key: "atom_context_sources",
+          content: { nodes: [{ node_id: "node-a", depth: 3, titles_only: false }] },
+        },
+        { key: "session_guidance", label: "기본 지침", content: "결과부터 보고한다." },
+      ],
+    }), codexAgent);
+
+    expect(ctx.combinedContextItems.map((item) => item.key)).toEqual([
+      "soulstream_session",
+      "session_atom_context",
+      "session_guidance",
+    ]);
+    expect(ctx.combinedContextItems[1]?.content).toContain("선택한 atom 컨텍스트");
+    expect(ctx.combinedContextItems.map((item) => item.key)).not.toContain("atom_context_sources");
+    expect(String(vi.mocked(globalThis.fetch).mock.calls[0]?.[0])).toContain(
+      "/api/tree/node-a/compile?depth=3",
+    );
+  });
+
   it("현재 폴더의 직접 자식만 board_workspace context item에 최소 필드로 주입", async () => {
     const getSession = vi.fn().mockResolvedValue({ folder_id: "root" });
     const getFolderById = vi.fn().mockResolvedValue({

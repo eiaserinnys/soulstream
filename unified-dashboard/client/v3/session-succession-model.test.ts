@@ -16,9 +16,9 @@ describe("session succession create options", () => {
     [true, false, { pageAnchor }],
     [false, true, { predecessorSessionId: "run-2" }],
     [false, false, {}],
-  ])("maps card=%s and summary=%s to the additive create fields", (inheritCard, inheritSummary, expected) => {
+  ])("maps page context=%s and summary=%s to the additive create fields", (includePageContext, inheritSummary, expected) => {
     expect(buildSuccessionCreateOptions({
-      inheritCard,
+      includePageContext,
       inheritSummary,
       pageAnchor,
       predecessorSessionId: "run-2",
