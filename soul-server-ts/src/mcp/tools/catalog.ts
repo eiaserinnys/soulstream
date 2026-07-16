@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
+import { registerContainerBrowseTools } from "./container_browse.js";
 
 const boardContainerSchema = z.object({
   kind: z.enum(["folder", "runbook"]),
@@ -16,6 +17,7 @@ export function registerCatalogTools(
   server: McpServer,
   runtime: McpRuntime,
 ): void {
+  registerContainerBrowseTools(server, runtime);
   server.registerTool(
     "list_folders",
     { description: "전체 폴더 목록.", inputSchema: {} },

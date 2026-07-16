@@ -172,7 +172,7 @@ describe("CatalogService.listChildFolders", () => {
 
 describe("CatalogService.browseFolder", () => {
   it("직접 자식 폴더, 세션 페이지, 문서/파일 보드 항목을 한 번에 반환", async () => {
-    const { sql, calls } = createMockSql((call) => {
+    const { sql } = createMockSql((call) => {
       const text = call.fragments.join("|");
       if (text.includes("folder_get_all")) {
         return [
@@ -181,77 +181,86 @@ describe("CatalogService.browseFolder", () => {
           { id: "grand", name: "Grand", sort_order: 2, settings: {}, parent_folder_id: "child" },
         ];
       }
-      if (text.includes("catalog_get_sessions")) {
-        return [
-          { session_id: "sess-a", folder_id: "root", display_name: "Session A" },
-          { session_id: "sess-b", folder_id: "root", display_name: "Session B" },
-        ];
-      }
-      if (text.includes("board_yjs_catalog_cache")) return [];
-      if (text.includes("FROM board_items")) {
-        return [
-          {
-            id: "markdown:doc-1",
-            folder_id: "root",
-            item_type: "markdown",
-            item_id: "doc-1",
-            x: 0,
-            y: 0,
-            metadata: { title: "Spec", preview: "Short spec", version: 1 },
-            created_at: null,
-            updated_at: null,
-          },
-          {
-            id: "asset:asset-1",
-            folder_id: "root",
-            item_type: "asset",
-            item_id: "asset-1",
-            x: 280,
-            y: 0,
-            metadata: {
-              assetId: "asset-1",
-              originalName: "image.png",
-              mimeType: "image/png",
-              byteSize: 1234,
-            },
-            created_at: null,
-            updated_at: null,
-          },
-          {
-            id: "markdown:doc-child",
-            folder_id: "child",
-            item_type: "markdown",
-            item_id: "doc-child",
-            x: 0,
-            y: 0,
-            metadata: { title: "Child doc" },
-            created_at: null,
-            updated_at: null,
-          },
-        ];
-      }
-      if (text.includes("session_list_summary")) {
-        return [
-          {
-            session_id: "sess-a",
-            display_name: "Session A",
-            status: "running",
-            session_type: "claude",
-            created_at: new Date("2026-06-17T00:00:00.000Z"),
-            updated_at: new Date("2026-06-17T01:00:00.000Z"),
-            event_count: "5",
-            away_summary: null,
-            caller_session_id: null,
-            last_event_id: "50",
-            last_read_event_id: "40",
-            node_id: "node-a",
-            total_count: "2",
-          },
-        ];
-      }
       return [];
     });
     const db = new SessionDB(sql);
+    vi.spyOn(db, "getFolderById").mockResolvedValue({
+      id: "root",
+      name: "Root",
+      sort_order: 0,
+      settings: {},
+      parent_folder_id: null,
+    });
+    const listContainerItems = vi.spyOn(db, "listContainerItems").mockImplementation(
+      async (params) => {
+        if (params.itemTypes?.includes("session")) {
+          return {
+            items: [{
+              boardItem: {
+                id: "session:sess-a",
+                folderId: "root",
+                containerKind: "folder",
+                containerId: "root",
+                itemType: "session",
+                itemId: "sess-a",
+                x: 0,
+                y: 0,
+                metadata: {},
+              },
+              archived: false,
+              session: {
+                agentSessionId: "sess-a",
+                displayName: "Session A",
+                lastUserMessagePreview: "Prompt",
+                status: "running",
+                agentId: null,
+                sessionType: "claude",
+                createdAt: "2026-06-17T00:00:00.000Z",
+                updatedAt: "2026-06-17T01:00:00.000Z",
+                eventCount: 5,
+                awaySummary: null,
+                callerSessionId: null,
+                predecessorSessionId: null,
+                nodeId: "node-a",
+                lastEventId: 50,
+                lastReadEventId: 40,
+              },
+            }],
+            total: 2,
+            counts: { session: 2, markdown: 0, subfolder: 0, asset: 0, frame: 0, runbook: 0, custom_view: 0 },
+          };
+        }
+        const boardItems = [
+          {
+            id: "markdown:doc-1",
+            folderId: "root",
+            containerKind: "folder" as const,
+            containerId: "root",
+            itemType: "markdown" as const,
+            itemId: "doc-1",
+            x: 0,
+            y: 0,
+            metadata: { title: "Spec" },
+          },
+          {
+            id: "asset:asset-1",
+            folderId: "root",
+            containerKind: "folder" as const,
+            containerId: "root",
+            itemType: "asset" as const,
+            itemId: "asset-1",
+            x: 280,
+            y: 0,
+            metadata: { originalName: "image.png" },
+          },
+        ];
+        return {
+          items: boardItems.map((boardItem) => ({ boardItem, archived: false })),
+          total: 2,
+          counts: { session: 0, markdown: 1, subfolder: 0, asset: 1, frame: 0, runbook: 0, custom_view: 0 },
+        };
+      },
+    );
     const { broadcaster } = createBroadcasterMock();
     const svc = new CatalogService(db, broadcaster);
 
@@ -287,10 +296,12 @@ describe("CatalogService.browseFolder", () => {
       assets: 1,
     });
 
-    const sessionListCall = calls.find((call) =>
-      call.fragments.join("|").includes("session_list_summary"),
-    );
-    expect(sessionListCall?.values).toEqual([null, null, 1, 0, "root", null]);
+    expect(listContainerItems).toHaveBeenCalledWith(expect.objectContaining({
+      container: { containerKind: "folder", containerId: "root" },
+      itemTypes: ["session"],
+      limit: 1,
+      cursor: 0,
+    }));
   });
 
   it("없는 폴더는 명시적으로 거부", async () => {

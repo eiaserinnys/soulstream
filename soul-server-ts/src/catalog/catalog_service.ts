@@ -17,7 +17,6 @@ import { randomUUID } from "node:crypto";
 import type {
   BoardYjsContainerRef,
   CatalogBoardItemRow,
-  ListSessionSummaryRow,
   SessionDB,
 } from "../db/session_db.js";
 import { assertMutableFolder } from "../system_folders.js";
@@ -28,6 +27,12 @@ import {
   type CatalogBoardItemMoveResult,
   type CatalogBoardYjsPort,
 } from "./catalog_board_item_service.js";
+import {
+  ContainerBrowseService,
+  type ContainerBrowseResult,
+  type ContainerSessionItem,
+  createContainerBrowseStore,
+} from "./container_browse_service.js";
 
 export interface CatalogFolderDto {
   id: string;
@@ -90,6 +95,7 @@ export interface BrowseFolderResult {
  */
 export class CatalogService {
   private readonly boardItems: CatalogBoardItemService;
+  private readonly containerBrowser: ContainerBrowseService;
 
   constructor(
     private readonly db: SessionDB,
@@ -105,6 +111,7 @@ export class CatalogService {
       boardYjsService,
       () => this.broadcastCatalog(),
     );
+    this.containerBrowser = new ContainerBrowseService(createContainerBrowseStore(db));
   }
 
   async listFolders(): Promise<CatalogFolderDto[]> {
@@ -140,49 +147,49 @@ export class CatalogService {
     sessionCursor?: number;
     sessionLimit?: number;
   }): Promise<BrowseFolderResult> {
-    const cursor = Math.max(0, Math.trunc(params.sessionCursor ?? 0));
-    const limit = Math.min(
-      100,
-      Math.max(1, Math.trunc(params.sessionLimit ?? 20)),
-    );
-    const catalog = await this.db.getCatalog();
-    const folder = catalog.folders.find((candidate) => candidate.id === params.folderId);
+    const folders = await this.listFolders();
+    const folder = folders.find((candidate) => candidate.id === params.folderId);
     if (!folder) {
       throw new Error(`folder not found: ${params.folderId}`);
     }
-    const childFolders = catalog.folders.filter(
+    const childFolders = folders.filter(
       (candidate) => candidate.parentFolderId === params.folderId,
     );
-    const boardItems = catalog.boardItems.filter(
-      (item) => item.folderId === params.folderId,
-    );
-    const { sessions, total } = await this.db.listSessionsSummary({
-      search: null,
-      limit,
-      offset: cursor,
+    const snapshot = await this.containerBrowser.browseLegacyFolder({
       folderId: params.folderId,
-      nodeId: null,
+      sessionCursor: params.sessionCursor,
+      sessionLimit: params.sessionLimit,
     });
+    const boardItems = snapshot.boardItems;
     return {
       folderId: params.folderId,
       folder,
       childFolders,
-      sessions: sessions.map(toBrowseFolderSession),
-      sessionsPage: {
-        cursor,
-        limit,
-        total,
-        nextCursor: cursor + limit < total ? cursor + limit : null,
-      },
+      sessions: snapshot.sessions.items
+        .filter((item): item is ContainerSessionItem => item.type === "session")
+        .map(toBrowseFolderSession),
+      sessionsPage: snapshot.sessions.page,
       boardItems,
       counts: {
         childFolders: childFolders.length,
-        sessions: total,
+        sessions: snapshot.sessions.page.total,
         boardItems: boardItems.length,
         documents: boardItems.filter((item) => item.itemType === "markdown").length,
         assets: boardItems.filter((item) => item.itemType === "asset").length,
       },
     };
+  }
+
+  async browseContainer(
+    params: Parameters<ContainerBrowseService["browse"]>[0],
+  ): Promise<ContainerBrowseResult> {
+    return await this.containerBrowser.browse(params);
+  }
+
+  async searchContainerItems(
+    params: Parameters<ContainerBrowseService["search"]>[0],
+  ): Promise<ContainerBrowseResult> {
+    return await this.containerBrowser.search(params);
   }
 
   /**
@@ -418,27 +425,21 @@ export class CatalogService {
   }
 }
 
-function toBrowseFolderSession(row: ListSessionSummaryRow): BrowseFolderSessionDto {
+function toBrowseFolderSession(row: ContainerSessionItem): BrowseFolderSessionDto {
   return {
-    sessionId: row.session_id,
-    title: row.display_name ?? row.session_id,
-    displayName: row.display_name,
+    sessionId: row.agentSessionId,
+    title: row.displayName,
+    displayName: row.displayName,
     status: row.status,
-    sessionType: row.session_type,
-    createdAt: serializeDate(row.created_at),
-    updatedAt: serializeDate(row.updated_at),
-    eventCount: row.event_count,
-    awaySummary: row.away_summary,
-    callerSessionId: row.caller_session_id,
-    predecessorSessionId: row.predecessor_session_id,
-    nodeId: row.node_id,
-    lastEventId: row.last_event_id,
-    lastReadEventId: row.last_read_event_id,
+    sessionType: row.sessionType,
+    createdAt: row.createdAt ?? row.updatedAt ?? "",
+    updatedAt: row.updatedAt ?? row.createdAt ?? "",
+    eventCount: row.eventCount,
+    awaySummary: row.awaySummary,
+    callerSessionId: row.callerSessionId,
+    predecessorSessionId: row.predecessorSessionId,
+    nodeId: row.nodeId,
+    lastEventId: row.lastEventId,
+    lastReadEventId: row.lastReadEventId,
   };
-}
-
-function serializeDate(value: Date | string): string {
-  if (value instanceof Date) return value.toISOString();
-  const ms = Date.parse(value);
-  return Number.isFinite(ms) ? new Date(ms).toISOString() : value;
 }

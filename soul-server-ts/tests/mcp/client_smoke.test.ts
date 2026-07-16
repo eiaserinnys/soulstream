@@ -46,6 +46,8 @@ const EXPECTED_TOOLS = [
   "list_folders",
   "list_child_folders",
   "browse_folder",
+  "browse_container",
+  "search_container_items",
   "create_folder",
   "move_folder",
   "rename_folder",
@@ -93,6 +95,14 @@ function createMockSql() {
     const call = { fragments: Array.from(strings), values };
     calls.push(call);
     const text = call.fragments.join("|");
+    if (text.includes("FROM folders WHERE id")) {
+      const id = values[0];
+      const folders = [
+        { id: "root", name: "Root", sort_order: 0, settings: {}, parent_folder_id: null },
+        { id: "child", name: "Child", sort_order: 1, settings: {}, parent_folder_id: "root" },
+      ];
+      return Promise.resolve(folders.filter((folder) => folder.id === id));
+    }
     if (text.includes("folder_get_all")) {
       return Promise.resolve([
         {
@@ -120,6 +130,16 @@ function createMockSql() {
     }
     if (text.includes("board_yjs_catalog_cache")) {
       return Promise.resolve([]);
+    }
+    if (text.includes("WITH scoped AS") && text.includes("FROM board_items bi")) {
+      const itemTypes = values.find((value): value is string[] =>
+        Array.isArray(value) && value.every((item) => typeof item === "string")
+          && value.some((item) => ["session", "markdown", "asset"].includes(item))
+      );
+      const rows = itemTypes
+        ? containerItemRows().filter((row) => itemTypes.includes(row.bi_item_type))
+        : containerItemRows();
+      return Promise.resolve(withContainerCounts(rows));
     }
     if (text.includes("FROM board_items")) {
       return Promise.resolve([
@@ -187,6 +207,120 @@ function createMockSql() {
   );
   fn.__calls = calls;
   return fn as unknown as SqlClient;
+}
+
+function containerItemRows() {
+  const counts = {
+    total_count: 3,
+    session_count: 1,
+    markdown_count: 1,
+    subfolder_count: 0,
+    asset_count: 1,
+    frame_count: 0,
+    runbook_count: 0,
+    custom_view_count: 0,
+  };
+  const base = {
+    bi_folder_id: "root",
+    bi_container_kind: "folder",
+    bi_container_id: "root",
+    bi_membership_kind: "primary",
+    bi_source_runbook_item_id: null,
+    bi_x: 0,
+    bi_y: 0,
+    bi_created_at: null,
+    bi_updated_at: new Date("2026-06-17T01:00:00.000Z"),
+    item_archived: false,
+    session_display_name: null,
+    session_status: null,
+    session_type: null,
+    session_created_at: null,
+    session_updated_at: null,
+    session_event_count: 0,
+    session_away_summary: null,
+    session_caller_session_id: null,
+    session_predecessor_session_id: null,
+    session_node_id: null,
+    session_agent_id: null,
+    session_last_event_id: null,
+    session_last_read_event_id: null,
+    session_last_user_preview: null,
+    markdown_id: null,
+    markdown_title: null,
+    markdown_body: null,
+    markdown_updated_at: null,
+    runbook_id: null,
+    runbook_title: null,
+    runbook_updated_at: null,
+    custom_view_id: null,
+    custom_view_title: null,
+    custom_view_updated_at: null,
+    asset_id: null,
+    asset_title: null,
+    asset_updated_at: null,
+    subfolder_id: null,
+    subfolder_title: null,
+  };
+  return [
+    {
+      ...base,
+      ...counts,
+      bi_id: "session:sess-root",
+      bi_item_type: "session",
+      bi_item_id: "sess-root",
+      bi_metadata: {},
+      session_display_name: "Root Session",
+      session_status: "running",
+      session_type: "claude",
+      session_created_at: new Date("2026-06-17T00:00:00.000Z"),
+      session_updated_at: new Date("2026-06-17T01:00:00.000Z"),
+      session_event_count: 3,
+      session_node_id: "test-node",
+      session_agent_id: "codex-default",
+      session_last_event_id: 30,
+      session_last_read_event_id: 20,
+      session_last_user_preview: "Root prompt",
+    },
+    {
+      ...base,
+      ...counts,
+      bi_id: "markdown:doc-1",
+      bi_item_type: "markdown",
+      bi_item_id: "doc-1",
+      bi_metadata: { title: "Spec", preview: "Short spec", version: 1 },
+      markdown_id: "doc-1",
+      markdown_title: "Spec",
+      markdown_body: "Short spec body",
+      markdown_updated_at: new Date("2026-06-17T00:59:00.000Z"),
+    },
+    {
+      ...base,
+      ...counts,
+      bi_id: "asset:asset-1",
+      bi_item_type: "asset",
+      bi_item_id: "asset-1",
+      bi_x: 280,
+      bi_metadata: { originalName: "image.png" },
+      asset_id: "asset-1",
+      asset_title: "image.png",
+      asset_updated_at: new Date("2026-06-17T00:58:00.000Z"),
+    },
+  ];
+}
+
+function withContainerCounts(rows: ReturnType<typeof containerItemRows>) {
+  const count = (type: string) => rows.filter((row) => row.bi_item_type === type).length;
+  return rows.map((row) => ({
+    ...row,
+    total_count: rows.length,
+    session_count: count("session"),
+    markdown_count: count("markdown"),
+    subfolder_count: count("subfolder"),
+    asset_count: count("asset"),
+    frame_count: count("frame"),
+    runbook_count: count("runbook"),
+    custom_view_count: count("custom_view"),
+  }));
 }
 
 function createSilentLogger() {
@@ -480,6 +614,65 @@ describe("MCP SDK client smoke", () => {
       documents: 1,
       assets: 1,
     });
+  });
+
+  it("callTool('browse_container') → board_items 소속의 타입별 메타와 페이지를 반환", async () => {
+    const result = await client.callTool({
+      name: "browse_container",
+      arguments: {
+        container: { kind: "folder", id: "root" },
+        caller_session_id: "current-codex-session",
+        limit: 20,
+      },
+    });
+    expect(result.isError).not.toBe(true);
+    const structured = result.structuredContent as {
+      container: { kind: string; id: string };
+      items: Array<Record<string, unknown>>;
+      page: { cursor: number; limit: number; total: number; next_cursor: number | null };
+    };
+    expect(structured.container).toEqual({ kind: "folder", id: "root" });
+    expect(structured.items).toEqual([
+      expect.objectContaining({
+        type: "session",
+        agent_session_id: "sess-root",
+        display_name: "Root Session",
+        status: "running",
+        agent: { id: "codex-default", name: "Codex" },
+      }),
+      expect.objectContaining({
+        type: "markdown",
+        id: "doc-1",
+        title: "Spec",
+        preview: "Short spec body",
+      }),
+      expect.objectContaining({ type: "asset", id: "asset-1", title: "image.png" }),
+    ]);
+    expect(structured.page).toEqual({
+      cursor: 0,
+      limit: 20,
+      total: 3,
+      next_cursor: null,
+    });
+  });
+
+  it("callTool('search_container_items') → 세션 표시명·문서만 최대 50개로 검색", async () => {
+    const result = await client.callTool({
+      name: "search_container_items",
+      arguments: {
+        container: { kind: "folder", id: "root" },
+        query: "Spec",
+        caller_session_id: "current-codex-session",
+        limit: 999,
+      },
+    });
+    expect(result.isError).not.toBe(true);
+    const structured = result.structuredContent as {
+      items: Array<{ type: string }>;
+      page: { limit: number };
+    };
+    expect(structured.items.map((item) => item.type)).toEqual(["session", "markdown"]);
+    expect(structured.page.limit).toBe(50);
   });
 
   it("callTool('move_folder') → 부모 이동, 루트 복귀, 순환 거부", async () => {

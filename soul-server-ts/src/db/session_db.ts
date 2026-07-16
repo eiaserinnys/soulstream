@@ -20,7 +20,7 @@ import { EventRepository } from "./repositories/event_repository.js";
 import { MarkdownDocumentRepository } from "./repositories/markdown_document_repository.js";
 import { SessionRepository } from "./repositories/session_repository.js";
 import type { RepositorySql } from "./repositories/repository_helpers.js";
-import type { AcknowledgeReviewOutcome, AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, BoardYjsReplica, BoardYjsSeed, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, UpstreamSessionDumpRow } from "./session_db_types.js";
+import type { AcknowledgeReviewOutcome, AppendEventParams, BoardYjsContainerRef, BoardYjsContainerScope, BoardYjsReplica, BoardYjsSeed, CatalogBoardItemRow, CatalogFolderRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, LastMessageRow, ListContainerItemsParams, ListContainerItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RegisterSessionParams, RunningSessionSummaryRow, SessionRow, SessionUpdateFields, SqlClient, UpstreamSessionDumpRow } from "./session_db_types.js";
 import { SupervisorSessionDbFacade } from "./supervisor_session_db_facade.js";
 
 export type * from "./session_db_types.js";
@@ -76,8 +76,6 @@ export class SessionDB extends SupervisorSessionDbFacade {
   async close(): Promise<void> {
     if (this.ownsSql) await this.sql.end({ timeout: 5 });
   }
-
-  /** Lightweight liveness probe for runtime reflection. */
   async ping(): Promise<void> {
     await this.sql`SELECT 1`;
   }
@@ -87,8 +85,7 @@ export class SessionDB extends SupervisorSessionDbFacade {
   }
 
   taskTree(): TaskTreeRepository {
-    this.taskTreeRepository ??= new TaskTreeRepository(this.sql);
-    return this.taskTreeRepository;
+    return this.taskTreeRepository ??= new TaskTreeRepository(this.sql);
   }
 
   runbooks(): RunbookRepository {
@@ -177,9 +174,7 @@ export class SessionDB extends SupervisorSessionDbFacade {
     return await this.catalogRepository.getDefaultFolder(name);
   }
 
-  async getFolderById(
-    folderId: string,
-  ): Promise<FolderRow | null> {
+  async getFolderById(folderId: string): Promise<FolderRow | null> {
     return await this.catalogRepository.getFolderById(folderId);
   }
 
@@ -201,6 +196,10 @@ export class SessionDB extends SupervisorSessionDbFacade {
 
   async getBoardItems(): Promise<CatalogBoardItemRow[]> {
     return await this.boardRepository.getBoardItems();
+  }
+
+  listContainerItems(params: ListContainerItemsParams): Promise<ListContainerItemsResult> {
+    return this.boardRepository.listContainerItems(params);
   }
 
   async getBoardItemById(boardItemId: string): Promise<CatalogBoardItemRow | null> {

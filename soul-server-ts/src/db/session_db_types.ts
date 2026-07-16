@@ -109,6 +109,70 @@ export interface CustomViewRow {
   updatedAt?: string;
 }
 
+export type ContainerItemCounts = Record<BoardItemType, number>;
+
+export interface ContainerSessionRecord {
+  agentSessionId: string;
+  displayName: string | null;
+  lastUserMessagePreview: string | null;
+  status: string | null;
+  agentId: string | null;
+  sessionType: string | null;
+  createdAt: string;
+  updatedAt: string;
+  eventCount: number;
+  awaySummary: string | null;
+  callerSessionId: string | null;
+  predecessorSessionId: string | null;
+  nodeId: string | null;
+  lastEventId: number | null;
+  lastReadEventId: number | null;
+}
+
+export interface ContainerMarkdownRecord {
+  id: string;
+  title: string;
+  body: string;
+  updatedAt: string | null;
+}
+
+export interface ContainerTitleRecord {
+  id: string;
+  title: string | null;
+  updatedAt: string | null;
+}
+
+export interface ContainerSubfolderRecord {
+  id: string;
+  title: string | null;
+}
+
+export interface ContainerItemRecord {
+  boardItem: CatalogBoardItemRow;
+  archived: boolean;
+  session?: ContainerSessionRecord;
+  markdown?: ContainerMarkdownRecord;
+  runbook?: ContainerTitleRecord;
+  customView?: ContainerTitleRecord;
+  asset?: ContainerTitleRecord;
+  subfolder?: ContainerSubfolderRecord;
+}
+
+export interface ListContainerItemsParams {
+  container: BoardYjsContainerRef;
+  query: string | null;
+  includeArchived: boolean;
+  itemTypes: BoardItemType[] | null;
+  limit: number;
+  cursor: number;
+}
+
+export interface ListContainerItemsResult {
+  items: ContainerItemRecord[];
+  total: number;
+  counts: ContainerItemCounts;
+}
+
 export interface BoardYjsSeed {
   boardItems: CatalogBoardItemRow[];
   markdownDocuments: MarkdownDocumentRow[];
