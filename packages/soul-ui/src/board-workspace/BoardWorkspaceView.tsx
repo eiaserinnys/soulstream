@@ -15,6 +15,7 @@ import { BoardWorkspaceCanvasContent } from "./BoardWorkspaceCanvasContent";
 import {
   boardToCanvasStyle,
   BOARD_ASSET_TILE_HEIGHT,
+  BOARD_RUNBOOK_FIXED_CARD_RECT,
   BOARD_TILE_HEIGHT,
   BOARD_TILE_WIDTH,
   buildBoardWorkspaceItems,
@@ -358,6 +359,7 @@ export function BoardWorkspaceView({
   const [declutterUndoUpdates, setDeclutterUndoUpdates] = useState<BoardItemPositionUpdate[]>([]);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const assetObjectUrlsRef = useRef(new Set<string>());
+  const assetSignedUrlsRef = useRef<Record<string, string>>({});
   const loadMoreGateRef = useRef(false);
   const previousBoardSyncStatusRef = useRef<string | null>(null);
   const {
@@ -409,19 +411,19 @@ export function BoardWorkspaceView({
   }, [loadRunbook, runbookId]);
 
   const rememberAssetSignedUrls = useCallback((items: CatalogBoardItem[]) => {
-    setAssetSignedUrls((current) => {
-      let changed = false;
-      const next = { ...current };
-      for (const item of items) {
-        if (item.itemType !== "asset") continue;
-        const signedUrl = item.metadata?.signedUrl;
-        if (typeof signedUrl !== "string" || !signedUrl) continue;
-        if (next[item.id] === signedUrl) continue;
-        next[item.id] = signedUrl;
-        changed = true;
-      }
-      return changed ? next : current;
-    });
+    const current = assetSignedUrlsRef.current;
+    let next = current;
+    for (const item of items) {
+      if (item.itemType !== "asset") continue;
+      const signedUrl = item.metadata?.signedUrl;
+      if (typeof signedUrl !== "string" || !signedUrl) continue;
+      if (next[item.id] === signedUrl) continue;
+      if (next === current) next = { ...current };
+      next[item.id] = signedUrl;
+    }
+    if (next === current) return;
+    assetSignedUrlsRef.current = next;
+    setAssetSignedUrls(next);
   }, []);
 
   useEffect(() => {
@@ -573,7 +575,10 @@ export function BoardWorkspaceView({
     }
   }, [addBoardItem, allBoardItems, boardSync.runtime, yjsUpdateBoardItemPosition]);
   const handleDeclutterBoard = useCallback(() => {
-    const declutterUpdates = declutterBoardItems(boardItems);
+    const declutterUpdates = declutterBoardItems(
+      boardItems,
+      isRunbookBoard ? [BOARD_RUNBOOK_FIXED_CARD_RECT] : [],
+    );
     if (declutterUpdates.length === 0) return;
     const expandedUpdates = expandFramePositionUpdates(allBoardItems, declutterUpdates);
     const currentById = new Map(allBoardItems.map((item) => [item.boardItemId, item]));
@@ -583,7 +588,7 @@ export function BoardWorkspaceView({
       return [{ boardItemId: current.boardItemId, x: current.x, y: current.y }];
     }));
     yjsUpdateBoardItemPositions(declutterUpdates, true);
-  }, [allBoardItems, boardItems, yjsUpdateBoardItemPositions]);
+  }, [allBoardItems, boardItems, isRunbookBoard, yjsUpdateBoardItemPositions]);
   const handleUndoDeclutter = useCallback(() => {
     if (declutterUndoUpdates.length === 0) return;
     yjsUpdateBoardItemPositions(declutterUndoUpdates, true);
@@ -1032,7 +1037,7 @@ export function BoardWorkspaceView({
         onCreateFolder={() => openCreateFolderDialog()}
         onOpenNewSession={() => openNewSessionAt()}
         onCreateMarkdown={() => createMarkdownAt()}
-        declutterDisabled={boardItems.length <= 1}
+        declutterDisabled={boardItems.length === 0 || (boardItems.length === 1 && !isRunbookBoard)}
         onDeclutterBoard={handleDeclutterBoard}
         undoDeclutterDisabled={declutterUndoUpdates.length === 0}
         onUndoDeclutter={handleUndoDeclutter}

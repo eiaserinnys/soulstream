@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { declutterBoardItems } from "./board-declutter";
+import {
+  DECLUTTER_CATALOG_ITEM_TYPES,
+  declutterBoardItems,
+} from "./board-declutter";
 import {
   BOARD_FRAME_DEFAULT_HEIGHT,
   BOARD_FRAME_DEFAULT_WIDTH,
 } from "./board-frames";
 import {
   BOARD_GRID_SIZE,
+  BOARD_ASSET_TILE_HEIGHT,
+  BOARD_RUNBOOK_FIXED_CARD_RECT,
   BOARD_RUNBOOK_TILE_HEIGHT,
   BOARD_RUNBOOK_TILE_WIDTH,
   BOARD_TILE_HEIGHT,
@@ -24,6 +29,18 @@ describe("declutterBoardItems", () => {
   it("returns no updates for empty and single-item boards", () => {
     expect(declutterBoardItems([])).toEqual([]);
     expect(declutterBoardItems([folder("only", 0)])).toEqual([]);
+  });
+
+  it("keeps every catalog board item type in the arrangement contract", () => {
+    expect(Object.keys(DECLUTTER_CATALOG_ITEM_TYPES).sort()).toEqual([
+      "asset",
+      "custom_view",
+      "frame",
+      "markdown",
+      "runbook",
+      "session",
+      "subfolder",
+    ]);
   });
 
   it("clusters markdown, custom views, sessions, and other cards in that order", () => {
@@ -78,6 +95,42 @@ describe("declutterBoardItems", () => {
     const bounds = unionBounds(rects);
     const ratio = bounds.width / bounds.height;
     expect(Math.abs(ratio - TARGET_ASPECT_RATIO)).toBeLessThan(0.2);
+  });
+
+  it("arranges asset and frame cards with every other catalog item type without overlap", () => {
+    const items: BoardWorkspaceItem[] = [
+      folder("folder", 0),
+      session("session", "2026-07-13T00:00:00.000Z"),
+      markdown("markdown", "2026-07-13T00:00:00.000Z"),
+      asset("asset", "2026-07-13T00:00:00.000Z"),
+      frame("frame", []),
+      runbook("runbook", "2026-07-13T00:00:00.000Z"),
+      customView("custom-view", "2026-07-13T00:00:00.000Z"),
+    ];
+    const positions = finalPositions(items);
+    const rects = items.map((item) => itemRect(item, positions.get(item.boardItemId)!));
+
+    for (let left = 0; left < rects.length; left += 1) {
+      for (let right = left + 1; right < rects.length; right += 1) {
+        expect(overlapsWithMargin(rects[left]!, rects[right]!)).toBe(false);
+      }
+    }
+  });
+
+  it("packs cards below the fixed runbook checklist using its rendered size", () => {
+    const items: BoardWorkspaceItem[] = [
+      markdown("markdown", "2026-07-13T00:00:00.000Z"),
+      session("session", "2026-07-12T00:00:00.000Z"),
+    ];
+
+    const positions = finalPositions(
+      items,
+      declutterBoardItems(items, [BOARD_RUNBOOK_FIXED_CARD_RECT]),
+    );
+    for (const item of items) {
+      const rect = itemRect(item, positions.get(item.boardItemId)!);
+      expect(overlapsWithMargin(rect, BOARD_RUNBOOK_FIXED_CARD_RECT)).toBe(false);
+    }
   });
 
   it("keeps frame children and generated inbox sessions fixed", () => {
@@ -155,6 +208,23 @@ function customView(id: string, updatedAt: string): BoardWorkspaceItem {
     y: 0,
     width: BOARD_TILE_WIDTH,
     height: BOARD_TILE_HEIGHT,
+  };
+}
+
+function asset(id: string, updatedAt: string): BoardWorkspaceItem {
+  return {
+    type: "asset",
+    id,
+    boardItemId: id,
+    assetId: id,
+    fileName: `${id}.png`,
+    mimeType: "image/png",
+    byteSize: 1,
+    updatedAt,
+    x: 0,
+    y: 0,
+    width: BOARD_TILE_WIDTH,
+    height: BOARD_ASSET_TILE_HEIGHT,
   };
 }
 

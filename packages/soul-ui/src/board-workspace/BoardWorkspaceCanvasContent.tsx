@@ -5,7 +5,7 @@ import type { SessionSummary } from "../shared/types";
 import { RunbookCard } from "../runbook/RunbookCard";
 import { BoardWorkspaceTile } from "./BoardWorkspaceTile";
 import { BoardWorkspaceChildPortal } from "./BoardWorkspaceChildPortal";
-import { BOARD_CANVAS_ORIGIN_X, BOARD_CANVAS_ORIGIN_Y, BOARD_CANVAS_WIDTH, snapBoardPosition, type BoardWorkspaceItem, type SessionBoardWorkspaceItem } from "./board-workspace-items";
+import { BOARD_CANVAS_ORIGIN_X, BOARD_CANVAS_ORIGIN_Y, BOARD_CANVAS_WIDTH, BOARD_RUNBOOK_FIXED_CARD_HEIGHT, BOARD_RUNBOOK_FIXED_CARD_WIDTH, snapBoardPosition, type BoardWorkspaceItem, type SessionBoardWorkspaceItem } from "./board-workspace-items";
 import type { BoardRect } from "./board-selection";
 import type { DirectChildPortalItem, SessionParentRef } from "./board-session-relations";
 
@@ -95,8 +95,12 @@ export function BoardWorkspaceCanvasContent({
       {fixedRunbookCard && (
         <div
           data-testid="runbook-board-fixed-card"
-          className="absolute z-[1] h-[520px] w-[360px]"
-          style={boardToCanvasStyle({ x: 0, y: 0 })}
+          className="absolute z-[1]"
+          style={{
+            ...boardToCanvasStyle({ x: 0, y: 0 }),
+            width: BOARD_RUNBOOK_FIXED_CARD_WIDTH,
+            height: BOARD_RUNBOOK_FIXED_CARD_HEIGHT,
+          }}
         >
           <RunbookCard
             runbookId={fixedRunbookCard.runbookId}

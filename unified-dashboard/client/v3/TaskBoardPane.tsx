@@ -148,13 +148,14 @@ export function TaskBoardPane({
     if (boardItems === null) return;
     const state = useDashboardStore.getState();
     const currentCatalog = catalogInitializedRef.current ? state.catalog : null;
-    state.setCatalog(buildTaskBoardCatalog({
+    const nextCatalog = retainEqualValue(currentCatalog ?? undefined, buildTaskBoardCatalog({
       currentCatalog,
       boardItems,
       sessions: displaySessions,
       projectFolderId,
       projectTitle,
     }));
+    if (nextCatalog !== currentCatalog) state.setCatalog(nextCatalog);
     if (!catalogInitializedRef.current) {
       state.openRunbookBoard(runbookId, projectFolderId);
       catalogInitializedRef.current = true;

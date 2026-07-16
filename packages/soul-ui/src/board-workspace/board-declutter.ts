@@ -1,4 +1,5 @@
 import type { BoardItemPositionUpdate } from "./board-selection";
+import type { CatalogBoardItemType } from "../shared/catalog-types";
 import {
   BOARD_GRID_SIZE,
   getBoardItemActivityMs,
@@ -9,6 +10,13 @@ import {
 } from "./board-workspace-items";
 
 type ArrangeClusterKey = "markdown" | "custom_view" | "session" | "other";
+
+export interface BoardDeclutterObstacle {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 interface ArrangeCell<T> {
   value: T;
@@ -38,6 +46,26 @@ const CLUSTER_ORDER: readonly ArrangeClusterKey[] = [
   "other",
 ];
 
+export const DECLUTTER_CATALOG_ITEM_TYPES: Readonly<Record<CatalogBoardItemType, true>> = Object.freeze({
+  session: true,
+  markdown: true,
+  subfolder: true,
+  asset: true,
+  frame: true,
+  runbook: true,
+  custom_view: true,
+});
+
+const CLUSTER_BY_WORKSPACE_ITEM_TYPE: Readonly<Record<BoardWorkspaceItem["type"], ArrangeClusterKey>> = {
+  folder: "other",
+  session: "session",
+  markdown: "markdown",
+  asset: "other",
+  frame: "other",
+  runbook: "other",
+  custom_view: "custom_view",
+};
+
 function getFrameChildIds(items: readonly BoardWorkspaceItem[]): Set<string> {
   const childIds = new Set<string>();
   for (const item of items) {
@@ -52,10 +80,7 @@ function isPinnedItem(item: BoardWorkspaceItem): boolean {
 }
 
 function clusterKey(item: BoardWorkspaceItem): ArrangeClusterKey {
-  if (item.type === "markdown" || item.type === "custom_view" || item.type === "session") {
-    return item.type;
-  }
-  return "other";
+  return CLUSTER_BY_WORKSPACE_ITEM_TYPE[item.type];
 }
 
 function compareRecent(left: BoardWorkspaceItem, right: BoardWorkspaceItem): number {
@@ -169,15 +194,22 @@ function arrangeClusters(clusters: readonly ArrangeCluster[]): ArrangeGrid<Arran
   }));
 }
 
-function pinnedBottom(pinnedItems: readonly BoardWorkspaceItem[]): number | null {
-  if (pinnedItems.length === 0) return null;
-  return Math.max(...pinnedItems.map((item) => item.y + getBoardItemHeight(item)));
+function fixedBottom(
+  pinnedItems: readonly BoardWorkspaceItem[],
+  obstacles: readonly BoardDeclutterObstacle[],
+): number | null {
+  const bottoms = [
+    ...pinnedItems.map((item) => item.y + getBoardItemHeight(item)),
+    ...obstacles.map((obstacle) => obstacle.y + obstacle.height),
+  ];
+  return bottoms.length > 0 ? Math.max(...bottoms) : null;
 }
 
 export function declutterBoardItems(
   items: readonly BoardWorkspaceItem[],
+  obstacles: readonly BoardDeclutterObstacle[] = [],
 ): BoardItemPositionUpdate[] {
-  if (items.length <= 1) return [];
+  if (items.length === 0 || (items.length === 1 && obstacles.length === 0)) return [];
 
   const frameChildIds = getFrameChildIds(items);
   const rootItems = items.filter((item) => !frameChildIds.has(item.boardItemId));
@@ -189,9 +221,9 @@ export function declutterBoardItems(
     Math.min(...movableItems.map((item) => item.x)),
     Math.min(...movableItems.map((item) => item.y)),
   );
-  const fixedBottom = pinnedBottom(pinnedItems);
-  if (fixedBottom !== null) {
-    origin.y = Math.max(origin.y, snapBoardPosition(0, fixedBottom + CLUSTER_GAP).y);
+  const occupiedBottom = fixedBottom(pinnedItems, obstacles);
+  if (occupiedBottom !== null) {
+    origin.y = Math.max(origin.y, snapBoardPosition(0, occupiedBottom + CLUSTER_GAP).y);
   }
 
   const clusterGrid = arrangeClusters(buildClusters(movableItems));
