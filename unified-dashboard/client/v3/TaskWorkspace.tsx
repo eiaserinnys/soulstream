@@ -60,7 +60,7 @@ export function TaskWorkspace({
   onTaskBlocksChanged,
   onAcknowledgedReview,
 }: {
-  task: PlannerTask;
+  task: PlannerTask | null;
   projectTitle: string;
   projectFolderId: string | null;
   folders: readonly CatalogFolder[];
@@ -99,7 +99,7 @@ export function TaskWorkspace({
   const draggingPointer = useRef<number | null>(null);
   const [splitPercent, setSplitPercent] = useState(DEFAULT_WORKSPACE_SPLIT);
   const [boardOpen, setBoardOpen] = useState(false);
-  const [visibleTitle, setVisibleTitle] = useState(task.page.title);
+  const [visibleTitle, setVisibleTitle] = useState(task?.page.title ?? "");
   const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: chatOpen && !boardOpen });
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
   const activeBoardDocumentId = useDashboardStore((state) => state.activeBoardDocumentId);
@@ -107,8 +107,8 @@ export function TaskWorkspace({
 
   useEffect(() => {
     setBoardOpen(false);
-    setVisibleTitle(task.page.title);
-  }, [task.page.id, task.page.title]);
+    setVisibleTitle(task?.page.title ?? "");
+  }, [task?.page.id, task?.page.title]);
 
   useEffect(() => {
     if (!chatOpen) draggingPointer.current = null;
@@ -170,6 +170,49 @@ export function TaskWorkspace({
       }}
     ><span /></div>
   );
+
+  if (!task) {
+    return (
+      <div className="v3-workspace-scrim is-chat-open" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}>
+        <div
+          ref={workspaceRef}
+          className="v3-workspace is-chat-open"
+          data-mobile-view={mobileMode ? mobileTab : undefined}
+          style={!mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 4px)) 8px minmax(0, 1fr)` } : undefined}
+        >
+          <section className="v3-detail-pane border border-glass-border glass-strong glass-chrome lg-rim" data-testid="v3-standalone-task-empty" aria-label="빈 업무 창">
+            <header className="v3-workspace-toolbar">
+              <strong>업무</strong>
+              <span className="v3-spacer" />
+              <button type="button" className="v3-workspace-close" aria-label="업무 창 닫기" onClick={onCloseWorkspace}>×</button>
+            </header>
+            <div className="v3-chat-empty">
+              <strong>연결된 업무가 없습니다.</strong>
+              <p>이 세션의 채팅은 그대로 확인할 수 있습니다.</p>
+            </div>
+          </section>
+          {divider("업무와 채팅 너비 조절")}
+          <section
+            ref={chatSurfaceRef}
+            className="v3-chat-pane border border-glass-border glass-strong glass-chrome lg-rim"
+            data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
+            data-testid="v3-standalone-session-chat"
+            aria-label="세션 채팅"
+          >
+            <header className="v3-chat-header">
+              <div><small>세션</small><strong>{activeSession?.displayName ?? activeSession?.agentName ?? "세션"}</strong></div>
+              <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession?.status === "running" ? "실행 중" : "완료"}</span>
+              <button type="button" aria-label="채팅 닫기" onClick={onCloseWorkspace}>×</button>
+            </header>
+            {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
+            <div className="v3-chat-content">
+              {activeSession ? <ChatView chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} showHeader={false} /> : <div className="v3-chat-empty"><strong>세션을 찾을 수 없습니다.</strong></div>}
+            </div>
+          </section>
+        </div>
+      </div>
+    );
+  }
 
   const boardInspector = activeBoardDocumentId ? (
     <section

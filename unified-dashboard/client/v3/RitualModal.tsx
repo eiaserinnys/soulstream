@@ -38,14 +38,14 @@ export function RitualModal({
   reviewCount,
   onClose,
   onActionApplied,
-  onOpenReviewQueue,
+  onFocusSessionPanel,
 }: {
   open: boolean;
   today: string;
   reviewCount: number;
   onClose(): void;
   onActionApplied(item: RitualQueueItem, action: RitualAction): void;
-  onOpenReviewQueue(): void;
+  onFocusSessionPanel(): void;
 }) {
   const api = useMemo(() => createPageApiClient(), []);
   const plannerDependencies = useMemo(() => createPlannerDataDependencies(), []);
@@ -102,9 +102,9 @@ export function RitualModal({
     setIndex(0);
     setActionError(null);
   };
-  const openReviewQueue = () => {
+  const focusSessionPanel = () => {
     finish();
-    onOpenReviewQueue();
+    onFocusSessionPanel();
   };
 
   return (
@@ -137,8 +137,8 @@ export function RitualModal({
                   <h3>오늘 준비 완료</h3>
                   <p>결정한 이월 업무를 오늘 플래너에 반영했습니다.</p>
                   {reviewCount > 0 ? (
-                    <Button variant="link" className="v3-ritual-review-link" onClick={openReviewQueue}>
-                      검수 대기 {reviewCount}건 → 검수 패널
+                    <Button variant="link" className="v3-ritual-review-link" onClick={focusSessionPanel}>
+                      검수 대기 {reviewCount}건 → 우측 세션
                     </Button>
                   ) : null}
                 </div>

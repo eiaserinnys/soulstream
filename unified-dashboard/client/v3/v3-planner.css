@@ -5,18 +5,18 @@
   grid-template-columns:
     calc(var(--v3-navigation-width, 264px) + 22px)
     var(--v3-panel-gap, 8px)
-    minmax(0, 1fr);
+    minmax(0, 1fr)
+    var(--v3-panel-gap, 8px)
+    calc(var(--v3-session-panel-width, 300px) + 22px);
   height: 100dvh;
   overflow: hidden;
   color: var(--foreground);
   background: transparent;
 }
-
 .v3-emoji {
   font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji";
   font-style: normal;
 }
-
 .v3-shell button,
 .v3-shell input,
 .v3-shell select,

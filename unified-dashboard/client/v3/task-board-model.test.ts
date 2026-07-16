@@ -11,6 +11,7 @@ import {
   extractTaskBoardSessionIds,
   mergeTaskBoardSessions,
   scopeCatalogUpdateToTaskBoard,
+  scopeCatalogUpdateToTaskBoardPreservingSessionList,
 } from "./task-board-model";
 
 describe("task board bounded catalog", () => {
@@ -114,6 +115,32 @@ describe("task board bounded catalog", () => {
         status: "completed",
       }),
     ]);
+  });
+
+  it("keeps the global session projection while scoping a task-board catalog update", () => {
+    const outside = session("session-outside", "다른 업무", "running");
+    const task = session("session-a", "업무 세션", "running");
+    const current: CatalogState = {
+      ...buildTaskBoardCatalog({
+        currentCatalog: null,
+        boardItems: [boardItem("rb-a", "session", "session-a")],
+        sessions: [session("session-a", "업무 세션")],
+        projectFolderId: "folder-a",
+        projectTitle: "프로젝트 A",
+      }),
+      sessionList: [task, outside],
+    };
+    const incoming: CatalogState = {
+      ...current,
+      sessionList: [session("session-a", "업무 세션", "completed"), { ...outside }],
+    };
+
+    const next = scopeCatalogUpdateToTaskBoardPreservingSessionList(current, incoming, "rb-a");
+
+    expect(next.sessionList).not.toBe(current.sessionList);
+    expect(next.sessionList?.[0]).not.toBe(task);
+    expect(next.sessionList?.[0]?.status).toBe("completed");
+    expect(next.sessionList?.[1]).toBe(outside);
   });
 
   it("lets the scoped live result override the task-only snapshot", () => {

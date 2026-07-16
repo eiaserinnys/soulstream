@@ -240,6 +240,7 @@ const runbooks: Record<string, Json> = {
 const sessions = [
   {
     agentSessionId: "run-alpha-1",
+    folderId: "folder-amber",
     status: "completed",
     reviewState: "acknowledged",
     sessionType: "claude",
@@ -259,6 +260,7 @@ const sessions = [
   },
   {
     agentSessionId: "run-alpha-2",
+    folderId: "folder-amber",
     status: "running",
     reviewState: "not_required",
     sessionType: "claude",
@@ -276,6 +278,7 @@ const sessions = [
   },
   {
     agentSessionId: "run-alpha-3",
+    folderId: "folder-amber",
     status: "completed",
     reviewState: "not_required",
     sessionType: "claude",
@@ -292,6 +295,7 @@ const sessions = [
   },
   {
     agentSessionId: "run-alpha-child",
+    folderId: "folder-amber",
     status: "completed",
     reviewState: "not_required",
     sessionType: "claude",
@@ -311,6 +315,7 @@ const sessions = [
   },
   {
     agentSessionId: "run-beta-1",
+    folderId: "folder-amber",
     status: "completed",
     reviewState: "not_required",
     sessionType: "claude",
@@ -549,7 +554,11 @@ export async function installV3VisualQaRoutes(
       });
     }
     if (path === "/api/sessions/stream") {
-      return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": visual-qa\n\n" });
+      return route.fulfill({
+        status: 200,
+        contentType: "text/event-stream",
+        body: `event: session_list\ndata: ${JSON.stringify({ type: "session_list", sessions, total: sessions.length })}\n\n`,
+      });
     }
     if (/^\/api\/sessions\/[^/]+\/events$/.test(path)) {
       const sessionId = decodeURIComponent(path.split("/")[3] ?? "");
@@ -854,6 +863,14 @@ export async function installV3VisualQaRoutes(
     }
     if (path === "/api/board-items") {
       await delay(options.plannerDelayMs);
+      if (url.searchParams.has("folder_id")) {
+        return fulfillJson(route, {
+          boardItems: [
+            ...runSessions["rb-alpha"].map((itemId, index) => boardItem("session", itemId, pages.taskAlpha.id, index * 72)),
+            ...runSessions["rb-beta"].map((itemId, index) => boardItem("session", itemId, pages.taskBeta.id, index * 72)),
+          ],
+        });
+      }
       const runbookId = url.searchParams.get("container_id") ?? "";
       const inlineItems = runbookId === "rb-alpha" ? [
         boardItem("markdown", "doc-inline", runbookId, 160, { title: "PR-O 결정 로그" }),

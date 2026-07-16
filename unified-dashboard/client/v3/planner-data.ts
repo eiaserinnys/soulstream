@@ -220,11 +220,18 @@ export async function loadStarredPlannerTask(
   api: PageApiClient,
   taskPage: PageDto,
 ): Promise<PlannerTask> {
-  const snapshot = await api.getPage(taskPage.id);
+  return await loadPlannerTask(api, taskPage.id);
+}
+
+export async function loadPlannerTask(
+  api: PageApiClient,
+  taskPageId: string,
+): Promise<PlannerTask> {
+  const snapshot = await api.getPage(taskPageId);
   const classification = classifyMountedPage(snapshot.blocks);
   if (classification.kind !== "task") throw new Error("별표 페이지가 runbook 업무가 아닙니다");
   const runbook = await fetchRunbookSnapshot(classification.runbookId);
-  const backlinks = await api.getBacklinks(taskPage.id, { kinds: ["mount"], limit: 50 });
+  const backlinks = await api.getBacklinks(taskPageId, { kinds: ["mount"], limit: 50 });
   const projectPageId = await firstProjectPageId(api, backlinks.items.map((item) => item.sourcePageId));
   return {
     page: snapshot.page,

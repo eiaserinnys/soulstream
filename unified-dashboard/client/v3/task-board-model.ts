@@ -1,8 +1,9 @@
-import type {
-  CatalogAssignment,
-  CatalogBoardItem,
-  CatalogState,
-  SessionSummary,
+import {
+  retainEqualValue,
+  type CatalogAssignment,
+  type CatalogBoardItem,
+  type CatalogState,
+  type SessionSummary,
 } from "@seosoyoung/soul-ui";
 
 interface BuildTaskBoardCatalogOptions {
@@ -105,4 +106,20 @@ export function scopeCatalogUpdateToTaskBoard(
     boardItems: nextBoardItems,
     sessionList,
   };
+}
+
+export function scopeCatalogUpdateToTaskBoardPreservingSessionList(
+  currentCatalog: CatalogState,
+  incomingCatalog: CatalogState,
+  runbookId: string,
+): CatalogState {
+  const scoped = scopeCatalogUpdateToTaskBoard(
+    currentCatalog,
+    incomingCatalog,
+    runbookId,
+  );
+  const sessionList = incomingCatalog.sessionList === undefined
+    ? currentCatalog.sessionList
+    : retainEqualValue(currentCatalog.sessionList, incomingCatalog.sessionList);
+  return sessionList === undefined ? scoped : { ...scoped, sessionList };
 }

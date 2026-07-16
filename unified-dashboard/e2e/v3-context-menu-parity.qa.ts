@@ -51,19 +51,11 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.getByRole("menuitem", { name: "오늘 플래너에 추가" }).click();
     await dailyTask.waitFor({ state: "visible" });
 
-    const reviewNavigation = page.getByTestId("v3-review-navigation").locator(".v3-review-nav-link").first();
-    await openContextMenu(reviewNavigation);
-    await assertSessionCommonMenu(page);
-    await assertMissingMenuItems(page, ["＋ 이어서 새 세션 (승계)", "다른 업무로 이동"]);
-    await page.keyboard.press("Escape");
-
-    await page.getByTestId("v3-review-navigation").getByRole("button", { name: /전체 \d+건 보기|검수 패널 열기/ }).click();
-    const reviewRow = page.getByTestId("v3-review-queue-list").locator(".v3-run-row").first();
+    const reviewRow = page.getByTestId("v3-session-group-review").locator(".v3-session-row").first();
     await reviewRow.waitFor({ state: "visible" });
     await openContextMenu(reviewRow);
     await assertSessionCommonMenu(page);
     await assertMissingMenuItems(page, ["＋ 이어서 새 세션 (승계)", "다른 업무로 이동"]);
-    await page.keyboard.press("Escape");
     await page.keyboard.press("Escape");
 
     const projectRow = page.getByTestId("v3-all-projects").locator(".v3-project-nav-row").filter({ hasText: fixtureTitles.project });
@@ -89,8 +81,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     return {
       todayRoundtrip: true,
       completionImmediate: true,
-      reviewNavigationMenu: true,
-      reviewPanelMenu: true,
+      sessionPanelMenu: true,
       projectDocumentMenu: true,
     };
   } finally {

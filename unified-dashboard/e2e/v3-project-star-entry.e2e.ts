@@ -24,24 +24,20 @@ for (const theme of ["dark", "light"] as const) {
 
     await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
     await expect(page.getByText("오늘의 업무")).toBeVisible();
-    const reviewNavigation = page.getByTestId("v3-review-navigation");
-    await expect(reviewNavigation.locator("button:not(.v3-new-project-trigger)")).toHaveCount(5);
-    await expect(reviewNavigation).toContainText("전체 6건 보기");
+    const reviewPanel = page.getByTestId("v3-session-group-review");
+    await expect(reviewPanel.locator(".v3-session-row")).toHaveCount(6);
+    await expect(page.getByTestId("v3-navigation-scroll")).not.toContainText("검수 대기");
     await expect(page.locator(".v3-review-strip")).toHaveCount(0);
     await expect(page.getByTestId("v3-starred-tasks")).toContainText(fixtureTitles.primaryTask);
     await expect(page.getByTestId("v3-all-projects").locator(".v3-project-nav-row")).toHaveCount(78);
     await expect(page.getByRole("button", { name: "하위 프로젝트 03", exact: true })).toHaveAttribute("aria-level", "2");
     await expect(page.getByRole("button", { name: /프로젝트.*별표/ })).toHaveCount(0);
-    await capture(page, theme, "01-review-nav-folder-projects-and-starred-task");
+    await capture(page, theme, "01-session-panel-folder-projects-and-starred-task");
 
-    await reviewNavigation.getByRole("button", { name: "전체 6건 보기" }).click();
-    await expect(page.getByRole("dialog", { name: "검수 대기" })).toBeVisible();
-    await expect(page.getByTestId("v3-review-queue-list").locator(".v3-run-row")).toHaveCount(6);
-    const firstReviewTitle = await page.getByTestId("v3-review-queue-list").locator(".v3-run-title-line strong").first().innerText();
+    const firstReviewTitle = await reviewPanel.locator(".v3-session-open > span:last-child").first().innerText();
     expect(firstReviewTitle).not.toContain("\n");
-    expect(Array.from(firstReviewTitle).length).toBeLessThanOrEqual(120);
-    await capture(page, theme, "02-review-panel-six-sessions");
-    await page.keyboard.press("Escape");
+    expect(Array.from(firstReviewTitle).length).toBeLessThanOrEqual(80);
+    await capture(page, theme, "02-right-panel-six-review-sessions");
 
     const taskCard = page.getByTestId("v3-task-task-alpha");
     await taskCard.getByRole("button", { name: `${fixtureTitles.primaryTask} 별표 해제` }).click();
@@ -92,13 +88,12 @@ for (const theme of ["dark", "light"] as const) {
       if (await later.count() === 0) break;
       await later.click();
     }
-    const reviewLink = page.getByRole("button", { name: "검수 대기 6건 → 검수 패널" });
+    const reviewLink = page.getByRole("button", { name: "검수 대기 6건 → 우측 세션" });
     await expect(reviewLink).toBeVisible();
     await capture(page, theme, "08-ritual-task-only-review-link");
     await reviewLink.click();
-    await expect(page.getByRole("dialog", { name: "검수 대기" })).toBeVisible();
-    await capture(page, theme, "09-review-panel-from-ritual");
-    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("v3-session-panel")).toBeFocused();
+    await capture(page, theme, "09-session-panel-from-ritual");
 
     expect(errors).toEqual([]);
   });
