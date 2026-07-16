@@ -945,6 +945,7 @@ function resetContextMenuParityState(): void {
 export const fixtureTitles = {
   primaryTask: pages.taskAlpha.title,
   secondaryTask: pages.taskBeta.title,
+  carryoverTask: pages.carryover.title,
   project: pages.project.title,
   document: pages.document.title,
 };

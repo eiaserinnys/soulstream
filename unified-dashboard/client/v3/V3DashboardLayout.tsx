@@ -42,11 +42,7 @@ import {
 } from "./mobile-planner-state";
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import { useTaskStarChanges } from "./task-star-store";
-import {
-  createPlannerDataDependencies,
-  loadStarredPlannerTask,
-  type PlannerTask,
-} from "./planner-data";
+import { createPlannerDataDependencies, loadStarredPlannerTask, type PlannerTask } from "./planner-data";
 import {
   fetchPageSessionDefaults,
   type PageSessionDefaults,
@@ -206,6 +202,7 @@ function V3DashboardContent() {
     notifyWriteFailure,
     todayTaskIds,
     setTaskTodayPresence,
+    addTaskToToday,
     patchTask: patchPlannerTask,
     removeSessionsFromPlanner,
     moveSessionInPlanner,
@@ -473,7 +470,9 @@ function V3DashboardContent() {
           mobileMode={mobileMode}
           mobileTab={mobileTab}
           taskMoveTargets={currentTasks}
+          taskInToday={workspaceTask ? todayTaskIds.has(workspaceTask.page.id) : false}
           onReturnToToday={returnToPlanner}
+          onToggleTaskToday={() => workspaceTask ? plannerActions.toggleTaskToday(workspaceTask) : Promise.reject(new Error("연결된 업무가 없습니다"))}
           onCloseWorkspace={closeWorkspace}
           onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }}
           onOpenDocument={openTaskDocument}

@@ -45,7 +45,9 @@ export function TaskWorkspace({
   mobileMode,
   mobileTab,
   taskMoveTargets,
+  taskInToday,
   onReturnToToday,
+  onToggleTaskToday,
   onCloseWorkspace,
   onCloseChat,
   onOpenDocument,
@@ -79,7 +81,9 @@ export function TaskWorkspace({
   mobileMode: boolean;
   mobileTab: MobilePlannerTab;
   taskMoveTargets: readonly PlannerTask[];
+  taskInToday: boolean;
   onReturnToToday(): void;
+  onToggleTaskToday(): Promise<void>;
   onCloseWorkspace(): void;
   onCloseChat(): void;
   onOpenDocument(documentId: string): void;
@@ -292,7 +296,9 @@ export function TaskWorkspace({
             onLoadMoreRuns={onLoadMoreRuns}
             sessionDefaults={sessionDefaults}
             taskMoveTargets={taskMoveTargets}
+            taskInToday={taskInToday}
             onReturnToToday={onReturnToToday}
+            onToggleTaskToday={onToggleTaskToday}
             onOpenBoard={() => {
               setSplitPercent(64);
               setBoardOpen(true);
