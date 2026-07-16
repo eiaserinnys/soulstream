@@ -43,6 +43,8 @@ export interface AuthContextValue {
   isAuthenticated: boolean;
   /** 현재 사용자 정보 */
   user: AuthUser | null;
+  /** 서버의 현재 인증 상태를 다시 확인 */
+  refreshAuthStatus: () => Promise<void>;
   /** 로그아웃 */
   logout: () => Promise<void>;
   /** Dev 로그인 (devModeEnabled: true일 때만 사용) */
@@ -164,6 +166,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         devModeEnabled,
         isAuthenticated,
         user,
+        refreshAuthStatus,
         logout,
         devLogin,
       }}

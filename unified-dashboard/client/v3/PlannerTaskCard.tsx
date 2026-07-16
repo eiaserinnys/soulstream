@@ -94,7 +94,7 @@ export function PlannerTaskCard({
           {taskStar.starred ? "★" : "☆"}
         </Button>
         <span className="v3-run-line">
-          {run ? `run #${run.number} ${runState}` : "run 0 · 시작 전"}
+          {run ? `세션 #${run.number} ${runState}` : "세션 0 · 시작 전"}
           {run?.session.status === "running" ? <i aria-label="실행 중" /> : null}
         </span>
         {task.progress === null ? null : (

@@ -4,6 +4,7 @@ import type {
   PageReadResponse,
 } from "@seosoyoung/soul-ui/page";
 
+import { HttpResponseError } from "../lib/http-response-error";
 import { parseSingleMountTitle } from "./planner-model";
 import type { PlannerTaskCreationPort } from "./planner-task-creation";
 
@@ -32,7 +33,10 @@ export class BrowserPlannerMutationPort implements PlannerTaskCreationPort {
     });
     const payload = await readPayload(response);
     if (!response.ok) {
-      throw new Error(responseMessage(payload, `업무를 만들지 못했습니다 (${response.status})`));
+      throw new HttpResponseError(
+        responseMessage(payload, `업무를 만들지 못했습니다 (${response.status})`),
+        response.status,
+      );
     }
     const ids = extractTaskIdentityIds(payload);
     if (!ids.id) throw new Error("업무 생성 응답에 ID가 없습니다");
@@ -195,6 +199,7 @@ function responseMessage(payload: unknown, fallback: string): string {
   const detail = objectValue(record?.detail);
   const error = objectValue(detail?.error) ?? objectValue(record?.error);
   return stringValue(error?.message)
+    ?? stringValue(record?.detail)
     ?? stringValue(detail?.message)
     ?? stringValue(record?.message)
     ?? fallback;

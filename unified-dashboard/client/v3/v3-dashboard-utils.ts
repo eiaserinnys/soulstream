@@ -37,6 +37,29 @@ export function errorText(error: unknown): string {
   return error instanceof Error && error.message ? error.message : String(error);
 }
 
+export const AUTH_EXPIRED_MESSAGE = "로그인이 만료되었습니다. 다시 로그인해 주세요";
+
+export function writeFailureText(action: string, error: unknown): string {
+  return errorStatus(error) === 401
+    ? AUTH_EXPIRED_MESSAGE
+    : `${action} 실패 · ${errorText(error)}`;
+}
+
+export function reportV3WriteFailure({
+  action,
+  error,
+  notify,
+  refreshAuthStatus,
+}: {
+  action: string;
+  error: unknown;
+  notify(message: string): void;
+  refreshAuthStatus(): void;
+}): void {
+  notify(writeFailureText(action, error));
+  if (errorStatus(error) === 401) refreshAuthStatus();
+}
+
 export function buildMobileTaskOptions(
   tasks: readonly PlannerTask[],
   sessions: readonly SessionSummary[],
@@ -56,4 +79,22 @@ export function buildMobileTaskOptions(
 
 function flattenRunIds(node: RunTreeNode): string[] {
   return [node.session.agentSessionId, ...node.children.flatMap(flattenRunIds)];
+}
+
+function errorStatus(error: unknown, seen = new Set<object>()): number | null {
+  if (error && typeof error === "object") {
+    if (seen.has(error)) return null;
+    seen.add(error);
+    if ("status" in error) {
+      const status = (error as { status?: unknown }).status;
+      if (typeof status === "number") return status;
+    }
+    const messageMatch = /\b([45]\d{2})\b/.exec(errorText(error));
+    if (messageMatch) return Number(messageMatch[1]);
+    if ("cause" in error) {
+      return errorStatus((error as { cause?: unknown }).cause, seen);
+    }
+  }
+  const match = /\b([45]\d{2})\b/.exec(errorText(error));
+  return match ? Number(match[1]) : null;
 }

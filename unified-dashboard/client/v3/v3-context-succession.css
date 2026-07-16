@@ -128,10 +128,11 @@
   font-size: var(--font-size-xs);
 }
 
-.v3-context-panel input:focus,
-.v3-succession-assignment select:focus {
+.v3-context-panel input:focus-visible,
+.v3-succession-assignment select:focus-visible {
   border-color: var(--info);
-  outline: 2px solid color-mix(in srgb, var(--info) 18%, transparent);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 18%, transparent);
 }
 
 .v3-context-options {
@@ -367,9 +368,10 @@
   font-size: var(--font-size-xs);
 }
 
-.v3-succession-body li select:focus {
+.v3-succession-body li select:focus-visible {
   border-color: var(--info);
-  outline: 2px solid color-mix(in srgb, var(--info) 18%, transparent);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 18%, transparent);
 }
 
 .v3-succession-body .v3-succession-context-chips {

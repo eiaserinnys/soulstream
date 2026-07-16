@@ -62,6 +62,7 @@ vi.mock("@seosoyoung/soul-ui", async (importOriginal) => {
         name: "Admin",
         isAdmin: true,
       },
+      refreshAuthStatus: vi.fn(),
       logout: vi.fn(),
       devLogin: vi.fn(),
     }),

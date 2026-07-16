@@ -35,6 +35,7 @@ import { V3Navigation } from "./V3Navigation";
 import { V3StandaloneInspector } from "./V3StandaloneInspector";
 import { V3GlobalToolbar } from "./V3GlobalToolbar";
 import { useV3PlannerActions } from "./use-v3-planner-actions";
+import { useV3Notifications } from "./use-v3-notifications";
 import {
   reduceMobilePlannerEscape,
   selectMobilePlannerTab,
@@ -116,9 +117,7 @@ function V3DashboardContent() {
   const [newDocumentOpen, setNewDocumentOpen] = useState(false);
   const [newDocumentTitle, setNewDocumentTitle] = useState("");
   const [sessionDefaults, setSessionDefaults] = useState<PageSessionDefaults | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
   const [navigationWidth, setNavigationWidth] = useState(() => readDashboardLeftSidebarWidth());
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const plannerSurfaceRef = useRef<HTMLDivElement>(null);
   const plannerWebglActive = useGlassSurface(plannerSurfaceRef, { enabled: true });
 
@@ -132,7 +131,8 @@ function V3DashboardContent() {
   }, []);
 
   useEffect(() => { initTheme(); }, []);
-  const { user } = useAuth();
+  const { user, refreshAuthStatus } = useAuth();
+  const { toast, notify, notifyWriteFailure } = useV3Notifications(refreshAuthStatus);
   useUserPreferencesSync(user?.email ?? null);
   useInitialCatalogLoad(true);
   useReadPositionSync();
@@ -147,15 +147,6 @@ function V3DashboardContent() {
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
   const setActiveBoardDocument = useDashboardStore((state) => state.setActiveBoardDocument);
   const nodes = useOrchestratorStore((state) => state.nodes);
-  const notify = useCallback((message: string) => {
-    setToast(message);
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 3200);
-  }, []);
-  useEffect(() => () => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-  }, []);
-
   const taskStarChanges = useTaskStarChanges();
   const {
     daily,
@@ -183,7 +174,12 @@ function V3DashboardContent() {
     notify,
   });
   const plannerActions = useV3PlannerActions({
-    api, invalidate: invalidateLocal, notify, todayTaskIds, setTaskTodayPresence,
+    api,
+    invalidate: invalidateLocal,
+    notify,
+    notifyWriteFailure,
+    todayTaskIds,
+    setTaskTodayPresence,
   });
   const currentTasks = useMemo(
     () => [
@@ -380,7 +376,7 @@ function V3DashboardContent() {
       notify(`새 업무 생성 · ${title}`);
     } catch (error) {
       const label = plannerTaskCreationErrorLabel(error);
-      notify(`${label} 실패 · ${errorText(error)}`);
+      notifyWriteFailure(label, error);
     } finally {
       setCreatePending(false);
     }
@@ -392,7 +388,7 @@ function V3DashboardContent() {
       invalidateLocal();
       notify("오늘 메모 저장됨");
     } catch (error) {
-      notify(`오늘 메모 저장 실패 · ${errorText(error)}`);
+      notifyWriteFailure("오늘 메모 저장", error);
       throw error;
     }
   };
@@ -405,7 +401,7 @@ function V3DashboardContent() {
       setNewDocumentOpen(false);
       invalidateLocal();
       notify(`새 문서 생성 · ${title}`);
-    } catch (error) { notify(`새 문서 생성 실패 · ${errorText(error)}`); }
+    } catch (error) { notifyWriteFailure("새 문서 생성", error); }
   };
   const saveDescription = async (markdown: string) => {
     if (!selectedTask) return;
@@ -414,7 +410,7 @@ function V3DashboardContent() {
       invalidateLocal();
       notify("업무 설명 저장됨");
     } catch (error) {
-      notify(`업무 설명 저장 실패 · ${errorText(error)}`);
+      notifyWriteFailure("업무 설명 저장", error);
       throw error;
     }
   };
@@ -425,7 +421,7 @@ function V3DashboardContent() {
       invalidateLocal();
       notify("문서를 프로젝트로 승격했습니다");
     } catch (error) {
-      notify(`문서 승격 실패 · ${errorText(error)}`);
+      notifyWriteFailure("문서 승격", error);
       throw error;
     }
   };

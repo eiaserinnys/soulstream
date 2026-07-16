@@ -282,10 +282,10 @@ export function TaskWorkspace({
               ref={chatSurfaceRef}
               className="v3-chat-pane border border-glass-border glass-strong glass-chrome lg-rim"
               data-liquid-glass-webgl={chatWebglActive ? "true" : undefined}
-              aria-label={inspectorKind === "document" ? "마크다운 문서" : "Run 채팅"}
+              aria-label={inspectorKind === "document" ? "마크다운 문서" : "세션 채팅"}
             >
               <header className="v3-chat-header">
-                <div><small>{projectTitle} › {visibleTitle}</small><strong>{inspectorKind === "document" ? "마크다운 문서" : activeSession ? runLabel(task, activeSession, sessions) : "선택된 run 없음"}</strong></div>
+                <div><small>{projectTitle} › {visibleTitle}</small><strong>{inspectorKind === "document" ? "마크다운 문서" : activeSession ? runLabel(task, activeSession, sessions) : "선택된 세션 없음"}</strong></div>
                 {inspectorKind !== "document" ? <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}</span> : null}
                 <button type="button" aria-label="우측 패널 닫기" onClick={closeWorkspaceInspector}>×</button>
               </header>
@@ -298,8 +298,8 @@ export function TaskWorkspace({
                 ) : (
                   <div className="v3-chat-empty" data-testid="v3-chat-empty">
                     <span className="v3-emoji" aria-hidden="true">💬</span>
-                    <strong>선택된 run이 없습니다.</strong>
-                    <p>업무 탭에서 run을 선택하거나 새 세션을 시작하세요.</p>
+                    <strong>선택된 세션이 없습니다.</strong>
+                    <p>업무 탭에서 세션을 선택하거나 새 세션을 시작하세요.</p>
                     <button type="button" className="v3-button v3-button--soft" onClick={closeWorkspaceInspector}>업무 탭으로</button>
                   </div>
                 )}
@@ -317,9 +317,9 @@ function runLabel(
   session: SessionSummary | undefined,
   sessions: readonly SessionSummary[],
 ): string {
-  if (!session) return "Run";
+  if (!session) return "세션";
   const roots = buildRunTree(task.sessionIds, sessions);
   const root = roots.find((node) => node.session.agentSessionId === session.agentSessionId);
-  if (root?.runNumber) return `run #${root.runNumber}`;
+  if (root?.runNumber) return `세션 #${root.runNumber}`;
   return session.displayName ?? session.agentName ?? "위임 세션";
 }

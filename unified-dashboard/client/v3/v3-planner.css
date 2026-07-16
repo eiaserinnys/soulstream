@@ -24,13 +24,21 @@
   font: inherit;
 }
 
-.v3-shell button:focus-visible,
-.v3-shell input:focus-visible,
-.v3-shell select:focus-visible,
-.v3-shell textarea:focus-visible,
+:where(
+  .v3-shell button,
+  .v3-shell input,
+  .v3-shell select,
+  .v3-shell textarea
+):focus-visible,
 .v3-task-card:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow:
+    0 0 0 2px var(--background),
+    0 0 0 4px var(--ring);
+}
+
+.v3-shell [data-slot="chat-input-composer"] textarea:focus-visible {
+  box-shadow: none;
 }
 
 .v3-navigation {

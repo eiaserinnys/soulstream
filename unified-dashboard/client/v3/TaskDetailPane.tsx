@@ -6,7 +6,11 @@ import type { TaskMoveTarget } from "./task-move-targets";
 import { plannerStatusPresentation } from "./planner-model";
 import { singleLinePreview } from "./session-preview";
 import type { PageSessionDefaults } from "./task-workspace-api";
-import { descriptionMarkdown, type RunSessionLoadState } from "./task-workspace-model";
+import {
+  descriptionMarkdown,
+  reconcileTaskSessions,
+  type RunSessionLoadState,
+} from "./task-workspace-model";
 import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 import { TaskContextPicker } from "./TaskContextPicker";
 import { TaskInlineBoard } from "./TaskInlineBoard";
@@ -142,8 +146,13 @@ export function TaskDetailPane({
       : mergeProjectContextPages([]),
     task.page.id,
   );
-  const allSessions = [...sessions, ...createdSessions.filter((created) => !sessions.some((session) => session.agentSessionId === created.agentSessionId))];
-  const allSessionIds = [...task.sessionIds, ...createdSessions.map((session) => session.agentSessionId)];
+  const reconciledSessions = useMemo(() => reconcileTaskSessions({
+    serverSessionIds: task.sessionIds,
+    serverSessions: sessions,
+    optimisticSessions: createdSessions,
+  }), [createdSessions, sessions, task.sessionIds]);
+  const allSessions = reconciledSessions.sessions;
+  const allSessionIds = reconciledSessions.sessionIds;
 
   const promote = async (blockId: string) => {
     setPromotingId(blockId);
@@ -300,7 +309,7 @@ export function TaskDetailPane({
           sessions={allSessions}
           runSessionLoadStates={runSessionLoadStates}
           runHistoryTotal={Math.max(
-            runHistoryTotal + createdSessions.filter((session) => !task.sessionIds.includes(session.agentSessionId)).length,
+            runHistoryTotal + reconciledSessions.optimisticOnlyCount,
             allSessionIds.length,
           )}
           runHistoryHasMore={runHistoryHasMore}
@@ -312,7 +321,10 @@ export function TaskDetailPane({
           onDeleteSessions={onDeleteSessions}
           onMoveSession={onMoveSession}
           onSessionCreated={(session) => {
-            setCreatedSessions((current) => [...current, session]);
+            setCreatedSessions((current) => [
+              ...current.filter((candidate) => candidate.agentSessionId !== session.agentSessionId),
+              session,
+            ]);
             setPredecessorSessionId(null);
             onOpenSession(session);
           }}

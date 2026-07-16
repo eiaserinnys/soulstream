@@ -52,6 +52,25 @@ describe("BrowserPlannerMutationPort.createTaskIdentity", () => {
       folderId: "folder-project",
     })).rejects.toThrow("업무 생성 응답의 ID가 일치하지 않습니다");
   });
+
+  it("preserves the status of an expired write response", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      detail: "Dashboard user is required",
+    }), { status: 401, headers: { "Content-Type": "application/json" } }));
+    const port = new BrowserPlannerMutationPort(
+      {} as PageApiClient,
+      fetchMock as typeof globalThis.fetch,
+    );
+
+    await expect(port.createTaskIdentity({
+      title: "만료된 업무",
+      description: "",
+      folderId: "folder-project",
+    })).rejects.toMatchObject({
+      message: "Dashboard user is required",
+      status: 401,
+    });
+  });
 });
 
 describe("BrowserPlannerMutationPort default fetch binding", () => {

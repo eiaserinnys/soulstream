@@ -6,6 +6,8 @@ import type {
   ReasoningEffort,
 } from "@seosoyoung/soul-ui";
 
+import { HttpResponseError } from "./http-response-error";
+
 export interface SessionAgentMetadata {
   id?: string | null;
   name?: string | null;
@@ -80,7 +82,7 @@ export async function createDashboardSession(
   });
 
   if (!response.ok) {
-    throw new Error(await readSessionCreateError(response));
+    throw new HttpResponseError(await readSessionCreateError(response), response.status);
   }
 
   let result: CreateSessionResponse;

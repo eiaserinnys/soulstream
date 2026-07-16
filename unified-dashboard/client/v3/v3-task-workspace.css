@@ -142,7 +142,8 @@
   line-height: var(--font-size-xl--line-height);
   font-weight: 760;
   letter-spacing: -.035em;
-  outline: 2px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent);
 }
 
 .v3-task-title-error {

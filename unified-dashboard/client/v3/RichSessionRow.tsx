@@ -46,7 +46,7 @@ export function RichSessionRow({
         <span className="v3-run-copy">
           <span className="v3-run-title-line">
             <strong>{title}</strong>
-            {!failed && runNumber !== null ? <span className="v3-run-number">run #{runNumber}</span> : null}
+            {!failed && runNumber !== null ? <span className="v3-run-number">세션 #{runNumber}</span> : null}
           </span>
           <span className="v3-run-agent-line">
             <span>{failed ? "세션 상세 없음" : session.agentName ?? session.agentId ?? "에이전트 미상"}</span>
@@ -82,7 +82,7 @@ function statusLabel(status: SessionSummary["status"]): string {
 }
 
 function runNumberLabel(runNumber: number | null): string {
-  return runNumber === null ? "run" : `run #${runNumber}`;
+  return runNumber === null ? "세션" : `세션 #${runNumber}`;
 }
 
 function formatRelativeSessionTime(session: SessionSummary): string {
