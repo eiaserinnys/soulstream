@@ -5,7 +5,7 @@ import {
   sendActionCommand,
   sendGenericStatusError,
   sendInterruptAckError,
-  sendReviewAcknowledgeAckError,
+  sendReviewAcknowledgeCommand,
   sendRealtimeAckError,
   sendToolApprovalAckError,
   type SessionActionCommandDispatchOptions,
@@ -23,6 +23,7 @@ import {
   type AcknowledgeSessionReviewNodeCommandPayload,
   type SessionParams,
 } from "./session_action_command_payloads.js";
+import type { SessionReviewAcknowledgeFallback } from "./session_review_acknowledge_fallback.js";
 
 export type SessionActionCallerInfoResolver = (
   request: FastifyRequest,
@@ -33,6 +34,7 @@ export type SessionActionCallerInfoResolver = (
 export type SessionActionCommandRouteOptions =
   SessionActionCommandDispatchOptions & {
     resolveCallerInfo?: SessionActionCallerInfoResolver;
+    reviewAcknowledgeFallback?: SessionReviewAcknowledgeFallback;
   };
 
 export const sessionActionCommandRouteAuthRequirements = {
@@ -81,12 +83,7 @@ export function registerSessionActionCommandRoutes(
         type: "acknowledge_session_review",
         agentSessionId: sessionParams(request).session_id,
       };
-      return sendActionCommand(
-        reply,
-        options,
-        payload,
-        sendReviewAcknowledgeAckError,
-      );
+      return sendReviewAcknowledgeCommand(reply, options, payload);
     },
   );
 

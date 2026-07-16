@@ -14,6 +14,7 @@ import {
   type SessionCommandTransportBridge,
 } from "./session_command_transport.js";
 import type { ExistingSessionActionPayload } from "./session_action_command_payloads.js";
+import type { SessionReviewAcknowledgeFallback } from "./session_review_acknowledge_fallback.js";
 
 export type SessionActionCommandDispatchOptions = {
   router: SessionCommandRouter;
@@ -30,16 +31,57 @@ export async function sendActionCommand<
   ackErrorMapper: (reply: FastifyReply, response: NodeCommandResponse) => FastifyReply,
 ): Promise<FastifyReply | NodeCommandResponse> {
   try {
-    const routed = options.router.routeExistingSessionPendingCommand(payload, {
-      timeoutMs: options.timeoutMs,
-    });
-    const result = await options.bridge.sendPendingCommand(routed);
-    if (isAckStatusError(result)) {
-      return ackErrorMapper(reply, result);
-    }
-    return result;
+    return mapActionCommandResponse(
+      reply,
+      await dispatchActionCommand(options, payload),
+      ackErrorMapper,
+    );
   } catch (error) {
     return sendMappedActionError(reply, error, ackErrorMapper);
+  }
+}
+
+export async function sendReviewAcknowledgeCommand<
+  TPayload extends ExistingSessionActionPayload<"acknowledge_session_review">,
+>(
+  reply: FastifyReply,
+  options: SessionActionCommandDispatchOptions & {
+    reviewAcknowledgeFallback?: SessionReviewAcknowledgeFallback;
+  },
+  payload: TPayload,
+): Promise<FastifyReply | NodeCommandResponse> {
+  try {
+    return mapActionCommandResponse(
+      reply,
+      await dispatchActionCommand(options, payload),
+      sendReviewAcknowledgeAckError,
+    );
+  } catch (error) {
+    if (
+      options.reviewAcknowledgeFallback !== undefined &&
+      isReviewAcknowledgeRouteFailure(error)
+    ) {
+      try {
+        return mapActionCommandResponse(
+          reply,
+          await options.reviewAcknowledgeFallback.acknowledgeSessionReview(
+            payload.agentSessionId,
+          ),
+          sendReviewAcknowledgeAckError,
+        );
+      } catch (fallbackError) {
+        return reply.code(500).send({
+          error: {
+            code: "REVIEW_ACKNOWLEDGE_FALLBACK_FAILED",
+            message:
+              fallbackError instanceof Error
+                ? fallbackError.message
+                : String(fallbackError),
+          },
+        });
+      }
+    }
+    return sendMappedActionError(reply, error, sendReviewAcknowledgeAckError);
   }
 }
 
@@ -119,6 +161,36 @@ export function sendRealtimeAckError(
 
 function isAckStatusError(response: NodeCommandResponse): boolean {
   return response.status === "error";
+}
+
+async function dispatchActionCommand<
+  TPayload extends ExistingSessionActionPayload<string>,
+>(
+  options: SessionActionCommandDispatchOptions,
+  payload: TPayload,
+): Promise<NodeCommandResponse> {
+  const routed = options.router.routeExistingSessionPendingCommand(payload, {
+    timeoutMs: options.timeoutMs,
+  });
+  return await options.bridge.sendPendingCommand(routed);
+}
+
+function mapActionCommandResponse(
+  reply: FastifyReply,
+  response: NodeCommandResponse,
+  ackErrorMapper: (reply: FastifyReply, response: NodeCommandResponse) => FastifyReply,
+): FastifyReply | NodeCommandResponse {
+  return isAckStatusError(response)
+    ? ackErrorMapper(reply, response)
+    : response;
+}
+
+function isReviewAcknowledgeRouteFailure(error: unknown): boolean {
+  return error instanceof SessionCommandRouteError && (
+    error.code === "SESSION_OWNER_MISSING" ||
+    error.code === "SESSION_OWNER_STALE" ||
+    error.code === "NODE_UNAVAILABLE"
+  );
 }
 
 function sendMappedActionError(

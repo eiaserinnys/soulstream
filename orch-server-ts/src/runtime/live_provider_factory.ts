@@ -78,6 +78,10 @@ import { createLiveAdminUsersRouteProvider } from "./live_admin_users_route_prov
 import { createLiveAtomHttpClient } from "./live_atom_route_provider.js";
 import { createLiveAttachmentRouteProviders } from "./live_attachment_route_provider.js";
 import { broadcastCatalogSnapshot } from "./live_folder_mutation_broadcaster.js";
+import {
+  createSessionReviewAcknowledgeFallback,
+  type SessionReviewAcknowledgeRepository,
+} from "../session/session_review_acknowledge_fallback.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import {
   resolveSessionSnapshotIds,
@@ -350,6 +354,7 @@ export function createLiveOrchestratorProviderBundle(
       sessionStreamEventFilter,
       authenticatedUserResolvers.resolveCallerInfo,
       sessionCreateLifecycle,
+      options.dependencies.dbCatalogRepository.sessionReviewRepository,
       {
         snapshotService: {
           async listSessions(query, request) {
@@ -443,6 +448,7 @@ function buildLiveRuntimeProviderBundle(
   sessionStreamEventFilter: SessionStreamEventFilter,
   resolveCallerInfo: LiveCallerInfoResolver,
   sessionCreateLifecycle: SessionCreateLifecycle,
+  sessionReviewRepository: SessionReviewAcknowledgeRepository,
   sessionSnapshotRoutes: OrchestratorRuntimeServices["routeOptions"]["sessionSnapshotRoutes"],
   loadSessionSnapshot: (request: FastifyRequest) => Promise<SessionStreamSnapshot>,
   taskChangeListener: LiveTaskChangeListener,
@@ -462,6 +468,10 @@ function buildLiveRuntimeProviderBundle(
         "session.actions",
         "runtime",
       ),
+      reviewAcknowledgeFallback: createSessionReviewAcknowledgeFallback({
+        repository: sessionReviewRepository,
+        broadcaster: services.sessionBroadcaster,
+      }),
       resolveCallerInfo: (request, bodyCallerInfo, targetSessionId) =>
         resolveCallerInfo(
           request,

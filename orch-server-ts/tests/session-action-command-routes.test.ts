@@ -1,12 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  InMemorySseReplayBroadcaster,
   PendingNodeCommandTimeoutError,
+  SessionRouteNodeUnavailableError,
+  SessionRouteSessionOwnerMissingError,
+  SessionRouteSessionOwnerStaleError,
   createApp,
+  createSessionReviewAcknowledgeFallback,
   loadContractFixtures,
   parseOrchServerConfig,
   registerSessionActionCommandRoutes,
   sessionActionCommandRouteAuthRequirements,
+  type SessionStreamEvent,
 } from "../src/index.js";
 import {
   createActionHarness,
@@ -249,7 +255,15 @@ describe("session action command HTTP route harness", () => {
   });
 
   it("routes review acknowledge and maps domain errors explicitly", async () => {
-    const success = createActionHarness();
+    const fallback = {
+      acknowledgeSessionReview: vi.fn(async () => ({
+        type: "acknowledge_session_review_ack",
+        status: "ok",
+      })),
+    };
+    const success = createActionHarness({
+      reviewAcknowledgeFallback: fallback,
+    });
     const ok = await success.app.inject({
       method: "POST",
       url: "/api/sessions/sess-contract/review/acknowledge",
@@ -264,6 +278,7 @@ describe("session action command HTTP route harness", () => {
       type: "acknowledge_session_review",
       agentSessionId: "sess-contract",
     });
+    expect(fallback.acknowledgeSessionReview).not.toHaveBeenCalled();
     await success.app.close();
 
     for (const [code, statusCode] of [
@@ -288,6 +303,152 @@ describe("session action command HTTP route harness", () => {
       await failure.app.close();
     }
   });
+
+  it.each([
+    [
+      "missing owner",
+      new SessionRouteSessionOwnerMissingError("sess-fallback"),
+    ],
+    [
+      "stale owner",
+      new SessionRouteSessionOwnerStaleError({
+        agentSessionId: "sess-fallback",
+        nodeId: "node-stale",
+      }),
+    ],
+    [
+      "unavailable node",
+      new SessionRouteNodeUnavailableError({
+        agentSessionId: "sess-fallback",
+        nodeId: "node-offline",
+      }),
+    ],
+  ])(
+    "falls back to the durable review transition and broadcasts for %s",
+    async (_label, routeError) => {
+      const { router, bridge } = createHarnessCore();
+      vi.spyOn(router, "routeExistingSessionPendingCommand").mockImplementation(
+        () => {
+          throw routeError;
+        },
+      );
+      const acknowledgeSessionReview = vi.fn(async () => ({
+        outcome: "acknowledged" as const,
+        session: {
+          agentSessionId: "sess-fallback",
+          status: "completed",
+          reviewRequired: true,
+          reviewState: "acknowledged",
+        },
+      }));
+      const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
+        instanceId: "review-fallback-test",
+      });
+      const app = createApp({ config });
+      registerSessionActionCommandRoutes(app, {
+        router,
+        bridge,
+        reviewAcknowledgeFallback: createSessionReviewAcknowledgeFallback({
+          repository: { acknowledgeSessionReview },
+          broadcaster,
+        }),
+      });
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/sessions/sess-fallback/review/acknowledge",
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        type: "acknowledge_session_review_ack",
+        status: "ok",
+        agentSessionId: "sess-fallback",
+        reviewState: "acknowledged",
+        changed: true,
+      });
+      expect(acknowledgeSessionReview).toHaveBeenCalledWith("sess-fallback");
+      expect(broadcaster.bufferedEvents).toHaveLength(1);
+      expect(broadcaster.bufferedEvents[0]?.payload).toMatchObject({
+        type: "session_updated",
+        agent_session_id: "sess-fallback",
+        agentSessionId: "sess-fallback",
+        reviewState: "acknowledged",
+      });
+
+      await app.close();
+    },
+  );
+
+  it("rebroadcasts the durable row when a fallback retry is already acknowledged", async () => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>();
+    const fallback = createSessionReviewAcknowledgeFallback({
+      repository: {
+        acknowledgeSessionReview: vi.fn(async () => ({
+          outcome: "already_acknowledged" as const,
+          session: {
+            agentSessionId: "sess-retry",
+            reviewState: "acknowledged",
+          },
+        })),
+      },
+      broadcaster,
+    });
+
+    await expect(
+      fallback.acknowledgeSessionReview("sess-retry"),
+    ).resolves.toMatchObject({
+      status: "ok",
+      changed: false,
+      reviewState: "acknowledged",
+    });
+    expect(broadcaster.bufferedEvents[0]?.payload).toMatchObject({
+      type: "session_updated",
+      agent_session_id: "sess-retry",
+      reviewState: "acknowledged",
+    });
+  });
+
+  it.each([
+    ["not_found", 404, "SESSION_NOT_FOUND"],
+    ["not_required", 409, "REVIEW_NOT_REQUIRED"],
+    ["not_pending", 409, "REVIEW_NOT_PENDING"],
+  ] as const)(
+    "keeps fallback outcome %s on the existing HTTP contract",
+    async (outcome, statusCode, code) => {
+      const { router, bridge } = createHarnessCore();
+      vi.spyOn(router, "routeExistingSessionPendingCommand").mockImplementation(
+        () => {
+          throw new SessionRouteSessionOwnerMissingError("sess-invalid");
+        },
+      );
+      const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>();
+      const app = createApp({ config });
+      registerSessionActionCommandRoutes(app, {
+        router,
+        bridge,
+        reviewAcknowledgeFallback: createSessionReviewAcknowledgeFallback({
+          repository: {
+            acknowledgeSessionReview: vi.fn(async () => ({
+              outcome,
+              session: null,
+            })),
+          },
+          broadcaster,
+        }),
+      });
+
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/sessions/sess-invalid/review/acknowledge",
+      });
+
+      expect(response.statusCode).toBe(statusCode);
+      expect(response.json()).toMatchObject({ error: { code } });
+      expect(broadcaster.bufferedEvents).toHaveLength(0);
+      await app.close();
+    },
+  );
 
   it("sends tool approval approve/reject payloads and preserves approvalId on errors", async () => {
     const { app, sent } = createActionHarness({

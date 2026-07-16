@@ -422,6 +422,7 @@ describe("live provider factory boundary", () => {
       nodeWsRoute: runtimeServices.routeOptions.nodeWsRoute,
       sessionActionCommandRoutes: {
         ...runtimeServices.routeOptions.sessionActionCommandRoutes,
+        reviewAcknowledgeFallback: expect.any(Object),
         resolveCallerInfo: expect.any(Function),
       },
       sessionBackgroundScheduleRoutes:
@@ -551,6 +552,12 @@ function createLiveDependencies(): LiveProviderDependencies {
       sessionResourceAccessRepository: {
         getSessionAccessRecord: vi.fn(async () => null),
         listFoldersForAccess: vi.fn(async () => []),
+      },
+      sessionReviewRepository: {
+        acknowledgeSessionReview: vi.fn(async () => ({
+          outcome: "not_found" as const,
+          session: null,
+        })),
       },
       taskReadProvider: {
         listTasks: vi.fn(async () => []),
