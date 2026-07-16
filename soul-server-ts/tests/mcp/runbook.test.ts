@@ -64,12 +64,14 @@ function createSilentLogger() {
   } as unknown as McpRuntime["logger"];
 }
 
-function makeRuntime(params: {
-  catalogService?: Record<string, unknown>;
-  runbookService?: Record<string, unknown>;
-  runbookTaskIdentityHostClient?: Record<string, unknown>;
-  customViewService?: Record<string, unknown>;
-} = {}): McpRuntime {
+function makeRuntime(
+  params: {
+    catalogService?: Record<string, unknown>;
+    runbookService?: Record<string, unknown>;
+    runbookTaskIdentityHostClient?: Record<string, unknown>;
+    customViewService?: Record<string, unknown>;
+  } = {},
+): McpRuntime {
   return {
     nodeId: "node-test",
     agentsConfigPath: "/tmp/agents.yaml",
@@ -82,7 +84,8 @@ function makeRuntime(params: {
     agentRegistry: new AgentRegistry([]),
     catalogService: (params.catalogService ?? {}) as CatalogService,
     runbookService: params.runbookService as never,
-    runbookTaskIdentityHostClient: params.runbookTaskIdentityHostClient as never,
+    runbookTaskIdentityHostClient:
+      params.runbookTaskIdentityHostClient as never,
     customViewService: params.customViewService as never,
     logger: createSilentLogger(),
   };
@@ -110,10 +113,12 @@ async function createClient(
   openServers.push(server);
   const baseUrl = await server.listen({ host: "127.0.0.1", port: 0 });
   const client = new Client({ name: "runbook-mcp-test", version: "0.0.0" });
-  await client.connect(new StreamableHTTPClientTransport(
-    new URL(`${baseUrl}/mcp`),
-    headers ? { requestInit: { headers } } : undefined,
-  ));
+  await client.connect(
+    new StreamableHTTPClientTransport(
+      new URL(`${baseUrl}/mcp`),
+      headers ? { requestInit: { headers } } : undefined,
+    ),
+  );
   openClients.push(client);
   return client;
 }
@@ -147,38 +152,43 @@ describe("runbook MCP tools", () => {
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name);
 
-    expect(names).toEqual(expect.arrayContaining([
-      "create_runbook",
-      "list_runbooks",
-      "update_runbook",
-      "set_runbook_status",
-      "archive_runbook",
-      "unarchive_runbook",
-      "create_runbook_section",
-      "update_runbook_section",
-      "set_runbook_section_assignee",
-      "archive_runbook_section",
-      "unarchive_runbook_section",
-      "move_runbook_section",
-      "create_runbook_item",
-      "update_runbook_item",
-      "set_runbook_item_assignee",
-      "archive_runbook_item",
-      "unarchive_runbook_item",
-      "move_runbook_item",
-      "set_runbook_item_status",
-      "get_runbook",
-      "list_my_turn_items",
-      "list_runbook_operations",
-    ]));
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "create_runbook",
+        "list_runbooks",
+        "update_runbook",
+        "set_runbook_status",
+        "archive_runbook",
+        "unarchive_runbook",
+        "create_runbook_section",
+        "update_runbook_section",
+        "set_runbook_section_assignee",
+        "archive_runbook_section",
+        "unarchive_runbook_section",
+        "move_runbook_section",
+        "create_runbook_item",
+        "update_runbook_item",
+        "set_runbook_item_assignee",
+        "archive_runbook_item",
+        "unarchive_runbook_item",
+        "move_runbook_item",
+        "set_runbook_item_status",
+        "get_runbook",
+        "list_my_turn_items",
+        "list_runbook_operations",
+      ]),
+    );
     for (const name of runbookMutationToolNames) {
       const tool = tools.tools.find((candidate) => candidate.name === name);
       expect(JSON.stringify(tool?.inputSchema)).toContain("caller_session_id");
+      expect(JSON.stringify(tool?.inputSchema)).toContain("include_snapshot");
       expect(tool?.description ?? "").toContain(callerSessionIdGuidance);
     }
     for (const name of runbookReadToolNames) {
       const tool = tools.tools.find((candidate) => candidate.name === name);
-      expect(JSON.stringify(tool?.inputSchema)).not.toContain("caller_session_id");
+      expect(JSON.stringify(tool?.inputSchema)).not.toContain(
+        "caller_session_id",
+      );
       expect(tool?.description ?? "").not.toContain(callerSessionIdGuidance);
     }
   });
@@ -252,6 +262,26 @@ describe("runbook MCP tools", () => {
     });
 
     expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      operation: {
+        target_kind: "item",
+        target_id: "item-1",
+      },
+      target: {
+        kind: "item",
+        row: {
+          id: "item-1",
+          how_to: "Do the thing",
+          version: 4,
+        },
+      },
+      runbook: {
+        id: "rb-1",
+        version: 7,
+        updated_at: "2026-07-16T00:00:00.000Z",
+      },
+    });
+    expect(result.structuredContent).not.toHaveProperty("snapshot");
     expect(service.setItemStatus).toHaveBeenCalledWith({
       actorKind: "agent",
       actorSessionId: "sess-caller",
@@ -263,11 +293,134 @@ describe("runbook MCP tools", () => {
     });
   });
 
-  it("uses explicit caller_session_id for runbook mutations without a header", async () => {
+  it("returns the unchanged mutation result when include_snapshot is true", async () => {
     const service = fakeRunbookService();
     const client = await createClient(
       makeRuntime({ runbookService: service }),
+      { "x-soulstream-agent-session-id": "sess-caller" },
     );
+
+    const result = await client.callTool({
+      name: "set_runbook_item_status",
+      arguments: {
+        item_id: "item-1",
+        status: "completed",
+        expected_version: 3,
+        idempotency_key: "idem-status-full-1",
+        include_snapshot: true,
+      },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      snapshot: {
+        runbook: { id: "rb-1" },
+        sections: [{ id: "sec-1" }],
+        items: [{ id: "item-1", version: 4 }],
+      },
+      operation: { id: "op-item" },
+      eventId: 1,
+    });
+    expect(result.structuredContent).not.toHaveProperty("target");
+  });
+
+  it("returns the changed section and runbook rows in slim mutation responses", async () => {
+    const service = fakeRunbookService();
+    const client = await createClient(
+      makeRuntime({ runbookService: service }),
+      { "x-soulstream-agent-session-id": "sess-caller" },
+    );
+
+    const sectionResult = await client.callTool({
+      name: "update_runbook_section",
+      arguments: {
+        runbook_id: "rb-1",
+        section_id: "sec-1",
+        expected_version: 2,
+        title: "Updated section",
+        idempotency_key: "idem-section-slim-1",
+      },
+    });
+    const runbookResult = await client.callTool({
+      name: "set_runbook_status",
+      arguments: {
+        runbook_id: "rb-1",
+        status: "completed",
+        expected_version: 6,
+        idempotency_key: "idem-runbook-slim-1",
+      },
+    });
+
+    expect(sectionResult.structuredContent).toMatchObject({
+      target: { kind: "section", row: { id: "sec-1", version: 3 } },
+      runbook: { id: "rb-1", version: 7 },
+    });
+    expect(runbookResult.structuredContent).toMatchObject({
+      target: { kind: "runbook", row: { id: "rb-1", version: 7 } },
+      runbook: { id: "rb-1", version: 7 },
+    });
+  });
+
+  it("keeps get_runbook full by default and supports outline and item views", async () => {
+    const service = fakeRunbookService();
+    const client = await createClient(makeRuntime({ runbookService: service }));
+
+    const full = await client.callTool({
+      name: "get_runbook",
+      arguments: { runbook_id: "rb-1" },
+    });
+    const outline = await client.callTool({
+      name: "get_runbook",
+      arguments: { runbook_id: "rb-1", view: "outline" },
+    });
+    const item = await client.callTool({
+      name: "get_runbook",
+      arguments: { runbook_id: "rb-1", item_id: "item-1" },
+    });
+
+    expect(full.structuredContent).toMatchObject({
+      runbook: { id: "rb-1" },
+      sections: [{ id: "sec-1" }],
+      items: [{ id: "item-1", how_to: "Do the thing" }],
+    });
+    expect(outline.structuredContent).toEqual({
+      runbook: {
+        id: "rb-1",
+        title: "Runbook",
+        status: "open",
+        version: 7,
+        updated_at: "2026-07-16T00:00:00.000Z",
+      },
+      sections: [
+        {
+          id: "sec-1",
+          title: "Section",
+          version: 3,
+          assignee: null,
+          items: [
+            {
+              id: "item-1",
+              title: "Item",
+              status: "in_progress",
+              version: 4,
+              assignee: { kind: "agent", agent_id: "roselin" },
+            },
+          ],
+        },
+      ],
+    });
+    expect(item.structuredContent).toMatchObject({
+      runbook: { id: "rb-1", version: 7 },
+      section: { id: "sec-1", version: 3 },
+      item: { id: "item-1", how_to: "Do the thing", version: 4 },
+    });
+    expect(item.structuredContent).not.toHaveProperty("sections");
+    expect(item.structuredContent).not.toHaveProperty("items");
+  });
+
+  it("uses explicit caller_session_id for runbook mutations without a header", async () => {
+    const service = fakeRunbookService();
+    const client = await createClient(makeRuntime({ runbookService: service }));
 
     const result = await client.callTool({
       name: "set_runbook_item_status",
@@ -411,6 +564,12 @@ describe("runbook MCP tools", () => {
     });
 
     expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      operation: { id: "op-identity", target_kind: "runbook" },
+      target: { kind: "runbook", row: { id: "rb-1", version: 7 } },
+      runbook: { id: "rb-1", version: 7 },
+    });
+    expect(result.structuredContent).not.toHaveProperty("snapshot");
     expect(taskIdentityHost.create).toHaveBeenCalledWith({
       actorKind: "agent",
       actorSessionId: "sess-caller",
@@ -425,9 +584,7 @@ describe("runbook MCP tools", () => {
 
   it("lists runbooks by folder without requiring a caller session", async () => {
     const service = fakeRunbookService();
-    const client = await createClient(
-      makeRuntime({ runbookService: service }),
-    );
+    const client = await createClient(makeRuntime({ runbookService: service }));
 
     const result = await client.callTool({
       name: "list_runbooks",
@@ -553,9 +710,7 @@ describe("runbook MCP tools", () => {
 
   it("rejects mutation calls without caller session header", async () => {
     const service = fakeRunbookService();
-    const client = await createClient(
-      makeRuntime({ runbookService: service }),
-    );
+    const client = await createClient(makeRuntime({ runbookService: service }));
 
     const result = await client.callTool({
       name: "create_runbook",
@@ -580,12 +735,14 @@ describe("custom view MCP tools", () => {
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name);
 
-    expect(names).toEqual(expect.arrayContaining([
-      "create_custom_view",
-      "patch_custom_view",
-      "get_custom_view",
-      "list_custom_views",
-    ]));
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "create_custom_view",
+        "patch_custom_view",
+        "get_custom_view",
+        "list_custom_views",
+      ]),
+    );
     for (const name of customViewMutationToolNames) {
       const tool = tools.tools.find((candidate) => candidate.name === name);
       expect(JSON.stringify(tool?.inputSchema)).toContain("caller_session_id");
@@ -593,7 +750,9 @@ describe("custom view MCP tools", () => {
     }
     for (const name of customViewReadToolNames) {
       const tool = tools.tools.find((candidate) => candidate.name === name);
-      expect(JSON.stringify(tool?.inputSchema)).not.toContain("caller_session_id");
+      expect(JSON.stringify(tool?.inputSchema)).not.toContain(
+        "caller_session_id",
+      );
       expect(tool?.description ?? "").not.toContain(callerSessionIdGuidance);
     }
   });
@@ -740,48 +899,128 @@ describe("custom view MCP tools", () => {
 });
 
 function fakeRunbookService() {
-  const mutationResult = {
-    snapshot: {
-      runbook: { id: "rb-1", board_item_id: "runbook:rb-1" },
-      sections: [],
-      items: [],
+  const snapshot = fakeRunbookSnapshot();
+  const mutationResult = (
+    targetKind: "runbook" | "section" | "item",
+    targetId: string,
+  ) => ({
+    snapshot,
+    operation: {
+      id: `op-${targetKind}`,
+      runbook_id: "rb-1",
+      target_kind: targetKind,
+      target_id: targetId,
     },
-    operation: { id: "op-1" },
     eventId: 1,
-  };
+  });
   return {
-    createRunbook: vi.fn(async () => mutationResult),
+    createRunbook: vi.fn(async () => mutationResult("runbook", "rb-1")),
     listRunbooks: vi.fn(async () => []),
-    patchRunbook: vi.fn(async () => mutationResult),
-    setRunbookStatus: vi.fn(async () => mutationResult),
-    createSection: vi.fn(async () => mutationResult),
-    patchSection: vi.fn(async () => mutationResult),
-    setSectionAssignee: vi.fn(async () => mutationResult),
-    moveSection: vi.fn(async () => mutationResult),
-    createItem: vi.fn(async () => mutationResult),
-    patchItem: vi.fn(async () => mutationResult),
-    setItemAssignee: vi.fn(async () => mutationResult),
-    moveItem: vi.fn(async () => mutationResult),
-    setItemStatus: vi.fn(async () => mutationResult),
-    getRunbook: vi.fn(async () => mutationResult.snapshot),
+    patchRunbook: vi.fn(async () => mutationResult("runbook", "rb-1")),
+    setRunbookStatus: vi.fn(async () => mutationResult("runbook", "rb-1")),
+    createSection: vi.fn(async () => mutationResult("section", "sec-1")),
+    patchSection: vi.fn(async () => mutationResult("section", "sec-1")),
+    setSectionAssignee: vi.fn(async () => mutationResult("section", "sec-1")),
+    moveSection: vi.fn(async () => mutationResult("section", "sec-1")),
+    createItem: vi.fn(async () => mutationResult("item", "item-1")),
+    patchItem: vi.fn(async () => mutationResult("item", "item-1")),
+    setItemAssignee: vi.fn(async () => mutationResult("item", "item-1")),
+    moveItem: vi.fn(async () => mutationResult("item", "item-1")),
+    setItemStatus: vi.fn(async () => mutationResult("item", "item-1")),
+    getRunbook: vi.fn(async () => snapshot),
     listMyTurnItems: vi.fn(async () => []),
     listOperations: vi.fn(async () => []),
   };
 }
 
 function fakeTaskIdentityHost() {
+  const snapshot = fakeRunbookSnapshot();
   const result = {
     id: "00000000-0000-4000-8000-0000000000ae",
     pageId: "00000000-0000-4000-8000-0000000000ae",
     runbookId: "00000000-0000-4000-8000-0000000000ae",
-    snapshot: { runbook: {}, sections: [], items: [] },
-    operation: { id: "op-identity" },
+    snapshot,
+    operation: {
+      id: "op-identity",
+      runbook_id: "rb-1",
+      target_kind: "runbook",
+      target_id: "rb-1",
+    },
     pageOperation: { id: "op-page" },
   };
   return {
     create: vi.fn(async () => result),
     update: vi.fn(async () => result),
     promoteExistingPage: vi.fn(async () => result),
+  };
+}
+
+function fakeRunbookSnapshot() {
+  return {
+    runbook: {
+      id: "rb-1",
+      board_item_id: "runbook:rb-1",
+      title: "Runbook",
+      status: "open",
+      archived: false,
+      version: 7,
+      created_session_id: "sess-caller",
+      created_event_id: 1,
+      completed_kind: null,
+      completed_session_id: null,
+      completed_event_id: null,
+      completed_user_id: null,
+      completed_at: null,
+      created_at: new Date("2026-07-15T00:00:00.000Z"),
+      updated_at: new Date("2026-07-16T00:00:00.000Z"),
+    },
+    sections: [
+      {
+        id: "sec-1",
+        runbook_id: "rb-1",
+        position_key: "V",
+        title: "Section",
+        assignee_kind: null,
+        assignee_agent_id: null,
+        assignee_session_id: null,
+        assignee_user_id: null,
+        archived: false,
+        version: 3,
+        created_session_id: "sess-caller",
+        created_event_id: 2,
+        updated_session_id: "sess-caller",
+        updated_event_id: 3,
+        created_at: new Date("2026-07-15T00:00:00.000Z"),
+        updated_at: new Date("2026-07-16T00:00:00.000Z"),
+      },
+    ],
+    items: [
+      {
+        id: "item-1",
+        section_id: "sec-1",
+        position_key: "V",
+        title: "Item",
+        how_to: "Do the thing",
+        status: "in_progress",
+        assignee_kind: "agent",
+        assignee_agent_id: "roselin",
+        assignee_session_id: null,
+        assignee_user_id: null,
+        archived: false,
+        version: 4,
+        created_session_id: "sess-caller",
+        created_event_id: 4,
+        updated_session_id: "sess-caller",
+        updated_event_id: 5,
+        completed_kind: null,
+        completed_session_id: null,
+        completed_event_id: null,
+        completed_user_id: null,
+        completed_at: null,
+        created_at: new Date("2026-07-15T00:00:00.000Z"),
+        updated_at: new Date("2026-07-16T00:00:00.000Z"),
+      },
+    ],
   };
 }
 
@@ -806,7 +1045,10 @@ function fakeCustomViewService() {
   };
   return {
     createCustomView: vi.fn(async () => result),
-    patchCustomView: vi.fn(async () => ({ ...result, customView: { ...result.customView, revision: 4 } })),
+    patchCustomView: vi.fn(async () => ({
+      ...result,
+      customView: { ...result.customView, revision: 4 },
+    })),
     getCustomView: vi.fn(async () => result),
     listCustomViews: vi.fn(async () => [result]),
   };
