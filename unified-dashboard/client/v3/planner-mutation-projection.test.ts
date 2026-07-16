@@ -26,6 +26,19 @@ describe("planner mutation projection", () => {
     expect(replacePlannerTask(next, "missing", (current) => current)).toBe(next);
   });
 
+  it("retains the original array for equivalent replacements and no-op removals", () => {
+    const first = task("first", ["session-1"]);
+    const tasks = [first];
+
+    expect(replacePlannerTask(tasks, "first", (current) => ({
+      ...current,
+      page: { ...current.page },
+      sessionIds: [...current.sessionIds],
+    }))).toBe(tasks);
+    expect(removePlannerSessions(tasks, new Set())).toBe(tasks);
+    expect(removePlannerSessions(tasks, new Set(["missing-session"]))).toBe(tasks);
+  });
+
   it("removes deleted sessions without recreating unrelated tasks", () => {
     const first = task("first", ["session-1", "session-2"]);
     const second = task("second", ["session-3"]);
@@ -50,6 +63,26 @@ describe("planner mutation projection", () => {
     expect(next[0]?.sessionIds).toEqual(["session-1"]);
     expect(next[1]?.sessionIds).toEqual(["session-3", "session-2"]);
     expect(next[2]).toBe(untouched);
+  });
+
+  it("covers loaded source and target visibility without inventing a hidden source", () => {
+    const targetOnly = task("target", ["session-target"]);
+    expect(movePlannerSession([targetOnly], "session-external", "target")[0]?.sessionIds)
+      .toEqual(["session-target", "session-external"]);
+
+    const sourceOnly = task("source", ["session-moving"]);
+    expect(movePlannerSession([sourceOnly], "session-moving", "hidden-target")[0]?.sessionIds)
+      .toEqual([]);
+
+    const unrelated = task("unrelated", ["session-other"]);
+    const unrelatedTasks = [unrelated];
+    expect(movePlannerSession(unrelatedTasks, "session-moving", "hidden-target"))
+      .toBe(unrelatedTasks);
+
+    const alreadyInTarget = task("target", ["session-moving"]);
+    const targetTasks = [alreadyInTarget];
+    expect(movePlannerSession(targetTasks, "session-moving", "target"))
+      .toBe(targetTasks);
   });
 });
 

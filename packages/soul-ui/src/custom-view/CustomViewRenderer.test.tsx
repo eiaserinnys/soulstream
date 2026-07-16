@@ -31,6 +31,17 @@ describe("CustomViewRenderer", () => {
     expect(CUSTOM_VIEW_CSP).not.toMatch(/(?:^|; )frame-src https:(?:;|$)/);
   });
 
+  it("emits exactly one frame-src directive containing only the origin allowlist", () => {
+    const frameDirectives = CUSTOM_VIEW_CSP
+      .split(";")
+      .map((directive) => directive.trim())
+      .filter((directive) => directive.startsWith("frame-src "));
+
+    expect(frameDirectives).toEqual([
+      `frame-src ${CUSTOM_VIEW_FRAME_ORIGINS.join(" ")}`,
+    ]);
+  });
+
   it("escapes whitelisted soul-bind values before srcdoc injection", () => {
     const srcDoc = renderCustomViewSrcDoc(
       '<div><soul-bind kind="runbook-item" id="item-1" field="title"></soul-bind></div>',

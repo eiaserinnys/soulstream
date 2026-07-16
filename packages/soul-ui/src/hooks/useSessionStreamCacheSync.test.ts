@@ -86,4 +86,65 @@ describe("useSessionStreamCacheSync catalog_updated", () => {
     expect(predicate?.({ queryKey: ["sessions", "all", "ids", null, ["session-a"]] } as never)).toBe(false);
     expect(predicate?.({ queryKey: ["sessions", "all", "feed", null] } as never)).toBe(true);
   });
+
+  it("preserves bound and explicit-null project page ids from catalog snapshots", () => {
+    const initialCatalog: CatalogState = {
+      folders: [
+        {
+          id: "bound",
+          name: "Bound",
+          sortOrder: 0,
+          parentFolderId: null,
+          projectPageId: null,
+        },
+        {
+          id: "unbound",
+          name: "Unbound",
+          sortOrder: 1,
+          parentFolderId: null,
+          projectPageId: "stale-page",
+        },
+      ],
+      sessions: {},
+    };
+    const nextCatalog: CatalogState = {
+      folders: [
+        {
+          id: "bound",
+          name: "Bound",
+          sortOrder: 0,
+          parentFolderId: null,
+          projectPageId: "page-parent",
+        },
+        {
+          id: "unbound",
+          name: "Unbound",
+          sortOrder: 1,
+          parentFolderId: null,
+          projectPageId: null,
+        },
+      ],
+      sessions: {},
+    };
+
+    useDashboardStore.getState().setCatalog(initialCatalog);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    flushSync(() => {
+      root?.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Harness)));
+    });
+
+    const streamOptions = vi.mocked(useSessionStreamSSE).mock.calls[0][0];
+    streamOptions.onCatalogUpdated?.({ type: "catalog_updated", catalog: nextCatalog, lastEventId: "8" });
+
+    expect(
+      useDashboardStore.getState().catalog?.folders.map(({ id, projectPageId }) => [id, projectPageId]),
+    ).toEqual([
+      ["bound", "page-parent"],
+      ["unbound", null],
+    ]);
+  });
 });

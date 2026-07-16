@@ -20,6 +20,15 @@ describe("v3 mutation invalidation policy", () => {
     }
   });
 
+  it("forbids direct query-cache reset primitives from every v3 production source", () => {
+    for (const sourceUrl of productionSources()) {
+      const source = readFileSync(sourceUrl, "utf8");
+      expect(source, sourceUrl.pathname).not.toMatch(
+        /\b(?:invalidateQueries|resetQueries|removeQueries|refetchQueries)\s*\(/,
+      );
+    }
+  });
+
   it("does not expose a broad local source in the live invalidation plane", () => {
     const source = readFileSync(new URL("./v3-live-invalidation-plane.ts", import.meta.url), "utf8");
     expect(source).not.toMatch(/["']local["']/);

@@ -410,6 +410,67 @@ describe("session action command HTTP route harness", () => {
   });
 
   it.each([
+    [
+      "missing transport",
+      { attachTransport: false },
+      "TRANSPORT_MISSING",
+    ],
+    [
+      "command timeout",
+      {
+        bridgeOverride: {
+          sendPendingCommand: async () => {
+            throw new PendingNodeCommandTimeoutError({
+              commandType: "acknowledge_session_review",
+              requestId: "review-timeout",
+              timeoutMs: 5,
+            });
+          },
+        },
+      },
+      "NODE_COMMAND_TIMEOUT",
+    ],
+  ] as const)("does not use the durable fallback for %s", async (_label, harnessOptions, code) => {
+    const fallback = {
+      acknowledgeSessionReview: vi.fn(async () => ({
+        type: "acknowledge_session_review_ack" as const,
+        status: "ok" as const,
+      })),
+    };
+    const harness = createActionHarness({
+      ...harnessOptions,
+      reviewAcknowledgeFallback: fallback,
+    });
+
+    const response = await harness.app.inject({
+      method: "POST",
+      url: "/api/sessions/sess-contract/review/acknowledge",
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ error: { code } });
+    expect(fallback.acknowledgeSessionReview).not.toHaveBeenCalled();
+    await harness.app.close();
+  });
+
+  it("fails explicitly when a durable acknowledgement has no DB session row", async () => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>();
+    const fallback = createSessionReviewAcknowledgeFallback({
+      repository: {
+        acknowledgeSessionReview: vi.fn(async () => ({
+          outcome: "acknowledged" as const,
+          session: null,
+        })),
+      },
+      broadcaster,
+    });
+
+    await expect(fallback.acknowledgeSessionReview("sess-missing-row"))
+      .rejects.toThrow("Durably acknowledged session is missing from DB: sess-missing-row");
+    expect(broadcaster.bufferedEvents).toHaveLength(0);
+  });
+
+  it.each([
     ["not_found", 404, "SESSION_NOT_FOUND"],
     ["not_required", 409, "REVIEW_NOT_REQUIRED"],
     ["not_pending", 409, "REVIEW_NOT_PENDING"],

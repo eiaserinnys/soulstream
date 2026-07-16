@@ -98,6 +98,86 @@ describe("run tree projection", () => {
     expect(tree.every((node) => node.children.length === 0)).toBe(true);
   });
 
+  it("keeps children as roots when their caller is outside the container", () => {
+    const child = session("child", "2026-07-13T11:00:00Z", "external-parent");
+
+    expect(buildRunTree(["child"], [
+      child,
+      session("external-parent", "2026-07-13T10:00:00Z"),
+    ])).toMatchObject([
+      { session: { agentSessionId: "child" }, children: [] },
+    ]);
+    expect(buildRunTree(["child"], [child])).toMatchObject([
+      { session: { agentSessionId: "child" }, children: [] },
+    ]);
+  });
+
+  it("keeps a missing in-container caller as a placeholder parent", () => {
+    const tree = buildRunTree(
+      ["parent", "child"],
+      [session("child", "2026-07-13T11:00:00Z", "parent")],
+      new Map([
+        ["parent", "failed"],
+        ["child", "ready"],
+      ]),
+    );
+
+    expect(tree).toMatchObject([
+      {
+        loadState: "failed",
+        session: { agentSessionId: "parent", status: "unknown" },
+        children: [{ session: { agentSessionId: "child" } }],
+      },
+    ]);
+  });
+
+  it.each([
+    [
+      "self cycle",
+      [session("self", "2026-07-13T10:00:00Z", "self")],
+    ],
+    [
+      "three-node cycle",
+      [
+        session("cycle-a", "2026-07-13T10:00:00Z", "cycle-b"),
+        session("cycle-b", "2026-07-13T11:00:00Z", "cycle-c"),
+        session("cycle-c", "2026-07-13T12:00:00Z", "cycle-a"),
+      ],
+    ],
+  ])("projects every member of a %s as an independent root", (_label, sessions) => {
+    const tree = buildRunTree(
+      sessions.map((item) => item.agentSessionId),
+      sessions,
+    );
+
+    expect(new Set(tree.map((node) => node.session.agentSessionId)))
+      .toEqual(new Set(sessions.map((item) => item.agentSessionId)));
+    expect(tree.every((node) => node.children.length === 0)).toBe(true);
+  });
+
+  it("ignores predecessor-only links while caller links still define nesting", () => {
+    const root = session("root", "2026-07-13T10:00:00Z");
+    const predecessorOnly = {
+      ...session("predecessor-only", "2026-07-13T11:00:00Z"),
+      predecessorSessionId: "root",
+    } as SessionSummary;
+    const callerAndPredecessor = {
+      ...session("caller-child", "2026-07-13T12:00:00Z", "root"),
+      predecessorSessionId: "different-root",
+    } as SessionSummary;
+
+    const tree = buildRunTree(
+      ["root", "predecessor-only", "caller-child"],
+      [root, predecessorOnly, callerAndPredecessor],
+    );
+
+    expect(tree.map((node) => node.session.agentSessionId)).toContain("predecessor-only");
+    expect(
+      tree.find((node) => node.session.agentSessionId === "root")
+        ?.children.map((node) => node.session.agentSessionId),
+    ).toEqual(["caller-child"]);
+  });
+
   it("projects catalog hits, targeted loading misses, and terminal misses separately", () => {
     const catalog = [session("catalog-hit", "2026-07-13T10:00:00Z")];
     const loading = resolveRunSessions({
