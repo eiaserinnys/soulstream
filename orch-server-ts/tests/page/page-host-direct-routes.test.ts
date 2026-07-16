@@ -5,6 +5,7 @@ import {
   registerPageYjsHostOperationRoutes,
 } from "../../src/page/page_host_operations.js";
 import { PageMutationVersionConflictError } from "../../src/page/page_mutation_core.js";
+import { PageYjsPageNotFoundError } from "../../src/page/page_yjs_persistence.js";
 import type { PageYjsService } from "../../src/page/page_service.js";
 
 describe("orch-local Page Yjs host operation routes", () => {
@@ -152,6 +153,34 @@ describe("orch-local Page Yjs host operation routes", () => {
         pageId: "page-1",
         includeSelf: true,
       }));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns PAGE_NOT_FOUND instead of a snapshot invariant error for an unknown page", async () => {
+    const service = serviceDouble();
+    vi.spyOn(service, "getPage")
+      .mockRejectedValue(new PageYjsPageNotFoundError("missing-page"));
+    const app = Fastify({ logger: false });
+    registerPageYjsHostOperationRoutes(app, { service, authBearerToken: "service-token" });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/page-yjs/host/get-page",
+        headers: { authorization: "Bearer service-token" },
+        payload: { page_id: "missing-page" },
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({
+        detail: {
+          error: {
+            code: "PAGE_NOT_FOUND",
+            message: "page not found: missing-page",
+          },
+        },
+      });
     } finally {
       await app.close();
     }

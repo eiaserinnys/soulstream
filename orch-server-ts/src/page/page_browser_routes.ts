@@ -22,6 +22,7 @@ import {
   type PageSessionDefaultsDto,
 } from "./page_repository_reads.js";
 import type { PageYjsService } from "./page_service.js";
+import { PageYjsPageNotFoundError } from "./page_yjs_persistence.js";
 import { registerPageBlockTransferRoute } from "./page_block_transfer_route.js";
 
 export const pageBrowserRouteAuthRequirements = {
@@ -444,7 +445,10 @@ function routeError(
   ) {
     return errorReply(reply, 422, error.code, error.message);
   }
-  if (error instanceof Error && error.message.includes("page not found")) {
+  if (
+    error instanceof PageYjsPageNotFoundError ||
+    (error instanceof Error && error.message.includes("page not found"))
+  ) {
     return errorReply(reply, 404, "PAGE_NOT_FOUND", error.message);
   }
   request.log.error({ err: error, operation }, "Browser page operation failed");

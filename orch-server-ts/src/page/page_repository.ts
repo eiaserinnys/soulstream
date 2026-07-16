@@ -108,6 +108,14 @@ export class PageRepository {
     return snapshot ? new Uint8Array(snapshot) : null;
   }
 
+  async hasPageProjection(pageId: string): Promise<boolean> {
+    const sql = await this.resolveSql();
+    const rows = await sql<readonly { exists: boolean }[]>`
+      SELECT EXISTS(SELECT 1 FROM pages WHERE id = ${pageId}) AS exists
+    `;
+    return rows[0]?.exists === true;
+  }
+
   async storePageYjsState(input: StorePageYjsStateInput): Promise<void> {
     const pageId = requirePageDocumentName(input.documentName);
     if (input.replica.page.id !== pageId) {

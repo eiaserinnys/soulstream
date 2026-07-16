@@ -22,6 +22,7 @@ export interface StorePageYjsStateInput {
 
 export interface PageYjsPersistenceRepository {
   getPageYjsSnapshot(documentName: string): Promise<Uint8Array | null>;
+  hasPageProjection(pageId: string): Promise<boolean>;
   storePageYjsState(input: StorePageYjsStateInput): Promise<void>;
   hasPageOperation?(operationId: string): Promise<boolean>;
 }
@@ -64,6 +65,15 @@ export class PageYjsSnapshotMissingError extends Error {
   constructor(readonly pageId: string) {
     super(`PAGE_YJS_SNAPSHOT_MISSING: ${pageId}`);
     this.name = "PageYjsSnapshotMissingError";
+  }
+}
+
+export class PageYjsPageNotFoundError extends Error {
+  readonly code = "PAGE_NOT_FOUND";
+
+  constructor(readonly pageId: string) {
+    super(`page not found: ${pageId}`);
+    this.name = "PageYjsPageNotFoundError";
   }
 }
 
@@ -127,7 +137,11 @@ export function createPageYjsPersistence(
     fetch: async (payload: fetchPayload) => {
       const pageId = requirePageDocumentName(payload.documentName);
       const snapshot = await repository.getPageYjsSnapshot(payload.documentName);
-      if (!snapshot) throw new PageYjsSnapshotMissingError(pageId);
+      if (!snapshot) {
+        const pageExists = await repository.hasPageProjection(pageId);
+        if (!pageExists) throw new PageYjsPageNotFoundError(pageId);
+        throw new PageYjsSnapshotMissingError(pageId);
+      }
       const pending = pendingUpdates.get(payload.documentName);
       return pending ? Y.mergeUpdates([snapshot, pending]) : snapshot;
     },

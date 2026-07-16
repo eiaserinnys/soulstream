@@ -12,6 +12,7 @@ import {
   PageMutationVersionConflictError,
 } from "../../src/page/page_mutation_core.js";
 import { PageBrowserBacklinkCursorError } from "../../src/page/page_repository_reads.js";
+import { PageYjsPageNotFoundError } from "../../src/page/page_yjs_persistence.js";
 
 const browserCookie = "soul_dashboard_auth=dashboard-token";
 
@@ -78,6 +79,37 @@ describe("browser page routes", () => {
       expect(service.getDailyPage).toHaveBeenCalledWith({
         date: "2026-07-12",
         actor: { actorKind: "user", actorUserId: "user@example.com" },
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("returns PAGE_NOT_FOUND for an unknown page instead of a snapshot invariant error", async () => {
+    const service = serviceDouble();
+    vi.mocked(service.getBrowserPage)
+      .mockRejectedValueOnce(new PageYjsPageNotFoundError("missing-page"));
+    const app = Fastify({ logger: false });
+    registerPageBrowserRoutes(app, {
+      service,
+      reads: service,
+      resolveUser: cookieUserResolver(),
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/pages/missing-page",
+        headers: { cookie: browserCookie },
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({
+        detail: {
+          error: {
+            code: "PAGE_NOT_FOUND",
+            message: "page not found: missing-page",
+          },
+        },
       });
     } finally {
       await app.close();

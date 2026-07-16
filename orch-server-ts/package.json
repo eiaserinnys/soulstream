@@ -9,6 +9,7 @@
   "scripts": {
     "build": "tsup",
     "start": "node dist/production_main.js",
+    "plan:page-yjs-snapshot-repair": "tsx scripts/plan-page-yjs-snapshot-repair.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

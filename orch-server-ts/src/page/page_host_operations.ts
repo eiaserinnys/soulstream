@@ -11,6 +11,7 @@ import {
   type PageMutationCommand,
 } from "./page_mutation_core.js";
 import type { PageYjsService } from "./page_service.js";
+import { PageYjsPageNotFoundError } from "./page_yjs_persistence.js";
 
 export interface PageYjsHostOperationOptions {
   service: PageYjsService;
@@ -191,6 +192,9 @@ export async function handlePageYjsHostOperation(
   try {
     return reply.send(await dispatch(operation, parsed.data, options.service));
   } catch (error) {
+    if (error instanceof PageYjsPageNotFoundError) {
+      return errorReply(reply, 404, error.code, error.message);
+    }
     if (error instanceof PageMutationVersionConflictError) {
       return errorReply(reply, 409, error.code, error.message);
     }
