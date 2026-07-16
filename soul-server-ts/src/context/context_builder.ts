@@ -48,8 +48,7 @@ import {
   type PrimarySessionContainerContext,
 } from "./session_container_context.js";
 import {
-  NO_PAGE_ANCHOR_CONTEXT_RESOLVER,
-  isPageContextSourcesItem,
+  NO_PAGE_ANCHOR_CONTEXT_RESOLVER, withoutPageContextSources,
   type PageContextResolver,
 } from "./page_context_resolver.js";
 import { buildPredecessorSummaryContextItem } from "./predecessor_summary_context.js";
@@ -461,9 +460,7 @@ export class ExecutionContextBuilder {
         content: args.atomMarkdown,
       });
     }
-    combinedContextItems.push(...(args.task.contextItems ?? []).filter(
-      (item) => !isPageContextSourcesItem(item),
-    ));
+    combinedContextItems.push(...withoutPageContextSources(args.task.contextItems));
 
     const assembledPrompt = assemblePrompt(args.task.prompt, undefined);
 

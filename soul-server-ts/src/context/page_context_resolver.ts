@@ -170,6 +170,11 @@ export function isPageContextSourcesItem(item: ContextItem): boolean {
   return item.key === PAGE_CONTEXT_SOURCES_KEY;
 }
 
+/** page_context_sources 마커는 resolver 입력 전용 — 엔진 컨텍스트로 흘리지 않는다. */
+export function withoutPageContextSources(items: ContextItem[] | undefined): ContextItem[] {
+  return (items ?? []).filter((item) => !isPageContextSourcesItem(item));
+}
+
 function pageContextSourceIds(items: ContextItem[] | undefined): string[] {
   const marker = items?.find(isPageContextSourcesItem);
   if (!marker || !isRecord(marker.content) || !Array.isArray(marker.content.pages)) return [];
