@@ -13,7 +13,7 @@ import {
 describe("v3 live invalidation plane", () => {
   beforeEach(() => resetV3InvalidationForTest());
 
-  it("normalizes session, catalog, runbook, custom view, replay, page, and local changes", () => {
+  it("normalizes session, catalog, runbook, custom view, replay, and page changes", () => {
     acceptV3SessionStreamEvent({
       type: "session_updated",
       agent_session_id: "session-a",
@@ -37,7 +37,6 @@ describe("v3 live invalidation plane", () => {
     });
     acceptV3SessionStreamEvent({ type: "replay_gap", latest_id: 9, instance_id: "orch-a" });
     invalidateV3("page");
-    invalidateV3("local");
 
     const snapshot = getV3InvalidationSnapshot();
     expect(selectV3InvalidationKey(snapshot, ["session_updated"])).toBe(1);
@@ -45,7 +44,7 @@ describe("v3 live invalidation plane", () => {
     expect(selectV3InvalidationKey(snapshot, ["runbook"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["custom_view"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["replay"])).toBe(1);
-    expect(selectV3InvalidationKey(snapshot, ["page", "local"])).toBe(2);
+    expect(selectV3InvalidationKey(snapshot, ["page"])).toBe(1);
   });
 
   it("invalidates only planner queries that consume each event kind", () => {

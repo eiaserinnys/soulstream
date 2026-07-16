@@ -266,7 +266,11 @@ export function useSessionStreamCacheSync(
           reconcileSessionPagesForCatalog(data, cacheQueryKey, catalog),
         );
       }
-      void queryClient.invalidateQueries({ queryKey: ["sessions"], exact: false });
+      void queryClient.invalidateQueries({
+        queryKey: ["sessions"],
+        exact: false,
+        predicate: (query) => query.queryKey[2] !== "ids",
+      });
     },
     [queryClient, onEventIdAdvance, transformCatalogUpdate],
   );

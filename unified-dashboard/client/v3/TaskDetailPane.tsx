@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { Button, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import type { PlannerTask } from "./planner-data";
 import type { TaskMoveTarget } from "./task-move-targets";
@@ -78,7 +78,7 @@ export function TaskDetailPane({
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
   onMoveSession(sessionId: string, targetTask: TaskMoveTarget): Promise<void>;
-  onTaskBlocksChanged(): void;
+  onTaskBlocksChanged(blocks: PlannerTask["blocks"]): void;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
@@ -95,6 +95,7 @@ export function TaskDetailPane({
   const [contextBlocks, setContextBlocks] = useState(task.blocks);
   const [predecessorSessionId, setPredecessorSessionId] = useState<string | null>(null);
   const [createdSessions, setCreatedSessions] = useState<SessionSummary[]>([]);
+  const reconciledSessionsRef = useRef<ReturnType<typeof reconcileTaskSessions> | null>(null);
   const inheritedContext = useProjectContextInheritance({
     folderId: projectFolderId ?? "",
     folders,
@@ -146,11 +147,15 @@ export function TaskDetailPane({
       : mergeProjectContextPages([]),
     task.page.id,
   );
-  const reconciledSessions = useMemo(() => reconcileTaskSessions({
-    serverSessionIds: task.sessionIds,
-    serverSessions: sessions,
-    optimisticSessions: createdSessions,
-  }), [createdSessions, sessions, task.sessionIds]);
+  const reconciledSessions = useMemo(() => {
+    const next = reconcileTaskSessions({
+      serverSessionIds: task.sessionIds,
+      serverSessions: sessions,
+      optimisticSessions: createdSessions,
+    });
+    reconciledSessionsRef.current = retainEqualValue(reconciledSessionsRef.current ?? undefined, next);
+    return reconciledSessionsRef.current;
+  }, [createdSessions, sessions, task.sessionIds]);
   const allSessions = reconciledSessions.sessions;
   const allSessionIds = reconciledSessions.sessionIds;
 
@@ -212,7 +217,7 @@ export function TaskDetailPane({
               sessions={allSessions}
               sessionDefaults={sessionDefaults}
               predecessorSessionId={predecessorSessionId}
-              onBlocksChanged={(blocks) => { setContextBlocks(blocks); onTaskBlocksChanged(); }}
+              onBlocksChanged={(blocks) => { setContextBlocks(blocks); onTaskBlocksChanged(blocks); }}
               onPredecessorChanged={setPredecessorSessionId}
               onClose={() => setContextPickerOpen(false)}
             />
@@ -271,7 +276,7 @@ export function TaskDetailPane({
               sessions={allSessions}
               sessionDefaults={sessionDefaults}
               predecessorSessionId={predecessorSessionId}
-              onBlocksChanged={(blocks) => { setContextBlocks(blocks); onTaskBlocksChanged(); }}
+              onBlocksChanged={(blocks) => { setContextBlocks(blocks); onTaskBlocksChanged(blocks); }}
               onPredecessorChanged={setPredecessorSessionId}
               onClose={() => setDocumentPickerOpen(false)}
             />

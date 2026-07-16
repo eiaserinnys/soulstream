@@ -23,6 +23,11 @@ import {
   type PlannerTask,
   type ProjectPlannerData,
 } from "./planner-data";
+import {
+  movePlannerSession,
+  removePlannerSessions,
+  replacePlannerTask,
+} from "./planner-mutation-projection";
 
 const STARRED_TASK_PAGE_SIZE = 50;
 const PROJECT_CONTENT_PAGE_SIZE = 20;
@@ -59,6 +64,7 @@ export function usePlannerCollections({
   const [starredTasksLoadingMore, setStarredTasksLoadingMore] = useState(false);
   const [projectTasksLoadingMore, setProjectTasksLoadingMore] = useState(false);
   const [projectDocumentsLoadingMore, setProjectDocumentsLoadingMore] = useState(false);
+  const [mutationRefresh, setMutationRefresh] = useState({ daily: 0, project: 0 });
   const dailyRef = useRef(daily);
   const projectRef = useRef(project);
   const starredTaskIndexRef = useRef(starredTaskIndex);
@@ -107,7 +113,7 @@ export function usePlannerCollections({
       if (active) setDaily((current) => failPlannerLoad(current, errorText(error)));
     });
     return () => { active = false; };
-  }, [api, dependencies, refreshKeys.daily, selectedDate, today]);
+  }, [api, dependencies, mutationRefresh.daily, refreshKeys.daily, selectedDate, today]);
 
   useEffect(() => {
     if (selectedDate === today) return;
@@ -120,7 +126,7 @@ export function usePlannerCollections({
       // The selected planner remains usable; its own error surface handles load failures.
     });
     return () => { active = false; };
-  }, [api, dependencies, refreshKeys.daily, selectedDate, today]);
+  }, [api, dependencies, mutationRefresh.daily, refreshKeys.daily, selectedDate, today]);
 
   const setTaskTodayPresence = useCallback((taskId: string, present: boolean) => {
     setTodayTaskIds((current) => {
@@ -130,6 +136,18 @@ export function usePlannerCollections({
       return retainEqualSet(current, next);
     });
   }, []);
+
+  const addTaskToToday = useCallback((task: PlannerTask) => {
+    setTaskTodayPresence(task.page.id, true);
+    if (selectedDate !== today) return;
+    setDaily((current) => {
+      if (!current.data || current.data.tasks.some((candidate) => candidate.page.id === task.page.id)) return current;
+      return retainEqualValue(current, {
+        ...current,
+        data: { ...current.data, tasks: [...current.data.tasks, task] },
+      });
+    });
+  }, [selectedDate, setTaskTodayPresence, today]);
 
   const projects = useMemo(() => {
     const next = mergePages(daily.data?.projects ?? [], selectedProject ? [selectedProject] : []);
@@ -166,7 +184,55 @@ export function usePlannerCollections({
       if (active) setProject((current) => failPlannerLoad(current, errorText(error)));
     });
     return () => { active = false; };
-  }, [api, dependencies, refreshKeys.project, selectedProject]);
+  }, [api, dependencies, mutationRefresh.project, refreshKeys.project, selectedProject]);
+
+  const updateLoadedTasks = useCallback((update: (tasks: PlannerTask[]) => PlannerTask[]) => {
+    setDaily((current) => {
+      if (!current.data) return current;
+      const tasks = update(current.data.tasks);
+      return tasks === current.data.tasks
+        ? current
+        : retainEqualValue(current, { ...current, data: { ...current.data, tasks } });
+    });
+    setProject((current) => {
+      if (!current.data) return current;
+      const tasks = update(current.data.tasks);
+      return tasks === current.data.tasks
+        ? current
+        : retainEqualValue(current, { ...current, data: { ...current.data, tasks } });
+    });
+  }, []);
+
+  const patchTask = useCallback((taskId: string, update: (task: PlannerTask) => PlannerTask) => {
+    updateLoadedTasks((tasks) => replacePlannerTask(tasks, taskId, update));
+  }, [updateLoadedTasks]);
+
+  const removeSessions = useCallback((sessionIds: readonly string[]) => {
+    const removedIds = new Set(sessionIds);
+    updateLoadedTasks((tasks) => removePlannerSessions(tasks, removedIds));
+  }, [updateLoadedTasks]);
+
+  const moveSession = useCallback((sessionId: string, targetTaskId: string) => {
+    updateLoadedTasks((tasks) => movePlannerSession(tasks, sessionId, targetTaskId));
+  }, [updateLoadedTasks]);
+
+  const refreshDaily = useCallback(() => {
+    setMutationRefresh((current) => ({ ...current, daily: current.daily + 1 }));
+  }, []);
+
+  const refreshProject = useCallback(() => {
+    setMutationRefresh((current) => ({ ...current, project: current.project + 1 }));
+  }, []);
+
+  const refreshTask = useCallback((taskId: string) => {
+    const inDaily = dailyRef.current.data?.tasks.some((task) => task.page.id === taskId) ?? false;
+    const inProject = projectRef.current.data?.tasks.some((task) => task.page.id === taskId) ?? false;
+    if (!inDaily && !inProject) return;
+    setMutationRefresh((current) => ({
+      daily: inDaily ? current.daily + 1 : current.daily,
+      project: inProject ? current.project + 1 : current.project,
+    }));
+  }, []);
 
   const loadMoreStarredTasks = useCallback(async () => {
     const cursor = starredTaskIndex.data?.nextCursor;
@@ -231,6 +297,7 @@ export function usePlannerCollections({
     daily,
     todayTaskIds,
     setTaskTodayPresence,
+    addTaskToToday,
     project,
     projects,
     selectedProject,
@@ -243,6 +310,12 @@ export function usePlannerCollections({
     loadMoreStarredTasks,
     loadMoreProjectTasks,
     loadMoreProjectDocuments,
+    patchTask,
+    removeSessions,
+    moveSession,
+    refreshDaily,
+    refreshProject,
+    refreshTask,
   };
 }
 
@@ -339,6 +412,38 @@ export function useTaskRunHistory({
     }
   }, [dependencies, notify, state, task]);
 
+  const removeSessions = useCallback((sessionIds: readonly string[]) => {
+    if (sessionIds.length === 0) return;
+    const removed = new Set(sessionIds);
+    setState((current) => {
+      if (!current) return current;
+      const nextSessionIds = current.sessionIds.filter((sessionId) => !removed.has(sessionId));
+      if (nextSessionIds.length === current.sessionIds.length) return current;
+      return retainEqualValue(current, {
+        ...current,
+        sessionIds: nextSessionIds,
+        total: Math.max(0, current.total - (current.sessionIds.length - nextSessionIds.length)),
+      });
+    });
+  }, []);
+
+  const moveSession = useCallback((sessionId: string, targetTaskId: string) => {
+    setState((current) => {
+      if (!current) return current;
+      const withoutSession = current.sessionIds.filter((candidate) => candidate !== sessionId);
+      const sessionIds = current.taskPageId === targetTaskId
+        ? [...withoutSession, sessionId]
+        : withoutSession;
+      if (sessionIds.length === current.sessionIds.length
+        && sessionIds.every((value, index) => value === current.sessionIds[index])) return current;
+      return retainEqualValue(current, {
+        ...current,
+        sessionIds,
+        total: Math.max(sessionIds.length, current.total + (sessionIds.length - current.sessionIds.length)),
+      });
+    });
+  }, []);
+
   const current = state?.taskPageId === task?.page.id ? state : null;
   return {
     sessionIds: current?.sessionIds ?? task?.sessionIds ?? EMPTY_SESSION_IDS,
@@ -346,6 +451,8 @@ export function useTaskRunHistory({
     hasMore: Boolean(current?.nextCursor),
     loading: current?.loading ?? false,
     loadMore,
+    removeSessions,
+    moveSession,
   };
 }
 

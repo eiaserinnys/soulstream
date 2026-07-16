@@ -52,7 +52,7 @@ export function TaskBoardPane({
     [boardItems],
   );
   const invalidationKey = useV3InvalidationKey([
-    "catalog", "runbook", "replay", "local",
+    "catalog", "runbook", "replay",
   ]);
   const {
     sessions: boardSessions,

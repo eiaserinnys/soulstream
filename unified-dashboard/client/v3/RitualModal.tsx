@@ -37,14 +37,14 @@ export function RitualModal({
   today,
   reviewCount,
   onClose,
-  onRefresh,
+  onActionApplied,
   onOpenReviewQueue,
 }: {
   open: boolean;
   today: string;
   reviewCount: number;
   onClose(): void;
-  onRefresh(): void;
+  onActionApplied(item: RitualQueueItem, action: RitualAction): void;
   onOpenReviewQueue(): void;
 }) {
   const api = useMemo(() => createPageApiClient(), []);
@@ -86,6 +86,7 @@ export function RitualModal({
         action,
         new BrowserRitualActionPort(data.dailyPageId, api),
       );
+      onActionApplied(item, action);
       setIndex((value) => value + 1);
     } catch (error) {
       console.error("[v3/ritual] 이월 업무 변경 실패", error);
@@ -96,7 +97,6 @@ export function RitualModal({
   };
 
   const finish = () => {
-    onRefresh();
     onClose();
     setLoadState({ status: "idle" });
     setIndex(0);

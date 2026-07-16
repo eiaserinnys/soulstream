@@ -23,9 +23,9 @@ export function TaskInlineBoard({ runbookId }: { runbookId: string }) {
   const [items, setItems] = useState<CatalogBoardItem[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const itemInvalidationKey = useV3InvalidationKey(["catalog", "runbook", "replay", "local"]);
-  const pageInvalidationKey = useV3InvalidationKey(["page", "replay", "local"]);
-  const customViewInvalidationKey = useV3InvalidationKey(["custom_view", "replay", "local"]);
+  const itemInvalidationKey = useV3InvalidationKey(["catalog", "runbook", "replay"]);
+  const pageInvalidationKey = useV3InvalidationKey(["page", "replay"]);
+  const customViewInvalidationKey = useV3InvalidationKey(["custom_view", "replay"]);
   const itemsRef = useRef(items);
   const loadedRunbookIdRef = useRef<string | null>(null);
   itemsRef.current = items;

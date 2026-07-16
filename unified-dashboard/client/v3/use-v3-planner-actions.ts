@@ -15,18 +15,24 @@ import { errorText } from "./v3-dashboard-utils";
 
 export function useV3PlannerActions({
   api,
-  invalidate,
   notify,
   notifyWriteFailure,
   todayTaskIds,
   setTaskTodayPresence,
+  patchTask,
+  removeSessionsFromPlanner,
+  moveSessionInPlanner,
+  refreshTask,
 }: {
   api: PageApiClient;
-  invalidate(): void;
   notify(message: string): void;
   notifyWriteFailure(action: string, error: unknown): void;
   todayTaskIds: ReadonlySet<string>;
   setTaskTodayPresence(taskId: string, present: boolean): void;
+  patchTask(taskId: string, update: (task: PlannerTask) => PlannerTask): void;
+  removeSessionsFromPlanner(sessionIds: readonly string[]): void;
+  moveSessionInPlanner(sessionId: string, targetTaskId: string): void;
+  refreshTask(taskId: string): void;
 }) {
   const queryClient = useQueryClient();
 
@@ -40,7 +46,7 @@ export function useV3PlannerActions({
       mutate: async () => {
         try {
           await completePlannerTask(task);
-          invalidate();
+          patchTask(taskId, (current) => ({ ...current, status: "completed" }));
           notify(`업무 완료 · ${task.page.title}`);
         } catch (error) {
           notifyWriteFailure("업무 완료", error);
@@ -49,7 +55,7 @@ export function useV3PlannerActions({
       },
       finalPresence: () => false,
     });
-  }, [invalidate, notify, notifyWriteFailure, setTaskTodayPresence, todayTaskIds]);
+  }, [notify, notifyWriteFailure, patchTask, setTaskTodayPresence, todayTaskIds]);
 
   const toggleTaskToday = useCallback(async (task: PlannerTask) => {
     const taskId = task.page.id;
@@ -62,7 +68,6 @@ export function useV3PlannerActions({
       mutate: async () => {
         try {
           const result = await togglePlannerTaskToday(task, api);
-          invalidate();
           notify(result === "added" ? "오늘 플래너에 추가했습니다" : "오늘 플래너에서 제거했습니다");
           return result;
         } catch (error) {
@@ -72,7 +77,7 @@ export function useV3PlannerActions({
       },
       finalPresence: (result) => result === "added",
     });
-  }, [api, invalidate, notify, notifyWriteFailure, setTaskTodayPresence, todayTaskIds]);
+  }, [api, notify, notifyWriteFailure, setTaskTodayPresence, todayTaskIds]);
 
   const resolveStarredTask = useCallback(async (page: PageDto) => {
     try {
@@ -94,37 +99,36 @@ export function useV3PlannerActions({
   const renameSession = useCallback(async (sessionId: string, displayName: string | null) => {
     try {
       await renameSessionOptimistic(sessionId, displayName, { queryClient });
-      invalidate();
       notify("세션 이름을 변경했습니다");
     } catch (error) {
       notifyWriteFailure("세션 이름 변경", error);
       throw error;
     }
-  }, [invalidate, notify, notifyWriteFailure, queryClient]);
+  }, [notify, notifyWriteFailure, queryClient]);
 
   const renameTaskTitle = useCallback(async (task: PlannerTask, title: string) => {
     try {
       const page = await renameTaskIdentityTitle(api, task.page.id, title);
       publishTaskStarChange({ page, starred: page.metadata.starred === true });
-      invalidate();
+      patchTask(task.page.id, (current) => ({ ...current, page }));
       notify("업무 제목을 변경했습니다");
       return page.title;
     } catch (error) {
       notifyWriteFailure("업무 제목 변경", error);
       throw error;
     }
-  }, [api, invalidate, notify, notifyWriteFailure]);
+  }, [api, notify, notifyWriteFailure, patchTask]);
 
   const deleteSessions = useCallback(async (sessionIds: string[]) => {
     try {
       await deleteSessionRecords(sessionIds);
-      invalidate();
+      removeSessionsFromPlanner(sessionIds);
       notify("세션을 삭제했습니다");
     } catch (error) {
       notifyWriteFailure("세션 삭제", error);
       throw error;
     }
-  }, [invalidate, notify, notifyWriteFailure]);
+  }, [notify, notifyWriteFailure, removeSessionsFromPlanner]);
 
   const moveSession = useCallback(async (sessionId: string, targetTask: TaskMoveTarget) => {
     try {
@@ -133,24 +137,24 @@ export function useV3PlannerActions({
         container: { kind: "runbook", id: targetTask.runbookId },
         idempotencyKey: `v3-run-move-${crypto.randomUUID()}`,
       });
-      invalidate();
+      moveSessionInPlanner(sessionId, targetTask.page.id);
       notify(`세션 이동 · ${targetTask.page.title}`);
     } catch (error) {
       notifyWriteFailure("세션 이동", error);
       throw error;
     }
-  }, [invalidate, notify, notifyWriteFailure]);
+  }, [moveSessionInPlanner, notify, notifyWriteFailure]);
 
   const unmountDocument = useCallback(async (task: PlannerTask, blockId: string) => {
     try {
       await unmountTaskDocument(api, task.page.id, blockId);
-      invalidate();
+      refreshTask(task.page.id);
       notify("문서 마운트를 해제했습니다");
     } catch (error) {
       notifyWriteFailure("문서 마운트 해제", error);
       throw error;
     }
-  }, [api, invalidate, notify, notifyWriteFailure]);
+  }, [api, notify, notifyWriteFailure, refreshTask]);
 
   return { completeTask, toggleTaskToday, completeStarredTask, toggleStarredTaskToday, renameTaskTitle, renameSession, deleteSessions, moveSession, unmountDocument };
 }

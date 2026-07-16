@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Button,
   Dialog,
@@ -46,9 +46,12 @@ export function ReviewQueuePanel({
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<SessionContextMenuState | null>(null);
+  const pendingRef = useRef(false);
+  const safeFocusRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) {
+      pendingRef.current = false;
       setPendingId(null);
       setError(null);
       setContextMenu(null);
@@ -56,14 +59,18 @@ export function ReviewQueuePanel({
   }, [open]);
 
   const acknowledge = async (session: SessionSummary) => {
-    if (pendingId) return;
+    if (pendingRef.current) return;
+    pendingRef.current = true;
     setPendingId(session.agentSessionId);
     setError(null);
     try {
-      onAcknowledged(await acknowledgeSessionReview(session.agentSessionId));
+      const result = await acknowledgeSessionReview(session.agentSessionId);
+      safeFocusRef.current?.focus({ preventScroll: true });
+      onAcknowledged(result);
     } catch (caught) {
       setError(reviewErrorMessage(caught));
     } finally {
+      pendingRef.current = false;
       setPendingId(null);
     }
   };
@@ -73,7 +80,7 @@ export function ReviewQueuePanel({
       <Dialog
       open={open}
       modal={reviewDialogModal(companionOpen)}
-      onOpenChange={(next) => { if (!next && !pendingId) onClose(); }}
+      onOpenChange={(next) => { if (!next && !pendingRef.current) onClose(); }}
       >
         <DialogPopup className={`v3-review-queue-popup${companionOpen ? " is-companion-open" : ""}`}>
           <DialogHeader>
@@ -82,7 +89,12 @@ export function ReviewQueuePanel({
           </DialogHeader>
           <DialogPanel>
             <p className="v3-review-queue-intro">완료된 세션의 결과를 확인하고 검수 상태를 정리합니다.</p>
-            <div className="v3-review-queue-list" data-testid="v3-review-queue-list">
+            <div
+              ref={safeFocusRef}
+              className="v3-review-queue-list"
+              data-testid="v3-review-queue-list"
+              tabIndex={-1}
+            >
               {visible.map((session) => (
                 <RichSessionRow
                   key={session.agentSessionId}

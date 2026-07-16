@@ -298,6 +298,7 @@ describe("applySessionUpdated", () => {
 
     expect(result.pages[0].sessions[0].status).toBe("running");
     expect(result.pages[1].sessions[0].status).toBe("completed");
+    expect(result.pages[0]).toBe(data.pages[0]);
   });
 
   it("미존재 ID → 데이터를 변경하지 않는다", () => {
@@ -308,6 +309,7 @@ describe("applySessionUpdated", () => {
       status: "completed",
     } as Partial<SessionSummary>);
 
+    expect(result).toBe(data);
     expect(result.pages[0].sessions[0].status).toBe("running");
   });
 
@@ -355,6 +357,7 @@ describe("applySessionDeleted", () => {
 
     expect(result.pages[0].sessions).toHaveLength(0);
     expect(result.pages[1].sessions).toHaveLength(1);
+    expect(result.pages[1]).toBe(data.pages[1]);
   });
 
   it("미존재 ID → 데이터를 변경하지 않는다", () => {
@@ -363,6 +366,7 @@ describe("applySessionDeleted", () => {
 
     const result = applySessionDeleted(data, "non-existent");
 
+    expect(result).toBe(data);
     expect(result.pages[0].sessions).toHaveLength(1);
   });
 });

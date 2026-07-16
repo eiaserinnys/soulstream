@@ -12,13 +12,11 @@ import {
   useSessionProvider,
   useGlassSurface,
   useUserPreferencesSync,
-  type SessionReviewAcknowledgeResult,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { clampDashboardLeftSidebarWidth, DASHBOARD_LEFT_SIDEBAR_DEFAULT_WIDTH, readDashboardLeftSidebarWidth, writeDashboardLeftSidebarWidth } from "@seosoyoung/soul-ui/components/dashboard-sidebar-collapse";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { DASHBOARD_CARD_GAP_PX, DASHBOARD_PANEL_GAP_PX } from "@seosoyoung/soul-ui/components/dashboard-spacing";
-
 import { useNodes } from "../hooks/useNodes";
 import { ConfigModal } from "../components/ConfigModal";
 import { SearchModal } from "../components/SearchModal";
@@ -49,16 +47,8 @@ import {
   loadStarredPlannerTask,
   type PlannerTask,
 } from "./planner-data";
-import { resolveProjectFolderId } from "./planner-model";
-import { resolveProjectPage } from "./project-page-actions";
-import {
-  createPlannerTask,
-  plannerTaskCreationErrorLabel,
-} from "./planner-task-creation";
 import {
   fetchPageSessionDefaults,
-  promoteMountedDocument,
-  saveTaskDescription,
   type PageSessionDefaults,
 } from "./task-workspace-api";
 import {
@@ -77,17 +67,17 @@ import {
 } from "./use-v3-planner-reads";
 import { useProjectFolderController } from "./use-project-folder-controller";
 import { reviewQueueSessions } from "./review-queue-model";
-import { invalidateV3, useV3PlannerInvalidationKeys } from "./v3-live-invalidation-plane";
+import { useV3PlannerInvalidationKeys } from "./v3-live-invalidation-plane";
 import { useV3LiveDataPlane } from "./use-v3-live-data-plane";
 import { openDocumentInV3, openSessionInV3 } from "./v3-inspector-model";
+import { useV3DashboardMutations } from "./use-v3-dashboard-mutations";
+import { useV3MutationProjection } from "./use-v3-mutation-projection";
 import "./v3-planner.css";
 import "./v3-planner-surfaces.css";
 import "./v3-task-workspace.css";
-
 export function V3DashboardLayout() {
   return <LiquidGlassProvider renderDefaultCanvas={false}><V3DashboardContent /></LiquidGlassProvider>;
 }
-
 function V3DashboardContent() {
   const today = useMemo(() => dateKey(new Date()), []);
   const dates = useMemo(() => recentDates(today), [today]);
@@ -100,7 +90,6 @@ function V3DashboardContent() {
   const selectedProjectId = selectedProject?.id ?? null;
   const plannerInvalidationKeys = useV3PlannerInvalidationKeys();
   const projectContextInvalidationKey = plannerInvalidationKeys.pageDetail;
-  const invalidateLocal = useCallback(() => invalidateV3("local"), []);
   const [createOpen, setCreateOpen] = useState(false);
   const [ritualOpen, setRitualOpen] = useState(false);
   const [reviewQueueOpen, setReviewQueueOpen] = useState(false);
@@ -129,7 +118,6 @@ function V3DashboardContent() {
       return next;
     });
   }, []);
-
   useEffect(() => { initTheme(); }, []);
   const { user, refreshAuthStatus } = useAuth();
   const { toast, notify, notifyWriteFailure } = useV3Notifications(refreshAuthStatus);
@@ -138,7 +126,6 @@ function V3DashboardContent() {
   useReadPositionSync();
   useNodes();
   const mobileMode = useMobilePlannerMode();
-
   const catalog = useDashboardStore((state) => state.catalog);
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
   const activeSessionSummary = useDashboardStore((state) => state.activeSessionSummary);
@@ -152,6 +139,7 @@ function V3DashboardContent() {
     daily,
     todayTaskIds,
     setTaskTodayPresence,
+    addTaskToToday,
     project,
     projects,
     starredTasks,
@@ -163,6 +151,12 @@ function V3DashboardContent() {
     loadMoreStarredTasks,
     loadMoreProjectTasks,
     loadMoreProjectDocuments,
+    patchTask: patchLoadedTask,
+    removeSessions: removeLoadedSessions,
+    moveSession: moveLoadedSession,
+    refreshDaily,
+    refreshProject,
+    refreshTask,
   } = usePlannerCollections({
     api,
     dependencies: dataDependencies,
@@ -172,14 +166,6 @@ function V3DashboardContent() {
     taskStarChanges,
     refreshKeys: plannerInvalidationKeys,
     notify,
-  });
-  const plannerActions = useV3PlannerActions({
-    api,
-    invalidate: invalidateLocal,
-    notify,
-    notifyWriteFailure,
-    todayTaskIds,
-    setTaskTodayPresence,
   });
   const currentTasks = useMemo(
     () => [
@@ -198,6 +184,22 @@ function V3DashboardContent() {
     workspaceOpen,
     refreshKey: plannerInvalidationKeys.runHistory,
     notify,
+  });
+  const removeRunHistorySessions = runHistory.removeSessions;
+  const moveRunHistorySession = runHistory.moveSession;
+  const { patchPlannerTask, removeSessionsFromPlanner, moveSessionInPlanner } = useV3MutationProjection({
+    patchLoadedTask, removeLoadedSessions, moveLoadedSession, removeRunHistorySessions, moveRunHistorySession, setSelectedTaskSnapshot,
+  });
+  const plannerActions = useV3PlannerActions({
+    api,
+    notify,
+    notifyWriteFailure,
+    todayTaskIds,
+    setTaskTodayPresence,
+    patchTask: patchPlannerTask,
+    removeSessionsFromPlanner,
+    moveSessionInPlanner,
+    refreshTask,
   });
   const plannerSessionIds = useMemo(
     () => [...new Set([
@@ -360,83 +362,42 @@ function V3DashboardContent() {
       setInspectorOpen: () => { setChatOpen(true); if (mobileMode) setMobileTab("chat"); },
     });
   }, [mobileMode, setActiveBoardDocument]);
-  const createTask = async (title: string, folderId: string, description: string) => {
-    const folder = catalog?.folders.find((item) => item.id === folderId);
-    if (!folder) { notify("선택한 프로젝트를 찾을 수 없습니다"); return; }
-    setCreatePending(true);
-    try {
-      const projectPage = await resolveProjectPage(api, folder, projects);
-      if (!projectPage) {
-        notify("이 폴더는 프로젝트에 연결되지 않아 새 업무를 만들 수 없습니다");
-        return;
-      }
-      const dailyPage = selectedDate === today && daily.data ? daily.data.daily.page : (await api.getDailyPage(today)).page;
-      await createPlannerTask({ title, description, dailyPageId: dailyPage.id, projectPageId: projectPage.id, folderId }, mutationPort);
-      setCreateOpen(false);
-      clearProject();
-      setSelectedDate(today);
-      invalidateLocal();
-      notify(`새 업무 생성 · ${title}`);
-    } catch (error) {
-      const label = plannerTaskCreationErrorLabel(error);
-      notifyWriteFailure(label, error);
-    } finally {
-      setCreatePending(false);
-    }
-  };
-  const saveMemo = async (blockId: string | null, text: string) => {
-    if (!daily.data) return;
-    try {
-      await mutationPort.saveMemo({ pageId: daily.data.daily.page.id, blockId, text });
-      invalidateLocal();
-      notify("오늘 메모 저장됨");
-    } catch (error) {
-      notifyWriteFailure("오늘 메모 저장", error);
-      throw error;
-    }
-  };
-  const createDocument = async () => {
-    const title = newDocumentTitle.trim();
-    if (!title || !selectedProject) return;
-    try {
-      await mutationPort.createDocument({ title, sourcePageId: selectedProject.id });
-      setNewDocumentTitle("");
-      setNewDocumentOpen(false);
-      invalidateLocal();
-      notify(`새 문서 생성 · ${title}`);
-    } catch (error) { notifyWriteFailure("새 문서 생성", error); }
-  };
-  const saveDescription = async (markdown: string) => {
-    if (!selectedTask) return;
-    try {
-      await saveTaskDescription(api, selectedTask.page.id, markdown);
-      invalidateLocal();
-      notify("업무 설명 저장됨");
-    } catch (error) {
-      notifyWriteFailure("업무 설명 저장", error);
-      throw error;
-    }
-  };
-  const promoteDocument = async (blockId: string) => {
-    if (!selectedTask?.projectPageId) throw new Error("프로젝트가 연결되지 않은 업무입니다");
-    try {
-      await promoteMountedDocument(api, selectedTask.page.id, selectedTask.projectPageId, blockId);
-      invalidateLocal();
-      notify("문서를 프로젝트로 승격했습니다");
-    } catch (error) {
-      notifyWriteFailure("문서 승격", error);
-      throw error;
-    }
-  };
-  const acknowledgeReview = (result: SessionReviewAcknowledgeResult) => {
-    setAcknowledgedReviewIds((current) => new Set([...current, result.agentSessionId]));
-    const state = useDashboardStore.getState();
-    const current = state.activeSessionSummary;
-    if (current?.agentSessionId === result.agentSessionId) {
-      state.setActiveSessionSummary({ ...current, reviewState: result.reviewState });
-    }
-    invalidateLocal();
-  };
+  const {
+    createTask,
+    saveMemo,
+    createDocument,
+    saveDescription,
+    promoteDocument,
+    acknowledgeReview,
+    applyTaskBlocks,
+    applyRitualAction,
+  } = useV3DashboardMutations({
+    api,
+    mutationPort,
+    catalog,
+    projects,
+    selectedDate,
+    today,
+    daily,
+    selectedProject,
+    selectedTask,
+    selectedTaskId,
+    setCreateOpen,
+    setCreatePending,
+    clearProject,
+    setSelectedDate,
+    newDocumentTitle,
+    setNewDocumentTitle,
+    setNewDocumentOpen,
+    setAcknowledgedReviewIds,
+    notify,
+    notifyWriteFailure,
+    patchPlannerTask,
+    addTaskToToday,
+    refreshDaily,
+    refreshProject,
+    refreshTask,
+  });
   const reviewSessions = useMemo(
     () => reviewQueueSessions(sessions)
       .filter((session) => !acknowledgedReviewIds.has(session.agentSessionId)),
@@ -523,13 +484,13 @@ function V3DashboardContent() {
           onRenameSession={plannerActions.renameSession}
           onDeleteSessions={plannerActions.deleteSessions}
           onMoveSession={plannerActions.moveSession}
-          onTaskBlocksChanged={invalidateLocal}
+          onTaskBlocksChanged={applyTaskBlocks}
           onAcknowledgedReview={acknowledgeReview}
         />
       ) : null}
       <V3StandaloneInspector open={inspectorOpen} session={inspectorSession} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} onClose={() => setInspectorOpen(false)} onAcknowledgedReview={acknowledgeReview} />
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
-      <RitualModal open={ritualOpen} today={today} reviewCount={reviewSessions.length} onClose={() => setRitualOpen(false)} onRefresh={invalidateLocal} onOpenReviewQueue={() => setReviewQueueOpen(true)} />
+      <RitualModal open={ritualOpen} today={today} reviewCount={reviewSessions.length} onClose={() => setRitualOpen(false)} onActionApplied={applyRitualAction} onOpenReviewQueue={() => setReviewQueueOpen(true)} />
       <ReviewQueuePanel open={reviewQueueOpen} companionOpen={inspectorOpen} sessions={reviewSessions} onClose={() => setReviewQueueOpen(false)} onOpenSession={openReviewSession} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onAcknowledged={acknowledgeReview} />
       <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
       <SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} />

@@ -14,8 +14,7 @@ export type V3InvalidationSource =
   | "runbook"
   | "custom_view"
   | "replay"
-  | "page"
-  | "local";
+  | "page";
 
 export interface V3InvalidationSnapshot {
   readonly revision: number;
@@ -32,7 +31,6 @@ const SOURCE_NAMES: readonly V3InvalidationSource[] = [
   "custom_view",
   "replay",
   "page",
-  "local",
 ];
 const PAGE_INVALIDATION_SETTLE_MS = 250;
 const listeners = new Set<() => void>();
@@ -101,19 +99,17 @@ export function selectV3PlannerInvalidationKeys(
     "runbook",
     "page",
     "replay",
-    "local",
   ]);
   return {
     daily: pageCollections,
     project: pageCollections,
-    starred: selectV3InvalidationKey(current, ["page", "replay", "local"]),
+    starred: selectV3InvalidationKey(current, ["page", "replay"]),
     runHistory: selectV3InvalidationKey(current, [
       "session_created",
       "session_deleted",
       "replay",
-      "local",
     ]),
-    pageDetail: selectV3InvalidationKey(current, ["page", "replay", "local"]),
+    pageDetail: selectV3InvalidationKey(current, ["page", "replay"]),
   };
 }
 

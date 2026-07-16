@@ -10,6 +10,7 @@ import {
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
+import { retainEqualValue } from "@seosoyoung/soul-ui";
 
 import {
   buildRunTree,
@@ -81,13 +82,27 @@ export function TaskRunHistory({
   onMoveSession(sessionId: string, targetTask: TaskMoveTarget): Promise<void>;
 }) {
   const api = useMemo(() => createPageApiClient(), []);
+  const treeRef = useRef<ReturnType<typeof buildRunTree>>([]);
+  const predecessorOptionsRef = useRef<ReturnType<typeof buildSuccessionSessionOptions>>([]);
   const tree = useMemo(
-    () => buildRunTree(sessionIds, sessions, runSessionLoadStates),
+    () => {
+      treeRef.current = retainEqualValue(
+        treeRef.current,
+        buildRunTree(sessionIds, sessions, runSessionLoadStates),
+      );
+      return treeRef.current;
+    },
     [runSessionLoadStates, sessionIds, sessions],
   );
   const currentSession = useMemo(() => latestTaskRun(sessionIds, sessions), [sessionIds, sessions]);
   const predecessorOptions = useMemo(
-    () => buildSuccessionSessionOptions(tree),
+    () => {
+      predecessorOptionsRef.current = retainEqualValue(
+        predecessorOptionsRef.current,
+        buildSuccessionSessionOptions(tree),
+      );
+      return predecessorOptionsRef.current;
+    },
     [tree],
   );
   const [successionOpen, setSuccessionOpen] = useState(false);
