@@ -42,13 +42,9 @@ export function PlannerTaskCard({
   const status = plannerStatusPresentation(task.status);
   const run = latestRun(task.sessionIds, sessions);
   const runStatus = run ? sessionPresentationStatus(run.session, nodeConnectivity) : null;
-  const runState = runStatus === "running"
-    ? "실행 중"
-    : runStatus === "offline"
-      ? "노드 오프라인"
-      : run
-        ? "완료"
-        : "시작 전";
+  const showAssignee = task.assignee !== "담당 미지정" && task.assignee !== "담당 미확인";
+  const showRun = runStatus === "running" || runStatus === "offline";
+  const runState = runStatus === "offline" ? "노드 오프라인" : "실행 중";
   const openFromKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
@@ -77,7 +73,6 @@ export function PlannerTaskCard({
           <span className={`v3-status-chip v3-status-chip--${task.status}`}>
             <span aria-hidden="true">{status.icon}</span> {status.label}
           </span>
-          <span className="v3-task-id">{task.runbookId.slice(0, 8)}</span>
         </div>
         <h3
           className="v3-text-clamp-2"
@@ -86,13 +81,14 @@ export function PlannerTaskCard({
         >
           {singleLinePreview(task.page.title, TASK_TITLE_PREVIEW_LENGTH)}
         </h3>
-        <div className="v3-task-meta">
-          <span className="v3-agent-dot" aria-hidden="true">
-            {task.assignee.slice(0, 1)}
-          </span>
-          <span>{task.assignee}</span>
-          <span>컨텍스트 {task.contextCount}</span>
-        </div>
+        {showAssignee ? (
+          <div className="v3-task-meta">
+            <span className="v3-agent-dot" aria-hidden="true">
+              {task.assignee.slice(0, 1)}
+            </span>
+            <span>{task.assignee}</span>
+          </div>
+        ) : null}
       </div>
       <div className="v3-task-side">
         <Button
@@ -106,10 +102,12 @@ export function PlannerTaskCard({
         >
           {taskStar.starred ? "★" : "☆"}
         </Button>
-        <span className="v3-run-line">
-          {run ? `세션 #${run.number} ${runState}` : "세션 0 · 시작 전"}
-          {runStatus === "running" ? <i aria-label="실행 중" /> : null}
-        </span>
+        {showRun && run ? (
+          <span className="v3-run-line">
+            {`세션 #${run.number} ${runState}`}
+            {runStatus === "running" ? <i aria-label="실행 중" /> : null}
+          </span>
+        ) : null}
         {task.progress === null ? null : (
           <span
             className="v3-progress"

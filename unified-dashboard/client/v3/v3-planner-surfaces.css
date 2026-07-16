@@ -2,7 +2,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px;
-  min-height: 118px;
+  min-height: 96px;
   border: 1px solid var(--glass-border);
   padding: 15px 18px;
   cursor: pointer;
@@ -62,12 +62,6 @@
 .v3-status-chip--completed {
   color: var(--info-foreground);
   background: color-mix(in srgb, var(--info) 12%, transparent);
-}
-
-.v3-task-id {
-  color: var(--muted-foreground);
-  font-size: var(--font-size-xs);
-  font-weight: 750;
 }
 
 .v3-task-card h3 {
