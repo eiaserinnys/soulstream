@@ -175,17 +175,27 @@ function createSessionPayload(
     fireAndForget: _fireAndForget,
     type: _type,
     agentSessionId: requestedSessionId,
+    agentId,
+    profile,
     ...rest
   } = body;
   const agentSessionId = isPageAnchor(rest.pageAnchor) && isUuid(requestedSessionId)
     ? requestedSessionId
     : randomUUID();
+  const canonicalProfile = firstNonEmptyString(profile, agentId);
   return {
     ...rest,
+    ...(canonicalProfile === undefined ? {} : { profile: canonicalProfile }),
     type: "create_session",
     prompt,
     agentSessionId,
   };
+}
+
+function firstNonEmptyString(...values: unknown[]): string | undefined {
+  return values.find(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
 }
 
 function isPageAnchor(value: unknown): value is JsonObject {

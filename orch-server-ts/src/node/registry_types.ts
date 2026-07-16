@@ -24,6 +24,7 @@ export type CreateSessionNodeCommandPayload =
   RequestResponseNodeCommandPayload<"create_session"> & {
     agentSessionId: string;
     prompt: string;
+    profile?: string;
   };
 
 export type SessionOwner = CachedNodeSession & {

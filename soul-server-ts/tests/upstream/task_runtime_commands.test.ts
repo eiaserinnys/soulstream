@@ -28,6 +28,13 @@ const claudeAgent: AgentProfile = {
   workspace_dir: "/tmp/claude-roselin",
 };
 
+const writerOpusAgent: AgentProfile = {
+  id: "writer-seosoyoung-opus",
+  name: "Writer Seosoyoung Opus",
+  backend: "claude",
+  workspace_dir: "/tmp/writer-seosoyoung-opus",
+};
+
 function makeTask(params: Partial<Task> = {}): Task {
   return {
     agentSessionId: "sess-1",
@@ -125,6 +132,23 @@ describe("TaskRuntimeCommands.createSession", () => {
       attachmentPaths: ["/tmp/a.png", "/tmp/b.txt"],
     });
     expect(taskExecutor.startExecution).toHaveBeenCalledWith(task, codexAgent);
+  });
+
+  it("preserves the explicitly selected writer profile through task creation and engine start", async () => {
+    const { runtime, taskManager, taskExecutor } = createRuntime({
+      agents: [codexAgent, writerOpusAgent],
+    });
+
+    const task = await runtime.createSession({
+      agentSessionId: "sess-writer-opus",
+      prompt: "write with opus",
+      profileId: writerOpusAgent.id,
+    });
+
+    expect(taskManager.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ profileId: "writer-seosoyoung-opus" }),
+    );
+    expect(taskExecutor.startExecution).toHaveBeenCalledWith(task, writerOpusAgent);
   });
 
   it("appends attachment path notes without duplicating attached-files context", async () => {

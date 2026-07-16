@@ -51,11 +51,11 @@ describe("production create-session route", () => {
       expect(result.command).toMatchObject({
         type: "create_session",
         prompt: "hello from dashboard",
-        agentId: "roselin_codex",
         profile: "roselin_codex",
         folderId: "folder-a",
         caller_info: { source: "browser" },
       });
+      expect(result.command).not.toHaveProperty("agentId");
       expect(result.response.statusCode).toBe(201);
       expect(result.response.json()).toEqual({
         agentSessionId: result.command?.agentSessionId,
@@ -91,6 +91,65 @@ describe("production create-session route", () => {
       expect(result.response.json()).toMatchObject({
         nodeId: "z-requested-node",
       });
+    } finally {
+      await closeHarness(harness);
+    }
+  });
+
+  it("preserves the soul-app agentId alias instead of defaulting to the node's first profile", async () => {
+    const harness = await createProductionHarness();
+    try {
+      await connectNode(harness, {
+        nodeId: "eias-linegames",
+        agents: [
+          { id: "seosoyoung_codex", backend: "codex" },
+          { id: "writer-seosoyoung-opus", backend: "claude" },
+        ],
+        supportedBackends: ["codex", "claude"],
+      });
+
+      const result = await requestCreateSession(harness, {
+        prompt: "start the selected writer",
+        agentId: "writer-seosoyoung-opus",
+        nodeId: "eias-linegames",
+      });
+
+      expect(result.routedNodeId).toBe("eias-linegames");
+      expect(result.command).toMatchObject({
+        profile: "writer-seosoyoung-opus",
+      });
+      expect(result.command).not.toHaveProperty("agentId");
+      expect(result.response.statusCode).toBe(201);
+    } finally {
+      await closeHarness(harness);
+    }
+  });
+
+  it("uses the soul-app agentId alias when automatically selecting a node", async () => {
+    const harness = await createProductionHarness();
+    try {
+      await connectNode(harness, {
+        nodeId: "a-codex-node",
+        agents: [{ id: "seosoyoung_codex", backend: "codex" }],
+        supportedBackends: ["codex"],
+      });
+      await connectNode(harness, {
+        nodeId: "z-writer-node",
+        agents: [{ id: "writer-seosoyoung-opus", backend: "claude" }],
+        supportedBackends: ["claude"],
+      });
+
+      const result = await requestCreateSession(harness, {
+        prompt: "find the selected writer",
+        agentId: "writer-seosoyoung-opus",
+      });
+
+      expect(result.routedNodeId).toBe("z-writer-node");
+      expect(result.command).toMatchObject({
+        profile: "writer-seosoyoung-opus",
+      });
+      expect(result.command).not.toHaveProperty("agentId");
+      expect(result.response.statusCode).toBe(201);
     } finally {
       await closeHarness(harness);
     }
