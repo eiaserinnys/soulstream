@@ -31,6 +31,8 @@ export type {
   MoveBoardItemToContainerResponse,
   UploadBoardAssetInput,
 } from "./board-workspace-operations";
+export { renameMarkdownDocument } from "./markdown-document-operations";
+export type { RenameMarkdownDocumentInput } from "./markdown-document-operations";
 export { createMoveSessionsOperations } from "./move-sessions";
 export type { MoveSessionsApiConfig, MoveSessionsOperations } from "./move-sessions";
 export { shouldLoadMoreAfterSessionMove } from "./session-move-load-more";

@@ -306,30 +306,6 @@
   color: var(--muted-foreground);
 }
 
-.v3-task-documents {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.v3-task-documents > div {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border-radius: 9px;
-  padding: 8px 10px;
-  background: var(--muted);
-  font-size: var(--font-size-xs);
-}
-
-.v3-task-documents > div > span {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .v3-session-defaults {
   margin-top: 18px;
   border: 1px solid var(--glass-border);

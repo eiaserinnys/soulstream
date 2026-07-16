@@ -1,3 +1,5 @@
+// Size exception: this legacy menu coordinator still owns every board-card dialog.
+// Shared mutations are extracted as they are touched; splitting the coordinator is a separate migration.
 import { useState } from "react";
 import { ArrowRightLeft, Folder, Frame, Maximize2, MessageSquarePlus, Minimize2, Pencil, SquarePen, Trash2 } from "lucide-react";
 
@@ -6,6 +8,7 @@ import { isSystemFolderId } from "../shared/constants";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { Button } from "../components/ui/button";
 import { toastManager } from "../components/ui/toast";
+import { renameMarkdownDocument } from "../lib/markdown-document-operations";
 import { FolderDialog } from "../components/FolderDialog";
 import { FolderContextMenu, type FolderContextMenuTarget } from "../components/FolderContextMenu";
 import { FolderSettingsDialog } from "../components/FolderSettingsDialog";
@@ -233,20 +236,15 @@ export function BoardWorkspaceContextMenus({
       if (boardYjsRuntime) {
         boardYjsRuntime.updateMarkdownTitle(renameMarkdownTarget.documentId, title);
       } else {
-        const res = await fetch(`/api/markdown-documents/${encodeURIComponent(renameMarkdownTarget.documentId)}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, expectedVersion: renameMarkdownTarget.version }),
+        await renameMarkdownDocument({
+          documentId: renameMarkdownTarget.documentId,
+          title,
+          expectedVersion: renameMarkdownTarget.version,
         });
-        if (res.status === 409) {
-          setRenameMarkdownError("문서가 다른 곳에서 변경되었습니다. 새로고침 후 다시 시도하세요.");
-          return;
-        }
-        if (!res.ok) throw new Error(`Rename markdown document failed: ${res.status}`);
-        await res.json();
       }
       setRenameMarkdownTarget(null);
     } catch (err) {
+      setRenameMarkdownError(err instanceof Error ? err.message : "문서 이름을 바꾸지 못했습니다.");
       console.error("Markdown document rename failed:", err);
     }
   };

@@ -50,12 +50,9 @@ export function TaskWorkspace({
   onToggleTaskToday,
   onCloseWorkspace,
   onCloseChat,
-  onOpenDocument,
   onOpenSession,
   onRenameTaskTitle,
   onSaveDescription,
-  onPromoteDocument,
-  onUnmountDocument,
   onRenameSession,
   onDeleteSessions,
   onMoveSession,
@@ -86,12 +83,9 @@ export function TaskWorkspace({
   onToggleTaskToday(): Promise<void>;
   onCloseWorkspace(): void;
   onCloseChat(): void;
-  onOpenDocument(documentId: string): void;
   onOpenSession(session: SessionSummary): void;
   onRenameTaskTitle(title: string): Promise<string>;
   onSaveDescription(markdown: string): Promise<void>;
-  onPromoteDocument(blockId: string): Promise<void>;
-  onUnmountDocument(blockId: string): Promise<void>;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
   onMoveSession(sessionId: string, targetTask: TaskMoveTarget): Promise<void>;
@@ -304,15 +298,12 @@ export function TaskWorkspace({
               setBoardOpen(true);
             }}
             onCloseWorkspace={onCloseWorkspace}
-            onOpenDocument={onOpenDocument}
             onOpenSession={onOpenSession}
             onRenameTaskTitle={async (title) => {
               const renamedTitle = await onRenameTaskTitle(title);
               setVisibleTitle(renamedTitle);
             }}
             onSaveDescription={onSaveDescription}
-            onPromoteDocument={onPromoteDocument}
-            onUnmountDocument={onUnmountDocument}
             onRenameSession={onRenameSession}
             onDeleteSessions={onDeleteSessions}
             onMoveSession={onMoveSession}

@@ -17,8 +17,6 @@ import { TaskInlineBoard } from "./TaskInlineBoard";
 import { TaskRunHistory } from "./TaskRunHistory";
 import { TaskTitleEditor } from "./TaskTitleEditor";
 import { TaskTodayToggle } from "./TaskTodayToggle";
-import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
-import { buildDocumentContextMenuActions } from "./context-menu-model";
 import "./v3-context-succession.css";
 import { useTaskStar } from "./use-task-star";
 import {
@@ -45,13 +43,10 @@ export function TaskDetailPane({
   onToggleTaskToday,
   onOpenBoard,
   onCloseWorkspace,
-  onOpenDocument,
   taskMoveTargets,
   onOpenSession,
   onRenameTaskTitle,
   onSaveDescription,
-  onPromoteDocument,
-  onUnmountDocument,
   onRenameSession,
   onDeleteSessions,
   onMoveSession,
@@ -73,13 +68,10 @@ export function TaskDetailPane({
   onToggleTaskToday(): Promise<void>;
   onOpenBoard(): void;
   onCloseWorkspace(): void;
-  onOpenDocument(documentId: string): void;
   taskMoveTargets: readonly PlannerTask[];
   onOpenSession(session: SessionSummary): void;
   onRenameTaskTitle(title: string): Promise<void>;
   onSaveDescription(markdown: string): Promise<void>;
-  onPromoteDocument(blockId: string): Promise<void>;
-  onUnmountDocument(blockId: string): Promise<void>;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
   onMoveSession(sessionId: string, targetTask: TaskMoveTarget): Promise<void>;
@@ -93,11 +85,9 @@ export function TaskDetailPane({
   );
   const status = plannerStatusPresentation(task.status);
   const taskStar = useTaskStar(task.page);
-  const [promotingId, setPromotingId] = useState<string | null>(null);
-  const [documentMenu, setDocumentMenu] = useState<{ target: V3ContextMenuTarget; blockId: string; pageId: string } | null>(null);
   const [contextPickerOpen, setContextPickerOpen] = useState(false);
-  const [documentPickerOpen, setDocumentPickerOpen] = useState(false);
   const [contextBlocks, setContextBlocks] = useState(task.blocks);
+  const [boardDocuments, setBoardDocuments] = useState<Array<{ pageId: string; title: string }>>([]);
   const [createdSessions, setCreatedSessions] = useState<SessionSummary[]>([]);
   const reconciledSessionsRef = useRef<ReturnType<typeof reconcileTaskSessions> | null>(null);
   const inheritedContext = useProjectContextInheritance({
@@ -108,10 +98,9 @@ export function TaskDetailPane({
   useEffect(() => {
     setContextBlocks(task.blocks);
     setContextPickerOpen(false);
-    setDocumentPickerOpen(false);
     setCreatedSessions([]);
-    setDocumentMenu(null);
   }, [task.blocks, task.page.id]);
+  useEffect(() => setBoardDocuments([]), [task.page.id]);
   const effectiveContext = useMemo(() => mergeProjectContextPages([
     ...(inheritedContext.status === "ready" ? inheritedContext.data.pages : []),
     {
@@ -162,15 +151,6 @@ export function TaskDetailPane({
   const allSessions = reconciledSessions.sessions;
   const allSessionIds = reconciledSessions.sessionIds;
 
-  const promote = async (blockId: string) => {
-    setPromotingId(blockId);
-    try {
-      await onPromoteDocument(blockId);
-    } finally {
-      setPromotingId(null);
-    }
-  };
-
   return (
     <article
       ref={surfaceRef}
@@ -210,7 +190,7 @@ export function TaskDetailPane({
           <div className="v3-context-chips">
             {contextItems.map((context) => <span key={context.id}><span className="v3-emoji" aria-hidden="true">{context.icon}</span> {context.label}</span>)}
             {contextItems.length === 0 ? <small>연결된 컨텍스트가 없습니다.</small> : null}
-            <button type="button" className="v3-context-add" aria-expanded={contextPickerOpen} onClick={() => { setDocumentPickerOpen(false); setContextPickerOpen((value) => !value); }}>＋ 컨텍스트</button>
+            <button type="button" className="v3-context-add" aria-expanded={contextPickerOpen} onClick={() => setContextPickerOpen((value) => !value)}>＋ 컨텍스트</button>
           </div>
           {contextPickerOpen ? (
             <TaskContextPicker
@@ -222,72 +202,11 @@ export function TaskDetailPane({
           ) : null}
         </section>
 
-        <section className="v3-detail-section">
-          <div className="v3-detail-section-head">
-            <h3><span className="v3-emoji" aria-hidden="true">📄</span> 문서</h3><span>{task.mountedDocuments.length}개</span>
-            <span className="v3-spacer" />
-            <Button
-              size="xs"
-              variant="glass"
-              className="h-7 rounded-full px-2.5 text-xs sm:h-7"
-              aria-expanded={documentPickerOpen}
-              onClick={() => { setContextPickerOpen(false); setDocumentPickerOpen((value) => !value); }}
-            >
-              ＋ 문서
-            </Button>
-          </div>
-          <div className="v3-task-documents">
-            {task.mountedDocuments.map((document) => (
-              <div
-                key={document.blockId}
-                data-testid={`v3-mounted-document-${document.page.id}`}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  setDocumentMenu({
-                    target: { x: event.clientX, y: event.clientY },
-                    blockId: document.blockId,
-                    pageId: document.page.id,
-                  });
-                }}
-              >
-                <span>{document.page.title}</span>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={!task.projectPageId || promotingId === document.blockId}
-                  title={task.projectPageId ? "업무의 문서 마운트를 프로젝트 페이지로 이동합니다" : "프로젝트에 속한 업무만 승격할 수 있습니다"}
-                  onClick={() => { void promote(document.blockId); }}
-                >
-                  {promotingId === document.blockId ? "승격 중…" : "프로젝트로 승격"}
-                </Button>
-              </div>
-            ))}
-            {task.mountedDocuments.length === 0 ? <p className="v3-detail-empty">마운트된 문서가 없습니다.</p> : null}
-          </div>
-          {documentPickerOpen ? (
-            <TaskContextPicker
-              mode="document"
-              taskPageId={task.page.id}
-              taskBlocks={contextBlocks}
-              onBlocksChanged={(blocks) => { setContextBlocks(blocks); onTaskBlocksChanged(blocks); }}
-              onClose={() => setDocumentPickerOpen(false)}
-            />
-          ) : null}
-        </section>
-
-        <V3ContextMenu
-          target={documentMenu?.target ?? null}
-          onClose={() => setDocumentMenu(null)}
-          actions={documentMenu ? buildDocumentContextMenuActions({
-            open: () => onOpenDocument(documentMenu.pageId),
-            copyId: () => navigator.clipboard.writeText(documentMenu.pageId),
-            unmount: () => onUnmountDocument(documentMenu.blockId),
-            promote: () => promote(documentMenu.blockId),
-            canPromote: Boolean(task.projectPageId),
-          }) : []}
+        <TaskInlineBoard
+          runbookId={task.runbookId}
+          folderId={projectFolderId}
+          onMarkdownDocumentsChanged={setBoardDocuments}
         />
-
-        <TaskInlineBoard runbookId={task.runbookId} />
 
         {effectiveSessionDefaults?.agentId || effectiveSessionDefaults?.nodeId ? (
           <div className="v3-session-defaults"><span className="v3-emoji" aria-hidden="true">👤</span> 기본값: {effectiveSessionDefaults.agentId ?? "agent 미지정"}@{effectiveSessionDefaults.nodeId ?? "node 미지정"} <span>(상속)</span></div>
@@ -298,10 +217,7 @@ export function TaskDetailPane({
           taskPageId={task.page.id}
           runbookId={task.runbookId}
           contextItems={contextItems}
-          documentOptions={task.mountedDocuments.map((document) => ({
-            pageId: document.page.id,
-            title: document.page.title,
-          }))}
+          documentOptions={boardDocuments}
           pageContextSources={pageContextSources}
           contextPending={inheritedContext.status === "loading"}
           sessionDefaults={effectiveSessionDefaults}
