@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
-import { Button, useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
+import { Button, retainEqualValue, useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import { DailyMemo } from "./DailyMemo";
 import { PlannerTaskCard } from "./PlannerTaskCard";
@@ -18,6 +18,7 @@ import { visibleDailyTasks } from "./today-task-state";
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import { buildDocumentContextMenuActions } from "./context-menu-model";
+import { loadConfirmedResult } from "./planner-query-state";
 
 export type PlannerLoadState<T> =
   | { status: "loading"; data: T | null; message: null }
@@ -157,19 +158,38 @@ export function ProjectPlannerView({
 
   const refreshDetails = async () => {
     if (!data) return;
-    const loaded = await fetchProjectPageDetails(data.project.id);
-    setDetails({ status: "ready", data: loaded, message: null });
+    const loaded = await loadConfirmedResult({
+      previous: details.data,
+      load: () => fetchProjectPageDetails(data.project.id),
+      clearsVisibleContent: (current, next) => current.blocks.length > 0 && next.blocks.length === 0,
+    });
+    setDetails((current) => retainEqualValue(current, { status: "ready", data: loaded, message: null }));
   };
   useEffect(() => {
     let active = true;
     const projectId = data?.project.id;
     if (!projectId) return;
-    setDetails({ status: "loading", data: null, message: null });
-    void fetchProjectPageDetails(projectId).then((loaded) => {
-      if (active) setDetails({ status: "ready", data: loaded, message: null });
+    const previous = details.data?.page.id === projectId ? details.data : null;
+    setDetails((current) => current.data?.page.id === projectId
+      ? current
+      : { status: "loading", data: null, message: null });
+    void loadConfirmedResult({
+      previous,
+      load: () => fetchProjectPageDetails(projectId),
+      clearsVisibleContent: (current, next) => current.blocks.length > 0 && next.blocks.length === 0,
+    }).then((loaded) => {
+      if (active) {
+        setDetails((current) => retainEqualValue(current, { status: "ready", data: loaded, message: null }));
+      }
     }).catch((error: unknown) => {
       console.error("[v3/planner] 프로젝트 컨텍스트 조회 실패", error);
-      if (active) setDetails({ status: "error", data: null, message: errorText(error) });
+      if (active) {
+        setDetails((current) => retainEqualValue(current, {
+          status: "error",
+          data: current.data,
+          message: errorText(error),
+        }));
+      }
     });
     return () => { active = false; };
   }, [data?.project.id, invalidationKey]);

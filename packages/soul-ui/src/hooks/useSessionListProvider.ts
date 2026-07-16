@@ -13,7 +13,8 @@
  */
 
 import { useCallback, useRef, useState, useMemo } from "react";
-import { replaceEqualDeep, useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { retainEqualValue } from "../lib/structural-sharing";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useRunbookStore } from "../stores/runbook-store";
 import { useCustomViewStore } from "../stores/custom-view-store";
@@ -43,13 +44,6 @@ const DEFAULT_PAGE_SIZE = 50;
 interface SessionPage {
   sessions: SessionSummary[];
   total: number;
-}
-
-export function retainEqualSessions(
-  previous: SessionSummary[],
-  next: SessionSummary[],
-): SessionSummary[] {
-  return replaceEqualDeep(previous, next);
 }
 
 export interface UseSessionListProviderOptions {
@@ -200,6 +194,7 @@ export function useSessionListProvider(
       return loaded < total ? loaded : undefined;
     },
     enabled,
+    structuralSharing: retainEqualValue,
     // externalProvider 폴링
     refetchInterval: externalProvider ? intervalMs : false,
     staleTime: externalProvider ? 0 : Infinity,
@@ -207,10 +202,19 @@ export function useSessionListProvider(
 
   // TanStack Query 데이터에서 sessions 추출
   const sessions = useMemo(() => {
-    const next = data?.pages.flatMap((page) => page.sessions) ?? [];
-    stableSessionsRef.current = retainEqualSessions(stableSessionsRef.current, next);
+    if (!data) {
+      if (normalizedSessionIds === undefined) return stableSessionsRef.current;
+      const requestedIds = new Set(normalizedSessionIds);
+      const stillRequested = stableSessionsRef.current.filter((session) => (
+        requestedIds.has(session.agentSessionId)
+      ));
+      stableSessionsRef.current = retainEqualValue(stableSessionsRef.current, stillRequested);
+      return stableSessionsRef.current;
+    }
+    const next = data.pages.flatMap((page) => page.sessions);
+    stableSessionsRef.current = retainEqualValue(stableSessionsRef.current, next);
     return stableSessionsRef.current;
-  }, [data]);
+  }, [data, normalizedSessionIds]);
 
   // sessionsTotal: 마지막 페이지의 total
   const sessionsTotal =

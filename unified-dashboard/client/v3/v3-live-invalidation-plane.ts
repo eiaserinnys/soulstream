@@ -6,13 +6,15 @@ import {
 } from "@seosoyoung/soul-ui/page";
 
 export type V3InvalidationSource =
-  | "session"
+  | "session_created"
+  | "session_updated"
+  | "session_deleted"
+  | "metadata_updated"
   | "catalog"
   | "runbook"
   | "custom_view"
   | "replay"
-  | "page"
-  | "local";
+  | "page";
 
 export interface V3InvalidationSnapshot {
   readonly revision: number;
@@ -20,13 +22,15 @@ export interface V3InvalidationSnapshot {
 }
 
 const SOURCE_NAMES: readonly V3InvalidationSource[] = [
-  "session",
+  "session_created",
+  "session_updated",
+  "session_deleted",
+  "metadata_updated",
   "catalog",
   "runbook",
   "custom_view",
   "replay",
   "page",
-  "local",
 ];
 const PAGE_INVALIDATION_SETTLE_MS = 250;
 const listeners = new Set<() => void>();
@@ -53,7 +57,7 @@ export function acceptV3SessionStreamEvent(event: SessionStreamEvent): void {
     case "session_updated":
     case "session_deleted":
     case "metadata_updated":
-      invalidateV3("session");
+      invalidateV3(event.type);
       break;
     case "catalog_updated":
       invalidateV3("catalog");
@@ -71,6 +75,47 @@ export function acceptV3SessionStreamEvent(event: SessionStreamEvent): void {
     case "stream_meta":
       break;
   }
+}
+
+export interface V3PlannerInvalidationKeys {
+  readonly daily: number;
+  readonly project: number;
+  readonly starred: number;
+  readonly runHistory: number;
+  readonly pageDetail: number;
+}
+
+/**
+ * Planner reads are intentionally bounded to the events that can change their
+ * backing collection. Session detail changes already update the TanStack
+ * session cache directly and must not refetch page collections.
+ */
+export function selectV3PlannerInvalidationKeys(
+  current: V3InvalidationSnapshot,
+): V3PlannerInvalidationKeys {
+  const pageCollections = selectV3InvalidationKey(current, [
+    "session_created",
+    "session_deleted",
+    "runbook",
+    "page",
+    "replay",
+  ]);
+  return {
+    daily: pageCollections,
+    project: pageCollections,
+    starred: selectV3InvalidationKey(current, ["page", "replay"]),
+    runHistory: selectV3InvalidationKey(current, [
+      "session_created",
+      "session_deleted",
+      "replay",
+    ]),
+    pageDetail: selectV3InvalidationKey(current, ["page", "replay"]),
+  };
+}
+
+export function useV3PlannerInvalidationKeys(): V3PlannerInvalidationKeys {
+  const current = useSyncExternalStore(subscribe, getV3InvalidationSnapshot, getV3InvalidationSnapshot);
+  return selectV3PlannerInvalidationKeys(current);
 }
 
 export function selectV3InvalidationKey(

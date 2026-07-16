@@ -106,13 +106,18 @@ async function verify(browser: Browser) {
     const requestsBeforeCatalog = plannerTodayRequests;
     emptyPlannerProjects = true;
     await emitCatalogUpdated(page);
-    await waitUntil(() => plannerTodayRequests > requestsBeforeCatalog, "catalog_updated 뒤 planner refetch");
+    await page.waitForTimeout(500);
+    assert(
+      plannerTodayRequests === requestsBeforeCatalog,
+      `catalog_updated가 planner를 광역 재조회했습니다: ${requestsBeforeCatalog} → ${plannerTodayRequests}`,
+    );
     await waitText(refreshedGuidance, "프로젝트의 결정을 실제 근거와 함께 기록하고", "refetch 뒤 유지된 guidance");
     assert(!(await refreshedPreview.textContent() ?? "").includes("컨텍스트 없음"), "일시적 빈 목록을 EMPTY로 오진했습니다.");
     await capture(page, "03-preview-retained-after-catalog-refetch");
 
     return {
       plannerTodayRequests,
+      catalogPlannerRefetches: plannerTodayRequests - requestsBeforeCatalog,
       pageReads: Object.fromEntries(pageReads),
       retainedAfterEmptyPlannerProjects: true,
       sessionContextSourcePageIds: (marker.content as { pages: Array<{ page_id: string }> }).pages

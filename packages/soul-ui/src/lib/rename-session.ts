@@ -81,15 +81,22 @@ function updateSessionQueryNames(
 ): void {
   queryClient?.setQueriesData<InfiniteData<SessionPage>>(
     { queryKey: ["sessions"], exact: false },
-    (current) => current ? {
-      ...current,
-      pages: current.pages.map((page) => ({
-        ...page,
-        sessions: page.sessions.map((session) => session.agentSessionId === sessionId
-          ? { ...session, displayName }
-          : session),
-      })),
-    } : current,
+    (current) => {
+      if (!current) return current;
+      let changed = false;
+      const pages = current.pages.map((page) => {
+        let pageChanged = false;
+        const sessions = page.sessions.map((session) => {
+          if (session.agentSessionId !== sessionId || session.displayName === displayName) return session;
+          pageChanged = true;
+          return { ...session, displayName };
+        });
+        if (!pageChanged) return page;
+        changed = true;
+        return { ...page, sessions };
+      });
+      return changed ? { ...current, pages } : current;
+    },
   );
 }
 

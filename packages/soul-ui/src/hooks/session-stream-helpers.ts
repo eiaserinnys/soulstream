@@ -14,6 +14,7 @@ import type {
 } from "../shared/types";
 import type { SessionUpdatedStreamEvent } from "../shared/stream-events";
 import { normalizeSessionStatus } from "../shared/session-status";
+import { retainEqualValue } from "../lib/structural-sharing";
 import {
   applyCatalogDisplayName,
   mergeSessionCreatedSummary,
@@ -152,7 +153,7 @@ export function reconcileSessionPagesForCatalog(
   cacheQueryKey: readonly unknown[],
   catalog: CatalogState,
 ): InfiniteData<SessionPage> {
-  return {
+  return retainEqualValue(data, {
     ...data,
     pages: data.pages.map((page) => ({
       ...page,
@@ -162,7 +163,7 @@ export function reconcileSessionPagesForCatalog(
         )
         .map((session) => applyCatalogDisplayName(session, catalog)),
     })),
-  };
+  });
 }
 
 export function countLoadedSessionsForQuery(
@@ -261,7 +262,7 @@ export function applySessionCreated(
     page.sessions.some((s) => s.agentSessionId === newSession.agentSessionId),
   );
   if (exists) {
-    return {
+    return retainEqualValue(data, {
       ...data,
       pages: data.pages.map((page) => ({
         ...page,
@@ -271,7 +272,7 @@ export function applySessionCreated(
             : s,
         ),
       })),
-    };
+    });
   }
   return {
     ...data,
@@ -297,7 +298,7 @@ export function applySessionUpdated(
   agentSessionId: string,
   updates: Partial<SessionSummary>,
 ): InfiniteData<SessionPage> {
-  return {
+  return retainEqualValue(data, {
     ...data,
     pages: data.pages.map((page) => ({
       ...page,
@@ -305,7 +306,7 @@ export function applySessionUpdated(
         s.agentSessionId === agentSessionId ? { ...s, ...updates } : s,
       ),
     })),
-  };
+  });
 }
 
 /**
@@ -407,7 +408,7 @@ export function applyMetadataUpdated(
   agentSessionId: string,
   metadata: MetadataEntry[],
 ): InfiniteData<SessionPage> {
-  return {
+  return retainEqualValue(data, {
     ...data,
     pages: data.pages.map((page) => ({
       ...page,
@@ -415,7 +416,7 @@ export function applyMetadataUpdated(
         s.agentSessionId === agentSessionId ? { ...s, metadata } : s,
       ),
     })),
-  };
+  });
 }
 
 /**
@@ -427,13 +428,12 @@ export function applySessionDeleted(
   data: InfiniteData<SessionPage>,
   agentSessionId: string,
 ): InfiniteData<SessionPage> {
-  return {
-    ...data,
-    pages: data.pages.map((page) => ({
-      ...page,
-      sessions: page.sessions.filter(
-        (s) => s.agentSessionId !== agentSessionId,
-      ),
-    })),
-  };
+  let changed = false;
+  const pages = data.pages.map((page) => {
+    const sessions = page.sessions.filter((session) => session.agentSessionId !== agentSessionId);
+    if (sessions.length === page.sessions.length) return page;
+    changed = true;
+    return { ...page, sessions };
+  });
+  return changed ? { ...data, pages } : data;
 }

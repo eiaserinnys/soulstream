@@ -25,8 +25,11 @@ describe("createRenameSessionOperation", () => {
       pages: [{
         sessions: [{ agentSessionId: "session-a", displayName: "이전 이름" } as SessionSummary],
         total: 1,
+      }, {
+        sessions: [{ agentSessionId: "session-b", displayName: "그대로" } as SessionSummary],
+        total: 1,
       }],
-      pageParams: [0],
+      pageParams: [0, 1],
     });
   });
 
@@ -42,11 +45,13 @@ describe("createRenameSessionOperation", () => {
       method: "PATCH",
     });
 
+    const before = queryClient.getQueryData<InfiniteData<SessionPage>>(queryKey);
     await renameSessionOptimistic("session-a", "새 이름", { queryClient });
+    const after = queryClient.getQueryData<InfiniteData<SessionPage>>(queryKey);
 
     expect(useDashboardStore.getState().catalog?.sessions["session-a"]?.displayName).toBe("새 이름");
-    expect(queryClient.getQueryData<InfiniteData<SessionPage>>(queryKey)?.pages[0]?.sessions[0]?.displayName)
-      .toBe("새 이름");
+    expect(after?.pages[0]?.sessions[0]?.displayName).toBe("새 이름");
+    expect(after?.pages[1]).toBe(before?.pages[1]);
   });
 
   it("restores both projections and rethrows when the network request fails", async () => {

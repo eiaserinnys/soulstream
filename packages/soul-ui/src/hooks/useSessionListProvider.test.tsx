@@ -13,12 +13,14 @@ import type {
   SessionSummary,
   SoulSSEEvent,
 } from "../shared/types";
-import type { SessionStorageProvider } from "../providers/types";
+import type {
+  FetchSessionsOptions,
+  SessionListResult,
+  SessionStorageProvider,
+} from "../providers/types";
+import { retainEqualValue } from "../lib/structural-sharing";
 import { useDashboardStore } from "../stores/dashboard-store";
-import {
-  retainEqualSessions,
-  useSessionListProvider,
-} from "./useSessionListProvider";
+import { useSessionListProvider } from "./useSessionListProvider";
 
 const initialCatalogLoadSpy = vi.hoisted(() => vi.fn());
 const streamCacheSyncSpy = vi.hoisted(() => vi.fn());
@@ -252,6 +254,48 @@ describe("useSessionListProvider query overrides", () => {
     expect(populated.length).toBeGreaterThan(0);
     expect(new Set(populated).size).toBe(1);
   });
+
+  it("does not publish an unconfirmed empty list while a new ids query is pending", async () => {
+    const sessionA = makeSession("session-a");
+    const sessionB = makeSession("session-b");
+    let resolveSecond!: (value: SessionListResult) => void;
+    const secondResponse = new Promise<SessionListResult>((resolve) => {
+      resolveSecond = resolve;
+    });
+    const provider = makeProvider([sessionA]);
+    provider.fetchSessions = vi.fn(async (options: FetchSessionsOptions = {}) => {
+      if (options.sessionIds?.includes("session-b")) {
+        return await secondResponse;
+      }
+      return { sessions: [sessionA], total: 1, hasMore: false };
+    });
+    let latest: SessionSummary[] = [];
+    const render = (sessionIds: readonly string[]) => {
+      flushSync(() => {
+        root.render(
+          createElement(
+            QueryClientProvider,
+            { client: queryClient },
+            createElement(Probe, {
+              provider,
+              sessionIds,
+              onSessions: (value) => { latest = value; },
+            }),
+          ),
+        );
+      });
+    };
+
+    render(["session-a"]);
+    await waitFor(() => expect(latest.map((session) => session.agentSessionId)).toEqual(["session-a"]));
+
+    render(["session-a", "session-b"]);
+    await Promise.resolve();
+    expect(latest.map((session) => session.agentSessionId)).toEqual(["session-a"]);
+
+    resolveSecond({ sessions: [sessionA, sessionB], total: 2, hasMore: false });
+    await waitFor(() => expect(latest.map((session) => session.agentSessionId)).toEqual(["session-a", "session-b"]));
+  });
 });
 
 describe("session list structural sharing", () => {
@@ -259,7 +303,7 @@ describe("session list structural sharing", () => {
     const previous = [makeSession("session-a"), makeSession("session-b")];
     const equivalent = previous.map((session) => ({ ...session }));
 
-    const retained = retainEqualSessions(previous, equivalent);
+    const retained = retainEqualValue(previous, equivalent);
 
     expect(retained).toBe(previous);
     expect(retained[0]).toBe(previous[0]);
@@ -273,7 +317,7 @@ describe("session list structural sharing", () => {
       { ...previous[1] },
     ];
 
-    const retained = retainEqualSessions(previous, changed);
+    const retained = retainEqualValue(previous, changed);
 
     expect(retained).not.toBe(previous);
     expect(retained[0]).not.toBe(previous[0]);

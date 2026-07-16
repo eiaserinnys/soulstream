@@ -91,7 +91,7 @@ export function TaskWorkspace({
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
   onDeleteSessions(sessionIds: string[]): Promise<void>;
   onMoveSession(sessionId: string, targetTask: TaskMoveTarget): Promise<void>;
-  onTaskBlocksChanged(): void;
+  onTaskBlocksChanged(blocks: PlannerTask["blocks"]): void;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
 }) {
   const workspaceRef = useRef<HTMLDivElement>(null);

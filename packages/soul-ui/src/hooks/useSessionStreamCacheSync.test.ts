@@ -69,6 +69,7 @@ describe("useSessionStreamCacheSync catalog_updated", () => {
     document.body.appendChild(container);
     root = createRoot(container);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidateQueries = vi.spyOn(queryClient, "invalidateQueries");
 
     flushSync(() => {
       root?.render(createElement(QueryClientProvider, { client: queryClient }, createElement(Harness)));
@@ -81,5 +82,8 @@ describe("useSessionStreamCacheSync catalog_updated", () => {
     expect(catalog?.folders.map((folder) => folder.name)).toEqual(["Renamed Parent", "Child"]);
     expect(getChildFolders(catalog?.folders ?? [], "parent")).toEqual([]);
     expect(getChildFolders(catalog?.folders ?? [], null).map((folder) => folder.id)).toEqual(["parent", "child"]);
+    const predicate = invalidateQueries.mock.calls[0]?.[0]?.predicate;
+    expect(predicate?.({ queryKey: ["sessions", "all", "ids", null, ["session-a"]] } as never)).toBe(false);
+    expect(predicate?.({ queryKey: ["sessions", "all", "feed", null] } as never)).toBe(true);
   });
 });
