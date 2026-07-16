@@ -7,11 +7,11 @@ import { fixtureTitles, installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 const baseUrl = process.env.V3_QA_BASE_URL ?? "http://127.0.0.1:4173";
 const outputRoot = path.resolve(
-  process.env.PR_AZ_QA_OUTPUT ?? path.join("e2e", "screenshots", "v3-session-panel"),
+  process.env.PR_BF_QA_OUTPUT ?? path.join("e2e", "screenshots", "v3-panel-layout"),
 );
 
 const result = await runPlaywrightLifecycle({
-  lockName: "pr-az-v3-session-panel",
+  lockName: "pr-bf-v3-panel-layout",
   timeoutMs: 180_000,
 }, async ({ browser }) => ({
   dark: await verifyTheme(browser, "dark"),
@@ -46,6 +46,59 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
   try {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
     const panel = page.getByTestId("v3-session-panel");
+    await panel.waitFor({ state: "visible", timeout: 20_000 });
+    await page.locator('[data-session-id="run-alpha-2"]').waitFor({ state: "visible" });
+
+    const layoutCombinations = [];
+    for (const widths of [
+      { navigation: 220, session: 240 },
+      { navigation: 264, session: 300 },
+      { navigation: 420, session: 420 },
+    ]) {
+      await page.evaluate(({ navigation, session }) => {
+        localStorage.setItem("soul-ui.dashboard.leftSidebarWidth", String(navigation));
+        localStorage.setItem("soulstream-v3-session-panel-width", String(session));
+      }, widths);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await panel.waitFor({ state: "visible", timeout: 20_000 });
+      await page.locator('[data-session-id="run-alpha-2"]').waitFor({ state: "visible" });
+      const measured = await page.evaluate(() => {
+        const navigation = document.querySelector<HTMLElement>(".v3-navigation");
+        const planner = document.querySelector<HTMLElement>(".v3-planner");
+        const panel = document.querySelector<HTMLElement>('[data-testid="v3-session-panel"]');
+        const panelScroll = document.querySelector<HTMLElement>(".v3-session-panel-scroll");
+        const plannerContent = document.querySelector<HTMLElement>(".v3-planner-scroll > *");
+        const rows = [...document.querySelectorAll<HTMLElement>(".v3-session-row .v3-run-row")];
+        if (!navigation || !planner || !panel || !panelScroll || !plannerContent) {
+          throw new Error("3열 레이아웃 측정 대상을 찾지 못했습니다.");
+        }
+        const navigationBox = navigation.getBoundingClientRect();
+        const plannerBox = planner.getBoundingClientRect();
+        const panelBox = panel.getBoundingClientRect();
+        return {
+          viewportOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          panelOverflow: panelScroll.scrollWidth - panelScroll.clientWidth,
+          rowOverflow: rows.map((row) => row.scrollWidth - row.clientWidth),
+          leftGap: plannerBox.left - navigationBox.right,
+          rightGap: panelBox.left - plannerBox.right,
+          plannerWidth: plannerBox.width,
+          contentWidth: plannerContent.getBoundingClientRect().width,
+        };
+      });
+      assert(measured.viewportOverflow <= 0, `${widths.navigation}/${widths.session}px 조합에서 viewport 가로 넘침 ${measured.viewportOverflow}px`);
+      assert(measured.panelOverflow <= 0, `${widths.navigation}/${widths.session}px 조합에서 우측 패널 가로 넘침 ${measured.panelOverflow}px`);
+      assert(measured.rowOverflow.every((value) => value <= 0), `${widths.navigation}/${widths.session}px 조합에서 행 가로 넘침 ${measured.rowOverflow.join(",")}px`);
+      assert(Math.abs(measured.leftGap - 22) <= 1, `${widths.navigation}/${widths.session}px 조합의 좌측 gap이 ${measured.leftGap}px입니다.`);
+      assert(Math.abs(measured.rightGap - 22) <= 1, `${widths.navigation}/${widths.session}px 조합의 우측 gap이 ${measured.rightGap}px입니다.`);
+      assert(measured.contentWidth <= 893, `${widths.navigation}/${widths.session}px 조합의 중앙 콘텐츠가 ${measured.contentWidth}px로 과도하게 확장됐습니다.`);
+      layoutCombinations.push({ ...widths, ...measured });
+    }
+
+    await page.evaluate(() => {
+      localStorage.setItem("soul-ui.dashboard.leftSidebarWidth", "264");
+      localStorage.setItem("soulstream-v3-session-panel-width", "300");
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
     await panel.waitFor({ state: "visible", timeout: 20_000 });
     await page.locator('[data-session-id="run-alpha-2"]').waitFor({ state: "visible" });
 
@@ -124,6 +177,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
         after: resizedPanelBox.width,
         restored: restoredPanelBox.width,
       },
+      layoutCombinations,
       richRow: true,
     };
   } finally {

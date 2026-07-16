@@ -422,10 +422,6 @@
 }
 
 @media (max-width: 980px) {
-  .v3-planner {
-    width: min(940px, calc(100% - 28px));
-  }
-
   .v3-eyebrow {
     display: none;
   }

@@ -6,6 +6,8 @@
 
 .v3-run-row {
   display: flex;
+  min-width: 0;
+  max-width: 100%;
   min-height: 74px;
   align-items: center;
   gap: 6px;

@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 
 const LAYOUT_PATH = fileURLToPath(new URL("./V3DashboardLayout.tsx", import.meta.url));
 const PLANNER_CSS_PATH = fileURLToPath(new URL("./v3-planner.css", import.meta.url));
+const SESSION_PANEL_CSS_PATH = fileURLToPath(new URL("./v3-session-panel.css", import.meta.url));
+const RUN_HISTORY_CSS_PATH = fileURLToPath(new URL("./v3-run-history.css", import.meta.url));
 const WORKSPACE_CSS_PATH = fileURLToPath(new URL("./v3-task-workspace.css", import.meta.url));
 const BOARD_CSS_PATH = fileURLToPath(new URL("./v3-task-board.css", import.meta.url));
 
@@ -38,6 +40,33 @@ describe("v3 panel scroll contract", () => {
     expect(scroll).toMatch(/overflow-y:\s*auto/);
     expect(layout).toContain('className="v3-planner-scroll"');
     expect(layout).toContain('data-testid="v3-planner-scroll"');
+  });
+
+  it("uses the full center column without fixed side gutters while bounding readable content", () => {
+    const css = readFileSync(PLANNER_CSS_PATH, "utf8");
+    const planner = ruleBody(css, ".v3-planner");
+    const content = ruleBody(css, ".v3-planner-scroll > *");
+
+    expect(planner).toMatch(/width:\s*100%/);
+    expect(planner).toMatch(/margin:\s*76px 0 22px/);
+    expect(planner).not.toMatch(/calc\(100% - 48px\)/);
+    expect(content).toMatch(/max-width:\s*892px/);
+    expect(content).toMatch(/margin-inline:\s*auto/);
+  });
+
+  it("keeps rich session rows inside the visible right-panel width", () => {
+    const panelCss = readFileSync(SESSION_PANEL_CSS_PATH, "utf8");
+    const rowCss = readFileSync(RUN_HISTORY_CSS_PATH, "utf8");
+    const scroll = ruleBody(panelCss, ".v3-session-panel-scroll");
+    const list = ruleBody(panelCss, ".v3-session-list");
+    const row = ruleBody(rowCss, ".v3-run-row");
+
+    expect(scroll).toMatch(/overflow-x:\s*hidden/);
+    expect(list).toMatch(/min-width:\s*0/);
+    expect(list).toMatch(/max-width:\s*100%/);
+    expect(row).toMatch(/min-width:\s*0/);
+    expect(row).toMatch(/max-width:\s*100%/);
+    expect(panelCss).toMatch(/\.v3-session-row \.v3-run-trailing[\s\S]*text-overflow:\s*ellipsis/);
   });
 
   it("keeps the 390px planner frame bounded above the mobile tabs", () => {
