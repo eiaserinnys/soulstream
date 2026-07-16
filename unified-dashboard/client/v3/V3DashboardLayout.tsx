@@ -21,7 +21,6 @@ import { useNodes } from "../hooks/useNodes";
 import { ConfigModal } from "../components/ConfigModal";
 import { SearchModal } from "../components/SearchModal";
 import { orchestratorSessionProvider } from "../providers";
-import { useOrchestratorStore } from "../store/orchestrator-store";
 import { NewTaskForm } from "./NewTaskForm";
 import { DailyPlannerView, ProjectPlannerView } from "./PlannerViews";
 import { ProjectFolderResolutionView } from "./ProjectFolderResolutionView";
@@ -68,6 +67,7 @@ import { openDocumentInV3 } from "./v3-inspector-model";
 import { useV3DashboardMutations } from "./use-v3-dashboard-mutations";
 import { useV3MutationProjection } from "./use-v3-mutation-projection";
 import { useV3SessionPanelController } from "./use-v3-session-panel-controller";
+import { useSessionNodeConnectivity } from "./use-session-node-connectivity";
 import "./v3-planner.css";
 import "./v3-planner-surfaces.css";
 import "./v3-task-workspace.css";
@@ -128,7 +128,7 @@ function V3DashboardContent() {
   const setActiveSessionSummary = useDashboardStore((state) => state.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
   const setActiveBoardDocument = useDashboardStore((state) => state.setActiveBoardDocument);
-  const nodes = useOrchestratorStore((state) => state.nodes);
+  const { nodes, nodeConnectivity } = useSessionNodeConnectivity();
   const taskStarChanges = useTaskStarChanges();
   const {
     daily,
@@ -436,11 +436,11 @@ function V3DashboardContent() {
           <div className="v3-planner-scroll" data-testid="v3-planner-scroll">
             {createOpen ? <NewTaskForm folders={catalog?.folders ?? []} invalidationKey={projectContextInvalidationKey} initialFolderId={selectedFolderId} pending={createPending} onCreate={(title, folderId, description) => { void createTask(title, folderId, description); }} onCancel={() => setCreateOpen(false)} /> : null}
             {selectedProject ? (
-              <ProjectPlannerView state={project} sessions={sessions} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
+              <ProjectPlannerView state={project} sessions={sessions} nodeConnectivity={nodeConnectivity} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
             ) : selectedFolderId ? (
               <ProjectFolderResolutionView state={resolution} title={selectedFolderName} onRetry={() => { void projectSelection.retry(); }} />
             ) : (
-              <DailyPlannerView state={daily} selectedDate={selectedDate} isTodayView={selectedDate === today} todayTaskIds={todayTaskIds} sessions={sessions} onSaveMemo={saveMemo} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} />
+              <DailyPlannerView state={daily} selectedDate={selectedDate} isTodayView={selectedDate === today} todayTaskIds={todayTaskIds} sessions={sessions} nodeConnectivity={nodeConnectivity} onSaveMemo={saveMemo} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} />
             )}
           </div>
         </div>
@@ -448,7 +448,7 @@ function V3DashboardContent() {
       <div className="v3-session-panel-resize" data-testid="v3-session-panel-resize-handle" aria-hidden="true">
         <DragHandle onDrag={sessionPanel.resize} widthPx={DASHBOARD_PANEL_GAP_PX} />
       </div>
-      <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} activeSessionId={activeSessionKey} onOpenSession={(session) => { void sessionPanel.openSession(session); }} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onAcknowledged={acknowledgeReview} />
+      <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} onOpenSession={(session) => { void sessionPanel.openSession(session); }} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onAcknowledged={acknowledgeReview} />
       {workspaceOpen && (workspaceTask || activeSession) ? (
         <TaskWorkspace
           task={workspaceTask}

@@ -97,6 +97,11 @@ describe("node snapshot and stream route harness", () => {
     expect((await app.inject({ method: "GET", url: "/api/nodes" })).json()).toEqual({
       nodes: [],
     });
+    expect(registry.sessionCache.findSession("sess-a")).toMatchObject({
+      nodeId: "node-a",
+      status: "running",
+      fresh: false,
+    });
 
     await app.close();
   });

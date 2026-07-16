@@ -19,6 +19,7 @@ import { V3ErrorNotice } from "./V3ErrorNotice";
 import { V3ContextMenu, type V3ContextMenuTarget } from "./V3ContextMenu";
 import { buildDocumentContextMenuActions } from "./context-menu-model";
 import { loadConfirmedResult } from "./planner-query-state";
+import type { SessionNodeConnectivity } from "./session-node-connectivity";
 
 export type PlannerLoadState<T> =
   | { status: "loading"; data: T | null; message: null }
@@ -31,6 +32,7 @@ export function DailyPlannerView({
   isTodayView,
   todayTaskIds,
   sessions,
+  nodeConnectivity,
   onSaveMemo,
   onOpenProject,
   onOpenTask,
@@ -42,6 +44,7 @@ export function DailyPlannerView({
   isTodayView: boolean;
   todayTaskIds: ReadonlySet<string>;
   sessions: readonly SessionSummary[];
+  nodeConnectivity: SessionNodeConnectivity;
   onSaveMemo(blockId: string | null, text: string): Promise<void>;
   onOpenProject(projectId: string): void;
   onOpenTask(task: PlannerTask): void;
@@ -91,6 +94,7 @@ export function DailyPlannerView({
                 key={task.page.id}
                 task={task}
                 sessions={sessions}
+                nodeConnectivity={nodeConnectivity}
                 isInToday={todayTaskIds.has(task.page.id)}
                 onOpen={() => onOpenTask(task)}
                 onComplete={() => onCompleteTask(task)}
@@ -110,6 +114,7 @@ export function DailyPlannerView({
 export function ProjectPlannerView({
   state,
   sessions,
+  nodeConnectivity,
   todayTaskIds,
   newDocumentOpen,
   newDocumentTitle,
@@ -129,6 +134,7 @@ export function ProjectPlannerView({
 }: {
   state: PlannerLoadState<ProjectPlannerData>;
   sessions: readonly SessionSummary[];
+  nodeConnectivity: SessionNodeConnectivity;
   todayTaskIds: ReadonlySet<string>;
   newDocumentOpen: boolean;
   newDocumentTitle: string;
@@ -278,6 +284,7 @@ export function ProjectPlannerView({
             key={task.page.id}
             task={task}
             sessions={sessions}
+            nodeConnectivity={nodeConnectivity}
             isInToday={todayTaskIds.has(task.page.id)}
             onOpen={() => onOpenTask(task)}
             onComplete={() => onCompleteTask(task)}

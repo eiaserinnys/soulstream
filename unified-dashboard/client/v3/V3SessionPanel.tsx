@@ -19,10 +19,12 @@ import {
 
 import { sessionPanelGroups, sessionPanelTitle } from "./v3-session-panel-model";
 import { RichSessionRow } from "./RichSessionRow";
+import type { SessionNodeConnectivity } from "./session-node-connectivity";
 import "./v3-session-panel.css";
 
 interface V3SessionPanelProps {
   sessions: readonly SessionSummary[];
+  nodeConnectivity: SessionNodeConnectivity;
   activeSessionId: string | null;
   onOpenSession(session: SessionSummary): void;
   onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
@@ -32,6 +34,7 @@ interface V3SessionPanelProps {
 
 export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(function V3SessionPanel({
   sessions,
+  nodeConnectivity,
   activeSessionId,
   onOpenSession,
   onRenameSession,
@@ -41,7 +44,10 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
   const surfaceRef = useRef<HTMLElement>(null);
   const pendingRef = useRef(false);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
-  const groups = useMemo(() => sessionPanelGroups(sessions), [sessions]);
+  const groups = useMemo(
+    () => sessionPanelGroups(sessions, nodeConnectivity),
+    [nodeConnectivity, sessions],
+  );
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<SessionContextMenuState | null>(null);
@@ -93,6 +99,20 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
           onContextMenu={openContextMenu}
           onAcknowledge={acknowledge}
         />
+        {groups.offline.length > 0 ? (
+          <SessionGroup
+            title="노드 오프라인"
+            testId="v3-session-group-offline"
+            emptyText=""
+            sessions={groups.offline}
+            activeSessionId={activeSessionId}
+            pendingId={pendingId}
+            onOpenSession={onOpenSession}
+            onContextMenu={openContextMenu}
+            onAcknowledge={acknowledge}
+            nodeOffline
+          />
+        ) : null}
         <SessionGroup
           title="검수 대기"
           testId="v3-session-group-review"
@@ -130,6 +150,7 @@ function SessionGroup({
   onContextMenu,
   onAcknowledge,
   review = false,
+  nodeOffline = false,
 }: {
   title: string;
   testId: string;
@@ -141,6 +162,7 @@ function SessionGroup({
   onContextMenu(session: SessionSummary, event: MouseEvent<HTMLElement>): void;
   onAcknowledge(session: SessionSummary): Promise<void>;
   review?: boolean;
+  nodeOffline?: boolean;
 }) {
   return (
     <section className="v3-session-group" data-testid={testId}>
@@ -153,6 +175,7 @@ function SessionGroup({
             active={activeSessionId === session.agentSessionId}
             pending={pendingId === session.agentSessionId}
             review={review}
+            nodeOffline={nodeOffline}
             onOpenSession={onOpenSession}
             onContextMenu={onContextMenu}
             onAcknowledge={onAcknowledge}
@@ -169,6 +192,7 @@ const SessionPanelRow = memo(function SessionPanelRow({
   active,
   pending,
   review,
+  nodeOffline,
   onOpenSession,
   onContextMenu,
   onAcknowledge,
@@ -177,6 +201,7 @@ const SessionPanelRow = memo(function SessionPanelRow({
   active: boolean;
   pending: boolean;
   review: boolean;
+  nodeOffline: boolean;
   onOpenSession(session: SessionSummary): void;
   onContextMenu(session: SessionSummary, event: MouseEvent<HTMLElement>): void;
   onAcknowledge(session: SessionSummary): Promise<void>;
@@ -188,6 +213,7 @@ const SessionPanelRow = memo(function SessionPanelRow({
     >
       <RichSessionRow
         session={session}
+        nodeOffline={nodeOffline}
         onOpen={onOpenSession}
         onContextMenu={onContextMenu}
         actions={review ? (

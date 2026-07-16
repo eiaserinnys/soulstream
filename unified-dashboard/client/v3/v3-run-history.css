@@ -144,6 +144,11 @@
   background: color-mix(in srgb, var(--success) 12%, transparent);
 }
 
+.v3-run-status-badge--offline {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+
 .v3-run-status-badge--error,
 .v3-run-status-badge--interrupted,
 .v3-run-status-badge--failed {
@@ -160,6 +165,7 @@
 }
 
 .v3-run-status--running { background: var(--success); }
+.v3-run-status--offline { background: var(--warning); }
 .v3-run-status--error,
 .v3-run-status--interrupted { background: var(--destructive); }
 .v3-run-status--completed { background: var(--info); }

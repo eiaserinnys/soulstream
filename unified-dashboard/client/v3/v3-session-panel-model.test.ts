@@ -21,6 +21,38 @@ describe("v3 session panel model", () => {
     expect(groups.review[0]).toBe(review);
   });
 
+  it("separates running sessions whose assigned node disappeared from a ready snapshot", () => {
+    const connected = {
+      ready: true,
+      connectedNodeIds: new Set(["node-online"]),
+    };
+    const online = {
+      ...session("online", "running", "not_required", "2026-07-16T03:00:00Z"),
+      nodeId: "node-online",
+    };
+    const offline = {
+      ...session("offline", "running", "not_required", "2026-07-16T04:00:00Z"),
+      nodeId: "node-offline",
+    };
+
+    const groups = sessionPanelGroups([online, offline], connected);
+
+    expect(groups.running).toEqual([online]);
+    expect(groups.offline).toEqual([offline]);
+  });
+
+  it("does not infer offline before the first node snapshot", () => {
+    const running = {
+      ...session("running", "running", "not_required", "2026-07-16T03:00:00Z"),
+      nodeId: "node-not-loaded-yet",
+    };
+
+    expect(sessionPanelGroups([running], {
+      ready: false,
+      connectedNodeIds: new Set(),
+    })).toMatchObject({ running: [running], offline: [] });
+  });
+
   it("sorts each group by recent activity while preserving equal-session identity", () => {
     const older = session("older", "running", "not_required", "2026-07-16T01:00:00Z");
     const newer = session("newer", "running", "not_required", "2026-07-16T02:00:00Z");

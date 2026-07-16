@@ -24,12 +24,12 @@ export function useNodes() {
 
       es.onopen = () => {
         retryRef.current = 0;
-        setConnectionStatus("connected");
       };
 
       es.addEventListener("snapshot", (e) => {
         const nodes: OrchestratorNode[] = JSON.parse(e.data);
         setNodes(nodes);
+        setConnectionStatus("connected");
       });
 
       es.addEventListener("node_connected", (e) => {
