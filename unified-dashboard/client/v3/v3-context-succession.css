@@ -330,6 +330,11 @@
   cursor: pointer;
 }
 
+.v3-succession-body li label > span {
+  min-width: 0;
+  flex: 1;
+}
+
 .v3-succession-body li input {
   margin-top: 3px;
   accent-color: var(--info);
@@ -367,7 +372,7 @@
   outline: 2px solid color-mix(in srgb, var(--info) 18%, transparent);
 }
 
-.v3-succession-context-chips {
+.v3-succession-body .v3-succession-context-chips {
   display: flex;
   flex-flow: row wrap;
   /* 업무 창 칩 행(.v3-context-chips)과 동일 준거 — 세로 중앙 정렬 */
@@ -376,17 +381,31 @@
   margin-top: 7px;
 }
 
-.v3-succession-context-chips > span {
+.v3-succession-body .v3-succession-context-chips > span {
   display: inline-flex;
+  box-sizing: border-box;
   width: fit-content;
+  max-width: 100%;
+  min-height: 28px;
+  flex: 0 1 auto;
   flex-direction: row;
   align-items: center;
+  overflow: hidden;
   border: 1px solid var(--glass-border);
   border-radius: 999px;
   padding: 3px 6px;
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--info) 7%, transparent);
   font-size: var(--font-size-xs);
+}
+
+.v3-succession-body .v3-succession-context-chips .v3-succession-context-label {
+  display: block;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .v3-succession-assignment {

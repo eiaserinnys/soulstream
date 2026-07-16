@@ -28,7 +28,7 @@ test("PR-Y · one Chromium · inherited values, empty values, and project switch
       const projectPageReads = new Map<string, number>();
       page.on("request", (request) => {
         const pathName = new URL(request.url()).pathname;
-        if (pathName === "/api/pages/project-amber" || pathName === "/api/pages/project-ops") {
+        if (["/api/pages/project-amber", "/api/pages/project-dashboard", "/api/pages/project-ops"].includes(pathName)) {
           projectPageReads.set(pathName, (projectPageReads.get(pathName) ?? 0) + 1);
         }
       });
@@ -37,22 +37,22 @@ test("PR-Y · one Chromium · inherited values, empty values, and project switch
       await expect(page.getByTestId("v3-global-toolbar")).toBeVisible();
       await expect(page.getByTestId("v3-task-task-alpha")).toBeVisible();
       await page.getByRole("button", { name: "새 업무" }).click();
+      await page.getByLabel("프로젝트 선택").selectOption("folder-dashboard");
 
       const preview = page.getByTestId("new-task-inheritance-preview");
-      await expect(preview).toContainText("상속 미리보기 · 소울스트림");
+      await expect(preview).toContainText("컨텍스트 미리보기 · 대시보드");
       await expect(page.getByTestId("inheritance-guidance-preview")).toContainText("프로젝트의 결정을 실제 근거와 함께 기록하고");
       await expect(page.getByTestId("inheritance-guidance-preview")).toHaveCSS("-webkit-line-clamp", "3");
+      await expect(page.getByTestId("inheritance-guidance")).toContainText("소울스트림에서 상속");
       await expect(page.getByTestId("inheritance-atom")).toContainText("⚛ soulstream · depth 5 · titlesOnly off");
       await expect(page.getByTestId("inheritance-defaults")).toContainText("👤 roselin_codex@eiaserinnys");
       await expect.poll(() => projectPageReads.get("/api/pages/project-amber") ?? 0).toBe(1);
-
-      await page.getByLabel("guidance 프리뷰 펼치기").click();
-      await expect(page.getByTestId("inheritance-guidance-full")).toBeVisible();
-      await page.getByLabel("guidance 프리뷰 펼치기").click();
+      await expect.poll(() => projectPageReads.get("/api/pages/project-dashboard") ?? 0).toBe(1);
+      await expect(preview.locator("details")).toHaveCount(0);
       await capture(page, theme, "01-with-context");
 
       await page.getByLabel("프로젝트 선택").selectOption("folder-ops");
-      await expect(preview).toContainText("상속 미리보기 · Soulstream 운영");
+      await expect(preview).toContainText("컨텍스트 미리보기 · Soulstream 운영");
       await expect(page.getByTestId("inheritance-guidance")).toContainText("없음");
       await expect(page.getByTestId("inheritance-atom")).toContainText("없음");
       await expect(page.getByTestId("inheritance-defaults")).toContainText("없음");
@@ -82,7 +82,7 @@ async function preparePage(page: Page, theme: Theme) {
     });
     Object.defineProperty(serviceWorker, "controller", { configurable: true, get: () => null });
   }, theme);
-  await installV3VisualQaRoutes(page);
+  await installV3VisualQaRoutes(page, { contextChainPreview: true });
 }
 
 async function capture(page: Page, theme: Theme, state: string) {

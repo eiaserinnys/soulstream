@@ -87,10 +87,11 @@ export class AncestorPageContextResolver implements PageContextResolver {
 
     const candidates: PageContextCandidate[] = [];
     const failures: PageContextTraversalFailure[] = [];
-    const explicitPageIds = pageContextSourceIds(task.contextItems).slice(
-      0,
-      Math.max(0, this.maxPages - 1),
-    );
+    const explicitPageLimit = Math.max(0, this.maxPages - 1);
+    const sourcePageIds = pageContextSourceIds(task.contextItems);
+    const explicitPageIds = explicitPageLimit > 0
+      ? sourcePageIds.slice(-explicitPageLimit)
+      : [];
     await collectExplicitPageContexts(
       this.repository,
       explicitPageIds,

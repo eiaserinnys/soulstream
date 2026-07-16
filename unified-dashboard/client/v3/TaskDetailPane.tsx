@@ -4,6 +4,7 @@ import { Button, useGlassSurface, type CatalogFolder, type SessionSummary } from
 import type { PlannerTask } from "./planner-data";
 import type { TaskMoveTarget } from "./task-move-targets";
 import { plannerStatusPresentation } from "./planner-model";
+import { singleLinePreview } from "./session-preview";
 import type { PageSessionDefaults } from "./task-workspace-api";
 import { descriptionMarkdown, type RunSessionLoadState } from "./task-workspace-model";
 import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
@@ -114,7 +115,9 @@ export function TaskDetailPane({
     ...effectiveContext.guidance.map((guidance) => ({
       id: `${guidance.source.pageId}:${guidance.blockId}`,
       icon: "✦",
-      label: `${guidance.text} · ${contextSourceLabel(guidance.source.folderName)}`,
+      label: `${singleLinePreview(guidance.text, 96) ?? guidance.text} · ${contextSourceLabel(
+        guidance.source.folderName,
+      )}`,
     })),
     ...effectiveContext.atomReferences.map((reference) => ({
       id: `${reference.source.pageId}:${reference.blockId}`,

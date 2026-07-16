@@ -175,7 +175,10 @@ export function SessionSuccessionModal({
                   <strong>업무 카드 본문</strong>
                   <span className="v3-succession-context-chips">
                     {contextItems.map((context) => (
-                      <span key={context.id}><span aria-hidden="true">{context.icon}</span> {context.label}</span>
+                      <span key={context.id}>
+                        <span aria-hidden="true">{context.icon}</span>
+                        <span className="v3-succession-context-label">{context.label}</span>
+                      </span>
                     ))}
                     {contextItems.length === 0 ? <small>연결된 컨텍스트 없음</small> : null}
                   </span>

@@ -52,6 +52,16 @@ describe("project page details", () => {
       headers: { Accept: "application/json" },
     });
   });
+
+  it("keeps the legacy atom title as a display-only fallback", () => {
+    expect(parseProjectPageDetails([
+      block("atom_ref", "", {
+        instance: "atom",
+        nodeId: "planner-design",
+        title: "플래너 UX 원칙",
+      }),
+    ]).atomReferences[0]?.nodeTitle).toBe("플래너 UX 원칙");
+  });
 });
 
 function block(blockType: string, text: string, properties: Record<string, unknown>) {

@@ -52,7 +52,10 @@ export function parseProjectPageDetails(blocks: readonly BlockDto[]): ProjectPag
         blockId: block.id,
         instance,
         nodeId,
-        nodeTitle: stringProperty(block.properties, "nodeTitle") ?? nodeId,
+        nodeTitle: stringProperty(block.properties, "nodeTitle")
+          ?? stringProperty(block.properties, "title")
+          ?? stringProperty(block.properties, "label")
+          ?? nodeId,
         depth: normalizeAtomDepth(block.properties.depth),
         titlesOnly: block.properties.titlesOnly === true,
       }];
