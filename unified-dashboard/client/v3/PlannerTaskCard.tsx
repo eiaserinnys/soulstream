@@ -14,11 +14,16 @@ import {
   TASK_TITLE_PREVIEW_LENGTH,
 } from "./session-preview";
 import { useTaskStar } from "./use-task-star";
+import {
+  sessionPresentationStatus,
+  type SessionNodeConnectivity,
+} from "./session-node-connectivity";
 import "./v3-content-boundary.css";
 
 export function PlannerTaskCard({
   task,
   sessions,
+  nodeConnectivity,
   isInToday,
   onOpen,
   onComplete,
@@ -26,6 +31,7 @@ export function PlannerTaskCard({
 }: {
   task: PlannerTask;
   sessions: readonly SessionSummary[];
+  nodeConnectivity: SessionNodeConnectivity;
   isInToday: boolean;
   onOpen(): void;
   onComplete(): Promise<void>;
@@ -35,7 +41,14 @@ export function PlannerTaskCard({
   const taskStar = useTaskStar(task.page);
   const status = plannerStatusPresentation(task.status);
   const run = latestRun(task.sessionIds, sessions);
-  const runState = run?.session.status === "running" ? "실행 중" : run ? "완료" : "시작 전";
+  const runStatus = run ? sessionPresentationStatus(run.session, nodeConnectivity) : null;
+  const runState = runStatus === "running"
+    ? "실행 중"
+    : runStatus === "offline"
+      ? "노드 오프라인"
+      : run
+        ? "완료"
+        : "시작 전";
   const openFromKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
@@ -95,7 +108,7 @@ export function PlannerTaskCard({
         </Button>
         <span className="v3-run-line">
           {run ? `세션 #${run.number} ${runState}` : "세션 0 · 시작 전"}
-          {run?.session.status === "running" ? <i aria-label="실행 중" /> : null}
+          {runStatus === "running" ? <i aria-label="실행 중" /> : null}
         </span>
         {task.progress === null ? null : (
           <span

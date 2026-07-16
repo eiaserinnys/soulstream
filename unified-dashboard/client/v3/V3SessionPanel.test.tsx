@@ -35,6 +35,7 @@ describe("V3SessionPanel", () => {
       root.render(
         <V3SessionPanel
           sessions={[session("running-1", "running"), session("review-1", "completed")]}
+          nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["eiaserinnys"]) }}
           activeSessionId={null}
           onOpenSession={onOpenSession}
           onRenameSession={async () => undefined}
@@ -78,6 +79,7 @@ describe("V3SessionPanel", () => {
       return (
         <V3SessionPanel
           sessions={sessions}
+          nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["eiaserinnys"]) }}
           activeSessionId={null}
           onOpenSession={() => undefined}
           onRenameSession={async () => undefined}
@@ -96,6 +98,53 @@ describe("V3SessionPanel", () => {
     await vi.waitFor(() => expect(host.querySelector('[data-testid="v3-session-row-review-1"]')).toBeNull());
     expect(host.querySelector('[data-testid="v3-session-panel"]')).not.toBeNull();
     expect(host.querySelector('[data-testid="v3-session-row-review-2"]')).toBe(untouched);
+    flushSync(() => { root.unmount(); });
+  });
+
+  it("moves a running session on a disconnected node into an offline group", () => {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const root = createRoot(host);
+
+    flushSync(() => {
+      root.render(
+        <V3SessionPanel
+          sessions={[{ ...session("offline-1", "running"), nodeId: "node-offline" }]}
+          nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["eiaserinnys"]) }}
+          activeSessionId={null}
+          onOpenSession={() => undefined}
+          onRenameSession={async () => undefined}
+          onDeleteSessions={async () => undefined}
+          onAcknowledged={() => undefined}
+        />,
+      );
+    });
+
+    expect(host.querySelector('[data-testid="v3-session-group-running"]')?.textContent)
+      .not.toContain("offline-1");
+    const offlineGroup = host.querySelector('[data-testid="v3-session-group-offline"]');
+    expect(offlineGroup?.textContent).toContain("offline-1");
+    expect(offlineGroup?.textContent).toContain("노드 오프라인");
+
+    flushSync(() => {
+      root.render(
+        <V3SessionPanel
+          sessions={[{ ...session("offline-1", "running"), nodeId: "node-offline" }]}
+          nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["node-offline"]) }}
+          activeSessionId={null}
+          onOpenSession={() => undefined}
+          onRenameSession={async () => undefined}
+          onDeleteSessions={async () => undefined}
+          onAcknowledged={() => undefined}
+        />,
+      );
+    });
+
+    expect(host.querySelector('[data-testid="v3-session-group-offline"]')).toBeNull();
+    expect(host.querySelector('[data-testid="v3-session-group-running"]')?.textContent)
+      .toContain("offline-1");
+    expect(host.querySelector('[data-testid="v3-session-group-running"]')?.textContent)
+      .toContain("실행 중");
     flushSync(() => { root.unmount(); });
   });
 });

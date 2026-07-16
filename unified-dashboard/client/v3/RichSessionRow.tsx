@@ -9,6 +9,7 @@ export function RichSessionRow({
   session,
   runNumber = null,
   failed = false,
+  nodeOffline = false,
   preview,
   actions,
   onOpen,
@@ -17,13 +18,15 @@ export function RichSessionRow({
   session: SessionSummary;
   runNumber?: number | null;
   failed?: boolean;
+  nodeOffline?: boolean;
   preview?: string;
   actions?: ReactNode;
   onOpen(session: SessionSummary): void;
   onContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
   const title = failed ? runNumberLabel(runNumber) : sessionPanelTitle(session);
-  const status = failed ? "조회 실패" : statusLabel(session.status);
+  const status = failed ? "조회 실패" : nodeOffline ? "노드 오프라인" : statusLabel(session.status);
+  const presentationStatus = failed ? "failed" : nodeOffline ? "offline" : session.status;
   const portraitUrl = failed ? null : sessionPortraitUrl(session);
   const visiblePreview = failed
     ? "세션 정보를 불러오지 못했습니다."
@@ -34,7 +37,7 @@ export function RichSessionRow({
 
   return (
     <div
-      className={`v3-run-row${failed ? " v3-run-row--failed" : ""}`}
+      className={`v3-run-row${failed ? " v3-run-row--failed" : ""}${nodeOffline ? " v3-run-row--offline" : ""}`}
       data-load-state={failed ? "failed" : "ready"}
       data-session-id={failed ? undefined : session.agentSessionId}
       onContextMenu={failed || !onContextMenu ? undefined : (event) => onContextMenu(session, event)}
@@ -55,8 +58,8 @@ export function RichSessionRow({
           <small>{visiblePreview}</small>
         </span>
         <span className="v3-run-trailing">
-          <span className={`v3-run-status-badge v3-run-status-badge--${failed ? "failed" : session.status}`}>
-            <span className={`v3-run-status v3-run-status--${failed ? "error" : session.status}`} aria-hidden="true" />
+          <span className={`v3-run-status-badge v3-run-status-badge--${presentationStatus}`}>
+            <span className={`v3-run-status v3-run-status--${presentationStatus}`} aria-hidden="true" />
             {status}
           </span>
           <time>{failed ? "" : formatRelativeSessionTime(session)}</time>

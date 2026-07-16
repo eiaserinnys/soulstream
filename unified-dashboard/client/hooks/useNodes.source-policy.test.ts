@@ -13,4 +13,13 @@ describe("useNodes source policy", () => {
     expect(source).toContain('addEventListener("snapshot"');
     expect(source).not.toContain('fetch("/api/nodes")');
   });
+
+  it("marks node state ready only after the first snapshot, not when the socket opens", () => {
+    const source = readFileSync(SOURCE_PATH, "utf8");
+    const onOpen = source.match(/es\.onopen = \(\) => \{([\s\S]*?)\n      \};/)?.[1] ?? "";
+    const snapshot = source.match(/addEventListener\("snapshot", \(e\) => \{([\s\S]*?)\n      \}\);/)?.[1] ?? "";
+
+    expect(onOpen).not.toContain('setConnectionStatus("connected")');
+    expect(snapshot).toContain('setConnectionStatus("connected")');
+  });
 });
