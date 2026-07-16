@@ -6,6 +6,7 @@ import {
   readPageYDocReplica,
 } from "../../src/page/page_yjs_model.js";
 import {
+  PageYjsPageNotFoundError,
   PageYjsSnapshotMissingError,
   createPageYjsPersistence,
   type PageYjsPersistenceRepository,
@@ -61,6 +62,7 @@ describe("orch page Yjs persistence", () => {
     const state = snapshot();
     const repository = {
       getPageYjsSnapshot: vi.fn().mockResolvedValue(state),
+      hasPageProjection: vi.fn(),
     } as unknown as PageYjsPersistenceRepository;
     const persistence = createPageYjsPersistence(repository);
 
@@ -68,11 +70,30 @@ describe("orch page Yjs persistence", () => {
       documentName: "page:page-1",
     } as never)).resolves.toBe(state);
     expect(repository.getPageYjsSnapshot).toHaveBeenCalledWith("page:page-1");
+    expect(repository.hasPageProjection).not.toHaveBeenCalled();
   });
 
-  it("fetches the snapshot only and fails explicitly when it is missing", async () => {
+  it("reports a missing page separately from a missing snapshot", async () => {
     const repository = {
       getPageYjsSnapshot: vi.fn().mockResolvedValue(null),
+      hasPageProjection: vi.fn().mockResolvedValue(false),
+    } as unknown as PageYjsPersistenceRepository;
+    const persistence = createPageYjsPersistence(repository);
+
+    await expect(persistence.database.configuration.fetch?.({
+      documentName: "page:missing-page",
+    } as never)).rejects.toMatchObject({
+      name: "PageYjsPageNotFoundError",
+      code: "PAGE_NOT_FOUND",
+      pageId: "missing-page",
+    } satisfies Partial<PageYjsPageNotFoundError>);
+    expect(repository.hasPageProjection).toHaveBeenCalledWith("missing-page");
+  });
+
+  it("keeps a projection without a snapshot as an explicit invariant failure", async () => {
+    const repository = {
+      getPageYjsSnapshot: vi.fn().mockResolvedValue(null),
+      hasPageProjection: vi.fn().mockResolvedValue(true),
     } as unknown as PageYjsPersistenceRepository;
     const persistence = createPageYjsPersistence(repository);
 
@@ -84,6 +105,7 @@ describe("orch page Yjs persistence", () => {
       pageId: "page-1",
     } satisfies Partial<PageYjsSnapshotMissingError>);
     expect(repository.getPageYjsSnapshot).toHaveBeenCalledTimes(1);
+    expect(repository.hasPageProjection).toHaveBeenCalledWith("page-1");
   });
 
   it("rejects non-page document names", async () => {

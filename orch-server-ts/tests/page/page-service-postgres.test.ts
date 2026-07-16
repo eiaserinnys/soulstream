@@ -734,6 +734,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
     const failing = new PageYjsService({
       repository: {
         getPageYjsSnapshot: repository.getPageYjsSnapshot.bind(repository),
+        hasPageProjection: repository.hasPageProjection.bind(repository),
         getPageMutationByIdempotencyKey: repository.getPageMutationByIdempotencyKey.bind(repository),
         hasPageOperation: repository.hasPageOperation.bind(repository),
         getPageTimestamps: repository.getPageTimestamps.bind(repository),

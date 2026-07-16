@@ -333,6 +333,10 @@ class MemoryPageRepository {
     return this.snapshots.get(documentName) ?? null;
   }
 
+  async hasPageProjection(pageId: string): Promise<boolean> {
+    return this.snapshots.has(`page:${pageId}`);
+  }
+
   async storePageYjsState(input: { documentName: string; snapshot: Uint8Array }): Promise<void> {
     this.snapshots.set(input.documentName, input.snapshot);
     this.storeCount += 1;

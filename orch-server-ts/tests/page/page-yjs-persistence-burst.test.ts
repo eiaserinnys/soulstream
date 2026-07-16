@@ -373,6 +373,10 @@ class InstrumentedPageRepository {
     return this.snapshots.get(documentName) ?? null;
   }
 
+  async hasPageProjection(pageId: string): Promise<boolean> {
+    return this.snapshots.has(`page:${pageId}`);
+  }
+
   async storePageYjsState(input: {
     documentName: string;
     snapshot: Uint8Array;

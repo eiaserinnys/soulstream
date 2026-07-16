@@ -117,6 +117,22 @@ describe("orch PageRepository", () => {
     expect(calls[0]?.values).toEqual(["page:page-1"]);
   });
 
+  it("checks the SQL page projection independently from the Y.Doc snapshot", async () => {
+    const { sql, calls } = createMockSql((call) =>
+      call.query.includes("SELECT EXISTS") ? [{ exists: true }] : [],
+    );
+    const repository = new PageRepository({
+      resolveSql: vi.fn(async () => sql),
+      close: vi.fn(),
+    });
+
+    await expect(repository.hasPageProjection("page-1")).resolves.toBe(true);
+    expect(calls).toEqual([expect.objectContaining({
+      query: expect.stringContaining("FROM pages"),
+      values: ["page-1"],
+    })]);
+  });
+
   it("rejects a replica whose document name and page id differ", async () => {
     const { sql, calls } = createMockSql();
     const repository = new PageRepository({
