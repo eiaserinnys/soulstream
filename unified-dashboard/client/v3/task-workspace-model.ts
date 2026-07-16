@@ -86,8 +86,15 @@ export function buildRunTree(
   loadStateById?: ReadonlyMap<string, RunSessionLoadState>,
 ): RunTreeNode[] {
   const byId = new Map(sessions.map((session) => [session.agentSessionId, session]));
-  const rootIds = new Set(containerSessionIds);
-  const roots = containerSessionIds.flatMap((sessionId) => {
+  const containerIdSet = new Set(containerSessionIds);
+  const rootSessionIds = containerSessionIds.filter((sessionId) => {
+    const parentId = byId.get(sessionId)?.callerSessionId;
+    return !parentId
+      || !containerIdSet.has(parentId)
+      || containerCallerChainReturnsTo(sessionId, byId, containerIdSet);
+  });
+  const rootIds = new Set(rootSessionIds);
+  const roots = rootSessionIds.flatMap((sessionId) => {
     const session = byId.get(sessionId);
     if (session) return [{ session, loadState: "ready" as const }];
     const loadState = loadStateById?.get(sessionId);
@@ -130,6 +137,22 @@ export function buildRunTree(
       new Set(),
       loadState,
     ));
+}
+
+function containerCallerChainReturnsTo(
+  startId: string,
+  byId: ReadonlyMap<string, SessionSummary>,
+  containerIds: ReadonlySet<string>,
+): boolean {
+  const visited = new Set<string>();
+  let currentId = byId.get(startId)?.callerSessionId;
+  while (currentId && containerIds.has(currentId)) {
+    if (currentId === startId) return true;
+    if (visited.has(currentId)) return false;
+    visited.add(currentId);
+    currentId = byId.get(currentId)?.callerSessionId;
+  }
+  return false;
 }
 
 export function resolveRunSessions({

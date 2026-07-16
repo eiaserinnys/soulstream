@@ -14,7 +14,10 @@ import {
 
 describe("v3 dashboard utilities", () => {
   it("builds one mobile option per task and includes descendant runs", () => {
-    const tasks = [task("task-1", ["run-1"]), task("task-1", ["run-1"])];
+    const tasks = [
+      task("task-1", ["run-1", "run-child"]),
+      task("task-1", ["run-1", "run-child"]),
+    ];
     const sessions = [
       session("run-1", undefined, "2026-07-14T00:00:00.000Z"),
       session("run-child", "run-1", "2026-07-14T01:00:00.000Z"),
