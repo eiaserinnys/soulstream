@@ -7,6 +7,37 @@ import type {
 import type { BoardRepository } from "./board_repository.js";
 import { toIsoString } from "./repository_helpers.js";
 
+interface FolderDataRow {
+  id: string;
+  name: string;
+  sort_order: number;
+  settings: unknown;
+  parent_folder_id: string | null;
+  project_page_id: string | null;
+  created_at: Date | string | null;
+}
+
+/** folder_get_all() returns SETOF folders, including the filtered archived column. */
+interface FolderGetAllRow extends FolderDataRow {
+  archived: boolean;
+}
+
+function toFolderRow(row: FolderDataRow): FolderRow {
+  const createdAt = row.created_at ? { created_at: row.created_at } : {};
+  return {
+    id: row.id,
+    name: row.name,
+    sort_order: row.sort_order,
+    parent_folder_id: row.parent_folder_id,
+    project_page_id: row.project_page_id,
+    ...createdAt,
+    settings:
+      row.settings && typeof row.settings === "object"
+        ? (row.settings as Record<string, unknown>)
+        : {},
+  };
+}
+
 export class CatalogRepository {
   constructor(
     private readonly sql: SqlClient,
@@ -32,23 +63,14 @@ export class CatalogRepository {
   async getFolderById(
     folderId: string,
   ): Promise<FolderRow | null> {
-    const rows = await this.sql<
-      { id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null; created_at: Date | string }[]
-    >`SELECT id, name, sort_order, settings, parent_folder_id, created_at FROM folders WHERE id = ${folderId}`;
+    const rows = await this.sql<FolderDataRow[]>`
+      SELECT id, name, sort_order, settings, parent_folder_id, project_page_id, created_at
+      FROM folders
+      WHERE id = ${folderId}
+    `;
     const row = rows[0];
     if (!row) return null;
-    const createdAt = row.created_at ? { created_at: row.created_at } : {};
-    return {
-      id: row.id,
-      name: row.name,
-      sort_order: row.sort_order,
-      parent_folder_id: row.parent_folder_id,
-      ...createdAt,
-      settings:
-        row.settings && typeof row.settings === "object"
-          ? (row.settings as Record<string, unknown>)
-          : {},
-    };
+    return toFolderRow(row);
   }
 
   async getCatalog(): Promise<{
@@ -56,20 +78,20 @@ export class CatalogRepository {
     sessions: Record<string, { folderId: string | null; displayName: string | null }>;
     boardItems: CatalogBoardItemRow[];
   }> {
-    const folderRows = await this.sql<
-      { id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null; created_at: Date | string | null }[]
-    >`SELECT * FROM folder_get_all()`;
+    const folderRows = await this.sql<FolderGetAllRow[]>`
+      SELECT * FROM folder_get_all()
+    `;
     const folders = folderRows.map((f) => {
-      const createdAt = toIsoString(f.created_at);
+      const folder = toFolderRow(f);
+      const createdAt = toIsoString(folder.created_at);
       return {
-        id: f.id,
-        name: f.name,
-        sortOrder: f.sort_order,
-        parentFolderId: f.parent_folder_id,
+        id: folder.id,
+        name: folder.name,
+        sortOrder: folder.sort_order,
+        parentFolderId: folder.parent_folder_id,
+        projectPageId: folder.project_page_id,
         ...(createdAt ? { createdAt } : {}),
-        settings: (typeof f.settings === "object" && f.settings !== null
-          ? (f.settings as Record<string, unknown>)
-          : {}),
+        settings: folder.settings,
       };
     });
 
@@ -90,23 +112,10 @@ export class CatalogRepository {
   }
 
   async getAllFolders(): Promise<FolderRow[]> {
-    const rows = await this.sql<
-      Array<{ id: string; name: string; sort_order: number; settings: unknown; parent_folder_id: string | null; created_at: Date | string | null }>
-    >`SELECT * FROM folder_get_all()`;
-    return rows.map((r) => {
-      const createdAt = r.created_at ? { created_at: r.created_at } : {};
-      return {
-        id: r.id,
-        name: r.name,
-        sort_order: r.sort_order,
-        parent_folder_id: r.parent_folder_id,
-        ...createdAt,
-        settings:
-          r.settings && typeof r.settings === "object"
-            ? (r.settings as Record<string, unknown>)
-            : {},
-      };
-    });
+    const rows = await this.sql<FolderGetAllRow[]>`
+      SELECT * FROM folder_get_all()
+    `;
+    return rows.map(toFolderRow);
   }
 
   async createFolder(

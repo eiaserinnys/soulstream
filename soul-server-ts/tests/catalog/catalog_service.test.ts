@@ -57,7 +57,15 @@ function setupSqlWithCatalog() {
   return createMockSql((call) => {
     const text = call.fragments.join("|");
     if (text.includes("folder_get_all"))
-      return [{ id: "f1", name: "F1", sort_order: 0, settings: {}, parent_folder_id: null }];
+      return [{
+        id: "f1",
+        name: "F1",
+        sort_order: 0,
+        settings: {},
+        parent_folder_id: null,
+        project_page_id: "page-f1",
+        archived: false,
+      }];
     if (text.includes("catalog_get_sessions"))
       return [{ session_id: "s1", folder_id: "f1", display_name: "Hi" }];
     return [];
@@ -68,8 +76,25 @@ describe("CatalogService.listFolders", () => {
   it("getAllFolders 결과를 sortOrder/settings 키로 정규화", async () => {
     const createdAt = new Date("2026-06-03T00:00:00.000Z");
     const { sql } = createMockSql(() => [
-      { id: "f1", name: "F1", sort_order: 1, settings: { x: 1 }, parent_folder_id: null, created_at: createdAt },
-      { id: "f2", name: "F2", sort_order: 2, settings: null, parent_folder_id: "f1" },
+      {
+        id: "f1",
+        name: "F1",
+        sort_order: 1,
+        settings: { x: 1 },
+        parent_folder_id: null,
+        project_page_id: "page-f1",
+        archived: false,
+        created_at: createdAt,
+      },
+      {
+        id: "f2",
+        name: "F2",
+        sort_order: 2,
+        settings: null,
+        parent_folder_id: "f1",
+        project_page_id: null,
+        archived: false,
+      },
     ]);
     const db = new SessionDB(sql);
     const { broadcaster } = createBroadcasterMock();
@@ -82,7 +107,7 @@ describe("CatalogService.listFolders", () => {
         sortOrder: 1,
         settings: { x: 1 },
         parentFolderId: null,
-        projectPageId: null,
+        projectPageId: "page-f1",
         createdAt: "2026-06-03T00:00:00.000Z",
       },
       { id: "f2", name: "F2", sortOrder: 2, settings: {}, parentFolderId: "f1", projectPageId: null },
@@ -1156,5 +1181,8 @@ describe("CatalogService.broadcastCatalog", () => {
     const arg = emitCatalogUpdated.mock.calls[0][0];
     expect(arg).toHaveProperty("folders");
     expect(arg).toHaveProperty("sessions");
+    expect(arg).toMatchObject({
+      folders: [{ id: "f1", projectPageId: "page-f1" }],
+    });
   });
 });

@@ -35,7 +35,7 @@ export interface FolderRow {
   sort_order: number;
   settings: Record<string, unknown>;
   parent_folder_id: string | null;
-  project_page_id?: string | null;
+  project_page_id: string | null;
   created_at?: Date | string;
 }
 
