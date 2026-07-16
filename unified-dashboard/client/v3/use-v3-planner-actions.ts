@@ -6,6 +6,10 @@ import { moveBoardItemToContainer } from "../lib/board-workspace-operations";
 import { deleteSessions as deleteSessionRecords } from "../lib/delete-session";
 import { renameSessionOptimistic } from "../lib/rename-session";
 import { loadStarredPlannerTask, type PlannerTask } from "./planner-data";
+import {
+  runOptimisticTaskProjectMove,
+  type TaskProjectMoveTarget,
+} from "./task-project-move";
 import type { TaskMoveTarget } from "./task-move-targets";
 import { completePlannerTask, togglePlannerTaskToday } from "./task-card-actions";
 import { publishTaskStarChange } from "./task-star-store";
@@ -23,6 +27,8 @@ export function useV3PlannerActions({
   patchTask,
   removeSessionsFromPlanner,
   moveSessionInPlanner,
+  moveTaskProjectInPlanner,
+  refreshTask,
 }: {
   api: PageApiClient;
   notify(message: string): void;
@@ -33,6 +39,8 @@ export function useV3PlannerActions({
   patchTask(taskId: string, update: (task: PlannerTask) => PlannerTask): void;
   removeSessionsFromPlanner(sessionIds: readonly string[]): void;
   moveSessionInPlanner(sessionId: string, targetTaskId: string): void;
+  moveTaskProjectInPlanner(task: PlannerTask, targetProject: PageDto): void;
+  refreshTask(taskId: string): void;
 }) {
   const queryClient = useQueryClient();
 
@@ -148,5 +156,25 @@ export function useV3PlannerActions({
     }
   }, [moveSessionInPlanner, notify, notifyWriteFailure]);
 
-  return { completeTask, toggleTaskToday, completeStarredTask, toggleStarredTaskToday, renameTaskTitle, renameSession, deleteSessions, moveSession };
+  const moveTaskProject = useCallback(async (
+    task: PlannerTask,
+    target: TaskProjectMoveTarget,
+  ) => {
+    try {
+      const plan = await runOptimisticTaskProjectMove({
+        api,
+        board: { moveBoardItemToContainer },
+        task,
+        target,
+        project: moveTaskProjectInPlanner,
+      });
+      notify(`프로젝트 이동 · ${plan.target.page.title}`);
+    } catch (error) {
+      refreshTask(task.page.id);
+      notifyWriteFailure("프로젝트 이동", error);
+      throw error;
+    }
+  }, [api, moveTaskProjectInPlanner, notify, notifyWriteFailure, refreshTask]);
+
+  return { completeTask, toggleTaskToday, completeStarredTask, toggleStarredTaskToday, renameTaskTitle, renameSession, deleteSessions, moveSession, moveTaskProject };
 }

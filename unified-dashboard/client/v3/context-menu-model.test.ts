@@ -27,6 +27,7 @@ describe("v3 context menu model", () => {
       "업무 열기",
       "업무 페이지 ID 복사",
       "별표 해제",
+      "다른 프로젝트로 이동",
       "완료 처리",
       "오늘 플래너에서 제거",
     ]);
@@ -41,8 +42,9 @@ describe("v3 context menu model", () => {
     }, taskActions());
 
     expect(menu[2]?.label).toBe("별표 추가");
-    expect(menu[3]).toMatchObject({ label: "완료 처리", disabled: true });
-    expect(menu[4]?.label).toBe("오늘 플래너에 추가");
+    expect(menu[3]?.label).toBe("다른 프로젝트로 이동");
+    expect(menu[4]).toMatchObject({ label: "완료 처리", disabled: true });
+    expect(menu[5]?.label).toBe("오늘 플래너에 추가");
   });
 
   it("keeps document common actions while adding only meaningful mount actions", () => {
@@ -95,6 +97,7 @@ function taskActions() {
     open: vi.fn(),
     copyId: vi.fn(),
     toggleStar: vi.fn(),
+    moveToProject: vi.fn(),
     complete: vi.fn(),
     toggleToday: vi.fn(),
   };

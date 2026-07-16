@@ -28,6 +28,7 @@ import {
   removePlannerSessions,
   replacePlannerTask,
 } from "./planner-mutation-projection";
+import { usePlannerProjectMoveProjection } from "./use-planner-project-move-projection";
 
 const STARRED_TASK_PAGE_SIZE = 50;
 const PROJECT_CONTENT_PAGE_SIZE = 20;
@@ -216,6 +217,8 @@ export function usePlannerCollections({
     updateLoadedTasks((tasks) => movePlannerSession(tasks, sessionId, targetTaskId));
   }, [updateLoadedTasks]);
 
+  const moveTaskProject = usePlannerProjectMoveProjection(setDaily, setProject);
+
   const refreshDaily = useCallback(() => {
     setMutationRefresh((current) => ({ ...current, daily: current.daily + 1 }));
   }, []);
@@ -313,6 +316,7 @@ export function usePlannerCollections({
     patchTask,
     removeSessions,
     moveSession,
+    moveTaskProject,
     refreshDaily,
     refreshProject,
     refreshTask,

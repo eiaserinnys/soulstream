@@ -44,6 +44,7 @@ export function V3Navigation({
   onSelectTask,
   onCompleteTask,
   onToggleTaskToday,
+  onMoveTaskToProject,
   onCreateProject,
   onCreateTask,
 }: {
@@ -62,6 +63,7 @@ export function V3Navigation({
   onSelectTask(task: PageDto): void;
   onCompleteTask(task: PageDto): Promise<void>;
   onToggleTaskToday(task: PageDto): Promise<void>;
+  onMoveTaskToProject(task: PageDto): void;
   onCreateProject(title: string): Promise<void>;
   onCreateTask(folderId: string): void;
 }) {
@@ -223,6 +225,7 @@ export function V3Navigation({
           open: () => onSelectTask(contextMenu.task),
           copyId: () => navigator.clipboard.writeText(contextMenu.task.id),
           toggleStar: () => clearTaskStar(contextMenu.task),
+          moveToProject: () => onMoveTaskToProject(contextMenu.task),
           complete: () => onCompleteTask(contextMenu.task),
           toggleToday: () => onToggleTaskToday(contextMenu.task),
         }) : contextMenu?.kind === "folder" ? buildProjectContextMenuActions({

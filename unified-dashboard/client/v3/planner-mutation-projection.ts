@@ -1,4 +1,5 @@
 import { retainEqualValue } from "@seosoyoung/soul-ui";
+import type { PageDto } from "@seosoyoung/soul-ui/page";
 
 import type { PlannerTask } from "./planner-data";
 
@@ -50,6 +51,38 @@ export function movePlannerSession(
     return { ...task, sessionIds };
   });
   return changed ? next : tasks;
+}
+
+export function movePlannerTaskProject(
+  tasks: PlannerTask[],
+  task: PlannerTask,
+  targetProjectPageId: string,
+  visibleProjectPageId: string,
+): PlannerTask[] {
+  if (visibleProjectPageId !== targetProjectPageId) {
+    const next = tasks.filter((candidate) => candidate.page.id !== task.page.id);
+    return next.length === tasks.length ? tasks : next;
+  }
+  const projected = { ...task, projectPageId: targetProjectPageId };
+  if (!tasks.some((candidate) => candidate.page.id === task.page.id)) {
+    return [...tasks, projected];
+  }
+  return replacePlannerTask(tasks, task.page.id, () => projected);
+}
+
+export function projectPagesForTasks(
+  projects: PageDto[],
+  tasks: readonly PlannerTask[],
+  targetProject: PageDto,
+): PageDto[] {
+  const referenced = new Set(tasks.flatMap((task) => (
+    task.projectPageId ? [task.projectPageId] : []
+  )));
+  const indexed = new Map([...projects, targetProject].map((project) => [project.id, project]));
+  return retainEqualValue(
+    projects,
+    [...indexed.values()].filter((project) => referenced.has(project.id)),
+  );
 }
 
 function sameIds(first: readonly string[], second: readonly string[]): boolean {

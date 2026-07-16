@@ -21,6 +21,7 @@ export function buildTaskContextMenuActions(
     open(): void | Promise<void>;
     copyId(): void | Promise<void>;
     toggleStar(): void | Promise<void>;
+    moveToProject(): void | Promise<void>;
     complete(): void | Promise<void>;
     toggleToday(): void | Promise<void>;
   },
@@ -32,6 +33,10 @@ export function buildTaskContextMenuActions(
       label: state.starred ? "별표 해제" : "별표 추가",
       onSelect: actions.toggleStar,
       separatorBefore: true,
+    },
+    {
+      label: "다른 프로젝트로 이동",
+      onSelect: actions.moveToProject,
     },
     {
       label: "완료 처리",

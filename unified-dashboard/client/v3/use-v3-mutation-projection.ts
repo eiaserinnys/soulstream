@@ -1,5 +1,6 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { retainEqualValue } from "@seosoyoung/soul-ui";
+import type { PageDto } from "@seosoyoung/soul-ui/page";
 
 import type { PlannerTask } from "./planner-data";
 import { movePlannerSession, removePlannerSessions } from "./planner-mutation-projection";
@@ -8,6 +9,7 @@ export function useV3MutationProjection({
   patchLoadedTask,
   removeLoadedSessions,
   moveLoadedSession,
+  moveLoadedTaskProject,
   removeRunHistorySessions,
   moveRunHistorySession,
   setSelectedTaskSnapshot,
@@ -15,6 +17,7 @@ export function useV3MutationProjection({
   patchLoadedTask(taskId: string, update: (task: PlannerTask) => PlannerTask): void;
   removeLoadedSessions(sessionIds: readonly string[]): void;
   moveLoadedSession(sessionId: string, targetTaskId: string): void;
+  moveLoadedTaskProject(task: PlannerTask, targetProject: PageDto): void;
   removeRunHistorySessions(sessionIds: readonly string[]): void;
   moveRunHistorySession(sessionId: string, targetTaskId: string): void;
   setSelectedTaskSnapshot: Dispatch<SetStateAction<PlannerTask | null>>;
@@ -43,5 +46,12 @@ export function useV3MutationProjection({
       : current);
   }, [moveLoadedSession, moveRunHistorySession, setSelectedTaskSnapshot]);
 
-  return { patchPlannerTask, removeSessionsFromPlanner, moveSessionInPlanner };
+  const moveTaskProjectInPlanner = useCallback((task: PlannerTask, targetProject: PageDto) => {
+    moveLoadedTaskProject(task, targetProject);
+    setSelectedTaskSnapshot((current) => current?.page.id === task.page.id
+      ? retainEqualValue(current, { ...current, projectPageId: targetProject.id })
+      : current);
+  }, [moveLoadedTaskProject, setSelectedTaskSnapshot]);
+
+  return { patchPlannerTask, removeSessionsFromPlanner, moveSessionInPlanner, moveTaskProjectInPlanner };
 }

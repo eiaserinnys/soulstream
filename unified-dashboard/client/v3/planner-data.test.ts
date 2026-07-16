@@ -7,6 +7,7 @@ import {
   loadDailyHistoryDates,
   loadDailyPlanner,
   loadProjectDocumentPage,
+  loadPlannerTask,
   loadStarredTasks,
   loadProjectPlanner,
   loadProjectTaskPage,
@@ -133,6 +134,55 @@ describe("planner BFF data", () => {
 
     await expect(dependencies.fetchPlanner("/api/planner/today?date=2026-07-14"))
       .rejects.toThrow("PostgreSQL connection refused at internal-host:5432");
+  });
+
+  it("resolves a starred task project after paginating past daily mounts", async () => {
+    const taskPage = page("task-starred", "별표 업무");
+    const taskSnapshot = {
+      page: taskPage,
+      blocks: [{
+        id: "runbook-ref",
+        page_id: taskPage.id,
+        parent_id: null,
+        position_key: "A",
+        block_type: "runbook_ref",
+        text: "",
+        properties: { primary: true, runbookId: "runbook-starred" },
+        collapsed: false,
+      }],
+      state_vector: "AA==",
+    };
+    const daily = { page: { ...page("daily", "오늘"), daily_date: "2026-07-17" }, blocks: [], state_vector: "AA==" };
+    const project = { page: page("project", "프로젝트"), blocks: [], state_vector: "AA==" };
+    const api = {
+      getPage: vi.fn(async (pageId: string) => (
+        pageId === taskPage.id ? taskSnapshot : pageId === daily.page.id ? daily : project
+      )),
+      getBacklinks: vi
+        .fn()
+        .mockResolvedValueOnce({
+          items: [{ sourcePageId: daily.page.id }],
+          nextCursor: "next-mounts",
+        })
+        .mockResolvedValueOnce({
+          items: [{ sourcePageId: project.page.id }],
+          nextCursor: null,
+        }),
+    } as unknown as PageApiClient;
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 404 })));
+
+    try {
+      await expect(loadPlannerTask(api, taskPage.id)).resolves.toMatchObject({
+        projectPageId: project.page.id,
+      });
+      expect(api.getBacklinks).toHaveBeenNthCalledWith(2, taskPage.id, {
+        kinds: ["mount"],
+        limit: 100,
+        cursor: "next-mounts",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

@@ -28,6 +28,7 @@ export function PlannerTaskCard({
   onOpen,
   onComplete,
   onToggleToday,
+  onMoveToProject,
 }: {
   task: PlannerTask;
   sessions: readonly SessionSummary[];
@@ -36,6 +37,7 @@ export function PlannerTaskCard({
   onOpen(): void;
   onComplete(): Promise<void>;
   onToggleToday(): Promise<void>;
+  onMoveToProject(): void;
 }) {
   const [contextMenu, setContextMenu] = useState<V3ContextMenuTarget | null>(null);
   const taskStar = useTaskStar(task.page);
@@ -132,6 +134,7 @@ export function PlannerTaskCard({
           open: onOpen,
           copyId: () => navigator.clipboard.writeText(task.page.id),
           toggleStar: taskStar.toggle,
+          moveToProject: onMoveToProject,
           complete: onComplete,
           toggleToday: onToggleToday,
         })}

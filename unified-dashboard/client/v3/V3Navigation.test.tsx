@@ -23,6 +23,7 @@ describe("V3Navigation frame contract", () => {
         onSelectTask={vi.fn()}
         onCompleteTask={vi.fn(async () => undefined)}
         onToggleTaskToday={vi.fn(async () => undefined)}
+        onMoveTaskToProject={vi.fn()}
         onCreateProject={vi.fn(async () => undefined)}
         onCreateTask={vi.fn()}
       />,
