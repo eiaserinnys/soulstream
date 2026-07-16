@@ -87,6 +87,32 @@ describe("v3 session panel model", () => {
     ], "session-a")).toEqual({ kind: "standalone" });
     expect(sessionWorkspaceTargetFromBoardItems(items, "missing")).toBeNull();
   });
+
+  it("preserves legacy defaults for missing membership and container fields", () => {
+    const legacyRunbook = {
+      id: "legacy-runbook",
+      folderId: "folder-a",
+      containerKind: "runbook",
+      containerId: "rb-legacy",
+      itemType: "session",
+      itemId: "session-a",
+      x: 0,
+      y: 0,
+    } as CatalogBoardItem;
+    const legacyFolder = {
+      id: "legacy-folder",
+      folderId: "folder-a",
+      itemType: "session",
+      itemId: "session-a",
+      x: 0,
+      y: 0,
+    } as CatalogBoardItem;
+
+    expect(sessionWorkspaceTargetFromBoardItems([legacyRunbook], "session-a"))
+      .toEqual({ kind: "task", pageId: "rb-legacy" });
+    expect(sessionWorkspaceTargetFromBoardItems([legacyFolder], "session-a"))
+      .toEqual({ kind: "standalone" });
+  });
 });
 
 function session(

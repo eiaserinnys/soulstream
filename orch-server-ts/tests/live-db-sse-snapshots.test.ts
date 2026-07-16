@@ -43,6 +43,23 @@ describe("live DB SSE replay snapshots", () => {
     ]);
   });
 
+  it("rejects an unknown durable review outcome before loading a session row", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("session_acknowledge_review")) {
+        return [{ outcome: "corrupt" }];
+      }
+      return [];
+    });
+    const repository = createLiveDbCatalogRepository({ sql: harness.sql });
+
+    await expect(
+      repository.sessionReviewRepository.acknowledgeSessionReview("sess-review"),
+    ).rejects.toThrow("Unexpected session_acknowledge_review outcome: corrupt");
+    expect(harness.normalizedCalls()).toEqual([
+      "SELECT session_acknowledge_review(?, ?) AS outcome",
+    ]);
+  });
+
   it("loads session snapshots from DB with Python session response wire keys", async () => {
     const registry = new InMemoryNodeRegistry();
     registry.registerNode({
