@@ -137,4 +137,6 @@ export interface ContainerItemDbRow {
   frame_count?: string | number;
   runbook_count?: string | number;
   custom_view_count?: string | number;
+  scanned_items?: string | number | null;
+  search_truncated?: boolean | null;
 }

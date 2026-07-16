@@ -131,7 +131,7 @@ function createMockSql() {
     if (text.includes("board_yjs_catalog_cache")) {
       return Promise.resolve([]);
     }
-    if (text.includes("WITH scoped AS") && text.includes("FROM board_items bi")) {
+    if (text.includes("scoped AS") && text.includes("FROM board_items bi")) {
       const itemTypes = values.find((value): value is string[] =>
         Array.isArray(value) && value.every((item) => typeof item === "string")
           && value.some((item) => ["session", "markdown", "asset"].includes(item))
@@ -320,6 +320,8 @@ function withContainerCounts(rows: ReturnType<typeof containerItemRows>) {
     frame_count: count("frame"),
     runbook_count: count("runbook"),
     custom_view_count: count("custom_view"),
+    scanned_items: rows.length,
+    search_truncated: false,
   }));
 }
 
@@ -654,6 +656,8 @@ describe("MCP SDK client smoke", () => {
       total: 3,
       next_cursor: null,
     });
+    expect(structured).not.toHaveProperty("truncated");
+    expect(structured).not.toHaveProperty("scanned_items");
   });
 
   it("callTool('search_container_items') → 세션 표시명·문서만 최대 50개로 검색", async () => {
@@ -670,9 +674,15 @@ describe("MCP SDK client smoke", () => {
     const structured = result.structuredContent as {
       items: Array<{ type: string }>;
       page: { limit: number };
+      truncated: boolean;
+      scanned_items: number;
+      scan_limit: number;
     };
     expect(structured.items.map((item) => item.type)).toEqual(["session", "markdown"]);
     expect(structured.page.limit).toBe(50);
+    expect(structured.truncated).toBe(false);
+    expect(structured.scanned_items).toBe(2);
+    expect(structured.scan_limit).toBe(2_000);
   });
 
   it("callTool('move_folder') → 부모 이동, 루트 복귀, 순환 거부", async () => {

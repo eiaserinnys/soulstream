@@ -61,6 +61,8 @@ describe("BoardRepository.listContainerItems", () => {
           frame_count: 0,
           runbook_count: 0,
           custom_view_count: 0,
+          scanned_items: 2000,
+          search_truncated: true,
         },
       ]);
     }) as unknown as SqlClient & { array: (values: unknown[]) => unknown[] };
@@ -73,6 +75,7 @@ describe("BoardRepository.listContainerItems", () => {
       itemTypes: ["session", "markdown"],
       limit: 50,
       cursor: 25,
+      scanLimit: 2000,
     });
 
     expect(calls).toHaveLength(1);
@@ -89,9 +92,16 @@ describe("BoardRepository.listContainerItems", () => {
       ["session", "markdown"],
       50,
       25,
+      2000,
+      2001,
     ]));
     expect(result.total).toBe(1);
     expect(result.counts.session).toBe(1);
+    expect(result.scan).toEqual({
+      limit: 2000,
+      scannedItems: 2000,
+      truncated: true,
+    });
     expect(result.items).toEqual([
       expect.objectContaining({
         archived: false,
@@ -145,5 +155,6 @@ describe("BoardRepository.listContainerItems", () => {
       runbook: 0,
       custom_view: 0,
     });
+    expect(result.scan).toBeNull();
   });
 });

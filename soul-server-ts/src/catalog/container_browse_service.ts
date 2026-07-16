@@ -12,6 +12,7 @@ import type {
 const DEFAULT_LIMIT = 20;
 const MAX_BROWSE_LIMIT = 100;
 const MAX_SEARCH_LIMIT = 50;
+export const CONTAINER_SEARCH_SCAN_LIMIT = 2_000;
 const SESSION_PREVIEW_LIMIT = 120;
 const MARKDOWN_PREVIEW_LIMIT = 240;
 const LEGACY_BOARD_ITEM_LIMIT = 10_000;
@@ -82,6 +83,11 @@ export interface ContainerBrowseResult {
   items: ContainerBrowseItem[];
   page: ContainerBrowsePage;
   counts: ListContainerItemsResult["counts"];
+  search?: {
+    scanLimit: number;
+    scannedItems: number;
+    truncated: boolean;
+  };
 }
 
 export class ContainerBrowseService {
@@ -120,6 +126,7 @@ export class ContainerBrowseService {
       includeArchived: params.includeArchived ?? false,
       query,
       itemTypes: ["session", "markdown"],
+      scanLimit: CONTAINER_SEARCH_SCAN_LIMIT,
     });
   }
 
@@ -171,6 +178,15 @@ export class ContainerBrowseService {
           : null,
       },
       counts: result.counts,
+      ...(result.scan
+        ? {
+            search: {
+              scanLimit: result.scan.limit,
+              scannedItems: result.scan.scannedItems,
+              truncated: result.scan.truncated,
+            },
+          }
+        : {}),
     };
   }
 

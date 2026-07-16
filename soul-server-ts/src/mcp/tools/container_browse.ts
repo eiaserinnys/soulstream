@@ -1,7 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import type { ContainerBrowseItem } from "../../catalog/container_browse_service.js";
+import {
+  CONTAINER_SEARCH_SCAN_LIMIT,
+  type ContainerBrowseItem,
+} from "../../catalog/container_browse_service.js";
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 
@@ -49,7 +52,7 @@ export function registerContainerBrowseTools(
     "search_container_items",
     {
       description:
-        "한 폴더/런북 안에서만 형제 세션 표시명과 마크다운 제목·본문을 검색한다. 전역 세션 기록 검색에는 search_session_history를 사용한다. Codex 등 위임 세션은 caller_session_id에 자기 agent_session_id를 명시한다.",
+        `한 폴더/런북 안에서만 최근 갱신된 최대 ${CONTAINER_SEARCH_SCAN_LIMIT}개 형제 세션·마크다운의 표시명·제목·본문을 검색한다. 응답의 truncated가 true면 더 오래된 항목은 검색하지 않았다는 뜻이다. 전역 세션 기록 검색에는 search_session_history를 사용한다. Codex 등 위임 세션은 caller_session_id에 자기 agent_session_id를 명시한다.`,
       inputSchema: {
         container: containerSchema,
         query: z.string().min(1),
@@ -94,6 +97,13 @@ function serializeResult(
       next_cursor: result.page.nextCursor,
     },
     counts: result.counts,
+    ...(result.search
+      ? {
+          truncated: result.search.truncated,
+          scanned_items: result.search.scannedItems,
+          scan_limit: result.search.scanLimit,
+        }
+      : {}),
   };
 }
 

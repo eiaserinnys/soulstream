@@ -68,6 +68,41 @@ describePostgres("container browse PostgreSQL integration", () => {
         NOW() - make_interval(secs => value)
       FROM generate_series(1, 205) AS value
     `;
+    await sql`
+      INSERT INTO folders (id, name, sort_order)
+      VALUES ('large-search-folder', 'Large Search Folder', 2)
+    `;
+    await sql`
+      INSERT INTO sessions (
+        session_id, folder_id, display_name, status, session_type, agent_id,
+        created_at, updated_at
+      )
+      SELECT
+        'large-session-' || value,
+        'large-search-folder',
+        'Large Session ' || value,
+        'completed',
+        'llm',
+        'roselin_codex',
+        NOW() - make_interval(secs => value),
+        NOW() - make_interval(secs => value)
+      FROM generate_series(1, 2005) AS value
+    `;
+    await sql`
+      INSERT INTO board_items (
+        id, folder_id, container_kind, container_id, item_type, item_id, metadata, updated_at
+      )
+      SELECT
+        'session:large-session-' || value,
+        'large-search-folder',
+        'folder',
+        'large-search-folder',
+        'session',
+        'large-session-' || value,
+        '{}',
+        NOW() - make_interval(secs => value)
+      FROM generate_series(1, 2005) AS value
+    `;
     const db = new SessionDB(sql);
     service = new ContainerBrowseService(createContainerBrowseStore(db));
   }, 45_000);
@@ -90,6 +125,7 @@ describePostgres("container browse PostgreSQL integration", () => {
     });
     expect(result.items).toHaveLength(8);
     expect(result.items.every((item) => item.type !== "runbook")).toBe(true);
+    expect(result).not.toHaveProperty("search");
 
     const archived = await service.browse({
       container: { containerKind: "folder", containerId: "container-folder" },
@@ -110,6 +146,11 @@ describePostgres("container browse PostgreSQL integration", () => {
     expect(markdown.items).toEqual([
       expect.objectContaining({ type: "markdown", id: "doc-spec", title: "Spec Document" }),
     ]);
+    expect(markdown.search).toEqual({
+      scanLimit: 2_000,
+      scannedItems: 2,
+      truncated: false,
+    });
 
     const session = await service.search({
       container: { containerKind: "folder", containerId: "container-folder" },
@@ -123,5 +164,19 @@ describePostgres("container browse PostgreSQL integration", () => {
         eventCount: 1,
       }),
     ]);
+  });
+
+  it("caps a large zero-match search and reports the truncation explicitly", async () => {
+    const result = await service.search({
+      container: { containerKind: "folder", containerId: "large-search-folder" },
+      query: "존재하지 않는 검색어",
+    });
+
+    expect(result.items).toEqual([]);
+    expect(result.search).toEqual({
+      scanLimit: 2_000,
+      scannedItems: 2_000,
+      truncated: true,
+    });
   });
 });

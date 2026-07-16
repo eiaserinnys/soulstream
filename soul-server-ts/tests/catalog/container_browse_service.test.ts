@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  CONTAINER_SEARCH_SCAN_LIMIT,
   ContainerBrowseService,
   type ContainerBrowseStore,
 } from "../../src/catalog/container_browse_service.js";
@@ -38,7 +39,11 @@ function boardItem(
   };
 }
 
-function storeWith(records: ContainerItemRecord[], total = records.length) {
+function storeWith(
+  records: ContainerItemRecord[],
+  total = records.length,
+  scan: { limit: number; scannedItems: number; truncated: boolean } | null = null,
+) {
   const listContainerItems = vi.fn(async () => ({
     items: records,
     total,
@@ -51,6 +56,7 @@ function storeWith(records: ContainerItemRecord[], total = records.length) {
       runbook: 0,
       custom_view: 0,
     },
+    scan,
   }));
   const store: ContainerBrowseStore = {
     getFolderById: vi.fn(async () => FOLDER),
@@ -204,7 +210,12 @@ describe("ContainerBrowseService", () => {
   });
 
   it("clamps browse to 100, search to 50, and keeps the query container-scoped", async () => {
-    const { store, listContainerItems } = storeWith([], 275);
+    expect(CONTAINER_SEARCH_SCAN_LIMIT).toBe(2_000);
+    const { store, listContainerItems } = storeWith([], 275, {
+      limit: 2_000,
+      scannedItems: 2_000,
+      truncated: true,
+    });
     const service = new ContainerBrowseService(store);
 
     const browse = await service.browse({
@@ -227,7 +238,7 @@ describe("ContainerBrowseService", () => {
       query: null,
     }));
 
-    await service.search({
+    const search = await service.search({
       container: { containerKind: "runbook", containerId: "runbook-1" },
       query: "  명세 😀  ",
       limit: 999,
@@ -238,7 +249,13 @@ describe("ContainerBrowseService", () => {
       limit: 50,
       query: "명세 😀",
       itemTypes: ["session", "markdown"],
+      scanLimit: 2_000,
     }));
+    expect(search.search).toEqual({
+      scanLimit: 2_000,
+      scannedItems: 2_000,
+      truncated: true,
+    });
   });
 
   it("rejects missing containers before querying board items", async () => {

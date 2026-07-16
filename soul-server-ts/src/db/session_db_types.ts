@@ -165,12 +165,18 @@ export interface ListContainerItemsParams {
   itemTypes: BoardItemType[] | null;
   limit: number;
   cursor: number;
+  scanLimit?: number | null;
 }
 
 export interface ListContainerItemsResult {
   items: ContainerItemRecord[];
   total: number;
   counts: ContainerItemCounts;
+  scan: {
+    limit: number;
+    scannedItems: number;
+    truncated: boolean;
+  } | null;
 }
 
 export interface BoardYjsSeed {

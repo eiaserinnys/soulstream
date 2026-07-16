@@ -195,8 +195,38 @@ export class BoardRepository {
     params: ListContainerItemsParams,
   ): Promise<ListContainerItemsResult> {
     const itemTypes = params.itemTypes ?? [];
+    const scanLimit = params.scanLimit ?? null;
+    const scanCandidateLimit = scanLimit == null ? 0 : scanLimit + 1;
     const rows = await this.sql<ContainerItemDbRow[]>`
-      WITH scoped AS (
+      WITH search_candidates AS MATERIALIZED (
+        SELECT
+          bi.id,
+          COALESCE(s.updated_at, md.updated_at, bi.updated_at) AS content_updated_at
+        FROM board_items bi
+        LEFT JOIN sessions s
+          ON bi.item_type = 'session' AND s.session_id = bi.item_id
+        LEFT JOIN markdown_documents md
+          ON bi.item_type = 'markdown' AND md.id = bi.item_id
+        WHERE ${scanLimit}::INTEGER IS NOT NULL
+          AND bi.container_kind = ${params.container.containerKind}
+          AND bi.container_id = ${params.container.containerId}
+          AND bi.item_type IN ('session', 'markdown')
+        ORDER BY content_updated_at DESC NULLS LAST, bi.id ASC
+        LIMIT ${scanCandidateLimit}
+      ),
+      search_window AS MATERIALIZED (
+        SELECT id
+        FROM search_candidates
+        ORDER BY content_updated_at DESC NULLS LAST, id ASC
+        LIMIT ${scanLimit ?? 0}
+      ),
+      search_scan AS (
+        SELECT
+          LEAST(COUNT(*), ${scanLimit ?? 0})::BIGINT AS scanned_items,
+          (COUNT(*) > ${scanLimit ?? 0}) AS truncated
+        FROM search_candidates
+      ),
+      scoped AS (
         SELECT
           bi.*,
           CASE
@@ -274,6 +304,14 @@ export class BoardRepository {
         WHERE bi.container_kind = ${params.container.containerKind}
           AND bi.container_id = ${params.container.containerId}
           AND (${itemTypes.length === 0} OR bi.item_type = ANY(${this.sql.array(itemTypes)}))
+          AND (
+            ${scanLimit}::INTEGER IS NULL
+            OR EXISTS (
+              SELECT 1
+              FROM search_window sw
+              WHERE sw.id = bi.id
+            )
+          )
       ),
       filtered AS (
         SELECT *
@@ -308,7 +346,9 @@ export class BoardRepository {
           COUNT(*) FILTER (WHERE item_type = 'asset')::BIGINT AS asset_count,
           COUNT(*) FILTER (WHERE item_type = 'frame')::BIGINT AS frame_count,
           COUNT(*) FILTER (WHERE item_type = 'runbook')::BIGINT AS runbook_count,
-          COUNT(*) FILTER (WHERE item_type = 'custom_view')::BIGINT AS custom_view_count
+          COUNT(*) FILTER (WHERE item_type = 'custom_view')::BIGINT AS custom_view_count,
+          (SELECT scanned_items FROM search_scan) AS scanned_items,
+          (SELECT truncated FROM search_scan) AS search_truncated
         FROM filtered
       )
       SELECT
@@ -374,6 +414,13 @@ export class BoardRepository {
         runbook: Number(summary?.runbook_count ?? 0),
         custom_view: Number(summary?.custom_view_count ?? 0),
       },
+      scan: scanLimit == null
+        ? null
+        : {
+            limit: scanLimit,
+            scannedItems: Number(summary?.scanned_items ?? 0),
+            truncated: Boolean(summary?.search_truncated),
+          },
     };
   }
 
