@@ -57,7 +57,12 @@ describe("task workspace split", () => {
 
 describe("run tree projection", () => {
   it("numbers container runs chronologically and nests caller descendants", () => {
-    const roots = ["run-old", "run-new"];
+    const roots = [
+      "run-old",
+      "run-new",
+      "delegate-child",
+      "delegate-grandchild",
+    ];
     const sessions = [
       session("delegate-grandchild", "2026-07-13T11:30:00Z", "delegate-child"),
       session("run-new", "2026-07-13T12:00:00Z"),
@@ -75,6 +80,22 @@ describe("run tree projection", () => {
     expect(tree[0]?.children[0]?.session.agentSessionId).toBe("delegate-child");
     expect(tree[0]?.children[0]?.children[0]?.session.agentSessionId).toBe("delegate-grandchild");
     expect(JSON.stringify(tree)).not.toContain("unrelated");
+  });
+
+  it("keeps caller cycles visible as roots without recursing", () => {
+    const tree = buildRunTree(
+      ["cycle-a", "cycle-b"],
+      [
+        session("cycle-a", "2026-07-13T10:00:00Z", "cycle-b"),
+        session("cycle-b", "2026-07-13T11:00:00Z", "cycle-a"),
+      ],
+    );
+
+    expect(tree.map((node) => node.session.agentSessionId)).toEqual([
+      "cycle-b",
+      "cycle-a",
+    ]);
+    expect(tree.every((node) => node.children.length === 0)).toBe(true);
   });
 
   it("projects catalog hits, targeted loading misses, and terminal misses separately", () => {
