@@ -38,6 +38,7 @@ export function DailyPlannerView({
   onOpenTask,
   onCompleteTask,
   onToggleTaskToday,
+  onMoveTaskToProject,
 }: {
   state: PlannerLoadState<DailyPlannerData>;
   selectedDate: string;
@@ -50,6 +51,7 @@ export function DailyPlannerView({
   onOpenTask(task: PlannerTask): void;
   onCompleteTask(task: PlannerTask): Promise<void>;
   onToggleTaskToday(task: PlannerTask): Promise<void>;
+  onMoveTaskToProject(task: PlannerTask): void;
 }) {
   const data = state.data;
   const visibleTasks = visibleDailyTasks(data?.tasks ?? [], isTodayView, todayTaskIds);
@@ -99,6 +101,7 @@ export function DailyPlannerView({
                 onOpen={() => onOpenTask(task)}
                 onComplete={() => onCompleteTask(task)}
                 onToggleToday={() => onToggleTaskToday(task)}
+                onMoveToProject={() => onMoveTaskToProject(task)}
               />
             ))}
           </div>
@@ -127,6 +130,7 @@ export function ProjectPlannerView({
   onOpenTask,
   onCompleteTask,
   onToggleTaskToday,
+  onMoveTaskToProject,
   onOpenDocument,
   onToggleNewDocument,
   onNewDocumentTitle,
@@ -147,6 +151,7 @@ export function ProjectPlannerView({
   onOpenTask(task: PlannerTask): void;
   onCompleteTask(task: PlannerTask): Promise<void>;
   onToggleTaskToday(task: PlannerTask): Promise<void>;
+  onMoveTaskToProject(task: PlannerTask): void;
   onOpenDocument(page: PageDto): void;
   onToggleNewDocument(): void;
   onNewDocumentTitle(value: string): void;
@@ -289,6 +294,7 @@ export function ProjectPlannerView({
             onOpen={() => onOpenTask(task)}
             onComplete={() => onCompleteTask(task)}
             onToggleToday={() => onToggleTaskToday(task)}
+            onMoveToProject={() => onMoveTaskToProject(task)}
           />
         ))}
       </div>

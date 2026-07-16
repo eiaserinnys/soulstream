@@ -15,6 +15,7 @@ import {
   taskContextCount,
   type PlannerTaskStatus,
 } from "./planner-model";
+import { loadAllMountBacklinks } from "./page-backlinks";
 
 export interface PlannerTask {
   page: PageDto;
@@ -231,8 +232,8 @@ export async function loadPlannerTask(
   const classification = classifyMountedPage(snapshot.blocks);
   if (classification.kind !== "task") throw new Error("별표 페이지가 runbook 업무가 아닙니다");
   const runbook = await fetchRunbookSnapshot(classification.runbookId);
-  const backlinks = await api.getBacklinks(taskPageId, { kinds: ["mount"], limit: 50 });
-  const projectPageId = await firstProjectPageId(api, backlinks.items.map((item) => item.sourcePageId));
+  const backlinks = await loadAllMountBacklinks(api, taskPageId);
+  const projectPageId = await firstProjectPageId(api, backlinks.map((item) => item.sourcePageId));
   return {
     page: snapshot.page,
     blocks: snapshot.blocks,

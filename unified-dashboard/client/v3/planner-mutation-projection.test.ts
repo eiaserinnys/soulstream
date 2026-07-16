@@ -3,7 +3,9 @@ import type { PageDto } from "@seosoyoung/soul-ui/page";
 
 import type { PlannerTask } from "./planner-data";
 import {
+  movePlannerTaskProject,
   movePlannerSession,
+  projectPagesForTasks,
   removePlannerSessions,
   replacePlannerTask,
 } from "./planner-mutation-projection";
@@ -83,6 +85,37 @@ describe("planner mutation projection", () => {
     const targetTasks = [alreadyInTarget];
     expect(movePlannerSession(targetTasks, "session-moving", "target"))
       .toBe(targetTasks);
+  });
+
+  it("projects a project move into the visible source or target without broad replacement", () => {
+    const moving = { ...task("moving", []), projectPageId: "project-source" };
+    const untouched = { ...task("untouched", []), projectPageId: "project-source" };
+
+    const source = movePlannerTaskProject(
+      [moving, untouched],
+      moving,
+      "project-target",
+      "project-source",
+    );
+    expect(source).toEqual([untouched]);
+    expect(source[0]).toBe(untouched);
+
+    const target = movePlannerTaskProject(
+      [untouched],
+      moving,
+      "project-target",
+      "project-target",
+    );
+    expect(target).toEqual([untouched, { ...moving, projectPageId: "project-target" }]);
+    expect(target[0]).toBe(untouched);
+  });
+
+  it("keeps daily project labels aligned with the projected task memberships", () => {
+    const source = page("project-source");
+    const target = page("project-target");
+    const moving = { ...task("moving", []), projectPageId: "project-target" };
+
+    expect(projectPagesForTasks([source], [moving], target)).toEqual([target]);
   });
 });
 

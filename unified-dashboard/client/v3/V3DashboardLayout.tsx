@@ -27,6 +27,7 @@ import { ProjectFolderResolutionView } from "./ProjectFolderResolutionView";
 import { MobilePlannerTabs, useMobilePlannerMode } from "./MobilePlannerTabs";
 import { RitualModal } from "./RitualModal";
 import { TaskWorkspace } from "./TaskWorkspace";
+import { TaskProjectMoveDialog } from "./TaskProjectMoveDialog";
 import { V3Navigation } from "./V3Navigation";
 import { V3SessionPanel } from "./V3SessionPanel";
 import { V3StandaloneDocumentInspector } from "./V3StandaloneDocumentInspector";
@@ -42,26 +43,13 @@ import {
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import { useTaskStarChanges } from "./task-star-store";
 import { createPlannerDataDependencies, loadStarredPlannerTask, type PlannerTask } from "./planner-data";
-import {
-  fetchPageSessionDefaults,
-  type PageSessionDefaults,
-} from "./task-workspace-api";
-import {
-  activateRunSession,
-  resolveRunSessions,
-} from "./task-workspace-model";
-import {
-  buildMobileTaskOptions,
-  dateKey,
-  errorText,
-  recentDates,
-} from "./v3-dashboard-utils";
-import {
-  usePlannerCollections,
-  useTaskRunHistory,
-} from "./use-v3-planner-reads";
+import { fetchPageSessionDefaults, type PageSessionDefaults } from "./task-workspace-api";
+import { activateRunSession, resolveRunSessions } from "./task-workspace-model";
+import { buildMobileTaskOptions, dateKey, errorText, recentDates } from "./v3-dashboard-utils";
+import { usePlannerCollections, useTaskRunHistory } from "./use-v3-planner-reads";
 import { useProjectFolderController } from "./use-project-folder-controller";
 import { useV3PlannerInvalidationKeys } from "./v3-live-invalidation-plane";
+import { useTaskProjectMoveController } from "./use-task-project-move-controller";
 import { useV3LiveDataPlane } from "./use-v3-live-data-plane";
 import { openDocumentInV3 } from "./v3-inspector-model";
 import { useV3DashboardMutations } from "./use-v3-dashboard-mutations";
@@ -149,6 +137,7 @@ function V3DashboardContent() {
     patchTask: patchLoadedTask,
     removeSessions: removeLoadedSessions,
     moveSession: moveLoadedSession,
+    moveTaskProject: moveLoadedTaskProject,
     refreshDaily,
     refreshProject,
     refreshTask,
@@ -193,8 +182,8 @@ function V3DashboardContent() {
   });
   const removeRunHistorySessions = runHistory.removeSessions;
   const moveRunHistorySession = runHistory.moveSession;
-  const { patchPlannerTask, removeSessionsFromPlanner, moveSessionInPlanner } = useV3MutationProjection({
-    patchLoadedTask, removeLoadedSessions, moveLoadedSession, removeRunHistorySessions, moveRunHistorySession, setSelectedTaskSnapshot,
+  const { patchPlannerTask, removeSessionsFromPlanner, moveSessionInPlanner, moveTaskProjectInPlanner } = useV3MutationProjection({
+    patchLoadedTask, removeLoadedSessions, moveLoadedSession, moveLoadedTaskProject, removeRunHistorySessions, moveRunHistorySession, setSelectedTaskSnapshot,
   });
   const plannerActions = useV3PlannerActions({
     api,
@@ -206,6 +195,14 @@ function V3DashboardContent() {
     patchTask: patchPlannerTask,
     removeSessionsFromPlanner,
     moveSessionInPlanner,
+    moveTaskProjectInPlanner,
+    refreshTask,
+  });
+  const taskProjectMove = useTaskProjectMoveController({
+    api,
+    folders: catalog?.folders ?? [],
+    moveTask: plannerActions.moveTaskProject,
+    notify,
   });
   const plannerSessionIds = useMemo(
     () => [...new Set([
@@ -415,7 +412,7 @@ function V3DashboardContent() {
         onOpenRitual={() => setRitualOpen(true)}
         onOpenSearch={() => setSearchOpen(true)}
       />
-      <V3Navigation dates={dates} selectedDate={selectedDate} folders={catalog?.folders ?? []} selectedFolderId={selectedFolderId} starredTasks={starredTasks} starredTasksHasMore={starredTasksHasMore} starredTasksLoading={starredTasksLoading || starredTasksLoadingMore} todayTaskIds={todayTaskIds} completedTaskIds={new Set(currentTasks.filter((task) => task.status === "completed").map((task) => task.page.id))} onLoadMoreStarredTasks={() => { void loadMoreStarredTasks(); }} onSelectDate={(date) => { clearProject(); setSelectedDate(date); }} onSelectFolder={(folder) => { void projectSelection.openFolder(api, folder, projects, notify); setNewDocumentOpen(false); }} onSelectTask={(task) => { void openStarredTask(task); }} onCompleteTask={plannerActions.completeStarredTask} onToggleTaskToday={plannerActions.toggleStarredTaskToday} onCreateProject={(title) => projectSelection.createProject(title, api, projects, notify)} onCreateTask={(folderId) => { projectSelection.setSelectedFolderId(folderId); setCreateOpen(true); }} />
+      <V3Navigation dates={dates} selectedDate={selectedDate} folders={catalog?.folders ?? []} selectedFolderId={selectedFolderId} starredTasks={starredTasks} starredTasksHasMore={starredTasksHasMore} starredTasksLoading={starredTasksLoading || starredTasksLoadingMore} todayTaskIds={todayTaskIds} completedTaskIds={new Set(currentTasks.filter((task) => task.status === "completed").map((task) => task.page.id))} onLoadMoreStarredTasks={() => { void loadMoreStarredTasks(); }} onSelectDate={(date) => { clearProject(); setSelectedDate(date); }} onSelectFolder={(folder) => { void projectSelection.openFolder(api, folder, projects, notify); setNewDocumentOpen(false); }} onSelectTask={(task) => { void openStarredTask(task); }} onCompleteTask={plannerActions.completeStarredTask} onToggleTaskToday={plannerActions.toggleStarredTaskToday} onMoveTaskToProject={(task) => { void taskProjectMove.openPage(task); }} onCreateProject={(title) => projectSelection.createProject(title, api, projects, notify)} onCreateTask={(folderId) => { projectSelection.setSelectedFolderId(folderId); setCreateOpen(true); }} />
       <div className="v3-navigation-resize" data-testid="v3-navigation-resize-handle" aria-hidden="true">
         <DragHandle onDrag={resizeNavigation} widthPx={DASHBOARD_PANEL_GAP_PX} />
       </div>
@@ -428,11 +425,11 @@ function V3DashboardContent() {
           <div className="v3-planner-scroll" data-testid="v3-planner-scroll">
             {createOpen ? <NewTaskForm folders={catalog?.folders ?? []} invalidationKey={projectContextInvalidationKey} initialFolderId={selectedFolderId} pending={createPending} onCreate={(title, folderId, description) => { void createTask(title, folderId, description); }} onCancel={() => setCreateOpen(false)} /> : null}
             {selectedProject ? (
-              <ProjectPlannerView state={project} sessions={sessions} nodeConnectivity={nodeConnectivity} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
+              <ProjectPlannerView state={project} sessions={sessions} nodeConnectivity={nodeConnectivity} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onMoveTaskToProject={taskProjectMove.openTask} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
             ) : selectedFolderId ? (
               <ProjectFolderResolutionView state={resolution} title={selectedFolderName} onRetry={() => { void projectSelection.retry(); }} />
             ) : (
-              <DailyPlannerView state={daily} selectedDate={selectedDate} isTodayView={selectedDate === today} todayTaskIds={todayTaskIds} sessions={sessions} nodeConnectivity={nodeConnectivity} onSaveMemo={saveMemo} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} />
+              <DailyPlannerView state={daily} selectedDate={selectedDate} isTodayView={selectedDate === today} todayTaskIds={todayTaskIds} sessions={sessions} nodeConnectivity={nodeConnectivity} onSaveMemo={saveMemo} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onMoveTaskToProject={taskProjectMove.openTask} />
             )}
           </div>
         </div>
@@ -478,6 +475,7 @@ function V3DashboardContent() {
         />
       ) : null}
       <V3StandaloneDocumentInspector open={documentInspectorOpen} onClose={() => setDocumentInspectorOpen(false)} />
+      <TaskProjectMoveDialog {...taskProjectMove.dialogProps} />
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
       <RitualModal open={ritualOpen} today={today} reviewCount={reviewSessions.length} onClose={() => setRitualOpen(false)} onActionApplied={applyRitualAction} onFocusSessionPanel={() => { requestAnimationFrame(() => sessionPanel.panelRef.current?.focus({ preventScroll: true })); }} />
       <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />

@@ -48,6 +48,7 @@ describe("PlannerTaskCard node connectivity", () => {
         onOpen={() => undefined}
         onComplete={async () => undefined}
         onToggleToday={async () => undefined}
+        onMoveToProject={() => undefined}
       />,
     );
 
@@ -82,6 +83,7 @@ describe("PlannerTaskCard node connectivity", () => {
         onOpen={() => undefined}
         onComplete={async () => undefined}
         onToggleToday={async () => undefined}
+        onMoveToProject={() => undefined}
       />,
     );
 
@@ -115,6 +117,7 @@ describe("PlannerTaskCard node connectivity", () => {
         onOpen={() => undefined}
         onComplete={async () => undefined}
         onToggleToday={async () => undefined}
+        onMoveToProject={() => undefined}
       />,
     );
 
