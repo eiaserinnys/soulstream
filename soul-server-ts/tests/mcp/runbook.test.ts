@@ -397,15 +397,15 @@ describe("runbook MCP tools", () => {
           title: "Section",
           version: 3,
           assignee: null,
-        },
-      ],
-      items: [
-        {
-          id: "item-1",
-          title: "Item",
-          status: "in_progress",
-          version: 4,
-          assignee: { kind: "agent", agent_id: "roselin" },
+          items: [
+            {
+              id: "item-1",
+              title: "Item",
+              status: "in_progress",
+              version: 4,
+              assignee: { kind: "agent", agent_id: "roselin" },
+            },
+          ],
         },
       ],
     });

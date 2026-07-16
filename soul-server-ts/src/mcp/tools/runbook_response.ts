@@ -64,8 +64,12 @@ export function formatRunbookReadResponse(
   if (options.view === "full") return snapshot;
   return {
     runbook: outlineRunbook(snapshot.runbook),
-    sections: snapshot.sections.map(outlineSection),
-    items: snapshot.items.map(outlineItem),
+    sections: snapshot.sections.map((section) => ({
+      ...outlineSection(section),
+      items: snapshot.items
+        .filter((item) => item.section_id === section.id)
+        .map(outlineItem),
+    })),
   };
 }
 
