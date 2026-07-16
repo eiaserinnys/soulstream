@@ -145,17 +145,13 @@ async function verify(browser: Browser) {
     await page.getByRole("menuitem", { name: "오늘 플래너에서 제거" }).waitFor({ state: "visible" });
     await page.keyboard.press("Escape");
 
-    await page.getByTestId("v3-review-navigation")
-      .getByRole("button", { name: /전체 \d+건 보기|검수 패널 열기/ })
-      .click();
-    const reviewDialog = page.locator(".v3-review-queue-popup");
-    await reviewDialog.waitFor({ state: "visible" });
-    const reviewRows = page.locator(".v3-review-queue-list .v3-run-row");
+    const reviewPanel = page.getByTestId("v3-session-panel");
+    const reviewRows = page.getByTestId("v3-session-group-review").locator(".v3-session-row");
     const reviewCountBefore = await reviewRows.count();
     await startReviewMutationObserver(page);
     await reviewRows.first().getByRole("button", { name: /확인 처리$/ }).click();
     await waitUntil(async () => await reviewRows.count() === reviewCountBefore - 1, "검수 행 부분 제거");
-    assert(await reviewDialog.isVisible(), "검수 확인 뒤 다이얼로그가 닫혔습니다.");
+    assert(await reviewPanel.isVisible(), "검수 확인 뒤 우측 세션 패널이 닫혔습니다.");
     const reviewMutations = await stopReviewMutationObserver(page);
     assert(reviewMutations.listChild === 1, `검수 확인이 목록 구조를 ${reviewMutations.listChild}회 바꿨습니다.`);
     assert(reviewMutations.untouched === 0, `검수 확인이 남은 행을 ${reviewMutations.untouched}회 바꿨습니다.`);
@@ -235,9 +231,9 @@ async function stopRenameMutationObserver(page: Page): Promise<{ listChild: numb
 
 async function startReviewMutationObserver(page: Page) {
   await page.evaluate(() => {
-    const list = document.querySelector(".v3-review-queue-list");
+    const list = document.querySelector('[data-testid="v3-session-group-review"] .v3-session-list');
     if (!list) throw new Error("검수 리스트를 찾지 못했습니다.");
-    const untouchedRows = [...list.querySelectorAll<HTMLElement>(".v3-run-row")].slice(1);
+    const untouchedRows = [...list.querySelectorAll<HTMLElement>(".v3-session-row")].slice(1);
     const state = { listChild: 0, untouched: 0, observers: [] as MutationObserver[] };
     const listObserver = new MutationObserver((records) => { state.listChild += records.length; });
     listObserver.observe(list, { childList: true });

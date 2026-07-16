@@ -1,0 +1,101 @@
+.v3-session-panel {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  min-height: 0;
+  width: var(--v3-session-panel-width, 300px);
+  margin: 76px 22px 22px 0;
+  overflow: hidden;
+  border-radius: 24px;
+}
+
+.v3-session-panel-scroll {
+  height: 100%;
+  overflow-y: auto;
+  padding: 18px 12px;
+  scrollbar-width: thin;
+}
+
+.v3-session-group + .v3-session-group { margin-top: 24px; }
+
+.v3-session-group > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 8px;
+  color: var(--muted-foreground);
+}
+
+.v3-session-group h2 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .02em;
+}
+
+.v3-session-group header > span { font-size: 11px; }
+.v3-session-list { display: grid; gap: 4px; }
+.v3-session-list > p {
+  margin: 0;
+  padding: 9px 8px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+
+.v3-session-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-radius: 10px;
+}
+
+.v3-session-row:hover,
+.v3-session-row.is-active { background: color-mix(in srgb, var(--accent) 56%, transparent); }
+
+.v3-session-open {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 9px 8px;
+  color: inherit;
+  text-align: left;
+}
+
+.v3-session-open > span:last-child {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.v3-session-state {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--muted-foreground);
+}
+
+.v3-session-state--running { background: var(--success); box-shadow: 0 0 8px color-mix(in srgb, var(--success) 54%, transparent); }
+.v3-session-state--completed { background: var(--primary); }
+
+.v3-session-acknowledge {
+  margin-right: 5px;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+
+.v3-session-acknowledge:hover { color: var(--foreground); background: color-mix(in srgb, var(--background) 45%, transparent); }
+.v3-session-acknowledge:disabled { opacity: .55; }
+.v3-session-panel-error { margin: 12px 8px 0; color: var(--destructive); font-size: 12px; }
+
+.v3-session-panel-resize { position: relative; z-index: 3; min-width: 0; }
+
+@media (max-width: 760px) {
+  .v3-session-panel,
+  .v3-session-panel-resize { display: none; }
+}

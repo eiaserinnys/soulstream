@@ -1,15 +1,11 @@
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  SessionContextMenu,
   useGlassSurface,
   type CatalogFolder,
-  type SessionContextMenuState,
-  type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
 
 import { flattenProjectFolders } from "./project-folders";
-import { reviewNavigationSessions, reviewSessionTitle } from "./review-queue-model";
 import { setTaskStarred } from "./task-star-actions";
 import {
   publishTaskStarChange,
@@ -37,7 +33,6 @@ export function V3Navigation({
   selectedDate,
   folders,
   selectedFolderId,
-  reviewSessions,
   starredTasks,
   starredTasksHasMore,
   starredTasksLoading,
@@ -45,21 +40,17 @@ export function V3Navigation({
   completedTaskIds,
   onLoadMoreStarredTasks,
   onSelectDate,
-  onOpenReviewQueue,
   onSelectFolder,
   onSelectTask,
   onCompleteTask,
   onToggleTaskToday,
   onCreateProject,
   onCreateTask,
-  onRenameSession,
-  onDeleteSessions,
 }: {
   dates: readonly PlannerDateNavItem[];
   selectedDate: string;
   folders: readonly CatalogFolder[];
   selectedFolderId: string | null;
-  reviewSessions: readonly SessionSummary[];
   starredTasks: readonly PageDto[];
   starredTasksHasMore: boolean;
   starredTasksLoading: boolean;
@@ -67,28 +58,23 @@ export function V3Navigation({
   completedTaskIds: ReadonlySet<string>;
   onLoadMoreStarredTasks(): void;
   onSelectDate(date: string): void;
-  onOpenReviewQueue(): void;
   onSelectFolder(folder: CatalogFolder): void;
   onSelectTask(task: PageDto): void;
   onCompleteTask(task: PageDto): Promise<void>;
   onToggleTaskToday(task: PageDto): Promise<void>;
   onCreateProject(title: string): Promise<void>;
   onCreateTask(folderId: string): void;
-  onRenameSession(sessionId: string, displayName: string | null): Promise<void>;
-  onDeleteSessions(sessionIds: string[]): Promise<void>;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
   const api = useMemo(() => createPageApiClient(), []);
   const taskStarChanges = useTaskStarChanges();
   const projectFolders = useMemo(() => flattenProjectFolders(folders), [folders]);
-  const reviewNavigation = useMemo(() => reviewNavigationSessions(reviewSessions), [reviewSessions]);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [newProjectTitle, setNewProjectTitle] = useState("");
   const [creatingProject, setCreatingProject] = useState(false);
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<MenuState | null>(null);
-  const [sessionMenu, setSessionMenu] = useState<SessionContextMenuState | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const createProject = async () => {
@@ -142,33 +128,6 @@ export function V3Navigation({
             <span>{item.label}</span>
           </button>
         ))}
-      </div>
-
-      <h2>검수 대기</h2>
-      <div className="v3-nav-list" data-testid="v3-review-navigation">
-        {reviewNavigation.map((session) => (
-          <button
-            type="button"
-            className="v3-review-nav-link"
-            key={session.agentSessionId}
-            onClick={onOpenReviewQueue}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setSessionMenu({ x: event.clientX, y: event.clientY, sessionId: session.agentSessionId });
-            }}
-          >
-            <span>{reviewSessionTitle(session)}</span>
-          </button>
-        ))}
-        {reviewSessions.length === 0 ? <p>검수 대기가 없습니다.</p> : null}
-        {reviewSessions.length > reviewNavigation.length ? (
-          <button type="button" className="v3-new-project-trigger" onClick={onOpenReviewQueue}>
-            전체 {reviewSessions.length}건 보기
-          </button>
-        ) : reviewSessions.length > 0 ? (
-          <button type="button" className="v3-new-project-trigger" onClick={onOpenReviewQueue}>검수 패널 열기</button>
-        ) : null}
       </div>
 
       <h2>★ 작업</h2>
@@ -271,14 +230,6 @@ export function V3Navigation({
           copyId: () => navigator.clipboard.writeText(contextMenu.folder.id),
           createTask: () => onCreateTask(contextMenu.folder.id),
         }) : []}
-      />
-      <SessionContextMenu
-        contextMenu={sessionMenu}
-        onClose={() => setSessionMenu(null)}
-        onRenameSession={onRenameSession}
-        onDeleteSessions={onDeleteSessions}
-        getSessionName={(sessionId) => reviewSessions.find((session) => session.agentSessionId === sessionId)?.displayName ?? ""}
-        resolveSessionIds={(sessionId) => [sessionId]}
       />
       <div className="v3-nav-foot">
         <div><kbd>C</kbd> 새 업무 · <kbd>Esc</kbd> 닫기</div>

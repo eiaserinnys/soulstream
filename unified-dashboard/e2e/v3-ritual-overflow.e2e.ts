@@ -98,7 +98,7 @@ for (const theme of ["dark", "light"] as const) {
     }
     const finishAction = page.getByRole("button", { name: "플래너 열기", exact: true });
     await expect(finishAction).toBeVisible();
-    const reviewLink = page.getByRole("button", { name: "검수 대기 6건 → 검수 패널" });
+    const reviewLink = page.getByRole("button", { name: "검수 대기 6건 → 우측 세션" });
     await expect(reviewLink).toBeVisible();
     await expect(footer).toBeVisible();
     await page.screenshot({
@@ -106,11 +106,12 @@ for (const theme of ["dark", "light"] as const) {
       animations: "disabled",
     });
     await reviewLink.click();
-    await expect(page.getByRole("dialog", { name: "검수 대기" })).toBeVisible();
-    await expect(page.getByTestId("v3-review-queue-list").locator(".v3-run-row")).toHaveCount(6);
-    const reviewTitle = await page.getByTestId("v3-review-queue-list").locator(".v3-run-title-line strong").first().innerText();
+    const reviewPanel = page.getByTestId("v3-session-group-review");
+    await expect(page.getByTestId("v3-session-panel")).toBeFocused();
+    await expect(reviewPanel.locator(".v3-session-row")).toHaveCount(6);
+    const reviewTitle = await reviewPanel.locator(".v3-session-open > span:last-child").first().innerText();
     expect(reviewTitle).not.toContain("\n");
-    expect(Array.from(reviewTitle).length).toBeLessThanOrEqual(120);
+    expect(Array.from(reviewTitle).length).toBeLessThanOrEqual(80);
     await page.screenshot({
       path: path.join(outputDir, "03-review-panel-long-preview-clamped.png"),
       animations: "disabled",

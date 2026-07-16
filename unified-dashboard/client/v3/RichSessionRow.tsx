@@ -1,8 +1,8 @@
 import type { MouseEvent, ReactNode } from "react";
 import { ProfileAvatar, type SessionSummary } from "@seosoyoung/soul-ui";
 
-import { reviewSessionTitle } from "./review-queue-model";
 import { singleLinePreview } from "./session-preview";
+import { sessionPanelTitle } from "./v3-session-panel-model";
 import "./v3-run-history.css";
 
 export function RichSessionRow({
@@ -22,7 +22,7 @@ export function RichSessionRow({
   onOpen(session: SessionSummary): void;
   onContextMenu?(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
-  const title = failed ? runNumberLabel(runNumber) : reviewSessionTitle(session);
+  const title = failed ? runNumberLabel(runNumber) : sessionPanelTitle(session);
   const status = failed ? "조회 실패" : statusLabel(session.status);
   const portraitUrl = failed ? null : sessionPortraitUrl(session);
   const visiblePreview = failed

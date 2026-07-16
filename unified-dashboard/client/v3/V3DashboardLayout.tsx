@@ -27,10 +27,10 @@ import { DailyPlannerView, ProjectPlannerView } from "./PlannerViews";
 import { ProjectFolderResolutionView } from "./ProjectFolderResolutionView";
 import { MobilePlannerTabs, useMobilePlannerMode } from "./MobilePlannerTabs";
 import { RitualModal } from "./RitualModal";
-import { ReviewQueuePanel } from "./ReviewQueuePanel";
 import { TaskWorkspace } from "./TaskWorkspace";
 import { V3Navigation } from "./V3Navigation";
-import { V3StandaloneInspector } from "./V3StandaloneInspector";
+import { V3SessionPanel } from "./V3SessionPanel";
+import { V3StandaloneDocumentInspector } from "./V3StandaloneDocumentInspector";
 import { V3GlobalToolbar } from "./V3GlobalToolbar";
 import { useV3PlannerActions } from "./use-v3-planner-actions";
 import { useV3Notifications } from "./use-v3-notifications";
@@ -66,12 +66,12 @@ import {
   useTaskRunHistory,
 } from "./use-v3-planner-reads";
 import { useProjectFolderController } from "./use-project-folder-controller";
-import { reviewQueueSessions } from "./review-queue-model";
 import { useV3PlannerInvalidationKeys } from "./v3-live-invalidation-plane";
 import { useV3LiveDataPlane } from "./use-v3-live-data-plane";
-import { openDocumentInV3, openSessionInV3 } from "./v3-inspector-model";
+import { openDocumentInV3 } from "./v3-inspector-model";
 import { useV3DashboardMutations } from "./use-v3-dashboard-mutations";
 import { useV3MutationProjection } from "./use-v3-mutation-projection";
+import { useV3SessionPanelController } from "./use-v3-session-panel-controller";
 import "./v3-planner.css";
 import "./v3-planner-surfaces.css";
 import "./v3-task-workspace.css";
@@ -92,8 +92,7 @@ function V3DashboardContent() {
   const projectContextInvalidationKey = plannerInvalidationKeys.pageDetail;
   const [createOpen, setCreateOpen] = useState(false);
   const [ritualOpen, setRitualOpen] = useState(false);
-  const [reviewQueueOpen, setReviewQueueOpen] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [documentInspectorOpen, setDocumentInspectorOpen] = useState(false);
   const [acknowledgedReviewIds, setAcknowledgedReviewIds] = useState<ReadonlySet<string>>(() => new Set());
   const [configOpen, setConfigOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -109,7 +108,6 @@ function V3DashboardContent() {
   const [navigationWidth, setNavigationWidth] = useState(() => readDashboardLeftSidebarWidth());
   const plannerSurfaceRef = useRef<HTMLDivElement>(null);
   const plannerWebglActive = useGlassSurface(plannerSurfaceRef, { enabled: true });
-
   const resizeNavigation = useCallback((deltaPercent: number) => {
     const deltaPx = document.documentElement.clientWidth * deltaPercent / 100;
     setNavigationWidth((current) => {
@@ -127,6 +125,7 @@ function V3DashboardContent() {
   useNodes();
   const mobileMode = useMobilePlannerMode();
   const catalog = useDashboardStore((state) => state.catalog);
+  const catalogSessions = catalog?.sessionList ?? [];
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
   const activeSessionSummary = useDashboardStore((state) => state.activeSessionSummary);
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
@@ -174,6 +173,17 @@ function V3DashboardContent() {
     ],
     [daily.data?.tasks, project.data?.tasks, selectedProject],
   );
+  const sessionPanel = useV3SessionPanelController({
+    api,
+    catalog,
+    currentTasks,
+    acknowledgedReviewIds,
+    setSelectedTaskId,
+    setSelectedTaskSnapshot,
+    setWorkspaceOpen,
+    setChatOpen,
+    notify,
+  });
   const selectedTask = useMemo(
     () => currentTasks.find((task) => task.page.id === selectedTaskId) ?? selectedTaskSnapshot,
     [currentTasks, selectedTaskId, selectedTaskSnapshot],
@@ -218,10 +228,10 @@ function V3DashboardContent() {
   });
   const runSessionResolution = useMemo(() => resolveRunSessions({
     sessionIds: plannerSessionIds,
-    catalogSessions: [],
+    catalogSessions,
     targetedSessions: targetedRunSessions,
     targetedLoading: targetedRunSessionsLoading,
-  }), [plannerSessionIds, targetedRunSessions, targetedRunSessionsLoading]);
+  }), [catalogSessions, plannerSessionIds, targetedRunSessions, targetedRunSessionsLoading]);
   const sessions = runSessionResolution.sessions;
   useSessionProvider({
     sessionKey: activeSessionKey,
@@ -244,8 +254,8 @@ function V3DashboardContent() {
     });
     return () => { active = false; };
   }, [notify, selectedTaskId, workspaceOpen]);
-
-  const activeSession = sessions.find((session) => session.agentSessionId === activeSessionKey)
+  const activeSession = catalogSessions.find((session) => session.agentSessionId === activeSessionKey)
+    ?? sessions.find((session) => session.agentSessionId === activeSessionKey)
     ?? (activeSessionSummary?.agentSessionId === activeSessionKey ? activeSessionSummary : undefined);
   const chatInputDisabled = activeSessionKey !== null && (
     !activeSession?.nodeId || nodes.get(activeSession.nodeId)?.status !== "connected"
@@ -253,7 +263,6 @@ function V3DashboardContent() {
   const fileUploadUrl = activeSession?.nodeId && !chatInputDisabled
     ? `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSession.nodeId)}`
     : undefined;
-
   const applyMobileState = useCallback((next: MobilePlannerState) => {
     setMobileTab(next.activeTab);
     setWorkspaceOpen(next.workspaceOpen);
@@ -277,7 +286,6 @@ function V3DashboardContent() {
       setSelectedDate(today);
     }
   }, [activeSessionKey, clearProject, currentTasks, selectedTaskId, sessions, setActiveSession, setActiveSessionSummary, setActiveTab, today]);
-
   const switchMobileTab = useCallback((target: MobilePlannerTab) => {
     applyMobileState(selectMobilePlannerTab({
       activeTab: mobileTab,
@@ -287,7 +295,6 @@ function V3DashboardContent() {
       chatOpen,
     }, target, mobileTaskOptions));
   }, [activeSessionKey, applyMobileState, chatOpen, mobileTab, mobileTaskOptions, selectedTaskId, workspaceOpen]);
-
   const returnToPlanner = useCallback(() => {
     setMobileTab("today");
     setChatOpen(false);
@@ -300,7 +307,6 @@ function V3DashboardContent() {
     setChatOpen(false);
     setWorkspaceOpen(false);
   }, []);
-
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target instanceof HTMLElement ? event.target : null;
@@ -330,7 +336,6 @@ function V3DashboardContent() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [activeSessionKey, applyMobileState, chatOpen, clearProject, closeWorkspace, createOpen, mobileMode, mobileTab, newDocumentOpen, selectedDate, selectedProjectId, selectedTaskId, today, workspaceOpen]);
-
   const openTask = (task: PlannerTask) => {
     setActiveSessionSummary(null);
     setActiveSession(null);
@@ -350,11 +355,8 @@ function V3DashboardContent() {
     setChatOpen(true);
     if (mobileMode && selectedTaskId) setMobileTab("chat");
   }, [mobileMode, selectedTaskId, setActiveSession, setActiveSessionSummary, setActiveTab]);
-  const openReviewSession = useCallback((session: SessionSummary) => {
-    openSessionInV3(session, { setActiveSessionSummary, setActiveSession, setActiveTab, setInspectorOpen });
-  }, [setActiveSession, setActiveSessionSummary, setActiveTab]);
   const openProjectDocument = useCallback((documentId: string) => {
-    openDocumentInV3(documentId, { setActiveBoardDocument, setInspectorOpen });
+    openDocumentInV3(documentId, { setActiveBoardDocument, setInspectorOpen: setDocumentInspectorOpen });
   }, [setActiveBoardDocument]);
   const openTaskDocument = useCallback((documentId: string) => {
     openDocumentInV3(documentId, {
@@ -398,16 +400,13 @@ function V3DashboardContent() {
     refreshProject,
     refreshTask,
   });
-  const reviewSessions = useMemo(
-    () => reviewQueueSessions(sessions)
-      .filter((session) => !acknowledgedReviewIds.has(session.agentSessionId)),
-    [acknowledgedReviewIds, sessions],
-  );
+  const { sessions: panelSessions, reviewSessions } = sessionPanel;
   const selectedFolderName = catalog?.folders.find((folder) => folder.id === selectedFolderId)?.name ?? "프로젝트";
   const shellStyle = {
     "--v3-card-gap": `${DASHBOARD_CARD_GAP_PX}px`,
     "--v3-panel-gap": `${DASHBOARD_PANEL_GAP_PX}px`,
     "--v3-navigation-width": `${navigationWidth || DASHBOARD_LEFT_SIDEBAR_DEFAULT_WIDTH}px`,
+    "--v3-session-panel-width": `${sessionPanel.panelWidth}px`,
   } as CSSProperties;
   const workspaceTask = useMemo(
     () => selectedTask ? { ...selectedTask, sessionIds: runHistory.sessionIds } : null,
@@ -417,8 +416,6 @@ function V3DashboardContent() {
   const projectFolderId = catalog?.folders.find(
     (folder) => folder.projectPageId === workspaceTask?.projectPageId,
   )?.id ?? null;
-  const inspectorSession = activeSessionSummary?.agentSessionId === activeSessionKey ? activeSessionSummary : activeSession;
-
   return (
     <div className="v3-shell isolate font-sans" data-mobile-tab={mobileTab} style={shellStyle}>
       <WallpaperLayer />
@@ -429,7 +426,7 @@ function V3DashboardContent() {
         onOpenRitual={() => setRitualOpen(true)}
         onOpenSearch={() => setSearchOpen(true)}
       />
-      <V3Navigation dates={dates} selectedDate={selectedDate} folders={catalog?.folders ?? []} selectedFolderId={selectedFolderId} reviewSessions={reviewSessions} starredTasks={starredTasks} starredTasksHasMore={starredTasksHasMore} starredTasksLoading={starredTasksLoading || starredTasksLoadingMore} todayTaskIds={todayTaskIds} completedTaskIds={new Set(currentTasks.filter((task) => task.status === "completed").map((task) => task.page.id))} onLoadMoreStarredTasks={() => { void loadMoreStarredTasks(); }} onSelectDate={(date) => { clearProject(); setSelectedDate(date); }} onOpenReviewQueue={() => setReviewQueueOpen(true)} onSelectFolder={(folder) => { void projectSelection.openFolder(api, folder, projects, notify); setNewDocumentOpen(false); }} onSelectTask={(task) => { void openStarredTask(task); }} onCompleteTask={plannerActions.completeStarredTask} onToggleTaskToday={plannerActions.toggleStarredTaskToday} onCreateProject={(title) => projectSelection.createProject(title, api, projects, notify)} onCreateTask={(folderId) => { projectSelection.setSelectedFolderId(folderId); setCreateOpen(true); }} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} />
+      <V3Navigation dates={dates} selectedDate={selectedDate} folders={catalog?.folders ?? []} selectedFolderId={selectedFolderId} starredTasks={starredTasks} starredTasksHasMore={starredTasksHasMore} starredTasksLoading={starredTasksLoading || starredTasksLoadingMore} todayTaskIds={todayTaskIds} completedTaskIds={new Set(currentTasks.filter((task) => task.status === "completed").map((task) => task.page.id))} onLoadMoreStarredTasks={() => { void loadMoreStarredTasks(); }} onSelectDate={(date) => { clearProject(); setSelectedDate(date); }} onSelectFolder={(folder) => { void projectSelection.openFolder(api, folder, projects, notify); setNewDocumentOpen(false); }} onSelectTask={(task) => { void openStarredTask(task); }} onCompleteTask={plannerActions.completeStarredTask} onToggleTaskToday={plannerActions.toggleStarredTaskToday} onCreateProject={(title) => projectSelection.createProject(title, api, projects, notify)} onCreateTask={(folderId) => { projectSelection.setSelectedFolderId(folderId); setCreateOpen(true); }} />
       <div className="v3-navigation-resize" data-testid="v3-navigation-resize-handle" aria-hidden="true">
         <DragHandle onDrag={resizeNavigation} widthPx={DASHBOARD_PANEL_GAP_PX} />
       </div>
@@ -451,7 +448,11 @@ function V3DashboardContent() {
           </div>
         </div>
       </main>
-      {workspaceOpen && workspaceTask ? (
+      <div className="v3-session-panel-resize" data-testid="v3-session-panel-resize-handle" aria-hidden="true">
+        <DragHandle onDrag={sessionPanel.resize} widthPx={DASHBOARD_PANEL_GAP_PX} />
+      </div>
+      <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} activeSessionId={activeSessionKey} onOpenSession={(session) => { void sessionPanel.openSession(session); }} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onAcknowledged={acknowledgeReview} />
+      {workspaceOpen && (workspaceTask || activeSession) ? (
         <TaskWorkspace
           task={workspaceTask}
           projectTitle={projectTitle}
@@ -477,10 +478,10 @@ function V3DashboardContent() {
           onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }}
           onOpenDocument={openTaskDocument}
           onOpenSession={openSession}
-          onRenameTaskTitle={(title) => plannerActions.renameTaskTitle(workspaceTask, title)}
+          onRenameTaskTitle={(title) => workspaceTask ? plannerActions.renameTaskTitle(workspaceTask, title) : Promise.reject(new Error("연결된 업무가 없습니다"))}
           onSaveDescription={saveDescription}
           onPromoteDocument={promoteDocument}
-          onUnmountDocument={(blockId) => plannerActions.unmountDocument(workspaceTask, blockId)}
+          onUnmountDocument={(blockId) => workspaceTask ? plannerActions.unmountDocument(workspaceTask, blockId) : Promise.reject(new Error("연결된 업무가 없습니다"))}
           onRenameSession={plannerActions.renameSession}
           onDeleteSessions={plannerActions.deleteSessions}
           onMoveSession={plannerActions.moveSession}
@@ -488,10 +489,9 @@ function V3DashboardContent() {
           onAcknowledgedReview={acknowledgeReview}
         />
       ) : null}
-      <V3StandaloneInspector open={inspectorOpen} session={inspectorSession} chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} onClose={() => setInspectorOpen(false)} onAcknowledgedReview={acknowledgeReview} />
+      <V3StandaloneDocumentInspector open={documentInspectorOpen} onClose={() => setDocumentInspectorOpen(false)} />
       <MobilePlannerTabs activeTab={mobileTab} onSelect={switchMobileTab} />
-      <RitualModal open={ritualOpen} today={today} reviewCount={reviewSessions.length} onClose={() => setRitualOpen(false)} onActionApplied={applyRitualAction} onOpenReviewQueue={() => setReviewQueueOpen(true)} />
-      <ReviewQueuePanel open={reviewQueueOpen} companionOpen={inspectorOpen} sessions={reviewSessions} onClose={() => setReviewQueueOpen(false)} onOpenSession={openReviewSession} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onAcknowledged={acknowledgeReview} />
+      <RitualModal open={ritualOpen} today={today} reviewCount={reviewSessions.length} onClose={() => setRitualOpen(false)} onActionApplied={applyRitualAction} onFocusSessionPanel={() => { requestAnimationFrame(() => sessionPanel.panelRef.current?.focus({ preventScroll: true })); }} />
       <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
       <SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} />
       <div className={`v3-toast${toast ? " is-visible" : ""}`} role="status" aria-live="polite">{toast}</div>
