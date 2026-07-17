@@ -12,11 +12,13 @@ const identityId = "00000000-0000-4000-8000-0000000000af";
 describe("FolderProjectIdentityService", () => {
   it("creates the folder and project page with one UUID", async () => {
     const repository = createRepository();
+    const onPageUpdated = vi.fn();
     const service = new FolderProjectIdentityService({
       repository,
       createId: () => identityId,
       createOperationId: () => "operation-af",
       hydratePage: vi.fn(),
+      onPageUpdated,
     });
 
     await expect(service.create({
@@ -38,6 +40,8 @@ describe("FolderProjectIdentityService", () => {
       title: "새 프로젝트",
       metadata: { projectIdentity: true, folderId: identityId },
     });
+    expect(onPageUpdated).toHaveBeenCalledOnce();
+    expect(onPageUpdated).toHaveBeenCalledWith({ pageId: identityId, version: 1 });
   });
 
   it("sends name and structural fields through one repository mutation", async () => {
@@ -55,10 +59,12 @@ describe("FolderProjectIdentityService", () => {
       pageVersion: 1,
     });
     vi.mocked(repository.readPageSnapshot).mockResolvedValue(createPageSnapshot());
+    const onPageUpdated = vi.fn();
     const service = new FolderProjectIdentityService({
       repository,
       createOperationId: () => "operation-af",
       hydratePage: vi.fn(),
+      onPageUpdated,
     });
 
     await service.mutateFromFolder({
@@ -83,6 +89,67 @@ describe("FolderProjectIdentityService", () => {
       },
       archived: false,
     }));
+    expect(onPageUpdated).toHaveBeenCalledOnce();
+    expect(onPageUpdated).toHaveBeenCalledWith({ pageId: identityId, version: 2 });
+  });
+
+  it("notifies for both legacy project page commit paths", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.listLegacyFolders).mockResolvedValue([{
+      folderId: identityId,
+      name: "레거시 프로젝트",
+      sortOrder: 0,
+      settings: {},
+      parentFolderId: null,
+    }]);
+    vi.mocked(repository.readPageSnapshot).mockResolvedValue(createPageSnapshot());
+    const onPageUpdated = vi.fn();
+    const service = new FolderProjectIdentityService({
+      repository,
+      createOperationId: () => "operation-af",
+      hydratePage: vi.fn(),
+      onPageUpdated,
+    });
+
+    await service.backfillLegacyFolder({
+      folderId: identityId,
+      existingPageId: identityId,
+      actor: { actorKind: "system" },
+      idempotencyKey: "bind-backfill-af",
+    });
+    await service.backfillLegacyFolder({
+      folderId: identityId,
+      actor: { actorKind: "system" },
+      idempotencyKey: "create-backfill-af",
+    });
+
+    expect(onPageUpdated).toHaveBeenNthCalledWith(1, { pageId: identityId, version: 2 });
+    expect(onPageUpdated).toHaveBeenNthCalledWith(2, { pageId: identityId, version: 1 });
+  });
+
+  it("does not notify for an idempotent folder-originated retry", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.findMutationByIdempotencyKey).mockResolvedValue(mutationResult({
+      id: identityId,
+      pageId: identityId,
+      name: "이미 바뀐 프로젝트",
+    }));
+    const onPageUpdated = vi.fn();
+    const service = new FolderProjectIdentityService({
+      repository,
+      hydratePage: vi.fn(),
+      onPageUpdated,
+    });
+
+    await service.mutateFromFolder({
+      folderId: identityId,
+      update: { name: "이미 바뀐 프로젝트" },
+      actor: { actorKind: "user", actorUserId: "user@example.com" },
+      idempotencyKey: "update-af-retry",
+    });
+
+    expect(repository.mutate).not.toHaveBeenCalled();
+    expect(onPageUpdated).not.toHaveBeenCalled();
   });
 
   it("returns a committed page result before recalculating an idempotent page retry", async () => {
@@ -98,7 +165,8 @@ describe("FolderProjectIdentityService", () => {
       createPageSnapshot("이미 바뀐 이름"),
     );
     const hydratePage = vi.fn();
-    const service = new FolderProjectIdentityService({ repository, hydratePage });
+    const onPageUpdated = vi.fn();
+    const service = new FolderProjectIdentityService({ repository, hydratePage, onPageUpdated });
 
     await expect(service.mutateFromPage({
       pageId: identityId,
@@ -114,6 +182,7 @@ describe("FolderProjectIdentityService", () => {
     expect(repository.findByPageId).not.toHaveBeenCalled();
     expect(repository.mutate).not.toHaveBeenCalled();
     expect(hydratePage).toHaveBeenCalledWith(identityId);
+    expect(onPageUpdated).not.toHaveBeenCalled();
   });
 
   it("returns the stored backfill outcome before listing legacy folders on retry", async () => {
@@ -126,9 +195,11 @@ describe("FolderProjectIdentityService", () => {
       operation: { payload_json: { created_page: true } },
     });
     vi.mocked(repository.findMutationByIdempotencyKey).mockResolvedValue(committed);
+    const onPageUpdated = vi.fn();
     const service = new FolderProjectIdentityService({
       repository,
       hydratePage: vi.fn(),
+      onPageUpdated,
     });
 
     await expect(service.backfillLegacyFolder({
@@ -144,11 +215,17 @@ describe("FolderProjectIdentityService", () => {
 
     expect(repository.listLegacyFolders).not.toHaveBeenCalled();
     expect(repository.createLegacyPageAndBind).not.toHaveBeenCalled();
+    expect(onPageUpdated).not.toHaveBeenCalled();
   });
 });
 
 function createRepository(): FolderProjectIdentityRepository {
-  const result = (input: { id: string; pageId: string; name: string }): FolderProjectIdentityMutationResult =>
+  const result = (input: {
+    id: string;
+    pageId: string;
+    name: string;
+    version?: number;
+  }): FolderProjectIdentityMutationResult =>
     mutationResult(input);
   return {
     findMutationByIdempotencyKey: vi.fn(async () => null),
@@ -157,13 +234,37 @@ function createRepository(): FolderProjectIdentityRepository {
       id: input.binding.folderId,
       pageId: input.binding.pageId,
       name: input.title,
+      version: 2,
     })),
     findByFolderId: vi.fn(async () => null),
     findByPageId: vi.fn(async () => null),
     readPageSnapshot: vi.fn(async () => null),
     listLegacyFolders: vi.fn(async () => []),
-    bindLegacyPage: vi.fn(),
-    createLegacyPageAndBind: vi.fn(),
+    bindLegacyPage: vi.fn(async (input) => ({
+      folderId: input.folder.folderId,
+      pageId: input.pageId,
+      createdPage: false,
+      operation: { id: "folder-operation" },
+      pageCommit: mutationResult({
+        id: input.folder.folderId,
+        pageId: input.pageId,
+        name: input.folder.name,
+        version: 2,
+      }).pageCommit,
+      idempotent: false,
+    })),
+    createLegacyPageAndBind: vi.fn(async (input) => ({
+      folderId: input.folder.folderId,
+      pageId: input.pageId,
+      createdPage: true,
+      operation: { id: "folder-operation" },
+      pageCommit: mutationResult({
+        id: input.folder.folderId,
+        pageId: input.pageId,
+        name: input.folder.name,
+      }).pageCommit,
+      idempotent: false,
+    })),
   };
 }
 
@@ -173,6 +274,7 @@ function mutationResult(input: {
   name: string;
   idempotent?: boolean;
   operation?: Record<string, unknown>;
+  version?: number;
 }): FolderProjectIdentityMutationResult {
   return {
     id: input.id,
@@ -198,7 +300,7 @@ function mutationResult(input: {
         actor_user_id: "user@example.com",
         idempotency_key: "page-create",
         expected_version: 0,
-        result_version: 1,
+        result_version: input.version ?? 1,
         payload_json: {},
         reason: null,
         created_at: new Date(),

@@ -106,6 +106,15 @@ export interface CustomViewUpdatedStreamEvent {
   lastEventId?: string;
 }
 
+/** 페이지 커밋 무효화 이벤트 — 본문과 Yjs update는 다시 읽는다. */
+export interface PageUpdatedStreamEvent {
+  type: "page_updated";
+  page_id: string;
+  version: number;
+  /** broadcaster가 부여한 SSE event_id */
+  lastEventId?: string;
+}
+
 /**
  * 스트림 메타 이벤트 (구독 시 최초 1회, SSE id 미부착)
  *
@@ -142,5 +151,6 @@ export type SessionStreamEvent =
   | MetadataUpdatedStreamEvent
   | RunbookUpdatedStreamEvent
   | CustomViewUpdatedStreamEvent
+  | PageUpdatedStreamEvent
   | StreamMetaStreamEvent
   | ReplayGapStreamEvent;

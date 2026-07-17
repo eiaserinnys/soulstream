@@ -9,6 +9,7 @@ import {
 } from "../page/page_mutation_core.js";
 import { readPageYDocReplica } from "../page/page_yjs_model.js";
 import { toMutationResult, type PageServiceMutationResult } from "../page/page_service.js";
+import { notifyPageUpdates } from "../page/page_update_notifications.js";
 import type {
   FolderProjectBinding,
   FolderProjectIdentityMutationResult,
@@ -50,7 +51,10 @@ export class FolderProjectIdentityService {
     const idempotent = await this.config.repository.findMutationByIdempotencyKey(
       input.idempotencyKey,
     );
-    if (idempotent) return await this.hydrate(idempotent);
+    if (idempotent) {
+      await this.config.hydratePage(idempotent.pageId);
+      return idempotent;
+    }
     const id = this.createId();
     assertUuid(id);
     const name = requireName(input.name);
@@ -92,7 +96,10 @@ export class FolderProjectIdentityService {
     const idempotent = await this.config.repository.findMutationByIdempotencyKey(
       input.idempotencyKey,
     );
-    if (idempotent) return await this.hydrate(idempotent);
+    if (idempotent) {
+      await this.config.hydratePage(idempotent.pageId);
+      return idempotent;
+    }
     const binding = await this.requireFolderBinding(input.folderId);
     const update = input.update ?? {};
     const title = typeof update.name === "string" ? requireName(update.name) : binding.name;
@@ -210,6 +217,7 @@ export class FolderProjectIdentityService {
         pageApplication,
       });
       await this.config.hydratePage(result.pageId);
+      this.notifyPageUpdate(result);
       if (!result.idempotent) await this.config.onCommitted?.();
       return result;
     }
@@ -235,6 +243,7 @@ export class FolderProjectIdentityService {
       pageApplication,
     });
     await this.config.hydratePage(result.pageId);
+    this.notifyPageUpdate(result);
     if (!result.idempotent) await this.config.onCommitted?.();
     return result;
   }
@@ -260,8 +269,15 @@ export class FolderProjectIdentityService {
     result: FolderProjectIdentityMutationResult,
   ): Promise<FolderProjectIdentityMutationResult> {
     await this.config.hydratePage(result.pageId);
+    this.notifyPageUpdate(result);
     if (!result.idempotent) await this.config.onCommitted?.();
     return result;
+  }
+
+  private notifyPageUpdate(
+    result: FolderProjectIdentityMutationResult | LegacyFolderBackfillResult,
+  ): void {
+    notifyPageUpdates([result], this.config.onPageUpdated);
   }
 
   private async pageResultFromIdentityMutation(

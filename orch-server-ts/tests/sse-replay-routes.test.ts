@@ -197,6 +197,39 @@ describe("SSE replay HTTP route harness", () => {
     );
   });
 
+  it("replays page_updated as a named additive session event with its SSE id", async () => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({ instanceId });
+    broadcaster.append({ type: "page_updated", page_id: "page-1", version: 7 });
+    const app = createApp({
+      config,
+      sseReplayRoutes: {
+        ...createHarness(),
+        session: {
+          broadcaster,
+          loadSnapshot: async () => ({ sessions: [], total: 0 }),
+        },
+      },
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/sessions/stream?lastEventId=0&instanceId=current-instance-id",
+    });
+
+    expect(parseSseEvents(response.body)).toEqual([
+      {
+        event: "stream_meta",
+        id: undefined,
+        data: { type: "stream_meta", instance_id: instanceId, latest_id: 1 },
+      },
+      {
+        event: "page_updated",
+        id: "1",
+        data: { type: "page_updated", page_id: "page-1", version: 7 },
+      },
+    ]);
+  });
+
   it("filters session replay events request-aware while preserving emitted SSE ids", async () => {
     const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
       instanceId,

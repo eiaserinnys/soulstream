@@ -68,6 +68,9 @@ export function acceptV3SessionStreamEvent(event: SessionStreamEvent): void {
     case "custom_view_updated":
       invalidateV3("custom_view");
       break;
+    case "page_updated":
+      invalidateV3("page");
+      break;
     case "replay_gap":
       invalidateV3("replay");
       break;
