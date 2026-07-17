@@ -236,10 +236,6 @@
   font-size: var(--font-size-xs);
 }
 
-.v3-succession-modal {
-  border-radius: 17px;
-}
-
 .v3-succession-head {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -273,16 +269,11 @@
 .v3-succession-head p {
   margin-top: 3px;
   color: var(--muted-foreground);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
 }
 
 .v3-succession-body {
   padding: 16px 18px;
-}
-
-.v3-succession-body > p {
-  color: var(--muted-foreground);
-  font-size: var(--font-size-xs);
 }
 
 .v3-succession-body ol {
@@ -324,7 +315,7 @@
 }
 
 .v3-succession-body li strong {
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
 }
 
 .v3-succession-body li small {
@@ -342,7 +333,7 @@
   color: var(--foreground);
   background: var(--background);
   font: inherit;
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
 }
 
 .v3-succession-body li select:focus-visible {
@@ -406,13 +397,17 @@
 }
 
 .v3-succession-context-editor strong {
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
 }
 
 .v3-succession-document-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
+  max-height: min(190px, 24dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
 }
 
 .v3-succession-document-options label {
@@ -421,7 +416,7 @@
   align-items: center;
   gap: 7px;
   color: var(--muted-foreground);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
 }
 
 .v3-succession-document-options label span {
@@ -449,7 +444,7 @@
   color: var(--foreground);
   background: var(--background);
   font: inherit;
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
 }
 
 .v3-succession-context-editor textarea:focus-visible {
@@ -462,7 +457,6 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px;
-  margin-top: 12px;
 }
 
 .v3-succession-assignment label {
@@ -471,7 +465,7 @@
   flex-direction: column;
   gap: 5px;
   color: var(--muted-foreground);
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   font-weight: 750;
 }
 

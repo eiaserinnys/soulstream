@@ -1,0 +1,71 @@
+{
+  "baseline": false,
+  "themes": [
+    {
+      "theme": "dark",
+      "newTask": {
+        "x": 432,
+        "y": 160,
+        "width": 576,
+        "height": 680,
+        "centerDeltaPx": 0,
+        "placement": "center",
+        "liquidGlassClass": true,
+        "liquidGlassEnhanced": "true",
+        "liquidGlassLayerCount": 1
+      },
+      "newSession": {
+        "x": 400,
+        "y": 16,
+        "width": 640,
+        "height": 968,
+        "centerDeltaPx": 0,
+        "placement": "center",
+        "liquidGlassClass": true,
+        "liquidGlassEnhanced": "true",
+        "liquidGlassLayerCount": 1
+      },
+      "succession": {
+        "sectionOrder": true,
+        "hasLegacyTerms": false,
+        "documentOverflowY": "auto",
+        "documentMaxHeight": "190px",
+        "primaryFontPx": 14,
+        "hasInitialInstruction": true
+      }
+    },
+    {
+      "theme": "light",
+      "newTask": {
+        "x": 432,
+        "y": 129,
+        "width": 576,
+        "height": 742,
+        "centerDeltaPx": 0,
+        "placement": "center",
+        "liquidGlassClass": true,
+        "liquidGlassEnhanced": "true",
+        "liquidGlassLayerCount": 1
+      },
+      "newSession": {
+        "x": 400,
+        "y": 16,
+        "width": 640,
+        "height": 968,
+        "centerDeltaPx": 0,
+        "placement": "center",
+        "liquidGlassClass": true,
+        "liquidGlassEnhanced": "true",
+        "liquidGlassLayerCount": 1
+      },
+      "succession": {
+        "sectionOrder": true,
+        "hasLegacyTerms": false,
+        "documentOverflowY": "auto",
+        "documentMaxHeight": "190px",
+        "primaryFontPx": 14,
+        "hasInitialInstruction": true
+      }
+    }
+  ]
+}

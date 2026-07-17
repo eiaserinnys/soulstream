@@ -51,7 +51,7 @@ export function buildSessionContextSelection({
   if (trimmedGuidance) {
     contextItems.push({
       key: "session_guidance",
-      label: "기본 지침",
+      label: "추가 지침",
       content: trimmedGuidance,
     });
   }

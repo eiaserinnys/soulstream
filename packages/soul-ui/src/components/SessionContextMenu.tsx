@@ -282,7 +282,7 @@ export function SessionContextMenu({
       {/* 컨텍스트 메뉴 — 모바일: Dialog 하단 시트, 데스크탑: base-ui Menu */}
       {isMobile ? (
         <Dialog open={contextMenu !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
-          <DialogPopup className="max-w-sm" showCloseButton={false}>
+          <DialogPopup bottomStickOnMobile className="max-w-sm" showCloseButton={false}>
             <div className="py-2 px-2">
               <MenuItems
                 onCopyId={handleCopyId}

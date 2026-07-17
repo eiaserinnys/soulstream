@@ -10,7 +10,8 @@ describe("v3 layer contract", () => {
 
     expect(value("--v3-layer-panel")).toBeLessThan(value("--v3-layer-overlay"));
     expect(value("--v3-layer-overlay")).toBeLessThan(value("--v3-layer-modal"));
-    expect(value("--v3-layer-modal")).toBeLessThan(value("--v3-layer-toast"));
+    expect(value("--v3-layer-modal")).toBeLessThan(value("--v3-layer-popover"));
+    expect(value("--v3-layer-popover")).toBeLessThan(value("--v3-layer-toast"));
   });
 
   it("puts the toast in the body portal above shared dialogs and v3 overlays", () => {
@@ -19,11 +20,13 @@ describe("v3 layer contract", () => {
     const dialog = read("../../../packages/soul-ui/src/components/ui/dialog.tsx");
     const layers = read("./v3-layer-contract.css");
     const contextMenu = read("./V3ContextMenu.tsx");
+    const popover = read("../../../packages/soul-ui/src/components/ui/popover.tsx");
 
     expect(layout).toContain("<V3Toast message={toast}");
     expect(toast).toContain("createPortal");
     expect(toast).toContain("document.body");
     expect(dialog).toContain("z-[var(--v3-layer-modal,50)]");
+    expect(popover).toContain("z-[var(--v3-layer-popover,51)]");
     expect(layers).toContain(".v3-workspace-scrim");
     expect(layers).toContain("z-index: var(--v3-layer-overlay)");
     expect(layers).toContain("z-index: var(--v3-layer-toast)");

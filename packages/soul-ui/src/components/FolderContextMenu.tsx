@@ -42,7 +42,7 @@ export function FolderContextMenu({
   if (isMobile) {
     return (
       <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-        <DialogPopup className="max-w-sm" showCloseButton={false}>
+        <DialogPopup bottomStickOnMobile className="max-w-sm" showCloseButton={false}>
           <div className="py-2 px-2">
             {!isSystemFolder && (
               <>

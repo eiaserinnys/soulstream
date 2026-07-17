@@ -21,4 +21,14 @@ describe("dialog liquid glass surfaces", () => {
     expect(source).toContain("data-liquid-glass-enhanced");
     expect(source).toContain("liquid-glass-card");
   });
+
+  it("centers regular dialogs in one shared viewport contract", () => {
+    const source = readUiSource("dialog.tsx");
+
+    expect(source).toContain("place-items-center");
+    expect(source).toContain("bottomStickOnMobile = false");
+    expect(source).toContain('data-modal-placement={bottomStickOnMobile ? "mobile-bottom-sheet" : "center"}');
+    expect(source).not.toContain("grid-rows-[1fr_auto_3fr]");
+    expect(source).not.toContain("row-start-2");
+  });
 });

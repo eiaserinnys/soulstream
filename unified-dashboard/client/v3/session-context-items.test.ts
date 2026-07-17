@@ -55,7 +55,7 @@ describe("session context item selection", () => {
         },
         {
           key: "session_guidance",
-          label: "기본 지침",
+          label: "추가 지침",
           content: "결과부터 간결하게 보고한다.",
         },
       ],

@@ -112,4 +112,24 @@ describe("AgentNodeAssignmentFields", () => {
     await waitFor(() => expect(container.textContent).toContain("에이전트 B"));
     expect(container.textContent).not.toContain("에이전트 A");
   });
+
+  it("renders the session assignment as node then agent without execution terminology", () => {
+    vi.stubGlobal("fetch", vi.fn(() => response([])));
+
+    flushSync(() => {
+      root.render(createElement(AgentNodeAssignmentFields, {
+        nodeId: "node-a",
+        agentId: "",
+        presentation: "session",
+        onNodeIdChange: vi.fn(),
+        onAgentIdChange: vi.fn(),
+      }));
+    });
+
+    const labels = [...container.querySelectorAll("label")].map((label) =>
+      label.firstChild?.textContent?.trim(),
+    );
+    expect(labels).toEqual(["노드", "에이전트"]);
+    expect(container.textContent).not.toContain("실행");
+  });
 });
