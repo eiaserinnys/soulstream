@@ -42,24 +42,58 @@ export async function createPagePostgresHarness(): Promise<PagePostgresHarness> 
 }
 
 async function connect(url: string, containerId?: string): Promise<PagePostgresHarness> {
-  const sql = postgres(url, { max: 1, idle_timeout: 1, onnotice: () => {} });
-  await waitForPostgres(sql);
   const schema = `page_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-  await sql.unsafe(`CREATE SCHEMA ${schema}`);
-  await sql.unsafe(`SET search_path TO ${schema}`);
-  await createSchema(sql);
+  const bootstrapSql = postgres(url, { max: 1, idle_timeout: 1, onnotice: () => {} });
+  try {
+    await waitForPostgres(bootstrapSql);
+    await bootstrapSql.unsafe(`CREATE SCHEMA ${schema}`);
+    await bootstrapSql.unsafe(`SET search_path TO ${schema}`);
+    await createSchema(bootstrapSql);
+  } catch (error) {
+    await dropSchema(url, schema);
+    throw error;
+  } finally {
+    await bootstrapSql.end({ timeout: 2 });
+  }
+
+  const sql = postgres(url, {
+    max: 1,
+    idle_timeout: 1,
+    onnotice: () => {},
+    connection: { search_path: schema },
+  });
+  try {
+    await waitForPostgres(sql);
+  } catch (error) {
+    await sql.end({ timeout: 2 });
+    await dropSchema(url, schema);
+    throw error;
+  }
   return {
     sql,
     liveSql: sql as unknown as LivePostgresSql,
     async cleanup() {
       try {
-        await sql.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
-      } finally {
         await sql.end({ timeout: 2 });
-        if (containerId) stopDocker(containerId);
+      } finally {
+        try {
+          await dropSchema(url, schema);
+        } finally {
+          if (containerId) stopDocker(containerId);
+        }
       }
     },
   };
+}
+
+async function dropSchema(url: string, schema: string): Promise<void> {
+  const cleanupSql = postgres(url, { max: 1, onnotice: () => {} });
+  try {
+    await waitForPostgres(cleanupSql);
+    await cleanupSql.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+  } finally {
+    await cleanupSql.end({ timeout: 2 });
+  }
 }
 
 async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {

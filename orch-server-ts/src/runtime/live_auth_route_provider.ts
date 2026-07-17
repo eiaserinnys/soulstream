@@ -16,7 +16,10 @@ import type {
 } from "../auth/auth_routes.js";
 import { AUTH_COOKIE_NAME } from "../auth/auth_routes.js";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
-import { extractDashboardJwtToken } from "./live_authenticated_user_resolver.js";
+import {
+  extractDashboardJwtToken,
+  type LiveAuthenticatedUserResolver,
+} from "./live_authenticated_user_resolver.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
 
 export type LiveAuthHttpClientFetch = (
@@ -53,6 +56,7 @@ export type CreateLiveAuthTokenResolverOptions = {
   readonly configProvider: LiveConfigProviderBoundary;
   readonly jwt?: AuthJwtHelper;
   readonly cookieName?: string;
+  readonly resolveDashboardUser?: LiveAuthenticatedUserResolver;
 };
 
 export type CreateLiveAuthUserAuthorizerOptions = {
@@ -172,15 +176,23 @@ export function createLiveAuthTokenResolver(
     }
 
     if (googleClientId.length > 0) {
-      const dashboardToken = extractDashboardJwtToken(request, cookieName);
-      if (dashboardToken) {
-        const payload = await jwt.verifyToken(dashboardToken);
-        if (payload) return { ok: true };
-      }
+      const payload = options.resolveDashboardUser === undefined
+        ? await verifyDashboardToken(request, cookieName, jwt)
+        : await options.resolveDashboardUser(request);
+      if (payload) return { ok: true };
     }
 
     return bearer;
   };
+}
+
+async function verifyDashboardToken(
+  request: Parameters<AuthTokenResolver>[0],
+  cookieName: string,
+  jwt: AuthJwtHelper,
+): Promise<AuthJwtPayload | null> {
+  const dashboardToken = extractDashboardJwtToken(request, cookieName);
+  return dashboardToken ? await jwt.verifyToken(dashboardToken) : null;
 }
 
 export function createLiveAuthUserAuthorizer(

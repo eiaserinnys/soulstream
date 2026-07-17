@@ -177,6 +177,15 @@ describe("live provider factory boundary", () => {
         headers: { cookie: `soul_dashboard_auth=${pushJwt}` },
       } as unknown as FastifyRequest),
     ).resolves.toBe("push@example.com");
+    const routeIdentityRequest = {
+      headers: { cookie: `soul_dashboard_auth=${pushJwt}` },
+    } as unknown as FastifyRequest;
+    await expect(
+      bundle.folderRoutes.resolveDashboardUserId?.(routeIdentityRequest),
+    ).resolves.toBe("push@example.com");
+    await expect(
+      bundle.runbookRoutes.resolveDashboardUserId?.(routeIdentityRequest),
+    ).resolves.toBe("push@example.com");
     expect(bundle.userBackgroundRoutes.repository).toBe(
       dependencies.dbCatalogRepository.userPreferencesRepository,
     );

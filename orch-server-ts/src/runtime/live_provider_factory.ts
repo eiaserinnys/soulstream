@@ -73,6 +73,7 @@ import { withBoardAssetMutationBroadcasts } from "./live_board_asset_mutation_br
 import {
   createLiveAuthenticatedUserResolvers,
   type LiveCallerInfoResolver,
+  type LiveAuthenticatedUserResolvers,
 } from "./live_authenticated_user_resolver.js";
 import { createLiveAdminUsersRouteProvider } from "./live_admin_users_route_provider.js";
 import { createLiveAtomHttpClient } from "./live_atom_route_provider.js";
@@ -133,6 +134,7 @@ export type LiveRuntimeProviderBundle = {
 };
 
 export type LiveOrchestratorProviderBundle = {
+  readonly authenticatedUserResolvers: LiveAuthenticatedUserResolvers;
   readonly adminUsersRoutes: AdminUsersRouteOptions;
   readonly atomRoutes: AtomRouteOptions;
   readonly attachmentRoutes: Pick<
@@ -149,7 +151,10 @@ export type LiveOrchestratorProviderBundle = {
     | "authorizeUser"
     | "userPayloadExtra"
   >;
-  readonly folderRoutes: Pick<FolderRouteOptions, "accessProvider" | "provider">;
+  readonly folderRoutes: Pick<
+    FolderRouteOptions,
+    "accessProvider" | "provider" | "resolveDashboardUserId"
+  >;
   readonly boardAssetRoutes: Pick<BoardAssetRouteOptions, "accessProvider" | "provider">;
   readonly boardItemRoutes: Pick<BoardItemRouteOptions, "accessProvider" | "provider">;
   readonly markdownDocumentRoutes: Pick<
@@ -172,7 +177,7 @@ export type LiveOrchestratorProviderBundle = {
   readonly nodeClaudeAuthRoutes: LiveNodeClaudeAuthRouteProviderBundle["nodeClaudeAuthRoutes"];
   readonly runbookRoutes:
     & LiveRunbookRouteProviderBundle["runbookRoutes"]
-    & Pick<RunbookRouteOptions, "accessProvider">;
+    & Pick<RunbookRouteOptions, "accessProvider" | "resolveDashboardUserId">;
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
   readonly taskMutationRoutes: TaskMutationRouteOptions;
   readonly taskReadRoutes: TaskReadRouteOptions;
@@ -231,13 +236,14 @@ export function createLiveOrchestratorProviderBundle(
   const authJwt = createLiveAuthJwtHelper({
     configProvider: options.dependencies.configProvider,
   });
+  const authenticatedUserResolvers = createLiveAuthenticatedUserResolvers({
+    jwt: authJwt,
+  });
   const dashboardAccessProvider = createLiveDashboardAccessProvider({
     configProvider: options.dependencies.configProvider,
     jwt: authJwt,
     repository: options.dependencies.dbCatalogRepository.adminUsersRepository,
-  });
-  const authenticatedUserResolvers = createLiveAuthenticatedUserResolvers({
-    jwt: authJwt,
+    verifyDashboardToken: authenticatedUserResolvers.verifyToken,
   });
   const sessionResourceAccessProvider = createSessionResourceAccessProvider({
     accessProvider: dashboardAccessProvider,
@@ -265,6 +271,7 @@ export function createLiveOrchestratorProviderBundle(
     );
 
   return {
+    authenticatedUserResolvers,
     adminUsersRoutes: {
       provider: createLiveAdminUsersRouteProvider({
         repository: options.dependencies.dbCatalogRepository.adminUsersRepository,
@@ -293,6 +300,7 @@ export function createLiveOrchestratorProviderBundle(
       resolveTokenAccess: createLiveAuthTokenResolver({
         configProvider: options.dependencies.configProvider,
         jwt: authJwt,
+        resolveDashboardUser: authenticatedUserResolvers.resolveUser,
       }),
       authorizeUser: createLiveAuthUserAuthorizer({
         configProvider: options.dependencies.configProvider,
@@ -305,6 +313,7 @@ export function createLiveOrchestratorProviderBundle(
         options.runtimeServices.sessionBroadcaster,
       ),
       accessProvider: dashboardAccessProvider,
+      resolveDashboardUserId: authenticatedUserResolvers.resolveEmail,
     },
     boardAssetRoutes: {
       provider: withBoardAssetMutationBroadcasts(
@@ -402,6 +411,7 @@ export function createLiveOrchestratorProviderBundle(
     runbookRoutes: {
       ...runbookProviders.runbookRoutes,
       accessProvider: dashboardAccessProvider,
+      resolveDashboardUserId: authenticatedUserResolvers.resolveEmail,
     },
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
     taskMutationRoutes: {

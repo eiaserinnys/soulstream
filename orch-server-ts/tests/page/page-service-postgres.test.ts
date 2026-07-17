@@ -908,6 +908,7 @@ function connectProvider(address: string, pageId: string): HocuspocusProvider {
     document: new Y.Doc(),
     token: "service-token",
     WebSocketPolyfill: WebSocket,
+    autoConnect: false,
   } as HocuspocusProviderConfiguration & { WebSocketPolyfill: typeof WebSocket });
 }
 
@@ -944,7 +945,9 @@ function waitForSync(
 }
 
 async function connectAndWaitForSync(provider: HocuspocusProvider): Promise<void> {
-  await waitForSync(provider);
+  const synced = waitForSync(provider);
+  provider.connect();
+  await synced;
 }
 
 function getEditableText(document: Y.Doc, blockId: string): Y.Text {

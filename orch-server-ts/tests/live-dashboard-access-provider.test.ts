@@ -70,6 +70,40 @@ describe("live dashboard DB access provider", () => {
     expect(repository.findUserByEmail).not.toHaveBeenCalledWith("admin@example.com");
   });
 
+  it("reuses a shared request-scoped dashboard token verifier", async () => {
+    const { repository } = createProviderHarness();
+    const jwt: AuthJwtHelper = {
+      issueToken: vi.fn(async () => "token"),
+      verifyToken: vi.fn(async () => null),
+    };
+    const verifyDashboardToken = vi.fn(async (_request, token: string) =>
+      token === "restricted-token"
+        ? { email: "restricted@example.com" }
+        : null
+    );
+    const provider = createLiveDashboardAccessProvider({
+      configProvider: configWith({
+        auth_bearer_token: "service-token",
+        google_client_id: "google-client",
+        environment: "production",
+      }),
+      jwt,
+      repository,
+      verifyDashboardToken,
+    });
+    const request = cookieRequest("restricted-token");
+
+    await expect(provider.resolveAccess(request)).resolves.toEqual({
+      restricted: true,
+      allowedFolderIds: ["folder-a"],
+    });
+    expect(verifyDashboardToken).toHaveBeenCalledWith(
+      request,
+      "restricted-token",
+    );
+    expect(jwt.verifyToken).not.toHaveBeenCalled();
+  });
+
   it("denies missing or invalid dashboard JWT requests before resolving user access", async () => {
     const { provider, repository } = createProviderHarness();
 
