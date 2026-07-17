@@ -74,7 +74,7 @@ export function TaskWorkspace({
   runHistoryTotal: number;
   runHistoryHasMore: boolean;
   runHistoryLoading: boolean;
-  onLoadMoreRuns(): void;
+  onLoadMoreRuns(): Promise<void>;
   activeSession: SessionSummary | undefined;
   focusRequest: TaskSectionFocusRequest | null;
   onFocusRequestHandled(requestId: number): void;

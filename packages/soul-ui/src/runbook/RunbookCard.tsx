@@ -89,9 +89,9 @@ export function RunbookCard({
   const projection = useRunbookStore((s) => s.byId[runbookId]);
   const loadRunbook = useRunbookStore((s) => s.loadRunbook);
   useEffect(() => {
-    const controller = new AbortController();
-    void loadRunbook(runbookId, { signal: controller.signal });
-    return () => controller.abort();
+    // The store owns and deduplicates this shared read. Aborting it from one
+    // card's cleanup also aborts a StrictMode remount or another observer.
+    void loadRunbook(runbookId);
   }, [loadRunbook, runbookId]);
 
   const snapshot = projection?.snapshot ?? null;
@@ -108,7 +108,7 @@ export function RunbookCard({
     [sections, itemsBySection],
   );
   const title = snapshot?.runbook.title || fallbackTitle || "Runbook";
-  const loading = (projection?.status ?? "idle") === "loading";
+  const loading = projection === undefined || projection.status === "idle" || projection.status === "loading";
   const refreshing = Boolean(projection?.isRefreshing);
   const error = projection?.error ?? null;
 

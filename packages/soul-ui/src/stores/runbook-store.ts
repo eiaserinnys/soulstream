@@ -227,7 +227,7 @@ export const useRunbookStore = create<RunbookStoreState>((set, get) => ({
 
   async loadRunbook(runbookId, options = {}) {
     const current = projectionFor(get(), runbookId);
-    if (!options.force && current.status === "ready") {
+    if (!options.force && current.status === "ready" && current.snapshot) {
       return current.snapshot;
     }
 

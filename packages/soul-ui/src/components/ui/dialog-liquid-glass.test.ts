@@ -31,4 +31,15 @@ describe("dialog liquid glass surfaces", () => {
     expect(source).not.toContain("grid-rows-[1fr_auto_3fr]");
     expect(source).not.toContain("row-start-2");
   });
+
+  it("bounds every dialog to the dynamic viewport and gives the panel the scroll remainder", () => {
+    const source = readUiSource("dialog.tsx");
+
+    expect(source).toContain("max-h-[calc(100dvh-2rem)]");
+    expect(source).toContain("overflow-hidden");
+    expect(source).toContain("min-h-0 flex-auto overflow-y-auto");
+    expect(source).toContain('data-slot="dialog-panel-scroll"');
+    expect(source).toContain("flex shrink-0 flex-col");
+    expect(source).toContain("가상 키보드를 제외한 가시 영역 높이");
+  });
 });

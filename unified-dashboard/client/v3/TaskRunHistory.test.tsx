@@ -1,9 +1,17 @@
+/**
+ * @vitest-environment jsdom
+ */
+
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
-import { getRunSessionRenamePrefill, TaskRunHistory } from "./TaskRunHistory";
+import {
+  getRunSessionRenamePrefill,
+  loadMoreRunsPreservingScroll,
+  TaskRunHistory,
+} from "./TaskRunHistory";
 
 describe("TaskRunHistory", () => {
   it("uses only displayName for rename prefill and never falls back to the prompt", () => {
@@ -84,8 +92,30 @@ describe("TaskRunHistory", () => {
     expect(html).toContain('aria-label="새 세션"');
     expect(html).toContain('title="새 세션"');
     expect(html).toContain('aria-label="이전 세션 더 보기"');
+    expect(html).toContain('class="v3-run-load-more"');
     expect(html).toContain("3/61회");
     expect(html).not.toContain(">이전 세션 더 보기<");
     expect(html).not.toContain("▶ 새 세션");
+  });
+
+  it("waits for the next run page and restores the owning detail scroller", async () => {
+    const scroller = document.createElement("div");
+    scroller.className = "v3-detail-scroll";
+    const button = document.createElement("button");
+    scroller.appendChild(button);
+    scroller.scrollTop = 420;
+    const loadMore = vi.fn(async () => {
+      scroller.scrollTop = 0;
+    });
+    const scheduleFrame = vi.fn((callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+
+    await loadMoreRunsPreservingScroll(button, loadMore, scheduleFrame);
+
+    expect(loadMore).toHaveBeenCalledOnce();
+    expect(scheduleFrame).toHaveBeenCalledOnce();
+    expect(scroller.scrollTop).toBe(420);
   });
 });

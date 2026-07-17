@@ -31,6 +31,25 @@ export class RunbookApiError extends Error {
   }
 }
 
+const RUNBOOK_PROJECTION_RETRY_DELAYS_MS = [100, 250, 500] as const;
+
+function waitForProjection(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+  }
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, delayMs);
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
+
 function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
@@ -81,17 +100,24 @@ export async function fetchRunbookSnapshot(
   runbookId: string,
   signal?: AbortSignal,
 ): Promise<RunbookSnapshot | null> {
-  const response = await fetch(`/api/runbooks/${encodeURIComponent(runbookId)}`, {
-    signal,
-  });
-  if (response.status === 404) return null;
-  if (!response.ok) {
-    throw new Error(await readRunbookErrorMessage(
-      response,
-      `Runbook fetch failed: ${response.status}`,
-    ));
+  for (let attempt = 0; attempt <= RUNBOOK_PROJECTION_RETRY_DELAYS_MS.length; attempt += 1) {
+    const response = await fetch(`/api/runbooks/${encodeURIComponent(runbookId)}`, {
+      signal,
+    });
+    if (response.status !== 404) {
+      if (!response.ok) {
+        throw new Error(await readRunbookErrorMessage(
+          response,
+          `Runbook fetch failed: ${response.status}`,
+        ));
+      }
+      return await response.json() as RunbookSnapshot;
+    }
+    const retryDelay = RUNBOOK_PROJECTION_RETRY_DELAYS_MS[attempt];
+    if (retryDelay === undefined) return null;
+    await waitForProjection(retryDelay, signal);
   }
-  return await response.json() as RunbookSnapshot;
+  return null;
 }
 
 export async function fetchRunbookOverview(

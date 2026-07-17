@@ -78,7 +78,7 @@ export function TaskRunHistory({
   runHistoryHasMore: boolean;
   runHistoryLoading: boolean;
   activeSessionId: string | null;
-  onLoadMoreRuns(): void;
+  onLoadMoreRuns(): Promise<void>;
   moveTargets: readonly TaskMoveTarget[];
   onOpenSession(session: SessionSummary): void;
   onSessionCreated(session: SessionSummary): void;
@@ -129,6 +129,12 @@ export function TaskRunHistory({
   );
   const normalizedMoveQuery = moveQuery.trim();
   const moveOptions = normalizedMoveQuery ? searchedMoveTargets : visibleMoveTargets;
+
+  const loadMoreRuns = async (event: MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    await loadMoreRunsPreservingScroll(event.currentTarget, onLoadMoreRuns);
+  };
 
   useEffect(() => {
     if (!moveSessionId || !normalizedMoveQuery) {
@@ -188,14 +194,16 @@ export function TaskRunHistory({
         ))}
       </div>
       {runHistoryHasMore ? (
-        <DashboardIconCap
-          label="이전 세션 더 보기"
-          data-testid="v3-load-more-runs"
-          disabled={runHistoryLoading}
-          onClick={onLoadMoreRuns}
-        >
-          <ChevronsDown className="h-4 w-4" aria-hidden="true" />
-        </DashboardIconCap>
+        <div className="v3-run-load-more">
+          <DashboardIconCap
+            label="이전 세션 더 보기"
+            data-testid="v3-load-more-runs"
+            disabled={runHistoryLoading}
+            onClick={(event) => { void loadMoreRuns(event); }}
+          >
+            <ChevronsDown className="h-4 w-4" aria-hidden="true" />
+          </DashboardIconCap>
+        </div>
       ) : null}
       {successionOpen ? (
         <SessionSuccessionModal
@@ -336,4 +344,21 @@ export function getRunSessionRenamePrefill(
   sessionId: string,
 ): string {
   return sessions.find((session) => session.agentSessionId === sessionId)?.displayName ?? "";
+}
+
+export async function loadMoreRunsPreservingScroll(
+  trigger: HTMLElement,
+  loadMore: () => Promise<void>,
+  scheduleFrame: (callback: FrameRequestCallback) => number = requestAnimationFrame,
+): Promise<void> {
+  const scroller = trigger.closest<HTMLElement>(".v3-detail-scroll");
+  const scrollTop = scroller?.scrollTop;
+  await loadMore();
+  if (!scroller || scrollTop === undefined) return;
+  await new Promise<void>((resolve) => {
+    scheduleFrame(() => {
+      scroller.scrollTop = scrollTop;
+      resolve();
+    });
+  });
 }

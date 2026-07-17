@@ -77,7 +77,7 @@ export function TaskDetailPane({
   activeSessionId: string | null;
   focusRequest: TaskSectionFocusRequest | null;
   onFocusRequestHandled(requestId: number): void;
-  onLoadMoreRuns(): void;
+  onLoadMoreRuns(): Promise<void>;
   sessionDefaults: PageSessionDefaults | null;
   onReturnToToday(): void;
   taskInToday: boolean;
