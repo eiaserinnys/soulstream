@@ -108,6 +108,7 @@ export function buildRunTree(
   );
   const childrenByParent = new Map<string, SessionSummary[]>();
   for (const session of sessions) {
+    if (!containerIdSet.has(session.agentSessionId)) continue;
     const parentId = session.callerSessionId;
     if (!parentId || rootIds.has(session.agentSessionId)) continue;
     const children = childrenByParent.get(parentId) ?? [];

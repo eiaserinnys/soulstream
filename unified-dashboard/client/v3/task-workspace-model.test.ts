@@ -112,6 +112,21 @@ describe("run tree projection", () => {
     ]);
   });
 
+  it("does not leak catalog descendants that have not been loaded into the container page", () => {
+    const tree = buildRunTree(
+      ["loaded-root"],
+      [
+        session("loaded-root", "2026-07-13T10:00:00Z"),
+        session("unloaded-child", "2026-07-13T11:00:00Z", "loaded-root"),
+      ],
+    );
+
+    expect(tree).toMatchObject([
+      { session: { agentSessionId: "loaded-root" }, children: [] },
+    ]);
+    expect(JSON.stringify(tree)).not.toContain("unloaded-child");
+  });
+
   it("keeps a missing in-container caller as a placeholder parent", () => {
     const tree = buildRunTree(
       ["parent", "child"],

@@ -2,9 +2,10 @@
  * @vitest-environment jsdom
  */
 
-import { createElement } from "react";
+import { createElement, StrictMode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useRunbookStore, type RunbookSnapshot } from "../stores/runbook-store";
@@ -204,6 +205,36 @@ describe("RunbookCard", () => {
     container.remove();
     useRunbookStore.getState().reset();
     globalThis.fetch = originalFetch;
+  });
+
+  it("treats an unseen projection as loading instead of a missing runbook", () => {
+    const html = renderToStaticMarkup(createElement(RunbookCard, {
+      runbookId: "rb-new",
+      fallbackTitle: "새 업무",
+    }));
+
+    expect(html).toContain("불러오는 중");
+    expect(html).not.toContain("런북을 찾을 수 없음");
+  });
+
+  it("keeps a shared projection retry alive across a StrictMode effect probe", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(errorResponse(404, { detail: "projection pending" }))
+      .mockResolvedValueOnce(okResponse(sampleSnapshot()));
+    globalThis.fetch = fetchMock;
+
+    flushSync(() => {
+      root.render(createElement(
+        StrictMode,
+        null,
+        createElement(RunbookCard, { runbookId: "rb-1", fallbackTitle: "Fallback" }),
+      ));
+    });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await waitForText(container, "Deploy Runbook");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(container.textContent).not.toContain("런북을 찾을 수 없음");
   });
 
   it("renders progress, human turn highlight, active human write state, and folded terminal how_to", () => {

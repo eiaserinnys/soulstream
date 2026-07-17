@@ -4,6 +4,12 @@
   gap: 8px;
 }
 
+.v3-run-load-more {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+}
+
 .v3-run-row {
   display: flex;
   min-width: 0;

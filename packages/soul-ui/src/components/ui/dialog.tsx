@@ -10,7 +10,6 @@ import {
   supportsLiquidGlassEnhancement,
 } from "../LiquidGlassCard";
 import { Button } from "./button";
-import { ScrollArea } from "./scroll-area";
 
 const DialogCreateHandle = DialogPrimitive.createHandle;
 
@@ -89,7 +88,7 @@ function DialogPopup({
       >
         <DialogPrimitive.Popup
           className={cn(
-            "liquid-glass-card -translate-y-[calc(1.25rem*var(--nested-dialogs))] relative flex max-h-full min-h-0 w-full min-w-0 max-w-lg scale-[calc(1-0.1*var(--nested-dialogs))] flex-col rounded-[26px] border border-glass-border glass-shadow-lg text-popover-foreground opacity-[calc(1-0.1*var(--nested-dialogs))] transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
+            "liquid-glass-card -translate-y-[calc(1.25rem*var(--nested-dialogs))] relative flex max-h-[calc(100dvh-2rem)] min-h-0 w-full min-w-0 max-w-lg scale-[calc(1-0.1*var(--nested-dialogs))] flex-col overflow-hidden rounded-[26px] border border-glass-border glass-shadow-lg text-popover-foreground opacity-[calc(1-0.1*var(--nested-dialogs))] transition-[scale,opacity,translate] duration-200 ease-in-out will-change-transform data-nested:data-ending-style:translate-y-8 data-nested:data-starting-style:translate-y-8 data-nested-dialog-open:origin-top data-ending-style:scale-98 data-starting-style:scale-98 data-ending-style:opacity-0 data-starting-style:opacity-0",
             bottomStickOnMobile &&
               "max-sm:max-w-none max-sm:rounded-none max-sm:border-x-0 max-sm:border-t max-sm:border-b-0 max-sm:opacity-[calc(1-min(var(--nested-dialogs),1))] max-sm:data-ending-style:translate-y-4 max-sm:data-starting-style:translate-y-4",
             className,
@@ -122,7 +121,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       className={cn(
-        "flex flex-col gap-2 p-6 in-[[data-slot=dialog-popup]:has([data-slot=dialog-panel])]:pb-3 max-sm:pb-4",
+        "flex shrink-0 flex-col gap-2 p-6 in-[[data-slot=dialog-popup]:has([data-slot=dialog-panel])]:pb-3 max-sm:pb-4",
         className,
       )}
       data-slot="dialog-header"
@@ -141,7 +140,7 @@ function DialogFooter({
   return (
     <div
       className={cn(
-        "flex flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end sm:rounded-b-[25px]",
+        "flex shrink-0 flex-col-reverse gap-2 px-6 sm:flex-row sm:justify-end sm:rounded-b-[25px]",
         variant === "default" && "border-t border-[var(--lg-line)] bg-transparent py-4",
         variant === "bare" &&
           "in-[[data-slot=dialog-popup]:has([data-slot=dialog-panel])]:pt-3 pt-4 pb-6",
@@ -184,8 +183,38 @@ function DialogPanel({
   scrollFade = true,
   ...props
 }: React.ComponentProps<"div"> & { scrollFade?: boolean }) {
+  const syncScrollFade = (element: HTMLDivElement) => {
+    if (!scrollFade) return;
+    const fadeSize = Number.parseFloat(
+      getComputedStyle(element).getPropertyValue("--fade-size"),
+    ) || 24;
+    const remaining = Math.max(
+      0,
+      element.scrollHeight - element.clientHeight - element.scrollTop,
+    );
+    element.style.setProperty(
+      "--scroll-area-overflow-y-start",
+      `${Math.min(fadeSize, element.scrollTop)}px`,
+    );
+    element.style.setProperty(
+      "--scroll-area-overflow-y-end",
+      `${Math.min(fadeSize, remaining)}px`,
+    );
+  };
+
   return (
-    <ScrollArea scrollFade={scrollFade}>
+    <div
+      className={cn(
+        "min-h-0 flex-auto overflow-y-auto overscroll-contain rounded-[inherit] outline-none",
+        scrollFade &&
+          "mask-t-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-start)))] mask-b-from-[calc(100%-min(var(--fade-size),var(--scroll-area-overflow-y-end)))] [--fade-size:1.5rem] [--scroll-area-overflow-y-start:0px] [--scroll-area-overflow-y-end:0px]",
+      )}
+      data-slot="dialog-panel-scroll"
+      onScroll={(event) => syncScrollFade(event.currentTarget)}
+      ref={(element) => {
+        if (element) syncScrollFade(element);
+      }}
+    >
       <div
         className={cn(
           "p-6 in-[[data-slot=dialog-popup]:has([data-slot=dialog-header])]:pt-1 in-[[data-slot=dialog-popup]:has([data-slot=dialog-footer]:not(.border-t))]:pb-1",
@@ -194,7 +223,7 @@ function DialogPanel({
         data-slot="dialog-panel"
         {...props}
       />
-    </ScrollArea>
+    </div>
   );
 }
 

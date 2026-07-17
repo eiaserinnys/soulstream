@@ -94,6 +94,17 @@ describe("runbook-store", () => {
     expect(useRunbookStore.getState().byId["rb-1"].snapshot?.runbook.title).toBe("Launch");
   });
 
+  it("absorbs a creation-time 404 and resolves when the projection appears", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(errorResponse(404, { detail: "not projected yet" }))
+      .mockResolvedValueOnce(okResponse(snapshot("Projected")));
+    globalThis.fetch = fetchMock;
+
+    await expect(useRunbookStore.getState().loadRunbook("rb-1"))
+      .resolves.toMatchObject({ runbook: { title: "Projected" } });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("loads the runbook overview from the my-turn API", async () => {
     const fetchMock = vi.fn().mockResolvedValue(okResponse(overview("Launch")));
     globalThis.fetch = fetchMock;

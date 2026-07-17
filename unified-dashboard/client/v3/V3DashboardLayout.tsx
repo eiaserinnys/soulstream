@@ -459,7 +459,7 @@ function V3DashboardContent() {
           runHistoryTotal={runHistory.total}
           runHistoryHasMore={runHistory.hasMore}
           runHistoryLoading={runHistory.loading}
-          onLoadMoreRuns={() => { void runHistory.loadMore(); }}
+          onLoadMoreRuns={runHistory.loadMore}
           activeSession={activeSession}
           focusRequest={sessionPanel.focusRequest}
           onFocusRequestHandled={sessionPanel.acknowledgeFocusRequest}
