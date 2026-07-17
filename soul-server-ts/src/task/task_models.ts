@@ -317,6 +317,9 @@ export interface Task {
   /** compact 직후 첫 사용자 메시지에서만 full context를 재주입하기 위한 런타임 플래그. */
   needsFullContextReinjection?: boolean;
 
+  /** 지연된 Claude runtime follow-up retry 전 중간 종료임을 finalizer에 알리는 런타임 플래그. */
+  pendingClaudeRuntimeFollowupRetry?: boolean;
+
   /** 진행 중 turn의 어댑터. cancelTask()에서 engine.interrupt() 호출 대상. */
   engine?: EnginePort;
 

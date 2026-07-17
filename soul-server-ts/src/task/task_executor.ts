@@ -180,6 +180,18 @@ export class TaskExecutor {
     task.executionPromise = promise;
   }
 
+  async failScheduledClaudeRuntimeFollowupsForShutdown(): Promise<void> {
+    if (!this.claudeRuntimeTaskFollowup) return;
+    for (const { task, message, reason } of this.claudeRuntimeTaskFollowup.takeScheduledFallbacks()) {
+      await this.handleScheduledClaudeRuntimeFollowupFailure(
+        task,
+        message,
+        reason,
+        new Error("server shutdown while delayed retry was scheduled"),
+      );
+    }
+  }
+
   /**
    * Turn 시퀀스 drain (B-4 multi-turn). 분석 캐시
    * `20260517-1410-codex-ts-folder-resume-intervene.md` §D-3 상태도.
@@ -210,6 +222,12 @@ export class TaskExecutor {
     let currentTurnIntervention = initialTurnInput.intervention;
     try {
       while (true) {
+        if (currentTurnIntervention && this.claudeRuntimeTaskFollowup) {
+          this.claudeRuntimeTaskFollowup.cancelScheduledFallback(
+            task,
+            currentTurnIntervention,
+          );
+        }
         const previousAssistantText = normalizeAssistantText(task.lastAssistantText);
         try {
           for await (const event of this.engineTurnRunner.executeTurn({
@@ -318,7 +336,14 @@ export class TaskExecutor {
     const attempt = intervention.followupAttempt ?? 1;
     if (attempt < MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT && this.claudeRuntimeTaskFollowup) {
       try {
-        await this.claudeRuntimeTaskFollowup.queueFallback(task, intervention, reason);
+        const scheduledFallback = this.claudeRuntimeTaskFollowup.queueFallback(
+          task,
+          intervention,
+          reason,
+        );
+        void scheduledFallback.catch((err: unknown) => {
+          void this.handleScheduledClaudeRuntimeFollowupFailure(task, intervention, reason, err);
+        });
         return;
       } catch (err) {
         this.logger.warn(
@@ -337,6 +362,41 @@ export class TaskExecutor {
     }
 
     await this.publishClaudeRuntimeFollowupExhausted(task, attempt);
+  }
+
+  private async handleScheduledClaudeRuntimeFollowupFailure(
+    task: Task,
+    intervention: InterventionMessage,
+    reason: ClaudeRuntimeFollowupStallReason,
+    err: unknown,
+  ): Promise<void> {
+    try {
+      if (task.status === "running") {
+        this.logger.info(
+          { sessionId: task.agentSessionId, followupKey: intervention.followupKey },
+          "Claude runtime task follow-up delayed failure ignored after another turn resumed",
+        );
+        return;
+      }
+      this.logger.warn(
+        {
+          err,
+          sessionId: task.agentSessionId,
+          followupAttempt: intervention.followupAttempt ?? 1,
+          followupKey: intervention.followupKey,
+          reason,
+        },
+        "Claude runtime task follow-up delayed fallback enqueue failed",
+      );
+      await this.publishClaudeRuntimeFollowupRetryFailed(task, err);
+      task.completedAt = new Date();
+      await this._finalize(task);
+    } catch (finalizeErr) {
+      this.logger.error(
+        { err: finalizeErr, sessionId: task.agentSessionId },
+        "Claude runtime task follow-up delayed failure finalization failed",
+      );
+    }
   }
 
   private async publishClaudeRuntimeFollowupEnqueueFailed(

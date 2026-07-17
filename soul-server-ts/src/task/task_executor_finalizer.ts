@@ -32,6 +32,7 @@ export class TaskExecutorFinalizer {
   }
 
   private async notifyCompletion(task: Task): Promise<void> {
+    if (task.pendingClaudeRuntimeFollowupRetry === true) return;
     if (!task.callerSessionId || !this.deps.completionNotifier) return;
 
     try {
