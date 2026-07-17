@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { Button, RunbookCard, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 
 import type { PlannerTask } from "./planner-data";
 import type { TaskMoveTarget } from "./task-move-targets";
@@ -183,6 +183,17 @@ export function TaskDetailPane({
         <section className="v3-detail-section">
           <div className="v3-detail-section-head"><h3>설명</h3><span>마크다운</span></div>
           <TaskDescriptionPanel markdown={description} onSave={onSaveDescription} />
+        </section>
+
+        <section className="v3-detail-section" data-testid="v3-task-runbook-checklist">
+          <div className="v3-detail-section-head"><h3>체크리스트</h3><span>런북</span></div>
+          <div className="v3-task-runbook-checklist">
+            <RunbookCard
+              runbookId={task.runbookId}
+              fallbackTitle={task.page.title}
+              onOpenBoard={() => onOpenBoard()}
+            />
+          </div>
         </section>
 
         <section className="v3-detail-section">

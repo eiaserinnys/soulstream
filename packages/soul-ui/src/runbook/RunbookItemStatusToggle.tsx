@@ -7,6 +7,7 @@ import {
 } from "react";
 
 import { cn } from "../lib/cn";
+import { RunbookApiError } from "../stores/runbook-api";
 import {
   type RunbookAssigneeKind,
   type RunbookItemStatus,
@@ -150,6 +151,7 @@ export function RunbookItemStatusToggle({
   onPointerDown,
   onStatusChanged,
 }: RunbookItemStatusToggleProps) {
+  const loadRunbook = useRunbookStore((s) => s.loadRunbook);
   const setItemStatus = useRunbookStore((s) => s.setItemStatus);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -186,18 +188,42 @@ export function RunbookItemStatusToggle({
     setError(null);
     setOptimisticStatus(nextStatus);
     try {
-      const snapshot = await setItemStatus({
-        runbookId: runbook.id,
-        itemId: item.id,
-        expectedVersion: item.version,
-        status: nextStatus,
-        idempotencyKey: createRunbookStatusIdempotencyKey(
-          runbook.id,
-          item.id,
-          nextStatus,
-          item.version,
-        ),
-      });
+      let snapshot: RunbookSnapshot | null;
+      try {
+        snapshot = await setItemStatus({
+          runbookId: runbook.id,
+          itemId: item.id,
+          expectedVersion: item.version,
+          status: nextStatus,
+          idempotencyKey: createRunbookStatusIdempotencyKey(
+            runbook.id,
+            item.id,
+            nextStatus,
+            item.version,
+          ),
+        });
+      } catch (caught) {
+        if (!(caught instanceof RunbookApiError) || caught.status !== 409) throw caught;
+        const freshSnapshot = await loadRunbook(runbook.id, { force: true });
+        const freshItem = freshSnapshot?.items.find((candidate) => candidate.id === item.id);
+        if (!freshItem) throw caught;
+        if (freshItem.status === nextStatus) {
+          snapshot = freshSnapshot;
+        } else {
+          snapshot = await setItemStatus({
+            runbookId: runbook.id,
+            itemId: item.id,
+            expectedVersion: freshItem.version,
+            status: nextStatus,
+            idempotencyKey: createRunbookStatusIdempotencyKey(
+              runbook.id,
+              item.id,
+              nextStatus,
+              freshItem.version,
+            ),
+          });
+        }
+      }
       await onStatusChanged?.(snapshot);
     } catch (caught) {
       setOptimisticStatus(null);

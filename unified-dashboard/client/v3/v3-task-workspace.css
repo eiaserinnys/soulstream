@@ -181,6 +181,12 @@
   font-size: var(--font-size-xs);
 }
 
+.v3-task-runbook-checklist {
+  width: 100%;
+  height: min(520px, 65dvh);
+  min-height: 320px;
+}
+
 .v3-description-preview {
   position: relative;
   display: flex;

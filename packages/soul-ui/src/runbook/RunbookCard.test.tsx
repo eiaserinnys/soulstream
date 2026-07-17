@@ -385,6 +385,77 @@ describe("RunbookCard", () => {
     );
   });
 
+  it("re-reads and retries a stale item version through the shared status toggle", async () => {
+    const freshSnapshot = sampleSnapshot();
+    freshSnapshot.items[0] = {
+      ...freshSnapshot.items[0]!,
+      version: 2,
+    };
+    const completedSnapshot = sampleSnapshot();
+    completedSnapshot.items[0] = {
+      ...completedSnapshot.items[0]!,
+      status: "completed",
+      version: 3,
+      completed_kind: "user",
+      completed_session_id: "sess-actor",
+      completed_user_id: "operator@example.com",
+      completed_at: "2026-06-16T00:02:00+00:00",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(errorResponse(409, {
+        detail: {
+          error: {
+            code: "RUNBOOK_VERSION_CONFLICT",
+            message: "항목 버전이 오래되었습니다.",
+          },
+        },
+      }))
+      .mockResolvedValueOnce(okResponse(freshSnapshot))
+      .mockResolvedValueOnce(okResponse({ ok: true, snapshot: completedSnapshot }));
+    globalThis.fetch = fetchMock;
+
+    useRunbookStore.setState({
+      byId: {
+        "rb-1": {
+          snapshot: sampleSnapshot(),
+          status: "ready",
+          error: null,
+          isRefreshing: false,
+        },
+      },
+    });
+
+    flushSync(() => {
+      root.render(createElement(RunbookCard, {
+        runbookId: "rb-1",
+        fallbackTitle: "Fallback",
+      }));
+    });
+
+    const checkbox = container.querySelector<HTMLInputElement>("input[type='checkbox']");
+    expect(checkbox).not.toBeNull();
+    checkbox!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    for (let attempt = 0; attempt < 20 && fetchMock.mock.calls.length < 3; attempt += 1) {
+      await flushPromises();
+    }
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/runbooks/rb-1/items/item-1/status");
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1].body as string)).toMatchObject({
+      status: "completed",
+      expectedVersion: 1,
+    });
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/runbooks/rb-1");
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/runbooks/rb-1/items/item-1/status");
+    const retryBody = JSON.parse(fetchMock.mock.calls[2]?.[1].body as string);
+    expect(retryBody).toMatchObject({
+      status: "completed",
+      expectedVersion: 2,
+    });
+    expect(retryBody.idempotencyKey).toMatch(/^runbook:rb-1:item:item-1:status:completed:v2:/);
+    expect(useRunbookStore.getState().byId["rb-1"].snapshot?.items[0]?.status).toBe("completed");
+  });
+
   it("posts authenticated runbook completion updates from the card header", async () => {
     const nextSnapshot = sampleSnapshot();
     nextSnapshot.runbook = {
