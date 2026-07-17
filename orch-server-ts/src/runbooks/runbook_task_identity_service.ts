@@ -13,6 +13,7 @@ import type {
   RunbookTaskIdentityMutationResult,
   RunbookTaskIdentityRepository,
   RunbookTaskIdentityServiceConfig,
+  TaskProjectPageBinding,
   TaskIdentityBinding,
 } from "./runbook_task_identity_contracts.js";
 import {
@@ -33,6 +34,7 @@ export type {
   RunbookTaskIdentityMutationResult,
   RunbookTaskIdentityRepository,
   RunbookTaskIdentityServiceConfig,
+  TaskProjectPageBinding,
   TaskIdentityBinding,
 } from "./runbook_task_identity_contracts.js";
 
@@ -64,6 +66,9 @@ export class RunbookTaskIdentityService {
     );
     if (idempotent) {
       await this.config.hydratePage(idempotent.pageId);
+      if (idempotent.projectPageId) {
+        await this.config.hydratePage(idempotent.projectPageId);
+      }
       return idempotent;
     }
     const id = input.runbookId ?? this.createId();
@@ -80,6 +85,15 @@ export class RunbookTaskIdentityService {
         operations: initialTaskOperations(title, input.description ?? "", id, this.createBlockId),
       },
     });
+    const projectPage = await this.config.repository.findProjectPageByFolderId(input.folderId);
+    const projectPageApplication = projectPage
+      ? await this.createProjectMountApplication(
+        projectPage,
+        title,
+        input.actor,
+        input.idempotencyKey,
+      )
+      : undefined;
     const result = await this.config.board.withRunbookBoardApplication({
       folderId: input.folderId,
       boardItemId,
@@ -102,10 +116,55 @@ export class RunbookTaskIdentityService {
       pageOperationId: this.createOperationId(),
       pageApplication,
       boardApplication,
+      expectedProjectPageId: projectPage?.pageId ?? null,
+      ...(projectPageApplication
+        ? {
+          projectPageOperationId: this.createOperationId(),
+          projectPageApplication,
+        }
+        : {}),
     }));
     await this.config.hydratePage(result.pageId);
+    if (result.projectPageId) {
+      await this.config.hydratePage(result.projectPageId);
+    }
     this.notifyPageUpdate(result);
     return result;
+  }
+
+  private async createProjectMountApplication(
+    projectPage: TaskProjectPageBinding,
+    title: string,
+    actor: PageMutationActor,
+    idempotencyKey: string,
+  ): Promise<PageMutationApplication> {
+    const document = await loadPageDocument(
+      projectPage.pageId,
+      (pageId) => this.config.repository.readPageSnapshot(pageId),
+    );
+    const replica = readPageYDocReplica(projectPage.pageId, document);
+    const afterBlockId = replica.blocks
+      .filter((block) => block.parentId === null)
+      .at(-1)?.id ?? null;
+    return this.mutationCore.mutate(document, {
+      pageId: projectPage.pageId,
+      expectedVersion: replica.page.mutationVersion,
+      command: {
+        type: "create_block",
+        parentId: null,
+        afterBlockId,
+        blockType: "paragraph",
+        text: `[[${title}]]`,
+        properties: {},
+      },
+      actor,
+      idempotencyKey: pageMutationIdempotencyKey(
+        "mount_task_identity_project",
+        actor,
+        `${idempotencyKey}:project:${projectPage.pageId}`,
+      ),
+      reason: "mount runbook task identity in project",
+    });
   }
 
   async promoteExistingPage(input: {

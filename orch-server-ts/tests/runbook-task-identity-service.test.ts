@@ -311,6 +311,7 @@ function createRepository(): RunbookTaskIdentityRepository {
     })),
     findByPageId: vi.fn(),
     findByRunbookId: vi.fn(),
+    findProjectPageByFolderId: vi.fn(async () => null),
     readPageSnapshot: vi.fn(),
   };
 }

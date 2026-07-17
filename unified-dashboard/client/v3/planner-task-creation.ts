@@ -1,14 +1,12 @@
 export type PlannerTaskCreationPhase =
   | "page"
   | "runbook"
-  | "reference"
-  | "project_mount";
+  | "reference";
 
 export interface PlannerTaskCreationInput {
   title: string;
   description: string;
   dailyPageId: string;
-  projectPageId: string;
   folderId: string;
 }
 
@@ -33,7 +31,6 @@ const CREATION_ERROR_LABEL: Record<PlannerTaskCreationPhase, string> = {
   page: "업무 페이지 생성",
   runbook: "런북 생성",
   reference: "업무-런북 연결",
-  project_mount: "프로젝트 편입",
 };
 
 export function plannerTaskCreationErrorLabel(error: unknown): string {
@@ -53,10 +50,6 @@ export async function createPlannerTask(
   }));
   await runPhase("page", () => port.mountPage({
     sourcePageId: input.dailyPageId,
-    title: input.title,
-  }));
-  await runPhase("project_mount", () => port.mountPage({
-    sourcePageId: input.projectPageId,
     title: input.title,
   }));
   return { pageId: identity.id, runbookId: identity.id };

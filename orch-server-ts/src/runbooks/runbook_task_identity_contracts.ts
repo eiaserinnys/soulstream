@@ -44,6 +44,10 @@ export interface TaskIdentityBinding {
   pageVersion: number;
 }
 
+export interface TaskProjectPageBinding {
+  pageId: string;
+}
+
 export interface LegacyRunbookBinding {
   runbookId: string;
   folderId: string;
@@ -68,6 +72,7 @@ export interface RunbookTaskIdentityMutationResult {
   id: string;
   pageId: string;
   runbookId: string;
+  projectPageId?: string;
   snapshot: {
     runbook: Record<string, unknown>;
     sections: readonly Record<string, unknown>[];
@@ -100,6 +105,9 @@ export interface RunbookTaskIdentityRepository {
     pageOperationId: string;
     pageApplication: PageMutationApplication;
     boardApplication: RunbookTaskIdentityBoardApplication;
+    expectedProjectPageId: string | null;
+    projectPageOperationId?: string;
+    projectPageApplication?: PageMutationApplication;
   }): Promise<RunbookTaskIdentityMutationResult>;
   promote(input: {
     id: string;
@@ -148,6 +156,7 @@ export interface RunbookTaskIdentityRepository {
   }): Promise<LegacyRunbookBackfillResult>;
   findByPageId(pageId: string): Promise<TaskIdentityBinding | null>;
   findByRunbookId(runbookId: string): Promise<TaskIdentityBinding | null>;
+  findProjectPageByFolderId(folderId: string): Promise<TaskProjectPageBinding | null>;
   readPageSnapshot(pageId: string): Promise<Uint8Array | null>;
 }
 

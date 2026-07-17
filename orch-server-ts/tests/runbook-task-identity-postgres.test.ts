@@ -109,7 +109,7 @@ describe("Runbook task identity PostgreSQL transaction", () => {
     });
   });
 
-  it("projects a v1 board-created identity into its v3 project immediately", async () => {
+  it("mounts an HTTP-created identity into its project and resolves daily ownership immediately", async () => {
     const folderId = "folder-v1-projection";
     const projectPageId = "project-v1-projection";
     const taskId = "00000000-0000-4000-8000-0000000000c0";
@@ -131,10 +131,18 @@ describe("Runbook task identity PostgreSQL transaction", () => {
       await harness.sql`
         UPDATE folders SET project_page_id = ${projectPageId} WHERE id = ${folderId}
       `;
+      const daily = await pages.getDailyPage({
+        date: "2026-07-17",
+        actor: { actorKind: "user", actorUserId: "user@example.com" },
+      });
       const service = createService(
         new TransactionBoardPort(),
         taskId,
-        ["runbook-op-v1-projection", "page-op-v1-projection"],
+        [
+          "runbook-op-v1-projection",
+          "page-op-v1-projection",
+          "project-page-op-v1-projection",
+        ],
       );
       registerRunbookCreateRoute(app, {
         provider: { listFolders: () => [{ id: folderId, name: "V1 projection" }] },
@@ -154,19 +162,23 @@ describe("Runbook task identity PostgreSQL transaction", () => {
       });
       expect(created.statusCode).toBe(201);
       expect(created.json()).toMatchObject({ id: taskId, pageId: taskId, runbookId: taskId });
+      await expect(service.create({
+        title: "v1에서 만든 업무",
+        folderId,
+        actor: { actorKind: "user", actorUserId: "user@example.com" },
+        idempotencyKey: "task-identity:v1-projection:create",
+      })).resolves.toMatchObject({
+        id: taskId,
+        projectPageId,
+        idempotent: true,
+      });
 
-      const planner = await new PlannerRepository(resolver).getProject(projectPageId, { limit: 20 });
-      expect(planner?.tasks.items).toEqual([
-        expect.objectContaining({
-          page: expect.objectContaining({ id: taskId, title: "v1에서 만든 업무" }),
-          runbook_id: taskId,
-          project_page_id: projectPageId,
-        }),
-      ]);
       const project = await pages.getBrowserPage(projectPageId);
+      expect(project.blocks.filter((block) => block.text === "[[v1에서 만든 업무]]"))
+        .toHaveLength(1);
       await pages.mutatePage({
-        pageId: projectPageId,
-        expectedVersion: project.page.version,
+        pageId: daily.page.id,
+        expectedVersion: daily.page.version,
         command: {
           type: "create_block",
           parentId: null,
@@ -176,37 +188,100 @@ describe("Runbook task identity PostgreSQL transaction", () => {
           properties: {},
         },
         actor: { actorKind: "user", actorUserId: "user@example.com" },
-        idempotencyKey: "task-identity:v1-projection:physical-mount",
+        idempotencyKey: "task-identity:v1-projection:daily-mount",
       });
-      const physicallyMounted = await new PlannerRepository(resolver)
-        .getProject(projectPageId, { limit: 20 });
-      expect(physicallyMounted?.tasks.items.map((item) => item.page.id)).toEqual([taskId]);
+      const planner = new PlannerRepository(resolver);
+      const projectPlanner = await planner.getProject(projectPageId, { limit: 20 });
+      expect(projectPlanner?.tasks.items).toEqual([
+        expect.objectContaining({
+          page: expect.objectContaining({ id: taskId, title: "v1에서 만든 업무" }),
+          runbook_id: taskId,
+          project_page_id: projectPageId,
+        }),
+      ]);
+      const todayPlanner = await planner.getToday("2026-07-17");
+      expect(todayPlanner?.tasks).toEqual([
+        expect.objectContaining({
+          page: expect.objectContaining({ id: taskId }),
+          project_page_id: projectPageId,
+        }),
+      ]);
     } finally {
       await app.close();
       await pages.close();
     }
   });
 
-  it("rolls back board, page, and runbook records together when provenance fails", async () => {
+  it("rolls back the project mount with board, page, and runbook records when a later write fails", async () => {
     const id = "00000000-0000-4000-8000-0000000000af";
+    const seedId = "00000000-0000-4000-8000-0000000000ad";
+    const folderId = "folder-project-rollback";
+    const projectPageId = "project-page-rollback";
     const board = new TransactionBoardPort();
-    const service = createService(board, id, ["runbook-op-b", "page-op-b"]);
+    const resolver = createLiveDbSqlResolver({ sql: harness.liveSql });
+    const pages = new PageYjsService({ repository: new PageRepository(resolver) });
+    try {
+      await pages.createPage({
+        page: {
+          id: projectPageId,
+          title: "Rollback project",
+          dailyDate: null,
+          metadata: { folderId },
+        },
+        actor: { actorKind: "user", actorUserId: "user@example.com" },
+        idempotencyKey: "task-identity:rollback:project",
+      });
+      await harness.sql`
+        INSERT INTO folders (id, name, project_page_id)
+        VALUES (${folderId}, 'Rollback project', ${projectPageId})
+      `;
+      await createService(
+        new TransactionBoardPort(),
+        seedId,
+        ["runbook-op-b", "seed-page-op-b"],
+      ).create({
+        title: "operation collision seed",
+        folderId: "folder-a",
+        actor: { actorKind: "user", actorUserId: "user@example.com" },
+        idempotencyKey: "task-identity:create:rollback-seed",
+      });
+      const service = createService(
+        board,
+        id,
+        ["runbook-op-b", "page-op-b", "project-page-op-b"],
+      );
 
-    await expect(service.create({
-      title: "롤백 업무",
-      folderId: "folder-a",
-      actor: { actorKind: "agent", actorSessionId: "missing-session" },
-      idempotencyKey: "task-identity:create:rollback",
-    })).rejects.toThrow();
+      await expect(service.create({
+        title: "롤백 업무",
+        folderId,
+        actor: { actorKind: "user", actorUserId: "user@example.com" },
+        idempotencyKey: "task-identity:create:rollback",
+      })).rejects.toThrow();
 
-    const rows = await harness.sql<Array<{ pages: number; runbooks: number; board_items: number }>>`
-      SELECT
-        (SELECT COUNT(*)::int FROM pages WHERE id = ${id}) AS pages,
-        (SELECT COUNT(*)::int FROM runbooks WHERE id = ${id}) AS runbooks,
-        (SELECT COUNT(*)::int FROM board_items WHERE id = ${`runbook:${id}`}) AS board_items
-    `;
-    expect(rows[0]).toEqual({ pages: 0, runbooks: 0, board_items: 0 });
-    expect(board.liveApplied).toBe(false);
+      const rows = await harness.sql<Array<{
+        pages: number;
+        runbooks: number;
+        board_items: number;
+        project_mount_blocks: number;
+      }>>`
+        SELECT
+          (SELECT COUNT(*)::int FROM pages WHERE id = ${id}) AS pages,
+          (SELECT COUNT(*)::int FROM runbooks WHERE id = ${id}) AS runbooks,
+          (SELECT COUNT(*)::int FROM board_items WHERE id = ${`runbook:${id}`}) AS board_items,
+          (SELECT COUNT(*)::int FROM blocks
+            WHERE page_id = ${projectPageId}
+              AND text_plain = '[[롤백 업무]]') AS project_mount_blocks
+      `;
+      expect(rows[0]).toEqual({
+        pages: 0,
+        runbooks: 0,
+        board_items: 0,
+        project_mount_blocks: 0,
+      });
+      expect(board.liveApplied).toBe(false);
+    } finally {
+      await pages.close();
+    }
   });
 
   it("recovers the original UUID when a create response is lost and retried", async () => {

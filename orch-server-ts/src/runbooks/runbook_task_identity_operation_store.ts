@@ -88,6 +88,10 @@ export async function readResult(
   if (!runbook) throw new Error(`task identity runbook not found: ${runbookId}`);
   const pageId = String(runbook.task_page_id ?? "");
   if (!pageId) throw new Error(`task identity page mapping missing: ${runbookId}`);
+  const payload = asRecord(operation.payload_json);
+  const projectPageId = typeof payload.project_page_id === "string"
+    ? payload.project_page_id
+    : undefined;
   const resolvedPageCommit = pageCommit ?? await readPageCommit(sql, pageId, operation);
   const sections = await sql<readonly Record<string, unknown>[]>`
     SELECT * FROM runbook_sections WHERE runbook_id = ${runbookId}
@@ -103,6 +107,7 @@ export async function readResult(
     id: runbookId,
     pageId,
     runbookId,
+    ...(projectPageId ? { projectPageId } : {}),
     snapshot: { runbook, sections, items },
     operation,
     pageOperation: resolvedPageCommit.operation,
