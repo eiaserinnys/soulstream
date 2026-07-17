@@ -35,15 +35,10 @@ describe("TaskSectionNavigation", () => {
     const tops = installGeometry(scroll);
 
     flushSync(() => scroll.dispatchEvent(new Event("scroll")));
-    await vi.waitFor(() => expect(currentLabel()).toBe("설명 섹션으로 이동"));
+    await vi.waitFor(() => expect(currentLabel()).toBe("정보 섹션으로 이동"));
 
-    tops.description = -120;
-    tops.context = 180;
-    flushSync(() => scroll.dispatchEvent(new Event("scroll")));
-    await vi.waitFor(() => expect(currentLabel()).toBe("컨텍스트 섹션으로 이동"));
-
-    tops.context = -80;
-    tops.checklist = 175;
+    tops.information = -120;
+    tops.checklist = 180;
     flushSync(() => scroll.dispatchEvent(new Event("scroll")));
     await vi.waitFor(() => expect(currentLabel()).toBe("체크리스트 섹션으로 이동"));
   });
@@ -112,12 +107,11 @@ function Harness({
   onFocusRequestHandled?(requestId: number): void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const description = useRef<HTMLElement>(null);
-  const context = useRef<HTMLElement>(null);
+  const information = useRef<HTMLElement>(null);
   const checklist = useRef<HTMLElement>(null);
   const board = useRef<HTMLElement>(null);
   const sessions = useRef<HTMLElement>(null);
-  const sectionRefs: TaskSectionRefs = { description, context, checklist, board, sessions };
+  const sectionRefs: TaskSectionRefs = { information, checklist, board, sessions };
 
   return (
     <div ref={scrollRef} data-testid="task-section-scroll">
@@ -128,8 +122,7 @@ function Harness({
         focusTargetReady
         onFocusRequestHandled={onFocusRequestHandled}
       />
-      <section ref={description} data-section-id="description" />
-      <section ref={context} data-section-id="context" />
+      <section ref={information} data-section-id="information" />
       <section ref={checklist} data-section-id="checklist" />
       <section ref={board} data-section-id="board" />
       <section ref={sessions} data-section-id="sessions">
@@ -141,8 +134,7 @@ function Harness({
 
 function installGeometry(scroll: HTMLDivElement) {
   const tops = {
-    description: 120,
-    context: 360,
+    information: 120,
     checklist: 660,
     board: 800,
     sessions: 1120,

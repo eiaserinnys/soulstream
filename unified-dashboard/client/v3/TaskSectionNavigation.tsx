@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import { useGlassSurface } from "@seosoyoung/soul-ui";
 import {
-  FileText,
   History,
+  Info,
   LayoutGrid,
   ListChecks,
-  Network,
   type LucideIcon,
 } from "lucide-react";
 
 import "./v3-task-section-navigation.css";
 
-export type TaskSectionId = "description" | "context" | "checklist" | "board" | "sessions";
+export type TaskSectionId = "information" | "checklist" | "board" | "sessions";
 
 export type TaskSectionRefs = Record<TaskSectionId, RefObject<HTMLElement | null>>;
 
@@ -27,8 +25,7 @@ const TASK_SECTIONS: readonly {
   accessibleLabel: string;
   Icon: LucideIcon;
 }[] = [
-  { id: "description", label: "설명", accessibleLabel: "설명", Icon: FileText },
-  { id: "context", label: "컨텍스트", accessibleLabel: "컨텍스트", Icon: Network },
+  { id: "information", label: "정보", accessibleLabel: "정보", Icon: Info },
   { id: "checklist", label: "체크", accessibleLabel: "체크리스트", Icon: ListChecks },
   { id: "board", label: "보드", accessibleLabel: "보드", Icon: LayoutGrid },
   { id: "sessions", label: "세션", accessibleLabel: "세션", Icon: History },
@@ -47,11 +44,9 @@ export function TaskSectionNavigation({
   focusTargetReady?: boolean;
   onFocusRequestHandled?(requestId: number): void;
 }) {
-  const navigationRef = useRef<HTMLElement>(null);
   const requestedSectionRef = useRef<TaskSectionId | null>(null);
   const requestedSectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const webglActive = useGlassSurface(navigationRef, { enabled: true });
-  const [activeSection, setActiveSection] = useState<TaskSectionId>("description");
+  const [activeSection, setActiveSection] = useState<TaskSectionId>("information");
 
   const moveToSection = useCallback((id: TaskSectionId, target?: HTMLElement | null) => {
     const scrollElement = scrollRef.current;
@@ -138,12 +133,9 @@ export function TaskSectionNavigation({
 
   return (
     <nav
-      ref={navigationRef}
-      className="v3-task-section-nav border border-glass-border glass-strong glass-chrome lg-rim"
-      data-liquid-glass-webgl={webglActive ? "true" : undefined}
+      className="v3-task-section-nav"
       aria-label="업무 섹션"
     >
-      <span className="v3-task-section-nav-title">섹션</span>
       {TASK_SECTIONS.map(({ id, label, accessibleLabel, Icon }) => (
         <button
           key={id}

@@ -47,23 +47,21 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       sections.map((section) => section.getAttribute("data-task-section"))
     ));
     assert(
-      JSON.stringify(order) === JSON.stringify(["description", "context", "checklist", "board", "sessions"]),
+      JSON.stringify(order) === JSON.stringify(["information", "checklist", "board", "sessions"]),
       `업무 섹션 순서가 다릅니다: ${order.join(" → ")}`,
     );
-    assert(await navigation.getByRole("button").count() === 5, "섹션 앵커가 5개가 아닙니다.");
-    assert(await currentSectionLabel(navigation) === "설명 섹션으로 이동", "첫 활성 섹션이 설명이 아닙니다.");
-    const focusStyle = await navigation.getByRole("button", { name: "설명 섹션으로 이동" })
+    assert(await navigation.getByRole("button").count() === 4, "섹션 앵커가 4개가 아닙니다.");
+    assert(await currentSectionLabel(navigation) === "정보 섹션으로 이동", "첫 활성 섹션이 정보가 아닙니다.");
+    const focusStyle = await navigation.getByRole("button", { name: "정보 섹션으로 이동" })
       .evaluate((element) => {
         (element as HTMLButtonElement).focus();
         const style = getComputedStyle(element);
         return { borderRadius: style.borderRadius, boxShadow: style.boxShadow, outlineStyle: style.outlineStyle };
       });
-    assert(focusStyle.borderRadius === "14px", "앵커 포커스 반경이 시각 계약과 다릅니다.");
+    assert(focusStyle.borderRadius === "12px", "앵커 포커스 반경이 시각 계약과 다릅니다.");
     assert(focusStyle.boxShadow !== "none", "앵커 포커스 링이 보이지 않습니다.");
     assert(focusStyle.outlineStyle === "none", "사각 outline 포커스가 남아 있습니다.");
 
-    await scrollToSection(scroll, "context");
-    await waitForCurrent(navigation, "컨텍스트 섹션으로 이동");
     const stickyY = (await navigation.boundingBox())?.y;
     assert(typeof stickyY === "number", "sticky 내비 위치를 측정하지 못했습니다.");
 
@@ -100,7 +98,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     assert(errors.length === 0, `브라우저 오류가 발생했습니다: ${errors.join(" | ")}`);
     return {
       sectionOrder: order,
-      sectionCount: 5,
+      sectionCount: 4,
       scrollTracking: true,
       clickScrolling: true,
       roundedFocusRing: true,
@@ -133,22 +131,6 @@ async function preparePage(page: Page, theme: "dark" | "light") {
     if (route.request().method() !== "GET") return route.fallback();
     await fulfillJson(route, runbookSnapshot());
   });
-}
-
-async function scrollToSection(
-  scroll: Locator,
-  sectionId: string,
-) {
-  await scroll.evaluate((element, id) => {
-    const section = element.querySelector<HTMLElement>(`[data-task-section="${id}"]`);
-    if (!section) throw new Error(`${id} 섹션을 찾지 못했습니다.`);
-    const scrollRect = element.getBoundingClientRect();
-    const sectionRect = section.getBoundingClientRect();
-    element.scrollTo({
-      top: element.scrollTop + sectionRect.top - scrollRect.top - 12,
-      behavior: "auto",
-    });
-  }, sectionId);
 }
 
 async function assertAnchored(

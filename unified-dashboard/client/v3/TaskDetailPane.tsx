@@ -91,14 +91,12 @@ export function TaskDetailPane({
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const descriptionSectionRef = useRef<HTMLElement>(null);
-  const contextSectionRef = useRef<HTMLElement>(null);
+  const informationSectionRef = useRef<HTMLElement>(null);
   const checklistSectionRef = useRef<HTMLElement>(null);
   const boardSectionRef = useRef<HTMLDivElement>(null);
   const sessionsSectionRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useMemo<TaskSectionRefs>(() => ({
-    description: descriptionSectionRef,
-    context: contextSectionRef,
+    information: informationSectionRef,
     checklist: checklistSectionRef,
     board: boardSectionRef,
     sessions: sessionsSectionRef,
@@ -225,22 +223,25 @@ export function TaskDetailPane({
               <TaskTitleEditor title={task.page.title} onRename={onRenameTaskTitle} />
             </div>
 
-            <section ref={descriptionSectionRef} className="v3-detail-section" data-task-section="description">
-              <div className="v3-detail-section-head"><h3>설명</h3><span>마크다운</span></div>
+            <section ref={informationSectionRef} className="v3-detail-section" data-task-section="information">
+              <div className="v3-detail-section-head"><h3>정보</h3></div>
               <TaskDescriptionPanel markdown={description} onSave={onSaveDescription} />
-            </section>
-
-            <section ref={contextSectionRef} className="v3-detail-section" data-task-section="context">
-              <div className="v3-detail-section-head"><h3>컨텍스트</h3><span>{contextItems.length}개</span></div>
               <div className="v3-context-chips">
-                {contextItems.map((context) => <span key={context.id}><span className="v3-emoji" aria-hidden="true">{context.icon}</span> {context.label}</span>)}
+                {contextItems.map((context) => (
+                  <span key={context.id} title={context.label}>
+                    <span className="v3-emoji" aria-hidden="true">{context.icon}</span>
+                    <span className="v3-context-chip-label">{context.label}</span>
+                  </span>
+                ))}
                 {contextItems.length === 0 ? <small>연결된 컨텍스트가 없습니다.</small> : null}
                 <DashboardIconCap
+                  className="v3-context-add"
                   label={`${contextPickerOpen ? "컨텍스트 선택 닫기" : "컨텍스트 추가"}`}
                   aria-expanded={contextPickerOpen}
                   onClick={() => setContextPickerOpen((value) => !value)}
                 >
                   {contextPickerOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
+                  <span>컨텍스트</span>
                 </DashboardIconCap>
               </div>
               {contextPickerOpen ? (

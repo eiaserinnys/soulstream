@@ -11,6 +11,7 @@ import {
   type CustomViewDocument,
   type MarkdownDocument,
 } from "@seosoyoung/soul-ui";
+import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 import { ChevronDown, ChevronRight, FilePlus2, Pencil } from "lucide-react";
 
 import {
@@ -215,7 +216,7 @@ export function TaskInlineBoard({
             const title = metadataText(item, "title") || "제목 없는 문서";
             const activeRename = renameState?.documentId === item.itemId ? renameState : null;
             return (
-              <article key={item.id} className="v3-inline-board-item" data-board-kind="markdown">
+              <LiquidGlassCard key={item.id} webglSurface cornerRadius={14} className="v3-inline-board-item" data-board-kind="markdown">
                 <div className="v3-inline-board-row">
                   {activeRename ? (
                     <form className="v3-inline-board-rename" onSubmit={(event) => { void commitRename(event); }}>
@@ -256,13 +257,13 @@ export function TaskInlineBoard({
                 </div>
                 {activeRename?.error ? <p className="v3-inline-board-error" role="alert">{activeRename.error}</p> : null}
                 {expanded ? <InlineMarkdown documentId={item.itemId} invalidationKey={pageInvalidationKey} /> : null}
-              </article>
+              </LiquidGlassCard>
             );
           }
           if (item.itemType === "custom_view") {
             const title = metadataText(item, "title") || "Custom view";
             return (
-              <article key={item.id} className="v3-inline-board-item" data-board-kind="custom_view">
+              <LiquidGlassCard key={item.id} webglSurface cornerRadius={14} className="v3-inline-board-item" data-board-kind="custom_view">
                 <div className="v3-inline-board-row">
                   <div className="v3-inline-board-label"><span>▦ {title}</span></div>
                   <DashboardIconCap
@@ -274,7 +275,7 @@ export function TaskInlineBoard({
                   </DashboardIconCap>
                 </div>
                 {expanded ? <InlineCustomView customViewId={item.itemId} invalidationKey={customViewInvalidationKey} /> : null}
-              </article>
+              </LiquidGlassCard>
             );
           }
           return <InlineAsset key={item.id} item={item} />;
@@ -348,9 +349,9 @@ function InlineAsset({ item }: { item: CatalogBoardItem }) {
   const title = metadataText(item, "originalName") || metadataText(item, "title") || "첨부 파일";
   const href = metadataText(item, "signedUrl") || metadataText(item, "sourceUrl");
   return (
-    <article className="v3-inline-board-item" data-board-kind="asset">
+    <LiquidGlassCard webglSurface cornerRadius={14} className="v3-inline-board-item" data-board-kind="asset">
       {href ? <a href={href} target="_blank" rel="noreferrer"><span>↗ {title}</span><small>열기</small></a> : <div><span>📎 {title}</span></div>}
-    </article>
+    </LiquidGlassCard>
   );
 }
 

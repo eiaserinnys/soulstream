@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
-import { Button, DashboardIconCap, retainEqualValue, useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, retainEqualValue, type SessionSummary } from "@seosoyoung/soul-ui";
 import { ArrowLeft, ChevronsDown, FilePlus2 } from "lucide-react";
 
 import { DailyMemo } from "./DailyMemo";
@@ -158,8 +158,6 @@ export function ProjectPlannerView({
   onNewDocumentTitle(value: string): void;
   onCreateDocument(): void;
 }) {
-  const documentSurfaceRef = useRef<HTMLElement>(null);
-  const documentWebglActive = useGlassSurface(documentSurfaceRef, { enabled: true });
   const data = state.data;
   const [documentMenu, setDocumentMenu] = useState<{ target: V3ContextMenuTarget; page: PageDto } | null>(null);
   const [details, setDetails] = useState<{
@@ -229,11 +227,7 @@ export function ProjectPlannerView({
           detail={details.message}
         />
       ) : null}
-      <section
-        ref={documentSurfaceRef}
-        className="v3-documents border border-glass-border glass-strong glass-chrome lg-rim"
-        data-liquid-glass-webgl={documentWebglActive ? "true" : undefined}
-      >
+      <section className="v3-documents">
         <div className="v3-section-head">
           <h2><span className="v3-emoji" aria-hidden="true">📄</span> 문서</h2><span>{data?.documents.length ?? 0}개</span>
           <span className="v3-spacer" />

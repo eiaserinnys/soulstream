@@ -28,23 +28,23 @@
 
 .v3-session-group h2 {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   font-weight: 700;
   letter-spacing: .02em;
 }
 
-.v3-session-group header > span { font-size: 11px; }
+.v3-session-group header > span { font-size: var(--font-size-xs); }
 .v3-session-list {
   display: grid;
   min-width: 0;
   max-width: 100%;
-  gap: 4px;
+  gap: 8px;
 }
 .v3-session-list > p {
   margin: 0;
   padding: 9px 8px;
   color: var(--muted-foreground);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
 }
 
 .v3-session-row {
@@ -79,7 +79,7 @@
   background: color-mix(in srgb, var(--accent) 56%, transparent);
 }
 
-.v3-session-panel-error { margin: 12px 8px 0; color: var(--destructive); font-size: 12px; }
+.v3-session-panel-error { margin: 12px 8px 0; color: var(--destructive); font-size: var(--font-size-xs); }
 
 .v3-session-panel-resize { position: relative; min-width: 0; }
 .v3-session-panel-resize > div { height: 100%; }
