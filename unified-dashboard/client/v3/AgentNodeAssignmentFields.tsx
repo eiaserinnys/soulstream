@@ -8,6 +8,7 @@ export function AgentNodeAssignmentFields({
   nodeId,
   preferredAgentId,
   preferredNodeId,
+  presentation = "execution-defaults",
   fallbackToAvailable = false,
   disabled = false,
   onAgentIdChange,
@@ -19,6 +20,7 @@ export function AgentNodeAssignmentFields({
   nodeId: string;
   preferredAgentId?: string | null;
   preferredNodeId?: string | null;
+  presentation?: "execution-defaults" | "session";
   fallbackToAvailable?: boolean;
   disabled?: boolean;
   onAgentIdChange(value: string): void;
@@ -90,30 +92,36 @@ export function AgentNodeAssignmentFields({
     ? [{ id: agentId, name: agentId } as AgentInfo, ...agents]
     : agents;
 
+  const agentField = (
+    <label>
+      {presentation === "session" ? "에이전트" : "실행 에이전트"}
+      <select
+        value={agentId}
+        aria-label={presentation === "session" ? "에이전트 선택" : "기본 실행 에이전트"}
+        disabled={disabled || !nodeId}
+        onChange={(event) => {
+          onAgentIdChange(event.target.value);
+          onAgentInfoChange?.(agentOptions.find((agent) => agent.id === event.target.value) ?? null);
+        }}
+      >
+        <option value="">미지정</option>
+        {agentOptions.map((agent) => <option key={agent.id} value={agent.id}>{agent.name ?? agent.id}</option>)}
+      </select>
+    </label>
+  );
+  const nodeField = (
+    <label>
+      {presentation === "session" ? "노드" : "실행 노드"}
+      <select value={nodeId} aria-label={presentation === "session" ? "노드 선택" : "기본 실행 노드"} disabled={disabled} onChange={(event) => onNodeIdChange(event.target.value)}>
+        <option value="">미지정</option>
+        {nodeOptions.map((node) => <option key={node.nodeId} value={node.nodeId}>{node.nodeId}</option>)}
+      </select>
+    </label>
+  );
+
   return (
     <div className="v3-succession-assignment">
-      <label>
-        실행 에이전트
-        <select
-          value={agentId}
-          aria-label="기본 실행 에이전트"
-          disabled={disabled || !nodeId}
-          onChange={(event) => {
-            onAgentIdChange(event.target.value);
-            onAgentInfoChange?.(agentOptions.find((agent) => agent.id === event.target.value) ?? null);
-          }}
-        >
-          <option value="">미지정</option>
-          {agentOptions.map((agent) => <option key={agent.id} value={agent.id}>{agent.name ?? agent.id}</option>)}
-        </select>
-      </label>
-      <label>
-        실행 노드
-        <select value={nodeId} aria-label="기본 실행 노드" disabled={disabled} onChange={(event) => onNodeIdChange(event.target.value)}>
-          <option value="">미지정</option>
-          {nodeOptions.map((node) => <option key={node.nodeId} value={node.nodeId}>{node.nodeId}</option>)}
-        </select>
-      </label>
+      {presentation === "session" ? <>{nodeField}{agentField}</> : <>{agentField}{nodeField}</>}
     </div>
   );
 }

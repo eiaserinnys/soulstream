@@ -53,7 +53,7 @@ export function V3ContextMenu({
   if (isMobile) {
     return (
       <Dialog open={target !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
-        <DialogPopup className="max-w-sm" showCloseButton={false}>
+        <DialogPopup bottomStickOnMobile className="max-w-sm" showCloseButton={false}>
           <div className="px-2 py-2" data-testid="v3-context-menu-mobile">
             {actions.map((action) => (
               <div key={action.label}>

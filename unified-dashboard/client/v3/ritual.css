@@ -1,7 +1,6 @@
 .v3-ritual-modal {
   min-height: 0;
   overflow: hidden;
-  border-radius: 18px;
 }
 
 .v3-ritual-head {
@@ -219,10 +218,6 @@
 }
 
 @media (max-width: 760px) {
-  .v3-ritual-modal {
-    border-radius: 18px 18px 0 0;
-  }
-
   .v3-ritual-head,
   .v3-ritual-body,
   .v3-ritual-footer {

@@ -40,6 +40,8 @@ describe("v3 session language", () => {
     expect(picker).not.toContain("atom nodeId 입력");
     expect(succession).toContain("보드 문서");
     expect(succession).toContain("atom 노드");
-    expect(succession).toContain("기본 지침");
+    expect(succession).toContain("추가 지침");
+    expect(succession).toContain("초기 지시");
+    expect(succession).not.toContain("기본 지침");
   });
 });

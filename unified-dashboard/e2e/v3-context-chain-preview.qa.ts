@@ -74,7 +74,7 @@ async function verify(browser: Browser) {
     await waitText(detailContext, "프로젝트의 결정을 실제 근거와 함께 기록하고", "업무 상세 부모 guidance");
     await waitText(detailContext, "플래너 UX 원칙", "업무 상세 자체 atom");
 
-    await page.getByRole("button", { name: "＋ 새 세션" }).click();
+    await page.getByRole("button", { name: "새 세션", exact: true }).click();
     const modal = page.locator(".v3-succession-modal");
     await waitText(modal, "프로젝트의 결정을 실제 근거와 함께 기록하고", "승계 모달 부모 guidance");
     await waitText(modal, "플래너 UX 원칙", "승계 모달 자체 atom");
