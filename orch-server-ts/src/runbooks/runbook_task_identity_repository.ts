@@ -30,6 +30,7 @@ import {
   readResult,
   storeBoardApplication,
 } from "./runbook_task_identity_operation_store.js";
+import { commitTaskProjectMount } from "./runbook_task_project_mount_store.js";
 
 export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepository {
   private readonly sqlResolver: BoardYjsSqlResolver;
@@ -65,9 +66,28 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
   ): Promise<RunbookTaskIdentityMutationResult> {
     const sql = await this.sqlResolver.resolveSql();
     return await sql.begin(async (transaction) => {
-      await transaction`SELECT pg_advisory_xact_lock(hashtextextended(${input.id}, 0))`;
+      for (const pageId of [input.id, input.expectedProjectPageId].filter(
+        (value): value is string => value !== null,
+      ).sort()) {
+        await transaction`SELECT pg_advisory_xact_lock(hashtextextended(${pageId}, 0))`;
+      }
       const existing = await findOperation(transaction, input.idempotencyKey);
       if (existing) return await readResult(transaction, input.id, existing, true);
+
+      const folders = await transaction<readonly { project_page_id: string | null }[]>`
+        SELECT project_page_id FROM folders WHERE id = ${input.folderId} FOR UPDATE
+      `;
+      if (!folders[0]) throw new Error(`task identity folder not found: ${input.folderId}`);
+      if (folders[0].project_page_id !== input.expectedProjectPageId) {
+        throw new Error(`task identity project mapping changed: ${input.folderId}`);
+      }
+      const expectsProjectMount = Boolean(input.expectedProjectPageId);
+      if (
+        Boolean(input.projectPageApplication) !== expectsProjectMount
+        || Boolean(input.projectPageOperationId) !== expectsProjectMount
+      ) {
+        throw new Error("task identity project mount application is incomplete");
+      }
 
       const collisions = await transaction<readonly { runbook_exists: boolean; page_exists: boolean }[]>`
         SELECT
@@ -103,6 +123,13 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
       };
       await assertDatabaseMutationVersion(transaction, pageCommitInput);
       const pageCommit = await commitPageMutationInTransaction(transaction, pageCommitInput);
+      const projectPageCommit = input.projectPageApplication && input.projectPageOperationId
+        ? await commitTaskProjectMount(transaction, {
+          pageId: input.expectedProjectPageId!,
+          operationId: input.projectPageOperationId,
+          application: input.projectPageApplication,
+        })
+        : null;
       const eventId = await appendRunbookEvent(transaction, {
         actor: input.actor,
         operationId: input.operationId,
@@ -137,6 +164,12 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
             folder_id: input.folderId,
             title: input.title,
             page_operation_id: pageCommit.operation.id,
+            ...(input.expectedProjectPageId
+              ? { project_page_id: input.expectedProjectPageId }
+              : {}),
+            ...(projectPageCommit
+              ? { project_page_operation_id: projectPageCommit.operation.id }
+              : {}),
           })}::jsonb,
           ${"create runbook task identity"}
         )
@@ -370,6 +403,20 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
     return await this.findBinding("r.id", runbookId);
   }
 
+  async findProjectPageByFolderId(folderId: string) {
+    const sql = await this.sqlResolver.resolveSql();
+    const rows = await sql<readonly { page_id: string }[]>`
+      SELECT page.id AS page_id
+      FROM folders folder
+      JOIN pages page ON page.id = folder.project_page_id
+      WHERE folder.id = ${folderId}
+        AND folder.archived = FALSE
+        AND page.archived = FALSE
+      LIMIT 1
+    `;
+    return rows[0] ? { pageId: rows[0].page_id } : null;
+  }
+
   async readPageSnapshot(pageId: string): Promise<Uint8Array | null> {
     const sql = await this.sqlResolver.resolveSql();
     const rows = await sql<readonly { snapshot: Buffer | Uint8Array }[]>`
@@ -387,7 +434,6 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
     return rows[0] ?? null;
   }
 }
-
 
 async function assertLegacyBinding(
   sql: BoardYjsQuerySql,

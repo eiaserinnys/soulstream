@@ -86,7 +86,6 @@ export function useV3DashboardMutations({
         title,
         description,
         dailyPageId: dailyPage.id,
-        projectPageId: projectPage.id,
         folderId,
       }, mutationPort);
       setCreateOpen(false);
