@@ -7,7 +7,6 @@ import {
   type SetStateAction,
 } from "react";
 import {
-  AtomNodeSelector,
   Button,
   Popover,
   PopoverPopup,
@@ -15,7 +14,10 @@ import {
 } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
-import { AgentNodeAssignmentFields } from "./AgentNodeAssignmentFields";
+import {
+  ProjectAtomFields,
+  ProjectSessionDefaultsFields,
+} from "./ProjectContextFormFields";
 import {
   ProjectAtomChip,
   ProjectSessionDefaultChip,
@@ -34,7 +36,7 @@ import type {
 import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 
 type EditorState =
-  | { kind: "atom"; blockId: string | null; instance: string; nodeId: string; nodeTitle: string; depth: number; titlesOnly: boolean }
+  | { kind: "atom"; blockId: string | null; instance: "atom" | "atom-nl"; nodeId: string; nodeTitle: string; depth: number; titlesOnly: boolean }
   | { kind: "defaults"; blockId: string | null; agentId: string; nodeId: string }
   | null;
 type AtomEditorState = Extract<NonNullable<EditorState>, { kind: "atom" }>;
@@ -251,9 +253,11 @@ function AtomEditorFields({
 }) {
   return (
     <div className="v3-project-context-editor" data-editor-presentation="popover">
-      <label>atom 노드<AtomNodeSelector value={editor.nodeId} selectedTitle={editor.nodeTitle} disabled={pending} onChange={(nodeId, nodeTitle) => setEditor({ ...editor, nodeId, nodeTitle })} /></label>
-      <label>깊이<input type="number" min={1} max={5} value={editor.depth} disabled={pending} onChange={(event) => setEditor({ ...editor, depth: Number(event.target.value) })} /></label>
-      <label><input type="checkbox" checked={editor.titlesOnly} disabled={pending} onChange={(event) => setEditor({ ...editor, titlesOnly: event.target.checked })} /> 제목만 포함</label>
+      <ProjectAtomFields
+        value={editor}
+        disabled={pending}
+        onChange={(value) => setEditor({ ...editor, ...value })}
+      />
       <EditorActions pending={pending} onCancel={onCancel} onSave={onSave} onDelete={onDelete} />
     </div>
   );
@@ -278,7 +282,7 @@ function DefaultsEditorFields({
 }) {
   return (
     <div className="v3-project-context-editor" data-editor-presentation="popover">
-      <AgentNodeAssignmentFields agentId={editor.agentId} nodeId={editor.nodeId} disabled={pending} onAgentIdChange={onAgentIdChange} onNodeIdChange={onNodeIdChange} onError={onError} />
+      <ProjectSessionDefaultsFields agentId={editor.agentId} nodeId={editor.nodeId} disabled={pending} onAgentIdChange={onAgentIdChange} onNodeIdChange={onNodeIdChange} onError={(message) => onError(message)} />
       <EditorActions pending={pending} onCancel={onCancel} onSave={onSave} />
     </div>
   );

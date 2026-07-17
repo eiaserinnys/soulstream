@@ -9,6 +9,11 @@ export interface FolderDragData {
   childIds: string[];
 }
 
+export interface FolderRootDropData {
+  type: "folder-root";
+  siblingIds: string[];
+}
+
 export interface BuildFolderReorderItemsParams {
   activeId: string;
   overId: string;
@@ -17,6 +22,13 @@ export interface BuildFolderReorderItemsParams {
   activeSiblingIds: string[];
   overSiblingIds: string[];
   overChildIds: string[];
+}
+
+export interface BuildFolderMoveToRootItemsParams {
+  activeId: string;
+  activeParentFolderId: string | null;
+  activeSiblingIds: string[];
+  rootSiblingIds: string[];
 }
 
 function toReorderItems(
@@ -48,5 +60,18 @@ export function buildFolderReorderItems({
   return [
     ...toReorderItems(sourceSiblingIds, activeParentFolderId),
     ...toReorderItems(targetChildIds, overId),
+  ];
+}
+
+export function buildFolderMoveToRootItems({
+  activeId,
+  activeParentFolderId,
+  activeSiblingIds,
+  rootSiblingIds,
+}: BuildFolderMoveToRootItemsParams): CatalogFolderReorderItem[] | null {
+  if (activeParentFolderId === null) return null;
+  return [
+    ...toReorderItems(activeSiblingIds.filter((id) => id !== activeId), activeParentFolderId),
+    ...toReorderItems([...rootSiblingIds.filter((id) => id !== activeId), activeId], null),
   ];
 }

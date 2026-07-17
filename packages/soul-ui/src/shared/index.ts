@@ -89,6 +89,7 @@ export type {
   SessionStreamEvent,
   FolderSettings,
   CatalogFolder,
+  CatalogFolderReorderItem,
   CatalogAssignment,
   BoardContainerRef,
   CatalogBoardItem,

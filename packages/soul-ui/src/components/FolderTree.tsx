@@ -15,7 +15,6 @@
  */
 
 import { useState, useCallback, type ReactNode } from "react";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { useSortedFolders } from "../hooks/useSortedFolders";
 import { useFolderSessionStats } from "../hooks/useFolderSessionStats";
@@ -35,6 +34,7 @@ import {
   writeFolderTreeExpandedState,
 } from "./folder-tree-expansion";
 import { DASHBOARD_SIDEBAR_ITEM_GAP_PX, DASHBOARD_SIDEBAR_LIST_INSET_PX } from "./dashboard-spacing";
+import { FolderSortableContext } from "../providers/FolderDragSurface";
 
 export interface FolderTreeProps {
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => void;
@@ -202,9 +202,9 @@ export function FolderTree({
           onEditCancel={() => setEditingId(null)}
         />
         {isExpanded && (
-          <SortableContext items={childFolderIds} strategy={verticalListSortingStrategy}>
+          <FolderSortableContext ids={childFolderIds}>
             {childFolders.map((child) => renderFolderItem(child, depth + 1, childFolderIds))}
-          </SortableContext>
+          </FolderSortableContext>
         )}
       </div>
     );
@@ -225,9 +225,9 @@ export function FolderTree({
         style={{ gap: DASHBOARD_SIDEBAR_ITEM_GAP_PX, paddingBlock: DASHBOARD_SIDEBAR_LIST_INSET_PX }}
       >
         {/* 일반 폴더 — SortableContext로 재정렬 가능 */}
-        <SortableContext items={sortedNormalFolderIds} strategy={verticalListSortingStrategy}>
+        <FolderSortableContext ids={sortedNormalFolderIds}>
           {sortedNormalFolders.map((folder) => renderFolderItem(folder, 0))}
-        </SortableContext>
+        </FolderSortableContext>
 
         {/* 구분선 (일반 폴더가 1개 이상일 때만) */}
         {sortedNormalFolders.length > 0 && (

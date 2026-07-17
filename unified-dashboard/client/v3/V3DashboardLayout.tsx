@@ -1,19 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import {
-  DragHandle,
-  LiquidGlassCanvas,
-  LiquidGlassProvider,
-  WallpaperLayer,
-  initTheme,
-  useAuth,
-  useDashboardStore,
-  useInitialCatalogLoad,
-  useReadPositionSync,
-  useSessionProvider,
-  useGlassSurface,
-  useUserPreferencesSync,
-  type SessionSummary,
-} from "@seosoyoung/soul-ui";
+import { DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type SessionSummary } from "@seosoyoung/soul-ui";
 import { clampDashboardLeftSidebarWidth, DASHBOARD_LEFT_SIDEBAR_DEFAULT_WIDTH, readDashboardLeftSidebarWidth, writeDashboardLeftSidebarWidth } from "@seosoyoung/soul-ui/components/dashboard-sidebar-collapse";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { DASHBOARD_CARD_GAP_PX, DASHBOARD_PANEL_GAP_PX } from "@seosoyoung/soul-ui/components/dashboard-spacing";
@@ -58,13 +44,8 @@ import { useV3DashboardMutations } from "./use-v3-dashboard-mutations";
 import { useV3MutationProjection } from "./use-v3-mutation-projection";
 import { useV3SessionPanelController } from "./use-v3-session-panel-controller";
 import { useSessionNodeConnectivity } from "./use-session-node-connectivity";
-import "./v3-planner.css";
-import "./v3-planner-mobile.css";
-import "./v3-planner-surfaces.css";
-import "./v3-task-workspace.css";
-import "./v3-task-workspace-mobile.css";
-import "./v3-mobile-projects.css";
-import "./v3-layer-contract.css";
+import { useProjectNavigationMutations } from "./use-project-navigation-mutations";
+import "./v3-dashboard-styles";
 export function V3DashboardLayout() {
   return <LiquidGlassProvider renderDefaultCanvas={false}><V3DashboardContent /></LiquidGlassProvider>;
 }
@@ -209,6 +190,15 @@ function V3DashboardContent() {
     folders: catalog?.folders ?? [],
     moveTask: plannerActions.moveTaskProject,
     notify,
+  });
+  const projectNavigationMutations = useProjectNavigationMutations({
+    api,
+    knownPages: projects,
+    notify,
+    selectedFolderId,
+    createProject: projectSelection.createProject,
+    patchProjectTitle: projectSelection.patchProjectTitle,
+    clearProject,
   });
   const plannerSessionIds = useMemo(
     () => [...new Set([
@@ -418,7 +408,16 @@ function V3DashboardContent() {
         onOpenRitual={() => setRitualOpen(true)}
         onOpenSearch={() => setSearchOpen(true)}
       />
-      <V3Navigation dates={dates} selectedDate={selectedDate} folders={catalog?.folders ?? []} selectedFolderId={selectedFolderId} starredTasks={starredTasks} starredTasksHasMore={starredTasksHasMore} starredTasksLoading={starredTasksLoading || starredTasksLoadingMore} todayTaskIds={todayTaskIds} completedTaskIds={new Set(currentTasks.filter((task) => task.status === "completed").map((task) => task.page.id))} onLoadMoreStarredTasks={() => { void loadMoreStarredTasks(); }} onSelectDate={(date) => { clearProject(); setSelectedDate(date); }} onSelectFolder={(folder) => { void projectSelection.openFolder(api, folder, projects, notify); setNewDocumentOpen(false); }} onSelectTask={(task) => { void openStarredTask(task); }} onCompleteTask={plannerActions.completeStarredTask} onToggleTaskToday={plannerActions.toggleStarredTaskToday} onMoveTaskToProject={(task) => { void taskProjectMove.openPage(task); }} onCreateProject={(title) => projectSelection.createProject(title, api, projects, notify)} onCreateTask={(folderId) => { projectSelection.setSelectedFolderId(folderId); setCreateOpen(true); }} />
+      <V3Navigation
+        dates={dates} selectedDate={selectedDate} folders={catalog?.folders ?? []} selectedFolderId={selectedFolderId}
+        starredTasks={starredTasks} starredTasksHasMore={starredTasksHasMore} starredTasksLoading={starredTasksLoading || starredTasksLoadingMore} todayTaskIds={todayTaskIds}
+        completedTaskIds={new Set(currentTasks.filter((task) => task.status === "completed").map((task) => task.page.id))}
+        onLoadMoreStarredTasks={() => { void loadMoreStarredTasks(); }}
+        onSelectDate={(date) => { clearProject(); setSelectedDate(date); }} onSelectFolder={(folder) => { void projectSelection.openFolder(api, folder, projects, notify); setNewDocumentOpen(false); }}
+        onSelectTask={(task) => { void openStarredTask(task); }} onCompleteTask={plannerActions.completeStarredTask} onToggleTaskToday={plannerActions.toggleStarredTaskToday}
+        onMoveTaskToProject={(task) => { void taskProjectMove.openPage(task); }} {...projectNavigationMutations}
+        onCreateTask={(folderId) => { projectSelection.setSelectedFolderId(folderId); setCreateOpen(true); }}
+      />
       {mobileMode && mobileTab === "projects" && !selectedFolderId ? <MobileProjectList folders={catalog?.folders ?? []} onSelect={(folder) => { void projectSelection.openFolder(api, folder, projects, notify); }} /> : null}
       <div className="v3-navigation-resize" data-testid="v3-navigation-resize-handle" aria-hidden="true">
         <DragHandle onDrag={resizeNavigation} widthPx={DASHBOARD_PANEL_GAP_PX} />

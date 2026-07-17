@@ -3,8 +3,15 @@
  */
 
 // === Dashboard DnD Provider ===
-export { DashboardDndProvider } from "./DashboardDndProvider";
+export { DashboardDndProvider, pointerFirstCollisionDetection } from "./DashboardDndProvider";
 export type { DashboardDndProviderProps } from "./DashboardDndProvider";
+export {
+  FolderSortableContext,
+  useFolderDragActive,
+  useFolderDragSurface,
+  useFolderRootDropSurface,
+} from "./FolderDragSurface";
+export type { FolderDragData, FolderRootDropData } from "./folder-dnd";
 
 // === SSE Session Provider ===
 export { SSESessionProvider, sseSessionProvider } from "./SSESessionProvider";

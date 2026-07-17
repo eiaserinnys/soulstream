@@ -8,14 +8,12 @@
  * 부모(FolderTree)가 모든 콜백과 표시 상태를 props로 주입한다.
  */
 
-import { useCallback, memo } from "react";
-import { useDroppable } from "@dnd-kit/core";
-import { useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+import { memo } from "react";
 import { cn } from "../lib/cn";
 import { Spinner } from "./ui/spinner";
 import { ChevronDown, ChevronRight, GripVertical } from "lucide-react";
 import type { FolderDragData } from "../providers/folder-dnd";
+import { useFolderDragSurface } from "../providers/FolderDragSurface";
 
 export interface FolderItemProps {
   folder: { id: string; name: string; sortOrder: number; parentFolderId?: string | null; createdAt?: string };
@@ -75,42 +73,21 @@ export const FolderItem = memo(function FolderItem({
     childIds: childFolderIds,
   };
 
-  // 폴더 재정렬용 (custom 모드에서만 active)
-  const {
-    attributes,
-    listeners,
-    setNodeRef: setSortableRef,
-    transform,
-    transition,
-    isDragging: isSortableDragging,
-  } = useSortable({
+  const dragSurface = useFolderDragSurface({
     id: folder.id,
     disabled: !isDraggableFolder,
     data: folderDragData,
   });
-
-  // 세션 drop target
-  const { setNodeRef: setDroppableRef, isOver } = useDroppable({
-    id: folder.id,
-    data: folderDragData,
-  });
-
-  // 두 ref를 합성
-  const setRef = useCallback(
-    (el: HTMLDivElement | null) => {
-      setSortableRef(el);
-      setDroppableRef(el);
-    },
-    [setSortableRef, setDroppableRef],
-  );
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setRef,
+    isDragging: isSortableDragging,
+    isOver,
+  } = dragSurface;
 
   const style = {
-    ...(isDraggableFolder
-      ? {
-          transform: CSS.Transform.toString(transform),
-          transition,
-        }
-      : {}),
+    ...dragSurface.style,
     paddingLeft: `${12 + depth * 18}px`,
   };
 

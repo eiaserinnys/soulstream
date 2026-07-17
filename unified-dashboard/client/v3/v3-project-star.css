@@ -1,7 +1,8 @@
 .v3-project-nav-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: 18px 18px minmax(0, 1fr);
   align-items: center;
+  padding-left: calc(var(--v3-project-depth, 0) * 14px);
   border-radius: 9px;
 }
 
@@ -15,9 +16,75 @@
   background: color-mix(in srgb, var(--primary) 10%, transparent);
 }
 
+.v3-project-nav-row.is-dragging {
+  opacity: .55;
+}
+
+.v3-project-nav-row.is-drop-target,
+.v3-project-tree-root.is-drop-target {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 65%, transparent);
+}
+
+.v3-project-tree-root {
+  min-height: 4px;
+  border-radius: 9px;
+}
+
+.v3-project-root-drop {
+  display: none;
+  min-height: 28px;
+  place-items: center;
+  margin-bottom: 4px;
+  border: 1px dashed color-mix(in srgb, var(--primary) 45%, var(--glass-border));
+  border-radius: 9px;
+  color: var(--muted-foreground);
+  font-size: var(--font-size-xs);
+}
+
+.v3-project-root-drop.is-visible {
+  display: grid;
+}
+
+.v3-project-root-drop.is-drop-target {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.v3-nav-list .v3-project-tree-toggle,
+.v3-nav-list .v3-project-drag-handle {
+  display: grid;
+  width: 18px;
+  min-height: 28px;
+  place-items: center;
+  gap: 0;
+  border-radius: 6px;
+  padding: 0;
+}
+
+.v3-project-tree-toggle svg,
+.v3-project-drag-handle svg {
+  width: 13px;
+  height: 13px;
+}
+
+.v3-project-drag-handle {
+  opacity: .24;
+  touch-action: none;
+  cursor: grab !important;
+}
+
+.v3-project-nav-row:hover .v3-project-drag-handle,
+.v3-project-drag-handle:focus-visible {
+  opacity: .82;
+}
+
+.v3-project-tree-toggle-spacer {
+  width: 18px;
+}
+
 .v3-nav-list .v3-project-nav-link {
   min-width: 0;
-  padding-left: calc(10px + var(--v3-project-depth, 0) * 14px);
+  padding-left: 4px;
   background: transparent;
 }
 
@@ -155,6 +222,12 @@
   padding-top: 10px;
 }
 
+.v3-project-context-fields {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
 .v3-project-context-editor label {
   display: grid;
   gap: 5px;
@@ -175,6 +248,61 @@
   display: grid;
   grid-template-columns: auto 1fr auto auto;
   gap: 6px;
+}
+
+.v3-project-dialog-form {
+  display: grid;
+  gap: 14px;
+}
+
+.v3-project-dialog-form > label,
+.v3-project-dialog-form fieldset {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.v3-project-dialog-form > label > span,
+.v3-project-dialog-form legend {
+  color: var(--foreground);
+  font-size: var(--font-size-sm);
+  font-weight: 760;
+}
+
+.v3-project-dialog-form input,
+.v3-project-dialog-form select,
+.v3-project-dialog-form textarea {
+  min-width: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 9px;
+  padding: 8px 10px;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--card) 72%, transparent);
+  font: inherit;
+}
+
+.v3-project-dialog-form textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.v3-project-dialog-entry {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.v3-project-dialog-entry + .v3-project-dialog-entry {
+  border-top: 1px solid var(--glass-border);
+  padding-top: 10px;
+}
+
+.v3-project-dialog-entry > button {
+  justify-self: end;
 }
 
 @media (max-width: 760px) {

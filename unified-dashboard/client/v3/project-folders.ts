@@ -5,7 +5,14 @@ export interface FlatProjectFolder {
   depth: number;
 }
 
-export function flattenProjectFolders(folders: readonly CatalogFolder[]): FlatProjectFolder[] {
+export interface ProjectFolderTreeNode {
+  folder: CatalogFolder;
+  children: ProjectFolderTreeNode[];
+}
+
+export function buildProjectFolderTree(
+  folders: readonly CatalogFolder[],
+): ProjectFolderTreeNode[] {
   const knownIds = new Set(folders.map((folder) => folder.id));
   const children = new Map<string | null, CatalogFolder[]>();
   for (const folder of folders) {
@@ -16,16 +23,31 @@ export function flattenProjectFolders(folders: readonly CatalogFolder[]): FlatPr
   }
   for (const siblings of children.values()) siblings.sort(compareFolders);
 
-  const result: FlatProjectFolder[] = [];
   const visited = new Set<string>();
-  const append = (folder: CatalogFolder, depth: number) => {
-    if (visited.has(folder.id)) return;
+  const build = (folder: CatalogFolder, ancestors: ReadonlySet<string>): ProjectFolderTreeNode => {
     visited.add(folder.id);
-    result.push({ folder, depth });
-    for (const child of children.get(folder.id) ?? []) append(child, depth + 1);
+    const nextAncestors = new Set(ancestors).add(folder.id);
+    return {
+      folder,
+      children: (children.get(folder.id) ?? [])
+        .filter((child) => !nextAncestors.has(child.id))
+        .map((child) => build(child, nextAncestors)),
+    };
   };
-  for (const root of children.get(null) ?? []) append(root, 0);
-  for (const folder of [...folders].sort(compareFolders)) append(folder, 0);
+  const roots = (children.get(null) ?? []).map((folder) => build(folder, new Set()));
+  for (const folder of [...folders].sort(compareFolders)) {
+    if (!visited.has(folder.id)) roots.push(build(folder, new Set()));
+  }
+  return roots;
+}
+
+export function flattenProjectFolders(folders: readonly CatalogFolder[]): FlatProjectFolder[] {
+  const result: FlatProjectFolder[] = [];
+  const append = (node: ProjectFolderTreeNode, depth: number) => {
+    result.push({ folder: node.folder, depth });
+    for (const child of node.children) append(child, depth + 1);
+  };
+  for (const root of buildProjectFolderTree(folders)) append(root, 0);
   return result;
 }
 
