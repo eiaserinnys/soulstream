@@ -1,7 +1,6 @@
 .v3-workspace-scrim {
   position: fixed;
   inset: 0;
-  z-index: 50;
   display: flex;
   justify-content: flex-end;
   background: color-mix(in srgb, var(--background) 38%, transparent);
@@ -458,75 +457,4 @@
 .v3-review-banner [data-slot="button"] {
   font-size: var(--font-size-xs);
   font-weight: 800;
-}
-
-@media (max-width: 760px) {
-  .v3-workspace-scrim {
-    inset: 0 0 58px;
-    display: block;
-    background: transparent;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-
-  .v3-workspace,
-  .v3-workspace.is-chat-open,
-  .v3-workspace.is-board-open {
-    display: block;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    border: 0;
-    box-shadow: none;
-    animation: none;
-  }
-
-  .v3-workspace[data-mobile-view="chat"] .v3-detail-pane,
-  .v3-workspace-divider {
-    display: none;
-  }
-
-  .v3-workspace[data-mobile-view="chat"] .v3-chat-pane {
-    display: flex;
-    width: 100%;
-    border-left: 0;
-  }
-
-  .v3-detail-pane,
-  .v3-chat-pane {
-    border: 0;
-    border-radius: 0;
-  }
-
-  .v3-detail-scroll {
-    padding: 18px 16px 28px;
-  }
-
-  .v3-workspace-toolbar,
-  .v3-chat-header {
-    padding-inline: 14px;
-  }
-
-  .v3-context-tabs {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .v3-context-tabs button:nth-child(2) {
-    border-right: 0;
-  }
-
-  .v3-context-tabs button:nth-child(-n + 2) {
-    border-bottom: 1px solid var(--border);
-  }
-
-  .v3-context-footer {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .v3-context-create-page,
-  .v3-succession-assignment {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
 }

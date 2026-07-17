@@ -21,6 +21,19 @@ const tasks: MobilePlannerTaskOption[] = [
 ];
 
 describe("mobile planner tab selection", () => {
+  it("opens the project list without inventing a task workspace", () => {
+    expect(selectMobilePlannerTab(state({
+      selectedTaskId: "task-a",
+      selectedRunId: "run-2",
+    }), "projects", tasks)).toEqual({
+      activeTab: "projects",
+      selectedTaskId: "task-a",
+      selectedRunId: "run-2",
+      workspaceOpen: false,
+      chatOpen: false,
+    });
+  });
+
   it("selects the first task when the task tab opens without a current task", () => {
     expect(selectMobilePlannerTab(state(), "task", tasks)).toEqual({
       activeTab: "task",

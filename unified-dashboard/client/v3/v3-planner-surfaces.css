@@ -186,6 +186,14 @@
   margin: 0;
 }
 
+.v3-new-task-dialog .v3-new-task-error {
+  border: 1px solid color-mix(in srgb, var(--destructive) 42%, var(--border));
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--destructive-foreground);
+  background: color-mix(in srgb, var(--destructive) 12%, var(--card));
+}
+
 .v3-new-task input,
 .v3-new-task select,
 .v3-new-document input {
@@ -327,7 +335,6 @@
 .v3-detail-scrim {
   position: fixed;
   inset: 0;
-  z-index: 50;
   display: flex;
   justify-content: flex-end;
   background: color-mix(in srgb, var(--background) 36%, transparent);
@@ -393,7 +400,6 @@
 
 .v3-toast {
   position: fixed;
-  z-index: 80;
   left: 50%;
   bottom: 24px;
   max-width: min(680px, 92vw);

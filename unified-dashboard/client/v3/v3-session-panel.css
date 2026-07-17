@@ -1,6 +1,5 @@
 .v3-session-panel {
   position: relative;
-  z-index: 2;
   min-width: 0;
   min-height: 0;
   width: var(--v3-session-panel-width, 300px);
@@ -82,7 +81,7 @@
 
 .v3-session-panel-error { margin: 12px 8px 0; color: var(--destructive); font-size: 12px; }
 
-.v3-session-panel-resize { position: relative; z-index: 3; min-width: 0; }
+.v3-session-panel-resize { position: relative; min-width: 0; }
 .v3-session-panel-resize > div { height: 100%; }
 
 @media (max-width: 760px) {

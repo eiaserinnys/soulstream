@@ -47,12 +47,12 @@ describe("v3 dashboard utilities", () => {
     const error = Object.assign(new Error("Dashboard user is required"), { status: 401 });
 
     expect(writeFailureText("새 업무 생성", error)).toBe(AUTH_EXPIRED_MESSAGE);
-    reportV3WriteFailure({
+    expect(reportV3WriteFailure({
       action: "새 업무 생성",
       error,
       notify: (message) => messages.push(message),
       refreshAuthStatus: () => { authRefreshes += 1; },
-    });
+    })).toBe(AUTH_EXPIRED_MESSAGE);
 
     expect(messages).toEqual([AUTH_EXPIRED_MESSAGE]);
     expect(authRefreshes).toBe(1);

@@ -55,9 +55,11 @@ export function reportV3WriteFailure({
   error: unknown;
   notify(message: string): void;
   refreshAuthStatus(): void;
-}): void {
-  notify(writeFailureText(action, error));
+}): string {
+  const message = writeFailureText(action, error);
+  notify(message);
   if (errorStatus(error) === 401) refreshAuthStatus();
+  return message;
 }
 
 export function buildMobileTaskOptions(

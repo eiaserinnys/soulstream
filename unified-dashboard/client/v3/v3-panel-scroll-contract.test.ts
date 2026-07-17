@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const LAYOUT_PATH = fileURLToPath(new URL("./V3DashboardLayout.tsx", import.meta.url));
 const PLANNER_CSS_PATH = fileURLToPath(new URL("./v3-planner.css", import.meta.url));
+const PLANNER_MOBILE_CSS_PATH = fileURLToPath(new URL("./v3-planner-mobile.css", import.meta.url));
 const SESSION_PANEL_CSS_PATH = fileURLToPath(new URL("./v3-session-panel.css", import.meta.url));
 const RUN_HISTORY_CSS_PATH = fileURLToPath(new URL("./v3-run-history.css", import.meta.url));
 const WORKSPACE_CSS_PATH = fileURLToPath(new URL("./v3-task-workspace.css", import.meta.url));
@@ -70,8 +71,7 @@ describe("v3 panel scroll contract", () => {
   });
 
   it("keeps the 390px planner frame bounded above the mobile tabs", () => {
-    const css = readFileSync(PLANNER_CSS_PATH, "utf8");
-    const mobile = css.slice(css.indexOf("@media (max-width: 760px)"));
+    const mobile = readFileSync(PLANNER_MOBILE_CSS_PATH, "utf8");
     const planner = ruleBody(mobile, ".v3-planner");
     const main = ruleBody(mobile, ".v3-main");
 
