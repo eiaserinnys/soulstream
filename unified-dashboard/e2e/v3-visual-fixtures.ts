@@ -95,7 +95,7 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
     page: pages.today,
     state_vector: "AA==",
     blocks: [
-      block("today-memo", pages.today.id, "paragraph", "아침 배포 전 시각 QA 결과를 한 번 더 확인한다."),
+      block("today-memo", pages.today.id, "paragraph", "**아침 배포 전** 시각 QA 결과를 한 번 더 확인한다."),
       block("today-alpha", pages.today.id, "paragraph", `[[${pages.taskAlpha.title}]]`),
       block("today-beta", pages.today.id, "paragraph", `[[${pages.taskBeta.title}]]`),
     ],

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button, DashboardIconCap, MarkdownContent } from "@seosoyoung/soul-ui";
-import { Pencil } from "lucide-react";
+import { Check, Pencil } from "lucide-react";
 
 export function TaskDescriptionPanel({
   markdown,
@@ -16,7 +16,7 @@ export function TaskDescriptionPanel({
   onSave(markdown: string): Promise<void>;
   ariaLabel?: string;
   emptyText?: string;
-  variant?: "default" | "compact";
+  variant?: "default" | "compact" | "daily";
   initialEditing?: boolean;
   onEditingChange?(editing: boolean): void;
   testId?: string;
@@ -26,6 +26,7 @@ export function TaskDescriptionPanel({
   const [saving, setSaving] = useState(false);
   const [editorMinHeight, setEditorMinHeight] = useState<number | null>(null);
   const savingRef = useRef(false);
+  const editorRef = useRef<HTMLTextAreaElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,6 +34,30 @@ export function TaskDescriptionPanel({
       setDraft(markdown);
     }
   }, [editing, markdown]);
+
+  useLayoutEffect(() => {
+    const element = editorRef.current;
+    if (!editing || variant !== "daily" || !element) return;
+    let lastWidth = element.clientWidth;
+    const fitHeight = () => {
+      element.style.height = "0px";
+      const borderHeight = element.offsetHeight - element.clientHeight;
+      element.style.height = `${Math.max(82, element.scrollHeight + borderHeight)}px`;
+    };
+    fitHeight();
+    if (typeof ResizeObserver === "function") {
+      const observer = new ResizeObserver((entries) => {
+        const width = entries[0]?.contentRect.width ?? element.clientWidth;
+        if (width === lastWidth) return;
+        lastWidth = width;
+        fitHeight();
+      });
+      observer.observe(element);
+      return () => observer.disconnect();
+    }
+    window.addEventListener("resize", fitHeight);
+    return () => window.removeEventListener("resize", fitHeight);
+  }, [draft, editing, variant]);
 
   const changeEditing = (next: boolean) => {
     if (next && !editing) {
@@ -73,6 +98,7 @@ export function TaskDescriptionPanel({
       {editing ? (
         <div className="v3-description-editor" data-editor-variant={variant}>
           <textarea
+            ref={editorRef}
             autoFocus
             value={draft}
             aria-label={`${ariaLabel} 마크다운`}
@@ -86,9 +112,21 @@ export function TaskDescriptionPanel({
             }}
           />
           <div>
-            <Button variant="secondary" disabled={saving} onMouseDown={(event) => event.preventDefault()} onClick={() => { void finish(); }}>
-              {saving ? "저장 중…" : "완료"}
-            </Button>
+            {variant === "daily" ? (
+              <DashboardIconCap
+                label={saving ? `${ariaLabel} 저장 중` : `${ariaLabel} 저장`}
+                disabled={saving}
+                aria-busy={saving || undefined}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => { void finish(); }}
+              >
+                <Check className="h-4 w-4" aria-hidden="true" />
+              </DashboardIconCap>
+            ) : (
+              <Button variant="secondary" disabled={saving} onMouseDown={(event) => event.preventDefault()} onClick={() => { void finish(); }}>
+                {saving ? "저장 중…" : "완료"}
+              </Button>
+            )}
           </div>
         </div>
       ) : (

@@ -269,14 +269,22 @@
   margin-top: 7px;
 }
 
-.v3-description-preview[data-editor-variant="compact"] {
+.v3-description-preview[data-editor-variant="compact"],
+.v3-description-preview[data-editor-variant="daily"] {
   min-height: 82px;
   padding: 9px 10px 38px;
 }
 
-.v3-description-editor[data-editor-variant="compact"] textarea {
+.v3-description-editor[data-editor-variant="compact"] textarea,
+.v3-description-editor[data-editor-variant="daily"] textarea {
   min-height: 82px;
   padding: 9px 10px;
+}
+
+.v3-description-editor[data-editor-variant="daily"] textarea {
+  height: auto;
+  resize: none;
+  overflow-y: hidden;
 }
 
 .v3-context-chips {

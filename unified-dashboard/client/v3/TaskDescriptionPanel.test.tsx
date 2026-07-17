@@ -38,33 +38,55 @@ describe("TaskDescriptionPanel", () => {
   it("exposes the description editor as the reusable compact markdown surface", () => {
     const html = renderToStaticMarkup(
       <TaskDescriptionPanel
-        markdown="오늘 기억할 내용"
+        markdown="**오늘** 기억할 내용"
         onSave={vi.fn()}
         ariaLabel="오늘 메모"
         emptyText="오늘 기억해 둘 내용을 적으세요."
-        variant="compact"
+        variant="daily"
       />,
     );
 
-    expect(html).toContain('data-editor-variant="compact"');
+    expect(html).toContain('data-editor-variant="daily"');
     expect(html).toContain('aria-label="오늘 메모 편집"');
+    expect(html).toMatch(/<strong[^>]*>오늘<\/strong>/);
     expect(html).not.toContain("전체 보기");
   });
 
-  it("keeps keyboard completion but removes editor meta labels", () => {
+  it("uses the icon-cap save action for the compact daily memo editor", () => {
     const html = renderToStaticMarkup(
       <TaskDescriptionPanel
         markdown="오늘 기억할 내용"
         onSave={vi.fn()}
         ariaLabel="오늘 메모"
-        variant="compact"
+        variant="daily"
         initialEditing
       />,
     );
 
     expect(html).toContain('aria-label="오늘 메모 마크다운"');
-    expect(html).toContain("완료");
+    expect(html).toContain('data-slot="dashboard-icon-cap"');
+    expect(html).toContain('aria-label="오늘 메모 저장"');
+    expect(html).toContain("lucide-check");
+    expect(html).not.toContain(">완료<");
     expect(html).not.toContain("Ctrl");
     expect(html).not.toContain("마크다운 ·");
+  });
+
+  it("keeps the existing text completion action for the default task description editor", () => {
+    const html = renderToStaticMarkup(
+      <TaskDescriptionPanel markdown="업무 설명" onSave={vi.fn()} initialEditing />,
+    );
+
+    expect(html).toContain(">완료<");
+    expect(html).not.toContain('aria-label="업무 설명 저장"');
+  });
+
+  it("keeps the existing text completion action for compact project guidance", () => {
+    const html = renderToStaticMarkup(
+      <TaskDescriptionPanel markdown="프로젝트 guidance" onSave={vi.fn()} ariaLabel="프로젝트 guidance" variant="compact" initialEditing />,
+    );
+
+    expect(html).toContain(">완료<");
+    expect(html).not.toContain('aria-label="프로젝트 guidance 저장"');
   });
 });
