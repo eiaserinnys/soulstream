@@ -147,4 +147,44 @@ describe("useSessionStreamCacheSync catalog_updated", () => {
       ["unbound", null],
     ]);
   });
+
+  it("advances the replay cursor and forwards page_updated to generic consumers", () => {
+    const onEventIdAdvance = vi.fn();
+    const onStreamEvent = vi.fn();
+    function PageEventHarness() {
+      useSessionStreamCacheSync({
+        enabled: true,
+        urlBuilder: () => "/api/sessions/stream",
+        queryKey: ["sessions", "all", "feed", null],
+        onEventIdAdvance,
+        onStreamEvent,
+      });
+      return null;
+    }
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    flushSync(() => {
+      root?.render(createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(PageEventHarness),
+      ));
+    });
+
+    const event = {
+      type: "page_updated" as const,
+      page_id: "page-1",
+      version: 7,
+      lastEventId: "19",
+    };
+    const streamOptions = vi.mocked(useSessionStreamSSE).mock.calls[0][0];
+    streamOptions.onPageUpdated?.(event);
+    streamOptions.onEvent?.(event);
+
+    expect(onEventIdAdvance).toHaveBeenCalledWith("19");
+    expect(onStreamEvent).toHaveBeenCalledWith(event);
+  });
 });

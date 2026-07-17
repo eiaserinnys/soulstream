@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
 import { Hocuspocus } from "@hocuspocus/server";
-import type { Extension, onAuthenticatePayload } from "@hocuspocus/server";
 import type { FastifyBaseLogger } from "fastify";
 import type WebSocket from "ws";
 import * as Y from "yjs";
@@ -12,10 +11,7 @@ import type {
   PageListDto,
 } from "@soulstream/page-model";
 
-import {
-  authenticateBoardYjsConnection,
-  type BoardYjsAuthConfig,
-} from "../board-yjs/board_yjs_auth.js";
+import type { BoardYjsAuthConfig } from "../board-yjs/board_yjs_auth.js";
 import {
   PageMutationCore,
   type CreatePageMutationInput,
@@ -50,6 +46,11 @@ import {
   type PageBlockTransferResult,
 } from "./page_block_transfer_service.js";
 import { PageAsyncMutex } from "./page_async_mutex.js";
+import { createPageYjsAuthExtension } from "./page_yjs_auth_extension.js";
+import {
+  notifyPageUpdates,
+  type PageUpdatedObserver,
+} from "./page_update_notifications.js";
 
 export interface PageServiceRepository extends PageYjsPersistenceRepository {
   getPageMutationByIdempotencyKey(
@@ -85,6 +86,7 @@ export interface PageYjsServiceConfig {
   now?: () => Date;
   auth?: BoardYjsAuthConfig;
   logger?: FastifyBaseLogger;
+  onPageUpdated?: PageUpdatedObserver;
   mutateTaskIdentity?: (
     input: PageMutationInput,
   ) => Promise<PageServiceMutationResult | null>;
@@ -164,6 +166,13 @@ export class PageYjsService {
           "Page Yjs persistence retrying after failure",
         );
       },
+      onStored: ({ pageId, version }) => {
+        notifyPageUpdates(
+          [{ page: { id: pageId, version } }],
+          config.onPageUpdated,
+          config.logger,
+        );
+      },
     });
     this.hocuspocus = new Hocuspocus({
       name: "soulstream-page-yjs",
@@ -196,16 +205,24 @@ export class PageYjsService {
         operationId,
       });
       if (committed.idempotent) return await this.resultFromCommit(committed);
+      const result = toMutationResult(application.replica, application.tempIdMapping, committed);
+      notifyPageUpdates([result], this.config.onPageUpdated, this.config.logger);
       await this.hydrateCommittedPage(documentName);
-      return toMutationResult(application.replica, application.tempIdMapping, committed);
+      return result;
     });
   }
 
   async mutatePage(input: PageMutationInput): Promise<PageServiceMutationResult> {
     const taskIdentityResult = await this.config.mutateTaskIdentity?.(input);
-    if (taskIdentityResult) return taskIdentityResult;
+    if (taskIdentityResult) {
+      notifyPageUpdates([taskIdentityResult], this.config.onPageUpdated, this.config.logger);
+      return taskIdentityResult;
+    }
     const projectIdentityResult = await this.config.mutateProjectIdentity?.(input);
-    if (projectIdentityResult) return projectIdentityResult;
+    if (projectIdentityResult) {
+      notifyPageUpdates([projectIdentityResult], this.config.onPageUpdated, this.config.logger);
+      return projectIdentityResult;
+    }
     return await this.mutex.runExclusive(input.pageId, async () => {
       const idempotent = await this.resolveIdempotent(input.idempotencyKey);
       if (idempotent) return idempotent;
@@ -230,12 +247,14 @@ export class PageYjsService {
           operationId,
         });
         if (committed.idempotent) return await this.resultFromCommit(committed);
+        const result = toMutationResult(application.replica, application.tempIdMapping, committed);
+        notifyPageUpdates([result], this.config.onPageUpdated, this.config.logger);
         Y.applyUpdate(live, application.update, operationId);
         const debounceId = `onStoreDocument-${documentName}`;
         if (this.hocuspocus.debouncer.isDebounced(debounceId)) {
           await this.hocuspocus.debouncer.executeNow(debounceId);
         }
-        return toMutationResult(application.replica, application.tempIdMapping, committed);
+        return result;
       } finally {
         connectionContext.skipPagePersistence = true;
         await connection.disconnect();
@@ -244,7 +263,7 @@ export class PageYjsService {
   }
 
   async transferBlocks(input: PageBlockTransferInput): Promise<PageBlockTransferResult> {
-    return await transferPageBlocks({
+    const result = await transferPageBlocks({
       repository: this.config.repository,
       mutationCore: this.mutationCore,
       mutex: this.mutex,
@@ -254,6 +273,12 @@ export class PageYjsService {
       decodeSnapshot: (snapshot) => this.decodeSnapshot(snapshot),
       toMutationResult,
     }, input);
+    notifyPageUpdates(
+      [result.source, result.target],
+      this.config.onPageUpdated,
+      this.config.logger,
+    );
+    return result;
   }
 
   async getPage(pageId: string): Promise<PageServiceReadResult> {
@@ -424,38 +449,6 @@ function kstDate(now: Date): string {
 function dailyPageTitle(date: string): string {
   const [year, month, day] = date.split("-").map(Number);
   return `${year}년 ${month}월 ${day}일`;
-}
-
-function createPageYjsAuthExtension(
-  auth: BoardYjsAuthConfig,
-  logger?: FastifyBaseLogger,
-): Extension {
-  return {
-    extensionName: "soulstream-page-yjs-auth",
-    async onAuthenticate(payload: onAuthenticatePayload) {
-      const routePageId = (payload.context as { pageId?: unknown } | undefined)?.pageId;
-      if (
-        typeof routePageId !== "string" ||
-        getPageYjsDocumentName(routePageId) !== payload.documentName
-      ) {
-        throw new Error("Page Yjs route pageId does not match document name");
-      }
-      const result = await authenticateBoardYjsConnection({
-        token: payload.token,
-        requestHeaders: payload.requestHeaders,
-        config: auth,
-      });
-      logger?.debug(
-        {
-          documentName: payload.documentName,
-          authSource: result.source,
-          subject: result.subject,
-        },
-        "Page Yjs websocket authenticated",
-      );
-      return { user: result.subject };
-    },
-  };
 }
 
 export function toMutationResult(

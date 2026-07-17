@@ -47,6 +47,11 @@ export interface PageYjsPersistenceDiagnostics {
 
 export interface PageYjsPersistenceOptions {
   maxAttempts?: number;
+  onStored?: (input: {
+    documentName: string;
+    pageId: string;
+    version: number;
+  }) => void;
   onFailure?: (input: {
     documentName: string;
     attempts: number;
@@ -170,6 +175,13 @@ export function createPageYjsPersistence(
           : await runExclusive(pageId, persist);
         if (!stored && update !== undefined) {
           mergePendingUpdate(payload.documentName, update);
+        }
+        if (stored) {
+          options.onStored?.({
+            documentName: payload.documentName,
+            pageId,
+            version: replica.page.mutationVersion,
+          });
         }
       } finally {
         activeStores -= 1;

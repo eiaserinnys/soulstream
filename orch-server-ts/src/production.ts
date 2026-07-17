@@ -42,6 +42,7 @@ import {
 } from "./runtime/live_provider_factory.js";
 import { createLivePushRegistrationRepository } from "./runtime/live_push_registration_repository.js";
 import { createLiveSupervisorIngestRepository } from "./runtime/live_supervisor_ingest_repository.js";
+import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
 import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_config_route_provider.js";
 import { SupervisorIngestService } from "./supervisor/supervisor_ingest.js";
 
@@ -196,6 +197,7 @@ export async function createLiveProductionApplication(
       createService: (logger) => pageYjsService ??= new PageYjsService({
         repository: pageRepository,
         logger,
+        onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),
         mutateTaskIdentity: async (input) =>
           await taskIdentityService?.mutateFromPage(input) ?? null,
         mutateProjectIdentity: async (input) =>

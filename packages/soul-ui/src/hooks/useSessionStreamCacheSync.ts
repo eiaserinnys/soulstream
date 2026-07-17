@@ -23,6 +23,7 @@ import type {
 import type {
   CatalogUpdatedStreamEvent,
   MetadataUpdatedStreamEvent,
+  PageUpdatedStreamEvent,
   CustomViewUpdatedStreamEvent,
   ReplayGapStreamEvent,
   RunbookUpdatedStreamEvent,
@@ -305,6 +306,13 @@ export function useSessionStreamCacheSync(
     [onCustomViewUpdatedOption, onEventIdAdvance],
   );
 
+  const onPageUpdated = useCallback(
+    (event: PageUpdatedStreamEvent) => {
+      if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
+    },
+    [onEventIdAdvance],
+  );
+
   const onSessionList = useCallback(() => {
     // 무시: TanStack Query fetch로 대체
   }, []);
@@ -320,6 +328,7 @@ export function useSessionStreamCacheSync(
     onMetadataUpdated,
     onRunbookUpdated,
     onCustomViewUpdated,
+    onPageUpdated,
     onStreamMeta,
     onReplayGap,
     onEvent: onStreamEvent,

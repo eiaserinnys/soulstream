@@ -122,10 +122,11 @@ describe("orch page Yjs persistence", () => {
 
   it("stores one merged incremental update beside the final snapshot", async () => {
     const edited = editSnapshot(" edited");
+    const onStored = vi.fn();
     const repository = {
       storePageYjsState: vi.fn().mockResolvedValue(undefined),
     } as unknown as PageYjsPersistenceRepository;
-    const persistence = createPageYjsPersistence(repository);
+    const persistence = createPageYjsPersistence(repository, undefined, { onStored });
 
     await persistence.updateCollector.onChange?.({
       documentName: "page:page-1",
@@ -149,6 +150,11 @@ describe("orch page Yjs persistence", () => {
       }),
     });
     expect(edited.update.byteLength).toBeLessThan(edited.snapshot.byteLength);
+    expect(onStored).toHaveBeenCalledWith({
+      documentName: "page:page-1",
+      pageId: "page-1",
+      version: 1,
+    });
   });
 
   it("retries a failed coalesced store with one bounded state payload", async () => {
@@ -205,7 +211,8 @@ describe("orch page Yjs persistence", () => {
       hasPageOperation: vi.fn().mockResolvedValue(true),
     } as unknown as PageYjsPersistenceRepository;
     const coordinator = { runExclusive: vi.fn() };
-    const persistence = createPageYjsPersistence(repository, coordinator);
+    const onStored = vi.fn();
+    const persistence = createPageYjsPersistence(repository, coordinator, { onStored });
 
     await persistence.database.configuration.store?.({
       documentName: "page:page-1",
@@ -217,6 +224,7 @@ describe("orch page Yjs persistence", () => {
     expect(repository.storePageYjsState).not.toHaveBeenCalled();
     expect(repository.hasPageOperation).toHaveBeenCalledWith("operation-1");
     expect(coordinator.runExclusive).not.toHaveBeenCalled();
+    expect(onStored).not.toHaveBeenCalled();
   });
 
   it("captures snapshot and replica after the operation lookup and pending take", async () => {

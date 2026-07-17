@@ -36,7 +36,7 @@ describe("v3 live invalidation plane", () => {
       revision: 2,
     });
     acceptV3SessionStreamEvent({ type: "replay_gap", latest_id: 9, instance_id: "orch-a" });
-    invalidateV3("page");
+    acceptV3SessionStreamEvent({ type: "page_updated", page_id: "page-a", version: 7 });
 
     const snapshot = getV3InvalidationSnapshot();
     expect(selectV3InvalidationKey(snapshot, ["session_updated"])).toBe(1);
@@ -93,7 +93,7 @@ describe("v3 live invalidation plane", () => {
       pageDetail: 0,
     });
 
-    invalidateV3("page");
+    acceptV3SessionStreamEvent({ type: "page_updated", page_id: "page-a", version: 8 });
     expect(selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot())).toEqual({
       daily: 3,
       project: 3,

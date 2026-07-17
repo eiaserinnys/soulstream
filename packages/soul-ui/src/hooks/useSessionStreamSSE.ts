@@ -21,6 +21,7 @@ import type {
   CatalogUpdatedStreamEvent,
   CustomViewUpdatedStreamEvent,
   MetadataUpdatedStreamEvent,
+  PageUpdatedStreamEvent,
   ReplayGapStreamEvent,
   RunbookUpdatedStreamEvent,
   SessionCreatedStreamEvent,
@@ -53,6 +54,7 @@ const SESSION_STREAM_EVENT_TYPES = [
   "metadata_updated",
   "runbook_updated",
   "custom_view_updated",
+  "page_updated",
   "replay_gap",
 ] as const;
 
@@ -78,6 +80,7 @@ export interface UseSessionStreamSSEOptions {
   onMetadataUpdated?: (event: MetadataUpdatedStreamEvent) => void;
   onRunbookUpdated?: (event: RunbookUpdatedStreamEvent) => void;
   onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
+  onPageUpdated?: (event: PageUpdatedStreamEvent) => void;
   onStreamMeta?: (event: StreamMetaStreamEvent) => void;
   onReplayGap?: (event: ReplayGapStreamEvent) => void;
   /** 타입별 캐시 처리가 끝난 뒤 호출되는 통합 관찰자. */

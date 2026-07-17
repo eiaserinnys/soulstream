@@ -33,6 +33,7 @@ function makeHandlers(): SessionStreamHandlers & {
     onMetadataUpdated: vi.fn(),
     onRunbookUpdated: vi.fn(),
     onCustomViewUpdated: vi.fn(),
+    onPageUpdated: vi.fn(),
     onStreamMeta: vi.fn(),
     onReplayGap: vi.fn(),
     onEvent: vi.fn(),
@@ -84,7 +85,7 @@ describe("dispatchSessionStreamEvent", () => {
     expect(() => dispatchSessionStreamEvent(event, {})).not.toThrow();
   });
 
-  it("기존 6종 이벤트와 runbook/custom_view 업데이트도 그대로 라우팅", () => {
+  it("기존 이벤트와 runbook/custom_view/page 업데이트도 그대로 라우팅", () => {
     const handlers = makeHandlers();
     const events: SessionStreamEvent[] = [
       { type: "session_list", sessions: [], total: 0 },
@@ -117,6 +118,7 @@ describe("dispatchSessionStreamEvent", () => {
         boardItemId: "custom_view:cv-1",
         revision: 2,
       },
+      { type: "page_updated", page_id: "page-1", version: 7 },
     ];
 
     for (const event of events) {
@@ -131,6 +133,7 @@ describe("dispatchSessionStreamEvent", () => {
     expect(handlers.__spies.onMetadataUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onRunbookUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onCustomViewUpdated).toHaveBeenCalledTimes(1);
+    expect(handlers.__spies.onPageUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onEvent).toHaveBeenCalledTimes(events.length);
     // stream_meta/replay_gap은 호출되지 않아야 함
     expect(handlers.__spies.onStreamMeta).not.toHaveBeenCalled();

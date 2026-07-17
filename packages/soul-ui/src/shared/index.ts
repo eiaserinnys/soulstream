@@ -85,6 +85,7 @@ export type {
   SessionCreatedStreamEvent,
   SessionUpdatedStreamEvent,
   SessionDeletedStreamEvent,
+  PageUpdatedStreamEvent,
   SessionStreamEvent,
   FolderSettings,
   CatalogFolder,

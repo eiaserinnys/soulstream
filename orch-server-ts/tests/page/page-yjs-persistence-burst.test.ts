@@ -3,7 +3,7 @@ import {
   HocuspocusProvider,
   type HocuspocusProviderConfiguration,
 } from "@hocuspocus/provider";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import * as Y from "yjs";
 
@@ -81,8 +81,10 @@ describe("Page Yjs rapid-edit persistence", () => {
   it("skips the trailing store for a durable server operation, then stores a client edit", async () => {
     const repository = new InstrumentedPageRepository();
     repository.seed("page-1", editableBlock("before"));
+    const onPageUpdated = vi.fn();
     const { app, service } = createHarness(repository, {
       createOperationId: () => "operation-1",
+      onPageUpdated,
     });
     const address = await app.listen({ host: "127.0.0.1", port: 0 });
     try {
@@ -96,6 +98,8 @@ describe("Page Yjs rapid-edit persistence", () => {
       expect(mutation.blocks[0]?.text).toBe("server");
       await waitFor(() => repository.hasPageOperationCalls > 0);
       expect(repository.storeCount).toBe(0);
+      expect(onPageUpdated).toHaveBeenCalledTimes(1);
+      expect(onPageUpdated).toHaveBeenLastCalledWith({ pageId: "page-1", version: 2 });
 
       const provider = connectProvider(address, "page-1");
       await waitForSync(provider);
@@ -103,6 +107,8 @@ describe("Page Yjs rapid-edit persistence", () => {
       await waitFor(() => repository.storeCount === 1);
       expect(repository.lastText).toBe("server-client");
       expect(repository.successfulUpdates).toHaveLength(1);
+      expect(onPageUpdated).toHaveBeenCalledTimes(2);
+      expect(onPageUpdated).toHaveBeenLastCalledWith({ pageId: "page-1", version: 2 });
     } finally {
       await app.close();
     }
@@ -258,7 +264,10 @@ describe("Page Yjs rapid-edit persistence", () => {
 
 function createHarness(
   repository: InstrumentedPageRepository,
-  options: { createOperationId?: () => string } = {},
+  options: {
+    createOperationId?: () => string;
+    onPageUpdated?: (event: { pageId: string; version: number }) => void;
+  } = {},
 ) {
   const app = Fastify({ logger: false });
   const service = new PageYjsService({
