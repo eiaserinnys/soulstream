@@ -19,7 +19,11 @@ import type {
   RunbookTaskIdentityRepository,
   TaskIdentityBinding,
 } from "./runbook_task_identity_service.js";
-import { bindingRows, legacyBindingRows } from "./runbook_task_identity_queries.js";
+import {
+  bindingRows,
+  legacyBindingRows,
+  pageTitleRows,
+} from "./runbook_task_identity_queries.js";
 import {
   appendRunbookEvent,
   findOperation,
@@ -40,6 +44,7 @@ import {
   assertLegacyBinding,
   persistLegacyBinding,
 } from "./runbook_task_identity_legacy_store.js";
+import { persistRunbookTaskPromotion } from "./runbook_task_identity_promotion_store.js";
 
 export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepository {
   private readonly sqlResolver: BoardYjsSqlResolver;
@@ -193,69 +198,10 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
   async promote(
     input: Parameters<RunbookTaskIdentityRepository["promote"]>[0],
   ): Promise<RunbookTaskIdentityMutationResult> {
-    const sql = await this.sqlResolver.resolveSql();
-    return await sql.begin(async (transaction) => {
-      await transaction`SELECT pg_advisory_xact_lock(hashtextextended(${input.id}, 0))`;
-      const existing = await findOperation(transaction, input.idempotencyKey);
-      if (existing) return await readResult(transaction, input.runbookId, existing, true);
-
-      const collisions = await transaction<readonly { runbook_exists: boolean; page_exists: boolean }[]>`
-        SELECT
-          EXISTS(SELECT 1 FROM runbooks WHERE id = ${input.runbookId}) AS runbook_exists,
-          EXISTS(SELECT 1 FROM pages WHERE id = ${input.pageId}) AS page_exists
-      `;
-      if (collisions[0]?.runbook_exists) {
-        throw new Error(`task identity runbook already exists: ${input.runbookId}`);
-      }
-      if (!collisions[0]?.page_exists) {
-        throw new Error(`task identity source page not found: ${input.pageId}`);
-      }
-
-      await storeBoardApplication(transaction, input.boardApplication);
-      const pageCommitInput = {
-        documentName: getPageYjsDocumentName(input.pageId),
-        application: input.pageApplication,
-        operationId: input.pageOperationId,
-      };
-      await assertDatabaseMutationVersion(transaction, pageCommitInput);
-      const pageCommit = await commitPageMutationInTransaction(transaction, pageCommitInput);
-      const eventId = await appendRunbookEvent(transaction, {
-        actor: input.actor,
-        operationId: input.operationId,
-        operationType: "create_runbook",
-        runbookId: input.runbookId,
-        idempotencyKey: input.idempotencyKey,
-      });
-      await transaction`
-        INSERT INTO runbooks (
-          id, board_item_id, task_page_id, title, archived,
-          created_session_id, created_event_id
-        ) VALUES (
-          ${input.runbookId}, ${input.boardItemId}, ${input.taskPageId}, ${input.title},
-          ${input.pageApplication.replica.page.archived},
-          ${input.actor.actorSessionId ?? null}, ${eventId}
-        )
-      `;
-      const operation = await insertRunbookOperation(transaction, {
-        id: input.operationId,
-        runbookId: input.runbookId,
-        operationType: "create_runbook",
-        actor: input.actor,
-        eventId,
-        idempotencyKey: input.idempotencyKey,
-        payload: {
-          id: input.id,
-          page_id: input.pageId,
-          board_item_id: input.boardItemId,
-          folder_id: input.folderId,
-          title: input.title,
-          promoted_existing_page: true,
-          page_operation_id: pageCommit.operation.id,
-        },
-        reason: "promote page to runbook task identity",
-      });
-      return await readResult(transaction, input.runbookId, operation, false, pageCommit);
-    });
+    return await persistRunbookTaskPromotion(
+      await this.sqlResolver.resolveSql(),
+      input,
+    );
   }
 
   async mutate(
@@ -434,6 +380,40 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
 
   async findByRunbookId(runbookId: string): Promise<TaskIdentityBinding | null> {
     return await this.findBinding("r.id", runbookId);
+  }
+
+  async findPageByTitle(title: string) {
+    const rows = await pageTitleRows(await this.sqlResolver.resolveSql(), title);
+    return rows[0] ?? null;
+  }
+
+  async findCreateResultByRunbookId(
+    runbookId: string,
+  ): Promise<RunbookTaskIdentityMutationResult | null> {
+    const sql = await this.sqlResolver.resolveSql();
+    const operations = await sql<readonly Record<string, unknown>[]>`
+      SELECT * FROM runbook_operations
+      WHERE runbook_id = ${runbookId}
+        AND operation_type = 'create_runbook'
+      ORDER BY created_at ASC, id ASC
+      LIMIT 1
+    `;
+    if (!operations[0]) return null;
+    const result = await readResult(sql, runbookId, operations[0], true);
+    const folders = await sql<readonly { project_page_id: string | null }[]>`
+      SELECT folder.project_page_id
+      FROM runbooks runbook
+      JOIN board_items board_item ON board_item.id = runbook.board_item_id
+      JOIN folders folder ON folder.id = board_item.folder_id
+      WHERE runbook.id = ${runbookId}
+      LIMIT 1
+    `;
+    if (folders[0]?.project_page_id) {
+      return { ...result, projectPageId: folders[0].project_page_id };
+    }
+    const current = { ...result };
+    delete current.projectPageId;
+    return current;
   }
 
   async findProjectPageByFolderId(folderId: string) {

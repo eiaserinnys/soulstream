@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 
 import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
+import { isTaskIdentityTitleConflictError } from "./runbook_task_identity_errors.js";
 import type { RunbookRouteOptions } from "./runbook_route_types.js";
 
 interface CreateRunbookBody {
@@ -62,6 +63,7 @@ export function registerRunbookCreateRoute(
 }
 
 function taskIdentityCreateErrorStatus(error: unknown): 409 | 422 | 500 {
+  if (isTaskIdentityTitleConflictError(error)) return 409;
   if (!(error instanceof Error)) return 500;
   if (error.message === "new task identity id must be a UUID") return 422;
   if (error.message.startsWith("task identity already exists:")) return 409;

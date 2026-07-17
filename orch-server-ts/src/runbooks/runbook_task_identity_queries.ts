@@ -1,8 +1,37 @@
 import type { BoardYjsQuerySql } from "../board-yjs/board_yjs_sql.js";
 import type {
   LegacyRunbookBinding,
+  TaskPageTitleBinding,
   TaskIdentityBinding,
 } from "./runbook_task_identity_contracts.js";
+
+export async function pageTitleRows(
+  sql: BoardYjsQuerySql,
+  title: string,
+): Promise<readonly TaskPageTitleBinding[]> {
+  const rows = await sql<readonly PageTitleDbRow[]>`
+    SELECT page.id AS page_id, page.title, page.archived,
+           page.daily_date::text AS daily_date,
+           project_folder.id AS project_folder_id
+    FROM pages page
+    LEFT JOIN LATERAL (
+      SELECT folder.id
+      FROM folders folder
+      WHERE folder.project_page_id = page.id
+      ORDER BY folder.id
+      LIMIT 1
+    ) project_folder ON TRUE
+    WHERE page.title_key = lower(btrim(${title}))
+    LIMIT 1
+  `;
+  return rows.map((row) => ({
+    pageId: row.page_id,
+    title: row.title,
+    archived: row.archived,
+    dailyDate: row.daily_date,
+    projectFolderId: row.project_folder_id,
+  }));
+}
 
 export async function bindingRows(
   sql: BoardYjsQuerySql,
@@ -115,4 +144,12 @@ interface LegacyBindingDbRow extends Record<string, unknown> {
   runbook_version: string | number;
   x: string | number;
   y: string | number;
+}
+
+interface PageTitleDbRow extends Record<string, unknown> {
+  page_id: string;
+  title: string;
+  archived: boolean;
+  daily_date: string | null;
+  project_folder_id: string | null;
 }

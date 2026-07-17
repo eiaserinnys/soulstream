@@ -435,6 +435,8 @@ function createRepository(): RunbookTaskIdentityRepository {
     })),
     findByPageId: vi.fn(),
     findByRunbookId: vi.fn(),
+    findPageByTitle: vi.fn(),
+    findCreateResultByRunbookId: vi.fn(),
     findProjectPageByFolderId: vi.fn(async () => null),
     listTaskMounts: vi.fn(async () => []),
     readPageSnapshot: vi.fn(),
