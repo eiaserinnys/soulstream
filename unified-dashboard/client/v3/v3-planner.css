@@ -257,8 +257,10 @@
 .v3-date-head {
   display: flex;
   align-items: flex-end;
+  justify-content: flex-start;
   gap: 12px;
   margin: 4px 0 16px;
+  text-align: left;
 }
 
 .v3-date-head > div {
@@ -330,8 +332,10 @@
 .v3-section-head {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   margin: 0 0 12px;
+  text-align: left;
 }
 
 .v3-section-head h2 {
