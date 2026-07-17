@@ -26,6 +26,13 @@ export interface ClaudeRuntimeTaskFollowupPort {
     reason: ClaudeRuntimeFollowupStallReason,
   ): Promise<void>;
   cancelScheduledFallback(task: Task, supersedingMessage: InterventionMessage): void;
+  takeScheduledFallbacks(): ClaudeRuntimeScheduledFallback[];
+}
+
+export interface ClaudeRuntimeScheduledFallback {
+  task: Task;
+  message: InterventionMessage;
+  reason: ClaudeRuntimeFollowupStallReason;
 }
 
 export interface ClaudeRuntimeTaskFollowupDeps {
@@ -39,6 +46,7 @@ interface ScheduledRuntimeTaskFallback {
   sessionId: string;
   token: symbol;
   promise: Promise<void>;
+  pending: ClaudeRuntimeScheduledFallback;
 }
 
 interface PendingRuntimeTaskFollowup {
@@ -184,6 +192,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       sessionId: task.agentSessionId,
       token,
       promise,
+      pending: { task, message, reason },
     });
     this.deps.logger.info(
       { sessionId: task.agentSessionId, followupKey, attempt, delayMs },
@@ -208,6 +217,21 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       { sessionId: task.agentSessionId, cancelled },
       "Claude runtime task follow-up fallback cancelled by a newer message",
     );
+  }
+
+  takeScheduledFallbacks(): ClaudeRuntimeScheduledFallback[] {
+    const scheduled = Array.from(this.scheduledFallbacks.values());
+    this.scheduledFallbacks.clear();
+    for (const { pending } of scheduled) {
+      pending.task.pendingClaudeRuntimeFollowupRetry = false;
+    }
+    if (scheduled.length > 0) {
+      this.deps.logger.warn(
+        { count: scheduled.length },
+        "Claude runtime task follow-up fallbacks cancelled by server shutdown",
+      );
+    }
+    return scheduled.map(({ pending }) => pending);
   }
 
   private async deliverFallbackAfterDelay(params: {

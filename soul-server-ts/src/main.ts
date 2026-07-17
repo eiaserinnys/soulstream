@@ -169,6 +169,7 @@ async function main(): Promise<void> {
     runtime.checklistRunbookReconciler.stop();
     try {
       runtime.scheduleDispatcher.stop();
+      await runtime.taskExecutor.failScheduledClaudeRuntimeFollowupsForShutdown();
       await runtime.taskManager.shutdown();
     } catch (err) {
       logger.warn({ err }, "TaskManager shutdown failed");

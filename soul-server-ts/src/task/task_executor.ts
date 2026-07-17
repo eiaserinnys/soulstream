@@ -180,6 +180,18 @@ export class TaskExecutor {
     task.executionPromise = promise;
   }
 
+  async failScheduledClaudeRuntimeFollowupsForShutdown(): Promise<void> {
+    if (!this.claudeRuntimeTaskFollowup) return;
+    for (const { task, message, reason } of this.claudeRuntimeTaskFollowup.takeScheduledFallbacks()) {
+      await this.handleScheduledClaudeRuntimeFollowupFailure(
+        task,
+        message,
+        reason,
+        new Error("server shutdown while delayed retry was scheduled"),
+      );
+    }
+  }
+
   /**
    * Turn 시퀀스 drain (B-4 multi-turn). 분석 캐시
    * `20260517-1410-codex-ts-folder-resume-intervene.md` §D-3 상태도.

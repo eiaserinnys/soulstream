@@ -415,4 +415,38 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(addIntervention).not.toHaveBeenCalled();
     expect(task.pendingClaudeRuntimeFollowupRetry).toBe(false);
   });
+
+  it("graceful shutdown은 인메모리 예약을 회수해 명시 실패로 넘긴다", async () => {
+    let releaseSleep!: () => void;
+    const sleep = vi.fn(() => new Promise<void>((resolve) => {
+      releaseSleep = resolve;
+    }));
+    const addIntervention = vi.fn(async () => ({ autoResumed: true as const }));
+    const controller = new ClaudeRuntimeTaskFollowupController({
+      taskManager: { addIntervention },
+      onResume: vi.fn(),
+      logger: silentLogger,
+      sleep,
+    });
+    const task = makeTask();
+    task.executionPromise = Promise.resolve();
+    const message = {
+      text: "delayed retry",
+      user: "system",
+      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+      followupAttempt: 1,
+      followupKey: "sess-1:task-1",
+    };
+    const scheduled = controller.queueFallback(task, message, "empty_response");
+    await vi.waitFor(() => expect(sleep).toHaveBeenCalledTimes(1));
+
+    expect(controller.takeScheduledFallbacks()).toEqual([
+      { task, message, reason: "empty_response" },
+    ]);
+    releaseSleep();
+    await scheduled;
+
+    expect(addIntervention).not.toHaveBeenCalled();
+    expect(task.pendingClaudeRuntimeFollowupRetry).toBe(false);
+  });
 });

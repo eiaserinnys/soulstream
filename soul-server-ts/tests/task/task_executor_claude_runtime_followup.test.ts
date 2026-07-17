@@ -80,6 +80,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         });
       }),
       cancelScheduledFallback: vi.fn(),
+      takeScheduledFallbacks: vi.fn(() => []),
       queueFallback: vi.fn(),
     };
     const capturedPrompts: string[] = [];
@@ -250,6 +251,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         });
       }),
       cancelScheduledFallback: vi.fn(),
+      takeScheduledFallbacks: vi.fn(() => []),
       queueFallback,
     };
     const prompts: string[] = [];
@@ -346,6 +348,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         });
       }),
       cancelScheduledFallback: vi.fn(),
+      takeScheduledFallbacks: vi.fn(() => []),
       queueFallback,
     };
     const prompts: string[] = [];
@@ -432,6 +435,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         });
       }),
       cancelScheduledFallback: vi.fn(),
+      takeScheduledFallbacks: vi.fn(() => []),
       queueFallback,
     };
     const prompts: string[] = [];
@@ -519,6 +523,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       collect: vi.fn(),
       flush: vi.fn(),
       cancelScheduledFallback,
+      takeScheduledFallbacks: vi.fn(() => []),
       queueFallback,
     };
     let turnCount = 0;
@@ -586,6 +591,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         });
       }),
       cancelScheduledFallback: vi.fn(),
+      takeScheduledFallbacks: vi.fn(() => []),
       queueFallback: vi.fn(),
     };
     let turnCount = 0;
@@ -653,6 +659,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
       collect: vi.fn(),
       flush: vi.fn(),
       cancelScheduledFallback: vi.fn(),
+      takeScheduledFallbacks: vi.fn(() => []),
       queueFallback: vi.fn(() => new Promise<void>((_resolve, reject) => {
         rejectFallback = reject;
       })),
@@ -701,6 +708,53 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     });
   });
 
+  it("graceful shutdown은 예약된 fallback을 stalled error로 영속화한다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.status = "completed";
+    const message = {
+      text: "delayed runtime follow-up",
+      user: "system",
+      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+      followupAttempt: 1,
+      followupKey: "sess-1:task-1",
+    };
+    const followup: ClaudeRuntimeTaskFollowupPort = {
+      collect: vi.fn(),
+      flush: vi.fn(),
+      cancelScheduledFallback: vi.fn(),
+      takeScheduledFallbacks: vi.fn(() => [
+        { task, message, reason: "empty_response" },
+      ]),
+      queueFallback: vi.fn(),
+    };
+    const executor = new TaskExecutor(
+      () => { throw new Error("engine factory must not run during shutdown fallback failure"); },
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      followup,
+    );
+
+    await executor.failScheduledClaudeRuntimeFollowupsForShutdown();
+
+    expect(task.status).toBe("error");
+    const errorBroadcast = mocks.broadcaster.emitEventEnvelope.mock.calls.find(
+      (call) =>
+        (call[1] as { error_code?: string }).error_code ===
+        "claude_runtime_followup_stalled",
+    );
+    expect(errorBroadcast?.[1]).toMatchObject({
+      type: "error",
+      fatal: true,
+      recoverable: true,
+    });
+  });
+
   it("flush가 follow-up을 큐잉하지 못하면 사용자 가시 nonfatal error를 남긴다", async () => {
     const mocks = makeMocks();
     const task = makeTask();
@@ -710,6 +764,7 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
         throw new Error("route unavailable");
       }),
       cancelScheduledFallback: vi.fn(),
+      takeScheduledFallbacks: vi.fn(() => []),
       queueFallback: vi.fn(),
     };
     const engine: EnginePort = {
