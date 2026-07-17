@@ -1,9 +1,11 @@
 import { useRef } from "react";
 import {
+  DashboardIconCap,
   MarkdownDocumentPanel,
   useDashboardStore,
   useGlassSurface,
 } from "@seosoyoung/soul-ui";
+import { X } from "lucide-react";
 
 export function V3StandaloneDocumentInspector({
   open,
@@ -33,7 +35,9 @@ export function V3StandaloneDocumentInspector({
         >
           <header className="v3-chat-header">
             <div><small>프로젝트 문서</small><strong>마크다운 문서</strong></div>
-            <button type="button" aria-label="문서 패널 닫기" onClick={close}>×</button>
+            <DashboardIconCap label="문서 패널 닫기" onClick={close}>
+              <X className="h-4 w-4" aria-hidden="true" />
+            </DashboardIconCap>
           </header>
           <div className="v3-board-document-content"><MarkdownDocumentPanel /></div>
         </section>

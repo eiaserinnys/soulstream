@@ -8,6 +8,7 @@ import {
   type MouseEvent,
 } from "react";
 import {
+  DashboardIconCap,
   SessionContextMenu,
   SessionReviewAcknowledgeError,
   acknowledgeSessionReview,
@@ -16,6 +17,7 @@ import {
   type SessionReviewAcknowledgeResult,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
+import { Check } from "lucide-react";
 
 import { sessionPanelGroups, sessionPanelTitle } from "./v3-session-panel-model";
 import { RichSessionRow } from "./RichSessionRow";
@@ -217,15 +219,13 @@ const SessionPanelRow = memo(function SessionPanelRow({
         onOpen={onOpenSession}
         onContextMenu={onContextMenu}
         actions={review ? (
-          <button
-            type="button"
-            className="v3-session-acknowledge"
+          <DashboardIconCap
+            label={`${sessionPanelTitle(session)} 확인 처리`}
             disabled={pending}
-            aria-label={`${sessionPanelTitle(session)} 확인 처리`}
             onClick={() => { void onAcknowledge(session); }}
           >
-            {pending ? "…" : "확인"}
-          </button>
+            <Check className="h-4 w-4" aria-hidden="true" />
+          </DashboardIconCap>
         ) : undefined}
       />
     </div>

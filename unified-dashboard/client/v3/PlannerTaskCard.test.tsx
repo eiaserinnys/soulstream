@@ -4,8 +4,21 @@ import { describe, expect, it, vi } from "vitest";
 import type { SessionSummary } from "@seosoyoung/soul-ui";
 
 vi.mock("@seosoyoung/soul-ui", () => ({
-  Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button {...props}>{children}</button>
+  DashboardIconCap: ({
+    children,
+    label,
+    className,
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) => (
+    <button
+      {...props}
+      className={`dashboard-icon-cap ${className ?? ""}`}
+      data-slot="dashboard-icon-cap"
+      aria-label={label}
+      title={label}
+    >
+      {children}
+    </button>
   ),
 }));
 

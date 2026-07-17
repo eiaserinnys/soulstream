@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, MarkdownContent } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, MarkdownContent } from "@seosoyoung/soul-ui";
+import { Pencil } from "lucide-react";
 
 export function TaskDescriptionPanel({
   markdown,
@@ -106,7 +107,9 @@ export function TaskDescriptionPanel({
             {markdown ? <MarkdownContent content={markdown} /> : <span className="v3-description-empty">{emptyText}</span>}
           </button>
           <div className="v3-description-actions">
-            <Button variant="ghost" size="sm" onClick={() => changeEditing(true)}>편집</Button>
+            <DashboardIconCap label={`${ariaLabel} 편집`} onClick={() => changeEditing(true)}>
+              <Pencil className="h-4 w-4" aria-hidden="true" />
+            </DashboardIconCap>
           </div>
         </div>
       )}

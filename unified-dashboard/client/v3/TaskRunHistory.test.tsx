@@ -79,9 +79,11 @@ describe("TaskRunHistory", () => {
     expect(html).not.toContain(">재개<");
     expect(html).not.toContain("aria-label=\"라이브 코디네이터 세션 요약\"");
     expect(html).not.toContain("v3-run-summary");
-    expect(html).toContain("＋ 새 세션");
+    expect(html).toContain('aria-label="새 세션"');
+    expect(html).toContain('title="새 세션"');
+    expect(html).toContain('aria-label="이전 세션 더 보기"');
     expect(html).toContain("3/61회");
-    expect(html).toContain("이전 세션 더 보기");
+    expect(html).not.toContain(">이전 세션 더 보기<");
     expect(html).not.toContain("▶ 새 세션");
   });
 });

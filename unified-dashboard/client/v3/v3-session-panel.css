@@ -80,20 +80,6 @@
   background: color-mix(in srgb, var(--accent) 56%, transparent);
 }
 
-.v3-session-acknowledge {
-  max-width: 64px;
-  overflow: hidden;
-  padding: 4px 7px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  color: var(--muted-foreground);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.v3-session-acknowledge:hover { color: var(--foreground); background: color-mix(in srgb, var(--background) 45%, transparent); }
-.v3-session-acknowledge:disabled { opacity: .55; }
 .v3-session-panel-error { margin: 12px 8px 0; color: var(--destructive); font-size: 12px; }
 
 .v3-session-panel-resize { position: relative; z-index: 3; min-width: 0; }

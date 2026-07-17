@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import {
-  Button,
+  DashboardIconCap,
   ThemeToggle,
   useGlassSurface,
   useLiquidLens,
@@ -60,23 +60,18 @@ export function V3GlobalToolbar({
         <kbd>⌘K</kbd>
       </button>
       <div className="dashboard-toolbar-actions">
-        <Button
-          size="sm"
-          className="h-[38px] rounded-full px-4"
-          aria-label="아침 정리"
+        <DashboardIconCap
+          label="아침 정리"
           onClick={onOpenRitual}
         >
-          <Sun className="h-3.5 w-3.5" />
-          아침 정리
-        </Button>
-        <Button
-          size="sm"
-          className="h-[38px] rounded-full px-4"
+          <Sun className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
+        <DashboardIconCap
+          label="새 업무"
           onClick={onOpenNewTask}
         >
-          <Plus className="h-3.5 w-3.5" />
-          새 업무
-        </Button>
+          <Plus className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
         <ConfigButton variant="chrome" onClick={onOpenConfig} />
         <ThemeToggle variant="chrome" />
       </div>

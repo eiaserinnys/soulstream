@@ -1,8 +1,10 @@
 import { useMemo, useRef, useState, type CSSProperties } from "react";
 import {
+  DashboardIconCap,
   useGlassSurface,
   type CatalogFolder,
 } from "@seosoyoung/soul-ui";
+import { ChevronsDown, FolderPlus } from "lucide-react";
 import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
 
 import { flattenProjectFolders } from "./project-folders";
@@ -151,15 +153,14 @@ export function V3Navigation({
         ))}
         {starredTasks.length === 0 ? <p>{starredTasksLoading ? "업무를 불러오는 중…" : "별표 업무가 없습니다."}</p> : null}
         {starredTasksHasMore ? (
-          <button
-            type="button"
-            className="v3-new-project-trigger"
+          <DashboardIconCap
+            label="별표 업무 더 보기"
             data-testid="v3-load-more-starred-tasks"
             disabled={starredTasksLoading}
             onClick={onLoadMoreStarredTasks}
           >
-            {starredTasksLoading ? "불러오는 중…" : "별표 업무 더 보기"}
-          </button>
+            <ChevronsDown className="h-4 w-4" aria-hidden="true" />
+          </DashboardIconCap>
         ) : null}
       </div>
 
@@ -186,14 +187,14 @@ export function V3Navigation({
           </div>
         ))}
         {projectFolders.length === 0 ? <p>프로젝트가 없습니다.</p> : null}
-        <button
-          type="button"
+        <DashboardIconCap
+          label="새 프로젝트"
           className="v3-new-project-trigger"
           aria-expanded={newProjectOpen}
           onClick={() => { setNewProjectOpen((value) => !value); setError(null); }}
         >
-          ＋ 새 프로젝트
-        </button>
+          <FolderPlus className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
         {newProjectOpen ? (
           <div className="v3-new-project-form">
             <input

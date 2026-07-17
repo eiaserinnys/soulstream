@@ -29,11 +29,14 @@ describe("TaskTodayToggle", () => {
     ));
 
     render(false);
-    expect(button().textContent).toContain("오늘 플래너에 추가");
+    expect(button().getAttribute("aria-label")).toBe("오늘 플래너에 추가");
+    expect(button().title).toBe("오늘 플래너에 추가");
+    expect(button().className).toContain("dashboard-icon-cap");
     expect(button().getAttribute("aria-pressed")).toBe("false");
 
     render(true);
-    expect(button().textContent).toContain("오늘 플래너에서 제거");
+    expect(button().getAttribute("aria-label")).toBe("오늘 플래너에서 제거");
+    expect(button().title).toBe("오늘 플래너에서 제거");
     expect(button().getAttribute("aria-pressed")).toBe("true");
   });
 

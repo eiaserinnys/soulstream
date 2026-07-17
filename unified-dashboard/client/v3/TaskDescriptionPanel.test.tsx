@@ -22,7 +22,8 @@ describe("TaskDescriptionPanel", () => {
     expect(html).not.toContain("v3-bounded-markdown");
     expect(html).not.toContain("전체 보기");
     expect(html).not.toContain("접기");
-    expect(html).toContain("편집");
+    expect(html).toContain('aria-label="업무 설명 편집"');
+    expect(html).toContain('title="업무 설명 편집"');
   });
 
   it("does not show an expand action for a short description", () => {
@@ -31,7 +32,7 @@ describe("TaskDescriptionPanel", () => {
     );
 
     expect(html).not.toContain("전체 보기");
-    expect(html).toContain("편집");
+    expect(html).toContain('aria-label="업무 설명 편집"');
   });
 
   it("exposes the description editor as the reusable compact markdown surface", () => {

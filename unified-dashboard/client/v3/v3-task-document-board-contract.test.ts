@@ -16,7 +16,8 @@ describe("v3 task document board unification", () => {
   it("keeps markdown creation and inline rename on the task board list", () => {
     const inlineBoard = read("./TaskInlineBoard.tsx");
 
-    expect(inlineBoard).toContain("＋ 마크다운");
+    expect(inlineBoard).toContain("<DashboardIconCap");
+    expect(inlineBoard).toContain('label="마크다운 추가"');
     expect(inlineBoard).toContain("useBoardYjsRuntime");
     expect(inlineBoard).toContain("renameMarkdownDocument");
     expect(inlineBoard).toContain("patchBoardMarkdownTitle");

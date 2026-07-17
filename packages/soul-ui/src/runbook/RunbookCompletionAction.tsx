@@ -2,6 +2,7 @@ import { useState, type PointerEvent } from "react";
 import { CheckCircle2, Loader2, RotateCcw } from "lucide-react";
 
 import { Button } from "../components/ui/button";
+import { DashboardIconCap } from "../components/DashboardIconCap";
 import { Badge } from "../components/ui/badge";
 import {
   AlertDialog,
@@ -125,12 +126,10 @@ export function RunbookCompletionAction({
   return (
     <div className={cn("flex shrink-0 items-center gap-1.5", className)}>
       <RunbookCompletionBadge status={currentStatus} />
-      <Button
-        size="xs"
-        variant={nextStatus === "completed" ? "success" : "outline"}
+      <DashboardIconCap
+        label={actionLabel}
         className={buttonClassName}
         disabled={pending}
-        title={actionLabel}
         onPointerDown={stopPointer}
         onClick={(event) => {
           event.stopPropagation();
@@ -138,10 +137,8 @@ export function RunbookCompletionAction({
           setOpen(true);
         }}
       >
-        {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Icon className="h-3.5 w-3.5" />}
-        <span className="hidden sm:inline">{actionLabel}</span>
-        <span className="sr-only sm:hidden">{actionLabel}</span>
-      </Button>
+        {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Icon className="h-3.5 w-3.5" aria-hidden="true" />}
+      </DashboardIconCap>
 
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogPopup className="max-w-sm">

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
-import { Button, retainEqualValue, useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, retainEqualValue, useGlassSurface, type SessionSummary } from "@seosoyoung/soul-ui";
+import { ArrowLeft, ChevronsDown, FilePlus2 } from "lucide-react";
 
 import { DailyMemo } from "./DailyMemo";
 import { PlannerTaskCard } from "./PlannerTaskCard";
@@ -209,7 +210,9 @@ export function ProjectPlannerView({
     <>
       <div className="v3-date-head v3-project-title">
         <div>
-          <button type="button" className="v3-button v3-button--ghost" onClick={onBack}>← 오늘</button>
+          <DashboardIconCap label="오늘로 돌아가기" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          </DashboardIconCap>
           <h1>{data?.project.title ?? "프로젝트"}</h1>
         </div>
         <p>프로젝트에 누적된 업무와 문서 · 최근순</p>
@@ -234,7 +237,9 @@ export function ProjectPlannerView({
         <div className="v3-section-head">
           <h2><span className="v3-emoji" aria-hidden="true">📄</span> 문서</h2><span>{data?.documents.length ?? 0}개</span>
           <span className="v3-spacer" />
-          <button type="button" className="v3-button v3-button--soft" onClick={onToggleNewDocument}>＋ 새 문서</button>
+          <DashboardIconCap label="새 문서" aria-expanded={newDocumentOpen} onClick={onToggleNewDocument}>
+            <FilePlus2 className="h-4 w-4" aria-hidden="true" />
+          </DashboardIconCap>
         </div>
         {newDocumentOpen ? (
           <div className="v3-new-document">
@@ -271,15 +276,14 @@ export function ProjectPlannerView({
           }) : []}
         />
         {data?.nextDocumentCursor ? (
-          <button
-            type="button"
-            className="v3-button v3-button--soft"
+          <DashboardIconCap
+            label="이전 문서 더 보기"
             data-testid="v3-load-more-project-documents"
             disabled={documentsLoadingMore}
             onClick={onLoadMoreDocuments}
           >
-            {documentsLoadingMore ? "문서 불러오는 중…" : "이전 문서 더 보기"}
-          </button>
+            <ChevronsDown className="h-4 w-4" aria-hidden="true" />
+          </DashboardIconCap>
         ) : null}
       </section>
       <div className="v3-section-head"><h2>역대 업무</h2><span>{data?.tasks.length ?? 0}개</span></div>
@@ -299,15 +303,14 @@ export function ProjectPlannerView({
         ))}
       </div>
       {data?.nextTaskCursor ? (
-        <button
-          type="button"
-          className="v3-button v3-button--soft"
+        <DashboardIconCap
+          label="이전 업무 더 보기"
           data-testid="v3-load-more-project-tasks"
           disabled={tasksLoadingMore}
           onClick={onLoadMoreTasks}
         >
-          {tasksLoadingMore ? "업무 불러오는 중…" : "이전 업무 더 보기"}
-        </button>
+          <ChevronsDown className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
       ) : null}
       {state.status === "ready" && data?.tasks.length === 0 ? (
         <EmptyState text="이 프로젝트에 누적된 업무가 없습니다." />
