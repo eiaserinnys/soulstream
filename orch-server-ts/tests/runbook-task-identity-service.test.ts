@@ -258,6 +258,129 @@ describe("RunbookTaskIdentityService", () => {
 
     expect(board.liveApplied).toBe(false);
   });
+
+  it("removes project and daily mounts in the same archived identity mutation", async () => {
+    const board = new MemoryBoardPort();
+    const repository = createRepository();
+    vi.mocked(repository.findByRunbookId).mockResolvedValue(taskBinding());
+    vi.mocked(repository.listTaskMounts).mockResolvedValue([
+      { sourcePageId: "project-a", sourceBlockIds: ["project-mount"] },
+      { sourcePageId: "daily-a", sourceBlockIds: ["daily-mount"] },
+    ]);
+    vi.mocked(repository.readPageSnapshot).mockImplementation(async (pageId) => (
+      pageId === identityId
+        ? createPageSnapshot()
+        : createMountedPageSnapshot(pageId, pageId === "project-a" ? "project-mount" : "daily-mount")
+    ));
+    const hydratePage = vi.fn(async () => undefined);
+    const onPageUpdated = vi.fn();
+    const service = new RunbookTaskIdentityService({
+      board,
+      repository,
+      createOperationId: operationSequence(),
+      hydratePage,
+      onPageUpdated,
+    });
+
+    await service.mutateFromRunbook({
+      runbookId: identityId,
+      expectedVersion: 1,
+      archived: true,
+      actor: { actorKind: "agent", actorSessionId: "session-ae" },
+      idempotencyKey: "archive-with-mounts",
+    });
+
+    const mutation = vi.mocked(repository.mutate).mock.calls[0]?.[0];
+    const mountPageApplications = mutation?.mountPageApplications ?? [];
+    expect(mountPageApplications).toHaveLength(2);
+    expect(mountPageApplications.map((item) => ({
+      pageId: item.pageId,
+      blocks: item.application.replica.blocks,
+    }))).toEqual([
+      { pageId: "daily-a", blocks: [] },
+      { pageId: "project-a", blocks: [] },
+    ]);
+    expect(hydratePage).toHaveBeenCalledWith(identityId);
+    expect(hydratePage).toHaveBeenCalledWith("project-a");
+    expect(hydratePage).toHaveBeenCalledWith("daily-a");
+    expect(onPageUpdated).toHaveBeenCalledTimes(3);
+  });
+
+  it("moves the board item and project mount through one staged server transaction", async () => {
+    const board = new MemoryBoardPort();
+    const repository = createRepository();
+    vi.mocked(repository.findByRunbookId).mockResolvedValue(taskBinding());
+    vi.mocked(repository.findProjectPageByFolderId).mockResolvedValue({ pageId: "project-target" });
+    vi.mocked(repository.listTaskMounts).mockResolvedValue([
+      { sourcePageId: "project-source", sourceBlockIds: ["source-mount"] },
+    ]);
+    vi.mocked(repository.readPageSnapshot).mockImplementation(async (pageId) => {
+      if (pageId === "project-source") return createMountedPageSnapshot(pageId, "source-mount");
+      if (pageId === "project-target") return createMountedPageSnapshot(pageId);
+      return createPageSnapshot();
+    });
+    const service = new RunbookTaskIdentityService({
+      board,
+      repository,
+      createOperationId: operationSequence(),
+      hydratePage: vi.fn(async () => undefined),
+    });
+
+    await expect(service.moveBoardItemToContainer({
+      boardItem: boardItem("folder-a"),
+      targetScope: {
+        folderId: "folder-target",
+        containerKind: "folder",
+        containerId: "folder-target",
+      },
+      idempotencyKey: "move-task-project",
+    })).resolves.toMatchObject({
+      folderId: "folder-target",
+      containerId: "folder-target",
+    });
+
+    const move = vi.mocked(repository.move).mock.calls[0]?.[0];
+    expect(move).toMatchObject({
+      sourceFolderId: "folder-a",
+      targetFolderId: "folder-target",
+      expectedTargetProjectPageId: "project-target",
+    });
+    expect(move?.mountPageApplications.map((item) => ({
+      pageId: item.pageId,
+      blockTexts: item.application.replica.blocks.map((block) => block.text),
+    }))).toEqual([
+      { pageId: "project-source", blockTexts: [] },
+      { pageId: "project-target", blockTexts: ["[[이전 업무]]"] },
+    ]);
+    expect(board.moveLiveApplied).toBe(true);
+  });
+
+  it("does not apply staged board documents when project move persistence fails", async () => {
+    const board = new MemoryBoardPort();
+    const repository = createRepository();
+    vi.mocked(repository.findByRunbookId).mockResolvedValue(taskBinding());
+    vi.mocked(repository.findProjectPageByFolderId).mockResolvedValue({ pageId: "project-target" });
+    vi.mocked(repository.listTaskMounts).mockResolvedValue([]);
+    vi.mocked(repository.readPageSnapshot).mockResolvedValue(createMountedPageSnapshot("project-target"));
+    vi.mocked(repository.move).mockRejectedValue(new Error("project move transaction failed"));
+    const service = new RunbookTaskIdentityService({
+      board,
+      repository,
+      createOperationId: operationSequence(),
+      hydratePage: vi.fn(async () => undefined),
+    });
+
+    await expect(service.moveBoardItemToContainer({
+      boardItem: boardItem("folder-a"),
+      targetScope: {
+        folderId: "folder-target",
+        containerKind: "folder",
+        containerId: "folder-target",
+      },
+      idempotencyKey: "move-task-project-fail",
+    })).rejects.toThrow("project move transaction failed");
+    expect(board.moveLiveApplied).toBe(false);
+  });
 });
 
 function createRepository(): RunbookTaskIdentityRepository {
@@ -293,6 +416,7 @@ function createRepository(): RunbookTaskIdentityRepository {
       title: input.title,
       resultVersion: 2,
     })),
+    move: vi.fn(async () => undefined),
     findLegacyRunbook: vi.fn(),
     bindLegacyPage: vi.fn(async (input) => ({
       runbookId: input.binding.runbookId,
@@ -312,6 +436,7 @@ function createRepository(): RunbookTaskIdentityRepository {
     findByPageId: vi.fn(),
     findByRunbookId: vi.fn(),
     findProjectPageByFolderId: vi.fn(async () => null),
+    listTaskMounts: vi.fn(async () => []),
     readPageSnapshot: vi.fn(),
   };
 }
@@ -373,6 +498,52 @@ function createReferencedPageSnapshot(): Uint8Array {
   }).snapshot;
 }
 
+function createMountedPageSnapshot(pageId: string, blockId?: string): Uint8Array {
+  return new PageMutationCore().createPage({
+    page: { id: pageId, title: pageId, dailyDate: null },
+    actor: { actorKind: "system" },
+    idempotencyKey: `test:system:${pageId}`,
+    ...(blockId
+      ? {
+        initialCommand: {
+          type: "batch_operations" as const,
+          operations: [{
+            op: "create_block" as const,
+            id: blockId,
+            tempId: blockId,
+            parentId: null,
+            afterBlockId: null,
+            blockType: "paragraph",
+            text: "[[이전 업무]]",
+            properties: {},
+          }],
+        },
+      }
+      : {}),
+  }).snapshot;
+}
+
+function operationSequence(): () => string {
+  let index = 0;
+  return () => `operation-${++index}`;
+}
+
+function boardItem(folderId: string) {
+  return {
+    id: `runbook:${identityId}`,
+    folderId,
+    containerKind: "folder" as const,
+    containerId: folderId,
+    membershipKind: "primary" as const,
+    sourceRunbookItemId: null,
+    itemType: "runbook" as const,
+    itemId: identityId,
+    x: 0,
+    y: 0,
+    metadata: { title: "이전 업무" },
+  };
+}
+
 function pageCommit(pageId: string, resultVersion: number) {
   return {
     operation: {
@@ -399,6 +570,7 @@ function pageCommit(pageId: string, resultVersion: number) {
 
 class MemoryBoardPort implements RunbookTaskIdentityBoardPort {
   liveApplied = false;
+  moveLiveApplied = false;
 
   async withRunbookBoardApplication<T>(
     input: Parameters<RunbookTaskIdentityBoardPort["withRunbookBoardApplication"]>[0],
@@ -432,4 +604,39 @@ class MemoryBoardPort implements RunbookTaskIdentityBoardPort {
     this.liveApplied = true;
     return result;
   }
+
+  async withRunbookBoardMoveApplication(
+    input: Parameters<RunbookTaskIdentityBoardPort["withRunbookBoardMoveApplication"]>[0],
+    persist: Parameters<RunbookTaskIdentityBoardPort["withRunbookBoardMoveApplication"]>[1],
+  ) {
+    const moved = {
+      ...input.boardItem,
+      folderId: input.targetScope.folderId,
+      containerKind: input.targetScope.containerKind,
+      containerId: input.targetScope.containerId,
+      x: input.position?.x ?? input.boardItem.x,
+      y: input.position?.y ?? input.boardItem.y,
+    };
+    await persist({
+      movedBoardItem: moved,
+      boardApplications: [
+        boardApplication(input.boardItem.folderId, []),
+        boardApplication(input.targetScope.folderId, [moved]),
+      ],
+    });
+    this.moveLiveApplied = true;
+    return moved;
+  }
+}
+
+function boardApplication(
+  folderId: string,
+  boardItems: RunbookTaskIdentityBoardApplication["replica"]["boardItems"],
+): RunbookTaskIdentityBoardApplication {
+  return {
+    documentName: `board-folder:${folderId}`,
+    scope: { folderId, containerKind: "folder", containerId: folderId },
+    snapshot: new Uint8Array([1, 2, 3]),
+    replica: { boardItems: [...boardItems], markdownDocuments: [] },
+  };
 }

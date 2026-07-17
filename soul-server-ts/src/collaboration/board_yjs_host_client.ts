@@ -101,6 +101,7 @@ export class BoardYjsHostClient {
       containerId: string;
     };
     position?: { x: number; y: number };
+    idempotencyKey: string;
   }): Promise<CatalogBoardItemRow> {
     return await this.request("move-board-item-to-container", input);
   }

@@ -776,10 +776,57 @@ describe("CatalogService board items", () => {
       boardItem: expect.objectContaining({ id: "session:s1" }),
       targetScope: { folderId: "target-folder", containerKind: "runbook", containerId: "rb-1" },
       position: { x: 120, y: 240 },
+      idempotencyKey: "move-1",
     });
     expect(upsertSessionBoardItem).not.toHaveBeenCalled();
     expect(assignSessionToFolder).toHaveBeenCalledWith("s1", "target-folder");
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
+  });
+
+  it("moveBoardItemToContainer는 runbook 업무 이동을 서버 identity 정본에 위임한다", async () => {
+    const source = {
+      id: "runbook:rb-task",
+      folderId: "source-folder",
+      containerKind: "folder" as const,
+      containerId: "source-folder",
+      membershipKind: "primary" as const,
+      sourceRunbookItemId: null,
+      itemType: "runbook" as const,
+      itemId: "rb-task",
+      x: 0,
+      y: 0,
+      metadata: {},
+    };
+    const moved = { ...source, folderId: "target-folder", containerId: "target-folder" };
+    const moveBoardItemToContainer = vi.fn().mockResolvedValue(moved);
+    const db = {
+      ensureBoardItems: vi.fn().mockResolvedValue(undefined),
+      resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
+        folderId: "target-folder",
+        containerKind: "folder",
+        containerId: "target-folder",
+      }),
+      getBoardItemById: vi.fn().mockResolvedValue(source),
+      getCatalog: vi.fn().mockResolvedValue({ folders: [], sessions: {}, boardItems: [] }),
+    } as unknown as SessionDB;
+    const { broadcaster } = createBroadcasterMock();
+    const svc = new CatalogService(db, broadcaster, { moveBoardItemToContainer } as never);
+
+    await expect(svc.moveBoardItemToContainer({
+      boardItemId: source.id,
+      target: { containerKind: "folder", containerId: "target-folder" },
+      idempotencyKey: "move-runbook-1",
+    })).resolves.toMatchObject({ boardItem: moved, enrolled: false });
+
+    expect(moveBoardItemToContainer).toHaveBeenCalledWith({
+      boardItem: source,
+      targetScope: {
+        folderId: "target-folder",
+        containerKind: "folder",
+        containerId: "target-folder",
+      },
+      idempotencyKey: "move-runbook-1",
+    });
   });
 
   it("createMarkdownDocument는 BoardYjsService 경로를 우선 사용하고 legacy DB create를 호출하지 않는다", async () => {

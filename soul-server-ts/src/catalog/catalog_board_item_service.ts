@@ -33,6 +33,7 @@ export interface CatalogBoardYjsPort {
       containerId: string;
     };
     position?: { x: number; y: number };
+    idempotencyKey: string;
   }): Promise<CatalogBoardItemRow>;
   createMarkdownDocument(input: {
     folderId: string;
@@ -177,6 +178,7 @@ export class CatalogBoardItemService {
         boardItem,
         targetScope,
         ...(snappedPosition ? { position: snappedPosition } : {}),
+        idempotencyKey: params.idempotencyKey,
       });
       await this.broadcastCatalog();
       return { boardItem: moved, enrolled: false };
@@ -398,9 +400,10 @@ function isSourceYDocMissingError(err: unknown): boolean {
 
 function isMovableBoardItemType(
   itemType: CatalogBoardItemRow["itemType"],
-): itemType is Extract<CatalogBoardItemRow["itemType"], "session" | "markdown" | "asset" | "custom_view"> {
+): itemType is Extract<CatalogBoardItemRow["itemType"], "session" | "markdown" | "asset" | "custom_view" | "runbook"> {
   return itemType === "session" ||
     itemType === "markdown" ||
     itemType === "asset" ||
-    itemType === "custom_view";
+    itemType === "custom_view" ||
+    itemType === "runbook";
 }

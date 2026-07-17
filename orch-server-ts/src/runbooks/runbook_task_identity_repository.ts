@@ -5,7 +5,6 @@ import {
 } from "../board-yjs/board_yjs_repository.js";
 import {
   BoardYjsSqlResolver,
-  type BoardYjsQuerySql,
 } from "../board-yjs/board_yjs_sql.js";
 import {
   assertDatabaseMutationVersion,
@@ -31,6 +30,16 @@ import {
   storeBoardApplication,
 } from "./runbook_task_identity_operation_store.js";
 import { commitTaskProjectMount } from "./runbook_task_project_mount_store.js";
+import {
+  assertTaskMountExpectation,
+  commitTaskMountApplications,
+  listTaskMountBindings,
+  persistTaskProjectMove,
+} from "./runbook_task_identity_lifecycle_store.js";
+import {
+  assertLegacyBinding,
+  persistLegacyBinding,
+} from "./runbook_task_identity_legacy_store.js";
 
 export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepository {
   private readonly sqlResolver: BoardYjsSqlResolver;
@@ -254,7 +263,13 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
   ): Promise<RunbookTaskIdentityMutationResult> {
     const sql = await this.sqlResolver.resolveSql();
     return await sql.begin(async (transaction) => {
-      await transaction`SELECT pg_advisory_xact_lock(hashtextextended(${input.binding.runbookId}, 0))`;
+      const lockIds = new Set([
+        input.binding.runbookId,
+        ...(input.mountPageApplications ?? []).map((item) => item.pageId),
+      ]);
+      for (const lockId of [...lockIds].sort()) {
+        await transaction`SELECT pg_advisory_xact_lock(hashtextextended(${lockId}, 0))`;
+      }
       const existing = await findOperation(transaction, input.idempotencyKey);
       if (existing) {
         return await readResult(transaction, input.binding.runbookId, existing, true);
@@ -269,6 +284,11 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
           `runbook version conflict: ${input.binding.runbookId} expected ${input.expectedRunbookVersion}, actual ${locked.runbookVersion}`,
         );
       }
+      await assertTaskMountExpectation(
+        transaction,
+        input.binding.pageId,
+        input.mountExpectation,
+      );
       await storeBoardApplication(transaction, input.boardApplication);
       const pageCommitInput = {
         documentName: getPageYjsDocumentName(input.binding.pageId),
@@ -277,6 +297,10 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
       };
       await assertDatabaseMutationVersion(transaction, pageCommitInput);
       const pageCommit = await commitPageMutationInTransaction(transaction, pageCommitInput);
+      const mountCommits = await commitTaskMountApplications(
+        transaction,
+        input.mountPageApplications ?? [],
+      );
       const eventId = await appendRunbookEvent(transaction, {
         actor: input.actor,
         operationId: input.operationId,
@@ -307,6 +331,9 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
           archived: input.archived,
           page_id: input.binding.pageId,
           page_operation_id: pageCommit.operation.id,
+          ...(mountCommits.length > 0
+            ? { mount_page_operation_ids: mountCommits.map((commit) => commit.operation.id) }
+            : {}),
         },
         reason: input.pageApplication.reason ?? "mutate runbook task identity",
       });
@@ -318,6 +345,12 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
         pageCommit,
       );
     });
+  }
+
+  async move(
+    input: Parameters<RunbookTaskIdentityRepository["move"]>[0],
+  ): Promise<void> {
+    await persistTaskProjectMove(await this.sqlResolver.resolveSql(), input);
   }
 
   async findLegacyRunbook(runbookId: string): Promise<LegacyRunbookBinding | null> {
@@ -417,6 +450,10 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
     return rows[0] ? { pageId: rows[0].page_id } : null;
   }
 
+  async listTaskMounts(pageId: string, scope: "all" | "project") {
+    return await listTaskMountBindings(await this.sqlResolver.resolveSql(), pageId, scope);
+  }
+
   async readPageSnapshot(pageId: string): Promise<Uint8Array | null> {
     const sql = await this.sqlResolver.resolveSql();
     const rows = await sql<readonly { snapshot: Buffer | Uint8Array }[]>`
@@ -433,65 +470,4 @@ export class SqlRunbookTaskIdentityRepository implements RunbookTaskIdentityRepo
       : await bindingRows(sql, "runbook", id);
     return rows[0] ?? null;
   }
-}
-
-async function assertLegacyBinding(
-  sql: BoardYjsQuerySql,
-  binding: LegacyRunbookBinding,
-  pageId: string,
-): Promise<void> {
-  const rows = await sql<readonly { version: string | number; task_page_id: string | null }[]>`
-    SELECT version, task_page_id FROM runbooks
-    WHERE id = ${binding.runbookId}
-    FOR UPDATE
-  `;
-  const row = rows[0];
-  if (!row) throw new Error(`legacy runbook not found: ${binding.runbookId}`);
-  if (Number(row.version) !== binding.runbookVersion) {
-    throw new Error(`runbook version conflict: ${binding.runbookId}`);
-  }
-  if (row.task_page_id && row.task_page_id !== pageId) {
-    throw new Error(`legacy runbook is already bound to page ${row.task_page_id}`);
-  }
-  const pages = await sql<readonly { exists: boolean }[]>`
-    SELECT EXISTS(SELECT 1 FROM pages WHERE id = ${pageId}) AS exists
-  `;
-  if (!pages[0]?.exists) throw new Error(`legacy binding page not found: ${pageId}`);
-}
-
-async function persistLegacyBinding(
-  sql: BoardYjsQuerySql,
-  input: {
-    binding: LegacyRunbookBinding;
-    pageId: string;
-    actor: Parameters<RunbookTaskIdentityRepository["create"]>[0]["actor"];
-    idempotencyKey: string;
-    operationId: string;
-    eventId: number | null;
-    createdPage: boolean;
-    pageOperationId?: string;
-  },
-): Promise<Record<string, unknown>> {
-  const rows = await sql<readonly Record<string, unknown>[]>`
-    UPDATE runbooks
-    SET task_page_id = ${input.pageId}, version = version + 1, updated_at = NOW()
-    WHERE id = ${input.binding.runbookId}
-      AND version = ${input.binding.runbookVersion}
-    RETURNING *
-  `;
-  if (!rows[0]) throw new Error(`runbook version conflict: ${input.binding.runbookId}`);
-  return await insertRunbookOperation(sql, {
-    id: input.operationId,
-    runbookId: input.binding.runbookId,
-    operationType: "backfill_task_identity",
-    actor: input.actor,
-    eventId: input.eventId,
-    idempotencyKey: input.idempotencyKey,
-    payload: {
-      page_id: input.pageId,
-      created_page: input.createdPage,
-      ...(input.pageOperationId ? { page_operation_id: input.pageOperationId } : {}),
-    },
-    reason: "backfill legacy runbook task identity",
-  });
 }

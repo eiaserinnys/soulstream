@@ -118,6 +118,7 @@ const schemas = {
     boardItem: boardItemSchema,
     targetScope: scopeSchema,
     position: z.object({ x: z.number(), y: z.number() }).optional(),
+    idempotencyKey: z.string().min(1).optional(),
   }),
   "update-markdown-document": z.object({
     container: containerSchema,

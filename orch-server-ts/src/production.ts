@@ -179,6 +179,10 @@ export async function createLiveProductionApplication(
         repository: boardYjsRepository,
         logger,
         hostMode: config.board_yjs_host_mode,
+        moveRunbookBoardItem: async (input) => {
+          if (!taskIdentityService) throw new Error("Task identity service is not initialized");
+          return await taskIdentityService.moveBoardItemToContainer(input);
+        },
         auth: {
           authBearerToken: config.auth_bearer_token,
           environment: config.environment,
@@ -217,6 +221,10 @@ export async function createLiveProductionApplication(
       async withRunbookBoardApplication(input, persist) {
         if (!boardYjsService) throw new Error("Board Yjs service is not initialized");
         return await boardYjsService.withRunbookBoardApplication(input, persist);
+      },
+      async withRunbookBoardMoveApplication(input, persist) {
+        if (!boardYjsService) throw new Error("Board Yjs service is not initialized");
+        return await boardYjsService.withRunbookBoardMoveApplication(input, persist);
       },
     },
     repository: taskIdentityRepository,
