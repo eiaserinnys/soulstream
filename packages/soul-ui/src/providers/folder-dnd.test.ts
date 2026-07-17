@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildFolderReorderItems } from "./folder-dnd";
+import { buildFolderMoveToRootItems, buildFolderReorderItems } from "./folder-dnd";
 
 describe("buildFolderReorderItems", () => {
   it("reorders folders inside the same parent", () => {
@@ -53,6 +53,20 @@ describe("buildFolderReorderItems", () => {
     ).toEqual([
       { id: "root-b", sortOrder: 0, parentFolderId: null },
       { id: "root-a", sortOrder: 0, parentFolderId: "child-a" },
+    ]);
+  });
+
+  it("promotes a child to the root drop surface while preserving both sibling groups", () => {
+    expect(buildFolderMoveToRootItems({
+      activeId: "child-a",
+      activeParentFolderId: "root-a",
+      activeSiblingIds: ["child-a", "child-b"],
+      rootSiblingIds: ["root-a", "root-b"],
+    })).toEqual([
+      { id: "child-b", sortOrder: 0, parentFolderId: "root-a" },
+      { id: "root-a", sortOrder: 0, parentFolderId: null },
+      { id: "root-b", sortOrder: 1, parentFolderId: null },
+      { id: "child-a", sortOrder: 2, parentFolderId: null },
     ]);
   });
 });

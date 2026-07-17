@@ -95,15 +95,25 @@ export function useProjectFolderController() {
       : { status: "idle", folderId: null, project: null, message: null });
   }, []);
 
+  const patchProjectTitle = useCallback((folderId: string, title: string) => {
+    setResolution((current) => current.status === "ready"
+      && current.folderId === folderId
+      && current.project
+      ? { ...current, project: { ...current.project, title } }
+      : current);
+  }, []);
+
   const createProject = useCallback(async (
     title: string,
     api: PageApiClient,
     knownPages: readonly PageDto[],
     notify: (message: string) => void,
+    parentFolderId: string | null = null,
   ) => {
-    const folder = await createFolder(title);
+    const folder = await createFolder(title, parentFolderId);
     if (!folder) throw new Error("프로젝트 폴더를 생성하지 못했습니다");
     await openFolder(api, folder, knownPages, notify);
+    return folder;
   }, [openFolder]);
 
   return {
@@ -111,6 +121,7 @@ export function useProjectFolderController() {
     selectedFolderId: resolution.folderId,
     selectedProject: resolution.status === "ready" ? resolution.project : null,
     setSelectedFolderId,
+    patchProjectTitle,
     openFolder,
     retry,
     openProjectPage,

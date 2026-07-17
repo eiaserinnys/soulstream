@@ -15,15 +15,19 @@ import {
   DndContext,
   closestCenter,
   PointerSensor,
+  pointerWithin,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
 } from "@dnd-kit/core";
 
 import type { CatalogFolderReorderItem } from "../shared/types";
 import {
+  buildFolderMoveToRootItems,
   buildFolderReorderItems,
   type FolderDragData,
+  type FolderRootDropData,
 } from "./folder-dnd";
 
 export interface DashboardDndProviderProps {
@@ -31,12 +35,20 @@ export interface DashboardDndProviderProps {
   onMoveSessions?: (sessionIds: string[], targetFolderId: string | null) => void;
   /** 폴더 부모/순서 변경 콜백 */
   onReorderFolders?: (items: CatalogFolderReorderItem[]) => Promise<void>;
+  /** 화면별 충돌 판정. v1 기본값은 기존 closestCenter를 유지한다. */
+  collisionDetection?: CollisionDetection;
   children: ReactNode;
 }
+
+export const pointerFirstCollisionDetection: CollisionDetection = (args) => {
+  const collisions = pointerWithin(args);
+  return collisions.length > 0 ? collisions : closestCenter(args);
+};
 
 export function DashboardDndProvider({
   onMoveSessions,
   onReorderFolders,
+  collisionDetection = closestCenter,
   children,
 }: DashboardDndProviderProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
@@ -63,8 +75,19 @@ export function DashboardDndProvider({
         // 폴더 → 폴더 드롭: 같은 부모면 재정렬, 다른 부모면 target folder의 자식으로 이동
         const activeId = active.id as string;
         const overId = over.id as string;
-        const overData = over.data.current as FolderDragData | undefined;
-        if (!overData || overData.type !== "folder") return;
+        const overData = over.data.current as FolderDragData | FolderRootDropData | undefined;
+        if (!overData) return;
+
+        if (overData.type === "folder-root") {
+          const rootItems = buildFolderMoveToRootItems({
+            activeId,
+            activeParentFolderId: activeData.parentFolderId,
+            activeSiblingIds: activeData.siblingIds,
+            rootSiblingIds: overData.siblingIds,
+          });
+          if (rootItems) onReorderFolders?.(rootItems);
+          return;
+        }
 
         const items = buildFolderReorderItems({
           activeId,
@@ -85,7 +108,7 @@ export function DashboardDndProvider({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={collisionDetection}
       onDragEnd={handleDragEnd}
     >
       {children}

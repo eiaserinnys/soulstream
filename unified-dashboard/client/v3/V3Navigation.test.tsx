@@ -24,7 +24,11 @@ describe("V3Navigation frame contract", () => {
         onCompleteTask={vi.fn(async () => undefined)}
         onToggleTaskToday={vi.fn(async () => undefined)}
         onMoveTaskToProject={vi.fn()}
-        onCreateProject={vi.fn(async () => undefined)}
+        onCreateProject={vi.fn(async (title, parentFolderId) => ({ id: "created", name: title, sortOrder: 0, parentFolderId, projectPageId: "created" }))}
+        onRenameProject={vi.fn(async () => undefined)}
+        onDeleteProject={vi.fn(async () => undefined)}
+        onReorderProjects={vi.fn(async () => undefined)}
+        projectHasContents={vi.fn(() => false)}
         onCreateTask={vi.fn()}
       />,
     );

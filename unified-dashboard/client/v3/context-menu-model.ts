@@ -54,11 +54,24 @@ export function buildProjectContextMenuActions(actions: {
   open(): void | Promise<void>;
   copyId(): void | Promise<void>;
   createTask(): void | Promise<void>;
+  createProject(): void | Promise<void>;
+  createChildProject(): void | Promise<void>;
+  edit(): void | Promise<void>;
+  remove(): void | Promise<void>;
 }): V3ContextMenuAction[] {
   return [
     { label: "프로젝트 열기", onSelect: actions.open },
     { label: "폴더 ID 복사", onSelect: actions.copyId },
     { label: "새 업무", onSelect: actions.createTask, separatorBefore: true },
+    { label: "새 프로젝트", onSelect: actions.createProject, separatorBefore: true },
+    { label: "하위 프로젝트 만들기", onSelect: actions.createChildProject },
+    { label: "프로젝트 설정", onSelect: actions.edit },
+    {
+      label: "프로젝트 삭제",
+      onSelect: actions.remove,
+      separatorBefore: true,
+      destructive: true,
+    },
   ];
 }
 

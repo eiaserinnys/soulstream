@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogFolder } from "@seosoyoung/soul-ui";
 
-import { flattenProjectFolders } from "./project-folders";
+import { buildProjectFolderTree, flattenProjectFolders } from "./project-folders";
 
 describe("project folder tree", () => {
   it("keeps every catalog folder and renders parent-child depth in sort order", () => {
@@ -24,6 +24,21 @@ describe("project folder tree", () => {
   it("returns all 78 folders without pagination", () => {
     const folders = Array.from({ length: 78 }, (_, index) => folder(`folder-${index}`, `${index}`, index));
     expect(flattenProjectFolders(folders)).toHaveLength(78);
+  });
+
+  it("keeps child structure available while callers decide which branches are visible", () => {
+    const folders: CatalogFolder[] = [
+      folder("root", "Root", 0),
+      folder("child", "Child", 0, "root"),
+      folder("grandchild", "Grandchild", 0, "child"),
+    ];
+
+    const [root] = buildProjectFolderTree(folders);
+
+    expect(root).toMatchObject({
+      folder: { id: "root" },
+      children: [{ folder: { id: "child" }, children: [{ folder: { id: "grandchild" } }] }],
+    });
   });
 });
 

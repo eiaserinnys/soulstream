@@ -76,10 +76,18 @@ describe("v3 context menu model", () => {
       open: vi.fn(),
       copyId: vi.fn(),
       createTask: vi.fn(),
+      createProject: vi.fn(),
+      createChildProject: vi.fn(),
+      edit: vi.fn(),
+      remove: vi.fn(),
     }).map((action) => action.label)).toEqual([
       "프로젝트 열기",
       "폴더 ID 복사",
       "새 업무",
+      "새 프로젝트",
+      "하위 프로젝트 만들기",
+      "프로젝트 설정",
+      "프로젝트 삭제",
     ]);
 
     expect(buildTaskSessionExtraActions({

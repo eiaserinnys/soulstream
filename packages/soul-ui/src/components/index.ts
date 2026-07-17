@@ -14,6 +14,11 @@ export type { ConnectionBadgeProps, ConnectionStatus } from "./ConnectionBadge";
 // === Folder / Feed / Session Views ===
 export { FolderTree } from "./FolderTree";
 export type { FolderTreeProps } from "./FolderTree";
+export {
+  getFolderTreeExpandedStorageKey,
+  readFolderTreeExpandedState,
+  writeFolderTreeExpandedState,
+} from "./folder-tree-expansion";
 export { FolderContents, nodeIdToHue, STATUS_CONFIG } from "./FolderContents";
 export type { FolderContentsProps, StatusConfig } from "./FolderContents";
 export { FeedCard } from "./FeedCard";
