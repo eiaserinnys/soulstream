@@ -154,7 +154,7 @@ async function collectMetrics(page: Page) {
       muted,
       background,
       mutedContrast: contrast(muted, background),
-      sessionFontSizes: fontSizes(".v3-run-open strong, .v3-run-agent-line, .v3-run-affiliation, .v3-run-open small, .v3-run-trailing"),
+      sessionFontSizes: fontSizes(".v3-run-open strong, .v3-run-agent-line, .v3-run-affiliation, .v3-run-open small, .v3-run-trailing time, .v3-run-status-badge"),
       taskFontSizes: fontSizes(".v3-detail-title h2, .v3-detail-section-head, .v3-description-preview, .v3-context-chips"),
       viewportOverflow: document.documentElement.scrollWidth - window.innerWidth,
     };
