@@ -11,9 +11,10 @@
 import { memo } from "react";
 import { cn } from "../lib/cn";
 import { Spinner } from "./ui/spinner";
-import { ChevronDown, ChevronRight, GripVertical } from "lucide-react";
+import { GripVertical } from "lucide-react";
 import type { FolderDragData } from "../providers/folder-dnd";
 import { useFolderDragSurface } from "../providers/FolderDragSurface";
+import { DisclosureActionIcon } from "./DisclosureActionIcon";
 
 export interface FolderItemProps {
   folder: { id: string; name: string; sortOrder: number; parentFolderId?: string | null; createdAt?: string };
@@ -133,17 +134,14 @@ export const FolderItem = memo(function FolderItem({
               type="button"
               data-testid={`folder-tree-toggle-${folder.id}`}
               aria-label={isExpanded ? `${folder.name} 접기` : `${folder.name} 펼치기`}
+              aria-expanded={isExpanded}
               className="-ml-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent"
               onClick={(event) => {
                 event.stopPropagation();
                 onToggleExpanded?.();
               }}
             >
-              {isExpanded ? (
-                <ChevronDown className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronRight className="h-3.5 w-3.5" />
-              )}
+              <DisclosureActionIcon expanded={isExpanded} className="h-3.5 w-3.5" />
             </button>
           ) : (
             <span className="-ml-1 h-4 w-4 shrink-0" />

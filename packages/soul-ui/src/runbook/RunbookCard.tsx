@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState, type PointerEvent } from "react";
 import {
   Bot,
   BookOpen,
-  ChevronDown,
-  ChevronRight,
   Circle,
   ExternalLink,
   MessageSquare,
@@ -12,6 +10,7 @@ import {
 
 import { MarkdownContent } from "../components/MarkdownContent";
 import { DashboardIconCap } from "../components/DashboardIconCap";
+import { DisclosureActionIcon } from "../components/DisclosureActionIcon";
 import { LiquidGlassCard } from "../components/LiquidGlassCard";
 import { Badge } from "../components/ui/badge";
 import { cn } from "../lib/cn";
@@ -36,6 +35,8 @@ interface RunbookCardProps {
   runbookId: string;
   fallbackTitle: string;
   onOpenBoard?: (runbookId: string) => void;
+  defaultItemDetailsOpen?: boolean;
+  textSize?: "compact" | "session";
 }
 
 interface EffectiveAssignee {
@@ -126,8 +127,10 @@ function sectionDefaultOpen(section: RunbookSectionRow, items: readonly RunbookI
 function itemDefaultOpen(
   section: RunbookSectionRow,
   item: RunbookItemRow,
+  defaultItemDetailsOpen: boolean,
 ): boolean {
-  return isRunbookItemHumanTurn(resolveAssignee(section, item), toToggleItem(item));
+  return defaultItemDetailsOpen
+    || isRunbookItemHumanTurn(resolveAssignee(section, item), toToggleItem(item));
 }
 
 function toToggleRunbook(runbookId: string, createdSessionId: string | null): RunbookStatusToggleRunbook {
@@ -166,7 +169,13 @@ function sortSections(sections: readonly RunbookSectionRow[]): RunbookSectionRow
     );
 }
 
-export function RunbookCard({ runbookId, fallbackTitle, onOpenBoard }: RunbookCardProps) {
+export function RunbookCard({
+  runbookId,
+  fallbackTitle,
+  onOpenBoard,
+  defaultItemDetailsOpen = false,
+  textSize = "compact",
+}: RunbookCardProps) {
   const projection = useRunbookStore((s) => s.byId[runbookId]);
   const loadRunbook = useRunbookStore((s) => s.loadRunbook);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
@@ -200,6 +209,7 @@ export function RunbookCard({ runbookId, fallbackTitle, onOpenBoard }: RunbookCa
     <LiquidGlassCard
       webglSurface
       data-testid="runbook-card"
+      data-text-size={textSize}
       className="flex h-full min-h-0 flex-col overflow-hidden rounded-[18px] border border-white/8 text-left shadow-[0_10px_30px_-18px_rgb(10_16_30_/_50%)]"
       onClick={(event) => event.stopPropagation()}
     >
@@ -207,10 +217,19 @@ export function RunbookCard({ runbookId, fallbackTitle, onOpenBoard }: RunbookCa
         <div className="flex min-w-0 items-start gap-2">
           <BookOpen className="mt-0.5 h-4 w-4 shrink-0 text-accent-blue" />
           <div className="min-w-0 flex-1">
-            <div data-testid="runbook-card-title" className="truncate text-[13px] font-semibold leading-5">
+            <div
+              data-testid="runbook-card-title"
+              className={cn(
+                "truncate font-semibold leading-5",
+                textSize === "session" ? "text-[14.5px]" : "text-[13px]",
+              )}
+            >
               {title}
             </div>
-            <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <div className={cn(
+              "mt-1 flex items-center gap-2 text-muted-foreground",
+              textSize === "session" ? "text-xs" : "text-[11px]",
+            )}>
               <span data-testid="runbook-card-progress">
                 {progress.completed}/{progress.total}
               </span>
@@ -245,7 +264,7 @@ export function RunbookCard({ runbookId, fallbackTitle, onOpenBoard }: RunbookCa
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      <div data-testid="runbook-card-scroll" className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
         {loading && !snapshot && (
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
             불러오는 중
@@ -272,25 +291,33 @@ export function RunbookCard({ runbookId, fallbackTitle, onOpenBoard }: RunbookCa
 
         {snapshot && sections.map((section) => {
           const sectionItems = itemsBySection.get(section.id) ?? [];
-          const open = openSections[section.id] ?? sectionDefaultOpen(section, sectionItems);
+          const open = openSections[section.id]
+            ?? (defaultItemDetailsOpen || sectionDefaultOpen(section, sectionItems));
           return (
             <section key={section.id} className="mb-2 last:mb-0">
               <button
                 type="button"
                 data-testid="runbook-section-toggle"
-                className="flex w-full items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-left text-xs font-semibold text-foreground transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/60"
+                aria-expanded={open}
+                className={cn(
+                  "flex w-full items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-left font-semibold text-foreground transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/60",
+                  textSize === "session" ? "text-sm" : "text-xs",
+                )}
                 onPointerDown={stopTileDrag}
                 onClick={() =>
                   setOpenSections((prev) => ({ ...prev, [section.id]: !open }))
                 }
               >
-                {open ? (
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                )}
+                <DisclosureActionIcon
+                  expanded={open}
+                  className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+                />
                 <span className="min-w-0 flex-1 truncate">{section.title}</span>
-                <Badge variant="outline" size="sm" className="h-4 px-1 text-[10px]">
+                <Badge
+                  variant="outline"
+                  size="sm"
+                  className={cn("h-4 px-1", textSize === "session" ? "text-xs" : "text-[10px]")}
+                >
                   {sectionItems.length}
                 </Badge>
               </button>
@@ -301,7 +328,8 @@ export function RunbookCard({ runbookId, fallbackTitle, onOpenBoard }: RunbookCa
                     const assignee = resolveAssignee(section, item);
                     const toggleItem = toToggleItem(item);
                     const myTurn = isRunbookItemHumanTurn(assignee, toggleItem);
-                    const itemOpen = openItems[item.id] ?? itemDefaultOpen(section, item);
+                    const itemOpen = openItems[item.id]
+                      ?? itemDefaultOpen(section, item, defaultItemDetailsOpen);
                     const hasHowTo = item.how_to.trim().length > 0;
                     return (
                       <div
@@ -325,8 +353,10 @@ export function RunbookCard({ runbookId, fallbackTitle, onOpenBoard }: RunbookCa
                           <div className="min-w-0 flex-1">
                             <div className="flex min-w-0 items-center gap-1.5">
                               <span
+                                data-testid="runbook-item-title"
                                 className={cn(
-                                  "min-w-0 flex-1 truncate text-xs font-medium leading-5",
+                                  "min-w-0 flex-1 truncate font-medium",
+                                  textSize === "session" ? "text-[14.5px] leading-[1.45]" : "text-xs leading-5",
                                   item.status === "cancelled" && "line-through",
                                 )}
                               >
@@ -338,7 +368,10 @@ export function RunbookCard({ runbookId, fallbackTitle, onOpenBoard }: RunbookCa
                                 </Badge>
                               )}
                             </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+                            <div className={cn(
+                              "mt-1 flex flex-wrap items-center gap-1.5 text-muted-foreground",
+                              textSize === "session" ? "text-xs" : "text-[10px]",
+                            )}>
                               <span
                                 className={cn(
                                   "inline-flex h-5 min-w-0 items-center gap-1 rounded-full border border-glass-border glass px-1.5",
@@ -352,17 +385,17 @@ export function RunbookCard({ runbookId, fallbackTitle, onOpenBoard }: RunbookCa
                               {hasHowTo && (
                                 <button
                                   type="button"
-                                  className="ml-auto inline-flex h-5 items-center gap-0.5 rounded-full px-1.5 text-[10px] text-accent-blue hover:bg-accent-blue/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/60"
+                                  aria-expanded={itemOpen}
+                                  className={cn(
+                                    "ml-auto inline-flex h-5 items-center gap-0.5 rounded-full px-1.5 text-accent-blue hover:bg-accent-blue/10 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/60",
+                                    textSize === "session" ? "text-xs" : "text-[10px]",
+                                  )}
                                   onPointerDown={stopTileDrag}
                                   onClick={() =>
                                     setOpenItems((prev) => ({ ...prev, [item.id]: !itemOpen }))
                                   }
                                 >
-                                  {itemOpen ? (
-                                    <ChevronDown className="h-3 w-3" />
-                                  ) : (
-                                    <ChevronRight className="h-3 w-3" />
-                                  )}
+                                  <DisclosureActionIcon expanded={itemOpen} className="h-3 w-3" />
                                   절차
                                 </button>
                               )}
@@ -370,7 +403,10 @@ export function RunbookCard({ runbookId, fallbackTitle, onOpenBoard }: RunbookCa
                             {hasHowTo && itemOpen && (
                               <div
                                 data-testid="runbook-how-to"
-                                className="mt-2 rounded-[10px] border border-glass-border glass px-2.5 py-2 text-xs leading-relaxed text-foreground glass-shadow-xs"
+                                className={cn(
+                                  "mt-2 rounded-[10px] border border-glass-border glass px-2.5 py-2 leading-relaxed text-foreground glass-shadow-xs",
+                                  textSize === "session" ? "text-sm" : "text-xs",
+                                )}
                               >
                                 <MarkdownContent content={item.how_to} compact />
                               </div>

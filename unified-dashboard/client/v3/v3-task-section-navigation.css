@@ -26,7 +26,7 @@
 
 .v3-task-section-anchor {
   display: grid;
-  min-height: 44px;
+  min-height: 38px;
   place-items: center;
   gap: 3px;
   border: 1px solid transparent;

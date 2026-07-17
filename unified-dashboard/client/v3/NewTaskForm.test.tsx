@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -59,7 +60,7 @@ describe("new task inheritance preview", () => {
     );
 
     expect(html).toContain("컨텍스트 미리보기 · 소울스트림");
-    expect(html).toContain("line-clamp-3");
+    expect(html).toContain("v3-text-clamp-3");
     expect(html).toContain(guidance);
     expect(html).not.toContain("<details");
     expect(html).not.toContain("<strong>guidance</strong>");
@@ -67,6 +68,10 @@ describe("new task inheritance preview", () => {
     expect(html).toContain("v3-project-context-chip");
     expect(html).toContain("⚛ soulstream · depth 5 · titlesOnly off");
     expect(html).toContain("👤 roselin_codex@eiaserinnys");
+
+    const clampCss = readFileSync(new URL("./v3-content-boundary.css", import.meta.url), "utf8");
+    expect(clampCss).toMatch(/\.v3-text-clamp-3[\s\S]*text-overflow:\s*ellipsis/);
+    expect(clampCss).toMatch(/\.v3-text-clamp-3\s*\{[^}]*-webkit-line-clamp:\s*3/s);
   });
 
   it("keeps every inheritance label and says 없음 when blocks are absent", () => {

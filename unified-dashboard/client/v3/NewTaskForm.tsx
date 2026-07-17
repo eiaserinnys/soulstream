@@ -17,6 +17,7 @@ import {
   ProjectSessionDefaultChip,
 } from "./ProjectContextChips";
 import { useProjectContextInheritance } from "./use-project-context-inheritance";
+import "./v3-content-boundary.css";
 import { writeFailureText } from "./v3-dashboard-utils";
 
 export function NewTaskForm({
@@ -165,7 +166,7 @@ export function ProjectInheritancePreview({
           <div className="v3-project-context-row" data-testid="inheritance-guidance">
             {state.data.guidance.length > 0 ? state.data.guidance.map((guidance) => (
               <div className="v3-project-guidance" key={guidance.blockId}>
-                <span className="line-clamp-3" data-testid="inheritance-guidance-preview">
+                <span className="v3-text-clamp-3" data-testid="inheritance-guidance-preview">
                   {guidance.text}
                 </span>
                 <small>{guidance.source.folderName}에서 상속</small>

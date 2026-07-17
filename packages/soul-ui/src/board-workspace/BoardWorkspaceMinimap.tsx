@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
-
+import { DisclosureActionIcon } from "../components/DisclosureActionIcon";
 import { Button } from "../components/ui/button";
 import { useGlassSurface } from "../components/LiquidGlassProvider";
 import { cn } from "../lib/cn";
@@ -113,9 +112,10 @@ export function BoardWorkspaceMinimap({
           className="h-7 w-7"
           data-testid="board-minimap-toggle"
           title="Show minimap"
+          aria-expanded={false}
           onClick={() => onCollapsedChange(false)}
         >
-          <ChevronUp className="h-4 w-4" />
+          <DisclosureActionIcon expanded={false} className="h-4 w-4" />
         </Button>
       </div>
     );
@@ -138,9 +138,10 @@ export function BoardWorkspaceMinimap({
           className="h-6 w-6"
           data-testid="board-minimap-toggle"
           title="Hide minimap"
+          aria-expanded
           onClick={() => onCollapsedChange(true)}
         >
-          <ChevronDown className="h-3.5 w-3.5" />
+          <DisclosureActionIcon expanded className="h-3.5 w-3.5" />
         </Button>
       </div>
       <div

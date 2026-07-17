@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Bell, ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
+import { Bell, Loader2, RefreshCw } from "lucide-react";
 
 import { ClaudeRuntimeSignalRows } from "./ClaudeRuntimeSignalRows";
 import { useClaudeRuntimeSignals } from "./claude-runtime-signals";
 import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
+import { DisclosureActionIcon } from "./DisclosureActionIcon";
 
 interface ClaudeRuntimeNotificationsPanelProps {
   sessionId: string;
@@ -38,7 +39,7 @@ export function ClaudeRuntimeNotificationsPanel({
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
         >
-          {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          <DisclosureActionIcon expanded={expanded} className="size-3.5" />
           <Bell className="size-4 text-muted-foreground" />
           <span>Runtime Signals</span>
           <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">

@@ -1,8 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BookOpenCheck,
-  ChevronDown,
-  ChevronRight,
   ListChecks,
   RefreshCw,
 } from "lucide-react";
@@ -10,6 +8,7 @@ import {
 import { Badge } from "../components/ui/badge";
 import { DASHBOARD_LIST_INSET_PX } from "../components/dashboard-spacing";
 import { LiquidGlassCard } from "../components/LiquidGlassCard";
+import { DisclosureActionIcon } from "../components/DisclosureActionIcon";
 import { useDashboardStore } from "../stores/dashboard-store";
 import {
   type RunbookOverviewGroup,
@@ -87,14 +86,14 @@ function RunbookListPane({
           >
             <button
               type="button"
+              aria-expanded={completedGroupsOpen}
               className="flex w-full min-w-0 items-center gap-2 px-3 py-2.5 text-left"
               onClick={onToggleCompletedGroups}
             >
-              {completedGroupsOpen ? (
-                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-              )}
+              <DisclosureActionIcon
+                expanded={completedGroupsOpen}
+                className="h-4 w-4 shrink-0 text-muted-foreground"
+              />
               <span className="min-w-0 flex-1 truncate text-sm font-semibold">완료됨</span>
               <Badge variant="success" size="sm" className="h-5 px-1.5 text-[10px]">
                 {completedGroups.length}

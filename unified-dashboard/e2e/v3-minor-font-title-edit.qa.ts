@@ -186,7 +186,7 @@ async function assertIdentityTitles(page: Page, expected: string) {
 }
 
 async function assertImmediateSurfaces(page: Page, expected: string) {
-  await page.getByRole("button", { name: "업무 상세 닫기" }).click();
+  await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
   const card = page.getByTestId("v3-task-task-alpha");
   await card.waitFor({ state: "visible" });
   if (!(await card.textContent())?.includes(expected)) throw new Error("업무 카드 제목이 즉시 갱신되지 않았습니다.");

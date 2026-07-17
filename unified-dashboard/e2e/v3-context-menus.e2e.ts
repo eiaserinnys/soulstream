@@ -90,7 +90,7 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("button", { name: new RegExp(fixtureTitles.secondaryTask) }).click();
     await expect(alphaRun).toHaveCount(0);
 
-    await page.getByRole("button", { name: "업무 상세 닫기" }).click();
+    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
     await page.getByTestId("v3-task-task-beta").click();
     const movedRun = page.locator('.v3-run-row[data-session-id="run-alpha-2"]');
     await expect(movedRun).toBeVisible();
@@ -99,7 +99,7 @@ for (const theme of ["dark", "light"] as const) {
     await page.getByRole("button", { name: new RegExp(fixtureTitles.primaryTask) }).click();
     await expect(movedRun).toHaveCount(0);
 
-    await page.getByRole("button", { name: "업무 상세 닫기" }).click();
+    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
     await page.getByTestId("v3-task-task-alpha").click();
     await expect(page.locator('.v3-run-row[data-session-id="run-alpha-2"]')).toBeVisible();
 

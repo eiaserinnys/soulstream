@@ -131,7 +131,7 @@ async function verify(browser: Browser) {
     ), "새 세션 실시간 추가");
     const sessionAddedMs = Date.now() - addStartedAt;
 
-    await page.getByRole("button", { name: "업무 상세 닫기" }).click();
+    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
     const projectTask = page.getByTestId("v3-task-task-alpha");
     await projectTask.waitFor({ state: "visible" });
     const removeStartedAt = Date.now();

@@ -1,10 +1,19 @@
-.v3-text-clamp-2 {
+.v3-text-clamp-2,
+.v3-text-clamp-3 {
   display: -webkit-box;
   min-width: 0;
   overflow: hidden;
   overflow-wrap: anywhere;
+  text-overflow: ellipsis;
   -webkit-box-orient: vertical;
+}
+
+.v3-text-clamp-2 {
   -webkit-line-clamp: 2;
+}
+
+.v3-text-clamp-3 {
+  -webkit-line-clamp: 3;
 }
 
 .v3-bounded-markdown {

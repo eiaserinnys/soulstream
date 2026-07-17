@@ -49,11 +49,54 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await panel.waitFor({ state: "visible", timeout: 20_000 });
     await page.locator('[data-session-id="run-alpha-2"]').waitFor({ state: "visible" });
 
+    const initialResizeHandle = page.getByTestId("v3-session-panel-resize-handle").locator(":scope > div");
+    const initialResizeHandleBox = await initialResizeHandle.boundingBox();
+    const legacyInitialPanelBox = await panel.boundingBox();
+    assert(initialResizeHandleBox !== null && initialResizeHandleBox.height > 800, `초기 우측 리사이즈 히트박스 높이가 ${initialResizeHandleBox?.height ?? 0}px입니다.`);
+    assert(legacyInitialPanelBox !== null && Math.abs(legacyInitialPanelBox.width - 420) <= 1, `저장된 초기 폭이 ${legacyInitialPanelBox?.width ?? 0}px입니다.`);
+    await page.mouse.move(
+      initialResizeHandleBox.x + initialResizeHandleBox.width / 2,
+      initialResizeHandleBox.y + initialResizeHandleBox.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      initialResizeHandleBox.x - 80,
+      initialResizeHandleBox.y + initialResizeHandleBox.height / 2,
+      { steps: 6 },
+    );
+    await page.mouse.up();
+    await page.waitForFunction(() => {
+      const panel = document.querySelector<HTMLElement>('[data-testid="v3-session-panel"]');
+      const stored = Number(localStorage.getItem("soulstream-v3-session-panel-width"));
+      return panel !== null && stored > 420
+        && Math.abs(panel.getBoundingClientRect().width - stored) <= 1;
+    });
+    const expandedInitialPanelBox = await panel.boundingBox();
+    assert(expandedInitialPanelBox !== null && expandedInitialPanelBox.width >= 490, `초기 420px 상태에서 드래그 뒤 폭이 ${expandedInitialPanelBox?.width ?? 0}px입니다.`);
+    await capture(page, theme, "00-initial-legacy-width-resized");
+
+    const scrollbarContract = await page.evaluate(() => {
+      const navigation = document.querySelector<HTMLElement>(".v3-navigation-scroll");
+      const sessions = document.querySelector<HTMLElement>(".v3-session-panel-scroll");
+      if (!navigation || !sessions) throw new Error("좌우 스크롤 표면을 찾지 못했습니다.");
+      const left = getComputedStyle(navigation);
+      const right = getComputedStyle(sessions);
+      return {
+        leftWidth: left.scrollbarWidth,
+        rightWidth: right.scrollbarWidth,
+        leftColor: left.scrollbarColor,
+        rightColor: right.scrollbarColor,
+      };
+    });
+    assert(scrollbarContract.leftWidth === "thin", `좌측 스크롤바 폭이 ${scrollbarContract.leftWidth}입니다.`);
+    assert(scrollbarContract.rightWidth === scrollbarContract.leftWidth, "좌우 스크롤바 폭 정본이 다릅니다.");
+    assert(scrollbarContract.rightColor === scrollbarContract.leftColor, "좌우 스크롤바 색상 정본이 다릅니다.");
+
     const layoutCombinations = [];
     for (const widths of [
-      { navigation: 220, session: 240 },
-      { navigation: 264, session: 300 },
-      { navigation: 420, session: 420 },
+      { navigation: 220, session: 240, expectedNavigation: 220, expectedSession: 240 },
+      { navigation: 264, session: 300, expectedNavigation: 264, expectedSession: 300 },
+      { navigation: 900, session: 900, expectedNavigation: 420, expectedSession: 560 },
     ]) {
       await page.evaluate(({ navigation, session }) => {
         localStorage.setItem("soul-ui.dashboard.leftSidebarWidth", String(navigation));
@@ -83,8 +126,12 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
           rightGap: panelBox.left - plannerBox.right,
           plannerWidth: plannerBox.width,
           contentWidth: plannerContent.getBoundingClientRect().width,
+          navigationWidth: navigationBox.width,
+          sessionWidth: panelBox.width,
         };
       });
+      assert(Math.abs(measured.navigationWidth - widths.expectedNavigation) <= 1, `좌측 내비 상한 실측이 ${measured.navigationWidth}px입니다.`);
+      assert(Math.abs(measured.sessionWidth - widths.expectedSession) <= 1, `우측 패널 상한 실측이 ${measured.sessionWidth}px입니다.`);
       assert(measured.viewportOverflow <= 0, `${widths.navigation}/${widths.session}px 조합에서 viewport 가로 넘침 ${measured.viewportOverflow}px`);
       assert(measured.panelOverflow <= 0, `${widths.navigation}/${widths.session}px 조합에서 우측 패널 가로 넘침 ${measured.panelOverflow}px`);
       assert(measured.rowOverflow.every((value) => value <= 0), `${widths.navigation}/${widths.session}px 조합에서 행 가로 넘침 ${measured.rowOverflow.join(",")}px`);
@@ -141,7 +188,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.locator('.v3-chat-pane[aria-label="세션 채팅"]').waitFor({ state: "visible" });
     assert(await page.getByTestId("v3-standalone-task-empty").count() === 0, "업무 소속 세션이 단독 모드로 열렸습니다.");
     await capture(page, theme, "02-task-session-active-chat");
-    await page.getByRole("button", { name: "업무 상세 닫기" }).click();
+    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
 
     await page.locator('[data-session-id="review-session"]').click();
     await page.getByTestId("v3-standalone-task-empty").waitFor({ state: "visible" });
@@ -177,8 +224,14 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
         after: resizedPanelBox.width,
         restored: restoredPanelBox.width,
       },
+      initialResize: {
+        hitboxHeight: initialResizeHandleBox.height,
+        before: legacyInitialPanelBox.width,
+        after: expandedInitialPanelBox.width,
+      },
       layoutCombinations,
       richRow: true,
+      scrollbarContract,
     };
   } finally {
     await context.close();
@@ -189,6 +242,10 @@ async function preparePage(page: Page, theme: "dark" | "light") {
   await page.addInitScript({ content: `
     localStorage.setItem("soul-dashboard-theme", ${JSON.stringify(theme)});
     localStorage.setItem("ls.webglGlass", "0");
+    if (sessionStorage.getItem("pr-ca-initial-width-seeded") !== "1") {
+      localStorage.setItem("soulstream-v3-session-panel-width", "420");
+      sessionStorage.setItem("pr-ca-initial-width-seeded", "1");
+    }
     const serviceWorker = navigator.serviceWorker;
     if (serviceWorker) {
       Object.defineProperty(serviceWorker, "register", {

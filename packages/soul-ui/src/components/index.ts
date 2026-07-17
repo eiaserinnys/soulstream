@@ -66,6 +66,8 @@ export { MobileChatHeader } from "./MobileChatHeader";
 export { ThemeToggle } from "./ThemeToggle";
 export { DashboardIconCap } from "./DashboardIconCap";
 export type { DashboardIconCapProps } from "./DashboardIconCap";
+export { DisclosureActionIcon } from "./DisclosureActionIcon";
+export type { DisclosureActionIconProps } from "./DisclosureActionIcon";
 export { ConfigButton } from "./ConfigButton";
 export { NewSessionDialog } from "./NewSessionDialog";
 export type { NewSessionDialogProps } from "./NewSessionDialog";

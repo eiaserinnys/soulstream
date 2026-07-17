@@ -11,7 +11,10 @@ describe("v3 task runbook checklist", () => {
     expect(detail).toContain("<RunbookCard");
     expect(detail).toContain("runbookId={task.runbookId}");
     expect(detail).toContain("fallbackTitle={task.page.title}");
-    expect(detail).toContain("onOpenBoard={() => onOpenBoard()}");
+    expect(detail).not.toContain("onOpenBoard={() => onOpenBoard()}");
+    expect(detail).toContain("defaultItemDetailsOpen");
+    expect(detail).toContain('textSize="session"');
+    expect(detail.match(/label="런북 보드 열기"/g)).toHaveLength(1);
     expect(detail).not.toContain("RunbookItemStatusToggle");
     expect(detail).not.toContain("useRunbookStore");
   });
@@ -20,7 +23,7 @@ describe("v3 task runbook checklist", () => {
     const css = read("./v3-task-workspace.css");
 
     expect(css).toContain(".v3-task-runbook-checklist");
-    expect(css).toMatch(/\.v3-task-runbook-checklist\s*\{[^}]*height:\s*min\(520px,\s*65dvh\)/s);
-    expect(css).toMatch(/\.v3-task-runbook-checklist\s*\{[^}]*min-height:\s*320px/s);
+    expect(css).toMatch(/\.v3-task-runbook-checklist\s*\{[^}]*height:\s*min\(348px,\s*44dvh\)/s);
+    expect(css).toMatch(/\.v3-task-runbook-checklist\s*\{[^}]*min-height:\s*214px/s);
   });
 });

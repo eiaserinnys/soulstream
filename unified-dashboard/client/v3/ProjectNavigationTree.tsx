@@ -1,6 +1,7 @@
 import type { CSSProperties, MouseEvent } from "react";
 import {
   DashboardDndProvider,
+  DisclosureActionIcon,
   FolderSortableContext,
   pointerFirstCollisionDetection,
   useFolderDragActive,
@@ -10,7 +11,7 @@ import {
   type CatalogFolderReorderItem,
   type FolderDragData,
 } from "@seosoyoung/soul-ui";
-import { ChevronDown, ChevronRight, GripVertical } from "lucide-react";
+import { GripVertical } from "lucide-react";
 
 import {
   buildProjectFolderTree,
@@ -150,7 +151,7 @@ function ProjectTreeNode({
             aria-expanded={expanded}
             onClick={(event) => { event.stopPropagation(); onToggleExpanded(node.folder.id); }}
           >
-            {expanded ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
+            <DisclosureActionIcon expanded={expanded} />
           </button>
         ) : <span className="v3-project-tree-toggle-spacer" />}
         <button

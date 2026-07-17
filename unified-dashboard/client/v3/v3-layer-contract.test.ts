@@ -28,6 +28,7 @@ describe("v3 layer contract", () => {
     expect(layers).toContain("z-index: var(--v3-layer-overlay)");
     expect(layers).toContain("z-index: var(--v3-layer-toast)");
     expect(layers).toContain("z-index: calc(var(--v3-layer-panel) + 2)");
+    expect(layers).toMatch(/\.v3-mobile-tabs\s*\{[^}]*z-index:\s*calc\(var\(--v3-layer-overlay\) \+ 1\)/s);
     expect(contextMenu).toContain("getBoundingClientRect");
     expect(contextMenu).toContain("top: y");
     expect(contextMenu).toContain("left: x");

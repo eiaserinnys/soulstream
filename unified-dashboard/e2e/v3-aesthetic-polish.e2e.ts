@@ -50,7 +50,7 @@ for (const theme of ["dark", "light"] as const) {
       await expect(page.getByTestId("v3-inline-board")).toBeVisible();
       await capture(page, theme, "04-task-board");
 
-      await page.getByRole("button", { name: "업무 상세 닫기" }).click();
+      await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
       const sessionRow = page.getByTestId("v3-session-row-run-alpha-2");
       await sessionRow.locator(".v3-run-open").click();
       await expect(page.getByRole("button", { name: "세션 섹션으로 이동" }))

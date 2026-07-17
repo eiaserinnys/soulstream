@@ -70,6 +70,20 @@ describe("v3 panel scroll contract", () => {
     expect(panelCss).toMatch(/\.v3-session-row \.v3-run-trailing[\s\S]*text-overflow:\s*ellipsis/);
   });
 
+  it("shares one liquid-glass scrollbar contract between the project nav and session panel", () => {
+    const plannerCss = readFileSync(PLANNER_CSS_PATH, "utf8");
+    const panelCss = readFileSync(SESSION_PANEL_CSS_PATH, "utf8");
+    const sharedScrollbar = ruleBody(
+      plannerCss,
+      ".v3-navigation-scroll,\n.v3-session-panel-scroll",
+    );
+
+    expect(sharedScrollbar).toMatch(/scrollbar-width:\s*thin/);
+    expect(sharedScrollbar).toMatch(/scrollbar-color:\s*color-mix\(/);
+    expect(plannerCss).toContain(".v3-navigation-scroll::-webkit-scrollbar-thumb,\n.v3-session-panel-scroll::-webkit-scrollbar-thumb");
+    expect(panelCss).not.toMatch(/\.v3-session-panel-scroll\s*\{[^}]*scrollbar-(?:width|color)/s);
+  });
+
   it("keeps the 390px planner frame bounded above the mobile tabs", () => {
     const mobile = readFileSync(PLANNER_MOBILE_CSS_PATH, "utf8");
     const planner = ruleBody(mobile, ".v3-planner");

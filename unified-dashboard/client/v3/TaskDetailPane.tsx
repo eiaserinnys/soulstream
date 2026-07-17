@@ -51,7 +51,6 @@ export function TaskDetailPane({
   taskInToday,
   onToggleTaskToday,
   onOpenBoard,
-  onCloseWorkspace,
   taskMoveTargets,
   onOpenSession,
   onRenameTaskTitle,
@@ -79,7 +78,6 @@ export function TaskDetailPane({
   taskInToday: boolean;
   onToggleTaskToday(): Promise<void>;
   onOpenBoard(): void;
-  onCloseWorkspace(): void;
   taskMoveTargets: readonly PlannerTask[];
   onOpenSession(session: SessionSummary): void;
   onRenameTaskTitle(title: string): Promise<void>;
@@ -204,9 +202,6 @@ export function TaskDetailPane({
         <DashboardIconCap label="런북 보드 열기" onClick={onOpenBoard}>
           <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
-        <DashboardIconCap label="업무 상세 닫기" onClick={onCloseWorkspace}>
-          <X className="h-4 w-4" aria-hidden="true" />
-        </DashboardIconCap>
       </header>
       <div ref={scrollRef} className="v3-detail-scroll">
         <div className="v3-task-detail-layout">
@@ -260,7 +255,8 @@ export function TaskDetailPane({
                 <RunbookCard
                   runbookId={task.runbookId}
                   fallbackTitle={task.page.title}
-                  onOpenBoard={() => onOpenBoard()}
+                  defaultItemDetailsOpen
+                  textSize="session"
                 />
               </div>
             </section>

@@ -52,8 +52,9 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await assertRoundedFocus(page, chatTextarea, chatComposer);
     await capture(page, theme, "03-chat-composer-focus");
 
-    await page.getByRole("button", { name: "우측 패널 닫기" }).click();
-    await page.getByRole("button", { name: "＋ 새 세션" }).click();
+    await page.keyboard.press("Escape");
+    await taskCard.click();
+    await page.getByRole("button", { name: "새 세션", exact: true }).click();
     const modalSelect = page.getByRole("combobox", { name: "이어받을 이전 세션" });
     await modalSelect.waitFor({ state: "visible" });
     await assertRoundedFocus(page, modalSelect, modalSelect);

@@ -96,7 +96,7 @@ async function verify(browser: Browser) {
       ],
     }), `세션 생성 source 체인이 다릅니다: ${JSON.stringify(marker.content)}`);
 
-    await page.getByRole("button", { name: "업무 상세 닫기" }).click();
+    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
     await page.locator(".v3-workspace-scrim").waitFor({ state: "detached" });
     await page.getByRole("button", { name: "새 업무" }).click();
     await page.getByLabel("프로젝트 선택").selectOption("folder-dashboard");
