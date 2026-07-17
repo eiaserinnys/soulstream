@@ -121,7 +121,7 @@ describe("task project move", () => {
     expect(plan.sourceMount?.id).toBe("source-mount");
     expect(fixture.api.getBacklinks).toHaveBeenNthCalledWith(2, "task-a", {
       kinds: ["mount"],
-      limit: 100,
+      limit: 50,
       cursor: "next-backlinks",
     });
   });

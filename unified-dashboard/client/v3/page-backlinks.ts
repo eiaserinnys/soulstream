@@ -10,7 +10,8 @@ export async function loadAllMountBacklinks(
   do {
     const page = await api.getBacklinks(pageId, {
       kinds: ["mount"],
-      limit: 100,
+      // 서버 backlinks limit 상한은 50 (page_browser_routes backlinksQuerySchema) — 초과 시 422
+      limit: 50,
       ...(cursor ? { cursor } : {}),
     });
     items.push(...page.items);
