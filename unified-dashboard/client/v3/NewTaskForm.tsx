@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   buildFolderTreeOptions,
   Button,
@@ -17,6 +17,7 @@ import {
   ProjectSessionDefaultChip,
 } from "./ProjectContextChips";
 import { useProjectContextInheritance } from "./use-project-context-inheritance";
+import { writeFailureText } from "./v3-dashboard-utils";
 
 export function NewTaskForm({
   folders,
@@ -30,7 +31,7 @@ export function NewTaskForm({
   invalidationKey?: number;
   initialFolderId: string | null;
   pending: boolean;
-  onCreate(title: string, folderId: string, description: string): void;
+  onCreate(title: string, folderId: string, description: string): Promise<string | null>;
   onCancel(): void;
 }) {
   const folderOptions = useMemo(() => newTaskFolderOptions(folders), [folders]);
@@ -39,6 +40,9 @@ export function NewTaskForm({
     initialFolderId ?? folderOptions[0]?.folder.id ?? "",
   );
   const [description, setDescription] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submissionInFlight = useRef(false);
   const inheritance = useProjectContextInheritance({
     folderId,
     folders,
@@ -50,14 +54,25 @@ export function NewTaskForm({
     ? inheritance.data.pages.at(-1)?.source.folderName
     : null;
 
-  const submit = () => {
+  const busy = pending || submitting;
+  const submit = async () => {
     const normalized = title.trim();
-    if (!normalized || !folderId || pending) return;
-    onCreate(normalized, folderId, description);
+    if (!normalized || !folderId || busy || submissionInFlight.current) return;
+    submissionInFlight.current = true;
+    setSubmitting(true);
+    setError(null);
+    try {
+      setError(await onCreate(normalized, folderId, description));
+    } catch (cause) {
+      setError(writeFailureText("새 업무 생성", cause));
+    } finally {
+      submissionInFlight.current = false;
+      setSubmitting(false);
+    }
   };
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open && !pending) onCancel(); }}>
+    <Dialog open onOpenChange={(open) => { if (!open && !busy) onCancel(); }}>
       <DialogPopup className="max-w-xl">
         <DialogHeader>
           <DialogTitle>새 업무</DialogTitle>
@@ -69,7 +84,7 @@ export function NewTaskForm({
               <span>프로젝트</span>
               <select
                 value={folderId}
-                disabled={pending}
+                disabled={busy}
                 aria-label="프로젝트 선택"
                 onChange={(event) => setFolderId(event.target.value)}
               >
@@ -85,12 +100,12 @@ export function NewTaskForm({
               <input
                 autoFocus
                 value={title}
-                disabled={pending}
+                disabled={busy}
                 placeholder="업무 이름"
                 aria-label="새 업무 제목"
                 onChange={(event) => setTitle(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter") { event.preventDefault(); submit(); }
+                  if (event.key === "Enter") { event.preventDefault(); void submit(); }
                 }}
               />
             </label>
@@ -98,7 +113,7 @@ export function NewTaskForm({
               <span>설명 <small>마크다운</small></span>
               <textarea
                 value={description}
-                disabled={pending}
+                disabled={busy}
                 placeholder="목표와 완료 조건을 적어두세요."
                 aria-label="업무 설명"
                 rows={7}
@@ -109,12 +124,13 @@ export function NewTaskForm({
               projectName={selected?.name ?? retainedProjectName ?? "프로젝트"}
               state={inheritance}
             />
+            {error ? <p className="v3-new-task-error" role="alert">{error}</p> : null}
           </div>
         </DialogPanel>
         <DialogFooter>
-          <Button variant="ghost" onClick={onCancel} disabled={pending}>취소</Button>
-          <Button onClick={submit} disabled={pending || !title.trim() || !folderId}>
-            {pending ? "만드는 중…" : "업무 만들기"}
+          <Button variant="ghost" onClick={onCancel} disabled={busy}>취소</Button>
+          <Button onClick={() => { void submit(); }} disabled={busy || !title.trim() || !folderId}>
+            {busy ? "만드는 중…" : "업무 만들기"}
           </Button>
         </DialogFooter>
       </DialogPopup>

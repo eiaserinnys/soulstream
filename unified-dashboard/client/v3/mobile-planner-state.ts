@@ -1,4 +1,4 @@
-export type MobilePlannerTab = "today" | "task" | "chat";
+export type MobilePlannerTab = "today" | "projects" | "task" | "chat";
 
 export interface MobilePlannerState {
   activeTab: MobilePlannerTab;
@@ -23,6 +23,15 @@ export function selectMobilePlannerTab(
     return {
       ...state,
       activeTab: "today",
+      workspaceOpen: false,
+      chatOpen: false,
+    };
+  }
+
+  if (target === "projects") {
+    return {
+      ...state,
+      activeTab: "projects",
       workspaceOpen: false,
       chatOpen: false,
     };

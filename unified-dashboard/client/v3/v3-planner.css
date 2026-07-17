@@ -43,7 +43,6 @@
 
 .v3-navigation {
   position: relative;
-  z-index: 2;
   display: flex;
   min-height: 0;
   width: var(--v3-navigation-width, 264px);
@@ -64,7 +63,6 @@
 
 .v3-navigation-resize {
   position: relative;
-  z-index: 4;
   min-width: 0;
   height: 100%;
 }
@@ -175,7 +173,6 @@
 
 .v3-main {
   position: relative;
-  z-index: 1;
   display: flex;
   min-width: 0;
   min-height: 0;
@@ -396,111 +393,4 @@
 
 .v3-mobile-tabs {
   display: none;
-}
-
-@media (max-width: 760px) {
-  .v3-shell {
-    display: block;
-    height: 100dvh;
-    padding-bottom: 58px;
-  }
-
-  .v3-navigation {
-    display: none;
-  }
-
-  .v3-navigation-resize {
-    display: none;
-  }
-
-  .v3-main {
-    height: calc(100dvh - 58px);
-    overflow: hidden;
-  }
-
-  .v3-shell[data-mobile-tab="task"] .v3-main,
-  .v3-shell[data-mobile-tab="chat"] .v3-main {
-    display: none;
-  }
-
-  .v3-planner {
-    width: calc(100% - 28px);
-    min-height: 0;
-    height: calc(100dvh - 146px);
-    margin: 72px auto 12px;
-    border-radius: 20px;
-    padding: 12px 0 0;
-  }
-
-  .v3-planner-scroll {
-    padding: 0 14px 76px;
-  }
-
-  .v3-global-toolbar {
-    top: 10px;
-    left: 14px;
-    right: 14px;
-    grid-template-columns: auto 1fr;
-    gap: 8px;
-  }
-
-  .v3-global-toolbar .dashboard-toolbar-search {
-    display: none;
-  }
-
-  .v3-global-toolbar .dashboard-toolbar-actions {
-    gap: 6px;
-  }
-
-  .v3-global-toolbar .dashboard-toolbar-actions > [data-slot="button"] {
-    width: 38px;
-    padding: 0;
-    font-size: 0;
-  }
-
-  .v3-global-toolbar .dashboard-icon-cap {
-    width: 38px;
-    height: 38px;
-  }
-
-  .v3-date-head {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .v3-date-head p {
-    margin: 0;
-  }
-
-  .v3-mobile-tabs {
-    position: fixed;
-    z-index: 80;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    display: grid;
-    height: 58px;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .v3-mobile-tab {
-    min-width: 0;
-    border: 0;
-    color: var(--muted-foreground);
-    background: transparent;
-    font-size: var(--font-size-sm);
-    line-height: var(--font-size-sm--line-height);
-    font-weight: 780;
-    cursor: pointer;
-  }
-
-  .v3-mobile-tab.is-active {
-    color: var(--primary);
-    background: color-mix(in srgb, var(--primary) 10%, transparent);
-  }
-
-  .v3-toast {
-    bottom: 72px;
-  }
 }

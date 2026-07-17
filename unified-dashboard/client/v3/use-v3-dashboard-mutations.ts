@@ -57,22 +57,27 @@ export function useV3DashboardMutations({
   setNewDocumentOpen: Dispatch<SetStateAction<boolean>>;
   setAcknowledgedReviewIds: Dispatch<SetStateAction<ReadonlySet<string>>>;
   notify(message: string): void;
-  notifyWriteFailure(action: string, error: unknown): void;
+  notifyWriteFailure(action: string, error: unknown): string;
   patchPlannerTask(taskId: string, update: (task: PlannerTask) => PlannerTask): void;
   addTaskToToday(task: PlannerTask): void;
   refreshDaily(): void;
   refreshProject(): void;
   refreshTask(taskId: string): void;
 }) {
-  const createTask = useCallback(async (title: string, folderId: string, description: string) => {
+  const createTask = useCallback(async (title: string, folderId: string, description: string): Promise<string | null> => {
     const folder = catalog?.folders.find((item) => item.id === folderId);
-    if (!folder) { notify("선택한 프로젝트를 찾을 수 없습니다"); return; }
+    if (!folder) {
+      const message = "선택한 프로젝트를 찾을 수 없습니다";
+      notify(message);
+      return message;
+    }
     setCreatePending(true);
     try {
       const projectPage = await resolveProjectPage(api, folder, projects);
       if (!projectPage) {
-        notify("이 폴더는 프로젝트에 연결되지 않아 새 업무를 만들 수 없습니다");
-        return;
+        const message = "이 폴더는 프로젝트에 연결되지 않아 새 업무를 만들 수 없습니다";
+        notify(message);
+        return message;
       }
       const dailyPage = selectedDate === today && daily.data
         ? daily.data.daily.page
@@ -89,8 +94,9 @@ export function useV3DashboardMutations({
       setSelectedDate(today);
       refreshDaily();
       notify(`새 업무 생성 · ${title}`);
+      return null;
     } catch (error) {
-      notifyWriteFailure(plannerTaskCreationErrorLabel(error), error);
+      return notifyWriteFailure(plannerTaskCreationErrorLabel(error), error);
     } finally {
       setCreatePending(false);
     }

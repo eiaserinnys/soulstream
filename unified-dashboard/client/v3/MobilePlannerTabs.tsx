@@ -6,6 +6,7 @@ import type { MobilePlannerTab } from "./mobile-planner-state";
 const MOBILE_PLANNER_QUERY = "(max-width: 760px)";
 const TABS: ReadonlyArray<{ id: MobilePlannerTab; icon: string; label: string }> = [
   { id: "today", icon: "📅", label: "오늘" },
+  { id: "projects", icon: "📁", label: "프로젝트" },
   { id: "task", icon: "📋", label: "업무" },
   { id: "chat", icon: "💬", label: "채팅" },
 ];

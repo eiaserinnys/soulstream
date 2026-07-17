@@ -11,7 +11,7 @@ export function useV3Notifications(refreshAuthStatus: () => Promise<void>) {
     toastTimer.current = setTimeout(() => setToast(null), 3200);
   }, []);
   const notifyWriteFailure = useCallback((action: string, error: unknown) => {
-    reportV3WriteFailure({
+    return reportV3WriteFailure({
       action,
       error,
       notify,

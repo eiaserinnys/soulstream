@@ -1,0 +1,32 @@
+:root:has(.v3-shell) {
+  --v3-layer-panel: 20;
+  --v3-layer-overlay: 40;
+  --v3-layer-modal: 60;
+  --v3-layer-toast: 80;
+}
+
+.v3-navigation,
+.v3-main,
+.v3-session-panel,
+.v3-mobile-projects {
+  z-index: var(--v3-layer-panel);
+}
+
+.v3-navigation-resize,
+.v3-session-panel-resize {
+  z-index: calc(var(--v3-layer-panel) + 1);
+}
+
+.v3-global-toolbar,
+.v3-mobile-tabs {
+  z-index: calc(var(--v3-layer-panel) + 2);
+}
+
+.v3-workspace-scrim,
+.v3-detail-scrim {
+  z-index: var(--v3-layer-overlay);
+}
+
+.v3-toast {
+  z-index: var(--v3-layer-toast);
+}

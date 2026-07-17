@@ -67,7 +67,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await assertMissingMenuItems(page, ["업무에서 마운트 해제", "프로젝트로 승격"]);
     await page.keyboard.press("Escape");
 
-    await page.getByRole("button", { name: "← 오늘" }).click();
+    await page.getByRole("button", { name: "오늘로 돌아가기" }).click();
     await dailyTask.waitFor({ state: "visible" });
 
     await openContextMenu(starredTask);

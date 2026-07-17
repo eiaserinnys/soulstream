@@ -25,6 +25,7 @@ import { NewTaskForm } from "./NewTaskForm";
 import { DailyPlannerView, ProjectPlannerView } from "./PlannerViews";
 import { ProjectFolderResolutionView } from "./ProjectFolderResolutionView";
 import { MobilePlannerTabs, useMobilePlannerMode } from "./MobilePlannerTabs";
+import { MobileProjectList } from "./MobileProjectList";
 import { RitualModal } from "./RitualModal";
 import { TaskWorkspace } from "./TaskWorkspace";
 import { TaskProjectMoveDialog } from "./TaskProjectMoveDialog";
@@ -32,6 +33,7 @@ import { V3Navigation } from "./V3Navigation";
 import { V3SessionPanel } from "./V3SessionPanel";
 import { V3StandaloneDocumentInspector } from "./V3StandaloneDocumentInspector";
 import { V3GlobalToolbar } from "./V3GlobalToolbar";
+import { V3Toast } from "./V3Toast";
 import { useV3PlannerActions } from "./use-v3-planner-actions";
 import { useV3Notifications } from "./use-v3-notifications";
 import {
@@ -57,8 +59,12 @@ import { useV3MutationProjection } from "./use-v3-mutation-projection";
 import { useV3SessionPanelController } from "./use-v3-session-panel-controller";
 import { useSessionNodeConnectivity } from "./use-session-node-connectivity";
 import "./v3-planner.css";
+import "./v3-planner-mobile.css";
 import "./v3-planner-surfaces.css";
 import "./v3-task-workspace.css";
+import "./v3-task-workspace-mobile.css";
+import "./v3-mobile-projects.css";
+import "./v3-layer-contract.css";
 export function V3DashboardLayout() {
   return <LiquidGlassProvider renderDefaultCanvas={false}><V3DashboardContent /></LiquidGlassProvider>;
 }
@@ -403,7 +409,7 @@ function V3DashboardContent() {
     (folder) => folder.projectPageId === workspaceTask?.projectPageId,
   )?.id ?? null;
   return (
-    <div className="v3-shell isolate font-sans" data-mobile-tab={mobileTab} style={shellStyle}>
+    <div className="v3-shell isolate font-sans" data-mobile-tab={mobileTab} data-mobile-project-open={selectedFolderId ? "true" : "false"} style={shellStyle}>
       <WallpaperLayer />
       <LiquidGlassCanvas />
       <V3GlobalToolbar
@@ -413,6 +419,7 @@ function V3DashboardContent() {
         onOpenSearch={() => setSearchOpen(true)}
       />
       <V3Navigation dates={dates} selectedDate={selectedDate} folders={catalog?.folders ?? []} selectedFolderId={selectedFolderId} starredTasks={starredTasks} starredTasksHasMore={starredTasksHasMore} starredTasksLoading={starredTasksLoading || starredTasksLoadingMore} todayTaskIds={todayTaskIds} completedTaskIds={new Set(currentTasks.filter((task) => task.status === "completed").map((task) => task.page.id))} onLoadMoreStarredTasks={() => { void loadMoreStarredTasks(); }} onSelectDate={(date) => { clearProject(); setSelectedDate(date); }} onSelectFolder={(folder) => { void projectSelection.openFolder(api, folder, projects, notify); setNewDocumentOpen(false); }} onSelectTask={(task) => { void openStarredTask(task); }} onCompleteTask={plannerActions.completeStarredTask} onToggleTaskToday={plannerActions.toggleStarredTaskToday} onMoveTaskToProject={(task) => { void taskProjectMove.openPage(task); }} onCreateProject={(title) => projectSelection.createProject(title, api, projects, notify)} onCreateTask={(folderId) => { projectSelection.setSelectedFolderId(folderId); setCreateOpen(true); }} />
+      {mobileMode && mobileTab === "projects" && !selectedFolderId ? <MobileProjectList folders={catalog?.folders ?? []} onSelect={(folder) => { void projectSelection.openFolder(api, folder, projects, notify); }} /> : null}
       <div className="v3-navigation-resize" data-testid="v3-navigation-resize-handle" aria-hidden="true">
         <DragHandle onDrag={resizeNavigation} widthPx={DASHBOARD_PANEL_GAP_PX} />
       </div>
@@ -423,7 +430,7 @@ function V3DashboardContent() {
           data-liquid-glass-webgl={plannerWebglActive ? "true" : undefined}
         >
           <div className="v3-planner-scroll" data-testid="v3-planner-scroll">
-            {createOpen ? <NewTaskForm folders={catalog?.folders ?? []} invalidationKey={projectContextInvalidationKey} initialFolderId={selectedFolderId} pending={createPending} onCreate={(title, folderId, description) => { void createTask(title, folderId, description); }} onCancel={() => setCreateOpen(false)} /> : null}
+            {createOpen ? <NewTaskForm folders={catalog?.folders ?? []} invalidationKey={projectContextInvalidationKey} initialFolderId={selectedFolderId} pending={createPending} onCreate={createTask} onCancel={() => setCreateOpen(false)} /> : null}
             {selectedProject ? (
               <ProjectPlannerView state={project} sessions={sessions} nodeConnectivity={nodeConnectivity} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onMoveTaskToProject={taskProjectMove.openTask} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
             ) : selectedFolderId ? (
@@ -480,7 +487,7 @@ function V3DashboardContent() {
       <RitualModal open={ritualOpen} today={today} reviewCount={reviewSessions.length} onClose={() => setRitualOpen(false)} onActionApplied={applyRitualAction} onFocusSessionPanel={() => { requestAnimationFrame(() => sessionPanel.panelRef.current?.focus({ preventScroll: true })); }} />
       <ConfigModal open={configOpen} onOpenChange={setConfigOpen} />
       <SearchModal open={searchOpen} onOpenChange={setSearchOpen} sessions={sessions} />
-      <div className={`v3-toast${toast ? " is-visible" : ""}`} role="status" aria-live="polite">{toast}</div>
+      <V3Toast message={toast} />
     </div>
   );
 }

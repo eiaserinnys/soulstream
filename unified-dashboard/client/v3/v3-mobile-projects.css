@@ -1,0 +1,82 @@
+.v3-mobile-projects {
+  display: none;
+}
+
+@media (max-width: 760px) {
+  .v3-mobile-projects {
+    position: fixed;
+    inset: 72px 14px 70px;
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 20px;
+    padding: 18px 14px;
+  }
+
+  .v3-mobile-projects > header {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 10px;
+    padding: 0 6px 14px;
+  }
+
+  .v3-mobile-projects > header > span {
+    font-size: 24px;
+  }
+
+  .v3-mobile-projects > header small,
+  .v3-mobile-projects > header h1 {
+    display: block;
+    margin: 0;
+  }
+
+  .v3-mobile-projects > header small {
+    color: var(--muted-foreground);
+    font-size: var(--font-size-xs);
+    font-weight: 800;
+  }
+
+  .v3-mobile-projects > header h1 {
+    font-size: var(--font-size-xl);
+    line-height: var(--font-size-xl--line-height);
+  }
+
+  .v3-mobile-project-list {
+    display: flex;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+    overflow-y: auto;
+  }
+
+  .v3-mobile-project-list button {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    gap: 10px;
+    border: 0;
+    border-radius: 12px;
+    padding: 10px 12px 10px calc(12px + var(--v3-mobile-project-depth) * 18px);
+    color: var(--foreground);
+    background: transparent;
+    text-align: left;
+  }
+
+  .v3-mobile-project-list button:hover,
+  .v3-mobile-project-list button:focus-visible {
+    background: var(--accent);
+  }
+
+  .v3-mobile-project-list p {
+    margin: auto;
+    color: var(--muted-foreground);
+    font-size: var(--font-size-sm);
+  }
+
+  .v3-shell[data-mobile-tab="projects"][data-mobile-project-open="false"] .v3-main {
+    display: none;
+  }
+}
