@@ -12,16 +12,19 @@ import {
   createMarkdownYjsDocument,
   deleteBoardYjsItem,
   deleteMarkdownYjsDocument,
-  deleteMovedBoardYjsItem,
   getBoardYjsContainerDocumentName,
   readBoardYDocReplica,
-  readMovableBoardYjsItem,
   updateMarkdownYjsDocument,
   upsertBoardYjsItem,
   upsertCustomViewYjsBoardItem,
-  upsertMovedBoardYjsItem,
   upsertRunbookYjsBoardItem,
 } from "./board_yjs_model.js";
+import {
+  moveBoardItemBetweenDocuments,
+  type BoardMoveInput,
+  type StagedRunbookBoardMove,
+  withStagedRunbookBoardMove,
+} from "./board_yjs_move.js";
 import {
   authenticateBoardYjsConnection,
   type BoardYjsAuthConfig,
@@ -41,6 +44,9 @@ export interface BoardYjsServiceConfig {
   auth: BoardYjsAuthConfig;
   logger: FastifyBaseLogger;
   hostMode: "node" | "orch";
+  moveRunbookBoardItem?: (
+    input: BoardMoveInput & { idempotencyKey: string },
+  ) => Promise<CatalogBoardItemRow>;
 }
 
 export class BoardYjsService {
@@ -280,67 +286,30 @@ export class BoardYjsService {
       containerId: string;
     };
     position?: { x: number; y: number };
+    idempotencyKey?: string;
   }): Promise<CatalogBoardItemRow> {
-    const hocuspocus = this.requireOrchHostMode();
-    const sourceContainer = {
-      containerKind: input.boardItem.containerKind ?? "folder",
-      containerId: input.boardItem.containerId ?? input.boardItem.folderId,
-    };
-    const source = await hocuspocus.openDirectConnection(
-      getBoardYjsContainerDocumentName(sourceContainer),
-      { ...sourceContainer, source: "server" },
-    );
-    const targetContainer = {
-      containerKind: input.targetScope.containerKind,
-      containerId: input.targetScope.containerId,
-    };
-    let targetApplied = false;
-    try {
-      const moved = await readMovedItem(source, input.boardItem.id, input.targetScope, input.position);
-      if (!moved) {
-        const target = await hocuspocus.openDirectConnection(
-          getBoardYjsContainerDocumentName(targetContainer),
-          { ...targetContainer, source: "server" },
-        );
-        try {
-          const existing = await readMovedItem(
-            target,
-            input.boardItem.id,
-            input.targetScope,
-            input.position,
-          );
-          if (existing) return existing.boardItem;
-        } finally {
-          await target.disconnect();
-        }
-        throw new Error(`board item not found in source Y.Doc: ${input.boardItem.id}`);
+    if (input.boardItem.itemType === "runbook") {
+      if (!input.idempotencyKey?.trim()) {
+        throw new Error("runbook board move idempotencyKey is required");
       }
-      const target = await hocuspocus.openDirectConnection(
-        getBoardYjsContainerDocumentName(targetContainer),
-        { ...targetContainer, source: "server" },
-      );
-      try {
-        await target.transact((document) => {
-          upsertMovedBoardYjsItem(document as unknown as Y.Doc, moved);
-        });
-        targetApplied = true;
-        await source.transact((document) => {
-          deleteMovedBoardYjsItem(document as unknown as Y.Doc, moved);
-        });
-        return moved.boardItem;
-      } catch (error) {
-        if (targetApplied) {
-          await target.transact((document) => {
-            deleteMovedBoardYjsItem(document as unknown as Y.Doc, moved);
-          });
-        }
-        throw error;
-      } finally {
-        await target.disconnect();
+      if (!this.config.moveRunbookBoardItem) {
+        throw new Error("runbook task identity move is not configured");
       }
-    } finally {
-      await source.disconnect();
+      return await this.config.moveRunbookBoardItem({
+        ...input,
+        idempotencyKey: input.idempotencyKey,
+      });
     }
+    return await moveBoardItemBetweenDocuments(this.requireOrchHostMode(), input);
+  }
+
+  async withRunbookBoardMoveApplication(
+    input: BoardMoveInput,
+    persist: (application: StagedRunbookBoardMove) => Promise<void>,
+  ): Promise<CatalogBoardItemRow> {
+    return await this.withTaskIdentityLock(input.boardItem.id, async () =>
+      await withStagedRunbookBoardMove(this.requireOrchHostMode(), input, persist)
+    );
   }
 
   async updateMarkdownDocument(
@@ -419,26 +388,6 @@ export class BoardYjsService {
       if (this.taskIdentityTails.get(key) === tail) this.taskIdentityTails.delete(key);
     }
   }
-}
-
-type DirectConnection = Awaited<ReturnType<Hocuspocus["openDirectConnection"]>>;
-
-async function readMovedItem(
-  connection: DirectConnection,
-  boardItemId: string,
-  targetScope: Parameters<typeof readMovableBoardYjsItem>[2],
-  position?: { x: number; y: number },
-): Promise<ReturnType<typeof readMovableBoardYjsItem>> {
-  let result: ReturnType<typeof readMovableBoardYjsItem> = null;
-  await connection.transact((document) => {
-    result = readMovableBoardYjsItem(
-      document as unknown as Y.Doc,
-      boardItemId,
-      targetScope,
-      position,
-    );
-  });
-  return result;
 }
 
 function createBoardYjsAuthExtension(

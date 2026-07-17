@@ -1,6 +1,7 @@
 import type {
   BoardYjsContainerScope,
   BoardYjsReplica,
+  CatalogBoardItemRow,
 } from "../board-yjs/board_yjs_types.js";
 import type {
   PageMutationActor,
@@ -16,6 +17,11 @@ export interface RunbookTaskIdentityBoardApplication {
   replica: BoardYjsReplica;
 }
 
+export interface RunbookTaskIdentityBoardMoveApplication {
+  movedBoardItem: CatalogBoardItemRow;
+  boardApplications: readonly RunbookTaskIdentityBoardApplication[];
+}
+
 export interface RunbookTaskIdentityBoardPort {
   withRunbookBoardApplication<T>(
     input: {
@@ -29,6 +35,14 @@ export interface RunbookTaskIdentityBoardPort {
     },
     persist: (application: RunbookTaskIdentityBoardApplication) => Promise<T>,
   ): Promise<T>;
+  withRunbookBoardMoveApplication(
+    input: {
+      boardItem: CatalogBoardItemRow;
+      targetScope: BoardYjsContainerScope;
+      position?: { x: number; y: number };
+    },
+    persist: (application: RunbookTaskIdentityBoardMoveApplication) => Promise<void>,
+  ): Promise<CatalogBoardItemRow>;
 }
 
 export interface TaskIdentityBinding {
@@ -46,6 +60,22 @@ export interface TaskIdentityBinding {
 
 export interface TaskProjectPageBinding {
   pageId: string;
+}
+
+export interface TaskMountBinding {
+  sourcePageId: string;
+  sourceBlockIds: readonly string[];
+}
+
+export interface TaskMountPageApplication {
+  pageId: string;
+  operationId: string;
+  application: PageMutationApplication;
+}
+
+export interface TaskMountExpectation {
+  scope: "all" | "project";
+  bindings: readonly TaskMountBinding[];
 }
 
 export interface LegacyRunbookBinding {
@@ -136,7 +166,21 @@ export interface RunbookTaskIdentityRepository {
     pageOperationId: string;
     pageApplication: PageMutationApplication;
     boardApplication: RunbookTaskIdentityBoardApplication;
+    mountPageApplications?: readonly TaskMountPageApplication[];
+    mountExpectation?: TaskMountExpectation;
   }): Promise<RunbookTaskIdentityMutationResult>;
+  move(input: {
+    binding: TaskIdentityBinding;
+    sourceFolderId: string;
+    targetFolderId: string;
+    expectedTargetProjectPageId: string;
+    actor: PageMutationActor;
+    idempotencyKey: string;
+    operationId: string;
+    boardApplications: readonly RunbookTaskIdentityBoardApplication[];
+    mountPageApplications: readonly TaskMountPageApplication[];
+    mountExpectation: TaskMountExpectation;
+  }): Promise<void>;
   findLegacyRunbook(runbookId: string): Promise<LegacyRunbookBinding | null>;
   bindLegacyPage(input: {
     binding: LegacyRunbookBinding;
@@ -157,6 +201,10 @@ export interface RunbookTaskIdentityRepository {
   findByPageId(pageId: string): Promise<TaskIdentityBinding | null>;
   findByRunbookId(runbookId: string): Promise<TaskIdentityBinding | null>;
   findProjectPageByFolderId(folderId: string): Promise<TaskProjectPageBinding | null>;
+  listTaskMounts(
+    pageId: string,
+    scope: "all" | "project",
+  ): Promise<readonly TaskMountBinding[]>;
   readPageSnapshot(pageId: string): Promise<Uint8Array | null>;
 }
 

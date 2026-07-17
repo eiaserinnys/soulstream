@@ -196,7 +196,7 @@ export function registerCatalogTools(
     "move_board_item_to_container",
     {
       description:
-        "기존 보드 항목을 폴더 보드와 런북 보드 사이에서 이동한다. 세션/마크다운/애셋/커스텀뷰 primary 항목만 대상.",
+        "기존 보드 항목을 폴더 보드와 런북 보드 사이에서 이동한다. 세션/마크다운/애셋/커스텀뷰와 폴더 간 업무(runbook) primary 항목이 대상.",
       inputSchema: {
         board_item_id: z.string().min(1),
         container: boardContainerSchema,

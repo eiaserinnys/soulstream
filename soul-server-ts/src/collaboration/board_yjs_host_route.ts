@@ -116,6 +116,7 @@ const moveBoardItemToContainerSchema = z.object({
   boardItem: boardItemSchema,
   targetScope: scopeSchema,
   position: z.object({ x: z.number(), y: z.number() }).optional(),
+  idempotencyKey: z.string().min(1).optional(),
 });
 
 const updateMarkdownDocumentSchema = z.object({

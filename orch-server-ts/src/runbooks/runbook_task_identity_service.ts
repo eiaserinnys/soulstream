@@ -8,6 +8,7 @@ import {
 import { readPageYDocReplica } from "../page/page_yjs_model.js";
 import { toMutationResult, type PageServiceMutationResult } from "../page/page_service.js";
 import { notifyPageUpdates } from "../page/page_update_notifications.js";
+import type { CatalogBoardItemRow } from "../board-yjs/board_yjs_types.js";
 import type {
   LegacyRunbookBackfillResult,
   RunbookTaskIdentityMutationResult,
@@ -25,6 +26,12 @@ import {
   pageMutationIdempotencyKey,
   requireNonEmpty,
 } from "./runbook_task_identity_page.js";
+import { backfillLegacyRunbookIdentity } from "./runbook_task_identity_legacy.js";
+import {
+  hydrateAndNotifyTaskMounts,
+  moveRunbookTaskIdentity,
+  planTaskIdentityMountChanges,
+} from "./runbook_task_identity_lifecycle.js";
 
 export type {
   LegacyRunbookBackfillResult,
@@ -36,6 +43,8 @@ export type {
   RunbookTaskIdentityServiceConfig,
   TaskProjectPageBinding,
   TaskIdentityBinding,
+  TaskMountBinding,
+  TaskMountPageApplication,
 } from "./runbook_task_identity_contracts.js";
 
 export class RunbookTaskIdentityService {
@@ -341,84 +350,39 @@ export class RunbookTaskIdentityService {
     return result;
   }
 
+  async moveBoardItemToContainer(input: {
+    boardItem: CatalogBoardItemRow;
+    targetScope: {
+      folderId: string;
+      containerKind: "folder" | "runbook";
+      containerId: string;
+    };
+    position?: { x: number; y: number };
+    idempotencyKey: string;
+  }): Promise<CatalogBoardItemRow> {
+    return await moveRunbookTaskIdentity({
+      config: this.config,
+      mutationCore: this.mutationCore,
+      createBlockId: this.createBlockId,
+      createOperationId: this.createOperationId,
+      move: input,
+    });
+  }
+
   async backfillLegacyRunbook(input: {
     runbookId: string;
     existingPageId?: string;
     actor: PageMutationActor;
     idempotencyKey: string;
   }): Promise<LegacyRunbookBackfillResult> {
-    const idempotent = await this.config.repository.findLegacyBackfillByIdempotencyKey(
-      input.idempotencyKey,
-    );
-    if (idempotent) {
-      if (idempotent.createdPage) await this.config.hydratePage(idempotent.pageId);
-      return idempotent;
-    }
-    const binding = await this.config.repository.findLegacyRunbook(input.runbookId);
-    if (!binding) throw new Error(`unbound legacy runbook not found: ${input.runbookId}`);
-    if (input.existingPageId) {
-      const document = await loadPageDocument(
-        input.existingPageId,
-        (pageId) => this.config.repository.readPageSnapshot(pageId),
-      );
-      const replica = readPageYDocReplica(input.existingPageId, document);
-      const hasPrimaryReference = replica.blocks.some((block) =>
-        block.type === "runbook_ref"
-        && block.properties.runbookId === input.runbookId
-        && block.properties.primary === true
-      );
-      if (!hasPrimaryReference) {
-        throw new Error(
-          `legacy page ${input.existingPageId} has no primary reference to ${input.runbookId}`,
-        );
-      }
-      return await this.config.repository.bindLegacyPage({
-        binding,
-        pageId: input.existingPageId,
-        actor: input.actor,
-        idempotencyKey: input.idempotencyKey,
-        operationId: this.createOperationId(),
-      });
-    }
-
-    const pageId = this.createId();
-    assertUuid(pageId);
-    const pageApplication = this.mutationCore.createPage({
-      page: {
-        id: pageId,
-        title: binding.title,
-        dailyDate: null,
-        metadata: { taskIdentity: true, legacyRunbookId: input.runbookId },
-      },
-      actor: input.actor,
-      idempotencyKey: pageMutationIdempotencyKey(
-        "backfill_task_identity",
-        input.actor,
-        `${input.idempotencyKey}:page`,
-      ),
-      reason: "backfill legacy runbook task page",
-      initialCommand: {
-        type: "batch_operations",
-        operations: initialTaskOperations(
-          binding.title,
-          "",
-          input.runbookId,
-          this.createBlockId,
-        ),
-      },
+    return await backfillLegacyRunbookIdentity({
+      config: this.config,
+      mutationCore: this.mutationCore,
+      createId: this.createId,
+      createOperationId: this.createOperationId,
+      createBlockId: this.createBlockId,
+      ...input,
     });
-    const result = await this.config.repository.createLegacyPageAndBind({
-      binding,
-      pageId,
-      actor: input.actor,
-      idempotencyKey: input.idempotencyKey,
-      operationId: this.createOperationId(),
-      pageOperationId: this.createOperationId(),
-      pageApplication,
-    });
-    await this.config.hydratePage(pageId);
-    this.notifyPageUpdate(result);
-    return result;
   }
 
   private async persistMutation(
@@ -435,6 +399,18 @@ export class RunbookTaskIdentityService {
     const operationType = archived !== binding.archived
       ? archived ? "archive_runbook" : "unarchive_runbook"
       : "update_runbook";
+    const mountChanges = await planTaskIdentityMountChanges({
+      config: this.config,
+      mutationCore: this.mutationCore,
+      createBlockId: this.createBlockId,
+      createOperationId: this.createOperationId,
+      binding,
+      title,
+      archived,
+      actor: input.actor,
+      idempotencyKey: input.idempotencyKey,
+    });
+    const mountPageApplications = mountChanges.applications;
     const result = await this.config.board.withRunbookBoardApplication({
       folderId: binding.folderId,
       boardItemId: binding.boardItemId,
@@ -455,8 +431,11 @@ export class RunbookTaskIdentityService {
       pageOperationId: this.createOperationId(),
       pageApplication,
       boardApplication,
+      ...(mountPageApplications.length > 0 ? { mountPageApplications } : {}),
+      ...(mountChanges.expectation ? { mountExpectation: mountChanges.expectation } : {}),
     }));
     await this.config.hydratePage(result.pageId);
+    await hydrateAndNotifyTaskMounts(this.config, mountPageApplications);
     return result;
   }
 

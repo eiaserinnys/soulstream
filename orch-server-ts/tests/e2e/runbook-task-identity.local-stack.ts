@@ -231,5 +231,8 @@ function localBoardPort(): RunbookTaskIdentityBoardPort {
       },
       });
     },
+    async withRunbookBoardMoveApplication(): Promise<never> {
+      throw new Error("not used by this local stack");
+    },
   };
 }
