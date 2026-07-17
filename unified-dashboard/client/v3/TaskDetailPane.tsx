@@ -16,6 +16,7 @@ import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 import { TaskContextPicker } from "./TaskContextPicker";
 import { TaskInlineBoard } from "./TaskInlineBoard";
 import { TaskRunHistory } from "./TaskRunHistory";
+import { TaskSectionNavigation, type TaskSectionRefs } from "./TaskSectionNavigation";
 import { TaskTitleEditor } from "./TaskTitleEditor";
 import { TaskTodayToggle } from "./TaskTodayToggle";
 import "./v3-context-succession.css";
@@ -79,6 +80,19 @@ export function TaskDetailPane({
   onTaskBlocksChanged(blocks: PlannerTask["blocks"]): void;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const descriptionSectionRef = useRef<HTMLElement>(null);
+  const contextSectionRef = useRef<HTMLElement>(null);
+  const checklistSectionRef = useRef<HTMLElement>(null);
+  const boardSectionRef = useRef<HTMLDivElement>(null);
+  const sessionsSectionRef = useRef<HTMLDivElement>(null);
+  const sectionRefs = useMemo<TaskSectionRefs>(() => ({
+    description: descriptionSectionRef,
+    context: contextSectionRef,
+    checklist: checklistSectionRef,
+    board: boardSectionRef,
+    sessions: sessionsSectionRef,
+  }), []);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
   const description = useMemo(
     () => descriptionMarkdown(task.page, task.blocks),
@@ -182,93 +196,102 @@ export function TaskDetailPane({
           <X className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </header>
-      <div className="v3-detail-scroll">
-        <div className="v3-detail-title">
-          <span className={`v3-status-chip v3-status-chip--${task.status}`}>{status.icon} {status.label}</span>
-          <TaskTitleEditor title={task.page.title} onRename={onRenameTaskTitle} />
+      <div ref={scrollRef} className="v3-detail-scroll">
+        <div className="v3-task-detail-layout">
+          <TaskSectionNavigation scrollRef={scrollRef} sectionRefs={sectionRefs} />
+          <div className="v3-task-detail-content">
+            <div className="v3-detail-title">
+              <span className={`v3-status-chip v3-status-chip--${task.status}`}>{status.icon} {status.label}</span>
+              <TaskTitleEditor title={task.page.title} onRename={onRenameTaskTitle} />
+            </div>
+
+            <section ref={descriptionSectionRef} className="v3-detail-section" data-task-section="description">
+              <div className="v3-detail-section-head"><h3>설명</h3><span>마크다운</span></div>
+              <TaskDescriptionPanel markdown={description} onSave={onSaveDescription} />
+            </section>
+
+            <section ref={contextSectionRef} className="v3-detail-section" data-task-section="context">
+              <div className="v3-detail-section-head"><h3>컨텍스트</h3><span>{contextItems.length}개</span></div>
+              <div className="v3-context-chips">
+                {contextItems.map((context) => <span key={context.id}><span className="v3-emoji" aria-hidden="true">{context.icon}</span> {context.label}</span>)}
+                {contextItems.length === 0 ? <small>연결된 컨텍스트가 없습니다.</small> : null}
+                <DashboardIconCap
+                  label={`${contextPickerOpen ? "컨텍스트 선택 닫기" : "컨텍스트 추가"}`}
+                  aria-expanded={contextPickerOpen}
+                  onClick={() => setContextPickerOpen((value) => !value)}
+                >
+                  {contextPickerOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
+                </DashboardIconCap>
+              </div>
+              {contextPickerOpen ? (
+                <TaskContextPicker
+                  taskPageId={task.page.id}
+                  taskBlocks={contextBlocks}
+                  onBlocksChanged={(blocks) => { setContextBlocks(blocks); onTaskBlocksChanged(blocks); }}
+                  onClose={() => setContextPickerOpen(false)}
+                />
+              ) : null}
+            </section>
+
+            <section ref={checklistSectionRef} className="v3-detail-section" data-task-section="checklist" data-testid="v3-task-runbook-checklist">
+              <div className="v3-detail-section-head"><h3>체크리스트</h3><span>런북</span></div>
+              <div className="v3-task-runbook-checklist">
+                <RunbookCard
+                  runbookId={task.runbookId}
+                  fallbackTitle={task.page.title}
+                  onOpenBoard={() => onOpenBoard()}
+                />
+              </div>
+            </section>
+
+            <div ref={boardSectionRef} data-task-section="board">
+              <TaskInlineBoard
+                runbookId={task.runbookId}
+                folderId={projectFolderId}
+                onMarkdownDocumentsChanged={setBoardDocuments}
+              />
+            </div>
+
+            <div ref={sessionsSectionRef} data-task-section="sessions">
+              {effectiveSessionDefaults?.agentId || effectiveSessionDefaults?.nodeId ? (
+                <div className="v3-session-defaults"><span className="v3-emoji" aria-hidden="true">👤</span> 기본값: {effectiveSessionDefaults.agentId ?? "agent 미지정"}@{effectiveSessionDefaults.nodeId ?? "node 미지정"} <span>(상속)</span></div>
+              ) : null}
+
+              <TaskRunHistory
+                taskTitle={task.page.title}
+                taskPageId={task.page.id}
+                runbookId={task.runbookId}
+                contextItems={contextItems}
+                documentOptions={boardDocuments}
+                pageContextSources={pageContextSources}
+                contextPending={inheritedContext.status === "loading"}
+                sessionDefaults={effectiveSessionDefaults}
+                sessionIds={allSessionIds}
+                sessions={allSessions}
+                runSessionLoadStates={runSessionLoadStates}
+                runHistoryTotal={Math.max(
+                  runHistoryTotal + reconciledSessions.optimisticOnlyCount,
+                  allSessionIds.length,
+                )}
+                runHistoryHasMore={runHistoryHasMore}
+                runHistoryLoading={runHistoryLoading}
+                onLoadMoreRuns={onLoadMoreRuns}
+                moveTargets={taskMoveTargets}
+                onOpenSession={onOpenSession}
+                onRenameSession={onRenameSession}
+                onDeleteSessions={onDeleteSessions}
+                onMoveSession={onMoveSession}
+                onSessionCreated={(session) => {
+                  setCreatedSessions((current) => [
+                    ...current.filter((candidate) => candidate.agentSessionId !== session.agentSessionId),
+                    session,
+                  ]);
+                  onOpenSession(session);
+                }}
+              />
+            </div>
+          </div>
         </div>
-
-        <section className="v3-detail-section">
-          <div className="v3-detail-section-head"><h3>설명</h3><span>마크다운</span></div>
-          <TaskDescriptionPanel markdown={description} onSave={onSaveDescription} />
-        </section>
-
-        <section className="v3-detail-section" data-testid="v3-task-runbook-checklist">
-          <div className="v3-detail-section-head"><h3>체크리스트</h3><span>런북</span></div>
-          <div className="v3-task-runbook-checklist">
-            <RunbookCard
-              runbookId={task.runbookId}
-              fallbackTitle={task.page.title}
-              onOpenBoard={() => onOpenBoard()}
-            />
-          </div>
-        </section>
-
-        <section className="v3-detail-section">
-          <div className="v3-detail-section-head"><h3>컨텍스트</h3><span>{contextItems.length}개</span></div>
-          <div className="v3-context-chips">
-            {contextItems.map((context) => <span key={context.id}><span className="v3-emoji" aria-hidden="true">{context.icon}</span> {context.label}</span>)}
-            {contextItems.length === 0 ? <small>연결된 컨텍스트가 없습니다.</small> : null}
-            <DashboardIconCap
-              label={`${contextPickerOpen ? "컨텍스트 선택 닫기" : "컨텍스트 추가"}`}
-              aria-expanded={contextPickerOpen}
-              onClick={() => setContextPickerOpen((value) => !value)}
-            >
-              {contextPickerOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
-            </DashboardIconCap>
-          </div>
-          {contextPickerOpen ? (
-            <TaskContextPicker
-              taskPageId={task.page.id}
-              taskBlocks={contextBlocks}
-              onBlocksChanged={(blocks) => { setContextBlocks(blocks); onTaskBlocksChanged(blocks); }}
-              onClose={() => setContextPickerOpen(false)}
-            />
-          ) : null}
-        </section>
-
-        <TaskInlineBoard
-          runbookId={task.runbookId}
-          folderId={projectFolderId}
-          onMarkdownDocumentsChanged={setBoardDocuments}
-        />
-
-        {effectiveSessionDefaults?.agentId || effectiveSessionDefaults?.nodeId ? (
-          <div className="v3-session-defaults"><span className="v3-emoji" aria-hidden="true">👤</span> 기본값: {effectiveSessionDefaults.agentId ?? "agent 미지정"}@{effectiveSessionDefaults.nodeId ?? "node 미지정"} <span>(상속)</span></div>
-        ) : null}
-
-        <TaskRunHistory
-          taskTitle={task.page.title}
-          taskPageId={task.page.id}
-          runbookId={task.runbookId}
-          contextItems={contextItems}
-          documentOptions={boardDocuments}
-          pageContextSources={pageContextSources}
-          contextPending={inheritedContext.status === "loading"}
-          sessionDefaults={effectiveSessionDefaults}
-          sessionIds={allSessionIds}
-          sessions={allSessions}
-          runSessionLoadStates={runSessionLoadStates}
-          runHistoryTotal={Math.max(
-            runHistoryTotal + reconciledSessions.optimisticOnlyCount,
-            allSessionIds.length,
-          )}
-          runHistoryHasMore={runHistoryHasMore}
-          runHistoryLoading={runHistoryLoading}
-          onLoadMoreRuns={onLoadMoreRuns}
-          moveTargets={taskMoveTargets}
-          onOpenSession={onOpenSession}
-          onRenameSession={onRenameSession}
-          onDeleteSessions={onDeleteSessions}
-          onMoveSession={onMoveSession}
-          onSessionCreated={(session) => {
-            setCreatedSessions((current) => [
-              ...current.filter((candidate) => candidate.agentSessionId !== session.agentSessionId),
-              session,
-            ]);
-            onOpenSession(session);
-          }}
-        />
       </div>
     </article>
   );
