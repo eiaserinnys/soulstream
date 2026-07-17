@@ -73,6 +73,30 @@ describe("live auth token access resolver", () => {
     expect(jwt.verifyToken).toHaveBeenCalledTimes(2);
   });
 
+  it("reuses the canonical dashboard user resolver when one is supplied", async () => {
+    const jwt = jwtVerifier();
+    const resolveDashboardUser = vi.fn(async () => ({
+      email: "user@example.com",
+    }));
+    const resolver = createLiveAuthTokenResolver({
+      configProvider: configWith({
+        auth_bearer_token: "service-token",
+        environment: "production",
+        google_client_id: "google-client",
+        jwt_secret: "jwt-secret",
+      }),
+      jwt,
+      resolveDashboardUser,
+    });
+    const dashboardRequest = request({
+      cookie: "soul_dashboard_auth=dashboard-jwt",
+    });
+
+    await expect(resolver(dashboardRequest)).resolves.toEqual({ ok: true });
+    expect(resolveDashboardUser).toHaveBeenCalledWith(dashboardRequest);
+    expect(jwt.verifyToken).not.toHaveBeenCalled();
+  });
+
   it("keeps Python verify_auth JWT fallback when production service Bearer is not configured", async () => {
     const jwt = jwtVerifier("dashboard-jwt");
     const resolver = createLiveAuthTokenResolver({

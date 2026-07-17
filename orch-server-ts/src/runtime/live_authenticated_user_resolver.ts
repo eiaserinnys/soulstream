@@ -19,6 +19,11 @@ export type LiveAuthenticatedEmailResolver = (
   request: FastifyRequest,
 ) => Promise<string | null>;
 
+export type LiveDashboardTokenVerifier = (
+  request: FastifyRequest,
+  token: string,
+) => Promise<AuthJwtPayload | null>;
+
 export type LiveCallerInfoResolver = (
   request: FastifyRequest,
   bodyCallerInfo: Record<string, unknown> | null | undefined,
@@ -26,6 +31,7 @@ export type LiveCallerInfoResolver = (
 ) => Promise<Record<string, unknown>>;
 
 export type LiveAuthenticatedUserResolvers = {
+  readonly verifyToken: LiveDashboardTokenVerifier;
   readonly resolveUser: LiveAuthenticatedUserResolver;
   readonly resolveEmail: LiveAuthenticatedEmailResolver;
   readonly resolveCallerInfo: LiveCallerInfoResolver;
@@ -35,13 +41,30 @@ export function createLiveAuthenticatedUserResolvers(
   options: CreateLiveAuthenticatedUserResolversOptions,
 ): LiveAuthenticatedUserResolvers {
   const cookieName = options.cookieName ?? AUTH_COOKIE_NAME;
+  const verificationCache = new WeakMap<
+    FastifyRequest,
+    Map<string, Promise<AuthJwtPayload | null>>
+  >();
+  const verifyToken: LiveDashboardTokenVerifier = async (request, token) => {
+    let requestCache = verificationCache.get(request);
+    if (requestCache === undefined) {
+      requestCache = new Map();
+      verificationCache.set(request, requestCache);
+    }
+    const cachedVerification = requestCache.get(token);
+    if (cachedVerification !== undefined) return await cachedVerification;
+    const verification = Promise.resolve(options.jwt.verifyToken(token));
+    requestCache.set(token, verification);
+    return await verification;
+  };
   const resolveUser: LiveAuthenticatedUserResolver = async (request) => {
     const token = extractDashboardJwtToken(request, cookieName);
     if (token === undefined) return null;
-    return await options.jwt.verifyToken(token);
+    return await verifyToken(request, token);
   };
 
   return {
+    verifyToken,
     resolveUser,
     async resolveEmail(request) {
       return (await resolveUser(request))?.email ?? null;

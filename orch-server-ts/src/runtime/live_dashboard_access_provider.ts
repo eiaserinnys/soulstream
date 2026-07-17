@@ -17,6 +17,7 @@ import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js
 import {
   extractDashboardBearerToken,
   extractDashboardJwtCookieToken,
+  type LiveDashboardTokenVerifier,
 } from "./live_authenticated_user_resolver.js";
 
 export type DashboardAccess = {
@@ -64,6 +65,7 @@ export type CreateLiveDashboardAccessProviderOptions = {
   readonly jwt: AuthJwtHelper;
   readonly repository?: DashboardUserRepository;
   readonly cookieName?: string;
+  readonly verifyDashboardToken?: LiveDashboardTokenVerifier;
 };
 
 export type DashboardAccessResolveContext = {
@@ -124,6 +126,7 @@ export function createLiveDashboardAccessProvider(
         request,
         configProvider: options.configProvider,
         jwt: options.jwt,
+        verifyDashboardToken: options.verifyDashboardToken,
         cookieName,
         accessEmail: context?.accessEmail,
       });
@@ -198,6 +201,7 @@ async function resolveAccessIdentity(input: {
   readonly request: FastifyRequest;
   readonly configProvider: LiveConfigProviderBoundary;
   readonly jwt: AuthJwtHelper;
+  readonly verifyDashboardToken?: LiveDashboardTokenVerifier;
   readonly cookieName: string;
   readonly accessEmail?: string | null;
 }): Promise<AccessIdentity> {
@@ -212,7 +216,7 @@ async function resolveAccessIdentity(input: {
   if (googleClientId.length > 0) {
     const cookieToken = extractDashboardJwtCookieToken(input.request, input.cookieName);
     if (cookieToken) {
-      const payload = await input.jwt.verifyToken(cookieToken);
+      const payload = await verifyDashboardToken(input, cookieToken);
       if (payload) {
         return { mode: "dashboard", email: normalizeDashboardEmail(payload.email) };
       }
@@ -237,7 +241,7 @@ async function resolveAccessIdentity(input: {
   if (googleClientId.length > 0) {
     const dashboardToken = extractDashboardBearerToken(input.request);
     if (dashboardToken) {
-      const payload = await input.jwt.verifyToken(dashboardToken);
+      const payload = await verifyDashboardToken(input, dashboardToken);
       if (payload) {
         return { mode: "dashboard", email: normalizeDashboardEmail(payload.email) };
       }
@@ -249,6 +253,19 @@ async function resolveAccessIdentity(input: {
     bearer.detail,
     bearer.statusCode ?? 401,
   );
+}
+
+async function verifyDashboardToken(
+  input: {
+    readonly request: FastifyRequest;
+    readonly jwt: AuthJwtHelper;
+    readonly verifyDashboardToken?: LiveDashboardTokenVerifier;
+  },
+  token: string,
+): Promise<AuthJwtPayload | null> {
+  return input.verifyDashboardToken === undefined
+    ? await input.jwt.verifyToken(token)
+    : await input.verifyDashboardToken(input.request, token);
 }
 
 function accessForUser(user: DashboardUserRecord | null): DashboardAccess {

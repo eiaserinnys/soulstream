@@ -62,6 +62,23 @@ describe("live authenticated user resolver", () => {
     await expect(resolvers.resolveEmail(requestWithHeaders({}))).resolves.toBeNull();
   });
 
+  it("verifies one dashboard token only once per request across identity consumers", async () => {
+    const jwt = createJwtHelper({
+      "user-jwt": { email: "user@example.com", name: "User" },
+    });
+    const resolvers = createLiveAuthenticatedUserResolvers({ jwt });
+    const request = requestWithHeaders({ cookie: "soul_dashboard_auth=user-jwt" });
+
+    await expect(resolvers.resolveUser(request)).resolves.toMatchObject({
+      email: "user@example.com",
+    });
+    await expect(resolvers.resolveEmail(request)).resolves.toBe("user@example.com");
+    await expect(
+      resolvers.verifyToken(request, "user-jwt"),
+    ).resolves.toMatchObject({ email: "user@example.com" });
+    expect(jwt.verifyToken).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves a truthy body caller_info before JWT classification", async () => {
     const jwt = createJwtHelper({
       "minimal-jwt": { email: "cron@example.com" },
