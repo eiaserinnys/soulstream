@@ -289,6 +289,13 @@
   overflow-y: hidden;
 }
 
+.v3-information-context-head {
+  margin-top: 18px;
+  color: var(--foreground);
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+}
+
 .v3-context-chips {
   display: flex;
   flex-wrap: wrap;
@@ -320,9 +327,18 @@
 
 .v3-context-chip-label {
   min-width: 0;
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.v3-context-chip-source {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: inherit;
+  font-weight: 600;
 }
 
 .v3-context-chips > small {
@@ -342,18 +358,58 @@
   font-weight: 750;
 }
 
-.v3-session-defaults {
-  margin-top: 18px;
-  border-radius: 8px;
-  padding: 9px 11px;
-  color: var(--muted-foreground);
-  background: color-mix(in srgb, var(--info) 6%, transparent);
-  font-size: var(--font-size-xs);
-  font-weight: 730;
+.v3-task-default-assignment {
+  margin-top: 10px;
 }
 
-.v3-session-defaults span {
-  opacity: .72;
+.v3-task-default-summary {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 2px;
+  color: var(--foreground);
+  background: transparent;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: 730;
+  text-align: left;
+  cursor: pointer;
+}
+
+.v3-task-default-summary:hover {
+  background: color-mix(in srgb, var(--muted) 64%, transparent);
+}
+
+.v3-task-default-summary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 28%, transparent);
+}
+
+.v3-task-default-summary small {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: inherit;
+  font-weight: 600;
+}
+
+.v3-task-default-editor {
+  display: grid;
+  gap: 8px;
+  padding: 6px 2px 2px;
+}
+
+.v3-task-default-editor > small[role="alert"] {
+  color: var(--destructive);
+  font-size: var(--font-size-xs);
+}
+
+.v3-task-default-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
 }
 
 .v3-workspace-divider {

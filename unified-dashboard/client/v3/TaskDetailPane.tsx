@@ -1,12 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DashboardIconCap, RunbookCard, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { ArrowLeft, LayoutDashboard, Plus, Star, X } from "lucide-react";
 
 import type { PlannerTask } from "./planner-data";
 import type { TaskMoveTarget } from "./task-move-targets";
 import { plannerStatusPresentation } from "./planner-model";
 import { singleLinePreview } from "./session-preview";
-import type { PageSessionDefaults } from "./task-workspace-api";
+import {
+  saveTaskSessionDefaults,
+  type PageSessionDefaults,
+} from "./task-workspace-api";
 import {
   descriptionMarkdown,
   reconcileTaskSessions,
@@ -14,6 +18,7 @@ import {
 } from "./task-workspace-model";
 import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 import { TaskContextPicker } from "./TaskContextPicker";
+import { TaskDefaultAssignment } from "./TaskDefaultAssignment";
 import { TaskInlineBoard } from "./TaskInlineBoard";
 import { TaskRunHistory } from "./TaskRunHistory";
 import {
@@ -106,6 +111,7 @@ export function TaskDetailPane({
   );
   const status = plannerStatusPresentation(task.status);
   const taskStar = useTaskStar(task.page);
+  const api = useMemo(() => createPageApiClient(), []);
   const [contextPickerOpen, setContextPickerOpen] = useState(false);
   const [contextBlocks, setContextBlocks] = useState(task.blocks);
   const [boardDocuments, setBoardDocuments] = useState<Array<{ pageId: string; title: string }>>([]);
@@ -122,38 +128,56 @@ export function TaskDetailPane({
     setCreatedSessions([]);
   }, [task.blocks, task.page.id]);
   useEffect(() => setBoardDocuments([]), [task.page.id]);
+  const taskContext = useMemo(
+    () => parseProjectPageDetails(contextBlocks),
+    [contextBlocks],
+  );
   const effectiveContext = useMemo(() => mergeProjectContextPages([
     ...(inheritedContext.status === "ready" ? inheritedContext.data.pages : []),
     {
       source: { folderId: task.page.id, folderName: "이 업무", pageId: task.page.id },
-      details: parseProjectPageDetails(contextBlocks),
+      details: taskContext,
     },
-  ]), [contextBlocks, inheritedContext, task.page.id]);
+  ]), [inheritedContext, task.page.id, taskContext]);
   const contextItems = useMemo(() => [
     ...effectiveContext.guidance.map((guidance) => ({
       id: `${guidance.source.pageId}:${guidance.blockId}`,
       icon: "✦",
-      label: `${singleLinePreview(guidance.text, 96) ?? guidance.text} · ${contextSourceLabel(
-        guidance.source.folderName,
-      )}`,
+      contentLabel: singleLinePreview(guidance.text, 96) ?? guidance.text,
+      sourceLabel: contextSourceLabel(guidance.source.folderName),
+      label: `${singleLinePreview(guidance.text, 96) ?? guidance.text} · ${contextSourceLabel(guidance.source.folderName)}`,
     })),
     ...effectiveContext.atomReferences.map((reference) => ({
       id: `${reference.source.pageId}:${reference.blockId}`,
       icon: "⚛",
+      contentLabel: reference.nodeTitle,
+      sourceLabel: contextSourceLabel(reference.source.folderName),
       label: `${reference.nodeTitle} · ${contextSourceLabel(reference.source.folderName)}`,
     })),
     ...contextBlocks.flatMap((block) => {
       const match = /^\[\[([^\[\]]+)\]\]$/.exec(block.text.trim());
-      return match ? [{ id: block.id, icon: "📄", label: match[1] }] : [];
+      return match ? [{
+        id: block.id,
+        icon: "📄",
+        contentLabel: match[1],
+        sourceLabel: "이 업무",
+        label: `${match[1]} · 이 업무`,
+      }] : [];
     }),
   ], [contextBlocks, effectiveContext]);
-  const inheritedDefaults = effectiveContext.sessionDefaults.at(-1);
-  const effectiveSessionDefaults = inheritedDefaults ? {
-    agentId: inheritedDefaults.agentId,
-    nodeId: inheritedDefaults.nodeId,
-    sourcePageId: inheritedDefaults.source.pageId,
-    sourceBlockId: inheritedDefaults.blockId,
+  const directDefaults = taskContext.sessionDefaults.at(-1) ?? null;
+  const sourcedDefaults = effectiveContext.sessionDefaults.at(-1);
+  const effectiveSessionDefaults = sourcedDefaults ? {
+    agentId: sourcedDefaults.agentId,
+    nodeId: sourcedDefaults.nodeId,
+    sourcePageId: sourcedDefaults.source.pageId,
+    sourceBlockId: sourcedDefaults.blockId,
   } : sessionDefaults;
+  const assignmentSourceLabel = sourcedDefaults
+    ? (sourcedDefaults.source.pageId === task.page.id
+        ? "직접 지정"
+        : `${sourcedDefaults.source.folderName}에서 상속`)
+    : fallbackAssignmentSource(sessionDefaults, task.page.id, folders);
   const pageContextSources = buildPageContextSourcesMarker(
     inheritedContext.status === "ready"
       ? inheritedContext.data
@@ -176,6 +200,15 @@ export function TaskDetailPane({
       && runSessionLoadStates.get(focusRequest.sessionId) === "ready"
   );
   const taskStarLabel = `별표 ${taskStar.starred ? "해제" : "추가"}`;
+  const saveDefaultAssignment = async (value: { agentId: string; nodeId: string }) => {
+    const result = await saveTaskSessionDefaults(api, task.page.id, {
+      blockId: directDefaults?.blockId ?? null,
+      agentId: value.agentId || null,
+      nodeId: value.nodeId || null,
+    });
+    setContextBlocks(result.blocks);
+    onTaskBlocksChanged(result.blocks);
+  };
 
   return (
     <article
@@ -221,11 +254,13 @@ export function TaskDetailPane({
             <section ref={informationSectionRef} className="v3-detail-section" data-task-section="information">
               <div className="v3-detail-section-head"><h3>정보</h3></div>
               <TaskDescriptionPanel markdown={description} onSave={onSaveDescription} />
+              <div className="v3-information-context-head"><strong>컨텍스트</strong></div>
               <div className="v3-context-chips">
                 {contextItems.map((context) => (
                   <span key={context.id} title={context.label}>
                     <span className="v3-emoji" aria-hidden="true">{context.icon}</span>
-                    <span className="v3-context-chip-label">{context.label}</span>
+                    <span className="v3-context-chip-label">{context.contentLabel}</span>
+                    <small className="v3-context-chip-source">· {context.sourceLabel}</small>
                   </span>
                 ))}
                 {contextItems.length === 0 ? <small>연결된 컨텍스트가 없습니다.</small> : null}
@@ -245,6 +280,14 @@ export function TaskDetailPane({
                   taskBlocks={contextBlocks}
                   onBlocksChanged={(blocks) => { setContextBlocks(blocks); onTaskBlocksChanged(blocks); }}
                   onClose={() => setContextPickerOpen(false)}
+                />
+              ) : null}
+              {effectiveSessionDefaults?.agentId || effectiveSessionDefaults?.nodeId ? (
+                <TaskDefaultAssignment
+                  agentId={effectiveSessionDefaults.agentId}
+                  nodeId={effectiveSessionDefaults.nodeId}
+                  sourceLabel={assignmentSourceLabel}
+                  onSave={saveDefaultAssignment}
                 />
               ) : null}
             </section>
@@ -271,10 +314,6 @@ export function TaskDetailPane({
             </div>
 
             <div ref={sessionsSectionRef} data-task-section="sessions">
-              {effectiveSessionDefaults?.agentId || effectiveSessionDefaults?.nodeId ? (
-                <div className="v3-session-defaults"><span className="v3-emoji" aria-hidden="true">👤</span> 기본값: {effectiveSessionDefaults.agentId ?? "agent 미지정"}@{effectiveSessionDefaults.nodeId ?? "node 미지정"} <span>(상속)</span></div>
-              ) : null}
-
               <TaskRunHistory
                 taskTitle={task.page.title}
                 taskPageId={task.page.id}
@@ -318,4 +357,14 @@ export function TaskDetailPane({
 
 function contextSourceLabel(folderName: string): string {
   return folderName === "이 업무" ? folderName : `${folderName}에서 상속`;
+}
+
+function fallbackAssignmentSource(
+  defaults: PageSessionDefaults | null,
+  taskPageId: string,
+  folders: readonly CatalogFolder[],
+): string {
+  if (!defaults || defaults.sourcePageId === taskPageId) return "직접 지정";
+  const source = folders.find((folder) => folder.projectPageId === defaults.sourcePageId);
+  return source ? `${source.name}에서 상속` : "상위 컨텍스트에서 상속";
 }

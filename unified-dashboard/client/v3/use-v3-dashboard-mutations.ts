@@ -155,8 +155,7 @@ export function useV3DashboardMutations({
       blocks,
       contextCount: taskContextCount(blocks),
     }));
-    refreshTask(selectedTaskId);
-  }, [patchPlannerTask, refreshTask, selectedTaskId]);
+  }, [patchPlannerTask, selectedTaskId]);
 
   const applyRitualAction = useCallback((item: RitualQueueItem, action: RitualAction) => {
     if (action === "today") addTaskToToday(item.task);

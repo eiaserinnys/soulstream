@@ -270,10 +270,21 @@
   font-size: var(--font-size-xs);
 }
 
+.v3-project-guidance > small {
+  text-align: right;
+}
+
+.v3-project-context-sourced > small {
+  margin-left: auto;
+  text-align: right;
+}
+
 .v3-project-context-sourced {
   display: inline-flex;
+  flex: 1 1 100%;
   align-items: center;
   gap: 5px;
+  min-width: 0;
 }
 
 .v3-new-document {

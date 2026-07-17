@@ -51,7 +51,7 @@ async function verify(browser: Browser) {
 
     const preview = page.getByTestId("new-task-inheritance-preview");
     const guidance = page.getByTestId("inheritance-guidance-preview");
-    await waitText(preview, "컨텍스트 미리보기 · 대시보드", "컨텍스트 미리보기");
+    await waitText(preview, "컨텍스트 · 대시보드", "컨텍스트");
     await waitText(guidance, "프로젝트의 결정을 실제 근거와 함께 기록하고", "부모 guidance");
     await waitText(page.getByTestId("inheritance-guidance"), "소울스트림에서 상속", "부모 출처");
     assert(await preview.locator("details").count() === 0, "guidance 접기 UI가 남았습니다.");

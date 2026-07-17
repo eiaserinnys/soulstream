@@ -1,4 +1,8 @@
-import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
+import type {
+  PageApiClient,
+  PageDto,
+  PageStructureOperation,
+} from "@seosoyoung/soul-ui/page";
 
 import {
   buildContextBlockOperations,
@@ -13,6 +17,8 @@ export interface PageSessionDefaults {
   sourcePageId: string;
   sourceBlockId: string;
 }
+
+export type TaskSessionDefaultsIdFactory = (prefix: string) => string;
 
 export async function renameTaskTitle(
   api: PageApiClient,
@@ -44,6 +50,49 @@ export async function fetchPageSessionDefaults(
   );
   if (!response.ok) throw new Error(`실행 기본값을 불러오지 못했습니다 (${response.status})`);
   return await response.json() as PageSessionDefaults | null;
+}
+
+export async function saveTaskSessionDefaults(
+  api: PageApiClient,
+  pageId: string,
+  input: { blockId: string | null; agentId: string | null; nodeId: string | null },
+  idFactory: TaskSessionDefaultsIdFactory = (prefix) => `${prefix}-${crypto.randomUUID()}`,
+): Promise<{ blocks: Awaited<ReturnType<PageApiClient["getPage"]>>["blocks"] }> {
+  const properties = {
+    agentId: input.agentId?.trim() || null,
+    nodeId: input.nodeId?.trim() || null,
+    scope: "session",
+  };
+  if (!properties.agentId && !properties.nodeId) {
+    throw new Error("에이전트 또는 노드를 선택해야 합니다");
+  }
+  const current = await api.getPage(pageId);
+  const operation: PageStructureOperation = input.blockId
+    ? {
+        op: "update_block_type_and_properties",
+        block_id: input.blockId,
+        block_type: "session_defaults",
+        properties,
+      }
+    : {
+        op: "create_block",
+        temp_id: idFactory("session-defaults-block"),
+        parent_id: null,
+        after_block_id: [...current.blocks].reverse()
+          .find((block) => block.parent_id === null)?.id ?? null,
+        block_type: "session_defaults",
+        text: "",
+        properties,
+        collapsed: false,
+      };
+  const result = await api.applyOperations(pageId, {
+    expectedVersion: current.page.version,
+    expectedStateVector: decodeBase64(current.state_vector),
+    idempotencyKey: idFactory("session-defaults-save"),
+    reason: "v3 task session defaults save",
+    operations: [operation],
+  });
+  return { blocks: result.blocks };
 }
 
 export async function saveTaskDescription(

@@ -158,7 +158,7 @@ export function ProjectInheritancePreview({
       data-testid="new-task-inheritance-preview"
       aria-live="polite"
     >
-      <strong>컨텍스트 미리보기 · {projectName}</strong>
+      <strong>컨텍스트 · {projectName}</strong>
       {state.status === "loading" ? <small>프로젝트 컨텍스트를 불러오는 중…</small> : null}
       {state.status === "error" ? <small role="alert">불러오기 실패 · {state.message}</small> : null}
       {state.status === "ready" ? (
@@ -174,22 +174,22 @@ export function ProjectInheritancePreview({
             )) : <small>지침 없음</small>}
           </div>
           <div className="v3-project-context-row" data-testid="inheritance-atom">
-            <strong>지식</strong>
+            <strong>atom</strong>
             {state.data.atomReferences.length > 0 ? state.data.atomReferences.map((reference) => (
               <span className="v3-project-context-sourced" key={reference.blockId}>
                 <ProjectAtomChip reference={reference} />
                 <small>{reference.source.folderName}에서 상속</small>
               </span>
-            )) : <small>지식 없음</small>}
+            )) : <small>없음</small>}
           </div>
           <div className="v3-project-context-row" data-testid="inheritance-defaults">
-            <strong>실행 기본값</strong>
+            <strong>기본 담당</strong>
             {state.data.sessionDefaults.length > 0 ? state.data.sessionDefaults.map((defaults) => (
               <span className="v3-project-context-sourced" key={defaults.blockId}>
                 <ProjectSessionDefaultChip defaults={defaults} />
                 <small>{defaults.source.folderName}에서 상속</small>
               </span>
-            )) : <small>기본값 없음</small>}
+            )) : <small>없음</small>}
           </div>
         </>
       ) : null}
