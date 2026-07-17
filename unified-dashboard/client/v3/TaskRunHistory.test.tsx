@@ -54,6 +54,7 @@ describe("TaskRunHistory", () => {
         runHistoryTotal={61}
         runHistoryHasMore
         runHistoryLoading={false}
+        activeSessionId="catalog-hit"
         onLoadMoreRuns={vi.fn()}
         runSessionLoadStates={new Map([
           ["catalog-hit", "ready"],
@@ -69,6 +70,7 @@ describe("TaskRunHistory", () => {
     );
 
     expect(html).toContain("라이브 코디네이터 세션");
+    expect(html).toMatch(/v3-run-row[^\"]*is-active/);
     expect(html).toContain("로젤린");
     expect(html).toContain("eiaserinnys");
     expect(html).toContain("마지막 메시지 한 줄");

@@ -54,6 +54,7 @@ export function TaskRunHistory({
   runHistoryTotal,
   runHistoryHasMore,
   runHistoryLoading,
+  activeSessionId,
   onLoadMoreRuns,
   moveTargets,
   onOpenSession,
@@ -76,6 +77,7 @@ export function TaskRunHistory({
   runHistoryTotal: number;
   runHistoryHasMore: boolean;
   runHistoryLoading: boolean;
+  activeSessionId: string | null;
   onLoadMoreRuns(): void;
   moveTargets: readonly TaskMoveTarget[];
   onOpenSession(session: SessionSummary): void;
@@ -179,6 +181,7 @@ export function TaskRunHistory({
             key={node.session.agentSessionId}
             node={node}
             depth={0}
+            activeSessionId={activeSessionId}
             onOpenSession={onOpenSession}
             onContextMenu={openRunContextMenu}
           />
@@ -278,11 +281,13 @@ export function TaskRunHistory({
 function RunNode({
   node,
   depth,
+  activeSessionId,
   onOpenSession,
   onContextMenu,
 }: {
   node: RunTreeNode;
   depth: number;
+  activeSessionId: string | null;
   onOpenSession(session: SessionSummary): void;
   onContextMenu(session: SessionSummary, event: MouseEvent<HTMLDivElement>): void;
 }) {
@@ -308,6 +313,7 @@ function RunNode({
         session={session}
         runNumber={node.runNumber}
         failed={failed}
+        active={!failed && session.agentSessionId === activeSessionId}
         onOpen={onOpenSession}
         onContextMenu={onContextMenu}
       />
@@ -316,6 +322,7 @@ function RunNode({
           key={child.session.agentSessionId}
           node={child}
           depth={depth + 1}
+          activeSessionId={activeSessionId}
           onOpenSession={onOpenSession}
           onContextMenu={onContextMenu}
         />

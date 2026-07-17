@@ -23,6 +23,7 @@ import {
   workspaceSplitForKey,
 } from "./task-workspace-model";
 import { TaskDetailPane } from "./TaskDetailPane";
+import type { TaskSectionFocusRequest } from "./TaskSectionNavigation";
 import { TaskBoardPane } from "./TaskBoardPane";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
 import type { MobilePlannerTab } from "./mobile-planner-state";
@@ -40,6 +41,8 @@ export function TaskWorkspace({
   runHistoryLoading,
   onLoadMoreRuns,
   activeSession,
+  focusRequest,
+  onFocusRequestHandled,
   chatOpen,
   chatInputDisabled,
   fileUploadUrl,
@@ -73,6 +76,8 @@ export function TaskWorkspace({
   runHistoryLoading: boolean;
   onLoadMoreRuns(): void;
   activeSession: SessionSummary | undefined;
+  focusRequest: TaskSectionFocusRequest | null;
+  onFocusRequestHandled(requestId: number): void;
   chatOpen: boolean;
   chatInputDisabled: boolean;
   fileUploadUrl: string | undefined;
@@ -297,6 +302,9 @@ export function TaskWorkspace({
             runHistoryTotal={runHistoryTotal}
             runHistoryHasMore={runHistoryHasMore}
             runHistoryLoading={runHistoryLoading}
+            activeSessionId={activeSessionKey}
+            focusRequest={focusRequest}
+            onFocusRequestHandled={onFocusRequestHandled}
             onLoadMoreRuns={onLoadMoreRuns}
             sessionDefaults={sessionDefaults}
             taskMoveTargets={taskMoveTargets}

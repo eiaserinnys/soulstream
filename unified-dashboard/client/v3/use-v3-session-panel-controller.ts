@@ -7,6 +7,7 @@ import {
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { loadPlannerTask, type PlannerTask } from "./planner-data";
+import type { TaskSectionFocusRequest } from "./TaskSectionNavigation";
 import { activateRunSession } from "./task-workspace-model";
 import { errorText } from "./v3-dashboard-utils";
 import { sessionPanelGroups } from "./v3-session-panel-model";
@@ -39,7 +40,9 @@ export function useV3SessionPanelController({
   notify(message: string): void;
 }) {
   const panelRef = useRef<HTMLElement>(null);
+  const focusRequestSequence = useRef(0);
   const [panelWidth, setPanelWidth] = useState(() => readV3SessionPanelWidth());
+  const [focusRequest, setFocusRequest] = useState<TaskSectionFocusRequest | null>(null);
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
   const setActiveSessionSummary = useDashboardStore((state) => state.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
@@ -56,6 +59,10 @@ export function useV3SessionPanelController({
       writeV3SessionPanelWidth(next);
       return next;
     });
+  }, []);
+  const clearFocusRequest = useCallback(() => setFocusRequest(null), []);
+  const acknowledgeFocusRequest = useCallback((requestId: number) => {
+    setFocusRequest((current) => current?.requestId === requestId ? null : current);
   }, []);
 
   const openSession = useCallback(async (session: SessionSummary) => {
@@ -78,18 +85,36 @@ export function useV3SessionPanelController({
         )) ?? await loadPlannerTask(api, pageId);
         setSelectedTaskId(loaded.page.id);
         setSelectedTaskSnapshot(loaded);
+        focusRequestSequence.current += 1;
+        setFocusRequest({
+          requestId: focusRequestSequence.current,
+          sectionId: "sessions",
+          sessionId: session.agentSessionId,
+        });
       } else {
         setSelectedTaskId(null);
         setSelectedTaskSnapshot(null);
+        setFocusRequest(null);
       }
     } catch (error) {
       setSelectedTaskId(null);
       setSelectedTaskSnapshot(null);
+      setFocusRequest(null);
       notify(`세션의 업무 열기 실패 · ${errorText(error)}`);
     }
     setWorkspaceOpen(true);
     setChatOpen(true);
   }, [api, catalog?.boardItems, currentTasks, notify, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen, setSelectedTaskId, setSelectedTaskSnapshot, setWorkspaceOpen]);
 
-  return { panelRef, panelWidth, sessions, reviewSessions, resize, openSession };
+  return {
+    panelRef,
+    panelWidth,
+    sessions,
+    reviewSessions,
+    focusRequest,
+    resize,
+    openSession,
+    clearFocusRequest,
+    acknowledgeFocusRequest,
+  };
 }

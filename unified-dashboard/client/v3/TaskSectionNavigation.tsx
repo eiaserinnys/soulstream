@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useGlassSurface } from "@seosoyoung/soul-ui";
 import {
   FileText,
@@ -14,6 +14,12 @@ import "./v3-task-section-navigation.css";
 export type TaskSectionId = "description" | "context" | "checklist" | "board" | "sessions";
 
 export type TaskSectionRefs = Record<TaskSectionId, RefObject<HTMLElement | null>>;
+
+export interface TaskSectionFocusRequest {
+  requestId: number;
+  sectionId: TaskSectionId;
+  sessionId?: string;
+}
 
 const TASK_SECTIONS: readonly {
   id: TaskSectionId;
@@ -31,15 +37,44 @@ const TASK_SECTIONS: readonly {
 export function TaskSectionNavigation({
   scrollRef,
   sectionRefs,
+  focusRequest,
+  focusTargetReady = true,
+  onFocusRequestHandled,
 }: {
   scrollRef: RefObject<HTMLDivElement | null>;
   sectionRefs: TaskSectionRefs;
+  focusRequest?: TaskSectionFocusRequest | null;
+  focusTargetReady?: boolean;
+  onFocusRequestHandled?(requestId: number): void;
 }) {
   const navigationRef = useRef<HTMLElement>(null);
   const requestedSectionRef = useRef<TaskSectionId | null>(null);
   const requestedSectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const webglActive = useGlassSurface(navigationRef, { enabled: true });
   const [activeSection, setActiveSection] = useState<TaskSectionId>("description");
+
+  const moveToSection = useCallback((id: TaskSectionId, target?: HTMLElement | null) => {
+    const scrollElement = scrollRef.current;
+    const section = sectionRefs[id].current;
+    const targetElement = target ?? section;
+    if (!scrollElement || !section || !targetElement) return;
+    const top = targetElement.getBoundingClientRect().top
+      - scrollElement.getBoundingClientRect().top
+      + scrollElement.scrollTop
+      - 12;
+    const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    requestedSectionRef.current = id;
+    if (requestedSectionTimerRef.current) clearTimeout(requestedSectionTimerRef.current);
+    requestedSectionTimerRef.current = setTimeout(() => {
+      requestedSectionRef.current = null;
+      requestedSectionTimerRef.current = null;
+    }, 600);
+    setActiveSection(id);
+    scrollElement.scrollTo({
+      top: Math.max(0, top),
+      behavior: reduceMotion ? "auto" : "smooth",
+    });
+  }, [scrollRef, sectionRefs]);
 
   useEffect(() => {
     const scrollElement = scrollRef.current;
@@ -88,27 +123,18 @@ export function TaskSectionNavigation({
     };
   }, [scrollRef, sectionRefs]);
 
-  const moveToSection = (id: TaskSectionId) => {
+  useEffect(() => {
+    if (!focusRequest || !focusTargetReady) return;
     const scrollElement = scrollRef.current;
-    const section = sectionRefs[id].current;
-    if (!scrollElement || !section) return;
-    const top = section.getBoundingClientRect().top
-      - scrollElement.getBoundingClientRect().top
-      + scrollElement.scrollTop
-      - 12;
-    const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    requestedSectionRef.current = id;
-    if (requestedSectionTimerRef.current) clearTimeout(requestedSectionTimerRef.current);
-    requestedSectionTimerRef.current = setTimeout(() => {
-      requestedSectionRef.current = null;
-      requestedSectionTimerRef.current = null;
-    }, 600);
-    setActiveSection(id);
-    scrollElement.scrollTo({
-      top: Math.max(0, top),
-      behavior: reduceMotion ? "auto" : "smooth",
-    });
-  };
+    if (!scrollElement) return;
+    const target = focusRequest.sessionId
+      ? Array.from(scrollElement.querySelectorAll<HTMLElement>("[data-session-id]"))
+        .find((element) => element.dataset.sessionId === focusRequest.sessionId)
+      : null;
+    if (focusRequest.sessionId && !target) return;
+    moveToSection(focusRequest.sectionId, target);
+    onFocusRequestHandled?.(focusRequest.requestId);
+  }, [focusRequest, focusTargetReady, moveToSection, onFocusRequestHandled, scrollRef]);
 
   return (
     <nav

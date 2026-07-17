@@ -16,7 +16,11 @@ import { TaskDescriptionPanel } from "./TaskDescriptionPanel";
 import { TaskContextPicker } from "./TaskContextPicker";
 import { TaskInlineBoard } from "./TaskInlineBoard";
 import { TaskRunHistory } from "./TaskRunHistory";
-import { TaskSectionNavigation, type TaskSectionRefs } from "./TaskSectionNavigation";
+import {
+  TaskSectionNavigation,
+  type TaskSectionFocusRequest,
+  type TaskSectionRefs,
+} from "./TaskSectionNavigation";
 import { TaskTitleEditor } from "./TaskTitleEditor";
 import { TaskTodayToggle } from "./TaskTodayToggle";
 import "./v3-context-succession.css";
@@ -38,6 +42,9 @@ export function TaskDetailPane({
   runHistoryTotal,
   runHistoryHasMore,
   runHistoryLoading,
+  activeSessionId,
+  focusRequest,
+  onFocusRequestHandled,
   onLoadMoreRuns,
   sessionDefaults,
   onReturnToToday,
@@ -63,6 +70,9 @@ export function TaskDetailPane({
   runHistoryTotal: number;
   runHistoryHasMore: boolean;
   runHistoryLoading: boolean;
+  activeSessionId: string | null;
+  focusRequest: TaskSectionFocusRequest | null;
+  onFocusRequestHandled(requestId: number): void;
   onLoadMoreRuns(): void;
   sessionDefaults: PageSessionDefaults | null;
   onReturnToToday(): void;
@@ -165,6 +175,10 @@ export function TaskDetailPane({
   }, [createdSessions, sessions, task.sessionIds]);
   const allSessions = reconciledSessions.sessions;
   const allSessionIds = reconciledSessions.sessionIds;
+  const focusTargetReady = !focusRequest?.sessionId || (
+    allSessions.some((session) => session.agentSessionId === focusRequest.sessionId)
+      && runSessionLoadStates.get(focusRequest.sessionId) === "ready"
+  );
   const taskStarLabel = `별표 ${taskStar.starred ? "해제" : "추가"}`;
 
   return (
@@ -198,7 +212,13 @@ export function TaskDetailPane({
       </header>
       <div ref={scrollRef} className="v3-detail-scroll">
         <div className="v3-task-detail-layout">
-          <TaskSectionNavigation scrollRef={scrollRef} sectionRefs={sectionRefs} />
+          <TaskSectionNavigation
+            scrollRef={scrollRef}
+            sectionRefs={sectionRefs}
+            focusRequest={focusRequest}
+            focusTargetReady={focusTargetReady}
+            onFocusRequestHandled={onFocusRequestHandled}
+          />
           <div className="v3-task-detail-content">
             <div className="v3-detail-title">
               <span className={`v3-status-chip v3-status-chip--${task.status}`}>{status.icon} {status.label}</span>
@@ -275,6 +295,7 @@ export function TaskDetailPane({
                 )}
                 runHistoryHasMore={runHistoryHasMore}
                 runHistoryLoading={runHistoryLoading}
+                activeSessionId={activeSessionId}
                 onLoadMoreRuns={onLoadMoreRuns}
                 moveTargets={taskMoveTargets}
                 onOpenSession={onOpenSession}
