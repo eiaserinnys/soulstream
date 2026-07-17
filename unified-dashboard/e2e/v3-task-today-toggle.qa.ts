@@ -77,7 +77,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
     await removeToggle.click();
     await toggledTask.waitFor({ state: "detached" });
-    await page.getByRole("button", { name: "업무 상세 닫기" }).click();
+    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
 
     await page.locator('[data-session-id="review-session"]').click();
     const standalone = page.getByTestId("v3-standalone-task-empty");

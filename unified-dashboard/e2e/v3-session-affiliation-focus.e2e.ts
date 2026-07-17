@@ -48,7 +48,7 @@ for (const theme of ["dark", "light"] as const) {
         .toHaveText(`${fixtureTitles.primaryTask} · ${fixtureTitles.project}`);
       await capture(page, theme, "01-session-click-focus");
 
-      await page.getByRole("button", { name: "업무 상세 닫기" }).click();
+      await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
       const affiliation = panelRow.locator(".v3-run-affiliation");
       await expect(affiliation).toBeVisible();
       await expect(affiliation).toHaveAttribute(

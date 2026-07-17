@@ -255,6 +255,38 @@ describe("RunbookCard", () => {
     expect(itemRow!.className).toContain("glass");
   });
 
+  it("can open every item procedure by default for the task checklist surface", () => {
+    useRunbookStore.setState({
+      byId: {
+        "rb-1": {
+          snapshot: sampleSnapshot(),
+          status: "ready",
+          error: null,
+          isRefreshing: false,
+        },
+      },
+    });
+
+    flushSync(() => {
+      root.render(createElement(RunbookCard, {
+        runbookId: "rb-1",
+        fallbackTitle: "Fallback",
+        defaultItemDetailsOpen: true,
+        textSize: "session",
+      }));
+    });
+
+    expect(container.textContent).toContain("Run pnpm test before handoff.");
+    expect(container.textContent).toContain("Done docs should stay folded.");
+    expect(container.textContent).toContain("Cancelled docs should stay folded.");
+    expect(container.querySelector<HTMLElement>('[data-testid="runbook-section-toggle"]')?.className)
+      .toContain("text-sm");
+    expect(container.querySelector<HTMLElement>('[data-testid="runbook-item-title"]')?.className)
+      .toContain("text-[14.5px]");
+    expect(container.querySelector<HTMLElement>('[data-testid="runbook-how-to"]')?.className)
+      .toContain("text-sm");
+  });
+
   it("renders a runbook board affordance that does not arm tile dragging", () => {
     const onOpenBoard = vi.fn();
     const onParentPointerDown = vi.fn();

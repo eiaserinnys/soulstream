@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, ChevronDown, ChevronRight, Loader2, RefreshCw, Trash2 } from "lucide-react";
+import { CalendarClock, Loader2, RefreshCw, Trash2 } from "lucide-react";
 
 import {
   deleteClaudeSchedule,
@@ -12,6 +12,7 @@ import type {
 } from "../stores/claude-runtime-state";
 import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
+import { DisclosureActionIcon } from "./DisclosureActionIcon";
 
 interface ClaudeRuntimeSchedulesPanelProps {
   sessionId: string;
@@ -103,7 +104,7 @@ export function ClaudeRuntimeSchedulesPanel({
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
         >
-          {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          <DisclosureActionIcon expanded={expanded} className="size-3.5" />
           <CalendarClock className="size-4 text-muted-foreground" />
           <span>Schedules</span>
           <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">

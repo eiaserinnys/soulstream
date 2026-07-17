@@ -17,9 +17,12 @@
   z-index: calc(var(--v3-layer-panel) + 1);
 }
 
-.v3-global-toolbar,
-.v3-mobile-tabs {
+.v3-global-toolbar {
   z-index: calc(var(--v3-layer-panel) + 2);
+}
+
+.v3-mobile-tabs {
+  z-index: calc(var(--v3-layer-overlay) + 1);
 }
 
 .v3-workspace-scrim,

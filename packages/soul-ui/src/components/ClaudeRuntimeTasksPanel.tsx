@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Bot, ChevronDown, ChevronRight, GitBranch, ListChecks, Loader2, RefreshCw, Square, TerminalSquare } from "lucide-react";
+import { Bot, GitBranch, ListChecks, Loader2, RefreshCw, Square, TerminalSquare } from "lucide-react";
 
 import {
   getClaudeBackgroundTaskOutput,
@@ -16,6 +16,7 @@ import type {
 } from "../stores/claude-runtime-state";
 import { runtimePanelScrollClass } from "./runtime-panel-overflow";
 import { Button } from "./ui/button";
+import { DisclosureActionIcon } from "./DisclosureActionIcon";
 
 interface ClaudeRuntimeTasksPanelProps {
   sessionId: string;
@@ -119,7 +120,7 @@ export function ClaudeRuntimeTasksPanel({
           aria-expanded={expanded}
           onClick={() => setExpanded((value) => !value)}
         >
-          {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          <DisclosureActionIcon expanded={expanded} className="size-3.5" />
           <Bot className="size-4 text-muted-foreground" />
           <span>Claude Runtime Tasks</span>
           <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">

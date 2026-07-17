@@ -61,7 +61,6 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     for (const label of [
       "오늘 플래너로 돌아가기",
       "런북 보드 열기",
-      "업무 상세 닫기",
       "업무 설명 편집",
       "컨텍스트 추가",
       "마크다운 추가",

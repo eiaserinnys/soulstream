@@ -46,7 +46,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
     await page.getByTestId("v3-task-task-alpha").click();
-    await page.getByRole("button", { name: "업무 상세 닫기" }).waitFor({ state: "visible" });
+    await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).waitFor({ state: "visible" });
     await page.getByRole("button", { name: "▦ 보드" }).click();
 
     const board = page.getByTestId("v3-task-board-pane");

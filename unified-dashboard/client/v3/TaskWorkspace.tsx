@@ -315,7 +315,6 @@ export function TaskWorkspace({
               setSplitPercent(64);
               setBoardOpen(true);
             }}
-            onCloseWorkspace={onCloseWorkspace}
             onOpenSession={onOpenSession}
             onRenameTaskTitle={async (title) => {
               const renamedTitle = await onRenameTaskTitle(title);
@@ -345,9 +344,6 @@ export function TaskWorkspace({
               <header className="v3-chat-header">
                 <div><small>{projectTitle} › {visibleTitle}</small><strong>{inspectorKind === "document" ? "마크다운 문서" : activeSession ? runLabel(task, activeSession, sessions) : "선택된 세션 없음"}</strong></div>
                 {inspectorKind !== "document" ? <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}</span> : null}
-                <DashboardIconCap label="우측 패널 닫기" onClick={closeWorkspaceInspector}>
-                  <X className="h-4 w-4" aria-hidden="true" />
-                </DashboardIconCap>
               </header>
               {inspectorKind === "chat" && activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
               {inspectorKind === "document" ? (

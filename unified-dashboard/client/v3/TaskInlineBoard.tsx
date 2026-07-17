@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
   CustomViewIframe,
   DashboardIconCap,
+  DisclosureActionIcon,
   renameMarkdownDocument,
   retainEqualValue,
   useBoardYjsRuntime,
@@ -12,7 +13,7 @@ import {
   type MarkdownDocument,
 } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
-import { ChevronDown, ChevronRight, FilePlus2, Pencil } from "lucide-react";
+import { FilePlus2, Pencil } from "lucide-react";
 
 import {
   fetchInlineCustomView,
@@ -247,7 +248,7 @@ export function TaskInlineBoard({
                         aria-expanded={expanded}
                         onClick={() => setExpandedId(expanded ? null : item.id)}
                       >
-                        {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
+                        <DisclosureActionIcon expanded={expanded} className="h-4 w-4" />
                       </DashboardIconCap>
                       <DashboardIconCap label={`${title} 이름 수정`} className="v3-inline-board-rename-button" onClick={() => beginRename(item)}>
                         <Pencil className="h-4 w-4" aria-hidden="true" />
@@ -271,7 +272,7 @@ export function TaskInlineBoard({
                     aria-expanded={expanded}
                     onClick={() => setExpandedId(expanded ? null : item.id)}
                   >
-                    {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
+                    <DisclosureActionIcon expanded={expanded} className="h-4 w-4" />
                   </DashboardIconCap>
                 </div>
                 {expanded ? <InlineCustomView customViewId={item.itemId} invalidationKey={customViewInvalidationKey} /> : null}

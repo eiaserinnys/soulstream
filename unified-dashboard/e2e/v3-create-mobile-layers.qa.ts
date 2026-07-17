@@ -78,7 +78,11 @@ async function verifyViewport(
     await createDialog.waitFor({ state: "detached" });
     await assertLayer(page, "task-workspace", ".v3-workspace-scrim");
     await capture(page, theme, mobile, "01-task-workspace-toast");
-    await page.getByRole("button", { name: "업무 상세 닫기" }).click();
+    if (mobile) {
+      await page.getByRole("tab", { name: "오늘", exact: true }).click();
+    } else {
+      await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
+    }
 
     await page.getByRole("button", { name: "아침 정리", exact: true }).click();
     const ritual = page.getByRole("dialog", { name: "어제에서 넘어온 것" });

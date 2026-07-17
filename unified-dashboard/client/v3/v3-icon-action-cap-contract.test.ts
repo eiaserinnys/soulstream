@@ -29,7 +29,7 @@ describe("v3 icon action cap contract", () => {
     ["./TaskInlineBoard.tsx", ["마크다운 추가", "펼치기", "이름 수정"]],
     ["./TaskRunHistory.tsx", ["새 세션", "이전 세션 더 보기"]],
     ["./TaskBoardPane.tsx", ["업무 상세로 돌아가기", "업무 보드 닫기"]],
-    ["./TaskWorkspace.tsx", ["업무 창 닫기", "채팅 닫기", "보드로 돌아가기", "우측 패널 닫기"]],
+    ["./TaskWorkspace.tsx", ["업무 창 닫기", "채팅 닫기", "보드로 돌아가기"]],
     ["./PlannerViews.tsx", ["오늘로 돌아가기", "새 문서", "이전 문서 더 보기", "이전 업무 더 보기"]],
     ["./V3Navigation.tsx", ["별표 업무 더 보기", "새 프로젝트"]],
     ["./V3SessionPanel.tsx", ["확인 처리"]],
@@ -44,5 +44,18 @@ describe("v3 icon action cap contract", () => {
   it("keeps star and today controls as pressed-state toggles", () => {
     expect(read("./PlannerTaskCard.tsx")).toMatch(/DashboardIconCap[\s\S]*aria-pressed=\{taskStar\.starred\}/);
     expect(read("./TaskTodayToggle.tsx")).toMatch(/DashboardIconCap[\s\S]*aria-pressed=\{inToday\}/);
+  });
+
+  it("leaves the planner return action as the only visible close affordance in task detail", () => {
+    const detail = read("./TaskDetailPane.tsx");
+    const workspace = read("./TaskWorkspace.tsx");
+    const layout = read("./V3DashboardLayout.tsx");
+
+    expect(detail).toContain('label="오늘 플래너로 돌아가기"');
+    expect(detail).not.toContain('label="업무 상세 닫기"');
+    expect(workspace).not.toContain('label="우측 패널 닫기"');
+    expect(workspace).toContain("onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}");
+    expect(layout).toContain('if (event.key !== "Escape") return;');
+    expect(layout).toContain("reduceMobilePlannerEscape");
   });
 });
