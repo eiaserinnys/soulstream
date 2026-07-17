@@ -72,7 +72,7 @@ export function DailyPlannerView({
   ].filter((group) => group.tasks.length > 0) : [];
 
   return (
-    <>
+    <div className="v3-planner-column">
       <div className="v3-date-head">
         <div><span>DAILY</span><h1>{formatLongDate(selectedDate)}</h1></div>
         <p>{state.status === "loading" ? "플래너를 불러오는 중…" : `${visibleTasks.length}개의 업무`}</p>
@@ -111,7 +111,7 @@ export function DailyPlannerView({
       {state.status === "ready" && groups.length === 0 ? (
         <EmptyState text="이 날짜에 편입된 업무가 없습니다." />
       ) : null}
-    </>
+    </div>
   );
 }
 

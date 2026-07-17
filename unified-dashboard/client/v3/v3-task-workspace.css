@@ -397,6 +397,9 @@
   display: flex;
   min-width: 0;
   flex: 1;
+}
+
+.v3-chat-header > div:not(.v3-chat-session-title) {
   flex-direction: column;
 }
 
@@ -409,6 +412,20 @@
 }
 
 .v3-chat-header strong { font-size: var(--font-size-sm); }
+
+.v3-chat-session-title {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+}
+
+.v3-chat-session-title strong {
+  overflow: hidden;
+  font-size: var(--font-size-base);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .v3-chat-status {
   border-radius: 999px;
