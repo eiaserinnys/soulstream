@@ -59,7 +59,7 @@ describe("new task inheritance preview", () => {
       />,
     );
 
-    expect(html).toContain("컨텍스트 미리보기 · 소울스트림");
+    expect(html).toContain("컨텍스트 · 소울스트림");
     expect(html).toContain("v3-text-clamp-3");
     expect(html).toContain(guidance);
     expect(html).not.toContain("<details");
@@ -87,8 +87,10 @@ describe("new task inheritance preview", () => {
       />,
     );
 
-    expect(html).toContain("지식");
-    expect(html).toContain("실행 기본값");
+    expect(html).toContain("atom");
+    expect(html).toContain("기본 담당");
+    expect(html).not.toContain("지식 없음");
+    expect(html).not.toContain("실행 기본값");
     expect(html.match(/없음/g)).toHaveLength(3);
   });
 });

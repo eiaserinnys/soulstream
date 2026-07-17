@@ -40,7 +40,7 @@ test("PR-Y · one Chromium · inherited values, empty values, and project switch
       await page.getByLabel("프로젝트 선택").selectOption("folder-dashboard");
 
       const preview = page.getByTestId("new-task-inheritance-preview");
-      await expect(preview).toContainText("컨텍스트 미리보기 · 대시보드");
+      await expect(preview).toContainText("컨텍스트 · 대시보드");
       await expect(page.getByTestId("inheritance-guidance-preview")).toContainText("프로젝트의 결정을 실제 근거와 함께 기록하고");
       await expect(page.getByTestId("inheritance-guidance-preview")).toHaveCSS("-webkit-line-clamp", "3");
       await expect(page.getByTestId("inheritance-guidance")).toContainText("소울스트림에서 상속");
@@ -52,7 +52,7 @@ test("PR-Y · one Chromium · inherited values, empty values, and project switch
       await capture(page, theme, "01-with-context");
 
       await page.getByLabel("프로젝트 선택").selectOption("folder-ops");
-      await expect(preview).toContainText("컨텍스트 미리보기 · Soulstream 운영");
+      await expect(preview).toContainText("컨텍스트 · Soulstream 운영");
       await expect(page.getByTestId("inheritance-guidance")).toContainText("없음");
       await expect(page.getByTestId("inheritance-atom")).toContainText("없음");
       await expect(page.getByTestId("inheritance-defaults")).toContainText("없음");
