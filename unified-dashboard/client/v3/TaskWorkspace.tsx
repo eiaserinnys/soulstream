@@ -12,11 +12,11 @@ import {
 import { X } from "lucide-react";
 
 import type { PlannerTask } from "./planner-data";
+import { sessionPanelTitle } from "./v3-session-panel-model";
 import type { TaskMoveTarget } from "./task-move-targets";
 import type { PageSessionDefaults } from "./task-workspace-api";
 import {
   DEFAULT_WORKSPACE_SPLIT,
-  buildRunTree,
   clampWorkspaceSplit,
   type RunSessionLoadState,
   workspaceInspectorKind,
@@ -207,7 +207,7 @@ export function TaskWorkspace({
             aria-label="세션 채팅"
           >
             <header className="v3-chat-header">
-              <div><small>세션</small><strong>{activeSession?.displayName ?? activeSession?.agentName ?? "세션"}</strong></div>
+              <div className="v3-chat-session-title"><strong>{activeSession ? sessionPanelTitle(activeSession) : "세션"}</strong></div>
               <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession?.status === "running" ? "실행 중" : "완료"}</span>
               <DashboardIconCap label="채팅 닫기" onClick={onCloseWorkspace}>
                 <X className="h-4 w-4" aria-hidden="true" />
@@ -248,7 +248,7 @@ export function TaskWorkspace({
       aria-label="업무 보드 세션 채팅"
     >
       <header className="v3-chat-header">
-        <div><small>{projectTitle} › {visibleTitle}</small><strong>{activeSession.displayName ?? activeSession.agentName ?? "세션"}</strong></div>
+        <div className="v3-chat-session-title"><strong>{sessionPanelTitle(activeSession)}</strong></div>
         <span className={`v3-chat-status v3-chat-status--${activeSession.status}`}>{activeSession.status === "running" ? "실행 중" : "완료"}</span>
         <DashboardIconCap label="보드로 돌아가기" onClick={closeBoardInspector}>
           <X className="h-4 w-4" aria-hidden="true" />
@@ -342,7 +342,11 @@ export function TaskWorkspace({
               aria-label={inspectorKind === "document" ? "마크다운 문서" : "세션 채팅"}
             >
               <header className="v3-chat-header">
-                <div><small>{projectTitle} › {visibleTitle}</small><strong>{inspectorKind === "document" ? "마크다운 문서" : activeSession ? runLabel(task, activeSession, sessions) : "선택된 세션 없음"}</strong></div>
+                {inspectorKind === "document" ? (
+                  <div><small>{projectTitle} › {visibleTitle}</small><strong>마크다운 문서</strong></div>
+                ) : (
+                  <div className="v3-chat-session-title"><strong>{activeSession ? sessionPanelTitle(activeSession) : "선택된 세션 없음"}</strong></div>
+                )}
                 {inspectorKind !== "document" ? <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}</span> : null}
               </header>
               {inspectorKind === "chat" && activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
@@ -366,16 +370,4 @@ export function TaskWorkspace({
       </div>
     </div>
   );
-}
-
-function runLabel(
-  task: PlannerTask,
-  session: SessionSummary | undefined,
-  sessions: readonly SessionSummary[],
-): string {
-  if (!session) return "세션";
-  const roots = buildRunTree(task.sessionIds, sessions);
-  const root = roots.find((node) => node.session.agentSessionId === session.agentSessionId);
-  if (root?.runNumber) return `세션 #${root.runNumber}`;
-  return session.displayName ?? session.agentName ?? "위임 세션";
 }
