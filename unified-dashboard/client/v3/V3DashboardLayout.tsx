@@ -156,6 +156,7 @@ function V3DashboardContent() {
     setChatOpen,
     notify,
   });
+  const clearSessionPanelFocus = sessionPanel.clearFocusRequest;
   const selectedTask = useMemo(
     () => currentTasks.find((task) => task.page.id === selectedTaskId) ?? selectedTaskSnapshot,
     [currentTasks, selectedTaskId, selectedTaskSnapshot],
@@ -326,6 +327,7 @@ function V3DashboardContent() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [activeSessionKey, applyMobileState, chatOpen, clearProject, closeWorkspace, createOpen, mobileMode, mobileTab, newDocumentOpen, selectedDate, selectedProjectId, selectedTaskId, today, workspaceOpen]);
   const openTask = (task: PlannerTask) => {
+    clearSessionPanelFocus();
     setActiveSessionSummary(null);
     setActiveSession(null);
     setSelectedTaskId(task.page.id);
@@ -339,11 +341,12 @@ function V3DashboardContent() {
     catch (error) { notify(`별표 업무 열기 실패 · ${errorText(error)}`); }
   };
   const openSession = useCallback((session: SessionSummary) => {
+    clearSessionPanelFocus();
     activateRunSession(session, { setActiveSessionSummary, setActiveSession, setActiveTab });
     setWorkspaceOpen(true);
     setChatOpen(true);
     if (mobileMode && selectedTaskId) setMobileTab("chat");
-  }, [mobileMode, selectedTaskId, setActiveSession, setActiveSessionSummary, setActiveTab]);
+  }, [clearSessionPanelFocus, mobileMode, selectedTaskId, setActiveSession, setActiveSessionSummary, setActiveTab]);
   const openProjectDocument = useCallback((documentId: string) => {
     openDocumentInV3(documentId, { setActiveBoardDocument, setInspectorOpen: setDocumentInspectorOpen });
   }, [setActiveBoardDocument]);
@@ -443,7 +446,7 @@ function V3DashboardContent() {
       <div className="v3-session-panel-resize" data-testid="v3-session-panel-resize-handle" aria-hidden="true">
         <DragHandle onDrag={sessionPanel.resize} widthPx={DASHBOARD_PANEL_GAP_PX} />
       </div>
-      <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} onOpenSession={(session) => { void sessionPanel.openSession(session); }} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onAcknowledged={acknowledgeReview} />
+      <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} boardItems={catalog?.boardItems ?? []} folders={catalog?.folders ?? []} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} onOpenSession={sessionPanel.openSession} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onAcknowledged={acknowledgeReview} />
       {workspaceOpen && (workspaceTask || activeSession) ? (
         <TaskWorkspace
           task={workspaceTask}
@@ -458,6 +461,8 @@ function V3DashboardContent() {
           runHistoryLoading={runHistory.loading}
           onLoadMoreRuns={() => { void runHistory.loadMore(); }}
           activeSession={activeSession}
+          focusRequest={sessionPanel.focusRequest}
+          onFocusRequestHandled={sessionPanel.acknowledgeFocusRequest}
           chatOpen={chatOpen}
           chatInputDisabled={chatInputDisabled}
           fileUploadUrl={fileUploadUrl}

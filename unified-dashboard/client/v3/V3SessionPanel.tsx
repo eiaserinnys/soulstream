@@ -1,6 +1,7 @@
 import {
   forwardRef,
   memo,
+  useCallback,
   useImperativeHandle,
   useMemo,
   useRef,
@@ -15,17 +16,25 @@ import {
   useGlassSurface,
   type SessionContextMenuState,
   type SessionReviewAcknowledgeResult,
+  type CatalogBoardItem,
+  type CatalogFolder,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
 import { Check } from "lucide-react";
 
-import { sessionPanelGroups, sessionPanelTitle } from "./v3-session-panel-model";
+import {
+  sessionPanelAffiliation,
+  sessionPanelGroups,
+  sessionPanelTitle,
+} from "./v3-session-panel-model";
 import { RichSessionRow } from "./RichSessionRow";
 import type { SessionNodeConnectivity } from "./session-node-connectivity";
 import "./v3-session-panel.css";
 
 interface V3SessionPanelProps {
   sessions: readonly SessionSummary[];
+  boardItems: readonly CatalogBoardItem[];
+  folders: readonly CatalogFolder[];
   nodeConnectivity: SessionNodeConnectivity;
   activeSessionId: string | null;
   onOpenSession(session: SessionSummary): void;
@@ -36,6 +45,8 @@ interface V3SessionPanelProps {
 
 export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(function V3SessionPanel({
   sessions,
+  boardItems,
+  folders,
   nodeConnectivity,
   activeSessionId,
   onOpenSession,
@@ -50,12 +61,16 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
     () => sessionPanelGroups(sessions, nodeConnectivity),
     [nodeConnectivity, sessions],
   );
+  const affiliations = useMemo(() => new Map(sessions.map((session) => [
+    session.agentSessionId,
+    sessionPanelAffiliation(boardItems, folders, session.agentSessionId),
+  ])), [boardItems, folders, sessions]);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<SessionContextMenuState | null>(null);
   useImperativeHandle(forwardedRef, () => surfaceRef.current as HTMLElement);
 
-  const openContextMenu = (session: SessionSummary, event: MouseEvent<HTMLElement>) => {
+  const openContextMenu = useCallback((session: SessionSummary, event: MouseEvent<HTMLElement>) => {
     event.preventDefault();
     event.stopPropagation();
     setContextMenu({
@@ -63,9 +78,9 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
       y: event.clientY,
       sessionId: session.agentSessionId,
     });
-  };
+  }, []);
 
-  const acknowledge = async (session: SessionSummary) => {
+  const acknowledge = useCallback(async (session: SessionSummary) => {
     if (pendingRef.current) return;
     pendingRef.current = true;
     setPendingId(session.agentSessionId);
@@ -78,7 +93,7 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
       pendingRef.current = false;
       setPendingId(null);
     }
-  };
+  }, [onAcknowledged]);
 
   return (
     <aside
@@ -95,6 +110,7 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
           testId="v3-session-group-running"
           emptyText="실행 중인 세션이 없습니다."
           sessions={groups.running}
+          affiliations={affiliations}
           activeSessionId={activeSessionId}
           pendingId={pendingId}
           onOpenSession={onOpenSession}
@@ -107,6 +123,7 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
             testId="v3-session-group-offline"
             emptyText=""
             sessions={groups.offline}
+            affiliations={affiliations}
             activeSessionId={activeSessionId}
             pendingId={pendingId}
             onOpenSession={onOpenSession}
@@ -120,6 +137,7 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
           testId="v3-session-group-review"
           emptyText="검수 대기 세션이 없습니다."
           sessions={groups.review}
+          affiliations={affiliations}
           activeSessionId={activeSessionId}
           pendingId={pendingId}
           onOpenSession={onOpenSession}
@@ -146,6 +164,7 @@ function SessionGroup({
   testId,
   emptyText,
   sessions,
+  affiliations,
   activeSessionId,
   pendingId,
   onOpenSession,
@@ -158,6 +177,7 @@ function SessionGroup({
   testId: string;
   emptyText: string;
   sessions: readonly SessionSummary[];
+  affiliations: ReadonlyMap<string, string | null>;
   activeSessionId: string | null;
   pendingId: string | null;
   onOpenSession(session: SessionSummary): void;
@@ -174,6 +194,7 @@ function SessionGroup({
           <SessionPanelRow
             key={session.agentSessionId}
             session={session}
+            affiliation={affiliations.get(session.agentSessionId) ?? null}
             active={activeSessionId === session.agentSessionId}
             pending={pendingId === session.agentSessionId}
             review={review}
@@ -191,6 +212,7 @@ function SessionGroup({
 
 const SessionPanelRow = memo(function SessionPanelRow({
   session,
+  affiliation,
   active,
   pending,
   review,
@@ -200,6 +222,7 @@ const SessionPanelRow = memo(function SessionPanelRow({
   onAcknowledge,
 }: {
   session: SessionSummary;
+  affiliation: string | null;
   active: boolean;
   pending: boolean;
   review: boolean;
@@ -215,6 +238,7 @@ const SessionPanelRow = memo(function SessionPanelRow({
     >
       <RichSessionRow
         session={session}
+        affiliation={affiliation}
         nodeOffline={nodeOffline}
         onOpen={onOpenSession}
         onContextMenu={onContextMenu}

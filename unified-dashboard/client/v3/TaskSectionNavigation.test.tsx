@@ -66,6 +66,26 @@ describe("TaskSectionNavigation", () => {
     expect(target.getAttribute("aria-current")).toBe("location");
   });
 
+  it("uses the same section scroll path to focus an externally requested session row", async () => {
+    flushSync(() => root.render(<Harness />));
+    const scroll = scrollElement();
+    installGeometry(scroll);
+    const scrollTo = vi.fn();
+    const onFocusRequestHandled = vi.fn();
+    scroll.scrollTo = scrollTo;
+
+    flushSync(() => root.render(
+      <Harness
+        focusRequest={{ requestId: 1, sectionId: "sessions", sessionId: "session-target" }}
+        onFocusRequestHandled={onFocusRequestHandled}
+      />,
+    ));
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1068, behavior: "auto" });
+    expect(onFocusRequestHandled).toHaveBeenCalledWith(1);
+    await vi.waitFor(() => expect(currentLabel()).toBe("세션 섹션으로 이동"));
+  });
+
   function scrollElement(): HTMLDivElement {
     const scroll = container.querySelector<HTMLDivElement>('[data-testid="task-section-scroll"]');
     if (!scroll) throw new Error("업무 상세 스크롤을 찾지 못했습니다.");
@@ -84,7 +104,13 @@ describe("TaskSectionNavigation", () => {
   }
 });
 
-function Harness() {
+function Harness({
+  focusRequest,
+  onFocusRequestHandled,
+}: {
+  focusRequest?: { requestId: number; sectionId: "sessions"; sessionId: string };
+  onFocusRequestHandled?(requestId: number): void;
+}) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const description = useRef<HTMLElement>(null);
   const context = useRef<HTMLElement>(null);
@@ -95,12 +121,20 @@ function Harness() {
 
   return (
     <div ref={scrollRef} data-testid="task-section-scroll">
-      <TaskSectionNavigation scrollRef={scrollRef} sectionRefs={sectionRefs} />
+      <TaskSectionNavigation
+        scrollRef={scrollRef}
+        sectionRefs={sectionRefs}
+        focusRequest={focusRequest}
+        focusTargetReady
+        onFocusRequestHandled={onFocusRequestHandled}
+      />
       <section ref={description} data-section-id="description" />
       <section ref={context} data-section-id="context" />
       <section ref={checklist} data-section-id="checklist" />
       <section ref={board} data-section-id="board" />
-      <section ref={sessions} data-section-id="sessions" />
+      <section ref={sessions} data-section-id="sessions">
+        <div data-session-id="session-target" />
+      </section>
     </div>
   );
 }
@@ -124,6 +158,9 @@ function installGeometry(scroll: HTMLDivElement) {
     if (!section) throw new Error(`${id} 섹션을 찾지 못했습니다.`);
     section.getBoundingClientRect = () => rect(tops[id as keyof typeof tops]);
   }
+  const sessionTarget = scroll.querySelector<HTMLElement>('[data-session-id="session-target"]');
+  if (!sessionTarget) throw new Error("세션 포커스 대상을 찾지 못했습니다.");
+  sessionTarget.getBoundingClientRect = () => rect(980);
   return tops;
 }
 

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { CatalogBoardItem, SessionSummary } from "@seosoyoung/soul-ui";
+import type { CatalogBoardItem, CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
   sessionPanelGroups,
+  sessionPanelAffiliation,
   sessionPanelTitle,
   sessionWorkspaceTargetFromBoardItems,
 } from "./v3-session-panel-model";
@@ -112,6 +113,43 @@ describe("v3 session panel model", () => {
       .toEqual({ kind: "task", pageId: "rb-legacy" });
     expect(sessionWorkspaceTargetFromBoardItems([legacyFolder], "session-a"))
       .toEqual({ kind: "standalone" });
+  });
+
+  it("derives task and project affiliation from cached catalog board items only", () => {
+    const items = [
+      boardItem("primary", "runbook", "task-a"),
+      {
+        id: "runbook:task-a",
+        folderId: "project-folder",
+        containerKind: "folder",
+        containerId: "project-folder",
+        membershipKind: "primary",
+        itemType: "runbook",
+        itemId: "task-a",
+        x: 0,
+        y: 0,
+        metadata: { title: "PR-BY 세션 UX" },
+      } satisfies CatalogBoardItem,
+    ];
+    const folders: CatalogFolder[] = [
+      { id: "project-folder", name: "소울스트림", sortOrder: 0, projectPageId: "project-page" },
+    ];
+
+    expect(sessionPanelAffiliation(items, folders, "session-a"))
+      .toBe("PR-BY 세션 UX · 소울스트림");
+    expect(sessionPanelAffiliation(items, [], "session-a")).toBe("PR-BY 세션 UX");
+  });
+
+  it("shows a cached folder name for v1 sessions and omits cache misses", () => {
+    const legacy = boardItem("primary", "folder", "legacy-folder");
+    const folders: CatalogFolder[] = [
+      { id: "legacy-folder", name: "기존 세션", sortOrder: 0, projectPageId: null },
+    ];
+
+    expect(sessionPanelAffiliation([legacy], folders, "session-a")).toBe("기존 세션");
+    expect(sessionPanelAffiliation([], folders, "session-a")).toBeNull();
+    expect(sessionPanelAffiliation([boardItem("primary", "runbook", "task-missing")], folders, "session-a"))
+      .toBeNull();
   });
 });
 

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SessionReviewAcknowledgeResult, SessionSummary } from "@seosoyoung/soul-ui";
+import type { CatalogBoardItem, CatalogFolder, SessionReviewAcknowledgeResult, SessionSummary } from "@seosoyoung/soul-ui";
 
 const acknowledgeSessionReview = vi.hoisted(() => vi.fn());
 
@@ -42,6 +42,8 @@ describe("V3SessionPanel", () => {
       root.render(
         <V3SessionPanel
           sessions={[session("running-1", "running"), session("review-1", "completed")]}
+          boardItems={affiliationBoardItems("running-1")}
+          folders={projectFolders}
           nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["eiaserinnys"]) }}
           activeSessionId={null}
           onOpenSession={onOpenSession}
@@ -58,6 +60,9 @@ describe("V3SessionPanel", () => {
     expect(runningRow?.textContent).toContain("로젤린");
     expect(runningRow?.textContent).toContain("eiaserinnys");
     expect(runningRow?.textContent).toContain("마지막 진행 메시지");
+    expect(runningRow?.textContent).toContain("PR-BY 업무 · 소울스트림");
+    expect(runningRow?.querySelector(".v3-run-affiliation")?.getAttribute("title"))
+      .toBe("PR-BY 업무 · 소울스트림");
     expect(runningRow?.textContent).toContain("실행 중");
     expect(runningRow?.querySelector('[data-testid="profile-avatar"]')).not.toBeNull();
     expect(runningRow?.querySelector(".v3-run-trailing time")?.textContent).toMatch(/전$/);
@@ -86,6 +91,8 @@ describe("V3SessionPanel", () => {
       return (
         <V3SessionPanel
           sessions={sessions}
+          boardItems={[]}
+          folders={[]}
           nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["eiaserinnys"]) }}
           activeSessionId={null}
           onOpenSession={() => undefined}
@@ -117,6 +124,8 @@ describe("V3SessionPanel", () => {
       root.render(
         <V3SessionPanel
           sessions={[{ ...session("offline-1", "running"), nodeId: "node-offline" }]}
+          boardItems={[]}
+          folders={[]}
           nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["eiaserinnys"]) }}
           activeSessionId={null}
           onOpenSession={() => undefined}
@@ -137,6 +146,8 @@ describe("V3SessionPanel", () => {
       root.render(
         <V3SessionPanel
           sessions={[{ ...session("offline-1", "running"), nodeId: "node-offline" }]}
+          boardItems={[]}
+          folders={[]}
           nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["node-offline"]) }}
           activeSessionId={null}
           onOpenSession={() => undefined}
@@ -174,4 +185,36 @@ function session(agentSessionId: string, status: "running" | "completed"): Sessi
     agentId: "roselin_codex",
     agentName: "로젤린",
   } as SessionSummary;
+}
+
+const projectFolders: CatalogFolder[] = [
+  { id: "project-folder", name: "소울스트림", sortOrder: 0, projectPageId: "project-page" },
+];
+
+function affiliationBoardItems(sessionId: string): CatalogBoardItem[] {
+  return [
+    {
+      id: `session:${sessionId}`,
+      folderId: "project-folder",
+      containerKind: "runbook",
+      containerId: "task-a",
+      membershipKind: "primary",
+      itemType: "session",
+      itemId: sessionId,
+      x: 0,
+      y: 0,
+    },
+    {
+      id: "runbook:task-a",
+      folderId: "project-folder",
+      containerKind: "folder",
+      containerId: "project-folder",
+      membershipKind: "primary",
+      itemType: "runbook",
+      itemId: "task-a",
+      x: 0,
+      y: 0,
+      metadata: { title: "PR-BY 업무" },
+    },
+  ];
 }

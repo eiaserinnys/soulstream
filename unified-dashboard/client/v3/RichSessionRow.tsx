@@ -10,6 +10,8 @@ export function RichSessionRow({
   runNumber = null,
   failed = false,
   nodeOffline = false,
+  active = false,
+  affiliation,
   preview,
   actions,
   onOpen,
@@ -19,6 +21,8 @@ export function RichSessionRow({
   runNumber?: number | null;
   failed?: boolean;
   nodeOffline?: boolean;
+  active?: boolean;
+  affiliation?: string | null;
   preview?: string;
   actions?: ReactNode;
   onOpen(session: SessionSummary): void;
@@ -37,7 +41,7 @@ export function RichSessionRow({
 
   return (
     <div
-      className={`v3-run-row${failed ? " v3-run-row--failed" : ""}${nodeOffline ? " v3-run-row--offline" : ""}`}
+      className={`v3-run-row${active ? " is-active" : ""}${failed ? " v3-run-row--failed" : ""}${nodeOffline ? " v3-run-row--offline" : ""}`}
       data-load-state={failed ? "failed" : "ready"}
       data-session-id={failed ? undefined : session.agentSessionId}
       onContextMenu={failed || !onContextMenu ? undefined : (event) => onContextMenu(session, event)}
@@ -55,6 +59,7 @@ export function RichSessionRow({
             <span>{failed ? "세션 상세 없음" : session.agentName ?? session.agentId ?? "에이전트 미상"}</span>
             {!failed ? <span>{session.nodeId ?? "노드 미상"}</span> : null}
           </span>
+          {affiliation ? <span className="v3-run-affiliation" title={affiliation}>{affiliation}</span> : null}
           <small>{visiblePreview}</small>
         </span>
         <span className="v3-run-trailing">

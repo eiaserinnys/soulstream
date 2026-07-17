@@ -1,4 +1,4 @@
-import type { CatalogBoardItem, SessionSummary } from "@seosoyoung/soul-ui";
+import type { CatalogBoardItem, CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 
 import { singleLinePreview } from "./session-preview";
 import {
@@ -53,17 +53,55 @@ export function sessionWorkspaceTargetFromBoardItems(
   boardItems: readonly CatalogBoardItem[],
   sessionId: string,
 ): SessionWorkspaceTarget | null {
-  const primary = boardItems.find((item) => (
-    item.itemType === "session"
-      && item.itemId === sessionId
-      && (item.membershipKind ?? "primary") === "primary"
-  ));
+  const primary = primarySessionBoardItem(boardItems, sessionId);
   if (!primary) return null;
   const containerKind = primary.containerKind ?? "folder";
   const containerId = primary.containerId ?? primary.folderId;
   return containerKind === "runbook"
     ? { kind: "task", pageId: containerId }
     : { kind: "standalone" };
+}
+
+export function sessionPanelAffiliation(
+  boardItems: readonly CatalogBoardItem[],
+  folders: readonly CatalogFolder[],
+  sessionId: string,
+): string | null {
+  const primary = primarySessionBoardItem(boardItems, sessionId);
+  if (!primary) return null;
+  const containerKind = primary.containerKind ?? "folder";
+  const containerId = primary.containerId ?? primary.folderId;
+  if (containerKind === "folder") {
+    return folders.find((folder) => folder.id === containerId)?.name.trim() || null;
+  }
+
+  const taskItem = boardItems.find((item) => (
+    item.itemType === "runbook"
+      && item.itemId === containerId
+      && (item.membershipKind ?? "primary") === "primary"
+  ));
+  const taskTitle = metadataTitle(taskItem);
+  if (!taskItem || !taskTitle) return null;
+  const projectName = folders.find((folder) => (
+    folder.id === taskItem.folderId && Boolean(folder.projectPageId)
+  ))?.name.trim();
+  return projectName ? `${taskTitle} · ${projectName}` : taskTitle;
+}
+
+function primarySessionBoardItem(
+  boardItems: readonly CatalogBoardItem[],
+  sessionId: string,
+): CatalogBoardItem | undefined {
+  return boardItems.find((item) => (
+    item.itemType === "session"
+      && item.itemId === sessionId
+      && (item.membershipKind ?? "primary") === "primary"
+  ));
+}
+
+function metadataTitle(item: CatalogBoardItem | undefined): string | null {
+  const title = item?.metadata?.title;
+  return typeof title === "string" ? title.trim() || null : null;
 }
 
 function sessionTimestamp(session: SessionSummary): number {

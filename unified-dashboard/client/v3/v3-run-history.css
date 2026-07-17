@@ -18,6 +18,11 @@
 
 .v3-run-row:hover { border-color: var(--glass-border); }
 
+.v3-run-row.is-active {
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--glass-border));
+  background: color-mix(in srgb, var(--accent) 56%, transparent);
+}
+
 .v3-run-open {
   display: flex;
   min-width: 0;
@@ -96,10 +101,18 @@
 }
 
 .v3-run-agent-line span,
+.v3-run-affiliation,
 .v3-run-open small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.v3-run-affiliation {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: var(--font-size-xs);
+  font-weight: 720;
 }
 
 .v3-run-agent-line span + span::before {
