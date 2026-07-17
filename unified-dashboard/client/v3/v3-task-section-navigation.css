@@ -4,9 +4,9 @@
 
 .v3-task-detail-layout {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
+  grid-template-columns: 58px minmax(0, 1fr);
   align-items: start;
-  gap: 14px;
+  gap: 18px;
 }
 
 .v3-task-detail-content {
@@ -20,33 +20,21 @@
   display: flex;
   align-items: stretch;
   flex-direction: column;
-  gap: 4px;
-  border-radius: 20px;
-  padding: 9px 6px 7px;
-  background: color-mix(in srgb, var(--card) 78%, transparent);
-  box-shadow: var(--lg-shadow), inset 0 1px 1px rgb(255 255 255 / 12%);
-}
-
-.v3-task-section-nav-title {
-  padding: 0 0 4px;
-  color: var(--muted-foreground);
-  font-size: 9px;
-  font-weight: 760;
-  letter-spacing: .04em;
-  text-align: center;
+  gap: 5px;
+  padding: 2px 0;
 }
 
 .v3-task-section-anchor {
   display: grid;
-  min-height: 52px;
+  min-height: 44px;
   place-items: center;
   gap: 3px;
   border: 1px solid transparent;
-  border-radius: 14px;
-  padding: 6px 2px;
+  border-radius: 12px;
+  padding: 5px 2px;
   color: var(--muted-foreground);
   background: transparent;
-  font-size: 9px;
+  font-size: var(--font-size-xs);
   font-weight: 720;
   line-height: 1;
   white-space: nowrap;
@@ -59,10 +47,10 @@
 }
 
 .v3-task-section-anchor[aria-current="location"] {
-  border-color: var(--glass-border);
+  border-color: color-mix(in srgb, var(--foreground) 14%, transparent);
   color: var(--foreground);
-  background: color-mix(in srgb, var(--card) 90%, transparent);
-  box-shadow: inset 3px 0 0 var(--foreground);
+  background: color-mix(in srgb, var(--muted) 82%, transparent);
+  box-shadow: inset 2px 0 0 var(--foreground);
 }
 
 .v3-task-section-anchor:focus-visible {
@@ -72,7 +60,7 @@
 
 .v3-task-section-anchor[aria-current="location"]:focus-visible {
   box-shadow:
-    inset 3px 0 0 var(--foreground),
+    inset 2px 0 0 var(--foreground),
     0 0 0 3px color-mix(in srgb, var(--ring) 36%, transparent);
 }
 

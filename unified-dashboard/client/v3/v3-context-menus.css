@@ -5,9 +5,8 @@
 
 .v3-inline-board-item {
   overflow: hidden;
-  border: 1px solid var(--lg-line);
+  border: 1px solid var(--glass-border);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--lg-card) 84%, transparent);
 }
 
 .v3-inline-board-item > a,

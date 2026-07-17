@@ -1,5 +1,6 @@
 import type { MouseEvent, ReactNode } from "react";
 import { ProfileAvatar, type SessionSummary } from "@seosoyoung/soul-ui";
+import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 
 import { singleLinePreview } from "./session-preview";
 import { sessionPanelTitle } from "./v3-session-panel-model";
@@ -40,7 +41,9 @@ export function RichSessionRow({
     ) ?? "아직 표시할 메시지가 없습니다.";
 
   return (
-    <div
+    <LiquidGlassCard
+      webglSurface
+      cornerRadius={14}
       className={`v3-run-row${active ? " is-active" : ""}${failed ? " v3-run-row--failed" : ""}${nodeOffline ? " v3-run-row--offline" : ""}`}
       data-load-state={failed ? "failed" : "ready"}
       data-session-id={failed ? undefined : session.agentSessionId}
@@ -71,7 +74,7 @@ export function RichSessionRow({
         </span>
       </button>
       {actions ? <div className="v3-run-row-actions">{actions}</div> : null}
-    </div>
+    </LiquidGlassCard>
   );
 }
 

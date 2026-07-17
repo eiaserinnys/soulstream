@@ -1,7 +1,7 @@
 .v3-run-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
 .v3-run-row {
@@ -11,16 +11,17 @@
   min-height: 74px;
   align-items: center;
   gap: 6px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--card) 72%, transparent);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
 }
 
 .v3-run-row:hover { border-color: var(--glass-border); }
 
 .v3-run-row.is-active {
   border-color: color-mix(in srgb, var(--primary) 34%, var(--glass-border));
-  background: color-mix(in srgb, var(--accent) 56%, transparent);
+  box-shadow:
+    inset 3px 0 0 color-mix(in srgb, var(--primary) 76%, transparent),
+    var(--lg-shadow);
 }
 
 .v3-run-open {
@@ -76,7 +77,7 @@
 
 .v3-run-open strong {
   overflow: hidden;
-  font-size: 14.5px;
+  font-size: var(--font-size-sm);
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;

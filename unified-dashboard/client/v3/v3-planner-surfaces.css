@@ -215,20 +215,18 @@
 }
 
 .v3-documents {
-  margin: 10px 0 24px;
-  border-radius: 12px;
-  padding: 16px;
+  margin: 26px 0 30px;
+  padding: 0 2px;
 }
 
 .v3-project-context {
   display: grid;
   gap: 10px;
-  margin: 10px 0 18px;
-  border: 1px solid var(--glass-border);
+  margin: 18px 0 22px;
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   color: var(--muted-foreground);
-  background: color-mix(in srgb, var(--card) 55%, transparent);
+  background: color-mix(in srgb, var(--muted) 62%, transparent);
   font-size: var(--font-size-sm);
 }
 
@@ -269,7 +267,7 @@
 .v3-project-guidance > small,
 .v3-project-context-sourced > small {
   color: var(--muted-foreground);
-  font-size: 10px;
+  font-size: var(--font-size-xs);
 }
 
 .v3-project-context-sourced {
@@ -288,25 +286,25 @@
 .v3-document-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .v3-document-list button {
   display: flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 9px;
   padding: 9px 10px;
   color: var(--muted-foreground);
-  background: var(--muted);
+  background: color-mix(in srgb, var(--muted) 68%, transparent);
   text-align: left;
   cursor: pointer;
 }
 
 .v3-document-list button:hover {
-  border-color: var(--info);
   color: var(--foreground);
+  background: var(--muted);
 }
 
 .v3-document-list small {

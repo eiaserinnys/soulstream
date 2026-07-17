@@ -70,7 +70,7 @@ async function verify(browser: Browser) {
       await capture(page, "diagnostic-task-open-failure");
       throw error;
     }
-    const detailContext = page.locator(".v3-detail-section").filter({ has: page.getByRole("heading", { name: "컨텍스트" }) });
+    const detailContext = page.locator(".v3-detail-section").filter({ has: page.getByRole("heading", { name: "정보" }) });
     await waitText(detailContext, "프로젝트의 결정을 실제 근거와 함께 기록하고", "업무 상세 부모 guidance");
     await waitText(detailContext, "플래너 UX 원칙", "업무 상세 자체 atom");
 
