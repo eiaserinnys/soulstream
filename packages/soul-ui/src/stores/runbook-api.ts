@@ -15,6 +15,16 @@ interface RunbookStatusResponse {
   snapshot?: RunbookSnapshot;
 }
 
+export class RunbookApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "RunbookApiError";
+  }
+}
+
 function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
@@ -109,10 +119,13 @@ export async function postRunbookItemStatus(
     },
   );
   if (!response.ok) {
-    throw new Error(await readRunbookErrorMessage(
-      response,
-      `Runbook status update failed: ${response.status}`,
-    ));
+    throw new RunbookApiError(
+      await readRunbookErrorMessage(
+        response,
+        `Runbook status update failed: ${response.status}`,
+      ),
+      response.status,
+    );
   }
   return await response.json() as RunbookItemStatusResponse;
 }
