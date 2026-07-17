@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { redirectV2Pathname } from "./App";
+import { redirectRetiredDashboardPathname } from "./dashboard-routes";
 
-describe("redirectV2Pathname", () => {
-  it.each(["/v2", "/v2/pages/page-1"])(
-    "replaces %s with /v3 and updates the rendered pathname",
+describe("redirectRetiredDashboardPathname", () => {
+  it.each(["/v2", "/v2/pages/page-1", "/v3", "/v3/projects/project-1"])(
+    "replaces %s with / and updates the rendered pathname",
     (pathname) => {
       const history = {
         state: { preserved: true },
@@ -12,17 +12,19 @@ describe("redirectV2Pathname", () => {
       };
       const updatePathname = vi.fn();
 
-      expect(redirectV2Pathname(pathname, history, updatePathname)).toBe(true);
+      expect(
+        redirectRetiredDashboardPathname(pathname, history, updatePathname),
+      ).toBe(true);
       expect(history.replaceState).toHaveBeenCalledWith(
         history.state,
         "",
-        "/v3",
+        "/",
       );
-      expect(updatePathname).toHaveBeenCalledWith("/v3");
+      expect(updatePathname).toHaveBeenCalledWith("/");
     },
   );
 
-  it.each(["/v2-other", "/v3", "/", "/session-1"])(
+  it.each(["/v2-other", "/v3-other", "/", "/v1", "/session-1"])(
     "leaves %s unchanged",
     (pathname) => {
       const history = {
@@ -31,7 +33,9 @@ describe("redirectV2Pathname", () => {
       };
       const updatePathname = vi.fn();
 
-      expect(redirectV2Pathname(pathname, history, updatePathname)).toBe(false);
+      expect(
+        redirectRetiredDashboardPathname(pathname, history, updatePathname),
+      ).toBe(false);
       expect(history.replaceState).not.toHaveBeenCalled();
       expect(updatePathname).not.toHaveBeenCalled();
     },

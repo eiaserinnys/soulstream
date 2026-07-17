@@ -61,6 +61,12 @@ function buildHash(viewMode: DashboardViewMode, sessionId: string | null): strin
   return sessionId ? `#${sessionId}` : "";
 }
 
+export function pathWithoutHash(
+  location: Pick<Location, "pathname" | "search">,
+): string {
+  return `${location.pathname}${location.search}`;
+}
+
 export function useUrlSync() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
   const viewMode = useDashboardStore((s) => s.viewMode);
@@ -122,7 +128,7 @@ export function useUrlSync() {
     if (targetHash) {
       window.history.pushState(null, "", targetHash);
     } else {
-      window.history.pushState(null, "", "/");
+      window.history.pushState(null, "", pathWithoutHash(window.location));
     }
   }, [activeSessionKey, viewMode]);
 

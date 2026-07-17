@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { isV3Pathname } from "../App";
+import { resolveOrchestratorDashboardVersion } from "../dashboard-routes";
 
-describe("isV3Pathname", () => {
-  it("matches only the /v3 route family", () => {
-    expect(isV3Pathname("/v3")).toBe(true);
-    expect(isV3Pathname("/v3/projects/project-1")).toBe(true);
-    expect(isV3Pathname("/v3-other")).toBe(false);
-    expect(isV3Pathname("/v2")).toBe(false);
-    expect(isV3Pathname("/")).toBe(false);
+describe("resolveOrchestratorDashboardVersion", () => {
+  it("serves v3 from the main route and v1 only from the explicit legacy family", () => {
+    expect(resolveOrchestratorDashboardVersion("/")).toBe("v3");
+    expect(resolveOrchestratorDashboardVersion("/session-1")).toBe("v3");
+    expect(resolveOrchestratorDashboardVersion("/v1")).toBe("v1");
+    expect(resolveOrchestratorDashboardVersion("/v1/session-1")).toBe("v1");
+    expect(resolveOrchestratorDashboardVersion("/v1-other")).toBe("v3");
   });
 });

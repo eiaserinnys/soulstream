@@ -7,6 +7,10 @@
 
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useAppConfig } from "./config/AppConfigContext";
+import {
+  redirectRetiredDashboardPathname,
+  resolveOrchestratorDashboardVersion,
+} from "./dashboard-routes";
 
 const DashboardLayout = lazy(() =>
   import("./DashboardLayout").then((mod) => ({ default: mod.DashboardLayout })),
@@ -22,26 +26,6 @@ const V3DashboardLayout = lazy(() =>
   })),
 );
 
-function isRetiredV2Pathname(pathname: string): boolean {
-  return pathname === "/v2" || pathname.startsWith("/v2/");
-}
-
-export function redirectV2Pathname(
-  pathname: string,
-  history: Pick<History, "replaceState" | "state">,
-  updatePathname: (pathname: string) => void,
-): boolean {
-  if (!isRetiredV2Pathname(pathname)) return false;
-
-  history.replaceState(history.state, "", "/v3");
-  updatePathname("/v3");
-  return true;
-}
-
-export function isV3Pathname(pathname: string): boolean {
-  return pathname === "/v3" || pathname.startsWith("/v3/");
-}
-
 export function App() {
   const config = useAppConfig();
   const [pathname, setPathname] = useState(() => window.location.pathname);
@@ -53,7 +37,7 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    redirectV2Pathname(pathname, window.history, setPathname);
+    redirectRetiredDashboardPathname(pathname, window.history, setPathname);
   }, [pathname]);
 
   useEffect(() => {
@@ -67,16 +51,16 @@ export function App() {
   }, [config.mode, config.nodeId]);
 
   if (config.mode === "orchestrator") {
-    if (isV3Pathname(pathname)) {
+    if (resolveOrchestratorDashboardVersion(pathname) === "v1") {
       return (
         <Suspense fallback={null}>
-          <V3DashboardLayout />
+          <OrchestratorDashboardLayout />
         </Suspense>
       );
     }
     return (
       <Suspense fallback={null}>
-        <OrchestratorDashboardLayout />
+        <V3DashboardLayout />
       </Suspense>
     );
   }
