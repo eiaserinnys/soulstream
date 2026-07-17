@@ -134,6 +134,7 @@ interface RunbookItemStatusToggleProps {
   chipClassName?: string;
   captionClassName?: string;
   showCaption?: boolean;
+  compact?: boolean;
   onPointerDown?: (event: PointerEvent<HTMLElement>) => void;
   onStatusChanged?: (snapshot: RunbookSnapshot | null) => Promise<void> | void;
 }
@@ -148,6 +149,7 @@ export function RunbookItemStatusToggle({
   chipClassName,
   captionClassName,
   showCaption = true,
+  compact = false,
   onPointerDown,
   onStatusChanged,
 }: RunbookItemStatusToggleProps) {
@@ -240,10 +242,15 @@ export function RunbookItemStatusToggle({
         aria-disabled={!writable}
         title={disabledReason ?? (checked ? "완료 해제" : "완료 표시")}
         className={cn(
-          "flex min-h-10 shrink-0 cursor-pointer items-center gap-2 rounded-[10px] border border-glass-border glass px-2 py-1 text-[11px] font-semibold text-muted-foreground glass-shadow-xs transition-colors",
-          "hover:border-accent-blue/45 hover:text-accent-blue",
+          compact
+            ? "flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors"
+            : "flex min-h-10 shrink-0 cursor-pointer items-center gap-2 rounded-[10px] border border-glass-border glass px-2 py-1 text-[11px] font-semibold text-muted-foreground glass-shadow-xs transition-colors",
+          compact ? "hover:bg-muted/45 hover:text-accent-blue" : "hover:border-accent-blue/45 hover:text-accent-blue",
           checked && "text-success",
-          !writable && "cursor-not-allowed opacity-60 hover:border-glass-border hover:text-muted-foreground",
+          !writable && cn(
+            "cursor-not-allowed opacity-60 hover:text-muted-foreground",
+            compact ? "hover:bg-transparent" : "hover:border-glass-border",
+          ),
           controlClassName,
         )}
         onPointerDown={onPointerDown}
@@ -255,13 +262,18 @@ export function RunbookItemStatusToggle({
           disabled={!writable}
           title={disabledReason ?? (checked ? "완료 해제" : "완료 표시")}
           aria-describedby={helpId}
-          className="h-5 w-5 shrink-0 accent-accent-blue"
+          className={cn(
+            "shrink-0 accent-accent-blue",
+            compact ? "h-4 w-4" : "h-5 w-5",
+          )}
           onChange={(event) => void handleChange(event)}
         />
-        <RunbookStatusChip
-          status={displayStatus}
-          className={cn("pointer-events-none h-6 px-2 text-[11px]", chipClassName)}
-        />
+        {compact ? null : (
+          <RunbookStatusChip
+            status={displayStatus}
+            className={cn("pointer-events-none h-6 px-2 text-[11px]", chipClassName)}
+          />
+        )}
       </label>
       {showCaption && helpMessage ? (
         <div

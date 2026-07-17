@@ -1,22 +1,24 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { isBoardFolderAllowed, normalizeBoardAccess } from "../board/board_access.js";
+import { normalizeBoardAccess } from "../board/board_access.js";
 import { filterRunbookOverviewForAccess } from "./runbook_access.js";
 import { registerRunbookCreateRoute } from "./runbook_create_route.js";
+import { registerRunbookCrudRoutes } from "./runbook_crud_routes.js";
+import {
+  loadRunbookSnapshot,
+  proxyRunbookMutation,
+  requireSnapshotAccess,
+  runbookStorageNotConfigured,
+  sendRunbookRouteError,
+} from "./runbook_mutation_proxy.js";
 import { registerRunbookTaskIdentityHostRoute } from "./runbook_task_identity_host_route.js";
 import {
   resolveItemActorSessionId,
   resolveRunbookActorSessionId,
   snapshotItem,
-  snapshotRunbookFolderId,
 } from "./runbook_snapshot.js";
 import {
-  RunbookRouteError,
-  type RunbookMutationHttpResponse,
-  type RunbookMutationNode,
   type RunbookRouteOptions,
-  type RunbookRouteProvider,
-  type RunbookSnapshot,
 } from "./runbook_route_types.js";
 
 export { filterRunbookOverviewForAccess } from "./runbook_access.js";
@@ -57,6 +59,7 @@ export function registerRunbookRoutes(
   options: RunbookRouteOptions,
 ): void {
   registerRunbookCreateRoute(app, options);
+  registerRunbookCrudRoutes(app, options);
   if (options.taskIdentityService && options.authBearerToken) {
     registerRunbookTaskIdentityHostRoute(app, {
       service: options.taskIdentityService,
@@ -153,112 +156,6 @@ export function registerRunbookRoutes(
       return reply.send(snapshotResult.value);
     },
   );
-}
-
-async function loadRunbookSnapshot(
-  provider: RunbookRouteProvider,
-  runbookId: string,
-): Promise<
-  | { ok: true; value: RunbookSnapshot }
-  | { ok: false; error: RunbookRouteError }
-> {
-  if (provider.getRunbookSnapshot === undefined) {
-    return {
-      ok: false,
-      error: storageNotConfiguredError(),
-    };
-  }
-  const snapshot = await provider.getRunbookSnapshot(runbookId);
-  if (snapshot === undefined || snapshot === null) {
-    return {
-      ok: false,
-      error: new RunbookRouteError(
-        "RUNBOOK_NOT_FOUND",
-        "Runbook not found",
-        404,
-      ),
-    };
-  }
-  return { ok: true, value: snapshot };
-}
-
-async function requireSnapshotAccess(
-  options: RunbookRouteOptions,
-  request: FastifyRequest,
-  snapshot: RunbookSnapshot,
-): Promise<{ ok: true } | { ok: false; error: RunbookRouteError }> {
-  const folders = await options.provider.listFolders();
-  const access = normalizeBoardAccess(await options.accessProvider.resolveAccess(request));
-  if (!isBoardFolderAllowed(access, folders, snapshotRunbookFolderId(snapshot))) {
-    return {
-      ok: false,
-      error: new RunbookRouteError(
-        "FOLDER_ACCESS_DENIED",
-        "Folder access denied",
-        403,
-      ),
-    };
-  }
-  return { ok: true };
-}
-
-async function proxyRunbookMutation(
-  request: FastifyRequest,
-  reply: FastifyReply,
-  options: RunbookRouteOptions,
-  actorSessionId: string,
-  input: { upstreamPath: string; body: unknown },
-): Promise<FastifyReply> {
-  const targetResult = await resolveRunbookMutationNode(options.provider, actorSessionId);
-  if (!targetResult.ok) return sendRunbookRouteError(reply, targetResult.error);
-
-  try {
-    const response = await options.httpClient({
-      method: "POST",
-      url: `http://${targetResult.value.host}:${targetResult.value.port}${input.upstreamPath}`,
-      upstreamPath: input.upstreamPath,
-      headers: forwardRunbookAuthHeaders(request),
-      body: input.body,
-      target: targetResult.value,
-    });
-    return sendRunbookNodeResponse(reply, response);
-  } catch {
-    return reply.code(502).send();
-  }
-}
-
-async function resolveRunbookMutationNode(
-  provider: RunbookRouteProvider,
-  actorSessionId: string,
-): Promise<
-  | { ok: true; value: RunbookMutationNode }
-  | { ok: false; error: RunbookRouteError }
-> {
-  if (provider.findSessionNode === undefined || provider.listConnectedNodes === undefined) {
-    return { ok: false, error: storageNotConfiguredError() };
-  }
-  try {
-    const node = await provider.findSessionNode(actorSessionId);
-    if (node !== undefined && node !== null) return { ok: true, value: node };
-  } catch (error) {
-    const statusCode = errorStatusCode(error);
-    if (statusCode !== 404 && statusCode !== 503) {
-      return { ok: false, error: routeErrorFromUnknown(error, 500) };
-    }
-  }
-
-  const fallback = provider.listConnectedNodes()[0];
-  if (fallback === undefined) {
-    return {
-      ok: false,
-      error: new RunbookRouteError(
-        "RUNBOOK_MUTATION_NODE_UNAVAILABLE",
-        "No connected soul-server node available for runbook mutation",
-        503,
-      ),
-    };
-  }
-  return { ok: true, value: fallback };
 }
 
 function parseStatusMutationBody<
@@ -379,66 +276,6 @@ function validationError<T>(
   return reply.code(validation.statusCode ?? 400).send({ detail: validation.message });
 }
 
-function runbookStorageNotConfigured(reply: FastifyReply): FastifyReply {
-  return sendRunbookRouteError(reply, storageNotConfiguredError());
-}
-
-function storageNotConfiguredError(): RunbookRouteError {
-  return new RunbookRouteError(
-    "RUNBOOK_STORAGE_NOT_CONFIGURED",
-    "Runbook storage is not configured",
-    503,
-  );
-}
-
-function sendRunbookRouteError(
-  reply: FastifyReply,
-  error: unknown,
-): FastifyReply {
-  const routeError = routeErrorFromUnknown(error, 500);
-  return reply.code(routeError.statusCode).send({ detail: routeError.message });
-}
-
-function routeErrorFromUnknown(error: unknown, fallbackStatusCode: number): RunbookRouteError {
-  if (error instanceof RunbookRouteError) return error;
-  const statusCode = errorStatusCode(error) ?? fallbackStatusCode;
-  const message = error instanceof Error ? error.message : String(error);
-  return new RunbookRouteError("RUNBOOK_ROUTE_ERROR", message, statusCode);
-}
-
-function errorStatusCode(error: unknown): number | undefined {
-  if (error instanceof RunbookRouteError) return error.statusCode;
-  if (isRecord(error) && typeof error.statusCode === "number") return error.statusCode;
-  if (isRecord(error) && typeof error.status_code === "number") return error.status_code;
-  return undefined;
-}
-
-function sendRunbookNodeResponse(
-  reply: FastifyReply,
-  response: RunbookMutationHttpResponse,
-): FastifyReply {
-  const contentType = headerValue(response.headers, "content-type");
-  if (contentType !== undefined) reply.header("content-type", contentType);
-  if (isJsonContentType(contentType)) {
-    return reply.code(response.statusCode).send(response.body ?? null);
-  }
-  if (response.body === undefined) return reply.code(response.statusCode).send();
-  return reply.code(response.statusCode).send(response.body);
-}
-
-function forwardRunbookAuthHeaders(request: FastifyRequest): Record<string, string> {
-  const headers: Record<string, string> = {};
-  const cookie = firstHeaderValue(request.headers.cookie);
-  if (cookie !== undefined) headers.cookie = cookie;
-  const authorization = firstHeaderValue(request.headers.authorization);
-  if (authorization !== undefined) headers.authorization = authorization;
-  return headers;
-}
-
-function firstHeaderValue(value: string | string[] | undefined): string | undefined {
-  return Array.isArray(value) ? value[0] : value;
-}
-
 async function resolveDashboardUserId(
   options: RunbookRouteOptions,
   request: FastifyRequest,
@@ -454,24 +291,4 @@ function runbookParams(request: FastifyRequest): RunbookParams {
 
 function runbookItemParams(request: FastifyRequest): RunbookItemParams {
   return request.params as RunbookItemParams;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function headerValue(
-  headers: Record<string, string | undefined> | undefined,
-  name: string,
-): string | undefined {
-  if (headers === undefined) return undefined;
-  const targetName = name.toLowerCase();
-  for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === targetName) return value;
-  }
-  return undefined;
-}
-
-function isJsonContentType(contentType: string | undefined): boolean {
-  return contentType?.toLowerCase().includes("application/json") ?? false;
 }

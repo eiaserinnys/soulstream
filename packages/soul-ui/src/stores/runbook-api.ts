@@ -4,6 +4,7 @@ import type {
   SetRunbookItemStatusInput,
   SetRunbookStatusInput,
 } from "./runbook-store";
+import type { RunbookChecklistMutation } from "./runbook-mutations";
 
 interface RunbookItemStatusResponse {
   ok: boolean;
@@ -11,6 +12,11 @@ interface RunbookItemStatusResponse {
 }
 
 interface RunbookStatusResponse {
+  ok: boolean;
+  snapshot?: RunbookSnapshot;
+}
+
+export interface RunbookMutationResponse {
   ok: boolean;
   snapshot?: RunbookSnapshot;
 }
@@ -154,4 +160,110 @@ export async function postRunbookStatus(
     ));
   }
   return await response.json() as RunbookStatusResponse;
+}
+
+export async function postRunbookChecklistMutation(
+  input: RunbookChecklistMutation,
+): Promise<RunbookMutationResponse> {
+  const request = mutationRequest(input);
+  const response = await fetch(request.path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(request.body),
+  });
+  if (!response.ok) {
+    throw new RunbookApiError(
+      await readRunbookErrorMessage(
+        response,
+        `Runbook mutation failed: ${response.status}`,
+      ),
+      response.status,
+    );
+  }
+  return await response.json() as RunbookMutationResponse;
+}
+
+function mutationRequest(input: RunbookChecklistMutation): {
+  path: string;
+  body: Record<string, unknown>;
+} {
+  const runbook = encodeURIComponent(input.runbookId);
+  const common = { idempotencyKey: input.idempotencyKey };
+  const versioned = "expectedVersion" in input
+    ? {
+        ...common,
+        expectedVersion: input.expectedVersion,
+        ...(input.reason ? { reason: input.reason } : {}),
+      }
+    : common;
+
+  switch (input.kind) {
+    case "create_section":
+      return {
+        path: `/api/runbooks/${runbook}/sections`,
+        body: {
+          ...common,
+          sectionId: input.sectionId,
+          title: input.title,
+          ...(input.afterSectionId ? { afterSectionId: input.afterSectionId } : {}),
+          ...(input.beforeSectionId ? { beforeSectionId: input.beforeSectionId } : {}),
+        },
+      };
+    case "update_section":
+      return {
+        path: `/api/runbooks/${runbook}/sections/${encodeURIComponent(input.sectionId)}`,
+        body: { ...versioned, title: input.title },
+      };
+    case "move_section":
+      return {
+        path: `/api/runbooks/${runbook}/sections/${encodeURIComponent(input.sectionId)}/move`,
+        body: {
+          ...versioned,
+          ...(input.afterSectionId ? { afterSectionId: input.afterSectionId } : {}),
+          ...(input.beforeSectionId ? { beforeSectionId: input.beforeSectionId } : {}),
+        },
+      };
+    case "archive_section":
+      return {
+        path: `/api/runbooks/${runbook}/sections/${encodeURIComponent(input.sectionId)}/archive`,
+        body: versioned,
+      };
+    case "create_item":
+      return {
+        path: `/api/runbooks/${runbook}/sections/${encodeURIComponent(input.sectionId)}/items`,
+        body: {
+          ...common,
+          itemId: input.itemId,
+          title: input.title,
+          howTo: input.howTo ?? "",
+          ...(input.afterItemId ? { afterItemId: input.afterItemId } : {}),
+          ...(input.beforeItemId ? { beforeItemId: input.beforeItemId } : {}),
+        },
+      };
+    case "update_item":
+      return {
+        path: `/api/runbooks/${runbook}/items/${encodeURIComponent(input.itemId)}`,
+        body: {
+          ...versioned,
+          ...(input.title === undefined ? {} : { title: input.title }),
+          ...(input.howTo === undefined ? {} : { howTo: input.howTo }),
+        },
+      };
+    case "move_item":
+      return {
+        path: `/api/runbooks/${runbook}/items/${encodeURIComponent(input.itemId)}/move`,
+        body: {
+          ...versioned,
+          sectionId: input.sectionId,
+          ...(input.afterItemId ? { afterItemId: input.afterItemId } : {}),
+          ...(input.beforeItemId ? { beforeItemId: input.beforeItemId } : {}),
+        },
+      };
+    case "archive_item":
+      return {
+        path: `/api/runbooks/${runbook}/items/${encodeURIComponent(input.itemId)}/archive`,
+        body: versioned,
+      };
+  }
 }

@@ -14,6 +14,7 @@ import type {
 import type { ChecklistRunbookAdapter } from "../page/checklist_runbook_adapter.js";
 
 import { registerRunbookCreateHttpRoute } from "./runbook_create_http_route.js";
+import { registerRunbookCrudHttpRoutes } from "./runbook_crud_http_route.js";
 import { RunbookVersionConflict } from "./runbook_models.js";
 import type { RunbookService } from "./runbook_service.js";
 import type { RunbookTaskIdentityHostClient } from "./runbook_task_identity_host_client.js";
@@ -54,6 +55,7 @@ export function registerRunbookHttpRoutes(
   config: RunbookHttpRouteConfig,
 ): void {
   registerRunbookCreateHttpRoute(fastify, config);
+  registerRunbookCrudHttpRoutes(fastify, config);
 
   fastify.post<{
     Params: RunbookStatusRouteParams;

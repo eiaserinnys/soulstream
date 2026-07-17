@@ -256,6 +256,7 @@ export function TaskDetailPane({
                   runbookId={task.runbookId}
                   fallbackTitle={task.page.title}
                   defaultItemDetailsOpen
+                  editable
                   textSize="session"
                 />
               </div>

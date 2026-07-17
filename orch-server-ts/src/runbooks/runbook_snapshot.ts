@@ -40,6 +40,25 @@ export function resolveItemActorSessionId(
   return null;
 }
 
+export function resolveSectionActorSessionId(
+  snapshot: RunbookSnapshot,
+  sectionId: string,
+): string | null {
+  const section = snapshotSection(snapshot, sectionId);
+  if (section === undefined) return null;
+  const runbook = recordOrNull(snapshot.runbook);
+  for (const value of [
+    section.assignee_session_id,
+    section.updated_session_id,
+    section.created_session_id,
+    runbook?.created_session_id,
+  ]) {
+    const sessionId = stringOrNull(value);
+    if (sessionId !== null && sessionId.length > 0) return sessionId;
+  }
+  return null;
+}
+
 export function snapshotItem(
   snapshot: RunbookSnapshot,
   itemId: string,
@@ -47,7 +66,7 @@ export function snapshotItem(
   return arrayValue(snapshot.items).find((item) => item.id === itemId);
 }
 
-function snapshotSection(
+export function snapshotSection(
   snapshot: RunbookSnapshot,
   sectionId: unknown,
 ): Record<string, unknown> | undefined {

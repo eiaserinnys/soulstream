@@ -6,7 +6,7 @@ const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf
 const DISCLOSURE_SOURCES = [
   "./TaskInlineBoard.tsx",
   "./ProjectNavigationTree.tsx",
-  "../../../packages/soul-ui/src/runbook/RunbookCard.tsx",
+  "../../../packages/soul-ui/src/runbook/RunbookChecklist.tsx",
   "../../../packages/soul-ui/src/runbook/RunbookOverview.tsx",
   "../../../packages/soul-ui/src/components/FolderItem.tsx",
   "../../../packages/soul-ui/src/components/ClaudeRuntimeNotificationsPanel.tsx",

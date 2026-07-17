@@ -104,5 +104,13 @@ export const runbookRouteAuthRequirements = {
   "GET /api/runbooks/my-turn": true,
   "POST /api/runbooks/:runbook_id/items/:item_id/status": true,
   "POST /api/runbooks/:runbook_id/status": true,
+  "POST /api/runbooks/:runbook_id/sections": true,
+  "POST /api/runbooks/:runbook_id/sections/:section_id": true,
+  "POST /api/runbooks/:runbook_id/sections/:section_id/move": true,
+  "POST /api/runbooks/:runbook_id/sections/:section_id/archive": true,
+  "POST /api/runbooks/:runbook_id/sections/:section_id/items": true,
+  "POST /api/runbooks/:runbook_id/items/:item_id": true,
+  "POST /api/runbooks/:runbook_id/items/:item_id/move": true,
+  "POST /api/runbooks/:runbook_id/items/:item_id/archive": true,
   "GET /api/runbooks/:runbook_id": true,
 } as const;

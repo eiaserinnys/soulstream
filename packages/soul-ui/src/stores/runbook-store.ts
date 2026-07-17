@@ -4,9 +4,14 @@ import type { RunbookUpdatedStreamEvent } from "../shared/stream-events";
 import {
   fetchRunbookOverview,
   fetchRunbookSnapshot,
+  postRunbookChecklistMutation,
   postRunbookItemStatus,
   postRunbookStatus,
 } from "./runbook-api";
+import {
+  applyRunbookMutationOptimistically,
+  type RunbookChecklistMutation,
+} from "./runbook-mutations";
 
 export type RunbookAssigneeKind = "agent" | "human" | "session";
 export type RunbookItemStatus =
@@ -178,6 +183,7 @@ interface RunbookStoreState {
   loadOverview: (options?: LoadOptions) => Promise<RunbookOverviewPayload>;
   setItemStatus: (input: SetRunbookItemStatusInput) => Promise<RunbookSnapshot | null>;
   setRunbookStatus: (input: SetRunbookStatusInput) => Promise<RunbookSnapshot | null>;
+  mutateChecklist: (input: RunbookChecklistMutation) => Promise<RunbookSnapshot>;
   handleRunbookUpdated: (
     event: RunbookUpdatedStreamEvent,
   ) => Promise<unknown> | undefined;
@@ -374,6 +380,50 @@ export const useRunbookStore = create<RunbookStoreState>((set, get) => ({
       }));
     }
     return snapshot;
+  },
+
+  async mutateChecklist(input) {
+    const previousProjection = projectionFor(get(), input.runbookId);
+    const previousSnapshot = previousProjection.snapshot;
+    if (!previousSnapshot) throw new Error("Runbook must be loaded before editing");
+
+    const optimisticSnapshot = applyRunbookMutationOptimistically(previousSnapshot, input);
+    set((state) => ({
+      byId: {
+        ...state.byId,
+        [input.runbookId]: {
+          snapshot: optimisticSnapshot,
+          status: "ready",
+          error: null,
+          isRefreshing: false,
+        },
+      },
+    }));
+
+    try {
+      const result = await postRunbookChecklistMutation(input);
+      const snapshot = result.snapshot ?? optimisticSnapshot;
+      set((state) => ({
+        byId: {
+          ...state.byId,
+          [input.runbookId]: {
+            snapshot,
+            status: "ready",
+            error: null,
+            isRefreshing: false,
+          },
+        },
+      }));
+      return snapshot;
+    } catch (error) {
+      set((state) => ({
+        byId: {
+          ...state.byId,
+          [input.runbookId]: previousProjection,
+        },
+      }));
+      throw error;
+    }
   },
 
   handleRunbookUpdated(event) {

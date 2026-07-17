@@ -248,11 +248,17 @@ describe("RunbookCard", () => {
     expect(statusToggle).not.toBeNull();
     expect(itemRow).not.toBeNull();
     expect(checkbox!.disabled).toBe(false);
-    expect(checkbox!.className).toContain("h-5");
-    expect(checkbox!.className).toContain("w-5");
-    expect(statusToggle!.className).toContain("min-h-10");
-    expect(statusToggle!.textContent).toContain("대기");
-    expect(itemRow!.className).toContain("glass");
+    expect(checkbox!.className).toContain("h-4");
+    expect(checkbox!.className).toContain("w-4");
+    expect(statusToggle!.className).toContain("h-7");
+    expect(statusToggle!.className).not.toContain("glass");
+    expect(statusToggle!.className).not.toContain("border-glass-border");
+    expect(statusToggle!.textContent).not.toContain("대기");
+    expect(itemRow!.className).not.toContain("glass");
+    expect(itemRow!.className).not.toContain("border-glass-border");
+    expect(container.querySelector('[data-testid="runbook-how-to"]')?.className).toContain("border-l-2");
+    expect(container.textContent).not.toContain("항목 추가");
+    expect(container.textContent).not.toContain("섹션 추가");
   });
 
   it("can open every item procedure by default for the task checklist surface", () => {
@@ -323,6 +329,67 @@ describe("RunbookCard", () => {
 
     expect(onParentPointerDown).not.toHaveBeenCalled();
     expect(onOpenBoard).toHaveBeenCalledWith("rb-1");
+  });
+
+  it("keeps editing quiet until the task-detail surface asks for it", async () => {
+    const nextSnapshot = sampleSnapshot();
+    nextSnapshot.sections = [
+      ...nextSnapshot.sections,
+      {
+        ...nextSnapshot.sections[0]!,
+        id: "sec-server",
+        position_key: "b",
+        title: "검수",
+      },
+    ];
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({
+      ok: true,
+      snapshot: nextSnapshot,
+    }));
+    globalThis.fetch = fetchMock;
+    useRunbookStore.setState({
+      byId: {
+        "rb-1": {
+          snapshot: sampleSnapshot(),
+          status: "ready",
+          error: null,
+          isRefreshing: false,
+        },
+      },
+    });
+
+    flushSync(() => {
+      root.render(createElement(RunbookCard, {
+        runbookId: "rb-1",
+        fallbackTitle: "Fallback",
+        editable: true,
+      }));
+    });
+
+    const addSection = findButtonByText(container, "섹션 추가");
+    expect(addSection).not.toBeUndefined();
+    flushSync(() => addSection!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="섹션 제목"]');
+    expect(input).not.toBeNull();
+    flushSync(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      setter?.call(input, "검수");
+      input!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const editor = container.querySelector('[data-testid="runbook-section-editor"]');
+    const submit = findButtonByText(editor!, "추가");
+    expect(submit).not.toBeUndefined();
+    flushSync(() => submit!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await flushPromises();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/runbooks/rb-1/sections",
+      expect.objectContaining({ method: "POST", credentials: "include" }),
+    );
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body).toMatchObject({ title: "검수", afterSectionId: "sec-1" });
+    expect(body.sectionId).toEqual(expect.any(String));
+    expect(container.textContent).toContain("검수");
   });
 
   it("shows the reason when a human checkbox has no session provenance", () => {
