@@ -62,6 +62,14 @@ export interface TaskProjectPageBinding {
   pageId: string;
 }
 
+export interface TaskPageTitleBinding {
+  pageId: string;
+  title: string;
+  archived: boolean;
+  dailyDate: string | null;
+  projectFolderId: string | null;
+}
+
 export interface TaskMountBinding {
   sourcePageId: string;
   sourceBlockIds: readonly string[];
@@ -153,6 +161,9 @@ export interface RunbookTaskIdentityRepository {
     pageOperationId: string;
     pageApplication: PageMutationApplication;
     boardApplication: RunbookTaskIdentityBoardApplication;
+    expectedProjectPageId?: string | null;
+    mountPageApplications?: readonly TaskMountPageApplication[];
+    mountExpectation?: TaskMountExpectation;
   }): Promise<RunbookTaskIdentityMutationResult>;
   mutate(input: {
     binding: TaskIdentityBinding;
@@ -200,6 +211,10 @@ export interface RunbookTaskIdentityRepository {
   }): Promise<LegacyRunbookBackfillResult>;
   findByPageId(pageId: string): Promise<TaskIdentityBinding | null>;
   findByRunbookId(runbookId: string): Promise<TaskIdentityBinding | null>;
+  findPageByTitle(title: string): Promise<TaskPageTitleBinding | null>;
+  findCreateResultByRunbookId(
+    runbookId: string,
+  ): Promise<RunbookTaskIdentityMutationResult | null>;
   findProjectPageByFolderId(folderId: string): Promise<TaskProjectPageBinding | null>;
   listTaskMounts(
     pageId: string,

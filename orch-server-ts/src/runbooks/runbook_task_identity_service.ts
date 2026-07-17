@@ -18,6 +18,10 @@ import type {
   TaskIdentityBinding,
 } from "./runbook_task_identity_contracts.js";
 import {
+  isTaskIdentityTitleRace,
+  TaskIdentityTitleConflictError,
+} from "./runbook_task_identity_errors.js";
+import {
   assertUuid,
   initialTaskOperations,
   isIdentityPageCommand,
@@ -27,6 +31,7 @@ import {
   requireNonEmpty,
 } from "./runbook_task_identity_page.js";
 import { backfillLegacyRunbookIdentity } from "./runbook_task_identity_legacy.js";
+import { promoteRunbookTaskPage } from "./runbook_task_identity_promotion.js";
 import {
   hydrateAndNotifyTaskMounts,
   moveRunbookTaskIdentity,
@@ -42,6 +47,7 @@ export type {
   RunbookTaskIdentityRepository,
   RunbookTaskIdentityServiceConfig,
   TaskProjectPageBinding,
+  TaskPageTitleBinding,
   TaskIdentityBinding,
   TaskMountBinding,
   TaskMountPageApplication,
@@ -80,9 +86,12 @@ export class RunbookTaskIdentityService {
       }
       return idempotent;
     }
+    if (input.runbookId) assertUuid(input.runbookId);
+    const title = requireNonEmpty(input.title, "title");
+    const existingTitle = await this.resolveTitleOrRace(input, title);
+    if (existingTitle) return existingTitle;
     const id = input.runbookId ?? this.createId();
     assertUuid(id);
-    const title = requireNonEmpty(input.title, "title");
     const boardItemId = `runbook:${id}`;
     const pageApplication = this.mutationCore.createPage({
       page: { id, title, dailyDate: null, metadata: { taskIdentity: true } },
@@ -103,36 +112,46 @@ export class RunbookTaskIdentityService {
         input.idempotencyKey,
       )
       : undefined;
-    const result = await this.config.board.withRunbookBoardApplication({
-      folderId: input.folderId,
-      boardItemId,
-      runbookId: id,
-      title,
-      archived: false,
-      x: input.x ?? 0,
-      y: input.y ?? 0,
-    }, async (boardApplication) => await this.config.repository.create({
-      id,
-      pageId: id,
-      runbookId: id,
-      taskPageId: id,
-      boardItemId,
-      folderId: input.folderId,
-      title,
-      actor: input.actor,
-      idempotencyKey: input.idempotencyKey,
-      operationId: this.createOperationId(),
-      pageOperationId: this.createOperationId(),
-      pageApplication,
-      boardApplication,
-      expectedProjectPageId: projectPage?.pageId ?? null,
-      ...(projectPageApplication
-        ? {
-          projectPageOperationId: this.createOperationId(),
-          projectPageApplication,
-        }
-        : {}),
-    }));
+    let result: RunbookTaskIdentityMutationResult;
+    try {
+      result = await this.config.board.withRunbookBoardApplication({
+        folderId: input.folderId,
+        boardItemId,
+        runbookId: id,
+        title,
+        archived: false,
+        x: input.x ?? 0,
+        y: input.y ?? 0,
+      }, async (boardApplication) => await this.config.repository.create({
+        id,
+        pageId: id,
+        runbookId: id,
+        taskPageId: id,
+        boardItemId,
+        folderId: input.folderId,
+        title,
+        actor: input.actor,
+        idempotencyKey: input.idempotencyKey,
+        operationId: this.createOperationId(),
+        pageOperationId: this.createOperationId(),
+        pageApplication,
+        boardApplication,
+        expectedProjectPageId: projectPage?.pageId ?? null,
+        ...(projectPageApplication
+          ? {
+            projectPageOperationId: this.createOperationId(),
+            projectPageApplication,
+          }
+          : {}),
+      }));
+    } catch (error) {
+      if (!isTaskIdentityTitleRace(error)) throw error;
+      const recovered = await this.resolveTitleOrRace(input, title);
+      if (recovered) return recovered;
+      throw new TaskIdentityTitleConflictError(
+        "같은 이름의 페이지가 이미 있습니다. 기존 페이지를 사용하거나 다른 이름을 사용해주세요.",
+      );
+    }
     await this.config.hydratePage(result.pageId);
     if (result.projectPageId) {
       await this.config.hydratePage(result.projectPageId);
@@ -176,6 +195,79 @@ export class RunbookTaskIdentityService {
     });
   }
 
+  private async resolveTitleOrRace(
+    input: Parameters<RunbookTaskIdentityService["create"]>[0],
+    title: string,
+  ): Promise<RunbookTaskIdentityMutationResult | null> {
+    try {
+      return await this.resolveExistingTitle(input, title);
+    } catch (error) {
+      if (!isTaskIdentityTitleRace(error)) throw error;
+      return await this.resolveExistingTitle(input, title);
+    }
+  }
+
+  private async resolveExistingTitle(
+    input: Parameters<RunbookTaskIdentityService["create"]>[0],
+    title: string,
+  ): Promise<RunbookTaskIdentityMutationResult | null> {
+    const page = await this.config.repository.findPageByTitle(title);
+    if (!page) return null;
+    if (input.runbookId && input.runbookId !== page.pageId) {
+      throw new TaskIdentityTitleConflictError(
+        "요청한 업무 ID와 같은 이름의 기존 페이지 ID가 다릅니다. 기존 페이지를 사용하거나 다른 이름을 사용해주세요.",
+      );
+    }
+    if (page.archived) {
+      throw new TaskIdentityTitleConflictError(
+        "같은 이름의 보관된 페이지가 이미 있습니다. 페이지를 복구하거나 다른 이름을 사용해주세요.",
+      );
+    }
+    if (page.dailyDate) {
+      throw new TaskIdentityTitleConflictError(
+        "같은 이름의 데일리 페이지가 이미 있습니다. 다른 이름을 사용해주세요.",
+      );
+    }
+    if (page.projectFolderId) {
+      throw new TaskIdentityTitleConflictError(
+        "같은 이름의 프로젝트 페이지가 이미 있습니다. 다른 이름을 사용해주세요.",
+      );
+    }
+    const binding = await this.config.repository.findByPageId(page.pageId);
+    if (binding) {
+      if (binding.folderId !== input.folderId) {
+        throw new TaskIdentityTitleConflictError(
+          "같은 이름의 업무가 다른 프로젝트에 이미 있습니다. 기존 업무를 이동하거나 다른 이름을 사용해주세요.",
+        );
+      }
+      const existing = await this.config.repository.findCreateResultByRunbookId(
+        binding.runbookId,
+      );
+      if (!existing) {
+        throw new Error(`task identity create operation missing: ${binding.runbookId}`);
+      }
+      await this.config.hydratePage(existing.pageId);
+      if (existing.projectPageId) await this.config.hydratePage(existing.projectPageId);
+      return { ...existing, idempotent: true };
+    }
+    const result = await promoteRunbookTaskPage({
+      config: this.config,
+      mutationCore: this.mutationCore,
+      createBlockId: this.createBlockId,
+      createOperationId: this.createOperationId,
+      pageId: page.pageId,
+      folderId: input.folderId,
+      title: page.title,
+      actor: input.actor,
+      idempotencyKey: input.idempotencyKey,
+      x: input.x,
+      y: input.y,
+      ensureProjectMount: true,
+    });
+    this.notifyPageUpdate(result);
+    return result;
+  }
+
   async promoteExistingPage(input: {
     pageId: string;
     folderId: string;
@@ -185,68 +277,14 @@ export class RunbookTaskIdentityService {
     x?: number;
     y?: number;
   }): Promise<RunbookTaskIdentityMutationResult> {
-    const idempotent = await this.config.repository.findMutationByIdempotencyKey(
-      input.idempotencyKey,
-    );
-    if (idempotent) {
-      await this.config.hydratePage(idempotent.pageId);
-      return idempotent;
-    }
-    const existing = await this.config.repository.findByPageId(input.pageId);
-    if (existing) {
-      throw new Error(`page is already a task identity: ${input.pageId}`);
-    }
-    const snapshot = await loadPageDocument(
-      input.pageId,
-      (pageId) => this.config.repository.readPageSnapshot(pageId),
-    );
-    const replica = readPageYDocReplica(input.pageId, snapshot);
-    const title = requireNonEmpty(input.title || replica.page.title, "title");
-    const pageApplication = this.mutationCore.mutate(snapshot, {
-      pageId: input.pageId,
-      expectedVersion: replica.page.mutationVersion,
-      command: {
-        type: "batch_operations",
-        operations: [{
-          op: "create_block",
-          tempId: this.createBlockId(),
-          parentId: null,
-          afterBlockId: replica.blocks.filter((block) => block.parentId === null).at(-1)?.id ?? null,
-          blockType: "runbook_ref",
-          text: "",
-          properties: { runbookId: input.pageId, primary: true },
-          collapsed: false,
-        }],
-      },
-      actor: input.actor,
-      idempotencyKey: pageMutationIdempotencyKey("promote_task_identity", input.actor, input.idempotencyKey),
-      reason: "promote page to runbook task identity",
+    const result = await promoteRunbookTaskPage({
+      config: this.config,
+      mutationCore: this.mutationCore,
+      createBlockId: this.createBlockId,
+      createOperationId: this.createOperationId,
+      ensureProjectMount: false,
+      ...input,
     });
-    const boardItemId = `runbook:${input.pageId}`;
-    const result = await this.config.board.withRunbookBoardApplication({
-      folderId: input.folderId,
-      boardItemId,
-      runbookId: input.pageId,
-      title,
-      archived: replica.page.archived,
-      x: input.x ?? 0,
-      y: input.y ?? 0,
-    }, async (boardApplication) => await this.config.repository.promote({
-      id: input.pageId,
-      pageId: input.pageId,
-      runbookId: input.pageId,
-      taskPageId: input.pageId,
-      boardItemId,
-      folderId: input.folderId,
-      title,
-      actor: input.actor,
-      idempotencyKey: input.idempotencyKey,
-      operationId: this.createOperationId(),
-      pageOperationId: this.createOperationId(),
-      pageApplication,
-      boardApplication,
-    }));
-    await this.config.hydratePage(result.pageId);
     this.notifyPageUpdate(result);
     return result;
   }
