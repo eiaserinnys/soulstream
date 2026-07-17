@@ -5,8 +5,7 @@
  * ThemeToggle과 동일한 스타일 패턴. 헤더 우상단 배치용.
  */
 
-import { useRef } from "react";
-import { cn, useGlassSurface, useLiquidLens } from "@seosoyoung/soul-ui";
+import { cn, DashboardIconCap } from "@seosoyoung/soul-ui";
 
 export function ConfigButton({
   onClick,
@@ -38,21 +37,13 @@ export function ConfigButton({
 }
 
 function ChromeConfigButton({ onClick }: { onClick: () => void }) {
-  const ref = useRef<HTMLButtonElement>(null);
-  const webglActive = useGlassSurface(ref, { enabled: true });
-  useLiquidLens(ref, { scale: 22, enabled: !webglActive });
-
   return (
-    <button
-      ref={ref}
+    <DashboardIconCap
+      label="서버 설정"
       data-testid="config-button"
       onClick={onClick}
-      className="dashboard-icon-cap border border-glass-border glass-strong glass-chrome lg-rim"
-      data-liquid-glass-webgl={webglActive ? "true" : undefined}
-      title="서버 설정"
-      aria-label="Open server configuration"
     >
       <span aria-hidden="true" className="text-base leading-none">⚙</span>
-    </button>
+    </DashboardIconCap>
   );
 }

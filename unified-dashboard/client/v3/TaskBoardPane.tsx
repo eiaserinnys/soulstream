@@ -7,12 +7,14 @@ import {
 } from "react";
 import {
   Button,
+  DashboardIconCap,
   retainEqualValue,
   useDashboardStore,
   useSessionListProvider,
   type CatalogBoardItem,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
+import { ArrowLeft, X } from "lucide-react";
 
 import { BoardWorkspaceView } from "../components/BoardWorkspaceView";
 import { orchestratorSessionProvider } from "../providers";
@@ -170,13 +172,17 @@ export function TaskBoardPane({
       data-board-session-count={sessionIds.length}
     >
       <header className="v3-workspace-toolbar">
-        <button type="button" className="v3-workspace-back" onClick={onClose}>← 업무</button>
+        <DashboardIconCap label="업무 상세로 돌아가기" onClick={onClose}>
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
         <strong>▦ 런북 보드</strong>
         <span className="v3-board-live-state">
           {boardItems === null || boardSessionsLoading ? "불러오는 중" : `${boardItems.length}개 항목 · 실시간`}
         </span>
         <span className="v3-spacer" />
-        <button type="button" className="v3-workspace-close" aria-label="업무 보드 닫기" onClick={onClose}>×</button>
+        <DashboardIconCap label="업무 보드 닫기" onClick={onClose}>
+          <X className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
       </header>
       <div className="v3-full-board">
         {loadError ? (

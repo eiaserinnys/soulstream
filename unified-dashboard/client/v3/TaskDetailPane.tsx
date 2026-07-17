@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Button, RunbookCard, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, RunbookCard, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { ArrowLeft, LayoutDashboard, Plus, Star, X } from "lucide-react";
 
 import type { PlannerTask } from "./planner-data";
 import type { TaskMoveTarget } from "./task-move-targets";
@@ -150,6 +151,7 @@ export function TaskDetailPane({
   }, [createdSessions, sessions, task.sessionIds]);
   const allSessions = reconciledSessions.sessions;
   const allSessionIds = reconciledSessions.sessionIds;
+  const taskStarLabel = `별표 ${taskStar.starred ? "해제" : "추가"}`;
 
   return (
     <article
@@ -158,21 +160,27 @@ export function TaskDetailPane({
       data-liquid-glass-webgl={webglActive ? "true" : undefined}
     >
       <header className="v3-workspace-toolbar">
-        <button type="button" className="v3-workspace-back" onClick={onReturnToToday}>← 오늘로</button>
+        <DashboardIconCap label="오늘 플래너로 돌아가기" onClick={onReturnToToday}>
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
         <span className="v3-spacer" />
-        <Button
-          variant="ghost"
+        <DashboardIconCap
           className="v3-task-detail-star"
+          label={taskStarLabel}
           aria-pressed={taskStar.starred}
           disabled={taskStar.pending}
-          title={taskStar.error ?? undefined}
+          tooltip={taskStar.error ? `${taskStarLabel} — ${taskStar.error}` : undefined}
           onClick={() => { void taskStar.toggle(); }}
         >
-          {taskStar.starred ? "★ 별표됨" : "☆ 별표하기"}
-        </Button>
+          <Star className="h-4 w-4" fill={taskStar.starred ? "currentColor" : "none"} aria-hidden="true" />
+        </DashboardIconCap>
         <TaskTodayToggle inToday={taskInToday} onToggle={onToggleTaskToday} />
-        <button type="button" className="v3-button v3-button--soft" onClick={onOpenBoard}>▦ 보드</button>
-        <button type="button" className="v3-workspace-close" aria-label="업무 상세 닫기" onClick={onCloseWorkspace}>×</button>
+        <DashboardIconCap label="런북 보드 열기" onClick={onOpenBoard}>
+          <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
+        <DashboardIconCap label="업무 상세 닫기" onClick={onCloseWorkspace}>
+          <X className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
       </header>
       <div className="v3-detail-scroll">
         <div className="v3-detail-title">
@@ -201,7 +209,13 @@ export function TaskDetailPane({
           <div className="v3-context-chips">
             {contextItems.map((context) => <span key={context.id}><span className="v3-emoji" aria-hidden="true">{context.icon}</span> {context.label}</span>)}
             {contextItems.length === 0 ? <small>연결된 컨텍스트가 없습니다.</small> : null}
-            <button type="button" className="v3-context-add" aria-expanded={contextPickerOpen} onClick={() => setContextPickerOpen((value) => !value)}>＋ 컨텍스트</button>
+            <DashboardIconCap
+              label={`${contextPickerOpen ? "컨텍스트 선택 닫기" : "컨텍스트 추가"}`}
+              aria-expanded={contextPickerOpen}
+              onClick={() => setContextPickerOpen((value) => !value)}
+            >
+              {contextPickerOpen ? <X className="h-4 w-4" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
+            </DashboardIconCap>
           </div>
           {contextPickerOpen ? (
             <TaskContextPicker

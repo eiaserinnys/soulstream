@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { MarkdownContent } from "../components/MarkdownContent";
+import { DashboardIconCap } from "../components/DashboardIconCap";
 import { LiquidGlassCard } from "../components/LiquidGlassCard";
 import { Badge } from "../components/ui/badge";
 import { cn } from "../lib/cn";
@@ -228,12 +229,10 @@ export function RunbookCard({ runbookId, fallbackTitle, onOpenBoard }: RunbookCa
             />
           ) : null}
           {onOpenBoard ? (
-            <button
-              type="button"
+            <DashboardIconCap
+              label={`${title} 런북 보드 열기`}
               data-testid="runbook-card-open-board"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent-blue/10 hover:text-accent-blue focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/55"
-              title="런북 보드 열기"
-              aria-label={`${title} 런북 보드 열기`}
+              className="shrink-0"
               onPointerDown={stopTileDrag}
               onClick={(event) => {
                 event.stopPropagation();
@@ -241,7 +240,7 @@ export function RunbookCard({ runbookId, fallbackTitle, onOpenBoard }: RunbookCa
               }}
             >
               <ExternalLink className="h-4 w-4" aria-hidden="true" />
-            </button>
+            </DashboardIconCap>
           ) : null}
         </div>
       </header>

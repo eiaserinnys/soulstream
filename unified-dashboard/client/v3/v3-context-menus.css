@@ -29,28 +29,27 @@
 .v3-inline-board-row {
   display: flex;
   align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 12px;
 }
 
-.v3-inline-board-expand {
+.v3-inline-board-label {
   display: flex;
   min-width: 0;
   flex: 1;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  text-align: left;
+  gap: 8px;
 }
 
-.v3-inline-board-expand:hover,
-.v3-inline-board-rename-button:hover {
-  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+.v3-inline-board-label > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.v3-inline-board-rename-button {
-  flex: none;
-  border-left: 1px solid var(--lg-line);
-  color: var(--muted-foreground);
-  font-size: var(--font-size-xs);
+.v3-inline-board-row > .dashboard-icon-cap {
+  flex: 0 0 44px;
 }
 
 .v3-inline-board-rename {

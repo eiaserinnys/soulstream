@@ -9,6 +9,13 @@ const acknowledgeSessionReview = vi.hoisted(() => vi.fn());
 
 vi.mock("@seosoyoung/soul-ui", () => ({
   acknowledgeSessionReview,
+  DashboardIconCap: ({
+    children,
+    label,
+    ...props
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) => (
+    <button {...props} aria-label={label} title={label}>{children}</button>
+  ),
   ProfileAvatar: ({ fallbackEmoji }: { fallbackEmoji: string }) => (
     <span data-testid="profile-avatar">{fallbackEmoji}</span>
   ),

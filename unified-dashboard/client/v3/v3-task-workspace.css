@@ -62,7 +62,7 @@
 
 .v3-workspace-back,
 .v3-workspace-close,
-.v3-chat-header > button {
+.v3-chat-header > button:not(.dashboard-icon-cap) {
   border: 0;
   color: var(--muted-foreground);
   background: transparent;
@@ -72,12 +72,12 @@
 
 .v3-workspace-back:hover,
 .v3-workspace-close:hover,
-.v3-chat-header > button:hover {
+.v3-chat-header > button:not(.dashboard-icon-cap):hover {
   color: var(--foreground);
 }
 
 .v3-workspace-close,
-.v3-chat-header > button {
+.v3-chat-header > button:not(.dashboard-icon-cap) {
   font-size: 22px;
 }
 

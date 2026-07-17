@@ -51,10 +51,17 @@
 }
 
 .v3-nav-list .v3-new-project-trigger {
+  align-self: flex-end;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  justify-content: center;
   margin-top: 3px;
-  border: 1px dashed var(--glass-border);
+  border: 1px solid var(--glass-border);
+  border-radius: 22px;
+  padding: 0;
   color: var(--muted-foreground);
-  background: color-mix(in srgb, var(--card) 42%, transparent);
+  text-align: center;
 }
 
 .v3-new-project-form {
@@ -84,9 +91,7 @@
 }
 
 .v3-task-star-toggle {
-  border: 0;
   color: var(--warning);
-  background: transparent;
   cursor: pointer;
   font-size: 17px;
 }

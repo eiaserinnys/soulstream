@@ -1,6 +1,7 @@
 import { useState, type KeyboardEvent, type MouseEvent } from "react";
-import { Button, type SessionSummary } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, type SessionSummary } from "@seosoyoung/soul-ui";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
+import { Star } from "lucide-react";
 
 import {
   latestRun,
@@ -93,17 +94,15 @@ export function PlannerTaskCard({
         ) : null}
       </div>
       <div className="v3-task-side">
-        <Button
-          variant="ghost"
-          size="icon-sm"
+        <DashboardIconCap
           className="v3-task-star-toggle"
-          aria-label={`${task.page.title} ${taskStar.starred ? "별표 해제" : "별표 추가"}`}
+          label={`${task.page.title} ${taskStar.starred ? "별표 해제" : "별표 추가"}`}
           aria-pressed={taskStar.starred}
           disabled={taskStar.pending}
           onClick={(event) => { event.stopPropagation(); void taskStar.toggle(); }}
         >
-          {taskStar.starred ? "★" : "☆"}
-        </Button>
+          <Star className="h-4 w-4" fill={taskStar.starred ? "currentColor" : "none"} aria-hidden="true" />
+        </DashboardIconCap>
         {showRun && run ? (
           <span className="v3-run-line">
             {`세션 #${run.number} ${runState}`}

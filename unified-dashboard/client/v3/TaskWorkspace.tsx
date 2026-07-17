@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ChatView,
+  DashboardIconCap,
   MarkdownDocumentPanel,
   useDashboardStore,
   useGlassSurface,
@@ -8,6 +9,7 @@ import {
   type SessionReviewAcknowledgeResult,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
+import { X } from "lucide-react";
 
 import type { PlannerTask } from "./planner-data";
 import type { TaskMoveTarget } from "./task-move-targets";
@@ -182,7 +184,9 @@ export function TaskWorkspace({
             <header className="v3-workspace-toolbar">
               <strong>업무</strong>
               <span className="v3-spacer" />
-              <button type="button" className="v3-workspace-close" aria-label="업무 창 닫기" onClick={onCloseWorkspace}>×</button>
+              <DashboardIconCap label="업무 창 닫기" onClick={onCloseWorkspace}>
+                <X className="h-4 w-4" aria-hidden="true" />
+              </DashboardIconCap>
             </header>
             <div className="v3-chat-empty">
               <strong>연결된 업무가 없습니다.</strong>
@@ -200,7 +204,9 @@ export function TaskWorkspace({
             <header className="v3-chat-header">
               <div><small>세션</small><strong>{activeSession?.displayName ?? activeSession?.agentName ?? "세션"}</strong></div>
               <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession?.status === "running" ? "실행 중" : "완료"}</span>
-              <button type="button" aria-label="채팅 닫기" onClick={onCloseWorkspace}>×</button>
+              <DashboardIconCap label="채팅 닫기" onClick={onCloseWorkspace}>
+                <X className="h-4 w-4" aria-hidden="true" />
+              </DashboardIconCap>
             </header>
             {activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
             <div className="v3-chat-content">
@@ -222,7 +228,9 @@ export function TaskWorkspace({
     >
       <header className="v3-chat-header">
         <div><small>{projectTitle} › {visibleTitle}</small><strong>마크다운 문서</strong></div>
-        <button type="button" aria-label="보드로 돌아가기" onClick={closeBoardInspector}>×</button>
+        <DashboardIconCap label="보드로 돌아가기" onClick={closeBoardInspector}>
+          <X className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
       </header>
       <div className="v3-board-document-content"><MarkdownDocumentPanel /></div>
     </section>
@@ -237,7 +245,9 @@ export function TaskWorkspace({
       <header className="v3-chat-header">
         <div><small>{projectTitle} › {visibleTitle}</small><strong>{activeSession.displayName ?? activeSession.agentName ?? "세션"}</strong></div>
         <span className={`v3-chat-status v3-chat-status--${activeSession.status}`}>{activeSession.status === "running" ? "실행 중" : "완료"}</span>
-        <button type="button" aria-label="보드로 돌아가기" onClick={closeBoardInspector}>×</button>
+        <DashboardIconCap label="보드로 돌아가기" onClick={closeBoardInspector}>
+          <X className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
       </header>
       <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} />
       <div className="v3-chat-content">
@@ -327,7 +337,9 @@ export function TaskWorkspace({
               <header className="v3-chat-header">
                 <div><small>{projectTitle} › {visibleTitle}</small><strong>{inspectorKind === "document" ? "마크다운 문서" : activeSession ? runLabel(task, activeSession, sessions) : "선택된 세션 없음"}</strong></div>
                 {inspectorKind !== "document" ? <span className={`v3-chat-status v3-chat-status--${activeSession?.status ?? "unknown"}`}>{activeSession ? activeSession.status === "running" ? "실행 중" : "완료" : "대기"}</span> : null}
-                <button type="button" aria-label="우측 패널 닫기" onClick={closeWorkspaceInspector}>×</button>
+                <DashboardIconCap label="우측 패널 닫기" onClick={closeWorkspaceInspector}>
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </DashboardIconCap>
               </header>
               {inspectorKind === "chat" && activeSession ? <V3SessionReviewBanner session={activeSession} onAcknowledged={onAcknowledgedReview} /> : null}
               {inspectorKind === "document" ? (

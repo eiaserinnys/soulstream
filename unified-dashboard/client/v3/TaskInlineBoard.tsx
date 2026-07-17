@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import {
-  Button,
   CustomViewIframe,
+  DashboardIconCap,
   renameMarkdownDocument,
   retainEqualValue,
   useBoardYjsRuntime,
@@ -11,6 +11,7 @@ import {
   type CustomViewDocument,
   type MarkdownDocument,
 } from "@seosoyoung/soul-ui";
+import { ChevronDown, ChevronRight, FilePlus2, Pencil } from "lucide-react";
 
 import {
   fetchInlineCustomView,
@@ -196,14 +197,13 @@ export function TaskInlineBoard({
       <div className="v3-detail-section-head">
         <h3>▦ 보드</h3><span>{status === "ready" ? `${items.length}개` : ""}</span>
         <span className="v3-spacer" />
-        <Button
-          size="xs"
-          variant="glass"
+        <DashboardIconCap
+          label="마크다운 추가"
           disabled={!boardSync.runtime || !boardSync.hasSynced}
           onClick={createMarkdown}
         >
-          ＋ 마크다운
-        </Button>
+          <FilePlus2 className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
       </div>
       {status === "loading" ? <p className="v3-detail-empty">보드 항목을 불러오는 중…</p> : null}
       {status === "error" ? <p className="v3-inline-board-error" role="alert">보드 항목을 불러오지 못했습니다.</p> : null}
@@ -236,12 +236,22 @@ export function TaskInlineBoard({
                       <button type="submit" disabled={activeRename.pending}>{activeRename.pending ? "저장 중…" : "저장"}</button>
                     </form>
                   ) : (
-                    <button type="button" className="v3-inline-board-expand" onClick={() => setExpandedId(expanded ? null : item.id)}>
-                      <span>📄 {title}</span><small>{expanded ? "접기" : "펼치기"}</small>
-                    </button>
+                    <div className="v3-inline-board-label"><span>📄 {title}</span></div>
                   )}
                   {!activeRename ? (
-                    <button type="button" className="v3-inline-board-rename-button" aria-label={`${title} 이름 수정`} onClick={() => beginRename(item)}>이름 수정</button>
+                    <>
+                      <DashboardIconCap
+                        label={`${title} ${expanded ? "접기" : "펼치기"}`}
+                        className="v3-inline-board-expand"
+                        aria-expanded={expanded}
+                        onClick={() => setExpandedId(expanded ? null : item.id)}
+                      >
+                        {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
+                      </DashboardIconCap>
+                      <DashboardIconCap label={`${title} 이름 수정`} className="v3-inline-board-rename-button" onClick={() => beginRename(item)}>
+                        <Pencil className="h-4 w-4" aria-hidden="true" />
+                      </DashboardIconCap>
+                    </>
                   ) : null}
                 </div>
                 {activeRename?.error ? <p className="v3-inline-board-error" role="alert">{activeRename.error}</p> : null}
@@ -250,11 +260,19 @@ export function TaskInlineBoard({
             );
           }
           if (item.itemType === "custom_view") {
+            const title = metadataText(item, "title") || "Custom view";
             return (
               <article key={item.id} className="v3-inline-board-item" data-board-kind="custom_view">
-                <button type="button" onClick={() => setExpandedId(expanded ? null : item.id)}>
-                  <span>▦ {metadataText(item, "title") || "Custom view"}</span><small>{expanded ? "접기" : "펼치기"}</small>
-                </button>
+                <div className="v3-inline-board-row">
+                  <div className="v3-inline-board-label"><span>▦ {title}</span></div>
+                  <DashboardIconCap
+                    label={`${title} ${expanded ? "접기" : "펼치기"}`}
+                    aria-expanded={expanded}
+                    onClick={() => setExpandedId(expanded ? null : item.id)}
+                  >
+                    {expanded ? <ChevronDown className="h-4 w-4" aria-hidden="true" /> : <ChevronRight className="h-4 w-4" aria-hidden="true" />}
+                  </DashboardIconCap>
+                </div>
                 {expanded ? <InlineCustomView customViewId={item.itemId} invalidationKey={customViewInvalidationKey} /> : null}
               </article>
             );

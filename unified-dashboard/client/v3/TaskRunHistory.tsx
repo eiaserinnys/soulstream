@@ -5,10 +5,12 @@ import {
   DialogPanel,
   DialogPopup,
   DialogTitle,
+  DashboardIconCap,
   SessionContextMenu,
   type SessionContextMenuState,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
+import { ChevronsDown, Plus } from "lucide-react";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { retainEqualValue } from "@seosoyoung/soul-ui";
 
@@ -166,7 +168,9 @@ export function TaskRunHistory({
     <section className="v3-detail-section v3-runs">
       <div className="v3-detail-section-head">
         <h3>세션 히스토리</h3><span>{runHistoryTotal > tree.length ? `${tree.length}/${runHistoryTotal}회` : `${tree.length}회`}</span><span className="v3-spacer" />
-        <button type="button" className="v3-button v3-button--soft" onClick={() => setSuccessionOpen(true)}>＋ 새 세션</button>
+        <DashboardIconCap label="새 세션" onClick={() => setSuccessionOpen(true)}>
+          <Plus className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
       </div>
       {tree.length === 0 ? <p className="v3-detail-empty">아직 실행된 세션이 없습니다.</p> : null}
       <div className="v3-run-list">
@@ -181,15 +185,14 @@ export function TaskRunHistory({
         ))}
       </div>
       {runHistoryHasMore ? (
-        <button
-          type="button"
-          className="v3-button v3-button--soft"
+        <DashboardIconCap
+          label="이전 세션 더 보기"
           data-testid="v3-load-more-runs"
           disabled={runHistoryLoading}
           onClick={onLoadMoreRuns}
         >
-          {runHistoryLoading ? "세션 불러오는 중…" : "이전 세션 더 보기"}
-        </button>
+          <ChevronsDown className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
       ) : null}
       {successionOpen ? (
         <SessionSuccessionModal

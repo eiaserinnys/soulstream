@@ -283,6 +283,8 @@ describe("RunbookCard", () => {
 
     const openBoard = container.querySelector<HTMLButtonElement>('[data-testid="runbook-card-open-board"]');
     expect(openBoard).not.toBeNull();
+    expect(openBoard!.className).toContain("dashboard-icon-cap");
+    expect(openBoard!.title).toBe("Deploy Runbook 런북 보드 열기");
 
     openBoard!.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, cancelable: true }));
     openBoard!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
@@ -490,7 +492,7 @@ describe("RunbookCard", () => {
       }));
     });
 
-    const openDialog = findButtonByText(container, "런북 완료");
+    const openDialog = container.querySelector<HTMLButtonElement>('button[aria-label="런북 완료"]');
     expect(openDialog).not.toBeUndefined();
     flushSync(() => {
       openDialog!.dispatchEvent(new MouseEvent("click", { bubbles: true }));

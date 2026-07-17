@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Button,
+  DashboardIconCap,
   SessionReviewAcknowledgeError,
   acknowledgeSessionReview,
   type SessionReviewAcknowledgeResult,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
+import { Check } from "lucide-react";
 
 export function V3SessionReviewBanner({
   session,
@@ -54,7 +55,11 @@ export function V3SessionReviewBanner({
     <div className={`v3-review-banner${message ? " has-message" : ""}`} role="status">
       <span aria-hidden="true">{message ? "✓" : "◆"}</span>
       <p><strong>{message ? "검수 상태" : "검수 대기"}</strong><small>{message ?? "이 세션의 결과 확인이 필요합니다."}</small></p>
-      {!message ? <Button variant="outline" size="sm" disabled={pending} onClick={() => { void acknowledge(); }}>{pending ? "처리 중…" : "확인"}</Button> : null}
+      {!message ? (
+        <DashboardIconCap label="검수 확인" disabled={pending} onClick={() => { void acknowledge(); }}>
+          <Check className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
+      ) : null}
     </div>
   );
 }
