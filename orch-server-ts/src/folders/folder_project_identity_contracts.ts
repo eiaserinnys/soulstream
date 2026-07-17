@@ -3,6 +3,7 @@ import type {
   PageMutationApplication,
 } from "../page/page_mutation_core.js";
 import type { PageMutationCommitResult } from "../page/page_repository.js";
+import type { PageUpdatedObserver } from "../page/page_update_notifications.js";
 
 export interface FolderProjectRecord {
   id: string;
@@ -111,4 +112,5 @@ export interface FolderProjectIdentityServiceConfig {
   createOperationId?: () => string;
   hydratePage: (pageId: string) => Promise<void>;
   onCommitted?: () => Promise<void>;
+  onPageUpdated?: PageUpdatedObserver;
 }

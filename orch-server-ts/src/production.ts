@@ -224,6 +224,7 @@ export async function createLiveProductionApplication(
       if (!pageYjsService) throw new Error("Page Yjs service is not initialized");
       await pageYjsService.hydrateCommittedPage(`page:${pageId}`);
     },
+    onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),
   });
   const dependencies: LiveProviderDependencies = {
     dbCatalogRepository,
@@ -254,6 +255,7 @@ export async function createLiveProductionApplication(
         runtimeServices.sessionBroadcaster,
       );
     },
+    onPageUpdated: createPageUpdatedEmitter(runtimeServices.sessionBroadcaster),
   });
   const app = createApp(buildProductionRouteOptions(
     appConfig,

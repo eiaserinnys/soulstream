@@ -7,6 +7,7 @@ import {
 } from "../page/page_mutation_core.js";
 import { readPageYDocReplica } from "../page/page_yjs_model.js";
 import { toMutationResult, type PageServiceMutationResult } from "../page/page_service.js";
+import { notifyPageUpdates } from "../page/page_update_notifications.js";
 import type {
   LegacyRunbookBackfillResult,
   RunbookTaskIdentityMutationResult,
@@ -103,6 +104,7 @@ export class RunbookTaskIdentityService {
       boardApplication,
     }));
     await this.config.hydratePage(result.pageId);
+    this.notifyPageUpdate(result);
     return result;
   }
 
@@ -177,6 +179,7 @@ export class RunbookTaskIdentityService {
       boardApplication,
     }));
     await this.config.hydratePage(result.pageId);
+    this.notifyPageUpdate(result);
     return result;
   }
 
@@ -270,11 +273,13 @@ export class RunbookTaskIdentityService {
       idempotencyKey: pageMutationIdempotencyKey("mutate_task_identity", input.actor, input.idempotencyKey),
       reason: input.reason,
     });
-    return await this.persistMutation(binding, pageApplication, {
+    const result = await this.persistMutation(binding, pageApplication, {
       actor: input.actor,
       idempotencyKey: input.idempotencyKey,
       expectedRunbookVersion: input.expectedVersion,
     });
+    this.notifyPageUpdate(result);
+    return result;
   }
 
   async backfillLegacyRunbook(input: {
@@ -353,6 +358,7 @@ export class RunbookTaskIdentityService {
       pageApplication,
     });
     await this.config.hydratePage(pageId);
+    this.notifyPageUpdate(result);
     return result;
   }
 
@@ -393,6 +399,12 @@ export class RunbookTaskIdentityService {
     }));
     await this.config.hydratePage(result.pageId);
     return result;
+  }
+
+  private notifyPageUpdate(
+    result: RunbookTaskIdentityMutationResult | LegacyRunbookBackfillResult,
+  ): void {
+    notifyPageUpdates([result], this.config.onPageUpdated);
   }
 
 }

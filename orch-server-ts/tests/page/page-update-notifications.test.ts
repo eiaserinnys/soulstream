@@ -33,4 +33,29 @@ describe("page update notifications", () => {
       "Page update notification failed after commit",
     );
   });
+
+  it("maps identity repository commits through the same notification boundary", () => {
+    const notify = vi.fn();
+
+    notifyPageUpdates([
+      {
+        pageId: "page-4",
+        pageCommit: {
+          operation: { result_version: 9 },
+          idempotent: false,
+        },
+      },
+      {
+        pageId: "page-5",
+        pageCommit: {
+          operation: { result_version: 3 },
+          idempotent: true,
+        },
+      },
+      { pageId: "page-6" },
+    ], notify);
+
+    expect(notify).toHaveBeenCalledOnce();
+    expect(notify).toHaveBeenCalledWith({ pageId: "page-4", version: 9 });
+  });
 });
