@@ -8,6 +8,10 @@ import type { InterventionMessage, Task } from "./task_models.js";
 
 export const CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE = "claude_runtime_task_followup";
 export const MAX_CLAUDE_RUNTIME_FOLLOWUP_ATTEMPT = 3;
+export const CLAUDE_RUNTIME_FOLLOWUP_RETRY_DELAY_MS: Readonly<Record<number, number>> = {
+  2: 5_000,
+  3: 30_000,
+};
 
 export type ClaudeRuntimeFollowupStallReason =
   | "empty_response"
@@ -21,12 +25,20 @@ export interface ClaudeRuntimeTaskFollowupPort {
     message: InterventionMessage,
     reason: ClaudeRuntimeFollowupStallReason,
   ): Promise<void>;
+  cancelScheduledFallback(task: Task, supersedingMessage: InterventionMessage): void;
 }
 
 export interface ClaudeRuntimeTaskFollowupDeps {
   taskManager: Pick<TaskManager, "addIntervention">;
   onResume: StartExecutionCallback;
   logger: Logger;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+interface ScheduledRuntimeTaskFallback {
+  sessionId: string;
+  token: symbol;
+  promise: Promise<void>;
 }
 
 interface PendingRuntimeTaskFollowup {
@@ -50,6 +62,7 @@ const TERMINAL_RUNTIME_TASK_STATUSES = new Set([
 export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFollowupPort {
   private readonly pendingBySession = new Map<string, Map<string, PendingRuntimeTaskFollowup>>();
   private readonly flushedTaskKeys = new Set<string>();
+  private readonly scheduledFallbacks = new Map<string, ScheduledRuntimeTaskFallback>();
   private sequence = 0;
 
   constructor(private readonly deps: ClaudeRuntimeTaskFollowupDeps) {}
@@ -135,14 +148,103 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     }
   }
 
-  async queueFallback(
+  queueFallback(
     task: Task,
     message: InterventionMessage,
     reason: ClaudeRuntimeFollowupStallReason,
   ): Promise<void> {
     const attempt = (message.followupAttempt ?? 1) + 1;
+    const followupKey = message.followupKey ?? `${task.agentSessionId}:attempt:${attempt}`;
+    const existing = this.scheduledFallbacks.get(followupKey);
+    if (existing) return existing.promise;
+
+    const delayMs = resolveFallbackDelayMs(attempt);
+    const token = Symbol(followupKey);
+    const executionPromise = task.executionPromise;
+    task.pendingClaudeRuntimeFollowupRetry = true;
+
+    const promise = this.deliverFallbackAfterDelay({
+      task,
+      message,
+      reason,
+      attempt,
+      followupKey,
+      delayMs,
+      token,
+      executionPromise,
+    }).finally(() => {
+      if (this.scheduledFallbacks.get(followupKey)?.token === token) {
+        this.scheduledFallbacks.delete(followupKey);
+      }
+      if (!this.hasScheduledFallback(task.agentSessionId)) {
+        task.pendingClaudeRuntimeFollowupRetry = false;
+      }
+    });
+    this.scheduledFallbacks.set(followupKey, {
+      sessionId: task.agentSessionId,
+      token,
+      promise,
+    });
+    this.deps.logger.info(
+      { sessionId: task.agentSessionId, followupKey, attempt, delayMs },
+      "Claude runtime task follow-up fallback scheduled after terminal drain",
+    );
+    return promise;
+  }
+
+  cancelScheduledFallback(task: Task, supersedingMessage: InterventionMessage): void {
+    if (supersedingMessage.source === CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE) return;
+
+    let cancelled = 0;
+    for (const [followupKey, scheduled] of this.scheduledFallbacks) {
+      if (scheduled.sessionId !== task.agentSessionId) continue;
+      this.scheduledFallbacks.delete(followupKey);
+      cancelled += 1;
+    }
+    if (cancelled === 0) return;
+
+    task.pendingClaudeRuntimeFollowupRetry = false;
+    this.deps.logger.info(
+      { sessionId: task.agentSessionId, cancelled },
+      "Claude runtime task follow-up fallback cancelled by a newer message",
+    );
+  }
+
+  private async deliverFallbackAfterDelay(params: {
+    task: Task;
+    message: InterventionMessage;
+    reason: ClaudeRuntimeFollowupStallReason;
+    attempt: number;
+    followupKey: string;
+    delayMs: number;
+    token: symbol;
+    executionPromise: Promise<void> | undefined;
+  }): Promise<void> {
+    const {
+      task,
+      message,
+      reason,
+      attempt,
+      followupKey,
+      delayMs,
+      token,
+      executionPromise,
+    } = params;
+
+    if (executionPromise) {
+      try {
+        await executionPromise;
+      } catch {
+        // The executor persists its terminal state before the delayed retry.
+      }
+    }
+    if (!this.isCurrentFallback(followupKey, token)) return;
+    await (this.deps.sleep ?? sleep)(delayMs);
+    if (!this.isCurrentFallback(followupKey, token)) return;
+
+    task.pendingClaudeRuntimeFollowupRetry = false;
     try {
-      await this.deps.taskManager.addIntervention(
+      const result = await this.deps.taskManager.addIntervention(
         {
           agentSessionId: task.agentSessionId,
           text: buildClaudeRuntimeTaskFollowupFallbackPrompt(message.text, reason),
@@ -150,17 +252,34 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
           callerInfo: message.callerInfo ?? { source: "system", display_name: "Soulstream" },
           source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
           followupAttempt: attempt,
-          followupKey: message.followupKey,
+          followupKey,
+          onlyIfTerminal: true,
         },
         this.deps.onResume,
       );
+      if ("deferred" in result && result.deferred) {
+        this.deps.logger.info(
+          { sessionId: task.agentSessionId, followupKey, attempt },
+          "Claude runtime task follow-up fallback skipped because another turn is running",
+        );
+      }
     } catch (err) {
       this.deps.logger.warn(
-        { err, sessionId: task.agentSessionId, followupKey: message.followupKey, reason },
+        { err, sessionId: task.agentSessionId, followupKey, reason },
         "Claude runtime task follow-up fallback intervention failed",
       );
       throw err;
     }
+  }
+
+  private isCurrentFallback(followupKey: string, token: symbol): boolean {
+    return this.scheduledFallbacks.get(followupKey)?.token === token;
+  }
+
+  private hasScheduledFallback(sessionId: string): boolean {
+    return Array.from(this.scheduledFallbacks.values()).some(
+      (scheduled) => scheduled.sessionId === sessionId,
+    );
   }
 
   private getPendingMap(sessionId: string): Map<string, PendingRuntimeTaskFollowup> {
@@ -170,6 +289,21 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     this.pendingBySession.set(sessionId, created);
     return created;
   }
+}
+
+function resolveFallbackDelayMs(attempt: number): number {
+  const delayMs = CLAUDE_RUNTIME_FOLLOWUP_RETRY_DELAY_MS[attempt];
+  if (delayMs === undefined) {
+    throw new Error(`No Claude runtime follow-up retry delay configured for attempt ${attempt}`);
+  }
+  return delayMs;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref();
+  });
 }
 
 export function buildClaudeRuntimeTaskFollowupPrompt(

@@ -31,12 +31,14 @@ function makeTask(): Task {
 function makeController() {
   const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
   const onResume = vi.fn();
+  const sleep = vi.fn(async () => undefined);
   const controller = new ClaudeRuntimeTaskFollowupController({
     taskManager: { addIntervention },
     onResume,
     logger: silentLogger,
+    sleep,
   });
-  return { controller, addIntervention, onResume };
+  return { controller, addIntervention, onResume, sleep };
 }
 
 describe("ClaudeRuntimeTaskFollowupController", () => {
@@ -287,9 +289,10 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(addIntervention.mock.calls[0]![0].followupKey).toBe("sess-1:task-a,task-b");
   });
 
-  it("fallback prompt는 retry 이유를 설명하되 완료 상태를 새로 단정하지 않는다", async () => {
+  it("fallback은 execution drain 뒤 5초를 기다려 terminal auto-resume route로 보낸다", async () => {
     const task = makeTask();
-    const { controller, addIntervention, onResume } = makeController();
+    task.executionPromise = Promise.resolve();
+    const { controller, addIntervention, onResume, sleep } = makeController();
 
     await controller.queueFallback(
       task,
@@ -307,13 +310,109 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
       expect.objectContaining({
         followupAttempt: 2,
         followupKey: "sess-1:task-1",
+        onlyIfTerminal: true,
         text: expect.stringContaining("빈 응답으로 끝났습니다"),
       }),
       onResume,
     );
+    expect(sleep).toHaveBeenCalledWith(5_000);
     const text = addIntervention.mock.calls[0]![0].text;
     expect(text).toContain("원래 follow-up 지시");
     expect(text).toContain("background task status");
     expect(text).not.toContain("완료된 백그라운드 작업 결과");
+  });
+
+  it("attempt 2 fallback은 30초 백오프 뒤 마지막 fresh turn을 예약한다", async () => {
+    const task = makeTask();
+    task.executionPromise = Promise.resolve();
+    const { controller, addIntervention, sleep } = makeController();
+
+    await controller.queueFallback(
+      task,
+      {
+        text: "retry attempt 2",
+        user: "system",
+        source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+        followupAttempt: 2,
+        followupKey: "sess-1:task-1",
+      },
+      "repeated_response",
+    );
+
+    expect(sleep).toHaveBeenCalledWith(30_000);
+    expect(addIntervention).toHaveBeenCalledWith(
+      expect.objectContaining({ followupAttempt: 3, onlyIfTerminal: true }),
+      expect.any(Function),
+    );
+  });
+
+  it("같은 followupKey의 지연 fallback은 하나만 유지한다", async () => {
+    let releaseSleep!: () => void;
+    const sleep = vi.fn(() => new Promise<void>((resolve) => {
+      releaseSleep = resolve;
+    }));
+    const addIntervention = vi.fn(async () => ({ autoResumed: true as const }));
+    const controller = new ClaudeRuntimeTaskFollowupController({
+      taskManager: { addIntervention },
+      onResume: vi.fn(),
+      logger: silentLogger,
+      sleep,
+    });
+    const task = makeTask();
+    task.executionPromise = Promise.resolve();
+    const message = {
+      text: "retry once",
+      user: "system",
+      source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+      followupAttempt: 1,
+      followupKey: "sess-1:task-1",
+    };
+
+    const first = controller.queueFallback(task, message, "empty_response");
+    const duplicate = controller.queueFallback(task, message, "empty_response");
+    await vi.waitFor(() => expect(sleep).toHaveBeenCalledTimes(1));
+    releaseSleep();
+    await Promise.all([first, duplicate]);
+
+    expect(addIntervention).toHaveBeenCalledTimes(1);
+  });
+
+  it("지연 중 비-followup 메시지가 먼저 시작되면 예약을 취소한다", async () => {
+    let releaseSleep!: () => void;
+    const sleep = vi.fn(() => new Promise<void>((resolve) => {
+      releaseSleep = resolve;
+    }));
+    const addIntervention = vi.fn(async () => ({ autoResumed: true as const }));
+    const controller = new ClaudeRuntimeTaskFollowupController({
+      taskManager: { addIntervention },
+      onResume: vi.fn(),
+      logger: silentLogger,
+      sleep,
+    });
+    const task = makeTask();
+    task.executionPromise = Promise.resolve();
+    const scheduled = controller.queueFallback(
+      task,
+      {
+        text: "delayed retry",
+        user: "system",
+        source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+        followupAttempt: 1,
+        followupKey: "sess-1:task-1",
+      },
+      "empty_response",
+    );
+    await vi.waitFor(() => expect(sleep).toHaveBeenCalledTimes(1));
+
+    controller.cancelScheduledFallback(task, {
+      text: "?",
+      user: "alice",
+      callerInfo: { source: "soul-app", display_name: "Alice" },
+    });
+    releaseSleep();
+    await scheduled;
+
+    expect(addIntervention).not.toHaveBeenCalled();
+    expect(task.pendingClaudeRuntimeFollowupRetry).toBe(false);
   });
 });

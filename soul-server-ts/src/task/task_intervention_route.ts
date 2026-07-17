@@ -36,6 +36,8 @@ export interface AddInterventionParams {
    * caller can keep its durable store active and retry later.
    */
   queueIfRunning?: boolean;
+  /** Delayed retries must use the terminal auto-resume path, never live steering. */
+  onlyIfTerminal?: boolean;
 }
 
 /**
@@ -82,6 +84,9 @@ export class TaskInterventionRoute {
       followupKey: params.followupKey,
     };
 
+    if (params.onlyIfTerminal === true && task.status === "running") {
+      return { deferred: true };
+    }
     if (this.deps.activeTaskRecovery.prepareForIntervention(task) === "running") {
       return await this.deps.runningInterventionTransition.deliver(task, message, {
         queueIfUndelivered: params.queueIfRunning ?? true,

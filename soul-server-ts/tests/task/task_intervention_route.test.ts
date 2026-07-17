@@ -99,6 +99,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
       agentSessionId: "sess-intervention",
       text: "resume",
       user: "alice",
+      onlyIfTerminal: true,
     }, onResume)).resolves.toEqual({ autoResumed: true });
 
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
@@ -109,6 +110,22 @@ describe("TaskInterventionRoute.addIntervention", () => {
       attachmentPaths: undefined,
       context: undefined,
     }, onResume);
+  });
+
+  it("terminal-only delivery never enters the running intervention path", async () => {
+    const task = makeTask({ status: "running" });
+    const { route, runningInterventionTransition, autoResumeTransition } = makeSubject([task]);
+
+    await expect(route.addIntervention({
+      agentSessionId: "sess-intervention",
+      text: "delayed background follow-up retry",
+      user: "system",
+      source: "claude_runtime_task_followup",
+      onlyIfTerminal: true,
+    }, vi.fn())).resolves.toEqual({ deferred: true });
+
+    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+    expect(autoResumeTransition.resume).not.toHaveBeenCalled();
   });
 
   it("loads and remembers evicted terminal tasks before auto-resume route selection", async () => {
