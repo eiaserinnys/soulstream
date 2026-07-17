@@ -191,6 +191,44 @@ describe("runbook-store", () => {
     })).rejects.toThrow("항목 버전이 오래되었습니다. 새로고침 후 다시 시도하세요.");
   });
 
+  it("patches only one loaded runbook optimistically and rolls it back exactly on failure", async () => {
+    const first = snapshot("First");
+    const second = snapshot("Second");
+    second.runbook.id = "rb-2";
+    const secondProjection = {
+      snapshot: second,
+      status: "ready" as const,
+      error: null,
+      isRefreshing: false,
+    };
+    useRunbookStore.setState({
+      byId: {
+        "rb-1": { snapshot: first, status: "ready", error: null, isRefreshing: false },
+        "rb-2": secondProjection,
+      },
+    });
+    let rejectRequest: ((error: Error) => void) | undefined;
+    globalThis.fetch = vi.fn().mockImplementation(() =>
+      new Promise<Response>((_resolve, reject) => { rejectRequest = reject; }));
+
+    const request = useRunbookStore.getState().mutateChecklist({
+      kind: "create_section",
+      runbookId: "rb-1",
+      sectionId: "sec-new",
+      title: "Optimistic",
+      idempotencyKey: "create-section",
+    });
+
+    expect(useRunbookStore.getState().byId["rb-1"].snapshot?.sections[0]?.title)
+      .toBe("Optimistic");
+    expect(useRunbookStore.getState().byId["rb-2"]).toBe(secondProjection);
+
+    rejectRequest?.(new Error("network down"));
+    await expect(request).rejects.toThrow("network down");
+    expect(useRunbookStore.getState().byId["rb-1"].snapshot).toBe(first);
+    expect(useRunbookStore.getState().byId["rb-2"]).toBe(secondProjection);
+  });
+
   it("reloads an observed runbook when runbook_updated arrives", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(okResponse(snapshot("Before")))

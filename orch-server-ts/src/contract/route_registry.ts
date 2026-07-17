@@ -253,6 +253,62 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
     family: "runbook",
     beforePath: "/api/runbooks/{runbook_id}",
   },
+  {
+    methods: ["POST"],
+    path: "/api/runbooks/{runbook_id}/sections",
+    name: "create_runbook_section_browser",
+    authRequired: true,
+    family: "runbook",
+  },
+  {
+    methods: ["POST"],
+    path: "/api/runbooks/{runbook_id}/sections/{section_id}",
+    name: "update_runbook_section_browser",
+    authRequired: true,
+    family: "runbook",
+  },
+  {
+    methods: ["POST"],
+    path: "/api/runbooks/{runbook_id}/sections/{section_id}/move",
+    name: "move_runbook_section_browser",
+    authRequired: true,
+    family: "runbook",
+  },
+  {
+    methods: ["POST"],
+    path: "/api/runbooks/{runbook_id}/sections/{section_id}/archive",
+    name: "archive_runbook_section_browser",
+    authRequired: true,
+    family: "runbook",
+  },
+  {
+    methods: ["POST"],
+    path: "/api/runbooks/{runbook_id}/sections/{section_id}/items",
+    name: "create_runbook_item_browser",
+    authRequired: true,
+    family: "runbook",
+  },
+  {
+    methods: ["POST"],
+    path: "/api/runbooks/{runbook_id}/items/{item_id}",
+    name: "update_runbook_item_browser",
+    authRequired: true,
+    family: "runbook",
+  },
+  {
+    methods: ["POST"],
+    path: "/api/runbooks/{runbook_id}/items/{item_id}/move",
+    name: "move_runbook_item_browser",
+    authRequired: true,
+    family: "runbook",
+  },
+  {
+    methods: ["POST"],
+    path: "/api/runbooks/{runbook_id}/items/{item_id}/archive",
+    name: "archive_runbook_item_browser",
+    authRequired: true,
+    family: "runbook",
+  },
 ];
 
 /**

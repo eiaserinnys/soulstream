@@ -260,6 +260,14 @@ describe("runbook route harness", () => {
       "GET /api/runbooks/my-turn": true,
       "POST /api/runbooks/:runbook_id/items/:item_id/status": true,
       "POST /api/runbooks/:runbook_id/status": true,
+      "POST /api/runbooks/:runbook_id/sections": true,
+      "POST /api/runbooks/:runbook_id/sections/:section_id": true,
+      "POST /api/runbooks/:runbook_id/sections/:section_id/move": true,
+      "POST /api/runbooks/:runbook_id/sections/:section_id/archive": true,
+      "POST /api/runbooks/:runbook_id/sections/:section_id/items": true,
+      "POST /api/runbooks/:runbook_id/items/:item_id": true,
+      "POST /api/runbooks/:runbook_id/items/:item_id/move": true,
+      "POST /api/runbooks/:runbook_id/items/:item_id/archive": true,
       "GET /api/runbooks/:runbook_id": true,
     });
 
@@ -654,6 +662,119 @@ describe("runbook route harness", () => {
     }));
 
     await app.close();
+  });
+
+  it("proxies authenticated section and item CRUD through the canonical owner node", async () => {
+    const httpClient: RunbookMutationHttpClient = vi.fn(async () => ({
+      statusCode: 200,
+      headers: { "content-type": "application/json" },
+      body: { ok: true, snapshot },
+    }));
+    const { app, calls } = createAppWithRunbooks(
+      { restricted: false },
+      {},
+      httpClient,
+    );
+
+    const requests = [
+      {
+        url: "/api/runbooks/rb%2F1/sections",
+        payload: {
+          sectionId: "sec-new",
+          title: "New section",
+          idempotencyKey: "create-section",
+        },
+        upstreamPath: "/api/runbooks/rb%2F1/sections",
+        actorSessionId: "sess-completed",
+      },
+      {
+        url: "/api/runbooks/rb%2F1/sections/sec-1/move",
+        payload: {
+          expectedVersion: 2,
+          beforeSectionId: "sec-0",
+          idempotencyKey: "move-section",
+        },
+        upstreamPath: "/api/runbooks/rb%2F1/sections/sec-1/move",
+        actorSessionId: "sess-section-updated",
+      },
+      {
+        url: "/api/runbooks/rb%2F1/items/item%2F1",
+        payload: {
+          title: "Updated item",
+          howTo: "Steps",
+          expectedVersion: 3,
+          idempotencyKey: "update-item",
+        },
+        upstreamPath: "/api/runbooks/rb%2F1/items/item%2F1",
+        actorSessionId: "sess-assignee",
+      },
+    ];
+
+    for (const request of requests) {
+      const response = await app.inject({
+        method: "POST",
+        url: request.url,
+        headers: {
+          cookie: "dashboard_auth=jwt",
+          authorization: "Bearer dashboard",
+        },
+        payload: request.payload,
+      });
+      expect(response.statusCode).toBe(200);
+      expect(httpClient).toHaveBeenLastCalledWith(expect.objectContaining({
+        upstreamPath: request.upstreamPath,
+        body: request.payload,
+        headers: {
+          cookie: "dashboard_auth=jwt",
+          authorization: "Bearer dashboard",
+        },
+        target: ownerNode,
+      }));
+      expect(calls).toContainEqual(["findNode", request.actorSessionId]);
+    }
+
+    await app.close();
+  });
+
+  it("rejects CRUD for inaccessible or missing targets before contacting a worker", async () => {
+    const httpClient: RunbookMutationHttpClient = vi.fn(async () => ({
+      statusCode: 200,
+      body: { ok: true },
+    }));
+    const { app: deniedApp } = createAppWithRunbooks(
+      { restricted: true, allowedFolderIds: ["folder-b"] },
+      {},
+      httpClient,
+    );
+    const { app: missingApp } = createAppWithRunbooks(
+      { restricted: false },
+      {},
+      httpClient,
+    );
+
+    const denied = await deniedApp.inject({
+      method: "POST",
+      url: "/api/runbooks/rb%2F1/sections",
+      payload: { title: "Denied", idempotencyKey: "denied" },
+    });
+    const missing = await missingApp.inject({
+      method: "POST",
+      url: "/api/runbooks/rb%2F1/items/missing/archive",
+      payload: { expectedVersion: 1, idempotencyKey: "missing" },
+    });
+    const invalid = await missingApp.inject({
+      method: "POST",
+      url: "/api/runbooks/rb%2F1/items/item%2F1",
+      payload: { title: 7, expectedVersion: 3, idempotencyKey: "update-item" },
+    });
+
+    expect(denied.statusCode).toBe(403);
+    expect(missing.statusCode).toBe(404);
+    expect(invalid.statusCode).toBe(400);
+    expect(httpClient).not.toHaveBeenCalled();
+
+    await deniedApp.close();
+    await missingApp.close();
   });
 
   it("preserves non-fallback resolver errors and maps request failures to 502", async () => {
