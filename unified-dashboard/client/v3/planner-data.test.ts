@@ -177,7 +177,7 @@ describe("planner BFF data", () => {
       });
       expect(api.getBacklinks).toHaveBeenNthCalledWith(2, taskPage.id, {
         kinds: ["mount"],
-        limit: 100,
+        limit: 50,
         cursor: "next-mounts",
       });
     } finally {
