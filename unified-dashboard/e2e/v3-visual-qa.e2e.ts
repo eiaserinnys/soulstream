@@ -193,11 +193,11 @@ for (const theme of ["dark", "light"] as const) {
       await page.waitForLoadState("networkidle");
       navigationInProgress = true;
       await page.goto(`${BASE_URL}/v2`, { waitUntil: "domcontentloaded" });
-      await expect(page).toHaveURL(`${BASE_URL}/v3`);
+      await expect(page).toHaveURL(`${BASE_URL}/`);
       await expect(page.getByText("오늘의 업무")).toBeVisible();
       await page.waitForLoadState("networkidle");
       navigationInProgress = false;
-      await capture(page, outputDir, "10-v2-redirected-to-v3", diagnostics);
+      await capture(page, outputDir, "10-v2-redirected-to-main", diagnostics);
 
       writeFileSync(
         path.join(outputDir, "diagnostics.json"),

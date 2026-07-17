@@ -19,6 +19,15 @@ interface LoginProps {
   title?: string;
 }
 
+export function buildGoogleAuthUrl(
+  location: Pick<Location, "pathname" | "hash">,
+): string {
+  const returnTo = `${location.pathname}${location.hash}`;
+  return returnTo && returnTo !== "/"
+    ? `/api/auth/google?return_to=${encodeURIComponent(returnTo)}`
+    : "/api/auth/google";
+}
+
 export function Login({ title = "Dashboard" }: LoginProps) {
   const { devModeEnabled, devLogin } = useAuth();
   const [devEmail, setDevEmail] = useState("");
@@ -37,10 +46,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
   }, []);
 
   const handleGoogleLogin = () => {
-    // 현재 경로를 return_to로 전달하여 로그인 후 원래 페이지로 복귀
-    const returnTo = window.location.pathname;
-    const params = returnTo && returnTo !== "/" ? `?return_to=${encodeURIComponent(returnTo)}` : "";
-    window.location.href = `/api/auth/google${params}`;
+    window.location.href = buildGoogleAuthUrl(window.location);
   };
 
   const handleDevLogin = async (e: React.FormEvent) => {

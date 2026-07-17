@@ -47,11 +47,14 @@ import {
   useDashboardStore,
   useUserPreferencesSync,
   ConnectionBadge,
+  DashboardIconCap,
   useSessionListProvider,
   shouldLoadMoreAfterSessionMove,
   RunbookOverview,
 } from "@seosoyoung/soul-ui";
+import { LayoutDashboard } from "lucide-react";
 import { FeedView } from "./components/FeedView";
+import { MAIN_DASHBOARD_PATH } from "./dashboard-routes";
 
 export function OrchestratorDashboardLayout() {
   const activeSessionKey = useDashboardStore((s) => s.activeSessionKey);
@@ -214,6 +217,12 @@ export function OrchestratorDashboardLayout() {
       }
       headerRight={
         <>
+          <DashboardIconCap
+            label="v3 플래너 열기"
+            onClick={() => window.location.assign(MAIN_DASHBOARD_PATH)}
+          >
+            <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+          </DashboardIconCap>
           <ConfigButton variant="chrome" onClick={() => setConfigOpen(true)} />
           <ThemeToggle variant="chrome" />
         </>
@@ -249,6 +258,15 @@ export function OrchestratorDashboardLayout() {
           <div className="flex items-center justify-between">
             <span className="text-sm">연결 상태</span>
             <ConnectionBadge status={sseStatus} />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">플래너</span>
+            <DashboardIconCap
+              label="v3 플래너 열기"
+              onClick={() => window.location.assign(MAIN_DASHBOARD_PATH)}
+            >
+              <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
+            </DashboardIconCap>
           </div>
         </div>
       }
