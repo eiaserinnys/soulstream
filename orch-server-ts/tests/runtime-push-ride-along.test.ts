@@ -15,7 +15,6 @@ describe("runtime push ride-along", () => {
         databaseUrl: "postgres://unused/unused",
         authBearerToken: "test-token",
       }),
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       additionalNodeEventSinks: [rideAlong],
     });
     const events: NodeRegistryEvent[] = [{

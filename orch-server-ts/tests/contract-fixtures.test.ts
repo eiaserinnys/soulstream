@@ -32,7 +32,7 @@ describe("orch-server-ts contract fixture reader", () => {
   it("keeps route inventory count, public routes, and static-before-dynamic hazards visible", () => {
     const summary = contractFixtureSummary(fixtures);
 
-    expect(summary.routeCount).toBe(128);
+    expect(summary.routeCount).toBe(116);
     expect(summary.publicRoutes).toEqual([
       "/api/auth/config",
       "/api/auth/dev-login",
@@ -77,7 +77,7 @@ describe("orch-server-ts contract fixture reader", () => {
   });
 
   it("keeps SSE replay, gap, and snapshot refetch metadata explicit", () => {
-    const { common, sessionStream, taskStream, gap } = fixtures.sseReplayGap;
+    const { common, sessionStream, gap } = fixtures.sseReplayGap;
 
     expect(common.snapshotRefetchOn).toEqual(["ring_gap", "instance_mismatch"]);
     expect(common.resumeInputs).toMatchObject({
@@ -90,7 +90,6 @@ describe("orch-server-ts contract fixture reader", () => {
       latest_id: 3,
     });
     expect(sessionStream.events).toHaveLength(3);
-    expect(taskStream.changes).toHaveLength(3);
     expect(gap).toMatchObject({
       ringMaxlen: 2,
       lastEventIdBeforeOldest: 0,

@@ -79,9 +79,6 @@ export function registerSessionCommandRoutes(
 
     try {
       const prepared = await prepareCreateSession(options.createSessionLifecycle, request, body);
-      if (prepared.existingResponse !== undefined) {
-        return reply.code(201).send({ ...prepared.existingResponse, prompt });
-      }
       const payload = createSessionPayload(prepared.payload, prompt);
       const routed = options.router.createSession(payload, {
         timeoutMs: options.timeoutMs,
@@ -100,20 +97,11 @@ export function registerSessionCommandRoutes(
           message: "create_session ack changed the server-generated agentSessionId",
         });
       }
-      const taskFields = options.createSessionLifecycle === undefined
-        ? {}
-        : await options.createSessionLifecycle.complete({
-            prepared,
-            childSessionId: agentSessionId,
-            childNodeId: routed.node.nodeId,
-            prompt,
-          });
       return reply.code(201).send({
         agentSessionId,
         nodeId: routed.node.nodeId,
         prompt,
         ...(Array.isArray(result.warnings) ? { warnings: result.warnings } : {}),
-        ...taskFields,
       });
     } catch (error) {
       return sendMappedError(reply, error);

@@ -83,11 +83,8 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "session.history", path: "runtime.sessionHistoryProvider" },
   { owner: "session.snapshot", path: "runtime" },
   { owner: "sse.replay", path: "runtime.loadSessionSnapshot" },
-  { owner: "sse.replay", path: "runtime.loadTaskSnapshot" },
   { owner: "system.config", path: "systemConfigRoutes.httpClient" },
   { owner: "system.config", path: "systemConfigRoutes.provider" },
-  { owner: "tasks.mutation", path: "taskMutationRoutes.provider" },
-  { owner: "tasks.read", path: "taskReadRoutes.provider" },
   { owner: "user.background", path: "userBackgroundRoutes.repository" },
   {
     owner: "user.background",

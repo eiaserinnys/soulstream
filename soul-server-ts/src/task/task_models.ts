@@ -178,8 +178,7 @@ export interface ClaudeRuntimeTranscriptMirrorState {
 }
 
 /**
- * Claude Agent SDK runtime state. This is intentionally separate from
- * Soulstream's Task Tree model; SDK task ids live only under claudeRuntime.
+ * Claude Agent SDK runtime state. SDK task ids live only under claudeRuntime.
  */
 export interface ClaudeRuntimeState {
   sessionState?: ClaudeRuntimeSessionState;
@@ -305,7 +304,7 @@ export interface Task {
   /** Supervisor usage normalization state. Runtime-only, never serialized to DB. */
   supervisorUsageTotals?: Record<string, number>;
 
-  /** Claude Agent SDK 장기 실행 runtime 상태. Task Tree와 별도 정본이다. */
+  /** Claude Agent SDK 장기 실행 runtime 상태. */
   claudeRuntime?: ClaudeRuntimeState;
 
   // === 런타임 전용 (DB·wire에 직접 박지 않음) ===

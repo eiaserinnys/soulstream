@@ -43,8 +43,6 @@ export interface CreateDashboardSessionInput {
   container?: BoardContainerRef | null;
   sourceSessionId?: string | null;
   sourceRunbookItemId?: string | null;
-  parentTaskId?: string;
-  taskIdempotencyKey?: string;
   boardPosition?: { x: number; y: number } | null;
   agentSessionId?: string;
   pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
@@ -78,8 +76,6 @@ export async function createDashboardSession(
     ...(input.agentId ? { profile: input.agentId } : {}),
     ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
     ...(input.oauthProfileName ? { oauth_profile_name: input.oauthProfileName } : {}),
-    ...(input.parentTaskId ? { parentTaskId: input.parentTaskId } : {}),
-    ...(input.taskIdempotencyKey ? { taskIdempotencyKey: input.taskIdempotencyKey } : {}),
   };
 
   const response = await fetch("/api/sessions", {

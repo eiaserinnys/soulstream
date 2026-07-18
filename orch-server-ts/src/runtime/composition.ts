@@ -44,12 +44,10 @@ import type { SessionSnapshotRouteOptions } from "../session/session_snapshot_ro
 import {
   InMemorySseReplayBroadcaster,
   type SessionStreamEvent,
-  type TaskStreamEvent,
 } from "../sse/replay_broadcaster.js";
 import type {
   SessionStreamSnapshot,
   SseReplayRouteOptions,
-  TaskStreamSnapshot,
 } from "../sse/sse_replay_routes.js";
 import {
   createLiveNodeHttpClientBoundary,
@@ -72,7 +70,6 @@ export type OrchestratorRuntimeCompositionOptions = {
   enableSessionActionCommandRoutes?: boolean;
   enableSessionBackgroundScheduleRoutes?: boolean;
   sessionSseInstanceId?: string;
-  taskSseInstanceId?: string;
   sseRingMaxlen?: number;
   sseKeepaliveMs?: number;
   sseReplayOnlyForTests?: boolean;
@@ -82,7 +79,6 @@ export type OrchestratorRuntimeCompositionOptions = {
   sessionHistoryProvider?: SessionHistoryProvider;
   sessionHistoryKeepaliveMs?: number;
   sessionHistoryCloseAfterHistorySync?: boolean;
-  loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   boardYjsHostHttpClient?: BoardYjsHostHttpClient;
   boardYjsRoutes?: BoardYjsRouteOptions;
   pageYjsRoutes?: PageYjsRouteOptions;
@@ -116,7 +112,6 @@ export type OrchestratorRuntimeServices = {
   sessionSnapshotService: SessionSnapshotService;
   sessionEventHub: RuntimeSessionEventHub;
   sessionBroadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
-  taskBroadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>;
   nodeHttpClient: LiveNodeHttpClientBoundary;
   routeOptions: OrchestratorRuntimeRouteOptions;
 };
@@ -156,10 +151,6 @@ export function createOrchestratorRuntimeServices(
   const sessionEventHub = new RuntimeSessionEventHub();
   const sessionBroadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
     instanceId: options.sessionSseInstanceId,
-    ringMaxlen: options.sseRingMaxlen,
-  });
-  const taskBroadcaster = new InMemorySseReplayBroadcaster<TaskStreamEvent>({
-    instanceId: options.taskSseInstanceId,
     ringMaxlen: options.sseRingMaxlen,
   });
   const nodeHttpClient = createLiveNodeHttpClientBoundary({
@@ -246,10 +237,6 @@ export function createOrchestratorRuntimeServices(
           options.loadSessionSnapshot ??
           (() => sessionSnapshotService.loadSessionStreamSnapshot()),
       },
-      task: {
-        broadcaster: taskBroadcaster,
-        loadSnapshot: options.loadTaskSnapshot,
-      },
       keepaliveMs: options.sseKeepaliveMs,
       replayOnlyForTests: options.sseReplayOnlyForTests,
     },
@@ -281,7 +268,6 @@ export function createOrchestratorRuntimeServices(
     sessionSnapshotService,
     sessionEventHub,
     sessionBroadcaster,
-    taskBroadcaster,
     nodeHttpClient,
     routeOptions,
   };

@@ -112,14 +112,6 @@ import {
   type SystemConfigRouteOptions,
 } from "./system/system_config_routes.js";
 import {
-  registerTaskReadRoutes,
-  type TaskReadRouteOptions,
-} from "./tasks/task_read_routes.js";
-import {
-  registerTaskMutationRoutes,
-  type TaskMutationRouteOptions,
-} from "./tasks/task_mutation_routes.js";
-import {
   registerUserBackgroundRoutes,
   type UserBackgroundRouteOptions,
 } from "./user/user_background_routes.js";
@@ -161,8 +153,6 @@ export type CreateAppOptions = {
   sessionSnapshotRoutes?: SessionSnapshotRouteOptions;
   sseReplayRoutes?: SseReplayRouteOptions;
   systemConfigRoutes?: SystemConfigRouteOptions;
-  taskReadRoutes?: TaskReadRouteOptions;
-  taskMutationRoutes?: TaskMutationRouteOptions;
   executeProxyRoutes?: ExecuteProxyRouteOptions;
   pushRoutes?: PushRouteOptions;
   publicStatusRoutes?: PublicStatusRouteOptions;
@@ -241,12 +231,6 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.systemConfigRoutes !== undefined) {
     registerSystemConfigRoutes(app, options.systemConfigRoutes);
-  }
-  if (options.taskReadRoutes !== undefined) {
-    registerTaskReadRoutes(app, options.taskReadRoutes);
-  }
-  if (options.taskMutationRoutes !== undefined) {
-    registerTaskMutationRoutes(app, options.taskMutationRoutes);
   }
   if (options.executeProxyRoutes !== undefined) {
     registerExecuteProxyRoutes(app, options.executeProxyRoutes);

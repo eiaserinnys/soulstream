@@ -41,10 +41,6 @@ from soulstream_server.api.session_models import (
 )
 from soulstream_server.api.session_serializer import _session_to_response
 from soulstream_server.api.session_stream import create_session_stream_response
-from soulstream_server.api.task_scoped_sessions import (
-    prepare_task_scoped_session_request,
-    task_scoped_response_fields,
-)
 from soulstream_server.dashboard_access import (
     access_for_request,
     first_allowed_folder_id,
@@ -262,13 +258,6 @@ def create_sessions_router(
             jwt_secret=settings.jwt_secret or "",
             system_node_id=body.nodeId or "",
         )
-        task_scope = await prepare_task_scoped_session_request(
-            db,
-            parent_task_id=body.parentTaskId,
-            idempotency_key=body.taskIdempotencyKey,
-        )
-        if task_scope.existing_response:
-            return task_scope.existing_response
         payload = body.model_dump(exclude_none=True)
         await _inherit_source_session_runbook_container(db, payload)
         access = access_for_request(
@@ -284,24 +273,12 @@ def create_sessions_router(
                     payload["folderId"] = requested_folder_id
             require_folder_allowed(access, folders, requested_folder_id)
         payload["caller_info"] = caller_info
-        if task_scope.extra_context_items:
-            payload["extra_context_items"] = task_scope.extra_context_items
         session_id, node_id = await session_router.route_create_session(payload)
         # folderId 저장은 soul-server 담당. orch는 catalog broadcast만 맡는다.
         # folderId가 없어도 soul-server 기본 폴더 배정이 있어 broadcast는 필요하다.
         if catalog_service:
             await catalog_service.broadcast_catalog()
-        response = {"agentSessionId": session_id, "nodeId": node_id}
-        response.update(await task_scoped_response_fields(
-            db,
-            parent_task=task_scope.parent_task,
-            child_session_id=session_id,
-            child_node_id=node_id,
-            prompt=body.prompt,
-            idempotency_key=body.taskIdempotencyKey,
-            logger=logger,
-        ))
-        return response
+        return {"agentSessionId": session_id, "nodeId": node_id}
 
     # === DB 직접 조회 라우트 ===
     # messages/viewport는 공유 PostgreSQL 직접 SELECT. viewport는 events보다 먼저 등록한다.

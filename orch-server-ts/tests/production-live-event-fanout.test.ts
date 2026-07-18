@@ -111,7 +111,6 @@ describe("production live event fanout", () => {
     const realtimeController = new AbortController();
     const catalogController = new AbortController();
     const nodeController = new AbortController();
-    const taskController = new AbortController();
     let ws: TestWebSocket | undefined;
     try {
       const authHeaders = { authorization: "Bearer production-service-token" };
@@ -120,15 +119,7 @@ describe("production live event fanout", () => {
         authHeaders,
         nodeController.signal,
       );
-      const taskStream = await connectSse(
-        `${address}/api/tasks/stream`,
-        authHeaders,
-        taskController.signal,
-      );
       expect((await nodeStream.next("snapshot")).data).toEqual([]);
-      expect((await taskStream.next("task_list")).data).toMatchObject({
-        type: "task_list",
-      });
 
       ws = await (application.app as typeof application.app & {
         injectWS: (
@@ -245,18 +236,6 @@ describe("production live event fanout", () => {
       expect(catalogUpdated.data).not.toHaveProperty("session_type");
       observedConsumers.add("sessions-stream");
 
-      database.publishTaskChange({ taskId: "task-a", operation: "updated" });
-      const taskChanged = await taskStream.next("task_changed");
-      expect(taskChanged.raw).toContain("event: task_changed\n");
-      expect(taskChanged.data).toMatchObject({
-        type: "task_changed",
-        change: {
-          taskId: "task-a",
-          operation: "updated",
-        },
-      });
-      observedConsumers.add("tasks-stream");
-
       ws.send(JSON.stringify({
         type: "session_updated",
         agent_session_id: "session-a",
@@ -278,13 +257,11 @@ describe("production live event fanout", () => {
         "push-notifier",
         "sessions-stream",
         "supervisor-ingest",
-        "tasks-stream",
       ]);
     } finally {
       realtimeController.abort();
       catalogController.abort();
       nodeController.abort();
-      taskController.abort();
       ws?.terminate();
       await application.app.close();
       await application.closeResources();
@@ -295,10 +272,8 @@ describe("production live event fanout", () => {
 function createFakeSql(): {
   sql: LivePostgresSql;
   queries: string[];
-  publishTaskChange: (change: Record<string, unknown>) => void;
 } {
   const queries: string[] = [];
-  let taskChangeListener: ((payload: string) => void) | undefined;
   const query = vi.fn(async (strings: TemplateStringsArray) => {
     const text = strings.join("?");
     queries.push(text.replace(/\s+/g, " ").trim());
@@ -318,24 +293,10 @@ function createFakeSql(): {
   });
   const sql = Object.assign(query, {
     json: vi.fn((value: unknown) => ({ jsonValue: value })),
-    listen: vi.fn(async (_channel: string, listener: (payload: string) => void) => {
-      taskChangeListener = listener;
-      return {
-        unlisten: vi.fn(async () => {
-          taskChangeListener = undefined;
-        }),
-      };
-    }),
   }) as unknown as LivePostgresSql;
   return {
     sql,
     queries,
-    publishTaskChange(change) {
-      if (taskChangeListener === undefined) {
-        throw new Error("Task change listener is not running");
-      }
-      taskChangeListener(JSON.stringify(change));
-    },
   };
 }
 

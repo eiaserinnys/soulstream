@@ -11,4 +11,3 @@ export * from "./tree-nodes";
 export * from "./api-types";
 export * from "./catalog-types";
 export * from "./stream-events";
-export * from "./task-types";

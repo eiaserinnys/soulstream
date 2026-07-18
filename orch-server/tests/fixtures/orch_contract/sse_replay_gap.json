@@ -37,27 +37,6 @@
       3
     ]
   },
-  "taskStream": {
-    "changes": [
-      {
-        "id": "task-1",
-        "status": "open"
-      },
-      {
-        "id": "task-1",
-        "status": "in_progress"
-      },
-      {
-        "id": "task-1",
-        "status": "review"
-      }
-    ],
-    "resumeFrom": 1,
-    "expectedReplayEventIds": [
-      2,
-      3
-    ]
-  },
   "gap": {
     "ringMaxlen": 2,
     "lastEventIdBeforeOldest": 0,

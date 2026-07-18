@@ -50,17 +50,6 @@ export type SessionStreamEvent = {
   [key: string]: unknown;
 };
 
-export type TaskStreamChange = {
-  id?: string;
-  status?: string;
-  [key: string]: unknown;
-};
-
-export type TaskStreamEvent = {
-  type: "task_changed";
-  change: TaskStreamChange;
-};
-
 type SseEventListener<TPayload extends object> = (event: SseReplayEvent<TPayload>) => void;
 
 const DEFAULT_RING_MAXLEN = 1000;
@@ -78,13 +67,6 @@ export function resolveSseResumeCursor(input: SseResumeInput): SseResumeCursor {
   return {
     lastEventId: parseLastEventId(input.lastEventIdHeader ?? input.lastEventIdQuery),
     instanceId: input.instanceIdQuery ?? null,
-  };
-}
-
-export function buildTaskChangedStreamEvent(change: TaskStreamChange = {}): TaskStreamEvent {
-  return {
-    type: "task_changed",
-    change,
   };
 }
 

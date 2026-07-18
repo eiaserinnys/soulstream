@@ -24,8 +24,6 @@ import { sessionHistoryRouteAuthRequirements } from "../session/session_history_
 import { sessionSnapshotRouteAuthRequirements } from "../session/session_snapshot_routes.js";
 import { sseReplayRouteAuthRequirements } from "../sse/sse_replay_routes.js";
 import { systemConfigRouteAuthRequirements } from "../system/system_config_routes.js";
-import { taskMutationRouteAuthRequirements } from "../tasks/task_mutation_routes.js";
-import { taskReadRouteAuthRequirements } from "../tasks/task_read_routes.js";
 import { userBackgroundRouteAuthRequirements } from "../user/user_background_routes.js";
 import { userPreferencesRouteAuthRequirements } from "../user/user_preferences_routes.js";
 import { pageYjsRouteAuthRequirements } from "../page/page_yjs_route.js";
@@ -66,8 +64,6 @@ export const routeCoverageOwners = [
   { owner: "session.snapshot", authRequirements: sessionSnapshotRouteAuthRequirements },
   { owner: "sse.replay", authRequirements: sseReplayRouteAuthRequirements },
   { owner: "system.config", authRequirements: systemConfigRouteAuthRequirements },
-  { owner: "tasks.mutation", authRequirements: taskMutationRouteAuthRequirements },
-  { owner: "tasks.read", authRequirements: taskReadRouteAuthRequirements },
   { owner: "user.background", authRequirements: userBackgroundRouteAuthRequirements },
   { owner: "user.preferences", authRequirements: userPreferencesRouteAuthRequirements },
 ] as const satisfies readonly RouteCoverageOwner[];

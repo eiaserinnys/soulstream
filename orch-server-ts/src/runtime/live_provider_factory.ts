@@ -4,7 +4,6 @@ import type { AdminUsersRouteOptions } from "../admin/admin_users_routes.js";
 import type { AtomRouteOptions } from "../atom/atom_routes.js";
 import type { AttachmentRouteOptions } from "../attachments/attachment_routes.js";
 import type { OrchestratorRuntimeServices } from "./composition.js";
-import type { LiveTaskChangeListener } from "./live_task_change_listener.js";
 import {
   createLiveAuthHttpClient,
   createLiveAuthJwtHelper,
@@ -31,9 +30,6 @@ import type { UserPreferencesRouteOptions } from "../user/user_preferences_route
 import type { UserBackgroundRouteOptions } from "../user/user_background_routes.js";
 import type { RunbookRouteOptions } from "../runbooks/runbook_route_types.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
-import type { TaskMutationRouteOptions } from "../tasks/task_mutation_routes.js";
-import type { TaskReadRouteOptions } from "../tasks/task_read_routes.js";
-import { withTaskMutationBroadcasts } from "./live_task_mutation_broadcaster.js";
 import { createLiveDashboardAccessProvider } from "./live_dashboard_access_provider.js";
 import { createLiveExecuteProxyRouteProvider } from "./live_execute_proxy_route_provider.js";
 import {
@@ -130,7 +126,6 @@ export type LiveRuntimeProviderBundle = {
   >;
   readonly sessionSnapshotRoutes: OrchestratorRuntimeServices["routeOptions"]["sessionSnapshotRoutes"];
   readonly sseReplayRoutes: OrchestratorRuntimeServices["routeOptions"]["sseReplayRoutes"];
-  readonly taskChangeListener: LiveTaskChangeListener;
 };
 
 export type LiveOrchestratorProviderBundle = {
@@ -179,8 +174,6 @@ export type LiveOrchestratorProviderBundle = {
     & LiveRunbookRouteProviderBundle["runbookRoutes"]
     & Pick<RunbookRouteOptions, "accessProvider" | "resolveDashboardUserId">;
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
-  readonly taskMutationRoutes: TaskMutationRouteOptions;
-  readonly taskReadRoutes: TaskReadRouteOptions;
   readonly implementedProviderPaths: readonly LiveProviderPath[];
 };
 
@@ -263,12 +256,7 @@ export function createLiveOrchestratorProviderBundle(
     resolveCallerInfo: authenticatedUserResolvers.resolveCallerInfo,
     boardItems: options.dependencies.dbCatalogRepository.boardItemRouteProvider,
     access: sessionResourceAccessProvider,
-    tasks: options.dependencies.dbCatalogRepository.taskMutationProvider,
   });
-  const taskChangeListener =
-    options.dependencies.dbCatalogRepository.createTaskChangeListener(
-      options.runtimeServices.taskBroadcaster,
-    );
 
   return {
     authenticatedUserResolvers,
@@ -394,7 +382,6 @@ export function createLiveOrchestratorProviderBundle(
           feedOnly: queryBool(request.query, "feed_only"),
         });
       },
-      taskChangeListener,
     ),
     cogitoRoutes: cogitoProviders.cogitoRoutes,
     configProviders,
@@ -414,18 +401,6 @@ export function createLiveOrchestratorProviderBundle(
       resolveDashboardUserId: authenticatedUserResolvers.resolveEmail,
     },
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
-    taskMutationRoutes: {
-      provider: withTaskMutationBroadcasts(
-        options.dependencies.dbCatalogRepository.taskMutationProvider,
-        options.runtimeServices.taskBroadcaster,
-        {
-          shouldBroadcast: () => !taskChangeListener.isRunning(),
-        },
-      ),
-    },
-    taskReadRoutes: {
-      provider: options.dependencies.dbCatalogRepository.taskReadProvider,
-    },
     implementedProviderPaths: alignment.factoryProviderPaths,
   };
 }
@@ -461,7 +436,6 @@ function buildLiveRuntimeProviderBundle(
   sessionReviewRepository: SessionReviewAcknowledgeRepository,
   sessionSnapshotRoutes: OrchestratorRuntimeServices["routeOptions"]["sessionSnapshotRoutes"],
   loadSessionSnapshot: (request: FastifyRequest) => Promise<SessionStreamSnapshot>,
-  taskChangeListener: LiveTaskChangeListener,
 ): LiveRuntimeProviderBundle {
   const sessionHistoryRoutes = requireRuntimeRouteOption(
     services.routeOptions.sessionHistoryRoutes,
@@ -508,7 +482,6 @@ function buildLiveRuntimeProviderBundle(
         filterEvent: sessionStreamEventFilter,
       },
     },
-    taskChangeListener,
   };
 }
 

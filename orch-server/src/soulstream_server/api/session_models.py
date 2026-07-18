@@ -60,11 +60,6 @@ class CreateSessionRequest(BaseModel):
         validation_alias=AliasChoices("notify_completion", "notifyCompletion"),
     )
     attachmentPaths: Optional[list[str]] = None
-    # Task Tree에서 사용자가 특정 태스크 아래 일반 New Session을 시작할 때 사용한다.
-    # 위임 세션이 아니므로 caller_session_id와 분리하고, 서버가 parent task context와
-    # child task link를 단일 operation처럼 처리한다.
-    parentTaskId: Optional[str] = None
-    taskIdempotencyKey: Optional[str] = None
     caller_info: Optional[dict] = None  # 발신자 정보. 비어있으면 서버가 HTTP Request에서 조립한다.
     model: Optional[str] = None
     # Codex 전용. SessionRouter가 backend=codex인 경우에만 노드 wire로 전달한다.

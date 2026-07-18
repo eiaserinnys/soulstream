@@ -72,15 +72,13 @@ describe("atom route harness", () => {
     });
 
     const routeRows = fixtures.routeInventory.routes
-      .filter((route) => route.order >= 96 && route.order <= 98)
+      .filter((route) => route.order >= 96 && route.order <= 97)
       .map((route) => [route.order, route.methods[0], route.path, route.authRequired]);
 
     expect(routeRows).toEqual([
       [96, "GET", "/api/atom/nodes", true],
       [97, "GET", "/api/atom/nodes/{node_id}/children", true],
-      [98, "GET", "/api/tasks", true],
     ]);
-    expect(Object.keys(atomRouteAuthRequirements)).not.toContain("GET /api/tasks");
   });
 
   it("returns Python-compatible disabled config errors without calling upstream", async () => {

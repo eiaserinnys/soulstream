@@ -1,9 +1,8 @@
-"""Contract fixtures for session/task SSE replay and gap semantics."""
+"""Contract fixtures for session SSE replay and gap semantics."""
 
 from collections import deque
 
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
-from soulstream_server.service.task_broadcaster import TaskBroadcaster
 from tests.orch_contract_helpers import load_contract_fixture
 
 
@@ -20,20 +19,6 @@ async def test_session_stream_replays_events_after_last_event_id():
     assert [event_id for event_id, _ in replay.events] == fixture["expectedReplayEventIds"]
     assert replay.latest_id == len(fixture["events"])
     assert replay.instance_id == broadcaster.instance_id
-
-
-async def test_task_stream_replays_changes_after_last_event_id():
-    fixture = load_contract_fixture("sse_replay_gap.json")["taskStream"]
-    broadcaster = TaskBroadcaster()
-
-    for change in fixture["changes"]:
-        await broadcaster.broadcast_task_change(change)
-
-    replay = broadcaster.replay_since(fixture["resumeFrom"], broadcaster.instance_id)
-
-    assert replay.gap is False
-    assert [event_id for event_id, _ in replay.events] == fixture["expectedReplayEventIds"]
-    assert [event["type"] for _, event in replay.events] == ["task_changed", "task_changed"]
 
 
 async def test_ring_gap_and_instance_mismatch_require_snapshot_refetch():

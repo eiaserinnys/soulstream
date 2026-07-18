@@ -1536,7 +1536,7 @@
     },
     "SSEEventClaudeRuntimeTaskCreated": {
       "type": "object",
-      "description": "SSE: Claude Agent SDK TaskCreated hook lifecycle. Soulstream Task Tree와 별도 개념.",
+      "description": "SSE: Claude Agent SDK TaskCreated hook lifecycle.",
       "required": ["type", "task_id", "subject"],
       "additionalProperties": true,
       "properties": {
@@ -1596,7 +1596,7 @@
     },
     "SSEEventClaudeRuntimeTaskCompleted": {
       "type": "object",
-      "description": "SSE: Claude Agent SDK TaskCompleted hook lifecycle. Soulstream Task Tree와 별도 개념.",
+      "description": "SSE: Claude Agent SDK TaskCompleted hook lifecycle.",
       "required": ["type", "task_id", "subject"],
       "additionalProperties": true,
       "properties": {

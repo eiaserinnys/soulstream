@@ -8,7 +8,6 @@ import {
   type BoardItemFolderRecord,
   type BoardItemRecord,
   type SessionResourceAccessProvider,
-  type TaskScopedSessionProvider,
 } from "../src/index.js";
 
 describe("session create lifecycle", () => {
@@ -28,7 +27,6 @@ describe("session create lifecycle", () => {
       resolveCallerInfo: vi.fn(async () => ({ source: "browser" })),
       boardItems,
       access: accessProvider({ restricted: false, allowedFolderIds: [] }),
-      tasks: taskProvider(),
     });
 
     const prepared = await lifecycle.prepare({
@@ -40,7 +38,6 @@ describe("session create lifecycle", () => {
       },
     });
 
-    expect(prepared.existingResponse).toBeUndefined();
     expect(prepared.payload).toMatchObject({
       folderId: "folder-a",
       container: { kind: "runbook", id: "runbook-a" },
@@ -72,7 +69,6 @@ describe("session create lifecycle", () => {
         ],
       }),
       access,
-      tasks: taskProvider(),
     });
 
     const prepared = await lifecycle.prepare({
@@ -89,73 +85,6 @@ describe("session create lifecycle", () => {
       request: request(),
       body: { prompt: "hello", folderId: "folder-denied" },
     })).rejects.toMatchObject({ statusCode: 403, code: "SESSION_ACCESS_DENIED" });
-  });
-
-  it("blocks task-scoped creation before idempotency lookup", async () => {
-    const tasks = taskProvider({
-      existing: {
-        task: {
-          id: "child-task",
-          status: "in_progress",
-          linkedSessionId: "child-session",
-          linkedNodeId: "node-a",
-        },
-        operation: { id: "op-a", operationType: "start_child_session" },
-        eventId: 303,
-        idempotent: true,
-      },
-    });
-    const lifecycle = createSessionCreateLifecycle({
-      resolveCallerInfo: vi.fn(async () => ({ source: "browser" })),
-      boardItems: boardItemProvider(),
-      access: accessProvider({ restricted: false, allowedFolderIds: [] }),
-      tasks,
-    });
-
-    await expect(lifecycle.prepare({
-      request: request(),
-      body: {
-        prompt: "child",
-        parentTaskId: "parent-task",
-        taskIdempotencyKey: "idem-child",
-      },
-    })).rejects.toMatchObject({
-      statusCode: 410,
-      code: "TASK_TREE_CREATION_DEPRECATED",
-      message: expect.stringContaining("create_runbook"),
-    });
-    expect(tasks.findTaskScopedSession).not.toHaveBeenCalled();
-    expect(tasks.getTask).not.toHaveBeenCalled();
-  });
-
-  it("blocks task-scoped creation before parent lookup or child creation", async () => {
-    const tasks = taskProvider({
-      parent: {
-        id: "parent-task",
-        title: "Parent task",
-        description: "parent description",
-        acceptanceCriteria: "parent acceptance",
-        verificationOwner: "both",
-        status: "in_progress",
-        navigationSessionId: "owner-session",
-      },
-    });
-    const lifecycle = createSessionCreateLifecycle({
-      resolveCallerInfo: vi.fn(async () => ({ source: "browser" })),
-      boardItems: boardItemProvider(),
-      access: accessProvider({ restricted: false, allowedFolderIds: [] }),
-      tasks,
-    });
-    await expect(lifecycle.prepare({
-      request: request(),
-      body: {
-        prompt: "하위 대화 내용",
-        parentTaskId: "parent-task",
-        taskIdempotencyKey: "idem-child",
-      },
-    })).rejects.toMatchObject({ statusCode: 410 });
-    expect(tasks.getTask).not.toHaveBeenCalled();
-    expect(tasks.createTaskScopedChild).not.toHaveBeenCalled();
   });
 });
 
@@ -195,33 +124,5 @@ function accessProvider(
     resolveAccess: vi.fn(async () => resolved),
     requireSessionAccess: vi.fn(async () => undefined),
     requireFolderAccess,
-  };
-}
-
-function taskProvider(input: {
-  existing?: Awaited<ReturnType<TaskScopedSessionProvider["findTaskScopedSession"]>>;
-  parent?: Awaited<ReturnType<TaskScopedSessionProvider["getTask"]>>;
-} = {}): TaskScopedSessionProvider & {
-  findTaskScopedSession: ReturnType<typeof vi.fn>;
-  getTask: ReturnType<typeof vi.fn>;
-  createTaskScopedChild: ReturnType<typeof vi.fn>;
-} {
-  return {
-    findTaskScopedSession: vi.fn(async () => input.existing ?? null),
-    getTask: vi.fn(async () => input.parent ?? null),
-    createTaskScopedChild: vi.fn(async ({ parentTask, childSessionId, childNodeId }) => ({
-      task: {
-        id: "created-child-task",
-        parentId: parentTask.id,
-        status: "in_progress" as const,
-        linkedSessionId: childSessionId,
-        linkedNodeId: childNodeId,
-      },
-      operation: {
-        id: "created-op",
-        operationType: "start_child_session",
-      },
-      eventId: 404,
-    })),
   };
 }

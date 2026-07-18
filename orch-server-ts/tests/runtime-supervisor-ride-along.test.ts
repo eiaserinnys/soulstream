@@ -24,7 +24,6 @@ describe("runtime supervisor ingest ride-along", () => {
         databaseUrl: "postgres://unused/unused",
         authBearerToken: "test-token",
       }),
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       additionalNodeEventSinks: [(events) => ingest.accept(events)],
     });
     const events = [{

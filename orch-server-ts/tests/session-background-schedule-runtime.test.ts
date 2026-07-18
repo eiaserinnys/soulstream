@@ -16,7 +16,6 @@ describe("session background task/schedule runtime opt-in", () => {
     const disabled = createOrchestratorRuntimeComposition({
       config,
       loadSessionSnapshot: async () => ({ sessions: [] }),
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       boardYjsHostHttpClient: vi.fn(),
     });
 
@@ -35,7 +34,6 @@ describe("session background task/schedule runtime opt-in", () => {
       config,
       enableSessionBackgroundScheduleRoutes: true,
       loadSessionSnapshot: async () => ({ sessions: [] }),
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       boardYjsHostHttpClient: vi.fn(),
     });
 

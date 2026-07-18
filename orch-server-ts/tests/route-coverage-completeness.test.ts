@@ -187,8 +187,6 @@ function createAllOptInRouteApp() {
     sessionSnapshotRoutes: inert,
     sseReplayRoutes: inert,
     systemConfigRoutes: inert,
-    taskMutationRoutes: inert,
-    taskReadRoutes: inert,
     userBackgroundRoutes: inert,
     userPreferencesRoutes: inert,
   } as unknown as CreateAppOptions);

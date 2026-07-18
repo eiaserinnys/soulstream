@@ -6,11 +6,6 @@ import type {
   BoardItemRecord,
   BoardItemRouteProvider,
 } from "../board/board_item_routes.js";
-import type {
-  TaskMutationResponse,
-} from "../tasks/task_mutation_routes.js";
-import type { SerializedTaskItem } from "../tasks/task_read_routes.js";
-import { TASK_CREATION_DEPRECATED_DETAIL } from "../tasks/task_creation_deprecation.js";
 import {
   firstAllowedSessionFolderId,
   type SessionResourceAccessProvider,
@@ -24,44 +19,8 @@ export type SessionCallerInfoResolver = (
   systemNodeId: string,
 ) => Promise<JsonObject> | JsonObject;
 
-export type TaskScopedSessionProvider = {
-  readonly findTaskScopedSession: (
-    idempotencyKey: string,
-  ) => Promise<TaskMutationResponse | null> | TaskMutationResponse | null;
-  readonly getTask: (
-    taskId: string,
-  ) => Promise<SerializedTaskItem | null> | SerializedTaskItem | null;
-  readonly createTaskScopedChild: (
-    input: CreateTaskScopedChildInput,
-  ) => Promise<TaskMutationResponse> | TaskMutationResponse;
-};
-
-export type CreateTaskScopedChildInput = {
-  readonly parentTask: SerializedTaskItem;
-  readonly childSessionId: string;
-  readonly childNodeId: string | null;
-  readonly prompt: string;
-  readonly idempotencyKey?: string;
-};
-
-export type SessionCreateResponse = {
-  readonly agentSessionId: string;
-  readonly nodeId?: string | null;
-  readonly task?: SerializedTaskItem | null;
-  readonly taskOperation?: TaskMutationResponse["operation"];
-  readonly taskEventId?: number;
-  readonly idempotent?: boolean;
-};
-
-type TaskScopeContext = {
-  readonly parentTask: SerializedTaskItem;
-  readonly idempotencyKey?: string;
-};
-
 export type PreparedSessionCreate = {
   readonly payload: JsonObject;
-  readonly existingResponse?: SessionCreateResponse;
-  readonly taskScope?: TaskScopeContext;
 };
 
 export type PrepareSessionCreateInput = {
@@ -69,27 +28,16 @@ export type PrepareSessionCreateInput = {
   readonly body: JsonObject;
 };
 
-export type CompleteSessionCreateInput = {
-  readonly prepared: PreparedSessionCreate;
-  readonly childSessionId: string;
-  readonly childNodeId: string | null;
-  readonly prompt: string;
-};
-
 export type SessionCreateLifecycle = {
   readonly prepare: (
     input: PrepareSessionCreateInput,
   ) => Promise<PreparedSessionCreate>;
-  readonly complete: (
-    input: CompleteSessionCreateInput,
-  ) => Promise<Record<string, unknown>>;
 };
 
 export type CreateSessionCreateLifecycleOptions = {
   readonly resolveCallerInfo: SessionCallerInfoResolver;
   readonly boardItems: BoardItemRouteProvider;
   readonly access: SessionResourceAccessProvider;
-  readonly tasks: TaskScopedSessionProvider;
 };
 
 export class SessionCreateLifecycleError extends Error {
@@ -115,31 +63,6 @@ export function createSessionCreateLifecycle(
         throw normalizeLifecycleError(error);
       }
     },
-    async complete(input) {
-      const taskScope = input.prepared.taskScope;
-      if (taskScope === undefined) return {};
-      try {
-        const result = await options.tasks.createTaskScopedChild({
-          parentTask: taskScope.parentTask,
-          childSessionId: input.childSessionId,
-          childNodeId: input.childNodeId,
-          prompt: input.prompt,
-          idempotencyKey: taskScope.idempotencyKey,
-        });
-        return {
-          task: result.task,
-          taskOperation: result.operation,
-          taskEventId: result.eventId,
-        };
-      } catch (error) {
-        return {
-          taskLinkError: {
-            message: error instanceof Error ? error.message : String(error),
-            type: error instanceof Error ? error.constructor.name : typeof error,
-          },
-        };
-      }
-    },
   };
 }
 
@@ -148,24 +71,6 @@ async function prepareSessionCreate(
   input: PrepareSessionCreateInput,
 ): Promise<PreparedSessionCreate> {
   const body = input.body;
-  const parentTaskId = optionalString(body, "parentTaskId") || undefined;
-  if (parentTaskId !== undefined) {
-    throw new SessionCreateLifecycleError(
-      "TASK_TREE_CREATION_DEPRECATED",
-      TASK_CREATION_DEPRECATED_DETAIL,
-      410,
-    );
-  }
-  const idempotencyKey = optionalString(body, "taskIdempotencyKey") || undefined;
-  const taskScope = await prepareTaskScope(
-    options.tasks,
-    parentTaskId,
-    idempotencyKey,
-  );
-  if (taskScope.existingResponse !== undefined) {
-    return { payload: { ...body }, existingResponse: taskScope.existingResponse };
-  }
-
   const payload: JsonObject = Object.fromEntries(
     Object.entries(body).filter(([, value]) => value !== null && value !== undefined),
   );
@@ -209,54 +114,7 @@ async function prepareSessionCreate(
     bodyCallerInfo,
     nodeId,
   );
-  if (taskScope.context !== undefined) {
-    payload.extra_context_items = [buildParentTaskContextItem(taskScope.context.parentTask)];
-  }
-  return {
-    payload,
-    ...(taskScope.context === undefined ? {} : { taskScope: taskScope.context }),
-  };
-}
-
-async function prepareTaskScope(
-  provider: TaskScopedSessionProvider,
-  parentTaskId: string | undefined,
-  idempotencyKey: string | undefined,
-): Promise<{
-  readonly existingResponse?: SessionCreateResponse;
-  readonly context?: TaskScopeContext;
-}> {
-  if (parentTaskId === undefined) return {};
-  if (idempotencyKey !== undefined) {
-    const existing = await provider.findTaskScopedSession(idempotencyKey);
-    const linkedSessionId = existing?.task?.linkedSessionId;
-    if (existing !== null && typeof linkedSessionId === "string" && linkedSessionId) {
-      return {
-        existingResponse: {
-          agentSessionId: linkedSessionId,
-          nodeId: existing.task?.linkedNodeId,
-          task: existing.task,
-          taskOperation: existing.operation,
-          taskEventId: existing.eventId,
-          idempotent: true,
-        },
-      };
-    }
-  }
-  const parentTask = await provider.getTask(parentTaskId);
-  if (parentTask === null) {
-    throw new SessionCreateLifecycleError(
-      "PARENT_TASK_NOT_FOUND",
-      "parent task item not found",
-      404,
-    );
-  }
-  return {
-    context: {
-      parentTask,
-      ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
-    },
-  };
+  return { payload };
 }
 
 function primarySessionBoardItem(
@@ -294,24 +152,6 @@ async function resolvePayloadFolderId(
     id: containerId,
   });
   return folderId;
-}
-
-function buildParentTaskContextItem(parent: SerializedTaskItem): JsonObject {
-  const content = [
-    "Task Tree parent context.",
-    "This is a normal user-started New Session scoped under the parent task, not a delegated agent task.",
-    "",
-    `- id: ${parent.id}`,
-    `- title: ${parent.title ?? ""}`,
-    `- status: ${parent.status}`,
-    `- description: ${parent.description || "(empty)"}`,
-    `- acceptanceCriteria: ${parent.acceptanceCriteria || "(empty)"}`,
-  ].join("\n");
-  return {
-    key: "task_tree_parent",
-    label: "Task Tree parent",
-    content,
-  };
 }
 
 function validateOptionalContainer(body: JsonObject): void {

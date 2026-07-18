@@ -10,20 +10,10 @@ import type { SessionSnapshotListResponse } from "../session/session_snapshot_se
 import type {
   SessionResourceAccessRepository,
 } from "../session/session_resource_access.js";
-import type {
-  SessionStreamSnapshot,
-  TaskStreamSnapshot,
-} from "../sse/sse_replay_routes.js";
-import type {
-  InMemorySseReplayBroadcaster,
-  TaskStreamEvent,
-} from "../sse/replay_broadcaster.js";
-import type { LiveTaskMutationProvider } from "./live_task_mutation_provider.js";
-import type { TaskReadRouteProvider } from "../tasks/task_read_routes.js";
+import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import type { PushNotificationRepository } from "../push/push_notifier.js";
 import type { UserBackgroundRepository } from "../user/user_background_routes.js";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
-import type { LiveTaskChangeListener } from "./live_task_change_listener.js";
 import type { LiveSystemPortraitAssetBoundary } from "./live_system_config_route_provider.js";
 import type { LiveAdminUsersRepository } from "./live_admin_users_route_provider.js";
 import type { SessionReviewAcknowledgeRepository } from "../session/session_review_acknowledge_fallback.js";
@@ -60,16 +50,10 @@ export type LiveDbCatalogRepositoryBoundary = {
     readonly offset: number;
     readonly limit: number;
   }) => Promise<SessionSnapshotListResponse>;
-  readonly loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   readonly sessionHistoryProvider: SessionHistoryProvider;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
   readonly sessionReviewRepository: SessionReviewAcknowledgeRepository;
-  readonly taskReadProvider: TaskReadRouteProvider;
-  readonly taskMutationProvider: LiveTaskMutationProvider;
   readonly userPreferencesRepository: UserBackgroundRepository;
-  readonly createTaskChangeListener: (
-    broadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>,
-  ) => LiveTaskChangeListener;
 };
 
 export type LiveNodeHttpResponse = {

@@ -50,7 +50,6 @@ describe("orch-local Board Yjs host operation routes", () => {
         authBearerToken: "test-token",
         boardYjsHostMode: "orch",
       }),
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       boardYjsRoutes: { createService },
     });
     try {

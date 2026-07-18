@@ -37,7 +37,6 @@ from soulstream_server.api.provider_usage import create_provider_usage_router
 from soulstream_server.api.push import create_push_router
 from soulstream_server.api.sessions import create_sessions_router
 from soulstream_server.api.system_portraits import create_system_portraits_router
-from soulstream_server.api.tasks import create_tasks_router
 from soulstream_server.api.user_preferences import create_user_preferences_router
 from soulstream_server.push import ExpoPushProvider, PushNotifier, PushRepository
 from soulstream_server.config import Settings, get_settings
@@ -48,8 +47,6 @@ from soulstream_server.nodes.ws_handler import handle_node_ws
 from soulstream_server.service.session_broadcaster import SessionBroadcaster
 from soulstream_server.service.session_router import SessionRouter
 from soulstream_server.service.supervisor_ingest import SupervisorIngestService
-from soulstream_server.service.task_broadcaster import TaskBroadcaster
-from soulstream_server.service.task_change_listener import TaskChangeListener
 from soulstream_server.users import DashboardUserService
 from soulstream_server.user_preferences import PostgresUserPreferencesRepository
 
@@ -288,7 +285,6 @@ def _mount_api_routers(
     node_manager: NodeManager,
     session_router: SessionRouter,
     broadcaster: SessionBroadcaster,
-    task_broadcaster: TaskBroadcaster,
     catalog_service: CatalogService,
     settings: Settings,
     push_repo: PushRepository | None = None,
@@ -333,14 +329,6 @@ def _mount_api_routers(
         app.include_router(create_user_preferences_router(user_preferences_repo, dependencies=api_deps))
     app.include_router(create_cogito_router(node_manager, db, catalog_service, dependencies=api_deps))
     app.include_router(create_atom_router(dependencies=api_deps))
-    app.include_router(
-        create_tasks_router(
-            db,
-            node_manager=node_manager,
-            broadcaster=task_broadcaster,
-            dependencies=api_deps,
-        )
-    )
     app.include_router(
         create_execute_proxy_router(
             db, node_manager, session_router, catalog_service,
@@ -422,9 +410,6 @@ async def lifespan(app: FastAPI):
         supervisor_ingest=supervisor_ingest,
     )
     broadcaster = SessionBroadcaster()
-    task_broadcaster = TaskBroadcaster()
-    task_change_listener = TaskChangeListener(db=db, broadcaster=task_broadcaster)
-    await task_change_listener.start()
     session_router = SessionRouter(node_manager)
     catalog_service = CatalogService(
         session_db=db,
@@ -463,8 +448,6 @@ async def lifespan(app: FastAPI):
     app.state.db = db
     app.state.node_manager = node_manager
     app.state.broadcaster = broadcaster
-    app.state.task_broadcaster = task_broadcaster
-    app.state.task_change_listener = task_change_listener
     app.state.session_router = session_router
     app.state.catalog_service = catalog_service
     app.state.user_service = user_service
@@ -480,7 +463,6 @@ async def lifespan(app: FastAPI):
         node_manager=node_manager,
         session_router=session_router,
         broadcaster=broadcaster,
-        task_broadcaster=task_broadcaster,
         catalog_service=catalog_service,
         settings=settings,
         push_repo=push_repo,
@@ -496,8 +478,6 @@ async def lifespan(app: FastAPI):
 
     # 종료
     broadcaster.disconnect_all()
-    task_broadcaster.disconnect_all()
-    await task_change_listener.stop()
     await db.close()
     logger.info("soulstream-orch-server stopped")
 
@@ -508,7 +488,6 @@ def create_app(
     node_manager: NodeManager | None = None,
     session_router: SessionRouter | None = None,
     broadcaster: SessionBroadcaster | None = None,
-    task_broadcaster: TaskBroadcaster | None = None,
     catalog_service: CatalogService | None = None,
     push_repo: PushRepository | None = None,
     user_service: DashboardUserService | None = None,
@@ -538,8 +517,6 @@ def create_app(
         obj is not None
         for obj in (db, node_manager, session_router, broadcaster, catalog_service)
     )
-    if test_mode and task_broadcaster is None:
-        task_broadcaster = TaskBroadcaster()
 
     app = FastAPI(
         title="soulstream-orch-server",
@@ -616,7 +593,6 @@ def create_app(
         app.state.db = db
         app.state.node_manager = node_manager
         app.state.broadcaster = broadcaster
-        app.state.task_broadcaster = task_broadcaster
         app.state.session_router = session_router
         app.state.catalog_service = catalog_service
         if user_service is not None:
@@ -627,7 +603,6 @@ def create_app(
             node_manager=node_manager,
             session_router=session_router,
             broadcaster=broadcaster,
-            task_broadcaster=task_broadcaster,
             catalog_service=catalog_service,
             settings=settings,
             push_repo=push_repo,
