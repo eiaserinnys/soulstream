@@ -28,6 +28,8 @@ export interface V3VisualQaRouteOptions {
   contextMenuParity?: boolean;
   contextChainPreview?: boolean;
   taskDefaultAssignment?: boolean;
+  taskContextEditing?: boolean;
+  legacyAtomContext?: boolean;
   emptyPlannerProjectsWhen?: () => boolean;
   emptyProjectPlannerWhen?: () => boolean;
   includeAlphaThirdRunWhen?: () => boolean;
@@ -37,6 +39,7 @@ export interface V3VisualQaRouteOptions {
   onPlannerTodayRequest?: (requestNumber: number) => void;
   onPlannerProjectRequest?: (requestNumber: number) => void;
   onRunHistoryRequest?: (requestNumber: number) => void;
+  onRunbookCreate?: (payload: Record<string, unknown>) => void;
 }
 
 function page(
@@ -479,6 +482,15 @@ export async function installV3VisualQaRoutes(
   options: V3VisualQaRouteOptions = {},
 ): Promise<void> {
   if (options.contextMenuParity) resetContextMenuParityState();
+  pageReads[pages.taskBeta.id].blocks = pageReads[pages.taskBeta.id].blocks.filter((item) => item.id !== "beta-cj-atom");
+  if (options.legacyAtomContext) {
+    pageReads[pages.taskBeta.id].blocks.push(block("beta-cj-atom", pages.taskBeta.id, "atom_ref", "", {
+      instance: "atom",
+      nodeId: "e6abe00f-3f3f-47ee-9188-c7a6320bd426",
+      depth: 3,
+      titlesOnly: false,
+    }));
+  }
   let shouldFailTaskTitleRename = options.failTaskTitleRenameOnce === true;
   let shouldFailProjectResolution = options.projectResolutionMode === "fail-once";
   let plannerTodayRequests = 0;
@@ -631,6 +643,15 @@ export async function installV3VisualQaRoutes(
       const body = request.postDataJSON() as { date?: string };
       const selected = body.date === "2026-07-13" ? pages.yesterday : pages.today;
       return fulfillJson(route, { page: selected, created: false });
+    }
+    if (path === "/api/runbooks" && request.method() === "POST" && options.onRunbookCreate) {
+      const payload = request.postDataJSON() as Record<string, unknown>;
+      options.onRunbookCreate(payload);
+      return fulfillJson(route, {
+        runbook: { id: "rb-cj-created", board_item_id: "runbook:rb-cj-created", folder_id: payload.folder_id, title: payload.title, status: "open", version: 1 },
+        task_page: page("task-cj-created", String(payload.title ?? "새 업무")),
+        created: true,
+      });
     }
     if (path === "/api/planner/today" && request.method() === "GET") {
       plannerTodayRequests += 1;
@@ -817,6 +838,29 @@ export async function installV3VisualQaRoutes(
             current.blocks = current.blocks.map((candidate) => candidate.id === operation.block_id
               ? { ...candidate, block_type: operation.block_type ?? candidate.block_type, properties: operation.properties ?? {} }
               : candidate);
+          }
+        }
+        current.page.version += 1;
+      }
+      if (options.taskContextEditing && pageId === pages.taskBeta.id) {
+        for (const operation of input.operations ?? []) {
+          if (operation.op === "create_block" && operation.temp_id) {
+            current.blocks.push(block(
+              tempIdMapping[operation.temp_id] ?? operation.temp_id,
+              pageId,
+              operation.block_type ?? "paragraph",
+              operation.text ?? "",
+              operation.properties ?? {},
+              operation.parent_id ?? null,
+            ));
+          }
+          if (operation.op === "update_block_type_and_properties" && operation.block_id) {
+            current.blocks = current.blocks.map((candidate) => candidate.id === operation.block_id
+              ? { ...candidate, block_type: operation.block_type ?? candidate.block_type, properties: operation.properties ?? {} }
+              : candidate);
+          }
+          if (operation.op === "delete_block_subtree" && operation.block_id) {
+            current.blocks = current.blocks.filter((candidate) => candidate.id !== operation.block_id);
           }
         }
         current.page.version += 1;

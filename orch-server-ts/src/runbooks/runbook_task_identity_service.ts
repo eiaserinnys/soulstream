@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { InitialTaskContext } from "@soulstream/page-model";
 
 import {
   PageMutationCore,
@@ -69,6 +70,7 @@ export class RunbookTaskIdentityService {
   async create(input: {
     title: string;
     description?: string;
+    initialContext?: InitialTaskContext;
     folderId: string;
     runbookId?: string;
     x?: number;
@@ -100,7 +102,13 @@ export class RunbookTaskIdentityService {
       reason: "create runbook task identity",
       initialCommand: {
         type: "batch_operations",
-        operations: initialTaskOperations(title, input.description ?? "", id, this.createBlockId),
+        operations: initialTaskOperations(
+          title,
+          input.description ?? "",
+          id,
+          this.createBlockId,
+          input.initialContext,
+        ),
       },
     });
     const projectPage = await this.config.repository.findProjectPageByFolderId(input.folderId);
@@ -263,6 +271,7 @@ export class RunbookTaskIdentityService {
       x: input.x,
       y: input.y,
       ensureProjectMount: true,
+      initialContext: input.initialContext,
     });
     this.notifyPageUpdate(result);
     return result;

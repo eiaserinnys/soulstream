@@ -22,6 +22,16 @@ describe("BrowserPlannerMutationPort.createTaskIdentity", () => {
       title: "새 업무",
       description: "업무 설명",
       folderId: "folder-project",
+      initialContext: {
+        guidance: "검증 근거를 남긴다.",
+        atomReferences: [{
+          instance: "atom",
+          nodeId: "node-soulstream",
+          nodeTitle: "soulstream",
+          depth: 4,
+          titlesOnly: true,
+        }],
+      },
     })).resolves.toEqual({ id: "task-uuid" });
 
     expect(fetchMock).toHaveBeenCalledWith("/api/runbooks", expect.objectContaining({
@@ -31,6 +41,16 @@ describe("BrowserPlannerMutationPort.createTaskIdentity", () => {
         title: "새 업무",
         description: "업무 설명",
         folder_id: "folder-project",
+        initial_context: {
+          guidance: "검증 근거를 남긴다.",
+          atom_references: [{
+            instance: "atom",
+            node_id: "node-soulstream",
+            node_title: "soulstream",
+            depth: 4,
+            titles_only: true,
+          }],
+        },
       }),
     }));
   });

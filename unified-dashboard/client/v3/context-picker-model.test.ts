@@ -10,7 +10,14 @@ describe("context picker block mapping", () => {
   it("maps only shared page and atom selections to ordered page operations", () => {
     const selections: ContextPickerSelection[] = [
       { key: "page:design", kind: "page", pageId: "page-design", title: "설계 문서" },
-      { key: "atom:node-a", kind: "atom", nodeId: "node-a", label: "soulstream / 페이지 모델" },
+      {
+        key: "atom:node-a",
+        kind: "atom",
+        nodeId: "node-a",
+        nodeTitle: "soulstream / 페이지 모델",
+        depth: 4,
+        titlesOnly: true,
+      },
     ];
 
     const result = buildContextBlockOperations({
@@ -38,7 +45,13 @@ describe("context picker block mapping", () => {
         after_temp_id: "temp-1",
         block_type: "atom_ref",
         text: "",
-        properties: { instance: "atom", nodeId: "node-a", title: "soulstream / 페이지 모델" },
+        properties: {
+          instance: "atom",
+          nodeId: "node-a",
+          nodeTitle: "soulstream / 페이지 모델",
+          depth: 4,
+          titlesOnly: true,
+        },
         collapsed: false,
       },
     ]);

@@ -24,8 +24,8 @@ describe("v3 aesthetic policy", () => {
     expect(detail).not.toContain("<h3>설명</h3>");
     expect(detail).not.toContain("<h3>컨텍스트</h3>");
     expect(sectionRule).not.toContain("border-top");
-    expect(css).toMatch(/\.v3-context-chips\s*\{[^}]*row-gap:\s*3px/s);
-    expect(css).toMatch(/\.v3-context-chips\s*>\s*span\s*\{[^}]*max-width:\s*min\(100%,\s*280px\)/s);
+    expect(css).toMatch(/\.v3-context-rows\s*\{[^}]*gap:\s*5px/s);
+    expect(css).toMatch(/\.v3-context-row\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto/s);
     expect(css).toMatch(/\.v3-context-add\.dashboard-icon-cap\s*\{[^}]*height:\s*28px/s);
   });
 

@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  parseInitialTaskContextWire,
+  type InitialTaskContext,
+} from "@soulstream/page-model";
 
 import type { FastifyInstance } from "fastify";
 
@@ -12,6 +16,7 @@ interface CreateRunbookBody {
   description?: string;
   folder_id: string;
   idempotency_key?: string;
+  initial_context?: unknown;
 }
 
 export function registerRunbookCreateRoute(
@@ -41,6 +46,7 @@ export function registerRunbookCreateRoute(
         description: body.value.description,
         folderId: body.value.folder_id,
         runbookId: body.value.runbook_id,
+        ...(body.value.initialContext ? { initialContext: body.value.initialContext } : {}),
         actor: { actorKind: "user", actorUserId: userId },
         idempotencyKey: body.value.idempotency_key ?? `create_runbook:${userId}:${randomUUID()}`,
       });
@@ -71,7 +77,7 @@ function taskIdentityCreateErrorStatus(error: unknown): 409 | 422 | 500 {
 }
 
 function parseCreateRunbookBody(body: unknown):
-  | { ok: true; value: CreateRunbookBody }
+  | { ok: true; value: CreateRunbookBody & { initialContext?: InitialTaskContext } }
   | { ok: false; message: string } {
   if (!isRecord(body)) return { ok: false, message: "request body must be an object" };
   const title = nonEmptyString(body.title, "title");
@@ -90,6 +96,8 @@ function parseCreateRunbookBody(body: unknown):
     ? undefined
     : nonEmptyString(body.idempotency_key, "idempotency_key");
   if (idempotencyKey && !idempotencyKey.ok) return idempotencyKey;
+  const initialContext = parseInitialTaskContextWire(body.initial_context);
+  if (!initialContext.ok) return { ok: false, message: initialContext.error };
   return {
     ok: true,
     value: {
@@ -98,6 +106,7 @@ function parseCreateRunbookBody(body: unknown):
       ...(description !== undefined ? { description } : {}),
       folder_id: folderId.value,
       ...(idempotencyKey ? { idempotency_key: idempotencyKey.value } : {}),
+      ...(initialContext.value ? { initialContext: initialContext.value } : {}),
     },
   };
 }

@@ -345,6 +345,16 @@ describe("runbook route harness", () => {
         title: "Browser work",
         description: "One object",
         folder_id: "folder-a-child",
+        initial_context: {
+          guidance: "검증 근거를 남긴다.",
+          atom_references: [{
+            instance: "atom",
+            node_id: "node-soulstream",
+            node_title: "soulstream",
+            depth: 4,
+            titles_only: true,
+          }],
+        },
         idempotency_key: "create_runbook:user:browser",
       },
     });
@@ -360,6 +370,16 @@ describe("runbook route harness", () => {
       actor: { actorKind: "user", actorUserId: "user@example.com" },
       description: "One object",
       folderId: "folder-a-child",
+      initialContext: {
+        guidance: "검증 근거를 남긴다.",
+        atomReferences: [{
+          instance: "atom",
+          nodeId: "node-soulstream",
+          nodeTitle: "soulstream",
+          depth: 4,
+          titlesOnly: true,
+        }],
+      },
       idempotencyKey: "create_runbook:user:browser",
       runbookId: "00000000-0000-4000-8000-0000000000ae",
       title: "Browser work",
@@ -389,6 +409,10 @@ describe("runbook route harness", () => {
       payload: {
         title: "MCP 업무",
         folder_id: "folder-a",
+        initial_context: {
+          guidance: "host 경로",
+          atom_references: [],
+        },
         actor_kind: "agent",
         actor_session_id: "session-a",
         idempotency_key: "mcp:create:one",
@@ -405,6 +429,10 @@ describe("runbook route harness", () => {
       title: "MCP 업무",
       description: undefined,
       folderId: "folder-a",
+      initialContext: {
+        guidance: "host 경로",
+        atomReferences: [],
+      },
       runbookId: undefined,
       x: undefined,
       y: undefined,

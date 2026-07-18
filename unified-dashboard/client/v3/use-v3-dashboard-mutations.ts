@@ -1,6 +1,6 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { useDashboardStore, type CatalogState, type SessionReviewAcknowledgeResult } from "@seosoyoung/soul-ui";
-import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
+import type { InitialTaskContext, PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
 import type { PlannerLoadState } from "./PlannerViews";
 import type { BrowserPlannerMutationPort } from "./planner-browser-port";
@@ -64,7 +64,12 @@ export function useV3DashboardMutations({
   refreshProject(): void;
   refreshTask(taskId: string): void;
 }) {
-  const createTask = useCallback(async (title: string, folderId: string, description: string): Promise<string | null> => {
+  const createTask = useCallback(async (
+    title: string,
+    folderId: string,
+    description: string,
+    initialContext?: InitialTaskContext,
+  ): Promise<string | null> => {
     const folder = catalog?.folders.find((item) => item.id === folderId);
     if (!folder) {
       const message = "선택한 프로젝트를 찾을 수 없습니다";
@@ -87,6 +92,7 @@ export function useV3DashboardMutations({
         description,
         dailyPageId: dailyPage.id,
         folderId,
+        ...(initialContext ? { initialContext } : {}),
       }, mutationPort);
       setCreateOpen(false);
       clearProject();

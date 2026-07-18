@@ -43,6 +43,16 @@ describe("runbook HTTP write route", () => {
         runbook_id: "00000000-0000-4000-8000-0000000000ae",
         title: "Browser work",
         folder_id: "folder-1",
+        initial_context: {
+          guidance: "직접 지침",
+          atom_references: [{
+            instance: "atom",
+            node_id: "node-soulstream",
+            node_title: "soulstream",
+            depth: 3,
+            titles_only: false,
+          }],
+        },
       },
     });
 
@@ -55,6 +65,16 @@ describe("runbook HTTP write route", () => {
       title: "Browser work",
       description: undefined,
       folderId: "folder-1",
+      initialContext: {
+        guidance: "직접 지침",
+        atomReferences: [{
+          instance: "atom",
+          nodeId: "node-soulstream",
+          nodeTitle: "soulstream",
+          depth: 3,
+          titlesOnly: false,
+        }],
+      },
       idempotencyKey: expect.stringMatching(/^create_runbook:operator@example\.com:/),
     });
   });

@@ -1,3 +1,5 @@
+import type { InitialTaskContext } from "@seosoyoung/soul-ui/page";
+
 export type PlannerTaskCreationPhase =
   | "page"
   | "runbook"
@@ -8,11 +10,17 @@ export interface PlannerTaskCreationInput {
   description: string;
   dailyPageId: string;
   folderId: string;
+  initialContext?: InitialTaskContext;
 }
 
 export interface PlannerTaskCreationPort {
   /** Creates the execution and document aspects of one task identity. */
-  createTaskIdentity(input: { title: string; description: string; folderId: string }): Promise<{ id: string }>;
+  createTaskIdentity(input: {
+    title: string;
+    description: string;
+    folderId: string;
+    initialContext?: InitialTaskContext;
+  }): Promise<{ id: string }>;
   mountPage(input: { sourcePageId: string; title: string }): Promise<void>;
 }
 
@@ -47,6 +55,7 @@ export async function createPlannerTask(
     title: input.title,
     description: input.description,
     folderId: input.folderId,
+    ...(input.initialContext ? { initialContext: input.initialContext } : {}),
   }));
   await runPhase("page", () => port.mountPage({
     sourcePageId: input.dailyPageId,

@@ -1,4 +1,8 @@
 import type { Logger } from "pino";
+import {
+  serializeInitialTaskContext,
+  type InitialTaskContext,
+} from "@soulstream/page-model";
 
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 
@@ -29,7 +33,9 @@ export class RunbookTaskIdentityHostClient {
     x?: number;
     y?: number;
     idempotencyKey: string;
+    initialContext?: InitialTaskContext;
   }): Promise<TaskIdentityHostResult> {
+    const initialContext = serializeInitialTaskContext(input.initialContext);
     return await this.request("create", {
       title: input.title,
       ...(input.description !== undefined ? { description: input.description } : {}),
@@ -37,6 +43,7 @@ export class RunbookTaskIdentityHostClient {
       ...(input.runbookId ? { runbook_id: input.runbookId } : {}),
       ...(input.x !== undefined ? { x: input.x } : {}),
       ...(input.y !== undefined ? { y: input.y } : {}),
+      ...(initialContext ? { initial_context: initialContext } : {}),
       ...actor(input),
       idempotency_key: input.idempotencyKey,
     });
