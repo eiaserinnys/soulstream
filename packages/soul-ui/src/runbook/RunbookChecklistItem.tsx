@@ -11,7 +11,11 @@ import type {
   RunbookSectionRow,
   RunbookSnapshot,
 } from "../stores/runbook-store";
-import { RunbookRowActions, type RowAction } from "./RunbookChecklistControls";
+import {
+  RunbookRowActionButton,
+  RunbookRowActions,
+  type RowAction,
+} from "./RunbookChecklistControls";
 import {
   RunbookItemStatusToggle,
   isRunbookItemHumanTurn,
@@ -82,25 +86,30 @@ export function RunbookItemRowView({
             >
               {item.title}
             </span>
-            {actions ? (
-              <RunbookRowActions
-                label={`${item.title} 항목 메뉴`}
-                actions={actions}
-                onPointerDown={stopTileDrag}
-              />
-            ) : null}
-            {hasDetails ? (
-              <button
-                type="button"
-                data-testid="runbook-item-details-toggle"
-                aria-label={`${item.title} 상세 ${itemOpen ? "접기" : "펼치기"}`}
-                aria-expanded={itemOpen}
-                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/45 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/60"
-                onPointerDown={stopTileDrag}
-                onClick={onToggleHowTo}
+            {actions || hasDetails ? (
+              <div
+                data-testid="runbook-item-actions"
+                className="flex shrink-0 items-center gap-1"
               >
-                <DisclosureActionIcon expanded={itemOpen} className="h-4 w-4" />
-              </button>
+                {actions ? (
+                  <RunbookRowActions
+                    label={`${item.title} 항목 메뉴`}
+                    actions={actions}
+                    onPointerDown={stopTileDrag}
+                  />
+                ) : null}
+                {hasDetails ? (
+                  <RunbookRowActionButton
+                    data-testid="runbook-item-details-toggle"
+                    aria-label={`${item.title} 상세 ${itemOpen ? "접기" : "펼치기"}`}
+                    aria-expanded={itemOpen}
+                    onPointerDown={stopTileDrag}
+                    onClick={onToggleHowTo}
+                  >
+                    <DisclosureActionIcon expanded={itemOpen} className="h-4 w-4" />
+                  </RunbookRowActionButton>
+                ) : null}
+              </div>
             ) : null}
           </div>
           {hasDetails && itemOpen ? (

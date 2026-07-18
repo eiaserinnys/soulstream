@@ -292,7 +292,7 @@ describe("RunbookCard", () => {
     expect(container.textContent).not.toContain("섹션 추가");
   });
 
-  it("keeps item details closed by default and places an icon-only toggle beside the row menu", () => {
+  it("keeps human-assigned item details closed and groups one shared action primitive with the row menu", () => {
     useRunbookStore.setState({
       byId: {
         "rb-1": {
@@ -314,17 +314,24 @@ describe("RunbookCard", () => {
     });
 
     const firstItem = container.querySelectorAll<HTMLElement>('[data-testid="runbook-item-row"]')[0];
+    const actionGroup = firstItem?.querySelector<HTMLElement>('[data-testid="runbook-item-actions"]');
     const menu = firstItem?.querySelector<HTMLButtonElement>('[data-testid="runbook-row-menu"]');
     const detailsToggle = firstItem?.querySelector<HTMLButtonElement>('[data-testid="runbook-item-details-toggle"]');
 
     expect(firstItem).toBeDefined();
+    expect(actionGroup).not.toBeNull();
     expect(menu).not.toBeNull();
     expect(detailsToggle).not.toBeNull();
+    expect(menu!.parentElement).toBe(actionGroup);
+    expect(detailsToggle!.parentElement).toBe(actionGroup);
     expect(menu!.nextElementSibling).toBe(detailsToggle);
+    expect(menu!.getAttribute("data-runbook-row-action")).toBe("");
+    expect(detailsToggle!.getAttribute("data-runbook-row-action")).toBe("");
     expect(detailsToggle!.textContent).toBe("");
     expect(detailsToggle!.getAttribute("aria-expanded")).toBe("false");
     expect(detailsToggle!.querySelector(".lucide-chevron-down")).not.toBeNull();
     expect(container.textContent).not.toContain("Run pnpm test before handoff.");
+    expect(firstItem!.textContent).not.toContain("operator@example.com");
     expect(container.textContent).not.toContain("내 차례");
     expect(container.textContent).not.toContain("절차");
 
@@ -335,6 +342,7 @@ describe("RunbookCard", () => {
     expect(detailsToggle!.getAttribute("aria-expanded")).toBe("true");
     expect(detailsToggle!.querySelector(".lucide-chevron-up")).not.toBeNull();
     expect(container.textContent).toContain("Run pnpm test before handoff.");
+    expect(firstItem!.textContent).toContain("operator@example.com");
     expect(container.textContent).toContain("내 차례");
     expect(container.querySelector<HTMLElement>('[data-testid="runbook-section-toggle"]')?.className)
       .toContain("text-sm");

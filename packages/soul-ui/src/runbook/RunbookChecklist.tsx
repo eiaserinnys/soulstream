@@ -27,14 +27,12 @@ export function RunbookChecklist({
   snapshot,
   sections,
   itemsBySection,
-  defaultItemDetailsOpen,
   textSize,
   editable,
 }: {
   snapshot: RunbookSnapshot;
   sections: readonly RunbookSectionRow[];
   itemsBySection: ReadonlyMap<string, RunbookItemRow[]>;
-  defaultItemDetailsOpen: boolean;
   textSize: "compact" | "session";
   editable: boolean;
 }) {
@@ -210,7 +208,7 @@ export function RunbookChecklist({
       {sections.map((section, sectionIndex) => {
         const sectionItems = itemsBySection.get(section.id) ?? [];
         const open = openSections[section.id]
-          ?? (defaultItemDetailsOpen || sectionDefaultOpen(section, sectionItems));
+          ?? sectionDefaultOpen(section, sectionItems);
         const editingSection = sectionEditor?.mode === "update"
           && sectionEditor.sectionId === section.id;
         return (
@@ -293,15 +291,13 @@ export function RunbookChecklist({
                       snapshot={snapshot}
                       section={section}
                       item={item}
-                      itemOpen={openItems[item.id]
-                        ?? defaultItemDetailsOpen}
+                      itemOpen={openItems[item.id] === true}
                       textSize={textSize}
                       actions={editable ? itemActions(section, item, sectionItems, itemIndex) : null}
                       onToggleHowTo={() =>
                         setOpenItems((value) => ({
                           ...value,
-                          [item.id]: !(openItems[item.id]
-                            ?? defaultItemDetailsOpen),
+                          [item.id]: openItems[item.id] !== true,
                         }))}
                     />
                   );

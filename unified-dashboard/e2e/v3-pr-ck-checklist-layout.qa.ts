@@ -67,6 +67,7 @@ async function verifyState(browser: Browser, theme: Theme, state: FixtureState) 
     await card.getByTestId("runbook-card-progress").waitFor({ state: "visible" });
     if (state !== "empty") {
       await card.getByTestId("runbook-item-row").first().waitFor({ state: "visible" });
+      await card.getByTestId("runbook-item-row").first().hover();
     }
 
     const metrics = await page.evaluate(() => {
@@ -88,8 +89,31 @@ async function verifyState(browser: Browser, theme: Theme, state: FixtureState) 
         rowMenus: runbookCard.querySelectorAll(
           '[data-testid="runbook-item-row"] [data-testid="runbook-row-menu"]',
         ).length,
+        actionGroups: runbookCard.querySelectorAll('[data-testid="runbook-item-actions"]').length,
+        sharedActionButtons: runbookCard.querySelectorAll(
+          '[data-testid="runbook-item-row"] [data-runbook-row-action]',
+        ).length,
         detailToggles: runbookCard.querySelectorAll('[data-testid="runbook-item-details-toggle"]').length,
         openDetails: runbookCard.querySelectorAll('[data-testid="runbook-how-to"]').length,
+        firstActionGeometry: (() => {
+          const firstRow = runbookCard.querySelector<HTMLElement>('[data-testid="runbook-item-row"]');
+          const menu = firstRow?.querySelector<HTMLElement>('[data-testid="runbook-row-menu"]');
+          const toggle = firstRow?.querySelector<HTMLElement>('[data-testid="runbook-item-details-toggle"]');
+          if (!menu || !toggle) return null;
+          const menuRect = menu.getBoundingClientRect();
+          const toggleRect = toggle.getBoundingClientRect();
+          const menuStyle = getComputedStyle(menu);
+          const toggleStyle = getComputedStyle(toggle);
+          return {
+            topDelta: Math.abs(menuRect.top - toggleRect.top),
+            widthDelta: Math.abs(menuRect.width - toggleRect.width),
+            heightDelta: Math.abs(menuRect.height - toggleRect.height),
+            menuRadius: menuStyle.borderRadius,
+            toggleRadius: toggleStyle.borderRadius,
+            menuPadding: menuStyle.padding,
+            togglePadding: toggleStyle.padding,
+          };
+        })(),
       };
     });
     assert(metrics !== null, `${theme}/${state}: 체크리스트 높이 측정 대상을 찾지 못했습니다.`);
@@ -103,7 +127,15 @@ async function verifyState(browser: Browser, theme: Theme, state: FixtureState) 
         assert(metrics.itemRows === 0, `${theme}: 빈 픽스처에 항목이 표시됩니다.`);
       } else {
         assert(metrics.rowMenus === metrics.itemRows, `${theme}/${state}: CRUD 메뉴가 모든 항목에 없습니다.`);
+        assert(metrics.actionGroups === metrics.itemRows, `${theme}/${state}: 항목 행 액션 그룹이 없습니다.`);
+        assert(metrics.sharedActionButtons === metrics.itemRows * 2, `${theme}/${state}: 공용 행 액션 버튼 정본을 우회했습니다.`);
         assert(metrics.detailToggles === metrics.itemRows, `${theme}/${state}: 상세 아이콘이 모든 항목에 없습니다.`);
+        assert(metrics.firstActionGeometry !== null, `${theme}/${state}: 첫 행 액션 기하를 측정하지 못했습니다.`);
+        assert(metrics.firstActionGeometry.topDelta <= 1, `${theme}/${state}: 메뉴와 꺽쇠가 같은 줄이 아닙니다.`);
+        assert(metrics.firstActionGeometry.widthDelta <= 1, `${theme}/${state}: 메뉴와 꺽쇠 너비가 다릅니다.`);
+        assert(metrics.firstActionGeometry.heightDelta <= 1, `${theme}/${state}: 메뉴와 꺽쇠 높이가 다릅니다.`);
+        assert(metrics.firstActionGeometry.menuRadius === metrics.firstActionGeometry.toggleRadius, `${theme}/${state}: 메뉴와 꺽쇠 radius가 다릅니다.`);
+        assert(metrics.firstActionGeometry.menuPadding === metrics.firstActionGeometry.togglePadding, `${theme}/${state}: 메뉴와 꺽쇠 padding이 다릅니다.`);
       }
       if (state === "short") await verifyShortDisclosure(card);
     }
@@ -122,9 +154,12 @@ async function verifyShortDisclosure(card: ReturnType<Page["getByTestId"]>) {
   assert(await toggle.getAttribute("aria-expanded") === "false", "상세 아이콘의 초기 상태가 닫힘이 아닙니다.");
   assert(await toggle.locator(".lucide-chevron-down").count() === 1, "닫힌 상세에 아래 꺽쇠가 없습니다.");
   assert(await row.evaluate((element) => {
+    const actionGroup = element.querySelector('[data-testid="runbook-item-actions"]');
     const rowMenu = element.querySelector('[data-testid="runbook-row-menu"]');
     const detailsToggle = element.querySelector('[data-testid="runbook-item-details-toggle"]');
-    return rowMenu?.nextElementSibling === detailsToggle;
+    return rowMenu?.parentElement === actionGroup
+      && detailsToggle?.parentElement === actionGroup
+      && rowMenu.nextElementSibling === detailsToggle;
   }), "상세 아이콘이 항목 메뉴 바로 옆에 없습니다.");
 
   await toggle.click();

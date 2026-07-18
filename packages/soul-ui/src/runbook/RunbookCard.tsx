@@ -16,7 +16,6 @@ interface RunbookCardProps {
   runbookId: string;
   fallbackTitle: string;
   onOpenBoard?: (runbookId: string) => void;
-  defaultItemDetailsOpen?: boolean;
   textSize?: "compact" | "session";
   editable?: boolean;
 }
@@ -82,7 +81,6 @@ export function RunbookCard({
   runbookId,
   fallbackTitle,
   onOpenBoard,
-  defaultItemDetailsOpen = false,
   textSize = "compact",
   editable = false,
 }: RunbookCardProps) {
@@ -201,7 +199,6 @@ export function RunbookCard({
             snapshot={snapshot}
             sections={sections}
             itemsBySection={itemsBySection}
-            defaultItemDetailsOpen={defaultItemDetailsOpen}
             textSize={textSize}
             editable={editable}
           />
