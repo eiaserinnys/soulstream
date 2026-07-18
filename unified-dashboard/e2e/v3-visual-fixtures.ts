@@ -31,6 +31,7 @@ export interface V3VisualQaRouteOptions {
   emptyPlannerProjectsWhen?: () => boolean;
   emptyProjectPlannerWhen?: () => boolean;
   includeAlphaThirdRunWhen?: () => boolean;
+  includeCreatedTaskWhen?: () => boolean;
   onAgentListRequest?: (nodeId: string) => void;
   onSessionCreate?: (payload: Record<string, unknown>) => void;
   onSessionListRequest?: () => void;
@@ -84,6 +85,7 @@ const pages = {
   today: page("daily-2026-07-14", "2026-07-14", "2026-07-14"),
   yesterday: page("daily-2026-07-13", "2026-07-13", "2026-07-13"),
   taskAlpha: page("task-alpha", "업무 카드 밀도와 계층 최종 QA", null, { starred: true }),
+  taskCreated: page("task-created", "PR-CI 생성 직후 fetch 회귀"),
   taskBeta: page("task-beta", "모바일 3탭 선택 상태 검증"),
   taskDone: page("task-done", "완료한 접근성 정리"),
   carryover: page("task-carryover", "이월 업무: 모달 간격 확인"),
@@ -154,6 +156,14 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
       block("alpha-guidance", pages.taskAlpha.id, "guidance", "대비와 잘림을 실제 픽셀로 확인", { enabled: true, scope: "session" }),
       block("alpha-defaults", pages.taskAlpha.id, "session_defaults", "", { agentId: "roselin_codex", nodeId: "eiaserinnys", scope: "session" }),
       block("alpha-doc", pages.taskAlpha.id, "paragraph", `[[${pages.document.title}]]`),
+    ],
+  },
+  [pages.taskCreated.id]: {
+    page: pages.taskCreated,
+    state_vector: "AA==",
+    blocks: [
+      block("created-description", pages.taskCreated.id, "paragraph", "생성 직후 projection loading 전이를 검증한다."),
+      block("created-runbook", pages.taskCreated.id, "runbook_ref", "", { runbookId: pages.taskCreated.id, primary: true }),
     ],
   },
   [pages.taskBeta.id]: {
@@ -232,6 +242,7 @@ function runbook(id: string, title: string, statuses: string[], status = "open")
 }
 
 const runbooks: Record<string, Json> = {
+  [pages.taskCreated.id]: runbook(pages.taskCreated.id, pages.taskCreated.title, []),
   "rb-alpha": runbook("rb-alpha", pages.taskAlpha.title, ["completed", "in_progress", "pending"]),
   "rb-beta": runbook("rb-beta", pages.taskBeta.title, ["completed", "review", "pending"]),
   "rb-done": runbook("rb-done", pages.taskDone.title, ["completed", "completed"], "completed"),
@@ -366,6 +377,7 @@ const sessions = [
 ];
 
 const runSessions: Record<string, string[]> = {
+  [pages.taskCreated.id]: [],
   "rb-alpha": ["run-alpha-1", "run-alpha-2"],
   "rb-beta": ["run-beta-1"],
   "rb-done": [],
@@ -484,6 +496,9 @@ export async function installV3VisualQaRoutes(
   let plannerTodayRequests = 0;
   let plannerProjectRequests = 0;
   let runHistoryRequests = 0;
+  const visiblePages = () => options.includeCreatedTaskWhen?.() === true
+    ? allPages
+    : allPages.filter((candidate) => candidate.id !== pages.taskCreated.id);
   const alphaRunIds = () => [
     ...runSessions["rb-alpha"],
     ...(options.includeAlphaThirdRunWhen?.() === true ? ["run-alpha-3"] : []),
@@ -657,6 +672,9 @@ export async function installV3VisualQaRoutes(
                       : {}),
                   }]),
               plannerTaskPayload(pages.taskBeta, "rb-beta"),
+              ...(options.includeCreatedTaskWhen?.() === true
+                ? [plannerTaskPayload(pages.taskCreated, pages.taskCreated.id)]
+                : []),
             ],
         memo_blocks: daily.blocks.filter((item) => !item.text.startsWith("[[")),
         review_session_ids: yesterday ? [] : sessions
@@ -725,13 +743,13 @@ export async function installV3VisualQaRoutes(
     if (path === "/api/pages" && request.method() === "GET") {
       const items = url.searchParams.get("starred") === "true"
         ? [pages.taskAlpha]
-        : allPages;
+        : visiblePages();
       return fulfillJson(route, { items, next_cursor: null });
     }
     if (path === "/api/pages/search") {
       const query = (url.searchParams.get("q") ?? "").toLowerCase();
       return fulfillJson(route, {
-        items: allPages
+        items: visiblePages()
           .filter((item) => item.title.toLowerCase().includes(query))
           .map((item) => ({ pageId: item.id, title: item.title })),
       });
@@ -967,6 +985,7 @@ function resetContextMenuParityState(): void {
 }
 
 export const fixtureTitles = {
+  createdTask: pages.taskCreated.title,
   primaryTask: pages.taskAlpha.title,
   secondaryTask: pages.taskBeta.title,
   carryoverTask: pages.carryover.title,
