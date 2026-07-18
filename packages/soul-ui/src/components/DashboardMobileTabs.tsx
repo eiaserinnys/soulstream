@@ -18,7 +18,7 @@ export interface DashboardMobileTabsProps {
   rightPanel: ReactNode;
   mobileSessionsView?: ReactNode;
   mobileFolderContents?: ReactNode;
-  mobileRunbooksView?: ReactNode;
+  mobileTasksView?: ReactNode;
   mobileChatView?: ReactNode;
   mobileChatHeader?: (onBack: () => void) => ReactNode;
   mobileSettingsContent?: ReactNode;
@@ -32,7 +32,7 @@ export function DashboardMobileTabs({
   rightPanel,
   mobileSessionsView,
   mobileFolderContents,
-  mobileRunbooksView,
+  mobileTasksView,
   mobileChatView,
   mobileChatHeader,
   mobileSettingsContent,
@@ -83,8 +83,8 @@ export function DashboardMobileTabs({
       clearSelectedFolder();
     } else if (tabId === "folder") {
       useDashboardStore.setState({ selectedFolderId: null });
-    } else if (tabId === "runbooks") {
-      setViewMode("runbooks");
+    } else if (tabId === "tasks") {
+      setViewMode("tasks");
     }
   }, [clearSelectedFolder, setActiveTab, setViewMode, visibleTabIds]);
 
@@ -114,9 +114,9 @@ export function DashboardMobileTabs({
           </TabsPanel>
         ) : null}
 
-        {visibleTabIds.has("runbooks") ? (
-          <TabsPanel value="runbooks" keepMounted className="h-full">
-            {mobileRunbooksView ?? centerPanel}
+        {visibleTabIds.has("tasks") ? (
+          <TabsPanel value="tasks" keepMounted className="h-full">
+            {mobileTasksView ?? centerPanel}
           </TabsPanel>
         ) : null}
 

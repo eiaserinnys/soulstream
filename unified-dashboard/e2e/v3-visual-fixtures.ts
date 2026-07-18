@@ -40,7 +40,7 @@ export interface V3VisualQaRouteOptions {
   onPlannerTodayRequest?: (requestNumber: number) => void;
   onPlannerProjectRequest?: (requestNumber: number) => void;
   onRunHistoryRequest?: (requestNumber: number) => void;
-  onRunbookCreate?: (payload: Record<string, unknown>) => void;
+  onTaskCreate?: (payload: Record<string, unknown>) => void;
 }
 
 function page(
@@ -154,7 +154,7 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
     blocks: [
       block("alpha-description", pages.taskAlpha.id, "paragraph", "## 목표\n\n목업 v4.5의 밀도와 계층을 유지하면서 다크·라이트 양쪽을 마감한다."),
       block("alpha-check", pages.taskAlpha.id, "checklist", "가로 오버플로 0", { checked: false }),
-      block("alpha-runbook", pages.taskAlpha.id, "runbook_ref", "", { runbookId: "rb-alpha", primary: true }),
+      block("alpha-task", pages.taskAlpha.id, "task_ref", "", { taskId: "rb-alpha", primary: true }),
       block("alpha-atom", pages.taskAlpha.id, "atom_ref", "", { instance: "atom", nodeId: "planner-design", title: "플래너 UX 원칙" }),
       block("alpha-guidance", pages.taskAlpha.id, "guidance", "대비와 잘림을 실제 픽셀로 확인", { enabled: true, scope: "session" }),
       block("alpha-defaults", pages.taskAlpha.id, "session_defaults", "", { agentId: "roselin_codex", nodeId: "eiaserinnys", scope: "session" }),
@@ -166,7 +166,7 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
     state_vector: "AA==",
     blocks: [
       block("created-description", pages.taskCreated.id, "paragraph", "생성 직후 projection loading 전이를 검증한다."),
-      block("created-runbook", pages.taskCreated.id, "runbook_ref", "", { runbookId: pages.taskCreated.id, primary: true }),
+      block("created-task", pages.taskCreated.id, "task_ref", "", { taskId: pages.taskCreated.id, primary: true }),
     ],
   },
   [pages.taskBeta.id]: {
@@ -174,7 +174,7 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
     state_vector: "AA==",
     blocks: [
       block("beta-description", pages.taskBeta.id, "paragraph", "390px에서 오늘·업무·채팅의 선택 상태를 유지한다."),
-      block("beta-runbook", pages.taskBeta.id, "runbook_ref", "", { runbookId: "rb-beta", primary: true }),
+      block("beta-task", pages.taskBeta.id, "task_ref", "", { taskId: "rb-beta", primary: true }),
       block("beta-guidance", pages.taskBeta.id, "guidance", "손가락으로 누르기 쉬운 탭 크기", { enabled: true, scope: "session" }),
     ],
   },
@@ -183,7 +183,7 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
     state_vector: "AA==",
     blocks: [
       block("done-description", pages.taskDone.id, "paragraph", "키보드 포커스와 라벨을 정리했다."),
-      block("done-runbook", pages.taskDone.id, "runbook_ref", "", { runbookId: "rb-done", primary: true }),
+      block("done-task", pages.taskDone.id, "task_ref", "", { taskId: "rb-done", primary: true }),
     ],
   },
   [pages.carryover.id]: {
@@ -191,7 +191,7 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
     state_vector: "AA==",
     blocks: [
       block("carry-description", pages.carryover.id, "paragraph", "리추얼 모달의 카드·버튼 간격을 마지막으로 확인한다."),
-      block("carry-runbook", pages.carryover.id, "runbook_ref", "", { runbookId: "rb-carry", primary: true }),
+      block("carry-task", pages.carryover.id, "task_ref", "", { taskId: "rb-carry", primary: true }),
     ],
   },
   [pages.document.id]: { page: pages.document, state_vector: "AA==", blocks: [] },
@@ -200,11 +200,11 @@ const pageReads: Record<string, { page: typeof pages.today; blocks: ReturnType<t
 
 const allPages = Object.values(pages);
 
-function runbook(id: string, title: string, statuses: string[], status = "open") {
+function task(id: string, title: string, statuses: string[], status = "open") {
   return {
-    runbook: {
+    task: {
       id,
-      board_item_id: `runbook:${id}`,
+      board_item_id: `task:${id}`,
       folder_id: "folder-amber",
       title,
       status,
@@ -244,12 +244,12 @@ function runbook(id: string, title: string, statuses: string[], status = "open")
   };
 }
 
-const runbooks: Record<string, Json> = {
-  [pages.taskCreated.id]: runbook(pages.taskCreated.id, pages.taskCreated.title, []),
-  "rb-alpha": runbook("rb-alpha", pages.taskAlpha.title, ["completed", "in_progress", "pending"]),
-  "rb-beta": runbook("rb-beta", pages.taskBeta.title, ["completed", "review", "pending"]),
-  "rb-done": runbook("rb-done", pages.taskDone.title, ["completed", "completed"], "completed"),
-  "rb-carry": runbook("rb-carry", pages.carryover.title, ["in_progress", "pending"]),
+const tasks: Record<string, Json> = {
+  [pages.taskCreated.id]: task(pages.taskCreated.id, pages.taskCreated.title, []),
+  "rb-alpha": task("rb-alpha", pages.taskAlpha.title, ["completed", "in_progress", "pending"]),
+  "rb-beta": task("rb-beta", pages.taskBeta.title, ["completed", "review", "pending"]),
+  "rb-done": task("rb-done", pages.taskDone.title, ["completed", "completed"], "completed"),
+  "rb-carry": task("rb-carry", pages.carryover.title, ["in_progress", "pending"]),
 };
 
 const sessions = [
@@ -387,9 +387,9 @@ const runSessions: Record<string, string[]> = {
   "rb-carry": [],
 };
 
-function runbookSummary(id: string) {
-  const snapshot = runbooks[id] as {
-    runbook: Record<string, unknown> & { status: string };
+function taskSummary(id: string) {
+  const snapshot = tasks[id] as {
+    task: Record<string, unknown> & { status: string };
     items: Array<{ status: string; assignee_agent_id: string | null }>;
   };
   const itemCounts = snapshot.items.reduce<Record<string, number>>((counts, item) => {
@@ -397,7 +397,7 @@ function runbookSummary(id: string) {
     return counts;
   }, {});
   return {
-    ...snapshot.runbook,
+    ...snapshot.task,
     item_counts: itemCounts,
     item_total: snapshot.items.length,
     completed_item_count: itemCounts.completed ?? 0,
@@ -407,14 +407,14 @@ function runbookSummary(id: string) {
 
 function plannerTaskPayload(
   taskPage: typeof pages.taskAlpha,
-  runbookId: string,
-  sessionIds: readonly string[] = runSessions[runbookId] ?? [],
+  taskId: string,
+  sessionIds: readonly string[] = runSessions[taskId] ?? [],
 ) {
   return {
     page: taskPage,
     blocks: pageReads[taskPage.id].blocks,
-    runbook_id: runbookId,
-    runbook: runbookSummary(runbookId),
+    task_id: taskId,
+    task: taskSummary(taskId),
     project_page_id: pages.project.id,
     sessions: sessionIds.slice(-1).map((agentSessionId) => ({ agent_session_id: agentSessionId })),
     mounted_documents: taskPage.id === pages.taskAlpha.id
@@ -423,12 +423,12 @@ function plannerTaskPayload(
   };
 }
 
-function boardItem(itemType: string, itemId: string, runbookId: string, y: number, metadata: Record<string, unknown> = {}) {
+function boardItem(itemType: string, itemId: string, taskId: string, y: number, metadata: Record<string, unknown> = {}) {
   return {
     id: `${itemType}:${itemId}`,
     folderId: "folder-amber",
-    containerKind: "runbook",
-    containerId: runbookId,
+    containerKind: "task",
+    containerId: taskId,
     itemType,
     itemId,
     x: 24,
@@ -659,11 +659,11 @@ export async function installV3VisualQaRoutes(
       const selected = body.date === "2026-07-13" ? pages.yesterday : pages.today;
       return fulfillJson(route, { page: selected, created: false });
     }
-    if (path === "/api/runbooks" && request.method() === "POST" && options.onRunbookCreate) {
+    if (path === "/api/tasks" && request.method() === "POST" && options.onTaskCreate) {
       const payload = request.postDataJSON() as Record<string, unknown>;
-      options.onRunbookCreate(payload);
+      options.onTaskCreate(payload);
       return fulfillJson(route, {
-        runbook: { id: "rb-cj-created", board_item_id: "runbook:rb-cj-created", folder_id: payload.folder_id, title: payload.title, status: "open", version: 1 },
+        task: { id: "rb-cj-created", board_item_id: "task:rb-cj-created", folder_id: payload.folder_id, title: payload.title, status: "open", version: 1 },
         task_page: page("task-cj-created", String(payload.title ?? "새 업무")),
         created: true,
       });
@@ -713,8 +713,8 @@ export async function installV3VisualQaRoutes(
     if (plannerTaskRunsMatch && request.method() === "GET") {
       runHistoryRequests += 1;
       options.onRunHistoryRequest?.(runHistoryRequests);
-      const taskId = decodeURIComponent(plannerTaskRunsMatch[1]);
-      if (options.alphaRunHistoryPages && taskId === pages.taskAlpha.id) {
+      const taskPageId = decodeURIComponent(plannerTaskRunsMatch[1]);
+      if (options.alphaRunHistoryPages && taskPageId === pages.taskAlpha.id) {
         const olderPage = url.searchParams.get("cursor") === "alpha-older";
         return fulfillJson(route, {
           items: [{ agent_session_id: olderPage ? "run-alpha-1" : "run-alpha-2" }],
@@ -722,11 +722,11 @@ export async function installV3VisualQaRoutes(
           total: 2,
         });
       }
-      const runbookId = taskId === pages.taskAlpha.id
+      const taskId = taskPageId === pages.taskAlpha.id
         ? "rb-alpha"
-        : taskId === pages.taskBeta.id ? "rb-beta" : taskId === pages.taskDone.id ? "rb-done" : "rb-carry";
-      const baseIds = runbookId === "rb-alpha" ? alphaRunIds() : (runSessions[runbookId] ?? []);
-      const ids = [...new Set(options.successionPickerRuns && runbookId === "rb-alpha"
+        : taskPageId === pages.taskBeta.id ? "rb-beta" : taskPageId === pages.taskDone.id ? "rb-done" : "rb-carry";
+      const baseIds = taskId === "rb-alpha" ? alphaRunIds() : (runSessions[taskId] ?? []);
+      const ids = [...new Set(options.successionPickerRuns && taskId === "rb-alpha"
         ? [...baseIds, "run-alpha-3"]
         : baseIds)].reverse();
       return fulfillJson(route, {
@@ -813,9 +813,9 @@ export async function installV3VisualQaRoutes(
         }
         pages.taskAlpha.title = rename.title;
         pages.taskAlpha.version += 1;
-        const snapshot = runbooks["rb-alpha"] as ReturnType<typeof runbook>;
-        snapshot.runbook.title = rename.title;
-        snapshot.runbook.version += 1;
+        const snapshot = tasks["rb-alpha"] as ReturnType<typeof task>;
+        snapshot.task.title = rename.title;
+        snapshot.task.version += 1;
       }
       const tempIdMapping = Object.fromEntries(
         (input.operations ?? [])
@@ -929,20 +929,20 @@ export async function installV3VisualQaRoutes(
         changed: true,
       });
     }
-    const runbookStatusMatch = /^\/api\/runbooks\/([^/]+)\/status$/.exec(path);
-    if (runbookStatusMatch && request.method() === "POST") {
-      const snapshot = runbooks[decodeURIComponent(runbookStatusMatch[1])] as ReturnType<typeof runbook> | undefined;
-      if (!snapshot) return fulfillJson(route, { detail: "runbook not found" }, 404);
+    const taskStatusMatch = /^\/api\/tasks\/([^/]+)\/status$/.exec(path);
+    if (taskStatusMatch && request.method() === "POST") {
+      const snapshot = tasks[decodeURIComponent(taskStatusMatch[1])] as ReturnType<typeof task> | undefined;
+      if (!snapshot) return fulfillJson(route, { detail: "task not found" }, 404);
       const payload = request.postDataJSON() as { status?: string };
-      snapshot.runbook.status = payload.status ?? snapshot.runbook.status;
-      snapshot.runbook.version += 1;
+      snapshot.task.status = payload.status ?? snapshot.task.status;
+      snapshot.task.version += 1;
       return fulfillJson(route, { ok: true, snapshot });
     }
-    const runbookMatch = /^\/api\/runbooks\/([^/]+)$/.exec(path);
-    if (runbookMatch) {
+    const taskMatch = /^\/api\/tasks\/([^/]+)$/.exec(path);
+    if (taskMatch) {
       await delay(options.plannerDelayMs);
-      const snapshot = runbooks[decodeURIComponent(runbookMatch[1])];
-      return snapshot ? fulfillJson(route, snapshot) : fulfillJson(route, { detail: "runbook not found" }, 404);
+      const snapshot = tasks[decodeURIComponent(taskMatch[1])];
+      return snapshot ? fulfillJson(route, snapshot) : fulfillJson(route, { detail: "task not found" }, 404);
     }
     if (path === "/api/board-items") {
       await delay(options.plannerDelayMs);
@@ -954,18 +954,18 @@ export async function installV3VisualQaRoutes(
           ],
         });
       }
-      const runbookId = url.searchParams.get("container_id") ?? "";
-      const inlineItems = runbookId === "rb-alpha" ? [
-        boardItem("markdown", "doc-inline", runbookId, 160, {
+      const taskId = url.searchParams.get("container_id") ?? "";
+      const inlineItems = taskId === "rb-alpha" ? [
+        boardItem("markdown", "doc-inline", taskId, 160, {
           title: inlineMarkdownDocument.title,
           version: inlineMarkdownDocument.version,
         }),
-        boardItem("custom_view", "view-inline", runbookId, 240, { title: "검증 현황" }),
-        boardItem("asset", "asset-inline", runbookId, 320, { originalName: "context-menu-map.png", sourceUrl: "/context-menu-map.png" }),
+        boardItem("custom_view", "view-inline", taskId, 240, { title: "검증 현황" }),
+        boardItem("asset", "asset-inline", taskId, 320, { originalName: "context-menu-map.png", sourceUrl: "/context-menu-map.png" }),
       ] : [];
       return fulfillJson(route, {
         boardItems: [
-          ...(runSessions[runbookId] ?? []).map((itemId, index) => boardItem("session", itemId, runbookId, index * 72)),
+          ...(runSessions[taskId] ?? []).map((itemId, index) => boardItem("session", itemId, taskId, index * 72)),
           ...inlineItems,
         ],
       });
@@ -975,14 +975,14 @@ export async function installV3VisualQaRoutes(
       const boardItemId = decodeURIComponent(boardMoveMatch[1]);
       const sessionId = boardItemId.startsWith("session:") ? boardItemId.slice("session:".length) : boardItemId;
       const body = request.postDataJSON() as { container?: { kind?: string; id?: string } };
-      const targetRunbookId = body.container?.kind === "runbook" ? body.container.id : null;
-      if (!targetRunbookId || !runSessions[targetRunbookId]) return fulfillJson(route, { detail: "target not found" }, 404);
+      const targetTaskId = body.container?.kind === "task" ? body.container.id : null;
+      if (!targetTaskId || !runSessions[targetTaskId]) return fulfillJson(route, { detail: "target not found" }, 404);
       for (const ids of Object.values(runSessions)) {
         const index = ids.indexOf(sessionId);
         if (index >= 0) ids.splice(index, 1);
       }
-      runSessions[targetRunbookId].push(sessionId);
-      return fulfillJson(route, { ok: true, boardItem: boardItem("session", sessionId, targetRunbookId, 0) });
+      runSessions[targetTaskId].push(sessionId);
+      return fulfillJson(route, { ok: true, boardItem: boardItem("session", sessionId, targetTaskId, 0) });
     }
     if (path === "/api/markdown-documents/doc-inline") {
       if (request.method() === "PUT") {
@@ -1023,9 +1023,9 @@ function resetContextMenuParityState(): void {
   daily.blocks = daily.blocks.filter((candidate) => candidate.text !== `[[${pages.taskAlpha.title}]]`);
   daily.blocks.push(block("today-alpha", pages.today.id, "paragraph", `[[${pages.taskAlpha.title}]]`));
   daily.page.version = 4;
-  const alpha = runbooks["rb-alpha"] as ReturnType<typeof runbook>;
-  alpha.runbook.status = "open";
-  alpha.runbook.version = 7;
+  const alpha = tasks["rb-alpha"] as ReturnType<typeof task>;
+  alpha.task.status = "open";
+  alpha.task.version = 7;
 }
 
 export const fixtureTitles = {

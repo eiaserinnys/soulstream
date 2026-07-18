@@ -76,7 +76,7 @@ describe("PageRepository PostgreSQL replica integration", () => {
       updated_at: Date;
     }]>`
       SELECT source_hash, processed_hash, actor_kind, updated_at
-      FROM checklist_runbook_projection_outbox
+      FROM checklist_task_projection_outbox
       WHERE block_id = 'child'
     `;
     expect(firstPending).toMatchObject({
@@ -128,7 +128,7 @@ describe("PageRepository PostgreSQL replica integration", () => {
     expect(secondDocument?.updated_at).toEqual(firstDocument?.updated_at);
     const [repeatedPending] = await sql<[{ source_hash: string; updated_at: Date }]>`
       SELECT source_hash, updated_at
-      FROM checklist_runbook_projection_outbox
+      FROM checklist_task_projection_outbox
       WHERE block_id = 'child'
     `;
     expect(repeatedPending).toEqual({
@@ -149,7 +149,7 @@ describe("PageRepository PostgreSQL replica integration", () => {
     });
     const [editedPending] = await sql<[{ source_hash: string }]>`
       SELECT source_hash
-      FROM checklist_runbook_projection_outbox
+      FROM checklist_task_projection_outbox
       WHERE block_id = 'child'
     `;
     expect(editedPending?.source_hash).not.toBe(firstPending?.source_hash);
@@ -165,7 +165,7 @@ describe("PageRepository PostgreSQL replica integration", () => {
     expect(remainingBlocks).toBe(1);
     const [archivedPending] = await sql<[{ source_hash: string }]>`
       SELECT source_hash
-      FROM checklist_runbook_projection_outbox
+      FROM checklist_task_projection_outbox
       WHERE block_id = 'child'
     `;
     expect(archivedPending?.source_hash).toBe("archive:child");

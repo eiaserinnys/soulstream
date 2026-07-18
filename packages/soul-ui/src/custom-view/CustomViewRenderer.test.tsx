@@ -44,14 +44,14 @@ describe("CustomViewRenderer", () => {
 
   it("escapes whitelisted soul-bind values before srcdoc injection", () => {
     const srcDoc = renderCustomViewSrcDoc(
-      '<div><soul-bind kind="runbook-item" id="item-1" field="title"></soul-bind></div>',
+      '<div><soul-bind kind="task-item" id="item-1" field="title"></soul-bind></div>',
       {
-        runbookItems: {
+        taskItems: {
           "item-1": {
             title: '<img src=x onerror="alert(1)">',
           },
         },
-        runbooks: {},
+        tasks: {},
         sessions: {},
       },
     );
@@ -64,8 +64,8 @@ describe("CustomViewRenderer", () => {
     const html = renderCustomViewFragment(
       '<soul-bind kind="session" id="s1" field="token"></soul-bind>',
       {
-        runbookItems: {},
-        runbooks: {},
+        taskItems: {},
+        tasks: {},
         sessions: {
           s1: {
             title: "Visible",

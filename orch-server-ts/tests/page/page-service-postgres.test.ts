@@ -153,7 +153,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       processed_hash: string | null;
     }>>`
       SELECT actor_kind, actor_session_id, actor_user_id, routing_session_id, processed_hash
-      FROM checklist_runbook_projection_outbox
+      FROM checklist_task_projection_outbox
       WHERE block_id = ${checklistBlockId}
     `;
     const projection = projectionRows[0];

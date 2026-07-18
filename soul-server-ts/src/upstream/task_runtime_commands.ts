@@ -38,7 +38,7 @@ export interface CreateSessionRuntimeParams {
   reasoningEffort?: ReasoningEffort;
   folderId?: string | null;
   container?: BoardYjsContainerRef | null;
-  sourceRunbookItemId?: string | null;
+  sourceTaskItemId?: string | null;
   systemPrompt?: string;
   pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
 }
@@ -139,7 +139,7 @@ export class TaskRuntimeCommands {
       claudePermissionMode: params.claudePermissionMode,
       folderId: params.folderId ?? null,
       container: params.container ?? null,
-      sourceRunbookItemId: params.sourceRunbookItemId ?? null,
+      sourceTaskItemId: params.sourceTaskItemId ?? null,
       systemPrompt: params.systemPrompt,
       contextItems: params.extraContextItems,
       attachmentPaths: params.attachmentPaths,

@@ -8,7 +8,7 @@ import type { LoadMoreCallback } from "../components/load-more-guard";
 import { Badge } from "../components/ui/badge";
 import { DASHBOARD_CARD_GAP_PX, DASHBOARD_LIST_INSET_PX } from "../components/dashboard-spacing";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { useRunbookStore, type RunbookSnapshot } from "../stores/runbook-store";
+import { useTaskStore, type TaskSnapshot } from "../stores/task-store";
 import {
   BoardWorkspaceView,
   type BoardWorkspaceViewProps,
@@ -57,13 +57,13 @@ function metadataBoolean(item: CatalogBoardItem, key: string): boolean {
   return item.metadata?.[key] === true;
 }
 
-function folderRunbookItems(
+function folderTaskItems(
   catalog: { boardItems?: CatalogBoardItem[] } | null,
   folderId: string | null,
 ): CatalogBoardItem[] {
   return (catalog?.boardItems ?? [])
     .filter((item) =>
-      item.itemType === "runbook" &&
+      item.itemType === "task" &&
       !metadataBoolean(item, "archived") &&
       boardItemBelongsToSelectedFolder(item, folderId),
     )
@@ -86,7 +86,7 @@ function filterFolderListSessions(
   return sessions.filter((session) => !hiddenSessionIds.has(session.agentSessionId));
 }
 
-function runbookProgress(snapshot: RunbookSnapshot | null): { completed: number; total: number } | null {
+function taskProgress(snapshot: TaskSnapshot | null): { completed: number; total: number } | null {
   if (!snapshot) return null;
   let completed = 0;
   let total = 0;
@@ -98,37 +98,37 @@ function runbookProgress(snapshot: RunbookSnapshot | null): { completed: number;
   return { completed, total };
 }
 
-function FolderRunbookCard({
+function FolderTaskCard({
   item,
   parentFolderId,
   onOpenBoard,
 }: {
   item: CatalogBoardItem;
   parentFolderId: string | null;
-  onOpenBoard: (runbookId: string, parentFolderId?: string | null) => void;
+  onOpenBoard: (taskId: string, parentFolderId?: string | null) => void;
 }) {
-  const projection = useRunbookStore((s) => s.byId[item.itemId]);
-  const loadRunbook = useRunbookStore((s) => s.loadRunbook);
+  const projection = useTaskStore((s) => s.byId[item.itemId]);
+  const loadTask = useTaskStore((s) => s.loadTask);
 
   useEffect(() => {
     const controller = new AbortController();
-    void loadRunbook(item.itemId, { signal: controller.signal }).catch(() => undefined);
+    void loadTask(item.itemId, { signal: controller.signal }).catch(() => undefined);
     return () => controller.abort();
-  }, [item.itemId, loadRunbook]);
+  }, [item.itemId, loadTask]);
 
   const snapshot = projection?.snapshot ?? null;
-  if (snapshot?.runbook.archived) return null;
+  if (snapshot?.task.archived) return null;
 
-  const title = snapshot?.runbook.title || metadataText(item, "title") || "Runbook";
-  const progress = runbookProgress(snapshot);
-  const completed = snapshot?.runbook.status === "completed";
-  const badgeText = progress ? `${progress.completed}/${progress.total}` : completed ? "완료" : "런북";
+  const title = snapshot?.task.title || metadataText(item, "title") || "Task";
+  const progress = taskProgress(snapshot);
+  const completed = snapshot?.task.status === "completed";
+  const badgeText = progress ? `${progress.completed}/${progress.total}` : completed ? "완료" : "업무";
 
   return (
     <button
       type="button"
-      data-testid="folder-runbook-card"
-      data-runbook-id={item.itemId}
+      data-testid="folder-task-card"
+      data-task-id={item.itemId}
       className="rounded-2xl border border-white/8 bg-[var(--lg-card)] px-3.5 py-3 text-left text-[12.5px] font-semibold shadow-[0_6px_22px_-16px_rgb(20_26_40_/_40%)] transition-[border-color,box-shadow] hover:border-accent-blue/35 hover:shadow-[0_12px_28px_-18px_rgb(10_30_70_/_50%)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/55"
       onClick={(event) => {
         event.stopPropagation();
@@ -175,26 +175,26 @@ export function FolderWorkspaceView({
   const catalog = useDashboardStore((s) => s.catalog);
   const selectFolder = useDashboardStore((s) => s.selectFolder);
   const activeBoardContainer = useDashboardStore((s) => s.activeBoardContainer);
-  const openRunbookBoard = useDashboardStore((s) => s.openRunbookBoard);
+  const openTaskBoard = useDashboardStore((s) => s.openTaskBoard);
   const setBoardItemsForFolder = useDashboardStore((s) => s.setBoardItemsForFolder);
-  const runbookProjections = useRunbookStore((s) => s.byId);
+  const taskProjections = useTaskStore((s) => s.byId);
   const [workspaceViewMode, setWorkspaceViewMode] =
     useFolderWorkspaceViewMode(selectedFolderId);
-  // 폴더의 리스트↔보드 토글은 항상 "폴더 보드"를 대상으로 한다. 런북 보드를
-  // 열었던 흔적(activeBoardContainer=runbook)이 남아 있으면 폴더 컨테이너로
-  // 되돌린다 — 런북 보드 재진입은 명시적 경로(오버뷰·런북 타일)만 사용.
+  // 폴더의 리스트↔보드 토글은 항상 "폴더 보드"를 대상으로 한다. 업무 보드를
+  // 열었던 흔적(activeBoardContainer=task)이 남아 있으면 폴더 컨테이너로
+  // 되돌린다 — 업무 보드 재진입은 명시적 경로(오버뷰·업무 타일)만 사용.
   const handleWorkspaceViewModeChange = (mode: Parameters<typeof setWorkspaceViewMode>[0]) => {
-    if (activeBoardContainer?.kind === "runbook" && selectedFolderId) {
+    if (activeBoardContainer?.kind === "task" && selectedFolderId) {
       selectFolder(selectedFolderId);
     }
     setWorkspaceViewMode(mode);
   };
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // 런북 보드는 폴더의 리스트/보드 선호와 무관한 컨테이너 뷰다 — 런북 컨테이너가
-  // 활성인 동안은 항상 보드를 렌더한다 (오버뷰 "런북 보드 열기"가 리스트 선호
+  // 업무 보드는 폴더의 리스트/보드 선호와 무관한 컨테이너 뷰다 — 업무 컨테이너가
+  // 활성인 동안은 항상 보드를 렌더한다 (오버뷰 "업무 보드 열기"가 리스트 선호
   // 폴더에서 세션 리스트로 떨어지던 결함 수정).
   const showBoard =
-    workspaceViewMode === "board" || activeBoardContainer?.kind === "runbook";
+    workspaceViewMode === "board" || activeBoardContainer?.kind === "task";
 
   useEffect(() => {
     if (showBoard || !selectedFolderId) return;
@@ -225,11 +225,11 @@ export function FolderWorkspaceView({
     () => getChildFolders(folders, selectedFolderId),
     [folders, selectedFolderId],
   );
-  const runbookItems = useMemo(() => (
-    folderRunbookItems(catalog, selectedFolderId).filter((item) =>
-      !runbookProjections[item.itemId]?.snapshot?.runbook.archived
+  const taskItems = useMemo(() => (
+    folderTaskItems(catalog, selectedFolderId).filter((item) =>
+      !taskProjections[item.itemId]?.snapshot?.task.archived
     )
-  ), [catalog, runbookProjections, selectedFolderId]);
+  ), [catalog, taskProjections, selectedFolderId]);
   const visibleSessions = useMemo(
     () => filterFolderListSessions(sessions, catalog, selectedFolderId),
     [catalog, selectedFolderId, sessions],
@@ -266,27 +266,27 @@ export function FolderWorkspaceView({
           </div>
         </section>
       )}
-      {runbookItems.length > 0 && (
+      {taskItems.length > 0 && (
         <section
-          data-testid="folder-runbook-section"
+          data-testid="folder-task-section"
           style={{
             paddingInline: DASHBOARD_LIST_INSET_PX,
             paddingBottom: DASHBOARD_CARD_GAP_PX,
           }}
         >
           <div className="pb-2 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/70">
-            런북
+            업무
           </div>
           <div
             className="grid grid-cols-1 xl:grid-cols-2"
             style={{ gap: DASHBOARD_CARD_GAP_PX }}
           >
-            {runbookItems.map((item) => (
-              <FolderRunbookCard
+            {taskItems.map((item) => (
+              <FolderTaskCard
                 key={item.id}
                 item={item}
                 parentFolderId={selectedFolderId}
-                onOpenBoard={openRunbookBoard}
+                onOpenBoard={openTaskBoard}
               />
             ))}
           </div>
@@ -299,7 +299,7 @@ export function FolderWorkspaceView({
         세션
       </div>
     </>
-  ), [catalog, childFolders, openRunbookBoard, runbookItems, selectFolder, selectedFolderId]);
+  ), [catalog, childFolders, openTaskBoard, taskItems, selectFolder, selectedFolderId]);
 
   if (showBoard) {
     return (

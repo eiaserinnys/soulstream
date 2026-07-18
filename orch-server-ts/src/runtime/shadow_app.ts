@@ -27,7 +27,7 @@ import type {
 import type { PublicStatusRouteOptions } from "../public/public_status_routes.js";
 import type { PageYjsRouteOptions } from "../page/page_yjs_route.js";
 import type { PushRouteOptions } from "../push/push_routes.js";
-import type { RunbookRouteOptions } from "../runbooks/runbook_route_types.js";
+import type { TaskRouteOptions } from "../tasks/task_route_types.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
 import type { SessionHistoryProvider } from "../session/session_history_service.js";
 import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
@@ -88,7 +88,7 @@ export type ShadowOrchestratorProviderBundle = {
   nodeClaudeAuthRoutes: ShadowNodeClaudeAuthRouteProviders;
   publicStatusRoutes: PublicStatusRouteOptions;
   pushRoutes: PushRouteOptions;
-  runbookRoutes: RunbookRouteOptions;
+  taskRoutes: TaskRouteOptions;
   sessionCatalogRoutes: SessionCatalogRouteOptions;
   systemConfigRoutes: SystemConfigRouteOptions;
   userBackgroundRoutes: UserBackgroundRouteOptions;
@@ -123,7 +123,7 @@ export type ShadowOrchestratorRouteOptions = Required<
     | "pageYjsRoutes"
     | "publicStatusRoutes"
     | "pushRoutes"
-    | "runbookRoutes"
+    | "taskRoutes"
     | "sessionActionCommandRoutes"
     | "sessionBackgroundScheduleRoutes"
     | "sessionCatalogRoutes"
@@ -232,11 +232,11 @@ export const shadowRouteCompositionRequirements = [
     paths: ["pushRoutes.repository", "pushRoutes.resolveJwtUser"],
   },
   {
-    owner: "runbooks",
+    owner: "tasks",
     paths: [
-      "runbookRoutes.provider",
-      "runbookRoutes.accessProvider",
-      "runbookRoutes.httpClient",
+      "taskRoutes.provider",
+      "taskRoutes.accessProvider",
+      "taskRoutes.httpClient",
     ],
   },
   { owner: "session.actions", paths: ["runtime"] },
@@ -378,7 +378,7 @@ function buildShadowRouteOptions(
     nodeWsRoute: runtime.routeOptions.nodeWsRoute,
     publicStatusRoutes: providers.publicStatusRoutes,
     pushRoutes: providers.pushRoutes,
-    runbookRoutes: providers.runbookRoutes,
+    taskRoutes: providers.taskRoutes,
     sessionActionCommandRoutes: requireRuntimeRouteOption(
       runtime.routeOptions.sessionActionCommandRoutes,
       "session.actions",

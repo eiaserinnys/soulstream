@@ -141,11 +141,11 @@ class SqliteSessionDB(
             CREATE TABLE IF NOT EXISTS board_items (
                 id TEXT PRIMARY KEY,
                 folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
-                container_kind TEXT NOT NULL DEFAULT 'folder' CHECK (container_kind IN ('folder', 'runbook')),
+                container_kind TEXT NOT NULL DEFAULT 'folder' CHECK (container_kind IN ('folder', 'task')),
                 container_id TEXT NOT NULL DEFAULT '',
                 membership_kind TEXT NOT NULL DEFAULT 'primary' CHECK (membership_kind IN ('primary', 'reference')),
-                source_runbook_item_id TEXT,
-                item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook')),
+                source_task_item_id TEXT,
+                item_type TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'task')),
                 item_id TEXT NOT NULL,
                 x REAL NOT NULL DEFAULT 0,
                 y REAL NOT NULL DEFAULT 0,
@@ -160,7 +160,7 @@ class SqliteSessionDB(
             "ALTER TABLE board_items ADD COLUMN container_kind TEXT NOT NULL DEFAULT 'folder'",
             "ALTER TABLE board_items ADD COLUMN container_id TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE board_items ADD COLUMN membership_kind TEXT NOT NULL DEFAULT 'primary'",
-            "ALTER TABLE board_items ADD COLUMN source_runbook_item_id TEXT",
+            "ALTER TABLE board_items ADD COLUMN source_task_item_id TEXT",
         ]:
             try:
                 await self._conn.execute(ddl)

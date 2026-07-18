@@ -210,26 +210,26 @@ async def test_session_deleted_with_none_session_id_skips_broadcast(mock_broadca
 
 
 @pytest.mark.asyncio
-async def test_runbook_updated_broadcasts_runbook_event(mock_broadcaster, mock_node_manager):
-    """node_session_runbook_updated → broadcast(runbook_updated) + broadcast_node_change."""
+async def test_task_updated_broadcasts_task_event(mock_broadcaster, mock_node_manager):
+    """node_session_task_updated → broadcast(task_updated) + broadcast_node_change."""
     data = {
-        "type": "runbook_updated",
-        "runbookId": "rb-1",
-        "boardItemId": "runbook:rb-1",
+        "type": "task_updated",
+        "taskId": "rb-1",
+        "boardItemId": "task:rb-1",
     }
     await _on_node_change(
         mock_broadcaster, mock_node_manager,
-        "node_session_runbook_updated", "node-1", data,
+        "node_session_task_updated", "node-1", data,
     )
 
     mock_broadcaster.broadcast.assert_awaited_once_with({
-        "type": "runbook_updated",
-        "runbookId": "rb-1",
-        "boardItemId": "runbook:rb-1",
+        "type": "task_updated",
+        "taskId": "rb-1",
+        "boardItemId": "task:rb-1",
         "nodeId": "node-1",
     })
     mock_broadcaster.broadcast_node_change.assert_awaited_once_with({
-        "type": "node_session_runbook_updated",
+        "type": "node_session_task_updated",
         "nodeId": "node-1",
         "data": data,
     })

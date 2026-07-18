@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 110개 $defs (wire 53 + SSE event 57). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 111개 $defs (wire 53 + SSE event 58). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -215,7 +215,8 @@ export interface SessionEventEnvelope {
     | SSEEventClaudeRuntimeModeState
     | SSEEventClaudeRuntimeScheduleUpdated
     | SSEEventClaudeRuntimeScheduleDeleted
-    | SSEEventRunbookUpdated
+    | SSEEventTaskUpdated
+    | SSEEventRunbookUpdatedLegacy
     | SSEEventCustomViewUpdated
     | SSEEventContextUsage
     | SSEEventCompact
@@ -711,9 +712,18 @@ export interface SSEEventClaudeRuntimeScheduleDeleted {
   [k: string]: unknown;
 }
 /**
- * SSE: 런북 mutation 후 뷰 갱신 트리거.
+ * SSE: 업무 mutation 후 뷰 갱신 트리거.
  */
-export interface SSEEventRunbookUpdated {
+export interface SSEEventTaskUpdated {
+  type: "task_updated";
+  taskId: string;
+  boardItemId: string;
+  [k: string]: unknown;
+}
+/**
+ * Production-gated read compatibility event. Producers must emit task_updated. Removal follows docs/task-read-compatibility.md.
+ */
+export interface SSEEventRunbookUpdatedLegacy {
   type: "runbook_updated";
   runbookId: string;
   boardItemId: string;
@@ -1063,7 +1073,7 @@ export interface CreateSession {
    */
   predecessor_session_id?: string | null;
   /**
-   * False suppresses caller completion relay for runbook-tracked fire-and-forget delegation. Missing defaults to true.
+   * False suppresses caller completion relay for task-tracked fire-and-forget delegation. Missing defaults to true.
    */
   notify_completion?: boolean;
   attachment_paths?: string[];

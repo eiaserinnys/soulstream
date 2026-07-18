@@ -150,21 +150,21 @@ describe("board workspace item helpers", () => {
     });
   });
 
-  it("builds runbook board items as first-class board objects", () => {
+  it("builds task board items as first-class board objects", () => {
     const items = buildBoardWorkspaceItems({
       catalog: {
         ...catalog,
         boardItems: [
           ...(catalog.boardItems ?? []),
           {
-            id: "runbook:rb-1",
+            id: "task:rb-1",
             folderId: "root",
-            itemType: "runbook",
+            itemType: "task",
             itemId: "rb-1",
             x: 400,
             y: 200,
             metadata: {
-              title: "Launch runbook",
+              title: "Launch task",
             },
           },
         ],
@@ -173,66 +173,66 @@ describe("board workspace item helpers", () => {
       sessions,
     });
 
-    expect(items.find((item) => item.boardItemId === "runbook:rb-1")).toMatchObject({
-      type: "runbook",
+    expect(items.find((item) => item.boardItemId === "task:rb-1")).toMatchObject({
+      type: "task",
       id: "rb-1",
-      runbookId: "rb-1",
-      title: "Launch runbook",
+      taskId: "rb-1",
+      title: "Launch task",
       x: 400,
       y: 200,
     });
   });
 
-  it("builds runbook container items without folder board fallback entries", () => {
+  it("builds task container items without folder board fallback entries", () => {
     const items = buildBoardWorkspaceItems({
       catalog: {
         ...catalog,
         boardItems: [
           ...(catalog.boardItems ?? []),
           {
-            id: "session:runbook-s1",
+            id: "session:task-s1",
             folderId: "root",
-            containerKind: "runbook",
+            containerKind: "task",
             containerId: "rb-1",
             itemType: "session",
-            itemId: "runbook-s1",
+            itemId: "task-s1",
             x: -120,
             y: 0,
           },
           {
-            id: "markdown:runbook-note",
+            id: "markdown:task-note",
             folderId: "root",
-            containerKind: "runbook",
+            containerKind: "task",
             containerId: "rb-1",
             itemType: "markdown",
-            itemId: "runbook-note",
+            itemId: "task-note",
             x: 0,
             y: 0,
-            metadata: { title: "Runbook note" },
+            metadata: { title: "Task note" },
           },
         ],
       },
       selectedFolderId: "root",
-      boardContainer: { kind: "runbook", id: "rb-1" },
+      boardContainer: { kind: "task", id: "rb-1" },
       sessions: [
         ...sessions,
         {
-          agentSessionId: "runbook-s1",
+          agentSessionId: "task-s1",
           status: "running",
           eventCount: 1,
-          prompt: "Runbook task",
+          prompt: "Task",
           folderId: "root",
         },
       ],
     });
 
     expect(items.map((item) => `${item.type}:${item.id}`)).toEqual([
-      "session:runbook-s1",
-      "markdown:runbook-note",
+      "session:task-s1",
+      "markdown:task-note",
     ]);
   });
 
-  it("projects an existing runbook session title from catalog without board metadata", () => {
+  it("projects an existing task session title from catalog without board metadata", () => {
     const items = buildBoardWorkspaceItems({
       catalog: {
         folders: catalog.folders,
@@ -242,7 +242,7 @@ describe("board workspace item helpers", () => {
         boardItems: [{
           id: "session:older-session",
           folderId: "root",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           itemType: "session",
           itemId: "older-session",
@@ -252,7 +252,7 @@ describe("board workspace item helpers", () => {
         }],
       },
       selectedFolderId: "root",
-      boardContainer: { kind: "runbook", id: "rb-1" },
+      boardContainer: { kind: "task", id: "rb-1" },
       sessions: [],
     });
 
@@ -268,8 +268,8 @@ describe("board workspace item helpers", () => {
       .toBe("Recovered title");
   });
 
-  it("keeps same-runbook primary child sessions inside the visible parent stack", () => {
-    const runbookCatalog: CatalogState = {
+  it("keeps same-task primary child sessions inside the visible parent stack", () => {
+    const taskCatalog: CatalogState = {
       folders: [{
         id: "root",
         name: "Root",
@@ -286,7 +286,7 @@ describe("board workspace item helpers", () => {
         {
           id: "session:parent",
           folderId: "root",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           membershipKind: "primary",
           itemType: "session",
@@ -297,7 +297,7 @@ describe("board workspace item helpers", () => {
         {
           id: "session:child1",
           folderId: "root",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           membershipKind: "primary",
           itemType: "session",
@@ -308,7 +308,7 @@ describe("board workspace item helpers", () => {
         {
           id: "session:child2",
           folderId: "root",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           membershipKind: "primary",
           itemType: "session",
@@ -345,9 +345,9 @@ describe("board workspace item helpers", () => {
     };
 
     const items = buildBoardWorkspaceItems({
-      catalog: runbookCatalog,
+      catalog: taskCatalog,
       selectedFolderId: "root",
-      boardContainer: { kind: "runbook", id: "rb-1" },
+      boardContainer: { kind: "task", id: "rb-1" },
       sessions: [],
     });
 
@@ -358,8 +358,8 @@ describe("board workspace item helpers", () => {
     });
   });
 
-  it("keeps a runbook child session visible when its parent has no primary item in the runbook", () => {
-    const runbookCatalog: CatalogState = {
+  it("keeps a task child session visible when its parent has no primary item in the task", () => {
+    const taskCatalog: CatalogState = {
       folders: [{
         id: "root",
         name: "Root",
@@ -373,7 +373,7 @@ describe("board workspace item helpers", () => {
       boardItems: [{
         id: "session:child",
         folderId: "root",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
         membershipKind: "primary",
         itemType: "session",
@@ -392,17 +392,17 @@ describe("board workspace item helpers", () => {
     };
 
     const items = buildBoardWorkspaceItems({
-      catalog: runbookCatalog,
+      catalog: taskCatalog,
       selectedFolderId: "root",
-      boardContainer: { kind: "runbook", id: "rb-1" },
+      boardContainer: { kind: "task", id: "rb-1" },
       sessions: [],
     });
 
     expect(items.map((item) => `${item.type}:${item.id}`)).toEqual(["session:child"]);
   });
 
-  it("does not suppress reference session memberships in a runbook container", () => {
-    const runbookCatalog: CatalogState = {
+  it("does not suppress reference session memberships in a task container", () => {
+    const taskCatalog: CatalogState = {
       folders: [{
         id: "root",
         name: "Root",
@@ -418,7 +418,7 @@ describe("board workspace item helpers", () => {
         {
           id: "session:parent",
           folderId: "root",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           membershipKind: "primary",
           itemType: "session",
@@ -429,7 +429,7 @@ describe("board workspace item helpers", () => {
         {
           id: "session:child:reference",
           folderId: "root",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           membershipKind: "reference",
           itemType: "session",
@@ -458,9 +458,9 @@ describe("board workspace item helpers", () => {
     };
 
     const items = buildBoardWorkspaceItems({
-      catalog: runbookCatalog,
+      catalog: taskCatalog,
       selectedFolderId: "root",
-      boardContainer: { kind: "runbook", id: "rb-1" },
+      boardContainer: { kind: "task", id: "rb-1" },
       sessions: [],
     });
 

@@ -11,7 +11,7 @@ export interface SessionFolderFallbackDeps {
 }
 
 export interface DelegatedContainerRef {
-  kind: "folder" | "runbook";
+  kind: "folder" | "task";
   id: string;
 }
 
@@ -89,7 +89,7 @@ export async function resolveDelegatedContainer(
   }
 
   const callerContainer = await getCallerSessionPrimaryContainer(deps, params.callerSessionId);
-  if (callerContainer?.containerKind === "runbook") {
+  if (callerContainer?.containerKind === "task") {
     try {
       const scope = await deps.db.resolveBoardYjsContainerScope(callerContainer);
       return { folderId: scope?.folderId ?? null, container: callerContainer };

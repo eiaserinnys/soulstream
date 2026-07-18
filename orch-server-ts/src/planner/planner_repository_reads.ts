@@ -19,7 +19,7 @@ interface StarredTaskRow extends Record<string, unknown> {
 }
 
 interface TaskRunRow extends Record<string, unknown> {
-  runbook_id: string;
+  task_id: string;
   runs: Array<{ agent_session_id: string; updated_at_cursor: string }>;
   total: number;
 }
@@ -58,9 +58,9 @@ export async function listStarredTasks(
         SELECT 1
         FROM blocks b
         WHERE b.page_id = p.id
-          AND b.block_type = 'runbook_ref'
+          AND b.block_type = 'task_ref'
           AND COALESCE((b.properties->>'primary')::boolean, FALSE)
-          AND NULLIF(b.properties->>'runbookId', '') IS NOT NULL
+          AND NULLIF(b.properties->>'taskId', '') IS NOT NULL
       )
       AND (
         ${updatedAt}::text IS NULL
@@ -105,14 +105,14 @@ export async function listTaskRuns(
   const updatedAt = cursor?.first ?? null;
   const cursorId = cursor?.second ?? "";
   const rows = await sql`
-    WITH task_runbook AS (
-      SELECT b.properties->>'runbookId' AS runbook_id
+    WITH work_task AS (
+      SELECT b.properties->>'taskId' AS task_id
       FROM blocks b
       JOIN pages p ON p.id = b.page_id AND p.archived = FALSE
       WHERE b.page_id = ${pageId}
-        AND b.block_type = 'runbook_ref'
+        AND b.block_type = 'task_ref'
         AND COALESCE((b.properties->>'primary')::boolean, FALSE)
-        AND NULLIF(b.properties->>'runbookId', '') IS NOT NULL
+        AND NULLIF(b.properties->>'taskId', '') IS NOT NULL
       ORDER BY b.position_key, b.id
       LIMIT 1
     ),
@@ -123,10 +123,10 @@ export async function listTaskRuns(
                session.updated_at AT TIME ZONE 'UTC',
                'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
              ) AS updated_at_cursor
-      FROM task_runbook task
+      FROM work_task task
       JOIN board_items item
-        ON item.container_kind = 'runbook'
-       AND item.container_id = task.runbook_id
+        ON item.container_kind = 'task'
+       AND item.container_id = task.task_id
        AND item.item_type = 'session'
       JOIN sessions session ON session.session_id = item.item_id
     ),
@@ -140,7 +140,7 @@ export async function listTaskRuns(
       ORDER BY updated_at DESC, session_id DESC
       LIMIT ${input.limit + 1}
     )
-    SELECT task.runbook_id,
+    SELECT task.task_id,
            COALESCE(
              jsonb_agg(
                jsonb_build_object(
@@ -152,9 +152,9 @@ export async function listTaskRuns(
              '[]'::jsonb
            ) AS runs,
            (SELECT count(*)::integer FROM all_runs) AS total
-    FROM task_runbook task
+    FROM work_task task
     LEFT JOIN paged_runs run ON TRUE
-    GROUP BY task.runbook_id
+    GROUP BY task.task_id
   ` as readonly TaskRunRow[];
   const row = rows[0];
   if (!row) return null;

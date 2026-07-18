@@ -12,9 +12,9 @@ interface BoardWorkspaceHeaderProps {
   selectedFolder: CatalogFolder | null;
   selectedFolderId: string | null;
   boardContainer: BoardContainerRef | null;
-  runbookTitle?: string | null;
-  runbookStatus?: string | null;
-  runbookProgress?: { completed: number; total: number };
+  taskTitle?: string | null;
+  taskStatus?: string | null;
+  taskProgress?: { completed: number; total: number };
   workspaceViewMode?: FolderWorkspaceViewMode;
   connectionStatus: BoardYjsConnectionStatus;
   connectionError?: string | null;
@@ -37,9 +37,9 @@ export function BoardWorkspaceHeader({
   selectedFolder,
   selectedFolderId,
   boardContainer,
-  runbookTitle,
-  runbookStatus,
-  runbookProgress,
+  taskTitle,
+  taskStatus,
+  taskProgress,
   workspaceViewMode,
   connectionStatus,
   connectionError,
@@ -58,9 +58,9 @@ export function BoardWorkspaceHeader({
 }: BoardWorkspaceHeaderProps) {
   const syncStatus = getSyncStatusMeta(connectionStatus);
   const SyncIcon = syncStatus.icon;
-  const isRunbookBoard = boardContainer?.kind === "runbook";
-  const heading = isRunbookBoard ? runbookTitle ?? "런북 보드" : selectedFolder?.name ?? "워크스페이스";
-  const progress = runbookProgress ?? { completed: 0, total: 0 };
+  const isTaskBoard = boardContainer?.kind === "task";
+  const heading = isTaskBoard ? taskTitle ?? "업무 보드" : selectedFolder?.name ?? "워크스페이스";
+  const progress = taskProgress ?? { completed: 0, total: 0 };
   return (
     <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3">
       <div className="flex min-w-0 flex-col gap-1">
@@ -75,22 +75,22 @@ export function BoardWorkspaceHeader({
                 type="button"
                 className={cn(
                   "truncate hover:text-foreground",
-                  folder.id === selectedFolderId && !isRunbookBoard
+                  folder.id === selectedFolderId && !isTaskBoard
                     ? "font-semibold text-muted-foreground"
                     : "text-muted-foreground/80",
                 )}
-                aria-current={folder.id === selectedFolderId && !isRunbookBoard ? "page" : undefined}
+                aria-current={folder.id === selectedFolderId && !isTaskBoard ? "page" : undefined}
                 onClick={() => onSelectFolder(folder.id)}
               >
                 {folder.name}
               </button>
             </div>
           ))}
-          {isRunbookBoard && (
+          {isTaskBoard && (
             <div className="flex min-w-0 items-center gap-1.5">
               <ChevronRight className="h-3 w-3 shrink-0 opacity-60" aria-hidden="true" />
               <span className="min-w-0 truncate font-semibold text-muted-foreground" aria-current="page">
-                런북 보드
+                업무 보드
               </span>
             </div>
           )}
@@ -99,12 +99,12 @@ export function BoardWorkspaceHeader({
           <h1 className="truncate text-[22px] font-bold leading-tight text-foreground">
             {heading}
           </h1>
-          {isRunbookBoard && (
+          {isTaskBoard && (
             <span className="flex min-w-0 shrink-0 items-center gap-1.5">
               <BookOpen className="h-4 w-4 text-accent-blue" aria-hidden="true" />
-              {runbookStatus ? (
+              {taskStatus ? (
                 <Badge variant="outline" size="sm" className="h-5 px-1.5 text-[10px]">
-                  {runbookStatusLabel(runbookStatus)}
+                  {taskStatusLabel(taskStatus)}
                 </Badge>
               ) : null}
               <Badge variant="info" size="sm" className="h-5 px-1.5 text-[10px]">
@@ -173,7 +173,7 @@ export function BoardWorkspaceHeader({
         </Button>
         {canCreateBoardItems && (
           <>
-            {!isRunbookBoard && (
+            {!isTaskBoard && (
               <Button variant="ghost" size="sm" onClick={onCreateFolder} title="New folder">
                 <FolderPlus className="mr-1 h-3.5 w-3.5" />
                 Folder
@@ -212,7 +212,7 @@ export function BoardWorkspaceHeader({
   );
 }
 
-function runbookStatusLabel(status: string): string {
+function taskStatusLabel(status: string): string {
   switch (status) {
     case "open":
     case "active":

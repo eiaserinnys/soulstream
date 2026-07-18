@@ -196,7 +196,7 @@ function affiliationBoardItems(sessionId: string): CatalogBoardItem[] {
     {
       id: `session:${sessionId}`,
       folderId: "project-folder",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "task-a",
       membershipKind: "primary",
       itemType: "session",
@@ -205,12 +205,12 @@ function affiliationBoardItems(sessionId: string): CatalogBoardItem[] {
       y: 0,
     },
     {
-      id: "runbook:task-a",
+      id: "task:task-a",
       folderId: "project-folder",
       containerKind: "folder",
       containerId: "project-folder",
       membershipKind: "primary",
-      itemType: "runbook",
+      itemType: "task",
       itemId: "task-a",
       x: 0,
       y: 0,

@@ -66,8 +66,8 @@ describe("orch contract fixtures", () => {
     expect(order.get("/api/sessions/{session_id}/events/viewport")).toBeLessThan(
       order.get("/api/sessions/{session_id}/events") ?? Number.POSITIVE_INFINITY,
     );
-    expect(order.get("/api/runbooks/my-turn")).toBeLessThan(
-      order.get("/api/runbooks/{runbook_id}") ?? Number.POSITIVE_INFINITY,
+    expect(order.get("/api/tasks/my-turn")).toBeLessThan(
+      order.get("/api/tasks/{task_id}") ?? Number.POSITIVE_INFINITY,
     );
   });
 

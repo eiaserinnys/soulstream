@@ -28,7 +28,7 @@ function makeHarness(options: {
   const getCatalog = vi.fn().mockResolvedValue({ folders: [], sessions: {} });
   const resolveBoardYjsContainerScope = vi.fn().mockResolvedValue({
     folderId: "root",
-    containerKind: "runbook",
+    containerKind: "task",
     containerId: "rb-1",
   });
   const loadBoardYjsSeed = vi.fn().mockResolvedValue({
@@ -46,14 +46,14 @@ function makeHarness(options: {
   } as unknown as SessionDB;
 
   const upsertSessionBoardItem = vi.fn().mockResolvedValue({
-    id: "session:sess-runbook",
+    id: "session:sess-task",
     folderId: "root",
-    containerKind: "runbook",
+    containerKind: "task",
     containerId: "rb-1",
     membershipKind: "primary",
-    sourceRunbookItemId: "runbook-item-1",
+    sourceTaskItemId: "task-item-1",
     itemType: "session",
-    itemId: "sess-runbook",
+    itemId: "sess-task",
     x: 0,
     y: 160,
     metadata: {},
@@ -236,12 +236,12 @@ describe("TaskCreation", () => {
     );
   });
 
-  it("keeps fire-and-forget caller metadata and runbook placement without a structural parent link", async () => {
+  it("keeps fire-and-forget caller metadata and task placement without a structural parent link", async () => {
     const h = makeHarness();
 
     const task = await h.creation.createTask({
       agentSessionId: "sess-fire-and-forget",
-      prompt: "independent runbook work",
+      prompt: "independent task work",
       profileId: "roselin_codex",
       callerSessionId: "sess-coordinator",
       callerInfo: {
@@ -251,8 +251,8 @@ describe("TaskCreation", () => {
         display_name: "Coordinator",
       },
       notifyCompletion: false,
-      container: { containerKind: "runbook", containerId: "rb-1" },
-      sourceRunbookItemId: "runbook-item-1",
+      container: { containerKind: "task", containerId: "rb-1" },
+      sourceTaskItemId: "task-item-1",
     });
 
     expect(task).toMatchObject({
@@ -276,9 +276,9 @@ describe("TaskCreation", () => {
       }),
     });
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
-      container: { containerKind: "runbook", containerId: "rb-1" },
+      container: { containerKind: "task", containerId: "rb-1" },
       sessionId: "sess-fire-and-forget",
-      sourceRunbookItemId: "runbook-item-1",
+      sourceTaskItemId: "task-item-1",
     }));
   });
 
@@ -320,16 +320,16 @@ describe("TaskCreation", () => {
     expect(h.tasks.get("sess-no-folder")).toBe(task);
   });
 
-  it("places delegated runbook sessions through the runbook board Y-doc before catalog broadcast", async () => {
+  it("places delegated task sessions through the task board Y-doc before catalog broadcast", async () => {
     const h = makeHarness();
     h.loadBoardYjsSeed.mockResolvedValueOnce({
       boardItems: [
         {
-          id: "runbook:rb-1",
+          id: "task:rb-1",
           folderId: "root",
           containerKind: "folder",
           containerId: "root",
-          itemType: "runbook",
+          itemType: "task",
           itemId: "rb-1",
           x: 0,
           y: 0,
@@ -338,7 +338,7 @@ describe("TaskCreation", () => {
         {
           id: "markdown:doc-1",
           folderId: "root",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           itemType: "markdown",
           itemId: "doc-1",
@@ -351,28 +351,28 @@ describe("TaskCreation", () => {
     });
 
     const task = await h.creation.createTask({
-      agentSessionId: "sess-runbook",
-      prompt: "runbook task",
+      agentSessionId: "sess-task",
+      prompt: "task workflow",
       profileId: "roselin_codex",
       sessionType: "llm",
-      container: { containerKind: "runbook", containerId: "rb-1" },
-      sourceRunbookItemId: "runbook-item-1",
+      container: { containerKind: "task", containerId: "rb-1" },
+      sourceTaskItemId: "task-item-1",
     });
 
     expect(h.resolveBoardYjsContainerScope).toHaveBeenCalledWith({
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
     });
-    expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-runbook", "root");
+    expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-task", "root");
     expect(h.loadBoardYjsSeed).toHaveBeenCalledWith({
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
     });
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "root",
-      container: { containerKind: "runbook", containerId: "rb-1" },
-      sessionId: "sess-runbook",
-      sourceRunbookItemId: "runbook-item-1",
+      container: { containerKind: "task", containerId: "rb-1" },
+      sessionId: "sess-task",
+      sourceTaskItemId: "task-item-1",
       x: 280,
       y: 160,
     });
@@ -389,12 +389,12 @@ describe("TaskCreation", () => {
     const h = makeHarness();
     h.loadBoardYjsSeed.mockResolvedValueOnce({
       boardItems: [{
-        id: "session:sess-runbook",
+        id: "session:sess-task",
         folderId: "root",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
         itemType: "session",
-        itemId: "sess-runbook",
+        itemId: "sess-task",
         x: 840,
         y: 480,
         metadata: {},
@@ -403,22 +403,22 @@ describe("TaskCreation", () => {
     });
 
     await h.creation.createTask({
-      agentSessionId: "sess-runbook",
-      prompt: "runbook task",
+      agentSessionId: "sess-task",
+      prompt: "task workflow",
       profileId: "roselin_codex",
       sessionType: "llm",
-      container: { containerKind: "runbook", containerId: "rb-1" },
-      sourceRunbookItemId: "runbook-item-1",
+      container: { containerKind: "task", containerId: "rb-1" },
+      sourceTaskItemId: "task-item-1",
     });
 
     expect(h.upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: "sess-runbook",
+      sessionId: "sess-task",
       x: 840,
       y: 480,
     }));
   });
 
-  it("logs target container when runbook session board enrollment falls back to folder assignment", async () => {
+  it("logs target container when task session board enrollment falls back to folder assignment", async () => {
     const logger = {
       warn: vi.fn(),
       child: () => logger,
@@ -427,23 +427,23 @@ describe("TaskCreation", () => {
     h.upsertSessionBoardItem.mockRejectedValueOnce(new Error("host proxy 401"));
 
     const task = await h.creation.createTask({
-      agentSessionId: "sess-runbook-fallback",
-      prompt: "runbook task",
+      agentSessionId: "sess-task-fallback",
+      prompt: "task workflow",
       profileId: "roselin_codex",
       sessionType: "llm",
-      container: { containerKind: "runbook", containerId: "rb-1" },
-      sourceRunbookItemId: "runbook-item-1",
+      container: { containerKind: "task", containerId: "rb-1" },
+      sourceTaskItemId: "task-item-1",
     });
 
-    expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-runbook-fallback", "root");
+    expect(h.assignSessionToFolder).toHaveBeenCalledWith("sess-task-fallback", "root");
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "root");
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         err: expect.any(Error),
-        sessionId: "sess-runbook-fallback",
+        sessionId: "sess-task-fallback",
         assignedFolderId: "root",
-        targetContainer: { containerKind: "runbook", containerId: "rb-1" },
-        sourceRunbookItemId: "runbook-item-1",
+        targetContainer: { containerKind: "task", containerId: "rb-1" },
+        sourceTaskItemId: "task-item-1",
       }),
       expect.stringContaining("folder fallback"),
     );

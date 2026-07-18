@@ -122,20 +122,20 @@ async def test_board_asset_init_and_commit_uses_r2_head_before_board_item(db: Sq
 
 
 @pytest.mark.asyncio
-async def test_folder_scoped_board_items_include_runbook_container_sessions(db: SqliteSessionDB):
+async def test_folder_scoped_board_items_include_task_container_sessions(db: SqliteSessionDB):
     service = CatalogService(db, FakeBroadcaster())
     await db.upsert_session("folder-session", folder_id="f1")
-    await db.upsert_session("runbook-session", folder_id="f1")
+    await db.upsert_session("task-session", folder_id="f1")
     await db.ensure_board_items()
     await db._conn.execute(
         """
         UPDATE board_items
-        SET container_kind = 'runbook',
+        SET container_kind = 'task',
             container_id = 'rb1',
-            source_runbook_item_id = 'item-1',
+            source_task_item_id = 'item-1',
             x = 120,
             y = 160
-        WHERE id = 'session:runbook-session'
+        WHERE id = 'session:task-session'
         """
     )
     await db._conn.commit()
@@ -144,42 +144,42 @@ async def test_folder_scoped_board_items_include_runbook_container_sessions(db: 
 
     assert [item["id"] for item in items] == [
         "session:folder-session",
-        "session:runbook-session",
+        "session:task-session",
     ]
-    runbook_item = next(item for item in items if item["id"] == "session:runbook-session")
-    assert runbook_item["containerKind"] == "runbook"
-    assert runbook_item["containerId"] == "rb1"
-    assert runbook_item["sourceRunbookItemId"] == "item-1"
+    task_item = next(item for item in items if item["id"] == "session:task-session")
+    assert task_item["containerKind"] == "task"
+    assert task_item["containerId"] == "rb1"
+    assert task_item["sourceTaskItemId"] == "item-1"
 
 
 @pytest.mark.asyncio
-async def test_runbook_board_asset_uses_container_storage_key_and_board_membership(db: SqliteSessionDB):
+async def test_task_board_asset_uses_container_storage_key_and_board_membership(db: SqliteSessionDB):
     storage = FakeBoardAssetStorage()
     service = CatalogService(db, FakeBroadcaster(), asset_storage=storage)
 
     init = await service.init_file_asset(
         folder_id="f1",
-        container_kind="runbook",
+        container_kind="task",
         container_id="rb-1",
         name="photo.png",
         mime_type="image/png",
         byte_size=123,
     )
 
-    assert init["storageKey"].startswith("containers/runbook/rb-1/assets/")
+    assert init["storageKey"].startswith("containers/task/rb-1/assets/")
     assert storage.put_urls[0][0] == init["storageKey"]
     storage.heads[init["storageKey"]] = ObjectHead(byte_size=123, mime_type="image/png")
 
     committed = await service.commit_file_asset(
         folder_id="f1",
-        container_kind="runbook",
+        container_kind="task",
         container_id="rb-1",
         asset_id=init["assetId"],
         x=41,
         y=79,
     )
 
-    assert committed["boardItem"]["containerKind"] == "runbook"
+    assert committed["boardItem"]["containerKind"] == "task"
     assert committed["boardItem"]["containerId"] == "rb-1"
     assert committed["boardItem"]["metadata"]["storageKey"] == init["storageKey"]
 

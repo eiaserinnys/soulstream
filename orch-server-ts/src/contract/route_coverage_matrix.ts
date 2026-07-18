@@ -15,7 +15,7 @@ import { nodeSnapshotRouteAuthRequirements } from "../node/node_snapshot_routes.
 import { nodeWsRouteAuthRequirements } from "../node/ws_route.js";
 import { publicStatusRouteAuthRequirements } from "../public/public_status_routes.js";
 import { pushRouteAuthRequirements } from "../push/push_routes.js";
-import { runbookRouteAuthRequirements } from "../runbooks/runbook_route_types.js";
+import { taskRouteAuthRequirements } from "../tasks/task_route_types.js";
 import { sessionActionCommandRouteAuthRequirements } from "../session/session_action_command_routes.js";
 import { sessionBackgroundScheduleRouteAuthRequirements } from "../session/session_background_schedule_routes.js";
 import { sessionCatalogRouteAuthRequirements } from "../session/session_catalog_routes.js";
@@ -52,7 +52,7 @@ export const routeCoverageOwners = [
   { owner: "node.ws", authRequirements: nodeWsRouteAuthRequirements },
   { owner: "public.status", authRequirements: publicStatusRouteAuthRequirements },
   { owner: "push", authRequirements: pushRouteAuthRequirements },
-  { owner: "runbooks", authRequirements: runbookRouteAuthRequirements },
+  { owner: "tasks", authRequirements: taskRouteAuthRequirements },
   { owner: "session.actions", authRequirements: sessionActionCommandRouteAuthRequirements },
   {
     owner: "session.background-schedule",

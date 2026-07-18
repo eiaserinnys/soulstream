@@ -182,12 +182,12 @@
   font-size: var(--font-size-xs);
 }
 
-.v3-task-runbook-checklist {
+.v3-task-checklist {
   width: 100%;
   max-height: min(348px, 44dvh);
 }
 
-.v3-task-runbook-checklist > [data-testid="runbook-card"] {
+.v3-task-checklist > [data-testid="task-card"] {
   height: auto;
   max-height: inherit;
 }

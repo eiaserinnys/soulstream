@@ -46,7 +46,7 @@ describe("TaskRunHistory", () => {
       <TaskRunHistory
         taskTitle="PR-J"
         taskPageId="page-pr-j"
-        runbookId="rb-pr-j"
+        taskId="rb-pr-j"
         contextItems={[]}
         documentOptions={[]}
         pageContextSources={{

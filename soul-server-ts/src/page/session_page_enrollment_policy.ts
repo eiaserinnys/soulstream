@@ -3,12 +3,12 @@ export type SessionPageEnrollmentDecision =
   | { readonly kind: "daily" }
   | {
     readonly kind: "excluded";
-    readonly reason: "runbook_container" | "non_human_source";
+    readonly reason: "task_container" | "non_human_source";
   };
 
 export interface SessionPageEnrollmentInput {
   readonly hasPageAnchor: boolean;
-  readonly containerKind: "folder" | "runbook" | null;
+  readonly containerKind: "folder" | "task" | null;
   readonly callerSource: string | null | undefined;
 }
 
@@ -19,8 +19,8 @@ export function decideSessionPageEnrollment(
   input: SessionPageEnrollmentInput,
 ): SessionPageEnrollmentDecision {
   if (input.hasPageAnchor) return { kind: "explicit_page" };
-  if (input.containerKind === "runbook") {
-    return { kind: "excluded", reason: "runbook_container" };
+  if (input.containerKind === "task") {
+    return { kind: "excluded", reason: "task_container" };
   }
   if (input.callerSource && HUMAN_DAILY_SOURCES.has(input.callerSource)) {
     return { kind: "daily" };

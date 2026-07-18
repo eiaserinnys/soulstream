@@ -25,7 +25,7 @@ function binding(overrides: Partial<SessionPageBindingRow> = {}): SessionPageBin
     legacy_folder_id: "folder-1",
     legacy_container_kind: null,
     legacy_container_id: null,
-    source_runbook_item_id: null,
+    source_task_item_id: null,
     page_state: "pending",
     legacy_state: "pending",
     attempts: 0,
@@ -150,10 +150,10 @@ describe("SessionPageBindingService", () => {
       params: { callerInfo: { source: "agent" } },
     },
     {
-      name: "runbook container",
+      name: "task container",
       params: {
         callerInfo: { source: "browser" },
-        container: { containerKind: "runbook", containerId: "rb-1" },
+        container: { containerKind: "task", containerId: "rb-1" },
       },
     },
     {
@@ -409,7 +409,7 @@ describe("kstDate", () => {
 });
 
 describe("SessionLegacyProjection", () => {
-  it("replays runbook placement into the same first-free grid policy as initial creation", async () => {
+  it("replays task placement into the same first-free grid policy as initial creation", async () => {
     const upsertSessionBoardItem = vi.fn(async () => ({}));
     const db = {
       resolveBoardYjsContainerScope: vi.fn(async () => ({ folderId: "root" })),
@@ -424,7 +424,7 @@ describe("SessionLegacyProjection", () => {
     );
     await projection.project(binding({
       legacy_folder_id: null,
-      legacy_container_kind: "runbook",
+      legacy_container_kind: "task",
       legacy_container_id: "rb-1",
     }));
 
@@ -461,7 +461,7 @@ describe("SessionLegacyProjection", () => {
     const projection = new SessionLegacyProjection(db as never, { upsertSessionBoardItem } as never);
     const row = binding({
       legacy_folder_id: null,
-      legacy_container_kind: "runbook",
+      legacy_container_kind: "task",
       legacy_container_id: "rb-1",
       page_state: "bound",
     });

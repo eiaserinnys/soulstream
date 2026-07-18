@@ -87,12 +87,23 @@ export interface MetadataUpdatedStreamEvent {
   lastEventId?: string;
 }
 
-/** 런북 상태 변경 이벤트 — 클라이언트는 서버 snapshot을 다시 읽는다. */
-export interface RunbookUpdatedStreamEvent {
+/** 업무 상태 변경 이벤트 — 클라이언트는 서버 snapshot을 다시 읽는다. */
+export interface TaskUpdatedStreamEvent {
+  type: "task_updated";
+  taskId: string;
+  boardItemId: string;
+  /** broadcaster가 부여한 SSE event_id */
+  lastEventId?: string;
+}
+
+/**
+ * Production-gated legacy event reader. Removal requires the release evidence
+ * and user approval in docs/task-read-compatibility.md.
+ */
+export interface LegacyRunbookUpdatedStreamEvent {
   type: "runbook_updated";
   runbookId: string;
   boardItemId: string;
-  /** broadcaster가 부여한 SSE event_id */
   lastEventId?: string;
 }
 
@@ -149,7 +160,8 @@ export type SessionStreamEvent =
   | SessionDeletedStreamEvent
   | CatalogUpdatedStreamEvent
   | MetadataUpdatedStreamEvent
-  | RunbookUpdatedStreamEvent
+  | TaskUpdatedStreamEvent
+  | LegacyRunbookUpdatedStreamEvent
   | CustomViewUpdatedStreamEvent
   | PageUpdatedStreamEvent
   | StreamMetaStreamEvent

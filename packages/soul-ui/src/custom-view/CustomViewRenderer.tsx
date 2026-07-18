@@ -20,14 +20,14 @@ export interface CustomViewBindingRecord {
 }
 
 export interface CustomViewBindingData {
-  runbookItems: Record<string, CustomViewBindingRecord>;
-  runbooks: Record<string, CustomViewBindingRecord>;
+  taskItems: Record<string, CustomViewBindingRecord>;
+  tasks: Record<string, CustomViewBindingRecord>;
   sessions: Record<string, CustomViewBindingRecord>;
 }
 
 const EMPTY_BINDINGS: CustomViewBindingData = {
-  runbookItems: {},
-  runbooks: {},
+  taskItems: {},
+  tasks: {},
   sessions: {},
 };
 
@@ -67,13 +67,13 @@ function bindingValue(
   const field = attrs.field;
   if (!id || !field) return "";
 
-  if (attrs.kind === "runbook-item") {
+  if (attrs.kind === "task-item") {
     if (field !== "status" && field !== "title") return "";
-    return stringifyBinding(data.runbookItems[id]?.[field]);
+    return stringifyBinding(data.taskItems[id]?.[field]);
   }
-  if (attrs.kind === "runbook") {
+  if (attrs.kind === "task") {
     if (field !== "completed" && field !== "total") return "";
-    return stringifyBinding(data.runbooks[id]?.[field]);
+    return stringifyBinding(data.tasks[id]?.[field]);
   }
   if (attrs.kind === "session") {
     if (field !== "status" && field !== "title") return "";

@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { normalizeBoardContainerKind } from "../board-yjs/board_container_kind_compat.js";
 import {
   isBoardFolderAllowed,
   normalizeBoardAccess,
@@ -25,7 +26,7 @@ export type BoardAssetCatalogSnapshot = {
 
 export type BoardAssetAccess = BoardAccess;
 
-export type BoardAssetContainerKind = "folder" | "runbook";
+export type BoardAssetContainerKind = "folder" | "task";
 
 export type BoardAssetContainerTarget = {
   kind: BoardAssetContainerKind;
@@ -329,14 +330,14 @@ async function resolveBoardContainerFolderId(
   const snapshot = await provider.getCatalogSnapshot();
   const boardItems = Array.isArray(snapshot.boardItems) ? snapshot.boardItems : [];
   for (const item of boardItems) {
-    if (item.itemType !== "runbook" || item.itemId !== container.id) continue;
+    if (item.itemType !== "task" || item.itemId !== container.id) continue;
     if (typeof item.folderId === "string" && item.folderId.length > 0) {
       return item.folderId;
     }
   }
   throw new BoardAssetRouteError(
-    "RUNBOOK_BOARD_CONTAINER_NOT_FOUND",
-    "Runbook board container not found",
+    "TASK_BOARD_CONTAINER_NOT_FOUND",
+    "Task board container not found",
     404,
   );
 }
@@ -356,9 +357,9 @@ async function tryResolveBoardContainerFolderId(
 }
 
 function parseContainerParams(params: ContainerAssetParams): Validation<BoardAssetContainerTarget> {
-  const kind = params.container_kind;
-  if (kind !== "folder" && kind !== "runbook") {
-    return { ok: false, message: "container_kind must be folder or runbook" };
+  const kind = normalizeBoardContainerKind(params.container_kind);
+  if (!kind) {
+    return { ok: false, message: "container_kind must be folder or task" };
   }
   if (params.container_id.length === 0) {
     return { ok: false, message: "container_id must not be empty" };

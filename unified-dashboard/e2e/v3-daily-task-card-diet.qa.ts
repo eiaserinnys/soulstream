@@ -46,8 +46,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     const runningBox = await running.boundingBox();
     const completedBox = await completed.boundingBox();
 
-    assert(!runningText.includes("rb-alpha"), "진행 카드에 런북 식별자가 노출되었습니다.");
-    assert(!completedText.includes("rb-beta"), "완료 카드에 런북 식별자가 노출되었습니다.");
+    assert(!runningText.includes("rb-alpha"), "진행 카드에 업무 식별자가 노출되었습니다.");
+    assert(!completedText.includes("rb-beta"), "완료 카드에 업무 식별자가 노출되었습니다.");
     assert(!runningText.includes("컨텍스트"), "진행 카드에 컨텍스트 개수가 남았습니다.");
     assert(!completedText.includes("컨텍스트"), "완료 카드에 컨텍스트 개수가 남았습니다.");
     assert(

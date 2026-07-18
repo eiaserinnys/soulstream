@@ -32,7 +32,7 @@ export interface BoardCardContextMenuState {
   item: BoardWorkspaceItem;
 }
 
-export interface RunbookMoveTarget {
+export interface TaskMoveTarget {
   id: string;
   title: string;
 }
@@ -49,7 +49,7 @@ interface BoardWorkspaceContextMenusProps {
   folders: CatalogFolder[];
   boardContainer: BoardContainerRef | null;
   resolvedBoardFolderId: string | null;
-  runbookMoveTargets: RunbookMoveTarget[];
+  taskMoveTargets: TaskMoveTarget[];
   activeBoardDocumentId: string | null;
   boardYjsRuntime: BoardYjsRuntime | null;
   canCreateBoardItems?: boolean;
@@ -83,7 +83,7 @@ export function BoardWorkspaceContextMenus({
   folders,
   boardContainer,
   resolvedBoardFolderId,
-  runbookMoveTargets,
+  taskMoveTargets,
   activeBoardDocumentId,
   boardYjsRuntime,
   canCreateBoardItems = true,
@@ -117,11 +117,11 @@ export function BoardWorkspaceContextMenus({
   const [renameMarkdownError, setRenameMarkdownError] = useState("");
   const [renameFrameTarget, setRenameFrameTarget] = useState<Extract<BoardWorkspaceItem, { type: "frame" }> | null>(null);
   const [renameFrameInput, setRenameFrameInput] = useState("");
-  const [moveRunbookTarget, setMoveRunbookTarget] = useState<{
+  const [moveTaskTarget, setMoveTaskTarget] = useState<{
     item: MovableBoardWorkspaceItem;
-    selectedRunbookId: string;
+    selectedTaskId: string;
   } | null>(null);
-  const [moveRunbookError, setMoveRunbookError] = useState("");
+  const [moveTaskError, setMoveTaskError] = useState("");
 
   const folderContextTarget: FolderContextMenuTarget | null =
     cardContextMenu?.item.type === "folder"
@@ -151,9 +151,9 @@ export function BoardWorkspaceContextMenus({
       ? movableContextMenu
       : null;
   const canMoveBoardItem = Boolean(onMoveBoardItemToContainer && boardContainer && resolvedBoardFolderId);
-  const moveLabel = boardContainer?.kind === "runbook"
+  const moveLabel = boardContainer?.kind === "task"
     ? "폴더 보드로 내보내기"
-    : "런북 보드로 이동...";
+    : "업무 보드로 이동...";
 
   const moveSessionActions: SessionContextMenuExtraAction[] =
     movableContextMenu?.item.type === "session" && canMoveBoardItem
@@ -166,14 +166,14 @@ export function BoardWorkspaceContextMenus({
   function openMoveBoardItemTarget(item: MovableBoardWorkspaceItem) {
     if (!onMoveBoardItemToContainer || !boardContainer || !resolvedBoardFolderId) return;
     onCloseCardContextMenu();
-    if (boardContainer.kind === "runbook") {
+    if (boardContainer.kind === "task") {
       void handleMoveBoardItem(item, { kind: "folder", id: resolvedBoardFolderId });
       return;
     }
-    setMoveRunbookError("");
-    setMoveRunbookTarget({
+    setMoveTaskError("");
+    setMoveTaskTarget({
       item,
-      selectedRunbookId: runbookMoveTargets[0]?.id ?? "",
+      selectedTaskId: taskMoveTargets[0]?.id ?? "",
     });
   }
 
@@ -183,12 +183,12 @@ export function BoardWorkspaceContextMenus({
   ) {
     if (!onMoveBoardItemToContainer) return;
     try {
-      setMoveRunbookError("");
+      setMoveTaskError("");
       await onMoveBoardItemToContainer(item, target);
-      setMoveRunbookTarget(null);
+      setMoveTaskTarget(null);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setMoveRunbookError(message);
+      setMoveTaskError(message);
       toastManager.add({
         title: "보드 이동 실패",
         description: message,
@@ -572,36 +572,36 @@ export function BoardWorkspaceContextMenus({
           </form>
         </div>
       )}
-      {moveRunbookTarget && (
+      {moveTaskTarget && (
         <div className={BOARD_MODAL_BACKDROP_CLASS}>
           <form
             className="w-[22rem] max-w-[calc(100vw-2rem)] rounded-md border border-glass-border glass-strong glass-shadow-lg p-3"
             onSubmit={(event) => {
               event.preventDefault();
-              if (!moveRunbookTarget.selectedRunbookId) return;
-              void handleMoveBoardItem(moveRunbookTarget.item, {
-                kind: "runbook",
-                id: moveRunbookTarget.selectedRunbookId,
+              if (!moveTaskTarget.selectedTaskId) return;
+              void handleMoveBoardItem(moveTaskTarget.item, {
+                kind: "task",
+                id: moveTaskTarget.selectedTaskId,
               });
             }}
           >
-            <label className="mb-2 block text-sm font-medium" htmlFor="board-runbook-move-target">
-              대상 런북
+            <label className="mb-2 block text-sm font-medium" htmlFor="board-task-move-target">
+              대상 업무
             </label>
-            <div id="board-runbook-move-target" className="mb-3 flex max-h-64 flex-col gap-1 overflow-auto">
-              {runbookMoveTargets.length > 0 ? (
-                runbookMoveTargets.map((target) => (
+            <div id="board-task-move-target" className="mb-3 flex max-h-64 flex-col gap-1 overflow-auto">
+              {taskMoveTargets.length > 0 ? (
+                taskMoveTargets.map((target) => (
                   <button
                     key={target.id}
                     type="button"
                     className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
-                      moveRunbookTarget.selectedRunbookId === target.id
+                      moveTaskTarget.selectedTaskId === target.id
                         ? "bg-primary text-primary-foreground"
                         : "hover:bg-accent"
                     }`}
                     onClick={() =>
-                      setMoveRunbookTarget((current) =>
-                        current ? { ...current, selectedRunbookId: target.id } : current
+                      setMoveTaskTarget((current) =>
+                        current ? { ...current, selectedTaskId: target.id } : current
                       )
                     }
                   >
@@ -610,18 +610,18 @@ export function BoardWorkspaceContextMenus({
                 ))
               ) : (
                 <p className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground">
-                  이동할 수 있는 런북이 없습니다.
+                  이동할 수 있는 업무가 없습니다.
                 </p>
               )}
             </div>
-            {moveRunbookError && (
-              <p className="mb-3 text-xs text-destructive">{moveRunbookError}</p>
+            {moveTaskError && (
+              <p className="mb-3 text-xs text-destructive">{moveTaskError}</p>
             )}
             <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setMoveRunbookTarget(null)}>
+              <Button type="button" variant="outline" onClick={() => setMoveTaskTarget(null)}>
                 취소
               </Button>
-              <Button type="submit" disabled={!moveRunbookTarget.selectedRunbookId}>
+              <Button type="submit" disabled={!moveTaskTarget.selectedTaskId}>
                 이동
               </Button>
             </div>

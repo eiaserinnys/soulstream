@@ -159,7 +159,7 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
     nodeClaudeAuthRoutes: createInertProvider(),
     publicStatusRoutes: createInertProvider(),
     pushRoutes: createInertProvider(),
-    runbookRoutes: createInertProvider(),
+    taskRoutes: createInertProvider(),
     sessionCatalogRoutes: createInertProvider(),
     systemConfigRoutes: createInertProvider(),
     userBackgroundRoutes: createInertProvider(),

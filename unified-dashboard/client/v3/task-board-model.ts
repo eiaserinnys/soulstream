@@ -72,12 +72,12 @@ export function buildTaskBoardCatalog({
 export function scopeCatalogUpdateToTaskBoard(
   currentCatalog: CatalogState,
   incomingCatalog: CatalogState,
-  runbookId: string,
+  taskId: string,
 ): CatalogState {
   const nextBoardItems = incomingCatalog.boardItems === undefined
     ? currentCatalog.boardItems ?? []
     : incomingCatalog.boardItems.filter((item) => (
-      item.containerKind === "runbook" && item.containerId === runbookId
+      item.containerKind === "task" && item.containerId === taskId
     ));
   const sessionIds = new Set(extractTaskBoardSessionIds(nextBoardItems));
   const sessions: Record<string, CatalogAssignment> = {};
@@ -111,12 +111,12 @@ export function scopeCatalogUpdateToTaskBoard(
 export function scopeCatalogUpdateToTaskBoardPreservingSessionList(
   currentCatalog: CatalogState,
   incomingCatalog: CatalogState,
-  runbookId: string,
+  taskId: string,
 ): CatalogState {
   const scoped = scopeCatalogUpdateToTaskBoard(
     currentCatalog,
     incomingCatalog,
-    runbookId,
+    taskId,
   );
   const sessionList = incomingCatalog.sessionList === undefined
     ? currentCatalog.sessionList

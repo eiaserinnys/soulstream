@@ -41,7 +41,7 @@ describe("PlannerTaskCard node connectivity", () => {
       <PlannerTaskCard
         task={{
           page: { id: "page-a", title: "정보를 덜어낸 업무" },
-          runbookId: "aae680d9-internal-runbook-id",
+          taskId: "aae680d9-internal-task-id",
           sessionIds: ["session-a"],
           status: "in_progress",
           assignee: "담당 미지정",
@@ -76,7 +76,7 @@ describe("PlannerTaskCard node connectivity", () => {
       <PlannerTaskCard
         task={{
           page: { id: "page-b", title: "진행 중인 업무" },
-          runbookId: "rb-running",
+          taskId: "rb-running",
           sessionIds: ["session-b"],
           status: "in_progress",
           assignee: "로젤린",
@@ -110,7 +110,7 @@ describe("PlannerTaskCard node connectivity", () => {
       <PlannerTaskCard
         task={{
           page: { id: "page-a", title: "노드 상태 업무" },
-          runbookId: "rb-node-offline",
+          taskId: "rb-node-offline",
           sessionIds: ["session-a"],
           status: "in_progress",
           assignee: "로젤린",

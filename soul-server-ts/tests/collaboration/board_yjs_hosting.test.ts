@@ -6,7 +6,7 @@ import { registerBoardYjsHostRoutes } from "../../src/collaboration/board_yjs_ho
 import { createBoardYjsRouting } from "../../src/collaboration/board_yjs_routing.js";
 import { BoardYjsService } from "../../src/collaboration/board_yjs_service.js";
 import type { SessionDB } from "../../src/db/session_db.js";
-import { upsertRunbookBoardItem } from "../../src/runbook/runbook_board_items.js";
+import { upsertTaskBoardItem } from "../../src/work-task/task_board_items.js";
 
 function createSilentLogger() {
   return {
@@ -25,17 +25,17 @@ afterEach(() => {
 });
 
 describe("board Yjs host centralization", () => {
-  it("orch mode routes RunbookBoardYjsPort through client and keeps local WS non-host close", async () => {
+  it("orch mode routes TaskBoardYjsPort through client and keeps local WS non-host close", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          id: "runbook:rb-1",
+          id: "task:rb-1",
           folderId: "root",
           containerKind: "folder",
           containerId: "root",
           membershipKind: "primary",
-          sourceRunbookItemId: null,
-          itemType: "runbook",
+          sourceTaskItemId: null,
+          itemType: "task",
           itemId: "rb-1",
           x: 10,
           y: 20,
@@ -64,16 +64,16 @@ describe("board Yjs host centralization", () => {
     try {
       expect(routing.isBoardYjsHost).toBe(false);
       expect(routing.mutationPort).toBeInstanceOf(BoardYjsHostClient);
-      await upsertRunbookBoardItem(routing.mutationPort, {
+      await upsertTaskBoardItem(routing.mutationPort, {
         folderId: "root",
-        boardItemId: "runbook:rb-1",
-        runbookId: "rb-1",
-        title: "Runbook",
+        boardItemId: "task:rb-1",
+        taskId: "rb-1",
+        title: "Task",
         x: 10,
         y: 20,
       });
       expect(fetchMock).toHaveBeenCalledWith(
-        "http://orch.local/api/board-yjs/host/upsert-runbook-board-item",
+        "http://orch.local/api/board-yjs/host/upsert-task-board-item",
         expect.objectContaining({ method: "POST" }),
       );
 
@@ -168,7 +168,7 @@ describe("board Yjs host centralization", () => {
     });
 
     await client.updateBoardItemPosition(
-      { containerKind: "runbook", containerId: "rb-1" },
+      { containerKind: "task", containerId: "rb-1" },
       "markdown:doc-1",
       120,
       240,
@@ -183,7 +183,7 @@ describe("board Yjs host centralization", () => {
       "content-type": "application/json",
     });
     expect(JSON.parse(init.body as string)).toEqual({
-      container: { containerKind: "runbook", containerId: "rb-1" },
+      container: { containerKind: "task", containerId: "rb-1" },
       boardItemId: "markdown:doc-1",
       x: 120,
       y: 240,
@@ -210,7 +210,7 @@ describe("board Yjs host centralization", () => {
         url: "/api/internal/board-yjs/update-board-item-position",
         headers: { authorization: "Bearer test-token" },
         payload: {
-          container: { containerKind: "runbook", containerId: "rb-1" },
+          container: { containerKind: "task", containerId: "rb-1" },
           boardItemId: "markdown:doc-1",
           x: 120,
           y: 240,
@@ -220,7 +220,7 @@ describe("board Yjs host centralization", () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({ ok: true });
       expect(service.updateBoardItemPosition).toHaveBeenCalledWith(
-        { containerKind: "runbook", containerId: "rb-1" },
+        { containerKind: "task", containerId: "rb-1" },
         "markdown:doc-1",
         120,
         240,
@@ -232,14 +232,14 @@ describe("board Yjs host centralization", () => {
 
   it("host internal route accepts Bearer-only upsert session requests when dashboard auth is enabled", async () => {
     const boardItem = {
-      id: "session:sess-runbook",
+      id: "session:sess-task",
       folderId: "root",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
       membershipKind: "primary",
-      sourceRunbookItemId: "runbook-item-1",
+      sourceTaskItemId: "task-item-1",
       itemType: "session",
-      itemId: "sess-runbook",
+      itemId: "sess-task",
       x: 280,
       y: 160,
       metadata: {},
@@ -265,9 +265,9 @@ describe("board Yjs host centralization", () => {
         headers: { authorization: "Bearer test-token" },
         payload: {
           folderId: "root",
-          container: { containerKind: "runbook", containerId: "rb-1" },
-          sessionId: "sess-runbook",
-          sourceRunbookItemId: "runbook-item-1",
+          container: { containerKind: "task", containerId: "rb-1" },
+          sessionId: "sess-task",
+          sourceTaskItemId: "task-item-1",
           x: 280,
           y: 160,
         },
@@ -277,9 +277,9 @@ describe("board Yjs host centralization", () => {
       expect(response.json()).toEqual(boardItem);
       expect(service.upsertSessionBoardItem).toHaveBeenCalledWith({
         folderId: "root",
-        container: { containerKind: "runbook", containerId: "rb-1" },
-        sessionId: "sess-runbook",
-        sourceRunbookItemId: "runbook-item-1",
+        container: { containerKind: "task", containerId: "rb-1" },
+        sessionId: "sess-task",
+        sourceTaskItemId: "task-item-1",
         x: 280,
         y: 160,
       });

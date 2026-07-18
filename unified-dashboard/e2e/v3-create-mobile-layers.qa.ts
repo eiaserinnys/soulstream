@@ -47,13 +47,13 @@ async function verifyViewport(
 
   try {
     await page.goto(baseUrl, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
+    await page.getByTestId("v3-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
     if (mobile) await verifyMobileProjects(page, theme);
 
     if (mobile) {
       await page.getByRole("tab", { name: "업무", exact: true }).click();
     } else {
-      await page.getByTestId("v3-task-task-alpha").click();
+      await page.getByTestId("v3-task-alpha").click();
     }
     await page.locator(".v3-workspace-scrim").waitFor({ state: "visible" });
     await page.keyboard.press("c");
@@ -185,7 +185,7 @@ async function preparePage(page: Page, theme: "dark" | "light", onCreate: () => 
       }),
     });
   });
-  await page.route("**/api/runbooks", async (route) => {
+  await page.route("**/api/tasks", async (route) => {
     onCreate();
     await new Promise((resolve) => setTimeout(resolve, 350));
     await route.fulfill({

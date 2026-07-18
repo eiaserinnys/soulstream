@@ -251,15 +251,15 @@ class TestCreateSession:
         assert resp.status_code == 201
         mock_catalog_service.broadcast_catalog.assert_awaited_once()
 
-    async def test_continue_session_inherits_source_runbook_container(
+    async def test_continue_session_inherits_source_task_container(
         self, client, mock_db, node_manager
     ):
-        """이어하기는 원 세션의 primary board item runbook 컨테이너를 상속한다."""
+        """이어하기는 원 세션의 primary board item task 컨테이너를 상속한다."""
         mock_db.get_primary_session_board_item = AsyncMock(return_value={
             "id": "session:source-session",
             "folderId": "folder-a",
-            "containerKind": "runbook",
-            "containerId": "runbook-a",
+            "containerKind": "task",
+            "containerId": "task-a",
             "membershipKind": "primary",
             "itemType": "session",
             "itemId": "source-session",
@@ -280,7 +280,7 @@ class TestCreateSession:
 
         assert resp.status_code == 201
         create_payload = _sent_create_payload(ws)
-        assert create_payload["container"] == {"kind": "runbook", "id": "runbook-a"}
+        assert create_payload["container"] == {"kind": "task", "id": "task-a"}
         assert "sourceSessionId" not in create_payload
 
     async def test_continue_session_keeps_folder_source_as_existing_folder_payload(

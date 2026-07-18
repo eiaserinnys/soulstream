@@ -7,6 +7,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
+
 import { AgentProfileSchema } from "../../agent_registry.js";
 import { buildCallerInfoFromCallerSession } from "../../caller_info.js";
 import { resolveDelegatedContainer } from "../../session_folder_fallback.js";
@@ -17,7 +19,7 @@ import { requireRemoteCallerSessionId } from "./caller_session.js";
 
 const NOT_CONFIGURED_MSG = "multi-node not configured";
 const delegatedContainerSchema = z.object({
-  kind: z.enum(["folder", "runbook"]),
+  kind: boardContainerKindInputSchema,
   id: z.string().min(1),
 });
 
@@ -234,7 +236,7 @@ export function registerMultiNodeTools(
     "create_remote_agent_session",
     {
       description:
-        "다른 노드에 새 에이전트 세션을 생성한다. caller_info(v1)를 자동 조립하여 원격 노드로 전파. notify_completion=false는 런북 기반 워크플로우에서 런북을 추적 표면으로 쓸 때 권장.",
+        "다른 노드에 새 에이전트 세션을 생성한다. caller_info(v1)를 자동 조립하여 원격 노드로 전파. notify_completion=false는 업무 기반 워크플로우에서 업무를 추적 표면으로 쓸 때 권장.",
       inputSchema: {
         node_id: z.string().min(1),
         agent_id: z.string().optional(),
@@ -243,11 +245,11 @@ export function registerMultiNodeTools(
         notify_completion: z.boolean().optional(),
         folder_id: z.string().nullable().optional(),
         container: delegatedContainerSchema.optional(),
-        source_runbook_item_id: z.string().optional(),
+        source_task_item_id: z.string().optional(),
       },
     },
     async (input) => {
-      const { node_id, agent_id, prompt, caller_session_id, notify_completion, folder_id, container, source_runbook_item_id } = input;
+      const { node_id, agent_id, prompt, caller_session_id, notify_completion, folder_id, container, source_task_item_id } = input;
       const orch = runtime.orch;
       if (!orch) return errorResult(NOT_CONFIGURED_MSG);
 
@@ -283,8 +285,8 @@ export function registerMultiNodeTools(
           id: resolvedContainer.container.containerId,
         };
       }
-      if (source_runbook_item_id !== undefined) {
-        body.sourceRunbookItemId = source_runbook_item_id;
+      if (source_task_item_id !== undefined) {
+        body.sourceTaskItemId = source_task_item_id;
       }
       if (notify_completion !== undefined) {
         body.notify_completion = notify_completion;

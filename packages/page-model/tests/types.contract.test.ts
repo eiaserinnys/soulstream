@@ -8,7 +8,7 @@ import {
   type ChecklistBlockProperties,
   type PageBlockProperties,
   type PageBlockType,
-  type RunbookRefBlockProperties,
+  type TaskRefBlockProperties,
   type SessionDefaultsBlockProperties,
 } from "../src/types.js";
 
@@ -20,7 +20,7 @@ describe("page model DTO contract", () => {
       "atom_ref",
       "guidance",
       "session_defaults",
-      "runbook_ref",
+      "task_ref",
       "checklist",
       "custom_view",
       "image",
@@ -52,15 +52,15 @@ describe("page model DTO contract", () => {
     expectTypeOf<PageBlockProperties<"session_defaults">>().toEqualTypeOf<
       SessionDefaultsBlockProperties
     >();
-    expectTypeOf<PageBlockProperties<"runbook_ref">>().toEqualTypeOf<
-      RunbookRefBlockProperties
+    expectTypeOf<PageBlockProperties<"task_ref">>().toEqualTypeOf<
+      TaskRefBlockProperties
     >();
     expectTypeOf<PageBlockProperties<"plugin/chart">>().toEqualTypeOf<
       Record<string, unknown>
     >();
 
     const boundChecklist: ChecklistBlockProperties = {
-      runbookId: "page-runbook:page-1",
+      taskId: "page-task:page-1",
       itemId: "checklist:block-1",
     };
     expect(boundChecklist).not.toHaveProperty("checked");

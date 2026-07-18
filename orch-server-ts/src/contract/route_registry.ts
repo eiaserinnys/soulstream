@@ -10,7 +10,7 @@ export type RouteFamily =
   | "control_plane"
   | "board_yjs_proxy"
   | "page_yjs"
-  | "runbook"
+  | "task"
   | "dashboard_static"
   | "session"
   | "node_proxy"
@@ -96,8 +96,8 @@ const KNOWN_STATIC_BEFORE_DYNAMIC_HAZARDS: StaticBeforeDynamicHazard[] = [
     dynamicPath: "/api/sessions/{session_id}/events",
   },
   {
-    staticPath: "/api/runbooks/my-turn",
-    dynamicPath: "/api/runbooks/{runbook_id}",
+    staticPath: "/api/tasks/my-turn",
+    dynamicPath: "/api/tasks/{task_id}",
   },
   {
     staticPath: "/api/pages/daily",
@@ -246,67 +246,67 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   },
   {
     methods: ["POST"],
-    path: "/api/runbooks",
-    name: "create_runbook",
+    path: "/api/tasks",
+    name: "create_task",
     authRequired: true,
-    family: "runbook",
-    beforePath: "/api/runbooks/{runbook_id}",
+    family: "task",
+    beforePath: "/api/tasks/{task_id}",
   },
   {
     methods: ["POST"],
-    path: "/api/runbooks/{runbook_id}/sections",
-    name: "create_runbook_section_browser",
+    path: "/api/tasks/{task_id}/sections",
+    name: "create_task_section_browser",
     authRequired: true,
-    family: "runbook",
+    family: "task",
   },
   {
     methods: ["POST"],
-    path: "/api/runbooks/{runbook_id}/sections/{section_id}",
-    name: "update_runbook_section_browser",
+    path: "/api/tasks/{task_id}/sections/{section_id}",
+    name: "update_task_section_browser",
     authRequired: true,
-    family: "runbook",
+    family: "task",
   },
   {
     methods: ["POST"],
-    path: "/api/runbooks/{runbook_id}/sections/{section_id}/move",
-    name: "move_runbook_section_browser",
+    path: "/api/tasks/{task_id}/sections/{section_id}/move",
+    name: "move_task_section_browser",
     authRequired: true,
-    family: "runbook",
+    family: "task",
   },
   {
     methods: ["POST"],
-    path: "/api/runbooks/{runbook_id}/sections/{section_id}/archive",
-    name: "archive_runbook_section_browser",
+    path: "/api/tasks/{task_id}/sections/{section_id}/archive",
+    name: "archive_task_section_browser",
     authRequired: true,
-    family: "runbook",
+    family: "task",
   },
   {
     methods: ["POST"],
-    path: "/api/runbooks/{runbook_id}/sections/{section_id}/items",
-    name: "create_runbook_item_browser",
+    path: "/api/tasks/{task_id}/sections/{section_id}/items",
+    name: "create_task_item_browser",
     authRequired: true,
-    family: "runbook",
+    family: "task",
   },
   {
     methods: ["POST"],
-    path: "/api/runbooks/{runbook_id}/items/{item_id}",
-    name: "update_runbook_item_browser",
+    path: "/api/tasks/{task_id}/items/{item_id}",
+    name: "update_task_item_browser",
     authRequired: true,
-    family: "runbook",
+    family: "task",
   },
   {
     methods: ["POST"],
-    path: "/api/runbooks/{runbook_id}/items/{item_id}/move",
-    name: "move_runbook_item_browser",
+    path: "/api/tasks/{task_id}/items/{item_id}/move",
+    name: "move_task_item_browser",
     authRequired: true,
-    family: "runbook",
+    family: "task",
   },
   {
     methods: ["POST"],
-    path: "/api/runbooks/{runbook_id}/items/{item_id}/archive",
-    name: "archive_runbook_item_browser",
+    path: "/api/tasks/{task_id}/items/{item_id}/archive",
+    name: "archive_task_item_browser",
     authRequired: true,
-    family: "runbook",
+    family: "task",
   },
 ];
 
@@ -450,7 +450,7 @@ export function classifyRouteFamily(path: string): RouteFamily {
   ) {
     return "page_yjs";
   }
-  if (path.startsWith("/api/runbooks/")) return "runbook";
+  if (path.startsWith("/api/tasks/")) return "task";
   if (path.startsWith("/api/sessions")) return "session";
   if (path.startsWith("/api/nodes/")) return "node_proxy";
   if (path.startsWith("/api/config/settings") || path.startsWith("/api/dashboard/config")) {

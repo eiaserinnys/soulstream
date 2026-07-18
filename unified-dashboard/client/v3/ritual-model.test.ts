@@ -80,11 +80,11 @@ describe("dispatchRitualAction", () => {
 
     await dispatchRitualAction(item, "later", port);
     expect(port.mountToday).toHaveBeenCalledTimes(1);
-    expect(port.completeRunbook).not.toHaveBeenCalled();
+    expect(port.completeTask).not.toHaveBeenCalled();
 
     await dispatchRitualAction(item, "done", port);
-    expect(port.completeRunbook).toHaveBeenCalledWith({
-      runbookId: "runbook-task-1",
+    expect(port.completeTask).toHaveBeenCalledWith({
+      taskId: "task-task-1",
       expectedVersion: 7,
     });
   });
@@ -105,11 +105,11 @@ function task(pageId: string, title: string, status: string): PlannerTask {
     },
     blocks: [],
     stateVector: "",
-    runbookId: `runbook-${pageId}`,
-    runbook: {
-      runbook: {
-        id: `runbook-${pageId}`,
-        board_item_id: `runbook:${pageId}`,
+    taskId: `task-${pageId}`,
+    task: {
+      task: {
+        id: `task-${pageId}`,
+        board_item_id: `task:${pageId}`,
         title,
         status: status as "open" | "completed",
         archived: false,
@@ -135,6 +135,6 @@ function task(pageId: string, title: string, status: string): PlannerTask {
 function mockPort(): RitualActionPort {
   return {
     mountToday: vi.fn(async () => undefined),
-    completeRunbook: vi.fn(async () => undefined),
+    completeTask: vi.fn(async () => undefined),
   };
 }

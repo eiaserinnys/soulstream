@@ -12,22 +12,22 @@ const INLINE_TYPES = new Set<CatalogBoardItem["itemType"]>([
 ]);
 
 export async function fetchTaskBoardItems(
-  runbookId: string,
+  taskId: string,
   fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
   signal?: AbortSignal,
 ): Promise<CatalogBoardItem[]> {
-  return (await fetchTaskBoardContainerItems(runbookId, fetchImplementation, signal))
+  return (await fetchTaskBoardContainerItems(taskId, fetchImplementation, signal))
     .filter((item) => INLINE_TYPES.has(item.itemType));
 }
 
 export async function fetchTaskBoardContainerItems(
-  runbookId: string,
+  taskId: string,
   fetchImplementation: typeof globalThis.fetch = globalThis.fetch,
   signal?: AbortSignal,
 ): Promise<CatalogBoardItem[]> {
   const query = new URLSearchParams({
-    container_kind: "runbook",
-    container_id: runbookId,
+    container_kind: "task",
+    container_id: taskId,
   });
   const response = await fetchWithProjectionRetry(
     (requestSignal) => fetchImplementation(`/api/board-items?${query.toString()}`, {

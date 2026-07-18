@@ -60,20 +60,20 @@ describe("orch BoardYjsService", () => {
         boardItem: created.boardItem,
         targetScope: {
           folderId: "folder-1",
-          containerKind: "runbook",
-          containerId: "runbook-1",
+          containerKind: "task",
+          containerId: "task-1",
         },
         position: { x: 100, y: 200 },
       });
       const updated = await service.updateMarkdownDocument(
-        { containerKind: "runbook", containerId: "runbook-1" },
+        { containerKind: "task", containerId: "task-1" },
         "doc-1",
         { title: "Moved", expectedVersion: 1 },
       );
 
       expect(moved).toMatchObject({
-        containerKind: "runbook",
-        containerId: "runbook-1",
+        containerKind: "task",
+        containerId: "task-1",
         x: 100,
         y: 200,
       });
@@ -216,7 +216,7 @@ class MemoryBoardYjsRepository {
     };
   }
 
-  async backfillRunbookBoardItemsIntoSnapshot(
+  async backfillTaskBoardItemsIntoSnapshot(
     _documentName: string,
     _container: BoardYjsContainerScope,
     snapshot: Uint8Array,

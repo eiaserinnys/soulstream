@@ -251,8 +251,8 @@ async function invokeActualClient(
   body: Record<string, unknown>,
 ): Promise<unknown> {
   switch (operation) {
-    case "remove-runbook-board-item":
-      return await client.removeRunbookBoardItem?.(body.folderId, body.boardItemId);
+    case "remove-task-board-item":
+      return await client.removeTaskBoardItem?.(body.folderId, body.boardItemId);
     case "remove-board-item":
       return await client.removeBoardItem?.(body.container, body.boardItemId);
     case "update-board-item-position":
@@ -279,7 +279,7 @@ async function invokeActualClient(
 
 function responseForOperation(operation: string): unknown {
   if ([
-    "remove-runbook-board-item",
+    "remove-task-board-item",
     "remove-board-item",
     "update-board-item-position",
     "delete-markdown-document",
@@ -292,9 +292,9 @@ function createServiceDouble() {
   return {
     createMarkdownDocument: result("create-markdown-document"),
     upsertSessionBoardItem: result("upsert-session-board-item"),
-    upsertRunbookBoardItem: result("upsert-runbook-board-item"),
+    upsertTaskBoardItem: result("upsert-task-board-item"),
     upsertCustomViewBoardItem: result("upsert-custom-view-board-item"),
-    removeRunbookBoardItem: result("remove-runbook-board-item"),
+    removeTaskBoardItem: result("remove-task-board-item"),
     removeBoardItem: result("remove-board-item"),
     updateBoardItemPosition: result("update-board-item-position"),
     moveBoardItemToContainer: result("move-board-item-to-container"),
@@ -355,7 +355,7 @@ class CapturingBoardYjsRepository {
       ...container,
     };
   }
-  async backfillRunbookBoardItemsIntoSnapshot(
+  async backfillTaskBoardItemsIntoSnapshot(
     _documentName: string,
     _container: BoardYjsContainerScope,
     snapshot: Uint8Array,

@@ -15,7 +15,7 @@ import type { CallerInfo } from "../task/task_models.js";
 import type { ContextItem } from "./prompt_assembler.js";
 
 export interface SoulstreamContainerContext {
-  kind: "folder" | "runbook";
+  kind: "folder" | "task";
   id: string;
   title: string;
 }
@@ -29,8 +29,8 @@ export interface SoulstreamContextParams {
   agentId?: string;
   callerInfo?: CallerInfo;
   container?: SoulstreamContainerContext | null;
-  sourceRunbookItemId?: string | null;
-  runbookGuidance?: string | null;
+  sourceTaskItemId?: string | null;
+  taskGuidance?: string | null;
 }
 
 /**
@@ -57,8 +57,8 @@ function detectLocalIp(): string {
  *   - agent_session_id, claude_session_id(또는 "(new session)"), workspace_dir
  *   - folder(folder_name 또는 "(unassigned)")
  *   - container (primary board item container가 있으면)
- *   - source_runbook_item_id (runbook item에서 파생된 세션이면)
- *   - runbook_guidance (runbook container면 행동 안내)
+ *   - source_task_item_id (task item에서 파생된 세션이면)
+ *   - task_guidance (task container면 행동 안내)
  *   - hostname, ip_address, current_node_id
  *   - host_os, os_version, current_time (ISO)
  *   - agent_id (있을 때만)
@@ -85,11 +85,11 @@ export function buildSoulstreamContextItem(
   if (params.container) {
     content.container = params.container;
   }
-  if (params.sourceRunbookItemId) {
-    content.source_runbook_item_id = params.sourceRunbookItemId;
+  if (params.sourceTaskItemId) {
+    content.source_task_item_id = params.sourceTaskItemId;
   }
-  if (params.runbookGuidance) {
-    content.runbook_guidance = params.runbookGuidance;
+  if (params.taskGuidance) {
+    content.task_guidance = params.taskGuidance;
   }
   if (params.callerInfo) {
     // R-2 회로 차단 정본 (PR #56 hydration callerInfo 복원과 짝).

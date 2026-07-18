@@ -20,7 +20,7 @@ export interface PlannerBlockDto {
   collapsed: boolean;
 }
 
-export interface PlannerRunbookSummaryDto {
+export interface PlannerTaskSummaryDto {
   id: string;
   board_item_id: string;
   title: string;
@@ -59,8 +59,8 @@ export interface PlannerMountedDocumentDto {
 export interface PlannerTaskDto {
   page: PlannerPageDto;
   blocks: PlannerBlockDto[];
-  runbook_id: string;
-  runbook: PlannerRunbookSummaryDto | null;
+  task_id: string;
+  task: PlannerTaskSummaryDto | null;
   project_page_id: string | null;
   sessions: PlannerSessionSummaryDto[];
   mounted_documents: PlannerMountedDocumentDto[];

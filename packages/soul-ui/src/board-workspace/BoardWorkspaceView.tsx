@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useDashboardStore } from "../stores/dashboard-store";
 import type { BoardContainerRef, CatalogBoardItem, CatalogState, SessionSummary } from "../shared/types";
-import { useRunbookStore, type RunbookSnapshot } from "../stores/runbook-store";
+import { useTaskStore, type TaskSnapshot } from "../stores/task-store";
 import { FolderDialog } from "../components/FolderDialog";
 import { runGuardedLoadMore } from "../components/load-more-guard";
 import { toastManager } from "../components/ui/toast";
@@ -15,7 +15,7 @@ import { BoardWorkspaceCanvasContent } from "./BoardWorkspaceCanvasContent";
 import {
   boardToCanvasStyle,
   BOARD_ASSET_TILE_HEIGHT,
-  BOARD_RUNBOOK_FIXED_CARD_RECT,
+  BOARD_TASK_FIXED_CARD_RECT,
   BOARD_TILE_HEIGHT,
   BOARD_TILE_WIDTH,
   buildBoardWorkspaceItems,
@@ -41,7 +41,7 @@ import {
   BoardWorkspaceContextMenus,
   type BoardCardContextMenuState,
   type BoardContextMenuState,
-  type RunbookMoveTarget,
+  type TaskMoveTarget,
 } from "./BoardWorkspaceContextMenus";
 import { useBoardYjsRuntime } from "./board-yjs-client";
 import { BoardWorkspaceMinimap } from "./BoardWorkspaceMinimap";
@@ -85,7 +85,7 @@ function boardItemsUrl(container: BoardContainerRef): string {
   return `/api/board-items?container_kind=${encodeURIComponent(container.kind)}&container_id=${encodeURIComponent(container.id)}`;
 }
 
-function runbookProgress(snapshot: RunbookSnapshot | null): { completed: number; total: number } {
+function taskProgress(snapshot: TaskSnapshot | null): { completed: number; total: number } {
   let completed = 0;
   let total = 0;
   for (const item of snapshot?.items ?? []) {
@@ -201,12 +201,12 @@ function boardWorkspaceItemToCatalogBoardItem(
       updatedAt: item.updatedAt,
     });
   }
-  if (item.type === "runbook") {
+  if (item.type === "task") {
     return withContainer({
       id: item.boardItemId,
       folderId: resolvedFolderId,
-      itemType: "runbook",
-      itemId: item.runbookId,
+      itemType: "task",
+      itemId: item.taskId,
       updatedAt: item.updatedAt,
       x,
       y,
@@ -344,7 +344,7 @@ export function BoardWorkspaceView({
   const clearFocusedBoardItem = useDashboardStore((s) => s.clearFocusedBoardItem);
   const addBoardItem = useDashboardStore((s) => s.addBoardItem);
   const activeBoardContainer = useDashboardStore((s) => s.activeBoardContainer);
-  const openRunbookBoard = useDashboardStore((s) => s.openRunbookBoard);
+  const openTaskBoard = useDashboardStore((s) => s.openTaskBoard);
   const setBoardItemsForContainer = useDashboardStore((s) => s.setBoardItemsForContainer);
   const updateBoardItemPosition = useDashboardStore((s) => s.updateBoardItemPosition);
   const removeBoardItem = useDashboardStore((s) => s.removeBoardItem);
@@ -384,14 +384,14 @@ export function BoardWorkspaceView({
       ? boardContainer.id
       : selectedFolderId ?? boardContainer.id
     : null;
-  const isRunbookBoard = boardContainer?.kind === "runbook";
-  const runbookId = isRunbookBoard ? boardContainer.id : null;
-  const runbookProjection = useRunbookStore((s) => (runbookId ? s.byId[runbookId] : undefined));
-  const loadRunbook = useRunbookStore((s) => s.loadRunbook);
-  const runbookSnapshot = runbookProjection?.snapshot ?? null;
-  const runbookBoardProgress = useMemo(
-    () => runbookProgress(runbookSnapshot),
-    [runbookSnapshot],
+  const isTaskBoard = boardContainer?.kind === "task";
+  const taskId = isTaskBoard ? boardContainer.id : null;
+  const taskProjection = useTaskStore((s) => (taskId ? s.byId[taskId] : undefined));
+  const loadTask = useTaskStore((s) => s.loadTask);
+  const taskSnapshot = taskProjection?.snapshot ?? null;
+  const taskBoardProgress = useMemo(
+    () => taskProgress(taskSnapshot),
+    [taskSnapshot],
   );
   const displaySessions = useMemo(() => applyCatalogDisplayNames(sessions, catalog), [sessions, catalog]);
   const boardSync = useBoardYjsRuntime({
@@ -402,13 +402,13 @@ export function BoardWorkspaceView({
   });
 
   useEffect(() => {
-    if (!runbookId) return;
+    if (!taskId) return;
     const controller = new AbortController();
-    void loadRunbook(runbookId, { signal: controller.signal });
+    void loadTask(taskId, { signal: controller.signal });
     return () => {
       controller.abort();
     };
-  }, [loadRunbook, runbookId]);
+  }, [loadTask, taskId]);
 
   const rememberAssetSignedUrls = useCallback((items: CatalogBoardItem[]) => {
     const current = assetSignedUrlsRef.current;
@@ -503,11 +503,11 @@ export function BoardWorkspaceView({
     () => [...persistedBoardItems, ...assetPlaceholders].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id)),
     [assetPlaceholders, persistedBoardItems],
   );
-  const runbookMoveTargets = useMemo<RunbookMoveTarget[]>(() => {
+  const taskMoveTargets = useMemo<TaskMoveTarget[]>(() => {
     if (!effectiveCatalog || !resolvedBoardFolderId) return [];
     return (effectiveCatalog.boardItems ?? [])
       .filter((item) =>
-        item.itemType === "runbook" &&
+        item.itemType === "task" &&
         item.folderId === resolvedBoardFolderId &&
         (item.containerKind ?? "folder") === "folder" &&
         (item.containerId ?? item.folderId) === resolvedBoardFolderId
@@ -577,7 +577,7 @@ export function BoardWorkspaceView({
   const handleDeclutterBoard = useCallback(() => {
     const declutterUpdates = declutterBoardItems(
       boardItems,
-      isRunbookBoard ? [BOARD_RUNBOOK_FIXED_CARD_RECT] : [],
+      isTaskBoard ? [BOARD_TASK_FIXED_CARD_RECT] : [],
     );
     if (declutterUpdates.length === 0) return;
     const expandedUpdates = expandFramePositionUpdates(allBoardItems, declutterUpdates);
@@ -588,7 +588,7 @@ export function BoardWorkspaceView({
       return [{ boardItemId: current.boardItemId, x: current.x, y: current.y }];
     }));
     yjsUpdateBoardItemPositions(declutterUpdates, true);
-  }, [allBoardItems, boardItems, isRunbookBoard, yjsUpdateBoardItemPositions]);
+  }, [allBoardItems, boardItems, isTaskBoard, yjsUpdateBoardItemPositions]);
   const handleUndoDeclutter = useCallback(() => {
     if (declutterUndoUpdates.length === 0) return;
     yjsUpdateBoardItemPositions(declutterUndoUpdates, true);
@@ -823,7 +823,7 @@ export function BoardWorkspaceView({
       "folder",
       {
         folderId: resolvedBoardFolderId,
-        ...(boardContainer.kind === "runbook" ? { container: boardContainer } : {}),
+        ...(boardContainer.kind === "task" ? { container: boardContainer } : {}),
         ...(boardPosition ? { boardPosition } : {}),
       },
     );
@@ -1012,8 +1012,8 @@ export function BoardWorkspaceView({
   }, []);
 
   const canCreateBoardItems = Boolean(boardContainer);
-  const runbookTitle = runbookSnapshot?.runbook.title ?? null;
-  const runbookStatus = runbookSnapshot?.runbook.status ?? null;
+  const taskTitle = taskSnapshot?.task.title ?? null;
+  const taskStatus = taskSnapshot?.task.status ?? null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -1022,9 +1022,9 @@ export function BoardWorkspaceView({
         selectedFolder={selectedFolder}
         selectedFolderId={selectedFolderId}
         boardContainer={boardContainer}
-        runbookTitle={runbookTitle}
-        runbookStatus={runbookStatus}
-        runbookProgress={runbookBoardProgress}
+        taskTitle={taskTitle}
+        taskStatus={taskStatus}
+        taskProgress={taskBoardProgress}
         workspaceViewMode={workspaceViewMode}
         connectionStatus={boardSync.connectionStatus}
         connectionError={boardSync.connectionError}
@@ -1036,7 +1036,7 @@ export function BoardWorkspaceView({
         onCreateFolder={() => openCreateFolderDialog()}
         onOpenNewSession={() => openNewSessionAt()}
         onCreateMarkdown={() => createMarkdownAt()}
-        declutterDisabled={boardItems.length === 0 || (boardItems.length === 1 && !isRunbookBoard)}
+        declutterDisabled={boardItems.length === 0 || (boardItems.length === 1 && !isTaskBoard)}
         onDeclutterBoard={handleDeclutterBoard}
         undoDeclutterDisabled={declutterUndoUpdates.length === 0}
         onUndoDeclutter={handleUndoDeclutter}
@@ -1100,8 +1100,8 @@ export function BoardWorkspaceView({
                   raiseBoardItems([item.boardItemId]);
                   selectFolder(folderId);
                 }}
-                onOpenRunbookBoard={(runbookId) => {
-                  openRunbookBoard(runbookId, selectedFolderId);
+                onOpenTaskBoard={(taskId) => {
+                  openTaskBoard(taskId, selectedFolderId);
                 }}
                 onOpenMarkdown={(item, documentId) => {
                   selectSingleBoardItem(item.boardItemId);
@@ -1115,14 +1115,14 @@ export function BoardWorkspaceView({
                   setActiveCustomView(customViewId);
                   if (isMobile) setActiveTab("chat");
                 }}
-                fixedRunbookCard={
-                  isRunbookBoard && runbookId
-                    ? { runbookId, fallbackTitle: runbookTitle ?? "런북 보드" }
+                fixedTaskCard={
+                  isTaskBoard && taskId
+                    ? { taskId, fallbackTitle: taskTitle ?? "업무 보드" }
                     : null
                 }
                 emptyMessage={
-                  isRunbookBoard
-                    ? "아직 이 런북 보드에 배치된 항목이 없음"
+                  isTaskBoard
+                    ? "아직 이 업무 보드에 배치된 항목이 없음"
                     : undefined
                 }
               />
@@ -1136,7 +1136,7 @@ export function BoardWorkspaceView({
             folders={folders}
             boardContainer={boardContainer}
             resolvedBoardFolderId={resolvedBoardFolderId}
-            runbookMoveTargets={runbookMoveTargets}
+            taskMoveTargets={taskMoveTargets}
             activeBoardDocumentId={activeBoardDocumentId}
             boardYjsRuntime={boardSync.runtime}
             canCreateBoardItems={canCreateBoardItems}

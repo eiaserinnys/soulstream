@@ -248,7 +248,7 @@ class NodeInboundEvents:
         if signal:
             await self._notify_session_change("input_request", signal)
 
-        if event.get("type") in {"runbook_updated", "custom_view_updated"}:
+        if event.get("type") in {"task_updated", "custom_view_updated"}:
             await self._notify_session_change(str(event.get("type")), event)
 
     async def _on_sessions_update(self, data: dict) -> None:

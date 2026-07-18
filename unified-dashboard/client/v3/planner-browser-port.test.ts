@@ -4,11 +4,11 @@ import type { PageApiClient } from "@seosoyoung/soul-ui/page";
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 
 describe("BrowserPlannerMutationPort.createTaskIdentity", () => {
-  it("uses one server call and requires the page and runbook aliases to match", async () => {
+  it("uses one server call and requires the page and task aliases to match", async () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       id: "task-uuid",
       pageId: "task-uuid",
-      runbookId: "task-uuid",
+      taskId: "task-uuid",
     }), {
       status: 201,
       headers: { "Content-Type": "application/json" },
@@ -34,7 +34,7 @@ describe("BrowserPlannerMutationPort.createTaskIdentity", () => {
       },
     })).resolves.toEqual({ id: "task-uuid" });
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/runbooks", expect.objectContaining({
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks", expect.objectContaining({
       method: "POST",
       credentials: "same-origin",
       body: JSON.stringify({
@@ -59,7 +59,7 @@ describe("BrowserPlannerMutationPort.createTaskIdentity", () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({
       id: "page-id",
       pageId: "page-id",
-      runbookId: "runbook-id",
+      taskId: "task-id",
     }), { status: 201, headers: { "Content-Type": "application/json" } }));
     const port = new BrowserPlannerMutationPort(
       {} as PageApiClient,
@@ -105,7 +105,7 @@ describe("BrowserPlannerMutationPort default fetch binding", () => {
       return Promise.resolve(new Response(JSON.stringify({
         id: "task-bound",
         pageId: "task-bound",
-        runbookId: "task-bound",
+        taskId: "task-bound",
       }), { status: 201, headers: { "Content-Type": "application/json" } }));
     }
     globalThis.fetch = strictFetch as unknown as typeof globalThis.fetch;

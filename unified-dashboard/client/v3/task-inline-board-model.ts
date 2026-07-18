@@ -1,5 +1,5 @@
 import {
-  BOARD_RUNBOOK_FIXED_CARD_RECT,
+  BOARD_TASK_FIXED_CARD_RECT,
   BOARD_TILE_HEIGHT,
   BOARD_TILE_WIDTH,
   findEmptyPlacement,
@@ -45,15 +45,15 @@ export function findTaskMarkdownPlacement(
   items: readonly CatalogBoardItem[],
 ): { x: number; y: number } {
   return findEmptyPlacement({
-    existingItems: [BOARD_RUNBOOK_FIXED_CARD_RECT, ...items],
+    existingItems: [BOARD_TASK_FIXED_CARD_RECT, ...items],
     preferredPoint: {
-      x: BOARD_RUNBOOK_FIXED_CARD_RECT.width + 40,
-      y: BOARD_RUNBOOK_FIXED_CARD_RECT.y,
+      x: BOARD_TASK_FIXED_CARD_RECT.width + 40,
+      y: BOARD_TASK_FIXED_CARD_RECT.y,
     },
     size: { width: BOARD_TILE_WIDTH, height: BOARD_TILE_HEIGHT },
   })[0] ?? {
-    x: BOARD_RUNBOOK_FIXED_CARD_RECT.width + 40,
-    y: BOARD_RUNBOOK_FIXED_CARD_RECT.y,
+    x: BOARD_TASK_FIXED_CARD_RECT.width + 40,
+    y: BOARD_TASK_FIXED_CARD_RECT.y,
   };
 }
 

@@ -183,7 +183,7 @@ describe("live provider factory boundary", () => {
       bundle.folderRoutes.resolveDashboardUserId?.(routeIdentityRequest),
     ).resolves.toBe("push@example.com");
     await expect(
-      bundle.runbookRoutes.resolveDashboardUserId?.(routeIdentityRequest),
+      bundle.taskRoutes.resolveDashboardUserId?.(routeIdentityRequest),
     ).resolves.toBe("push@example.com");
     expect(bundle.userBackgroundRoutes.repository).toBe(
       dependencies.dbCatalogRepository.userPreferencesRepository,
@@ -233,7 +233,7 @@ describe("live provider factory boundary", () => {
     );
     expect(bundle.boardItemRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.boardItemRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
     expect(bundle.markdownDocumentRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.markdownDocumentRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
-    expect(bundle.runbookRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.runbookRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
+    expect(bundle.taskRoutes).toMatchObject({ provider: dependencies.dbCatalogRepository.taskRouteProvider, accessProvider: { resolveAccess: expect.any(Function) } });
     expect(bundle.sessionCatalogRoutes.provider).not.toBe(
       dependencies.dbCatalogRepository.sessionCatalogProvider,
     );
@@ -295,27 +295,27 @@ describe("live provider factory boundary", () => {
       headers: { cookie: "sid=abc" },
       body: { changes: { KEY: "value" } },
     });
-    const runbookPayload = {
+    const taskPayload = {
       status: "completed",
       expectedVersion: 4,
-      idempotencyKey: "idem-runbook",
+      idempotencyKey: "idem-task",
     };
     await expect(
-      bundle.runbookRoutes.httpClient({
+      bundle.taskRoutes.httpClient({
         method: "POST",
         url: "http://ignored.example.test/legacy-python-proxy",
-        upstreamPath: "/api/runbooks/rb%2F1/status",
-        headers: { cookie: "sid=runbook", authorization: "Bearer runbook" },
-        body: runbookPayload,
-        target: { nodeId: "node-runbook", host: "ignored", port: 4105 },
+        upstreamPath: "/api/tasks/rb%2F1/status",
+        headers: { cookie: "sid=task", authorization: "Bearer task" },
+        body: taskPayload,
+        target: { nodeId: "node-task", host: "ignored", port: 4105 },
       }),
     ).resolves.toMatchObject({ statusCode: 200 });
     expect(dependencies.nodeHttpClient.requestNode).toHaveBeenCalledWith({
-      nodeId: "node-runbook",
+      nodeId: "node-task",
       method: "POST",
-      path: "/api/runbooks/rb%2F1/status",
-      headers: { cookie: "sid=runbook", authorization: "Bearer runbook" },
-      body: runbookPayload,
+      path: "/api/tasks/rb%2F1/status",
+      headers: { cookie: "sid=task", authorization: "Bearer task" },
+      body: taskPayload,
     });
     await expect(
       bundle.nodeClaudeAuthRoutes.profileHttpClient({
@@ -491,7 +491,7 @@ function createLiveDependencies(): LiveProviderDependencies {
         initFileAsset: vi.fn(async () => ({ assetId: "asset-live" })),
         commitFileAsset: vi.fn(async () => ({ asset: {}, boardItem: {} })),
       },
-      boardItemRouteProvider: {} as never, markdownDocumentRouteProvider: {} as never, runbookRouteProvider: {} as never,
+      boardItemRouteProvider: {} as never, markdownDocumentRouteProvider: {} as never, taskRouteProvider: {} as never,
       sessionCatalogProvider: {
         renameSession: vi.fn(async () => undefined),
         moveSessionsToFolder: vi.fn(async () => ({ count: 0 })),

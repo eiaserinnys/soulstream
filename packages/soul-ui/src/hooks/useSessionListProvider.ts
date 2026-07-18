@@ -16,7 +16,7 @@ import { useCallback, useRef, useState, useMemo } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { retainEqualValue } from "../lib/structural-sharing";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { useRunbookStore } from "../stores/runbook-store";
+import { useTaskStore } from "../stores/task-store";
 import { useCustomViewStore } from "../stores/custom-view-store";
 import type { DashboardState } from "../stores/dashboard-store-types";
 import type { SessionSummary } from "../shared/types";
@@ -105,7 +105,7 @@ export function useSessionListProvider(
   } = options;
 
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
-  const handleRunbookUpdated = useRunbookStore((s) => s.handleRunbookUpdated);
+  const handleTaskUpdated = useTaskStore((s) => s.handleTaskUpdated);
   const handleCustomViewUpdated = useCustomViewStore((s) => s.handleCustomViewUpdated);
 
   // 필터 상태
@@ -268,7 +268,7 @@ export function useSessionListProvider(
       lastEventIdRef.current = update.nextLastEventId;
       if (update.shouldRefetch) queryRefetch();
     },
-    onRunbookUpdated: handleRunbookUpdated,
+    onTaskUpdated: handleTaskUpdated,
     onCustomViewUpdated: handleCustomViewUpdated,
     onStreamEvent,
     transformCatalogUpdate,

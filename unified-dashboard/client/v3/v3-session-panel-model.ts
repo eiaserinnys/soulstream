@@ -57,7 +57,7 @@ export function sessionWorkspaceTargetFromBoardItems(
   if (!primary) return null;
   const containerKind = primary.containerKind ?? "folder";
   const containerId = primary.containerId ?? primary.folderId;
-  return containerKind === "runbook"
+  return containerKind === "task"
     ? { kind: "task", pageId: containerId }
     : { kind: "standalone" };
 }
@@ -76,7 +76,7 @@ export function sessionPanelAffiliation(
   }
 
   const taskItem = boardItems.find((item) => (
-    item.itemType === "runbook"
+    item.itemType === "task"
       && item.itemId === containerId
       && (item.membershipKind ?? "primary") === "primary"
   ));

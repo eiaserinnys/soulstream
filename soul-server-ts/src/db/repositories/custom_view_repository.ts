@@ -55,7 +55,7 @@ export class CustomViewRepository {
         bi.container_kind AS bi_container_kind,
         bi.container_id AS bi_container_id,
         bi.membership_kind AS bi_membership_kind,
-        bi.source_runbook_item_id AS bi_source_runbook_item_id,
+        bi.source_task_item_id AS bi_source_task_item_id,
         bi.item_type AS bi_item_type,
         bi.item_id AS bi_item_id,
         bi.x AS bi_x,
@@ -96,7 +96,7 @@ export class CustomViewRepository {
         bi.container_kind AS bi_container_kind,
         bi.container_id AS bi_container_id,
         bi.membership_kind AS bi_membership_kind,
-        bi.source_runbook_item_id AS bi_source_runbook_item_id,
+        bi.source_task_item_id AS bi_source_task_item_id,
         bi.item_type AS bi_item_type,
         bi.item_id AS bi_item_id,
         bi.x AS bi_x,
@@ -232,7 +232,7 @@ function normalizeCustomViewJoin(row: CustomViewJoinRow): CustomViewWithBoardIte
       container_kind: row.bi_container_kind,
       container_id: row.bi_container_id,
       membership_kind: row.bi_membership_kind,
-      source_runbook_item_id: row.bi_source_runbook_item_id,
+      source_task_item_id: row.bi_source_task_item_id,
       item_type: row.bi_item_type,
       item_id: row.bi_item_id,
       x: row.bi_x,
@@ -285,10 +285,10 @@ interface CustomViewDbRow {
 interface BoardItemDbRow {
   id: string;
   folder_id: string;
-  container_kind: "folder" | "runbook" | null;
+  container_kind: "folder" | "task" | null;
   container_id: string | null;
   membership_kind: "primary" | "reference" | null;
-  source_runbook_item_id: string | null;
+  source_task_item_id: string | null;
   item_type: "custom_view";
   item_id: string;
   x: string | number;
@@ -313,10 +313,10 @@ interface CustomViewJoinRow {
   cv_updated_at: Date | string | null;
   bi_id: string;
   bi_folder_id: string;
-  bi_container_kind: "folder" | "runbook" | null;
+  bi_container_kind: "folder" | "task" | null;
   bi_container_id: string | null;
   bi_membership_kind: "primary" | "reference" | null;
-  bi_source_runbook_item_id: string | null;
+  bi_source_task_item_id: string | null;
   bi_item_type: "custom_view";
   bi_item_id: string;
   bi_x: string | number;

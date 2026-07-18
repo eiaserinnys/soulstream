@@ -33,7 +33,7 @@ async function verify(browser: Browser) {
   const page = await context.newPage();
   const browserErrors: string[] = [];
   const taskOperations: Array<{ operations?: Array<Record<string, unknown>> }> = [];
-  const runbookCreates: Record<string, unknown>[] = [];
+  const taskCreates: Record<string, unknown>[] = [];
   let plannerTodayRequests = 0;
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("console", (message) => {
@@ -53,7 +53,7 @@ async function verify(browser: Browser) {
       legacyAtomContext: mode === "before",
       taskContextEditing: mode === "after",
       onPlannerTodayRequest: (count) => { plannerTodayRequests = count; },
-      onRunbookCreate: mode === "after" ? (payload) => runbookCreates.push(payload) : undefined,
+      onTaskCreate: mode === "after" ? (payload) => taskCreates.push(payload) : undefined,
     });
     await page.route("**/api/atom/nodes", async (route) => {
       await route.fulfill({
@@ -91,8 +91,8 @@ async function verify(browser: Browser) {
     if (mode === "after") {
       await newTaskDialog.getByLabel("새 업무 제목").fill("PR-CJ 생성 컨텍스트 QA");
       await newTaskDialog.getByRole("button", { name: "업무 만들기", exact: true }).click();
-      await waitUntil(() => runbookCreates.length === 1, "새 업무 생성 payload");
-      const initialContext = runbookCreates[0]?.initial_context as Record<string, unknown> | undefined;
+      await waitUntil(() => taskCreates.length === 1, "새 업무 생성 payload");
+      const initialContext = taskCreates[0]?.initial_context as Record<string, unknown> | undefined;
       assert(initialContext?.guidance === "PR-CJ 직접 guidance", "생성 guidance가 initial_context에 없습니다.");
       const references = initialContext?.atom_references;
       assert(Array.isArray(references) && references.length === 1, "생성 atom_references가 한 건이 아닙니다.");
@@ -145,7 +145,7 @@ async function verify(browser: Browser) {
     }
 
     assert(browserErrors.length === 0, `브라우저 오류: ${browserErrors.join(" | ")}`);
-    return { plannerTodayRequests, taskOperationCount: taskOperations.length, runbookCreateCount: runbookCreates.length, screenshotRoot: path.join(outputRoot, mode, theme) };
+    return { plannerTodayRequests, taskOperationCount: taskOperations.length, taskCreateCount: taskCreates.length, screenshotRoot: path.join(outputRoot, mode, theme) };
   } finally {
     await context.close();
   }

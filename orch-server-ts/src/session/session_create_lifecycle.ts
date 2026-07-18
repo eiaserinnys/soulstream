@@ -85,7 +85,7 @@ async function prepareSessionCreate(
     if (!isJsonObject(payload.container)) {
       snapshot = await options.boardItems.getCatalogSnapshot();
       const sourceItem = primarySessionBoardItem(snapshot.boardItems, sourceSessionId);
-      const inherited = inheritedRunbookContainer(sourceItem);
+      const inherited = inheritedTaskContainer(sourceItem);
       if (inherited !== undefined) payload.container = inherited;
     }
   }
@@ -128,13 +128,13 @@ function primarySessionBoardItem(
   );
 }
 
-function inheritedRunbookContainer(
+function inheritedTaskContainer(
   item: BoardItemRecord | undefined,
 ): BoardContainerTarget | undefined {
-  if (item?.containerKind !== "runbook") return undefined;
+  if (item?.containerKind !== "task") return undefined;
   const containerId = item.containerId;
   if (typeof containerId !== "string" || containerId.length === 0) return undefined;
-  return { kind: "runbook", id: containerId };
+  return { kind: "task", id: containerId };
 }
 
 async function resolvePayloadFolderId(
@@ -146,9 +146,9 @@ async function resolvePayloadFolderId(
   const kind = payload.container.kind;
   const containerId = stringOrNull(payload.container.id);
   if (kind === "folder" && containerId !== null) return containerId;
-  if (kind !== "runbook" || containerId === null) return folderId;
+  if (kind !== "task" || containerId === null) return folderId;
   folderId = await provider.resolveBoardContainerFolderId({
-    kind: "runbook",
+    kind: "task",
     id: containerId,
   });
   return folderId;

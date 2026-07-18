@@ -48,7 +48,7 @@ describe("catalog-actions", () => {
     });
   });
 
-  it("replaces the full folder scope without duplicating runbook container items", () => {
+  it("replaces the full folder scope without duplicating task container items", () => {
     const catalog: CatalogState = {
       folders: [],
       sessions: {},
@@ -64,12 +64,12 @@ describe("catalog-actions", () => {
           y: 0,
         },
         {
-          id: "session:runbook-a",
+          id: "session:task-a",
           folderId: "root",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           itemType: "session",
-          itemId: "runbook-a",
+          itemId: "task-a",
           x: 10,
           y: 10,
         },
@@ -98,12 +98,12 @@ describe("catalog-actions", () => {
         y: 100,
       },
       {
-        id: "session:runbook-a",
+        id: "session:task-a",
         folderId: "root",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
         itemType: "session",
-        itemId: "runbook-a",
+        itemId: "task-a",
         x: 120,
         y: 120,
       },
@@ -112,11 +112,11 @@ describe("catalog-actions", () => {
     expect(updated.boardItems?.map((item) => item.id)).toEqual([
       "session:other",
       "session:folder-a",
-      "session:runbook-a",
+      "session:task-a",
     ]);
-    expect(updated.boardItems?.filter((item) => item.id === "session:runbook-a")).toHaveLength(1);
-    expect(updated.boardItems?.find((item) => item.id === "session:runbook-a")).toMatchObject({
-      containerKind: "runbook",
+    expect(updated.boardItems?.filter((item) => item.id === "session:task-a")).toHaveLength(1);
+    expect(updated.boardItems?.find((item) => item.id === "session:task-a")).toMatchObject({
+      containerKind: "task",
       containerId: "rb-1",
       x: 120,
       y: 120,
@@ -129,12 +129,12 @@ describe("catalog-actions", () => {
       sessions: {},
       boardItems: [
         {
-          id: "session:runbook-a",
+          id: "session:task-a",
           folderId: "root",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           itemType: "session",
-          itemId: "runbook-a",
+          itemId: "task-a",
           x: 10,
           y: 10,
         },
@@ -145,18 +145,18 @@ describe("catalog-actions", () => {
       catalog,
       { kind: "folder", id: "root" },
       [{
-        id: "session:runbook-a",
+        id: "session:task-a",
         folderId: "root",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
         itemType: "session",
-        itemId: "runbook-a",
+        itemId: "task-a",
         x: 120,
         y: 120,
       }],
     );
 
     expect(updated.boardItems).toHaveLength(1);
-    expect(updated.boardItems?.[0]).toMatchObject({ id: "session:runbook-a", x: 120 });
+    expect(updated.boardItems?.[0]).toMatchObject({ id: "session:task-a", x: 120 });
   });
 });

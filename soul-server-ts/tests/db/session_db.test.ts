@@ -361,10 +361,10 @@ describe("SessionDB board Yjs persistence", () => {
     expect(seed.markdownDocuments).toEqual([{ id: "d1", title: "Note", body: "Body", version: 1 }]);
   });
 
-  it("runbook 컨테이너 seed는 runbook membership만 로드", async () => {
+  it("task 컨테이너 seed는 task membership만 로드", async () => {
     const { sql } = createMockSql((call) => {
       const query = call.fragments.join("?");
-      if (query.includes("FROM runbooks r")) {
+      if (query.includes("FROM tasks r")) {
         return [{ folder_id: "f1" }];
       }
       if (query.includes("board_item_get_all")) {
@@ -372,26 +372,26 @@ describe("SessionDB board Yjs persistence", () => {
           {
             id: "markdown:d1",
             folder_id: "f1",
-            container_kind: "runbook",
+            container_kind: "task",
             container_id: "rb-1",
             membership_kind: "primary",
-            source_runbook_item_id: null,
+            source_task_item_id: null,
             item_type: "markdown",
             item_id: "d1",
             x: 0,
             y: 0,
-            metadata: { title: "Runbook note" },
+            metadata: { title: "Task note" },
             created_at: null,
             updated_at: null,
           },
           {
-            id: "runbook:rb-1",
+            id: "task:rb-1",
             folder_id: "f1",
             container_kind: "folder",
             container_id: "f1",
             membership_kind: "primary",
-            source_runbook_item_id: null,
-            item_type: "runbook",
+            source_task_item_id: null,
+            item_type: "task",
             item_id: "rb-1",
             x: 0,
             y: 0,
@@ -402,23 +402,23 @@ describe("SessionDB board Yjs persistence", () => {
         ];
       }
       if (query.includes("FROM markdown_documents")) {
-        return [{ id: "d1", title: "Runbook note", body: "Body", version: 1, created_at: null, updated_at: null }];
+        return [{ id: "d1", title: "Task note", body: "Body", version: 1, created_at: null, updated_at: null }];
       }
       return [];
     });
     const db = new SessionDB(sql);
 
-    const seed = await db.loadBoardYjsSeed({ containerKind: "runbook", containerId: "rb-1" });
+    const seed = await db.loadBoardYjsSeed({ containerKind: "task", containerId: "rb-1" });
 
     expect(seed.boardItems).toEqual([
       expect.objectContaining({
         id: "markdown:d1",
         folderId: "f1",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
       }),
     ]);
-    expect(seed.markdownDocuments).toEqual([{ id: "d1", title: "Runbook note", body: "Body", version: 1 }]);
+    expect(seed.markdownDocuments).toEqual([{ id: "d1", title: "Task note", body: "Body", version: 1 }]);
   });
 
   it("replica sync는 폴더 내 누락 item 삭제 후 board_items와 markdown_documents를 upsert", async () => {
@@ -497,7 +497,7 @@ describe("SessionDB board Yjs persistence", () => {
     expect(cacheCall?.values.slice(0, 5)).toEqual(["f1", "folder", "f1", [], []]);
   });
 
-  it("기존 snapshot 로드 시 DB-only runbook board item을 Y.Doc에 주입한다", async () => {
+  it("기존 snapshot 로드 시 DB-only task board item을 Y.Doc에 주입한다", async () => {
     const snapshot = createBoardYDocSnapshot({
       folderId: "f1",
       boardItems: [{
@@ -513,19 +513,19 @@ describe("SessionDB board Yjs persistence", () => {
     });
     const { sql, calls } = createMockSql((call) => {
       const query = call.fragments.join("?");
-      if (query.includes("FROM board_items") && query.includes("item_type = 'runbook'")) {
+      if (query.includes("FROM board_items") && query.includes("item_type = 'task'")) {
         return [{
-          id: "runbook:rb-1",
+          id: "task:rb-1",
           folder_id: "f1",
           container_kind: "folder",
           container_id: "f1",
           membership_kind: "primary",
-          source_runbook_item_id: null,
-          item_type: "runbook",
+          source_task_item_id: null,
+          item_type: "task",
           item_id: "rb-1",
           x: 280,
           y: 0,
-          metadata: { title: "Runbook" },
+          metadata: { title: "Task" },
           created_at: null,
           updated_at: null,
         }];
@@ -534,7 +534,7 @@ describe("SessionDB board Yjs persistence", () => {
     });
     const db = new SessionDB(sql);
 
-    const repaired = await db.backfillRunbookBoardItemsIntoBoardYjsSnapshot(
+    const repaired = await db.backfillTaskBoardItemsIntoBoardYjsSnapshot(
       "board-folder:f1",
       "f1",
       snapshot,
@@ -543,7 +543,7 @@ describe("SessionDB board Yjs persistence", () => {
     expect(readBoardYDocSnapshot({ folderId: "f1", snapshot: repaired }).replica.boardItems)
       .toEqual([
         expect.objectContaining({ id: "session:s1" }),
-        expect.objectContaining({ id: "runbook:rb-1", itemType: "runbook" }),
+        expect.objectContaining({ id: "task:rb-1", itemType: "task" }),
       ]);
     expect(calls.some((call) =>
       call.fragments.join("?").includes("INSERT INTO board_yjs_documents"),
@@ -752,12 +752,12 @@ describe("SessionDB.appendEvent", () => {
     let eventId = 0;
     await sql.begin(async (txSql) => {
       eventId = await db.appendEventTx(txSql, {
-        sessionId: "sess-runbook",
-        eventType: "runbook_operation",
-        payload: '{"type":"runbook_operation"}',
-        searchableText: "runbook operation",
+        sessionId: "sess-task",
+        eventType: "task_operation",
+        payload: '{"type":"task_operation"}',
+        searchableText: "task operation",
         createdAt,
-        dedupeKey: "runbook:op-1",
+        dedupeKey: "task:op-1",
       });
     });
 
@@ -765,12 +765,12 @@ describe("SessionDB.appendEvent", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].inTransaction).toBe(true);
     expect(calls[0].values).toEqual([
-      "sess-runbook",
-      "runbook_operation",
-      '{"type":"runbook_operation"}',
-      "runbook operation",
+      "sess-task",
+      "task_operation",
+      '{"type":"task_operation"}',
+      "task operation",
       createdAt,
-      "runbook:op-1",
+      "task:op-1",
     ]);
   });
 });
@@ -1233,7 +1233,7 @@ describe("SessionDB folder ops (B-5)", () => {
         containerKind: "folder",
         containerId: "f1",
         membershipKind: "primary",
-        sourceRunbookItemId: null,
+        sourceTaskItemId: null,
         itemType: "session",
         itemId: "s1",
         x: 0,
@@ -1273,10 +1273,10 @@ describe("SessionDB.getPrimarySessionBoardItem", () => {
           {
             id: "session:s1",
             folder_id: "f1",
-            container_kind: "runbook",
+            container_kind: "task",
             container_id: "rb-1",
             membership_kind: "primary",
-            source_runbook_item_id: "rb-item-1",
+            source_task_item_id: "rb-item-1",
             item_type: "session",
             item_id: "s1",
             x: "32",
@@ -1303,10 +1303,10 @@ describe("SessionDB.getPrimarySessionBoardItem", () => {
     expect(item).toEqual({
       id: "session:s1",
       folderId: "f1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
       membershipKind: "primary",
-      sourceRunbookItemId: "rb-item-1",
+      sourceTaskItemId: "rb-item-1",
       itemType: "session",
       itemId: "s1",
       x: 32,

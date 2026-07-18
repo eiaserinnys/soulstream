@@ -52,8 +52,8 @@ describe("orch-server-ts contract fixture reader", () => {
         dynamicPath: "/api/sessions/{session_id}/events",
       },
       {
-        staticPath: "/api/runbooks/my-turn",
-        dynamicPath: "/api/runbooks/{runbook_id}",
+        staticPath: "/api/tasks/my-turn",
+        dynamicPath: "/api/tasks/{task_id}",
       },
       {
         staticPath: "/api/pages/daily",

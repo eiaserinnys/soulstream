@@ -15,7 +15,7 @@ import {
 } from "./task-board-model";
 
 describe("task board bounded catalog", () => {
-  it("extracts only unique session ids from the selected runbook", () => {
+  it("extracts only unique session ids from the selected task", () => {
     expect(extractTaskBoardSessionIds([
       boardItem("rb-a", "session", "session-b"),
       boardItem("rb-a", "markdown", "doc-a"),
@@ -24,7 +24,7 @@ describe("task board bounded catalog", () => {
     ])).toEqual(["session-a", "session-b"]);
   });
 
-  it("builds a catalog containing only the selected runbook and its sessions", () => {
+  it("builds a catalog containing only the selected task and its sessions", () => {
     const items = [
       boardItem("rb-a", "session", "session-a"),
       boardItem("rb-a", "markdown", "doc-a"),
@@ -152,16 +152,16 @@ describe("task board bounded catalog", () => {
 });
 
 function boardItem(
-  runbookId: string,
+  taskId: string,
   itemType: CatalogBoardItem["itemType"],
   itemId: string,
   x = 0,
 ): CatalogBoardItem {
   return {
-    id: `${runbookId}:${itemType}:${itemId}`,
+    id: `${taskId}:${itemType}:${itemId}`,
     folderId: "folder-a",
-    containerKind: "runbook",
-    containerId: runbookId,
+    containerKind: "task",
+    containerId: taskId,
     itemType,
     itemId,
     x,

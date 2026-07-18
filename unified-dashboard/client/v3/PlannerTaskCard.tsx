@@ -113,7 +113,7 @@ export function PlannerTaskCard({
           <span
             className="v3-progress"
             role="progressbar"
-            aria-label="런북 진행률"
+            aria-label="업무 진행률"
             aria-valuenow={task.progress}
             aria-valuemin={0}
             aria-valuemax={100}

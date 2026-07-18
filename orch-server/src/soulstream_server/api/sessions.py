@@ -81,7 +81,7 @@ async def _resolve_payload_folder_id(
     container_id = container.get("id")
     if kind == "folder" and isinstance(container_id, str) and container_id:
         return container_id
-    if kind != "runbook" or not isinstance(container_id, str) or not container_id:
+    if kind != "task" or not isinstance(container_id, str) or not container_id:
         return folder_id
     if catalog_service is None:
         return folder_id
@@ -90,13 +90,13 @@ async def _resolve_payload_folder_id(
     for item in board_items:
         if not isinstance(item, dict):
             continue
-        if item.get("itemType") == "runbook" and item.get("itemId") == container_id:
+        if item.get("itemType") == "task" and item.get("itemId") == container_id:
             resolved = item.get("folderId")
             return resolved if isinstance(resolved, str) and resolved else folder_id
-    raise HTTPException(status_code=404, detail="Runbook board container not found")
+    raise HTTPException(status_code=404, detail="Task board container not found")
 
 
-async def _inherit_source_session_runbook_container(
+async def _inherit_source_session_task_container(
     db: PostgresSessionDB,
     payload: dict[str, Any],
 ) -> None:
@@ -115,8 +115,8 @@ async def _inherit_source_session_runbook_container(
 
     container_kind = board_item.get("containerKind") or "folder"
     container_id = board_item.get("containerId") or board_item.get("folderId")
-    if container_kind == "runbook" and isinstance(container_id, str) and container_id:
-        payload["container"] = {"kind": "runbook", "id": container_id}
+    if container_kind == "task" and isinstance(container_id, str) and container_id:
+        payload["container"] = {"kind": "task", "id": container_id}
 
 
 TOOL_APPROVAL_ACK_ERROR_HTTP_STATUS = {
@@ -259,7 +259,7 @@ def create_sessions_router(
             system_node_id=body.nodeId or "",
         )
         payload = body.model_dump(exclude_none=True)
-        await _inherit_source_session_runbook_container(db, payload)
+        await _inherit_source_session_task_container(db, payload)
         access = access_for_request(
             request,
             access_email=_access_email_from_caller_info(body.caller_info),

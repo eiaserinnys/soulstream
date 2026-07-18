@@ -176,7 +176,7 @@ function parsePositionBody(
 function parseMoveBody(
   body: BoardItemContainerMoveBody,
 ): { ok: true; value: {
-  container: { kind: "folder" | "runbook"; id: string };
+  container: { kind: "folder" | "task"; id: string };
   position?: { x: number; y: number };
   idempotencyKey: string;
 } } | { ok: false; error: string } {
@@ -186,7 +186,7 @@ function parseMoveBody(
   }
   const kind = (container as { kind?: unknown }).kind;
   const id = (container as { id?: unknown }).id;
-  if ((kind !== "folder" && kind !== "runbook") || typeof id !== "string" || !id.trim()) {
+  if ((kind !== "folder" && kind !== "task") || typeof id !== "string" || !id.trim()) {
     return { ok: false, error: "invalid container" };
   }
   const idempotencyKey = body.idempotencyKey ?? body.idempotency_key;

@@ -13,9 +13,9 @@ import type { CustomViewService } from "../custom_view/custom_view_service.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import type { PageYjsHostClient } from "../page/page_host_client.js";
-import type { ChecklistRunbookAdapter } from "../page/checklist_runbook_adapter.js";
-import type { RunbookService } from "../runbook/runbook_service.js";
-import type { RunbookTaskIdentityHostClient } from "../runbook/runbook_task_identity_host_client.js";
+import type { ChecklistTaskAdapter } from "../page/checklist_task_adapter.js";
+import type { TaskService } from "../work-task/task_service.js";
+import type { TaskIdentityHostClient } from "../work-task/task_identity_host_client.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { McpToolProfile } from "./tool_access.js";
@@ -38,12 +38,12 @@ export interface McpRuntime {
   agentConfigService?: AgentConfigService;
   mcpConfigService?: McpConfigService;
   catalogService: CatalogService;
-  runbookService?: RunbookService;
-  runbookTaskIdentityHostClient?: RunbookTaskIdentityHostClient;
+  taskService?: TaskService;
+  taskIdentityHostClient?: TaskIdentityHostClient;
   customViewService?: CustomViewService;
   /** Tests may inject the page host boundary; production constructs it from orch. */
   pageHostClient?: PageYjsHostClient;
-  checklistRunbookAdapter?: ChecklistRunbookAdapter;
+  checklistTaskAdapter?: ChecklistTaskAdapter;
   logger: Logger;
   /** default = full tool surface. supervisor_readonly hides and blocks mutation tools. */
   mcpToolProfile?: McpToolProfile;

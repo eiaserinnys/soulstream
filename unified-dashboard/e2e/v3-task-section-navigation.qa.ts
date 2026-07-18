@@ -36,12 +36,12 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
   await preparePage(page, theme);
   try {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").click();
+    await page.getByTestId("v3-task-alpha").click();
 
     const navigation = page.getByRole("navigation", { name: "업무 섹션" });
     const scroll = page.locator(".v3-detail-scroll");
     await navigation.waitFor({ state: "visible", timeout: 20_000 });
-    await page.getByTestId("v3-task-runbook-checklist").getByTestId("runbook-item-row").first().waitFor();
+    await page.getByTestId("v3-task-checklist").getByTestId("task-item-row").first().waitFor();
 
     const order = await page.locator("[data-task-section]").evaluateAll((sections) => (
       sections.map((section) => section.getAttribute("data-task-section"))
@@ -69,9 +69,9 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await checklistButton.click();
     await waitForCurrent(navigation, "체크리스트 섹션으로 이동");
     await assertAnchored(scroll, "checklist");
-    const runbookCard = page.getByTestId("v3-task-runbook-checklist").getByTestId("runbook-card");
-    assert(await runbookCard.getByTestId("runbook-card-progress").innerText() === "8/48", "48항목 진행률이 다릅니다.");
-    assert(await runbookCard.getByTestId("runbook-item-row").count() === 40, "완료 섹션 기본 접기 뒤 40항목이 보이지 않습니다.");
+    const taskCard = page.getByTestId("v3-task-checklist").getByTestId("task-card");
+    assert(await taskCard.getByTestId("task-card-progress").innerText() === "8/48", "48항목 진행률이 다릅니다.");
+    assert(await taskCard.getByTestId("task-item-row").count() === 40, "완료 섹션 기본 접기 뒤 40항목이 보이지 않습니다.");
 
     const beforeBoardScroll = await scroll.evaluate((element) => element.scrollTop);
     await navigation.getByRole("button", { name: "보드 섹션으로 이동" }).click();
@@ -127,9 +127,9 @@ async function preparePage(page: Page, theme: "dark" | "light") {
     }
   ` });
   await installV3VisualQaRoutes(page);
-  await page.route("**/api/runbooks/rb-alpha", async (route) => {
+  await page.route("**/api/tasks/rb-alpha", async (route) => {
     if (route.request().method() !== "GET") return route.fallback();
-    await fulfillJson(route, runbookSnapshot());
+    await fulfillJson(route, taskSnapshot());
   });
 }
 
@@ -177,11 +177,11 @@ async function currentSectionLabel(navigation: Locator) {
   return navigation.locator('[aria-current="location"]').getAttribute("aria-label");
 }
 
-function runbookSnapshot() {
+function taskSnapshot() {
   const now = "2026-07-17T00:00:00.000Z";
   const section = (id: string, positionKey: string, title: string) => ({
     id,
-    runbook_id: "rb-alpha",
+    task_id: "rb-alpha",
     position_key: positionKey,
     title,
     assignee_kind: null,
@@ -223,9 +223,9 @@ function runbookSnapshot() {
     updated_at: now,
   });
   return {
-    runbook: {
+    task: {
       id: "rb-alpha",
-      board_item_id: "runbook:rb-alpha",
+      board_item_id: "task:rb-alpha",
       folder_id: "folder-amber",
       title: "v3 플래너 UX 폴리시",
       status: "open",

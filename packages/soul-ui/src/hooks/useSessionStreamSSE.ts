@@ -23,7 +23,7 @@ import type {
   MetadataUpdatedStreamEvent,
   PageUpdatedStreamEvent,
   ReplayGapStreamEvent,
-  RunbookUpdatedStreamEvent,
+  TaskUpdatedStreamEvent,
   SessionCreatedStreamEvent,
   SessionDeletedStreamEvent,
   SessionListStreamEvent,
@@ -52,6 +52,7 @@ const SESSION_STREAM_EVENT_TYPES = [
   "session_deleted",
   "catalog_updated",
   "metadata_updated",
+  "task_updated",
   "runbook_updated",
   "custom_view_updated",
   "page_updated",
@@ -78,7 +79,7 @@ export interface UseSessionStreamSSEOptions {
   onSessionDeleted?: (event: SessionDeletedStreamEvent) => void;
   onCatalogUpdated?: (event: CatalogUpdatedStreamEvent) => void;
   onMetadataUpdated?: (event: MetadataUpdatedStreamEvent) => void;
-  onRunbookUpdated?: (event: RunbookUpdatedStreamEvent) => void;
+  onTaskUpdated?: (event: TaskUpdatedStreamEvent) => void;
   onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
   onPageUpdated?: (event: PageUpdatedStreamEvent) => void;
   onStreamMeta?: (event: StreamMetaStreamEvent) => void;

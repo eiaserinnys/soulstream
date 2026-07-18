@@ -31,7 +31,7 @@ function makeHandlers(): SessionStreamHandlers & {
     onSessionDeleted: vi.fn(),
     onCatalogUpdated: vi.fn(),
     onMetadataUpdated: vi.fn(),
-    onRunbookUpdated: vi.fn(),
+    onTaskUpdated: vi.fn(),
     onCustomViewUpdated: vi.fn(),
     onPageUpdated: vi.fn(),
     onStreamMeta: vi.fn(),
@@ -85,7 +85,7 @@ describe("dispatchSessionStreamEvent", () => {
     expect(() => dispatchSessionStreamEvent(event, {})).not.toThrow();
   });
 
-  it("기존 이벤트와 runbook/custom_view/page 업데이트도 그대로 라우팅", () => {
+  it("기존 이벤트와 task/custom_view/page 업데이트도 그대로 라우팅", () => {
     const handlers = makeHandlers();
     const events: SessionStreamEvent[] = [
       { type: "session_list", sessions: [], total: 0 },
@@ -108,9 +108,9 @@ describe("dispatchSessionStreamEvent", () => {
         metadata: [],
       },
       {
-        type: "runbook_updated",
-        runbookId: "rb-1",
-        boardItemId: "runbook:rb-1",
+        type: "task_updated",
+        taskId: "rb-1",
+        boardItemId: "task:rb-1",
       },
       {
         type: "custom_view_updated",
@@ -131,13 +131,38 @@ describe("dispatchSessionStreamEvent", () => {
     expect(handlers.__spies.onSessionDeleted).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onCatalogUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onMetadataUpdated).toHaveBeenCalledTimes(1);
-    expect(handlers.__spies.onRunbookUpdated).toHaveBeenCalledTimes(1);
+    expect(handlers.__spies.onTaskUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onCustomViewUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onPageUpdated).toHaveBeenCalledTimes(1);
     expect(handlers.__spies.onEvent).toHaveBeenCalledTimes(events.length);
     // stream_meta/replay_gap은 호출되지 않아야 함
     expect(handlers.__spies.onStreamMeta).not.toHaveBeenCalled();
     expect(handlers.__spies.onReplayGap).not.toHaveBeenCalled();
+  });
+
+  it("runbook_updated 읽기 호환 이벤트를 canonical task_updated로 한 번만 전달", () => {
+    const handlers = makeHandlers();
+
+    dispatchSessionStreamEvent(
+      {
+        type: "runbook_updated",
+        runbookId: "rb-legacy",
+        boardItemId: "runbook:opaque-id",
+        lastEventId: "19",
+      },
+      handlers,
+    );
+
+    const canonical = {
+      type: "task_updated",
+      taskId: "rb-legacy",
+      boardItemId: "runbook:opaque-id",
+      lastEventId: "19",
+    };
+    expect(handlers.__spies.onTaskUpdated).toHaveBeenCalledOnce();
+    expect(handlers.__spies.onTaskUpdated).toHaveBeenCalledWith(canonical);
+    expect(handlers.__spies.onEvent).toHaveBeenCalledOnce();
+    expect(handlers.__spies.onEvent).toHaveBeenCalledWith(canonical);
   });
 });
 

@@ -56,7 +56,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light", verifyFail
 
   try {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible" });
+    await page.getByTestId("v3-task-alpha").waitFor({ state: "visible" });
     await openPrimaryTask(page, fixtureTitles.primaryTask);
 
     const legacyOverride = await page.addStyleTag({ content: `
@@ -70,7 +70,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light", verifyFail
     await capture(page, theme, "01-font-before");
     await legacyOverride.dispose();
     await page.reload({ waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible" });
+    await page.getByTestId("v3-task-alpha").waitFor({ state: "visible" });
     await openPrimaryTask(page, fixtureTitles.primaryTask);
 
     const afterFont = await runCardFontMetrics(page);
@@ -102,7 +102,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light", verifyFail
 }
 
 async function openPrimaryTask(page: Page, title: string) {
-  await page.getByTestId("v3-task-task-alpha").click();
+  await page.getByTestId("v3-task-alpha").click();
   try {
     await taskTitleButton(page, title).waitFor({ state: "visible", timeout: 10_000 });
   } catch (error) {
@@ -172,22 +172,22 @@ function taskTitleButton(page: Page, title: string) {
 
 async function assertIdentityTitles(page: Page, expected: string) {
   const titles = await page.evaluate(async () => {
-    const [pageResponse, runbookResponse] = await Promise.all([
+    const [pageResponse, taskResponse] = await Promise.all([
       fetch("/api/pages/task-alpha"),
-      fetch("/api/runbooks/rb-alpha"),
+      fetch("/api/tasks/rb-alpha"),
     ]);
     const pagePayload = await pageResponse.json() as { page: { title: string } };
-    const runbookPayload = await runbookResponse.json() as { runbook: { title: string } };
-    return { page: pagePayload.page.title, runbook: runbookPayload.runbook.title };
+    const taskPayload = await taskResponse.json() as { task: { title: string } };
+    return { page: pagePayload.page.title, task: taskPayload.task.title };
   });
-  if (titles.page !== expected || titles.runbook !== expected) {
-    throw new Error(`한 객체 rename 불일치: page=${titles.page}, runbook=${titles.runbook}, expected=${expected}`);
+  if (titles.page !== expected || titles.task !== expected) {
+    throw new Error(`한 객체 rename 불일치: page=${titles.page}, task=${titles.task}, expected=${expected}`);
   }
 }
 
 async function assertImmediateSurfaces(page: Page, expected: string) {
   await page.getByRole("button", { name: "오늘 플래너로 돌아가기" }).click();
-  const card = page.getByTestId("v3-task-task-alpha");
+  const card = page.getByTestId("v3-task-alpha");
   await card.waitFor({ state: "visible" });
   if (!(await card.textContent())?.includes(expected)) throw new Error("업무 카드 제목이 즉시 갱신되지 않았습니다.");
   const starred = page.getByTestId("v3-starred-tasks");

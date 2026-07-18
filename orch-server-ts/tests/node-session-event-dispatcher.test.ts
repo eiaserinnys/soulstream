@@ -88,7 +88,7 @@ describe("node inbound session event dispatcher", () => {
       });
   });
 
-  it("maps runbook and custom view event envelopes while skipping non-session broadcasts", () => {
+  it("maps task and custom view event envelopes while skipping non-session broadcasts", () => {
     const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
       instanceId: "dispatcher-session-stream",
     });
@@ -113,8 +113,8 @@ describe("node inbound session event dispatcher", () => {
             type: "event",
             agentSessionId: "sess-1",
             event: {
-              type: "runbook_updated",
-              runbookId: "rb-1",
+              type: "task_updated",
+              taskId: "rb-1",
               version: 2,
             },
           },
@@ -163,8 +163,8 @@ describe("node inbound session event dispatcher", () => {
         nodeId: "node-1",
       },
       {
-        type: "runbook_updated",
-        runbookId: "rb-1",
+        type: "task_updated",
+        taskId: "rb-1",
         version: 2,
         nodeId: "node-1",
       },
@@ -174,6 +174,40 @@ describe("node inbound session event dispatcher", () => {
         nodeId: "node-1",
       },
     ]);
+  });
+
+  it("normalizes a production-gated runbook_updated event at the ingestion boundary", () => {
+    const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
+      instanceId: "dispatcher-session-stream",
+    });
+
+    const result = dispatchNodeRegistryEventsToSessionBroadcaster(
+      [
+        {
+          type: "node_session_event",
+          nodeId: "node-legacy",
+          data: {
+            type: "event",
+            agentSessionId: "sess-legacy",
+            event: {
+              type: "runbook_updated",
+              runbookId: "rb-legacy",
+              boardItemId: "runbook:opaque-id",
+            },
+          },
+        },
+      ] satisfies NodeRegistryEvent[],
+      broadcaster,
+    );
+
+    expect(result).toEqual({ appended: 1, skipped: 0, failed: 0 });
+    expect(broadcaster.bufferedEvents[0]?.payload).toEqual({
+      type: "task_updated",
+      taskId: "rb-legacy",
+      boardItemId: "runbook:opaque-id",
+      nodeId: "node-legacy",
+    });
+    expect(broadcaster.bufferedEvents[0]?.payload).not.toHaveProperty("runbookId");
   });
 
   it("offers a no-throw sink so broadcaster listener failures do not break the node route", () => {

@@ -49,7 +49,7 @@ describe("v3 project model local-stack PostgreSQL round-trip", () => {
       idempotencyKey: "create_page:pr-t:task",
       initialCommand: {
         type: "batch_operations",
-        operations: [block("runbook", "runbook_ref", "", { primary: true, runbookId: "rb-pr-t" })],
+        operations: [block("task", "task_ref", "", { primary: true, taskId: "rb-pr-t" })],
       },
     });
 

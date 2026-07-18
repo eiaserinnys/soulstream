@@ -169,7 +169,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     });
   });
 
-  it("page anchor replaces legacy folder/runbook context while retaining core context", async () => {
+  it("page anchor replaces legacy folder/task context while retaining core context", async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input);
@@ -221,10 +221,10 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       const getPrimarySessionBoardItem = vi.fn().mockResolvedValue({
         id: "session:sess-1",
         folderId: "folder-1",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
         membershipKind: "primary",
-        sourceRunbookItemId: "item-1",
+        sourceTaskItemId: "item-1",
         itemType: "session",
         itemId: "sess-1",
         x: 0,
@@ -255,7 +255,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
           getCatalog,
           listRunningSessionsSummary,
           getPrimarySessionBoardItem,
-          runbooks: () => ({ getRunbook: async () => ({ title: "Runbook" }) }),
+          tasks: () => ({ getTask: async () => ({ title: "Task" }) }),
         } as unknown as Partial<SessionDB>,
         new AgentRegistry([agent]),
         true,
@@ -275,8 +275,8 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       expect(keys).toContain("cogito_context");
       expect(keys).not.toContain("board_workspace");
       expect(keys).not.toContain("atom_context");
-      expect(sessionContent.container).toEqual({ kind: "runbook", id: "rb-1", title: "Runbook" });
-      expect(sessionContent).not.toHaveProperty("runbook_guidance");
+      expect(sessionContent.container).toEqual({ kind: "task", id: "rb-1", title: "Task" });
+      expect(sessionContent).not.toHaveProperty("task_guidance");
       expect(vi.mocked(globalThis.fetch).mock.calls.filter(([url]) =>
         String(url).includes("/api/tree/"))).toHaveLength(1);
     } finally {
@@ -528,53 +528,53 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     expect(content.caller_info).toEqual({ source: "slack", display_name: "Alice" });
   });
 
-  it("runbook primary board item → soulstream_session에 container와 실행 안내를 주입", async () => {
+  it("task primary board item → soulstream_session에 container와 실행 안내를 주입", async () => {
     const getSession = vi.fn().mockResolvedValue({ folder_id: "folder-a" });
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
-      name: "런북 폴더",
+      name: "업무 폴더",
       sort_order: 0,
       settings: {},
     });
     const getPrimarySessionBoardItem = vi.fn().mockResolvedValue({
       id: "session:sess-1",
       folderId: "folder-a",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
       membershipKind: "primary",
-      sourceRunbookItemId: "rb-item-13",
+      sourceTaskItemId: "rb-item-13",
       itemType: "session",
       itemId: "sess-1",
       x: 0,
       y: 0,
       metadata: {},
     });
-    const getRunbook = vi.fn().mockResolvedValue({ id: "rb-1", title: "PR-12 런북" });
+    const getTask = vi.fn().mockResolvedValue({ id: "rb-1", title: "PR-12 업무" });
     const cb = makeBuilder({
       getSession,
       getFolderById,
       getPrimarySessionBoardItem,
-      runbooks: () => ({ getRunbook }),
+      tasks: () => ({ getTask }),
     } as Partial<SessionDB>);
 
     const ctx = await cb.build(makeTask(), codexAgent);
     const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
 
-    expect(content.folder).toBe("런북 폴더");
+    expect(content.folder).toBe("업무 폴더");
     expect(content.container).toEqual({
-      kind: "runbook",
+      kind: "task",
       id: "rb-1",
-      title: "PR-12 런북",
+      title: "PR-12 업무",
     });
-    expect(content.source_runbook_item_id).toBe("rb-item-13");
-    expect(content.runbook_guidance).toBe(
-      "이 세션은 런북 rb-1(PR-12 런북) 소속. get_runbook으로 체크리스트를 확인하고, 산출물·후속 세션은 이 런북 컨테이너에 연결한다.",
+    expect(content.source_task_item_id).toBe("rb-item-13");
+    expect(content.task_guidance).toBe(
+      "이 세션은 업무 rb-1(PR-12 업무) 소속. get_task으로 체크리스트를 확인하고, 산출물·후속 세션은 이 업무 컨테이너에 연결한다.",
     );
     expect(getPrimarySessionBoardItem).toHaveBeenCalledWith("sess-1");
-    expect(getRunbook).toHaveBeenCalledWith("rb-1");
+    expect(getTask).toHaveBeenCalledWith("rb-1");
   });
 
-  it("folder primary board item → container만 주입하고 runbook 안내는 추가하지 않는다", async () => {
+  it("folder primary board item → container만 주입하고 task 안내는 추가하지 않는다", async () => {
     const getSession = vi.fn().mockResolvedValue({ folder_id: "folder-a" });
     const getFolderById = vi.fn().mockResolvedValue({
       id: "folder-a",
@@ -588,7 +588,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       containerKind: "folder",
       containerId: "folder-a",
       membershipKind: "primary",
-      sourceRunbookItemId: null,
+      sourceTaskItemId: null,
       itemType: "session",
       itemId: "sess-1",
       x: 0,
@@ -610,8 +610,8 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
       id: "folder-a",
       title: "일반 폴더",
     });
-    expect(content).not.toHaveProperty("source_runbook_item_id");
-    expect(content).not.toHaveProperty("runbook_guidance");
+    expect(content).not.toHaveProperty("source_task_item_id");
+    expect(content).not.toHaveProperty("task_guidance");
   });
 
   it("primary board item 없음 → 기존 soulstream_session 형태로 폴백", async () => {
@@ -634,8 +634,8 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
 
     expect(content.folder).toBe("일반 폴더");
     expect(content).not.toHaveProperty("container");
-    expect(content).not.toHaveProperty("source_runbook_item_id");
-    expect(content).not.toHaveProperty("runbook_guidance");
+    expect(content).not.toHaveProperty("source_task_item_id");
+    expect(content).not.toHaveProperty("task_guidance");
   });
 
   it("primary board item 조회 실패 → 세션 기동을 막지 않고 기존 형태로 폴백", async () => {
@@ -658,7 +658,7 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
 
     expect(content.folder).toBe("일반 폴더");
     expect(content).not.toHaveProperty("container");
-    expect(content).not.toHaveProperty("runbook_guidance");
+    expect(content).not.toHaveProperty("task_guidance");
   });
 
   it("getSession throw → graceful, folder 없는 흐름과 동일", async () => {

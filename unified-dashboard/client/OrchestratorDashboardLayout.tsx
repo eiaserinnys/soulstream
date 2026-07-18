@@ -50,7 +50,7 @@ import {
   DashboardIconCap,
   useSessionListProvider,
   shouldLoadMoreAfterSessionMove,
-  RunbookOverview,
+  TaskOverview,
 } from "@seosoyoung/soul-ui";
 import { LayoutDashboard } from "lucide-react";
 import { FeedView } from "./components/FeedView";
@@ -182,8 +182,8 @@ export function OrchestratorDashboardLayout() {
         />
       }
       centerPanel={
-        viewMode === "runbooks" ? (
-          <RunbookOverview />
+        viewMode === "tasks" ? (
+          <TaskOverview />
         ) : viewMode === "feed" ? (
           <FeedView
             placement="main"
@@ -238,7 +238,7 @@ export function OrchestratorDashboardLayout() {
       mobileFolderContents={
         <FolderWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
       }
-      mobileRunbooksView={<RunbookOverview />}
+      mobileTasksView={<TaskOverview />}
       onNewSession={() => openNewSessionModal("folder")}
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={

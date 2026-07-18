@@ -61,7 +61,7 @@ describe("v3 dashboard utilities", () => {
       .toBe(AUTH_EXPIRED_MESSAGE);
     expect(writeFailureText(
       "새 업무 생성",
-      Object.assign(new Error("런북 생성 실패"), { cause: error }),
+      Object.assign(new Error("업무 생성 실패"), { cause: error }),
     )).toBe(AUTH_EXPIRED_MESSAGE);
   });
 });

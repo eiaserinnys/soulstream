@@ -74,7 +74,7 @@ describe("planner task card actions", () => {
 
     await completePlannerTask(task());
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/runbooks/rb-task-a/status", expect.objectContaining({
+    expect(fetchMock).toHaveBeenCalledWith("/api/tasks/rb-task-a/status", expect.objectContaining({
       method: "POST",
       body: expect.stringContaining('"status":"completed"'),
     }));
@@ -86,11 +86,11 @@ function task(): PlannerTask {
     page: page("task-a", "업무 A", 2),
     blocks: [],
     stateVector: "AA==",
-    runbookId: "rb-task-a",
-    runbook: {
-      runbook: {
+    taskId: "rb-task-a",
+    task: {
+      task: {
         id: "rb-task-a",
-        board_item_id: "runbook:rb-task-a",
+        board_item_id: "task:rb-task-a",
         title: "업무 A",
         status: "open",
         archived: false,

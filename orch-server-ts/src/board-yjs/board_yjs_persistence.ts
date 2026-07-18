@@ -24,7 +24,7 @@ export interface BoardYjsPersistenceRepository {
   resolveBoardYjsContainerScope(
     container: BoardYjsContainerRef,
   ): Promise<BoardYjsContainerScope | null>;
-  backfillRunbookBoardItemsIntoSnapshot(
+  backfillTaskBoardItemsIntoSnapshot(
     documentName: string,
     container: BoardYjsContainerScope,
     snapshot: Uint8Array,
@@ -58,7 +58,7 @@ export function createBoardYjsPersistence(
         const scope = await repository.resolveBoardYjsContainerScope(container);
         if (!scope) return snapshot ?? null;
         if (snapshot) {
-          return await repository.backfillRunbookBoardItemsIntoSnapshot(
+          return await repository.backfillTaskBoardItemsIntoSnapshot(
             payload.documentName,
             scope,
             snapshot,

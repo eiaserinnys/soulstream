@@ -42,7 +42,7 @@ import type { PageContextSourcesMarker } from "./project-context-inheritance";
 export function TaskRunHistory({
   taskTitle,
   taskPageId,
-  runbookId,
+  taskId,
   contextItems,
   documentOptions,
   pageContextSources,
@@ -65,7 +65,7 @@ export function TaskRunHistory({
 }: {
   taskTitle: string;
   taskPageId: string;
-  runbookId: string;
+  taskId: string;
   contextItems: readonly SuccessionContextItem[];
   documentOptions: readonly SuccessionDocumentOption[];
   pageContextSources: PageContextSourcesMarker;
@@ -124,8 +124,8 @@ export function TaskRunHistory({
     ? sessions.find((session) => session.agentSessionId === targetedSuccessionId) ?? null
     : currentSession;
   const visibleMoveTargets = useMemo(
-    () => defaultTaskMoveTargets(moveTargets, runbookId),
-    [moveTargets, runbookId],
+    () => defaultTaskMoveTargets(moveTargets, taskId),
+    [moveTargets, taskId],
   );
   const normalizedMoveQuery = moveQuery.trim();
   const moveOptions = normalizedMoveQuery ? searchedMoveTargets : visibleMoveTargets;
@@ -146,7 +146,7 @@ export function TaskRunHistory({
     let active = true;
     setMoveSearchPending(true);
     setMoveSearchError(null);
-    void searchTaskMoveTargets(api, normalizedMoveQuery, runbookId).then((targets) => {
+    void searchTaskMoveTargets(api, normalizedMoveQuery, taskId).then((targets) => {
       if (active) setSearchedMoveTargets(targets);
     }).catch((error: unknown) => {
       if (active) setMoveSearchError(error instanceof Error ? error.message : String(error));
@@ -154,7 +154,7 @@ export function TaskRunHistory({
       if (active) setMoveSearchPending(false);
     });
     return () => { active = false; };
-  }, [api, moveSessionId, normalizedMoveQuery, runbookId]);
+  }, [api, moveSessionId, normalizedMoveQuery, taskId]);
 
   const moveSession = (target: TaskMoveTarget) => {
     if (!moveSessionId) return;
@@ -209,7 +209,7 @@ export function TaskRunHistory({
         <SessionSuccessionModal
           taskTitle={taskTitle}
           taskPageId={taskPageId}
-          runbookId={runbookId}
+          taskId={taskId}
           contextItems={contextItems}
           documentOptions={documentOptions}
           pageContextSources={pageContextSources}
@@ -262,12 +262,12 @@ export function TaskRunHistory({
                     <button
                       type="button"
                       className="v3-context-option"
-                      key={target.runbookId}
+                      key={target.taskId}
                       disabled={movePending}
                       onClick={() => moveSession(target)}
                     >
                       <span className="v3-emoji" aria-hidden="true">↪</span>
-                      <span><strong>{target.page.title}</strong><small>업무 · {target.runbookId.slice(0, 8)}</small></span>
+                      <span><strong>{target.page.title}</strong><small>업무 · {target.taskId.slice(0, 8)}</small></span>
                     </button>
                   ))}
                   {moveSearchPending ? <p>업무를 검색하는 중…</p> : null}

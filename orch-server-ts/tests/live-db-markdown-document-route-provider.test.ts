@@ -98,7 +98,7 @@ describe("live DB markdown document route provider", () => {
     });
   });
 
-  it("uses the board item provider indexed lookup for runbook container folders", async () => {
+  it("uses the board item provider indexed lookup for task container folders", async () => {
     let cacheCalls = 0;
     const harness = createSqlHarness((text) => {
       if (text.includes("board_yjs_catalog_cache")) {
@@ -117,29 +117,29 @@ describe("live DB markdown document route provider", () => {
     ).resolves.toBe("folder-direct");
     await expect(
       repository.markdownDocumentRouteProvider.resolveBoardContainerFolderId({
-        kind: "runbook",
-        id: "runbook-1",
+        kind: "task",
+        id: "task-1",
       }),
     ).resolves.toBe("folder-a");
     await expect(
       repository.markdownDocumentRouteProvider.resolveBoardContainerFolderId({
-        kind: "runbook",
+        kind: "task",
         id: "missing",
       }),
     ).rejects.toMatchObject(
       new MarkdownDocumentRouteError(
         "BOARD_CONTAINER_NOT_FOUND",
-        "Runbook board container not found",
+        "Task board container not found",
         404,
       ),
     );
-    const runbookCalls = harness.calls.filter((call) =>
+    const taskCalls = harness.calls.filter((call) =>
       call.text.includes("board_yjs_catalog_cache")
     );
-    expect(runbookCalls).toHaveLength(2);
-    expect(runbookCalls[0]?.text).toContain("container_kind = 'runbook'");
-    expect(runbookCalls[0]?.text).not.toContain("board_item_get_all");
-    expect(runbookCalls[0]?.values).toEqual(["runbook-1"]);
+    expect(taskCalls).toHaveLength(2);
+    expect(taskCalls[0]?.text).toContain("container_kind = 'task'");
+    expect(taskCalls[0]?.text).not.toContain("board_item_get_all");
+    expect(taskCalls[0]?.values).toEqual(["task-1"]);
   });
 });
 

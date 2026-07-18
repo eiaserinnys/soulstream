@@ -61,10 +61,10 @@ export class BoardRepository {
           x: string | number;
           y: string | number;
           metadata: unknown;
-          container_kind?: "folder" | "runbook" | null;
+          container_kind?: "folder" | "task" | null;
           container_id?: string | null;
           membership_kind?: "primary" | "reference" | null;
-          source_runbook_item_id?: string | null;
+          source_task_item_id?: string | null;
           created_at: Date | string | null;
           updated_at: Date | string | null;
         }>
@@ -99,10 +99,10 @@ export class BoardRepository {
         x: string | number;
         y: string | number;
         metadata: unknown;
-        container_kind?: "folder" | "runbook" | null;
+        container_kind?: "folder" | "task" | null;
         container_id?: string | null;
         membership_kind?: "primary" | "reference" | null;
-        source_runbook_item_id?: string | null;
+        source_task_item_id?: string | null;
         created_at: Date | string | null;
         updated_at: Date | string | null;
       }>
@@ -120,10 +120,10 @@ export class BoardRepository {
         x: string | number;
         y: string | number;
         metadata: unknown;
-        container_kind?: "folder" | "runbook" | null;
+        container_kind?: "folder" | "task" | null;
         container_id?: string | null;
         membership_kind?: "primary" | "reference" | null;
-        source_runbook_item_id?: string | null;
+        source_task_item_id?: string | null;
         created_at: Date | string | null;
         updated_at: Date | string | null;
       }>
@@ -146,10 +146,10 @@ export class BoardRepository {
         x: string | number;
         y: string | number;
         metadata: unknown;
-        container_kind?: "folder" | "runbook" | null;
+        container_kind?: "folder" | "task" | null;
         container_id?: string | null;
         membership_kind?: "primary" | "reference" | null;
-        source_runbook_item_id?: string | null;
+        source_task_item_id?: string | null;
         created_at: Date | string | null;
         updated_at: Date | string | null;
       }>
@@ -174,10 +174,10 @@ export class BoardRepository {
         x: string | number;
         y: string | number;
         metadata: unknown;
-        container_kind?: "folder" | "runbook" | null;
+        container_kind?: "folder" | "task" | null;
         container_id?: string | null;
         membership_kind?: "primary" | "reference" | null;
-        source_runbook_item_id?: string | null;
+        source_task_item_id?: string | null;
         created_at: Date | string | null;
         updated_at: Date | string | null;
       }>
@@ -230,7 +230,7 @@ export class BoardRepository {
         SELECT
           bi.*,
           CASE
-            WHEN bi.item_type = 'runbook' THEN COALESCE(r.archived, FALSE)
+            WHEN bi.item_type = 'task' THEN COALESCE(r.archived, FALSE)
             WHEN bi.item_type = 'custom_view' THEN COALESCE(cv.archived, FALSE)
             WHEN bi.item_type = 'subfolder' THEN COALESCE(sf.archived, FALSE)
             ELSE FALSE
@@ -269,9 +269,9 @@ export class BoardRepository {
           md.title AS markdown_title,
           md.body AS markdown_body,
           md.updated_at AS markdown_updated_at,
-          r.id AS runbook_id,
-          r.title AS runbook_title,
-          r.updated_at AS runbook_updated_at,
+          r.id AS task_id,
+          r.title AS task_title,
+          r.updated_at AS task_updated_at,
           cv.id AS custom_view_id,
           cv.title AS custom_view_title,
           cv.updated_at AS custom_view_updated_at,
@@ -293,8 +293,8 @@ export class BoardRepository {
         ) AS user_event ON TRUE
         LEFT JOIN markdown_documents md
           ON bi.item_type = 'markdown' AND md.id = bi.item_id
-        LEFT JOIN runbooks r
-          ON bi.item_type = 'runbook' AND r.id = bi.item_id
+        LEFT JOIN tasks r
+          ON bi.item_type = 'task' AND r.id = bi.item_id
         LEFT JOIN board_custom_views cv
           ON bi.item_type = 'custom_view' AND cv.id = bi.item_id
         LEFT JOIN file_assets fa
@@ -345,7 +345,7 @@ export class BoardRepository {
           COUNT(*) FILTER (WHERE item_type = 'subfolder')::BIGINT AS subfolder_count,
           COUNT(*) FILTER (WHERE item_type = 'asset')::BIGINT AS asset_count,
           COUNT(*) FILTER (WHERE item_type = 'frame')::BIGINT AS frame_count,
-          COUNT(*) FILTER (WHERE item_type = 'runbook')::BIGINT AS runbook_count,
+          COUNT(*) FILTER (WHERE item_type = 'task')::BIGINT AS task_count,
           COUNT(*) FILTER (WHERE item_type = 'custom_view')::BIGINT AS custom_view_count,
           (SELECT scanned_items FROM search_scan) AS scanned_items,
           (SELECT truncated FROM search_scan) AS search_truncated
@@ -357,7 +357,7 @@ export class BoardRepository {
         p.container_kind AS bi_container_kind,
         p.container_id AS bi_container_id,
         p.membership_kind AS bi_membership_kind,
-        p.source_runbook_item_id AS bi_source_runbook_item_id,
+        p.source_task_item_id AS bi_source_task_item_id,
         p.item_type AS bi_item_type,
         p.item_id AS bi_item_id,
         p.x AS bi_x,
@@ -384,9 +384,9 @@ export class BoardRepository {
         p.markdown_title,
         p.markdown_body,
         p.markdown_updated_at,
-        p.runbook_id,
-        p.runbook_title,
-        p.runbook_updated_at,
+        p.task_id,
+        p.task_title,
+        p.task_updated_at,
         p.custom_view_id,
         p.custom_view_title,
         p.custom_view_updated_at,
@@ -411,7 +411,7 @@ export class BoardRepository {
         subfolder: Number(summary?.subfolder_count ?? 0),
         asset: Number(summary?.asset_count ?? 0),
         frame: Number(summary?.frame_count ?? 0),
-        runbook: Number(summary?.runbook_count ?? 0),
+        task: Number(summary?.task_count ?? 0),
         custom_view: Number(summary?.custom_view_count ?? 0),
       },
       scan: scanLimit == null

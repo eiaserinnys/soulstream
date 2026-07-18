@@ -14,7 +14,7 @@ export function toContainerItemRecord(row: ContainerItemDbRow): ContainerItemRec
     container_kind: row.bi_container_kind,
     container_id: row.bi_container_id,
     membership_kind: row.bi_membership_kind,
-    source_runbook_item_id: row.bi_source_runbook_item_id,
+    source_task_item_id: row.bi_source_task_item_id,
     item_type: row.bi_item_type!,
     item_id: row.bi_item_id!,
     x: row.bi_x!,
@@ -54,8 +54,8 @@ export function toContainerItemRecord(row: ContainerItemDbRow): ContainerItemRec
       updatedAt: toIsoString(row.markdown_updated_at) ?? null,
     };
   }
-  if (boardItem.itemType === "runbook" && row.runbook_id) {
-    result.runbook = titleRecord(row.runbook_id, row.runbook_title, row.runbook_updated_at);
+  if (boardItem.itemType === "task" && row.task_id) {
+    result.task = titleRecord(row.task_id, row.task_title, row.task_updated_at);
   }
   if (boardItem.itemType === "custom_view" && row.custom_view_id) {
     result.customView = titleRecord(
@@ -88,10 +88,10 @@ function nullableNumber(value: string | number | null | undefined): number | nul
 export interface ContainerItemDbRow {
   bi_id: string | null;
   bi_folder_id?: string;
-  bi_container_kind?: "folder" | "runbook";
+  bi_container_kind?: "folder" | "task";
   bi_container_id?: string;
   bi_membership_kind?: "primary" | "reference";
-  bi_source_runbook_item_id?: string | null;
+  bi_source_task_item_id?: string | null;
   bi_item_type?: BoardItemType;
   bi_item_id?: string;
   bi_x?: string | number;
@@ -118,9 +118,9 @@ export interface ContainerItemDbRow {
   markdown_title?: string | null;
   markdown_body?: string | null;
   markdown_updated_at?: Date | string | null;
-  runbook_id?: string | null;
-  runbook_title?: string | null;
-  runbook_updated_at?: Date | string | null;
+  task_id?: string | null;
+  task_title?: string | null;
+  task_updated_at?: Date | string | null;
   custom_view_id?: string | null;
   custom_view_title?: string | null;
   custom_view_updated_at?: Date | string | null;
@@ -135,7 +135,7 @@ export interface ContainerItemDbRow {
   subfolder_count?: string | number;
   asset_count?: string | number;
   frame_count?: string | number;
-  runbook_count?: string | number;
+  task_count?: string | number;
   custom_view_count?: string | number;
   scanned_items?: string | number | null;
   search_truncated?: boolean | null;

@@ -33,7 +33,7 @@ export type UISlice = Pick<
     | "setActiveCustomView"
     | "focusBoardItem"
     | "clearFocusedBoardItem"
-    | "openRunbookBoard"
+    | "openTaskBoard"
     | "setDashboardConfig"
     | "setViewMode"
     | "selectFeed"
@@ -102,9 +102,9 @@ export const createUISlice: StateCreator<
         : {}
     )),
 
-  openRunbookBoard: (runbookId, parentFolderId = null) =>
+  openTaskBoard: (taskId, parentFolderId = null) =>
     set({
-      activeBoardContainer: { kind: "runbook", id: runbookId },
+      activeBoardContainer: { kind: "task", id: taskId },
       selectedFolderId: parentFolderId,
       focusedBoardItem: null,
       viewMode: "folder",

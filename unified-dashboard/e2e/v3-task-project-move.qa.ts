@@ -37,7 +37,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
   try {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    const task = page.getByTestId("v3-task-task-alpha");
+    const task = page.getByTestId("v3-task-alpha");
     await task.waitFor({ state: "visible" });
 
     await openContextMenu(task);
@@ -48,13 +48,13 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await target.click();
 
     await dialog.getByRole("alert").waitFor({ state: "visible" });
-    assert(await projectGroup(page, fixtureTitles.project).getByTestId("v3-task-task-alpha").count() === 1,
+    assert(await projectGroup(page, fixtureTitles.project).getByTestId("v3-task-alpha").count() === 1,
       "실패 복구 후 기존 프로젝트에 업무가 돌아오지 않았습니다.");
 
     await target.click();
     await dialog.waitFor({ state: "detached" });
-    await projectGroup(page, "Soulstream 운영").getByTestId("v3-task-task-alpha").waitFor({ state: "visible" });
-    assert(await projectGroup(page, fixtureTitles.project).getByTestId("v3-task-task-alpha").count() === 0,
+    await projectGroup(page, "Soulstream 운영").getByTestId("v3-task-alpha").waitFor({ state: "visible" });
+    assert(await projectGroup(page, fixtureTitles.project).getByTestId("v3-task-alpha").count() === 0,
       "이동 후 기존 프로젝트에 업무가 남았습니다.");
     assert(audit.transfers === 3, `프로젝트 페이지 이동/복구 호출 수가 다릅니다: ${audit.transfers}`);
     assert(audit.boardMoves === 2, `보드 이동 호출 수가 다릅니다: ${audit.boardMoves}`);
@@ -123,7 +123,7 @@ async function preparePage(
   });
   await page.route("**/api/board-items/**/container", async (route) => {
     const id = decodeURIComponent(new URL(route.request().url()).pathname.split("/")[3] ?? "");
-    if (id !== "runbook:rb-alpha") return route.fallback();
+    if (id !== "task:rb-alpha") return route.fallback();
     audit.boardMoves += 1;
     if (audit.boardMoves === 1) return route.fulfill({ status: 204 });
     return fulfillJson(route, {
@@ -133,7 +133,7 @@ async function preparePage(
         folderId: "folder-ops",
         containerKind: "folder",
         containerId: "folder-ops",
-        itemType: "runbook",
+        itemType: "task",
         itemId: "rb-alpha",
         x: 0,
         y: 0,

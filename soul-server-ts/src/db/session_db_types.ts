@@ -1,7 +1,11 @@
 import type postgres from "postgres";
 import type { SessionBindingWarning } from "@soulstream/page-model";
 
-import type { ReviewState, TaskStatus, TerminationReason } from "../task/task_models.js";
+import type {
+  ReviewState,
+  TaskStatus as SessionTaskStatus,
+  TerminationReason,
+} from "../task/task_models.js";
 import type { SupervisorWakeDispatchState } from "../supervisor/wake_dispatch_state.js";
 
 export type SessionType = "claude" | "llm";
@@ -10,7 +14,7 @@ export type SessionType = "claude" | "llm";
 export interface SessionUpdateFields {
   folder_id?: string | null;
   display_name?: string | null;
-  status?: TaskStatus;
+  status?: SessionTaskStatus;
   prompt?: string;
   client_id?: string | null;
   last_message?: LastMessageRow;
@@ -55,10 +59,10 @@ export type BoardItemType =
   | "subfolder"
   | "asset"
   | "frame"
-  | "runbook"
+  | "task"
   | "custom_view";
 
-export type BoardContainerKind = "folder" | "runbook";
+export type BoardContainerKind = "folder" | "task";
 
 export interface BoardYjsContainerRef {
   containerKind: BoardContainerKind;
@@ -75,7 +79,7 @@ export interface CatalogBoardItemRow {
   containerKind?: BoardContainerKind;
   containerId?: string;
   membershipKind?: "primary" | "reference";
-  sourceRunbookItemId?: string | null;
+  sourceTaskItemId?: string | null;
   itemType: BoardItemType;
   itemId: string;
   x: number;
@@ -152,7 +156,7 @@ export interface ContainerItemRecord {
   archived: boolean;
   session?: ContainerSessionRecord;
   markdown?: ContainerMarkdownRecord;
-  runbook?: ContainerTitleRecord;
+  task?: ContainerTitleRecord;
   customView?: ContainerTitleRecord;
   asset?: ContainerTitleRecord;
   subfolder?: ContainerSubfolderRecord;
@@ -266,7 +270,7 @@ export interface RegisterSessionParams {
   sessionType: SessionType;
   prompt: string;
   clientId: string | null;
-  status: TaskStatus;
+  status: SessionTaskStatus;
   createdAt: Date;
   updatedAt: Date;
   callerSessionId: string | null;
@@ -293,35 +297,35 @@ export interface AppendEventParams {
   dedupeKey?: string | null;
 }
 
-export type RunbookAssigneeKind = "agent" | "human" | "session";
-export type RunbookItemStatus =
+export type TaskAssigneeKind = "agent" | "human" | "session";
+export type TaskItemStatus =
   | "pending"
   | "in_progress"
   | "review"
   | "completed"
   | "cancelled";
-export type RunbookStatus = "open" | "completed";
-export type RunbookOperationTargetKind = "runbook" | "section" | "item";
-export type RunbookOperationActorKind = "agent" | "user" | "system";
-export type RunbookCompletionKind = Exclude<RunbookOperationActorKind, "system">;
+export type TaskStatus = "open" | "completed";
+export type TaskOperationTargetKind = "task" | "section" | "item";
+export type TaskOperationActorKind = "agent" | "user" | "system";
+export type TaskCompletionKind = Exclude<TaskOperationActorKind, "system">;
 
-export interface RunbookAssigneeFields {
-  assignee_kind: RunbookAssigneeKind | null;
+export interface TaskAssigneeFields {
+  assignee_kind: TaskAssigneeKind | null;
   assignee_agent_id: string | null;
   assignee_session_id: string | null;
   assignee_user_id: string | null;
 }
 
-export interface RunbookRow {
+export interface TaskRow {
   id: string;
   board_item_id: string;
   title: string;
-  status: RunbookStatus;
+  status: TaskStatus;
   archived: boolean;
   version: number;
   created_session_id: string | null;
   created_event_id: number | null;
-  completed_kind: RunbookCompletionKind | null;
+  completed_kind: TaskCompletionKind | null;
   completed_session_id: string | null;
   completed_event_id: number | null;
   completed_user_id: string | null;
@@ -330,9 +334,9 @@ export interface RunbookRow {
   updated_at: Date;
 }
 
-export interface RunbookSectionRow extends RunbookAssigneeFields {
+export interface TaskSectionRow extends TaskAssigneeFields {
   id: string;
-  runbook_id: string;
+  task_id: string;
   position_key: string;
   title: string;
   archived: boolean;
@@ -345,13 +349,13 @@ export interface RunbookSectionRow extends RunbookAssigneeFields {
   updated_at: Date;
 }
 
-export interface RunbookItemRow extends RunbookAssigneeFields {
+export interface TaskItemRow extends TaskAssigneeFields {
   id: string;
   section_id: string;
   position_key: string;
   title: string;
   how_to: string;
-  status: RunbookItemStatus;
+  status: TaskItemStatus;
   archived: boolean;
   version: number;
   created_session_id: string | null;
@@ -367,13 +371,13 @@ export interface RunbookItemRow extends RunbookAssigneeFields {
   updated_at: Date;
 }
 
-export interface RunbookOperationRow {
+export interface TaskOperationRow {
   id: string;
-  runbook_id: string | null;
-  target_kind: RunbookOperationTargetKind;
+  task_id: string | null;
+  target_kind: TaskOperationTargetKind;
   target_id: string;
   operation_type: string;
-  actor_kind: RunbookOperationActorKind;
+  actor_kind: TaskOperationActorKind;
   actor_session_id: string | null;
   actor_event_id: number | null;
   actor_user_id: string | null;
@@ -383,24 +387,24 @@ export interface RunbookOperationRow {
   created_at: Date;
 }
 
-export interface RunbookSnapshot {
-  runbook: RunbookRow;
-  sections: RunbookSectionRow[];
-  items: RunbookItemRow[];
+export interface TaskSnapshot {
+  task: TaskRow;
+  sections: TaskSectionRow[];
+  items: TaskItemRow[];
 }
 
-export interface RunbookListRow {
+export interface TaskListRow {
   id: string;
   board_item_id: string;
   folder_id: string;
   title: string;
-  status: RunbookStatus;
+  status: TaskStatus;
   archived: boolean;
   version: number;
   x: number;
   y: number;
   metadata: Record<string, unknown>;
-  completed_kind: RunbookCompletionKind | null;
+  completed_kind: TaskCompletionKind | null;
   completed_session_id: string | null;
   completed_event_id: number | null;
   completed_user_id: string | null;
@@ -409,24 +413,24 @@ export interface RunbookListRow {
   updated_at: Date;
 }
 
-export interface RunbookMyTurnItemRow {
-  runbook_id: string;
-  runbook_title: string;
-  runbook_status: RunbookStatus;
+export interface TaskMyTurnItemRow {
+  task_id: string;
+  task_title: string;
+  task_status: TaskStatus;
   board_item_id: string;
-  runbook_completed_kind: RunbookCompletionKind | null;
-  runbook_completed_session_id: string | null;
-  runbook_completed_event_id: number | null;
-  runbook_completed_user_id: string | null;
-  runbook_completed_at: Date | null;
+  task_completed_kind: TaskCompletionKind | null;
+  task_completed_session_id: string | null;
+  task_completed_event_id: number | null;
+  task_completed_user_id: string | null;
+  task_completed_at: Date | null;
   section_id: string;
   section_title: string;
   item_id: string;
   item_title: string;
   how_to: string;
-  status: RunbookItemStatus;
+  status: TaskItemStatus;
   item_version: number;
-  effective_assignee_kind: RunbookAssigneeKind | null;
+  effective_assignee_kind: TaskAssigneeKind | null;
   effective_assignee_agent_id: string | null;
   effective_assignee_session_id: string | null;
   effective_assignee_user_id: string | null;

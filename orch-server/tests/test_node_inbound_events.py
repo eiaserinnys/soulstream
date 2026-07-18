@@ -132,13 +132,13 @@ class TestNodeInboundEventsSessionCache:
             "node-1", "sessions_update", data
         )
 
-    async def test_runbook_updated_event_reports_change(
+    async def test_task_updated_event_reports_change(
         self, inbound, on_session_change
     ):
         event = {
-            "type": "runbook_updated",
-            "runbookId": "rb-1",
-            "boardItemId": "runbook:rb-1",
+            "type": "task_updated",
+            "taskId": "rb-1",
+            "boardItemId": "task:rb-1",
         }
         data = {
             "type": EVT_EVENT,
@@ -149,7 +149,7 @@ class TestNodeInboundEventsSessionCache:
         await inbound.handle(data)
 
         on_session_change.assert_awaited_once_with(
-            "node-1", "runbook_updated", event
+            "node-1", "task_updated", event
         )
 
     async def test_event_calls_supervisor_ingest_before_listener_fanout(self):

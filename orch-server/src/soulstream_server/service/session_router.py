@@ -151,7 +151,7 @@ class SessionRouter:
                 attachment_paths=request.get("attachmentPaths"),
                 caller_info=request.get("caller_info"),
                 container=request.get("container"),
-                source_runbook_item_id=request.get("sourceRunbookItemId"),
+                source_task_item_id=request.get("sourceTaskItemId"),
                 model=request.get("model"),
                 reasoning_effort=(
                     request.get("reasoningEffort") if effective_backend == "codex" else None

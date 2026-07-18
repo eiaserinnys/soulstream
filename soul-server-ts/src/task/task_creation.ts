@@ -22,7 +22,7 @@ import {
   type TaskCreationHook,
 } from "./task_creation_hook.js";
 import { initialSessionReview } from "./session_review.js";
-import { sessionBoardItemPosition } from "./runbook_session_position.js";
+import { sessionBoardItemPosition } from "./task_session_position.js";
 import { resolveStructuralCallerSessionId } from "./delegation_relationship.js";
 
 export interface CreateTaskParams {
@@ -51,7 +51,7 @@ export interface CreateTaskParams {
   claudePermissionMode?: ClaudePermissionMode;
   folderId?: string | null;
   container?: BoardYjsContainerRef | null;
-  sourceRunbookItemId?: string | null;
+  sourceTaskItemId?: string | null;
   /** Optional page block converted into the canonical primary session_ref before first turn. */
   pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
   /** B-6 context_builder: 사용자/위임자 system_prompt. folder_prompt와 합성됨. */
@@ -93,8 +93,8 @@ export class TaskCreation {
     if (this.deps.hasTask(params.agentSessionId)) {
       throw new Error(`Task already exists: ${params.agentSessionId}`);
     }
-    if (params.container?.containerKind === "runbook" && !this.deps.boardYjsService) {
-      throw new Error("Board Yjs service is required for runbook session placement");
+    if (params.container?.containerKind === "task" && !this.deps.boardYjsService) {
+      throw new Error("Board Yjs service is required for task session placement");
     }
 
     const now = new Date();
@@ -193,7 +193,7 @@ export class TaskCreation {
       sessionType,
       params.folderId ?? null,
       params.container ?? null,
-      params.sourceRunbookItemId ?? null,
+      params.sourceTaskItemId ?? null,
     );
     try {
       await this.deps.taskCreationHook?.afterLegacyProjection?.({
@@ -242,12 +242,12 @@ export class TaskCreation {
     sessionType: string,
     folderId: string | null,
     container: BoardYjsContainerRef | null,
-    sourceRunbookItemId: string | null,
+    sourceTaskItemId: string | null,
   ): Promise<{ assignedFolderId: string | null; completed: boolean }> {
     let assigned: string | null = null;
     let completed = true;
     try {
-      if (container?.containerKind === "runbook") {
+      if (container?.containerKind === "task") {
         const scope = await this.deps.db.resolveBoardYjsContainerScope(container);
         if (!scope) {
           throw new Error(`board container not found: ${container.containerKind}:${container.containerId}`);
@@ -260,7 +260,7 @@ export class TaskCreation {
           folderId: scope.folderId,
           container,
           sessionId,
-          sourceRunbookItemId,
+          sourceTaskItemId,
           x,
           y,
         });
@@ -286,7 +286,7 @@ export class TaskCreation {
           targetContainer: container
             ? { containerKind: container.containerKind, containerId: container.containerId }
             : null,
-          sourceRunbookItemId,
+          sourceTaskItemId,
         },
         "session folder assignment or board container enrollment failed - proceeding with folder fallback",
       );

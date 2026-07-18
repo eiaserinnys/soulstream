@@ -19,7 +19,7 @@ export interface ChecklistOutboxActor {
   actorUserId?: string | null;
 }
 
-/** Coalesced SQL-only ingress. Network and Runbook work belongs to the worker reconciler. */
+/** Coalesced SQL-only ingress. Network and Task work belongs to the worker reconciler. */
 export async function reconcileChecklistProjectionOutbox(
   sql: ChecklistOutboxSql,
   replica: PageYjsReplica,
@@ -42,7 +42,7 @@ export async function reconcileChecklistProjectionOutbox(
         FROM jsonb_to_recordset(${sql.json(incoming)}::jsonb)
           AS row(block_id TEXT, page_id TEXT, source_hash TEXT)
       )
-      INSERT INTO checklist_runbook_projection_outbox (
+      INSERT INTO checklist_task_projection_outbox (
         block_id, page_id, source_hash,
         actor_kind, actor_session_id, actor_user_id,
         routing_session_id,
@@ -68,8 +68,8 @@ export async function reconcileChecklistProjectionOutbox(
           lease_owner_node_id = NULL,
           lease_expires_at = NULL,
           updated_at = NOW()
-      WHERE checklist_runbook_projection_outbox.page_id IS DISTINCT FROM EXCLUDED.page_id
-         OR checklist_runbook_projection_outbox.source_hash IS DISTINCT FROM EXCLUDED.source_hash
+      WHERE checklist_task_projection_outbox.page_id IS DISTINCT FROM EXCLUDED.page_id
+         OR checklist_task_projection_outbox.source_hash IS DISTINCT FROM EXCLUDED.source_hash
     `;
   }
 
@@ -82,7 +82,7 @@ export async function reconcileChecklistProjectionOutbox(
     });
   } else {
     await sql`
-      UPDATE checklist_runbook_projection_outbox
+      UPDATE checklist_task_projection_outbox
       SET source_hash = 'archive:' || block_id,
       actor_kind = ${actorKind},
       actor_session_id = ${actorSessionId},
@@ -107,7 +107,7 @@ async function markMissingAsArchived(
   actor: Required<ChecklistOutboxActor>,
 ): Promise<void> {
   await sql`
-    UPDATE checklist_runbook_projection_outbox
+    UPDATE checklist_task_projection_outbox
     SET source_hash = 'archive:' || block_id,
         actor_kind = ${actor.actorKind},
         actor_session_id = ${actor.actorSessionId},

@@ -47,7 +47,7 @@ import {
   ConnectionBadge,
   useSessionListProvider,
   shouldLoadMoreAfterSessionMove,
-  RunbookOverview,
+  TaskOverview,
 } from "@seosoyoung/soul-ui";
 import { FeedView } from "./components/FeedView";
 import { getSessionProvider } from "./providers";
@@ -179,8 +179,8 @@ export function DashboardLayout() {
         />
       }
       centerPanel={
-        viewMode === "runbooks" ? (
-          <RunbookOverview />
+        viewMode === "tasks" ? (
+          <TaskOverview />
         ) : viewMode === "feed" ? (
           <FeedView
             placement="main"
@@ -230,7 +230,7 @@ export function DashboardLayout() {
         // 항상 FolderContents를 전달한다. 조건부로 undefined를 전달하면 타이밍 이슈로 빈 화면이 보인다.
         <FolderWorkspaceView sessions={sessions} onLoadMore={loadMore} hasMore={hasMore} />
       }
-      mobileRunbooksView={<RunbookOverview />}
+      mobileTasksView={<TaskOverview />}
       onNewSession={() => openNewSessionModal("folder")}
       mobileChatHeader={(onBack) => <MobileChatHeader onBack={onBack} />}
       mobileChatView={

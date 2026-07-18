@@ -35,7 +35,7 @@ describe("Phase 3 first-turn page context integration", () => {
           legacy_folder_id: input.legacyFolderId,
           legacy_container_kind: input.legacyContainerKind,
           legacy_container_id: input.legacyContainerId,
-          source_runbook_item_id: input.sourceRunbookItemId,
+          source_task_item_id: input.sourceTaskItemId,
           page_state: input.initialPageState,
           legacy_state: "pending",
           attempts: 0,

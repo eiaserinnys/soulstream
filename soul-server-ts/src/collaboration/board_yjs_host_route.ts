@@ -6,6 +6,10 @@ import {
   type BoardYjsAuthConfig,
 } from "./board_yjs_auth.js";
 import type { BoardYjsService } from "./board_yjs_service.js";
+import {
+  boardContainerKindInputSchema,
+  boardItemTypeInputSchema,
+} from "./board_container_kind_compat.js";
 
 export interface BoardYjsHostRouteConfig {
   service: BoardYjsService;
@@ -13,24 +17,25 @@ export interface BoardYjsHostRouteConfig {
 }
 
 const containerSchema = z.object({
-  containerKind: z.enum(["folder", "runbook"]),
+  containerKind: boardContainerKindInputSchema,
   containerId: z.string().min(1),
 });
 
 const scopeSchema = z.object({
   folderId: z.string().min(1),
-  containerKind: z.enum(["folder", "runbook"]),
+  containerKind: boardContainerKindInputSchema,
   containerId: z.string().min(1),
 });
 
 const rawBoardItemSchema = z.object({
   id: z.string().min(1),
   folderId: z.string().min(1),
-  containerKind: z.enum(["folder", "runbook"]).nullable().optional(),
+  containerKind: boardContainerKindInputSchema.nullable().optional(),
   containerId: z.string().nullable().optional(),
   membershipKind: z.enum(["primary", "reference"]).nullable().optional(),
+  sourceTaskItemId: z.string().nullable().optional(),
   sourceRunbookItemId: z.string().nullable().optional(),
-  itemType: z.enum(["session", "markdown", "subfolder", "asset", "frame", "runbook", "custom_view"]),
+  itemType: boardItemTypeInputSchema,
   itemId: z.string().min(1),
   x: z.number(),
   y: z.number(),
@@ -41,6 +46,7 @@ const boardItemSchema = rawBoardItemSchema.transform((item) => {
     containerKind,
     containerId,
     membershipKind,
+    sourceTaskItemId,
     sourceRunbookItemId,
     metadata,
     ...rest
@@ -50,7 +56,7 @@ const boardItemSchema = rawBoardItemSchema.transform((item) => {
     ...(containerKind ? { containerKind } : {}),
     ...(containerId ? { containerId } : {}),
     ...(membershipKind ? { membershipKind } : {}),
-    sourceRunbookItemId: sourceRunbookItemId ?? null,
+    sourceTaskItemId: sourceTaskItemId ?? sourceRunbookItemId ?? null,
     metadata: metadata ?? {},
   };
 });
@@ -71,13 +77,13 @@ const upsertSessionBoardItemSchema = z.object({
   sessionId: z.string().min(1),
   x: z.number(),
   y: z.number(),
-  sourceRunbookItemId: z.string().nullable().optional(),
+  sourceTaskItemId: z.string().nullable().optional(),
 });
 
-const upsertRunbookBoardItemSchema = z.object({
+const upsertTaskBoardItemSchema = z.object({
   folderId: z.string().min(1),
   boardItemId: z.string().min(1),
-  runbookId: z.string().min(1),
+  taskId: z.string().min(1),
   title: z.string(),
   x: z.number(),
   y: z.number(),
@@ -97,7 +103,7 @@ const upsertCustomViewBoardItemSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-const removeRunbookBoardItemSchema = z.object({
+const removeTaskBoardItemSchema = z.object({
   folderId: z.string().min(1),
   boardItemId: z.string().min(1),
 });
@@ -144,14 +150,14 @@ export function registerBoardYjsHostRoutes(
   registerHostPost(fastify, config, "upsert-session-board-item", upsertSessionBoardItemSchema, (input) =>
     config.service.upsertSessionBoardItem(input));
 
-  registerHostPost(fastify, config, "upsert-runbook-board-item", upsertRunbookBoardItemSchema, (input) =>
-    config.service.upsertRunbookBoardItem(input));
+  registerHostPost(fastify, config, "upsert-task-board-item", upsertTaskBoardItemSchema, (input) =>
+    config.service.upsertTaskBoardItem(input));
 
   registerHostPost(fastify, config, "upsert-custom-view-board-item", upsertCustomViewBoardItemSchema, (input) =>
     config.service.upsertCustomViewBoardItem(input));
 
-  registerHostPost(fastify, config, "remove-runbook-board-item", removeRunbookBoardItemSchema, async (input) => {
-    await config.service.removeRunbookBoardItem(input.folderId, input.boardItemId);
+  registerHostPost(fastify, config, "remove-task-board-item", removeTaskBoardItemSchema, async (input) => {
+    await config.service.removeTaskBoardItem(input.folderId, input.boardItemId);
     return { ok: true };
   });
 

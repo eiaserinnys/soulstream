@@ -42,7 +42,7 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     if (message.type() === "error") browserErrors.push(message.text());
   });
   let created = false;
-  let runbookReads = 0;
+  let taskReads = 0;
   let boardReads = 0;
 
   try {
@@ -50,18 +50,18 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     await page.route("**/api/**", async (route) => {
       const request = route.request();
       const url = new URL(request.url());
-      if (url.pathname === "/api/runbooks" && request.method() === "POST") {
+      if (url.pathname === "/api/tasks" && request.method() === "POST") {
         created = true;
         await fulfillJson(route, {
           id: "task-created",
           page_id: "task-created",
-          runbook_id: "task-created",
+          task_id: "task-created",
         });
         return;
       }
-      if (url.pathname === "/api/runbooks/task-created" && request.method() === "GET") {
-        runbookReads += 1;
-        if (runbookReads <= 2) {
+      if (url.pathname === "/api/tasks/task-created" && request.method() === "GET") {
+        taskReads += 1;
+        if (taskReads <= 2) {
           await fulfillJson(route, { detail: "creation projection pending" }, 404);
           return;
         }
@@ -96,7 +96,7 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     await createdTask.waitFor({ state: "visible", timeout: 30_000 });
     await createdTask.click();
 
-    const checklist = page.getByTestId("v3-task-runbook-checklist");
+    const checklist = page.getByTestId("v3-task-checklist");
     const board = page.getByTestId("v3-inline-board");
     const information = page.locator('[data-task-section="information"]');
     await checklist.getByText("불러오는 중", { exact: true }).waitFor({ state: "visible", timeout: 10_000 });
@@ -109,9 +109,9 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     await information.waitFor({ state: "visible" });
     await capture(page, theme, "ready");
 
-    assert(runbookReads === 3, `${theme}: 체크리스트 조회 횟수가 다릅니다: ${runbookReads}`);
+    assert(taskReads === 3, `${theme}: 체크리스트 조회 횟수가 다릅니다: ${taskReads}`);
     assert(boardReads === 3, `${theme}: 보드 조회 횟수가 다릅니다: ${boardReads}`);
-    assert(await page.getByText("런북을 찾을 수 없음", { exact: true }).count() === 0, `${theme}: 체크리스트 부재 오류가 남았습니다.`);
+    assert(await page.getByText("업무를 찾을 수 없음", { exact: true }).count() === 0, `${theme}: 체크리스트 부재 오류가 남았습니다.`);
     assert(await page.getByText("보드 항목을 불러오지 못했습니다.", { exact: true }).count() === 0, `${theme}: 보드 오류가 남았습니다.`);
     assert(await information.getByRole("alert").count() === 0, `${theme}: 정보 섹션에 오류가 남았습니다.`);
     assert(await page.getByText(/실행 기본값 조회 실패/).count() === 0, `${theme}: 정보 기본값 조회 오류가 남았습니다.`);
@@ -121,19 +121,19 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     );
     assert(unexpectedBrowserErrors.length === 0, `${theme}: 브라우저 오류: ${unexpectedBrowserErrors.join(" | ")}`);
 
-    const creationRunbookReads = runbookReads;
+    const creationTaskReads = taskReads;
     const creationBoardReads = boardReads;
     await page.reload({ waitUntil: "domcontentloaded" });
     const createdTaskAfterReload = page.getByTestId("v3-task-task-created");
     await createdTaskAfterReload.waitFor({ state: "visible", timeout: 15_000 });
     await createdTaskAfterReload.click();
-    await page.getByTestId("v3-task-runbook-checklist")
+    await page.getByTestId("v3-task-checklist")
       .getByRole("button", { name: "섹션 추가", exact: true })
       .waitFor({ state: "visible", timeout: 10_000 });
     await page.getByTestId("v3-inline-board")
       .getByText("보드에 표시할 문서가 없습니다.", { exact: true })
       .waitFor({ state: "visible", timeout: 10_000 });
-    assert(runbookReads === 4, `${theme}: 새로고침 후 체크리스트 조회 횟수가 다릅니다: ${runbookReads}`);
+    assert(taskReads === 4, `${theme}: 새로고침 후 체크리스트 조회 횟수가 다릅니다: ${taskReads}`);
     assert(boardReads === 4, `${theme}: 새로고침 후 보드 조회 횟수가 다릅니다: ${boardReads}`);
     assert(await page.getByText("보드 항목을 불러오지 못했습니다.", { exact: true }).count() === 0, `${theme}: 새로고침 후 보드 오류가 남았습니다.`);
     const finalUnexpectedBrowserErrors = browserErrors.filter(
@@ -144,9 +144,9 @@ async function verifyTheme(browser: Browser, theme: Theme) {
 
     return {
       theme,
-      runbookReads: creationRunbookReads,
+      taskReads: creationTaskReads,
       boardReads: creationBoardReads,
-      reentryRunbookReads: runbookReads,
+      reentryTaskReads: taskReads,
       reentryBoardReads: boardReads,
       expectedProjection404s: browserErrors.length - finalUnexpectedBrowserErrors.length,
       checklistRecovered: true,

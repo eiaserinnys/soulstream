@@ -5,7 +5,7 @@
 - PostgresEventMixin: 이벤트 CRUD
 - PostgresViewportMixin: 뷰포트 API
 - PostgresFolderMixin: 폴더 CRUD + 카탈로그
-- PostgresRunbookMixin: 런북 조회 투영
+- PostgresTaskMixin: 업무 조회 투영
 - PostgresSearchMixin: 경량 세션 목록 + 전문검색
 """
 
@@ -13,7 +13,7 @@ from soul_common.db.postgres.session_crud import PostgresSessionCRUDMixin
 from soul_common.db.postgres.events import PostgresEventMixin, _event_to_dict
 from soul_common.db.postgres.viewport import PostgresViewportMixin
 from soul_common.db.postgres.folders import PostgresFolderMixin
-from soul_common.db.postgres.runbooks import PostgresRunbookMixin
+from soul_common.db.postgres.tasks import PostgresTaskMixin
 from soul_common.db.postgres.search import PostgresSearchMixin
 
 __all__ = [
@@ -21,7 +21,7 @@ __all__ = [
     "PostgresEventMixin",
     "PostgresViewportMixin",
     "PostgresFolderMixin",
-    "PostgresRunbookMixin",
+    "PostgresTaskMixin",
     "PostgresSearchMixin",
     "_event_to_dict",
 ]

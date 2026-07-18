@@ -55,17 +55,17 @@ describe("board_yjs_model", () => {
     expect(replica.markdownDocuments).toEqual([{ id: "d1", title: "Note", body: "hello", version: 1 }]);
   });
 
-  it("runbook board item type을 폴더 Y-doc snapshot으로 round-trip", () => {
+  it("task board item type을 폴더 Y-doc snapshot으로 round-trip", () => {
     const snapshot = createBoardYDocSnapshot({
       folderId: "folder-1",
       boardItems: [{
-        id: "runbook:rb-1",
+        id: "task:rb-1",
         folderId: "folder-1",
-        itemType: "runbook",
+        itemType: "task",
         itemId: "rb-1",
         x: 60,
         y: 80,
-        metadata: { title: "Launch runbook" },
+        metadata: { title: "Launch task" },
       }],
       markdownDocuments: [],
     });
@@ -76,10 +76,10 @@ describe("board_yjs_model", () => {
 
     expect(replica.boardItems).toEqual([
       expect.objectContaining({
-        id: "runbook:rb-1",
-        itemType: "runbook",
+        id: "task:rb-1",
+        itemType: "task",
         itemId: "rb-1",
-        metadata: expect.objectContaining({ title: "Launch runbook" }),
+        metadata: expect.objectContaining({ title: "Launch task" }),
       }),
     ]);
   });
@@ -89,7 +89,7 @@ describe("board_yjs_model", () => {
 
     const boardItem = upsertCustomViewYjsBoardItem(doc, {
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
     }, {
       boardItemId: "custom_view:cv-1",
@@ -104,10 +104,10 @@ describe("board_yjs_model", () => {
     expect(boardItem).toMatchObject({
       id: "custom_view:cv-1",
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
       membershipKind: "primary",
-      sourceRunbookItemId: null,
+      sourceTaskItemId: null,
       itemType: "custom_view",
       itemId: "cv-1",
       x: 120,
@@ -120,25 +120,25 @@ describe("board_yjs_model", () => {
     });
     expect(JSON.stringify(readBoardYDocReplica({
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
     }, doc))).not.toContain("<section>");
   });
 
-  it("runbook session membership과 source runbook item id를 Y-doc snapshot으로 round-trip", () => {
+  it("task session membership과 source task item id를 Y-doc snapshot으로 round-trip", () => {
     const snapshot = createBoardYDocSnapshot({
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
       boardItems: [{
         id: "session:s1",
         folderId: "folder-1",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
         itemType: "session",
         itemId: "s1",
         membershipKind: "primary",
-        sourceRunbookItemId: "runbook-item-1",
+        sourceTaskItemId: "task-item-1",
         x: 280,
         y: 160,
         metadata: {},
@@ -150,7 +150,7 @@ describe("board_yjs_model", () => {
 
     const replica = readBoardYDocReplica({
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
     }, doc);
 
@@ -158,10 +158,10 @@ describe("board_yjs_model", () => {
       expect.objectContaining({
         id: "session:s1",
         folderId: "folder-1",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
         membershipKind: "primary",
-        sourceRunbookItemId: "runbook-item-1",
+        sourceTaskItemId: "task-item-1",
       }),
     ]);
   });
@@ -299,16 +299,16 @@ describe("board_yjs_model", () => {
     });
   });
 
-  it("markdown create helper는 runbook 컨테이너 board item을 생성한다", () => {
+  it("markdown create helper는 task 컨테이너 board item을 생성한다", () => {
     const doc = new Y.Doc();
 
     const created = createMarkdownYjsDocument(doc, {
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
     }, {
       documentId: "doc-1",
-      title: "Runbook note",
+      title: "Task note",
       body: "body",
       x: 40,
       y: 80,
@@ -317,19 +317,19 @@ describe("board_yjs_model", () => {
     expect(created.boardItem).toMatchObject({
       id: "markdown:doc-1",
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
       membershipKind: "primary",
-      sourceRunbookItemId: null,
+      sourceTaskItemId: null,
     });
     expect(readBoardYDocReplica({
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
     }, doc).boardItems).toEqual([
       expect.objectContaining({
         id: "markdown:doc-1",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
       }),
     ]);
@@ -348,7 +348,7 @@ describe("board_yjs_model", () => {
 
     const moved = readMovableBoardYjsItem(sourceDoc, "markdown:doc-1", {
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
     }, { x: 200, y: 240 });
 
@@ -362,14 +362,14 @@ describe("board_yjs_model", () => {
     });
     expect(readBoardYDocReplica({
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
     }, targetDoc)).toEqual({
       boardItems: [
         expect.objectContaining({
           id: "markdown:doc-1",
           folderId: "folder-1",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           x: 200,
           y: 240,
@@ -400,7 +400,7 @@ describe("board_yjs_model", () => {
 
     const moved = readMovableBoardYjsItem(sourceDoc, "session:s1", {
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
     });
 
@@ -413,7 +413,7 @@ describe("board_yjs_model", () => {
     ]);
     expect(readBoardYDocReplica({
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
     }, targetDoc).boardItems).toEqual([]);
   });
@@ -427,23 +427,50 @@ describe("board_yjs_model", () => {
       containerId: "folder-1",
     })).toBe("board:folder:folder-1");
     expect(normalizeBoardYjsDocumentName("board:folder:folder-1")).toBe(name);
-    expect(parseBoardYjsDocumentName("board:runbook:rb-1")).toEqual({
-      containerKind: "runbook",
+    expect(parseBoardYjsDocumentName("board:task:rb-1")).toEqual({
+      containerKind: "task",
       containerId: "rb-1",
     });
+    expect(parseBoardYjsDocumentName("board:runbook:rb-1")).toEqual({
+      containerKind: "task",
+      containerId: "rb-1",
+    });
+    expect(normalizeBoardYjsDocumentName("board:runbook:rb-1"))
+      .toBe("board:task:rb-1");
     expect(getFolderIdFromBoardYjsDocumentName("/yjs/folder-1")).toBeNull();
   });
 
-  it("runbook 컨테이너 snapshot은 같은 folderId 안에서도 runbook membership만 seed한다", () => {
+  it("legacy binary board item is normalized only at the read boundary", () => {
+    const doc = new Y.Doc();
+    doc.getMap("boardItems").set("runbook:rb-1", {
+      item_type: "runbook",
+      item_id: "rb-1",
+      source_runbook_item_id: "item-1",
+      x: 10,
+      y: 20,
+    });
+    expect(readBoardYDocReplica({
+      folderId: "folder-1",
+      containerKind: "task",
+      containerId: "rb-1",
+    }, doc).boardItems[0]).toMatchObject({
+      id: "runbook:rb-1",
+      itemType: "task",
+      sourceTaskItemId: "item-1",
+      containerKind: "task",
+    });
+  });
+
+  it("task 컨테이너 snapshot은 같은 folderId 안에서도 task membership만 seed한다", () => {
     const snapshot = createBoardYDocSnapshot({
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
       boardItems: [
         {
-          id: "runbook-child",
+          id: "task-child",
           folderId: "folder-1",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           itemType: "markdown",
           itemId: "doc-1",
@@ -456,7 +483,7 @@ describe("board_yjs_model", () => {
           folderId: "folder-1",
           containerKind: "folder",
           containerId: "folder-1",
-          itemType: "runbook",
+          itemType: "task",
           itemId: "rb-1",
           x: 100,
           y: 0,
@@ -470,15 +497,15 @@ describe("board_yjs_model", () => {
 
     const replica = readBoardYDocReplica({
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
     }, doc);
 
     expect(replica.boardItems).toEqual([
       expect.objectContaining({
-        id: "runbook-child",
+        id: "task-child",
         folderId: "folder-1",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
       }),
     ]);

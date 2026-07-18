@@ -50,7 +50,7 @@ export interface DashboardConfig {
 export interface NewSessionDefaults {
   folderId?: string | null;
   container?: BoardContainerRef | null;
-  sourceRunbookItemId?: string | null;
+  sourceTaskItemId?: string | null;
   nodeId?: string;
   agentId?: string | null;
   boardPosition?: { x: number; y: number };
@@ -80,9 +80,9 @@ export type FolderSortMode =
 
 // === Mobile Tab ===
 
-export type DashboardViewMode = "feed" | "folder" | "runbooks";
+export type DashboardViewMode = "feed" | "folder" | "tasks";
 
-export type MobileTab = "feed" | "folder" | "runbooks" | "chat" | "settings";
+export type MobileTab = "feed" | "folder" | "tasks" | "chat" | "settings";
 
 export interface BoardItemFocusRequest {
   boardItemId: string;
@@ -106,7 +106,7 @@ export interface ProcessEventsResult {
 // === State Interface ===
 
 export interface DashboardState {
-  /** 뷰 모드 — URL 해시에서 파생. runbooks는 런북 모아보기 */
+  /** 뷰 모드 — URL 해시에서 파생. tasks는 업무 모아보기 */
   viewMode: DashboardViewMode;
 
   /** 피드 스크롤 오프셋 (뷰 전환 시 위치 복원용) */
@@ -348,7 +348,7 @@ export interface DashboardActions {
   setFeedScrollOffset: (offset: number) => void;
   focusBoardItem: (boardItemId: string, folderId: string | null) => void;
   clearFocusedBoardItem: (requestId: number) => void;
-  openRunbookBoard: (runbookId: string, parentFolderId?: string | null) => void;
+  openTaskBoard: (taskId: string, parentFolderId?: string | null) => void;
 
   // 카탈로그
   setCatalog: (catalog: CatalogState) => void;

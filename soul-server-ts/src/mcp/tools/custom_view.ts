@@ -1,6 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
+
 import type { BoardYjsContainerRef } from "../../db/session_db_types.js";
 import type { CustomViewService } from "../../custom_view/custom_view_service.js";
 import { SOULSTREAM_AGENT_SESSION_HEADER } from "../request_context.js";
@@ -14,10 +16,10 @@ import {
   expectedVersionSchema,
   idempotencyKeySchema,
   mutationToolDescription,
-} from "./runbook_shared.js";
+} from "./task_shared.js";
 
 const containerSchema = z.object({
-  kind: z.enum(["folder", "runbook"]),
+  kind: boardContainerKindInputSchema,
   id: z.string().min(1),
 });
 

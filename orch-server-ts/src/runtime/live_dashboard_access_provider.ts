@@ -12,7 +12,7 @@ import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { BoardItemAccessProvider } from "../board/board_item_routes.js";
 import type { MarkdownDocumentAccessProvider } from "../board/markdown_document_routes.js";
 import type { FolderAccessProvider } from "../folders/folder_routes.js";
-import type { RunbookAccessProvider } from "../runbooks/runbook_route_types.js";
+import type { TaskAccessProvider } from "../tasks/task_route_types.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
 import {
   extractDashboardBearerToken,
@@ -76,7 +76,7 @@ export type LiveDashboardAccessProvider =
   & FolderAccessProvider
   & BoardItemAccessProvider
   & MarkdownDocumentAccessProvider
-  & RunbookAccessProvider
+  & TaskAccessProvider
   & {
     readonly isAdminEmail: (email: string) => Promise<boolean>;
     readonly resolveAccess: (

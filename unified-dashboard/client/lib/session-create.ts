@@ -42,7 +42,7 @@ export interface CreateDashboardSessionInput {
   oauthProfileName?: string | null;
   container?: BoardContainerRef | null;
   sourceSessionId?: string | null;
-  sourceRunbookItemId?: string | null;
+  sourceTaskItemId?: string | null;
   boardPosition?: { x: number; y: number } | null;
   agentSessionId?: string;
   pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
@@ -70,8 +70,8 @@ export async function createDashboardSession(
     ...(input.folderId !== undefined ? { folderId: input.folderId } : {}),
     ...(input.container ? { container: input.container } : {}),
     ...(input.sourceSessionId ? { sourceSessionId: input.sourceSessionId } : {}),
-    ...(input.sourceRunbookItemId !== undefined
-      ? { sourceRunbookItemId: input.sourceRunbookItemId }
+    ...(input.sourceTaskItemId !== undefined
+      ? { sourceTaskItemId: input.sourceTaskItemId }
       : {}),
     ...(input.agentId ? { profile: input.agentId } : {}),
     ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
@@ -110,7 +110,7 @@ export async function createDashboardSession(
     input.agent?.name ?? null,
     input.agent?.portraitUrl ?? null,
     input.agent?.backend ?? null,
-    input.container?.kind === "runbook" ? null : input.boardPosition ?? null,
+    input.container?.kind === "task" ? null : input.boardPosition ?? null,
   );
 
   return result;

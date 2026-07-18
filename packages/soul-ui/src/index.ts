@@ -15,6 +15,6 @@ export * from "./lib";
 export * from "./hooks";
 export * from "./components";
 export * from "./board-workspace";
-export * from "./runbook";
+export * from "./task";
 export * from "./page";
 export * from "./pending-mutation-registry";

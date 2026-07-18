@@ -4,12 +4,14 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { boardContainerKindInputSchema } from "../../collaboration/board_container_kind_compat.js";
+
 import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { registerContainerBrowseTools } from "./container_browse.js";
 
 const boardContainerSchema = z.object({
-  kind: z.enum(["folder", "runbook"]),
+  kind: boardContainerKindInputSchema,
   id: z.string().min(1),
 });
 
@@ -196,7 +198,7 @@ export function registerCatalogTools(
     "move_board_item_to_container",
     {
       description:
-        "기존 보드 항목을 폴더 보드와 런북 보드 사이에서 이동한다. 세션/마크다운/애셋/커스텀뷰와 폴더 간 업무(runbook) primary 항목이 대상.",
+        "기존 보드 항목을 폴더 보드와 업무 보드 사이에서 이동한다. 세션/마크다운/애셋/커스텀뷰와 폴더 간 업무(task) primary 항목이 대상.",
       inputSchema: {
         board_item_id: z.string().min(1),
         container: boardContainerSchema,

@@ -6,8 +6,8 @@ import type { SoulstreamContainerContext } from "./soulstream_item.js";
 
 export interface PrimarySessionContainerContext {
   container: SoulstreamContainerContext;
-  sourceRunbookItemId?: string | null;
-  runbookGuidance?: string | null;
+  sourceTaskItemId?: string | null;
+  taskGuidance?: string | null;
 }
 
 export async function resolvePrimarySessionContainerContext(
@@ -40,13 +40,13 @@ export async function resolvePrimarySessionContainerContext(
   const id = boardItem.containerId ?? boardItem.folderId;
   if (!id) return null;
 
-  if (kind === "runbook") {
-    const title = await resolveRunbookTitle(db, logger, id, boardItem);
+  if (kind === "task") {
+    const title = await resolveTaskTitle(db, logger, id, boardItem);
     const container = { kind, id, title };
     return {
       container,
-      sourceRunbookItemId: boardItem.sourceRunbookItemId ?? null,
-      runbookGuidance: buildRunbookGuidance(container),
+      sourceTaskItemId: boardItem.sourceTaskItemId ?? null,
+      taskGuidance: buildTaskGuidance(container),
     };
   }
 
@@ -59,30 +59,30 @@ export async function resolvePrimarySessionContainerContext(
   };
 }
 
-async function resolveRunbookTitle(
+async function resolveTaskTitle(
   db: SessionDB,
   logger: Logger,
-  runbookId: string,
+  taskId: string,
   boardItem: CatalogBoardItemRow,
 ): Promise<string> {
-  const runbooks = (db as unknown as {
-    runbooks?: () => {
-      getRunbook?: (runbookId: string) => Promise<{ title?: unknown } | null>;
+  const tasks = (db as unknown as {
+    tasks?: () => {
+      getTask?: (taskId: string) => Promise<{ title?: unknown } | null>;
     };
-  }).runbooks;
-  if (typeof runbooks === "function") {
+  }).tasks;
+  if (typeof tasks === "function") {
     try {
-      const repo = runbooks.call(db);
-      const runbook = typeof repo.getRunbook === "function"
-        ? await repo.getRunbook(runbookId)
+      const repo = tasks.call(db);
+      const task = typeof repo.getTask === "function"
+        ? await repo.getTask(taskId)
         : null;
-      if (typeof runbook?.title === "string" && runbook.title.trim().length > 0) {
-        return runbook.title;
+      if (typeof task?.title === "string" && task.title.trim().length > 0) {
+        return task.title;
       }
     } catch (err) {
       logger.warn(
-        { err, runbookId },
-        "resolveRunbookTitle: getRunbook failed",
+        { err, taskId },
+        "resolveTaskTitle: getTask failed",
       );
     }
   }
@@ -91,9 +91,9 @@ async function resolveRunbookTitle(
   if (typeof metadataTitle === "string" && metadataTitle.trim().length > 0) {
     return metadataTitle;
   }
-  return runbookId;
+  return taskId;
 }
 
-function buildRunbookGuidance(container: SoulstreamContainerContext): string {
-  return `이 세션은 런북 ${container.id}(${container.title}) 소속. get_runbook으로 체크리스트를 확인하고, 산출물·후속 세션은 이 런북 컨테이너에 연결한다.`;
+function buildTaskGuidance(container: SoulstreamContainerContext): string {
+  return `이 세션은 업무 ${container.id}(${container.title}) 소속. get_task으로 체크리스트를 확인하고, 산출물·후속 세션은 이 업무 컨테이너에 연결한다.`;
 }

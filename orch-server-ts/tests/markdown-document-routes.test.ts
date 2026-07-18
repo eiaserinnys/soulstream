@@ -149,8 +149,8 @@ describe("markdown document and custom view route harness", () => {
       url: "/api/markdown-documents",
       payload: {
         folderId: "folder-a-child",
-        container: { kind: "runbook", id: "runbook-1" },
-        title: "Runbook note",
+        container: { kind: "task", id: "task-1" },
+        title: "Task note",
         x: 12,
       },
     });
@@ -161,8 +161,8 @@ describe("markdown document and custom view route harness", () => {
       expect.objectContaining({
         body: {
           folderId: "folder-a-child",
-          container: { kind: "runbook", id: "runbook-1" },
-          title: "Runbook note",
+          container: { kind: "task", id: "task-1" },
+          title: "Task note",
           body: "",
         },
       }),
@@ -171,7 +171,7 @@ describe("markdown document and custom view route harness", () => {
     await app.close();
   });
 
-  it("resolves runbook container folder when create omits folderId", async () => {
+  it("resolves task container folder when create omits folderId", async () => {
     const { app, calls, httpClient } = createAppWithMarkdownDocuments({
       restricted: true,
       allowedFolderIds: ["folder-a"],
@@ -181,14 +181,14 @@ describe("markdown document and custom view route harness", () => {
       method: "POST",
       url: "/api/markdown-documents",
       payload: {
-        container: { kind: "runbook", id: "runbook-1" },
-        title: "Runbook note",
+        container: { kind: "task", id: "task-1" },
+        title: "Task note",
       },
     });
 
     expect(response.statusCode).toBe(201);
     expect(calls).toEqual([
-      ["resolveContainer", { kind: "runbook", id: "runbook-1" }],
+      ["resolveContainer", { kind: "task", id: "task-1" }],
       ["listFolders"],
       ["access"],
     ]);
@@ -196,7 +196,7 @@ describe("markdown document and custom view route harness", () => {
       expect.objectContaining({
         body: expect.objectContaining({
           folderId: "folder-a",
-          container: { kind: "runbook", id: "runbook-1" },
+          container: { kind: "task", id: "task-1" },
         }),
       }),
     );
@@ -204,7 +204,7 @@ describe("markdown document and custom view route harness", () => {
     await app.close();
   });
 
-  it("returns container not found before host proxy when runbook source is missing", async () => {
+  it("returns container not found before host proxy when task source is missing", async () => {
     const { app, calls, httpClient } = createAppWithMarkdownDocuments({
       restricted: false,
     });
@@ -213,15 +213,15 @@ describe("markdown document and custom view route harness", () => {
       method: "POST",
       url: "/api/markdown-documents",
       payload: {
-        container: { kind: "runbook", id: "missing" },
-        title: "Runbook note",
+        container: { kind: "task", id: "missing" },
+        title: "Task note",
       },
     });
 
     expect(response.statusCode).toBe(404);
-    expect(response.json()).toEqual({ detail: "Runbook board container not found" });
+    expect(response.json()).toEqual({ detail: "Task board container not found" });
     expect(calls).toEqual([
-      ["resolveContainer", { kind: "runbook", id: "missing" }],
+      ["resolveContainer", { kind: "task", id: "missing" }],
     ]);
     expect(httpClient).not.toHaveBeenCalled();
 

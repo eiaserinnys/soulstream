@@ -53,7 +53,7 @@ export function useV3LiveDataPlane({
     onStreamReset: () => invalidateV3("replay"),
     transformCatalogUpdate: (incoming, current) => {
       const active = useDashboardStore.getState().activeBoardContainer;
-      if (!current || active?.kind !== "runbook") return undefined;
+      if (!current || active?.kind !== "task") return undefined;
       return scopeCatalogUpdateToTaskBoardPreservingSessionList(current, incoming, active.id);
     },
   });

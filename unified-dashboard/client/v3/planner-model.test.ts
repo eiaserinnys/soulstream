@@ -8,17 +8,17 @@ import {
 } from "./planner-model";
 
 describe("classifyMountedPage", () => {
-  it("classifies a page with a primary runbook_ref as a task", () => {
+  it("classifies a page with a primary task_ref as a task", () => {
     expect(classifyMountedPage([
       block("paragraph", {}),
-      block("runbook_ref", { runbookId: "rb-1", primary: true }),
-    ])).toEqual({ kind: "task", runbookId: "rb-1" });
+      block("task_ref", { taskId: "rb-1", primary: true }),
+    ])).toEqual({ kind: "task", taskId: "rb-1" });
   });
 
   it("classifies pages without a valid primary reference as documents", () => {
     expect(classifyMountedPage([block("paragraph", {})])).toEqual({ kind: "document" });
     expect(classifyMountedPage([
-      block("runbook_ref", { runbookId: "rb-secondary", primary: false }),
+      block("task_ref", { taskId: "rb-secondary", primary: false }),
     ])).toEqual({ kind: "document" });
   });
 });
@@ -36,7 +36,7 @@ describe("project folder bridge", () => {
 });
 
 describe("planner task status", () => {
-  it("derives review and in-progress states from open runbook items", () => {
+  it("derives review and in-progress states from open task items", () => {
     expect(derivePlannerTaskStatus(snapshot("open", ["pending"]))).toBe("open");
     expect(derivePlannerTaskStatus(snapshot("open", ["in_progress"]))).toBe("in_progress");
     expect(derivePlannerTaskStatus(snapshot("open", ["in_progress", "review"]))).toBe("review");
@@ -66,7 +66,7 @@ function block(blockType: string, properties: Record<string, unknown>) {
 
 function snapshot(status: string, itemStatuses: string[]) {
   return {
-    runbook: { status },
+    task: { status },
     items: itemStatuses.map((itemStatus) => ({ status: itemStatus })),
   };
 }

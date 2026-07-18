@@ -7,9 +7,9 @@ import type {
   SessionSummary,
 } from "@seosoyoung/soul-ui";
 import type {
-  RunbookItemRow,
-  RunbookSnapshot,
-} from "@seosoyoung/soul-ui/stores/runbook-store";
+  TaskItemRow,
+  TaskSnapshot,
+} from "@seosoyoung/soul-ui/stores/task-store";
 
 export type PlannerTaskStatus = "open" | "in_progress" | "review" | "completed";
 
@@ -21,18 +21,18 @@ const STATUS_PRESENTATION = {
 } as const satisfies Record<PlannerTaskStatus, { icon: string; label: string }>;
 
 export type MountedPageClassification =
-  | { kind: "task"; runbookId: string }
+  | { kind: "task"; taskId: string }
   | { kind: "document" };
 
 export function classifyMountedPage(
   blocks: readonly Pick<BlockDto, "block_type" | "properties">[],
 ): MountedPageClassification {
   for (const block of blocks) {
-    if (block.block_type !== "runbook_ref") continue;
+    if (block.block_type !== "task_ref") continue;
     const properties = block.properties as Record<string, unknown>;
     if (properties.primary !== true) continue;
-    const runbookId = nonEmptyString(properties.runbookId);
-    if (runbookId) return { kind: "task", runbookId };
+    const taskId = nonEmptyString(properties.taskId);
+    if (taskId) return { kind: "task", taskId };
   }
   return { kind: "document" };
 }
@@ -46,13 +46,13 @@ export function parseSingleMountTitle(
 }
 
 export function derivePlannerTaskStatus(snapshot: {
-  runbook: { status?: string | null };
+  task: { status?: string | null };
   items: readonly { status: string }[];
 }): PlannerTaskStatus {
-  const runbookStatus = snapshot.runbook.status;
-  if (runbookStatus === "completed") return "completed";
-  if (runbookStatus === "review") return "review";
-  if (runbookStatus === "in_progress") return "in_progress";
+  const taskStatus = snapshot.task.status;
+  if (taskStatus === "completed") return "completed";
+  if (taskStatus === "review") return "review";
+  if (taskStatus === "in_progress") return "in_progress";
   if (snapshot.items.some((item) => item.status === "review")) return "review";
   if (snapshot.items.some((item) => item.status === "in_progress")) return "in_progress";
   return "open";
@@ -62,7 +62,7 @@ export function plannerStatusPresentation(status: PlannerTaskStatus) {
   return STATUS_PRESENTATION[status];
 }
 
-export function plannerProgress(snapshot: RunbookSnapshot | null): number | null {
+export function plannerProgress(snapshot: TaskSnapshot | null): number | null {
   if (!snapshot || snapshot.items.length === 0) return null;
   const completed = snapshot.items.filter((item) => item.status === "completed").length;
   return Math.round((completed / snapshot.items.length) * 100);
@@ -70,11 +70,11 @@ export function plannerProgress(snapshot: RunbookSnapshot | null): number | null
 
 export function taskContextCount(blocks: readonly BlockDto[]): number {
   return blocks.filter((block) => (
-    block.block_type !== "paragraph" && block.block_type !== "runbook_ref"
+    block.block_type !== "paragraph" && block.block_type !== "task_ref"
   )).length;
 }
 
-export function taskAssignee(snapshot: RunbookSnapshot | null): string {
+export function taskAssignee(snapshot: TaskSnapshot | null): string {
   if (!snapshot) return "담당 미확인";
   const item = preferredAssigneeItem(snapshot.items);
   if (!item) return "담당 미지정";
@@ -102,7 +102,7 @@ export function resolveProjectFolderId(
   return folders.find((folder) => folder.projectPageId === page.id)?.id ?? null;
 }
 
-function preferredAssigneeItem(items: readonly RunbookItemRow[]): RunbookItemRow | null {
+function preferredAssigneeItem(items: readonly TaskItemRow[]): TaskItemRow | null {
   const active = items.find((item) => item.status === "in_progress")
     ?? items.find((item) => item.status === "review")
     ?? items.find((item) => item.status === "pending")

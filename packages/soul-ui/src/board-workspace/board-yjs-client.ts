@@ -17,7 +17,7 @@ export interface BoardYjsItemValue {
   x: number;
   y: number;
   membership_kind?: CatalogBoardItem["membershipKind"];
-  source_runbook_item_id?: string | null;
+  source_task_item_id?: string | null;
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -120,7 +120,7 @@ export function catalogBoardItemsFromYDoc(
       containerKind: container.kind,
       containerId: container.id,
       membershipKind: value.membership_kind ?? "primary",
-      sourceRunbookItemId: value.source_runbook_item_id ?? null,
+      sourceTaskItemId: value.source_task_item_id ?? null,
       itemType: value.item_type,
       itemId: value.item_id,
       x: value.x,
@@ -196,7 +196,7 @@ export function createMarkdownYjsDocument(
     containerKind: container.kind,
     containerId: container.id,
     membershipKind: "primary",
-    sourceRunbookItemId: null,
+    sourceTaskItemId: null,
     itemType: "markdown",
     itemId: documentId,
     x: input.x,
@@ -539,8 +539,8 @@ function toYjsItemValue(item: CatalogBoardItem): BoardYjsItemValue {
     x: item.x,
     y: item.y,
     ...(item.membershipKind ? { membership_kind: item.membershipKind } : {}),
-    ...(item.sourceRunbookItemId !== undefined
-      ? { source_runbook_item_id: item.sourceRunbookItemId }
+    ...(item.sourceTaskItemId !== undefined
+      ? { source_task_item_id: item.sourceTaskItemId }
       : {}),
     metadata: sanitizeBoardItemMetadata(item.metadata),
     ...(item.createdAt ? { created_at: item.createdAt } : {}),

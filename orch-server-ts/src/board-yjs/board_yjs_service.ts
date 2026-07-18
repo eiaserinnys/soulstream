@@ -17,13 +17,13 @@ import {
   updateMarkdownYjsDocument,
   upsertBoardYjsItem,
   upsertCustomViewYjsBoardItem,
-  upsertRunbookYjsBoardItem,
+  upsertTaskYjsBoardItem,
 } from "./board_yjs_model.js";
 import {
   moveBoardItemBetweenDocuments,
   type BoardMoveInput,
-  type StagedRunbookBoardMove,
-  withStagedRunbookBoardMove,
+  type StagedTaskBoardMove,
+  withStagedTaskBoardMove,
 } from "./board_yjs_move.js";
 import {
   authenticateBoardYjsConnection,
@@ -44,7 +44,7 @@ export interface BoardYjsServiceConfig {
   auth: BoardYjsAuthConfig;
   logger: FastifyBaseLogger;
   hostMode: "node" | "orch";
-  moveRunbookBoardItem?: (
+  moveTaskBoardItem?: (
     input: BoardMoveInput & { idempotencyKey: string },
   ) => Promise<CatalogBoardItemRow>;
 }
@@ -127,7 +127,7 @@ export class BoardYjsService {
     sessionId: string;
     x: number;
     y: number;
-    sourceRunbookItemId?: string | null;
+    sourceTaskItemId?: string | null;
   }): Promise<CatalogBoardItemRow> {
     const boardItem: CatalogBoardItemRow = {
       id: `session:${input.sessionId}`,
@@ -135,7 +135,7 @@ export class BoardYjsService {
       containerKind: input.container.containerKind,
       containerId: input.container.containerId,
       membershipKind: "primary",
-      sourceRunbookItemId: input.sourceRunbookItemId ?? null,
+      sourceTaskItemId: input.sourceTaskItemId ?? null,
       itemType: "session",
       itemId: input.sessionId,
       x: input.x,
@@ -149,28 +149,28 @@ export class BoardYjsService {
     return boardItem;
   }
 
-  async upsertRunbookBoardItem(input: {
+  async upsertTaskBoardItem(input: {
     folderId: string;
     boardItemId: string;
-    runbookId: string;
+    taskId: string;
     title: string;
     x: number;
     y: number;
     metadata?: Record<string, unknown>;
   }): Promise<CatalogBoardItemRow> {
     return await this.withDirectConnection(input.folderId, (doc) =>
-      upsertRunbookYjsBoardItem(doc, input)
+      upsertTaskYjsBoardItem(doc, input)
     );
   }
 
   /**
-   * Stages a runbook board mutation off-document. The live Y.Doc is updated only
+   * Stages a task board mutation off-document. The live Y.Doc is updated only
    * after the caller's database transaction commits successfully.
    */
-  async withRunbookBoardApplication<T>(input: {
+  async withTaskBoardApplication<T>(input: {
     folderId: string;
     boardItemId: string;
-    runbookId: string;
+    taskId: string;
     title: string;
     archived: boolean;
     x: number;
@@ -195,17 +195,17 @@ export class BoardYjsService {
       const documentName = getBoardYjsContainerDocumentName(scope);
       const connection = await hocuspocus.openDirectConnection(documentName, {
         ...scope,
-        source: "runbook-task-identity",
+        source: "task-identity",
       });
       try {
         const live = connection.document as unknown as Y.Doc | null;
         if (!live) throw new Error(`board Y.Doc direct connection closed: ${documentName}`);
         const staged = new Y.Doc();
         Y.applyUpdate(staged, Y.encodeStateAsUpdate(live));
-        upsertRunbookYjsBoardItem(staged, {
+        upsertTaskYjsBoardItem(staged, {
           folderId: input.folderId,
           boardItemId: input.boardItemId,
-          runbookId: input.runbookId,
+          taskId: input.taskId,
           title: input.title,
           x: input.x,
           y: input.y,
@@ -249,7 +249,7 @@ export class BoardYjsService {
     );
   }
 
-  async removeRunbookBoardItem(folderId: string, boardItemId: string): Promise<void> {
+  async removeTaskBoardItem(folderId: string, boardItemId: string): Promise<void> {
     await this.withDirectConnection(folderId, (doc) => {
       deleteBoardYjsItem(doc, boardItemId);
       return true;
@@ -288,14 +288,14 @@ export class BoardYjsService {
     position?: { x: number; y: number };
     idempotencyKey?: string;
   }): Promise<CatalogBoardItemRow> {
-    if (input.boardItem.itemType === "runbook") {
+    if (input.boardItem.itemType === "task") {
       if (!input.idempotencyKey?.trim()) {
-        throw new Error("runbook board move idempotencyKey is required");
+        throw new Error("task board move idempotencyKey is required");
       }
-      if (!this.config.moveRunbookBoardItem) {
-        throw new Error("runbook task identity move is not configured");
+      if (!this.config.moveTaskBoardItem) {
+        throw new Error("task identity move is not configured");
       }
-      return await this.config.moveRunbookBoardItem({
+      return await this.config.moveTaskBoardItem({
         ...input,
         idempotencyKey: input.idempotencyKey,
       });
@@ -303,12 +303,12 @@ export class BoardYjsService {
     return await moveBoardItemBetweenDocuments(this.requireOrchHostMode(), input);
   }
 
-  async withRunbookBoardMoveApplication(
+  async withTaskBoardMoveApplication(
     input: BoardMoveInput,
-    persist: (application: StagedRunbookBoardMove) => Promise<void>,
+    persist: (application: StagedTaskBoardMove) => Promise<void>,
   ): Promise<CatalogBoardItemRow> {
     return await this.withTaskIdentityLock(input.boardItem.id, async () =>
-      await withStagedRunbookBoardMove(this.requireOrchHostMode(), input, persist)
+      await withStagedTaskBoardMove(this.requireOrchHostMode(), input, persist)
     );
   }
 

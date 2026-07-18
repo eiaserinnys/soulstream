@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { composeSupervisorRuntime } from "../../src/runtime/supervisor_composition.js";
 import { composeWorkerRuntime } from "../../src/runtime/worker_composition.js";
-import { composeChecklistRunbookProjection } from "../../src/runtime/checklist_runbook_composition.js";
+import { composeChecklistTaskProjection } from "../../src/runtime/checklist_task_composition.js";
 
 const sourceRoot = fileURLToPath(new URL("../../src/", import.meta.url));
 
@@ -26,8 +26,8 @@ describe("worker composition boundary", () => {
 
     expect(main).toContain("composeWorkerRuntime");
     expect(main).toContain('process.once("SIGTERM"');
-    expect(main).not.toMatch(/new (SessionDB|TaskManager|TaskExecutor|RunbookService)\b/);
-    expect(workerComposition).toMatch(/new (SessionDB|TaskManager|RunbookService)\b/);
+    expect(main).not.toMatch(/new (SessionDB|TaskManager|TaskExecutor|TaskService)\b/);
+    expect(workerComposition).toMatch(/new (SessionDB|TaskManager|TaskService)\b/);
     expect(supervisorComposition).toContain("new TaskExecutor");
   });
 
@@ -41,7 +41,7 @@ describe("worker composition boundary", () => {
   });
 
   it("exports an executable checklist projection composition boundary", () => {
-    expect(composeChecklistRunbookProjection).toBeTypeOf("function");
+    expect(composeChecklistTaskProjection).toBeTypeOf("function");
   });
 
   it("keeps every production module touched by the extraction below 500 lines", () => {
@@ -54,11 +54,11 @@ describe("worker composition boundary", () => {
       "context/page_context_resolver.ts",
       "context/page_context_repository.ts",
       "context/page_context_assembler.ts",
-      "page/checklist_runbook_adapter.ts",
-      "page/checklist_runbook_projection_repository.ts",
-      "page/checklist_runbook_reconciler.ts",
-      "runtime/checklist_runbook_composition.ts",
-      "runbook/runbook_service.ts",
+      "page/checklist_task_adapter.ts",
+      "page/checklist_task_projection_repository.ts",
+      "page/checklist_task_reconciler.ts",
+      "runtime/checklist_task_composition.ts",
+      "work-task/task_service.ts",
       "task/task_creation.ts",
       "task/task_creation_hook.ts",
     ];

@@ -13,7 +13,7 @@ import {
   type FolderRouteProvider,
   type LiveConfigProviderBoundary,
   type MarkdownDocumentRouteProvider,
-  type RunbookRouteProvider,
+  type TaskRouteProvider,
 } from "../src/index.js";
 
 const config = parseOrchServerConfig({
@@ -75,7 +75,7 @@ describe("live dashboard access provider route wiring", () => {
     await app.close();
   });
 
-  it("applies the same folder access to board, markdown, and runbook routes", async () => {
+  it("applies the same folder access to board, markdown, and task routes", async () => {
     const { app } = createRouteApp();
     const headers = { cookie: `${AUTH_COOKIE_NAME}=restricted-token` };
 
@@ -103,12 +103,12 @@ describe("live dashboard access provider route wiring", () => {
 
     expect((await app.inject({
       method: "GET",
-      url: "/api/runbooks/rb-child",
+      url: "/api/tasks/rb-child",
       headers,
     })).statusCode).toBe(200);
     expect((await app.inject({
       method: "GET",
-      url: "/api/runbooks/rb-b",
+      url: "/api/tasks/rb-b",
       headers,
     })).statusCode).toBe(403);
 
@@ -192,8 +192,8 @@ function createRouteApp() {
       accessProvider,
       hostProxy,
     },
-    runbookRoutes: {
-      provider: createRunbookProvider(),
+    taskRoutes: {
+      provider: createTaskProvider(),
       accessProvider,
       httpClient: vi.fn(async () => ({ statusCode: 200 })),
     },
@@ -242,14 +242,14 @@ function createMarkdownProvider(): MarkdownDocumentRouteProvider {
   };
 }
 
-function createRunbookProvider(): RunbookRouteProvider {
+function createTaskProvider(): TaskRouteProvider {
   return {
     listFolders: vi.fn(async () => folders),
-    getRunbookSnapshot: vi.fn(async (runbookId) => {
-      if (runbookId === "rb-child") {
-        return { runbook: { id: "rb-child", folder_id: "folder-a-child" } };
+    getTaskSnapshot: vi.fn(async (taskId) => {
+      if (taskId === "rb-child") {
+        return { task: { id: "rb-child", folder_id: "folder-a-child" } };
       }
-      if (runbookId === "rb-b") return { runbook: { id: "rb-b", folder_id: "folder-b" } };
+      if (taskId === "rb-b") return { task: { id: "rb-b", folder_id: "folder-b" } };
       return null;
     }),
   };

@@ -51,9 +51,9 @@ import {
   type ExecuteProxyRouteOptions,
 } from "./execute/execute_proxy_routes.js";
 import {
-  registerRunbookRoutes,
-  type RunbookRouteOptions,
-} from "./runbooks/runbook_routes.js";
+  registerTaskRoutes,
+  type TaskRouteOptions,
+} from "./tasks/task_routes.js";
 import {
   registerNodeAgentProfileRoutes,
   type NodeAgentProfileRouteOptions,
@@ -165,7 +165,7 @@ export type CreateAppOptions = {
   boardItemRoutes?: BoardItemRouteOptions;
   cogitoRoutes?: CogitoRouteOptions;
   markdownDocumentRoutes?: MarkdownDocumentRouteOptions;
-  runbookRoutes?: RunbookRouteOptions;
+  taskRoutes?: TaskRouteOptions;
 };
 
 export function createApp(options: CreateAppOptions): FastifyInstance {
@@ -283,8 +283,8 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   if (options.markdownDocumentRoutes !== undefined) {
     registerMarkdownDocumentRoutes(app, options.markdownDocumentRoutes);
   }
-  if (options.runbookRoutes !== undefined) {
-    registerRunbookRoutes(app, options.runbookRoutes);
+  if (options.taskRoutes !== undefined) {
+    registerTaskRoutes(app, options.taskRoutes);
   }
 
   return app;

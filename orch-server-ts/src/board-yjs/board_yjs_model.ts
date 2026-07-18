@@ -4,6 +4,7 @@ import {
   BOARD_ITEMS_MAP,
   MARKDOWN_BODIES_MAP,
   boardYjsFolderScope,
+  normalizeLegacyBoardYjsItemValue,
 } from "./board_yjs_document.js";
 import {
   MarkdownDocumentVersionConflictError,
@@ -54,7 +55,7 @@ export function createMarkdownYjsDocument(
     containerKind: scope.containerKind,
     containerId: scope.containerId,
     membershipKind: "primary",
-    sourceRunbookItemId: null,
+    sourceTaskItemId: null,
     itemType: "markdown",
     itemId: input.documentId,
     x: input.x,
@@ -79,8 +80,9 @@ export function updateMarkdownYjsDocument(
 ): MarkdownDocumentRow | null {
   const boardItems = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
   const boardItemId = `markdown:${documentId}`;
-  const current = boardItems.get(boardItemId);
-  if (!current) return null;
+  const stored = boardItems.get(boardItemId);
+  if (!stored) return null;
+  const current = normalizeLegacyBoardYjsItemValue(stored);
   const metadata = current.metadata && typeof current.metadata === "object" ? current.metadata : {};
   const currentVersion = normalizeMarkdownVersion(metadata.version);
   if (currentVersion !== fields.expectedVersion) {
@@ -117,12 +119,12 @@ export function deleteMarkdownYjsDocument(doc: Y.Doc, documentId: string): void 
   doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP).delete(documentId);
 }
 
-export function upsertRunbookYjsBoardItem(
+export function upsertTaskYjsBoardItem(
   doc: Y.Doc,
   input: {
     folderId: string;
     boardItemId: string;
-    runbookId: string;
+    taskId: string;
     title: string;
     x: number;
     y: number;
@@ -135,9 +137,9 @@ export function upsertRunbookYjsBoardItem(
     containerKind: "folder",
     containerId: input.folderId,
     membershipKind: "primary",
-    sourceRunbookItemId: null,
-    itemType: "runbook",
-    itemId: input.runbookId,
+    sourceTaskItemId: null,
+    itemType: "task",
+    itemId: input.taskId,
     x: input.x,
     y: input.y,
     metadata: { ...(input.metadata ?? {}), title: input.title },
@@ -167,7 +169,7 @@ export function upsertCustomViewYjsBoardItem(
     containerKind: scope.containerKind,
     containerId: scope.containerId,
     membershipKind: "primary",
-    sourceRunbookItemId: null,
+    sourceTaskItemId: null,
     itemType: "custom_view",
     itemId: input.customViewId,
     x: input.x,
@@ -194,8 +196,9 @@ export function readMovableBoardYjsItem(
   position?: { x: number; y: number },
 ): MovedBoardYjsItem | null {
   const boardItems = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
-  const current = boardItems.get(boardItemId);
-  if (!current) return null;
+  const stored = boardItems.get(boardItemId);
+  if (!stored) return null;
+  const current = normalizeLegacyBoardYjsItemValue(stored);
   const now = new Date().toISOString();
   const value: BoardYjsItemValue = {
     ...current,
@@ -214,7 +217,7 @@ export function readMovableBoardYjsItem(
       containerKind: targetScope.containerKind,
       containerId: targetScope.containerId,
       membershipKind: value.membership_kind ?? "primary",
-      sourceRunbookItemId: value.source_runbook_item_id ?? null,
+      sourceTaskItemId: value.source_task_item_id ?? null,
       itemType: value.item_type,
       itemId: value.item_id,
       x: value.x,
@@ -250,8 +253,8 @@ export function upsertBoardYjsItem(doc: Y.Doc, boardItem: CatalogBoardItemRow): 
     x: boardItem.x,
     y: boardItem.y,
     ...(boardItem.membershipKind ? { membership_kind: boardItem.membershipKind } : {}),
-    ...(boardItem.sourceRunbookItemId !== undefined
-      ? { source_runbook_item_id: boardItem.sourceRunbookItemId }
+    ...(boardItem.sourceTaskItemId !== undefined
+      ? { source_task_item_id: boardItem.sourceTaskItemId }
       : {}),
     metadata: boardItem.metadata ?? {},
     ...(boardItem.createdAt ? { created_at: boardItem.createdAt } : {}),

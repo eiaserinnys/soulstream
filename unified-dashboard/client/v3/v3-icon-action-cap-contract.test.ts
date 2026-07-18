@@ -19,11 +19,11 @@ describe("v3 icon action cap contract", () => {
   });
 
   it.each([
-    ["../../../packages/soul-ui/src/runbook/RunbookCard.tsx", ["런북 보드 열기"]],
-    ["../../../packages/soul-ui/src/runbook/RunbookCompletionAction.tsx", ["actionLabel"]],
+    ["../../../packages/soul-ui/src/task/TaskCard.tsx", ["업무 보드 열기"]],
+    ["../../../packages/soul-ui/src/task/TaskCompletionAction.tsx", ["actionLabel"]],
     ["./V3GlobalToolbar.tsx", ["아침 정리", "새 업무"]],
     ["./PlannerTaskCard.tsx", ["별표"]],
-    ["./TaskDetailPane.tsx", ["오늘 플래너로 돌아가기", "별표", "런북 보드 열기"]],
+    ["./TaskDetailPane.tsx", ["오늘 플래너로 돌아가기", "별표", "업무 보드 열기"]],
     ["./TaskTodayToggle.tsx", ["todayPlannerMenuLabel"]],
     ["./TaskDescriptionPanel.tsx", ["편집"]],
     ["./TaskInlineBoard.tsx", ["마크다운 추가", "펼치기", "이름 수정"]],

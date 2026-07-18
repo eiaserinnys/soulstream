@@ -39,7 +39,7 @@ export class MarkdownDocumentRepository {
         item_container_kind: BoardContainerKind;
         item_container_id: string;
         item_membership_kind: "primary" | "reference";
-        item_source_runbook_item_id: string | null;
+        item_source_task_item_id: string | null;
         item_type: BoardItemType;
         item_ref_id: string;
         item_x: string | number;
@@ -91,7 +91,7 @@ export class MarkdownDocumentRepository {
         item.container_kind AS item_container_kind,
         item.container_id AS item_container_id,
         item.membership_kind AS item_membership_kind,
-        item.source_runbook_item_id AS item_source_runbook_item_id,
+        item.source_task_item_id AS item_source_task_item_id,
         item.item_type AS item_type,
         item.item_id AS item_ref_id,
         item.x AS item_x,
@@ -119,7 +119,7 @@ export class MarkdownDocumentRepository {
       container_kind: row.item_container_kind,
       container_id: row.item_container_id,
       membership_kind: row.item_membership_kind,
-      source_runbook_item_id: row.item_source_runbook_item_id,
+      source_task_item_id: row.item_source_task_item_id,
       item_type: row.item_type,
       item_id: row.item_ref_id,
       x: row.item_x,

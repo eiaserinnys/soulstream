@@ -11,13 +11,13 @@ import {
 } from "../src/index.js";
 
 describe("session create lifecycle", () => {
-  it("inherits a source session primary runbook container and removes sourceSessionId", async () => {
+  it("inherits a source session primary task container and removes sourceSessionId", async () => {
     const boardItems = boardItemProvider({
       boardItems: [{
         id: "session:source",
         folderId: "folder-a",
-        containerKind: "runbook",
-        containerId: "runbook-a",
+        containerKind: "task",
+        containerId: "task-a",
         membershipKind: "primary",
         itemType: "session",
         itemId: "source",
@@ -40,7 +40,7 @@ describe("session create lifecycle", () => {
 
     expect(prepared.payload).toMatchObject({
       folderId: "folder-a",
-      container: { kind: "runbook", id: "runbook-a" },
+      container: { kind: "task", id: "task-a" },
       caller_info: { source: "browser" },
     });
     expect(prepared.payload).not.toHaveProperty("sourceSessionId");
@@ -106,11 +106,11 @@ function boardItemProvider(input: {
     listBoardItems: vi.fn(async () => boardItems),
     resolveBoardContainerFolderId: vi.fn(async (container) => {
       if (container.kind === "folder") return container.id;
-      const runbook = boardItems.find((item) =>
-        item.itemType === "runbook" && item.itemId === container.id
+      const task = boardItems.find((item) =>
+        item.itemType === "task" && item.itemId === container.id
       );
-      if (typeof runbook?.folderId !== "string") throw new Error("missing runbook");
-      return runbook.folderId;
+      if (typeof task?.folderId !== "string") throw new Error("missing task");
+      return task.folderId;
     }),
     getCatalogSnapshot: vi.fn(async () => ({ folders, boardItems })),
   };

@@ -43,7 +43,7 @@ describe("route coverage completeness gate", () => {
     "GET /api/planner/tasks/{pageId}/runs",
   ];
   const reviewRouteKey = "POST /api/sessions/{session_id}/review/acknowledge";
-  const runbookCreateRouteKey = "POST /api/runbooks";
+  const taskCreateRouteKey = "POST /api/tasks";
 
   it("covers every Python fixture route with opt-in TS registration and auth metadata", async () => {
     const registeredRouteKeys = await collectRegisteredFixtureRouteKeys(registry);
@@ -66,10 +66,10 @@ describe("route coverage completeness gate", () => {
     });
     expect(registeredRouteKeys).toHaveLength(registry.entries.length);
     expect(registry.entries.map((entry) => entry.key)).toEqual(
-      expect.arrayContaining([...browserRouteKeys, reviewRouteKey, runbookCreateRouteKey]),
+      expect.arrayContaining([...browserRouteKeys, reviewRouteKey, taskCreateRouteKey]),
     );
     expect(registeredRouteKeys).toEqual(
-      expect.arrayContaining([...browserRouteKeys, reviewRouteKey, runbookCreateRouteKey]),
+      expect.arrayContaining([...browserRouteKeys, reviewRouteKey, taskCreateRouteKey]),
     );
   });
 
@@ -178,7 +178,7 @@ function createAllOptInRouteApp() {
     },
     publicStatusRoutes: inert,
     pushRoutes: inert,
-    runbookRoutes: inert,
+    taskRoutes: inert,
     sessionActionCommandRoutes: inert,
     sessionBackgroundScheduleRoutes: inert,
     sessionCatalogRoutes: inert,

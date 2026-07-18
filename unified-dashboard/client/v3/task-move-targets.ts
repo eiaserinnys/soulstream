@@ -6,24 +6,24 @@ const TASK_MOVE_SEARCH_LIMIT = 8;
 
 export interface TaskMoveTarget {
   page: PageDto;
-  runbookId: string;
+  taskId: string;
 }
 
 export function defaultTaskMoveTargets(
   targets: readonly TaskMoveTarget[],
-  currentRunbookId: string,
+  currentTaskId: string,
 ): TaskMoveTarget[] {
   return [...new Map(
     targets
-      .filter((target) => target.runbookId !== currentRunbookId)
-      .map((target) => [target.runbookId, target]),
+      .filter((target) => target.taskId !== currentTaskId)
+      .map((target) => [target.taskId, target]),
   ).values()];
 }
 
 export async function searchTaskMoveTargets(
   api: PageApiClient,
   query: string,
-  currentRunbookId: string,
+  currentTaskId: string,
 ): Promise<TaskMoveTarget[]> {
   const normalized = query.trim();
   if (!normalized) return [];
@@ -34,7 +34,7 @@ export async function searchTaskMoveTargets(
   const targets = snapshots.flatMap((snapshot) => {
     const classification = classifyMountedPage(snapshot.blocks);
     if (classification.kind !== "task") return [];
-    return [{ page: snapshot.page, runbookId: classification.runbookId }];
+    return [{ page: snapshot.page, taskId: classification.taskId }];
   });
-  return defaultTaskMoveTargets(targets, currentRunbookId);
+  return defaultTaskMoveTargets(targets, currentTaskId);
 }

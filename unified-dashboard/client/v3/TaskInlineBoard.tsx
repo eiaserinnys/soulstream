@@ -48,11 +48,11 @@ const INLINE_ITEM_TYPES = new Set<CatalogBoardItem["itemType"]>([
 ]);
 
 export function TaskInlineBoard({
-  runbookId,
+  taskId,
   folderId,
   onMarkdownDocumentsChanged,
 }: {
-  runbookId: string;
+  taskId: string;
   folderId: string | null;
   onMarkdownDocumentsChanged(documents: TaskBoardMarkdownDocument[]): void;
 }) {
@@ -60,11 +60,11 @@ export function TaskInlineBoard({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [renameState, setRenameState] = useState<MarkdownRenameState | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const itemInvalidationKey = useV3InvalidationKey(["catalog", "runbook", "replay"]);
+  const itemInvalidationKey = useV3InvalidationKey(["catalog", "task", "replay"]);
   const pageInvalidationKey = useV3InvalidationKey(["page", "replay"]);
   const customViewInvalidationKey = useV3InvalidationKey(["custom_view", "replay"]);
   const itemsRef = useRef(items);
-  const loadedRunbookIdRef = useRef<string | null>(null);
+  const loadedTaskIdRef = useRef<string | null>(null);
   itemsRef.current = items;
   const boardCatalog = useMemo<CatalogState>(() => ({
     folders: [],
@@ -73,8 +73,8 @@ export function TaskInlineBoard({
     sessionList: [],
   }), [items]);
   const boardSync = useBoardYjsRuntime({
-    container: status === "ready" ? { kind: "runbook", id: runbookId } : null,
-    resolvedFolderId: folderId ?? items[0]?.folderId ?? runbookId,
+    container: status === "ready" ? { kind: "task", id: taskId } : null,
+    resolvedFolderId: folderId ?? items[0]?.folderId ?? taskId,
     catalog: boardCatalog,
     selectionItemId: null,
   });
@@ -82,18 +82,18 @@ export function TaskInlineBoard({
   useEffect(() => {
     setExpandedId(null);
     setRenameState(null);
-  }, [runbookId]);
+  }, [taskId]);
 
   useEffect(() => {
     const controller = new AbortController();
-    const sameRunbook = loadedRunbookIdRef.current === runbookId;
-    const previous = sameRunbook ? itemsRef.current : null;
-    if (!sameRunbook) {
+    const sameTask = loadedTaskIdRef.current === taskId;
+    const previous = sameTask ? itemsRef.current : null;
+    if (!sameTask) {
       setItems([]);
       setStatus("loading");
     }
     const load = () => fetchTaskBoardItems(
-      runbookId,
+      taskId,
       globalThis.fetch.bind(globalThis),
       controller.signal,
     );
@@ -102,7 +102,7 @@ export function TaskInlineBoard({
       load,
       clearsVisibleContent: (current, next) => current.length > 0 && next.length === 0,
     }).then((next) => {
-      loadedRunbookIdRef.current = runbookId;
+      loadedTaskIdRef.current = taskId;
       setItems((current) => retainEqualValue(current, next));
       setStatus("ready");
     }).catch((error: unknown) => {
@@ -110,7 +110,7 @@ export function TaskInlineBoard({
       setStatus("error");
     });
     return () => controller.abort();
-  }, [itemInvalidationKey, runbookId]);
+  }, [itemInvalidationKey, taskId]);
 
   useEffect(() => {
     if (!boardSync.hasSynced || !boardSync.boardItems) return;

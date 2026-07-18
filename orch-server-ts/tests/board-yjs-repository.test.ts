@@ -64,7 +64,7 @@ describe("orch BoardYjsRepository", () => {
     const repository = new BoardYjsRepository(resolver);
     const scope = {
       folderId: "folder-1",
-      containerKind: "runbook" as const,
+      containerKind: "task" as const,
       containerId: "rb-1",
     };
     const doc = new Y.Doc();
@@ -73,10 +73,10 @@ describe("orch BoardYjsRepository", () => {
       boardItems: [{
         id: "markdown:d1",
         folderId: "folder-1",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
         membershipKind: "primary",
-        sourceRunbookItemId: null,
+        sourceTaskItemId: null,
         itemType: "markdown",
         itemId: "d1",
         x: 280,
@@ -133,10 +133,10 @@ describe("orch BoardYjsRepository", () => {
         return [{
           id: "markdown:d1",
           folder_id: "folder-1",
-          container_kind: "runbook",
+          container_kind: "task",
           container_id: "rb-1",
           membership_kind: "primary",
-          source_runbook_item_id: null,
+          source_task_item_id: null,
           item_type: "markdown",
           item_id: "d1",
           x: 10,
@@ -165,7 +165,7 @@ describe("orch BoardYjsRepository", () => {
 
     const seed = await repository.loadBoardYjsSeed({
       folderId: "folder-1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
     });
 
@@ -177,28 +177,28 @@ describe("orch BoardYjsRepository", () => {
     expect(seed).toEqual({
       boardItems: [expect.objectContaining({
         id: "markdown:d1",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
       })],
       markdownDocuments: [{ id: "d1", title: "Note", body: "Body", version: 2 }],
     });
   });
 
-  it("backfills a DB-only runbook tile into the folder snapshot and reconciles it", async () => {
+  it("backfills a DB-only task tile into the folder snapshot and reconciles it", async () => {
     const { sql, calls } = createMockSql((call) => {
-      if (call.query.includes("FROM board_items") && call.query.includes("item_type = 'runbook'")) {
+      if (call.query.includes("FROM board_items") && call.query.includes("item_type = 'task'")) {
         return [{
-          id: "runbook:rb-1",
+          id: "task:rb-1",
           folder_id: "folder-1",
           container_kind: "folder",
           container_id: "folder-1",
           membership_kind: "primary",
-          source_runbook_item_id: null,
-          item_type: "runbook",
+          source_task_item_id: null,
+          item_type: "task",
           item_id: "rb-1",
           x: 40,
           y: 80,
-          metadata: { title: "Runbook" },
+          metadata: { title: "Task" },
           created_at: null,
           updated_at: null,
         }];
@@ -215,7 +215,7 @@ describe("orch BoardYjsRepository", () => {
       markdownDocuments: [],
     });
 
-    const repaired = await repository.backfillRunbookBoardItemsIntoSnapshot(
+    const repaired = await repository.backfillTaskBoardItemsIntoSnapshot(
       "board-folder:folder-1",
       { folderId: "folder-1", containerKind: "folder", containerId: "folder-1" },
       empty,
@@ -224,7 +224,7 @@ describe("orch BoardYjsRepository", () => {
     Y.applyUpdate(doc, repaired);
 
     expect(readBoardYDocReplica("folder-1", doc).boardItems)
-      .toEqual([expect.objectContaining({ id: "runbook:rb-1", itemType: "runbook" })]);
+      .toEqual([expect.objectContaining({ id: "task:rb-1", itemType: "task" })]);
     expect(calls.some((call) => call.query.includes("INSERT INTO board_yjs_documents")))
       .toBe(true);
     expect(calls.some((call) => call.query.includes("INSERT INTO board_yjs_catalog_cache")))

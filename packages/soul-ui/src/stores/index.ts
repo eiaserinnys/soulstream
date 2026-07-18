@@ -7,7 +7,7 @@ export {
   useDashboardStore,
   isSessionUnread,
 } from "./dashboard-store";
-export { useRunbookStore } from "./runbook-store";
+export { useTaskStore } from "./task-store";
 export { useCustomViewStore } from "./custom-view-store";
 export type {
   ProfileConfig,
@@ -32,5 +32,5 @@ export { placeInTree, handleTextStart } from "./tree-placer";
 // === Session Updater ===
 export { shouldNotify, deriveSessionStatus } from "./session-updater";
 
-// === Runbook Reads ===
-export { fetchRunbookSnapshot } from "./runbook-api";
+// === Task Reads ===
+export { fetchTaskSnapshot } from "./task-api";

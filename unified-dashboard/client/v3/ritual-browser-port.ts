@@ -1,5 +1,5 @@
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
-import { postRunbookStatus } from "@seosoyoung/soul-ui/stores/runbook-api";
+import { postTaskStatus } from "@seosoyoung/soul-ui/stores/task-api";
 
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import type { RitualActionPort } from "./ritual-model";
@@ -18,8 +18,8 @@ export class BrowserRitualActionPort implements RitualActionPort {
     await mountRitualTaskToday(this.plannerPort, this.dailyPageId, input.taskTitle);
   }
 
-  async completeRunbook(input: { runbookId: string; expectedVersion: number }) {
-    await completeRitualRunbook(input);
+  async completeTask(input: { taskId: string; expectedVersion: number }) {
+    await completeRitualTask(input);
   }
 }
 
@@ -31,14 +31,14 @@ export async function mountRitualTaskToday(
   await plannerPort.mountPage({ sourcePageId: dailyPageId, title: taskTitle });
 }
 
-export async function completeRitualRunbook(input: {
-  runbookId: string;
+export async function completeRitualTask(input: {
+  taskId: string;
   expectedVersion: number;
 }): Promise<void> {
-  await postRunbookStatus({
-    runbookId: input.runbookId,
+  await postTaskStatus({
+    taskId: input.taskId,
     expectedVersion: input.expectedVersion,
-    idempotencyKey: ritualOperationId("runbook-complete"),
+    idempotencyKey: ritualOperationId("task-complete"),
     status: "completed",
     reason: "v3 morning ritual completion",
   });

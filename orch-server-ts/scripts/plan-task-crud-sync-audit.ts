@@ -4,10 +4,10 @@ import {
   planTaskCrudSyncAudit,
   type ActiveTaskProjectMountRow,
   type ArchivedTaskMountRow,
-} from "../src/runbooks/runbook_task_crud_sync_audit_plan.js";
+} from "../src/tasks/task_crud_sync_audit_plan.js";
 
 interface ActiveInventoryRow {
-  runbook_id: string;
+  task_id: string;
   task_page_id: string;
   title: string;
   expected_folder_id: string;
@@ -17,7 +17,7 @@ interface ActiveInventoryRow {
 }
 
 interface ArchivedInventoryRow {
-  runbook_id: string;
+  task_id: string;
   task_page_id: string;
   title: string;
   source_page_id: string;
@@ -33,16 +33,16 @@ try {
     const activeRows = await transaction<ActiveInventoryRow[]>`
       WITH identities AS (
         SELECT
-          runbook.id AS runbook_id,
-          runbook.task_page_id,
-          runbook.title,
+          task.id AS task_id,
+          task.task_page_id,
+          task.title,
           board_item.folder_id AS expected_folder_id,
           folder.project_page_id AS expected_project_page_id
-        FROM runbooks runbook
+        FROM tasks task
         JOIN board_items board_item
-          ON board_item.id = runbook.board_item_id
-         AND board_item.item_type = 'runbook'
-         AND board_item.item_id = runbook.id
+          ON board_item.id = task.board_item_id
+         AND board_item.item_type = 'task'
+         AND board_item.item_id = task.id
          AND board_item.container_kind = 'folder'
          AND board_item.membership_kind = 'primary'
         JOIN folders folder
@@ -50,9 +50,9 @@ try {
          AND folder.project_page_id IS NOT NULL
          AND folder.archived = FALSE
         JOIN pages task_page
-          ON task_page.id = runbook.task_page_id
+          ON task_page.id = task.task_page_id
          AND task_page.archived = FALSE
-        WHERE runbook.archived = FALSE
+        WHERE task.archived = FALSE
       ), project_mounts AS (
         SELECT
           link.target_page_id AS task_page_id,
@@ -65,7 +65,7 @@ try {
         GROUP BY link.target_page_id, source.page_id
       )
       SELECT
-        identity.runbook_id,
+        identity.task_id,
         identity.task_page_id,
         identity.title,
         identity.expected_folder_id,
@@ -74,13 +74,13 @@ try {
         COALESCE(mount.mount_count, 0)::int AS mount_count
       FROM identities identity
       LEFT JOIN project_mounts mount ON mount.task_page_id = identity.task_page_id
-      ORDER BY identity.runbook_id, mount.source_project_page_id
+      ORDER BY identity.task_id, mount.source_project_page_id
     `;
     const archivedRows = await transaction<ArchivedInventoryRow[]>`
       SELECT
-        runbook.id AS runbook_id,
-        runbook.task_page_id,
-        runbook.title,
+        task.id AS task_id,
+        task.task_page_id,
+        task.title,
         source.page_id AS source_page_id,
         CASE
           WHEN project_folder.id IS NOT NULL THEN 'project'
@@ -88,19 +88,19 @@ try {
           ELSE 'other'
         END AS source_kind,
         COUNT(DISTINCT source.id)::int AS mount_count
-      FROM runbooks runbook
-      JOIN pages task_page ON task_page.id = runbook.task_page_id
+      FROM tasks task
+      JOIN pages task_page ON task_page.id = task.task_page_id
       JOIN block_links link
         ON link.target_page_id = task_page.id
        AND link.link_kind = 'mount'
       JOIN blocks source ON source.id = link.source_block_id
       JOIN pages source_page ON source_page.id = source.page_id
       LEFT JOIN folders project_folder ON project_folder.project_page_id = source.page_id
-      WHERE runbook.archived = TRUE OR task_page.archived = TRUE
+      WHERE task.archived = TRUE OR task_page.archived = TRUE
       GROUP BY
-        runbook.id, runbook.task_page_id, runbook.title,
+        task.id, task.task_page_id, task.title,
         source.page_id, source_page.daily_date, project_folder.id
-      ORDER BY runbook.id, source.page_id
+      ORDER BY task.id, source.page_id
     `;
     return { activeRows, archivedRows };
   });
@@ -120,7 +120,7 @@ try {
 
 function toActiveRow(row: ActiveInventoryRow): ActiveTaskProjectMountRow {
   return {
-    runbookId: row.runbook_id,
+    taskId: row.task_id,
     taskPageId: row.task_page_id,
     title: row.title,
     expectedFolderId: row.expected_folder_id,
@@ -132,7 +132,7 @@ function toActiveRow(row: ActiveInventoryRow): ActiveTaskProjectMountRow {
 
 function toArchivedRow(row: ArchivedInventoryRow): ArchivedTaskMountRow {
   return {
-    runbookId: row.runbook_id,
+    taskId: row.task_id,
     taskPageId: row.task_page_id,
     title: row.title,
     sourcePageId: row.source_page_id,

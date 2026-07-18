@@ -96,7 +96,7 @@ export class BoardYjsRepository {
     }
     const rows = await this.sql<Array<{ folder_id: string }>>`
       SELECT bi.folder_id
-      FROM runbooks r
+      FROM tasks r
       JOIN board_items bi ON bi.id = r.board_item_id
       WHERE r.id = ${container.containerId}
       LIMIT 1
@@ -152,15 +152,15 @@ export class BoardYjsRepository {
     });
   }
 
-  async backfillRunbookBoardItemsIntoSnapshot(
+  async backfillTaskBoardItemsIntoSnapshot(
     documentName: string,
     containerInput: string | BoardYjsContainerRef,
     snapshot: Uint8Array,
   ): Promise<Uint8Array> {
     const scope = await this.resolveBoardYjsContainerScope(containerInput);
     if (!scope || scope.containerKind !== "folder") return snapshot;
-    const runbookItems = await this.loadRunbookBoardItems(scope);
-    if (runbookItems.length === 0) return snapshot;
+    const taskItems = await this.loadTaskBoardItems(scope);
+    if (taskItems.length === 0) return snapshot;
 
     const doc = new Y.Doc();
     if (snapshot.byteLength > 0) {
@@ -168,7 +168,7 @@ export class BoardYjsRepository {
     }
     const replica = readBoardYDocReplica(scope, doc);
     const existingIds = new Set(replica.boardItems.map((item) => item.id));
-    const missing = runbookItems.filter((item) => !existingIds.has(item.id));
+    const missing = taskItems.filter((item) => !existingIds.has(item.id));
     if (missing.length === 0) return snapshot;
 
     doc.transact(() => {
@@ -200,7 +200,7 @@ export class BoardYjsRepository {
     return rows.map(toMarkdownDocumentRow);
   }
 
-  private async loadRunbookBoardItems(
+  private async loadTaskBoardItems(
     scope: BoardYjsContainerScope,
   ): Promise<CatalogBoardItemRow[]> {
     const rows = await this.sql<
@@ -210,8 +210,8 @@ export class BoardYjsRepository {
         container_kind: "folder";
         container_id: string;
         membership_kind: "primary" | "reference";
-        source_runbook_item_id: string | null;
-        item_type: "runbook";
+        source_task_item_id: string | null;
+        item_type: "task";
         item_id: string;
         x: string | number;
         y: string | number;
@@ -222,11 +222,11 @@ export class BoardYjsRepository {
     >`
       SELECT
         id, folder_id, container_kind, container_id, membership_kind,
-        source_runbook_item_id, item_type, item_id, x, y, metadata, created_at, updated_at
+        source_task_item_id, item_type, item_id, x, y, metadata, created_at, updated_at
       FROM board_items
       WHERE container_kind = ${scope.containerKind}
         AND container_id = ${scope.containerId}
-        AND item_type = 'runbook'
+        AND item_type = 'task'
       ORDER BY y ASC, x ASC, id ASC
     `;
     return rows.map((row) => ({
@@ -235,7 +235,7 @@ export class BoardYjsRepository {
       containerKind: row.container_kind,
       containerId: row.container_id,
       membershipKind: row.membership_kind,
-      sourceRunbookItemId: row.source_runbook_item_id,
+      sourceTaskItemId: row.source_task_item_id,
       itemType: row.item_type,
       itemId: row.item_id,
       x: Number(row.x),
@@ -274,7 +274,7 @@ export class BoardYjsRepository {
       await sql`
         INSERT INTO board_items (
           id, folder_id, container_kind, container_id, membership_kind,
-          source_runbook_item_id, item_type, item_id, x, y, metadata, updated_at
+          source_task_item_id, item_type, item_id, x, y, metadata, updated_at
         )
         VALUES (
           ${item.id},
@@ -282,7 +282,7 @@ export class BoardYjsRepository {
           ${scope.containerKind},
           ${scope.containerId},
           ${item.membershipKind ?? "primary"},
-          ${item.sourceRunbookItemId ?? null},
+          ${item.sourceTaskItemId ?? null},
           ${item.itemType},
           ${item.itemId},
           ${item.x},
@@ -295,7 +295,7 @@ export class BoardYjsRepository {
             container_kind = EXCLUDED.container_kind,
             container_id = EXCLUDED.container_id,
             membership_kind = EXCLUDED.membership_kind,
-            source_runbook_item_id = EXCLUDED.source_runbook_item_id,
+            source_task_item_id = EXCLUDED.source_task_item_id,
             item_type = EXCLUDED.item_type,
             item_id = EXCLUDED.item_id,
             x = EXCLUDED.x,
