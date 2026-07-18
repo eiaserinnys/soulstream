@@ -214,6 +214,10 @@ export function applyClaudeRuntimeEvent(task: Task, event: SSEEventPayload): boo
       break;
 
     case "claude_runtime_task_notification": {
+      // Claude emits task_notification only for work detached into the background.
+      // Local Agent notifications do not carry is_backgrounded, so the event type
+      // itself is the canonical background signal.
+      runtimeTask.isBackgrounded = true;
       const status = parseTaskStatus(payload.status);
       if (status) runtimeTask.status = status;
       copyString(payload, "output_file", runtimeTask, "outputFile");
