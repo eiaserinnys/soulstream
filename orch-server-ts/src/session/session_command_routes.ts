@@ -45,6 +45,11 @@ const RESPOND_ACK_ERROR_HTTP_STATUS: Readonly<Record<string, number>> = {
 
 type JsonObject = Record<string, unknown>;
 
+const WAIT_FOR_INSTRUCTION_PROMPT =
+  "업무 현황을 파악한 후, 사용자의 다음 지시를 대기해주세요.";
+const EXECUTE_INSTRUCTION_PROMPT =
+  "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.";
+
 export function registerSessionCommandRoutes(
   app: FastifyInstance,
   options: SessionCommandRouteOptions,
@@ -54,10 +59,9 @@ export function registerSessionCommandRoutes(
     if (body === undefined) {
       return badRequest(reply, "Request body must be a JSON object");
     }
-    const prompt = body.prompt;
-    if (typeof prompt !== "string") {
-      return badRequest(reply, "prompt is required");
-    }
+    const resolvedPrompt = resolveCreateSessionPrompt(body);
+    if ("error" in resolvedPrompt) return badRequest(reply, resolvedPrompt.error);
+    const { prompt } = resolvedPrompt;
     if (body.pageAnchor !== undefined && !isPageAnchor(body.pageAnchor)) {
       return badRequest(reply, "pageAnchor must include pageId, blockId, and a positive expectedVersion");
     }
@@ -76,7 +80,7 @@ export function registerSessionCommandRoutes(
     try {
       const prepared = await prepareCreateSession(options.createSessionLifecycle, request, body);
       if (prepared.existingResponse !== undefined) {
-        return reply.code(201).send(prepared.existingResponse);
+        return reply.code(201).send({ ...prepared.existingResponse, prompt });
       }
       const payload = createSessionPayload(prepared.payload, prompt);
       const routed = options.router.createSession(payload, {
@@ -107,6 +111,7 @@ export function registerSessionCommandRoutes(
       return reply.code(201).send({
         agentSessionId,
         nodeId: routed.node.nodeId,
+        prompt,
         ...(Array.isArray(result.warnings) ? { warnings: result.warnings } : {}),
         ...taskFields,
       });
@@ -174,6 +179,7 @@ function createSessionPayload(
     requestId: _requestId,
     fireAndForget: _fireAndForget,
     type: _type,
+    initial_instruction: _initialInstruction,
     agentSessionId: requestedSessionId,
     agentId,
     profile,
@@ -190,6 +196,25 @@ function createSessionPayload(
     prompt,
     agentSessionId,
   };
+}
+
+function resolveCreateSessionPrompt(
+  body: JsonObject,
+): { prompt: string } | { error: string } {
+  if (Object.prototype.hasOwnProperty.call(body, "initial_instruction")) {
+    if (typeof body.initial_instruction !== "string") {
+      return { error: "initial_instruction must be a string" };
+    }
+    const initialInstruction = body.initial_instruction.trim();
+    return {
+      prompt: initialInstruction.length === 0
+        ? WAIT_FOR_INSTRUCTION_PROMPT
+        : `${EXECUTE_INSTRUCTION_PROMPT}\n${initialInstruction}`,
+    };
+  }
+  return typeof body.prompt === "string"
+    ? { prompt: body.prompt }
+    : { error: "prompt is required" };
 }
 
 function firstNonEmptyString(...values: unknown[]): string | undefined {

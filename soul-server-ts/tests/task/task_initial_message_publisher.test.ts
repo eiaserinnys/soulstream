@@ -133,6 +133,23 @@ describe("TaskInitialMessagePublisher", () => {
     expect(userEvent.context).toBeUndefined();
   });
 
+  it("persists the server-assembled initial instruction verbatim as the first user_message", async () => {
+    const assembledPrompt =
+      "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.\n결과를 표로 정리해줘.";
+    const task = makeTask({ prompt: assembledPrompt });
+    const { publisher, persistEvent } = makeSubject();
+
+    await publisher.publishInitialMessages(task);
+
+    expect(persistEvent).toHaveBeenCalledWith(
+      "sess-initial",
+      expect.objectContaining({
+        type: "user_message",
+        text: assembledPrompt,
+      }),
+    );
+  });
+
   it("uses user contextItems but hides resolver markers when prepared context is absent", async () => {
     const task = makeTask({
       contextItems: [

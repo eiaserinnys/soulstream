@@ -87,7 +87,9 @@ describe("v3 modal shell contract", () => {
     );
     expect(source).not.toContain("기본 지침");
     expect(source).not.toContain("실행 에이전트");
-    expect(source).toContain("buildSessionInitiationPrompt(initialInstruction)");
+    expect(source).toContain("initialInstruction,");
+    expect(source).not.toContain("buildSessionInitiationPrompt");
+    expect(source).not.toContain("./session-initiation-prompt");
     expect(read("./v3-context-succession.css")).toMatch(
       /\.v3-succession-document-options\s*\{[^}]*max-height:[^}]*overflow-y:\s*auto/s,
     );

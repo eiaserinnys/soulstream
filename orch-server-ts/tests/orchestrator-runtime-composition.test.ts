@@ -186,6 +186,7 @@ describe("orchestrator runtime composition harness", () => {
     expect(response.json()).toEqual({
       agentSessionId,
       nodeId: "fake-node",
+      prompt: "hello",
     });
     expect(runtime.registry.findSessionOwner(agentSessionId)).toMatchObject({
       nodeId: "fake-node",
