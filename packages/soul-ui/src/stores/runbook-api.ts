@@ -5,6 +5,7 @@ import type {
   SetRunbookStatusInput,
 } from "./runbook-store";
 import type { RunbookChecklistMutation } from "./runbook-mutations";
+import { fetchWithProjectionRetry } from "../lib/projection-retry";
 
 interface RunbookItemStatusResponse {
   ok: boolean;
@@ -29,25 +30,6 @@ export class RunbookApiError extends Error {
     super(message);
     this.name = "RunbookApiError";
   }
-}
-
-const RUNBOOK_PROJECTION_RETRY_DELAYS_MS = [100, 250, 500] as const;
-
-function waitForProjection(delayMs: number, signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) {
-    return Promise.reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
-  }
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", abort);
-      resolve();
-    }, delayMs);
-    const abort = () => {
-      clearTimeout(timer);
-      reject(signal?.reason ?? new DOMException("Aborted", "AbortError"));
-    };
-    signal?.addEventListener("abort", abort, { once: true });
-  });
 }
 
 function nonEmptyString(value: unknown): string | null {
@@ -100,24 +82,20 @@ export async function fetchRunbookSnapshot(
   runbookId: string,
   signal?: AbortSignal,
 ): Promise<RunbookSnapshot | null> {
-  for (let attempt = 0; attempt <= RUNBOOK_PROJECTION_RETRY_DELAYS_MS.length; attempt += 1) {
-    const response = await fetch(`/api/runbooks/${encodeURIComponent(runbookId)}`, {
-      signal,
-    });
-    if (response.status !== 404) {
-      if (!response.ok) {
-        throw new Error(await readRunbookErrorMessage(
-          response,
-          `Runbook fetch failed: ${response.status}`,
-        ));
-      }
-      return await response.json() as RunbookSnapshot;
-    }
-    const retryDelay = RUNBOOK_PROJECTION_RETRY_DELAYS_MS[attempt];
-    if (retryDelay === undefined) return null;
-    await waitForProjection(retryDelay, signal);
+  const response = await fetchWithProjectionRetry(
+    (requestSignal) => fetch(`/api/runbooks/${encodeURIComponent(runbookId)}`, {
+      signal: requestSignal,
+    }),
+    signal,
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(await readRunbookErrorMessage(
+      response,
+      `Runbook fetch failed: ${response.status}`,
+    ));
   }
-  return null;
+  return await response.json() as RunbookSnapshot;
 }
 
 export async function fetchRunbookOverview(

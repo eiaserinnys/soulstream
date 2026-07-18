@@ -1,0 +1,22 @@
+{
+  "themes": [
+    {
+      "theme": "dark",
+      "runbookReads": 3,
+      "boardReads": 3,
+      "expectedProjection404s": 4,
+      "checklistRecovered": true,
+      "boardRecovered": true,
+      "informationErrors": 0
+    },
+    {
+      "theme": "light",
+      "runbookReads": 3,
+      "boardReads": 3,
+      "expectedProjection404s": 4,
+      "checklistRecovered": true,
+      "boardRecovered": true,
+      "informationErrors": 0
+    }
+  ]
+}

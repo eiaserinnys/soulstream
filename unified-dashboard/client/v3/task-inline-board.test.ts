@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   fetchInlineCustomView,
@@ -9,6 +9,10 @@ import {
 } from "./task-inline-board-api";
 
 describe("task inline board API", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("loads a runbook container once and excludes run sessions", async () => {
     const fetchMock = vi.fn(async () => json({
       boardItems: [
@@ -48,6 +52,50 @@ describe("task inline board API", () => {
         { itemType: "markdown", itemId: "doc-1" },
         { itemType: "custom_view", itemId: "view-1" },
       ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a projected board loading through a transient 404, then accepts an empty board", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(json({ boardItems: [] }));
+
+    const pending = fetchTaskBoardContainerItems("rb-new", fetchMock as typeof globalThis.fetch);
+    await vi.advanceTimersByTimeAsync(99);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+
+    await expect(pending).resolves.toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a missing board only after the bounded projection retries are exhausted", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+    const pending = fetchTaskBoardContainerItems("rb-missing", fetchMock as typeof globalThis.fetch);
+    const rejection = expect(pending).rejects.toThrow("보드 항목을 불러오지 못했습니다 (404)");
+
+    await vi.runAllTimersAsync();
+
+    await rejection;
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("aborts the board projection retry when its surface unmounts", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+    const pending = fetchTaskBoardContainerItems(
+      "rb-aborted",
+      fetchMock as typeof globalThis.fetch,
+      controller.signal,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

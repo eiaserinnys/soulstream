@@ -92,10 +92,11 @@ export function TaskInlineBoard({
       setItems([]);
       setStatus("loading");
     }
-    const load = () => fetchTaskBoardItems(runbookId, (input, init) => globalThis.fetch(input, {
-        ...init,
-        signal: controller.signal,
-      }));
+    const load = () => fetchTaskBoardItems(
+      runbookId,
+      globalThis.fetch.bind(globalThis),
+      controller.signal,
+    );
     void loadConfirmedResult({
       previous,
       load,

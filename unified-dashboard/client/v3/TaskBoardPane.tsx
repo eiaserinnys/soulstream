@@ -92,10 +92,11 @@ export function TaskBoardPane({
     const controller = new AbortController();
     const sameRunbook = loadedRunbookIdRef.current === runbookId;
     if (!sameRunbook) setBoardItems(null);
-    const load = () => fetchTaskBoardContainerItems(runbookId, (input, init) => globalThis.fetch(input, {
-        ...init,
-        signal: controller.signal,
-      }));
+    const load = () => fetchTaskBoardContainerItems(
+      runbookId,
+      globalThis.fetch.bind(globalThis),
+      controller.signal,
+    );
     void loadConfirmedResult({
       previous: sameRunbook ? boardItemsRef.current : null,
       load,
