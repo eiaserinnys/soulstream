@@ -328,6 +328,41 @@ describe("FolderWorkspaceView list mode", () => {
     expect(scrollRoot?.textContent).toContain("Session A");
   });
 
+  it("uses the session grid column basis for project header cards", async () => {
+    const boardItems: NonNullable<CatalogState["boardItems"]> = [{
+      id: "runbook:rb-1",
+      folderId: "root",
+      containerKind: "folder",
+      containerId: "root",
+      membershipKind: "primary",
+      sourceRunbookItemId: null,
+      itemType: "runbook",
+      itemId: "rb-1",
+      x: 20,
+      y: 10,
+      metadata: { title: "Launch Runbook" },
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-01T00:00:00.000Z",
+    }];
+    ({ container, root } = renderFolderWorkspace({ boardItems }));
+
+    await flushEffects();
+
+    const childFolderGrid = Array.from(container.querySelectorAll<HTMLElement>("section"))
+      .find((section) => section.textContent?.includes("Child A"))
+      ?.querySelector<HTMLElement>(".grid");
+    const runbookGrid = container.querySelector<HTMLElement>("[data-testid='folder-runbook-section'] > .grid");
+    const sessionGrid = container.querySelector<HTMLElement>("[data-testid='folder-session-row-grid']");
+    const columnClasses = (element: HTMLElement | null | undefined) =>
+      Array.from(element?.classList ?? []).filter((className) => className.includes("grid-cols-"));
+
+    expect(childFolderGrid).not.toBeNull();
+    expect(runbookGrid).not.toBeNull();
+    expect(sessionGrid).not.toBeNull();
+    expect(columnClasses(childFolderGrid)).toEqual(columnClasses(sessionGrid));
+    expect(columnClasses(runbookGrid)).toEqual(columnClasses(sessionGrid));
+  });
+
   it("renders folder runbooks above sessions and opens the runbook board", async () => {
     const boardItems: NonNullable<CatalogState["boardItems"]> = [{
       id: "runbook:rb-1",
