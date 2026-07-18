@@ -99,6 +99,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       agentSessionId: "sess-intervention",
       text: "resume",
       user: "alice",
+      source: "claude_runtime_task_followup",
+      followupAttempt: 2,
+      followupKey: "sess-intervention:agent-task",
+      followupTaskIds: ["agent-task"],
       onlyIfTerminal: true,
     }, onResume)).resolves.toEqual({ autoResumed: true });
 
@@ -109,6 +113,10 @@ describe("TaskInterventionRoute.addIntervention", () => {
       callerInfo: undefined,
       attachmentPaths: undefined,
       context: undefined,
+      source: "claude_runtime_task_followup",
+      followupAttempt: 2,
+      followupKey: "sess-intervention:agent-task",
+      followupTaskIds: ["agent-task"],
     }, onResume);
   });
 

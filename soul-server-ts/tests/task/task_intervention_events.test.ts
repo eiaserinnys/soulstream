@@ -30,6 +30,7 @@ describe("publishInterventionSent", () => {
     } as unknown as Logger;
     const appendEvent = vi.fn(async (record: { payload: string }) => {
       expect(record.payload).not.toContain("\\ud83d");
+      expect(record.payload).not.toContain("followupTaskIds");
       expect(JSON.parse(record.payload).text).toBe(`${"a".repeat(199)}�tail`);
       return 42;
     });
@@ -46,7 +47,11 @@ describe("publishInterventionSent", () => {
 
     await publishInterventionSent(
       task,
-      { text: `${"a".repeat(199)}\ud83dtail`, user: "alice" },
+      {
+        text: `${"a".repeat(199)}\ud83dtail`,
+        user: "alice",
+        followupTaskIds: ["internal-runtime-task"],
+      },
       { broadcaster, logger, persistence },
     );
 

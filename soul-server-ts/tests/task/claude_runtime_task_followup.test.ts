@@ -81,6 +81,34 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(text).toContain("직전 응답을 그대로 반복하지 마세요");
   });
 
+  it("local_agent terminal notification은 is_backgrounded 표식 없이도 follow-up한다", async () => {
+    const task = makeTask();
+    task.claudeRuntime!.tasks["agent-task"] = {
+      taskId: "agent-task",
+      status: "stopped",
+      updatedAt: Date.now(),
+      taskType: "local_agent",
+      description: "PR diff review",
+    };
+    const { controller, addIntervention } = makeController();
+
+    controller.collect(task, {
+      type: "claude_runtime_task_notification",
+      task_id: "agent-task",
+      status: "stopped",
+      summary: "PR diff review",
+      output_file: "",
+    } as SSEEventPayload);
+    await controller.flush(task);
+
+    expect(addIntervention).toHaveBeenCalledTimes(1);
+    expect(addIntervention.mock.calls[0]![0]).toMatchObject({
+      followupKey: "sess-1:agent-task",
+      followupTaskIds: ["agent-task"],
+    });
+    expect(addIntervention.mock.calls[0]![0].text).toContain("status=stopped");
+  });
+
   it("failed/stopped/killed follow-up prompt는 완료로 오인하지 않도록 상태를 진실하게 설명한다", async () => {
     const task = makeTask();
     for (const runtimeTask of [
@@ -320,6 +348,42 @@ describe("ClaudeRuntimeTaskFollowupController", () => {
     expect(text).toContain("원래 follow-up 지시");
     expect(text).toContain("background task status");
     expect(text).not.toContain("완료된 백그라운드 작업 결과");
+  });
+
+  it("빈 attach 뒤 fallback은 재수화된 최신 status와 output_file로 지시를 갱신한다", async () => {
+    const task = makeTask();
+    task.executionPromise = Promise.resolve();
+    task.claudeRuntime!.tasks["agent-task"] = {
+      taskId: "agent-task",
+      status: "stopped",
+      updatedAt: Date.now(),
+      taskType: "local_agent",
+      isBackgrounded: true,
+      outputFile: "/tmp/agent-task.output",
+      summary: "No completion record was found; transcript is saved on disk.",
+      description: "PR diff review",
+    };
+    const { controller, addIntervention } = makeController();
+
+    await controller.queueFallback(
+      task,
+      {
+        text: "stale prompt without an output path",
+        user: "system",
+        source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
+        followupAttempt: 1,
+        followupKey: "sess-1:agent-task",
+        followupTaskIds: ["agent-task"],
+      },
+      "empty_response",
+    );
+
+    const params = addIntervention.mock.calls[0]![0];
+    expect(params.followupTaskIds).toEqual(["agent-task"]);
+    expect(params.text).toContain("status=stopped");
+    expect(params.text).toContain("/tmp/agent-task.output");
+    expect(params.text).toContain("No completion record was found");
+    expect(params.text).not.toContain("stale prompt without an output path");
   });
 
   it("attempt 2 fallback은 30초 백오프 뒤 마지막 fresh turn을 예약한다", async () => {

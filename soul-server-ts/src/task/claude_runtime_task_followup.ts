@@ -96,7 +96,9 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     const status = asString(payload.status) ?? asString(patch.status) ?? runtimeTask?.status;
     if (!status || !TERMINAL_RUNTIME_TASK_STATUSES.has(status)) return;
     const isBackgrounded =
-      runtimeTask?.isBackgrounded === true || patch.is_backgrounded === true;
+      type === "claude_runtime_task_notification" ||
+      runtimeTask?.isBackgrounded === true ||
+      patch.is_backgrounded === true;
     if (!isBackgrounded) return;
 
     const pending = this.getPendingMap(task.agentSessionId);
@@ -137,6 +139,7 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
           source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
           followupAttempt: 1,
           followupKey: buildFollowupKey(task.agentSessionId, items),
+          followupTaskIds: items.map((item) => item.taskId),
         },
         this.deps.onResume,
       );
@@ -267,16 +270,21 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     if (!this.isCurrentFallback(followupKey, token)) return;
 
     task.pendingClaudeRuntimeFollowupRetry = false;
+    const refreshedPrompt = buildRefreshedClaudeRuntimeTaskFollowupPrompt(task, message);
     try {
       const result = await this.deps.taskManager.addIntervention(
         {
           agentSessionId: task.agentSessionId,
-          text: buildClaudeRuntimeTaskFollowupFallbackPrompt(message.text, reason),
+          text: buildClaudeRuntimeTaskFollowupFallbackPrompt(
+            refreshedPrompt ?? message.text,
+            reason,
+          ),
           user: "system",
           callerInfo: message.callerInfo ?? { source: "system", display_name: "Soulstream" },
           source: CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE,
           followupAttempt: attempt,
           followupKey,
+          followupTaskIds: message.followupTaskIds,
           onlyIfTerminal: true,
         },
         this.deps.onResume,
@@ -387,6 +395,31 @@ function buildClaudeRuntimeTaskFollowupFallbackPrompt(
 
 function buildFollowupKey(sessionId: string, items: PendingRuntimeTaskFollowup[]): string {
   return `${sessionId}:${items.map((item) => item.taskId).join(",")}`;
+}
+
+function buildRefreshedClaudeRuntimeTaskFollowupPrompt(
+  task: Task,
+  message: InterventionMessage,
+): string | undefined {
+  const taskIds = message.followupTaskIds;
+  if (!taskIds || taskIds.length === 0) return undefined;
+
+  const items: PendingRuntimeTaskFollowup[] = [];
+  for (const [firstSeen, taskId] of taskIds.entries()) {
+    const runtimeTask = task.claudeRuntime?.tasks[taskId];
+    if (!runtimeTask) return undefined;
+    items.push({
+      taskId,
+      status: runtimeTask.status,
+      outputFile: runtimeTask.outputFile,
+      summary: runtimeTask.summary,
+      description: runtimeTask.description,
+      toolUseId: runtimeTask.toolUseId,
+      error: runtimeTask.error,
+      firstSeen,
+    });
+  }
+  return buildClaudeRuntimeTaskFollowupPrompt(items);
 }
 
 function buildTaskKey(sessionId: string, taskId: string): string {

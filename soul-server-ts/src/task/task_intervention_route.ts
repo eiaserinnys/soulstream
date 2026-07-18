@@ -30,6 +30,7 @@ export interface AddInterventionParams {
   source?: string;
   followupAttempt?: number;
   followupKey?: string;
+  followupTaskIds?: string[];
   /**
    * Scheduler dispatch must not rely on the in-memory fallback queue. When false,
    * a running task that cannot be live-steered returns `{deferred: true}` so the
@@ -82,6 +83,7 @@ export class TaskInterventionRoute {
       source: params.source,
       followupAttempt: params.followupAttempt,
       followupKey: params.followupKey,
+      followupTaskIds: params.followupTaskIds,
     };
 
     if (params.onlyIfTerminal === true && task.status === "running") {

@@ -219,6 +219,104 @@ describe("TaskExecutor Claude runtime task follow-up", () => {
     expect(prompts[1].indexOf("task-a")).toBeLessThan(prompts[1].indexOf("task-b"));
   });
 
+  it.each(["before", "after", "same_tick"] as const)(
+    "local_agent notification이 foreground result %s에 도착해도 follow-up을 한 번만 실행한다",
+    async (order) => {
+      const mocks = makeMocks();
+      const task = makeTask();
+      let addInterventionCalls = 0;
+      const controller = new ClaudeRuntimeTaskFollowupController({
+        taskManager: {
+          addIntervention: vi.fn(async (params) => {
+            addInterventionCalls += 1;
+            task.interventionQueue.push({
+              text: params.text,
+              user: params.user,
+              source: params.source,
+              followupAttempt: params.followupAttempt,
+              followupKey: params.followupKey,
+              followupTaskIds: params.followupTaskIds,
+            });
+            return { queued: true, queuePosition: addInterventionCalls };
+          }),
+        },
+        onResume: vi.fn(),
+        logger: silentLogger,
+      });
+      const prompts: string[] = [];
+      let turnCount = 0;
+      const notification = {
+        type: "claude_runtime_task_notification",
+        task_id: "agent-task",
+        status: "stopped",
+        summary: "PR diff review",
+        output_file: "",
+      } as SSEEventPayload;
+      const foregroundResult = {
+        type: "complete",
+        result: "foreground done",
+        timestamp: 1,
+      } as SSEEventPayload;
+      const engine: EnginePort = {
+        backendId: "claude",
+        workspaceDir: "/tmp/claude-roselin",
+        async *execute(params): AsyncIterable<SSEEventPayload> {
+          prompts.push(params.prompt);
+          if (turnCount === 0) {
+            turnCount += 1;
+            yield {
+              type: "claude_runtime_task_started",
+              task_id: "agent-task",
+              task_type: "local_agent",
+              description: "PR diff review",
+            } as SSEEventPayload;
+            if (order === "after") {
+              yield foregroundResult;
+              yield notification;
+            } else if (order === "same_tick") {
+              yield notification;
+              await Promise.resolve();
+              yield foregroundResult;
+            } else {
+              yield notification;
+              yield foregroundResult;
+            }
+            return;
+          }
+          turnCount += 1;
+          yield {
+            type: "assistant_message",
+            content: "review resumed from terminal notification",
+            timestamp: 2,
+          } as SSEEventPayload;
+          yield { type: "complete", result: "continued", timestamp: 2 } as SSEEventPayload;
+        },
+        async interrupt() { return true; },
+        async close() {},
+      };
+      const executor = new TaskExecutor(
+        () => engine,
+        mocks.db,
+        mocks.persistence,
+        mocks.broadcaster,
+        silentLogger,
+        undefined,
+        undefined,
+        undefined,
+        controller,
+      );
+
+      executor.startExecution(task, claudeAgent);
+      await task.executionPromise;
+
+      expect(addInterventionCalls).toBe(1);
+      expect(turnCount).toBe(2);
+      expect(prompts[1]).toContain("task_id=agent-task");
+      expect(prompts[1]).toContain("status=stopped");
+      expect(task.lastAssistantText).toBe("review resumed from terminal notification");
+    },
+  );
+
   it("runtime follow-up turn이 직전 응답을 반복하면 fallback follow-up을 재시도한다", async () => {
     const mocks = makeMocks();
     const task = makeTask();

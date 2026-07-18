@@ -778,6 +778,7 @@ describe("TaskEngineEventPublisher", () => {
           toolUseId: "toolu-bg",
           description: "background bash",
           taskType: "bash",
+          isBackgrounded: true,
           outputFile: "/tmp/task.out",
           summary: "done",
         },
