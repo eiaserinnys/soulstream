@@ -2,6 +2,34 @@
 -- 모든 테이블, 인덱스, 트리거, 함수를 멱등하게 정의한다.
 -- CREATE OR REPLACE / IF NOT EXISTS로 반복 실행 가능.
 
+-- 041_retire_task_tree.sql mirror: retire the legacy v1 Task Tree before the 042
+-- rename. Self-guarded so it can ONLY ever drop the v1 tree, never the live task
+-- table: it fires only in the pre-rename state — `runbooks` is still a base table
+-- AND `task_items` carries the v1 tree shape (a `parent_id` column). After the
+-- rename, `task_items` is the renamed `runbook_items` (a `section_id`, no
+-- `parent_id`) and this block is a no-op. The external v1 Task Tree backup is
+-- captured and checksum-locked in scripts/verify_task_tree_retirement_backup.py.
+DO $$
+DECLARE
+    runbooks_kind "char";
+    task_items_is_v1_tree boolean;
+BEGIN
+    SELECT relkind INTO runbooks_kind FROM pg_class WHERE oid = to_regclass('runbooks');
+    SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'task_items'
+          AND column_name = 'parent_id'
+    ) INTO task_items_is_v1_tree;
+
+    IF runbooks_kind IN ('r', 'p') AND task_items_is_v1_tree THEN
+        DROP TABLE IF EXISTS task_operations;
+        DROP TABLE IF EXISTS task_items;
+        DROP FUNCTION IF EXISTS task_tree_notify_change();
+    END IF;
+END;
+$$;
+
 -- 042_runbook_to_task.sql mirror: this must run before any canonical Task DDL.
 -- A legacy runbooks table plus task_items means v1 Task Tree still occupies the
 -- namespace, so 041 must be applied by a human before this schema is deployed.
