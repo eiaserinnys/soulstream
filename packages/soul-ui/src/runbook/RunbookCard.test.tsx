@@ -454,8 +454,7 @@ describe("RunbookCard", () => {
     expect(checkbox!.disabled).toBe(true);
     expect(checkbox!.title).toBe("세션 정보 없음");
     expect(statusToggle!.getAttribute("aria-disabled")).toBe("true");
-    expect(container.querySelector("[data-testid='runbook-checkbox-disabled-reason']")?.textContent)
-      .toBe("세션 정보 없음");
+    expect(container.querySelector("[data-testid='runbook-checkbox-disabled-reason']")).toBeNull();
   });
 
   it("posts authenticated human item status updates through the runbook store", async () => {

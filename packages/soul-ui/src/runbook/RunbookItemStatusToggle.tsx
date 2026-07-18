@@ -170,8 +170,8 @@ export function RunbookItemStatusToggle({
   );
   const writable = isRunbookItemHumanWritable(assignee, displayItem) && !disabledReason;
   const checked = displayStatus === "completed";
-  const helpMessage = error ?? disabledReason;
-  const helpId = showCaption && helpMessage ? captionId : undefined;
+  // 비활성 사유는 상시 캡션이 아니라 title 툴팁으로만 노출한다 (260718 디렉터 지시).
+  const helpId = showCaption && error ? captionId : undefined;
 
   useEffect(() => {
     if (optimisticStatus && item.status === optimisticStatus) {
@@ -275,17 +275,13 @@ export function RunbookItemStatusToggle({
           />
         )}
       </label>
-      {showCaption && helpMessage ? (
+      {showCaption && error ? (
         <div
           id={captionId}
-          data-testid={error ? "runbook-status-error" : "runbook-checkbox-disabled-reason"}
-          className={cn(
-            "mt-1 text-[10px] leading-4",
-            error ? "text-accent-red" : "text-muted-foreground",
-            captionClassName,
-          )}
+          data-testid="runbook-status-error"
+          className={cn("mt-1 text-[10px] leading-4 text-accent-red", captionClassName)}
         >
-          {helpMessage}
+          {error}
         </div>
       ) : null}
     </div>
