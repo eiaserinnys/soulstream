@@ -1,0 +1,21 @@
+{
+  "theme": "dark",
+  "strict": true,
+  "initialMetrics": {
+    "itemRows": 3,
+    "borderedItemRows": 0,
+    "openDetails": 0,
+    "rowMenus": 5
+  },
+  "operations": [
+    "create_section",
+    "update_section",
+    "move_section",
+    "create_item",
+    "update_item",
+    "move_item",
+    "archive_item",
+    "archive_section"
+  ],
+  "browserErrors": 0
+}
