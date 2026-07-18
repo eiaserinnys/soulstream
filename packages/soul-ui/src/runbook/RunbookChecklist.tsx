@@ -16,7 +16,7 @@ import {
   SectionTitleForm,
   type RowAction,
 } from "./RunbookChecklistControls";
-import { itemDefaultOpen, RunbookItemRowView } from "./RunbookChecklistItem";
+import { RunbookItemRowView } from "./RunbookChecklistItem";
 
 type SectionEditor = { mode: "create" } | { mode: "update"; sectionId: string };
 type ItemEditor =
@@ -294,14 +294,14 @@ export function RunbookChecklist({
                       section={section}
                       item={item}
                       itemOpen={openItems[item.id]
-                        ?? itemDefaultOpen(section, item, defaultItemDetailsOpen)}
+                        ?? defaultItemDetailsOpen}
                       textSize={textSize}
                       actions={editable ? itemActions(section, item, sectionItems, itemIndex) : null}
                       onToggleHowTo={() =>
                         setOpenItems((value) => ({
                           ...value,
                           [item.id]: !(openItems[item.id]
-                            ?? itemDefaultOpen(section, item, defaultItemDetailsOpen)),
+                            ?? defaultItemDetailsOpen),
                         }))}
                     />
                   );

@@ -51,20 +51,29 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     await card.getByText("요구사항 확인", { exact: true }).waitFor({ state: "visible" });
     await capture(page, theme, "01-checklist-layout");
 
+    const firstRow = card.getByTestId("runbook-item-row").filter({ hasText: "요구사항 확인" });
+    const detailsToggle = firstRow.getByTestId("runbook-item-details-toggle");
     const initialMetrics = await card.evaluate((element) => ({
       itemRows: element.querySelectorAll('[data-testid="runbook-item-row"]').length,
       borderedItemRows: Array.from(element.querySelectorAll<HTMLElement>('[data-testid="runbook-item-row"]'))
         .filter((row) => row.className.includes("border")).length,
-      howToUsesLeftRule: element.querySelector<HTMLElement>('[data-testid="runbook-how-to"]')
-        ?.className.includes("border-l-2") ?? false,
+      openDetails: element.querySelectorAll('[data-testid="runbook-how-to"]').length,
       rowMenus: element.querySelectorAll('[data-testid="runbook-row-menu"]').length,
     }));
 
     if (strict) {
       assert(initialMetrics.borderedItemRows === 0, "항목 행에 중첩 보더 프레임이 남았습니다.");
-      assert(initialMetrics.howToUsesLeftRule, "절차가 이중 박스 대신 왼쪽 규칙선으로 계층화되지 않았습니다.");
+      assert(initialMetrics.openDetails === 0, "항목 상세가 기본으로 닫히지 않았습니다.");
       assert(initialMetrics.rowMenus >= 5, "섹션·항목 CRUD 메뉴가 체크리스트 표면에 없습니다.");
-      assert(!await card.getByText("검증자", { exact: true }).isVisible(), "내 차례와 담당자가 중복 표시됩니다.");
+      assert(!await card.getByText("검증자", { exact: true }).isVisible(), "접힌 항목에 담당자가 노출됩니다.");
+      await detailsToggle.click();
+      assert(
+        await firstRow.getByTestId("runbook-how-to").evaluate((element) => element.className.includes("border-l-2")),
+        "상세가 왼쪽 규칙선으로 계층화되지 않았습니다.",
+      );
+      assert(await firstRow.getByText("검증자", { exact: true }).isVisible(), "펼친 상세에 담당자가 없습니다.");
+      assert(await firstRow.getByText("내 차례", { exact: true }).isVisible(), "펼친 상세에 내 차례 표시가 없습니다.");
+      await detailsToggle.click();
       await exerciseCrud(page, card, fixture, theme);
       await capture(page, theme, "03-crud-complete");
     }

@@ -12,18 +12,27 @@ describe("v3 task runbook checklist", () => {
     expect(detail).toContain("runbookId={task.runbookId}");
     expect(detail).toContain("fallbackTitle={task.page.title}");
     expect(detail).not.toContain("onOpenBoard={() => onOpenBoard()}");
-    expect(detail).toContain("defaultItemDetailsOpen");
+    expect(detail).not.toContain("defaultItemDetailsOpen");
     expect(detail).toContain('textSize="session"');
     expect(detail.match(/label="런북 보드 열기"/g)).toHaveLength(1);
     expect(detail).not.toContain("RunbookItemStatusToggle");
     expect(detail).not.toContain("useRunbookStore");
   });
 
-  it("keeps large task checklists inside a bounded inner scroll surface", () => {
+  it("lets short checklists size to content and bounds only long checklists", () => {
     const css = read("./v3-task-workspace.css");
 
     expect(css).toContain(".v3-task-runbook-checklist");
-    expect(css).toMatch(/\.v3-task-runbook-checklist\s*\{[^}]*height:\s*min\(348px,\s*44dvh\)/s);
-    expect(css).toMatch(/\.v3-task-runbook-checklist\s*\{[^}]*min-height:\s*214px/s);
+    expect(css).toMatch(/\.v3-task-runbook-checklist\s*\{[^}]*max-height:\s*min\(348px,\s*44dvh\)/s);
+    expect(css).toMatch(/\.v3-task-runbook-checklist\s*>\s*\[data-testid="runbook-card"\]\s*\{[^}]*height:\s*auto/s);
+    expect(css).not.toMatch(/\.v3-task-runbook-checklist\s*\{[^}]*\n\s*height:/s);
+    expect(css).not.toContain("min-height: 214px");
+  });
+
+  it("uses the section gap as the task workspace bottom inset", () => {
+    const css = read("./v3-task-workspace.css");
+
+    expect(css).toMatch(/\.v3-detail-scroll\s*\{[^}]*padding:\s*24px 24px 28px/s);
+    expect(css).not.toContain("padding: 24px 24px 70px");
   });
 });
