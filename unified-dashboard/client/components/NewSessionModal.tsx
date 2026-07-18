@@ -130,7 +130,7 @@ export function NewSessionModal() {
         attachmentPaths,
         folderId: selectedModalFolderId ?? undefined,
         container: newSessionDefaults?.container ?? null,
-        sourceRunbookItemId: newSessionDefaults?.sourceRunbookItemId ?? null,
+        sourceTaskItemId: newSessionDefaults?.sourceTaskItemId ?? null,
         agentId: selectedAgentId || null,
         agent: selectedAgent ?? null,
         reasoningEffort: submitReasoningEffort,
@@ -139,7 +139,7 @@ export function NewSessionModal() {
 
       // 성공: draft 삭제, 보드 배치 반영, 모달 닫기
       clearDraft(draftKey);
-      if (boardPosition && selectedModalFolderId && newSessionDefaults?.container?.kind !== "runbook") {
+      if (boardPosition && selectedModalFolderId && newSessionDefaults?.container?.kind !== "task") {
         placeBoardSessionInYjs(
           selectedModalFolderId,
           result.agentSessionId,
@@ -150,7 +150,7 @@ export function NewSessionModal() {
       setSelectedAgentId("");
       setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
     },
-    [queryClient, selectedModalFolderId, selectedAgentId, submitReasoningEffort, agents, addOptimisticSession, clearDraft, draftKey, closeModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceRunbookItemId],
+    [queryClient, selectedModalFolderId, selectedAgentId, submitReasoningEffort, agents, addOptimisticSession, clearDraft, draftKey, closeModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceTaskItemId],
   );
 
   const handleOpenChange = useCallback(

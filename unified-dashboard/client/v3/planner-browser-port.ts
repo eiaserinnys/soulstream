@@ -29,7 +29,7 @@ export class BrowserPlannerMutationPort implements PlannerTaskCreationPort {
     initialContext?: InitialTaskContext;
   }) {
     const initialContext = serializeInitialTaskContext(input.initialContext);
-    const response = await this.fetchImplementation("/api/runbooks", {
+    const response = await this.fetchImplementation("/api/tasks", {
       method: "POST",
       credentials: "same-origin",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
@@ -51,8 +51,8 @@ export class BrowserPlannerMutationPort implements PlannerTaskCreationPort {
     if (!ids.id) throw new Error("업무 생성 응답에 ID가 없습니다");
     if (
       (ids.pageId && ids.pageId !== ids.id)
-      || (ids.runbookId && ids.runbookId !== ids.id)
-      || (ids.pageId && ids.runbookId && ids.pageId !== ids.runbookId)
+      || (ids.taskId && ids.taskId !== ids.id)
+      || (ids.pageId && ids.taskId && ids.pageId !== ids.taskId)
     ) {
       throw new Error("업무 생성 응답의 ID가 일치하지 않습니다");
     }
@@ -183,22 +183,22 @@ async function readPayload(response: Response): Promise<unknown> {
 function extractTaskIdentityIds(payload: unknown): {
   id: string | null;
   pageId: string | null;
-  runbookId: string | null;
+  taskId: string | null;
 } {
   if (!payload || typeof payload !== "object") {
-    return { id: null, pageId: null, runbookId: null };
+    return { id: null, pageId: null, taskId: null };
   }
   const record = payload as Record<string, unknown>;
-  const runbook = objectValue(record.runbook)
-    ?? objectValue(objectValue(record.snapshot)?.runbook);
-  const runbookId = stringValue(record.runbookId)
-    ?? stringValue(record.runbook_id)
-    ?? stringValue(runbook?.id);
+  const task = objectValue(record.task)
+    ?? objectValue(objectValue(record.snapshot)?.task);
+  const taskId = stringValue(record.taskId)
+    ?? stringValue(record.task_id)
+    ?? stringValue(task?.id);
   const pageId = stringValue(record.pageId) ?? stringValue(record.page_id);
   return {
-    id: stringValue(record.id) ?? pageId ?? runbookId,
+    id: stringValue(record.id) ?? pageId ?? taskId,
     pageId,
-    runbookId,
+    taskId,
   };
 }
 

@@ -17,9 +17,9 @@ import {
   type BoardYjsHostRouteConfig,
 } from "./collaboration/board_yjs_host_route.js";
 import {
-  registerRunbookHttpRoutes,
-  type RunbookHttpRouteConfig,
-} from "./runbook/runbook_http_route.js";
+  registerTaskHttpRoutes,
+  type TaskHttpRouteConfig,
+} from "./work-task/task_http_route.js";
 import {
   registerBoardItemHttpRoutes,
   type BoardItemHttpRouteConfig,
@@ -56,8 +56,8 @@ export interface ServerParams {
   boardYjs?: BoardYjsRouteConfig;
   /** Internal board host write route 설정. */
   boardYjsHost?: BoardYjsHostRouteConfig;
-  /** Runbook dashboard write routes. */
-  runbook?: RunbookHttpRouteConfig;
+  /** Task dashboard write routes. */
+  task?: TaskHttpRouteConfig;
   /** Board item dashboard write routes. */
   boardItem?: BoardItemHttpRouteConfig;
   /** Markdown document dashboard write routes. */
@@ -112,8 +112,8 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
   if (params.boardYjsHost) {
     registerBoardYjsHostRoutes(fastify, params.boardYjsHost);
   }
-  if (params.runbook) {
-    registerRunbookHttpRoutes(fastify, params.runbook);
+  if (params.task) {
+    registerTaskHttpRoutes(fastify, params.task);
   }
   if (params.boardItem) {
     registerBoardItemHttpRoutes(fastify, params.boardItem);

@@ -9,8 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogState, SessionSummary } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
-import type { RunbookSnapshot } from "../stores/runbook-store";
-import { useRunbookStore } from "../stores/runbook-store";
+import type { TaskSnapshot } from "../stores/task-store";
+import { useTaskStore } from "../stores/task-store";
 import { FolderWorkspaceView } from "./FolderWorkspaceView";
 import { writeFolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 
@@ -88,12 +88,12 @@ const sessions: SessionSummary[] = [
   },
 ];
 
-const runbookSnapshot: RunbookSnapshot = {
-  runbook: {
+const taskSnapshot: TaskSnapshot = {
+  task: {
     id: "rb-1",
-    board_item_id: "runbook:rb-1",
+    board_item_id: "task:rb-1",
     folder_id: "root",
-    title: "Launch Runbook",
+    title: "Launch Task",
     status: "open",
     archived: false,
     version: 1,
@@ -104,7 +104,7 @@ const runbookSnapshot: RunbookSnapshot = {
   },
   sections: [{
     id: "sec-1",
-    runbook_id: "rb-1",
+    task_id: "rb-1",
     position_key: "a",
     title: "Phase",
     assignee_kind: null,
@@ -211,7 +211,7 @@ function installFetchMock({
   failBoardItems = false,
 }: {
   boardItems?: NonNullable<CatalogState["boardItems"]>;
-  snapshots?: Record<string, RunbookSnapshot>;
+  snapshots?: Record<string, TaskSnapshot>;
   failBoardItems?: boolean;
 } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -222,9 +222,9 @@ function installFetchMock({
       }
       return Response.json({ boardItems });
     }
-    const runbookMatch = url.match(/^\/api\/runbooks\/([^/]+)$/);
-    if (runbookMatch) {
-      const snapshot = snapshots[decodeURIComponent(runbookMatch[1] ?? "")];
+    const taskMatch = url.match(/^\/api\/tasks\/([^/]+)$/);
+    if (taskMatch) {
+      const snapshot = snapshots[decodeURIComponent(taskMatch[1] ?? "")];
       if (snapshot) return Response.json(snapshot);
       return Response.json({ detail: "not found" }, { status: 404 });
     }
@@ -244,7 +244,7 @@ function renderFolderWorkspace(options: {
   catalogOverride?: CatalogState;
   sessionsOverride?: SessionSummary[];
   boardItems?: NonNullable<CatalogState["boardItems"]>;
-  snapshots?: Record<string, RunbookSnapshot>;
+  snapshots?: Record<string, TaskSnapshot>;
   failBoardItems?: boolean;
 } = {}) {
   const container = document.createElement("div");
@@ -257,7 +257,7 @@ function renderFolderWorkspace(options: {
     failBoardItems: options.failBoardItems,
   });
   useDashboardStore.getState().reset();
-  useRunbookStore.getState().reset();
+  useTaskStore.getState().reset();
   useDashboardStore.getState().setCatalog(options.catalogOverride ?? catalog);
   useDashboardStore.getState().selectFolder("root");
   writeFolderWorkspaceViewMode(window.localStorage, "root", "list");
@@ -330,17 +330,17 @@ describe("FolderWorkspaceView list mode", () => {
 
   it("uses the session grid column basis for project header cards", async () => {
     const boardItems: NonNullable<CatalogState["boardItems"]> = [{
-      id: "runbook:rb-1",
+      id: "task:rb-1",
       folderId: "root",
       containerKind: "folder",
       containerId: "root",
       membershipKind: "primary",
-      sourceRunbookItemId: null,
-      itemType: "runbook",
+      sourceTaskItemId: null,
+      itemType: "task",
       itemId: "rb-1",
       x: 20,
       y: 10,
-      metadata: { title: "Launch Runbook" },
+      metadata: { title: "Launch Task" },
       createdAt: "2026-07-01T00:00:00.000Z",
       updatedAt: "2026-07-01T00:00:00.000Z",
     }];
@@ -351,77 +351,77 @@ describe("FolderWorkspaceView list mode", () => {
     const childFolderGrid = Array.from(container.querySelectorAll<HTMLElement>("section"))
       .find((section) => section.textContent?.includes("Child A"))
       ?.querySelector<HTMLElement>(".grid");
-    const runbookGrid = container.querySelector<HTMLElement>("[data-testid='folder-runbook-section'] > .grid");
+    const taskGrid = container.querySelector<HTMLElement>("[data-testid='folder-task-section'] > .grid");
     const sessionGrid = container.querySelector<HTMLElement>("[data-testid='folder-session-row-grid']");
     const columnClasses = (element: HTMLElement | null | undefined) =>
       Array.from(element?.classList ?? []).filter((className) => className.includes("grid-cols-"));
 
     expect(childFolderGrid).not.toBeNull();
-    expect(runbookGrid).not.toBeNull();
+    expect(taskGrid).not.toBeNull();
     expect(sessionGrid).not.toBeNull();
     expect(columnClasses(childFolderGrid)).toEqual(columnClasses(sessionGrid));
-    expect(columnClasses(runbookGrid)).toEqual(columnClasses(sessionGrid));
+    expect(columnClasses(taskGrid)).toEqual(columnClasses(sessionGrid));
   });
 
-  it("renders folder runbooks above sessions and opens the runbook board", async () => {
+  it("renders folder tasks above sessions and opens the task board", async () => {
     const boardItems: NonNullable<CatalogState["boardItems"]> = [{
-      id: "runbook:rb-1",
+      id: "task:rb-1",
       folderId: "root",
       containerKind: "folder",
       containerId: "root",
       membershipKind: "primary",
-      sourceRunbookItemId: null,
-      itemType: "runbook",
+      sourceTaskItemId: null,
+      itemType: "task",
       itemId: "rb-1",
       x: 20,
       y: 10,
-      metadata: { title: "Launch Runbook" },
+      metadata: { title: "Launch Task" },
       createdAt: "2026-07-01T00:00:00.000Z",
       updatedAt: "2026-07-01T00:00:00.000Z",
     }];
     ({ container, root } = renderFolderWorkspace({
       boardItems,
-      snapshots: { "rb-1": runbookSnapshot },
+      snapshots: { "rb-1": taskSnapshot },
     }));
 
     await flushEffects();
 
     const scrollRoot = container.querySelector<HTMLElement>("[data-testid='folder-session-scroll-root']");
-    const runbookCard = container.querySelector<HTMLButtonElement>("[data-testid='folder-runbook-card']");
+    const taskCard = container.querySelector<HTMLButtonElement>("[data-testid='folder-task-card']");
     const virtualGrid = container.querySelector<HTMLElement>("[data-testid='folder-session-virtual-grid']");
 
     expect(scrollRoot).not.toBeNull();
-    expect(runbookCard).not.toBeNull();
+    expect(taskCard).not.toBeNull();
     expect(virtualGrid).not.toBeNull();
-    expect(scrollRoot?.contains(runbookCard ?? null)).toBe(true);
+    expect(scrollRoot?.contains(taskCard ?? null)).toBe(true);
     expect(scrollRoot?.contains(virtualGrid)).toBe(true);
     expect(scrollRoot?.textContent).toContain("하위 폴더");
-    expect(scrollRoot?.textContent).toContain("런북");
-    expect(scrollRoot?.textContent).toContain("Launch Runbook");
+    expect(scrollRoot?.textContent).toContain("업무");
+    expect(scrollRoot?.textContent).toContain("Launch Task");
     expect(scrollRoot?.textContent).toContain("1/2");
 
     flushSync(() => {
-      runbookCard?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      taskCard?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
     expect(useDashboardStore.getState().activeBoardContainer).toEqual({
-      kind: "runbook",
+      kind: "task",
       id: "rb-1",
     });
     expect(useDashboardStore.getState().selectedFolderId).toBe("root");
   });
 
-  it("does not render a runbook section when the folder has no runbooks", async () => {
+  it("does not render a task section when the folder has no tasks", async () => {
     ({ container, root } = renderFolderWorkspace());
 
     await flushEffects();
 
-    expect(container.querySelector("[data-testid='folder-runbook-section']")).toBeNull();
-    expect(container.textContent).not.toContain("런북");
+    expect(container.querySelector("[data-testid='folder-task-section']")).toBeNull();
+    expect(container.textContent).not.toContain("업무");
     expect(container.textContent).toContain("세션");
   });
 
-  it("hides runbook container sessions from the folder session list", () => {
+  it("hides task container sessions from the folder session list", () => {
     ({ container, root } = renderFolderWorkspace({
       catalogOverride: {
         ...catalog,
@@ -429,10 +429,10 @@ describe("FolderWorkspaceView list mode", () => {
           {
             id: "session:session-a",
             folderId: "root",
-            containerKind: "runbook",
+            containerKind: "task",
             containerId: "rb-1",
             membershipKind: "primary",
-            sourceRunbookItemId: "item-1",
+            sourceTaskItemId: "item-1",
             itemType: "session",
             itemId: "session-a",
             x: 10,
@@ -444,7 +444,7 @@ describe("FolderWorkspaceView list mode", () => {
             containerKind: "folder",
             containerId: "root",
             membershipKind: "primary",
-            sourceRunbookItemId: null,
+            sourceTaskItemId: null,
             itemType: "session",
             itemId: "session-b",
             x: 20,
@@ -469,7 +469,7 @@ describe("FolderWorkspaceView list mode", () => {
             containerKind: "folder",
             containerId: "child-folder-or-nested-board",
             membershipKind: "primary",
-            sourceRunbookItemId: null,
+            sourceTaskItemId: null,
             itemType: "session",
             itemId: "session-a",
             x: 10,
@@ -481,7 +481,7 @@ describe("FolderWorkspaceView list mode", () => {
             containerKind: "folder",
             containerId: "root",
             membershipKind: "primary",
-            sourceRunbookItemId: null,
+            sourceTaskItemId: null,
             itemType: "session",
             itemId: "session-b",
             x: 20,
@@ -495,16 +495,16 @@ describe("FolderWorkspaceView list mode", () => {
     expect(container.textContent).toContain("Session B");
   });
 
-  it("hides runbook container sessions after loading folder-scoped board items", async () => {
+  it("hides task container sessions after loading folder-scoped board items", async () => {
     ({ container, root } = renderFolderWorkspace({
       boardItems: [
         {
           id: "session:session-a",
           folderId: "root",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           membershipKind: "primary",
-          sourceRunbookItemId: "item-1",
+          sourceTaskItemId: "item-1",
           itemType: "session",
           itemId: "session-a",
           x: 10,
@@ -516,7 +516,7 @@ describe("FolderWorkspaceView list mode", () => {
           containerKind: "folder",
           containerId: "root",
           membershipKind: "primary",
-          sourceRunbookItemId: null,
+          sourceTaskItemId: null,
           itemType: "session",
           itemId: "session-b",
           x: 20,
@@ -543,7 +543,7 @@ describe("FolderWorkspaceView list mode", () => {
           containerKind: "folder",
           containerId: "child-folder-or-nested-board",
           membershipKind: "primary",
-          sourceRunbookItemId: null,
+          sourceTaskItemId: null,
           itemType: "session",
           itemId: "session-a",
           x: 10,
@@ -555,7 +555,7 @@ describe("FolderWorkspaceView list mode", () => {
           containerKind: "folder",
           containerId: "root",
           membershipKind: "primary",
-          sourceRunbookItemId: null,
+          sourceTaskItemId: null,
           itemType: "session",
           itemId: "session-b",
           x: 20,
@@ -597,7 +597,7 @@ describe("FolderWorkspaceView list mode", () => {
           containerKind: "folder",
           containerId: "root",
           membershipKind: "primary",
-          sourceRunbookItemId: null,
+          sourceTaskItemId: null,
           itemType: "session",
           itemId: "session-b",
           x: 20,
@@ -622,35 +622,35 @@ describe("FolderWorkspaceView list mode", () => {
     expect(container.textContent).toContain("Session B");
   });
 
-  it("omits archived runbooks from the folder runbook section", async () => {
-    const archivedSnapshot: RunbookSnapshot = {
-      ...runbookSnapshot,
-      runbook: {
-        ...runbookSnapshot.runbook,
+  it("omits archived tasks from the folder task section", async () => {
+    const archivedSnapshot: TaskSnapshot = {
+      ...taskSnapshot,
+      task: {
+        ...taskSnapshot.task,
         archived: true,
       },
     };
     ({ container, root } = renderFolderWorkspace({
       boardItems: [{
-        id: "runbook:rb-1",
+        id: "task:rb-1",
         folderId: "root",
         containerKind: "folder",
         containerId: "root",
         membershipKind: "primary",
-        sourceRunbookItemId: null,
-        itemType: "runbook",
+        sourceTaskItemId: null,
+        itemType: "task",
         itemId: "rb-1",
         x: 20,
         y: 10,
-        metadata: { title: "Archived Runbook" },
+        metadata: { title: "Archived Task" },
       }],
       snapshots: { "rb-1": archivedSnapshot },
     }));
 
     await flushEffects();
 
-    expect(container.querySelector("[data-testid='folder-runbook-section']")).toBeNull();
-    expect(container.textContent).not.toContain("Archived Runbook");
+    expect(container.querySelector("[data-testid='folder-task-section']")).toBeNull();
+    expect(container.textContent).not.toContain("Archived Task");
     expect(container.textContent).toContain("세션");
   });
 });

@@ -227,7 +227,7 @@ export class ExecutionContextBuilder {
       taskAtomMarkdown,
       primaryContainer,
       pageContextItem: pageAnchored ? pageContext.contextItem : null,
-      suppressRunbookGuidance: pageAnchored,
+      suppressTaskGuidance: pageAnchored,
       boardWorkspaceItem,
       runningSessionsItem,
       predecessorSummaryItem,
@@ -399,7 +399,7 @@ export class ExecutionContextBuilder {
     taskAtomMarkdown: string | null;
     primaryContainer: PrimarySessionContainerContext | null;
     pageContextItem: ContextItem | null;
-    suppressRunbookGuidance: boolean;
+    suppressTaskGuidance: boolean;
     boardWorkspaceItem: ContextItem | null;
     runningSessionsItem: ContextItem | null;
     predecessorSummaryItem: ContextItem | null;
@@ -424,10 +424,10 @@ export class ExecutionContextBuilder {
       agentId: args.task.profileId,
       callerInfo: args.task.callerInfo,
       container: args.primaryContainer?.container ?? null,
-      sourceRunbookItemId: args.primaryContainer?.sourceRunbookItemId ?? null,
-      runbookGuidance: args.suppressRunbookGuidance
+      sourceTaskItemId: args.primaryContainer?.sourceTaskItemId ?? null,
+      taskGuidance: args.suppressTaskGuidance
         ? null
-        : args.primaryContainer?.runbookGuidance ?? null,
+        : args.primaryContainer?.taskGuidance ?? null,
     });
 
     const combinedContextItems: ContextItem[] = [soulstreamItem];

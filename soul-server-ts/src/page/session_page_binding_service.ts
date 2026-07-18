@@ -10,7 +10,7 @@ import {
   type TaskCreationHook,
   type TaskCreationHookParams,
 } from "../task/task_creation_hook.js";
-import { sessionBoardItemPosition } from "../task/runbook_session_position.js";
+import { sessionBoardItemPosition } from "../task/task_session_position.js";
 import type { PageYjsHostClient } from "./page_host_client.js";
 import { decideSessionPageEnrollment } from "./session_page_enrollment_policy.js";
 import {
@@ -64,7 +64,7 @@ export class SessionPageBindingService implements TaskCreationHook {
       legacyFolderId: params.folderId ?? null,
       legacyContainerKind: params.container?.containerKind ?? null,
       legacyContainerId: params.container?.containerId ?? null,
-      sourceRunbookItemId: params.sourceRunbookItemId ?? null,
+      sourceTaskItemId: params.sourceTaskItemId ?? null,
     });
     await this.reconcileSession(task.agentSessionId, true);
     const binding = await this.deps.repository.get(task.agentSessionId);
@@ -279,7 +279,7 @@ export class SessionLegacyProjection implements LegacyProjectionPort {
         folderId: scope.folderId,
         container,
         sessionId: binding.session_id,
-        sourceRunbookItemId: binding.source_runbook_item_id,
+        sourceTaskItemId: binding.source_task_item_id,
         x,
         y,
       });

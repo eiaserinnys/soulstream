@@ -122,7 +122,7 @@ function cachedFolderBoardItems() {
   const sessionItem = (sessionId: string, y: number) => ({
     id: `session:${sessionId}`,
     folderId: "folder-amber",
-    containerKind: "runbook",
+    containerKind: "task",
     containerId: "task-alpha",
     membershipKind: "primary",
     itemType: "session",
@@ -135,12 +135,12 @@ function cachedFolderBoardItems() {
       sessionItem("run-alpha-1", 0),
       sessionItem("run-alpha-2", 72),
       {
-        id: "runbook:task-alpha",
+        id: "task:task-alpha",
         folderId: "folder-amber",
         containerKind: "folder",
         containerId: "folder-amber",
         membershipKind: "primary",
-        itemType: "runbook",
+        itemType: "task",
         itemId: "task-alpha",
         x: 24,
         y: 144,

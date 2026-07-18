@@ -2,6 +2,122 @@
 -- 모든 테이블, 인덱스, 트리거, 함수를 멱등하게 정의한다.
 -- CREATE OR REPLACE / IF NOT EXISTS로 반복 실행 가능.
 
+-- 042_runbook_to_task.sql mirror: this must run before any canonical Task DDL.
+-- A legacy runbooks table plus task_items means v1 Task Tree still occupies the
+-- namespace, so 041 must be applied by a human before this schema is deployed.
+DO $$
+DECLARE
+    legacy_kind "char";
+    task_items_kind "char";
+BEGIN
+    SELECT relkind INTO legacy_kind FROM pg_class WHERE oid = to_regclass('runbooks');
+    SELECT relkind INTO task_items_kind FROM pg_class WHERE oid = to_regclass('task_items');
+
+    IF legacy_kind IN ('r', 'p') AND task_items_kind IN ('r', 'p') THEN
+        RAISE EXCEPTION '041_retire_task_tree.sql must run before 042_runbook_to_task.sql';
+    END IF;
+
+    IF legacy_kind IN ('r', 'p') THEN
+        IF EXISTS (
+            SELECT 1 FROM pg_class WHERE oid = to_regclass('tasks') AND relkind IN ('r', 'p')
+        ) THEN
+            RAISE EXCEPTION 'cannot rename runbooks: tasks table already exists';
+        END IF;
+        ALTER TABLE runbooks RENAME TO tasks;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM pg_class WHERE oid = to_regclass('runbook_sections') AND relkind IN ('r', 'p')) THEN
+        ALTER TABLE runbook_sections RENAME TO task_sections;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_class WHERE oid = to_regclass('runbook_items') AND relkind IN ('r', 'p')) THEN
+        ALTER TABLE runbook_items RENAME TO task_items;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_class WHERE oid = to_regclass('runbook_operations') AND relkind IN ('r', 'p')) THEN
+        ALTER TABLE runbook_operations RENAME TO task_operations;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM pg_class
+        WHERE oid = to_regclass('checklist_runbook_projection_outbox') AND relkind IN ('r', 'p')
+    ) THEN
+        ALTER TABLE checklist_runbook_projection_outbox RENAME TO checklist_task_projection_outbox;
+    END IF;
+
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'task_sections' AND column_name = 'runbook_id'
+    ) THEN
+        ALTER TABLE task_sections RENAME COLUMN runbook_id TO task_id;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'task_operations' AND column_name = 'runbook_id'
+    ) THEN
+        ALTER TABLE task_operations RENAME COLUMN runbook_id TO task_id;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'board_items' AND column_name = 'source_runbook_item_id'
+    ) THEN
+        ALTER TABLE board_items RENAME COLUMN source_runbook_item_id TO source_task_item_id;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'session_page_bindings' AND column_name = 'source_runbook_item_id'
+    ) THEN
+        ALTER TABLE session_page_bindings RENAME COLUMN source_runbook_item_id TO source_task_item_id;
+    END IF;
+
+    IF to_regclass('board_items') IS NOT NULL THEN
+        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_item_type_check;
+        UPDATE board_items SET item_type = 'task' WHERE item_type = 'runbook';
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = current_schema() AND table_name = 'board_items'
+              AND column_name = 'container_kind'
+        ) THEN
+            ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_container_kind_check;
+            UPDATE board_items SET container_kind = 'task' WHERE container_kind = 'runbook';
+        END IF;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'board_yjs_catalog_cache'
+          AND column_name = 'container_kind'
+    ) THEN
+        ALTER TABLE board_yjs_catalog_cache DROP CONSTRAINT IF EXISTS board_yjs_catalog_cache_container_kind_check;
+        UPDATE board_yjs_catalog_cache SET container_kind = 'task' WHERE container_kind = 'runbook';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema() AND table_name = 'session_page_bindings'
+          AND column_name = 'legacy_container_kind'
+    ) THEN
+        ALTER TABLE session_page_bindings DROP CONSTRAINT IF EXISTS session_page_bindings_container_kind_check;
+        UPDATE session_page_bindings SET legacy_container_kind = 'task' WHERE legacy_container_kind = 'runbook';
+    END IF;
+    IF to_regclass('task_operations') IS NOT NULL THEN
+        ALTER TABLE task_operations DROP CONSTRAINT IF EXISTS runbook_operations_target_kind_check;
+        ALTER TABLE task_operations DROP CONSTRAINT IF EXISTS task_operations_target_kind_check;
+        UPDATE task_operations
+        SET target_kind = CASE WHEN target_kind = 'runbook' THEN 'task' ELSE target_kind END,
+            operation_type = replace(operation_type, 'runbook', 'task')
+        WHERE target_kind = 'runbook' OR operation_type LIKE '%runbook%';
+    END IF;
+    IF to_regclass('blocks') IS NOT NULL THEN
+        UPDATE blocks
+        SET block_type = 'task_ref',
+            properties = (properties - 'runbookId')
+              || CASE WHEN properties ? 'runbookId'
+                   THEN jsonb_build_object('taskId', properties -> 'runbookId')
+                   ELSE '{}'::jsonb END
+        WHERE block_type = 'runbook_ref' OR properties ? 'runbookId';
+    END IF;
+    IF to_regclass('folders') IS NOT NULL THEN
+        UPDATE folders SET name = '📋 업무' WHERE name = '📒 런북';
+    END IF;
+END;
+$$;
+
 -- ============================================================
 -- 1. 테이블
 -- ============================================================
@@ -173,8 +289,8 @@ CREATE TABLE IF NOT EXISTS board_items (
     container_kind         TEXT NOT NULL DEFAULT 'folder',
     container_id           TEXT NOT NULL,
     membership_kind        TEXT NOT NULL DEFAULT 'primary',
-    source_runbook_item_id TEXT,
-    item_type              TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook', 'custom_view')),
+    source_task_item_id TEXT,
+    item_type              TEXT NOT NULL CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'task', 'custom_view')),
     item_id                TEXT NOT NULL,
     x                      DOUBLE PRECISION NOT NULL DEFAULT 0,
     y                      DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -182,7 +298,7 @@ CREATE TABLE IF NOT EXISTS board_items (
     created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT board_items_container_kind_check
-        CHECK (container_kind IN ('folder','runbook')),
+        CHECK (container_kind IN ('folder','task')),
     CONSTRAINT board_items_membership_kind_check
         CHECK (membership_kind IN ('primary','reference')),
     CONSTRAINT uq_board_items_container_item
@@ -192,7 +308,7 @@ CREATE TABLE IF NOT EXISTS board_items (
 ALTER TABLE board_items ADD COLUMN IF NOT EXISTS container_kind TEXT NOT NULL DEFAULT 'folder';
 ALTER TABLE board_items ADD COLUMN IF NOT EXISTS container_id TEXT;
 ALTER TABLE board_items ADD COLUMN IF NOT EXISTS membership_kind TEXT NOT NULL DEFAULT 'primary';
-ALTER TABLE board_items ADD COLUMN IF NOT EXISTS source_runbook_item_id TEXT;
+ALTER TABLE board_items ADD COLUMN IF NOT EXISTS source_task_item_id TEXT;
 ALTER TABLE board_items ADD COLUMN IF NOT EXISTS metadata JSONB NOT NULL DEFAULT '{}';
 ALTER TABLE board_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 UPDATE board_items SET container_kind = 'folder' WHERE container_kind IS NULL;
@@ -203,10 +319,10 @@ ALTER TABLE board_items ALTER COLUMN container_id SET NOT NULL;
 ALTER TABLE board_items ALTER COLUMN membership_kind SET NOT NULL;
 ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_item_type_check;
 ALTER TABLE board_items ADD CONSTRAINT board_items_item_type_check
-    CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'runbook', 'custom_view'));
+    CHECK (item_type IN ('session', 'markdown', 'subfolder', 'asset', 'frame', 'task', 'custom_view'));
 ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_container_kind_check;
 ALTER TABLE board_items ADD CONSTRAINT board_items_container_kind_check
-    CHECK (container_kind IN ('folder','runbook'));
+    CHECK (container_kind IN ('folder','task'));
 ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_membership_kind_check;
 ALTER TABLE board_items ADD CONSTRAINT board_items_membership_kind_check
     CHECK (membership_kind IN ('primary','reference'));
@@ -261,7 +377,7 @@ CREATE TABLE IF NOT EXISTS board_yjs_catalog_cache (
     markdown_documents  JSONB NOT NULL DEFAULT '[]'::jsonb,
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT board_yjs_catalog_cache_container_kind_check
-        CHECK (container_kind IN ('folder','runbook')),
+        CHECK (container_kind IN ('folder','task')),
     CONSTRAINT board_yjs_catalog_cache_pkey
         PRIMARY KEY (container_kind, container_id)
 );
@@ -274,10 +390,39 @@ ALTER TABLE board_yjs_catalog_cache ALTER COLUMN container_kind SET NOT NULL;
 ALTER TABLE board_yjs_catalog_cache ALTER COLUMN container_id SET NOT NULL;
 ALTER TABLE board_yjs_catalog_cache DROP CONSTRAINT IF EXISTS board_yjs_catalog_cache_container_kind_check;
 ALTER TABLE board_yjs_catalog_cache ADD CONSTRAINT board_yjs_catalog_cache_container_kind_check
-    CHECK (container_kind IN ('folder','runbook'));
+    CHECK (container_kind IN ('folder','task'));
 ALTER TABLE board_yjs_catalog_cache DROP CONSTRAINT IF EXISTS board_yjs_catalog_cache_pkey;
 ALTER TABLE board_yjs_catalog_cache ADD CONSTRAINT board_yjs_catalog_cache_pkey
     PRIMARY KEY (container_kind, container_id);
+
+UPDATE board_yjs_catalog_cache cache
+SET board_items = normalized.board_items
+FROM (
+    SELECT source.container_kind,
+           source.container_id,
+           jsonb_agg(
+             (entry.value - 'sourceRunbookItemId' - 'runbookId')
+             || CASE WHEN entry.value ? 'sourceRunbookItemId'
+                  THEN jsonb_build_object('sourceTaskItemId', entry.value -> 'sourceRunbookItemId')
+                  ELSE '{}'::jsonb END
+             || CASE WHEN entry.value ? 'runbookId'
+                  THEN jsonb_build_object('taskId', entry.value -> 'runbookId')
+                  ELSE '{}'::jsonb END
+             || CASE WHEN entry.value ->> 'itemType' = 'runbook'
+                  THEN jsonb_build_object('itemType', 'task')
+                  ELSE '{}'::jsonb END
+             || CASE WHEN entry.value ->> 'containerKind' = 'runbook'
+                  THEN jsonb_build_object('containerKind', 'task')
+                  ELSE '{}'::jsonb END
+             ORDER BY entry.ordinality
+           ) AS board_items
+    FROM board_yjs_catalog_cache source
+    CROSS JOIN LATERAL jsonb_array_elements(source.board_items)
+      WITH ORDINALITY AS entry(value, ordinality)
+    GROUP BY source.container_kind, source.container_id
+) normalized
+WHERE cache.container_kind = normalized.container_kind
+  AND cache.container_id = normalized.container_id;
 
 CREATE OR REPLACE FUNCTION board_delete_markdown_refs()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
@@ -2361,7 +2506,7 @@ BEGIN
     PERFORM pg_advisory_xact_lock(hashtext('soulstream:board_items')::bigint);
 
     -- 세션 타일 reconcile: folder 컨테이너 타일만 폴더 불일치로 삭제한다.
-    -- runbook 컨테이너 타일은 Y.Doc이 생명주기를 소유하므로 세션 자체가
+    -- task 컨테이너 타일은 Y.Doc이 생명주기를 소유하므로 세션 자체가
     -- 사라진 경우(고아)에만 정리한다.
     DELETE FROM board_items bi
     WHERE bi.item_type = 'session'
@@ -2493,7 +2638,7 @@ RETURNS TABLE(
     container_kind TEXT,
     container_id TEXT,
     membership_kind TEXT,
-    source_runbook_item_id TEXT,
+    source_task_item_id TEXT,
     item_type TEXT,
     item_id TEXT,
     x DOUBLE PRECISION,
@@ -2508,7 +2653,7 @@ RETURNS TABLE(
         bi.container_kind,
         bi.container_id,
         bi.membership_kind,
-        bi.source_runbook_item_id,
+        bi.source_task_item_id,
         bi.item_type,
         bi.item_id,
         bi.x,
@@ -2568,7 +2713,7 @@ SELECT
             'containerKind', bi.container_kind,
             'containerId', bi.container_id,
             'membershipKind', bi.membership_kind,
-            'sourceRunbookItemId', bi.source_runbook_item_id,
+            'sourceTaskItemId', bi.source_task_item_id,
             'itemType', bi.item_type,
             'itemId', bi.item_id,
             'x', bi.x,
@@ -2882,10 +3027,10 @@ ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS background_blob BYTEA;
 ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS background_mime TEXT;
 ALTER TABLE user_preferences ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
--- Runbooks: collaborative checklist state and append-only provenance.
-CREATE TABLE IF NOT EXISTS runbooks (
+-- Tasks: collaborative checklist state and append-only provenance.
+CREATE TABLE IF NOT EXISTS tasks (
     id                 TEXT PRIMARY KEY,
-    board_item_id      TEXT NOT NULL REFERENCES board_items(id) ON DELETE CASCADE, -- 자기 자신의 item_type='runbook' board_item 1:1
+    board_item_id      TEXT NOT NULL REFERENCES board_items(id) ON DELETE CASCADE, -- 자기 자신의 item_type='task' board_item 1:1
     title              TEXT NOT NULL DEFAULT '',
     status             TEXT NOT NULL DEFAULT 'open',
     archived           BOOLEAN NOT NULL DEFAULT FALSE,
@@ -2899,50 +3044,50 @@ CREATE TABLE IF NOT EXISTS runbooks (
     completed_at       TIMESTAMPTZ,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT runbooks_status_check
+    CONSTRAINT tasks_status_check
         CHECK (status IN ('open','completed')),
-    CONSTRAINT runbooks_completed_kind_check
+    CONSTRAINT tasks_completed_kind_check
         CHECK (completed_kind IN ('agent','user')),
     FOREIGN KEY (created_session_id, created_event_id)
         REFERENCES events(session_id, id) ON DELETE SET NULL,
-    CONSTRAINT runbooks_completed_session_id_fkey
+    CONSTRAINT tasks_completed_session_id_fkey
         FOREIGN KEY (completed_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL,
-    CONSTRAINT runbooks_completed_event_fkey
+    CONSTRAINT tasks_completed_event_fkey
         FOREIGN KEY (completed_session_id, completed_event_id)
         REFERENCES events(session_id, id) ON DELETE SET NULL
 );
 
-ALTER TABLE runbooks DROP CONSTRAINT IF EXISTS runbooks_completed_session_id_completed_event_id_fkey;
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_completed_session_id_completed_event_id_fkey;
 
-ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open';
-ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS completed_kind TEXT;
-ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS completed_session_id TEXT;
-ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS completed_event_id INTEGER;
-ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS completed_user_id TEXT;
-ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'open';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_kind TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_session_id TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_event_id INTEGER;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_user_id TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
 
-ALTER TABLE runbooks DROP CONSTRAINT IF EXISTS runbooks_status_check;
-ALTER TABLE runbooks ADD CONSTRAINT runbooks_status_check
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
+ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
     CHECK (status IN ('open','completed'));
 
-ALTER TABLE runbooks DROP CONSTRAINT IF EXISTS runbooks_completed_kind_check;
-ALTER TABLE runbooks ADD CONSTRAINT runbooks_completed_kind_check
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_completed_kind_check;
+ALTER TABLE tasks ADD CONSTRAINT tasks_completed_kind_check
     CHECK (completed_kind IN ('agent','user'));
 
-ALTER TABLE runbooks DROP CONSTRAINT IF EXISTS runbooks_completed_session_id_fkey;
-ALTER TABLE runbooks ADD CONSTRAINT runbooks_completed_session_id_fkey
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_completed_session_id_fkey;
+ALTER TABLE tasks ADD CONSTRAINT tasks_completed_session_id_fkey
     FOREIGN KEY (completed_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
 
-ALTER TABLE runbooks DROP CONSTRAINT IF EXISTS runbooks_completed_event_fkey;
-ALTER TABLE runbooks ADD CONSTRAINT runbooks_completed_event_fkey
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_completed_event_fkey;
+ALTER TABLE tasks ADD CONSTRAINT tasks_completed_event_fkey
     FOREIGN KEY (completed_session_id, completed_event_id)
     REFERENCES events(session_id, id) ON DELETE SET NULL;
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_runbooks_board_item ON runbooks(board_item_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_board_item ON tasks(board_item_id);
 
-CREATE TABLE IF NOT EXISTS runbook_sections (
+CREATE TABLE IF NOT EXISTS task_sections (
     id                 TEXT PRIMARY KEY,
-    runbook_id         TEXT NOT NULL REFERENCES runbooks(id) ON DELETE CASCADE,
+    task_id         TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
     position_key       TEXT NOT NULL,
     title              TEXT NOT NULL,
     assignee_kind      TEXT CHECK (assignee_kind IN ('agent','human','session')),
@@ -2963,12 +3108,12 @@ CREATE TABLE IF NOT EXISTS runbook_sections (
         REFERENCES events(session_id, id) ON DELETE SET NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_runbook_sections_runbook
-    ON runbook_sections(runbook_id, position_key);
+CREATE INDEX IF NOT EXISTS idx_task_sections_task
+    ON task_sections(task_id, position_key);
 
-CREATE TABLE IF NOT EXISTS runbook_items (
+CREATE TABLE IF NOT EXISTS task_items (
     id                   TEXT PRIMARY KEY,
-    section_id           TEXT NOT NULL REFERENCES runbook_sections(id) ON DELETE CASCADE,
+    section_id           TEXT NOT NULL REFERENCES task_sections(id) ON DELETE CASCADE,
     position_key         TEXT NOT NULL,
     title                TEXT NOT NULL,
     how_to               TEXT NOT NULL DEFAULT '',
@@ -2999,29 +3144,29 @@ CREATE TABLE IF NOT EXISTS runbook_items (
         REFERENCES events(session_id, id) ON DELETE SET NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_runbook_items_section
-    ON runbook_items(section_id, position_key);
+CREATE INDEX IF NOT EXISTS idx_task_items_section
+    ON task_items(section_id, position_key);
 
-ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_source_runbook_item_id_fkey;
-ALTER TABLE board_items ADD CONSTRAINT board_items_source_runbook_item_id_fkey
-    FOREIGN KEY (source_runbook_item_id) REFERENCES runbook_items(id) ON DELETE SET NULL;
+ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_source_task_item_id_fkey;
+ALTER TABLE board_items ADD CONSTRAINT board_items_source_task_item_id_fkey
+    FOREIGN KEY (source_task_item_id) REFERENCES task_items(id) ON DELETE SET NULL;
 
-ALTER TABLE runbook_items DROP CONSTRAINT IF EXISTS runbook_items_status_check;
-ALTER TABLE runbook_items ADD CONSTRAINT runbook_items_status_check
+ALTER TABLE task_items DROP CONSTRAINT IF EXISTS task_items_status_check;
+ALTER TABLE task_items ADD CONSTRAINT task_items_status_check
     CHECK (status IN ('pending','in_progress','review','completed','cancelled'));
 
 -- "내 차례"는 review이거나, 유효 담당(항목 own, 없으면 섹션 상속)이 human이고 미완·미취소.
 -- 상속 케이스는 부분 인덱스로 못 잡으므로 조회 시 항목⨝섹션으로 해석한다.
-CREATE INDEX IF NOT EXISTS idx_runbook_items_human_self
-    ON runbook_items(section_id)
+CREATE INDEX IF NOT EXISTS idx_task_items_human_self
+    ON task_items(section_id)
     WHERE assignee_kind = 'human'
       AND status NOT IN ('completed','cancelled')
       AND archived = FALSE;
 
-CREATE TABLE IF NOT EXISTS runbook_operations (
+CREATE TABLE IF NOT EXISTS task_operations (
     id               TEXT PRIMARY KEY,
-    runbook_id       TEXT REFERENCES runbooks(id) ON DELETE CASCADE,
-    target_kind      TEXT NOT NULL CHECK (target_kind IN ('runbook','section','item')),
+    task_id       TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+    target_kind      TEXT NOT NULL CHECK (target_kind IN ('task','section','item')),
     target_id        TEXT NOT NULL,
     operation_type   TEXT NOT NULL,
     actor_kind       TEXT NOT NULL DEFAULT 'agent' CHECK (actor_kind IN ('agent','user','system')),
@@ -3036,12 +3181,12 @@ CREATE TABLE IF NOT EXISTS runbook_operations (
         REFERENCES events(session_id, id) ON DELETE SET NULL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_runbook_ops_idem
-    ON runbook_operations(idempotency_key)
+CREATE UNIQUE INDEX IF NOT EXISTS uq_task_ops_idem
+    ON task_operations(idempotency_key)
     WHERE idempotency_key IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_runbook_ops_target
-    ON runbook_operations(target_kind, target_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_task_ops_target
+    ON task_operations(target_kind, target_id, created_at);
 
 -- Pages and blocks: Y.Doc-backed page replicas, mutation provenance, and backlinks.
 CREATE TABLE IF NOT EXISTS pages (
@@ -3121,13 +3266,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_folder_project_ops_idem
 CREATE INDEX IF NOT EXISTS idx_folder_project_ops_folder
     ON folder_project_operations(folder_id, created_at);
 
--- One task identity has a runbook execution aspect and a page document aspect.
+-- One task identity has a task execution aspect and a page document aspect.
 -- New rows use task_page_id = id; legacy rows remain NULL until canonical Y.Doc backfill.
-ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS task_page_id TEXT;
-CREATE UNIQUE INDEX IF NOT EXISTS uq_runbooks_task_page_id
-    ON runbooks(task_page_id) WHERE task_page_id IS NOT NULL;
-ALTER TABLE runbooks DROP CONSTRAINT IF EXISTS runbooks_task_page_id_fkey;
-ALTER TABLE runbooks ADD CONSTRAINT runbooks_task_page_id_fkey
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS task_page_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tasks_task_page_id
+    ON tasks(task_page_id) WHERE task_page_id IS NOT NULL;
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_task_page_id_fkey;
+ALTER TABLE tasks ADD CONSTRAINT tasks_task_page_id_fkey
     FOREIGN KEY (task_page_id) REFERENCES pages(id) ON DELETE RESTRICT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pages_title_key ON pages(title_key);
@@ -3220,7 +3365,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_blocks_primary_session_ref
     WHERE block_type = 'session_ref'
       AND properties ->> 'primary' = 'true';
 
-CREATE TABLE IF NOT EXISTS checklist_runbook_projection_outbox (
+CREATE TABLE IF NOT EXISTS checklist_task_projection_outbox (
     block_id           TEXT PRIMARY KEY,
     page_id            TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
     source_hash        TEXT NOT NULL,
@@ -3238,51 +3383,51 @@ CREATE TABLE IF NOT EXISTS checklist_runbook_projection_outbox (
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS page_id TEXT;
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS source_hash TEXT;
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS processed_hash TEXT;
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS actor_kind TEXT NOT NULL DEFAULT 'system';
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS actor_session_id TEXT;
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS actor_user_id TEXT;
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS routing_session_id TEXT;
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS last_error TEXT;
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS lease_owner_node_id TEXT;
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ;
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
-ALTER TABLE checklist_runbook_projection_outbox ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS page_id TEXT;
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS source_hash TEXT;
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS processed_hash TEXT;
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS actor_kind TEXT NOT NULL DEFAULT 'system';
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS actor_session_id TEXT;
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS actor_user_id TEXT;
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS routing_session_id TEXT;
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS last_error TEXT;
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS lease_owner_node_id TEXT;
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ;
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
-ALTER TABLE checklist_runbook_projection_outbox ALTER COLUMN page_id SET NOT NULL;
-ALTER TABLE checklist_runbook_projection_outbox ALTER COLUMN source_hash SET NOT NULL;
-ALTER TABLE checklist_runbook_projection_outbox DROP CONSTRAINT IF EXISTS checklist_runbook_projection_outbox_page_id_fkey;
-ALTER TABLE checklist_runbook_projection_outbox ADD CONSTRAINT checklist_runbook_projection_outbox_page_id_fkey
+ALTER TABLE checklist_task_projection_outbox ALTER COLUMN page_id SET NOT NULL;
+ALTER TABLE checklist_task_projection_outbox ALTER COLUMN source_hash SET NOT NULL;
+ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_page_id_fkey;
+ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_page_id_fkey
     FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE;
-ALTER TABLE checklist_runbook_projection_outbox DROP CONSTRAINT IF EXISTS checklist_runbook_projection_outbox_actor_session_id_fkey;
-ALTER TABLE checklist_runbook_projection_outbox ADD CONSTRAINT checklist_runbook_projection_outbox_actor_session_id_fkey
+ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_actor_session_id_fkey;
+ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_actor_session_id_fkey
     FOREIGN KEY (actor_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
-ALTER TABLE checklist_runbook_projection_outbox DROP CONSTRAINT IF EXISTS checklist_runbook_projection_outbox_routing_session_id_fkey;
-ALTER TABLE checklist_runbook_projection_outbox ADD CONSTRAINT checklist_runbook_projection_outbox_routing_session_id_fkey
+ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_routing_session_id_fkey;
+ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_routing_session_id_fkey
     FOREIGN KEY (routing_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL;
-ALTER TABLE checklist_runbook_projection_outbox DROP CONSTRAINT IF EXISTS checklist_runbook_projection_outbox_actor_kind_check;
-ALTER TABLE checklist_runbook_projection_outbox ADD CONSTRAINT checklist_runbook_projection_outbox_actor_kind_check
+ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_actor_kind_check;
+ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_actor_kind_check
     CHECK (actor_kind IN ('agent','user','system'));
-ALTER TABLE checklist_runbook_projection_outbox DROP CONSTRAINT IF EXISTS checklist_runbook_projection_outbox_actor_shape_check;
-ALTER TABLE checklist_runbook_projection_outbox ADD CONSTRAINT checklist_runbook_projection_outbox_actor_shape_check
+ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_actor_shape_check;
+ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_actor_shape_check
     CHECK (
       (actor_kind = 'agent' AND actor_session_id IS NOT NULL AND actor_user_id IS NULL)
       OR (actor_kind = 'user' AND actor_user_id IS NOT NULL)
       OR (actor_kind = 'system' AND actor_user_id IS NULL)
     );
-ALTER TABLE checklist_runbook_projection_outbox DROP CONSTRAINT IF EXISTS checklist_runbook_projection_outbox_attempts_check;
-ALTER TABLE checklist_runbook_projection_outbox ADD CONSTRAINT checklist_runbook_projection_outbox_attempts_check
+ALTER TABLE checklist_task_projection_outbox DROP CONSTRAINT IF EXISTS checklist_task_projection_outbox_attempts_check;
+ALTER TABLE checklist_task_projection_outbox ADD CONSTRAINT checklist_task_projection_outbox_attempts_check
     CHECK (attempts >= 0);
 
-CREATE INDEX IF NOT EXISTS idx_checklist_runbook_projection_due
-    ON checklist_runbook_projection_outbox(next_retry_at, updated_at, block_id)
+CREATE INDEX IF NOT EXISTS idx_checklist_task_projection_due
+    ON checklist_task_projection_outbox(next_retry_at, updated_at, block_id)
     WHERE processed_hash IS DISTINCT FROM source_hash;
 
-INSERT INTO checklist_runbook_projection_outbox (
+INSERT INTO checklist_task_projection_outbox (
   block_id, page_id, source_hash, actor_kind, actor_session_id
 )
 SELECT
@@ -3318,7 +3463,7 @@ CREATE TABLE IF NOT EXISTS session_page_bindings (
     legacy_folder_id       TEXT,
     legacy_container_kind  TEXT,
     legacy_container_id    TEXT,
-    source_runbook_item_id TEXT,
+    source_task_item_id TEXT,
     page_state             TEXT NOT NULL DEFAULT 'pending'
                            CHECK (page_state IN ('pending','bound','manual_repair')),
     legacy_state           TEXT NOT NULL DEFAULT 'pending'
@@ -3338,7 +3483,7 @@ CREATE TABLE IF NOT EXISTS session_page_bindings (
       OR (legacy_container_kind IS NOT NULL AND legacy_container_id IS NOT NULL)
     ),
     CONSTRAINT session_page_bindings_container_kind_check CHECK (
-      legacy_container_kind IS NULL OR legacy_container_kind IN ('folder','runbook')
+      legacy_container_kind IS NULL OR legacy_container_kind IN ('folder','task')
     )
 );
 
@@ -3496,3 +3641,62 @@ CREATE INDEX IF NOT EXISTS idx_block_links_unresolved_page
 CREATE INDEX IF NOT EXISTS idx_block_links_target_block
     ON block_links(target_block_id, created_at)
     WHERE target_block_id IS NOT NULL;
+
+-- One-release legacy read compatibility. UNION ALL keeps every view read-only.
+CREATE OR REPLACE VIEW runbooks AS
+SELECT id, board_item_id, title, status, archived, version,
+       created_session_id, created_event_id, completed_kind,
+       completed_session_id, completed_event_id, completed_user_id,
+       completed_at, created_at, updated_at, task_page_id
+FROM tasks
+UNION ALL
+SELECT id, board_item_id, title, status, archived, version,
+       created_session_id, created_event_id, completed_kind,
+       completed_session_id, completed_event_id, completed_user_id,
+       completed_at, created_at, updated_at, task_page_id
+FROM tasks WHERE FALSE;
+
+CREATE OR REPLACE VIEW runbook_sections AS
+SELECT id, task_id AS runbook_id, position_key, title, assignee_kind,
+       assignee_agent_id, assignee_session_id, assignee_user_id, archived,
+       version, created_session_id, created_event_id, updated_session_id,
+       updated_event_id, created_at, updated_at
+FROM task_sections
+UNION ALL
+SELECT id, task_id, position_key, title, assignee_kind,
+       assignee_agent_id, assignee_session_id, assignee_user_id, archived,
+       version, created_session_id, created_event_id, updated_session_id,
+       updated_event_id, created_at, updated_at
+FROM task_sections WHERE FALSE;
+
+CREATE OR REPLACE VIEW runbook_items AS
+SELECT id, section_id, position_key, title, how_to, assignee_kind,
+       assignee_agent_id, assignee_session_id, assignee_user_id, status,
+       archived, version, created_session_id, created_event_id,
+       updated_session_id, updated_event_id, completed_kind,
+       completed_session_id, completed_event_id, completed_user_id,
+       completed_at, created_at, updated_at
+FROM task_items
+UNION ALL
+SELECT id, section_id, position_key, title, how_to, assignee_kind,
+       assignee_agent_id, assignee_session_id, assignee_user_id, status,
+       archived, version, created_session_id, created_event_id,
+       updated_session_id, updated_event_id, completed_kind,
+       completed_session_id, completed_event_id, completed_user_id,
+       completed_at, created_at, updated_at
+FROM task_items WHERE FALSE;
+
+CREATE OR REPLACE VIEW runbook_operations AS
+SELECT id, task_id AS runbook_id,
+       CASE WHEN target_kind = 'task' THEN 'runbook' ELSE target_kind END AS target_kind,
+       target_id, replace(operation_type, 'task', 'runbook') AS operation_type,
+       actor_kind, actor_session_id, actor_event_id, actor_user_id,
+       idempotency_key, payload_json, reason, created_at
+FROM task_operations
+UNION ALL
+SELECT id, task_id,
+       CASE WHEN target_kind = 'task' THEN 'runbook' ELSE target_kind END,
+       target_id, replace(operation_type, 'task', 'runbook'), actor_kind,
+       actor_session_id, actor_event_id, actor_user_id, idempotency_key,
+       payload_json, reason, created_at
+FROM task_operations WHERE FALSE;

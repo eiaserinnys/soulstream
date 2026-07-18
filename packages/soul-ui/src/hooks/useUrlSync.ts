@@ -6,8 +6,8 @@
  * URL 패턴:
  *   /#/feed                  → 피드 뷰, 세션 미선택
  *   /#/feed/{agentSessionId} → 피드 뷰 + 해당 세션 선택
- *   /#/runbooks              → 런북 모아보기
- *   /#/runbooks/{agentSessionId}→ 런북 모아보기 + 해당 세션 선택
+ *   /#/tasks                 → 업무 모아보기
+ *   /#/tasks/{agentSessionId} → 업무 모아보기 + 해당 세션 선택
  *   /#/{agentSessionId}      → 폴더 뷰 + 해당 세션 선택
  *   /#/ 또는 /               → 피드 뷰 (초기 진입)
  *
@@ -36,16 +36,10 @@ function parseHash(hash: string): ParsedHash {
     return { viewMode: "feed", sessionId: path.slice(5) || null };
   }
   if (path === "tasks") {
-    return { viewMode: "runbooks", sessionId: null };
+    return { viewMode: "tasks", sessionId: null };
   }
   if (path.startsWith("tasks/")) {
-    return { viewMode: "runbooks", sessionId: path.slice(6) || null };
-  }
-  if (path === "runbooks") {
-    return { viewMode: "runbooks", sessionId: null };
-  }
-  if (path.startsWith("runbooks/")) {
-    return { viewMode: "runbooks", sessionId: path.slice(9) || null };
+    return { viewMode: "tasks", sessionId: path.slice(6) || null };
   }
   return { viewMode: "folder", sessionId: path };
 }
@@ -55,8 +49,8 @@ function buildHash(viewMode: DashboardViewMode, sessionId: string | null): strin
   if (viewMode === "feed") {
     return sessionId ? `#feed/${sessionId}` : "#feed";
   }
-  if (viewMode === "runbooks") {
-    return sessionId ? `#runbooks/${sessionId}` : "#runbooks";
+  if (viewMode === "tasks") {
+    return sessionId ? `#tasks/${sessionId}` : "#tasks";
   }
   return sessionId ? `#${sessionId}` : "";
 }

@@ -26,7 +26,7 @@ import type {
   PageUpdatedStreamEvent,
   CustomViewUpdatedStreamEvent,
   ReplayGapStreamEvent,
-  RunbookUpdatedStreamEvent,
+  TaskUpdatedStreamEvent,
   SessionCreatedStreamEvent,
   SessionDeletedStreamEvent,
   SessionUpdatedStreamEvent,
@@ -75,8 +75,8 @@ export interface UseSessionStreamCacheSyncOptions {
   onStreamMeta?: (event: StreamMetaStreamEvent) => void;
   /** replay_gap 수신 시 호출 (풀 refetch 트리거용). */
   onReplayGap?: (event: ReplayGapStreamEvent) => void;
-  /** runbook_updated 수신 시 호출 (런북 snapshot projection 갱신용). */
-  onRunbookUpdated?: (event: RunbookUpdatedStreamEvent) => void;
+  /** task_updated 수신 시 호출 (업무 snapshot projection 갱신용). */
+  onTaskUpdated?: (event: TaskUpdatedStreamEvent) => void;
   /** custom_view_updated 수신 시 호출 (커스텀 뷰 projection 갱신용). */
   onCustomViewUpdated?: (event: CustomViewUpdatedStreamEvent) => void;
   /** 모든 stream event의 타입별 캐시 처리가 끝난 뒤 호출한다. */
@@ -98,7 +98,7 @@ export function useSessionStreamCacheSync(
     onEventIdAdvance,
     onStreamMeta,
     onReplayGap,
-    onRunbookUpdated: onRunbookUpdatedOption,
+    onTaskUpdated: onTaskUpdatedOption,
     onCustomViewUpdated: onCustomViewUpdatedOption,
     onStreamEvent,
     transformCatalogUpdate,
@@ -290,12 +290,12 @@ export function useSessionStreamCacheSync(
     [queryClient, onEventIdAdvance],
   );
 
-  const onRunbookUpdated = useCallback(
-    (event: RunbookUpdatedStreamEvent) => {
+  const onTaskUpdated = useCallback(
+    (event: TaskUpdatedStreamEvent) => {
       if (event.lastEventId) onEventIdAdvance?.(event.lastEventId);
-      onRunbookUpdatedOption?.(event);
+      onTaskUpdatedOption?.(event);
     },
-    [onEventIdAdvance, onRunbookUpdatedOption],
+    [onEventIdAdvance, onTaskUpdatedOption],
   );
 
   const onCustomViewUpdated = useCallback(
@@ -326,7 +326,7 @@ export function useSessionStreamCacheSync(
     onSessionDeleted,
     onCatalogUpdated,
     onMetadataUpdated,
-    onRunbookUpdated,
+    onTaskUpdated,
     onCustomViewUpdated,
     onPageUpdated,
     onStreamMeta,

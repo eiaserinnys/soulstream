@@ -23,10 +23,10 @@ const customView: CustomViewRow = {
 const boardItem: CatalogBoardItemRow = {
   id: "custom_view:cv-1",
   folderId: "folder-1",
-  containerKind: "runbook",
+  containerKind: "task",
   containerId: "rb-1",
   membershipKind: "primary",
-  sourceRunbookItemId: null,
+  sourceTaskItemId: null,
   itemType: "custom_view",
   itemId: "cv-1",
   x: 120,
@@ -67,7 +67,7 @@ describe("CustomViewService", () => {
         getCatalog: vi.fn(async () => ({ folders: [], sessions: {}, boardItems: [] })),
         resolveBoardYjsContainerScope: vi.fn(async () => ({
           folderId: "folder-1",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
         })),
       },
@@ -80,7 +80,7 @@ describe("CustomViewService", () => {
 
     const result = await service.createCustomView({
       actorSessionId: "sess-actor",
-      container: { containerKind: "runbook", containerId: "rb-1" },
+      container: { containerKind: "task", containerId: "rb-1" },
       title: "Progress panel",
       html: "<section></section>",
       x: 120,
@@ -121,7 +121,7 @@ describe("CustomViewService", () => {
         getCatalog: vi.fn(async () => ({ folders: [], sessions: {}, boardItems: [] })),
         resolveBoardYjsContainerScope: vi.fn(async () => ({
           folderId: "folder-1",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
         })),
       },

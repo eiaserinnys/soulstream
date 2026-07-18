@@ -34,9 +34,9 @@ class CreateSessionRequest(BaseModel):
         default=None,
         validation_alias=AliasChoices("sourceSessionId", "source_session_id"),
     )
-    sourceRunbookItemId: Optional[str] = Field(
+    sourceTaskItemId: Optional[str] = Field(
         default=None,
-        validation_alias=AliasChoices("sourceRunbookItemId", "source_runbook_item_id"),
+        validation_alias=AliasChoices("sourceTaskItemId", "source_task_item_id"),
     )
     profile: Optional[str] = Field(
         default=None,

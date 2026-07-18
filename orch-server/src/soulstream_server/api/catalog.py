@@ -36,7 +36,7 @@ class BoardItemPositionUpdate(BaseModel):
 
 
 class BoardContainerTarget(BaseModel):
-    kind: Literal["folder", "runbook"]
+    kind: Literal["folder", "task"]
     id: str = Field(..., min_length=1)
 
 
@@ -67,7 +67,7 @@ class MarkdownDocumentUpdate(BaseModel):
     expected_version: int = Field(..., alias="expectedVersion")
 
 
-class RunbookItemStatusMutation(BaseModel):
+class TaskItemStatusMutation(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     status: Literal["pending", "review", "completed", "cancelled"]
@@ -82,7 +82,7 @@ class RunbookItemStatusMutation(BaseModel):
     reason: Optional[str] = None
 
 
-class RunbookStatusMutation(BaseModel):
+class TaskStatusMutation(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     status: Literal["open", "completed"]
@@ -134,7 +134,7 @@ def _dashboard_user_id_for_request(request: Request) -> str | None:
     return user_id if isinstance(user_id, str) and user_id else None
 
 
-def _filter_runbook_overview_for_access(
+def _filter_task_overview_for_access(
     overview: dict,
     allowed_folder_ids: set[str] | None,
 ) -> dict:
@@ -150,7 +150,7 @@ def _filter_runbook_overview_for_access(
             item for item in overview.get("my_turn_items", [])
             if isinstance(item, dict) and allowed(item)
         ],
-        "runbooks": [
+        "tasks": [
             {
                 **group,
                 "items": [
@@ -158,7 +158,7 @@ def _filter_runbook_overview_for_access(
                     if isinstance(item, dict) and allowed(item)
                 ],
             }
-            for group in overview.get("runbooks", [])
+            for group in overview.get("tasks", [])
             if isinstance(group, dict) and allowed(group)
         ],
     }
@@ -175,7 +175,7 @@ def _board_asset_error(exc: Exception) -> HTTPException:
 
 async def _resolve_board_container_folder_id(
     catalog_service: CatalogService,
-    container_kind: Literal["folder", "runbook"],
+    container_kind: Literal["folder", "task"],
     container_id: str,
 ) -> str:
     if container_kind == "folder":
@@ -185,25 +185,25 @@ async def _resolve_board_container_folder_id(
     for item in board_items:
         if not isinstance(item, dict):
             continue
-        if item.get("itemType") == "runbook" and item.get("itemId") == container_id:
+        if item.get("itemType") == "task" and item.get("itemId") == container_id:
             folder_id = item.get("folderId")
             if isinstance(folder_id, str) and folder_id:
                 return folder_id
-    raise HTTPException(status_code=404, detail="Runbook board container not found")
+    raise HTTPException(status_code=404, detail="Task board container not found")
 
 
 async def _resolve_body_board_container(
     catalog_service: CatalogService,
     folder_id: Optional[str],
     container: Optional[dict],
-) -> tuple[str, Literal["folder", "runbook"], str]:
+) -> tuple[str, Literal["folder", "task"], str]:
     if container is None:
         if not folder_id:
             raise HTTPException(status_code=400, detail="folderId or container is required")
         return folder_id, "folder", folder_id
     kind = container.get("kind")
     container_id = container.get("id")
-    if kind not in ("folder", "runbook") or not isinstance(container_id, str) or not container_id:
+    if kind not in ("folder", "task") or not isinstance(container_id, str) or not container_id:
         raise HTTPException(status_code=400, detail="invalid board container")
     resolved_folder_id = folder_id or await _resolve_board_container_folder_id(
         catalog_service,
@@ -292,7 +292,7 @@ def create_catalog_router(
     async def list_board_items(
         request: Request,
         folder_id: Optional[str] = Query(None),
-        container_kind: Optional[Literal["folder", "runbook"]] = Query(None),
+        container_kind: Optional[Literal["folder", "task"]] = Query(None),
         container_id: Optional[str] = Query(None),
     ) -> dict:
         """현재 컨테이너의 보드 항목만 조회한다."""
@@ -444,45 +444,45 @@ def create_catalog_router(
         require_folder_allowed(access_for_request(request), folders, custom_view.get("folderId"))
         return custom_view
 
-    @router.get("/runbooks/my-turn")
-    async def get_runbook_my_turn(request: Request, limit: int = Query(100, ge=1, le=500)) -> dict:
-        loader = getattr(db, "get_runbook_overview", None)
+    @router.get("/tasks/my-turn")
+    async def get_task_my_turn(request: Request, limit: int = Query(100, ge=1, le=500)) -> dict:
+        loader = getattr(db, "get_task_overview", None)
         if loader is None:
-            raise HTTPException(status_code=503, detail="Runbook storage is not configured")
+            raise HTTPException(status_code=503, detail="Task storage is not configured")
         folders = await catalog_service.list_folders()
         overview = await loader(user_id=_dashboard_user_id_for_request(request), limit=limit)
         allowed_ids = visible_folder_ids(access_for_request(request), folders)
-        return _filter_runbook_overview_for_access(overview, allowed_ids)
+        return _filter_task_overview_for_access(overview, allowed_ids)
 
-    @router.post("/runbooks/{runbook_id}/items/{item_id}/status")
-    async def proxy_runbook_item_status(
-        runbook_id: str,
+    @router.post("/tasks/{task_id}/items/{item_id}/status")
+    async def proxy_task_item_status(
+        task_id: str,
         item_id: str,
-        body: RunbookItemStatusMutation,
+        body: TaskItemStatusMutation,
         request: Request,
     ):
-        loader = getattr(db, "get_runbook_snapshot", None)
+        loader = getattr(db, "get_task_snapshot", None)
         if loader is None or node_manager is None:
-            raise HTTPException(status_code=503, detail="Runbook storage is not configured")
+            raise HTTPException(status_code=503, detail="Task storage is not configured")
 
-        snapshot = await loader(runbook_id)
+        snapshot = await loader(task_id)
         if snapshot is None:
-            raise HTTPException(status_code=404, detail="Runbook not found")
-        folder_id = (snapshot.get("runbook") or {}).get("folder_id")
+            raise HTTPException(status_code=404, detail="Task not found")
+        folder_id = (snapshot.get("task") or {}).get("folder_id")
         folders = await catalog_service.list_folders()
         require_folder_allowed(access_for_request(request), folders, folder_id)
 
         if not _snapshot_has_item(snapshot, item_id):
-            raise HTTPException(status_code=404, detail="Runbook item not found")
+            raise HTTPException(status_code=404, detail="Task item not found")
 
         actor_session_id = _resolve_actor_session_id(snapshot, item_id)
         if actor_session_id is None:
-            raise HTTPException(status_code=422, detail="Runbook item has no session provenance")
+            raise HTTPException(status_code=422, detail="Task item has no session provenance")
 
-        node = await _resolve_runbook_mutation_node(actor_session_id, db, node_manager)
+        node = await _resolve_task_mutation_node(actor_session_id, db, node_manager)
         url = (
             f"http://{node.host}:{node.port}"
-            f"/api/runbooks/{quote(runbook_id, safe='')}"
+            f"/api/tasks/{quote(task_id, safe='')}"
             f"/items/{quote(item_id, safe='')}/status"
         )
         payload = {
@@ -512,31 +512,31 @@ def create_catalog_router(
             media_type=content_type or None,
         )
 
-    @router.post("/runbooks/{runbook_id}/status")
-    async def proxy_runbook_status(
-        runbook_id: str,
-        body: RunbookStatusMutation,
+    @router.post("/tasks/{task_id}/status")
+    async def proxy_task_status(
+        task_id: str,
+        body: TaskStatusMutation,
         request: Request,
     ):
-        loader = getattr(db, "get_runbook_snapshot", None)
+        loader = getattr(db, "get_task_snapshot", None)
         if loader is None or node_manager is None:
-            raise HTTPException(status_code=503, detail="Runbook storage is not configured")
+            raise HTTPException(status_code=503, detail="Task storage is not configured")
 
-        snapshot = await loader(runbook_id)
+        snapshot = await loader(task_id)
         if snapshot is None:
-            raise HTTPException(status_code=404, detail="Runbook not found")
-        folder_id = (snapshot.get("runbook") or {}).get("folder_id")
+            raise HTTPException(status_code=404, detail="Task not found")
+        folder_id = (snapshot.get("task") or {}).get("folder_id")
         folders = await catalog_service.list_folders()
         require_folder_allowed(access_for_request(request), folders, folder_id)
 
-        actor_session_id = _resolve_runbook_actor_session_id(snapshot)
+        actor_session_id = _resolve_task_actor_session_id(snapshot)
         if actor_session_id is None:
-            raise HTTPException(status_code=422, detail="Runbook has no session provenance")
+            raise HTTPException(status_code=422, detail="Task has no session provenance")
 
-        node = await _resolve_runbook_mutation_node(actor_session_id, db, node_manager)
+        node = await _resolve_task_mutation_node(actor_session_id, db, node_manager)
         url = (
             f"http://{node.host}:{node.port}"
-            f"/api/runbooks/{quote(runbook_id, safe='')}/status"
+            f"/api/tasks/{quote(task_id, safe='')}/status"
         )
         payload = {
             "status": body.status,
@@ -565,15 +565,15 @@ def create_catalog_router(
             media_type=content_type or None,
         )
 
-    @router.get("/runbooks/{runbook_id}")
-    async def get_runbook(runbook_id: str, request: Request) -> dict:
-        loader = getattr(db, "get_runbook_snapshot", None)
+    @router.get("/tasks/{task_id}")
+    async def get_task(task_id: str, request: Request) -> dict:
+        loader = getattr(db, "get_task_snapshot", None)
         if loader is None:
-            raise HTTPException(status_code=503, detail="Runbook storage is not configured")
-        snapshot = await loader(runbook_id)
+            raise HTTPException(status_code=503, detail="Task storage is not configured")
+        snapshot = await loader(task_id)
         if snapshot is None:
-            raise HTTPException(status_code=404, detail="Runbook not found")
-        folder_id = (snapshot.get("runbook") or {}).get("folder_id")
+            raise HTTPException(status_code=404, detail="Task not found")
+        folder_id = (snapshot.get("task") or {}).get("folder_id")
         folders = await catalog_service.list_folders()
         require_folder_allowed(access_for_request(request), folders, folder_id)
         return snapshot
@@ -640,7 +640,7 @@ def create_catalog_router(
 
     @router.post("/board-containers/{container_kind}/{container_id}/assets/init", status_code=201)
     async def init_container_board_asset(
-        container_kind: Literal["folder", "runbook"],
+        container_kind: Literal["folder", "task"],
         container_id: str,
         body: BoardAssetInit,
         request: Request,
@@ -689,7 +689,7 @@ def create_catalog_router(
 
     @router.post("/board-containers/{container_kind}/{container_id}/assets/{asset_id}/commit")
     async def commit_container_board_asset(
-        container_kind: Literal["folder", "runbook"],
+        container_kind: Literal["folder", "task"],
         container_id: str,
         asset_id: str,
         body: BoardAssetCommit,
@@ -728,13 +728,13 @@ def _snapshot_has_item(snapshot: dict, item_id: str) -> bool:
     return any(isinstance(item, dict) and item.get("id") == item_id for item in items)
 
 
-def _resolve_runbook_actor_session_id(snapshot: dict) -> str | None:
-    runbook = snapshot.get("runbook") or {}
-    if not isinstance(runbook, dict):
+def _resolve_task_actor_session_id(snapshot: dict) -> str | None:
+    task = snapshot.get("task") or {}
+    if not isinstance(task, dict):
         return None
     for value in (
-        runbook.get("completed_session_id"),
-        runbook.get("created_session_id"),
+        task.get("completed_session_id"),
+        task.get("created_session_id"),
     ):
         if isinstance(value, str) and value:
             return value
@@ -752,14 +752,14 @@ def _resolve_actor_session_id(snapshot: dict, item_id: str) -> str | None:
         item.get("created_session_id"),
         (section or {}).get("updated_session_id"),
         (section or {}).get("created_session_id"),
-        (snapshot.get("runbook") or {}).get("created_session_id"),
+        (snapshot.get("task") or {}).get("created_session_id"),
     ):
         if isinstance(value, str) and value:
             return value
     return None
 
 
-async def _resolve_runbook_mutation_node(actor_session_id: str, db, node_manager):
+async def _resolve_task_mutation_node(actor_session_id: str, db, node_manager):
     try:
         return await find_session_node(actor_session_id, db, node_manager)
     except HTTPException as exc:
@@ -769,11 +769,11 @@ async def _resolve_runbook_mutation_node(actor_session_id: str, db, node_manager
         if not connected_nodes:
             raise HTTPException(
                 status_code=503,
-                detail="No connected soul-server node available for runbook mutation",
+                detail="No connected soul-server node available for task mutation",
             ) from exc
         fallback = connected_nodes[0]
         logger.info(
-            "Runbook actor session %s is not routable (%s); forwarding to connected node %s",
+            "Task actor session %s is not routable (%s); forwarding to connected node %s",
             actor_session_id,
             exc.detail,
             fallback.node_id,

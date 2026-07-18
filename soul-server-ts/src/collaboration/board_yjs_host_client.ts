@@ -33,21 +33,21 @@ export class BoardYjsHostClient {
     sessionId: string;
     x: number;
     y: number;
-    sourceRunbookItemId?: string | null;
+    sourceTaskItemId?: string | null;
   }): Promise<CatalogBoardItemRow> {
     return await this.request("upsert-session-board-item", input);
   }
 
-  async upsertRunbookBoardItem(input: {
+  async upsertTaskBoardItem(input: {
     folderId: string;
     boardItemId: string;
-    runbookId: string;
+    taskId: string;
     title: string;
     x: number;
     y: number;
     metadata?: Record<string, unknown>;
   }): Promise<CatalogBoardItemRow> {
-    return await this.request("upsert-runbook-board-item", input);
+    return await this.request("upsert-task-board-item", input);
   }
 
   async upsertCustomViewBoardItem(input: {
@@ -65,8 +65,8 @@ export class BoardYjsHostClient {
     return await this.request("upsert-custom-view-board-item", input);
   }
 
-  async removeRunbookBoardItem(folderId: string, boardItemId: string): Promise<void> {
-    await this.request("remove-runbook-board-item", { folderId, boardItemId });
+  async removeTaskBoardItem(folderId: string, boardItemId: string): Promise<void> {
+    await this.request("remove-task-board-item", { folderId, boardItemId });
   }
 
   async removeBoardItem(

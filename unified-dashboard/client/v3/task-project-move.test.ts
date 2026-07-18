@@ -20,7 +20,7 @@ describe("task project move", () => {
     await executeTaskProjectMove(fixture.api, fixture.board, plan, () => "move-id");
 
     expect(fixture.board.moveBoardItemToContainer).toHaveBeenCalledWith({
-      boardItemId: "runbook-board-item",
+      boardItemId: "task-board-item",
       container: { kind: "folder", id: "folder-target" },
       idempotencyKey: "move-id",
     });
@@ -86,11 +86,11 @@ function task(): PlannerTask {
     page: page("task-a", "업무 A"),
     blocks: [],
     stateVector: "AA==",
-    runbookId: "task-a",
-    runbook: {
-      runbook: {
+    taskId: "task-a",
+    task: {
+      task: {
         id: "task-a",
-        board_item_id: "runbook-board-item",
+        board_item_id: "task-board-item",
         title: "업무 A",
         status: "open",
         archived: false,

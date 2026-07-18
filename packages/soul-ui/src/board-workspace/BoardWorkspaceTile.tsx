@@ -11,7 +11,7 @@ import { BoardAssetCard } from "../components/BoardAssetCard";
 import { STATUS_CONFIG } from "../components/SessionItem";
 import { cn } from "../lib/cn";
 import { CustomViewTileBody } from "../custom-view/CustomViewTileBody";
-import { RunbookCard } from "../runbook/RunbookCard";
+import { TaskCard } from "../task/TaskCard";
 import type { SessionParentRef } from "./board-session-relations";
 import {
   formatBoardWorkspaceTime,
@@ -41,7 +41,7 @@ interface BoardWorkspaceTileProps {
     item: BoardWorkspaceItem,
   ) => void;
   onOpenFolder: (folderId: string) => void;
-  onOpenRunbookBoard: (runbookId: string) => void;
+  onOpenTaskBoard: (taskId: string) => void;
   onOpenMarkdown: (documentId: string) => void;
   onOpenCustomView: (customViewId: string) => void;
   onOpenSession: (session: SessionSummary) => void;
@@ -65,7 +65,7 @@ export function BoardWorkspaceTile({
   activeSessionKey,
   onTilePointerDown,
   onOpenFolder,
-  onOpenRunbookBoard,
+  onOpenTaskBoard,
   onOpenMarkdown,
   onOpenCustomView,
   onOpenSession,
@@ -284,13 +284,13 @@ export function BoardWorkspaceTile({
     );
   }
 
-  if (item.type === "runbook") {
+  if (item.type === "task") {
     return (
       <div
         key={item.id}
         role="group"
         tabIndex={0}
-        data-testid="board-runbook-tile"
+        data-testid="board-task-tile"
         data-board-tile="true"
         className={cn(BOARD_TILE_CLASS, "h-[360px] w-[360px] p-0", selectionClassName, pulsingClassName)}
         style={tileStyle}
@@ -298,10 +298,10 @@ export function BoardWorkspaceTile({
         onContextMenu={(event) => onTileContextMenu(event, item)}
         onClick={(event) => event.stopPropagation()}
       >
-        <RunbookCard
-          runbookId={item.runbookId}
+        <TaskCard
+          taskId={item.taskId}
           fallbackTitle={item.title}
-          onOpenBoard={onOpenRunbookBoard}
+          onOpenBoard={onOpenTaskBoard}
         />
       </div>
     );

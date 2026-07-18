@@ -1,8 +1,8 @@
 import websocket from "@fastify/websocket";
 import type { FastifyInstance } from "fastify";
 
-import type { BoardContainerKind } from "../db/session_db.js";
 import type { BoardYjsService } from "./board_yjs_service.js";
+import { normalizeBoardContainerKind } from "./board_container_kind_compat.js";
 
 export interface BoardYjsRouteConfig {
   service: BoardYjsService;
@@ -25,8 +25,9 @@ export async function registerBoardYjsRoutes(
     "/yjs/:containerKind/:containerId",
     { websocket: true },
     (socket, request) => {
-      const { containerKind, containerId } = request.params;
-      if (!isBoardContainerKind(containerKind)) {
+      const { containerKind: rawContainerKind, containerId } = request.params;
+      const containerKind = normalizeBoardContainerKind(rawContainerKind);
+      if (!containerKind) {
         socket.close(1008, "unsupported board container kind");
         return;
       }
@@ -40,8 +41,4 @@ export async function registerBoardYjsRoutes(
   fastify.addHook("onClose", async () => {
     await config.service.close();
   });
-}
-
-function isBoardContainerKind(value: string): value is BoardContainerKind {
-  return value === "folder" || value === "runbook";
 }

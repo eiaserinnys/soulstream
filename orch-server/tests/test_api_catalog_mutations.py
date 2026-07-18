@@ -186,14 +186,14 @@ class TestBoardItems:
                 "metadata": {},
             },
             {
-                "id": "session:runbook-session",
+                "id": "session:task-session",
                 "folderId": "f1",
-                "containerKind": "runbook",
+                "containerKind": "task",
                 "containerId": "rb1",
                 "membershipKind": "primary",
-                "sourceRunbookItemId": "item-1",
+                "sourceTaskItemId": "item-1",
                 "itemType": "session",
-                "itemId": "runbook-session",
+                "itemId": "task-session",
                 "x": 120,
                 "y": 160,
                 "metadata": {},
@@ -214,14 +214,14 @@ class TestBoardItems:
                 "metadata": {},
             },
             {
-                "id": "session:runbook-session",
+                "id": "session:task-session",
                 "folderId": "f1",
-                "containerKind": "runbook",
+                "containerKind": "task",
                 "containerId": "rb1",
                 "membershipKind": "primary",
-                "sourceRunbookItemId": "item-1",
+                "sourceTaskItemId": "item-1",
                 "itemType": "session",
-                "itemId": "runbook-session",
+                "itemId": "task-session",
                 "x": 120,
                 "y": 160,
                 "metadata": {},
@@ -229,14 +229,14 @@ class TestBoardItems:
         ]
         mock_catalog_service.list_board_items.assert_called_once_with(folder_id="f1")
 
-    async def test_list_board_items_scoped_to_runbook_container(self, client, mock_catalog_service):
+    async def test_list_board_items_scoped_to_task_container(self, client, mock_catalog_service):
         mock_catalog_service.get_catalog.return_value = {
             "folders": [{"id": "f1", "name": "Folder", "sortOrder": 0}],
             "sessions": {},
             "boardItems": [{
-                "id": "runbook:rb1",
+                "id": "task:rb1",
                 "folderId": "f1",
-                "itemType": "runbook",
+                "itemType": "task",
                 "itemId": "rb1",
                 "x": 0,
                 "y": 0,
@@ -246,7 +246,7 @@ class TestBoardItems:
         mock_catalog_service.list_board_items.return_value = [{
             "id": "markdown:d1",
             "folderId": "f1",
-            "containerKind": "runbook",
+            "containerKind": "task",
             "containerId": "rb1",
             "itemType": "markdown",
             "itemId": "d1",
@@ -255,12 +255,12 @@ class TestBoardItems:
             "metadata": {},
         }]
 
-        resp = await client.get("/api/board-items?container_kind=runbook&container_id=rb1")
+        resp = await client.get("/api/board-items?container_kind=task&container_id=rb1")
 
         assert resp.status_code == 200
-        assert resp.json()["boardItems"][0]["containerKind"] == "runbook"
+        assert resp.json()["boardItems"][0]["containerKind"] == "task"
         mock_catalog_service.list_board_items.assert_called_once_with(
-            container_kind="runbook",
+            container_kind="task",
             container_id="rb1",
         )
 
@@ -317,13 +317,13 @@ class TestBoardItems:
                     "metadata": {"title": "Design note"},
                 },
                 {
-                    "id": "runbook:rb-1",
+                    "id": "task:rb-1",
                     "folderId": "root",
-                    "itemType": "runbook",
+                    "itemType": "task",
                     "itemId": "rb-1",
                     "x": 680,
                     "y": 80,
-                    "metadata": {"title": "Deploy Runbook"},
+                    "metadata": {"title": "Deploy Task"},
                 },
             ],
         }
@@ -332,7 +332,7 @@ class TestBoardItems:
             "boardItem": {
                 "id": "markdown:doc-a",
                 "folderId": "root",
-                "containerKind": "runbook",
+                "containerKind": "task",
                 "containerId": "rb-1",
                 "itemType": "markdown",
                 "itemId": "doc-a",
@@ -350,7 +350,7 @@ class TestBoardItems:
             resp = await client.patch(
                 "/api/board-items/markdown:doc-a/container",
                 json={
-                    "container": {"kind": "runbook", "id": "rb-1"},
+                    "container": {"kind": "task", "id": "rb-1"},
                     "x": 360,
                     "y": 80,
                     "idempotencyKey": "move-1",
@@ -367,7 +367,7 @@ class TestBoardItems:
         )
         assert called_kwargs["headers"]["authorization"] == f"Bearer {TEST_AUTH_TOKEN}"
         assert called_kwargs["json"] == {
-            "container": {"kind": "runbook", "id": "rb-1"},
+            "container": {"kind": "task", "id": "rb-1"},
             "x": 360.0,
             "y": 80.0,
             "idempotencyKey": "move-1",
@@ -408,7 +408,7 @@ class TestBoardYjsHostProxy:
         host = await _register_board_yjs_node(node_manager, "board-host", 4105, is_host=True)
         mock_resp = _make_response(200, {"ok": True})
         payload = {
-            "container": {"containerKind": "runbook", "containerId": "rb-1"},
+            "container": {"containerKind": "task", "containerId": "rb-1"},
             "boardItemId": "markdown:doc-1",
             "x": 12,
             "y": 34,
@@ -451,16 +451,16 @@ class TestBoardYjsHostProxy:
         assert resp.json()["detail"] == "Board Yjs host node is not connected"
 
 
-class TestRunbooks:
-    """Runbook read API tests."""
+class TestTasks:
+    """Task read API tests."""
 
-    async def test_get_runbook_my_turn_overview(self, client, mock_db, mock_catalog_service):
+    async def test_get_task_my_turn_overview(self, client, mock_db, mock_catalog_service):
         overview = {
             "my_turn_items": [
                 {
-                    "runbook_id": "rb-1",
-                    "runbook_title": "Launch",
-                    "board_item_id": "runbook:rb-1",
+                    "task_id": "rb-1",
+                    "task_title": "Launch",
+                    "board_item_id": "task:rb-1",
                     "folder_id": "f1",
                     "section_id": "sec-1",
                     "section_title": "Release",
@@ -475,23 +475,23 @@ class TestRunbooks:
                     "effective_assignee_user_id": None,
                 }
             ],
-            "runbooks": [],
+            "tasks": [],
         }
-        mock_db.get_runbook_overview.return_value = overview
+        mock_db.get_task_overview.return_value = overview
 
-        resp = await client.get("/api/runbooks/my-turn")
+        resp = await client.get("/api/tasks/my-turn")
 
         assert resp.status_code == 200
         assert resp.json() == overview
-        mock_db.get_runbook_overview.assert_called_once_with(user_id=None, limit=100)
-        mock_db.get_runbook_snapshot.assert_not_called()
+        mock_db.get_task_overview.assert_called_once_with(user_id=None, limit=100)
+        mock_db.get_task_snapshot.assert_not_called()
         mock_catalog_service.list_folders.assert_called_once()
 
-    async def test_get_runbook_snapshot(self, client, mock_db, mock_catalog_service):
+    async def test_get_task_snapshot(self, client, mock_db, mock_catalog_service):
         snapshot = {
-            "runbook": {
+            "task": {
                 "id": "rb-1",
-                "board_item_id": "runbook:rb-1",
+                "board_item_id": "task:rb-1",
                 "folder_id": "f1",
                 "title": "Launch",
                 "archived": False,
@@ -504,24 +504,24 @@ class TestRunbooks:
             "sections": [],
             "items": [],
         }
-        mock_db.get_runbook_snapshot.return_value = snapshot
+        mock_db.get_task_snapshot.return_value = snapshot
 
-        resp = await client.get("/api/runbooks/rb-1")
+        resp = await client.get("/api/tasks/rb-1")
 
         assert resp.status_code == 200
         assert resp.json() == snapshot
-        mock_db.get_runbook_snapshot.assert_called_once_with("rb-1")
+        mock_db.get_task_snapshot.assert_called_once_with("rb-1")
         mock_catalog_service.list_folders.assert_called_once()
 
-    async def test_get_runbook_snapshot_404(self, client, mock_db):
-        mock_db.get_runbook_snapshot.return_value = None
+    async def test_get_task_snapshot_404(self, client, mock_db):
+        mock_db.get_task_snapshot.return_value = None
 
-        resp = await client.get("/api/runbooks/missing")
+        resp = await client.get("/api/tasks/missing")
 
         assert resp.status_code == 404
-        assert resp.json()["detail"] == "Runbook not found"
+        assert resp.json()["detail"] == "Task not found"
 
-    async def test_proxy_runbook_item_status_to_owner_node_with_auth_headers(
+    async def test_proxy_task_item_status_to_owner_node_with_auth_headers(
         self,
         client,
         mock_db,
@@ -534,16 +534,16 @@ class TestRunbooks:
         node = await node_manager.register_node(
             ws,
             {
-                "node_id": "node-runbook",
+                "node_id": "node-task",
                 "host": "localhost",
                 "port": 4105,
                 "agents": [],
             },
         )
         snapshot = {
-            "runbook": {
+            "task": {
                 "id": "rb-1",
-                "board_item_id": "runbook:rb-1",
+                "board_item_id": "task:rb-1",
                 "folder_id": "f1",
                 "title": "Launch",
                 "archived": False,
@@ -556,7 +556,7 @@ class TestRunbooks:
             "sections": [],
             "items": [{"id": "item-1"}],
         }
-        mock_db.get_runbook_snapshot.return_value = snapshot
+        mock_db.get_task_snapshot.return_value = snapshot
         mock_db.get_session.return_value = {
             "session_id": "sess-actor",
             "node_id": node.node_id,
@@ -569,11 +569,11 @@ class TestRunbooks:
             mock_client_cls.return_value.__aenter__.return_value = mock_client
 
             resp = await client.post(
-                "/api/runbooks/rb-1/items/item-1/status",
+                "/api/tasks/rb-1/items/item-1/status",
                 json={
                     "status": "review",
                     "expectedVersion": 1,
-                    "idempotencyKey": "runbook:rb-1:item:item-1:status:review:v1:test",
+                    "idempotencyKey": "task:rb-1:item:item-1:status:review:v1:test",
                 },
             )
 
@@ -582,17 +582,17 @@ class TestRunbooks:
         called_url, called_kwargs = mock_client.post.call_args
         assert called_url[0] == (
             f"http://{node.host}:{node.port}"
-            "/api/runbooks/rb-1/items/item-1/status"
+            "/api/tasks/rb-1/items/item-1/status"
         )
         assert called_kwargs["headers"]["authorization"] == f"Bearer {TEST_AUTH_TOKEN}"
         assert called_kwargs["json"] == {
             "status": "review",
             "expectedVersion": 1,
-            "idempotencyKey": "runbook:rb-1:item:item-1:status:review:v1:test",
+            "idempotencyKey": "task:rb-1:item:item-1:status:review:v1:test",
         }
         mock_catalog_service.list_folders.assert_called()
 
-    async def test_proxy_runbook_item_status_falls_back_to_connected_node_when_actor_session_missing(
+    async def test_proxy_task_item_status_falls_back_to_connected_node_when_actor_session_missing(
         self,
         client,
         mock_db,
@@ -604,16 +604,16 @@ class TestRunbooks:
         node = await node_manager.register_node(
             ws,
             {
-                "node_id": "node-runbook",
+                "node_id": "node-task",
                 "host": "localhost",
                 "port": 4105,
                 "agents": [],
             },
         )
         snapshot = {
-            "runbook": {
+            "task": {
                 "id": "rb-1",
-                "board_item_id": "runbook:rb-1",
+                "board_item_id": "task:rb-1",
                 "folder_id": "f1",
                 "title": "Launch",
                 "archived": False,
@@ -626,7 +626,7 @@ class TestRunbooks:
             "sections": [],
             "items": [{"id": "item-1"}],
         }
-        mock_db.get_runbook_snapshot.return_value = snapshot
+        mock_db.get_task_snapshot.return_value = snapshot
         mock_db.get_session.return_value = None
         mock_resp = _make_response(200, {"ok": True, "snapshot": snapshot})
 
@@ -636,11 +636,11 @@ class TestRunbooks:
             mock_client_cls.return_value.__aenter__.return_value = mock_client
 
             resp = await client.post(
-                "/api/runbooks/rb-1/items/item-1/status",
+                "/api/tasks/rb-1/items/item-1/status",
                 json={
                     "status": "completed",
                     "expectedVersion": 1,
-                    "idempotencyKey": "runbook:rb-1:item:item-1:status:completed:v1:test",
+                    "idempotencyKey": "task:rb-1:item:item-1:status:completed:v1:test",
                 },
             )
 
@@ -649,11 +649,11 @@ class TestRunbooks:
         called_url, called_kwargs = mock_client.post.call_args
         assert called_url[0] == (
             f"http://{node.host}:{node.port}"
-            "/api/runbooks/rb-1/items/item-1/status"
+            "/api/tasks/rb-1/items/item-1/status"
         )
         assert called_kwargs["json"]["status"] == "completed"
 
-    async def test_proxy_runbook_status_to_owner_node_with_auth_headers(
+    async def test_proxy_task_status_to_owner_node_with_auth_headers(
         self,
         client,
         mock_db,
@@ -666,16 +666,16 @@ class TestRunbooks:
         node = await node_manager.register_node(
             ws,
             {
-                "node_id": "node-runbook",
+                "node_id": "node-task",
                 "host": "localhost",
                 "port": 4105,
                 "agents": [],
             },
         )
         snapshot = {
-            "runbook": {
+            "task": {
                 "id": "rb-1",
-                "board_item_id": "runbook:rb-1",
+                "board_item_id": "task:rb-1",
                 "folder_id": "f1",
                 "title": "Launch",
                 "status": "open",
@@ -690,7 +690,7 @@ class TestRunbooks:
             "sections": [],
             "items": [],
         }
-        mock_db.get_runbook_snapshot.return_value = snapshot
+        mock_db.get_task_snapshot.return_value = snapshot
         mock_db.get_session.return_value = {
             "session_id": "sess-actor",
             "node_id": node.node_id,
@@ -703,11 +703,11 @@ class TestRunbooks:
             mock_client_cls.return_value.__aenter__.return_value = mock_client
 
             resp = await client.post(
-                "/api/runbooks/rb-1/status",
+                "/api/tasks/rb-1/status",
                 json={
                     "status": "completed",
                     "expectedVersion": 1,
-                    "idempotencyKey": "runbook:rb-1:status:completed:v1:test",
+                    "idempotencyKey": "task:rb-1:status:completed:v1:test",
                 },
             )
 
@@ -716,13 +716,13 @@ class TestRunbooks:
         called_url, called_kwargs = mock_client.post.call_args
         assert called_url[0] == (
             f"http://{node.host}:{node.port}"
-            "/api/runbooks/rb-1/status"
+            "/api/tasks/rb-1/status"
         )
         assert called_kwargs["headers"]["authorization"] == f"Bearer {TEST_AUTH_TOKEN}"
         assert called_kwargs["json"] == {
             "status": "completed",
             "expectedVersion": 1,
-            "idempotencyKey": "runbook:rb-1:status:completed:v1:test",
+            "idempotencyKey": "task:rb-1:status:completed:v1:test",
         }
         mock_catalog_service.list_folders.assert_called()
 
@@ -746,14 +746,14 @@ class TestBoardAssets:
             byte_size=123,
         )
 
-    async def test_init_runbook_board_asset_uses_container_route(self, client, mock_catalog_service):
+    async def test_init_task_board_asset_uses_container_route(self, client, mock_catalog_service):
         mock_catalog_service.get_catalog.return_value = {
             "folders": [{"id": "f1", "name": "Folder", "sortOrder": 0}],
             "sessions": {},
             "boardItems": [{
-                "id": "runbook:rb1",
+                "id": "task:rb1",
                 "folderId": "f1",
-                "itemType": "runbook",
+                "itemType": "task",
                 "itemId": "rb1",
                 "x": 0,
                 "y": 0,
@@ -762,7 +762,7 @@ class TestBoardAssets:
         }
 
         resp = await client.post(
-            "/api/board-containers/runbook/rb1/assets/init",
+            "/api/board-containers/task/rb1/assets/init",
             json={"name": "photo.png", "mime": "image/png", "size": 123},
         )
 
@@ -772,7 +772,7 @@ class TestBoardAssets:
             name="photo.png",
             mime_type="image/png",
             byte_size=123,
-            container_kind="runbook",
+            container_kind="task",
             container_id="rb1",
         )
 
@@ -830,14 +830,14 @@ class TestBoardAssets:
             ],
         )
 
-    async def test_commit_runbook_board_asset_uses_container_route(self, client, mock_catalog_service):
+    async def test_commit_task_board_asset_uses_container_route(self, client, mock_catalog_service):
         mock_catalog_service.get_catalog.return_value = {
             "folders": [{"id": "f1", "name": "Folder", "sortOrder": 0}],
             "sessions": {},
             "boardItems": [{
-                "id": "runbook:rb1",
+                "id": "task:rb1",
                 "folderId": "f1",
-                "itemType": "runbook",
+                "itemType": "task",
                 "itemId": "rb1",
                 "x": 0,
                 "y": 0,
@@ -846,7 +846,7 @@ class TestBoardAssets:
         }
 
         resp = await client.post(
-            "/api/board-containers/runbook/rb1/assets/asset-1/commit",
+            "/api/board-containers/task/rb1/assets/asset-1/commit",
             json={"x": 41, "y": 79, "parts": []},
         )
 
@@ -860,7 +860,7 @@ class TestBoardAssets:
             height=None,
             duration_seconds=None,
             parts=[],
-            container_kind="runbook",
+            container_kind="task",
             container_id="rb1",
         )
 
@@ -913,7 +913,7 @@ class TestMarkdownDocuments:
         }
         mock_catalog_service.create_markdown_document.assert_not_called()
 
-    async def test_create_runbook_markdown_document_proxies_to_board_yjs_host_node(
+    async def test_create_task_markdown_document_proxies_to_board_yjs_host_node(
         self,
         client,
         mock_catalog_service,
@@ -924,9 +924,9 @@ class TestMarkdownDocuments:
             "folders": [{"id": "f1", "name": "Folder", "sortOrder": 0}],
             "sessions": {},
             "boardItems": [{
-                "id": "runbook:rb1",
+                "id": "task:rb1",
                 "folderId": "f1",
-                "itemType": "runbook",
+                "itemType": "task",
                 "itemId": "rb1",
                 "x": 0,
                 "y": 0,
@@ -946,7 +946,7 @@ class TestMarkdownDocuments:
             resp = await client.post(
                 "/api/markdown-documents",
                 json={
-                    "container": {"kind": "runbook", "id": "rb1"},
+                    "container": {"kind": "task", "id": "rb1"},
                     "title": "Note",
                     "body": "Body",
                     "x": 40,
@@ -959,7 +959,7 @@ class TestMarkdownDocuments:
         assert called_args == ("POST", f"http://{host.host}:{host.port}/api/markdown-documents")
         assert called_kwargs["json"] == {
             "folderId": "f1",
-            "container": {"kind": "runbook", "id": "rb1"},
+            "container": {"kind": "task", "id": "rb1"},
             "title": "Note",
             "body": "Body",
             "x": 40.0,

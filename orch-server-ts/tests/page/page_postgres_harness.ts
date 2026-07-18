@@ -242,7 +242,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       CHECK (actor_kind <> 'agent' OR actor_session_id IS NOT NULL),
       CHECK (actor_kind <> 'user' OR actor_user_id IS NOT NULL)
     );
-    CREATE TABLE checklist_runbook_projection_outbox (
+    CREATE TABLE checklist_task_projection_outbox (
       block_id TEXT PRIMARY KEY,
       page_id TEXT NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
       source_hash TEXT NOT NULL,
@@ -271,8 +271,8 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       ON pages (title_key text_pattern_ops, id) WHERE archived = FALSE;
     CREATE INDEX idx_blocks_text_prefix
       ON blocks ((lower(text_plain)) text_pattern_ops, id);
-    CREATE INDEX idx_checklist_runbook_projection_due
-      ON checklist_runbook_projection_outbox(next_retry_at, updated_at, block_id)
+    CREATE INDEX idx_checklist_task_projection_due
+      ON checklist_task_projection_outbox(next_retry_at, updated_at, block_id)
       WHERE processed_hash IS DISTINCT FROM source_hash;
     CREATE TABLE block_links (
       id TEXT PRIMARY KEY,
@@ -321,7 +321,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       container_kind TEXT NOT NULL DEFAULT 'folder',
       container_id TEXT NOT NULL,
       membership_kind TEXT NOT NULL DEFAULT 'primary',
-      source_runbook_item_id TEXT,
+      source_task_item_id TEXT,
       item_type TEXT NOT NULL,
       item_id TEXT NOT NULL,
       x DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -339,7 +339,7 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (container_kind, container_id)
     );
-    CREATE TABLE runbooks (
+    CREATE TABLE tasks (
       id TEXT PRIMARY KEY,
       board_item_id TEXT NOT NULL UNIQUE REFERENCES board_items(id) ON DELETE CASCADE,
       task_page_id TEXT UNIQUE REFERENCES pages(id) ON DELETE RESTRICT,
@@ -352,9 +352,9 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-    CREATE TABLE runbook_sections (
+    CREATE TABLE task_sections (
       id TEXT PRIMARY KEY,
-      runbook_id TEXT NOT NULL REFERENCES runbooks(id) ON DELETE CASCADE,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
       position_key TEXT NOT NULL,
       assignee_agent_id TEXT,
       assignee_user_id TEXT,
@@ -362,9 +362,9 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       archived BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-    CREATE TABLE runbook_items (
+    CREATE TABLE task_items (
       id TEXT PRIMARY KEY,
-      section_id TEXT NOT NULL REFERENCES runbook_sections(id) ON DELETE CASCADE,
+      section_id TEXT NOT NULL REFERENCES task_sections(id) ON DELETE CASCADE,
       position_key TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
       assignee_agent_id TEXT,
@@ -373,9 +373,9 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       archived BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
-    CREATE TABLE runbook_operations (
+    CREATE TABLE task_operations (
       id TEXT PRIMARY KEY,
-      runbook_id TEXT REFERENCES runbooks(id) ON DELETE CASCADE,
+      task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
       target_kind TEXT NOT NULL,
       target_id TEXT NOT NULL,
       operation_type TEXT NOT NULL,

@@ -31,7 +31,7 @@ export type CustomViewRecord = {
 
 export type MarkdownDocumentAccess = BoardAccess;
 
-export type MarkdownDocumentContainerKind = "folder" | "runbook";
+export type MarkdownDocumentContainerKind = "folder" | "task";
 
 export type MarkdownDocumentContainerTarget = {
   kind: MarkdownDocumentContainerKind;
@@ -368,7 +368,7 @@ function parseContainerBody(
   const kindValue = container.kind;
   const idValue = container.id;
   if (
-    (kindValue !== "folder" && kindValue !== "runbook") ||
+    (kindValue !== "folder" && kindValue !== "task") ||
     typeof idValue !== "string" ||
     idValue.length === 0
   ) {

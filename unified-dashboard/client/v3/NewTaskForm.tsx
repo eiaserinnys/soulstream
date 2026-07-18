@@ -88,7 +88,7 @@ export function NewTaskForm({
       <DialogPopup className="max-w-xl">
         <DialogHeader>
           <DialogTitle>새 업무</DialogTitle>
-          <DialogDescription>프로젝트에 업무 페이지와 런북을 함께 만듭니다.</DialogDescription>
+          <DialogDescription>프로젝트에 업무 페이지와 업무를 함께 만듭니다.</DialogDescription>
         </DialogHeader>
         <DialogPanel>
           <div className="v3-new-task-dialog">

@@ -434,8 +434,8 @@ function requireBoardItem(row: Record<string, unknown> | undefined): BoardItemRe
     containerId: stringValue(row?.container_id ?? row?.containerId) ?? folderId,
     membershipKind:
       stringValue(row?.membership_kind ?? row?.membershipKind) ?? "primary",
-    sourceRunbookItemId: stringOrNull(
-      row?.source_runbook_item_id ?? row?.sourceRunbookItemId,
+    sourceTaskItemId: stringOrNull(
+      row?.source_task_item_id ?? row?.sourceTaskItemId,
     ),
     itemType,
     itemId,

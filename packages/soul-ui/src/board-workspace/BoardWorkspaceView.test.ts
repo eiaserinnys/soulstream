@@ -9,12 +9,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogState, SessionSummary } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { useRunbookStore } from "../stores/runbook-store";
+import { useTaskStore } from "../stores/task-store";
 import { BoardWorkspaceView, resolveEffectiveBoardCatalog } from "./BoardWorkspaceView";
 import { FolderWorkspaceView } from "./FolderWorkspaceView";
 import {
-  BOARD_RUNBOOK_FIXED_CARD_HEIGHT,
-  BOARD_RUNBOOK_FIXED_CARD_WIDTH,
+  BOARD_TASK_FIXED_CARD_HEIGHT,
+  BOARD_TASK_FIXED_CARD_WIDTH,
 } from "./board-workspace-items";
 import { writeFolderWorkspaceViewMode } from "./folder-workspace-view-mode";
 
@@ -277,16 +277,16 @@ function findButtonByText(scope: ParentNode, text: string): HTMLButtonElement | 
     .find((button) => button.textContent?.trim() === text);
 }
 
-function seedRunbookProjection(runbookId = "rb-1") {
-  useRunbookStore.setState({
+function seedTaskProjection(taskId = "rb-1") {
+  useTaskStore.setState({
     byId: {
-      [runbookId]: {
+      [taskId]: {
         snapshot: {
-          runbook: {
-            id: runbookId,
-            board_item_id: `runbook:${runbookId}`,
+          task: {
+            id: taskId,
+            board_item_id: `task:${taskId}`,
             folder_id: "root",
-            title: "Deploy Runbook",
+            title: "Deploy Task",
             status: "open",
             archived: false,
             version: 3,
@@ -298,7 +298,7 @@ function seedRunbookProjection(runbookId = "rb-1") {
           sections: [
             {
               id: "sec-1",
-              runbook_id: runbookId,
+              task_id: taskId,
               position_key: "a",
               title: "Checklist",
               archived: false,
@@ -410,7 +410,7 @@ describe("BoardWorkspaceView", () => {
     container?.remove();
     root = undefined;
     container = undefined;
-    useRunbookStore.getState().reset();
+    useTaskStore.getState().reset();
     globalThis.IntersectionObserver = originalIntersectionObserver as typeof IntersectionObserver;
     window.matchMedia = originalMatchMedia as typeof window.matchMedia;
     vi.restoreAllMocks();
@@ -430,34 +430,34 @@ describe("BoardWorkspaceView", () => {
     expect(result?.boardItems).toHaveLength(3);
   });
 
-  it("scopes runbook boards to catalog items for that container before Yjs has synced", () => {
+  it("scopes task boards to catalog items for that container before Yjs has synced", () => {
     const result = resolveEffectiveBoardCatalog({
       catalog: {
         ...catalog,
         boardItems: [
           ...(catalog.boardItems ?? []),
           {
-            id: "session:runbook-parent",
+            id: "session:task-parent",
             folderId: "root",
-            containerKind: "runbook",
+            containerKind: "task",
             containerId: "rb-1",
             membershipKind: "primary",
             itemType: "session",
-            itemId: "runbook-parent",
+            itemId: "task-parent",
             x: 0,
             y: 0,
           },
         ],
       },
       selectedFolderId: "root",
-      boardContainer: { kind: "runbook", id: "rb-1" },
+      boardContainer: { kind: "task", id: "rb-1" },
       yjsBoardItemsForSelectedFolder: [],
       isYjsLoading: true,
       hasYjsSynced: false,
       assetSignedUrls: {},
     });
 
-    expect(result?.boardItems?.map((item) => item.id)).toEqual(["session:runbook-parent"]);
+    expect(result?.boardItems?.map((item) => item.id)).toEqual(["session:task-parent"]);
   });
 
   it("uses Yjs board items after the document has synced", () => {
@@ -630,16 +630,16 @@ describe("BoardWorkspaceView", () => {
     expect(status?.title).toContain("websocket is unavailable");
   });
 
-  it("renders runbook board header and fixed checklist card from activeBoardContainer", () => {
-    useRunbookStore.setState({
+  it("renders task board header and fixed checklist card from activeBoardContainer", () => {
+    useTaskStore.setState({
       byId: {
         "rb-1": {
           snapshot: {
-            runbook: {
+            task: {
               id: "rb-1",
-              board_item_id: "runbook:rb-1",
+              board_item_id: "task:rb-1",
               folder_id: "root",
-              title: "Deploy Runbook",
+              title: "Deploy Task",
               status: "open",
               archived: false,
               version: 3,
@@ -651,7 +651,7 @@ describe("BoardWorkspaceView", () => {
             sections: [
               {
                 id: "sec-1",
-                runbook_id: "rb-1",
+                task_id: "rb-1",
                 position_key: "a",
                 title: "Checklist",
                 archived: false,
@@ -736,49 +736,49 @@ describe("BoardWorkspaceView", () => {
     }));
 
     flushSync(() => {
-      useDashboardStore.getState().openRunbookBoard("rb-1", "root");
+      useDashboardStore.getState().openTaskBoard("rb-1", "root");
     });
 
-    expect(container.textContent).toContain("Deploy Runbook");
-    expect(container.textContent).toContain("런북 보드");
+    expect(container.textContent).toContain("Deploy Task");
+    expect(container.textContent).toContain("업무 보드");
     expect(container.textContent).toContain("1/2");
-    expect(container.querySelector('[data-testid="runbook-board-fixed-card"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="runbook-card"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="runbook-card-title"]')?.textContent).toBe("Deploy Runbook");
-    expect(container.querySelector('[data-testid="runbook-card-progress"]')?.textContent).toBe("1/2");
-    expect(container.textContent).not.toContain("아직 이 런북 보드에 배치된 항목이 없음");
+    expect(container.querySelector('[data-testid="task-board-fixed-card"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="task-card"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="task-card-title"]')?.textContent).toBe("Deploy Task");
+    expect(container.querySelector('[data-testid="task-card-progress"]')?.textContent).toBe("1/2");
+    expect(container.textContent).not.toContain("아직 이 업무 보드에 배치된 항목이 없음");
     expect(findButtonByText(container, "Folder")).toBeUndefined();
     expect(findButtonByText(container, "New")).not.toBeUndefined();
   });
 
-  it("arranges runbook board cards below the fixed checklist through the Y.Doc path", async () => {
-    seedRunbookProjection();
+  it("arranges task board cards below the fixed checklist through the Y.Doc path", async () => {
+    seedTaskProjection();
     const onUpdateBoardItemPosition = vi.fn().mockResolvedValue(undefined);
     ({ container, root } = renderBoard({ onUpdateBoardItemPosition }, {
       catalog: {
         ...catalog,
         boardItems: [
           {
-            id: "markdown:runbook-doc",
+            id: "markdown:task-doc",
             folderId: "root",
-            containerKind: "runbook",
+            containerKind: "task",
             containerId: "rb-1",
             itemType: "markdown",
-            itemId: "runbook-doc",
+            itemId: "task-doc",
             x: 0,
             y: 0,
-            metadata: { title: "Runbook note" },
+            metadata: { title: "Task note" },
           },
         ],
       },
     }));
 
     flushSync(() => {
-      useDashboardStore.getState().openRunbookBoard("rb-1", "root");
+      useDashboardStore.getState().openTaskBoard("rb-1", "root");
     });
-    const fixedCard = container.querySelector<HTMLElement>('[data-testid="runbook-board-fixed-card"]');
-    expect(fixedCard?.style.width).toBe(`${BOARD_RUNBOOK_FIXED_CARD_WIDTH}px`);
-    expect(fixedCard?.style.height).toBe(`${BOARD_RUNBOOK_FIXED_CARD_HEIGHT}px`);
+    const fixedCard = container.querySelector<HTMLElement>('[data-testid="task-board-fixed-card"]');
+    expect(fixedCard?.style.width).toBe(`${BOARD_TASK_FIXED_CARD_WIDTH}px`);
+    expect(fixedCard?.style.height).toBe(`${BOARD_TASK_FIXED_CARD_HEIGHT}px`);
 
     const button = container.querySelector<HTMLButtonElement>('[data-testid="board-declutter-button"]');
     expect(button?.disabled).toBe(false);
@@ -790,19 +790,19 @@ describe("BoardWorkspaceView", () => {
     const byId = new Map(
       (useDashboardStore.getState().catalog?.boardItems ?? []).map((item) => [item.id, item]),
     );
-    expect(byId.get("markdown:runbook-doc")!.y).toBeGreaterThanOrEqual(BOARD_RUNBOOK_FIXED_CARD_HEIGHT + 20);
+    expect(byId.get("markdown:task-doc")!.y).toBeGreaterThanOrEqual(BOARD_TASK_FIXED_CARD_HEIGHT + 20);
     expect(onUpdateBoardItemPosition).not.toHaveBeenCalled();
   });
 
-  it("opens new sessions from a runbook board with runbook container defaults", () => {
-    seedRunbookProjection();
+  it("opens new sessions from a task board with task container defaults", () => {
+    seedTaskProjection();
     ({ container, root } = renderBoard({}, {
       catalog: { ...catalog, boardItems: [] },
       sessions: [],
     }));
 
     flushSync(() => {
-      useDashboardStore.getState().openRunbookBoard("rb-1", "root");
+      useDashboardStore.getState().openTaskBoard("rb-1", "root");
     });
 
     const newButton = findButtonByText(container, "New");
@@ -819,31 +819,31 @@ describe("BoardWorkspaceView", () => {
     expect(useDashboardStore.getState().isNewSessionModalOpen).toBe(true);
     expect(useDashboardStore.getState().newSessionDefaults).toMatchObject({
       folderId: "root",
-      container: { kind: "runbook", id: "rb-1" },
+      container: { kind: "task", id: "rb-1" },
       boardPosition: { x: 300, y: 240 },
     });
   });
 
-  it("uploads dropped files from a runbook board with the runbook container target", async () => {
-    seedRunbookProjection();
+  it("uploads dropped files from a task board with the task container target", async () => {
+    seedTaskProjection();
     const onUploadBoardAsset = vi.fn(async (input) => ({
-      asset: { id: "asset-runbook" },
+      asset: { id: "asset-task" },
       boardItem: {
-        id: "asset:asset-runbook",
+        id: "asset:asset-task",
         folderId: input.folderId,
-        containerKind: "runbook" as const,
+        containerKind: "task" as const,
         containerId: "rb-1",
         itemType: "asset" as const,
-        itemId: "asset-runbook",
+        itemId: "asset-task",
         x: input.x,
         y: input.y,
         metadata: {
-          assetId: "asset-runbook",
-          storageKey: "containers/runbook/rb-1/assets/asset-runbook/report.pdf",
+          assetId: "asset-task",
+          storageKey: "containers/task/rb-1/assets/asset-task/report.pdf",
           originalName: input.file.name,
           mimeType: input.file.type,
           byteSize: input.file.size,
-          signedUrl: "https://r2.example/runbook-report.pdf",
+          signedUrl: "https://r2.example/task-report.pdf",
         },
       },
     }));
@@ -853,7 +853,7 @@ describe("BoardWorkspaceView", () => {
     }));
 
     flushSync(() => {
-      useDashboardStore.getState().openRunbookBoard("rb-1", "root");
+      useDashboardStore.getState().openTaskBoard("rb-1", "root");
     });
     const scroller = container.querySelector<HTMLElement>('[data-testid="board-workspace-scroll"]');
     expect(scroller).not.toBeNull();
@@ -869,7 +869,7 @@ describe("BoardWorkspaceView", () => {
     expect(onUploadBoardAsset).toHaveBeenCalledTimes(1);
     expect(onUploadBoardAsset.mock.calls[0]?.[0]).toMatchObject({
       folderId: "root",
-      container: { kind: "runbook", id: "rb-1" },
+      container: { kind: "task", id: "rb-1" },
       file,
       x: 2000,
       y: 2000,
@@ -1471,14 +1471,14 @@ describe("BoardWorkspaceView", () => {
     expect(document.body.textContent).toContain("이 세션을 이어서 시작하기");
   });
 
-  it("moves an existing markdown tile into a runbook board from the context menu", async () => {
-    seedRunbookProjection("rb-1");
+  it("moves an existing markdown tile into a task board from the context menu", async () => {
+    seedTaskProjection("rb-1");
     const onMoveBoardItemToContainer = vi.fn(async () => ({
       ok: true as const,
       boardItem: {
         id: "markdown:doc-a",
         folderId: "root",
-        containerKind: "runbook" as const,
+        containerKind: "task" as const,
         containerId: "rb-1",
         itemType: "markdown" as const,
         itemId: "doc-a",
@@ -1493,15 +1493,15 @@ describe("BoardWorkspaceView", () => {
         boardItems: [
           ...(catalog.boardItems ?? []),
           {
-            id: "runbook:rb-1",
+            id: "task:rb-1",
             folderId: "root",
             containerKind: "folder",
             containerId: "root",
-            itemType: "runbook",
+            itemType: "task",
             itemId: "rb-1",
             x: 680,
             y: 80,
-            metadata: { title: "Deploy Runbook" },
+            metadata: { title: "Deploy Task" },
           },
         ],
       },
@@ -1518,19 +1518,19 @@ describe("BoardWorkspaceView", () => {
       }));
     });
 
-    const moveAction = findButtonByText(document.body, "런북 보드로 이동...");
+    const moveAction = findButtonByText(document.body, "업무 보드로 이동...");
     expect(moveAction).not.toBeUndefined();
     flushSync(() => {
       moveAction!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await Promise.resolve();
 
-    const modal = document.body.querySelector<HTMLElement>("#board-runbook-move-target");
+    const modal = document.body.querySelector<HTMLElement>("#board-task-move-target");
     expect(modal).not.toBeNull();
-    const runbookTarget = findButtonByText(modal!, "Deploy Runbook");
-    expect(runbookTarget).not.toBeUndefined();
+    const taskTarget = findButtonByText(modal!, "Deploy Task");
+    expect(taskTarget).not.toBeUndefined();
     flushSync(() => {
-      runbookTarget!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      taskTarget!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     const submit = findButtonByText(document.body, "이동");
     expect(submit).not.toBeUndefined();
@@ -1542,14 +1542,14 @@ describe("BoardWorkspaceView", () => {
 
     expect(onMoveBoardItemToContainer).toHaveBeenCalledWith(expect.objectContaining({
       boardItemId: "markdown:doc-a",
-      container: { kind: "runbook", id: "rb-1" },
+      container: { kind: "task", id: "rb-1" },
       x: 360,
       y: 80,
     }));
     expect(useDashboardStore.getState().catalog?.boardItems?.find((item) => item.id === "markdown:doc-a")).toMatchObject({
       id: "markdown:doc-a",
       folderId: "root",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
       itemType: "markdown",
       itemId: "doc-a",

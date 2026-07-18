@@ -59,7 +59,7 @@ export interface CatalogBoardYjsPort {
     sessionId: string;
     x: number;
     y: number;
-    sourceRunbookItemId?: string | null;
+    sourceTaskItemId?: string | null;
   }): Promise<CatalogBoardItemRow>;
 }
 
@@ -194,7 +194,7 @@ export class CatalogBoardItemService {
             targetScope,
             targetContainer,
             position: snappedPosition,
-            sourceRunbookItemId: boardItem.sourceRunbookItemId ?? null,
+            sourceTaskItemId: boardItem.sourceTaskItemId ?? null,
           });
           await this.broadcastCatalog();
           return { boardItem: enrolled, enrolled: true };
@@ -344,7 +344,7 @@ export class CatalogBoardItemService {
       targetScope: params.targetScope,
       targetContainer: params.targetContainer,
       position: params.position,
-      sourceRunbookItemId: null,
+      sourceTaskItemId: null,
     });
   }
 
@@ -353,7 +353,7 @@ export class CatalogBoardItemService {
     targetScope: BoardYjsContainerScope;
     targetContainer: BoardYjsContainerRef;
     position?: { x: number; y: number };
-    sourceRunbookItemId: string | null;
+    sourceTaskItemId: string | null;
   }): Promise<CatalogBoardItemRow> {
     const [x, y] = params.position
       ? [params.position.x, params.position.y]
@@ -363,7 +363,7 @@ export class CatalogBoardItemService {
       folderId: params.targetScope.folderId,
       container: params.targetContainer,
       sessionId: params.sessionId,
-      sourceRunbookItemId: params.sourceRunbookItemId,
+      sourceTaskItemId: params.sourceTaskItemId,
       x,
       y,
     });
@@ -400,10 +400,10 @@ function isSourceYDocMissingError(err: unknown): boolean {
 
 function isMovableBoardItemType(
   itemType: CatalogBoardItemRow["itemType"],
-): itemType is Extract<CatalogBoardItemRow["itemType"], "session" | "markdown" | "asset" | "custom_view" | "runbook"> {
+): itemType is Extract<CatalogBoardItemRow["itemType"], "session" | "markdown" | "asset" | "custom_view" | "task"> {
   return itemType === "session" ||
     itemType === "markdown" ||
     itemType === "asset" ||
     itemType === "custom_view" ||
-    itemType === "runbook";
+    itemType === "task";
 }

@@ -30,20 +30,20 @@
       "operation": "upsert-session-board-item",
       "body": {
         "folderId": "folder-1",
-        "container": { "containerKind": "runbook", "containerId": "runbook-1" },
+        "container": { "containerKind": "task", "containerId": "task-1" },
         "sessionId": "session-1",
         "x": 30,
         "y": 40,
-        "sourceRunbookItemId": "item-1"
+        "sourceTaskItemId": "item-1"
       }
     },
     {
-      "operation": "upsert-runbook-board-item",
+      "operation": "upsert-task-board-item",
       "body": {
         "folderId": "folder-1",
-        "boardItemId": "runbook:runbook-1",
-        "runbookId": "runbook-1",
-        "title": "Runbook",
+        "boardItemId": "task:task-1",
+        "taskId": "task-1",
+        "title": "Task",
         "x": 50,
         "y": 60,
         "metadata": { "status": "open" }
@@ -65,20 +65,20 @@
       }
     },
     {
-      "operation": "remove-runbook-board-item",
-      "body": { "folderId": "folder-1", "boardItemId": "runbook:runbook-1" }
+      "operation": "remove-task-board-item",
+      "body": { "folderId": "folder-1", "boardItemId": "task:task-1" }
     },
     {
       "operation": "remove-board-item",
       "body": {
-        "container": { "containerKind": "runbook", "containerId": "runbook-1" },
+        "container": { "containerKind": "task", "containerId": "task-1" },
         "boardItemId": "session:session-1"
       }
     },
     {
       "operation": "update-board-item-position",
       "body": {
-        "container": { "containerKind": "runbook", "containerId": "runbook-1" },
+        "container": { "containerKind": "task", "containerId": "task-1" },
         "boardItemId": "session:session-1",
         "x": 90,
         "y": 100
@@ -93,7 +93,7 @@
           "containerKind": "folder",
           "containerId": "folder-1",
           "membershipKind": "primary",
-          "sourceRunbookItemId": null,
+          "sourceTaskItemId": null,
           "itemType": "session",
           "itemId": "session-1",
           "x": 30,
@@ -102,8 +102,8 @@
         },
         "targetScope": {
           "folderId": "folder-1",
-          "containerKind": "runbook",
-          "containerId": "runbook-1"
+          "containerKind": "task",
+          "containerId": "task-1"
         },
         "position": { "x": 110, "y": 120 }
       }

@@ -8,7 +8,7 @@ describe("resolveSessionWorkspace", () => {
     const fetchImplementation = vi.fn();
     const result = await resolveSessionWorkspace({
       session: session("session-a", "folder-a"),
-      boardItems: [boardItem("session-a", "runbook", "task-a")],
+      boardItems: [boardItem("session-a", "task", "task-a")],
       fetchImplementation: fetchImplementation as typeof globalThis.fetch,
     });
 
@@ -29,7 +29,7 @@ describe("resolveSessionWorkspace", () => {
   });
 
   it("performs one bounded folder lookup when the cached catalog cannot resolve the session", async () => {
-    const items = [boardItem("session-a", "runbook", "task-a")];
+    const items = [boardItem("session-a", "task", "task-a")];
     const fetchImplementation = vi.fn(async () => new Response(JSON.stringify({ boardItems: items }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -99,7 +99,7 @@ function session(agentSessionId: string, folderId: string | null): SessionSummar
 
 function boardItem(
   sessionId: string,
-  containerKind: "folder" | "runbook",
+  containerKind: "folder" | "task",
   containerId: string,
 ): CatalogBoardItem {
   return {

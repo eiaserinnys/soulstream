@@ -24,7 +24,7 @@ export function createBoardYjsPersistence(db: SessionDB): BoardYjsPersistence {
         const scope = await db.resolveBoardYjsContainerScope(container);
         if (!scope) return snapshot ?? null;
         if (snapshot) {
-          return await db.backfillRunbookBoardItemsIntoBoardYjsSnapshot(
+          return await db.backfillTaskBoardItemsIntoBoardYjsSnapshot(
             payload.documentName,
             scope,
             snapshot,

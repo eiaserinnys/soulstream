@@ -10,9 +10,9 @@ describe("decideSessionPageEnrollment", () => {
       expected: { kind: "explicit_page" },
     },
     {
-      name: "runbook container stays on its own board",
-      input: { hasPageAnchor: false, containerKind: "runbook", callerSource: "browser" },
-      expected: { kind: "excluded", reason: "runbook_container" },
+      name: "task container stays on its own board",
+      input: { hasPageAnchor: false, containerKind: "task", callerSource: "browser" },
+      expected: { kind: "excluded", reason: "task_container" },
     },
     {
       name: "browser speech enrolls in daily",

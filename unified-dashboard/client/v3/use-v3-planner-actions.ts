@@ -145,7 +145,7 @@ export function useV3PlannerActions({
     try {
       await moveBoardItemToContainer({
         boardItemId: `session:${sessionId}`,
-        container: { kind: "runbook", id: targetTask.runbookId },
+        container: { kind: "task", id: targetTask.taskId },
         idempotencyKey: `v3-run-move-${crypto.randomUUID()}`,
       });
       moveSessionInPlanner(sessionId, targetTask.page.id);

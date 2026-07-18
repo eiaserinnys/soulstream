@@ -41,23 +41,23 @@ describe("board-yjs-client", () => {
     expect(buildBoardYjsUrl({ kind: "folder", id: "f1" }, location)).toBe("wss://soul.example/yjs/f1");
   });
 
-  it("runbook 컨테이너는 container 문서명과 신규 websocket route를 사용한다", () => {
+  it("task 컨테이너는 container 문서명과 신규 websocket route를 사용한다", () => {
     const location = { protocol: "https:", host: "soul.example" } as Location;
 
-    expect(getBoardYjsDocumentName({ kind: "runbook", id: "rb-1" })).toBe("board:runbook:rb-1");
-    expect(buildBoardYjsUrl({ kind: "runbook", id: "rb-1" }, location)).toBe("wss://soul.example/yjs/runbook/rb-1");
+    expect(getBoardYjsDocumentName({ kind: "task", id: "rb-1" })).toBe("board:task:rb-1");
+    expect(buildBoardYjsUrl({ kind: "task", id: "rb-1" }, location)).toBe("wss://soul.example/yjs/task/rb-1");
   });
 
   it("container seed는 같은 folderId 안에서도 containerKind/containerId로 필터링한다", () => {
     const doc = new Y.Doc();
-    seedBoardYDocFromCatalog(doc, { kind: "runbook", id: "rb-1" }, {
+    seedBoardYDocFromCatalog(doc, { kind: "task", id: "rb-1" }, {
       folders: [],
       sessions: {},
       boardItems: [
         {
-          id: "runbook-session:visible",
+          id: "task-session:visible",
           folderId: "f1",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           itemType: "session",
           itemId: "visible",
@@ -77,11 +77,11 @@ describe("board-yjs-client", () => {
       ],
     });
 
-    expect(catalogBoardItemsFromYDoc({ kind: "runbook", id: "rb-1" }, doc, "f1")).toEqual([
+    expect(catalogBoardItemsFromYDoc({ kind: "task", id: "rb-1" }, doc, "f1")).toEqual([
       expect.objectContaining({
-        id: "runbook-session:visible",
+        id: "task-session:visible",
         folderId: "f1",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
       }),
     ]);
@@ -159,33 +159,33 @@ describe("board-yjs-client", () => {
     ]);
   });
 
-  it("runbook board item type과 metadata를 Yjs roundtrip으로 보존한다", () => {
+  it("task board item type과 metadata를 Yjs roundtrip으로 보존한다", () => {
     const doc = new Y.Doc();
     seedBoardYDocFromCatalog(doc, "folder-a", {
       folders: [],
       sessions: {},
       boardItems: [{
-        id: "runbook:rb-1",
+        id: "task:rb-1",
         folderId: "folder-a",
-        itemType: "runbook",
+        itemType: "task",
         itemId: "rb-1",
         x: 60,
         y: 80,
         metadata: {
-          title: "Launch runbook",
+          title: "Launch task",
         },
       }],
     });
 
     expect(catalogBoardItemsFromYDoc("folder-a", doc)).toEqual([
       expect.objectContaining({
-        id: "runbook:rb-1",
-        itemType: "runbook",
+        id: "task:rb-1",
+        itemType: "task",
         itemId: "rb-1",
         x: 60,
         y: 80,
         metadata: expect.objectContaining({
-          title: "Launch runbook",
+          title: "Launch task",
         }),
       }),
     ]);

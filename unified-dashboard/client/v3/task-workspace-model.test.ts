@@ -265,7 +265,7 @@ describe("description markdown boundary", () => {
     const blocks = [
       block("paragraph-root", "paragraph", "**목표**"),
       block("check-child", "checklist", "완료 조건", "paragraph-root", { checked: true }),
-      block("runbook", "runbook_ref", "", null, { runbookId: "rb-1", primary: true }),
+      block("task", "task_ref", "", null, { taskId: "rb-1", primary: true }),
       block("defaults", "session_defaults", "", null, { agentId: "roselin", scope: "run" }),
       block("atom", "atom_ref", "", null, { instance: "atom", nodeId: "node-a" }),
       block("guidance", "guidance", "검수 원칙", null, { enabled: true, scope: "run" }),
@@ -286,7 +286,7 @@ describe("description markdown boundary", () => {
     expect(mutation.operations).toContainEqual({ op: "delete_block_subtree", block_id: "paragraph-root" });
     expect(mutation.operations.filter((operation) => operation.op === "delete_block_subtree"))
       .toEqual([{ op: "delete_block_subtree", block_id: "paragraph-root" }]);
-    expect(mutation.preservedBlockIds).toEqual(["runbook", "defaults", "atom", "guidance", "mount"]);
+    expect(mutation.preservedBlockIds).toEqual(["task", "defaults", "atom", "guidance", "mount"]);
   });
 });
 

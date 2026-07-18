@@ -4,7 +4,7 @@ import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import type { PlannerTask } from "./planner-data";
 import { parseSingleMountTitle } from "./planner-model";
 import {
-  completeRitualRunbook,
+  completeRitualTask,
   mountRitualTaskToday,
 } from "./ritual-browser-port";
 
@@ -13,11 +13,11 @@ type OperationIdFactory = (prefix: string) => string;
 export async function completePlannerTask(
   task: PlannerTask,
 ): Promise<void> {
-  const expectedVersion = task.runbook?.runbook.version;
+  const expectedVersion = task.task?.task.version;
   if (expectedVersion === undefined) {
-    throw new Error("업무 런북을 불러오지 못해 완료 처리할 수 없습니다");
+    throw new Error("업무를 불러오지 못해 완료 처리할 수 없습니다");
   }
-  await completeRitualRunbook({ runbookId: task.runbookId, expectedVersion });
+  await completeRitualTask({ taskId: task.taskId, expectedVersion });
 }
 
 export async function togglePlannerTaskToday(

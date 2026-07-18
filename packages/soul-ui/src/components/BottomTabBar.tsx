@@ -12,7 +12,7 @@ export interface DashboardMobileTab {
 export const DEFAULT_DASHBOARD_MOBILE_TABS: readonly DashboardMobileTab[] = [
   { id: "feed",     label: "피드",  icon: <Activity className="h-5 w-5" /> },
   { id: "folder",   label: "폴더",  icon: <Folder className="h-5 w-5" /> },
-  { id: "runbooks", label: "런북",  icon: <BookOpenCheck className="h-5 w-5" /> },
+  { id: "tasks", label: "업무",  icon: <BookOpenCheck className="h-5 w-5" /> },
   { id: "chat",     label: "채팅",  icon: <MessageSquare className="h-5 w-5" /> },
   { id: "settings", label: "설정",  icon: <Settings className="h-5 w-5" /> },
 ];

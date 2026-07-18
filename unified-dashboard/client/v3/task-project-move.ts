@@ -44,7 +44,7 @@ export async function prepareTaskProjectMove(
   if (sourceProjectPageId === target.projectPageId) {
     throw new Error("이미 이 프로젝트에 속한 업무입니다");
   }
-  const boardItemId = task.runbook?.runbook.board_item_id;
+  const boardItemId = task.task?.task.board_item_id;
   if (!boardItemId) throw new Error("업무 보드 카드를 확인할 수 없습니다");
   const [source, targetPage] = await Promise.all([
     api.getPage(sourceProjectPageId),

@@ -6,6 +6,7 @@ import {
   authenticateDashboardHttpRequest,
   type BoardYjsAuthConfig,
 } from "../collaboration/board_yjs_auth.js";
+import { normalizeBoardContainerKind } from "../collaboration/board_container_kind_compat.js";
 import { MarkdownDocumentVersionConflictError } from "../db/markdown_document_version.js";
 import type { CatalogService } from "./catalog_service.js";
 
@@ -183,17 +184,18 @@ function parseUpdateBody(
 
 function parseContainer(
   value: unknown,
-): { ok: true; value?: { containerKind: "folder" | "runbook"; containerId: string } } | { ok: false; error: string } {
+): { ok: true; value?: { containerKind: "folder" | "task"; containerId: string } } | { ok: false; error: string } {
   if (value === undefined || value === null) return { ok: true };
   if (typeof value !== "object") return { ok: false, error: "container must be an object" };
   const kind = (value as { kind?: unknown; containerKind?: unknown }).kind
     ?? (value as { containerKind?: unknown }).containerKind;
   const id = (value as { id?: unknown; containerId?: unknown }).id
     ?? (value as { containerId?: unknown }).containerId;
-  if ((kind !== "folder" && kind !== "runbook") || typeof id !== "string" || !id.trim()) {
+  const containerKind = normalizeBoardContainerKind(kind);
+  if (!containerKind || typeof id !== "string" || !id.trim()) {
     return { ok: false, error: "invalid container" };
   }
-  return { ok: true, value: { containerKind: kind, containerId: id } };
+  return { ok: true, value: { containerKind, containerId: id } };
 }
 
 function errorDetail(code: string, message: string) {

@@ -49,7 +49,7 @@
     {
       "name": "board_item_get_all",
       "args": "",
-      "returns": "TABLE( id TEXT, folder_id TEXT, container_kind TEXT, container_id TEXT, membership_kind TEXT, source_runbook_item_id TEXT, item_type TEXT, item_id TEXT, x DOUBLE PRECISION, y DOUBLE PRECISION, metadata JSONB, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ )"
+      "returns": "TABLE( id TEXT, folder_id TEXT, container_kind TEXT, container_id TEXT, membership_kind TEXT, source_task_item_id TEXT, item_type TEXT, item_id TEXT, x DOUBLE PRECISION, y DOUBLE PRECISION, metadata JSONB, created_at TIMESTAMPTZ, updated_at TIMESTAMPTZ )"
     },
     {
       "name": "supervisor_event_append",

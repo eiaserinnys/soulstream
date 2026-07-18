@@ -44,7 +44,7 @@ async function verifyDesktop(browser: Browser, theme: Theme) {
   const page = await context.newPage();
   const browserErrors: string[] = [];
   installDiagnostics(page, browserErrors);
-  let runbookReads = 0;
+  let taskReads = 0;
   let runHistoryReads = 0;
 
   try {
@@ -52,9 +52,9 @@ async function verifyDesktop(browser: Browser, theme: Theme) {
       alphaRunHistoryPages: true,
       onRunHistoryRequest: (count) => { runHistoryReads = count; },
     });
-    await page.route("**/api/runbooks/rb-alpha", async (route) => {
-      runbookReads += 1;
-      if (runbookReads === 1) {
+    await page.route("**/api/tasks/rb-alpha", async (route) => {
+      taskReads += 1;
+      if (taskReads === 1) {
         await route.fulfill({
           status: 404,
           contentType: "application/json",
@@ -66,18 +66,18 @@ async function verifyDesktop(browser: Browser, theme: Theme) {
     });
 
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 30_000 });
-    await page.getByTestId("v3-task-task-alpha").click();
+    await page.getByTestId("v3-task-alpha").waitFor({ state: "visible", timeout: 30_000 });
+    await page.getByTestId("v3-task-alpha").click();
     await page.locator(".v3-detail-scroll").waitFor({ state: "visible", timeout: 30_000 });
-    const checklist = page.getByTestId("v3-task-runbook-checklist");
+    const checklist = page.getByTestId("v3-task-checklist");
     await checklist.waitFor({ state: "visible" });
     if (strict) {
       await checklist.getByRole("button", { name: "섹션 추가", exact: true })
         .waitFor({ state: "visible", timeout: 10_000 });
     } else {
-      await checklist.getByText("런북을 찾을 수 없음", { exact: true }).waitFor({ state: "visible", timeout: 10_000 });
+      await checklist.getByText("업무를 찾을 수 없음", { exact: true }).waitFor({ state: "visible", timeout: 10_000 });
     }
-    await capture(page, theme, "desktop-runbook-race");
+    await capture(page, theme, "desktop-task-race");
 
     const loadMore = page.getByTestId("v3-load-more-runs");
     await loadMore.waitFor({ state: "visible" });
@@ -102,8 +102,8 @@ async function verifyDesktop(browser: Browser, theme: Theme) {
     await capture(page, theme, "desktop-load-more-after");
 
     if (strict) {
-      assert(runbookReads >= 2, `${theme}: 생성 직후 404 뒤 런북을 재조회하지 않았습니다.`);
-      assert(await checklist.getByText("런북을 찾을 수 없음", { exact: true }).count() === 0, `${theme}: 정상 투영 지연이 부재 오류로 남았습니다.`);
+      assert(taskReads >= 2, `${theme}: 생성 직후 404 뒤 업무를 재조회하지 않았습니다.`);
+      assert(await checklist.getByText("업무를 찾을 수 없음", { exact: true }).count() === 0, `${theme}: 정상 투영 지연이 부재 오류로 남았습니다.`);
       assert(centerDelta <= 2, `${theme}: 더 보기 버튼 중앙 오차가 큽니다: ${centerDelta}px`);
       assert(Math.abs(scrollTopAfter - scrollTopBefore) <= 1, `${theme}: 더 보기 뒤 스크롤이 이동했습니다: ${scrollTopBefore} → ${scrollTopAfter}`);
       assert(stableNodeCount === 1, `${theme}: 기존 세션 행 DOM identity가 교체되었습니다.`);
@@ -117,8 +117,8 @@ async function verifyDesktop(browser: Browser, theme: Theme) {
     assert(unexpectedBrowserErrors.length === 0, `${theme}: 브라우저 오류: ${unexpectedBrowserErrors.join(" | ")}`);
 
     return {
-      runbookReads,
-      runbookRecovered: await checklist.getByRole("button", { name: "섹션 추가", exact: true }).count() > 0,
+      taskReads,
+      taskRecovered: await checklist.getByRole("button", { name: "섹션 추가", exact: true }).count() > 0,
       centerDelta,
       scrollTopBefore,
       scrollTopAfter,
@@ -150,7 +150,7 @@ async function verifyMobile(browser: Browser, theme: Theme) {
       successionPickerRuns: true,
     });
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 30_000 });
+    await page.getByTestId("v3-task-alpha").waitFor({ state: "visible", timeout: 30_000 });
 
     await page.getByRole("button", { name: "새 업무", exact: true }).click();
     await page.getByLabel("프로젝트 선택").selectOption("folder-dashboard");
@@ -160,7 +160,7 @@ async function verifyMobile(browser: Browser, theme: Theme) {
     await capture(page, theme, "mobile-new-task");
     await page.getByRole("button", { name: "취소", exact: true }).click();
 
-    await page.getByTestId("v3-task-task-alpha").click();
+    await page.getByTestId("v3-task-alpha").click();
     await page.locator(".v3-detail-scroll").waitFor({ state: "visible", timeout: 30_000 });
     await page.getByRole("button", { name: "새 세션", exact: true }).click();
     const newSessionDialog = page.getByRole("dialog", { name: "새 세션" });

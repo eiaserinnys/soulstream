@@ -17,7 +17,7 @@ import {
 
 function renderShell(
   props: Partial<DashboardShellProps> = {},
-  initialActiveTab?: "feed" | "folder" | "runbooks" | "chat" | "settings",
+  initialActiveTab?: "feed" | "folder" | "tasks" | "chat" | "settings",
   initialActiveSessionKey?: string,
 ) {
   const container = document.createElement("div");
@@ -168,19 +168,19 @@ describe("DashboardShell", () => {
     expect(foldersToggle?.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("adds runbooks as a desktop navigation surface", () => {
+  it("adds tasks as a desktop navigation surface", () => {
     ({ container, root } = renderShell());
 
-    const runbooksToggle = container.querySelector<HTMLButtonElement>('[data-testid="left-navigation-runbooks"]');
-    expect(runbooksToggle).not.toBeNull();
-    expect(runbooksToggle?.textContent).toContain("런북");
+    const tasksToggle = container.querySelector<HTMLButtonElement>('[data-testid="left-navigation-tasks"]');
+    expect(tasksToggle).not.toBeNull();
+    expect(tasksToggle?.textContent).toContain("업무");
 
     flushSync(() => {
-      runbooksToggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      tasksToggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(useDashboardStore.getState().viewMode).toBe("runbooks");
-    expect(runbooksToggle?.getAttribute("aria-pressed")).toBe("true");
+    expect(useDashboardStore.getState().viewMode).toBe("tasks");
+    expect(tasksToggle?.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("resizes and persists the desktop left sidebar width", () => {
@@ -239,7 +239,7 @@ describe("DashboardShell", () => {
 
     const labels = Array.from(container.querySelectorAll('[data-slot="tabs-tab"]'))
       .map((tab) => tab.textContent?.trim());
-    expect(labels).toEqual(["피드", "폴더", "런북", "채팅", "설정"]);
+    expect(labels).toEqual(["피드", "폴더", "업무", "채팅", "설정"]);
     expect(container.querySelectorAll('[data-slot="tabs-content"]')).toHaveLength(5);
   });
 
@@ -251,7 +251,7 @@ describe("DashboardShell", () => {
         { id: "chat", label: "Chat", icon: createElement("span") },
         { id: "settings", label: "Settings", icon: createElement("span") },
       ],
-    }, "runbooks"));
+    }, "tasks"));
 
     const labels = Array.from(container.querySelectorAll('[data-slot="tabs-tab"]'))
       .map((tab) => tab.textContent?.trim());

@@ -50,7 +50,7 @@ export function toCatalogBoardItemRow(row: {
   container_kind?: BoardContainerKind | null;
   container_id?: string | null;
   membership_kind?: "primary" | "reference" | null;
-  source_runbook_item_id?: string | null;
+  source_task_item_id?: string | null;
   item_type: BoardItemType;
   item_id: string;
   x: string | number;
@@ -65,7 +65,7 @@ export function toCatalogBoardItemRow(row: {
     containerKind: row.container_kind ?? "folder",
     containerId: row.container_id ?? row.folder_id,
     membershipKind: row.membership_kind ?? "primary",
-    sourceRunbookItemId: row.source_runbook_item_id ?? null,
+    sourceTaskItemId: row.source_task_item_id ?? null,
     itemType: row.item_type,
     itemId: row.item_id,
     x: Number(row.x),
@@ -86,8 +86,8 @@ export function parseCatalogBoardItems(value: unknown): CatalogBoardItemRow[] {
       ? item.containerKind
       : "folder";
     const membershipKind = item.membershipKind === "reference" ? "reference" : "primary";
-    const sourceRunbookItemId = typeof item.sourceRunbookItemId === "string"
-      ? item.sourceRunbookItemId
+    const sourceTaskItemId = typeof item.sourceTaskItemId === "string"
+      ? item.sourceTaskItemId
       : null;
     const itemType = isBoardItemType(item.itemType) ? item.itemType : null;
     const itemId = typeof item.itemId === "string" ? item.itemId : null;
@@ -102,7 +102,7 @@ export function parseCatalogBoardItems(value: unknown): CatalogBoardItemRow[] {
       containerKind,
       containerId,
       membershipKind,
-      sourceRunbookItemId,
+      sourceTaskItemId,
       itemType,
       itemId,
       x: Number.isFinite(x) ? x : 0,
@@ -119,7 +119,7 @@ export function parseCatalogBoardItems(value: unknown): CatalogBoardItemRow[] {
 }
 
 export function isBoardContainerKind(value: unknown): value is BoardContainerKind {
-  return value === "folder" || value === "runbook";
+  return value === "folder" || value === "task";
 }
 
 export function isBoardItemType(value: unknown): value is BoardItemType {
@@ -128,7 +128,7 @@ export function isBoardItemType(value: unknown): value is BoardItemType {
     value === "subfolder" ||
     value === "asset" ||
     value === "frame" ||
-    value === "runbook" ||
+    value === "task" ||
     value === "custom_view";
 }
 

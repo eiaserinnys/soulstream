@@ -52,7 +52,7 @@ test("PR-J/R: bounded planner reads, targeted run hydration, long-history sync, 
   await page.goto(`${BASE_URL}/v3`, { waitUntil: "domcontentloaded" });
   const domContentLoadedMs = Date.now() - navigationStartedAt;
   const domContentLoadedAtMs = Date.now() - startedAt;
-  await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible" });
+  await page.getByTestId("v3-task-alpha").waitFor({ state: "visible" });
   const plannerVisibleAtMs = Date.now() - startedAt;
   const plannerRequestStartedAtMs = requests.find((mark) => mark.path === "/api/planner/today")?.startedAtMs;
   if (plannerRequestStartedAtMs === undefined) throw new Error("today planner request was not observed");
@@ -62,7 +62,7 @@ test("PR-J/R: bounded planner reads, targeted run hydration, long-history sync, 
   expect(plannerReadyMs, "today planner ready under one second").toBeLessThan(1_000);
 
   const runRowsStartedAt = Date.now();
-  await page.getByTestId("v3-task-task-alpha").click();
+  await page.getByTestId("v3-task-alpha").click();
   await expect(page.getByRole("heading", { name: fixtureTitles.primaryTask, level: 2 })).toBeVisible();
   const activeRun = page.locator(".v3-run-open").filter({ hasText: "시각 QA 순회" });
   await expect(activeRun).toContainText("로젤린");
@@ -83,14 +83,14 @@ test("PR-J/R: bounded planner reads, targeted run hydration, long-history sync, 
 
   const taskOpenReads = requestTimes(requests, [
     "/api/planner/tasks/task-alpha/runs",
-    "/api/board-items?container_kind=runbook&container_id=rb-alpha",
+    "/api/board-items?container_kind=task&container_id=rb-alpha",
   ]);
   expect(
     Math.max(...taskOpenReads) - Math.min(...taskOpenReads),
     "task detail lazy reads start together",
   ).toBeLessThan(150);
   expect(requests.some((mark) => mark.path.includes("/backlinks"))).toBe(false);
-  expect(requests.some((mark) => mark.path.startsWith("/api/runbooks/"))).toBe(false);
+  expect(requests.some((mark) => mark.path.startsWith("/api/tasks/"))).toBe(false);
   expect(requests.some((mark) => mark.path.includes("task-beta") && mark.path !== "/api/pages/task-beta")).toBe(false);
 
   await page.screenshot({

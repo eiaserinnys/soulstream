@@ -1,7 +1,7 @@
 """schema 자체 유효성 + 메시지 인벤토리 검증.
 
 본 테스트는 src/upstream.schema.json이 JSON Schema Draft 2020-12 유효이며,
-설계 명세에 합의된 110개 $defs (wire 53 + SSE event 57)를 모두 포함하는지 확인한다.
+설계 명세에 합의된 111개 $defs (wire 53 + SSE event 58)를 모두 포함하는지 확인한다.
 """
 
 import json
@@ -152,7 +152,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventClaudeRuntimeModeState",
         "SSEEventClaudeRuntimeScheduleUpdated",
         "SSEEventClaudeRuntimeScheduleDeleted",
-        "SSEEventRunbookUpdated",
+        "SSEEventTaskUpdated",
+        "SSEEventRunbookUpdatedLegacy",
         "SSEEventCustomViewUpdated",
         "SSEEventContextUsage",
         "SSEEventCompact",
@@ -162,8 +163,8 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventAssistantError",
         "SSEEventAwaySummary",
     }
-    assert len(sse_types) == 57, (
-        "SSE event $defs 57종 (wire-schema 정본 + session_ended + runbook_updated + custom_view_updated)."
+    assert len(sse_types) == 58, (
+        "SSE event $defs 58종 (canonical 57종 + 한 릴리스 runbook_updated 읽기 호환)."
     )
 
     expected = wire_types | sse_types
@@ -379,7 +380,8 @@ def test_known_sse_event_types_completeness() -> None:
         "claude_runtime_mode_state",
         "claude_runtime_schedule_updated",
         "claude_runtime_schedule_deleted",
-        "runbook_updated",
+            "task_updated",
+            "runbook_updated",
         "custom_view_updated",
         "context_usage",
         "compact",

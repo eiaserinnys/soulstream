@@ -42,7 +42,7 @@ describe("live DB board item route provider", () => {
         containerKind: "folder",
         containerId: "folder-a",
         membershipKind: "primary",
-        sourceRunbookItemId: null,
+        sourceTaskItemId: null,
         itemType: "markdown",
         itemId: "doc-1",
         x: 20,
@@ -63,10 +63,10 @@ describe("live DB board item route provider", () => {
     const cached = {
       id: "item-section",
       folderId: "folder-a",
-      containerKind: "runbook",
-      containerId: "runbook-1",
+      containerKind: "task",
+      containerId: "task-1",
       membershipKind: "primary",
-      sourceRunbookItemId: "section-1",
+      sourceTaskItemId: "section-1",
       itemType: "session",
       itemId: "sess-1",
       x: 10,
@@ -85,7 +85,7 @@ describe("live DB board item route provider", () => {
 
     await expect(
       repository.boardItemRouteProvider.listBoardItems({
-        container: { kind: "runbook", id: "runbook-1" },
+        container: { kind: "task", id: "task-1" },
       }),
     ).resolves.toEqual([cached]);
     expect(harness.normalizedCalls()).toEqual([
@@ -93,10 +93,10 @@ describe("live DB board item route provider", () => {
         "FROM board_yjs_catalog_cache WHERE container_kind = ? AND container_id = ?",
       ),
     ]);
-    expect(harness.calls[0]?.values).toEqual(["runbook", "runbook-1"]);
+    expect(harness.calls[0]?.values).toEqual(["task", "task-1"]);
   });
 
-  it("resolves a runbook container folder with one indexed catalog-cache lookup", async () => {
+  it("resolves a task container folder with one indexed catalog-cache lookup", async () => {
     let cacheCalls = 0;
     const harness = createSqlHarness((text) => {
       if (text.includes("folder_get_all")) return [folderRow()];
@@ -116,31 +116,31 @@ describe("live DB board item route provider", () => {
     ).resolves.toBe("folder-direct");
     await expect(
       repository.boardItemRouteProvider.resolveBoardContainerFolderId({
-        kind: "runbook",
-        id: "runbook-1",
+        kind: "task",
+        id: "task-1",
       }),
     ).resolves.toBe("folder-a");
     await expect(
       repository.boardItemRouteProvider.resolveBoardContainerFolderId({
-        kind: "runbook",
+        kind: "task",
         id: "missing",
       }),
     ).rejects.toMatchObject(
       new BoardItemRouteError(
         "BOARD_CONTAINER_NOT_FOUND",
-        "Runbook board container not found",
+        "Task board container not found",
         404,
       ),
     );
-    const runbookCalls = harness.calls.filter((call) =>
+    const taskCalls = harness.calls.filter((call) =>
       call.text.includes("board_yjs_catalog_cache")
     );
-    expect(runbookCalls).toHaveLength(2);
-    expect(runbookCalls[0]?.text).toContain("container_kind = 'runbook'");
-    expect(runbookCalls[0]?.text).toContain("container_id =");
-    expect(runbookCalls[0]?.text).toContain("LIMIT 1");
-    expect(runbookCalls[0]?.text).not.toContain("board_item_get_all");
-    expect(runbookCalls[0]?.values).toEqual(["runbook-1"]);
+    expect(taskCalls).toHaveLength(2);
+    expect(taskCalls[0]?.text).toContain("container_kind = 'task'");
+    expect(taskCalls[0]?.text).toContain("container_id =");
+    expect(taskCalls[0]?.text).toContain("LIMIT 1");
+    expect(taskCalls[0]?.text).not.toContain("board_item_get_all");
+    expect(taskCalls[0]?.values).toEqual(["task-1"]);
   });
 });
 
@@ -163,7 +163,7 @@ function boardItemRow(overrides: Record<string, unknown> = {}): Record<string, u
     container_kind: "folder",
     container_id: "folder-a",
     membership_kind: "primary",
-    source_runbook_item_id: null,
+    source_task_item_id: null,
     item_type: "session",
     item_id: "sess-1",
     x: 20,

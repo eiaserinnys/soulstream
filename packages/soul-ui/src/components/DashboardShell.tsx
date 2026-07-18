@@ -91,8 +91,8 @@ export interface DashboardShellProps {
   mobileTabs?: readonly DashboardMobileTab[];
   /** 모바일 폴더 탭에서 폴더 선택 후 표시할 세션 목록 뷰 */
   mobileFolderContents?: ReactNode;
-  /** 모바일 Runbooks 탭 내용물 */
-  mobileRunbooksView?: ReactNode;
+  /** 모바일 Tasks 탭 내용물 */
+  mobileTasksView?: ReactNode;
   /** 모바일 채팅 뷰 내용물. 미지정 시 rightPanel 사용 */
   mobileChatView?: ReactNode;
   /**
@@ -135,7 +135,7 @@ function DashboardShellContent({
   mobileSessionsView,
   mobileTabs,
   mobileFolderContents,
-  mobileRunbooksView,
+  mobileTasksView,
   mobileChatView,
   mobileChatHeader,
   mobileSettingsContent,
@@ -276,14 +276,14 @@ function DashboardShellContent({
           type="button"
           className={cn(
             "dashboard-sidebar-row w-full",
-            viewMode === "runbooks" && "dashboard-sidebar-row-active",
+            viewMode === "tasks" && "dashboard-sidebar-row-active",
           )}
-          data-testid="left-navigation-runbooks"
-          aria-pressed={viewMode === "runbooks"}
-          onClick={() => setViewMode("runbooks")}
+          data-testid="left-navigation-tasks"
+          aria-pressed={viewMode === "tasks"}
+          onClick={() => setViewMode("tasks")}
         >
           <BookOpenCheck className="h-3.5 w-3.5" />
-          <span className="truncate">런북</span>
+          <span className="truncate">업무</span>
         </button>
         <button
           type="button"
@@ -408,7 +408,7 @@ function DashboardShellContent({
           rightPanel={rightPanel}
           mobileSessionsView={mobileSessionsView}
           mobileFolderContents={mobileFolderContents}
-          mobileRunbooksView={mobileRunbooksView}
+          mobileTasksView={mobileTasksView}
           mobileChatView={mobileChatView}
           mobileChatHeader={mobileChatHeader}
           mobileSettingsContent={mobileSettingsContent}

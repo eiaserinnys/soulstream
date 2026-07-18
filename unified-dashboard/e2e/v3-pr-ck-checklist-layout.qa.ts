@@ -60,45 +60,45 @@ async function verifyState(browser: Browser, theme: Theme, state: FixtureState) 
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
     await page.getByTestId("v3-task-task-alpha").click();
 
-    const checklist = page.getByTestId("v3-task-runbook-checklist");
-    const wrapper = checklist.locator(".v3-task-runbook-checklist");
-    const card = wrapper.getByTestId("runbook-card");
+    const checklist = page.getByTestId("v3-task-checklist");
+    const wrapper = checklist.locator(".v3-task-checklist");
+    const card = wrapper.getByTestId("task-card");
     await card.waitFor({ state: "visible", timeout: 30_000 });
-    await card.getByTestId("runbook-card-progress").waitFor({ state: "visible" });
+    await card.getByTestId("task-card-progress").waitFor({ state: "visible" });
     if (state !== "empty") {
-      await card.getByTestId("runbook-item-row").first().waitFor({ state: "visible" });
-      await card.getByTestId("runbook-item-row").first().hover();
+      await card.getByTestId("task-item-row").first().waitFor({ state: "visible" });
+      await card.getByTestId("task-item-row").first().hover();
     }
 
     const metrics = await page.evaluate(() => {
       const checklistWrapper = document.querySelector<HTMLElement>(
-        '[data-testid="v3-task-runbook-checklist"] .v3-task-runbook-checklist',
+        '[data-testid="v3-task-checklist"] .v3-task-checklist',
       );
-      const runbookCard = checklistWrapper?.querySelector<HTMLElement>('[data-testid="runbook-card"]');
-      const scroll = runbookCard?.querySelector<HTMLElement>('[data-testid="runbook-card-scroll"]');
+      const taskCard = checklistWrapper?.querySelector<HTMLElement>('[data-testid="task-card"]');
+      const scroll = taskCard?.querySelector<HTMLElement>('[data-testid="task-card-scroll"]');
       const detailScroll = document.querySelector<HTMLElement>(".v3-detail-scroll");
-      if (!checklistWrapper || !runbookCard || !scroll || !detailScroll) return null;
+      if (!checklistWrapper || !taskCard || !scroll || !detailScroll) return null;
       return {
         wrapperHeight: checklistWrapper.getBoundingClientRect().height,
-        cardHeight: runbookCard.getBoundingClientRect().height,
+        cardHeight: taskCard.getBoundingClientRect().height,
         maxHeight: Number.parseFloat(getComputedStyle(checklistWrapper).maxHeight),
         scrollClientHeight: scroll.clientHeight,
         scrollHeight: scroll.scrollHeight,
         detailBottomPadding: Number.parseFloat(getComputedStyle(detailScroll).paddingBottom),
-        itemRows: runbookCard.querySelectorAll('[data-testid="runbook-item-row"]').length,
-        rowMenus: runbookCard.querySelectorAll(
-          '[data-testid="runbook-item-row"] [data-testid="runbook-row-menu"]',
+        itemRows: taskCard.querySelectorAll('[data-testid="task-item-row"]').length,
+        rowMenus: taskCard.querySelectorAll(
+          '[data-testid="task-item-row"] [data-testid="task-row-menu"]',
         ).length,
-        actionGroups: runbookCard.querySelectorAll('[data-testid="runbook-item-actions"]').length,
-        sharedActionButtons: runbookCard.querySelectorAll(
-          '[data-testid="runbook-item-row"] [data-runbook-row-action]',
+        actionGroups: taskCard.querySelectorAll('[data-testid="task-item-actions"]').length,
+        sharedActionButtons: taskCard.querySelectorAll(
+          '[data-testid="task-item-row"] [data-task-row-action]',
         ).length,
-        detailToggles: runbookCard.querySelectorAll('[data-testid="runbook-item-details-toggle"]').length,
-        openDetails: runbookCard.querySelectorAll('[data-testid="runbook-how-to"]').length,
+        detailToggles: taskCard.querySelectorAll('[data-testid="task-item-details-toggle"]').length,
+        openDetails: taskCard.querySelectorAll('[data-testid="task-how-to"]').length,
         firstActionGeometry: (() => {
-          const firstRow = runbookCard.querySelector<HTMLElement>('[data-testid="runbook-item-row"]');
-          const menu = firstRow?.querySelector<HTMLElement>('[data-testid="runbook-row-menu"]');
-          const toggle = firstRow?.querySelector<HTMLElement>('[data-testid="runbook-item-details-toggle"]');
+          const firstRow = taskCard.querySelector<HTMLElement>('[data-testid="task-item-row"]');
+          const menu = firstRow?.querySelector<HTMLElement>('[data-testid="task-row-menu"]');
+          const toggle = firstRow?.querySelector<HTMLElement>('[data-testid="task-item-details-toggle"]');
           if (!menu || !toggle) return null;
           const menuRect = menu.getBoundingClientRect();
           const toggleRect = toggle.getBoundingClientRect();
@@ -148,15 +148,15 @@ async function verifyState(browser: Browser, theme: Theme, state: FixtureState) 
 }
 
 async function verifyShortDisclosure(card: ReturnType<Page["getByTestId"]>) {
-  const row = card.getByTestId("runbook-item-row").filter({ hasText: "요구사항 확인" });
-  const toggle = row.getByTestId("runbook-item-details-toggle");
+  const row = card.getByTestId("task-item-row").filter({ hasText: "요구사항 확인" });
+  const toggle = row.getByTestId("task-item-details-toggle");
   assert(await row.getByText("검증자", { exact: true }).count() === 0, "접힌 항목에 담당자가 노출됩니다.");
   assert(await toggle.getAttribute("aria-expanded") === "false", "상세 아이콘의 초기 상태가 닫힘이 아닙니다.");
   assert(await toggle.locator(".lucide-chevron-down").count() === 1, "닫힌 상세에 아래 꺽쇠가 없습니다.");
   assert(await row.evaluate((element) => {
-    const actionGroup = element.querySelector('[data-testid="runbook-item-actions"]');
-    const rowMenu = element.querySelector('[data-testid="runbook-row-menu"]');
-    const detailsToggle = element.querySelector('[data-testid="runbook-item-details-toggle"]');
+    const actionGroup = element.querySelector('[data-testid="task-item-actions"]');
+    const rowMenu = element.querySelector('[data-testid="task-row-menu"]');
+    const detailsToggle = element.querySelector('[data-testid="task-item-details-toggle"]');
     return rowMenu?.parentElement === actionGroup
       && detailsToggle?.parentElement === actionGroup
       && rowMenu.nextElementSibling === detailsToggle;
@@ -184,7 +184,7 @@ async function preparePage(page: Page, theme: Theme, state: FixtureState) {
     }
   ` });
   await installV3VisualQaRoutes(page);
-  await page.route("**/api/runbooks/rb-alpha", async (route) => {
+  await page.route("**/api/tasks/rb-alpha", async (route) => {
     if (route.request().method() !== "GET") return route.fallback();
     return fulfillJson(route, snapshotFor(state));
   });
@@ -196,8 +196,8 @@ function snapshotFor(state: FixtureState) {
   const count = state === "empty" ? 0 : state === "short" ? 2 : 30;
   const items = Array.from({ length: count }, (_, index) => makeItem(index, now));
   return {
-    runbook: {
-      id: "rb-alpha", board_item_id: "runbook:rb-alpha", folder_id: "folder-amber",
+    task: {
+      id: "rb-alpha", board_item_id: "task:rb-alpha", folder_id: "folder-amber",
       title: `체크리스트 ${state}`, status: "open", archived: false, version: 1,
       created_session_id: "session-coordinator", created_event_id: 1, created_at: now, updated_at: now,
     },
@@ -208,7 +208,7 @@ function snapshotFor(state: FixtureState) {
 
 function makeSection(now: string) {
   return {
-    id: "section-main", runbook_id: "rb-alpha", position_key: "000", title: "준비",
+    id: "section-main", task_id: "rb-alpha", position_key: "000", title: "준비",
     assignee_kind: "human", assignee_agent_id: null, assignee_session_id: null, assignee_user_id: "검증자",
     archived: false, version: 1, created_session_id: "session-coordinator", created_event_id: 1,
     updated_session_id: "session-coordinator", updated_event_id: 1, created_at: now, updated_at: now,

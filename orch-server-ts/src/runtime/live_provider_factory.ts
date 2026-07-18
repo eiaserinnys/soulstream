@@ -28,7 +28,7 @@ import type { PublicStatusRouteOptions } from "../public/public_status_routes.js
 import type { PushRouteOptions } from "../push/push_routes.js";
 import type { UserPreferencesRouteOptions } from "../user/user_preferences_routes.js";
 import type { UserBackgroundRouteOptions } from "../user/user_background_routes.js";
-import type { RunbookRouteOptions } from "../runbooks/runbook_route_types.js";
+import type { TaskRouteOptions } from "../tasks/task_route_types.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
 import { createLiveDashboardAccessProvider } from "./live_dashboard_access_provider.js";
 import { createLiveExecuteProxyRouteProvider } from "./live_execute_proxy_route_provider.js";
@@ -41,9 +41,9 @@ import {
   type LiveNodeAgentProfileRouteProviderBundle,
 } from "./live_node_agent_profile_route_provider.js";
 import {
-  createLiveRunbookRouteProviders,
-  type LiveRunbookRouteProviderBundle,
-} from "./live_runbook_route_provider.js";
+  createLiveTaskRouteProviders,
+  type LiveTaskRouteProviderBundle,
+} from "./live_task_route_provider.js";
 import {
   createLiveSystemConfigRouteProviders,
   type LiveSystemConfigRouteProviderBundle,
@@ -170,9 +170,9 @@ export type LiveOrchestratorProviderBundle = {
   readonly executeProxyRoutes: ExecuteProxyRouteOptions;
   readonly nodeAgentProfileRoutes: LiveNodeAgentProfileRouteProviderBundle["nodeAgentProfileRoutes"];
   readonly nodeClaudeAuthRoutes: LiveNodeClaudeAuthRouteProviderBundle["nodeClaudeAuthRoutes"];
-  readonly runbookRoutes:
-    & LiveRunbookRouteProviderBundle["runbookRoutes"]
-    & Pick<RunbookRouteOptions, "accessProvider" | "resolveDashboardUserId">;
+  readonly taskRoutes:
+    & LiveTaskRouteProviderBundle["taskRoutes"]
+    & Pick<TaskRouteOptions, "accessProvider" | "resolveDashboardUserId">;
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
   readonly implementedProviderPaths: readonly LiveProviderPath[];
 };
@@ -210,9 +210,9 @@ export function createLiveOrchestratorProviderBundle(
     bridge: options.runtimeServices.sessionBridge,
     nodeHttpClient: options.dependencies.nodeHttpClient,
   });
-  const runbookProviders = createLiveRunbookRouteProviders({
+  const taskProviders = createLiveTaskRouteProviders({
     nodeHttpClient: options.dependencies.nodeHttpClient,
-    provider: options.dependencies.dbCatalogRepository.runbookRouteProvider,
+    provider: options.dependencies.dbCatalogRepository.taskRouteProvider,
   });
   const configProviders = createLiveConfigRouteProviders(
     options.dependencies.configProvider,
@@ -395,8 +395,8 @@ export function createLiveOrchestratorProviderBundle(
     },
     nodeAgentProfileRoutes: nodeAgentProfileProviders.nodeAgentProfileRoutes,
     nodeClaudeAuthRoutes: nodeClaudeAuthProviders.nodeClaudeAuthRoutes,
-    runbookRoutes: {
-      ...runbookProviders.runbookRoutes,
+    taskRoutes: {
+      ...taskProviders.taskRoutes,
       accessProvider: dashboardAccessProvider,
       resolveDashboardUserId: authenticatedUserResolvers.resolveEmail,
     },

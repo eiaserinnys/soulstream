@@ -252,7 +252,7 @@ describe("CatalogService.browseFolder", () => {
               },
             }],
             total: 2,
-            counts: { session: 2, markdown: 0, subfolder: 0, asset: 0, frame: 0, runbook: 0, custom_view: 0 },
+            counts: { session: 2, markdown: 0, subfolder: 0, asset: 0, frame: 0, task: 0, custom_view: 0 },
           };
         }
         const boardItems = [
@@ -282,7 +282,7 @@ describe("CatalogService.browseFolder", () => {
         return {
           items: boardItems.map((boardItem) => ({ boardItem, archived: false })),
           total: 2,
-          counts: { session: 0, markdown: 1, subfolder: 0, asset: 1, frame: 0, runbook: 0, custom_view: 0 },
+          counts: { session: 0, markdown: 1, subfolder: 0, asset: 1, frame: 0, task: 0, custom_view: 0 },
         };
       },
     );
@@ -500,15 +500,15 @@ describe("CatalogService.moveSessionsToFolder", () => {
 });
 
 describe("CatalogService board items", () => {
-  it("moveBoardItemToContainer는 미영속 세션 타일을 대상 runbook에 편입한다", async () => {
+  it("moveBoardItemToContainer는 미영속 세션 타일을 대상 task에 편입한다", async () => {
     const assignSessionToFolder = vi.fn().mockResolvedValue(undefined);
     const upsertSessionBoardItem = vi.fn().mockResolvedValue({
       id: "session:s1",
       folderId: "f1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
       membershipKind: "primary",
-      sourceRunbookItemId: null,
+      sourceTaskItemId: null,
       itemType: "session",
       itemId: "s1",
       x: 120,
@@ -519,7 +519,7 @@ describe("CatalogService board items", () => {
       ensureBoardItems: vi.fn().mockResolvedValue(undefined),
       resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
         folderId: "f1",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
       }),
       getBoardItemById: vi.fn().mockResolvedValue(null),
@@ -535,7 +535,7 @@ describe("CatalogService board items", () => {
 
     const result = await svc.moveBoardItemToContainer({
       boardItemId: "session:s1",
-      target: { containerKind: "runbook", containerId: "rb-1" },
+      target: { containerKind: "task", containerId: "rb-1" },
       position: { x: 121, y: 239 },
       idempotencyKey: "move-1",
     });
@@ -544,7 +544,7 @@ describe("CatalogService board items", () => {
     expect(result.boardItem).toMatchObject({
       id: "session:s1",
       folderId: "f1",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
       x: 120,
       y: 240,
@@ -552,9 +552,9 @@ describe("CatalogService board items", () => {
     expect(assignSessionToFolder).toHaveBeenCalledWith("s1", "f1");
     expect(upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "f1",
-      container: { containerKind: "runbook", containerId: "rb-1" },
+      container: { containerKind: "task", containerId: "rb-1" },
       sessionId: "s1",
-      sourceRunbookItemId: null,
+      sourceTaskItemId: null,
       x: 120,
       y: 240,
     });
@@ -569,10 +569,10 @@ describe("CatalogService board items", () => {
     const upsertSessionBoardItem = vi.fn().mockResolvedValue({
       id: "session:s1",
       folderId: "target-folder",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
       membershipKind: "primary",
-      sourceRunbookItemId: null,
+      sourceTaskItemId: null,
       itemType: "session",
       itemId: "s1",
       x: 280,
@@ -583,7 +583,7 @@ describe("CatalogService board items", () => {
       ensureBoardItems: vi.fn().mockResolvedValue(undefined),
       resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
         folderId: "target-folder",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
       }),
       getBoardItemById: vi.fn().mockResolvedValue({
@@ -592,7 +592,7 @@ describe("CatalogService board items", () => {
         containerKind: "folder",
         containerId: "source-folder",
         membershipKind: "primary",
-        sourceRunbookItemId: null,
+        sourceTaskItemId: null,
         itemType: "session",
         itemId: "s1",
         x: 0,
@@ -604,7 +604,7 @@ describe("CatalogService board items", () => {
       getBoardItems: vi.fn().mockResolvedValue([
         {
           folderId: "target-folder",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           x: 0,
           y: 0,
@@ -621,7 +621,7 @@ describe("CatalogService board items", () => {
 
     const result = await svc.moveBoardItemToContainer({
       boardItemId: "session:s1",
-      target: { containerKind: "runbook", containerId: "rb-1" },
+      target: { containerKind: "task", containerId: "rb-1" },
       idempotencyKey: "move-1",
     });
 
@@ -630,9 +630,9 @@ describe("CatalogService board items", () => {
     expect(assignSessionToFolder).not.toHaveBeenCalledWith("s1", "source-folder");
     expect(upsertSessionBoardItem).toHaveBeenCalledWith({
       folderId: "target-folder",
-      container: { containerKind: "runbook", containerId: "rb-1" },
+      container: { containerKind: "task", containerId: "rb-1" },
       sessionId: "s1",
-      sourceRunbookItemId: null,
+      sourceTaskItemId: null,
       x: 280,
       y: 0,
     });
@@ -642,7 +642,7 @@ describe("CatalogService board items", () => {
   it("moveBoardItemToContainer의 미영속 세션 편입은 재시도해도 같은 대상에 upsert한다", async () => {
     const upsertSessionBoardItem = vi.fn(async (input: {
       folderId: string;
-      container: { containerKind: "runbook"; containerId: string };
+      container: { containerKind: "task"; containerId: string };
       sessionId: string;
       x: number;
       y: number;
@@ -652,7 +652,7 @@ describe("CatalogService board items", () => {
       containerKind: input.container.containerKind,
       containerId: input.container.containerId,
       membershipKind: "primary" as const,
-      sourceRunbookItemId: null,
+      sourceTaskItemId: null,
       itemType: "session" as const,
       itemId: input.sessionId,
       x: input.x,
@@ -663,7 +663,7 @@ describe("CatalogService board items", () => {
       ensureBoardItems: vi.fn().mockResolvedValue(undefined),
       resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
         folderId: "f1",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
       }),
       getBoardItemById: vi.fn().mockResolvedValue(null),
@@ -675,7 +675,7 @@ describe("CatalogService board items", () => {
     const svc = new CatalogService(db, broadcaster, { upsertSessionBoardItem } as never);
     const params = {
       boardItemId: "session:s1",
-      target: { containerKind: "runbook" as const, containerId: "rb-1" },
+      target: { containerKind: "task" as const, containerId: "rb-1" },
       position: { x: 120, y: 240 },
       idempotencyKey: "move-1",
     };
@@ -695,7 +695,7 @@ describe("CatalogService board items", () => {
       ensureBoardItems: vi.fn().mockResolvedValue(undefined),
       resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
         folderId: "f1",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
       }),
       getBoardItemById: vi.fn().mockResolvedValue(null),
@@ -708,7 +708,7 @@ describe("CatalogService board items", () => {
 
     await expect(svc.moveBoardItemToContainer({
       boardItemId: "session:missing",
-      target: { containerKind: "runbook", containerId: "rb-1" },
+      target: { containerKind: "task", containerId: "rb-1" },
       idempotencyKey: "move-1",
     })).rejects.toThrow("board item not found: session:missing");
 
@@ -722,10 +722,10 @@ describe("CatalogService board items", () => {
     const moveBoardItemToContainer = vi.fn().mockResolvedValue({
       id: "session:s1",
       folderId: "target-folder",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-1",
       membershipKind: "primary",
-      sourceRunbookItemId: null,
+      sourceTaskItemId: null,
       itemType: "session",
       itemId: "s1",
       x: 120,
@@ -737,7 +737,7 @@ describe("CatalogService board items", () => {
       ensureBoardItems: vi.fn().mockResolvedValue(undefined),
       resolveBoardYjsContainerScope: vi.fn().mockResolvedValue({
         folderId: "target-folder",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
       }),
       getBoardItemById: vi.fn().mockResolvedValue({
@@ -746,7 +746,7 @@ describe("CatalogService board items", () => {
         containerKind: "folder",
         containerId: "source-folder",
         membershipKind: "primary",
-        sourceRunbookItemId: null,
+        sourceTaskItemId: null,
         itemType: "session",
         itemId: "s1",
         x: 0,
@@ -766,7 +766,7 @@ describe("CatalogService board items", () => {
 
     const result = await svc.moveBoardItemToContainer({
       boardItemId: "session:s1",
-      target: { containerKind: "runbook", containerId: "rb-1" },
+      target: { containerKind: "task", containerId: "rb-1" },
       position: { x: 121, y: 239 },
       idempotencyKey: "move-1",
     });
@@ -774,7 +774,7 @@ describe("CatalogService board items", () => {
     expect(result.enrolled).toBe(false);
     expect(moveBoardItemToContainer).toHaveBeenCalledWith({
       boardItem: expect.objectContaining({ id: "session:s1" }),
-      targetScope: { folderId: "target-folder", containerKind: "runbook", containerId: "rb-1" },
+      targetScope: { folderId: "target-folder", containerKind: "task", containerId: "rb-1" },
       position: { x: 120, y: 240 },
       idempotencyKey: "move-1",
     });
@@ -783,15 +783,15 @@ describe("CatalogService board items", () => {
     expect(emitCatalogUpdated).toHaveBeenCalledTimes(1);
   });
 
-  it("moveBoardItemToContainer는 runbook 업무 이동을 서버 identity 정본에 위임한다", async () => {
+  it("moveBoardItemToContainer는 task 업무 이동을 서버 identity 정본에 위임한다", async () => {
     const source = {
-      id: "runbook:rb-task",
+      id: "task:rb-task",
       folderId: "source-folder",
       containerKind: "folder" as const,
       containerId: "source-folder",
       membershipKind: "primary" as const,
-      sourceRunbookItemId: null,
-      itemType: "runbook" as const,
+      sourceTaskItemId: null,
+      itemType: "task" as const,
       itemId: "rb-task",
       x: 0,
       y: 0,
@@ -815,7 +815,7 @@ describe("CatalogService board items", () => {
     await expect(svc.moveBoardItemToContainer({
       boardItemId: source.id,
       target: { containerKind: "folder", containerId: "target-folder" },
-      idempotencyKey: "move-runbook-1",
+      idempotencyKey: "move-task-1",
     })).resolves.toMatchObject({ boardItem: moved, enrolled: false });
 
     expect(moveBoardItemToContainer).toHaveBeenCalledWith({
@@ -825,7 +825,7 @@ describe("CatalogService board items", () => {
         containerKind: "folder",
         containerId: "target-folder",
       },
-      idempotencyKey: "move-runbook-1",
+      idempotencyKey: "move-task-1",
     });
   });
 

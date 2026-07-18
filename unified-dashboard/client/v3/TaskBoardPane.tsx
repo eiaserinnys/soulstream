@@ -30,13 +30,13 @@ import { loadConfirmedResult } from "./planner-query-state";
 import "./v3-task-board.css";
 
 export function TaskBoardPane({
-  runbookId,
+  taskId,
   projectFolderId,
   projectTitle,
   sessions,
   onClose,
 }: {
-  runbookId: string;
+  taskId: string;
   projectFolderId: string | null;
   projectTitle: string;
   sessions: readonly SessionSummary[];
@@ -47,14 +47,14 @@ export function TaskBoardPane({
   const previousStoreRef = useRef<Partial<ReturnType<typeof useDashboardStore.getState>> | null>(null);
   const catalogInitializedRef = useRef(false);
   const boardItemsRef = useRef(boardItems);
-  const loadedRunbookIdRef = useRef<string | null>(null);
+  const loadedTaskIdRef = useRef<string | null>(null);
   boardItemsRef.current = boardItems;
   const sessionIds = useMemo(
     () => extractTaskBoardSessionIds(boardItems ?? []),
     [boardItems],
   );
   const invalidationKey = useV3InvalidationKey([
-    "catalog", "runbook", "replay",
+    "catalog", "task", "replay",
   ]);
   const {
     sessions: boardSessions,
@@ -76,33 +76,33 @@ export function TaskBoardPane({
     try {
       const next = await loadConfirmedResult({
         previous: boardItemsRef.current,
-        load: () => fetchTaskBoardContainerItems(runbookId),
+        load: () => fetchTaskBoardContainerItems(taskId),
         clearsVisibleContent: (current, result) => current.length > 0 && result.length === 0,
       });
-      loadedRunbookIdRef.current = runbookId;
+      loadedTaskIdRef.current = taskId;
       setBoardItems((current) => retainEqualValue(current ?? undefined, next));
       setLoadError(null);
     } catch (error) {
       console.error("[v3/task-board] 보드 항목 재조회 실패", error);
       setLoadError(errorText(error));
     }
-  }, [runbookId]);
+  }, [taskId]);
 
   useEffect(() => {
     const controller = new AbortController();
-    const sameRunbook = loadedRunbookIdRef.current === runbookId;
-    if (!sameRunbook) setBoardItems(null);
+    const sameTask = loadedTaskIdRef.current === taskId;
+    if (!sameTask) setBoardItems(null);
     const load = () => fetchTaskBoardContainerItems(
-      runbookId,
+      taskId,
       globalThis.fetch.bind(globalThis),
       controller.signal,
     );
     void loadConfirmedResult({
-      previous: sameRunbook ? boardItemsRef.current : null,
+      previous: sameTask ? boardItemsRef.current : null,
       load,
       clearsVisibleContent: (current, result) => current.length > 0 && result.length === 0,
     }).then((next) => {
-      loadedRunbookIdRef.current = runbookId;
+      loadedTaskIdRef.current = taskId;
       setBoardItems((current) => retainEqualValue(current ?? undefined, next));
       setLoadError(null);
     }).catch((error: unknown) => {
@@ -111,7 +111,7 @@ export function TaskBoardPane({
       setLoadError(errorText(error));
     });
     return () => controller.abort();
-  }, [invalidationKey, runbookId]);
+  }, [invalidationKey, taskId]);
 
   useEffect(() => {
     const state = useDashboardStore.getState();
@@ -160,10 +160,10 @@ export function TaskBoardPane({
     }));
     if (nextCatalog !== currentCatalog) state.setCatalog(nextCatalog);
     if (!catalogInitializedRef.current) {
-      state.openRunbookBoard(runbookId, projectFolderId);
+      state.openTaskBoard(taskId, projectFolderId);
       catalogInitializedRef.current = true;
     }
-  }, [boardItems, displaySessions, projectFolderId, projectTitle, runbookId]);
+  }, [boardItems, displaySessions, projectFolderId, projectTitle, taskId]);
 
   return (
     <article
@@ -176,7 +176,7 @@ export function TaskBoardPane({
         <DashboardIconCap label="업무 상세로 돌아가기" onClick={onClose}>
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
-        <strong>▦ 런북 보드</strong>
+        <strong>▦ 업무 보드</strong>
         <span className="v3-board-live-state">
           {boardItems === null || boardSessionsLoading ? "불러오는 중" : `${boardItems.length}개 항목 · 실시간`}
         </span>
@@ -191,7 +191,7 @@ export function TaskBoardPane({
             <Button variant="secondary" onClick={() => { void reloadBoardItems(); }}>다시 시도</Button>
           </V3ErrorNotice>
         ) : boardItems === null ? (
-          <div className="v3-board-load-state" data-testid="v3-task-board-loading">런북 내용을 불러오는 중…</div>
+          <div className="v3-board-load-state" data-testid="v3-task-board-loading">업무 내용을 불러오는 중…</div>
         ) : (
           <BoardWorkspaceView sessions={displaySessions} />
         )}

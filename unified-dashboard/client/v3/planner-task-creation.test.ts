@@ -27,7 +27,7 @@ describe("createPlannerTask", () => {
         guidance: "초기 지침",
         atomReferences: [],
       },
-    }, port)).resolves.toEqual({ pageId: "task-uuid", runbookId: "task-uuid" });
+    }, port)).resolves.toEqual({ pageId: "task-uuid", taskId: "task-uuid" });
 
     expect(calls).toEqual(["identity", "daily-mount"]);
     expect(port.createTaskIdentity).toHaveBeenCalledWith({
@@ -59,7 +59,7 @@ describe("createPlannerTask", () => {
     }, port).catch((error: unknown) => error);
 
     expect(failure).toBeInstanceOf(PlannerTaskCreationError);
-    expect(failure).toMatchObject({ phase: "runbook" });
+    expect(failure).toMatchObject({ phase: "task" });
     expect(port.mountPage).not.toHaveBeenCalled();
   });
 

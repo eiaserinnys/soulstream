@@ -464,7 +464,7 @@ class TestCatalog:
                 "containerKind": "folder",
                 "containerId": "f1",
                 "membershipKind": "primary",
-                "sourceRunbookItemId": None,
+                "sourceTaskItemId": None,
                 "itemType": "session",
                 "itemId": "s1",
                 "x": 0.0,
@@ -634,7 +634,7 @@ class TestCatalog:
             "containerKind": "folder",
             "containerId": "f1",
             "membershipKind": "primary",
-            "sourceRunbookItemId": None,
+            "sourceTaskItemId": None,
             "itemType": "asset",
             "itemId": "asset-1",
             "x": 40.0,
@@ -653,32 +653,32 @@ class TestCatalog:
             "updatedAt": result["boardItem"]["updatedAt"],
         }
 
-    async def test_markdown_and_file_asset_can_target_runbook_container(self, db: SqliteSessionDB):
+    async def test_markdown_and_file_asset_can_target_task_container(self, db: SqliteSessionDB):
         await db.create_folder("f1", "Folder 1")
 
         markdown = await db.create_markdown_document(
-            "doc-runbook",
+            "doc-task",
             "f1",
-            "Runbook note",
+            "Task note",
             "Body",
             40,
             80,
-            container_kind="runbook",
+            container_kind="task",
             container_id="rb-1",
         )
         assert markdown["boardItem"] == {
-            "id": "markdown:doc-runbook",
+            "id": "markdown:doc-task",
             "folderId": "f1",
-            "containerKind": "runbook",
+            "containerKind": "task",
             "containerId": "rb-1",
             "membershipKind": "primary",
-            "sourceRunbookItemId": None,
+            "sourceTaskItemId": None,
             "itemType": "markdown",
-            "itemId": "doc-runbook",
+            "itemId": "doc-task",
             "x": 40.0,
             "y": 80.0,
             "metadata": {
-                "title": "Runbook note",
+                "title": "Task note",
                 "preview": "Body",
                 "version": 1,
             },
@@ -687,24 +687,24 @@ class TestCatalog:
         }
 
         await db.create_pending_file_asset(
-            "asset-runbook",
-            "containers/runbook/rb-1/assets/asset-runbook/photo.png",
+            "asset-task",
+            "containers/task/rb-1/assets/asset-task/photo.png",
             "photo.png",
             "image/png",
             123,
         )
         asset = await db.commit_file_asset(
-            "asset-runbook",
+            "asset-task",
             "f1",
             120,
             160,
-            container_kind="runbook",
+            container_kind="task",
             container_id="rb-1",
         )
-        assert asset["boardItem"]["containerKind"] == "runbook"
+        assert asset["boardItem"]["containerKind"] == "task"
         assert asset["boardItem"]["containerId"] == "rb-1"
         assert asset["boardItem"]["metadata"]["storageKey"] == (
-            "containers/runbook/rb-1/assets/asset-runbook/photo.png"
+            "containers/task/rb-1/assets/asset-task/photo.png"
         )
 
     async def test_file_asset_delete_trigger_removes_board_item(self, db: SqliteSessionDB):

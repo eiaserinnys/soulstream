@@ -39,7 +39,7 @@ export function createLiveBoardItemRouteProvider(
       const rows = await sql`
         SELECT folder_id
         FROM board_yjs_catalog_cache
-        WHERE container_kind = 'runbook'
+        WHERE container_kind = 'task'
           AND container_id = ${container.id}
         LIMIT 1
       `;
@@ -47,7 +47,7 @@ export function createLiveBoardItemRouteProvider(
       if (folderId !== null) return folderId;
       throw new BoardItemRouteError(
         "BOARD_CONTAINER_NOT_FOUND",
-        "Runbook board container not found",
+        "Task board container not found",
         404,
       );
     },
@@ -85,8 +85,8 @@ function serializeBoardItemRow(row: Record<string, unknown>): BoardItemRecord[] 
     containerId: stringValue(row.container_id ?? row.containerId) ?? folderId,
     membershipKind:
       stringValue(row.membership_kind ?? row.membershipKind) ?? "primary",
-    sourceRunbookItemId: stringValue(
-      row.source_runbook_item_id ?? row.sourceRunbookItemId,
+    sourceTaskItemId: stringValue(
+      row.source_task_item_id ?? row.sourceTaskItemId,
     ),
     itemType,
     itemId,

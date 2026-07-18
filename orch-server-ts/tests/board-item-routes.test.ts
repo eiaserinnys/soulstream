@@ -32,10 +32,10 @@ const boardItems = [
     container: { kind: "folder", id: "folder-a-child" },
   },
   {
-    id: "runbook-card",
+    id: "task-card",
     folderId: "folder-a",
-    itemType: "runbook",
-    itemId: "runbook-1",
+    itemType: "task",
+    itemId: "task-1",
   },
   { id: "item-b", folderId: "folder-b" },
 ];
@@ -78,10 +78,10 @@ function createHarness(overrides: Partial<BoardItemRouteProvider> = {}) {
     async resolveBoardContainerFolderId(container) {
       calls.push(["resolveContainer", container]);
       if (container.kind === "folder") return container.id;
-      if (container.id === "runbook-1") return "folder-a";
+      if (container.id === "task-1") return "folder-a";
       throw new BoardItemRouteError(
         "BOARD_CONTAINER_NOT_FOUND",
-        "Runbook board container not found",
+        "Task board container not found",
         404,
       );
     },
@@ -200,7 +200,7 @@ describe("board item route harness", () => {
     });
     expect(invalidKind.statusCode).toBe(400);
     expect(invalidKind.json()).toEqual({
-      detail: "container_kind must be folder or runbook",
+      detail: "container_kind must be folder or task",
     });
     expect(calls).toEqual([]);
 
@@ -231,7 +231,7 @@ describe("board item route harness", () => {
     await app.close();
   });
 
-  it("resolves runbook container folder before listing board items", async () => {
+  it("resolves task container folder before listing board items", async () => {
     const { app, calls } = createAppWithBoardItems({
       restricted: true,
       allowedFolderIds: ["folder-a"],
@@ -239,15 +239,15 @@ describe("board item route harness", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/board-items?container_kind=runbook&container_id=runbook-1",
+      url: "/api/board-items?container_kind=task&container_id=task-1",
     });
 
     expect(response.statusCode).toBe(200);
     expect(calls).toEqual([
       ["listFolders"],
-      ["resolveContainer", { kind: "runbook", id: "runbook-1" }],
+      ["resolveContainer", { kind: "task", id: "task-1" }],
       ["access"],
-      ["listBoardItems", { container: { kind: "runbook", id: "runbook-1" } }],
+      ["listBoardItems", { container: { kind: "task", id: "task-1" } }],
     ]);
 
     await app.close();
@@ -343,7 +343,7 @@ describe("board item route harness", () => {
       method: "PATCH",
       url: "/api/board-items/item%2Fone/container",
       payload: {
-        container: { kind: "runbook", id: "runbook-1" },
+        container: { kind: "task", id: "task-1" },
         idempotency_key: "idem-1",
         x: 2,
         y: 3,
@@ -354,14 +354,14 @@ describe("board item route harness", () => {
     expect(calls).toEqual([
       ["access"],
       ["catalog"],
-      ["resolveContainer", { kind: "runbook", id: "runbook-1" }],
+      ["resolveContainer", { kind: "task", id: "task-1" }],
     ]);
     expect(httpClient).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "PATCH",
         upstreamPath: "/api/board-items/item%2Fone/container",
         body: {
-          container: { kind: "runbook", id: "runbook-1" },
+          container: { kind: "task", id: "task-1" },
           idempotencyKey: "idem-1",
           x: 2,
           y: 3,

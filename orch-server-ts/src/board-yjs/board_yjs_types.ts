@@ -4,10 +4,10 @@ export type BoardItemType =
   | "subfolder"
   | "asset"
   | "frame"
-  | "runbook"
+  | "task"
   | "custom_view";
 
-export type BoardContainerKind = "folder" | "runbook";
+export type BoardContainerKind = "folder" | "task";
 
 export interface BoardYjsContainerRef {
   containerKind: BoardContainerKind;
@@ -24,7 +24,7 @@ export interface CatalogBoardItemRow {
   containerKind?: BoardContainerKind;
   containerId?: string;
   membershipKind?: "primary" | "reference";
-  sourceRunbookItemId?: string | null;
+  sourceTaskItemId?: string | null;
   itemType: BoardItemType;
   itemId: string;
   x: number;
@@ -59,7 +59,7 @@ export interface BoardYjsItemValue {
   x: number;
   y: number;
   membership_kind?: "primary" | "reference";
-  source_runbook_item_id?: string | null;
+  source_task_item_id?: string | null;
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;

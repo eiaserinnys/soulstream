@@ -17,15 +17,15 @@ describe("task move targets", () => {
       target("task-a", "rb-a", "업무 A"),
       duplicate,
       target("task-b", "rb-b", "업무 B"),
-    ], "rb-current").map((item) => item.runbookId)).toEqual(["rb-a", "rb-b"]);
+    ], "rb-current").map((item) => item.taskId)).toEqual(["rb-a", "rb-b"]);
   });
 
-  it("uses the bounded page search and returns only primary runbook tasks", async () => {
+  it("uses the bounded page search and returns only primary tasks", async () => {
     const snapshots = new Map([
-      ["remote-task", pageRead("remote-task", "화면 밖 업무", [runbookBlock("rb-remote", true)])],
+      ["remote-task", pageRead("remote-task", "화면 밖 업무", [taskBlock("rb-remote", true)])],
       ["document", pageRead("document", "일반 문서", [])],
-      ["secondary", pageRead("secondary", "보조 참조", [runbookBlock("rb-secondary", false)])],
-      ["current", pageRead("current", "현재 업무", [runbookBlock("rb-current", true)])],
+      ["secondary", pageRead("secondary", "보조 참조", [taskBlock("rb-secondary", false)])],
+      ["current", pageRead("current", "현재 업무", [taskBlock("rb-current", true)])],
     ]);
     const api = {
       searchPages: vi.fn(async () => ({
@@ -52,8 +52,8 @@ describe("task move targets", () => {
   });
 });
 
-function target(id: string, runbookId: string, title: string): TaskMoveTarget {
-  return { page: pageRead(id, title, []).page, runbookId };
+function target(id: string, taskId: string, title: string): TaskMoveTarget {
+  return { page: pageRead(id, title, []).page, taskId };
 }
 
 function pageRead(
@@ -77,15 +77,15 @@ function pageRead(
   };
 }
 
-function runbookBlock(runbookId: string, primary: boolean): PageReadResponse["blocks"][number] {
+function taskBlock(taskId: string, primary: boolean): PageReadResponse["blocks"][number] {
   return {
-    id: `block-${runbookId}`,
+    id: `block-${taskId}`,
     page_id: "page",
     parent_id: null,
     position_key: "A",
-    block_type: "runbook_ref",
+    block_type: "task_ref",
     text: "",
-    properties: { runbookId, primary },
+    properties: { taskId, primary },
     collapsed: false,
   };
 }

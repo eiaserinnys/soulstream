@@ -155,10 +155,23 @@ function customStreamEventFromEnvelope(
   if (payload === undefined) return undefined;
   if (
     payload.type !== "catalog_updated" &&
+    payload.type !== "task_updated" &&
     payload.type !== "runbook_updated" &&
     payload.type !== "custom_view_updated"
   ) {
     return undefined;
+  }
+  if (payload.type === "runbook_updated") {
+    if (typeof payload.runbookId !== "string" || payload.runbookId.length === 0) {
+      return undefined;
+    }
+    const { runbookId, ...canonicalPayload } = payload;
+    return {
+      ...canonicalPayload,
+      type: "task_updated",
+      taskId: runbookId,
+      nodeId,
+    };
   }
   return {
     ...payload,

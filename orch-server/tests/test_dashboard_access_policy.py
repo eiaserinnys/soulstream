@@ -360,22 +360,22 @@ async def test_restricted_user_cannot_read_blocked_board_items(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_restricted_user_cannot_read_runbook_container_in_blocked_folder(monkeypatch):
+async def test_restricted_user_cannot_read_task_container_in_blocked_folder(monkeypatch):
     app, _db, catalog_service, _node_manager = _build_app(monkeypatch)
     catalog_service.get_catalog.return_value = {
         "folders": _folders(),
         "sessions": {},
         "boardItems": [{
-            "id": "runbook:blocked-rb",
+            "id": "task:blocked-rb",
             "folderId": "blocked-root",
-            "itemType": "runbook",
+            "itemType": "task",
             "itemId": "blocked-rb",
             "x": 0,
             "y": 0,
         }],
     }
     async for client in _restricted_client(app):
-        resp = await client.get("/api/board-items?container_kind=runbook&container_id=blocked-rb")
+        resp = await client.get("/api/board-items?container_kind=task&container_id=blocked-rb")
 
     assert resp.status_code == 403
     catalog_service.list_board_items.assert_not_called()

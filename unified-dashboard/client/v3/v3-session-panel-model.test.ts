@@ -77,8 +77,8 @@ describe("v3 session panel model", () => {
 
   it("resolves only the primary session board item and treats folder containers as standalone", () => {
     const items: CatalogBoardItem[] = [
-      boardItem("reference", "runbook", "rb-reference"),
-      boardItem("primary", "runbook", "rb-task"),
+      boardItem("reference", "task", "rb-reference"),
+      boardItem("primary", "task", "rb-task"),
     ];
 
     expect(sessionWorkspaceTargetFromBoardItems(items, "session-a"))
@@ -90,10 +90,10 @@ describe("v3 session panel model", () => {
   });
 
   it("preserves legacy defaults for missing membership and container fields", () => {
-    const legacyRunbook = {
-      id: "legacy-runbook",
+    const legacyTask = {
+      id: "legacy-task",
       folderId: "folder-a",
-      containerKind: "runbook",
+      containerKind: "task",
       containerId: "rb-legacy",
       itemType: "session",
       itemId: "session-a",
@@ -109,7 +109,7 @@ describe("v3 session panel model", () => {
       y: 0,
     } as CatalogBoardItem;
 
-    expect(sessionWorkspaceTargetFromBoardItems([legacyRunbook], "session-a"))
+    expect(sessionWorkspaceTargetFromBoardItems([legacyTask], "session-a"))
       .toEqual({ kind: "task", pageId: "rb-legacy" });
     expect(sessionWorkspaceTargetFromBoardItems([legacyFolder], "session-a"))
       .toEqual({ kind: "standalone" });
@@ -117,14 +117,14 @@ describe("v3 session panel model", () => {
 
   it("derives task and project affiliation from cached catalog board items only", () => {
     const items = [
-      boardItem("primary", "runbook", "task-a"),
+      boardItem("primary", "task", "task-a"),
       {
-        id: "runbook:task-a",
+        id: "task:task-a",
         folderId: "project-folder",
         containerKind: "folder",
         containerId: "project-folder",
         membershipKind: "primary",
-        itemType: "runbook",
+        itemType: "task",
         itemId: "task-a",
         x: 0,
         y: 0,
@@ -148,7 +148,7 @@ describe("v3 session panel model", () => {
 
     expect(sessionPanelAffiliation([legacy], folders, "session-a")).toBe("기존 세션");
     expect(sessionPanelAffiliation([], folders, "session-a")).toBeNull();
-    expect(sessionPanelAffiliation([boardItem("primary", "runbook", "task-missing")], folders, "session-a"))
+    expect(sessionPanelAffiliation([boardItem("primary", "task", "task-missing")], folders, "session-a"))
       .toBeNull();
   });
 });

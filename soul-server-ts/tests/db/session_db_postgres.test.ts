@@ -96,7 +96,7 @@ describePostgres("SessionDB supervisor PostgreSQL integration", () => {
       legacyFolderId: null,
       legacyContainerKind: null,
       legacyContainerId: null,
-      sourceRunbookItemId: null,
+      sourceTaskItemId: null,
     };
     const first = await repository.enqueue(input);
     const duplicate = await repository.enqueue({ ...input, dailyDate: "2026-07-14" });
@@ -227,7 +227,7 @@ describePostgres("SessionDB supervisor PostgreSQL integration", () => {
       legacyFolderId: null,
       legacyContainerKind: null,
       legacyContainerId: null,
-      sourceRunbookItemId: null,
+      sourceTaskItemId: null,
     });
     await harness!.sql`
       UPDATE session_page_bindings

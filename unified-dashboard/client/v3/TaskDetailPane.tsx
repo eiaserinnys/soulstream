@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DashboardIconCap, RunbookCard, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
+import { DashboardIconCap, TaskCard, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { ArrowLeft, LayoutDashboard, Plus, Star, Trash2, X } from "lucide-react";
 
@@ -301,7 +301,7 @@ export function TaskDetailPane({
           <Star className="h-4 w-4" fill={taskStar.starred ? "currentColor" : "none"} aria-hidden="true" />
         </DashboardIconCap>
         <TaskTodayToggle inToday={taskInToday} onToggle={onToggleTaskToday} />
-        <DashboardIconCap label="런북 보드 열기" onClick={onOpenBoard}>
+        <DashboardIconCap label="업무 보드 열기" onClick={onOpenBoard}>
           <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </header>
@@ -368,11 +368,11 @@ export function TaskDetailPane({
               ) : null}
             </section>
 
-            <section ref={checklistSectionRef} className="v3-detail-section" data-task-section="checklist" data-testid="v3-task-runbook-checklist">
-              <div className="v3-detail-section-head"><h3>체크리스트</h3><span>런북</span></div>
-              <div className="v3-task-runbook-checklist">
-                <RunbookCard
-                  runbookId={task.runbookId}
+            <section ref={checklistSectionRef} className="v3-detail-section" data-task-section="checklist" data-testid="v3-task-checklist">
+              <div className="v3-detail-section-head"><h3>체크리스트</h3><span>업무</span></div>
+              <div className="v3-task-checklist">
+                <TaskCard
+                  taskId={task.taskId}
                   fallbackTitle={task.page.title}
                   editable
                   textSize="session"
@@ -382,7 +382,7 @@ export function TaskDetailPane({
 
             <div ref={boardSectionRef} data-task-section="board">
               <TaskInlineBoard
-                runbookId={task.runbookId}
+                taskId={task.taskId}
                 folderId={projectFolderId}
                 onMarkdownDocumentsChanged={setBoardDocuments}
               />
@@ -392,7 +392,7 @@ export function TaskDetailPane({
               <TaskRunHistory
                 taskTitle={task.page.title}
                 taskPageId={task.page.id}
-                runbookId={task.runbookId}
+                taskId={task.taskId}
                 contextItems={contextItems}
                 documentOptions={boardDocuments}
                 pageContextSources={pageContextSources}

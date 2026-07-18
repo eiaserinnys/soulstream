@@ -41,8 +41,8 @@ import type { BoardAssetRouteProvider } from "../board/board_asset_routes.js";
 import type { LiveBoardAssetStorage } from "./live_board_asset_storage.js";
 import { createLiveMarkdownDocumentRouteProvider } from "./live_markdown_document_route_provider.js";
 import type { MarkdownDocumentRouteProvider } from "../board/markdown_document_routes.js";
-import { createLiveRunbookRouteProvider } from "./live_runbook_route_provider.js";
-import type { RunbookRouteProvider } from "../runbooks/runbook_route_types.js";
+import { createLiveTaskRouteProvider } from "./live_task_route_provider.js";
+import type { TaskRouteProvider } from "../tasks/task_route_types.js";
 import { createLiveSessionHistoryProvider } from "./live_session_history_provider.js";
 import { serializeSessionRow } from "./live_session_serialization.js";
 import { createLiveUserPreferencesRepository } from "./live_user_preferences_repository.js";
@@ -61,7 +61,7 @@ export type LiveDbCatalogRepository = {
   readonly boardAssetRouteProvider: BoardAssetRouteProvider;
   readonly boardItemRouteProvider: BoardItemRouteProvider;
   readonly markdownDocumentRouteProvider: MarkdownDocumentRouteProvider;
-  readonly runbookRouteProvider: RunbookRouteProvider;
+  readonly taskRouteProvider: TaskRouteProvider;
   readonly sessionCatalogProvider: SessionCatalogProvider;
   readonly sessionHistoryProvider: ReturnType<typeof createLiveSessionHistoryProvider>;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
@@ -130,7 +130,7 @@ export function createLiveDbCatalogRepository(
     storage: options.boardAssetStorage,
     configProvider: options.configProvider,
   });
-  const runbookProvider = createLiveRunbookRouteProvider({
+  const taskProvider = createLiveTaskRouteProvider({
     sqlResolver,
     folderProvider,
     registry: options.registry,
@@ -234,7 +234,7 @@ export function createLiveDbCatalogRepository(
       folderProvider,
       boardItemProvider,
     ),
-    runbookRouteProvider: runbookProvider,
+    taskRouteProvider: taskProvider,
     sessionCatalogProvider: createSessionCatalogProvider(sqlResolver),
     sessionHistoryProvider,
     sessionResourceAccessRepository,

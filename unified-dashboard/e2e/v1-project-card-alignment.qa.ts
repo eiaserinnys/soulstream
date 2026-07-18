@@ -36,9 +36,13 @@ async function verifyTheme(browser: Browser, theme: Theme) {
   });
   const page = await context.newPage();
   const browserErrors: string[] = [];
+  const httpErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("console", (message) => {
     if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("response", (response) => {
+    if (response.status() >= 400) httpErrors.push(`${response.status()} ${response.url()}`);
   });
 
   try {
@@ -66,11 +70,14 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     const afterRefresh = await openProjectAndMeasure(page);
 
     await selectProject(page, "Soulstream 운영");
-    await page.getByTestId("folder-runbook-card").waitFor({ state: "detached" });
+    await page.getByTestId("folder-task-card").waitFor({ state: "detached" });
     const afterReentry = await openProjectAndMeasure(page);
     await capture(page, theme, "reentry");
 
-    assert(browserErrors.length === 0, `${theme}: 브라우저 오류: ${browserErrors.join(" | ")}`);
+    assert(
+      browserErrors.length === 0 && httpErrors.length === 0,
+      `${theme}: 브라우저 오류: ${browserErrors.join(" | ")} (${httpErrors.join(" | ")})`,
+    );
     return { initial, afterRefresh, afterReentry, browserErrors: 0 };
   } finally {
     await context.close();
@@ -81,19 +88,19 @@ async function openProjectAndMeasure(page: Page) {
   await selectProject(page, "소울스트림");
   const scrollRoot = page.getByTestId("folder-session-scroll-root");
   const childFolderCard = scrollRoot.locator("section").filter({ hasText: "하위 폴더" }).locator("button").first();
-  const runbookCard = scrollRoot.getByTestId("folder-runbook-card").first();
+  const taskCard = scrollRoot.getByTestId("folder-task-card").first();
   const sessionCard = scrollRoot.getByTestId("folder-session-card-frame").first();
 
   await childFolderCard.waitFor({ state: "visible", timeout: 15_000 });
-  await runbookCard.waitFor({ state: "visible", timeout: 15_000 });
+  await taskCard.waitFor({ state: "visible", timeout: 15_000 });
   await sessionCard.waitFor({ state: "visible", timeout: 15_000 });
 
   const childFolder = await requireBounds(childFolderCard, "하위 프로젝트 카드");
-  const runbook = await requireBounds(runbookCard, "업무 카드");
+  const task = await requireBounds(taskCard, "업무 카드");
   const session = await requireBounds(sessionCard, "세션 카드");
   assertAligned(childFolder, session, "하위 프로젝트");
-  assertAligned(runbook, session, "업무");
-  return { childFolder, runbook, session };
+  assertAligned(task, session, "업무");
+  return { childFolder, task, session };
 }
 
 async function selectProject(page: Page, name: string) {
@@ -113,7 +120,7 @@ async function routeProjectBoardItems(route: Route) {
     contentType: "application/json",
     body: JSON.stringify({
       boardItems: [
-        boardItem("runbook", "rb-alpha"),
+        boardItem("task", "rb-alpha"),
         boardItem("session", "run-alpha-1"),
         boardItem("session", "run-alpha-2"),
       ],
@@ -121,19 +128,19 @@ async function routeProjectBoardItems(route: Route) {
   });
 }
 
-function boardItem(itemType: "runbook" | "session", itemId: string) {
+function boardItem(itemType: "task" | "session", itemId: string) {
   return {
     id: `${itemType}:${itemId}`,
     folderId: "folder-amber",
     containerKind: "folder",
     containerId: "folder-amber",
     membershipKind: "primary",
-    sourceRunbookItemId: null,
+    sourceTaskItemId: null,
     itemType,
     itemId,
     x: 0,
     y: 0,
-    metadata: itemType === "runbook" ? { title: "업무 카드 밀도와 계층 최종 QA" } : {},
+    metadata: itemType === "task" ? { title: "업무 카드 밀도와 계층 최종 QA" } : {},
     createdAt: "2026-07-14T01:30:00.000Z",
     updatedAt: "2026-07-14T01:30:00.000Z",
   };

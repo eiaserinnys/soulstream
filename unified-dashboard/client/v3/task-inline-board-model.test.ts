@@ -28,7 +28,7 @@ describe("task inline board model", () => {
     expect(next[1]).toBe(original[1]);
   });
 
-  it("places new markdown outside the fixed runbook card and existing tiles", () => {
+  it("places new markdown outside the fixed task card and existing tiles", () => {
     const placement = findTaskMarkdownPlacement([
       { ...item("markdown", "doc-1", { title: "문서" }), x: 400, y: 0 },
     ]);
@@ -52,7 +52,7 @@ function item(
   return {
     id: `${itemType}:${itemId}`,
     folderId: "folder-a",
-    containerKind: "runbook",
+    containerKind: "task",
     containerId: "rb-a",
     itemType,
     itemId,

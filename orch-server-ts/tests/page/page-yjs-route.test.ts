@@ -370,14 +370,14 @@ class MemoryBoardRepository {
     return this.snapshots.get(documentName) ?? null;
   }
 
-  async resolveBoardYjsContainerScope(container: { containerKind: "folder" | "runbook"; containerId: string }) {
+  async resolveBoardYjsContainerScope(container: { containerKind: "folder" | "task"; containerId: string }) {
     return {
       folderId: container.containerKind === "folder" ? container.containerId : "folder-1",
       ...container,
     };
   }
 
-  async backfillRunbookBoardItemsIntoSnapshot(
+  async backfillTaskBoardItemsIntoSnapshot(
     _documentName: string,
     _container: unknown,
     snapshot: Uint8Array,

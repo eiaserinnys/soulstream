@@ -4,8 +4,8 @@ import type {
   PageDto,
   PageReadResponse,
 } from "@seosoyoung/soul-ui/page";
-import type { RunbookSnapshot } from "@seosoyoung/soul-ui/stores/runbook-store";
-import { fetchRunbookSnapshot } from "@seosoyoung/soul-ui";
+import type { TaskSnapshot } from "@seosoyoung/soul-ui/stores/task-store";
+import { fetchTaskSnapshot } from "@seosoyoung/soul-ui";
 
 import {
   classifyMountedPage,
@@ -21,8 +21,8 @@ export interface PlannerTask {
   page: PageDto;
   blocks: BlockDto[];
   stateVector: string;
-  runbookId: string;
-  runbook: RunbookSnapshot | null;
+  taskId: string;
+  task: TaskSnapshot | null;
   status: PlannerTaskStatus;
   assignee: string;
   contextCount: number;
@@ -230,20 +230,20 @@ export async function loadPlannerTask(
 ): Promise<PlannerTask> {
   const snapshot = await api.getPage(taskPageId);
   const classification = classifyMountedPage(snapshot.blocks);
-  if (classification.kind !== "task") throw new Error("별표 페이지가 runbook 업무가 아닙니다");
-  const runbook = await fetchRunbookSnapshot(classification.runbookId);
+  if (classification.kind !== "task") throw new Error("별표 페이지가 task 업무가 아닙니다");
+  const task = await fetchTaskSnapshot(classification.taskId);
   const backlinks = await loadAllMountBacklinks(api, taskPageId);
   const projectPageId = await firstProjectPageId(api, backlinks.map((item) => item.sourcePageId));
   return {
     page: snapshot.page,
     blocks: snapshot.blocks,
     stateVector: snapshot.state_vector,
-    runbookId: classification.runbookId,
-    runbook,
-    status: runbook ? derivePlannerTaskStatus(runbook) : "open",
-    assignee: taskAssignee(runbook),
+    taskId: classification.taskId,
+    task,
+    status: task ? derivePlannerTaskStatus(task) : "open",
+    assignee: taskAssignee(task),
     contextCount: taskContextCount(snapshot.blocks),
-    progress: plannerProgress(runbook),
+    progress: plannerProgress(task),
     projectPageId,
     sessionIds: [],
     mountedDocuments: [],
@@ -272,17 +272,17 @@ function plannerPage<T>(payload: PageSlicePayload<T>): PlannerPage<T> {
 }
 
 function plannerTask(payload: PlannerTaskPayload): PlannerTask {
-  const runbook = payload.runbook ? minimalRunbook(payload.runbook) : null;
+  const task = payload.task ? minimalTask(payload.task) : null;
   return {
     page: payload.page,
     blocks: payload.blocks,
     stateVector: "",
-    runbookId: payload.runbook_id,
-    runbook,
-    status: plannerSummaryStatus(payload.runbook),
-    assignee: payload.runbook?.assignee ?? (payload.runbook ? "담당 미지정" : "담당 미확인"),
+    taskId: payload.task_id,
+    task,
+    status: plannerSummaryStatus(payload.task),
+    assignee: payload.task?.assignee ?? (payload.task ? "담당 미지정" : "담당 미확인"),
     contextCount: taskContextCount(payload.blocks),
-    progress: plannerSummaryProgress(payload.runbook),
+    progress: plannerSummaryProgress(payload.task),
     projectPageId: payload.project_page_id,
     sessionIds: payload.sessions.map((session) => session.agent_session_id),
     mountedDocuments: payload.mounted_documents.map((document) => ({
@@ -292,7 +292,7 @@ function plannerTask(payload: PlannerTaskPayload): PlannerTask {
   };
 }
 
-function plannerSummaryStatus(summary: PlannerRunbookSummaryPayload | null): PlannerTaskStatus {
+function plannerSummaryStatus(summary: PlannerTaskSummaryPayload | null): PlannerTaskStatus {
   if (!summary) return "open";
   if (summary.status === "completed") return "completed";
   if ((summary.item_counts.review ?? 0) > 0) return "review";
@@ -300,14 +300,14 @@ function plannerSummaryStatus(summary: PlannerRunbookSummaryPayload | null): Pla
   return "open";
 }
 
-function plannerSummaryProgress(summary: PlannerRunbookSummaryPayload | null): number | null {
+function plannerSummaryProgress(summary: PlannerTaskSummaryPayload | null): number | null {
   if (!summary || summary.item_total === 0) return null;
   return Math.round((summary.completed_item_count / summary.item_total) * 100);
 }
 
-function minimalRunbook(summary: PlannerRunbookSummaryPayload): RunbookSnapshot {
+function minimalTask(summary: PlannerTaskSummaryPayload): TaskSnapshot {
   return {
-    runbook: {
+    task: {
       id: summary.id,
       board_item_id: summary.board_item_id,
       title: summary.title,
@@ -324,7 +324,7 @@ function minimalRunbook(summary: PlannerRunbookSummaryPayload): RunbookSnapshot 
   };
 }
 
-interface PlannerRunbookSummaryPayload {
+interface PlannerTaskSummaryPayload {
   id: string;
   board_item_id: string;
   title: string;
@@ -344,8 +344,8 @@ interface PlannerRunbookSummaryPayload {
 interface PlannerTaskPayload {
   page: PageDto;
   blocks: BlockDto[];
-  runbook_id: string;
-  runbook: PlannerRunbookSummaryPayload | null;
+  task_id: string;
+  task: PlannerTaskSummaryPayload | null;
   project_page_id: string | null;
   sessions: Array<{ agent_session_id: string }>;
   mounted_documents: Array<{ block_id: string; page: PageDto }>;

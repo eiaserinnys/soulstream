@@ -48,7 +48,7 @@ describe("board_yjs_persistence", () => {
       storeBoardYjsSnapshot: vi.fn().mockResolvedValue(undefined),
       markBoardYjsDocumentSynced: vi.fn().mockResolvedValue(undefined),
       syncBoardYjsReplica: vi.fn().mockResolvedValue(undefined),
-      backfillRunbookBoardItemsIntoSnapshot: vi.fn().mockResolvedValue(snapshot),
+      backfillTaskBoardItemsIntoSnapshot: vi.fn().mockResolvedValue(snapshot),
     } as unknown as BoardYjsPersistenceRepository;
 
     const persistence = createBoardYjsPersistence(db);
@@ -65,7 +65,7 @@ describe("board_yjs_persistence", () => {
     expect(db.loadBoardYjsSeed).not.toHaveBeenCalled();
     expect(db.storeBoardYjsSnapshot).not.toHaveBeenCalled();
     expect(db.syncBoardYjsReplica).not.toHaveBeenCalled();
-    expect(db.backfillRunbookBoardItemsIntoSnapshot).toHaveBeenCalledWith(
+    expect(db.backfillTaskBoardItemsIntoSnapshot).toHaveBeenCalledWith(
       documentName,
       { folderId, containerKind: "folder", containerId: folderId },
       snapshot,
@@ -73,7 +73,7 @@ describe("board_yjs_persistence", () => {
     expect(db.markBoardYjsDocumentSynced).not.toHaveBeenCalled();
   });
 
-  it("fetch는 기존 snapshot의 DB-only runbook tile을 보강한 snapshot을 반환", async () => {
+  it("fetch는 기존 snapshot의 DB-only task tile을 보강한 snapshot을 반환", async () => {
     const folderId = "folder-1";
     const documentName = getBoardYjsDocumentName(folderId);
     const snapshot = createBoardYDocSnapshot({
@@ -84,13 +84,13 @@ describe("board_yjs_persistence", () => {
     const repaired = createBoardYDocSnapshot({
       folderId,
       boardItems: [{
-        id: "runbook:rb-1",
+        id: "task:rb-1",
         folderId,
-        itemType: "runbook",
+        itemType: "task",
         itemId: "rb-1",
         x: 0,
         y: 0,
-        metadata: { title: "Runbook" },
+        metadata: { title: "Task" },
       }],
       markdownDocuments: [],
     });
@@ -101,7 +101,7 @@ describe("board_yjs_persistence", () => {
         containerKind: "folder",
         containerId: folderId,
       }),
-      backfillRunbookBoardItemsIntoSnapshot: vi.fn().mockResolvedValue(repaired),
+      backfillTaskBoardItemsIntoSnapshot: vi.fn().mockResolvedValue(repaired),
     } as unknown as BoardYjsPersistenceRepository;
 
     const persistence = createBoardYjsPersistence(db);
@@ -112,15 +112,15 @@ describe("board_yjs_persistence", () => {
     const doc = new Y.Doc();
     Y.applyUpdate(doc, fetched as Uint8Array);
     expect(readBoardYDocReplica(folderId, doc).boardItems).toEqual([
-      expect.objectContaining({ id: "runbook:rb-1", itemType: "runbook" }),
+      expect.objectContaining({ id: "task:rb-1", itemType: "task" }),
     ]);
   });
 
-  it("fetch는 runbook 컨테이너 문서 seed를 해당 컨테이너 항목으로 생성하고 synced marker를 남긴다", async () => {
-    const documentName = "board:runbook:rb-1";
+  it("fetch는 task 컨테이너 문서 seed를 해당 컨테이너 항목으로 생성하고 synced marker를 남긴다", async () => {
+    const documentName = "board:task:rb-1";
     const scope = {
       folderId: "folder-1",
-      containerKind: "runbook" as const,
+      containerKind: "task" as const,
       containerId: "rb-1",
     };
     const db = {
@@ -130,15 +130,15 @@ describe("board_yjs_persistence", () => {
         boardItems: [{
           id: "markdown:d1",
           folderId: "folder-1",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           itemType: "markdown",
           itemId: "d1",
           x: 0,
           y: 0,
-          metadata: { title: "Runbook note" },
+          metadata: { title: "Task note" },
         }],
-        markdownDocuments: [{ id: "d1", title: "Runbook note", body: "body", version: 1 }],
+        markdownDocuments: [{ id: "d1", title: "Task note", body: "body", version: 1 }],
       }),
       storeBoardYjsSnapshot: vi.fn().mockResolvedValue(undefined),
       markBoardYjsDocumentSynced: vi.fn().mockResolvedValue(undefined),
@@ -154,7 +154,7 @@ describe("board_yjs_persistence", () => {
     expect(readBoardYDocReplica(scope, doc).boardItems).toEqual([
       expect.objectContaining({
         id: "markdown:d1",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
       }),
     ]);

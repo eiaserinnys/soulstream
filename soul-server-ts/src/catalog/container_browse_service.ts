@@ -5,7 +5,7 @@ import type {
   FolderRow,
   ListContainerItemsParams,
   ListContainerItemsResult,
-  RunbookRow,
+  TaskRow,
   SessionDB,
 } from "../db/session_db.js";
 
@@ -19,7 +19,7 @@ const LEGACY_BOARD_ITEM_LIMIT = 10_000;
 
 export interface ContainerBrowseStore {
   getFolderById(folderId: string): Promise<FolderRow | null>;
-  getRunbookById(runbookId: string): Promise<RunbookRow | null>;
+  getTaskById(taskId: string): Promise<TaskRow | null>;
   listContainerItems(params: ListContainerItemsParams): Promise<ListContainerItemsResult>;
 }
 
@@ -155,7 +155,7 @@ export class ContainerBrowseService {
         limit: LEGACY_BOARD_ITEM_LIMIT,
         includeArchived: false,
         query: null,
-        itemTypes: ["markdown", "subfolder", "asset", "frame", "runbook", "custom_view"],
+        itemTypes: ["markdown", "subfolder", "asset", "frame", "task", "custom_view"],
       }),
     ]);
     return {
@@ -193,7 +193,7 @@ export class ContainerBrowseService {
   private async assertContainer(container: BoardYjsContainerRef): Promise<void> {
     const row = container.containerKind === "folder"
       ? await this.store.getFolderById(container.containerId)
-      : await this.store.getRunbookById(container.containerId);
+      : await this.store.getTaskById(container.containerId);
     if (!row) {
       throw new Error(`${container.containerKind} not found: ${container.containerId}`);
     }
@@ -203,7 +203,7 @@ export class ContainerBrowseService {
 export function createContainerBrowseStore(db: SessionDB): ContainerBrowseStore {
   return {
     getFolderById: async (folderId) => await db.getFolderById(folderId),
-    getRunbookById: async (runbookId) => await db.runbooks().getRunbook(runbookId),
+    getTaskById: async (taskId) => await db.tasks().getTask(taskId),
     listContainerItems: async (params) => await db.listContainerItems(params),
   };
 }
@@ -260,14 +260,14 @@ function toBrowseItem(record: ListContainerItemsResult["items"][number]): Contai
       title: readableText(record.boardItem.metadata.title) ?? "제목 없는 프레임",
     };
   }
-  const titled = record.runbook ?? record.customView ?? record.asset ?? record.subfolder;
+  const titled = record.task ?? record.customView ?? record.asset ?? record.subfolder;
   return {
     ...base,
     type: record.boardItem.itemType,
     id: titled?.id ?? record.boardItem.itemId,
     title: readableText(titled?.title ?? record.boardItem.metadata.title)
       ?? untitledLabel(record.boardItem.itemType),
-    updatedAt: record.subfolder ? base.updatedAt : record.runbook?.updatedAt
+    updatedAt: record.subfolder ? base.updatedAt : record.task?.updatedAt
       ?? record.customView?.updatedAt
       ?? record.asset?.updatedAt
       ?? base.updatedAt,
@@ -294,7 +294,7 @@ function normalizeLimit(limit: number | undefined, max: number): number {
 
 function untitledLabel(itemType: BoardItemType): string {
   const labels: Partial<Record<BoardItemType, string>> = {
-    runbook: "제목 없는 런북",
+    task: "제목 없는 업무",
     custom_view: "제목 없는 커스텀뷰",
     asset: "이름 없는 파일",
     subfolder: "이름 없는 폴더",

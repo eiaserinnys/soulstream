@@ -97,7 +97,7 @@ export class BoardYjsRepository {
     const sql = await this.sqlResolver.resolveSql();
     const rows = await sql<readonly { folder_id: string }[]>`
       SELECT bi.folder_id
-      FROM runbooks r
+      FROM tasks r
       JOIN board_items bi ON bi.id = r.board_item_id
       WHERE r.id = ${container.containerId}
       LIMIT 1
@@ -160,7 +160,7 @@ export class BoardYjsRepository {
     });
   }
 
-  async backfillRunbookBoardItemsIntoSnapshot(
+  async backfillTaskBoardItemsIntoSnapshot(
     documentName: string,
     containerInput: string | BoardYjsContainerRef | BoardYjsContainerScope,
     snapshot: Uint8Array,
@@ -168,13 +168,13 @@ export class BoardYjsRepository {
     const scope = await this.resolveBoardYjsContainerScope(containerInput);
     if (!scope || scope.containerKind !== "folder") return snapshot;
     const sql = await this.sqlResolver.resolveSql();
-    const runbookItems = await this.loadRunbookBoardItems(sql, scope);
-    if (runbookItems.length === 0) return snapshot;
+    const taskItems = await this.loadTaskBoardItems(sql, scope);
+    if (taskItems.length === 0) return snapshot;
     const doc = new Y.Doc();
     if (snapshot.byteLength > 0) Y.applyUpdate(doc, snapshot);
     const replica = readBoardYDocReplica(scope, doc);
     const existingIds = new Set(replica.boardItems.map((item) => item.id));
-    const missing = runbookItems.filter((item) => !existingIds.has(item.id));
+    const missing = taskItems.filter((item) => !existingIds.has(item.id));
     if (missing.length === 0) return snapshot;
     doc.transact(() => {
       for (const item of missing) upsertBoardYjsItem(doc, item);
@@ -195,18 +195,18 @@ export class BoardYjsRepository {
     return rows.map(toMarkdownDocumentRow);
   }
 
-  private async loadRunbookBoardItems(
+  private async loadTaskBoardItems(
     sql: BoardYjsQuerySql,
     scope: BoardYjsContainerScope,
   ): Promise<CatalogBoardItemRow[]> {
     const rows = await sql<readonly BoardItemDbRow[]>`
       SELECT
         id, folder_id, container_kind, container_id, membership_kind,
-        source_runbook_item_id, item_type, item_id, x, y, metadata, created_at, updated_at
+        source_task_item_id, item_type, item_id, x, y, metadata, created_at, updated_at
       FROM board_items
       WHERE container_kind = ${scope.containerKind}
         AND container_id = ${scope.containerId}
-        AND item_type = 'runbook'
+        AND item_type = 'task'
       ORDER BY y ASC, x ASC, id ASC
     `;
     return rows.map(toCatalogBoardItemRow);
@@ -252,10 +252,10 @@ export async function syncBoardYjsReplicaWithSql(
       await sql`
         INSERT INTO board_items (
           id, folder_id, container_kind, container_id, membership_kind,
-          source_runbook_item_id, item_type, item_id, x, y, metadata, updated_at
+          source_task_item_id, item_type, item_id, x, y, metadata, updated_at
         ) VALUES (
           ${item.id}, ${scope.folderId}, ${scope.containerKind}, ${scope.containerId},
-          ${item.membershipKind ?? "primary"}, ${item.sourceRunbookItemId ?? null},
+          ${item.membershipKind ?? "primary"}, ${item.sourceTaskItemId ?? null},
           ${item.itemType}, ${item.itemId}, ${item.x}, ${item.y},
           ${sql.json(item.metadata ?? {})}::jsonb, NOW()
         )
@@ -264,7 +264,7 @@ export async function syncBoardYjsReplicaWithSql(
             container_kind = EXCLUDED.container_kind,
             container_id = EXCLUDED.container_id,
             membership_kind = EXCLUDED.membership_kind,
-            source_runbook_item_id = EXCLUDED.source_runbook_item_id,
+            source_task_item_id = EXCLUDED.source_task_item_id,
             item_type = EXCLUDED.item_type,
             item_id = EXCLUDED.item_id,
             x = EXCLUDED.x,
@@ -309,10 +309,10 @@ export async function syncBoardYjsReplicaWithSql(
 interface BoardItemDbRow extends Record<string, unknown> {
   id: string;
   folder_id: string;
-  container_kind?: "folder" | "runbook" | null;
+  container_kind?: "folder" | "task" | null;
   container_id?: string | null;
   membership_kind?: "primary" | "reference" | null;
-  source_runbook_item_id?: string | null;
+  source_task_item_id?: string | null;
   item_type: BoardItemType;
   item_id: string;
   x: string | number;
@@ -338,7 +338,7 @@ function toCatalogBoardItemRow(row: BoardItemDbRow): CatalogBoardItemRow {
     containerKind: row.container_kind ?? "folder",
     containerId: row.container_id ?? row.folder_id,
     membershipKind: row.membership_kind ?? "primary",
-    sourceRunbookItemId: row.source_runbook_item_id ?? null,
+    sourceTaskItemId: row.source_task_item_id ?? null,
     itemType: row.item_type,
     itemId: row.item_id,
     x: Number(row.x),

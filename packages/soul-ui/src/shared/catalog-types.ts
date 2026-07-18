@@ -54,10 +54,10 @@ export type CatalogBoardItemType =
   | "subfolder"
   | "asset"
   | "frame"
-  | "runbook"
+  | "task"
   | "custom_view";
 
-export type BoardContainerKind = "folder" | "runbook";
+export type BoardContainerKind = "folder" | "task";
 
 export interface BoardContainerRef {
   kind: BoardContainerKind;
@@ -70,7 +70,7 @@ export interface CatalogBoardItem {
   containerKind?: BoardContainerKind;
   containerId?: string;
   membershipKind?: "primary" | "reference";
-  sourceRunbookItemId?: string | null;
+  sourceTaskItemId?: string | null;
   itemType: CatalogBoardItemType;
   itemId: string;
   x: number;

@@ -12,8 +12,8 @@ describe("planner repository", () => {
       tasks: { items: [{
         page: page("task"),
         blocks: [],
-        runbook_id: "runbook",
-        runbook: null,
+        task_id: "task",
+        task: null,
         project_page_id: "project",
         sessions: [],
         mounted_documents: [],
@@ -38,8 +38,8 @@ describe("planner repository", () => {
     expect(harness.calls[0]?.values).toEqual(expect.arrayContaining(["project", "project"]));
     const query = normalizeSql(harness.calls[0]?.text);
     for (const table of [
-      "pages", "blocks", "block_links", "runbooks", "runbook_sections",
-      "runbook_items", "board_items", "sessions",
+      "pages", "blocks", "block_links", "tasks", "task_sections",
+      "task_items", "board_items", "sessions",
     ]) {
       expect(query).toContain(table);
     }
@@ -50,7 +50,7 @@ describe("planner repository", () => {
     expect(query).toContain("project_link.link_kind = 'mount'");
     expect(query).toContain("folder_task_mounts AS");
     expect(query).toContain("board_item.membership_kind = 'primary'");
-    expect(query).toContain("runbook.task_page_id IS NOT NULL");
+    expect(query).toContain("task.task_page_id IS NOT NULL");
     expect(query).toContain("LIMIT ?");
     expect(query).toContain("ORDER BY session.updated_at DESC, session.session_id DESC LIMIT 1");
   });
@@ -79,7 +79,7 @@ describe("planner repository", () => {
     expect(normalizeSql(harness.calls[0]?.text)).toContain("LIMIT 50");
   });
 
-  it("indexes only starred primary-runbook task pages with keyset limits", async () => {
+  it("indexes only starred primary-task pages with keyset limits", async () => {
     const harness = createSqlHarness([
       [
         { payload: page("project-a"), updated_at_cursor: "2026-07-14T00:00:00.000Z", id: "project-a" },
@@ -87,7 +87,7 @@ describe("planner repository", () => {
       ],
       [{ daily_date: "2026-07-13" }, { daily_date: "2026-07-11" }],
       [{
-        runbook_id: "runbook-a",
+        task_id: "task-a",
         runs: [
           { agent_session_id: "session-a", updated_at_cursor: "2026-07-14T00:00:00.000Z" },
           { agent_session_id: "session-b", updated_at_cursor: "2026-07-13T00:00:00.000Z" },
@@ -112,13 +112,13 @@ describe("planner repository", () => {
 
     const taskQuery = normalizeSql(harness.calls[0]?.text);
     expect(taskQuery).toContain("COALESCE((p.metadata->>'starred')::boolean, FALSE)");
-    expect(taskQuery).toContain("b.block_type = 'runbook_ref'");
+    expect(taskQuery).toContain("b.block_type = 'task_ref'");
     expect(taskQuery).toContain("COALESCE((b.properties->>'primary')::boolean, FALSE)");
-    expect(taskQuery).toContain("NULLIF(b.properties->>'runbookId', '') IS NOT NULL");
+    expect(taskQuery).toContain("NULLIF(b.properties->>'taskId', '') IS NOT NULL");
     expect(taskQuery).toContain("LIMIT ?");
     expect(harness.calls[0]?.values).toContain(2);
     const runQuery = normalizeSql(harness.calls[2]?.text);
-    expect(runQuery).toContain("container_kind = 'runbook'");
+    expect(runQuery).toContain("container_kind = 'task'");
     expect(runQuery).toContain("ORDER BY updated_at DESC, session_id DESC");
     expect(harness.calls[2]?.values).toContain(2);
   });

@@ -2,7 +2,7 @@ import type { InitialTaskContext } from "@seosoyoung/soul-ui/page";
 
 export type PlannerTaskCreationPhase =
   | "page"
-  | "runbook"
+  | "task"
   | "reference";
 
 export interface PlannerTaskCreationInput {
@@ -37,8 +37,8 @@ export class PlannerTaskCreationError extends Error {
 
 const CREATION_ERROR_LABEL: Record<PlannerTaskCreationPhase, string> = {
   page: "업무 페이지 생성",
-  runbook: "런북 생성",
-  reference: "업무-런북 연결",
+  task: "업무 생성",
+  reference: "업무 연결",
 };
 
 export function plannerTaskCreationErrorLabel(error: unknown): string {
@@ -50,8 +50,8 @@ export function plannerTaskCreationErrorLabel(error: unknown): string {
 export async function createPlannerTask(
   input: PlannerTaskCreationInput,
   port: PlannerTaskCreationPort,
-): Promise<{ pageId: string; runbookId: string }> {
-  const identity = await runPhase("runbook", () => port.createTaskIdentity({
+): Promise<{ pageId: string; taskId: string }> {
+  const identity = await runPhase("task", () => port.createTaskIdentity({
     title: input.title,
     description: input.description,
     folderId: input.folderId,
@@ -61,7 +61,7 @@ export async function createPlannerTask(
     sourcePageId: input.dailyPageId,
     title: input.title,
   }));
-  return { pageId: identity.id, runbookId: identity.id };
+  return { pageId: identity.id, taskId: identity.id };
 }
 
 async function runPhase<T>(phase: PlannerTaskCreationPhase, operation: () => Promise<T>): Promise<T> {

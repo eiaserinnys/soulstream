@@ -1,7 +1,7 @@
 """
 PostgresSessionDB - PostgreSQL 기반 세션 저장소 (thin assembly class)
 
-6개 도메인 mixin(session_crud, events, viewport, folders, runbooks, search)을 합성하여
+6개 도메인 mixin(session_crud, events, viewport, folders, tasks, search)을 합성하여
 SessionDBBase 인터페이스를 구현한다.
 
 인프라 관심사(connect/close/pool)만 이 파일에 남긴다.
@@ -22,7 +22,7 @@ from soul_common.db.postgres.session_crud import PostgresSessionCRUDMixin
 from soul_common.db.postgres.events import PostgresEventMixin
 from soul_common.db.postgres.viewport import PostgresViewportMixin
 from soul_common.db.postgres.folders import PostgresFolderMixin
-from soul_common.db.postgres.runbooks import PostgresRunbookMixin
+from soul_common.db.postgres.tasks import PostgresTaskMixin
 from soul_common.db.postgres.search import PostgresSearchMixin
 from soul_common.db.postgres.supervisor import PostgresSupervisorMixin
 
@@ -35,7 +35,7 @@ class PostgresSessionDB(
     PostgresEventMixin,
     PostgresViewportMixin,
     PostgresFolderMixin,
-    PostgresRunbookMixin,
+    PostgresTaskMixin,
     PostgresSearchMixin,
     SessionDBBase,
 ):

@@ -26,15 +26,15 @@ const folders = [
 
 const boardItems = [
   {
-    id: "runbook:rb-1",
+    id: "task:rb-1",
     folderId: "folder-a",
-    itemType: "runbook",
+    itemType: "task",
     itemId: "rb-1",
   },
   {
-    id: "runbook:rb-empty-folder",
+    id: "task:rb-empty-folder",
     folderId: "",
-    itemType: "runbook",
+    itemType: "task",
     itemId: "rb-empty-folder",
   },
   {
@@ -120,11 +120,11 @@ describe("board asset route harness", () => {
       ["POST", "/api/board/folder-a/assets/init", { name: "photo.png", mime: "image/png", size: 123 }],
       [
         "POST",
-        "/api/board-containers/runbook/rb-1/assets/init",
+        "/api/board-containers/task/rb-1/assets/init",
         { name: "photo.png", mime: "image/png", size: 123 },
       ],
       ["POST", "/api/board/folder-a/assets/asset-1/commit", { x: 1, y: 2 }],
-      ["POST", "/api/board-containers/runbook/rb-1/assets/asset-1/commit", { x: 1, y: 2 }],
+      ["POST", "/api/board-containers/task/rb-1/assets/asset-1/commit", { x: 1, y: 2 }],
     ] as const) {
       expect(await app.inject({ method, url, payload })).toMatchObject({
         statusCode: 404,
@@ -201,7 +201,7 @@ describe("board asset route harness", () => {
     await app.close();
   });
 
-  it("resolves runbook containers from catalog board items before init", async () => {
+  it("resolves task containers from catalog board items before init", async () => {
     const { app, calls } = createAppWithBoardAssets({
       restricted: true,
       allowedFolderIds: ["folder-a"],
@@ -209,7 +209,7 @@ describe("board asset route harness", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/api/board-containers/runbook/rb-1/assets/init",
+      url: "/api/board-containers/task/rb-1/assets/init",
       payload: { name: "photo.png", mime: "image/png", size: 123 },
     });
 
@@ -225,7 +225,7 @@ describe("board asset route harness", () => {
           name: "photo.png",
           mimeType: "image/png",
           byteSize: 123,
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
         },
       ],
@@ -284,7 +284,7 @@ describe("board asset route harness", () => {
     await app.close();
   });
 
-  it("commits runbook container assets with default parts", async () => {
+  it("commits task container assets with default parts", async () => {
     const { app, calls } = createAppWithBoardAssets({
       restricted: true,
       allowedFolderIds: ["folder-a"],
@@ -292,7 +292,7 @@ describe("board asset route harness", () => {
 
     const response = await app.inject({
       method: "POST",
-      url: "/api/board-containers/runbook/rb-1/assets/asset-1/commit",
+      url: "/api/board-containers/task/rb-1/assets/asset-1/commit",
       payload: { x: 41, y: 79 },
     });
 
@@ -309,7 +309,7 @@ describe("board asset route harness", () => {
           x: 41,
           y: 79,
           parts: [],
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
         },
       ],
@@ -326,19 +326,19 @@ describe("board asset route harness", () => {
       url: "/api/board-containers/session/sess-1/assets/init",
       payload: { name: "photo.png", mime: "image/png", size: 123 },
     });
-    const missingRunbook = await app.inject({
+    const missingTask = await app.inject({
       method: "POST",
-      url: "/api/board-containers/runbook/missing/assets/init",
+      url: "/api/board-containers/task/missing/assets/init",
       payload: { name: "photo.png", mime: "image/png", size: 123 },
     });
 
     expect(invalidKind.statusCode).toBe(400);
     expect(invalidKind.json()).toEqual({
-      detail: "container_kind must be folder or runbook",
+      detail: "container_kind must be folder or task",
     });
-    expect(missingRunbook.statusCode).toBe(404);
-    expect(missingRunbook.json()).toEqual({
-      detail: "Runbook board container not found",
+    expect(missingTask.statusCode).toBe(404);
+    expect(missingTask.json()).toEqual({
+      detail: "Task board container not found",
     });
     expect(calls).toEqual([["catalog"]]);
 

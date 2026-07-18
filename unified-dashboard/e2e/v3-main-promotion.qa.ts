@@ -107,7 +107,7 @@ async function verifyLoginRoundTrips(browser: Browser) {
       assert(oauthReturnTo === target.path, `OAuth return_to가 ${oauthReturnTo ?? "없음"}입니다.`);
 
       if (target.expected === "v3") {
-        await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
+        await page.getByTestId("v3-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
         assert(new URL(page.url()).pathname === "/", `로그인 뒤 v3 경로가 ${page.url()}입니다.`);
       } else {
         await page.getByRole("button", { name: "v3 플래너 열기" }).waitFor({ state: "visible", timeout: 20_000 });
@@ -127,7 +127,7 @@ async function openV3(page: Page, path: string) {
   await page.goto(`${baseUrl}${path}`, { waitUntil: "domcontentloaded" });
   await page.waitForURL(`${baseUrl}/`);
   try {
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
+    await page.getByTestId("v3-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
   } catch (error) {
     const body = (await page.content()).slice(0, 2_000);
     throw new Error(`v3 main did not render at ${page.url()}: ${body}`, { cause: error });
@@ -163,9 +163,9 @@ async function installAuthRoutes(
 }
 
 async function installMainPromotionRoutes(page: Page) {
-  await page.route("**/api/runbooks/my-turn", (route) => fulfillJson(route, {
+  await page.route("**/api/tasks/my-turn", (route) => fulfillJson(route, {
     my_turn_items: [],
-    runbooks: [],
+    tasks: [],
   }));
 }
 

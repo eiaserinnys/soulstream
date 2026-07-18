@@ -39,7 +39,7 @@ for (const theme of ["dark", "light"] as const) {
     expect(Array.from(firstReviewTitle).length).toBeLessThanOrEqual(80);
     await capture(page, theme, "02-right-panel-six-review-sessions");
 
-    const taskCard = page.getByTestId("v3-task-task-alpha");
+    const taskCard = page.getByTestId("v3-task-alpha");
     await taskCard.getByRole("button", { name: `${fixtureTitles.primaryTask} 별표 해제` }).click();
     await expect(page.getByTestId("v3-starred-tasks")).not.toContainText(fixtureTitles.primaryTask);
     await taskCard.getByRole("button", { name: `${fixtureTitles.primaryTask} 별표 추가` }).click();
@@ -145,7 +145,7 @@ async function installModelCorrectionRoutes(page: Page): Promise<{
     }
     if (url.pathname === "/api/pages/task-alpha" && request.method() === "GET") {
       return fulfillJson(route, pageRead(task, [{
-        id: "task-runbook", page_id: task.id, parent_id: null, position_key: "a0", block_type: "runbook_ref", text: "", properties: { primary: true, runbookId: "rb-alpha" }, collapsed: false,
+        id: "task", page_id: task.id, parent_id: null, position_key: "a0", block_type: "task_ref", text: "", properties: { primary: true, taskId: "rb-alpha" }, collapsed: false,
       }]));
     }
     if (url.pathname === "/api/pages/task-alpha/starred" && request.method() === "PATCH") {

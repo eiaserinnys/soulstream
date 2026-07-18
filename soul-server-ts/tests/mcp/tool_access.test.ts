@@ -28,7 +28,7 @@ describe("MCP tool access profiles", () => {
         "download_session_history",
         "delete_session",
         "background_claude_tasks",
-        "set_runbook_item_status",
+        "set_task_item_status",
         "create_page",
         "batch_page_operations",
         "upsert_page_markdown",
@@ -50,14 +50,14 @@ describe("MCP tool access profiles", () => {
 
     guarded.registerTool("send_message_to_session", { inputSchema: {} }, vi.fn());
     guarded.registerTool("download_session_history", { inputSchema: {} }, vi.fn());
-    guarded.registerTool("set_runbook_item_status", { inputSchema: {} }, vi.fn());
+    guarded.registerTool("set_task_item_status", { inputSchema: {} }, vi.fn());
     guarded.registerTool("move_board_item_to_container", { inputSchema: {} }, vi.fn());
     guarded.registerTool("list_sessions", { inputSchema: {} }, vi.fn());
 
     expect(registerTool).toHaveBeenCalledTimes(1);
     expect(registered.has("send_message_to_session")).toBe(false);
     expect(registered.has("download_session_history")).toBe(false);
-    expect(registered.has("set_runbook_item_status")).toBe(false);
+    expect(registered.has("set_task_item_status")).toBe(false);
     expect(registered.has("move_board_item_to_container")).toBe(false);
     expect(registered.has("list_sessions")).toBe(true);
   });

@@ -261,19 +261,19 @@ async function assertBackfillCandidate(
     exists: boolean;
     daily: boolean;
     used_by_folder: boolean;
-    used_by_runbook: boolean;
+    used_by_task: boolean;
   }[]>`
     SELECT
       EXISTS(SELECT 1 FROM pages WHERE id = ${pageId}) AS exists,
       EXISTS(SELECT 1 FROM pages WHERE id = ${pageId} AND daily_date IS NOT NULL) AS daily,
       EXISTS(SELECT 1 FROM folders WHERE project_page_id = ${pageId}) AS used_by_folder,
-      EXISTS(SELECT 1 FROM runbooks WHERE task_page_id = ${pageId}) AS used_by_runbook
+      EXISTS(SELECT 1 FROM tasks WHERE task_page_id = ${pageId}) AS used_by_task
   `;
   const page = pages[0];
   if (createdPage ? page?.exists : !page?.exists) {
     throw new Error(`legacy page existence conflict: ${pageId}`);
   }
-  if (page?.daily || page?.used_by_folder || page?.used_by_runbook) {
+  if (page?.daily || page?.used_by_folder || page?.used_by_task) {
     throw new Error(`legacy page is not available for folder binding: ${pageId}`);
   }
 }

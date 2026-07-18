@@ -25,7 +25,7 @@ describe("orch page Yjs model", () => {
     expect(getPageYjsDocumentName("page-1")).toBe("page:page-1");
     expect(parsePageYjsDocumentName("page:page-1")).toBe("page-1");
     expect(parsePageYjsDocumentName("page:")).toBeNull();
-    expect(parsePageYjsDocumentName("board:runbook:rb-1")).toBeNull();
+    expect(parsePageYjsDocumentName("board:task:rb-1")).toBeNull();
     expect(parsePageYjsDocumentName("board-folder:folder-1")).toBeNull();
     expect(parseBoardYjsDocumentName("page:page-1")).toBeNull();
   });

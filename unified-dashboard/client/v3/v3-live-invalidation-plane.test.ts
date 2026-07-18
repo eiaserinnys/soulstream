@@ -13,7 +13,7 @@ import {
 describe("v3 live invalidation plane", () => {
   beforeEach(() => resetV3InvalidationForTest());
 
-  it("normalizes session, catalog, runbook, custom view, replay, and page changes", () => {
+  it("normalizes session, catalog, task, custom view, replay, and page changes", () => {
     acceptV3SessionStreamEvent({
       type: "session_updated",
       agent_session_id: "session-a",
@@ -21,9 +21,9 @@ describe("v3 live invalidation plane", () => {
       updated_at: "2026-07-15T00:00:00Z",
     });
     acceptV3SessionStreamEvent({
-      type: "runbook_updated",
-      runbookId: "rb-a",
-      boardItemId: "runbook:rb-a",
+      type: "task_updated",
+      taskId: "rb-a",
+      boardItemId: "task:rb-a",
     });
     acceptV3SessionStreamEvent({
       type: "catalog_updated",
@@ -41,7 +41,7 @@ describe("v3 live invalidation plane", () => {
     const snapshot = getV3InvalidationSnapshot();
     expect(selectV3InvalidationKey(snapshot, ["session_updated"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["catalog"])).toBe(1);
-    expect(selectV3InvalidationKey(snapshot, ["runbook"])).toBe(1);
+    expect(selectV3InvalidationKey(snapshot, ["task"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["custom_view"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["replay"])).toBe(1);
     expect(selectV3InvalidationKey(snapshot, ["page"])).toBe(1);
@@ -81,9 +81,9 @@ describe("v3 live invalidation plane", () => {
     });
 
     acceptV3SessionStreamEvent({
-      type: "runbook_updated",
-      runbookId: "rb-a",
-      boardItemId: "runbook:rb-a",
+      type: "task_updated",
+      taskId: "rb-a",
+      boardItemId: "task:rb-a",
     });
     expect(selectV3PlannerInvalidationKeys(getV3InvalidationSnapshot())).toEqual({
       daily: 2,

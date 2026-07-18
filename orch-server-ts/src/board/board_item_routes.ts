@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
+import { normalizeBoardContainerKind } from "../board-yjs/board_container_kind_compat.js";
 import {
   proxyBoardYjsHostRequest,
   type BoardYjsHostProxyRouteOptions,
@@ -22,7 +23,7 @@ export type BoardItemAccess = {
   allowedFolderIds?: readonly string[];
 };
 
-export type BoardContainerKind = "folder" | "runbook";
+export type BoardContainerKind = "folder" | "task";
 
 export type BoardContainerTarget = {
   kind: BoardContainerKind;
@@ -383,10 +384,9 @@ function optionalQueryString(
 }
 
 function parseContainerKind(value: string): Validation<BoardContainerKind> {
-  if (value === "folder" || value === "runbook") {
-    return { ok: true, value };
-  }
-  return { ok: false, message: "container_kind must be folder or runbook" };
+  const normalized = normalizeBoardContainerKind(value);
+  if (normalized) return { ok: true, value: normalized };
+  return { ok: false, message: "container_kind must be folder or task" };
 }
 
 function requiredString(

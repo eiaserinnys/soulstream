@@ -3,21 +3,26 @@ import * as Y from "yjs";
 import type {
   BoardContainerKind,
   BoardItemType,
-  BoardYjsContainerRef,
   BoardYjsContainerScope,
   CatalogBoardItemRow,
   MarkdownDocumentRow,
 } from "../db/session_db.js";
 import {
+  BOARD_ITEMS_MAP,
+  MARKDOWN_BODIES_MAP,
+  boardYjsFolderScope,
+} from "./board_yjs_document.js";
+import {
+  getHtmlPreview,
+  getMarkdownPreview,
+  normalizeMarkdownTitle,
+} from "./board_yjs_preview.js";
+import {
   MarkdownDocumentVersionConflictError,
   normalizeMarkdownVersion,
 } from "../db/markdown_document_version.js";
 
-export const BOARD_YJS_LEGACY_FOLDER_PREFIX = "board-folder:";
-export const BOARD_YJS_CONTAINER_PREFIX = "board:";
-export const BOARD_YJS_PREFIX = BOARD_YJS_LEGACY_FOLDER_PREFIX;
-export const BOARD_ITEMS_MAP = "boardItems";
-export const MARKDOWN_BODIES_MAP = "markdownBodies";
+export * from "./board_yjs_document.js";
 
 export interface BoardYjsItemValue {
   item_type: BoardItemType;
@@ -25,7 +30,7 @@ export interface BoardYjsItemValue {
   x: number;
   y: number;
   membership_kind?: "primary" | "reference";
-  source_runbook_item_id?: string | null;
+  source_task_item_id?: string | null;
   metadata?: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
@@ -43,61 +48,6 @@ export interface MovedBoardYjsItem {
 }
 
 type BoardYjsScopeInput = string | BoardYjsContainerScope;
-
-export function getBoardYjsDocumentName(folderId: string): string {
-  return getBoardYjsContainerDocumentName(boardYjsFolderScope(folderId));
-}
-
-export function getBoardYjsContainerDocumentName(
-  container: BoardYjsContainerRef,
-): string {
-  assertBoardYjsContainer(container);
-  if (container.containerKind === "folder") {
-    return `${BOARD_YJS_LEGACY_FOLDER_PREFIX}${container.containerId}`;
-  }
-  return `${BOARD_YJS_CONTAINER_PREFIX}${container.containerKind}:${container.containerId}`;
-}
-
-export function getFormalBoardYjsDocumentName(
-  container: BoardYjsContainerRef,
-): string {
-  assertBoardYjsContainer(container);
-  return `${BOARD_YJS_CONTAINER_PREFIX}${container.containerKind}:${container.containerId}`;
-}
-
-export function normalizeBoardYjsDocumentName(documentName: string): string | null {
-  const container = parseBoardYjsDocumentName(documentName);
-  return container ? getBoardYjsContainerDocumentName(container) : null;
-}
-
-export function parseBoardYjsDocumentName(documentName: string): BoardYjsContainerRef | null {
-  if (documentName.startsWith(BOARD_YJS_LEGACY_FOLDER_PREFIX)) {
-    const folderId = documentName.slice(BOARD_YJS_LEGACY_FOLDER_PREFIX.length);
-    return folderId.length > 0
-      ? { containerKind: "folder", containerId: folderId }
-      : null;
-  }
-  if (!documentName.startsWith(BOARD_YJS_CONTAINER_PREFIX)) return null;
-  const rest = documentName.slice(BOARD_YJS_CONTAINER_PREFIX.length);
-  const separator = rest.indexOf(":");
-  if (separator <= 0) return null;
-  const containerKind = rest.slice(0, separator);
-  const containerId = rest.slice(separator + 1);
-  if (!isBoardContainerKind(containerKind) || containerId.length === 0) return null;
-  return { containerKind, containerId };
-}
-
-export function boardYjsFolderScope(folderId: string): BoardYjsContainerScope {
-  if (!folderId.trim()) {
-    throw new Error("folderId is required");
-  }
-  return { folderId, containerKind: "folder", containerId: folderId };
-}
-
-export function getFolderIdFromBoardYjsDocumentName(documentName: string): string | null {
-  const container = parseBoardYjsDocumentName(documentName);
-  return container?.containerKind === "folder" ? container.containerId : null;
-}
 
 export function createBoardYDocSnapshot(params: {
   folderId: string;
@@ -123,8 +73,8 @@ export function createBoardYDocSnapshot(params: {
         x: item.x,
         y: item.y,
         ...(item.membershipKind ? { membership_kind: item.membershipKind } : {}),
-        ...(item.sourceRunbookItemId !== undefined
-          ? { source_runbook_item_id: item.sourceRunbookItemId }
+        ...(item.sourceTaskItemId !== undefined
+          ? { source_task_item_id: item.sourceTaskItemId }
           : {}),
         metadata: markdown
           ? {
@@ -165,28 +115,31 @@ export function readBoardYDocReplicaForScope(
 
   const rows: CatalogBoardItemRow[] = [];
   for (const [id, value] of boardItems.entries()) {
-    const metadata = value.metadata && typeof value.metadata === "object" ? value.metadata : {};
+    const normalizedValue = normalizeLegacyBoardYjsItemValue(value);
+    const metadata = normalizedValue.metadata && typeof normalizedValue.metadata === "object"
+      ? normalizedValue.metadata
+      : {};
     rows.push({
       id,
       folderId: scope.folderId,
       containerKind: scope.containerKind,
       containerId: scope.containerId,
-      membershipKind: value.membership_kind ?? "primary",
-      sourceRunbookItemId: value.source_runbook_item_id ?? null,
-      itemType: value.item_type,
-      itemId: value.item_id,
-      x: Number(value.x),
-      y: Number(value.y),
+      membershipKind: normalizedValue.membership_kind ?? "primary",
+      sourceTaskItemId: normalizedValue.source_task_item_id ?? null,
+      itemType: normalizedValue.item_type,
+      itemId: normalizedValue.item_id,
+      x: Number(normalizedValue.x),
+      y: Number(normalizedValue.y),
       metadata,
-      ...(value.created_at ? { createdAt: value.created_at } : {}),
-      ...(value.updated_at ? { updatedAt: value.updated_at } : {}),
+      ...(normalizedValue.created_at ? { createdAt: normalizedValue.created_at } : {}),
+      ...(normalizedValue.updated_at ? { updatedAt: normalizedValue.updated_at } : {}),
     });
 
-    if (value.item_type === "markdown") {
+    if (normalizedValue.item_type === "markdown") {
       const title = typeof metadata.title === "string" ? metadata.title : "Untitled document";
-      const body = markdownBodies.get(value.item_id)?.toString() ?? "";
-      markdownDocumentsById.set(value.item_id, {
-        id: value.item_id,
+      const body = markdownBodies.get(normalizedValue.item_id)?.toString() ?? "";
+      markdownDocumentsById.set(normalizedValue.item_id, {
+        id: normalizedValue.item_id,
         title,
         body,
         version: normalizeMarkdownVersion(metadata.version),
@@ -262,7 +215,7 @@ export function createMarkdownYjsDocument(
     containerKind: scope.containerKind,
     containerId: scope.containerId,
     membershipKind: "primary",
-    sourceRunbookItemId: null,
+    sourceTaskItemId: null,
     itemType: "markdown",
     itemId: input.documentId,
     x: input.x,
@@ -287,8 +240,9 @@ export function updateMarkdownYjsDocument(
 ): MarkdownDocumentRow | null {
   const boardItems = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
   const boardItemId = `markdown:${documentId}`;
-  const current = boardItems.get(boardItemId);
-  if (!current) return null;
+  const stored = boardItems.get(boardItemId);
+  if (!stored) return null;
+  const current = normalizeLegacyBoardYjsItemValue(stored);
 
   const currentMetadata = current.metadata && typeof current.metadata === "object"
     ? current.metadata
@@ -341,12 +295,12 @@ export function deleteMarkdownYjsDocument(
   doc.getMap<Y.Text>(MARKDOWN_BODIES_MAP).delete(documentId);
 }
 
-export function upsertRunbookYjsBoardItem(
+export function upsertTaskYjsBoardItem(
   doc: Y.Doc,
   input: {
     folderId: string;
     boardItemId: string;
-    runbookId: string;
+    taskId: string;
     title: string;
     x: number;
     y: number;
@@ -359,9 +313,9 @@ export function upsertRunbookYjsBoardItem(
     containerKind: "folder",
     containerId: input.folderId,
     membershipKind: "primary",
-    sourceRunbookItemId: null,
-    itemType: "runbook",
-    itemId: input.runbookId,
+    sourceTaskItemId: null,
+    itemType: "task",
+    itemId: input.taskId,
     x: input.x,
     y: input.y,
     metadata: { ...(input.metadata ?? {}), title: input.title },
@@ -391,7 +345,7 @@ export function upsertCustomViewYjsBoardItem(
     containerKind: scope.containerKind,
     containerId: scope.containerId,
     membershipKind: "primary",
-    sourceRunbookItemId: null,
+    sourceTaskItemId: null,
     itemType: "custom_view",
     itemId: input.customViewId,
     x: input.x,
@@ -418,8 +372,9 @@ export function readMovableBoardYjsItem(
   position?: { x: number; y: number },
 ): MovedBoardYjsItem | null {
   const boardItems = doc.getMap<BoardYjsItemValue>(BOARD_ITEMS_MAP);
-  const current = boardItems.get(boardItemId);
-  if (!current) return null;
+  const stored = boardItems.get(boardItemId);
+  if (!stored) return null;
+  const current = normalizeLegacyBoardYjsItemValue(stored);
   const now = new Date().toISOString();
   const value: BoardYjsItemValue = {
     ...current,
@@ -438,7 +393,7 @@ export function readMovableBoardYjsItem(
       containerKind: targetScope.containerKind,
       containerId: targetScope.containerId,
       membershipKind: value.membership_kind ?? "primary",
-      sourceRunbookItemId: value.source_runbook_item_id ?? null,
+      sourceTaskItemId: value.source_task_item_id ?? null,
       itemType: value.item_type,
       itemId: value.item_id,
       x: value.x,
@@ -480,8 +435,8 @@ export function upsertBoardYjsItem(doc: Y.Doc, boardItem: CatalogBoardItemRow): 
     x: boardItem.x,
     y: boardItem.y,
     ...(boardItem.membershipKind ? { membership_kind: boardItem.membershipKind } : {}),
-    ...(boardItem.sourceRunbookItemId !== undefined
-      ? { source_runbook_item_id: boardItem.sourceRunbookItemId }
+    ...(boardItem.sourceTaskItemId !== undefined
+      ? { source_task_item_id: boardItem.sourceTaskItemId }
       : {}),
     metadata: boardItem.metadata ?? {},
     ...(boardItem.createdAt ? { created_at: boardItem.createdAt } : {}),
@@ -499,29 +454,21 @@ function getOrCreateMarkdownText(doc: Y.Doc, documentId: string): Y.Text {
   return text;
 }
 
-function normalizeMarkdownTitle(title: string): string {
-  return title.trim() || "Untitled document";
-}
-
-function getMarkdownPreview(body: string): string {
-  return body.replace(/\s+/g, " ").trim().slice(0, 180);
-}
-
-function getHtmlPreview(html: string): string {
-  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
-}
-
-function isBoardContainerKind(value: string): value is BoardContainerKind {
-  return value === "folder" || value === "runbook";
-}
-
-function assertBoardYjsContainer(container: BoardYjsContainerRef): void {
-  if (!isBoardContainerKind(container.containerKind)) {
-    throw new Error(`unsupported board container kind: ${String(container.containerKind)}`);
-  }
-  if (!container.containerId.trim()) {
-    throw new Error("containerId is required");
-  }
+function normalizeLegacyBoardYjsItemValue(
+  value: BoardYjsItemValue,
+): BoardYjsItemValue {
+  const legacy = value as Omit<BoardYjsItemValue, "item_type"> & {
+    item_type: BoardYjsItemValue["item_type"] | "runbook";
+    source_runbook_item_id?: string | null;
+  };
+  const { source_runbook_item_id: legacySourceItemId, ...canonical } = legacy;
+  return {
+    ...canonical,
+    item_type: legacy.item_type === "runbook" ? "task" : legacy.item_type,
+    ...(canonical.source_task_item_id === undefined && legacySourceItemId !== undefined
+      ? { source_task_item_id: legacySourceItemId }
+      : {}),
+  };
 }
 
 function scopeFromSnapshotParams(params: {

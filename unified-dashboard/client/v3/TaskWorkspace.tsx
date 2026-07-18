@@ -285,7 +285,7 @@ export function TaskWorkspace({
       >
         {boardOpen ? (
           <TaskBoardPane
-            runbookId={task.runbookId}
+            taskId={task.taskId}
             projectFolderId={projectFolderId}
             projectTitle={projectTitle}
             sessions={sessions}

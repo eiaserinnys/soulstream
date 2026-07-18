@@ -10,8 +10,8 @@ import { PageYjsService } from "./page/page_service.js";
 import { SqlFolderProjectIdentityRepository } from "./folders/folder_project_identity_repository.js";
 import { FolderProjectIdentityService } from "./folders/folder_project_identity_service.js";
 import { PlannerRepository } from "./planner/planner_repository.js";
-import { SqlRunbookTaskIdentityRepository } from "./runbooks/runbook_task_identity_repository.js";
-import { RunbookTaskIdentityService } from "./runbooks/runbook_task_identity_service.js";
+import { SqlTaskIdentityRepository } from "./tasks/task_identity_repository.js";
+import { TaskIdentityService } from "./tasks/task_identity_service.js";
 import {
   createEnvironmentConfigProvider,
   type OrchServerEnvironmentConfig,
@@ -128,7 +128,7 @@ export async function createLiveProductionApplication(
   const registry = new InMemoryNodeRegistry();
   const boardYjsRepository = new BoardYjsRepository(sqlResolver);
   const pageRepository = new PageRepository(sqlResolver);
-  const taskIdentityRepository = new SqlRunbookTaskIdentityRepository(sqlResolver);
+  const taskIdentityRepository = new SqlTaskIdentityRepository(sqlResolver);
   const folderProjectIdentityRepository = new SqlFolderProjectIdentityRepository(sqlResolver);
   const plannerRepository = new PlannerRepository(sqlResolver);
   const boardAssetStorage = await resolveLiveBoardAssetStorageFromConfig(config);
@@ -158,7 +158,7 @@ export async function createLiveProductionApplication(
   let providers: LiveOrchestratorProviderBundle;
   let boardYjsService: BoardYjsService | undefined;
   let pageYjsService: PageYjsService | undefined;
-  let taskIdentityService: RunbookTaskIdentityService | undefined;
+  let taskIdentityService: TaskIdentityService | undefined;
   let folderProjectIdentityService: FolderProjectIdentityService | undefined;
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
@@ -178,7 +178,7 @@ export async function createLiveProductionApplication(
         repository: boardYjsRepository,
         logger,
         hostMode: config.board_yjs_host_mode,
-        moveRunbookBoardItem: async (input) => {
+        moveTaskBoardItem: async (input) => {
           if (!taskIdentityService) throw new Error("Task identity service is not initialized");
           return await taskIdentityService.moveBoardItemToContainer(input);
         },
@@ -215,15 +215,15 @@ export async function createLiveProductionApplication(
       }),
     },
   });
-  taskIdentityService = new RunbookTaskIdentityService({
+  taskIdentityService = new TaskIdentityService({
     board: {
-      async withRunbookBoardApplication(input, persist) {
+      async withTaskBoardApplication(input, persist) {
         if (!boardYjsService) throw new Error("Board Yjs service is not initialized");
-        return await boardYjsService.withRunbookBoardApplication(input, persist);
+        return await boardYjsService.withTaskBoardApplication(input, persist);
       },
-      async withRunbookBoardMoveApplication(input, persist) {
+      async withTaskBoardMoveApplication(input, persist) {
         if (!boardYjsService) throw new Error("Board Yjs service is not initialized");
-        return await boardYjsService.withRunbookBoardMoveApplication(input, persist);
+        return await boardYjsService.withTaskBoardMoveApplication(input, persist);
       },
     },
     repository: taskIdentityRepository,
@@ -300,7 +300,7 @@ export function buildProductionRouteOptions(
   runtime: OrchestratorRuntimeServices,
   providers: LiveOrchestratorProviderBundle,
   corsAllowedOrigins: readonly string[] = [],
-  taskIdentityService?: RunbookTaskIdentityService,
+  taskIdentityService?: TaskIdentityService,
   folderProjectIdentityService?: FolderProjectIdentityService,
 ): CreateAppOptions {
   return {
@@ -347,8 +347,8 @@ export function buildProductionRouteOptions(
       configProvider: providers.configProviders.publicStatusRoutes.configProvider,
     },
     pushRoutes: providers.pushRoutes,
-    runbookRoutes: {
-      ...providers.runbookRoutes,
+    taskRoutes: {
+      ...providers.taskRoutes,
       authBearerToken: config.authBearerToken,
       ...(taskIdentityService ? { taskIdentityService } : {}),
     },

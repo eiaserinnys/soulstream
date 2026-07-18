@@ -29,13 +29,13 @@ import { buildOrchProxyConfig } from "../mcp/orch_proxy.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import { RealtimeBroker } from "../realtime/realtime_broker.js";
-import { RunbookHandoffNotifier } from "../runbook/runbook_handoff_notifier.js";
-import { RunbookService } from "../runbook/runbook_service.js";
-import { RunbookTaskIdentityHostClient } from "../runbook/runbook_task_identity_host_client.js";
+import { TaskHandoffNotifier } from "../work-task/task_handoff_notifier.js";
+import { TaskService } from "../work-task/task_service.js";
+import { TaskIdentityHostClient } from "../work-task/task_identity_host_client.js";
 import { FolderProjectIdentityHostClient } from "../folder/folder_project_identity_host_client.js";
 import { PageYjsHostClient } from "../page/page_host_client.js";
-import type { ChecklistRunbookAdapter } from "../page/checklist_runbook_adapter.js";
-import type { ChecklistRunbookReconciler } from "../page/checklist_runbook_reconciler.js";
+import type { ChecklistTaskAdapter } from "../page/checklist_task_adapter.js";
+import type { ChecklistTaskReconciler } from "../page/checklist_task_reconciler.js";
 import {
   SessionLegacyProjection,
   SessionPageBindingService,
@@ -52,7 +52,7 @@ import {
   composeSupervisorRuntime,
   type SupervisorComposition,
 } from "./supervisor_composition.js";
-import { composeChecklistRunbookProjection } from "./checklist_runbook_composition.js";
+import { composeChecklistTaskProjection } from "./checklist_task_composition.js";
 
 export interface WorkerCompositionParams {
   env: Env;
@@ -74,8 +74,8 @@ export interface WorkerComposition extends SupervisorComposition {
   mcpRuntime: McpRuntime;
   scheduleService: SoulstreamScheduleService;
   sessionPageBindingService: SessionPageBindingService;
-  checklistRunbookAdapter: ChecklistRunbookAdapter;
-  checklistRunbookReconciler: ChecklistRunbookReconciler;
+  checklistTaskAdapter: ChecklistTaskAdapter;
+  checklistTaskReconciler: ChecklistTaskReconciler;
   createUpstreamAdapter(): UpstreamAdapter;
 }
 
@@ -161,7 +161,7 @@ export async function composeWorkerRuntime(
   );
   const sessionPageBindingRepository = db.sessionPageBindings();
   const pageHost = new PageYjsHostClient({ orch: orchProxyConfig, logger });
-  const runbookTaskIdentityHost = new RunbookTaskIdentityHostClient({
+  const taskIdentityHost = new TaskIdentityHostClient({
     orch: orchProxyConfig,
     logger,
   });
@@ -288,8 +288,8 @@ export async function composeWorkerRuntime(
     boardYjsService,
     folderProjectIdentityHost,
   );
-  const runbookHandoffNotifier = new RunbookHandoffNotifier(
-    db.runbooks(),
+  const taskHandoffNotifier = new TaskHandoffNotifier(
+    db.tasks(),
     {
       send: (message) =>
         sendMessageToSession(
@@ -299,26 +299,26 @@ export async function composeWorkerRuntime(
     },
     logger,
   );
-  const runbookService = new RunbookService(
+  const taskService = new TaskService(
     db,
     broadcaster,
     boardYjsService,
-    runbookHandoffNotifier,
+    taskHandoffNotifier,
     catalogService,
     logger,
   );
   const {
-    checklistRunbookAdapter,
-    checklistRunbookReconciler,
-  } = composeChecklistRunbookProjection({
+    checklistTaskAdapter,
+    checklistTaskReconciler,
+  } = composeChecklistTaskProjection({
     nodeId: env.SOULSTREAM_NODE_ID,
     db,
-    runbookService,
-    runbookTaskIdentityHost,
+    taskService,
+    taskIdentityHost,
     pageHost,
     logger,
   });
-  checklistRunbookReconciler.start();
+  checklistTaskReconciler.start();
   const customViewService = new CustomViewService(db, boardYjsService, broadcaster);
   const llmAdapters = {
     ...(env.LLM_OPENAI_API_KEY ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) } : {}),
@@ -353,9 +353,9 @@ export async function composeWorkerRuntime(
     agentConfigService,
     mcpConfigService,
     catalogService,
-    runbookService,
-    runbookTaskIdentityHostClient: runbookTaskIdentityHost,
-    checklistRunbookAdapter,
+    taskService,
+    taskIdentityHostClient: taskIdentityHost,
+    checklistTaskAdapter,
     customViewService,
     logger,
     mcpToolProfile: env.MCP_TOOL_PROFILE,
@@ -389,10 +389,10 @@ export async function composeWorkerRuntime(
       : undefined,
     boardYjs: { service: localBoardYjsService },
     boardYjsHost: { service: localBoardYjsService, auth: boardYjsAuth },
-    runbook: {
-      service: runbookService,
-      taskIdentityHost: runbookTaskIdentityHost,
-      checklistAdapter: checklistRunbookAdapter,
+    task: {
+      service: taskService,
+      taskIdentityHost: taskIdentityHost,
+      checklistAdapter: checklistTaskAdapter,
       auth: boardYjsAuth,
     },
     boardItem: { service: catalogService, auth: boardYjsAuth },
@@ -443,8 +443,8 @@ export async function composeWorkerRuntime(
     mcpRuntime,
     scheduleService,
     sessionPageBindingService,
-    checklistRunbookAdapter,
-    checklistRunbookReconciler,
+    checklistTaskAdapter,
+    checklistTaskReconciler,
     createUpstreamAdapter,
   };
 }

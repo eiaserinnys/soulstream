@@ -3,6 +3,10 @@ import { z } from "zod";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { BoardYjsService } from "./board_yjs_service.js";
+import {
+  boardContainerKindInputSchema,
+  boardItemTypeInputSchema,
+} from "./board_container_kind_compat.js";
 
 export interface BoardYjsHostOperationOptions {
   service: BoardYjsService;
@@ -10,32 +14,25 @@ export interface BoardYjsHostOperationOptions {
 }
 
 const containerSchema = z.object({
-  containerKind: z.enum(["folder", "runbook"]),
+  containerKind: boardContainerKindInputSchema,
   containerId: z.string().min(1),
 });
 
 const scopeSchema = z.object({
   folderId: z.string().min(1),
-  containerKind: z.enum(["folder", "runbook"]),
+  containerKind: boardContainerKindInputSchema,
   containerId: z.string().min(1),
 });
 
 const rawBoardItemSchema = z.object({
   id: z.string().min(1),
   folderId: z.string().min(1),
-  containerKind: z.enum(["folder", "runbook"]).nullable().optional(),
+  containerKind: boardContainerKindInputSchema.nullable().optional(),
   containerId: z.string().nullable().optional(),
   membershipKind: z.enum(["primary", "reference"]).nullable().optional(),
+  sourceTaskItemId: z.string().nullable().optional(),
   sourceRunbookItemId: z.string().nullable().optional(),
-  itemType: z.enum([
-    "session",
-    "markdown",
-    "subfolder",
-    "asset",
-    "frame",
-    "runbook",
-    "custom_view",
-  ]),
+  itemType: boardItemTypeInputSchema,
   itemId: z.string().min(1),
   x: z.number(),
   y: z.number(),
@@ -47,6 +44,7 @@ const boardItemSchema = rawBoardItemSchema.transform((item) => {
     containerKind,
     containerId,
     membershipKind,
+    sourceTaskItemId,
     sourceRunbookItemId,
     metadata,
     ...rest
@@ -56,7 +54,7 @@ const boardItemSchema = rawBoardItemSchema.transform((item) => {
     ...(containerKind ? { containerKind } : {}),
     ...(containerId ? { containerId } : {}),
     ...(membershipKind ? { membershipKind } : {}),
-    sourceRunbookItemId: sourceRunbookItemId ?? null,
+    sourceTaskItemId: sourceTaskItemId ?? sourceRunbookItemId ?? null,
     metadata: metadata ?? {},
   };
 });
@@ -77,12 +75,12 @@ const schemas = {
     sessionId: z.string().min(1),
     x: z.number(),
     y: z.number(),
-    sourceRunbookItemId: z.string().nullable().optional(),
+    sourceTaskItemId: z.string().nullable().optional(),
   }),
-  "upsert-runbook-board-item": z.object({
+  "upsert-task-board-item": z.object({
     folderId: z.string().min(1),
     boardItemId: z.string().min(1),
-    runbookId: z.string().min(1),
+    taskId: z.string().min(1),
     title: z.string(),
     x: z.number(),
     y: z.number(),
@@ -100,7 +98,7 @@ const schemas = {
     y: z.number(),
     metadata: z.record(z.string(), z.unknown()).optional(),
   }),
-  "remove-runbook-board-item": z.object({
+  "remove-task-board-item": z.object({
     folderId: z.string().min(1),
     boardItemId: z.string().min(1),
   }),
@@ -213,17 +211,17 @@ async function dispatchBoardYjsHostOperation(
       return await service.upsertSessionBoardItem(
         input as z.infer<typeof schemas["upsert-session-board-item"]>,
       );
-    case "upsert-runbook-board-item":
-      return await service.upsertRunbookBoardItem(
-        input as z.infer<typeof schemas["upsert-runbook-board-item"]>,
+    case "upsert-task-board-item":
+      return await service.upsertTaskBoardItem(
+        input as z.infer<typeof schemas["upsert-task-board-item"]>,
       );
     case "upsert-custom-view-board-item":
       return await service.upsertCustomViewBoardItem(
         input as z.infer<typeof schemas["upsert-custom-view-board-item"]>,
       );
-    case "remove-runbook-board-item": {
-      const value = input as z.infer<typeof schemas["remove-runbook-board-item"]>;
-      await service.removeRunbookBoardItem(value.folderId, value.boardItemId);
+    case "remove-task-board-item": {
+      const value = input as z.infer<typeof schemas["remove-task-board-item"]>;
+      await service.removeTaskBoardItem(value.folderId, value.boardItemId);
       return { ok: true };
     }
     case "remove-board-item": {

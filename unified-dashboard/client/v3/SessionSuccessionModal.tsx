@@ -44,7 +44,7 @@ export interface SuccessionDocumentOption {
 export function SessionSuccessionModal({
   taskTitle,
   taskPageId,
-  runbookId,
+  taskId,
   contextItems,
   documentOptions,
   pageContextSources,
@@ -57,7 +57,7 @@ export function SessionSuccessionModal({
 }: {
   taskTitle: string;
   taskPageId: string;
-  runbookId: string;
+  taskId: string;
   contextItems: readonly SuccessionContextItem[];
   documentOptions: readonly SuccessionDocumentOption[];
   pageContextSources: PageContextSourcesMarker;
@@ -134,7 +134,7 @@ export function SessionSuccessionModal({
         nodeId: selectedNodeId,
         agentId: selectedAgentId,
         agent: selectedAgent,
-        container: { kind: "runbook", id: runbookId },
+        container: { kind: "task", id: taskId },
         contextItems: contextSelection.contextItems.length > 0
           ? contextSelection.contextItems
           : undefined,

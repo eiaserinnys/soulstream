@@ -52,11 +52,11 @@ describePostgres("container browse PostgreSQL integration", () => {
         ('session:session-named', 'container-folder', 'folder', 'container-folder', 'session', 'session-named', '{}'),
         ('markdown:doc-spec', 'container-folder', 'folder', 'container-folder', 'markdown', 'doc-spec', '{}'),
         ('asset:asset-diagram', 'container-folder', 'folder', 'container-folder', 'asset', 'asset-diagram', '{}'),
-        ('runbook:archived', 'container-folder', 'folder', 'container-folder', 'runbook', 'archived', '{}')
+        ('task:archived', 'container-folder', 'folder', 'container-folder', 'task', 'archived', '{}')
     `;
     await sql`
-      INSERT INTO runbooks (id, board_item_id, title, archived)
-      VALUES ('archived', 'runbook:archived', 'Archived Runbook', TRUE)
+      INSERT INTO tasks (id, board_item_id, title, archived)
+      VALUES ('archived', 'task:archived', 'Archived Task', TRUE)
     `;
     await sql`
       INSERT INTO board_items (
@@ -124,7 +124,7 @@ describePostgres("container browse PostgreSQL integration", () => {
       nextCursor: null,
     });
     expect(result.items).toHaveLength(8);
-    expect(result.items.every((item) => item.type !== "runbook")).toBe(true);
+    expect(result.items.every((item) => item.type !== "task")).toBe(true);
     expect(result).not.toHaveProperty("search");
 
     const archived = await service.browse({
@@ -133,7 +133,7 @@ describePostgres("container browse PostgreSQL integration", () => {
       includeArchived: true,
     });
     expect(archived.page.total).toBe(209);
-    expect(archived.counts.runbook).toBe(1);
+    expect(archived.counts.task).toBe(1);
   });
 
   it("searches only session display names and markdown title/body in the container", async () => {

@@ -77,10 +77,19 @@ DASHBOARD_SEARCH_EVENT_TYPES = [
 
 # === schema.sql 적용 계약 ===
 
-async def test_runbook_status_migration_is_mirrored_in_schema_sql():
+async def test_task_status_contract_is_mirrored_in_canonical_schema_sql():
     migration_sql = _migration_sql("029_runbook_status.sql").strip()
+    schema_sql = _schema_sql()
 
-    assert migration_sql in _schema_sql()
+    assert "ALTER TABLE runbooks ADD COLUMN IF NOT EXISTS status" in migration_sql
+    for required in [
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status",
+        "ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_session_id",
+        "ALTER TABLE tasks ADD CONSTRAINT tasks_status_check",
+        "ALTER TABLE tasks ADD CONSTRAINT tasks_completed_session_id_fkey",
+        "ALTER TABLE tasks ADD CONSTRAINT tasks_completed_event_fkey",
+    ]:
+        assert required in schema_sql
 
 
 async def test_event_search_prefix_fallback_migration_is_mirrored_in_schema_sql():
@@ -102,10 +111,13 @@ async def test_event_search_prefix_fallback_migration_is_mirrored_in_schema_sql(
     ) in schema_sql
 
 
-async def test_runbook_item_review_status_migration_is_mirrored_in_schema_sql():
+async def test_task_item_review_status_contract_is_mirrored_in_canonical_schema_sql():
     migration_sql = _migration_sql("031_runbook_item_review_status.sql").strip()
+    schema_sql = _schema_sql()
 
-    assert migration_sql in _schema_sql()
+    assert "runbook_items_status_check" in migration_sql
+    assert "ALTER TABLE task_items ADD CONSTRAINT task_items_status_check" in schema_sql
+    assert "CHECK (status IN ('pending','in_progress','review','completed','cancelled'))" in schema_sql
 
 
 async def test_notify_completion_migration_contract_is_mirrored_in_schema_sql():
@@ -261,10 +273,18 @@ async def test_page_prefix_search_indexes_apply_to_fresh_schema_and_are_idempote
             assert fragment in migrated_indexes[index_name]
 
 
-async def test_checklist_projection_outbox_migration_is_mirrored_in_schema_sql():
+async def test_checklist_projection_outbox_contract_is_mirrored_in_canonical_schema_sql():
     migration_sql = _migration_sql("039_checklist_runbook_projection_outbox.sql").strip()
+    schema_sql = _schema_sql()
 
-    assert migration_sql in _schema_sql()
+    assert "CREATE TABLE IF NOT EXISTS checklist_runbook_projection_outbox" in migration_sql
+    for required in [
+        "CREATE TABLE IF NOT EXISTS checklist_task_projection_outbox",
+        "ALTER TABLE checklist_task_projection_outbox ADD COLUMN IF NOT EXISTS page_id",
+        "CREATE INDEX IF NOT EXISTS idx_checklist_task_projection_due",
+        "INSERT INTO checklist_task_projection_outbox",
+    ]:
+        assert required in schema_sql
 
 
 async def test_checklist_projection_outbox_upgrade_backfills_and_reapplies(test_db):
@@ -284,16 +304,17 @@ async def test_checklist_projection_outbox_upgrade_backfills_and_reapplies(test_
         )
         """
     )
-    await test_db.execute("DROP TABLE checklist_runbook_projection_outbox")
+    await test_db.execute("DROP TABLE checklist_task_projection_outbox")
 
     migration_sql = _migration_sql("039_checklist_runbook_projection_outbox.sql")
     await test_db.execute(migration_sql)
     await test_db.execute(migration_sql)
+    await test_db.execute(_migration_sql("042_runbook_to_task.sql"))
 
     row = await test_db.fetchrow(
         """
         SELECT page_id, actor_kind, processed_hash, attempts
-        FROM checklist_runbook_projection_outbox
+        FROM checklist_task_projection_outbox
         WHERE block_id = 'block-outbox-upgrade'
         """
     )
@@ -308,10 +329,10 @@ async def test_checklist_projection_outbox_upgrade_backfills_and_reapplies(test_
         SELECT indexname
         FROM pg_indexes
         WHERE schemaname = current_schema()
-          AND tablename = 'checklist_runbook_projection_outbox'
+          AND tablename = 'checklist_task_projection_outbox'
         """
     )
-    assert "idx_checklist_runbook_projection_due" in {
+    assert "idx_checklist_task_projection_due" in {
         row["indexname"] for row in indexes
     }
 
@@ -466,7 +487,7 @@ async def test_board_items_container_schema_contract(test_db):
     assert columns["container_id"]["is_nullable"] == "NO"
     assert columns["membership_kind"]["is_nullable"] == "NO"
     assert columns["membership_kind"]["column_default"] == "'primary'::text"
-    assert columns["source_runbook_item_id"]["is_nullable"] == "YES"
+    assert columns["source_task_item_id"]["is_nullable"] == "YES"
 
     constraints = {
         row["conname"]: row["contype"].decode()
@@ -483,7 +504,7 @@ async def test_board_items_container_schema_contract(test_db):
     assert constraints["board_items_container_kind_check"] == "c"
     assert constraints["board_items_membership_kind_check"] == "c"
     assert constraints["uq_board_items_container_item"] == "u"
-    assert constraints["board_items_source_runbook_item_id_fkey"] == "f"
+    assert constraints["board_items_source_task_item_id_fkey"] == "f"
     assert "board_items_folder_id_item_id_key" not in constraints
 
     indexes = {
@@ -513,12 +534,12 @@ async def test_schema_reapply_backfills_legacy_board_items_container_columns(tes
         ALTER TABLE board_items DROP CONSTRAINT IF EXISTS uq_board_items_container_item;
         ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_container_kind_check;
         ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_membership_kind_check;
-        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_source_runbook_item_id_fkey;
+        ALTER TABLE board_items DROP CONSTRAINT IF EXISTS board_items_source_task_item_id_fkey;
         DROP INDEX IF EXISTS idx_board_items_container;
         DROP INDEX IF EXISTS uq_board_items_primary_membership;
         DROP TRIGGER IF EXISTS trg_board_items_fill_container_defaults ON board_items;
         DROP FUNCTION IF EXISTS board_items_fill_container_defaults();
-        ALTER TABLE board_items DROP COLUMN IF EXISTS source_runbook_item_id CASCADE;
+        ALTER TABLE board_items DROP COLUMN IF EXISTS source_task_item_id CASCADE;
         ALTER TABLE board_items DROP COLUMN IF EXISTS membership_kind CASCADE;
         ALTER TABLE board_items DROP COLUMN IF EXISTS container_id CASCADE;
         ALTER TABLE board_items DROP COLUMN IF EXISTS container_kind CASCADE;
@@ -768,7 +789,7 @@ async def test_schema_reapply_backfills_legacy_board_yjs_catalog_cache_key(test_
 
 
 async def test_schema_prefills_board_yjs_catalog_cache_per_container(test_db):
-    """schema.sql groups cache rows by folder/runbook container, not folder_id alone."""
+    """schema.sql groups cache rows by folder/task container, not folder_id alone."""
 
     await _create_folder(test_db, "container-cache-folder", "Container Cache Folder")
     await test_db.execute(
@@ -776,7 +797,7 @@ async def test_schema_prefills_board_yjs_catalog_cache_per_container(test_db):
         INSERT INTO markdown_documents (id, title, body)
         VALUES
           ('container-folder-doc', 'Folder doc', 'folder body'),
-          ('container-runbook-doc', 'Runbook doc', 'runbook body')
+          ('container-task-doc', 'Task doc', 'task body')
         """
     )
     await test_db.execute(
@@ -787,8 +808,8 @@ async def test_schema_prefills_board_yjs_catalog_cache_per_container(test_db):
         VALUES
           ('markdown:container-folder-doc', 'container-cache-folder', 'markdown',
            'container-folder-doc', 'folder', 'container-cache-folder', 0, 0),
-          ('markdown:container-runbook-doc', 'container-cache-folder', 'markdown',
-           'container-runbook-doc', 'runbook', 'rb-cache', 20, 20)
+          ('markdown:container-task-doc', 'container-cache-folder', 'markdown',
+           'container-task-doc', 'task', 'rb-cache', 20, 20)
         """
     )
 
@@ -808,25 +829,25 @@ async def test_schema_prefills_board_yjs_catalog_cache_per_container(test_db):
         for row in rows
     }
     assert ("folder", "container-cache-folder") in by_container
-    assert ("runbook", "rb-cache") in by_container
+    assert ("task", "rb-cache") in by_container
     assert by_container[("folder", "container-cache-folder")][0]["containerKind"] == "folder"
-    assert by_container[("runbook", "rb-cache")][0]["containerKind"] == "runbook"
+    assert by_container[("task", "rb-cache")][0]["containerKind"] == "task"
 
 
-async def test_schema_reapply_upgrades_pre_status_runbooks_table(test_db):
-    """schema.sql만 재실행해도 029 이전 runbooks 테이블이 최신 형태가 된다."""
+async def test_schema_reapply_upgrades_pre_status_tasks_table(test_db):
+    """schema.sql만 재실행해도 029 이전 tasks 테이블이 최신 형태가 된다."""
 
     await test_db.execute(
         """
-        DROP TABLE IF EXISTS runbook_operations CASCADE;
-        DROP TABLE IF EXISTS runbook_items CASCADE;
-        DROP TABLE IF EXISTS runbook_sections CASCADE;
-        DROP TABLE IF EXISTS runbooks CASCADE;
+        DROP TABLE IF EXISTS task_operations CASCADE;
+        DROP TABLE IF EXISTS task_items CASCADE;
+        DROP TABLE IF EXISTS task_sections CASCADE;
+        DROP TABLE IF EXISTS tasks CASCADE;
         """
     )
     await test_db.execute(
         """
-        CREATE TABLE runbooks (
+        CREATE TABLE tasks (
             id                 TEXT PRIMARY KEY,
             board_item_id      TEXT NOT NULL REFERENCES board_items(id) ON DELETE CASCADE,
             title              TEXT NOT NULL DEFAULT '',
@@ -839,28 +860,28 @@ async def test_schema_reapply_upgrades_pre_status_runbooks_table(test_db):
             FOREIGN KEY (created_session_id, created_event_id)
                 REFERENCES events(session_id, id) ON DELETE SET NULL
         );
-        CREATE UNIQUE INDEX uq_runbooks_board_item ON runbooks(board_item_id);
+        CREATE UNIQUE INDEX uq_tasks_board_item ON tasks(board_item_id);
         """
     )
 
-    await _create_folder(test_db, "legacy-runbook-folder", "Legacy Runbook Folder")
+    await _create_folder(test_db, "legacy-task-folder", "Legacy Task Folder")
     await test_db.execute(
         """
         INSERT INTO board_items (id, folder_id, item_type, item_id)
-        VALUES ($1, $2, 'runbook', $3)
+        VALUES ($1, $2, 'task', $3)
         """,
-        "legacy-runbook-board-item",
-        "legacy-runbook-folder",
-        "legacy-runbook",
+        "legacy-task-board-item",
+        "legacy-task-folder",
+        "legacy-task",
     )
     await test_db.execute(
         """
-        INSERT INTO runbooks (id, board_item_id, title)
+        INSERT INTO tasks (id, board_item_id, title)
         VALUES ($1, $2, $3)
         """,
-        "legacy-runbook",
-        "legacy-runbook-board-item",
-        "Legacy Runbook",
+        "legacy-task",
+        "legacy-task-board-item",
+        "Legacy Task",
     )
 
     await test_db.execute(_schema_sql())
@@ -870,10 +891,10 @@ async def test_schema_reapply_upgrades_pre_status_runbooks_table(test_db):
         """
         SELECT status, completed_kind, completed_session_id, completed_event_id,
                completed_user_id, completed_at
-        FROM runbooks
+        FROM tasks
         WHERE id = $1
         """,
-        "legacy-runbook",
+        "legacy-task",
     )
     assert row["status"] == "open"
     assert row["completed_kind"] is None
@@ -888,85 +909,85 @@ async def test_schema_reapply_upgrades_pre_status_runbooks_table(test_db):
             """
             SELECT conname
             FROM pg_constraint
-            WHERE conrelid = 'runbooks'::regclass
+            WHERE conrelid = 'tasks'::regclass
             """
         )
     }
     assert {
-        "runbooks_status_check",
-        "runbooks_completed_kind_check",
-        "runbooks_completed_session_id_fkey",
-        "runbooks_completed_event_fkey",
+        "tasks_status_check",
+        "tasks_completed_kind_check",
+        "tasks_completed_session_id_fkey",
+        "tasks_completed_event_fkey",
     } <= constraint_names
 
     with pytest.raises(Exception):
-        await test_db.execute("UPDATE runbooks SET status = 'invalid'")
+        await test_db.execute("UPDATE tasks SET status = 'invalid'")
     with pytest.raises(Exception):
-        await test_db.execute("UPDATE runbooks SET completed_kind = 'system'")
+        await test_db.execute("UPDATE tasks SET completed_kind = 'system'")
     with pytest.raises(Exception):
-        await test_db.execute("UPDATE runbooks SET completed_session_id = 'missing-session'")
+        await test_db.execute("UPDATE tasks SET completed_session_id = 'missing-session'")
 
 
-async def test_fresh_schema_uses_runbook_status_canonical_constraint_names(test_db):
+async def test_fresh_schema_uses_task_status_canonical_constraint_names(test_db):
     constraint_names = {
         row["conname"]
         for row in await test_db.fetch(
             """
             SELECT conname
             FROM pg_constraint
-            WHERE conrelid = 'runbooks'::regclass
+            WHERE conrelid = 'tasks'::regclass
             """
         )
     }
 
-    assert "runbooks_completed_event_fkey" in constraint_names
-    assert "runbooks_completed_session_id_completed_event_id_fkey" not in constraint_names
+    assert "tasks_completed_event_fkey" in constraint_names
+    assert "tasks_completed_session_id_completed_event_id_fkey" not in constraint_names
 
 
-async def test_schema_reapply_upgrades_runbook_item_review_status_check(test_db):
-    """schema.sql만 재실행해도 기존 runbook_items CHECK가 review를 허용한다."""
+async def test_schema_reapply_upgrades_task_item_review_status_check(test_db):
+    """schema.sql만 재실행해도 기존 task_items CHECK가 review를 허용한다."""
 
     await test_db.execute(
         """
-        ALTER TABLE runbook_items DROP CONSTRAINT IF EXISTS runbook_items_status_check;
-        ALTER TABLE runbook_items ADD CONSTRAINT runbook_items_status_check
+        ALTER TABLE task_items DROP CONSTRAINT IF EXISTS task_items_status_check;
+        ALTER TABLE task_items ADD CONSTRAINT task_items_status_check
             CHECK (status IN ('pending','in_progress','completed','cancelled'));
         """
     )
 
     await test_db.execute(_schema_sql())
-    await _create_folder(test_db, "review-runbook-folder", "Review Runbook Folder")
+    await _create_folder(test_db, "review-task-folder", "Review Task Folder")
     await test_db.execute(
         """
         INSERT INTO board_items (id, folder_id, item_type, item_id)
-        VALUES ($1, $2, 'runbook', $3)
+        VALUES ($1, $2, 'task', $3)
         """,
-        "review-runbook-board-item",
-        "review-runbook-folder",
-        "review-runbook",
+        "review-task-board-item",
+        "review-task-folder",
+        "review-task",
     )
     await test_db.execute(
         """
-        INSERT INTO runbooks (id, board_item_id, title)
+        INSERT INTO tasks (id, board_item_id, title)
         VALUES ($1, $2, $3)
         """,
-        "review-runbook",
-        "review-runbook-board-item",
-        "Review Runbook",
+        "review-task",
+        "review-task-board-item",
+        "Review Task",
     )
     await test_db.execute(
         """
-        INSERT INTO runbook_sections (id, runbook_id, position_key, title)
+        INSERT INTO task_sections (id, task_id, position_key, title)
         VALUES ($1, $2, $3, $4)
         """,
         "review-section",
-        "review-runbook",
+        "review-task",
         "a",
         "Review Section",
     )
     await test_db.execute(
         """
-        INSERT INTO runbook_items (id, section_id, position_key, title, status)
+        INSERT INTO task_items (id, section_id, position_key, title, status)
         VALUES ($1, $2, $3, $4, 'review')
         """,
         "review-item",
@@ -976,7 +997,7 @@ async def test_schema_reapply_upgrades_runbook_item_review_status_check(test_db)
     )
 
     status = await test_db.fetchval(
-        "SELECT status FROM runbook_items WHERE id = $1",
+        "SELECT status FROM task_items WHERE id = $1",
         "review-item",
     )
     assert status == "review"

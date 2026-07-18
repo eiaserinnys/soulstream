@@ -1,7 +1,7 @@
 """PostgresFolderMixin — 폴더 CRUD + 카탈로그 (PostgreSQL)
 
 Size exception: legacy mixin still owns folders, board items, markdown documents,
-and file assets. New runbook overview reads live in postgres/runbooks.py.
+and file assets. New task overview reads live in postgres/tasks.py.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ def _normalize_board_item(row: dict) -> dict:
         "containerKind": row.get("container_kind") or "folder",
         "containerId": row.get("container_id") or row["folder_id"],
         "membershipKind": row.get("membership_kind") or "primary",
-        "sourceRunbookItemId": row.get("source_runbook_item_id"),
+        "sourceTaskItemId": row.get("source_task_item_id"),
         "itemType": row["item_type"],
         "itemId": row["item_id"],
         "x": float(row["x"]),
@@ -86,7 +86,7 @@ def _normalize_markdown_document(row: dict) -> dict:
     }
 
 
-def _normalize_runbook_row(row: dict) -> dict:
+def _normalize_task_row(row: dict) -> dict:
     result = dict(row)
     for key in ("created_at", "updated_at", "completed_at"):
         value = result.get(key)
@@ -494,42 +494,42 @@ class PostgresFolderMixin:
             document_id,
         )
 
-    async def get_runbook_snapshot(self, runbook_id: str) -> Optional[dict]:
-        runbook_row = await self._pool.fetchrow(
+    async def get_task_snapshot(self, task_id: str) -> Optional[dict]:
+        task_row = await self._pool.fetchrow(
             """
             SELECT r.*, bi.folder_id
-            FROM runbooks r
+            FROM tasks r
             JOIN board_items bi ON bi.id = r.board_item_id
             WHERE r.id = $1
             """,
-            runbook_id,
+            task_id,
         )
-        if runbook_row is None:
+        if task_row is None:
             return None
 
         sections = await self._pool.fetch(
             """
             SELECT *
-            FROM runbook_sections
-            WHERE runbook_id = $1
+            FROM task_sections
+            WHERE task_id = $1
             ORDER BY position_key ASC, created_at ASC
             """,
-            runbook_id,
+            task_id,
         )
         items = await self._pool.fetch(
             """
             SELECT i.*
-            FROM runbook_items i
-            JOIN runbook_sections s ON s.id = i.section_id
-            WHERE s.runbook_id = $1
+            FROM task_items i
+            JOIN task_sections s ON s.id = i.section_id
+            WHERE s.task_id = $1
             ORDER BY s.position_key ASC, i.position_key ASC, i.created_at ASC
             """,
-            runbook_id,
+            task_id,
         )
         return {
-            "runbook": _normalize_runbook_row(dict(runbook_row)),
-            "sections": [_normalize_runbook_row(dict(row)) for row in sections],
-            "items": [_normalize_runbook_row(dict(row)) for row in items],
+            "task": _normalize_task_row(dict(task_row)),
+            "sections": [_normalize_task_row(dict(row)) for row in sections],
+            "items": [_normalize_task_row(dict(row)) for row in items],
         }
 
     async def create_pending_file_asset(

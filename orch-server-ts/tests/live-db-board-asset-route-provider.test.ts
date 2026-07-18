@@ -28,7 +28,7 @@ describe("live DB board asset route provider", () => {
     ]);
     await expect(provider.getCatalogSnapshot()).resolves.toEqual({
       folders: [expect.objectContaining({ id: "folder-a" })],
-      boardItems: [expect.objectContaining({ id: "runbook-card" })],
+      boardItems: [expect.objectContaining({ id: "task-card" })],
     });
   });
 
@@ -130,7 +130,7 @@ describe("live DB board asset route provider", () => {
         return [
           fileAssetRow({
             id: "asset-multi",
-            storage_key: "containers/runbook/rb-1/assets/asset-multi/clip.mov",
+            storage_key: "containers/task/rb-1/assets/asset-multi/clip.mov",
             original_name: "clip.mov",
             mime_type: "video/quicktime",
             byte_size: String(5 * 1024 * 1024 + 1),
@@ -148,7 +148,7 @@ describe("live DB board asset route provider", () => {
     await expect(
       provider.initFileAsset({
         folderId: "folder-a",
-        containerKind: "runbook",
+        containerKind: "task",
         containerId: "rb-1",
         name: "clip.mov",
         mimeType: "video/quicktime",
@@ -156,7 +156,7 @@ describe("live DB board asset route provider", () => {
       }),
     ).resolves.toMatchObject({
       assetId: "asset-multi",
-      storageKey: "containers/runbook/rb-1/assets/asset-multi/clip.mov",
+      storageKey: "containers/task/rb-1/assets/asset-multi/clip.mov",
       uploadMode: "multipart",
       uploadId: "upload-1",
       partSize: 5 * 1024 * 1024,
@@ -166,7 +166,7 @@ describe("live DB board asset route provider", () => {
       ],
     });
     expect(storage.createMultipartUpload).toHaveBeenCalledWith({
-      storageKey: "containers/runbook/rb-1/assets/asset-multi/clip.mov",
+      storageKey: "containers/task/rb-1/assets/asset-multi/clip.mov",
       mimeType: "video/quicktime",
       byteSize: 5 * 1024 * 1024 + 1,
       partSize: 5 * 1024 * 1024,
@@ -412,13 +412,13 @@ function folderRow(overrides: Record<string, unknown> = {}): Record<string, unkn
 
 function boardItemRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    id: "runbook-card",
+    id: "task-card",
     folder_id: "folder-a",
     container_kind: "folder",
     container_id: "folder-a",
     membership_kind: "primary",
-    source_runbook_item_id: null,
-    item_type: "runbook",
+    source_task_item_id: null,
+    item_type: "task",
     item_id: "rb-1",
     x: 20,
     y: 40,
@@ -466,7 +466,7 @@ function serializeBoardItemRow(row: Record<string, unknown>) {
     containerKind: String(row.container_kind ?? "folder"),
     containerId: String(row.container_id ?? row.folder_id),
     membershipKind: String(row.membership_kind ?? "primary"),
-    sourceRunbookItemId: row.source_runbook_item_id as string | null,
+    sourceTaskItemId: row.source_task_item_id as string | null,
     itemType: String(row.item_type),
     itemId: String(row.item_id),
     x: Number(row.x ?? 0),

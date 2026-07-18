@@ -33,7 +33,7 @@ def test_static_routes_keep_priority_over_dynamic_routes():
         order["/api/sessions/{session_id}/events/viewport"]
         < order["/api/sessions/{session_id}/events"]
     )
-    assert order["/api/runbooks/my-turn"] < order["/api/runbooks/{runbook_id}"]
+    assert order["/api/tasks/my-turn"] < order["/api/tasks/{task_id}"]
 
 
 def test_public_route_auth_contract_is_explicit():

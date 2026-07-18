@@ -1,5 +1,6 @@
 import * as Y from "yjs";
 
+import { normalizeBoardContainerKind } from "./board_container_kind_compat.js";
 import { normalizeMarkdownVersion } from "./markdown_document_version.js";
 import type {
   BoardContainerKind,
@@ -54,9 +55,10 @@ export function parseBoardYjsDocumentName(documentName: string): BoardYjsContain
   const rest = documentName.slice(BOARD_YJS_CONTAINER_PREFIX.length);
   const separator = rest.indexOf(":");
   if (separator <= 0) return null;
-  const containerKind = rest.slice(0, separator);
+  const rawContainerKind = rest.slice(0, separator);
   const containerId = rest.slice(separator + 1);
-  if (!isBoardContainerKind(containerKind) || containerId.length === 0) return null;
+  const containerKind = normalizeBoardContainerKind(rawContainerKind);
+  if (!containerKind || containerId.length === 0) return null;
   return { containerKind, containerId };
 }
 
@@ -94,8 +96,8 @@ export function createBoardYDocSnapshot(params: {
         x: item.x,
         y: item.y,
         ...(item.membershipKind ? { membership_kind: item.membershipKind } : {}),
-        ...(item.sourceRunbookItemId !== undefined
-          ? { source_runbook_item_id: item.sourceRunbookItemId }
+        ...(item.sourceTaskItemId !== undefined
+          ? { source_task_item_id: item.sourceTaskItemId }
           : {}),
         metadata: markdown
           ? { ...metadata, version: normalizeMarkdownVersion(metadata.version ?? markdown.version) }
@@ -124,27 +126,30 @@ export function readBoardYDocReplica(
   const rows: CatalogBoardItemRow[] = [];
 
   for (const [id, value] of boardItems.entries()) {
-    const metadata = value.metadata && typeof value.metadata === "object" ? value.metadata : {};
+    const normalizedValue = normalizeLegacyBoardYjsItemValue(value);
+    const metadata = normalizedValue.metadata && typeof normalizedValue.metadata === "object"
+      ? normalizedValue.metadata
+      : {};
     rows.push({
       id,
       folderId: scope.folderId,
       containerKind: scope.containerKind,
       containerId: scope.containerId,
-      membershipKind: value.membership_kind ?? "primary",
-      sourceRunbookItemId: value.source_runbook_item_id ?? null,
-      itemType: value.item_type,
-      itemId: value.item_id,
-      x: Number(value.x),
-      y: Number(value.y),
+      membershipKind: normalizedValue.membership_kind ?? "primary",
+      sourceTaskItemId: normalizedValue.source_task_item_id ?? null,
+      itemType: normalizedValue.item_type,
+      itemId: normalizedValue.item_id,
+      x: Number(normalizedValue.x),
+      y: Number(normalizedValue.y),
       metadata,
-      ...(value.created_at ? { createdAt: value.created_at } : {}),
-      ...(value.updated_at ? { updatedAt: value.updated_at } : {}),
+      ...(normalizedValue.created_at ? { createdAt: normalizedValue.created_at } : {}),
+      ...(normalizedValue.updated_at ? { updatedAt: normalizedValue.updated_at } : {}),
     });
-    if (value.item_type === "markdown") {
-      markdownDocumentsById.set(value.item_id, {
-        id: value.item_id,
+    if (normalizedValue.item_type === "markdown") {
+      markdownDocumentsById.set(normalizedValue.item_id, {
+        id: normalizedValue.item_id,
         title: typeof metadata.title === "string" ? metadata.title : "Untitled document",
-        body: markdownBodies.get(value.item_id)?.toString() ?? "",
+        body: markdownBodies.get(normalizedValue.item_id)?.toString() ?? "",
         version: normalizeMarkdownVersion(metadata.version),
       });
     }
@@ -172,7 +177,24 @@ export function readBoardYDocSnapshot(params: {
 }
 
 function isBoardContainerKind(value: string): value is BoardContainerKind {
-  return value === "folder" || value === "runbook";
+  return value === "folder" || value === "task";
+}
+
+export function normalizeLegacyBoardYjsItemValue(
+  value: BoardYjsItemValue,
+): BoardYjsItemValue {
+  const legacy = value as Omit<BoardYjsItemValue, "item_type"> & {
+    item_type: BoardYjsItemValue["item_type"] | "runbook";
+    source_runbook_item_id?: string | null;
+  };
+  const { source_runbook_item_id: legacySourceItemId, ...canonical } = legacy;
+  return {
+    ...canonical,
+    item_type: legacy.item_type === "runbook" ? "task" : legacy.item_type,
+    ...(canonical.source_task_item_id === undefined && legacySourceItemId !== undefined
+      ? { source_task_item_id: legacySourceItemId }
+      : {}),
+  };
 }
 
 function assertBoardYjsContainer(container: BoardYjsContainerRef): void {

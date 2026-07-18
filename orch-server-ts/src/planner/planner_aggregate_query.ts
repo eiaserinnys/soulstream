@@ -54,23 +54,23 @@ export async function plannerQuery(
     folder_task_mounts AS (
       SELECT board_item.id AS source_block_id,
              '~board:' || board_item.id AS position_key,
-             runbook.task_page_id AS page_id
+             task.task_page_id AS page_id
       FROM root_folder folder
       JOIN board_items board_item ON board_item.folder_id = folder.id
        AND board_item.container_kind = 'folder'
        AND board_item.container_id = folder.id
        AND board_item.membership_kind = 'primary'
-       AND board_item.item_type = 'runbook'
-      JOIN runbooks runbook ON runbook.id = board_item.item_id
-       AND runbook.board_item_id = board_item.id
-       AND runbook.task_page_id IS NOT NULL
-       AND runbook.archived = FALSE
-      JOIN pages task_page ON task_page.id = runbook.task_page_id
+       AND board_item.item_type = 'task'
+      JOIN tasks task ON task.id = board_item.item_id
+       AND task.board_item_id = board_item.id
+       AND task.task_page_id IS NOT NULL
+       AND task.archived = FALSE
+      JOIN pages task_page ON task_page.id = task.task_page_id
                           AND task_page.archived = FALSE
       WHERE NOT EXISTS (
         SELECT 1
         FROM physical_root_mounts mounted
-        WHERE mounted.page_id = runbook.task_page_id
+        WHERE mounted.page_id = task.task_page_id
       )
     ),
     root_mounts AS (
@@ -85,18 +85,18 @@ export async function plannerQuery(
     ),
     mounted_kinds AS (
       SELECT mounted.id AS page_id,
-             runbook_ref.properties->>'runbookId' AS runbook_id
+             task_ref.properties->>'taskId' AS task_id
       FROM mounted_pages mounted
       LEFT JOIN LATERAL (
         SELECT b.properties
         FROM blocks b
         WHERE b.page_id = mounted.id
-          AND b.block_type = 'runbook_ref'
+          AND b.block_type = 'task_ref'
           AND COALESCE((b.properties->>'primary')::boolean, FALSE)
-          AND NULLIF(b.properties->>'runbookId', '') IS NOT NULL
+          AND NULLIF(b.properties->>'taskId', '') IS NOT NULL
         ORDER BY b.position_key, b.id
         LIMIT 1
-      ) runbook_ref ON TRUE
+      ) task_ref ON TRUE
     ),
     project_pages AS (
       SELECT p.*
@@ -107,9 +107,9 @@ export async function plannerQuery(
           SELECT 1
           FROM blocks task_ref
           WHERE task_ref.page_id = p.id
-            AND task_ref.block_type = 'runbook_ref'
+            AND task_ref.block_type = 'task_ref'
             AND COALESCE((task_ref.properties->>'primary')::boolean, FALSE)
-            AND NULLIF(task_ref.properties->>'runbookId', '') IS NOT NULL
+            AND NULLIF(task_ref.properties->>'taskId', '') IS NOT NULL
         )
         AND EXISTS (
           SELECT 1
@@ -123,7 +123,7 @@ export async function plannerQuery(
     task_rows AS (
       SELECT mounted.id AS page_id,
              mounted.mount_position,
-             kind_row.runbook_id,
+             kind_row.task_id,
              CASE
                WHEN ${kind} = 'project' THEN root.id
                ELSE project_mount.project_page_id
@@ -131,7 +131,7 @@ export async function plannerQuery(
       FROM mounted_pages mounted
       JOIN mounted_kinds kind_row
         ON kind_row.page_id = mounted.id
-       AND kind_row.runbook_id IS NOT NULL
+       AND kind_row.task_id IS NOT NULL
       CROSS JOIN root_page root
       LEFT JOIN LATERAL (
         SELECT project.id AS project_page_id
@@ -172,7 +172,7 @@ export async function plannerQuery(
       JOIN mounted_kinds kind_row ON kind_row.page_id = mounted.id
       WHERE ${kind} = 'project'
         AND ${input.includeDocuments}
-        AND kind_row.runbook_id IS NULL
+        AND kind_row.task_id IS NULL
         AND (
           ${documentCursor?.position ?? null}::text IS NULL
           OR (mounted.mount_position, mounted.id) < (
@@ -243,33 +243,33 @@ export async function plannerQuery(
       FROM block_payloads block
       GROUP BY block.page_id
     ),
-    task_runbook_ids AS (
-      SELECT DISTINCT runbook_id FROM visible_task_rows
+    task_ids AS (
+      SELECT DISTINCT task_id FROM visible_task_rows
     ),
-    runbook_item_status_counts AS (
-      SELECT section.runbook_id,
+    task_item_status_counts AS (
+      SELECT section.task_id,
              item.status,
              count(*)::integer AS status_count
-      FROM runbook_sections section
-      JOIN task_runbook_ids task_runbook ON task_runbook.runbook_id = section.runbook_id
-      JOIN runbook_items item ON item.section_id = section.id
+      FROM task_sections section
+      JOIN task_ids selected_task ON selected_task.task_id = section.task_id
+      JOIN task_items item ON item.section_id = section.id
       WHERE section.archived = FALSE AND item.archived = FALSE
-      GROUP BY section.runbook_id, item.status
+      GROUP BY section.task_id, item.status
     ),
-    runbook_item_counts AS (
-      SELECT runbook_id,
+    task_item_counts AS (
+      SELECT task_id,
              sum(status_count)::integer AS item_total,
              COALESCE(
                sum(status_count) FILTER (WHERE status = 'completed'),
                0
              )::integer AS completed_item_count,
              jsonb_object_agg(status, status_count) AS item_counts
-      FROM runbook_item_status_counts
-      GROUP BY runbook_id
+      FROM task_item_status_counts
+      GROUP BY task_id
     ),
     preferred_assignees AS (
-      SELECT DISTINCT ON (section.runbook_id)
-             section.runbook_id,
+      SELECT DISTINCT ON (section.task_id)
+             section.task_id,
              COALESCE(
                item.assignee_agent_id,
                item.assignee_user_id,
@@ -278,13 +278,13 @@ export async function plannerQuery(
                section.assignee_user_id,
                CASE WHEN section.assignee_session_id IS NOT NULL THEN '세션 담당' END
              ) AS assignee
-      FROM runbook_sections section
-      JOIN task_runbook_ids task_runbook ON task_runbook.runbook_id = section.runbook_id
-      LEFT JOIN runbook_items item
+      FROM task_sections section
+      JOIN task_ids selected_task ON selected_task.task_id = section.task_id
+      LEFT JOIN task_items item
         ON item.section_id = section.id
        AND item.archived = FALSE
       WHERE section.archived = FALSE
-      ORDER BY section.runbook_id,
+      ORDER BY section.task_id,
                CASE item.status
                  WHEN 'in_progress' THEN 0
                  WHEN 'review' THEN 1
@@ -294,37 +294,37 @@ export async function plannerQuery(
                section.position_key,
                item.position_key
     ),
-    runbook_summaries AS (
-      SELECT runbook.id,
+    task_summaries AS (
+      SELECT task.id,
              jsonb_build_object(
-               'id', runbook.id,
-               'board_item_id', runbook.board_item_id,
-               'title', runbook.title,
-               'status', runbook.status,
-               'archived', runbook.archived,
-               'version', runbook.version,
-               'created_session_id', runbook.created_session_id,
-               'created_event_id', runbook.created_event_id,
-               'created_at', runbook.created_at,
-               'updated_at', runbook.updated_at,
+               'id', task.id,
+               'board_item_id', task.board_item_id,
+               'title', task.title,
+               'status', task.status,
+               'archived', task.archived,
+               'version', task.version,
+               'created_session_id', task.created_session_id,
+               'created_event_id', task.created_event_id,
+               'created_at', task.created_at,
+               'updated_at', task.updated_at,
                'item_counts', COALESCE(counts.item_counts, '{}'::jsonb),
                'item_total', COALESCE(counts.item_total, 0),
                'completed_item_count', COALESCE(counts.completed_item_count, 0),
                'assignee', assignee.assignee
              ) AS payload
-      FROM runbooks runbook
-      JOIN task_runbook_ids task_runbook ON task_runbook.runbook_id = runbook.id
-      LEFT JOIN runbook_item_counts counts ON counts.runbook_id = runbook.id
-      LEFT JOIN preferred_assignees assignee ON assignee.runbook_id = runbook.id
-      WHERE runbook.archived = FALSE
+      FROM tasks task
+      JOIN task_ids selected_task ON selected_task.task_id = task.id
+      LEFT JOIN task_item_counts counts ON counts.task_id = task.id
+      LEFT JOIN preferred_assignees assignee ON assignee.task_id = task.id
+      WHERE task.archived = FALSE
     ),
-    runbook_sessions AS (
-      SELECT task_runbook.runbook_id,
+    task_sessions AS (
+      SELECT selected_task.task_id,
              CASE WHEN latest.payload IS NULL
                THEN '[]'::jsonb
                ELSE jsonb_build_array(latest.payload)
              END AS payload
-      FROM task_runbook_ids task_runbook
+      FROM task_ids selected_task
       LEFT JOIN LATERAL (
         SELECT jsonb_build_object(
                  'agent_session_id', session.session_id,
@@ -341,8 +341,8 @@ export async function plannerQuery(
                ) AS payload
         FROM board_items item
         JOIN sessions session ON session.session_id = item.item_id
-        WHERE item.container_kind = 'runbook'
-          AND item.container_id = task_runbook.runbook_id
+        WHERE item.container_kind = 'task'
+          AND item.container_id = selected_task.task_id
           AND item.item_type = 'session'
         ORDER BY session.updated_at DESC, session.session_id DESC
         LIMIT 1
@@ -374,8 +374,8 @@ export async function plannerQuery(
              jsonb_build_object(
                'page', page_payload.payload,
                'blocks', COALESCE(page_block.payload, '[]'::jsonb),
-               'runbook_id', task.runbook_id,
-               'runbook', runbook.payload,
+               'task_id', task.task_id,
+               'task', task_summary.payload,
                'project_page_id', task.project_page_id,
                'sessions', COALESCE(run_sessions.payload, '[]'::jsonb),
                'mounted_documents', COALESCE(documents.payload, '[]'::jsonb)
@@ -384,8 +384,8 @@ export async function plannerQuery(
       JOIN pages page ON page.id = task.page_id
       JOIN page_payloads page_payload ON page_payload.id = page.id
       LEFT JOIN page_blocks page_block ON page_block.page_id = page.id
-      LEFT JOIN runbook_summaries runbook ON runbook.id = task.runbook_id
-      LEFT JOIN runbook_sessions run_sessions ON run_sessions.runbook_id = task.runbook_id
+      LEFT JOIN task_summaries task_summary ON task_summary.id = task.task_id
+      LEFT JOIN task_sessions run_sessions ON run_sessions.task_id = task.task_id
       LEFT JOIN mounted_documents documents ON documents.page_id = page.id
     ),
     payload AS (

@@ -87,8 +87,8 @@ describe("route registry", () => {
         dynamicPath: "/api/sessions/{session_id}/events",
       },
       {
-        staticPath: "/api/runbooks/my-turn",
-        dynamicPath: "/api/runbooks/{runbook_id}",
+        staticPath: "/api/tasks/my-turn",
+        dynamicPath: "/api/tasks/{task_id}",
       },
       {
         staticPath: "/api/pages/daily",
@@ -99,16 +99,16 @@ describe("route registry", () => {
     const brokenFixture: RouteInventoryFixture = {
       ...fixtures.routeInventory,
       routes: fixtures.routeInventory.routes.map((route) => {
-        if (route.path === "/api/runbooks/my-turn") return { ...route, order: 80 };
-        if (route.path === "/api/runbooks/{runbook_id}") return { ...route, order: 76 };
+        if (route.path === "/api/tasks/my-turn") return { ...route, order: 80 };
+        if (route.path === "/api/tasks/{task_id}") return { ...route, order: 76 };
         return route;
       }),
     };
     const brokenPriority = validateStaticBeforeDynamicPriority(buildRouteRegistry(brokenFixture));
     expect(brokenPriority.valid).toBe(false);
     expect(brokenPriority.violations).toContainEqual({
-      staticPath: "/api/runbooks/my-turn",
-      dynamicPath: "/api/runbooks/{runbook_id}",
+      staticPath: "/api/tasks/my-turn",
+      dynamicPath: "/api/tasks/{task_id}",
       staticOrder: 80,
       dynamicOrder: 76,
     });
@@ -135,7 +135,7 @@ describe("route registry", () => {
       ["POST", "/api/board-yjs/host/{operation}", "board_yjs_proxy"],
       ["POST", "/api/page-yjs/host/{operation}", "page_yjs"],
       ["WEBSOCKET", "/yjs/page/{pageId}", "page_yjs"],
-      ["GET", "/api/runbooks/{runbook_id}", "runbook"],
+      ["GET", "/api/tasks/{task_id}", "task"],
       ["GET", "/api/admin/users", "admin_or_user"],
       ["GET", "/api/sessions/{session_id}/messages", "session"],
     ] as const;

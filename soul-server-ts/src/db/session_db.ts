@@ -6,10 +6,10 @@
 import postgres from "postgres";
 
 import { DEFAULT_FOLDERS as SYSTEM_DEFAULT_FOLDERS } from "../system_folders.js";
-import { RunbookRepository } from "../runbook/runbook_repository.js";
+import { TaskRepository } from "../work-task/task_repository.js";
 import { SoulstreamScheduleRepository } from "../schedule/schedule_repository.js";
 import { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
-import { ChecklistRunbookProjectionRepository } from "../page/checklist_runbook_projection_repository.js";
+import { ChecklistTaskProjectionRepository } from "../page/checklist_task_projection_repository.js";
 import { BoardRepository } from "./repositories/board_repository.js";
 import { BoardYjsRepository } from "./repositories/board_yjs_repository.js";
 import { CatalogRepository } from "./repositories/catalog_repository.js";
@@ -30,11 +30,11 @@ export const DEFAULT_FOLDERS = SYSTEM_DEFAULT_FOLDERS;
 export class SessionDB extends SupervisorSessionDbFacade {
   private readonly sql: SqlClient;
   private readonly ownsSql: boolean;
-  private runbookRepository?: RunbookRepository;
+  private taskRepository?: TaskRepository;
   private customViewRepository?: CustomViewRepository;
   private scheduleRepository?: SoulstreamScheduleRepository;
   private sessionPageBindingRepository?: SessionPageBindingRepository;
-  private checklistRunbookProjectionRepository?: ChecklistRunbookProjectionRepository;
+  private checklistTaskProjectionRepository?: ChecklistTaskProjectionRepository;
   private readonly sessionRepository: SessionRepository;
   private readonly boardRepository: BoardRepository;
   private readonly catalogRepository: CatalogRepository;
@@ -82,9 +82,9 @@ export class SessionDB extends SupervisorSessionDbFacade {
     await this.sessionRepository.ensureStableSessionOrderIndex();
   }
 
-  runbooks(): RunbookRepository {
-    this.runbookRepository ??= new RunbookRepository(this.sql);
-    return this.runbookRepository;
+  tasks(): TaskRepository {
+    this.taskRepository ??= new TaskRepository(this.sql);
+    return this.taskRepository;
   }
 
   customViews(): CustomViewRepository {
@@ -102,9 +102,9 @@ export class SessionDB extends SupervisorSessionDbFacade {
     return this.sessionPageBindingRepository;
   }
 
-  checklistRunbookProjections(): ChecklistRunbookProjectionRepository {
-    this.checklistRunbookProjectionRepository ??= new ChecklistRunbookProjectionRepository(this.sql);
-    return this.checklistRunbookProjectionRepository;
+  checklistTaskProjections(): ChecklistTaskProjectionRepository {
+    this.checklistTaskProjectionRepository ??= new ChecklistTaskProjectionRepository(this.sql);
+    return this.checklistTaskProjectionRepository;
   }
 
   async registerSession(params: RegisterSessionParams): Promise<void> {
@@ -265,12 +265,12 @@ export class SessionDB extends SupervisorSessionDbFacade {
     return await this.boardYjsRepository.getBoardYjsUpdates(documentName);
   }
 
-  async backfillRunbookBoardItemsIntoBoardYjsSnapshot(
+  async backfillTaskBoardItemsIntoBoardYjsSnapshot(
     documentName: string,
     container: string | BoardYjsContainerRef,
     snapshot: Uint8Array,
   ): Promise<Uint8Array> {
-    return await this.boardYjsRepository.backfillRunbookBoardItemsIntoSnapshot(
+    return await this.boardYjsRepository.backfillTaskBoardItemsIntoSnapshot(
       documentName,
       container,
       snapshot,

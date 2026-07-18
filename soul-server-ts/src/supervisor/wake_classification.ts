@@ -52,6 +52,7 @@ export const WAKE_CLASS_BY_EVENT_TYPE = {
   claude_runtime_mode_state: "quiet",
   claude_runtime_schedule_updated: "batch",
   claude_runtime_schedule_deleted: "batch",
+  task_updated: "quiet",
   runbook_updated: "quiet",
   custom_view_updated: "quiet",
   context_usage: "quiet",

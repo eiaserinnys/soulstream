@@ -23,15 +23,15 @@ export const BOARD_GRID_SIZE = 20;
 export const BOARD_TILE_WIDTH = 280;
 export const BOARD_TILE_HEIGHT = 160;
 export const BOARD_ASSET_TILE_HEIGHT = 200;
-export const BOARD_RUNBOOK_TILE_WIDTH = 360;
-export const BOARD_RUNBOOK_TILE_HEIGHT = 360;
-export const BOARD_RUNBOOK_FIXED_CARD_WIDTH = 360;
-export const BOARD_RUNBOOK_FIXED_CARD_HEIGHT = 520;
-export const BOARD_RUNBOOK_FIXED_CARD_RECT = Object.freeze({
+export const BOARD_TASK_TILE_WIDTH = 360;
+export const BOARD_TASK_TILE_HEIGHT = 360;
+export const BOARD_TASK_FIXED_CARD_WIDTH = 360;
+export const BOARD_TASK_FIXED_CARD_HEIGHT = 520;
+export const BOARD_TASK_FIXED_CARD_RECT = Object.freeze({
   x: 0,
   y: 0,
-  width: BOARD_RUNBOOK_FIXED_CARD_WIDTH,
-  height: BOARD_RUNBOOK_FIXED_CARD_HEIGHT,
+  width: BOARD_TASK_FIXED_CARD_WIDTH,
+  height: BOARD_TASK_FIXED_CARD_HEIGHT,
 });
 export const BOARD_CUSTOM_VIEW_TILE_WIDTH = 280;
 export const BOARD_CUSTOM_VIEW_TILE_HEIGHT = 160;
@@ -136,11 +136,11 @@ export interface FrameBoardWorkspaceItem {
   height: number;
 }
 
-export interface RunbookBoardWorkspaceItem {
-  type: "runbook";
+export interface TaskBoardWorkspaceItem {
+  type: "task";
   id: string;
   boardItemId: string;
-  runbookId: string;
+  taskId: string;
   title: string;
   updatedAt?: string;
   x: number;
@@ -170,7 +170,7 @@ export type BoardWorkspaceItem =
   | MarkdownBoardWorkspaceItem
   | AssetBoardWorkspaceItem
   | FrameBoardWorkspaceItem
-  | RunbookBoardWorkspaceItem
+  | TaskBoardWorkspaceItem
   | CustomViewBoardWorkspaceItem;
 
 export interface BuildBoardWorkspaceItemsParams {
@@ -591,18 +591,18 @@ function buildPositionedItems({
       });
       continue;
     }
-    if (boardItem.itemType === "runbook") {
+    if (boardItem.itemType === "task") {
       items.push({
-        type: "runbook",
+        type: "task",
         id: boardItem.itemId,
         boardItemId: boardItem.id,
-        runbookId: boardItem.itemId,
-        title: metadataText(boardItem, "title") || "Runbook",
+        taskId: boardItem.itemId,
+        title: metadataText(boardItem, "title") || "Task",
         updatedAt: boardItem.updatedAt,
         x: boardItem.x,
         y: boardItem.y,
-        width: BOARD_RUNBOOK_TILE_WIDTH,
-        height: BOARD_RUNBOOK_TILE_HEIGHT,
+        width: BOARD_TASK_TILE_WIDTH,
+        height: BOARD_TASK_TILE_HEIGHT,
       });
       continue;
     }
@@ -643,7 +643,7 @@ function buildPositionedItems({
   );
 
   // 현재 폴더 컨테이너가 아닌 다른 primary placement가 이미 소유한 세션은
-  // 폴더 보드에서 합성하지 않는다. runbook뿐 아니라 하위 folder 컨테이너도
+  // 폴더 보드에서 합성하지 않는다. task뿐 아니라 하위 folder 컨테이너도
   // 같은 소유권 경계로 취급한다.
   const sessionIdsOwnedByOtherContainer = sessionIdsOwnedByOtherBoardContainer(
     catalog.boardItems,

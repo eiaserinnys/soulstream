@@ -36,11 +36,11 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
   try {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
+    await page.getByTestId("v3-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
 
     const todayCaps = await auditVisibleCaps(page);
     assert(todayCaps.length >= 8, `오늘 화면 아이콘 캡이 ${todayCaps.length}개뿐입니다.`);
-    await assertPressedToggle(page.getByTestId("v3-task-task-alpha").locator('[data-slot="dashboard-icon-cap"]'));
+    await assertPressedToggle(page.getByTestId("v3-task-alpha").locator('[data-slot="dashboard-icon-cap"]'));
     await capture(page, theme, "01-today-actions");
 
     await page.getByRole("button", { name: fixtureTitles.project, exact: true }).click();
@@ -52,15 +52,15 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await capture(page, theme, "02-project-actions");
 
     await page.getByRole("button", { name: "오늘로 돌아가기" }).click();
-    await page.getByTestId("v3-task-task-alpha").click();
+    await page.getByTestId("v3-task-alpha").click();
     const detail = page.locator(".v3-detail-pane").first();
-    await detail.getByTestId("v3-task-runbook-checklist").waitFor({ state: "visible" });
+    await detail.getByTestId("v3-task-checklist").waitFor({ state: "visible" });
     await detail.getByTestId("v3-inline-board").waitFor({ state: "visible" });
 
     const detailCaps = await auditVisibleCaps(detail);
     for (const label of [
       "오늘 플래너로 돌아가기",
-      "런북 보드 열기",
+      "업무 보드 열기",
       "업무 설명 편집",
       "컨텍스트 추가",
       "마크다운 추가",

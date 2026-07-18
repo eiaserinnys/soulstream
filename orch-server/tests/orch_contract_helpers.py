@@ -77,8 +77,8 @@ def build_full_contract_app():
         "update_folder": None,
         "delete_folder": None,
         "get_catalog": {"folders": [], "sessions": {}},
-        "get_runbook_snapshot": None,
-        "get_runbook_overview": {"my_turn_items": [], "runbooks": []},
+        "get_task_snapshot": None,
+        "get_task_overview": {"my_turn_items": [], "tasks": []},
     }.items():
         setattr(db, name, _async_method(value))
 

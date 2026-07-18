@@ -13,7 +13,7 @@ export interface SessionPageBindingRow {
   legacy_folder_id: string | null;
   legacy_container_kind: string | null;
   legacy_container_id: string | null;
-  source_runbook_item_id: string | null;
+  source_task_item_id: string | null;
   page_state: "pending" | "bound" | "manual_repair";
   legacy_state: "pending" | "completed" | "manual_repair";
   attempts: number;
@@ -34,7 +34,7 @@ export interface EnqueueSessionPageBinding {
   legacyFolderId: string | null;
   legacyContainerKind: string | null;
   legacyContainerId: string | null;
-  sourceRunbookItemId: string | null;
+  sourceTaskItemId: string | null;
 }
 
 export class SessionPageBindingRepository {
@@ -45,12 +45,12 @@ export class SessionPageBindingRepository {
       INSERT INTO session_page_bindings (
         session_id, node_id, target_page_id, target_block_id, target_expected_version,
         daily_date, session_type, legacy_folder_id, legacy_container_kind,
-        legacy_container_id, source_runbook_item_id, page_state
+        legacy_container_id, source_task_item_id, page_state
       ) VALUES (
         ${input.sessionId}, ${input.nodeId}, ${input.targetPageId}, ${input.targetBlockId},
         ${input.targetExpectedVersion}, ${input.dailyDate}, ${input.sessionType},
         ${input.legacyFolderId}, ${input.legacyContainerKind}, ${input.legacyContainerId},
-        ${input.sourceRunbookItemId}, ${input.initialPageState}
+        ${input.sourceTaskItemId}, ${input.initialPageState}
       )
       ON CONFLICT (session_id) DO NOTHING
       RETURNING *

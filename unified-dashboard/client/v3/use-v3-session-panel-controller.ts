@@ -81,7 +81,7 @@ export function useV3SessionPanelController({
       if (resolved.target.kind === "task") {
         const { pageId } = resolved.target;
         const loaded = currentTasks.find((task) => (
-          task.page.id === pageId || task.runbookId === pageId
+          task.page.id === pageId || task.taskId === pageId
         )) ?? await loadPlannerTask(api, pageId);
         setSelectedTaskId(loaded.page.id);
         setSelectedTaskSnapshot(loaded);

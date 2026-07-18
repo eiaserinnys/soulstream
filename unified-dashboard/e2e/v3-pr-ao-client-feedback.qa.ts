@@ -34,7 +34,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
   try {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    const taskCard = page.getByTestId("v3-task-task-alpha");
+    const taskCard = page.getByTestId("v3-task-alpha");
     await taskCard.waitFor({ state: "visible" });
     await assertRoundedFocus(page, taskCard, taskCard);
     await capture(page, theme, "01-task-card-focus");
@@ -95,7 +95,7 @@ async function verifyAuthExpiry(browser: Browser) {
       ? { authenticated: false, user: null }
       : { authenticated: true, user: { email: "director@example.com", name: "Director" } });
   });
-  await page.route("**/api/runbooks", async (route) => {
+  await page.route("**/api/tasks", async (route) => {
     if (route.request().method() !== "POST") {
       await route.fallback();
       return;
@@ -110,7 +110,7 @@ async function verifyAuthExpiry(browser: Browser) {
 
   try {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible" });
+    await page.getByTestId("v3-task-alpha").waitFor({ state: "visible" });
     await page.getByRole("button", { name: "새 업무", exact: true }).click();
     await page.getByRole("textbox", { name: "새 업무 제목" }).fill("만료 안내 QA");
     await page.getByRole("button", { name: "업무 만들기" }).click();

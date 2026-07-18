@@ -26,10 +26,10 @@ function boardItem(
   return {
     id: `${itemType}:${itemId}`,
     folderId: "folder-1",
-    containerKind: "runbook",
-    containerId: "runbook-1",
+    containerKind: "task",
+    containerId: "task-1",
     membershipKind: "primary",
-    sourceRunbookItemId: null,
+    sourceTaskItemId: null,
     itemType,
     itemId,
     x: 0,
@@ -53,14 +53,14 @@ function storeWith(
       subfolder: 0,
       asset: 0,
       frame: 0,
-      runbook: 0,
+      task: 0,
       custom_view: 0,
     },
     scan,
   }));
   const store: ContainerBrowseStore = {
     getFolderById: vi.fn(async () => FOLDER),
-    getRunbookById: vi.fn(async (id) => id === "runbook-1" ? ({ id } as never) : null),
+    getTaskById: vi.fn(async (id) => id === "task-1" ? ({ id } as never) : null),
     listContainerItems,
   };
   return { store, listContainerItems };
@@ -135,7 +135,7 @@ describe("ContainerBrowseService", () => {
     ]);
 
     const result = await new ContainerBrowseService(store).browse({
-      container: { containerKind: "runbook", containerId: "runbook-1" },
+      container: { containerKind: "task", containerId: "task-1" },
     });
 
     expect(result.items.map((item) => item.type === "session" ? item.displayName : null)).toEqual([
@@ -165,9 +165,9 @@ describe("ContainerBrowseService", () => {
         },
       },
       {
-        boardItem: boardItem("runbook", "runbook-child"),
+        boardItem: boardItem("task", "task-child"),
         archived: false,
-        runbook: { id: "runbook-child", title: "후속 업무", updatedAt: null },
+        task: { id: "task-child", title: "후속 업무", updatedAt: null },
       },
       {
         boardItem: boardItem("custom_view", "view-1"),
@@ -191,7 +191,7 @@ describe("ContainerBrowseService", () => {
     ]);
 
     const result = await new ContainerBrowseService(store).browse({
-      container: { containerKind: "runbook", containerId: "runbook-1" },
+      container: { containerKind: "task", containerId: "task-1" },
     });
     const markdown = result.items[0];
     expect(markdown).toEqual(expect.objectContaining({ type: "markdown", title: "명세" }));
@@ -201,7 +201,7 @@ describe("ContainerBrowseService", () => {
     expect(markdown.preview).not.toContain("\ud83d");
     expect(result.items.map((item) => item.type)).toEqual([
       "markdown",
-      "runbook",
+      "task",
       "custom_view",
       "asset",
       "subfolder",
@@ -239,12 +239,12 @@ describe("ContainerBrowseService", () => {
     }));
 
     const search = await service.search({
-      container: { containerKind: "runbook", containerId: "runbook-1" },
+      container: { containerKind: "task", containerId: "task-1" },
       query: "  명세 😀  ",
       limit: 999,
     });
     expect(listContainerItems).toHaveBeenNthCalledWith(2, expect.objectContaining({
-      container: { containerKind: "runbook", containerId: "runbook-1" },
+      container: { containerKind: "task", containerId: "task-1" },
       cursor: 0,
       limit: 50,
       query: "명세 😀",
@@ -260,11 +260,11 @@ describe("ContainerBrowseService", () => {
 
   it("rejects missing containers before querying board items", async () => {
     const { store, listContainerItems } = storeWith([]);
-    store.getRunbookById = vi.fn(async () => null);
+    store.getTaskById = vi.fn(async () => null);
 
     await expect(new ContainerBrowseService(store).browse({
-      container: { containerKind: "runbook", containerId: "missing" },
-    })).rejects.toThrow("runbook not found: missing");
+      container: { containerKind: "task", containerId: "missing" },
+    })).rejects.toThrow("task not found: missing");
     expect(listContainerItems).not.toHaveBeenCalled();
   });
 });

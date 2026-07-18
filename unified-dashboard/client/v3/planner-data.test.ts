@@ -33,7 +33,7 @@ describe("planner BFF data", () => {
         reviewSessionIds: ["review-session"],
         tasks: [{
           page: { id: "task" },
-          runbookId: "runbook",
+          taskId: "task",
           status: "in_progress",
           assignee: "roselin",
           progress: 25,
@@ -141,13 +141,13 @@ describe("planner BFF data", () => {
     const taskSnapshot = {
       page: taskPage,
       blocks: [{
-        id: "runbook-ref",
+        id: "task-ref",
         page_id: taskPage.id,
         parent_id: null,
         position_key: "A",
-        block_type: "runbook_ref",
+        block_type: "task_ref",
         text: "",
-        properties: { primary: true, runbookId: "runbook-starred" },
+        properties: { primary: true, taskId: "task-starred" },
         collapsed: false,
       }],
       state_vector: "AA==",
@@ -206,10 +206,10 @@ function taskPayload(index = 0) {
   return {
     page: page(`task${index || ""}`, `업무 ${index}`),
     blocks: [],
-    runbook_id: "runbook",
-    runbook: {
-      id: "runbook",
-      board_item_id: "runbook:runbook",
+    task_id: "task",
+    task: {
+      id: "task",
+      board_item_id: "task:task",
       title: "업무",
       status: "open",
       archived: false,

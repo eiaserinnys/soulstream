@@ -13,7 +13,7 @@ describe("task inline board API", () => {
     vi.useRealTimers();
   });
 
-  it("loads a runbook container once and excludes run sessions", async () => {
+  it("loads a task container once and excludes run sessions", async () => {
     const fetchMock = vi.fn(async () => json({
       boardItems: [
         boardItem("session", "run-1"),
@@ -32,12 +32,12 @@ describe("task inline board API", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/board-items?container_kind=runbook&container_id=rb-a",
+      "/api/board-items?container_kind=task&container_id=rb-a",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
 
-  it("keeps every board item for the full runbook board", async () => {
+  it("keeps every board item for the full task board", async () => {
     const fetchMock = vi.fn(async () => json({
       boardItems: [
         boardItem("session", "run-1"),
@@ -156,7 +156,7 @@ function boardItem(itemType: string, itemId: string) {
   return {
     id: `${itemType}:${itemId}`,
     folderId: "folder-a",
-    containerKind: "runbook",
+    containerKind: "task",
     containerId: "rb-a",
     itemType,
     itemId,

@@ -25,7 +25,7 @@ import {
   upsertMovedBoardYjsItem,
   upsertBoardYjsItem,
   upsertCustomViewYjsBoardItem,
-  upsertRunbookYjsBoardItem,
+  upsertTaskYjsBoardItem,
 } from "./board_yjs_model.js";
 import {
   authenticateBoardYjsConnection,
@@ -122,7 +122,7 @@ export class BoardYjsService {
     sessionId: string;
     x: number;
     y: number;
-    sourceRunbookItemId?: string | null;
+    sourceTaskItemId?: string | null;
   }): Promise<CatalogBoardItemRow> {
     const boardItem: CatalogBoardItemRow = {
       id: `session:${input.sessionId}`,
@@ -130,7 +130,7 @@ export class BoardYjsService {
       containerKind: input.container.containerKind,
       containerId: input.container.containerId,
       membershipKind: "primary",
-      sourceRunbookItemId: input.sourceRunbookItemId ?? null,
+      sourceTaskItemId: input.sourceTaskItemId ?? null,
       itemType: "session",
       itemId: input.sessionId,
       x: input.x,
@@ -144,17 +144,17 @@ export class BoardYjsService {
     return boardItem;
   }
 
-  async upsertRunbookBoardItem(input: {
+  async upsertTaskBoardItem(input: {
     folderId: string;
     boardItemId: string;
-    runbookId: string;
+    taskId: string;
     title: string;
     x: number;
     y: number;
     metadata?: Record<string, unknown>;
   }): Promise<CatalogBoardItemRow> {
     return await this.withDirectConnection(input.folderId, (doc) =>
-      upsertRunbookYjsBoardItem(doc, input)
+      upsertTaskYjsBoardItem(doc, input)
     );
   }
 
@@ -179,7 +179,7 @@ export class BoardYjsService {
     );
   }
 
-  async removeRunbookBoardItem(
+  async removeTaskBoardItem(
     folderId: string,
     boardItemId: string,
   ): Promise<void> {

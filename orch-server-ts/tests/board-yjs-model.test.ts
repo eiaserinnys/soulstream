@@ -13,21 +13,21 @@ import {
 describe("orch board Yjs model", () => {
   it("keeps legacy folder names and canonical container names round-trippable", () => {
     const folder = { containerKind: "folder" as const, containerId: "folder-1" };
-    const runbook = { containerKind: "runbook" as const, containerId: "rb-1" };
+    const task = { containerKind: "task" as const, containerId: "rb-1" };
 
     expect(getBoardYjsContainerDocumentName(folder)).toBe("board-folder:folder-1");
     expect(getFormalBoardYjsDocumentName(folder)).toBe("board:folder:folder-1");
     expect(normalizeBoardYjsDocumentName("board:folder:folder-1"))
       .toBe("board-folder:folder-1");
     expect(parseBoardYjsDocumentName("board-folder:folder-1")).toEqual(folder);
-    expect(parseBoardYjsDocumentName("board:runbook:rb-1")).toEqual(runbook);
-    expect(getBoardYjsContainerDocumentName(runbook)).toBe("board:runbook:rb-1");
+    expect(parseBoardYjsDocumentName("board:task:rb-1")).toEqual(task);
+    expect(getBoardYjsContainerDocumentName(task)).toBe("board:task:rb-1");
   });
 
   it("derives the same ordered board_items replica from one Y.Doc state", () => {
     const scope = {
       folderId: "folder-1",
-      containerKind: "runbook" as const,
+      containerKind: "task" as const,
       containerId: "rb-1",
     };
     const snapshot = createBoardYDocSnapshot({
@@ -36,10 +36,10 @@ describe("orch board Yjs model", () => {
         {
           id: "session:s2",
           folderId: "folder-1",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           membershipKind: "primary",
-          sourceRunbookItemId: "item-2",
+          sourceTaskItemId: "item-2",
           itemType: "session",
           itemId: "s2",
           x: 300,
@@ -49,10 +49,10 @@ describe("orch board Yjs model", () => {
         {
           id: "markdown:d1",
           folderId: "folder-1",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           membershipKind: "primary",
-          sourceRunbookItemId: null,
+          sourceTaskItemId: null,
           itemType: "markdown",
           itemId: "d1",
           x: 100,
@@ -69,7 +69,7 @@ describe("orch board Yjs model", () => {
       boardItems: [
         expect.objectContaining({
           id: "markdown:d1",
-          containerKind: "runbook",
+          containerKind: "task",
           containerId: "rb-1",
           x: 100,
           y: 100,
@@ -77,7 +77,7 @@ describe("orch board Yjs model", () => {
         }),
         expect.objectContaining({
           id: "session:s2",
-          sourceRunbookItemId: "item-2",
+          sourceTaskItemId: "item-2",
           x: 300,
           y: 200,
         }),

@@ -243,16 +243,16 @@ async def _on_node_change(
                 "[broadcast] session_deleted SKIPPED: no session_id from node=%s data_keys=%s",
                 node_id, list((data or {}).keys()),
             )
-    elif event_type == "node_session_runbook_updated":
+    elif event_type == "node_session_task_updated":
         broadcast_data = {
             **(data or {}),
-            "type": "runbook_updated",
+            "type": "task_updated",
             "nodeId": node_id,
         }
         recipient_count = await broadcaster.broadcast(broadcast_data)
         logger.info(
-            "[broadcast] runbook_updated runbook=%s node=%s recipients=%d",
-            broadcast_data.get("runbookId"),
+            "[broadcast] task_updated task=%s node=%s recipients=%d",
+            broadcast_data.get("taskId"),
             node_id,
             recipient_count,
         )

@@ -22,7 +22,7 @@ try {
   }>>`
     SELECT p.id, p.title,
            p.daily_date IS NOT NULL AS daily,
-           EXISTS(SELECT 1 FROM runbooks r WHERE r.task_page_id = p.id) AS task_identity,
+           EXISTS(SELECT 1 FROM tasks r WHERE r.task_page_id = p.id) AS task_identity,
            (SELECT f.id FROM folders f WHERE f.project_page_id = p.id LIMIT 1) AS bound_folder_id
     FROM pages p
     WHERE p.archived = FALSE

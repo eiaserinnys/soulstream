@@ -11,9 +11,9 @@ import {
 import {
   BOARD_GRID_SIZE,
   BOARD_ASSET_TILE_HEIGHT,
-  BOARD_RUNBOOK_FIXED_CARD_RECT,
-  BOARD_RUNBOOK_TILE_HEIGHT,
-  BOARD_RUNBOOK_TILE_WIDTH,
+  BOARD_TASK_FIXED_CARD_RECT,
+  BOARD_TASK_TILE_HEIGHT,
+  BOARD_TASK_TILE_WIDTH,
   BOARD_TILE_HEIGHT,
   BOARD_TILE_WIDTH,
   getBoardItemHeight,
@@ -37,15 +37,15 @@ describe("declutterBoardItems", () => {
       "custom_view",
       "frame",
       "markdown",
-      "runbook",
       "session",
       "subfolder",
+      "task",
     ]);
   });
 
   it("clusters markdown, custom views, sessions, and other cards in that order", () => {
     const items: BoardWorkspaceItem[] = [
-      runbook("runbook", "2026-07-13T00:00:00.000Z"),
+      task("task", "2026-07-13T00:00:00.000Z"),
       session("session-old", "2026-07-11T00:00:00.000Z"),
       markdown("markdown-old", "2026-07-10T00:00:00.000Z"),
       customView("custom-old", "2026-07-09T00:00:00.000Z"),
@@ -60,7 +60,7 @@ describe("declutterBoardItems", () => {
       ["markdown-new", "markdown-old"],
       ["custom-new", "custom-old"],
       ["session-new", "session-old"],
-      ["runbook", "folder"],
+      ["task", "folder"],
     ].map((ids) => clusterBounds(items, positions, ids));
 
     expect([...clusterOrder].sort(readingOrder)).toEqual(clusterOrder);
@@ -77,8 +77,8 @@ describe("declutterBoardItems", () => {
         customView(`custom-${index}`, `2026-07-1${index}T00:00:00.000Z`)),
       ...Array.from({ length: 4 }, (_, index) =>
         session(`session-${index}`, `2026-07-1${index}T00:00:00.000Z`)),
-      runbook("runbook-a", "2026-07-13T00:00:00.000Z"),
-      runbook("runbook-b", "2026-07-12T00:00:00.000Z"),
+      task("task-a", "2026-07-13T00:00:00.000Z"),
+      task("task-b", "2026-07-12T00:00:00.000Z"),
       folder("folder-a", 0),
       folder("folder-b", 1),
     ];
@@ -104,7 +104,7 @@ describe("declutterBoardItems", () => {
       markdown("markdown", "2026-07-13T00:00:00.000Z"),
       asset("asset", "2026-07-13T00:00:00.000Z"),
       frame("frame", []),
-      runbook("runbook", "2026-07-13T00:00:00.000Z"),
+      task("task", "2026-07-13T00:00:00.000Z"),
       customView("custom-view", "2026-07-13T00:00:00.000Z"),
     ];
     const positions = finalPositions(items);
@@ -117,7 +117,7 @@ describe("declutterBoardItems", () => {
     }
   });
 
-  it("packs cards below the fixed runbook checklist using its rendered size", () => {
+  it("packs cards below the fixed task checklist using its rendered size", () => {
     const items: BoardWorkspaceItem[] = [
       markdown("markdown", "2026-07-13T00:00:00.000Z"),
       session("session", "2026-07-12T00:00:00.000Z"),
@@ -125,11 +125,11 @@ describe("declutterBoardItems", () => {
 
     const positions = finalPositions(
       items,
-      declutterBoardItems(items, [BOARD_RUNBOOK_FIXED_CARD_RECT]),
+      declutterBoardItems(items, [BOARD_TASK_FIXED_CARD_RECT]),
     );
     for (const item of items) {
       const rect = itemRect(item, positions.get(item.boardItemId)!);
-      expect(overlapsWithMargin(rect, BOARD_RUNBOOK_FIXED_CARD_RECT)).toBe(false);
+      expect(overlapsWithMargin(rect, BOARD_TASK_FIXED_CARD_RECT)).toBe(false);
     }
   });
 
@@ -244,18 +244,18 @@ function session(id: string, updatedAt: string): BoardWorkspaceItem {
   };
 }
 
-function runbook(id: string, updatedAt: string): BoardWorkspaceItem {
+function task(id: string, updatedAt: string): BoardWorkspaceItem {
   return {
-    type: "runbook",
+    type: "task",
     id,
     boardItemId: id,
-    runbookId: id,
+    taskId: id,
     title: id,
     updatedAt,
     x: 0,
     y: 0,
-    width: BOARD_RUNBOOK_TILE_WIDTH,
-    height: BOARD_RUNBOOK_TILE_HEIGHT,
+    width: BOARD_TASK_TILE_WIDTH,
+    height: BOARD_TASK_TILE_HEIGHT,
   };
 }
 

@@ -22,7 +22,7 @@ export type RitualAction = "today" | "later" | "done";
 
 export interface RitualActionPort {
   mountToday(input: { taskTitle: string }): Promise<void>;
-  completeRunbook(input: { runbookId: string; expectedVersion: number }): Promise<void>;
+  completeTask(input: { taskId: string; expectedVersion: number }): Promise<void>;
 }
 
 export interface BuildMorningRitualQueueInput {
@@ -83,12 +83,12 @@ export async function dispatchRitualAction(
     return;
   }
   if (action === "done") {
-    const expectedVersion = item.task.runbook?.runbook.version;
+    const expectedVersion = item.task.task?.task.version;
     if (expectedVersion === undefined) {
-      throw new Error("업무 런북을 불러오지 못해 완료 처리할 수 없습니다");
+      throw new Error("업무를 불러오지 못해 완료 처리할 수 없습니다");
     }
-    await port.completeRunbook({
-      runbookId: item.task.runbookId,
+    await port.completeTask({
+      taskId: item.task.taskId,
       expectedVersion,
     });
     return;
@@ -97,9 +97,9 @@ export async function dispatchRitualAction(
 }
 
 function isTerminalTask(task: PlannerTask): boolean {
-  const runbookStatus = task.runbook?.runbook.status as string | null | undefined;
-  return runbookStatus === "completed"
-    || runbookStatus === "cancelled"
+  const taskStatus = task.task?.task.status as string | null | undefined;
+  return taskStatus === "completed"
+    || taskStatus === "cancelled"
     || task.status === "completed";
 }
 

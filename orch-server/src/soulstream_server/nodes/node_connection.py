@@ -393,7 +393,7 @@ class NodeConnection:
         attachment_paths: list[str] | None = None,
         caller_info: dict | None = None,
         container: dict | None = None,
-        source_runbook_item_id: str | None = None,
+        source_task_item_id: str | None = None,
         model: str | None = None,
         reasoning_effort: str | None = None,
         extra_context_items: list[dict] | None = None,
@@ -425,8 +425,8 @@ class NodeConnection:
             payload["caller_info"] = caller_info
         if container is not None:
             payload["container"] = container
-        if source_runbook_item_id is not None:
-            payload["sourceRunbookItemId"] = source_runbook_item_id
+        if source_task_item_id is not None:
+            payload["sourceTaskItemId"] = source_task_item_id
         context_items = list(extra_context_items or [])
         if attachment_paths:
             payload["attachment_paths"] = attachment_paths

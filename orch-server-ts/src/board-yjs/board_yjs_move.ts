@@ -27,7 +27,7 @@ export interface StagedBoardApplication {
   replica: ReturnType<typeof readBoardYDocReplica>;
 }
 
-export interface StagedRunbookBoardMove {
+export interface StagedTaskBoardMove {
   movedBoardItem: CatalogBoardItemRow;
   boardApplications: readonly StagedBoardApplication[];
 }
@@ -79,10 +79,10 @@ export async function moveBoardItemBetweenDocuments(
   }
 }
 
-export async function withStagedRunbookBoardMove(
+export async function withStagedTaskBoardMove(
   hocuspocus: Hocuspocus,
   input: BoardMoveInput,
-  persist: (application: StagedRunbookBoardMove) => Promise<void>,
+  persist: (application: StagedTaskBoardMove) => Promise<void>,
 ): Promise<CatalogBoardItemRow> {
   const sourceScope = scopeOf(input.boardItem);
   const targetScope = input.targetScope;
@@ -102,8 +102,8 @@ export async function withStagedRunbookBoardMove(
     if (!moved) {
       throw new Error(`board item not found in source Y.Doc: ${input.boardItem.id}`);
     }
-    if (moved.boardItem.itemType !== "runbook") {
-      throw new Error(`staged task identity move requires runbook: ${moved.boardItem.itemType}`);
+    if (moved.boardItem.itemType !== "task") {
+      throw new Error(`staged task identity move requires task: ${moved.boardItem.itemType}`);
     }
     upsertMovedBoardYjsItem(targetStaged, moved);
     deleteMovedBoardYjsItem(sourceStaged, moved);

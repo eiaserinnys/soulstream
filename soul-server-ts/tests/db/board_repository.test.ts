@@ -12,10 +12,10 @@ describe("BoardRepository.listContainerItems", () => {
         {
           bi_id: "session:session-1",
           bi_folder_id: "folder-1",
-          bi_container_kind: "runbook",
-          bi_container_id: "runbook-1",
+          bi_container_kind: "task",
+          bi_container_id: "task-1",
           bi_membership_kind: "primary",
-          bi_source_runbook_item_id: null,
+          bi_source_task_item_id: null,
           bi_item_type: "session",
           bi_item_id: "session-1",
           bi_x: 10,
@@ -42,9 +42,9 @@ describe("BoardRepository.listContainerItems", () => {
           markdown_title: null,
           markdown_body: null,
           markdown_updated_at: null,
-          runbook_id: null,
-          runbook_title: null,
-          runbook_updated_at: null,
+          task_id: null,
+          task_title: null,
+          task_updated_at: null,
           custom_view_id: null,
           custom_view_title: null,
           custom_view_updated_at: null,
@@ -59,7 +59,7 @@ describe("BoardRepository.listContainerItems", () => {
           subfolder_count: 0,
           asset_count: 0,
           frame_count: 0,
-          runbook_count: 0,
+          task_count: 0,
           custom_view_count: 0,
           scanned_items: 2000,
           search_truncated: true,
@@ -69,7 +69,7 @@ describe("BoardRepository.listContainerItems", () => {
     sql.array = (values) => values;
 
     const result = await new BoardRepository(sql).listContainerItems({
-      container: { containerKind: "runbook", containerId: "runbook-1" },
+      container: { containerKind: "task", containerId: "task-1" },
       query: "발화",
       includeArchived: false,
       itemTypes: ["session", "markdown"],
@@ -85,8 +85,8 @@ describe("BoardRepository.listContainerItems", () => {
     expect(calls[0]?.text).toContain("LEFT JOIN sessions");
     expect(calls[0]?.text).toContain("LEFT JOIN markdown_documents");
     expect(calls[0]?.values).toEqual(expect.arrayContaining([
-      "runbook",
-      "runbook-1",
+      "task",
+      "task-1",
       "발화",
       false,
       ["session", "markdown"],
@@ -108,8 +108,8 @@ describe("BoardRepository.listContainerItems", () => {
         boardItem: expect.objectContaining({
           itemType: "session",
           itemId: "session-1",
-          containerKind: "runbook",
-          containerId: "runbook-1",
+          containerKind: "task",
+          containerId: "task-1",
         }),
         session: expect.objectContaining({
           agentSessionId: "session-1",
@@ -130,7 +130,7 @@ describe("BoardRepository.listContainerItems", () => {
       subfolder_count: 0,
       asset_count: 0,
       frame_count: 0,
-      runbook_count: 0,
+      task_count: 0,
       custom_view_count: 0,
     }])) as unknown as SqlClient & { array: (values: unknown[]) => unknown[] };
     sql.array = (values) => values;
@@ -152,7 +152,7 @@ describe("BoardRepository.listContainerItems", () => {
       subfolder: 0,
       asset: 0,
       frame: 0,
-      runbook: 0,
+      task: 0,
       custom_view: 0,
     });
     expect(result.scan).toBeNull();

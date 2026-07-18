@@ -126,7 +126,7 @@ describe("TaskRuntimeCommands.createSession", () => {
       folderId: "folder-1",
       pageAnchor: undefined,
       container: null,
-      sourceRunbookItemId: null,
+      sourceTaskItemId: null,
       systemPrompt: "system override",
       contextItems,
       attachmentPaths: ["/tmp/a.png", "/tmp/b.txt"],
