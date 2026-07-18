@@ -247,7 +247,7 @@ export function FolderWorkspaceView({
             하위 폴더
           </div>
           <div
-            className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+            className="grid grid-cols-1 xl:grid-cols-2"
             style={{ gap: DASHBOARD_CARD_GAP_PX }}
           >
             {childFolders.map((folder) => (
@@ -278,7 +278,7 @@ export function FolderWorkspaceView({
             런북
           </div>
           <div
-            className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+            className="grid grid-cols-1 xl:grid-cols-2"
             style={{ gap: DASHBOARD_CARD_GAP_PX }}
           >
             {runbookItems.map((item) => (

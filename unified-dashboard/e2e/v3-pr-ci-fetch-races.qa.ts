@@ -121,13 +121,37 @@ async function verifyTheme(browser: Browser, theme: Theme) {
     );
     assert(unexpectedBrowserErrors.length === 0, `${theme}: 브라우저 오류: ${unexpectedBrowserErrors.join(" | ")}`);
 
+    const creationRunbookReads = runbookReads;
+    const creationBoardReads = boardReads;
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const createdTaskAfterReload = page.getByTestId("v3-task-task-created");
+    await createdTaskAfterReload.waitFor({ state: "visible", timeout: 15_000 });
+    await createdTaskAfterReload.click();
+    await page.getByTestId("v3-task-runbook-checklist")
+      .getByRole("button", { name: "섹션 추가", exact: true })
+      .waitFor({ state: "visible", timeout: 10_000 });
+    await page.getByTestId("v3-inline-board")
+      .getByText("보드에 표시할 문서가 없습니다.", { exact: true })
+      .waitFor({ state: "visible", timeout: 10_000 });
+    assert(runbookReads === 4, `${theme}: 새로고침 후 체크리스트 조회 횟수가 다릅니다: ${runbookReads}`);
+    assert(boardReads === 4, `${theme}: 새로고침 후 보드 조회 횟수가 다릅니다: ${boardReads}`);
+    assert(await page.getByText("보드 항목을 불러오지 못했습니다.", { exact: true }).count() === 0, `${theme}: 새로고침 후 보드 오류가 남았습니다.`);
+    const finalUnexpectedBrowserErrors = browserErrors.filter(
+      (message) => message !== "Failed to load resource: the server responded with a status of 404 (Not Found)",
+    );
+    assert(finalUnexpectedBrowserErrors.length === 0, `${theme}: 새로고침 후 브라우저 오류: ${finalUnexpectedBrowserErrors.join(" | ")}`);
+    await capture(page, theme, "reentry");
+
     return {
       theme,
-      runbookReads,
-      boardReads,
-      expectedProjection404s: browserErrors.length - unexpectedBrowserErrors.length,
+      runbookReads: creationRunbookReads,
+      boardReads: creationBoardReads,
+      reentryRunbookReads: runbookReads,
+      reentryBoardReads: boardReads,
+      expectedProjection404s: browserErrors.length - finalUnexpectedBrowserErrors.length,
       checklistRecovered: true,
       boardRecovered: true,
+      reentryRecovered: true,
       informationErrors: 0,
     };
   } catch (error) {
