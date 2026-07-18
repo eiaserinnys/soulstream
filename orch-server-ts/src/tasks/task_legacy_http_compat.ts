@@ -10,7 +10,10 @@ import {
 } from "./task_mutation_proxy.js";
 import type { TaskRouteOptions } from "./task_route_types.js";
 
-/** One-release HTTP read compatibility. All legacy writes fail explicitly. */
+/**
+ * Production-gated HTTP reads. All legacy writes fail explicitly. Removal is
+ * governed by docs/task-read-compatibility.md, never by an internal phase.
+ */
 export function registerTaskLegacyHttpCompatibility(
   app: FastifyInstance,
   options: TaskRouteOptions,

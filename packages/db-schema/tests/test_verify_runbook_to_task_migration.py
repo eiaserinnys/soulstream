@@ -17,7 +17,11 @@ from verify_runbook_to_task_migration import (  # noqa: E402
     compare_snapshots,
     normalize_row,
 )
-from audit_task_rename_residuals import ALLOWLIST, find_residuals  # noqa: E402
+from audit_task_rename_residuals import (  # noqa: E402
+    ALLOWLIST,
+    find_residuals,
+    validate_read_compatibility_gate,
+)
 
 
 def test_normalization_changes_contract_vocabulary_only() -> None:
@@ -102,3 +106,7 @@ def test_task_rename_residuals_are_explicitly_allowlisted() -> None:
     residuals = find_residuals()
 
     assert sorted(set(residuals) - set(ALLOWLIST)) == []
+
+
+def test_read_compatibility_removal_requires_production_evidence() -> None:
+    assert validate_read_compatibility_gate() == []

@@ -1808,7 +1808,7 @@
     },
     "SSEEventRunbookUpdatedLegacy": {
       "type": "object",
-      "description": "Deprecated one-release read compatibility event. Producers must emit task_updated.",
+      "description": "Production-gated read compatibility event. Producers must emit task_updated. Removal follows docs/task-read-compatibility.md.",
       "required": ["type", "runbookId", "boardItemId"],
       "additionalProperties": true,
       "properties": {

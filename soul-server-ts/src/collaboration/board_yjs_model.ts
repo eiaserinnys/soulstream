@@ -454,6 +454,7 @@ function getOrCreateMarkdownText(doc: Y.Doc, documentId: string): Y.Text {
   return text;
 }
 
+/** Persisted Y.Doc read compatibility; see docs/task-read-compatibility.md. */
 function normalizeLegacyBoardYjsItemValue(
   value: BoardYjsItemValue,
 ): BoardYjsItemValue {

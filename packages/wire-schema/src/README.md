@@ -6,7 +6,9 @@
 
 - `src/upstream.schema.json` — JSON Schema Draft 2020-12. 메시지 정의 111개 $defs (wire 53 + SSE event 58).
   - wire 메시지 53종
-  - SSE event payload 58종 (`event` 메시지의 `event` 키 안에 packed — canonical 57종 + 한 릴리스 읽기 호환 `runbook_updated` 1종)
+  - SSE event payload 58종 (`event` 메시지의 `event` 키 안에 packed — canonical 57종 + production-gated 읽기 호환 `runbook_updated` 1종)
+
+`runbook_updated`의 제거 조건은 `docs/task-read-compatibility.md`가 정본이다. 내부 Phase 번호만으로 제거하지 않는다.
 
 ## 생성물 (직접 편집 금지)
 

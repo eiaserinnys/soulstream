@@ -3642,7 +3642,8 @@ CREATE INDEX IF NOT EXISTS idx_block_links_target_block
     ON block_links(target_block_id, created_at)
     WHERE target_block_id IS NOT NULL;
 
--- One-release legacy read compatibility. UNION ALL keeps every view read-only.
+-- Production-gated read compatibility; docs/task-read-compatibility.md is the
+-- removal contract. UNION ALL keeps every view read-only.
 CREATE OR REPLACE VIEW runbooks AS
 SELECT id, board_item_id, title, status, archived, version,
        created_session_id, created_event_id, completed_kind,

@@ -721,7 +721,7 @@ export interface SSEEventTaskUpdated {
   [k: string]: unknown;
 }
 /**
- * Deprecated one-release read compatibility event. Producers must emit task_updated.
+ * Production-gated read compatibility event. Producers must emit task_updated. Removal follows docs/task-read-compatibility.md.
  */
 export interface SSEEventRunbookUpdatedLegacy {
   type: "runbook_updated";

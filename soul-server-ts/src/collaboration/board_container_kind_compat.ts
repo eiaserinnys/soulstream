@@ -5,7 +5,10 @@ import type {
   BoardItemType,
 } from "../db/session_db_types.js";
 
-/** Remove the legacy branch in Phase 3; callers always receive the canonical kind. */
+/**
+ * Production-gated reader; see docs/task-read-compatibility.md. Callers always
+ * receive the canonical kind, and an internal phase cannot remove this branch.
+ */
 export function normalizeBoardContainerKind(
   value: unknown,
 ): BoardContainerKind | null {

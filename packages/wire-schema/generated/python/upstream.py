@@ -1416,7 +1416,7 @@ class SSEEventTaskUpdated(TypedDict):
 
 class SSEEventRunbookUpdatedLegacy(TypedDict):
     """
-    Deprecated one-release read compatibility event. Producers must emit task_updated.
+    Production-gated read compatibility event. Producers must emit task_updated. Removal follows docs/task-read-compatibility.md.
     """
 
     type: Literal['runbook_updated']

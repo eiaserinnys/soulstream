@@ -6,7 +6,10 @@ import type { McpRuntime } from "../runtime.js";
 import { errorMessage, getTaskService } from "./task_shared.js";
 import { formatTaskReadResponse } from "./task_response.js";
 
-/** Remove in Phase 3. These are the only legacy MCP names kept for one release. */
+/**
+ * Production-gated read compatibility. Removal requires every condition in
+ * docs/task-read-compatibility.md; an internal phase is never sufficient.
+ */
 export function registerTaskLegacyReadCompatibility(
   server: McpServer,
   runtime: McpRuntime,
@@ -14,7 +17,8 @@ export function registerTaskLegacyReadCompatibility(
   server.registerTool(
     "get_runbook",
     {
-      description: "Deprecated read-only alias for get_task. Remove in Phase 3.",
+      description:
+        "Deprecated read-only alias for get_task. Removal requires production evidence and user approval; see docs/task-read-compatibility.md.",
       inputSchema: {
         runbook_id: z.string().min(1),
         view: z.enum(["full", "outline"]).default("full"),
@@ -38,7 +42,8 @@ export function registerTaskLegacyReadCompatibility(
   server.registerTool(
     "list_runbooks",
     {
-      description: "Deprecated read-only alias for list_tasks. Remove in Phase 3.",
+      description:
+        "Deprecated read-only alias for list_tasks. Removal requires production evidence and user approval; see docs/task-read-compatibility.md.",
       inputSchema: {
         folder_id: z.string().min(1),
         include_archived: z.boolean().default(false),
@@ -66,7 +71,7 @@ export function registerTaskLegacyReadCompatibility(
     "list_runbook_operations",
     {
       description:
-        "Deprecated read-only alias for list_task_operations. Remove in Phase 3.",
+        "Deprecated read-only alias for list_task_operations. Removal requires production evidence and user approval; see docs/task-read-compatibility.md.",
       inputSchema: {
         runbook_id: z.string().min(1),
         limit: z.number().int().min(1).max(200).default(50),

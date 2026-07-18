@@ -180,6 +180,7 @@ function isBoardContainerKind(value: string): value is BoardContainerKind {
   return value === "folder" || value === "task";
 }
 
+/** Persisted Y.Doc read compatibility; see docs/task-read-compatibility.md. */
 export function normalizeLegacyBoardYjsItemValue(
   value: BoardYjsItemValue,
 ): BoardYjsItemValue {

@@ -96,7 +96,10 @@ export interface TaskUpdatedStreamEvent {
   lastEventId?: string;
 }
 
-/** Remove in Phase 3 after all producers have emitted task_updated for one release. */
+/**
+ * Production-gated legacy event reader. Removal requires the release evidence
+ * and user approval in docs/task-read-compatibility.md.
+ */
 export interface LegacyRunbookUpdatedStreamEvent {
   type: "runbook_updated";
   runbookId: string;

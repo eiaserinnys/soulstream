@@ -176,7 +176,7 @@ describe("node inbound session event dispatcher", () => {
     ]);
   });
 
-  it("normalizes a one-release runbook_updated event at the ingestion boundary", () => {
+  it("normalizes a production-gated runbook_updated event at the ingestion boundary", () => {
     const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>({
       instanceId: "dispatcher-session-stream",
     });

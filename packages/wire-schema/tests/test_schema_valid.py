@@ -164,7 +164,7 @@ def test_schema_has_all_message_types() -> None:
         "SSEEventAwaySummary",
     }
     assert len(sse_types) == 58, (
-        "SSE event $defs 58종 (canonical 57종 + 한 릴리스 runbook_updated 읽기 호환)."
+        "SSE event $defs 58종 (canonical 57종 + production-gated runbook_updated 읽기 호환)."
     )
 
     expected = wire_types | sse_types

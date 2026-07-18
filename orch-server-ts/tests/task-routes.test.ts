@@ -528,7 +528,7 @@ describe("task route harness", () => {
     await app.close();
   });
 
-  it("keeps legacy HTTP reads for one release and rejects every legacy write", async () => {
+  it("keeps production-gated legacy HTTP reads and rejects every legacy write", async () => {
     const { app } = createAppWithTasks({ restricted: false });
 
     const overviewResponse = await app.inject({

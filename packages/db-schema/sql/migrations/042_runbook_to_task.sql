@@ -216,7 +216,8 @@ BEGIN
 END;
 $$;
 
--- One-release read compatibility. UNION ALL makes these views read-only.
+-- Production-gated read compatibility; docs/task-read-compatibility.md is the
+-- removal contract. UNION ALL makes these views read-only.
 CREATE OR REPLACE VIEW runbooks AS
 SELECT id, board_item_id, title, status, archived, version,
        created_session_id, created_event_id, completed_kind,
