@@ -1,0 +1,72 @@
+[
+  {
+    "theme": "dark",
+    "state": "empty",
+    "wrapperHeight": 135,
+    "cardHeight": 135,
+    "maxHeight": 348,
+    "scrollClientHeight": 64,
+    "scrollHeight": 64,
+    "detailBottomPadding": 28,
+    "itemRows": 0,
+    "rowMenus": 0,
+    "actionGroups": 0,
+    "sharedActionButtons": 0,
+    "detailToggles": 0,
+    "openDetails": 0,
+    "firstActionGeometry": null,
+    "browserErrors": 0
+  },
+  {
+    "theme": "dark",
+    "state": "short",
+    "wrapperHeight": 321,
+    "cardHeight": 321,
+    "maxHeight": 348,
+    "scrollClientHeight": 250,
+    "scrollHeight": 250,
+    "detailBottomPadding": 28,
+    "itemRows": 2,
+    "rowMenus": 2,
+    "actionGroups": 0,
+    "sharedActionButtons": 0,
+    "detailToggles": 2,
+    "openDetails": 0,
+    "firstActionGeometry": {
+      "topDelta": 44,
+      "widthDelta": 0,
+      "heightDelta": 0,
+      "menuRadius": "6px",
+      "toggleRadius": "6px",
+      "menuPadding": "0px",
+      "togglePadding": "0px"
+    },
+    "browserErrors": 0
+  },
+  {
+    "theme": "dark",
+    "state": "long",
+    "wrapperHeight": 348,
+    "cardHeight": 348,
+    "maxHeight": 348,
+    "scrollClientHeight": 277,
+    "scrollHeight": 1594,
+    "detailBottomPadding": 28,
+    "itemRows": 30,
+    "rowMenus": 30,
+    "actionGroups": 0,
+    "sharedActionButtons": 0,
+    "detailToggles": 30,
+    "openDetails": 0,
+    "firstActionGeometry": {
+      "topDelta": 44,
+      "widthDelta": 0,
+      "heightDelta": 0,
+      "menuRadius": "6px",
+      "toggleRadius": "6px",
+      "menuPadding": "0px",
+      "togglePadding": "0px"
+    },
+    "browserErrors": 0
+  }
+]

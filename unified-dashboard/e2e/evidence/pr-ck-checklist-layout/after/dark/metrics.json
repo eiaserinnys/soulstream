@@ -1,0 +1,47 @@
+[
+  {
+    "theme": "dark",
+    "state": "empty",
+    "wrapperHeight": 116.75,
+    "cardHeight": 116.75,
+    "maxHeight": 348,
+    "scrollClientHeight": 48,
+    "scrollHeight": 48,
+    "detailBottomPadding": 28,
+    "itemRows": 0,
+    "rowMenus": 0,
+    "detailToggles": 0,
+    "openDetails": 0,
+    "browserErrors": 0
+  },
+  {
+    "theme": "dark",
+    "state": "short",
+    "wrapperHeight": 321,
+    "cardHeight": 321,
+    "maxHeight": 348,
+    "scrollClientHeight": 250,
+    "scrollHeight": 250,
+    "detailBottomPadding": 28,
+    "itemRows": 2,
+    "rowMenus": 2,
+    "detailToggles": 2,
+    "openDetails": 0,
+    "browserErrors": 0
+  },
+  {
+    "theme": "dark",
+    "state": "long",
+    "wrapperHeight": 348,
+    "cardHeight": 348,
+    "maxHeight": 348,
+    "scrollClientHeight": 277,
+    "scrollHeight": 1594,
+    "detailBottomPadding": 28,
+    "itemRows": 30,
+    "rowMenus": 30,
+    "detailToggles": 30,
+    "openDetails": 0,
+    "browserErrors": 0
+  }
+]

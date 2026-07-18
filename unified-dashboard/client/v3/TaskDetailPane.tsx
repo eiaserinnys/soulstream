@@ -374,7 +374,6 @@ export function TaskDetailPane({
                 <RunbookCard
                   runbookId={task.runbookId}
                   fallbackTitle={task.page.title}
-                  defaultItemDetailsOpen
                   editable
                   textSize="session"
                 />

@@ -83,7 +83,7 @@
 .v3-detail-scroll {
   min-height: 0;
   overflow-y: auto;
-  padding: 24px 24px 70px;
+  padding: 24px 24px 28px;
 }
 
 .v3-detail-title {
@@ -184,8 +184,12 @@
 
 .v3-task-runbook-checklist {
   width: 100%;
-  height: min(348px, 44dvh);
-  min-height: 214px;
+  max-height: min(348px, 44dvh);
+}
+
+.v3-task-runbook-checklist > [data-testid="runbook-card"] {
+  height: auto;
+  max-height: inherit;
 }
 
 .v3-description-preview {

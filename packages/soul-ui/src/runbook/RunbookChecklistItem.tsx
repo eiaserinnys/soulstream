@@ -11,7 +11,11 @@ import type {
   RunbookSectionRow,
   RunbookSnapshot,
 } from "../stores/runbook-store";
-import { RunbookRowActions, type RowAction } from "./RunbookChecklistControls";
+import {
+  RunbookRowActionButton,
+  RunbookRowActions,
+  type RowAction,
+} from "./RunbookChecklistControls";
 import {
   RunbookItemStatusToggle,
   isRunbookItemHumanTurn,
@@ -49,6 +53,8 @@ export function RunbookItemRowView({
   const toggleItem = toToggleItem(item);
   const myTurn = isRunbookItemHumanTurn(assignee, toggleItem);
   const hasHowTo = item.how_to.trim().length > 0;
+  const hasAssignee = assignee.kind !== null;
+  const hasDetails = hasHowTo || hasAssignee;
   return (
     <div
       data-testid="runbook-item-row"
@@ -80,63 +86,60 @@ export function RunbookItemRowView({
             >
               {item.title}
             </span>
-            {myTurn ? (
-              <Badge variant="info" size="sm" className="h-4 px-1 text-[10px]">내 차례</Badge>
-            ) : null}
-            {actions ? (
-              <RunbookRowActions
-                label={`${item.title} 항목 메뉴`}
-                actions={actions}
-                onPointerDown={stopTileDrag}
-              />
-            ) : null}
-          </div>
-          <div className={cn(
-            "mt-0.5 flex min-h-5 items-center gap-2 text-muted-foreground",
-            textSize === "session" ? "text-xs" : "text-[10px]",
-          )}>
-            {!myTurn && assignee.kind ? (
-              <span className="inline-flex min-w-0 items-center gap-1" title={runbookAssigneeLabel(assignee)}>
-                <AssigneeIcon assignee={assignee} />
-                <span className="max-w-[112px] truncate">{runbookAssigneeLabel(assignee)}</span>
-              </span>
-            ) : null}
-            {hasHowTo ? (
-              <button
-                type="button"
-                aria-expanded={itemOpen}
-                className="ml-auto inline-flex h-5 items-center gap-0.5 rounded px-1 text-accent-blue hover:bg-accent-blue/8 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/60"
-                onPointerDown={stopTileDrag}
-                onClick={onToggleHowTo}
+            {actions || hasDetails ? (
+              <div
+                data-testid="runbook-item-actions"
+                className="flex shrink-0 items-center gap-1"
               >
-                <DisclosureActionIcon expanded={itemOpen} className="h-3 w-3" />
-                절차
-              </button>
+                {actions ? (
+                  <RunbookRowActions
+                    label={`${item.title} 항목 메뉴`}
+                    actions={actions}
+                    onPointerDown={stopTileDrag}
+                  />
+                ) : null}
+                {hasDetails ? (
+                  <RunbookRowActionButton
+                    data-testid="runbook-item-details-toggle"
+                    aria-label={`${item.title} 상세 ${itemOpen ? "접기" : "펼치기"}`}
+                    aria-expanded={itemOpen}
+                    onPointerDown={stopTileDrag}
+                    onClick={onToggleHowTo}
+                  >
+                    <DisclosureActionIcon expanded={itemOpen} className="h-4 w-4" />
+                  </RunbookRowActionButton>
+                ) : null}
+              </div>
             ) : null}
           </div>
-          {hasHowTo && itemOpen ? (
+          {hasDetails && itemOpen ? (
             <div
               data-testid="runbook-how-to"
               className={cn(
-                "mt-2 border-l-2 border-accent-blue/20 pl-3 leading-relaxed text-foreground/90",
+                "mt-2 space-y-2 border-l-2 border-accent-blue/20 pl-3 leading-relaxed text-foreground/90",
                 textSize === "session" ? "text-sm" : "text-xs",
               )}
             >
-              <MarkdownContent content={item.how_to} compact />
+              {hasAssignee ? (
+                <div
+                  data-testid="runbook-item-assignee"
+                  className="flex min-w-0 items-center gap-1.5 text-muted-foreground"
+                  title={runbookAssigneeLabel(assignee)}
+                >
+                  <AssigneeIcon assignee={assignee} />
+                  <span className="min-w-0 truncate">{runbookAssigneeLabel(assignee)}</span>
+                  {myTurn ? (
+                    <Badge variant="info" size="sm" className="h-4 px-1 text-[10px]">내 차례</Badge>
+                  ) : null}
+                </div>
+              ) : null}
+              {hasHowTo ? <MarkdownContent content={item.how_to} compact /> : null}
             </div>
           ) : null}
         </div>
       </div>
     </div>
   );
-}
-
-export function itemDefaultOpen(
-  section: RunbookSectionRow,
-  item: RunbookItemRow,
-  defaultOpen: boolean,
-): boolean {
-  return defaultOpen || isRunbookItemHumanTurn(resolveAssignee(section, item), toToggleItem(item));
 }
 
 function resolveAssignee(section: RunbookSectionRow, item: RunbookItemRow): EffectiveAssignee {

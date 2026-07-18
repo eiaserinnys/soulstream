@@ -1,4 +1,12 @@
-import { Fragment, useEffect, useState, type FormEvent, type PointerEvent } from "react";
+import {
+  Fragment,
+  forwardRef,
+  useEffect,
+  useState,
+  type ButtonHTMLAttributes,
+  type FormEvent,
+  type PointerEvent,
+} from "react";
 import {
   Archive,
   ArrowDown,
@@ -34,6 +42,24 @@ const icons = {
   archive: Archive,
 };
 
+export const RunbookRowActionButton = forwardRef<
+  HTMLButtonElement,
+  ButtonHTMLAttributes<HTMLButtonElement>
+>(function RunbookRowActionButton({ className, type = "button", ...props }, ref) {
+  return (
+    <button
+      ref={ref}
+      type={type}
+      data-runbook-row-action=""
+      className={cn(
+        "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted/45 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/60",
+        className,
+      )}
+      {...props}
+    />
+  );
+});
+
 export function RunbookRowActions({
   label,
   actions,
@@ -47,11 +73,10 @@ export function RunbookRowActions({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <button
-            type="button"
+          <RunbookRowActionButton
             aria-label={label}
             data-testid="runbook-row-menu"
-            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-muted/45 hover:text-foreground focus:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent-blue/60 group-hover:opacity-100 data-[popup-open]:opacity-100"
+            className="opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100 data-[popup-open]:opacity-100"
             onPointerDown={onPointerDown}
           />
         }

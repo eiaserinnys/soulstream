@@ -237,7 +237,7 @@ describe("RunbookCard", () => {
     expect(container.textContent).not.toContain("런북을 찾을 수 없음");
   });
 
-  it("renders progress, human turn highlight, active human write state, and folded terminal how_to", () => {
+  it("renders progress, human turn highlight, active human write state, and folded item details", () => {
     useRunbookStore.setState({
       byId: {
         "rb-1": {
@@ -262,10 +262,10 @@ describe("RunbookCard", () => {
     expect(card?.className).toContain("liquid-glass-card");
     expect(html).toContain("Deploy Runbook");
     expect(html).toContain("1/2");
-    expect(html).toContain("내 차례");
+    expect(html).not.toContain("내 차례");
     expect(html).not.toContain("PR-3b 대기");
     expect(html).toContain("Run migration check");
-    expect(html).toContain("Run <code");
+    expect(html).not.toContain("Run <code");
     expect(html).toContain("Cancelled path");
     expect(html).toContain("line-through");
     expect(html).not.toContain("Done docs should stay folded");
@@ -287,12 +287,12 @@ describe("RunbookCard", () => {
     expect(statusToggle!.textContent).not.toContain("대기");
     expect(itemRow!.className).not.toContain("glass");
     expect(itemRow!.className).not.toContain("border-glass-border");
-    expect(container.querySelector('[data-testid="runbook-how-to"]')?.className).toContain("border-l-2");
+    expect(container.querySelector('[data-testid="runbook-how-to"]')).toBeNull();
     expect(container.textContent).not.toContain("항목 추가");
     expect(container.textContent).not.toContain("섹션 추가");
   });
 
-  it("can open every item procedure by default for the task checklist surface", () => {
+  it("keeps human-assigned item details closed and groups one shared action primitive with the row menu", () => {
     useRunbookStore.setState({
       byId: {
         "rb-1": {
@@ -308,20 +308,83 @@ describe("RunbookCard", () => {
       root.render(createElement(RunbookCard, {
         runbookId: "rb-1",
         fallbackTitle: "Fallback",
-        defaultItemDetailsOpen: true,
         textSize: "session",
+        editable: true,
       }));
     });
 
+    const firstItem = container.querySelectorAll<HTMLElement>('[data-testid="runbook-item-row"]')[0];
+    const actionGroup = firstItem?.querySelector<HTMLElement>('[data-testid="runbook-item-actions"]');
+    const menu = firstItem?.querySelector<HTMLButtonElement>('[data-testid="runbook-row-menu"]');
+    const detailsToggle = firstItem?.querySelector<HTMLButtonElement>('[data-testid="runbook-item-details-toggle"]');
+
+    expect(firstItem).toBeDefined();
+    expect(actionGroup).not.toBeNull();
+    expect(menu).not.toBeNull();
+    expect(detailsToggle).not.toBeNull();
+    expect(menu!.parentElement).toBe(actionGroup);
+    expect(detailsToggle!.parentElement).toBe(actionGroup);
+    expect(menu!.nextElementSibling).toBe(detailsToggle);
+    expect(menu!.getAttribute("data-runbook-row-action")).toBe("");
+    expect(detailsToggle!.getAttribute("data-runbook-row-action")).toBe("");
+    expect(detailsToggle!.textContent).toBe("");
+    expect(detailsToggle!.getAttribute("aria-expanded")).toBe("false");
+    expect(detailsToggle!.querySelector(".lucide-chevron-down")).not.toBeNull();
+    expect(container.textContent).not.toContain("Run pnpm test before handoff.");
+    expect(firstItem!.textContent).not.toContain("operator@example.com");
+    expect(container.textContent).not.toContain("내 차례");
+    expect(container.textContent).not.toContain("절차");
+
+    flushSync(() => {
+      detailsToggle!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(detailsToggle!.getAttribute("aria-expanded")).toBe("true");
+    expect(detailsToggle!.querySelector(".lucide-chevron-up")).not.toBeNull();
     expect(container.textContent).toContain("Run pnpm test before handoff.");
-    expect(container.textContent).toContain("Done docs should stay folded.");
-    expect(container.textContent).toContain("Cancelled docs should stay folded.");
+    expect(firstItem!.textContent).toContain("operator@example.com");
+    expect(container.textContent).toContain("내 차례");
     expect(container.querySelector<HTMLElement>('[data-testid="runbook-section-toggle"]')?.className)
       .toContain("text-sm");
     expect(container.querySelector<HTMLElement>('[data-testid="runbook-item-title"]')?.className)
       .toContain("text-[14.5px]");
     expect(container.querySelector<HTMLElement>('[data-testid="runbook-how-to"]')?.className)
       .toContain("text-sm");
+  });
+
+  it("keeps an assignee-only detail hidden until the disclosure opens", () => {
+    const snapshot = sampleSnapshot();
+    snapshot.items[1]!.how_to = "";
+    useRunbookStore.setState({
+      byId: {
+        "rb-1": {
+          snapshot,
+          status: "ready",
+          error: null,
+          isRefreshing: false,
+        },
+      },
+    });
+
+    flushSync(() => {
+      root.render(createElement(RunbookCard, {
+        runbookId: "rb-1",
+        fallbackTitle: "Fallback",
+        editable: true,
+      }));
+    });
+
+    const secondItem = container.querySelectorAll<HTMLElement>('[data-testid="runbook-item-row"]')[1];
+    const detailsToggle = secondItem?.querySelector<HTMLButtonElement>('[data-testid="runbook-item-details-toggle"]');
+    expect(detailsToggle).not.toBeNull();
+    expect(secondItem?.textContent).not.toContain("roselin");
+
+    flushSync(() => {
+      detailsToggle!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+
+    expect(secondItem?.textContent).toContain("roselin");
+    expect(secondItem?.querySelector('[data-testid="runbook-how-to"]')).not.toBeNull();
   });
 
   it("renders a runbook board affordance that does not arm tile dragging", () => {
