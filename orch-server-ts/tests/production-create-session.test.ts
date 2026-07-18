@@ -60,6 +60,7 @@ describe("production create-session route", () => {
       expect(result.response.json()).toEqual({
         agentSessionId: result.command?.agentSessionId,
         nodeId: "node-a",
+        prompt: "hello from dashboard",
       });
     } finally {
       await closeHarness(harness);

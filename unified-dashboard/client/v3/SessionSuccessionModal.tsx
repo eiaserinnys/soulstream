@@ -29,7 +29,6 @@ import {
 import { V3ErrorNotice } from "./V3ErrorNotice";
 import type { PageContextSourcesMarker } from "./project-context-inheritance";
 import { buildSessionContextSelection } from "./session-context-items";
-import { buildSessionInitiationPrompt } from "./session-initiation-prompt";
 
 export interface SuccessionContextItem {
   id: string;
@@ -131,7 +130,7 @@ export function SessionSuccessionModal({
       const result = await createDashboardSession({
         queryClient,
         addOptimisticSession: useDashboardStore.getState().addOptimisticSession,
-        prompt: buildSessionInitiationPrompt(initialInstruction),
+        initialInstruction,
         nodeId: selectedNodeId,
         agentId: selectedAgentId,
         agent: selectedAgent,

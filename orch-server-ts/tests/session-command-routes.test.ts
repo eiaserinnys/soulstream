@@ -242,6 +242,7 @@ describe("session command HTTP route harness", () => {
     expect(response.json()).toEqual({
       agentSessionId: sent[0]?.agentSessionId,
       nodeId: "fake-node",
+      prompt: "hello",
     });
     expect(sent).toHaveLength(1);
     expect(sent[0]).toMatchObject({
@@ -393,6 +394,7 @@ describe("session command HTTP route harness", () => {
       taskOperation: { operationType: "start_child_session" },
       taskEventId: 303,
       idempotent: true,
+      prompt: "child",
     });
     expect(send).not.toHaveBeenCalled();
   });

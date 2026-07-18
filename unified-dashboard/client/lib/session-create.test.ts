@@ -76,6 +76,49 @@ describe("createDashboardSession", () => {
     );
   });
 
+  it("sends raw initial_instruction and uses the server-assembled prompt for the optimistic session", async () => {
+    const assembledPrompt =
+      "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.\n결과를 표로 정리해줘.";
+    const fetchMock = vi.fn().mockResolvedValue(okJson({
+      agentSessionId: "session-new",
+      status: "running",
+      nodeId: "node-a",
+      prompt: assembledPrompt,
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const addOptimisticSession = vi.fn();
+
+    await createDashboardSession({
+      queryClient,
+      addOptimisticSession,
+      initialInstruction: "  결과를 표로 정리해줘.  ",
+      folderId: "folder-a",
+      nodeId: "node-a",
+      agentId: "roselin_codex",
+    });
+
+    const requestBody = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
+    expect(requestBody).toMatchObject({
+      initial_instruction: "  결과를 표로 정리해줘.  ",
+      nodeId: "node-a",
+      folderId: "folder-a",
+      profile: "roselin_codex",
+    });
+    expect(requestBody).not.toHaveProperty("prompt");
+    expect(addOptimisticSession).toHaveBeenCalledWith(
+      queryClient,
+      "session-new",
+      assembledPrompt,
+      "folder-a",
+      "node-a",
+      "roselin_codex",
+      null,
+      null,
+      null,
+      null,
+    );
+  });
+
   it("surfaces server errors and does not add an optimistic session", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(errorJson(503, {
       detail: "target node unavailable",

@@ -37,7 +37,10 @@ export interface EventRecord {
 
 /** POST /api/sessions 요청 (대시보드에서 세션 생성 또는 resume) */
 export interface CreateSessionRequest {
-  prompt: string;
+  /** 기존 클라이언트가 직접 조립해 보내는 첫 사용자 메시지. initial_instruction과 둘 중 하나는 필수다. */
+  prompt?: string;
+  /** 서버가 정본 문구와 조립할 새 세션 초기 지시. prompt와 함께 있으면 이 필드가 우선한다. */
+  initial_instruction?: string;
   /** resume 시 기존 세션 ID. 없으면 새 세션 생성 (Soul 서버가 ID 생성). */
   agentSessionId?: string;
   /** orchestrator 모드에서 세션을 생성할 대상 노드 ID. */
@@ -75,6 +78,8 @@ export interface CreateSessionResponse {
   agentSessionId: string;
   status: "running";
   nodeId?: string;
+  /** 서버가 최종 조립하여 worker에 전달한 첫 사용자 메시지. */
+  prompt?: string;
   task?: TaskItem;
   taskLinkError?: { message: string; type: string };
   warnings?: SessionCreationWarning[];

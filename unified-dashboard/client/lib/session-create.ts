@@ -31,7 +31,8 @@ export type AddOptimisticSession = (
 export interface CreateDashboardSessionInput {
   queryClient: QueryClient;
   addOptimisticSession: AddOptimisticSession;
-  prompt: string;
+  prompt?: string;
+  initialInstruction?: string;
   attachmentPaths?: string[];
   folderId?: string | null;
   nodeId?: string;
@@ -54,8 +55,14 @@ export interface CreateDashboardSessionInput {
 export async function createDashboardSession(
   input: CreateDashboardSessionInput,
 ): Promise<CreateSessionResponse> {
+  if (input.prompt === undefined && input.initialInstruction === undefined) {
+    throw new Error("prompt or initialInstruction is required");
+  }
   const payload: CreateSessionRequest & { predecessor_session_id?: string } = {
-    prompt: input.prompt,
+    ...(input.prompt !== undefined ? { prompt: input.prompt } : {}),
+    ...(input.initialInstruction !== undefined
+      ? { initial_instruction: input.initialInstruction }
+      : {}),
     ...(input.agentSessionId ? { agentSessionId: input.agentSessionId } : {}),
     ...(input.pageAnchor ? { pageAnchor: input.pageAnchor } : {}),
     ...(input.predecessorSessionId ? { predecessor_session_id: input.predecessorSessionId } : {}),
@@ -92,10 +99,15 @@ export async function createDashboardSession(
     throw new Error("Server returned an invalid response");
   }
 
+  const optimisticPrompt = result.prompt ?? input.prompt;
+  if (optimisticPrompt === undefined) {
+    throw new Error("Server response is missing the assembled prompt");
+  }
+
   input.addOptimisticSession(
     input.queryClient,
     result.agentSessionId,
-    input.prompt,
+    optimisticPrompt,
     input.folderId ?? null,
     result.nodeId ?? input.nodeId,
     input.agentId || null,
