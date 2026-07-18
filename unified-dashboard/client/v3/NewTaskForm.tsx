@@ -11,12 +11,14 @@ import {
   DialogTitle,
 } from "@seosoyoung/soul-ui";
 import type { CatalogFolder, FolderTreeOption } from "@seosoyoung/soul-ui";
+import type { InitialTaskContext } from "@seosoyoung/soul-ui/page";
 import type { ProjectContextPreviewState } from "./project-context-inheritance";
 import {
   ProjectAtomChip,
   ProjectSessionDefaultChip,
 } from "./ProjectContextChips";
 import { useProjectContextInheritance } from "./use-project-context-inheritance";
+import { InitialTaskContextPicker } from "./TaskContextPicker";
 import "./v3-content-boundary.css";
 import { writeFailureText } from "./v3-dashboard-utils";
 
@@ -32,7 +34,12 @@ export function NewTaskForm({
   invalidationKey?: number;
   initialFolderId: string | null;
   pending: boolean;
-  onCreate(title: string, folderId: string, description: string): Promise<string | null>;
+  onCreate(
+    title: string,
+    folderId: string,
+    description: string,
+    initialContext: InitialTaskContext,
+  ): Promise<string | null>;
   onCancel(): void;
 }) {
   const folderOptions = useMemo(() => newTaskFolderOptions(folders), [folders]);
@@ -41,6 +48,10 @@ export function NewTaskForm({
     initialFolderId ?? folderOptions[0]?.folder.id ?? "",
   );
   const [description, setDescription] = useState("");
+  const [initialContext, setInitialContext] = useState<InitialTaskContext>({
+    guidance: "",
+    atomReferences: [],
+  });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submissionInFlight = useRef(false);
@@ -63,7 +74,7 @@ export function NewTaskForm({
     setSubmitting(true);
     setError(null);
     try {
-      setError(await onCreate(normalized, folderId, description));
+      setError(await onCreate(normalized, folderId, description, initialContext));
     } catch (cause) {
       setError(writeFailureText("새 업무 생성", cause));
     } finally {
@@ -124,6 +135,11 @@ export function NewTaskForm({
             <ProjectInheritancePreview
               projectName={selected?.name ?? retainedProjectName ?? "프로젝트"}
               state={inheritance}
+            />
+            <InitialTaskContextPicker
+              value={initialContext}
+              disabled={busy}
+              onChange={setInitialContext}
             />
             {error ? <p className="v3-new-task-error" role="alert">{error}</p> : null}
           </div>

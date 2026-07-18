@@ -2,7 +2,14 @@ import type { PageStructureOperation } from "@seosoyoung/soul-ui/page";
 
 export type ContextPickerSelection =
   | { key: string; kind: "page"; pageId: string; title: string }
-  | { key: string; kind: "atom"; nodeId: string; label: string };
+  | {
+      key: string;
+      kind: "atom";
+      nodeId: string;
+      nodeTitle: string;
+      depth: number;
+      titlesOnly: boolean;
+    };
 
 export function buildContextBlockOperations({
   selections,
@@ -38,7 +45,13 @@ export function buildContextBlockOperations({
         ...common,
         block_type: "atom_ref",
         text: "",
-        properties: { instance: "atom", nodeId: selection.nodeId, title: selection.label },
+        properties: {
+          instance: "atom",
+          nodeId: selection.nodeId,
+          nodeTitle: selection.nodeTitle,
+          depth: selection.depth,
+          titlesOnly: selection.titlesOnly,
+        },
       });
     }
     previousTempId = tempId;

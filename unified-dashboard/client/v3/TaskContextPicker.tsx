@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { AtomNodeSelector, Button } from "@seosoyoung/soul-ui";
 import {
   createPageApiClient,
   type BlockDto,
   type BrowserPageSearchItemDto,
+  type InitialTaskContext,
 } from "@seosoyoung/soul-ui/page";
 
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
@@ -125,7 +127,9 @@ export function TaskContextPicker({
       key: `atom:${normalized}`,
       kind: "atom" as const,
       nodeId: normalized,
-      label: title.trim() || normalized,
+      nodeTitle: title.trim() || normalized,
+      depth: 3,
+      titlesOnly: false,
     };
     setSelected((current) => new Map(current).set(selection.key, selection));
   };
@@ -167,7 +171,13 @@ export function TaskContextPicker({
             />
             <div className="v3-context-options">
               {selectedValues.filter((selection) => selection.kind === "atom").map((selection) => (
-                <ContextOption key={selection.key} icon="🧠" title={selection.label} meta={selection.nodeId} selected onClick={() => toggle(selection)} />
+                <SelectedAtomOption
+                  key={selection.key}
+                  title={selection.nodeTitle}
+                  meta={selection.nodeId}
+                  disabled={pending}
+                  onRemove={() => toggle(selection)}
+                />
               ))}
               {atomNodeId && existing.has(`atom:${atomNodeId}`) ? <p>이미 연결된 atom 노드입니다.</p> : null}
             </div>
@@ -180,6 +190,134 @@ export function TaskContextPicker({
         <span>{documentMode ? `선택한 문서 ${selectedValues.filter((selection) => selection.kind === "page").length}개` : `업무 컨텍스트 ${estimate.count}건 · ${estimate.label}`}</span>
         <Button disabled={pending} onClick={() => { void apply(); }}>{pending ? "추가 중…" : documentMode ? "선택 문서 마운트" : "선택 추가"}</Button>
       </footer>
+    </div>
+  );
+}
+
+export function InitialTaskContextPicker({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: InitialTaskContext;
+  disabled: boolean;
+  onChange(value: InitialTaskContext): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"guidance" | "atom">("guidance");
+  const [atomNodeId, setAtomNodeId] = useState("");
+  const [atomTitle, setAtomTitle] = useState("");
+  const estimate = estimateContextPayload([
+    ...(value.guidance.trim() ? [value.guidance] : []),
+    ...value.atomReferences.map((reference) => `${reference.nodeId}\n${reference.nodeTitle}`),
+  ]);
+
+  const selectAtomNode = (nodeId: string, title: string) => {
+    setAtomNodeId(nodeId);
+    setAtomTitle(title);
+    const normalized = nodeId.trim();
+    if (!normalized || value.atomReferences.some((reference) => reference.nodeId === normalized)) return;
+    onChange({
+      ...value,
+      atomReferences: [...value.atomReferences, {
+        instance: "atom",
+        nodeId: normalized,
+        nodeTitle: title.trim() || normalized,
+        depth: 3,
+        titlesOnly: false,
+      }],
+    });
+  };
+
+  return (
+    <section className="v3-new-task-context" data-testid="new-task-direct-context">
+      <div className="v3-new-task-context-head">
+        <span>
+          <strong>이 업무에 직접 추가</strong>
+          <small>{estimate.count > 0 ? `${estimate.count}건 · ${estimate.label}` : "선택 사항"}</small>
+        </span>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={disabled}
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+        >
+          {open ? "컨텍스트 닫기" : "＋ 컨텍스트"}
+        </Button>
+      </div>
+      {open ? (
+        <div className="v3-context-picker v3-context-picker--initial">
+          <div className="v3-context-tabs" role="tablist" aria-label="새 업무 컨텍스트 종류">
+            <button type="button" role="tab" aria-selected={tab === "guidance"} className={tab === "guidance" ? "is-active" : ""} onClick={() => setTab("guidance")}>✦ guidance</button>
+            <button type="button" role="tab" aria-selected={tab === "atom"} className={tab === "atom" ? "is-active" : ""} onClick={() => setTab("atom")}>🧠 atom</button>
+          </div>
+          <div className="v3-context-panel" role="tabpanel">
+            {tab === "guidance" ? (
+              <label className="v3-initial-guidance">
+                <span>업무 직접 guidance</span>
+                <textarea
+                  rows={4}
+                  value={value.guidance}
+                  disabled={disabled}
+                  aria-label="업무 직접 guidance"
+                  placeholder="이 업무에서만 사용할 지침을 적어두세요."
+                  onChange={(event) => onChange({ ...value, guidance: event.target.value })}
+                />
+              </label>
+            ) : (
+              <>
+                <AtomNodeSelector
+                  value={atomNodeId}
+                  selectedTitle={atomTitle}
+                  disabled={disabled}
+                  onChange={selectAtomNode}
+                />
+                <div className="v3-context-options">
+                  {value.atomReferences.map((reference) => (
+                    <SelectedAtomOption
+                      key={`${reference.instance}:${reference.nodeId}`}
+                      title={reference.nodeTitle}
+                      meta={reference.nodeId}
+                      disabled={disabled}
+                      onRemove={() => onChange({
+                        ...value,
+                        atomReferences: value.atomReferences.filter((candidate) => (
+                          candidate.instance !== reference.instance || candidate.nodeId !== reference.nodeId
+                        )),
+                      })}
+                    />
+                  ))}
+                  {value.atomReferences.length === 0 ? <p>추가한 atom 노드가 없습니다.</p> : null}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function SelectedAtomOption({ title, meta, disabled, onRemove }: {
+  title: string;
+  meta: string;
+  disabled: boolean;
+  onRemove(): void;
+}) {
+  return (
+    <div className="v3-context-option v3-context-option--selected">
+      <span className="v3-emoji" aria-hidden="true">🧠</span>
+      <span><strong>{title}</strong><small>{meta}</small></span>
+      <button
+        type="button"
+        className="v3-context-remove"
+        aria-label={`${title} atom 제거`}
+        disabled={disabled}
+        onClick={onRemove}
+      >
+        <Trash2 className="h-4 w-4" aria-hidden="true" />
+      </button>
     </div>
   );
 }
@@ -221,7 +359,7 @@ function blockEstimateValue(block: BlockDto): string {
 
 function selectionEstimateValue(selection: ContextPickerSelection): string {
   if (selection.kind === "page") return selection.title;
-  return `${selection.nodeId}\n${selection.label}`;
+  return `${selection.nodeId}\n${selection.nodeTitle}`;
 }
 
 function errorText(error: unknown): string {

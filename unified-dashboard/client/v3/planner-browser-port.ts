@@ -1,8 +1,10 @@
 import type {
   BlockDto,
+  InitialTaskContext,
   PageApiClient,
   PageReadResponse,
 } from "@seosoyoung/soul-ui/page";
+import { serializeInitialTaskContext } from "@seosoyoung/soul-ui/page";
 
 import { HttpResponseError } from "../lib/http-response-error";
 import { parseSingleMountTitle } from "./planner-model";
@@ -20,7 +22,13 @@ export class BrowserPlannerMutationPort implements PlannerTaskCreationPort {
     return await this.createMountedPage(input);
   }
 
-  async createTaskIdentity(input: { title: string; description: string; folderId: string }) {
+  async createTaskIdentity(input: {
+    title: string;
+    description: string;
+    folderId: string;
+    initialContext?: InitialTaskContext;
+  }) {
+    const initialContext = serializeInitialTaskContext(input.initialContext);
     const response = await this.fetchImplementation("/api/runbooks", {
       method: "POST",
       credentials: "same-origin",
@@ -29,6 +37,7 @@ export class BrowserPlannerMutationPort implements PlannerTaskCreationPort {
         title: input.title,
         description: input.description,
         folder_id: input.folderId,
+        ...(initialContext ? { initial_context: initialContext } : {}),
       }),
     });
     const payload = await readPayload(response);

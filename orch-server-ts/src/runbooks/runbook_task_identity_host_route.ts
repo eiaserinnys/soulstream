@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
+import { parseInitialTaskContextWire } from "@soulstream/page-model";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { PageMutationActor } from "../page/page_mutation_core.js";
@@ -33,6 +34,7 @@ const schemas = {
     runbook_id: uuid.optional(),
     x: z.number().optional(),
     y: z.number().optional(),
+    initial_context: z.unknown().optional(),
     ...mutationFields,
   }),
   "promote-page": z.object({
@@ -101,6 +103,10 @@ export function registerRunbookTaskIdentityHostRoute(
           idempotencyKey: input.idempotency_key as string,
         };
         if (operation === "create") {
+          const initialContext = parseInitialTaskContextWire(input.initial_context);
+          if (!initialContext.ok) {
+            return errorReply(reply, 422, "INVALID_TASK_IDENTITY_REQUEST", initialContext.error);
+          }
           return reply.send(await options.service.create({
             title: input.title as string,
             description: input.description as string | undefined,
@@ -108,6 +114,7 @@ export function registerRunbookTaskIdentityHostRoute(
             runbookId: input.runbook_id as string | undefined,
             x: input.x as number | undefined,
             y: input.y as number | undefined,
+            ...(initialContext.value ? { initialContext: initialContext.value } : {}),
             ...common,
           }));
         }

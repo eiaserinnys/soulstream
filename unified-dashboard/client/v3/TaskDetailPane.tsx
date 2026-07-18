@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DashboardIconCap, RunbookCard, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
-import { ArrowLeft, LayoutDashboard, Plus, Star, X } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, Plus, Star, Trash2, X } from "lucide-react";
 
 import type { PlannerTask } from "./planner-data";
 import type { TaskMoveTarget } from "./task-move-targets";
@@ -35,6 +35,14 @@ import {
   mergeProjectContextPages,
 } from "./project-context-inheritance";
 import { parseProjectPageDetails } from "./project-page-details";
+import {
+  deletePageContextBlock,
+  savePageAtomReference,
+} from "./project-context-actions";
+import {
+  deleteOptimisticTaskContextBlock,
+  updateOptimisticTaskAtomReference,
+} from "./task-context-row-model";
 import { useProjectContextInheritance } from "./use-project-context-inheritance";
 
 export function TaskDetailPane({
@@ -114,6 +122,8 @@ export function TaskDetailPane({
   const api = useMemo(() => createPageApiClient(), []);
   const [contextPickerOpen, setContextPickerOpen] = useState(false);
   const [contextBlocks, setContextBlocks] = useState(task.blocks);
+  const [contextMutationBlockId, setContextMutationBlockId] = useState<string | null>(null);
+  const [contextMutationError, setContextMutationError] = useState<string | null>(null);
   const [boardDocuments, setBoardDocuments] = useState<Array<{ pageId: string; title: string }>>([]);
   const [createdSessions, setCreatedSessions] = useState<SessionSummary[]>([]);
   const reconciledSessionsRef = useRef<ReturnType<typeof reconcileTaskSessions> | null>(null);
@@ -125,6 +135,8 @@ export function TaskDetailPane({
   useEffect(() => {
     setContextBlocks(task.blocks);
     setContextPickerOpen(false);
+    setContextMutationBlockId(null);
+    setContextMutationError(null);
     setCreatedSessions([]);
   }, [task.blocks, task.page.id]);
   useEffect(() => setBoardDocuments([]), [task.page.id]);
@@ -142,6 +154,9 @@ export function TaskDetailPane({
   const contextItems = useMemo(() => [
     ...effectiveContext.guidance.map((guidance) => ({
       id: `${guidance.source.pageId}:${guidance.blockId}`,
+      kind: "guidance" as const,
+      blockId: guidance.blockId,
+      direct: guidance.source.pageId === task.page.id,
       icon: "✦",
       contentLabel: singleLinePreview(guidance.text, 96) ?? guidance.text,
       sourceLabel: contextSourceLabel(guidance.source.folderName),
@@ -149,6 +164,10 @@ export function TaskDetailPane({
     })),
     ...effectiveContext.atomReferences.map((reference) => ({
       id: `${reference.source.pageId}:${reference.blockId}`,
+      kind: "atom" as const,
+      blockId: reference.blockId,
+      direct: reference.source.pageId === task.page.id,
+      reference,
       icon: "⚛",
       contentLabel: reference.nodeTitle,
       sourceLabel: contextSourceLabel(reference.source.folderName),
@@ -158,6 +177,9 @@ export function TaskDetailPane({
       const match = /^\[\[([^\[\]]+)\]\]$/.exec(block.text.trim());
       return match ? [{
         id: block.id,
+        kind: "page" as const,
+        blockId: block.id,
+        direct: true,
         icon: "📄",
         contentLabel: match[1],
         sourceLabel: "이 업무",
@@ -209,6 +231,53 @@ export function TaskDetailPane({
     setContextBlocks(result.blocks);
     onTaskBlocksChanged(result.blocks);
   };
+  const applyContextBlocks = (blocks: PlannerTask["blocks"]) => {
+    setContextBlocks(blocks);
+    onTaskBlocksChanged(blocks);
+  };
+  const updateAtomContext = async (
+    blockId: string,
+    reference: (typeof effectiveContext.atomReferences)[number],
+    depth: number,
+    titlesOnly: boolean,
+  ) => {
+    const previous = contextBlocks;
+    const optimistic = updateOptimisticTaskAtomReference(previous, blockId, { depth, titlesOnly });
+    applyContextBlocks(optimistic);
+    setContextMutationBlockId(blockId);
+    setContextMutationError(null);
+    try {
+      const result = await savePageAtomReference(api, task.page.id, {
+        blockId,
+        instance: reference.instance,
+        nodeId: reference.nodeId,
+        nodeTitle: reference.nodeTitle,
+        depth,
+        titlesOnly,
+      });
+      applyContextBlocks(result.blocks);
+    } catch (cause) {
+      applyContextBlocks(previous);
+      setContextMutationError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setContextMutationBlockId(null);
+    }
+  };
+  const removeContextBlock = async (blockId: string) => {
+    const previous = contextBlocks;
+    applyContextBlocks(deleteOptimisticTaskContextBlock(previous, blockId));
+    setContextMutationBlockId(blockId);
+    setContextMutationError(null);
+    try {
+      const result = await deletePageContextBlock(api, task.page.id, blockId);
+      applyContextBlocks(result.blocks);
+    } catch (cause) {
+      applyContextBlocks(previous);
+      setContextMutationError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setContextMutationBlockId(null);
+    }
+  };
 
   return (
     <article
@@ -255,13 +324,19 @@ export function TaskDetailPane({
               <div className="v3-detail-section-head"><h3>정보</h3></div>
               <TaskDescriptionPanel markdown={description} onSave={onSaveDescription} />
               <div className="v3-information-context-head"><strong>컨텍스트</strong></div>
-              <div className="v3-context-chips">
+              <div className="v3-context-rows">
                 {contextItems.map((context) => (
-                  <span key={context.id} title={context.label}>
+                  <div key={context.id} className="v3-context-row" title={context.label} data-testid={`task-context-${context.blockId}`}>
                     <span className="v3-emoji" aria-hidden="true">{context.icon}</span>
-                    <span className="v3-context-chip-label">{context.contentLabel}</span>
-                    <small className="v3-context-chip-source">· {context.sourceLabel}</small>
-                  </span>
+                    <span className="v3-context-row-copy"><strong>{context.contentLabel}</strong><small>{context.sourceLabel}</small></span>
+                    {context.kind === "atom" ? (
+                      context.direct ? <span className="v3-context-row-controls">
+                        <label>depth <select aria-label={`${context.contentLabel} atom depth`} value={context.reference.depth ?? 3} disabled={contextMutationBlockId === context.blockId} onChange={(event) => { void updateAtomContext(context.blockId, context.reference, Number(event.target.value), context.reference.titlesOnly ?? false); }}>{[1, 2, 3, 4, 5].map((depth) => <option key={depth} value={depth}>{depth}</option>)}</select></label>
+                        <label><input type="checkbox" aria-label={`${context.contentLabel} 제목만 포함`} checked={context.reference.titlesOnly ?? false} disabled={contextMutationBlockId === context.blockId} onChange={(event) => { void updateAtomContext(context.blockId, context.reference, context.reference.depth ?? 3, event.target.checked); }} /> 제목만</label>
+                        <ContextRemoveButton title={context.contentLabel} disabled={contextMutationBlockId === context.blockId} onClick={() => { void removeContextBlock(context.blockId); }} />
+                      </span> : <small className="v3-context-row-readonly">depth {context.reference.depth ?? 3} · 제목만 {(context.reference.titlesOnly ?? false) ? "켜짐" : "꺼짐"}</small>
+                    ) : context.direct ? <ContextRemoveButton title={context.contentLabel} disabled={contextMutationBlockId === context.blockId} onClick={() => { void removeContextBlock(context.blockId); }} /> : null}
+                  </div>
                 ))}
                 {contextItems.length === 0 ? <small>연결된 컨텍스트가 없습니다.</small> : null}
                 <DashboardIconCap
@@ -274,11 +349,12 @@ export function TaskDetailPane({
                   <span>컨텍스트</span>
                 </DashboardIconCap>
               </div>
+              {contextMutationError ? <small className="v3-context-mutation-error" role="alert">컨텍스트 저장 실패 · {contextMutationError}</small> : null}
               {contextPickerOpen ? (
                 <TaskContextPicker
                   taskPageId={task.page.id}
                   taskBlocks={contextBlocks}
-                  onBlocksChanged={(blocks) => { setContextBlocks(blocks); onTaskBlocksChanged(blocks); }}
+                  onBlocksChanged={applyContextBlocks}
                   onClose={() => setContextPickerOpen(false)}
                 />
               ) : null}
@@ -352,6 +428,18 @@ export function TaskDetailPane({
         </div>
       </div>
     </article>
+  );
+}
+
+function ContextRemoveButton({ title, disabled, onClick }: {
+  title: string;
+  disabled: boolean;
+  onClick(): void;
+}) {
+  return (
+    <button type="button" className="v3-context-row-remove" aria-label={`${title} 컨텍스트 제거`} disabled={disabled} onClick={onClick}>
+      <Trash2 className="h-4 w-4" aria-hidden="true" />
+    </button>
   );
 }
 

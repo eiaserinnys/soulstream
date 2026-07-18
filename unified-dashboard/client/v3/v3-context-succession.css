@@ -150,6 +150,31 @@
   cursor: default;
 }
 
+.v3-context-option--selected {
+  cursor: default;
+}
+
+.v3-context-remove {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 9%, transparent);
+  cursor: pointer;
+}
+
+.v3-context-remove:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--destructive) 18%, transparent);
+}
+
+.v3-context-remove:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
 .v3-context-option > span:nth-child(2) {
   display: flex;
   min-width: 0;
@@ -205,6 +230,53 @@
 .v3-context-create-page [data-slot="button"] {
   font-size: var(--font-size-xs);
   font-weight: 760;
+}
+
+.v3-new-task-context {
+  display: grid;
+  gap: 8px;
+}
+
+.v3-new-task-context-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.v3-new-task-context-head > span {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+  font-size: var(--font-size-xs);
+}
+
+.v3-new-task-context-head small,
+.v3-initial-guidance > span {
+  color: var(--muted-foreground);
+  font-size: var(--font-size-xs);
+}
+
+.v3-context-picker--initial {
+  margin-top: 0;
+}
+
+.v3-initial-guidance {
+  display: grid;
+  gap: 5px;
+}
+
+.v3-initial-guidance textarea {
+  min-height: 88px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 9px;
+  color: var(--foreground);
+  background: var(--background);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
 }
 
 .v3-context-error {

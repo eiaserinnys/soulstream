@@ -296,57 +296,102 @@
   font-weight: 650;
 }
 
-.v3-context-chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  column-gap: 7px;
-  row-gap: 3px;
+.v3-context-rows {
+  display: grid;
+  gap: 5px;
   margin-top: 9px;
 }
 
-.v3-context-chips > span {
-  display: inline-flex;
-  box-sizing: border-box;
-  height: 28px;
-  min-height: 28px;
+.v3-context-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  max-width: min(100%, 280px);
-  overflow: hidden;
+  gap: 8px;
   border: 1px solid var(--glass-border);
-  border-radius: 999px;
-  padding: 5px 9px;
+  border-radius: 9px;
+  padding: 6px 7px 6px 9px;
   color: var(--muted-foreground);
   background: color-mix(in srgb, var(--card) 78%, transparent);
   font-size: var(--font-size-xs);
-  font-weight: 750;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.v3-context-chip-label {
+.v3-context-row-copy {
+  display: grid;
   min-width: 0;
-  flex: 1;
+  gap: 2px;
+}
+
+.v3-context-row-copy strong {
   overflow: hidden;
+  color: var(--foreground);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.v3-context-chip-source {
-  flex: 0 0 auto;
-  margin-left: auto;
+.v3-context-row-copy small,
+.v3-context-row-readonly {
   color: var(--muted-foreground);
   font-size: inherit;
   font-weight: 600;
 }
 
-.v3-context-chips > small {
+.v3-context-rows > small {
   color: var(--muted-foreground);
   font-size: var(--font-size-xs);
 }
 
+.v3-context-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.v3-context-row-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.v3-context-row-controls select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 4px;
+  color: var(--foreground);
+  background: var(--background);
+  font: inherit;
+}
+
+.v3-context-row-remove {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: var(--destructive);
+  background: color-mix(in srgb, var(--destructive) 9%, transparent);
+  cursor: pointer;
+}
+
+.v3-context-row-remove:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--destructive) 18%, transparent);
+}
+
+.v3-context-row-remove:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.v3-context-mutation-error {
+  display: block;
+  margin-top: 6px;
+  color: var(--destructive);
+  font-size: var(--font-size-xs);
+}
+
 .v3-context-add.dashboard-icon-cap {
+  justify-self: start;
   width: auto;
   min-width: 0;
   height: 28px;

@@ -2,6 +2,7 @@ import {
   PageMutationCore,
   type PageMutationActor,
 } from "../page/page_mutation_core.js";
+import type { InitialTaskContext } from "@soulstream/page-model";
 import { readPageYDocReplica } from "../page/page_yjs_model.js";
 import type {
   RunbookTaskIdentityMutationResult,
@@ -15,6 +16,7 @@ import {
 } from "./runbook_task_mount_reconciliation.js";
 import {
   loadPageDocument,
+  initialTaskContextOperations,
   pageMutationIdempotencyKey,
   requireNonEmpty,
 } from "./runbook_task_identity_page.js";
@@ -32,6 +34,7 @@ export async function promoteRunbookTaskPage(input: {
   x?: number;
   y?: number;
   ensureProjectMount: boolean;
+  initialContext?: InitialTaskContext;
 }): Promise<RunbookTaskIdentityMutationResult> {
   const idempotent = await input.config.repository.findMutationByIdempotencyKey(
     input.idempotencyKey,
@@ -50,16 +53,24 @@ export async function promoteRunbookTaskPage(input: {
   );
   const replica = readPageYDocReplica(input.pageId, snapshot);
   const title = requireNonEmpty(input.title || replica.page.title, "title");
+  const lastRootBlockId = replica.blocks.filter((block) => block.parentId === null).at(-1)?.id ?? null;
+  const contextOperations = initialTaskContextOperations({
+    context: input.initialContext,
+    createId: input.createBlockId,
+    afterBlockId: lastRootBlockId,
+  });
+  const lastContextTempId = contextOperations.at(-1)?.tempId ?? null;
   const pageApplication = input.mutationCore.mutate(snapshot, {
     pageId: input.pageId,
     expectedVersion: replica.page.mutationVersion,
     command: {
       type: "batch_operations",
-      operations: [{
+      operations: [...contextOperations, {
         op: "create_block",
         tempId: input.createBlockId(),
         parentId: null,
-        afterBlockId: replica.blocks.filter((block) => block.parentId === null).at(-1)?.id ?? null,
+        afterBlockId: lastContextTempId ? null : lastRootBlockId,
+        ...(lastContextTempId ? { afterTempId: lastContextTempId } : {}),
         blockType: "runbook_ref",
         text: "",
         properties: { runbookId: input.pageId, primary: true },

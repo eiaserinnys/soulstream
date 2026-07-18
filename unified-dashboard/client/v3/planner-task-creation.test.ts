@@ -23,6 +23,10 @@ describe("createPlannerTask", () => {
       description: "## 첫 설명\n\n업무 배경",
       dailyPageId: "daily",
       folderId: "folder",
+      initialContext: {
+        guidance: "초기 지침",
+        atomReferences: [],
+      },
     }, port)).resolves.toEqual({ pageId: "task-uuid", runbookId: "task-uuid" });
 
     expect(calls).toEqual(["identity", "daily-mount"]);
@@ -30,6 +34,10 @@ describe("createPlannerTask", () => {
       title: "새 업무",
       description: "## 첫 설명\n\n업무 배경",
       folderId: "folder",
+      initialContext: {
+        guidance: "초기 지침",
+        atomReferences: [],
+      },
     });
     expect(port.mountPage).toHaveBeenNthCalledWith(1, {
       sourcePageId: "daily",

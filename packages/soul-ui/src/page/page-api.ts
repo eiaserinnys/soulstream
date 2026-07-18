@@ -19,9 +19,17 @@ export type {
   BrowserBlockSearchItemDto,
   BrowserPageSearchDto,
   BrowserPageSearchItemDto,
+  InitialTaskContext,
+  InitialTaskAtomReference,
+  InitialTaskContextWire,
   PageDto,
   PageLinkKind,
   PageListDto,
+} from "@soulstream/page-model";
+
+export {
+  parseInitialTaskContextWire,
+  serializeInitialTaskContext,
 } from "@soulstream/page-model";
 
 export class PageApiError extends Error {

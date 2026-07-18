@@ -29,6 +29,16 @@ describe("RunbookTaskIdentityService", () => {
       title: "원자 업무",
       description: "설명",
       folderId: "folder-a",
+      initialContext: {
+        guidance: "검증 근거를 남긴다.",
+        atomReferences: [{
+          instance: "atom",
+          nodeId: "node-soulstream",
+          nodeTitle: "soulstream",
+          depth: 4,
+          titlesOnly: true,
+        }],
+      },
       actor: { actorKind: "user", actorUserId: "user@example.com" },
       idempotencyKey: "create-ae",
     })).resolves.toMatchObject({
@@ -46,6 +56,21 @@ describe("RunbookTaskIdentityService", () => {
       taskPageId: identityId,
     });
     expect(input?.pageApplication.replica.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "guidance",
+        text: "검증 근거를 남긴다.",
+        properties: { enabled: true, scope: "task" },
+      }),
+      expect.objectContaining({
+        type: "atom_ref",
+        properties: {
+          instance: "atom",
+          nodeId: "node-soulstream",
+          nodeTitle: "soulstream",
+          depth: 4,
+          titlesOnly: true,
+        },
+      }),
       expect.objectContaining({ type: "runbook_ref", properties: {
         primary: true,
         runbookId: identityId,
@@ -54,6 +79,45 @@ describe("RunbookTaskIdentityService", () => {
     expect(board.liveApplied).toBe(true);
     expect(onPageUpdated).toHaveBeenCalledOnce();
     expect(onPageUpdated).toHaveBeenCalledWith({ pageId: identityId, version: 1 });
+  });
+
+  it("adds initial context when create promotes a standalone page", async () => {
+    const repository = createRepository();
+    vi.mocked(repository.findPageByTitle).mockResolvedValue({
+      pageId: identityId,
+      title: "승격 업무",
+      archived: false,
+      dailyDate: null,
+      projectFolderId: null,
+    });
+    vi.mocked(repository.readPageSnapshot).mockResolvedValue(createPageSnapshot());
+    const service = new RunbookTaskIdentityService({
+      board: new MemoryBoardPort(),
+      repository,
+      createOperationId: () => "operation-ae",
+      hydratePage: vi.fn(),
+    });
+
+    await service.create({
+      title: "승격 업무",
+      folderId: "folder-a",
+      initialContext: {
+        guidance: "승격과 함께 저장",
+        atomReferences: [],
+      },
+      actor: { actorKind: "user", actorUserId: "user@example.com" },
+      idempotencyKey: "promote-create-ae",
+    });
+
+    const input = vi.mocked(repository.promote).mock.calls[0]?.[0];
+    expect(input?.pageApplication.replica.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "guidance",
+        text: "승격과 함께 저장",
+        properties: { enabled: true, scope: "task" },
+      }),
+      expect.objectContaining({ type: "runbook_ref" }),
+    ]));
   });
 
   it("notifies after promoting an existing page", async () => {

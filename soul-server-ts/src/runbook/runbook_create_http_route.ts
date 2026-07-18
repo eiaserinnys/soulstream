@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  parseInitialTaskContextWire,
+  type InitialTaskContext,
+} from "@soulstream/page-model";
 
 import type { FastifyInstance } from "fastify";
 
@@ -15,6 +19,7 @@ interface CreateRunbookRequestBody {
   description?: unknown;
   folder_id?: unknown;
   idempotency_key?: unknown;
+  initial_context?: unknown;
 }
 
 export function registerRunbookCreateHttpRoute(
@@ -62,6 +67,7 @@ export function registerRunbookCreateHttpRoute(
           title: parsed.value.title,
           description: parsed.value.description,
           folderId: parsed.value.folderId,
+          ...(parsed.value.initialContext ? { initialContext: parsed.value.initialContext } : {}),
           idempotencyKey: parsed.value.idempotencyKey
             ?? `create_runbook:${userId}:${randomUUID()}`,
         });
@@ -95,6 +101,7 @@ function parseCreateRunbookBody(body: CreateRunbookRequestBody):
     description?: string;
     folderId: string;
     idempotencyKey?: string;
+    initialContext?: InitialTaskContext;
   } }
   | { ok: false; error: string } {
   if (typeof body.title !== "string" || body.title.trim().length === 0) {
@@ -118,6 +125,8 @@ function parseCreateRunbookBody(body: CreateRunbookRequestBody):
   ) {
     return { ok: false, error: "idempotency_key must be a non-empty string when provided" };
   }
+  const initialContext = parseInitialTaskContextWire(body.initial_context);
+  if (!initialContext.ok) return { ok: false, error: initialContext.error };
   return {
     ok: true,
     value: {
@@ -130,6 +139,7 @@ function parseCreateRunbookBody(body: CreateRunbookRequestBody):
       ...(typeof body.runbook_id === "string"
         ? { runbookId: body.runbook_id.trim() }
         : {}),
+      ...(initialContext.value ? { initialContext: initialContext.value } : {}),
     },
   };
 }

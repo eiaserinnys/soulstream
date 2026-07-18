@@ -25,7 +25,7 @@ export async function saveProjectGuidance(
   ));
 }
 
-export async function saveProjectAtomReference(
+export async function savePageAtomReference(
   api: PageApiClient,
   pageId: string,
   input: {
@@ -43,24 +43,30 @@ export async function saveProjectAtomReference(
   if (!Number.isInteger(input.depth) || input.depth < 1 || input.depth > 5) {
     throw new Error("atom 깊이는 1~5여야 합니다");
   }
-  const properties = {
-    instance: input.instance?.trim() || "atom",
-    nodeId,
-    nodeTitle: input.nodeTitle.trim() || nodeId,
-    depth: input.depth,
-    titlesOnly: input.titlesOnly,
-  };
-  return await mutate(api, pageId, idFactory, "v3 project atom reference save", (blocks) => (
-    input.blockId
+  return await mutate(api, pageId, idFactory, "v3 page atom reference save", (blocks) => {
+    const previous = input.blockId
+      ? blocks.find((block) => block.id === input.blockId)?.properties ?? {}
+      : {};
+    const properties = {
+      ...previous,
+      instance: input.instance?.trim() || "atom",
+      nodeId,
+      nodeTitle: input.nodeTitle.trim() || nodeId,
+      depth: input.depth,
+      titlesOnly: input.titlesOnly,
+    };
+    return input.blockId
       ? [{
         op: "update_block_type_and_properties",
         block_id: input.blockId,
         block_type: "atom_ref",
         properties,
       }]
-      : [createBlock(blocks, idFactory("atom-reference-block"), "atom_ref", "", properties)]
-  ));
+      : [createBlock(blocks, idFactory("atom-reference-block"), "atom_ref", "", properties)];
+  });
 }
+
+export const saveProjectAtomReference = savePageAtomReference;
 
 export async function saveProjectSessionDefaults(
   api: PageApiClient,
@@ -85,17 +91,19 @@ export async function saveProjectSessionDefaults(
   ));
 }
 
-export async function deleteProjectContextBlock(
+export async function deletePageContextBlock(
   api: PageApiClient,
   pageId: string,
   blockId: string,
   idFactory: ContextOperationIdFactory = operationId,
 ): Promise<PageMutationResponse> {
-  return await mutate(api, pageId, idFactory, "v3 project context delete", () => ([{
+  return await mutate(api, pageId, idFactory, "v3 page context delete", () => ([{
     op: "delete_block_subtree",
     block_id: blockId,
   }]));
 }
+
+export const deleteProjectContextBlock = deletePageContextBlock;
 
 async function mutate(
   api: PageApiClient,

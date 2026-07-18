@@ -1,4 +1,7 @@
-import { markdownToPageBlocks } from "@soulstream/page-model";
+import {
+  markdownToPageBlocks,
+  type InitialTaskContext,
+} from "@soulstream/page-model";
 import * as Y from "yjs";
 
 import {
@@ -12,11 +15,12 @@ export function initialTaskOperations(
   description: string,
   runbookId: string,
   createId: () => string,
+  initialContext?: InitialTaskContext,
 ) {
   const source = description.trim() ? `# ${title}\n\n${description.trim()}` : `# ${title}`;
   const blocks = markdownToPageBlocks(source, { title, createId });
   const lastSibling = new Map<string | null, string>();
-  const operations = blocks.map((block) => {
+  const contentOperations = blocks.map((block) => {
     const previous = lastSibling.get(block.parent_id) ?? null;
     lastSibling.set(block.parent_id, block.id);
     return {
@@ -32,7 +36,13 @@ export function initialTaskOperations(
       collapsed: block.collapsed,
     };
   });
-  const lastRoot = lastSibling.get(null) ?? null;
+  const contextOperations = initialTaskContextOperations({
+    context: initialContext,
+    createId,
+    afterTempId: lastSibling.get(null) ?? null,
+  });
+  const operations = [...contentOperations, ...contextOperations];
+  const lastRoot = contextOperations.at(-1)?.tempId ?? lastSibling.get(null) ?? null;
   operations.push({
     op: "create_block" as const,
     tempId: createId(),
@@ -45,6 +55,53 @@ export function initialTaskOperations(
     collapsed: false,
   });
   return operations;
+}
+
+export function initialTaskContextOperations({
+  context,
+  createId,
+  afterBlockId = null,
+  afterTempId = null,
+}: {
+  context?: InitialTaskContext;
+  createId(): string;
+  afterBlockId?: string | null;
+  afterTempId?: string | null;
+}) {
+  if (!context) return [];
+  const specifications = [
+    ...(context.guidance.trim() ? [{
+      blockType: "guidance" as const,
+      text: context.guidance.trim(),
+      properties: { enabled: true, scope: "task" },
+    }] : []),
+    ...context.atomReferences.map((reference) => ({
+      blockType: "atom_ref" as const,
+      text: "",
+      properties: {
+        instance: reference.instance,
+        nodeId: reference.nodeId,
+        nodeTitle: reference.nodeTitle,
+        depth: reference.depth,
+        titlesOnly: reference.titlesOnly,
+      },
+    })),
+  ];
+  let previousTempId = afterTempId;
+  return specifications.map((specification, index) => {
+    const tempId = createId();
+    const operation = {
+      op: "create_block" as const,
+      tempId,
+      parentId: null,
+      afterBlockId: index === 0 && !previousTempId ? afterBlockId : null,
+      ...(previousTempId ? { afterTempId: previousTempId } : {}),
+      ...specification,
+      collapsed: false,
+    };
+    previousTempId = tempId;
+    return operation;
+  });
 }
 
 export async function loadPageDocument(
