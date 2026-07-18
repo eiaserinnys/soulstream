@@ -8,16 +8,10 @@ import {
   type SessionStreamEvent,
   type SseReplayEvent,
   type SseResumeCursor,
-  type TaskStreamEvent,
 } from "./replay_broadcaster.js";
 
 export type SessionStreamSnapshot = {
   sessions: unknown[];
-  total?: number;
-};
-
-export type TaskStreamSnapshot = {
-  tasks: unknown[];
   total?: number;
 };
 
@@ -27,17 +21,12 @@ export type SseReplayRouteOptions = {
     loadSnapshot: (request: FastifyRequest) => Promise<SessionStreamSnapshot>;
     filterEvent?: SseReplayEventFilter<SessionStreamEvent>;
   };
-  task: {
-    broadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>;
-    loadSnapshot: (request: FastifyRequest) => Promise<TaskStreamSnapshot>;
-  };
   keepaliveMs?: number;
   replayOnlyForTests?: boolean;
 };
 
 export const sseReplayRouteAuthRequirements = {
   "GET /api/sessions/stream": true,
-  "GET /api/tasks/stream": true,
 } as const;
 
 type SseFrame = {
@@ -80,25 +69,6 @@ export function registerSseReplayRoutes(
         };
       },
       filterEvent: options.session.filterEvent,
-      keepaliveMs: options.keepaliveMs,
-      replayOnlyForTests: options.replayOnlyForTests,
-    }),
-  );
-
-  app.get("/api/tasks/stream", async (request, reply) =>
-    sendSseReplayStream(request, reply, {
-      broadcaster: options.task.broadcaster,
-      loadSnapshot: async (snapshotRequest) => {
-        const snapshot = await options.task.loadSnapshot(snapshotRequest);
-        return {
-          event: "task_list",
-          data: {
-            type: "task_list",
-            tasks: snapshot.tasks,
-            total: snapshot.total ?? snapshot.tasks.length,
-          },
-        };
-      },
       keepaliveMs: options.keepaliveMs,
       replayOnlyForTests: options.replayOnlyForTests,
     }),

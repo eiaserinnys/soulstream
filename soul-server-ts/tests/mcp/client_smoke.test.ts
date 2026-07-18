@@ -501,37 +501,6 @@ describe("MCP SDK client smoke", () => {
       expect(names).toContain(tool);
     }
     expect(names.length).toBeGreaterThanOrEqual(expected.length);
-    for (const name of ["create_task_item", "delegate_task_item"]) {
-      const tool = result.tools.find((candidate) => candidate.name === name);
-      expect(tool?.description).toContain("DEPRECATED");
-      expect(tool?.description).toContain("create_runbook");
-      expect(tool?.description).toContain("folder_id 지정이 필수");
-    }
-  });
-
-  it.each([
-    [
-      "create_task_item",
-      { session_id: "parent-session", title: "Deprecated task" },
-    ],
-    [
-      "delegate_task_item",
-      {
-        session_id: "parent-session",
-        parent_task_id: "parent-task",
-        title: "Deprecated child task",
-        prompt: "Do the work",
-      },
-    ],
-  ])("callTool('%s') returns the runbook migration alternative", async (name, args) => {
-    const result = await client.callTool({ name, arguments: args });
-
-    expect(result.isError).toBe(true);
-    expect(result.structuredContent).toEqual({
-      error: expect.stringContaining(
-        "업무는 create_runbook으로 생성하세요 — folder_id 지정이 필수입니다",
-      ),
-    });
   });
 
   it("callTool('reflect_brief') → compact aggregate includes Level 0-3 sections", async () => {

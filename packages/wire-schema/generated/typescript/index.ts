@@ -507,7 +507,7 @@ export interface SSEEventClaudeRuntimeTaskStarted {
   [k: string]: unknown;
 }
 /**
- * SSE: Claude Agent SDK TaskCreated hook lifecycle. Soulstream Task Tree와 별도 개념.
+ * SSE: Claude Agent SDK TaskCreated hook lifecycle.
  */
 export interface SSEEventClaudeRuntimeTaskCreated {
   type: "claude_runtime_task_created";
@@ -557,7 +557,7 @@ export interface SSEEventClaudeRuntimeTaskProgress {
   [k: string]: unknown;
 }
 /**
- * SSE: Claude Agent SDK TaskCompleted hook lifecycle. Soulstream Task Tree와 별도 개념.
+ * SSE: Claude Agent SDK TaskCompleted hook lifecycle.
  */
 export interface SSEEventClaudeRuntimeTaskCompleted {
   type: "claude_runtime_task_completed";

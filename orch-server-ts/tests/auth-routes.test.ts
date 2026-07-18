@@ -43,7 +43,7 @@ describe("Auth route harness", () => {
     await app.close();
   });
 
-  it("registers Python auth contract rows for route inventory order 113-120", () => {
+  it("registers Python auth contract rows for route inventory order 101-108", () => {
     expect(authRouteAuthRequirements).toEqual({
       "GET /api/auth/token": true,
       "POST /api/auth/google/native": false,
@@ -57,17 +57,17 @@ describe("Auth route harness", () => {
 
     expect(
       fixtures.routeInventory.routes
-        .filter((route) => route.order >= 113 && route.order <= 120)
+        .filter((route) => route.order >= 101 && route.order <= 108)
         .map((route) => [route.order, route.methods[0], route.path, route.authRequired]),
     ).toEqual([
-      [113, "GET", "/api/auth/token", true],
-      [114, "POST", "/api/auth/google/native", false],
-      [115, "GET", "/api/auth/config", false],
-      [116, "GET", "/api/auth/google", false],
-      [117, "GET", "/api/auth/google/callback", false],
-      [118, "GET", "/api/auth/status", false],
-      [119, "POST", "/api/auth/logout", false],
-      [120, "POST", "/api/auth/dev-login", false],
+      [101, "GET", "/api/auth/token", true],
+      [102, "POST", "/api/auth/google/native", false],
+      [103, "GET", "/api/auth/config", false],
+      [104, "GET", "/api/auth/google", false],
+      [105, "GET", "/api/auth/google/callback", false],
+      [106, "GET", "/api/auth/status", false],
+      [107, "POST", "/api/auth/logout", false],
+      [108, "POST", "/api/auth/dev-login", false],
     ]);
   });
 

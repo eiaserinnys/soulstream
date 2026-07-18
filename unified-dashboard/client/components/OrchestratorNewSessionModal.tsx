@@ -46,7 +46,6 @@ export function OrchestratorNewSessionModal() {
   const isModalOpen = useDashboardStore((s) => s.isNewSessionModalOpen);
   const closeNewSessionModal = useDashboardStore((s) => s.closeNewSessionModal);
   const newSessionSource = useDashboardStore((s) => s.newSessionSource);
-  const newSessionParentTask = useDashboardStore((s) => s.newSessionParentTask);
   const newSessionDefaults = useDashboardStore((s) => s.newSessionDefaults);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const catalog = useDashboardStore((s) => s.catalog);
@@ -69,10 +68,7 @@ export function OrchestratorNewSessionModal() {
   );
 
   const defaultFolderExists = catalog?.folders.some((f) => f.id === DEFAULT_FOLDER_ID) ?? false;
-  const taskIdempotencyKeyRef = useRef<string | null>(null);
-  const draftKey = newSessionParentTask
-    ? `__draft__orchestrator__task__${newSessionParentTask.id}`
-    : `__draft__orchestrator__${selectedNodeId || "null"}__${selectedModalFolderId ?? "null"}`;
+  const draftKey = `__draft__orchestrator__${selectedNodeId || "null"}__${selectedModalFolderId ?? "null"}`;
   const initialDraft = useMemo(() => {
     return useDashboardStore.getState().drafts[draftKey] ?? "";
   }, [draftKey, isModalOpen]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -96,7 +92,6 @@ export function OrchestratorNewSessionModal() {
   useEffect(() => {
     if (!isModalOpen) {
       folderInitialized.current = false;
-      taskIdempotencyKeyRef.current = null;
       return;
     }
     if (folderInitialized.current || !catalog) return;
@@ -116,14 +111,6 @@ export function OrchestratorNewSessionModal() {
       setSelectedModalFolderId(selectedFolderId);
     }
   }, [isModalOpen, catalog]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!isModalOpen || !newSessionParentTask) {
-      taskIdempotencyKeyRef.current = null;
-      return;
-    }
-    taskIdempotencyKeyRef.current = createTaskIdempotencyKey(newSessionParentTask.id);
-  }, [isModalOpen, newSessionParentTask?.id]);
 
   // 앱/WebView에서는 현재 노드가 명확한 경우가 많다. 노드가 자동 선택되면
   // NewSessionDialog가 즉시 fileUploadUrl을 받아 세션 생성 전 첨부 UI를 표시한다.
@@ -201,13 +188,6 @@ export function OrchestratorNewSessionModal() {
         agent: selectedAgent ?? null,
         reasoningEffort: submitReasoningEffort,
         oauthProfileName: selectedOAuthProfile,
-        ...(newSessionParentTask
-          ? {
-              parentTaskId: newSessionParentTask.id,
-              taskIdempotencyKey:
-                taskIdempotencyKeyRef.current ?? createTaskIdempotencyKey(newSessionParentTask.id),
-            }
-          : {}),
         boardPosition,
       });
       const { agentSessionId } = result;
@@ -222,7 +202,7 @@ export function OrchestratorNewSessionModal() {
       setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
       setSelectedOAuthProfile(null);
     },
-    [selectedNodeId, selectedModalFolderId, selectedAgentId, submitReasoningEffort, selectedOAuthProfile, newSessionParentTask, agents, clearDraft, draftKey, closeNewSessionModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceRunbookItemId],
+    [selectedNodeId, selectedModalFolderId, selectedAgentId, submitReasoningEffort, selectedOAuthProfile, agents, clearDraft, draftKey, closeNewSessionModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceRunbookItemId],
   );
 
   const folderSelector = (
@@ -361,8 +341,7 @@ export function OrchestratorNewSessionModal() {
       oauthProfileSelector={oauthProfileSelector}
       optionsSlot={optionsSlot}
       submitDisabled={!selectedNodeId}
-      title={newSessionParentTask ? "하위 대화 시작" : "New Session"}
-      subtitle={newSessionParentTask ? `under ${newSessionParentTask.title}` : undefined}
+      title="New Session"
       initialDraft={initialDraft}
       onDraftChange={handleDraftChange}
       fileUploadUrl={
@@ -372,12 +351,4 @@ export function OrchestratorNewSessionModal() {
       }
     />
   );
-}
-
-function createTaskIdempotencyKey(taskId: string): string {
-  const random =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `task-session:${taskId}:${random}`;
 }

@@ -3,12 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   InMemorySseReplayBroadcaster,
   SNAPSHOT_REFETCH_REASONS,
-  buildTaskChangedStreamEvent,
   loadContractFixtures,
   resolveSseResumeCursor,
   type SessionStreamEvent,
-  type TaskStreamChange,
-  type TaskStreamEvent,
 } from "../src/index.js";
 
 describe("SSE replay broadcaster primitive", () => {
@@ -44,31 +41,6 @@ describe("SSE replay broadcaster primitive", () => {
       ...fixture.common.streamMeta,
       instance_id: instanceId,
     });
-  });
-
-  it("wraps task changes in the common task stream event shape before replay", () => {
-    const broadcaster = new InMemorySseReplayBroadcaster<TaskStreamEvent>({
-      instanceId,
-    });
-
-    for (const change of fixture.taskStream.changes) {
-      broadcaster.append(buildTaskChangedStreamEvent(change as TaskStreamChange));
-    }
-
-    const replay = broadcaster.replaySince(fixture.taskStream.resumeFrom, instanceId);
-
-    expect(replay.gap).toBe(false);
-    expect(replay.events.map((event) => event.id)).toEqual(
-      fixture.taskStream.expectedReplayEventIds,
-    );
-    expect(replay.events.map((event) => event.payload.type)).toEqual([
-      "task_changed",
-      "task_changed",
-    ]);
-    expect(replay.events.map((event) => event.payload.change.status)).toEqual([
-      "in_progress",
-      "review",
-    ]);
   });
 
   it("uses ring oldest/latest/maxlen to decide ring-gap snapshot refetch", () => {

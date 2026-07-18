@@ -44,13 +44,11 @@ describe("session history/read-only route harness", () => {
   it("wires runtime composition history routes only when an explicit provider is supplied", async () => {
     const withoutProvider = createOrchestratorRuntimeComposition({
       config,
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       boardYjsHostHttpClient: vi.fn(),
       sseReplayOnlyForTests: true,
     });
     const withProvider = createOrchestratorRuntimeComposition({
       config,
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       boardYjsHostHttpClient: vi.fn(),
       sseReplayOnlyForTests: true,
       sessionHistoryProvider: createProvider({

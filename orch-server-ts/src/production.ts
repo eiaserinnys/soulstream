@@ -166,7 +166,6 @@ export async function createLiveProductionApplication(
     enableSessionActionCommandRoutes: true,
     enableSessionBackgroundScheduleRoutes: true,
     loadSessionSnapshot: async () => dbCatalogRepository.loadSessionSnapshot(),
-    loadTaskSnapshot: dbCatalogRepository.loadTaskSnapshot,
     sessionHistoryProvider: dbCatalogRepository.sessionHistoryProvider,
     sessionHistoryCloseAfterHistorySync: false,
     sessionForegroundObservers: foregroundObservers,
@@ -276,13 +275,12 @@ export async function createLiveProductionApplication(
   let resourcesClosed = false;
   return {
     app,
-    startBackground: providers.runtime.taskChangeListener.start,
+    startBackground: async () => {},
     async closeResources() {
       if (resourcesClosed) return;
       resourcesClosed = true;
       await pushNotifier.close();
       await supervisorIngest.close();
-      await providers.runtime.taskChangeListener.stop();
       await dbCatalogRepository.close();
     },
   };
@@ -363,8 +361,6 @@ export function buildProductionRouteOptions(
     sessionSnapshotRoutes: providers.runtime.sessionSnapshotRoutes,
     sseReplayRoutes: providers.runtime.sseReplayRoutes,
     systemConfigRoutes: providers.systemConfigRoutes,
-    taskMutationRoutes: providers.taskMutationRoutes,
-    taskReadRoutes: providers.taskReadRoutes,
     userBackgroundRoutes: providers.userBackgroundRoutes,
     userPreferencesRoutes: providers.userPreferencesRoutes,
   };

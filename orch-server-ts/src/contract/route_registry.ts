@@ -11,7 +11,6 @@ export type RouteFamily =
   | "board_yjs_proxy"
   | "page_yjs"
   | "runbook"
-  | "task_tree"
   | "dashboard_static"
   | "session"
   | "node_proxy"
@@ -452,7 +451,6 @@ export function classifyRouteFamily(path: string): RouteFamily {
     return "page_yjs";
   }
   if (path.startsWith("/api/runbooks/")) return "runbook";
-  if (path.startsWith("/api/tasks")) return "task_tree";
   if (path.startsWith("/api/sessions")) return "session";
   if (path.startsWith("/api/nodes/")) return "node_proxy";
   if (path.startsWith("/api/config/settings") || path.startsWith("/api/dashboard/config")) {
@@ -493,7 +491,6 @@ function isControlPlanePath(path: string): boolean {
     path === "/api/nodes" ||
     path === "/api/nodes/stream" ||
     path === "/api/sessions/stream" ||
-    path === "/api/tasks/stream" ||
     path === "/api/execute"
   ) {
     return true;

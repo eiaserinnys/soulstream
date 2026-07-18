@@ -20,16 +20,7 @@ import {
   buildSessionSnapshotListResponse,
   type SessionSnapshotListResponse,
 } from "../session/session_snapshot_service.js";
-import type {
-  SessionStreamSnapshot,
-  TaskStreamSnapshot,
-} from "../sse/sse_replay_routes.js";
-import type {
-  InMemorySseReplayBroadcaster,
-  TaskStreamEvent,
-} from "../sse/replay_broadcaster.js";
-import type { LiveTaskMutationProvider } from "./live_task_mutation_provider.js";
-import type { TaskReadRouteProvider } from "../tasks/task_read_routes.js";
+import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
 import {
   createLiveDbSqlResolver,
@@ -54,13 +45,6 @@ import { createLiveRunbookRouteProvider } from "./live_runbook_route_provider.js
 import type { RunbookRouteProvider } from "../runbooks/runbook_route_types.js";
 import { createLiveSessionHistoryProvider } from "./live_session_history_provider.js";
 import { serializeSessionRow } from "./live_session_serialization.js";
-import {
-  createLiveTaskChangeListener,
-  type LiveTaskChangeListener,
-} from "./live_task_change_listener.js";
-import { createLiveTaskMutationProvider } from "./live_task_mutation_provider.js";
-import { createLiveTaskReadProvider } from "./live_task_read_provider.js";
-import { serializeTasksWithLinkedSessions } from "./live_task_serialization.js";
 import { createLiveUserPreferencesRepository } from "./live_user_preferences_repository.js";
 import type { UserBackgroundRepository } from "../user/user_background_routes.js";
 import {
@@ -82,19 +66,13 @@ export type LiveDbCatalogRepository = {
   readonly sessionHistoryProvider: ReturnType<typeof createLiveSessionHistoryProvider>;
   readonly sessionResourceAccessRepository: SessionResourceAccessRepository;
   readonly sessionReviewRepository: SessionReviewAcknowledgeRepository;
-  readonly taskReadProvider: TaskReadRouteProvider;
-  readonly taskMutationProvider: LiveTaskMutationProvider;
   readonly userPreferencesRepository: UserBackgroundRepository;
-  readonly createTaskChangeListener: (
-    broadcaster: InMemorySseReplayBroadcaster<TaskStreamEvent>,
-  ) => LiveTaskChangeListener;
   readonly loadSessionSnapshot: (
     input?: LoadSessionSnapshotInput,
   ) => Promise<SessionStreamSnapshot>;
   readonly listSessionSnapshots: (
     input: ListSessionSnapshotsInput,
   ) => Promise<SessionSnapshotListResponse>;
-  readonly loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   readonly close: () => Promise<void>;
 };
 
@@ -121,12 +99,10 @@ export type CreateLiveDbCatalogRepositoryOptions = {
   readonly maxConnections?: number;
   readonly closeTimeoutSeconds?: number;
   readonly sessionSnapshotLimit?: number;
-  readonly taskSnapshotLimit?: number;
   readonly boardAssetStorage?: LiveBoardAssetStorage | null;
 };
 
 const DEFAULT_SESSION_SNAPSHOT_LIMIT = 200;
-const DEFAULT_TASK_SNAPSHOT_LIMIT = 1000;
 
 export function createLiveDbCatalogRepository(
   options: CreateLiveDbCatalogRepositoryOptions = {},
@@ -165,17 +141,8 @@ export function createLiveDbCatalogRepository(
     sqlResolver,
     registry: options.registry,
   });
-  const taskReadProvider = createLiveTaskReadProvider({
-    sqlResolver,
-    registry: options.registry,
-  });
-  const taskMutationProvider = createLiveTaskMutationProvider({
-    sqlResolver,
-    registry: options.registry,
-  });
   const sessionSnapshotLimit =
     options.sessionSnapshotLimit ?? DEFAULT_SESSION_SNAPSHOT_LIMIT;
-  const taskSnapshotLimit = options.taskSnapshotLimit ?? DEFAULT_TASK_SNAPSHOT_LIMIT;
   async function loadSessionPage(
     input: LoadSessionSnapshotInput & {
       readonly sessionIds?: readonly string[];
@@ -272,12 +239,7 @@ export function createLiveDbCatalogRepository(
     sessionHistoryProvider,
     sessionResourceAccessRepository,
     sessionReviewRepository,
-    taskReadProvider,
-    taskMutationProvider,
     userPreferencesRepository: createLiveUserPreferencesRepository({ sqlResolver }),
-    createTaskChangeListener(broadcaster) {
-      return createLiveTaskChangeListener({ sqlResolver, broadcaster });
-    },
     async loadSessionSnapshot(input = {}) {
       return loadSessionPage(input, sessionSnapshotLimit, null);
     },
@@ -293,27 +255,6 @@ export function createLiveDbCatalogRepository(
         input.offset,
         input.limit,
       );
-    },
-    async loadTaskSnapshot() {
-      const sql = await sqlResolver.resolveSql();
-      const countRows = await sql`
-        SELECT COUNT(*)::int
-        FROM task_items
-        WHERE archived = FALSE
-      `;
-      const taskRows = await sql`
-        SELECT *
-        FROM task_items
-        WHERE archived = FALSE
-        ORDER BY parent_id NULLS FIRST, position_key ASC, created_at ASC
-        LIMIT ${taskSnapshotLimit}
-      `;
-      return {
-        tasks: await serializeTasksWithLinkedSessions(sql, taskRows, {
-          registry: options.registry,
-        }),
-        total: numberValue(countRows[0]?.count) ?? taskRows.length,
-      };
     },
     async close() {
       await sqlResolver.close();

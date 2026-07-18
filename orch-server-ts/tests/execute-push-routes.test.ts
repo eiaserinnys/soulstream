@@ -68,7 +68,7 @@ describe("Execute proxy and push route harnesses", () => {
     await app.close();
   });
 
-  it("registers Python auth contract rows for route inventory order 110-112", () => {
+  it("registers Python auth contract rows for route inventory order 98-100", () => {
     expect(executeProxyRouteAuthRequirements).toEqual({
       "POST /api/execute": true,
     });
@@ -78,12 +78,12 @@ describe("Execute proxy and push route harnesses", () => {
     });
 
     expect(fixtures.routeInventory.routes
-      .filter((route) => route.order >= 110 && route.order <= 112)
+      .filter((route) => route.order >= 98 && route.order <= 100)
       .map((route) => [route.order, route.methods[0], route.path, route.authRequired]))
       .toEqual([
-        [110, "POST", "/api/execute", true],
-        [111, "POST", "/api/push/register", true],
-        [112, "DELETE", "/api/push/register/{device_id}", true],
+        [98, "POST", "/api/execute", true],
+        [99, "POST", "/api/push/register", true],
+        [100, "DELETE", "/api/push/register/{device_id}", true],
       ]);
   });
 

@@ -10,7 +10,6 @@ import { RunbookRepository } from "../runbook/runbook_repository.js";
 import { SoulstreamScheduleRepository } from "../schedule/schedule_repository.js";
 import { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
 import { ChecklistRunbookProjectionRepository } from "../page/checklist_runbook_projection_repository.js";
-import { TaskTreeRepository } from "../task_tree/task_tree_repository.js";
 import { BoardRepository } from "./repositories/board_repository.js";
 import { BoardYjsRepository } from "./repositories/board_yjs_repository.js";
 import { CatalogRepository } from "./repositories/catalog_repository.js";
@@ -33,7 +32,6 @@ export class SessionDB extends SupervisorSessionDbFacade {
   private readonly ownsSql: boolean;
   private runbookRepository?: RunbookRepository;
   private customViewRepository?: CustomViewRepository;
-  private taskTreeRepository?: TaskTreeRepository;
   private scheduleRepository?: SoulstreamScheduleRepository;
   private sessionPageBindingRepository?: SessionPageBindingRepository;
   private checklistRunbookProjectionRepository?: ChecklistRunbookProjectionRepository;
@@ -82,10 +80,6 @@ export class SessionDB extends SupervisorSessionDbFacade {
 
   async ensureStableSessionOrderIndex(): Promise<void> {
     await this.sessionRepository.ensureStableSessionOrderIndex();
-  }
-
-  taskTree(): TaskTreeRepository {
-    return this.taskTreeRepository ??= new TaskTreeRepository(this.sql);
   }
 
   runbooks(): RunbookRepository {

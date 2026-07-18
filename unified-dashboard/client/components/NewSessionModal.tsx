@@ -40,7 +40,6 @@ export function NewSessionModal() {
   const addOptimisticSession = useDashboardStore((s) => s.addOptimisticSession);
   const selectedFolderId = useDashboardStore((s) => s.selectedFolderId);
   const newSessionSource = useDashboardStore((s) => s.newSessionSource);
-  const newSessionParentTask = useDashboardStore((s) => s.newSessionParentTask);
   const newSessionDefaults = useDashboardStore((s) => s.newSessionDefaults);
   const catalog = useDashboardStore((s) => s.catalog);
   const dashboardConfig = useDashboardStore((s) => s.dashboardConfig);
@@ -60,14 +59,12 @@ export function NewSessionModal() {
 
   // 폴더 초기화 1회 제한 — catalog 갱신 시 사용자 선택을 덮어쓰지 않도록
   const folderInitialized = useRef(false);
-  const taskIdempotencyKeyRef = useRef<string | null>(null);
 
   // 모달이 열릴 때 진입 경로에 따라 초기 폴더 설정
   // catalog가 로드되기 전에는 설정하지 않는다 (Base UI Select가 UUID를 fallback 표시하는 것 방지)
   useEffect(() => {
     if (!isOpen) {
       folderInitialized.current = false;
-      taskIdempotencyKeyRef.current = null;
       return;
     }
     if (folderInitialized.current || !catalog) return;
@@ -98,17 +95,7 @@ export function NewSessionModal() {
     }
   }, [isOpen, catalog]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!isOpen || !newSessionParentTask) {
-      taskIdempotencyKeyRef.current = null;
-      return;
-    }
-    taskIdempotencyKeyRef.current = createTaskIdempotencyKey(newSessionParentTask.id);
-  }, [isOpen, newSessionParentTask?.id]);
-
-  const draftKey = newSessionParentTask
-    ? `__draft__task__${newSessionParentTask.id}`
-    : `__draft__${selectedModalFolderId ?? "null"}`;
+  const draftKey = `__draft__${selectedModalFolderId ?? "null"}`;
 
   // 선택된 폴더명 계산
   const selectedModalFolderName =
@@ -147,13 +134,6 @@ export function NewSessionModal() {
         agentId: selectedAgentId || null,
         agent: selectedAgent ?? null,
         reasoningEffort: submitReasoningEffort,
-        ...(newSessionParentTask
-          ? {
-              parentTaskId: newSessionParentTask.id,
-              taskIdempotencyKey:
-                taskIdempotencyKeyRef.current ?? createTaskIdempotencyKey(newSessionParentTask.id),
-            }
-          : {}),
         boardPosition,
       });
 
@@ -170,7 +150,7 @@ export function NewSessionModal() {
       setSelectedAgentId("");
       setSelectedReasoningEffort(DEFAULT_REASONING_EFFORT);
     },
-    [queryClient, selectedModalFolderId, selectedAgentId, submitReasoningEffort, newSessionParentTask, agents, addOptimisticSession, clearDraft, draftKey, closeModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceRunbookItemId],
+    [queryClient, selectedModalFolderId, selectedAgentId, submitReasoningEffort, agents, addOptimisticSession, clearDraft, draftKey, closeModal, newSessionDefaults?.boardPosition, newSessionDefaults?.container, newSessionDefaults?.sourceRunbookItemId],
   );
 
   const handleOpenChange = useCallback(
@@ -262,20 +242,8 @@ export function NewSessionModal() {
       initialDraft={initialDraft}
       onDraftChange={handleDraftChange}
       fileUploadUrl="/attachments/sessions"
-      title={newSessionParentTask ? "하위 대화 시작" : "New Session"}
-      subtitle={
-        newSessionParentTask
-          ? `under ${newSessionParentTask.title}`
-          : `in ${selectedModalFolderName}`
-      }
+      title="New Session"
+      subtitle={`in ${selectedModalFolderName}`}
     />
   );
-}
-
-function createTaskIdempotencyKey(taskId: string): string {
-  const random =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `task-session:${taskId}:${random}`;
 }

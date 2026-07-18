@@ -30,7 +30,6 @@ describe("shadow runtime composition", () => {
         config,
         providers: {
           runtime: {
-            loadTaskSnapshot: async () => ({ tasks: [] }),
           },
         } as unknown as ShadowOrchestratorProviderBundle,
       }),
@@ -142,7 +141,6 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
     runtime: {
       boardYjsHostHttpClient: vi.fn(),
       loadSessionSnapshot: async () => ({ sessions: [] }),
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       sessionHistoryProvider: createInertProvider(),
       sseReplayOnlyForTests: true,
       pageYjsRoutes: createInertPageYjsRoutes(),
@@ -164,8 +162,6 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
     runbookRoutes: createInertProvider(),
     sessionCatalogRoutes: createInertProvider(),
     systemConfigRoutes: createInertProvider(),
-    taskMutationRoutes: createInertProvider(),
-    taskReadRoutes: createInertProvider(),
     userBackgroundRoutes: createInertProvider(),
     userPreferencesRoutes: createInertProvider(),
   };

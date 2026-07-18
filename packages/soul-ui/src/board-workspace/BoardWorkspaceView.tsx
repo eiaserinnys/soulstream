@@ -821,7 +821,6 @@ export function BoardWorkspaceView({
     const boardPosition = snapBoardPosition(resolved.x, resolved.y);
     openNewSessionModal(
       "folder",
-      null,
       {
         folderId: resolvedBoardFolderId,
         ...(boardContainer.kind === "runbook" ? { container: boardContainer } : {}),

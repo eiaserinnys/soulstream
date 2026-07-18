@@ -8,7 +8,6 @@
 import type { SessionBindingWarning } from "@soulstream/page-model";
 
 import type { SessionSummary } from "./session-types";
-import type { TaskItem } from "./task-types";
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh";
 
@@ -62,9 +61,6 @@ export interface CreateSessionRequest {
   reasoningEffort?: ReasoningEffort;
   /** orchestrator 모드 Claude OAuth 프로필 선택값. */
   oauth_profile_name?: string;
-  /** Task Tree parent task 아래 일반 New Session을 시작할 때 사용. */
-  parentTaskId?: string;
-  taskIdempotencyKey?: string;
   /** Existing page block converted by the worker into the canonical primary session_ref. */
   pageAnchor?: { pageId: string; blockId: string; expectedVersion: number };
   /** 첫 turn에만 주입할 구조화 context item. 서버 command wire 정본 이름을 유지한다. */
@@ -80,10 +76,7 @@ export interface CreateSessionResponse {
   nodeId?: string;
   /** 서버가 최종 조립하여 worker에 전달한 첫 사용자 메시지. */
   prompt?: string;
-  task?: TaskItem;
-  taskLinkError?: { message: string; type: string };
   warnings?: SessionCreationWarning[];
-  idempotent?: boolean;
 }
 
 /** POST /api/sessions/:id/intervene 요청 */

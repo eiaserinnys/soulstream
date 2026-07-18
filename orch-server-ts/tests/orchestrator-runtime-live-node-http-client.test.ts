@@ -34,7 +34,6 @@ describe("orchestrator runtime live node HTTP client", () => {
     const runtime = createOrchestratorRuntimeComposition({
       config,
       nowMs: () => 1_700_000_000_000,
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       nodeHttpFetch: fetch,
       sseReplayOnlyForTests: true,
     });

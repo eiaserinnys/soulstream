@@ -1147,7 +1147,7 @@ class SSEEventClaudeRuntimeTaskStarted(TypedDict):
 
 class SSEEventClaudeRuntimeTaskCreated(TypedDict):
     """
-    SSE: Claude Agent SDK TaskCreated hook lifecycle. Soulstream Task Tree와 별도 개념.
+    SSE: Claude Agent SDK TaskCreated hook lifecycle.
     """
 
     type: Literal['claude_runtime_task_created']
@@ -1201,7 +1201,7 @@ class SSEEventClaudeRuntimeTaskProgress(TypedDict):
 
 class SSEEventClaudeRuntimeTaskCompleted(TypedDict):
     """
-    SSE: Claude Agent SDK TaskCompleted hook lifecycle. Soulstream Task Tree와 별도 개념.
+    SSE: Claude Agent SDK TaskCompleted hook lifecycle.
     """
 
     type: Literal['claude_runtime_task_completed']

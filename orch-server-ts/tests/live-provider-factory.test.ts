@@ -11,7 +11,6 @@ import {
   type LiveProviderDependencies,
   type NodeConnectionSnapshot,
   type LiveProviderWiringInventoryEntry,
-  type TaskMutationResponse,
 } from "../src/index.js";
 
 const config = parseOrchServerConfig({
@@ -253,39 +252,6 @@ describe("live provider factory boundary", () => {
       requireSessionAccess: expect.any(Function),
       requireFolderAccess: expect.any(Function),
     });
-    expect(bundle.taskReadRoutes.provider).toBe(
-      dependencies.dbCatalogRepository.taskReadProvider,
-    );
-    await expect(
-      bundle.taskMutationRoutes.provider.createTask({
-        sessionId: "sess-task",
-        title: "Task",
-        description: "",
-        acceptanceCriteria: "",
-        verificationOwner: "agent",
-        status: "open",
-        setActive: false,
-      }),
-    ).resolves.toMatchObject({
-      task: { id: "task-live" },
-      operation: {
-        id: "op-live",
-        operationType: "create_task_item",
-        actorEventId: 9,
-      },
-      eventId: 9,
-    });
-    expect(runtimeServices.taskBroadcaster.bufferedEvents.at(-1)?.payload).toEqual({
-      type: "task_changed",
-      change: {
-        table: "task_operations",
-        action: "UPDATE",
-        task_id: "task-live",
-        operation_id: "op-live",
-        operation_type: "create_task_item",
-        actor_event_id: 9,
-      },
-    });
     await expect(
       bundle.configProviders.atomRoutes.configProvider.getConfig(),
     ).resolves.toEqual({
@@ -455,7 +421,6 @@ describe("live provider factory boundary", () => {
           loadSnapshot: expect.any(Function),
         },
       },
-      taskChangeListener: expect.any(Object),
     });
   });
 });
@@ -464,7 +429,6 @@ function createRuntimeServices(dependencies: LiveProviderDependencies) {
   return createOrchestratorRuntimeServices({
     config,
     loadSessionSnapshot: async () => dependencies.dbCatalogRepository.loadSessionSnapshot(),
-    loadTaskSnapshot: dependencies.dbCatalogRepository.loadTaskSnapshot,
     sessionHistoryProvider:
       dependencies.dbCatalogRepository.sessionHistoryProvider,
     enableSessionActionCommandRoutes: true,
@@ -482,17 +446,6 @@ function createLiveDependencies(): LiveProviderDependencies {
     readLastEventId: vi.fn(async () => 0),
     streamEventsRaw: vi.fn(() => emptyRawEvents()),
   };
-  const taskMutationResponse = {
-    task: { id: "task-live", status: "open" },
-    operation: {
-      id: "op-live",
-      taskId: "task-live",
-      operationType: "create_task_item",
-      actorEventId: 9,
-    },
-    eventId: 9,
-  } satisfies TaskMutationResponse;
-
   return {
     dbCatalogRepository: {
       adminUsersRepository: {
@@ -556,7 +509,6 @@ function createLiveDependencies(): LiveProviderDependencies {
         nextCursor: null,
         hasMore: false,
       })),
-      loadTaskSnapshot: vi.fn(async () => ({ tasks: [] })),
       sessionHistoryProvider,
       sessionResourceAccessRepository: {
         getSessionAccessRecord: vi.fn(async () => null),
@@ -568,28 +520,6 @@ function createLiveDependencies(): LiveProviderDependencies {
           session: null,
         })),
       },
-      taskReadProvider: {
-        listTasks: vi.fn(async () => []),
-        getTaskContext: vi.fn(async () => ({
-          activeTask: null,
-          activeTaskPath: [],
-          linkedTasks: [],
-        })),
-      },
-      taskMutationProvider: {
-        createTask: vi.fn(async () => taskMutationResponse),
-        setTaskStatus: vi.fn(async () => taskMutationResponse),
-        updateTask: vi.fn(async () => taskMutationResponse),
-        moveTask: vi.fn(async () => taskMutationResponse),
-        linkTask: vi.fn(async () => taskMutationResponse),
-        holdTask: vi.fn(async () => taskMutationResponse),
-        archiveTask: vi.fn(async () => taskMutationResponse),
-        pinTask: vi.fn(async () => taskMutationResponse),
-        listTaskOperations: vi.fn(async () => []),
-        findTaskScopedSession: vi.fn(async () => null),
-        getTask: vi.fn(async () => null),
-        createTaskScopedChild: vi.fn(async () => taskMutationResponse),
-      },
       userPreferencesRepository: {
         get: vi.fn(async () => null),
         put: vi.fn(async (email, prefs) => ({ email, prefs })),
@@ -600,11 +530,6 @@ function createLiveDependencies(): LiveProviderDependencies {
           backgroundMime: input.mime,
         })),
       },
-      createTaskChangeListener: vi.fn(() => ({
-        start: vi.fn(async () => undefined),
-        stop: vi.fn(async () => undefined),
-        isRunning: vi.fn(() => false),
-      })),
     },
     nodeHttpClient: {
       boardYjsHostHttpClient: vi.fn(async () => ({ statusCode: 200 })),

@@ -1114,12 +1114,12 @@ class TestAttachmentPaths:
         await node.send_create_session(
             prompt="test",
             session_id="sid-1",
-            extra_context_items=[{"key": "task_tree_parent", "content": "parent"}],
+            extra_context_items=[{"key": "source_context", "content": "context"}],
             attachment_paths=["/incoming/abc/file.txt"],
         )
 
         sent = ws.send_json.call_args[0][0]
-        assert sent["extra_context_items"] == [{"key": "task_tree_parent", "content": "parent"}]
+        assert sent["extra_context_items"] == [{"key": "source_context", "content": "context"}]
         assert sent["attachment_paths"] == ["/incoming/abc/file.txt"]
 
     async def test_send_create_session_no_extra_context_items_when_no_attachment_paths(self, node, ws):

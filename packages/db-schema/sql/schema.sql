@@ -516,56 +516,6 @@ CREATE TABLE IF NOT EXISTS event_search_corpus_stats (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS task_items (
-    id                    TEXT PRIMARY KEY,
-    parent_id             TEXT REFERENCES task_items(id) ON DELETE SET NULL,
-    position_key          DOUBLE PRECISION NOT NULL DEFAULT 0,
-    title                 TEXT NOT NULL,
-    description           TEXT NOT NULL DEFAULT '',
-    acceptance_criteria   TEXT NOT NULL DEFAULT '',
-    verification_owner    TEXT NOT NULL DEFAULT 'agent',
-    status                TEXT NOT NULL DEFAULT 'open',
-    linked_session_id     TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    linked_node_id        TEXT,
-    active_for_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    created_from_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    created_from_event_id INTEGER,
-    navigation_session_id TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    navigation_node_id    TEXT,
-    navigation_event_id   INTEGER,
-    archived              BOOLEAN NOT NULL DEFAULT FALSE,
-    pinned                BOOLEAN NOT NULL DEFAULT FALSE,
-    version               INTEGER NOT NULL DEFAULT 1,
-    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CHECK (status IN (
-        'open',
-        'in_progress',
-        'agent_done',
-        'verified_done',
-        'reopened',
-        'blocked',
-        'cancelled'
-    )),
-    CHECK (verification_owner IN ('agent', 'user', 'both'))
-);
-
-ALTER TABLE task_items ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT FALSE;
-
-CREATE TABLE IF NOT EXISTS task_operations (
-    id                 TEXT PRIMARY KEY,
-    task_id            TEXT REFERENCES task_items(id) ON DELETE SET NULL,
-    operation_type     TEXT NOT NULL,
-    actor_kind         TEXT NOT NULL DEFAULT 'agent',
-    actor_session_id   TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
-    actor_event_id     INTEGER,
-    actor_user_id      TEXT,
-    idempotency_key    TEXT,
-    payload_json       JSONB NOT NULL DEFAULT '{}',
-    reason             TEXT,
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 CREATE TABLE IF NOT EXISTS claude_transcript_entries (
     id          BIGSERIAL PRIMARY KEY,
     project_key TEXT NOT NULL,
@@ -631,15 +581,6 @@ CREATE INDEX IF NOT EXISTS idx_board_yjs_catalog_cache_folder
     ON board_yjs_catalog_cache (folder_id);
 CREATE INDEX IF NOT EXISTS idx_board_yjs_updates_document ON board_yjs_updates (document_name, id);
 
-CREATE INDEX IF NOT EXISTS idx_task_items_parent ON task_items (parent_id, position_key);
-CREATE INDEX IF NOT EXISTS idx_task_items_status ON task_items (status) WHERE archived = FALSE;
-CREATE INDEX IF NOT EXISTS idx_task_items_active_session ON task_items (active_for_session_id) WHERE active_for_session_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_task_items_linked_session ON task_items (linked_session_id) WHERE linked_session_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_task_items_sibling_sort ON task_items (parent_id, pinned DESC, updated_at DESC) WHERE archived = FALSE;
-CREATE INDEX IF NOT EXISTS idx_task_operations_task ON task_operations (task_id, created_at DESC);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_task_operations_idempotency
-    ON task_operations (idempotency_key)
-    WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_claude_transcript_load
     ON claude_transcript_entries (project_key, session_id, subpath, id);
 CREATE INDEX IF NOT EXISTS idx_claude_transcript_sessions
@@ -647,43 +588,6 @@ CREATE INDEX IF NOT EXISTS idx_claude_transcript_sessions
 CREATE UNIQUE INDEX IF NOT EXISTS idx_claude_transcript_entry_uuid
     ON claude_transcript_entries (project_key, session_id, subpath, entry_uuid)
     WHERE entry_uuid IS NOT NULL;
-
-CREATE OR REPLACE FUNCTION task_tree_notify_change()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-DECLARE
-    v_payload JSONB;
-BEGIN
-    IF TG_TABLE_NAME = 'task_items' THEN
-        v_payload := jsonb_build_object(
-            'table', TG_TABLE_NAME,
-            'action', TG_OP,
-            'task_id', NEW.id,
-            'updated_at', NEW.updated_at
-        );
-    ELSE
-        v_payload := jsonb_build_object(
-            'table', TG_TABLE_NAME,
-            'action', TG_OP,
-            'task_id', NEW.task_id,
-            'operation_id', NEW.id,
-            'operation_type', NEW.operation_type,
-            'actor_event_id', NEW.actor_event_id
-        );
-    END IF;
-    PERFORM pg_notify('task_tree_changed', v_payload::text);
-    RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_task_items_notify ON task_items;
-CREATE TRIGGER trg_task_items_notify
-AFTER INSERT OR UPDATE ON task_items
-FOR EACH ROW EXECUTE FUNCTION task_tree_notify_change();
-
-DROP TRIGGER IF EXISTS trg_task_operations_notify ON task_operations;
-CREATE TRIGGER trg_task_operations_notify
-AFTER INSERT OR UPDATE ON task_operations
-FOR EACH ROW EXECUTE FUNCTION task_tree_notify_change();
 
 -- 뷰포트 가상화 지원: parent_event_id 기반 자식 조회 인덱스
 CREATE INDEX IF NOT EXISTS idx_events_parent ON events (session_id, parent_event_id);

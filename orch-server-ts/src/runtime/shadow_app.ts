@@ -30,13 +30,8 @@ import type { PushRouteOptions } from "../push/push_routes.js";
 import type { RunbookRouteOptions } from "../runbooks/runbook_route_types.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
 import type { SessionHistoryProvider } from "../session/session_history_service.js";
-import type {
-  SessionStreamSnapshot,
-  TaskStreamSnapshot,
-} from "../sse/sse_replay_routes.js";
+import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import type { SystemConfigRouteOptions } from "../system/system_config_routes.js";
-import type { TaskMutationRouteOptions } from "../tasks/task_mutation_routes.js";
-import type { TaskReadRouteOptions } from "../tasks/task_read_routes.js";
 import type { UserBackgroundRouteOptions } from "../user/user_background_routes.js";
 import type { UserPreferencesRouteOptions } from "../user/user_preferences_routes.js";
 import {
@@ -49,14 +44,12 @@ export type ShadowOrchestratorRuntimeProviders = {
   requestIdGenerator?: NodeCommandRequestIdGenerator;
   commandTimeoutMs?: number;
   sessionSseInstanceId?: string;
-  taskSseInstanceId?: string;
   sseRingMaxlen?: number;
   sseKeepaliveMs?: number;
   sseReplayOnlyForTests?: boolean;
   nodeStreamKeepaliveMs?: number;
   nodeStreamCloseAfterInitialSnapshot?: boolean;
   loadSessionSnapshot?: (request: FastifyRequest) => Promise<SessionStreamSnapshot>;
-  loadTaskSnapshot: () => Promise<TaskStreamSnapshot>;
   sessionHistoryProvider: SessionHistoryProvider;
   sessionHistoryKeepaliveMs?: number;
   sessionHistoryCloseAfterHistorySync?: boolean;
@@ -98,8 +91,6 @@ export type ShadowOrchestratorProviderBundle = {
   runbookRoutes: RunbookRouteOptions;
   sessionCatalogRoutes: SessionCatalogRouteOptions;
   systemConfigRoutes: SystemConfigRouteOptions;
-  taskMutationRoutes: TaskMutationRouteOptions;
-  taskReadRoutes: TaskReadRouteOptions;
   userBackgroundRoutes: UserBackgroundRouteOptions;
   userPreferencesRoutes: UserPreferencesRouteOptions;
 };
@@ -141,8 +132,6 @@ export type ShadowOrchestratorRouteOptions = Required<
     | "sessionSnapshotRoutes"
     | "sseReplayRoutes"
     | "systemConfigRoutes"
-    | "taskMutationRoutes"
-    | "taskReadRoutes"
     | "userBackgroundRoutes"
     | "userPreferencesRoutes"
   >
@@ -261,14 +250,12 @@ export const shadowRouteCompositionRequirements = [
   { owner: "session.snapshot", paths: ["runtime"] },
   {
     owner: "sse.replay",
-    paths: ["runtime.loadSessionSnapshot", "runtime.loadTaskSnapshot"],
+    paths: ["runtime.loadSessionSnapshot"],
   },
   {
     owner: "system.config",
     paths: ["systemConfigRoutes.provider", "systemConfigRoutes.httpClient"],
   },
-  { owner: "tasks.mutation", paths: ["taskMutationRoutes.provider"] },
-  { owner: "tasks.read", paths: ["taskReadRoutes.provider"] },
   {
     owner: "user.background",
     paths: [
@@ -413,8 +400,6 @@ function buildShadowRouteOptions(
     sessionSnapshotRoutes: runtime.routeOptions.sessionSnapshotRoutes,
     sseReplayRoutes: runtime.routeOptions.sseReplayRoutes,
     systemConfigRoutes: providers.systemConfigRoutes,
-    taskMutationRoutes: providers.taskMutationRoutes,
-    taskReadRoutes: providers.taskReadRoutes,
     userBackgroundRoutes: providers.userBackgroundRoutes,
     userPreferencesRoutes: providers.userPreferencesRoutes,
   };

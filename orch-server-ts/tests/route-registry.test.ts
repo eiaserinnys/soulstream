@@ -131,13 +131,11 @@ describe("route registry", () => {
       ["GET", "/api/nodes/stream", "control_plane"],
       ["GET", "/api/sessions/stream", "control_plane"],
       ["GET", "/api/sessions/{session_id}/events", "control_plane"],
-      ["GET", "/api/tasks/stream", "control_plane"],
       ["POST", "/api/execute", "control_plane"],
       ["POST", "/api/board-yjs/host/{operation}", "board_yjs_proxy"],
       ["POST", "/api/page-yjs/host/{operation}", "page_yjs"],
       ["WEBSOCKET", "/yjs/page/{pageId}", "page_yjs"],
       ["GET", "/api/runbooks/{runbook_id}", "runbook"],
-      ["GET", "/api/tasks", "task_tree"],
       ["GET", "/api/admin/users", "admin_or_user"],
       ["GET", "/api/sessions/{session_id}/messages", "session"],
     ] as const;

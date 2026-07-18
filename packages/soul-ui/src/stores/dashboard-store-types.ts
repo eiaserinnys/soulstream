@@ -19,7 +19,6 @@ import type {
   BoardContainerRef,
   CatalogFolderReorderItem,
   TokenUsage,
-  TaskItem,
 } from "@shared/types";
 import type { ProcessingContext } from "./processing-context";
 import type { ClaudeRuntimeView } from "./claude-runtime-state";
@@ -179,9 +178,6 @@ export interface DashboardState {
   /** New Session 모달을 연 진입 경로 ('folder': 폴더 뷰, 'feed': 피드 뷰) */
   newSessionSource: "folder" | "feed";
 
-  /** Task Tree에서 특정 parent task 아래 새 일반 세션을 시작할 때의 parent task */
-  newSessionParentTask: TaskItem | null;
-
   /** 특정 진입점에서 New Session 모달에 주입하는 초기 선택값 */
   newSessionDefaults: NewSessionDefaults | null;
 
@@ -316,7 +312,6 @@ export interface DashboardActions {
   // New Session 모달
   openNewSessionModal: (
     source?: "folder" | "feed",
-    parentTask?: TaskItem | null,
     defaults?: NewSessionDefaults | null,
   ) => void;
   closeNewSessionModal: () => void;

@@ -102,10 +102,6 @@ export type {
   MetadataUpdatedStreamEvent,
   AgentInfo,
   AgentProfile,
-  TaskItem,
-  TaskListResponse,
-  TaskStatus,
-  VerificationOwner,
 } from "./types";
 
 // === Mappers ===

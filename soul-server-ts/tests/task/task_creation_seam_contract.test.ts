@@ -21,7 +21,6 @@ describe("TaskCreationHook production seam", () => {
   it("routes every production create entrypoint through TaskManager.createTask", () => {
     const entrypoints = [
       "mcp/tools/session_mgmt.ts",
-      // task_tree_service.ts는 PR-AT에서 v1 태스크 생성이 폐기되어 생성 진입점이 아니다.
       "upstream/task_runtime_commands.ts",
       "supervisor/activation.ts",
       "llm/executor.ts",

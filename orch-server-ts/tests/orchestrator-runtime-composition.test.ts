@@ -93,13 +93,11 @@ describe("orchestrator runtime composition harness", () => {
     };
     expect(() => createOrchestratorRuntimeComposition({
       config,
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       pageYjsRoutes: routeOptions,
     })).toThrow("Page Yjs production routes require BOARD_YJS_HOST_MODE=orch");
 
     const runtime = createOrchestratorRuntimeComposition({
       config: { ...config, boardYjsHostMode: "orch" },
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       boardYjsRoutes: {
         createService: () => ({
           handleConnection: vi.fn(),
@@ -139,7 +137,6 @@ describe("orchestrator runtime composition harness", () => {
         `runtime-${commandType}-${sequence}`,
       commandTimeoutMs: 1_000,
       loadSessionSnapshot: async () => ({ sessions: [] }),
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       boardYjsHostHttpClient: vi.fn(),
       sseReplayOnlyForTests: true,
     });
@@ -217,7 +214,6 @@ describe("orchestrator runtime composition harness", () => {
       config,
       sessionSseInstanceId: "runtime-session-stream",
       loadSessionSnapshot: async () => ({ sessions: [] }),
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       boardYjsHostHttpClient: vi.fn(),
       sseReplayOnlyForTests: true,
     });
@@ -276,7 +272,6 @@ describe("orchestrator runtime composition harness", () => {
       config,
       nowMs: () => 1_700_000_000_000,
       loadSessionSnapshot: async () => ({ sessions: [] }),
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       boardYjsHostHttpClient: httpClient,
       sseReplayOnlyForTests: true,
     });
@@ -333,9 +328,7 @@ describe("orchestrator runtime composition harness", () => {
     const runtime = createOrchestratorRuntimeComposition({
       config,
       sessionSseInstanceId: "runtime-session-stream",
-      taskSseInstanceId: "runtime-task-stream",
       loadSessionSnapshot,
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       boardYjsHostHttpClient: vi.fn(),
       sseReplayOnlyForTests: true,
     });
@@ -376,7 +369,6 @@ describe("orchestrator runtime composition harness", () => {
     const runtime = createOrchestratorRuntimeComposition({
       config,
       sessionSseInstanceId: "runtime-session-stream",
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       boardYjsHostHttpClient: vi.fn(),
       sseReplayOnlyForTests: true,
     });
@@ -437,7 +429,6 @@ describe("orchestrator runtime composition harness", () => {
     const runtime = createOrchestratorRuntimeComposition({
       config,
       nowMs: () => 1_700_000_000_000,
-      loadTaskSnapshot: async () => ({ tasks: [] }),
       boardYjsHostHttpClient: vi.fn(),
       sseReplayOnlyForTests: true,
       nodeStreamCloseAfterInitialSnapshot: true,

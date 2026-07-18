@@ -346,59 +346,6 @@ describe("session command HTTP route harness", () => {
     });
   });
 
-  it("returns a task-scoped idempotent response without dispatching another node command", async () => {
-    const { registry, transports, router, bridge } = createHarness();
-    const connectionId = registerNode(registry);
-    const send = vi.fn();
-    transports.attach({
-      nodeId: "fake-node",
-      connectionId,
-      transport: { send },
-    });
-    const app = createApp({
-      config,
-      sessionCommandRoutes: {
-        router,
-        bridge,
-        createSessionLifecycle: {
-          prepare: vi.fn(async ({ body }) => ({
-            payload: body,
-            existingResponse: {
-              agentSessionId: "existing-child",
-              nodeId: "fake-node",
-              task: { id: "child-task", status: "in_progress" as const },
-              taskOperation: { id: "op-1", operationType: "start_child_session" },
-              taskEventId: 303,
-              idempotent: true,
-            },
-          })),
-          complete: vi.fn(async () => ({})),
-        },
-      },
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/api/sessions",
-      payload: {
-        prompt: "child",
-        parentTaskId: "parent-task",
-        taskIdempotencyKey: "idem-child",
-      },
-    });
-
-    expect(response.statusCode).toBe(201);
-    expect(response.json()).toMatchObject({
-      agentSessionId: "existing-child",
-      task: { id: "child-task" },
-      taskOperation: { operationType: "start_child_session" },
-      taskEventId: 303,
-      idempotent: true,
-      prompt: "child",
-    });
-    expect(send).not.toHaveBeenCalled();
-  });
-
   it("maps respond request_id to inputRequestId without letting body.requestId override the command requestId", async () => {
     const { registry, transports, router, bridge } = createHarness();
     const connectionId = registerNode(registry);

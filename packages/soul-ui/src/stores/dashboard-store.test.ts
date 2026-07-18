@@ -49,7 +49,6 @@ import type {
   ToolNode,
   SessionNode,
   ResultNode,
-  TaskItem,
 } from "../shared/types";
 
 /** 트리에서 특정 타입의 모든 노드를 수집하는 헬퍼 */
@@ -681,22 +680,8 @@ describe("dashboard-store", () => {
       expect(useDashboardStore.getState().isNewSessionModalOpen).toBe(false);
     });
 
-    it("should keep and clear the parent task for task-scoped new sessions", () => {
-      const parentTask = {
-        id: "task-parent",
-        title: "Parent",
-        status: "in_progress",
-      } as TaskItem;
-
-      useDashboardStore.getState().openNewSessionModal("feed", parentTask);
-      expect(useDashboardStore.getState().newSessionParentTask).toBe(parentTask);
-
-      useDashboardStore.getState().closeNewSessionModal();
-      expect(useDashboardStore.getState().newSessionParentTask).toBeNull();
-    });
-
     it("should keep and clear new session defaults", () => {
-      useDashboardStore.getState().openNewSessionModal("feed", null, {
+      useDashboardStore.getState().openNewSessionModal("feed", {
         folderId: "folder-parent",
         nodeId: "node-parent",
         agentId: "agent-parent",
