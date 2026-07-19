@@ -199,6 +199,27 @@
   user-select: text;
 }
 
+[data-slot="chat-body"],
+[data-slot="chat-body"] p,
+[data-slot="chat-body"] h1,
+[data-slot="chat-body"] h2,
+[data-slot="chat-body"] h3,
+[data-slot="chat-body"] h4,
+[data-slot="chat-body"] li,
+[data-slot="chat-body"] pre,
+[data-slot="chat-body"] code,
+[data-slot="chat-body"] table,
+[data-slot="chat-tool-body"],
+[data-slot="chat-input-body"] {
+  font-size: var(--chat-font-size);
+  line-height: var(--chat-line-height);
+}
+
+[data-slot="tool-call-group-toggle"] {
+  font-size: 12px;
+  line-height: 18px;
+}
+
 /* 모바일 탭 패널 fade 전환 — keepMounted + [hidden] 오버라이드.
    base-ui TabsPanel(ui/tabs.tsx L70-78)은 data-slot="tabs-content"를 부여한다.
    .mobile-tabs 스코프 내에서만 동작하여 다른 Tabs 사용처에는 영향을 주지 않는다. */

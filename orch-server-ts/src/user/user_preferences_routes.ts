@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const ALLOWED_APPEARANCES = new Set(["system", "light", "dark"]);
 const ALLOWED_WALLPAPER_MODES = new Set(["bokeh", "metal", "photo", "plain"]);
+const ALLOWED_CHAT_FONT_SIZES = new Set([14, 15, 16, 17, 18]);
 
 const DEFAULT_GLASS_SETTINGS = {
   enabled: true,
@@ -23,6 +24,7 @@ const GLASS_NUMERIC_LIMITS = {
 
 export type NormalizedUserPreferences = {
   appearance: "system" | "light" | "dark";
+  chatFontSize: 14 | 15 | 16 | 17 | 18;
   wallpaper: {
     mode: "bokeh" | "metal" | "photo" | "plain";
     customImage?: string;
@@ -163,6 +165,7 @@ export function serializePreferences(row: UserPreferencesRecord): Record<string,
     email: normalizeEmail(row.email),
     preferences: prefs,
     appearance: prefs.appearance,
+    chatFontSize: prefs.chatFontSize,
     wallpaper: prefs.wallpaper,
     hasBackground: hasBackground(row),
     backgroundUrl,
@@ -192,6 +195,7 @@ export function normalizeUserPreferences(value: unknown): NormalizedUserPreferen
 
   return {
     appearance,
+    chatFontSize: normalizeChatFontSize(source.chatFontSize),
     wallpaper,
     glass: normalizeGlassSettings(source.glass),
   };
@@ -206,16 +210,23 @@ export function preferencesFromPayload(
   if (isPlainObject(payload.prefs)) {
     Object.assign(patch, payload.prefs);
   }
-  for (const key of ["appearance", "wallpaper", "glass"] as const) {
+  for (const key of ["appearance", "chatFontSize", "wallpaper", "glass"] as const) {
     if (Object.hasOwn(payload, key)) {
       patch[key] = payload[key];
     }
   }
   return normalizeUserPreferences({
     appearance: Object.hasOwn(patch, "appearance") ? patch.appearance : existing.appearance,
+    chatFontSize: Object.hasOwn(patch, "chatFontSize") ? patch.chatFontSize : existing.chatFontSize,
     wallpaper: Object.hasOwn(patch, "wallpaper") ? patch.wallpaper : existing.wallpaper,
     glass: Object.hasOwn(patch, "glass") ? patch.glass : existing.glass,
   });
+}
+
+function normalizeChatFontSize(value: unknown): NormalizedUserPreferences["chatFontSize"] {
+  return typeof value === "number" && Number.isInteger(value) && ALLOWED_CHAT_FONT_SIZES.has(value)
+    ? value as NormalizedUserPreferences["chatFontSize"]
+    : 14;
 }
 
 function normalizeGlassSettings(value: unknown): NormalizedUserPreferences["glass"] {

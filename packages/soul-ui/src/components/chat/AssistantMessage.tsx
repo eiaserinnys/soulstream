@@ -60,13 +60,13 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
           )}
         </div>
         {msg.isStreaming ? (
-          <div className="text-base leading-snug text-foreground whitespace-pre-wrap break-words">
+          <div data-slot="chat-body" className="text-base leading-snug text-foreground whitespace-pre-wrap break-words">
             {msg.content}
             <span className="inline-block w-1.5 h-3.5 bg-foreground/60 ml-0.5 align-text-bottom animate-caret-blink" aria-hidden="true" />
           </div>
         ) : (
-          <div className="break-words text-base leading-snug text-foreground">
-            <MarkdownContent content={msg.content} />
+          <div data-slot="chat-body" className="break-words text-base leading-snug text-foreground">
+            <MarkdownContent content={msg.content} enableBlockquoteCopy />
           </div>
         )}
       </div>

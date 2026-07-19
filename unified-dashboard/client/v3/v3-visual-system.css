@@ -118,11 +118,27 @@
 }
 
 .v3-description-content,
-.v3-description-editor textarea,
-.v3-chat-pane [data-slot="chat-message-bubble"] .text-base,
-.v3-chat-pane [data-slot="chat-message-bubble"] p,
-.v3-chat-pane [data-slot="chat-message-bubble"] li {
+.v3-description-editor textarea {
   font: var(--v3-type-body) var(--v3-font-family);
+  letter-spacing: 0;
+}
+
+.v3-chat-pane [data-slot="chat-body"],
+.v3-chat-pane [data-slot="chat-body"] p,
+.v3-chat-pane [data-slot="chat-body"] h1,
+.v3-chat-pane [data-slot="chat-body"] h2,
+.v3-chat-pane [data-slot="chat-body"] h3,
+.v3-chat-pane [data-slot="chat-body"] h4,
+.v3-chat-pane [data-slot="chat-body"] li,
+.v3-chat-pane [data-slot="chat-body"] pre,
+.v3-chat-pane [data-slot="chat-body"] code,
+.v3-chat-pane [data-slot="chat-body"] table,
+.v3-chat-pane [data-slot="chat-tool-body"],
+.v3-chat-pane [data-slot="chat-input-body"] {
+  font-family: var(--v3-font-family);
+  font-size: var(--chat-font-size);
+  font-weight: 450;
+  line-height: var(--chat-line-height);
   letter-spacing: 0;
 }
 
@@ -381,8 +397,11 @@
 }
 
 .v3-chat-pane [data-slot="chat-tool-row"] {
-  padding-top: var(--v3-space-2);
-  padding-bottom: var(--v3-space-3);
+  padding-block: 4px;
+}
+
+.v3-chat-pane [data-slot="tool-call-group-toggle"] {
+  font: var(--v3-type-meta) var(--v3-font-family);
 }
 
 .v3-chat-pane [data-slot="chat-input-composer"] {

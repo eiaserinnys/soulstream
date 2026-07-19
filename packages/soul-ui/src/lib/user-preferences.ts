@@ -9,11 +9,17 @@ import {
   type LiquidGlassSettings,
 } from "./glass-settings";
 import type { Appearance } from "../hooks/useTheme";
+import {
+  DEFAULT_CHAT_FONT_SIZE,
+  normalizeChatFontSize,
+  type ChatFontSize,
+} from "./chat-typography";
 
 export interface UserPreferencesSnapshot {
   appearance: Appearance;
   wallpaper: WallpaperSettings;
   glass: LiquidGlassSettings;
+  chatFontSize: ChatFontSize;
 }
 
 export interface UserPreferencesResponse extends UserPreferencesSnapshot {
@@ -28,6 +34,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferencesSnapshot = {
   appearance: "system",
   wallpaper: DEFAULT_WALLPAPER_SETTINGS,
   glass: DEFAULT_LIQUID_GLASS_SETTINGS,
+  chatFontSize: DEFAULT_CHAT_FONT_SIZE,
 };
 
 const CACHE_PREFIX = "soul-user-preferences:";
@@ -40,6 +47,7 @@ export function normalizeUserPreferences(value: unknown): UserPreferencesSnapsho
     appearance: APPEARANCES.has(source.appearance as Appearance) ? source.appearance as Appearance : "system",
     wallpaper: normalizeWallpaperSettings(source.wallpaper),
     glass: normalizeLiquidGlassSettings(source.glass),
+    chatFontSize: normalizeChatFontSize(source.chatFontSize),
   };
 }
 
@@ -52,6 +60,7 @@ export function normalizeUserPreferencesResponse(value: unknown): UserPreference
     appearance: preferences.appearance,
     wallpaper: preferences.wallpaper,
     glass: preferences.glass,
+    chatFontSize: preferences.chatFontSize,
     hasBackground: Boolean(source.hasBackground),
     backgroundUrl: typeof source.backgroundUrl === "string" ? source.backgroundUrl : null,
     updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : null,

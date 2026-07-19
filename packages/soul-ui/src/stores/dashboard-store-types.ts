@@ -24,6 +24,7 @@ import type { ProcessingContext } from "./processing-context";
 import type { ClaudeRuntimeView } from "./claude-runtime-state";
 import type { WallpaperMode, WallpaperSettings } from "../lib/wallpaper-settings";
 import type { LiquidGlassSettings } from "../lib/glass-settings";
+import type { ChatFontSize } from "../lib/chat-typography";
 
 // === Dashboard Config ===
 
@@ -94,7 +95,7 @@ export interface BoardItemFocusRequest {
 
 export type LeftNavigationMode = "folders" | "feed";
 
-export type { LiquidGlassSettings, WallpaperMode, WallpaperSettings };
+export type { ChatFontSize, LiquidGlassSettings, WallpaperMode, WallpaperSettings };
 
 // === ProcessEventsResult ===
 
@@ -222,6 +223,9 @@ export interface DashboardState {
 
   /** 리퀴드 글래스 설정. 계정 preferences glass가 정본이다. */
   liquidGlass: LiquidGlassSettings;
+
+  /** 채팅 본문 글자 크기. 계정 preferences chatFontSize가 정본이다. */
+  chatFontSize: ChatFontSize;
 
   /** 오른쪽 Chat 슬롯에 표시 중인 보드 마크다운 문서 */
   activeBoardDocumentId: string | null;
@@ -388,6 +392,9 @@ export interface DashboardActions {
   // 리퀴드 글래스 설정
   setLiquidGlass: (settings: Partial<LiquidGlassSettings>) => void;
   setLiquidGlassEnabled: (enabled: boolean) => void;
+
+  // 채팅 본문 글자 크기
+  setChatFontSize: (fontSize: ChatFontSize | number) => void;
 
   // 활성 세션 해제 (selectedFolderId를 유지하면서 세션만 해제)
   clearActiveSession: () => void;

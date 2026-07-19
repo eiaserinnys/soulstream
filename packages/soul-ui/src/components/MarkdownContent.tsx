@@ -6,6 +6,8 @@
  * @tailwindcss/typography (prose)를 사용하지 않고 커스텀 컴포넌트로 스타일링합니다.
  */
 
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Check, Copy } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -17,6 +19,7 @@ interface MarkdownContentProps {
   content: string;
   compact?: boolean;
   linkTone?: "default" | "onUserBubble";
+  enableBlockquoteCopy?: boolean;
 }
 
 const defaultAnchorClass = "text-accent-blue hover:underline";
@@ -211,19 +214,103 @@ const compactComponents: Components = {
 const userBubbleComponents: Components = { ...components, a: userBubbleAnchor };
 const compactUserBubbleComponents: Components = { ...compactComponents, a: userBubbleAnchor };
 
+const BlockquoteDepthContext = createContext(0);
+
+function CopyableBlockquote({
+  children,
+  compact,
+}: {
+  children: React.ReactNode;
+  compact: boolean;
+}) {
+  const depth = useContext(BlockquoteDepthContext);
+  const contentRef = useRef<HTMLQuoteElement>(null);
+  const resetTimerRef = useRef<number | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle");
+  const quoteClassName = compact
+    ? "border-l-2 border-muted-foreground/30 pl-2 my-1 text-muted-foreground italic"
+    : "border-l-2 border-muted-foreground/30 pl-3 my-2 text-muted-foreground italic";
+
+  useEffect(() => () => {
+    if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+  }, []);
+
+  if (depth > 0) {
+    return (
+      <BlockquoteDepthContext.Provider value={depth + 1}>
+        <blockquote className={quoteClassName}>{children}</blockquote>
+      </BlockquoteDepthContext.Provider>
+    );
+  }
+
+  const copyQuote = async () => {
+    try {
+      const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+      if (!clipboard?.writeText) throw new Error("Clipboard API is unavailable");
+      await clipboard.writeText(contentRef.current?.innerText.trim() ?? "");
+      setCopyState("success");
+    } catch {
+      setCopyState("error");
+    }
+    if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = window.setTimeout(() => setCopyState("idle"), 1600);
+  };
+
+  const feedback = copyState === "success"
+    ? "인용문을 복사했습니다"
+    : copyState === "error"
+      ? "인용문을 복사하지 못했습니다"
+      : "";
+
+  return (
+    <BlockquoteDepthContext.Provider value={depth + 1}>
+      <div className="group/blockquote relative">
+        <blockquote
+          ref={contentRef}
+          data-slot="blockquote-copy-content"
+          className={`${quoteClassName} pr-9`}
+        >
+          {children}
+        </blockquote>
+        <button
+          type="button"
+          aria-label="인용문 복사"
+          data-copy-state={copyState}
+          onClick={() => void copyQuote()}
+          className="absolute right-1 top-1 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground/75 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          {copyState === "success"
+            ? <Check className="size-4" aria-hidden="true" />
+            : <Copy className="size-4" aria-hidden="true" />}
+        </button>
+        <span className="sr-only" role="status" aria-live="polite">{feedback}</span>
+      </div>
+    </BlockquoteDepthContext.Provider>
+  );
+}
+
+function createCopyableBlockquote(compact: boolean): NonNullable<Components["blockquote"]> {
+  return ({ children }) => <CopyableBlockquote compact={compact}>{children}</CopyableBlockquote>;
+}
+
 export function MarkdownContent({
   content,
   compact = false,
   linkTone = "default",
+  enableBlockquoteCopy = false,
 }: MarkdownContentProps) {
-  const selectedComponents =
-    linkTone === "onUserBubble"
+  const selectedComponents = useMemo(() => {
+    const baseComponents = linkTone === "onUserBubble"
       ? compact
         ? compactUserBubbleComponents
         : userBubbleComponents
       : compact
         ? compactComponents
         : components;
+    return enableBlockquoteCopy
+      ? { ...baseComponents, blockquote: createCopyableBlockquote(compact) }
+      : baseComponents;
+  }, [compact, enableBlockquoteCopy, linkTone]);
 
   return (
     <ReactMarkdown

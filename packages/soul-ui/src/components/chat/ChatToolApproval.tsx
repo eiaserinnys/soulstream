@@ -46,10 +46,10 @@ export const ChatToolApproval = memo(function ChatToolApproval({
         </div>
         <div className="text-sm font-semibold leading-[1.5] text-foreground">{msg.toolName}</div>
         {msg.toolResult && (
-          <div className="text-xs text-muted-foreground">{msg.toolResult}</div>
+          <div data-slot="chat-tool-body" className="text-xs text-muted-foreground">{msg.toolResult}</div>
         )}
         {msg.toolInput && (
-          <pre className="max-h-32 overflow-auto rounded-[13px] border border-[var(--lg-line)] bg-muted/40 p-2 text-xs text-muted-foreground">
+          <pre data-slot="chat-tool-body" className="max-h-32 overflow-auto rounded-[13px] border border-[var(--lg-line)] bg-muted/40 p-2 text-xs text-muted-foreground">
             {JSON.stringify(msg.toolInput, null, 2)}
           </pre>
         )}

@@ -70,8 +70,8 @@ export const UserMessage = memo(function UserMessage({ msg, llmContext }: { msg:
             </span>
           )}
         </div>
-        <div className="chat-message-selectable break-words text-base leading-snug text-white [&_code]:bg-white/15 [&_code]:text-white">
-          <MarkdownContent content={msg.content} linkTone="onUserBubble" />
+        <div data-slot="chat-body" className="chat-message-selectable break-words text-base leading-snug text-white [&_code]:bg-white/15 [&_code]:text-white">
+          <MarkdownContent content={msg.content} linkTone="onUserBubble" enableBlockquoteCopy />
         </div>
         {msg.contextItems && msg.contextItems.length > 0 && (
           <ContextBlock items={msg.contextItems} />

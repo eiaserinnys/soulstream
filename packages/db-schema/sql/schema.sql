@@ -3041,7 +3041,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_is_admin ON users(is_admin);
 
 -- Account-scoped dashboard preferences (orch-server).
--- prefs JSONB stores appearance, wallpaper, and liquid glass settings.
+-- prefs JSONB stores appearance, wallpaper, liquid glass, and chat font-size settings.
 CREATE TABLE IF NOT EXISTS user_preferences (
     email TEXT PRIMARY KEY REFERENCES users(email) ON DELETE CASCADE,
     prefs JSONB NOT NULL DEFAULT '{}'::JSONB,

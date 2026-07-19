@@ -29,7 +29,7 @@ export const CollapsibleContent = memo(function CollapsibleContent({
           {label}
         </span>
       )}
-      <pre className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
+      <pre data-slot="chat-body" className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">
         {expanded || !needsCollapse ? safeContent : preview}
       </pre>
     </div>

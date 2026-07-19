@@ -24,8 +24,10 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
   const [appearance] = useAppearancePreference();
   const wallpaper = useDashboardStore((state) => state.wallpaper);
   const liquidGlass = useDashboardStore((state) => state.liquidGlass);
+  const chatFontSize = useDashboardStore((state) => state.chatFontSize);
   const setWallpaper = useDashboardStore((state) => state.setWallpaper);
   const setLiquidGlass = useDashboardStore((state) => state.setLiquidGlass);
+  const setChatFontSize = useDashboardStore((state) => state.setChatFontSize);
   const hydratedAccountRef = useRef<string | null>(null);
   const appliedSnapshotKeyRef = useRef<string | null>(null);
   const hasServerBackgroundRef = useRef(false);
@@ -40,7 +42,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     let cancelled = false;
     const cached = readCachedUserPreferences(accountKey);
     if (cached) {
-      applySnapshot(cached, setWallpaper, setLiquidGlass, appliedSnapshotKeyRef);
+      applySnapshot(cached, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef);
       hydratedAccountRef.current = accountKey;
     }
 
@@ -48,7 +50,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
       .then((response) => {
         if (cancelled) return;
         hasServerBackgroundRef.current = response.hasBackground;
-        applySnapshot(response.preferences, setWallpaper, setLiquidGlass, appliedSnapshotKeyRef);
+        applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef);
         writeCachedUserPreferences(accountKey, response.preferences);
         hydratedAccountRef.current = accountKey;
       })
@@ -61,7 +63,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     return () => {
       cancelled = true;
     };
-  }, [accountKey, setLiquidGlass, setWallpaper]);
+  }, [accountKey, setChatFontSize, setLiquidGlass, setWallpaper]);
 
   useEffect(() => {
     if (!accountKey || hydratedAccountRef.current !== accountKey) return;
@@ -70,6 +72,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
       appearance,
       wallpaper: wallpaperForServer(wallpaper),
       glass: liquidGlass,
+      chatFontSize,
     });
     const snapshotKey = stableSnapshotKey(snapshot);
     if (appliedSnapshotKeyRef.current === snapshotKey) return;
@@ -82,7 +85,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
         .then((response) => {
           if (saveSeqRef.current !== saveSeq) return;
           hasServerBackgroundRef.current = response.hasBackground;
-          applySnapshot(response.preferences, setWallpaper, setLiquidGlass, appliedSnapshotKeyRef);
+          applySnapshot(response.preferences, setWallpaper, setLiquidGlass, setChatFontSize, appliedSnapshotKeyRef);
           writeCachedUserPreferences(accountKey, response.preferences);
         })
         .catch(() => {
@@ -91,7 +94,7 @@ export function useUserPreferencesSync(email: string | null | undefined): void {
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [accountKey, appearance, liquidGlass, wallpaper, setLiquidGlass, setWallpaper]);
+  }, [accountKey, appearance, chatFontSize, liquidGlass, wallpaper, setChatFontSize, setLiquidGlass, setWallpaper]);
 }
 
 async function persistSnapshot(
@@ -104,6 +107,7 @@ async function persistSnapshot(
     return saveUserPreferences({
       appearance: snapshot.appearance,
       glass: snapshot.glass,
+      chatFontSize: snapshot.chatFontSize,
       wallpaper: uploaded.wallpaper,
     });
   }
@@ -117,6 +121,7 @@ function applySnapshot(
   snapshot: UserPreferencesSnapshot,
   setWallpaper: (settings: WallpaperSettings) => void,
   setLiquidGlass: (settings: UserPreferencesSnapshot["glass"]) => void,
+  setChatFontSize: (fontSize: UserPreferencesSnapshot["chatFontSize"]) => void,
   appliedSnapshotKeyRef: { current: string | null },
 ) {
   const normalized = normalizeUserPreferences(snapshot);
@@ -124,6 +129,7 @@ function applySnapshot(
   setAppearancePreference(normalized.appearance);
   setWallpaper(normalized.wallpaper);
   setLiquidGlass(normalized.glass);
+  setChatFontSize(normalized.chatFontSize);
 }
 
 function wallpaperForServer(wallpaper: WallpaperSettings): WallpaperSettings {

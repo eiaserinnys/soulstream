@@ -168,6 +168,7 @@ describe("user background route harness", () => {
         "user@example.com",
         {
           appearance: "dark",
+          chatFontSize: 14,
           wallpaper: {
             mode: "photo",
             customImage: "/api/user/background",
@@ -307,6 +308,7 @@ describe("user background route harness", () => {
         "user@example.com",
         {
           appearance: "light",
+          chatFontSize: 14,
           wallpaper: { mode: "bokeh" },
           glass: {
             enabled: true,
