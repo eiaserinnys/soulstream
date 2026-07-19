@@ -7,7 +7,7 @@ import {
 } from "../../packages/db-schema/scripts/migrate.mjs";
 
 export async function applySchema(options = {}) {
-  return await runMigrations("fresh-install", options);
+  return await runMigrations("initialize", options);
 }
 
 export function formatApplySchemaError(error, env = process.env) {

@@ -19,15 +19,23 @@ function required(env, name) {
   return value;
 }
 
-export function deriveOrchestratorHealthUrl(upstreamUrl) {
+function deriveOrchestratorUrl(upstreamUrl, pathname) {
   const url = new URL(upstreamUrl);
   if (url.protocol === "ws:") url.protocol = "http:";
   else if (url.protocol === "wss:") url.protocol = "https:";
   else throw new Error("SOULSTREAM_UPSTREAM_URL must use ws:// or wss://");
-  url.pathname = "/api/health";
+  url.pathname = pathname;
   url.search = "";
   url.hash = "";
   return url;
+}
+
+export function deriveOrchestratorHealthUrl(upstreamUrl) {
+  return deriveOrchestratorUrl(upstreamUrl, "/api/health");
+}
+
+export function deriveOrchestratorNodesUrl(upstreamUrl) {
+  return deriveOrchestratorUrl(upstreamUrl, "/api/nodes");
 }
 
 function localBaseUrl(env) {
@@ -44,6 +52,53 @@ async function fetchHealth(url, fetchImpl) {
   const body = await response.json();
   if (body?.status !== "ok") throw new Error(`${url} did not report status=ok`);
   return body;
+}
+
+export async function readNodeRegistration(
+  {
+    url,
+    token,
+    nodeId,
+    fetchImpl,
+    attempts = 30,
+    intervalMs = 1_000,
+    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  },
+) {
+  let lastError = new Error(`${nodeId} is not connected in the orchestrator registry`);
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetchImpl(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(`${url} authentication failed with HTTP ${response.status}`);
+      }
+      if (!response.ok) {
+        lastError = new Error(`${url} returned HTTP ${response.status}`);
+      } else {
+        const body = await response.json();
+        if (!Array.isArray(body?.nodes)) throw new Error(`${url} did not return a node list`);
+        const node = body.nodes.find((entry) => entry?.nodeId === nodeId);
+        if (node?.connected === true && node.status === "connected") {
+          return {
+            node_id: nodeId,
+            connected: true,
+            status: node.status,
+            connection_id: node.connectionId ?? null,
+            attempts: attempt,
+          };
+        }
+        lastError = new Error(`${nodeId} is not connected in the orchestrator registry`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("authentication failed")) throw error;
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+    if (attempt < attempts) await sleep(intervalMs);
+  }
+  throw lastError;
 }
 
 export async function readMcpHealth({ url, token, taskId }) {
@@ -113,6 +168,7 @@ export async function verifyReleaseHealth(
     env = process.env,
     cwd = process.cwd(),
     fetchImpl = fetch,
+    nodeRead = readNodeRegistration,
     mcpRead = readMcpHealth,
     dataRead = readDataHealth,
   },
@@ -128,18 +184,29 @@ export async function verifyReleaseHealth(
   const base = localBaseUrl(env);
   const soulHealthUrl = new URL("/health", base);
   const mcpUrl = new URL(required(env, "MCP_PATH"), base);
-  const orchHealthUrl = deriveOrchestratorHealthUrl(required(env, "SOULSTREAM_UPSTREAM_URL"));
+  const upstreamUrl = required(env, "SOULSTREAM_UPSTREAM_URL");
+  const orchHealthUrl = deriveOrchestratorHealthUrl(upstreamUrl);
+  const orchNodesUrl = deriveOrchestratorNodesUrl(upstreamUrl);
+  const token = required(env, "AUTH_BEARER_TOKEN");
+  const nodeId = required(env, "SOULSTREAM_NODE_ID");
 
-  const [orchestrator, soul, mcp, data] = await Promise.all([
+  const [orchestrator, soul, node, mcp, data] = await Promise.all([
     fetchHealth(orchHealthUrl, fetchImpl),
     fetchHealth(soulHealthUrl, fetchImpl),
-    mcpRead({ url: mcpUrl, token: env.AUTH_BEARER_TOKEN?.trim() ?? "", taskId }),
+    nodeRead({
+      url: orchNodesUrl,
+      token,
+      nodeId,
+      fetchImpl,
+    }),
+    mcpRead({ url: mcpUrl, token, taskId }),
     dataRead({ databaseUrl: readDatabaseUrl(env), taskId }),
   ]);
   return {
     status: "ok",
     orchestrator: { url: orchHealthUrl.toString(), status: orchestrator.status },
     soul: { url: soulHealthUrl.toString(), status: soul.status },
+    node,
     mcp,
     data,
   };

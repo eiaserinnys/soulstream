@@ -21,6 +21,7 @@ import {
   readReleaseId,
   validateBackupGate,
 } from "./migration-contract.mjs";
+import { assertPostgresBackupPrerequisites } from "./postgres-backup-tools.mjs";
 
 const MODES = new Set([
   "preflight",
@@ -140,6 +141,28 @@ async function assertDestructivePreflight(plan) {
   assertLegacyBackupResolved(await loadLegacyBackupContract());
 }
 
+export async function preflightPendingMigrations(
+  plan,
+  {
+    env = process.env,
+    backupPreflight = assertPostgresBackupPrerequisites,
+  } = {},
+) {
+  const destructive = destructivePending(plan);
+  if (destructive.length === 0) {
+    return { destructive_pending: [], backup_prerequisites: "not_required" };
+  }
+  await assertDestructivePreflight(plan);
+  const prerequisites = await backupPreflight({
+    databaseUrl: readDatabaseUrl(env),
+    env,
+  });
+  return {
+    destructive_pending: destructive.map((migration) => migration.id),
+    backup_prerequisites: prerequisites,
+  };
+}
+
 async function readVerifiedBackupGate(env, plan) {
   const directory = env.HANIEL_BACKUP_DIR?.trim();
   if (!directory) throw new Error("HANIEL_BACKUP_DIR is required for destructive migration");
@@ -209,8 +232,8 @@ export async function runMigrations(
   try {
     const initial = await readMigrationPlan(sql, migrations);
     if (mode === "preflight") {
-      await assertDestructivePreflight(initial);
-      return planReport(mode, initial);
+      const preflight = await preflightPendingMigrations(initial, { env });
+      return { ...planReport(mode, initial), ...preflight };
     }
     if (mode === "verify") {
       if (initial.bootstrap.length > 0 || initial.pending.length > 0) {

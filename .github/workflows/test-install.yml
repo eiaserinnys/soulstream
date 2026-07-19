@@ -6,6 +6,14 @@ on:
     paths:
       - 'install/**'
       - '.github/workflows/test-install.yml'
+  pull_request:
+    paths:
+      - 'install/**'
+      - 'packages/db-schema/**'
+      - 'soul-server-ts/scripts/**'
+      - 'soul-server-ts/tests/scripts/**'
+      - 'deploy/release-manifest.json'
+      - '.github/workflows/test-install.yml'
   workflow_dispatch:
 
 jobs:
@@ -33,6 +41,24 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Expose PostgreSQL 16+ client tools
+        shell: pwsh
+        run: |
+          $candidate = Get-ChildItem "C:\Program Files\PostgreSQL" -Directory -ErrorAction SilentlyContinue |
+            Where-Object { [int]$_.Name -ge 16 } |
+            Sort-Object { [int]$_.Name } -Descending |
+            Select-Object -First 1
+          if ($null -eq $candidate) {
+            choco install postgresql16 --yes --no-progress
+            $candidate = Get-Item "C:\Program Files\PostgreSQL\16"
+          }
+          $bin = Join-Path $candidate.FullName "bin"
+          if (-not (Test-Path (Join-Path $bin "pg_dump.exe")) -or
+              -not (Test-Path (Join-Path $bin "pg_restore.exe"))) {
+            throw "PostgreSQL client tools were not installed at $bin"
+          }
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Cache pnpm store
         uses: actions/cache@v4

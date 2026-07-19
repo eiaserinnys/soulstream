@@ -1,11 +1,14 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import postgres from "postgres";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { assertPostgresBackupPrerequisites } from
+  "../../../packages/db-schema/scripts/postgres-backup-tools.mjs";
 
 const MIGRATE = fileURLToPath(
   new URL("../../../packages/db-schema/scripts/migrate.mjs", import.meta.url),
@@ -36,6 +39,14 @@ describe.sequential("versioned migration runner", () => {
     const url = await startPostgres();
     const cwd = environmentDirectory(url);
     const serviceEnvironment = { HANIEL_SERVICE_CWD: cwd };
+
+    const prerequisites = await assertPostgresBackupPrerequisites({ databaseUrl: url });
+    expect(prerequisites).toMatchObject({
+      server_major: 16,
+      pg_dump_major: 16,
+      pg_restore_major: 16,
+      restore_capability: "verified",
+    });
 
     const fresh = runWithEnv(MIGRATE, REPOSITORY_ROOT, serviceEnvironment, "initialize");
     expect(fresh.status).toBe(0);
@@ -93,35 +104,11 @@ describe.sequential("versioned migration runner", () => {
       expectNoSecret(verified);
       expect(JSON.parse(readFileSync(join(backupDirectory, "database-backup.json"), "utf8")))
         .toMatchObject({
-          status: "verified",
+          status: "verified_not_required",
           target_head: "integration-test-head",
           destructive_pending: [],
         });
-
-      appendFileSync(join(backupDirectory, "database.dump"), "corruption", "utf8");
-      const corrupted = runWithEnv(BACKUP, REPOSITORY_ROOT, backupEnvironment, "verify");
-      expect(corrupted.status).not.toBe(0);
-      expect(corrupted.stderr).toContain("database dump checksum differs");
-      expectNoSecret(corrupted);
-
-      expect(runWithEnv(BACKUP, REPOSITORY_ROOT, backupEnvironment, "create").status)
-        .toBe(0);
-      expect(runWithEnv(BACKUP, REPOSITORY_ROOT, backupEnvironment, "verify").status)
-        .toBe(0);
-      await sql`DELETE FROM task_operations WHERE id = 'operation-sentinel'`;
-      const restored = runWithEnv(BACKUP, REPOSITORY_ROOT, backupEnvironment, "restore");
-      expect(restored.status).toBe(0);
-      expectNoSecret(restored);
-      const restoredRows = await sql`
-        SELECT COUNT(*)::int AS count
-        FROM task_operations
-        WHERE id = 'operation-sentinel'
-      `;
-      expect(restoredRows[0].count).toBe(1);
-      expect(runWithEnv(BACKUP, REPOSITORY_ROOT, backupEnvironment, "restore").status)
-        .toBe(0);
-      expect(JSON.parse(readFileSync(join(backupDirectory, "database-backup.json"), "utf8")))
-        .toMatchObject({ status: "restored", target_head: "integration-test-head" });
+      expect(existsSync(join(backupDirectory, "database.dump"))).toBe(false);
     } finally {
       await sql.end({ timeout: 5 });
     }

@@ -18,6 +18,7 @@ import {
   sha256,
 } from "./migration-contract.mjs";
 import { readMigrationPlan } from "./migrate.mjs";
+import { postgresCli, runPostgresCommand } from "./postgres-backup-tools.mjs";
 
 const METADATA_NAME = "database-backup.json";
 const DUMP_NAME = "database.dump";
@@ -32,42 +33,6 @@ function requireDeployEnvironment(env) {
     targetHead,
     releaseId: readReleaseId(env),
   };
-}
-
-function postgresCli(databaseUrl, env) {
-  const parsed = new URL(databaseUrl);
-  const database = decodeURIComponent(parsed.pathname.replace(/^\//, ""));
-  if (!parsed.hostname || !database || !parsed.username) {
-    throw new Error("DATABASE_URL must include hostname, user, and database");
-  }
-  return {
-    args: [
-      "--host", parsed.hostname,
-      "--port", parsed.port || "5432",
-      "--username", decodeURIComponent(parsed.username),
-      "--dbname", database,
-    ],
-    env: {
-      ...env,
-      PGPASSWORD: decodeURIComponent(parsed.password),
-      ...(parsed.searchParams.get("sslmode")
-        ? { PGSSLMODE: parsed.searchParams.get("sslmode") }
-        : {}),
-    },
-  };
-}
-
-function run(command, args, options, spawn = spawnSync) {
-  const result = spawn(command, args, {
-    ...options,
-    encoding: "utf8",
-    timeout: 300_000,
-  });
-  if (result.error) throw result.error;
-  if (result.status !== 0) {
-    throw new Error(`${command} failed with ${result.status}: ${result.stderr?.trim()}`);
-  }
-  return result.stdout ?? "";
 }
 
 async function atomicJson(path, value) {
@@ -97,7 +62,12 @@ export function validateBackupArchive(metadata, bytes, toc) {
 }
 
 export async function createBackup(
-  { env = process.env, cwd = process.cwd(), spawn = spawnSync } = {},
+  {
+    env = process.env,
+    cwd = process.cwd(),
+    spawn = spawnSync,
+    planRead = databasePlan,
+  } = {},
 ) {
   dotenv.config({
     path: deploymentEnvironmentPath(env, cwd),
@@ -110,8 +80,24 @@ export async function createBackup(
   const metadataPath = resolve(deploy.backupDirectory, METADATA_NAME);
   await mkdir(deploy.backupDirectory, { recursive: true });
 
+  const plan = await planRead(databaseUrl);
+  const pending = destructivePending(plan).map((item) => item.id);
+  if (pending.length === 0) {
+    const metadata = {
+      schema_version: "soulstream.database-backup.v1",
+      status: "not_required",
+      release_id: deploy.releaseId,
+      target_head: deploy.targetHead,
+      created_at: new Date().toISOString(),
+      schema_state: plan.state,
+      destructive_pending: [],
+    };
+    await atomicJson(metadataPath, metadata);
+    return metadata;
+  }
+
   const cli = postgresCli(databaseUrl, env);
-  run(
+  runPostgresCommand(
     "pg_dump",
     [...cli.args, "--format", "custom", "--file", dumpPath],
     { env: cli.env },
@@ -120,7 +106,6 @@ export async function createBackup(
   const bytes = await readFile(dumpPath);
   const size = (await stat(dumpPath)).size;
   if (size === 0) throw new Error("pg_dump produced an empty file");
-  const plan = await databasePlan(databaseUrl);
   const metadata = {
     schema_version: "soulstream.database-backup.v1",
     status: "created",
@@ -131,14 +116,19 @@ export async function createBackup(
     dump_bytes: size,
     dump_sha256: sha256(bytes),
     schema_state: plan.state,
-    destructive_pending: destructivePending(plan).map((item) => item.id),
+    destructive_pending: pending,
   };
   await atomicJson(metadataPath, metadata);
   return metadata;
 }
 
 export async function verifyBackup(
-  { env = process.env, cwd = process.cwd(), spawn = spawnSync } = {},
+  {
+    env = process.env,
+    cwd = process.cwd(),
+    spawn = spawnSync,
+    planRead = databasePlan,
+  } = {},
 ) {
   dotenv.config({
     path: deploymentEnvironmentPath(env, cwd),
@@ -149,6 +139,22 @@ export async function verifyBackup(
   const deploy = requireDeployEnvironment(env);
   const metadataPath = resolve(deploy.backupDirectory, METADATA_NAME);
   const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+  if (new Set(["not_required", "verified_not_required"]).has(metadata.status)) {
+    if (metadata.release_id !== deploy.releaseId || metadata.target_head !== deploy.targetHead) {
+      throw new Error("backup metadata does not match this release");
+    }
+    const plan = await planRead(databaseUrl);
+    if (destructivePending(plan).length > 0) {
+      throw new Error("database migration plan became destructive after backup skip");
+    }
+    const verified = {
+      ...metadata,
+      status: "verified_not_required",
+      verified_at: new Date().toISOString(),
+    };
+    await atomicJson(metadataPath, verified);
+    return verified;
+  }
   if (!new Set(["created", "verified"]).has(metadata.status)) {
     throw new Error("backup metadata is not in a verifiable state");
   }
@@ -159,10 +165,10 @@ export async function verifyBackup(
 
   const dumpPath = resolve(deploy.backupDirectory, metadata.dump_file);
   const bytes = await readFile(dumpPath);
-  const toc = run("pg_restore", ["--list", dumpPath], { env }, spawn);
+  const toc = runPostgresCommand("pg_restore", ["--list", dumpPath], { env }, spawn);
   const tocEntries = validateBackupArchive(metadata, bytes, toc);
 
-  const plan = await databasePlan(databaseUrl);
+  const plan = await planRead(databaseUrl);
   const pending = destructivePending(plan).map((item) => item.id);
   if (JSON.stringify(pending) !== JSON.stringify(metadata.destructive_pending)) {
     throw new Error("database migration plan changed after backup");
@@ -191,6 +197,14 @@ export async function restoreBackup(
   });
   const databaseUrl = readDatabaseUrl(env);
   const deploy = requireDeployEnvironment(env);
+  const fencePath = env.SOULSTREAM_CLUSTER_WRITE_FENCE_PATH?.trim();
+  if (!fencePath) {
+    throw new Error("SOULSTREAM_CLUSTER_WRITE_FENCE_PATH is required for destructive restore");
+  }
+  validateClusterWriteFence(
+    JSON.parse(await readFile(resolve(fencePath), "utf8")),
+    env,
+  );
   const metadataPath = resolve(deploy.backupDirectory, METADATA_NAME);
   const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
   if (!new Set(["verified", "restored"]).has(metadata.status)) {
@@ -204,9 +218,14 @@ export async function restoreBackup(
   const dumpPath = resolve(deploy.backupDirectory, metadata.dump_file);
   const bytes = await readFile(dumpPath);
   const cli = postgresCli(databaseUrl, env);
-  const toc = run("pg_restore", ["--list", dumpPath], { env: cli.env }, spawn);
+  const toc = runPostgresCommand(
+    "pg_restore",
+    ["--list", dumpPath],
+    { env: cli.env },
+    spawn,
+  );
   validateBackupArchive(metadata, bytes, toc);
-  run(
+  runPostgresCommand(
     "pg_restore",
     [
       ...cli.args,
@@ -237,6 +256,31 @@ export async function restoreBackup(
   };
   await atomicJson(metadataPath, restored);
   return restored;
+}
+
+export function validateClusterWriteFence(fence, env = process.env) {
+  const writers = Array.isArray(fence?.writer_nodes) ? fence.writer_nodes : [];
+  const fenced = Array.isArray(fence?.fenced_nodes) ? fence.fenced_nodes : [];
+  const writerSet = new Set(writers);
+  const fencedSet = new Set(fenced);
+  const allFenced = writerSet.size > 0
+    && writerSet.size === fencedSet.size
+    && [...writerSet].every((nodeId) => fencedSet.has(nodeId));
+  if (
+    fence?.schema_version !== "soulstream.cluster-write-fence.v1"
+    || fence?.status !== "verified"
+    || Number(fence?.active_writer_count) !== 0
+    || !allFenced
+  ) {
+    throw new Error("cluster writers are not fully fenced");
+  }
+  if (
+    fence.release_id !== readReleaseId(env)
+    || fence.target_head !== env.HANIEL_TARGET_HEAD
+  ) {
+    throw new Error("cluster write fence does not match this release");
+  }
+  return fence;
 }
 
 export function formatBackupError(error, env = process.env) {

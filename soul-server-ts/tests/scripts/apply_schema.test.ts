@@ -20,6 +20,9 @@ const STANDALONE_YAML_PATH = fileURLToPath(
   new URL("../../../install/haniel-standalone.yaml.template", import.meta.url),
 );
 const INSTALLER_PATH = fileURLToPath(new URL("../../../install/install.ps1", import.meta.url));
+const EIASERINNYS_FIXTURE_PATH = fileURLToPath(
+  new URL("../fixtures/eiaserinnys-haniel-services.yaml", import.meta.url),
+);
 
 const TEST_DB_NAME = "apply_schema_test_db";
 const TEST_USER = "apply_schema_test";
@@ -39,7 +42,7 @@ afterEach(() => {
 });
 
 describe("apply-schema.mjs", () => {
-  itWithDocker("applies canonical schema only to a fresh database", async () => {
+  itWithDocker("initializes a fresh database and is safe on a current database", async () => {
     const { url } = await startPostgres();
     const cwd = writeEnv(url);
 
@@ -49,8 +52,8 @@ describe("apply-schema.mjs", () => {
     expectNoSecretLeak(first);
 
     const repeated = runApplySchema(cwd);
-    expect(repeated.status).not.toBe(0);
-    expect(repeated.stderr).toContain("fresh-install requires an empty database");
+    expect(repeated.status).toBe(0);
+    expect(repeated.stdout).toContain('"schema_state":"current"');
     expectNoSecretLeak(repeated);
 
     const notices: Array<{ severity?: string; code?: string }> = [];
@@ -317,9 +320,33 @@ describe("apply-schema.mjs", () => {
     expect(installer).toContain(
       'node "packages/db-schema/scripts/migrate.mjs" initialize',
     );
+    expect(installer).toContain('Get-PostgresToolMajorVersion "pg_dump"');
+    expect(installer).toContain('Get-PostgresToolMajorVersion "pg_restore"');
+    expect(installer).toContain("PostgreSQL client 16+ required");
+    expect(installer).toContain("-AuthBearerToken is required in non-interactive mode");
     expect(
       installer.indexOf('node "packages/db-schema/scripts/migrate.mjs" initialize'),
     ).toBeLessThan(installer.indexOf('Write-Step "Starting Soulstream service..."'));
+  });
+
+  it("pins the eiaserinnys service keys while keeping them out of the repo manifest", () => {
+    const fixture = parseYaml(readFileSync(EIASERINNYS_FIXTURE_PATH, "utf8")) as {
+      services: Record<string, { cwd: string; repo: string; hooks?: { pre_start?: string } }>;
+    };
+    const manifest = JSON.parse(readFileSync(
+      fileURLToPath(new URL("../../../deploy/release-manifest.json", import.meta.url)),
+      "utf8",
+    ));
+
+    expect(Object.keys(fixture.services)).toEqual([
+      "soulstream-orch-server",
+      "soulstream-soul-server-ts",
+    ]);
+    expect(fixture.services["soulstream-orch-server"].cwd).toBe("./services/soulstream");
+    expect(fixture.services["soulstream-orch-server"].hooks?.pre_start).toContain(
+      "apply-schema.mjs",
+    );
+    expect(manifest).not.toHaveProperty("environment_service");
   });
 });
 

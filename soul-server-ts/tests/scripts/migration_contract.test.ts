@@ -1,4 +1,6 @@
 import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
@@ -55,6 +57,14 @@ const legacyPre041 = {
 };
 
 describe("versioned migration contract", () => {
+  it("keeps deployment-specific service keys and destructive restore out of the manifest", () => {
+    const manifest = JSON.parse(readFileSync(fileURLToPath(
+      new URL("../../../deploy/release-manifest.json", import.meta.url),
+    ), "utf8"));
+
+    expect(manifest).not.toHaveProperty("environment_service");
+    expect(manifest.recovery).not.toHaveProperty("fallback");
+  });
   it("loads release settings from the declared Haniel service cwd", () => {
     expect(deploymentEnvironmentPath(
       { HANIEL_SERVICE_CWD: "/service-root" },

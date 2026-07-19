@@ -1,0 +1,18 @@
+repos:
+  soulstream:
+    path: ./services/soulstream
+    release_manifest: deploy/release-manifest.json
+
+services:
+  soulstream-orch-server:
+    cwd: ./services/soulstream
+    repo: soulstream
+    ready: port:5200
+    hooks:
+      pre_start: /usr/bin/node soul-server-ts/scripts/apply-schema.mjs
+  soulstream-soul-server-ts:
+    cwd: ./services/soulstream
+    repo: soulstream
+    ready: port:3105
+    after:
+      - soulstream-orch-server
