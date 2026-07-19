@@ -45,7 +45,7 @@ export const InterventionMessage = memo(function InterventionMessage({ msg }: { 
             </span>
           )}
         </div>
-        <div className="whitespace-pre-wrap break-words text-base leading-snug text-white">{msg.content}</div>
+        <div data-slot="chat-body" className="whitespace-pre-wrap break-words text-base leading-snug text-white">{msg.content}</div>
         {/* Phase A context 정본 (Y-9, atom d7a1ad86 차단): UserMessage.tsx:82-84와 대칭으로
             wire의 context_items를 ContextBlock으로 표시 — 첫 턴/auto-resume/running intervention
             세 경로 모두 동일 UX 표면. */}

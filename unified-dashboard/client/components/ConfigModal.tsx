@@ -33,10 +33,12 @@ import { ConfigCategoryNav } from "./config/ConfigCategoryNav";
 import { ConfigResultMessage } from "./config/ConfigResultMessage";
 import { useConfigSettings } from "../hooks/useConfigSettings";
 import { LiquidGlassTab } from "./LiquidGlassTab";
+import { ChatTypographyTab } from "./ChatTypographyTab";
 
 const CLAUDE_AUTH_TAB_NAME = "claude_auth";
 const CLAUDE_AUTH_TAB_LABEL = "Claude Code 인증";
 const LIQUID_GLASS_TAB_NAME = "liquid_glass";
+const CHAT_TAB_NAME = "chat";
 const NODES_TAB_NAME = "nodes";
 const USERS_TAB_NAME = "users";
 
@@ -66,14 +68,17 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
   const [selectedTab, setSelectedTab] = useState<string>("");
   const extraTabs = useMemo(() => {
     const glassTab = { name: LIQUID_GLASS_TAB_NAME, label: "리퀴드 글래스" };
+    const chatTab = { name: CHAT_TAB_NAME, label: "채팅" };
     if (config.mode === "orchestrator") {
       return [
+        chatTab,
         glassTab,
         { name: NODES_TAB_NAME, label: "노드" },
         ...(user?.isAdmin ? [{ name: USERS_TAB_NAME, label: "사용자" }] : []),
       ];
     }
     return [
+      chatTab,
       glassTab,
       ...(showClaudeAuthTab
         ? [{ name: CLAUDE_AUTH_TAB_NAME, label: CLAUDE_AUTH_TAB_LABEL }]
@@ -95,6 +100,7 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
   const activeCategory = categories.find((c) => c.name === selectedTab);
   const isNonConfigTab =
     selectedTab === LIQUID_GLASS_TAB_NAME ||
+    selectedTab === CHAT_TAB_NAME ||
     selectedTab === NODES_TAB_NAME ||
     selectedTab === USERS_TAB_NAME;
   const hasTabs = categories.length > 0 || extraTabs.length > 0;
@@ -131,6 +137,8 @@ export function ConfigModal({ open, onOpenChange }: ConfigModalProps) {
               />
               {selectedTab === CLAUDE_AUTH_TAB_NAME ? (
                 <ClaudeAuthTab />
+              ) : selectedTab === CHAT_TAB_NAME ? (
+                <ChatTypographyTab />
               ) : selectedTab === LIQUID_GLASS_TAB_NAME ? (
                 <LiquidGlassTab />
               ) : selectedTab === NODES_TAB_NAME ? (

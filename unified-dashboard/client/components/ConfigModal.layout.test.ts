@@ -187,6 +187,23 @@ describe("ConfigModal layout", () => {
     expect(saveButton?.disabled).toBe(true);
   });
 
+  it("renders a five-step account chat font-size slider", async () => {
+    ({ container, root } = renderModal());
+    await settleConfigModal();
+
+    clickConfigTab("채팅");
+    await settleConfigModal();
+
+    expect(document.body.textContent).toContain("채팅 글자 크기");
+    expect(document.body.textContent).toContain("기본");
+    expect(document.body.textContent).toContain("+4");
+    const slider = document.body.querySelector<HTMLElement>('[data-testid="chat-font-size-slider"]');
+    expect(slider).not.toBeNull();
+    expect(slider?.getAttribute("aria-label")).toBe("채팅 글자 크기");
+    const thumb = slider?.querySelector<HTMLInputElement>('input[type="range"]');
+    expect(thumb?.getAttribute("aria-label")).toBe("채팅 글자 크기");
+  });
+
   it("keeps the user table inside a horizontal scroll container", async () => {
     ({ container, root } = renderModal());
     await settleConfigModal();

@@ -23,6 +23,7 @@ describe("user-preferences", () => {
     const result = normalizeUserPreferencesResponse({
       email: "user@example.com",
       appearance: "dark",
+      chatFontSize: 18,
       wallpaper: { mode: "photo", customImage: "/api/user/background?v=1" },
       glass: { enabled: false, refraction: 63, blur: 4, chromatic: 1.2, specular: 0.5, tint: 0.3 },
       hasBackground: true,
@@ -31,6 +32,7 @@ describe("user-preferences", () => {
     });
 
     expect(result.appearance).toBe("dark");
+    expect(result.chatFontSize).toBe(18);
     expect(result.wallpaper).toEqual({
       mode: "photo",
       customImage: "/api/user/background?v=1",
@@ -74,12 +76,14 @@ describe("user-preferences", () => {
   it("reads and writes account-scoped local cache", () => {
     writeCachedUserPreferences("User@Example.com", {
       appearance: "light",
+      chatFontSize: 17,
       wallpaper: { mode: "metal" },
       glass: { enabled: true, refraction: 72, blur: 4.5, chromatic: 0.4, specular: 0.2, tint: 0.5 },
     });
 
     expect(readCachedUserPreferences("user@example.com")).toEqual({
       appearance: "light",
+      chatFontSize: 17,
       wallpaper: { mode: "metal" },
       glass: { enabled: true, refraction: 72, blur: 4.5, chromatic: 0.4, specular: 0.2, tint: 0.5 },
     });
@@ -120,6 +124,7 @@ describe("user-preferences", () => {
     await saveUserPreferences(
       {
         appearance: "dark",
+        chatFontSize: 16,
         wallpaper: { mode: "plain" },
         glass: { enabled: false, refraction: 50, blur: 2, chromatic: 0.5, specular: 0.3, tint: 0.7 },
       },
@@ -135,6 +140,7 @@ describe("user-preferences", () => {
           appearance: "dark",
           wallpaper: { mode: "plain" },
           glass: { enabled: false, refraction: 50, blur: 2, chromatic: 0.5, specular: 0.3, tint: 0.7 },
+          chatFontSize: 16,
           clearBackground: true,
         }),
       }),

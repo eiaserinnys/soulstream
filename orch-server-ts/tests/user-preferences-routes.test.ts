@@ -102,6 +102,7 @@ describe("user preferences route harness", () => {
       email: "user@example.com",
       preferences: {
         appearance: "system",
+        chatFontSize: 14,
         wallpaper: { mode: "bokeh" },
         glass: {
           enabled: true,
@@ -113,6 +114,7 @@ describe("user preferences route harness", () => {
         },
       },
       appearance: "system",
+      chatFontSize: 14,
       wallpaper: { mode: "bokeh" },
       hasBackground: false,
       backgroundUrl: null,
@@ -129,6 +131,7 @@ describe("user preferences route harness", () => {
         email: "user@example.com",
         prefs: JSON.stringify({
           appearance: "dark",
+          chatFontSize: 18,
           wallpaper: {
             mode: "photo",
             customImage: "https://example.com/old.png",
@@ -146,6 +149,7 @@ describe("user preferences route harness", () => {
     expect(response.json()).toMatchObject({
       email: "user@example.com",
       appearance: "dark",
+      chatFontSize: 18,
       hasBackground: true,
       backgroundUrl: "/api/user/background?v=1783566306",
       updatedAt: "2026-07-09T03:05:06+00:00",
@@ -191,6 +195,7 @@ describe("user preferences route harness", () => {
         "user@example.com",
         {
           appearance: "dark",
+          chatFontSize: 14,
           wallpaper: { mode: "metal" },
           glass: {
             enabled: true,
@@ -219,6 +224,7 @@ describe("user preferences route harness", () => {
         email: "user@example.com",
         prefs: JSON.stringify({
           appearance: "dark",
+          chatFontSize: 17,
           wallpaper: {
             mode: "photo",
             customImage: "/api/user/background?v=1",
@@ -250,6 +256,7 @@ describe("user preferences route harness", () => {
         "user@example.com",
         {
           appearance: "light",
+          chatFontSize: 17,
           wallpaper: {
             mode: "photo",
             customImage: "/api/user/background?v=1",
@@ -311,6 +318,7 @@ describe("user preferences route harness", () => {
         "user@example.com",
         {
           appearance: "dark",
+          chatFontSize: 14,
           wallpaper: { mode: "plain" },
           glass: {
             enabled: false,

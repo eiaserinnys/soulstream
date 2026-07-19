@@ -96,6 +96,13 @@ export {
 } from "./user-preferences";
 export type { UserPreferencesResponse, UserPreferencesSnapshot } from "./user-preferences";
 export {
+  CHAT_FONT_SIZE_STEPS,
+  DEFAULT_CHAT_FONT_SIZE,
+  normalizeChatFontSize,
+  resolveChatTypography,
+} from "./chat-typography";
+export type { ChatFontSize } from "./chat-typography";
+export {
   DEFAULT_WALLPAPER_PHOTO_URL,
   DEFAULT_WALLPAPER_SETTINGS,
   MAX_WALLPAPER_DATA_URL_BYTES,

@@ -34,6 +34,7 @@ import { createOptimisticSessionSlice } from "./slices/optimistic-session-slice"
 import { createPromptSuggestionSlice } from "./slices/prompt-suggestion-slice";
 import { createWallpaperSlice } from "./slices/wallpaper-slice";
 import { createLiquidGlassSlice } from "./slices/liquid-glass-slice";
+import { createChatTypographySlice } from "./slices/chat-typography-slice";
 
 // === Re-exports for backward compatibility ===
 
@@ -47,6 +48,7 @@ export type {
   LeftNavigationMode,
   WallpaperMode,
   WallpaperSettings,
+  ChatFontSize,
   ProcessEventsResult,
   DashboardState,
   DashboardActions,
@@ -103,6 +105,7 @@ export const useDashboardStore = create<DashboardState & DashboardActions>()(
         ...createPromptSuggestionSlice(set, get, store),
         ...createWallpaperSlice(set, get, store),
         ...createLiquidGlassSlice(set, get, store),
+        ...createChatTypographySlice(set, get, store),
       };
 
       // 초기 state 스냅샷 (모든 slice의 초기 필드 값) — reset의 정본.

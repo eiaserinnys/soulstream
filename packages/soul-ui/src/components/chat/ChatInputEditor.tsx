@@ -61,6 +61,7 @@ export const ChatInputEditor = forwardRef<HTMLTextAreaElement, ChatInputEditorPr
             {modeIcon}
           </span>
           <textarea
+            data-slot="chat-input-body"
             ref={ref}
             value={text}
             onChange={(e) => onChangeText(e.target.value)}

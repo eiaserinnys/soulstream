@@ -16,7 +16,7 @@
  * Tool grouping: 연속된 tool 메시지를 접기/펼치기 그룹으로 묶어 표시.
  */
 
-import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect } from "react";
+import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect, type CSSProperties } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { flattenTree } from "../../lib/flatten-tree";
@@ -41,6 +41,7 @@ import { ChatRuntimeCompactStrips } from "./ChatRuntimeCompactStrips";
 import { ProfileAvatar } from "../ProfileAvatar";
 import { CHAT_STATUS_TONE_CONFIG } from "./chat-tone-config";
 import { useGlassSurface } from "../LiquidGlassProvider";
+import { resolveChatTypography } from "../../lib/chat-typography";
 
 interface ChatViewProps {
   chatInputDisabled?: boolean;
@@ -74,6 +75,12 @@ export function ChatView({
    * 이 selector도 chatPrependedCount와 같은 렌더 사이클에 갱신된다.
    */
   const chatLastPrependAtMs = useDashboardStore((s) => s.chatLastPrependAtMs);
+  const chatFontSize = useDashboardStore((s) => s.chatFontSize);
+  const chatTypography = resolveChatTypography(chatFontSize);
+  const chatTypographyStyle = {
+    "--chat-font-size": `${chatTypography.fontSize}px`,
+    "--chat-line-height": `${chatTypography.lineHeight}px`,
+  } as CSSProperties;
   const llmContext = useLlmContext();
 
   // 옵션 D: 히스토리는 useMessageHistoryBuffer가 store.tree에 직접 통합한다.
@@ -287,7 +294,12 @@ export function ChatView({
   const chatStatusConfig = CHAT_STATUS_TONE_CONFIG[chatStatus] ?? CHAT_STATUS_TONE_CONFIG.unknown;
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3">
+    <div
+      data-slot="chat-root"
+      data-chat-font-size={chatFontSize}
+      style={chatTypographyStyle}
+      className="flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3"
+    >
       {showHeader && (
         <div
           ref={headerRef}

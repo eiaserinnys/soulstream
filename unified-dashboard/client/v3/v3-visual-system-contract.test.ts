@@ -59,5 +59,11 @@ describe("PR-CL v3 visual system contract", () => {
     expect(assistant).toContain('data-slot="chat-message-bubble"');
     expect(css).toMatch(/\[data-slot="chat-message-row"\][^{]*\{[^}]*padding-block:\s*6px/s);
     expect(css).toMatch(/\[data-slot="chat-message-bubble"\][^{]*\{[^}]*max-width:\s*88%[^}]*padding:\s*14px 16px/s);
+    expect(css).toMatch(/\[data-slot="chat-tool-row"\][^{]*\{[^}]*padding-block:\s*4px/s);
+    expect(css).toMatch(/\[data-slot="tool-call-group-toggle"\][^{]*\{[^}]*font:\s*var\(--v3-type-meta\) var\(--v3-font-family\)/s);
+    expect(css).toContain('.v3-chat-pane [data-slot="chat-body"] h1');
+    expect(css).toContain('.v3-chat-pane [data-slot="chat-body"] h4');
+    expect(css).toContain('font-size: var(--chat-font-size)');
+    expect(css).toContain('line-height: var(--chat-line-height)');
   });
 });
