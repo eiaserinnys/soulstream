@@ -58,9 +58,12 @@ export async function listStarredTasks(
         SELECT 1
         FROM blocks b
         WHERE b.page_id = p.id
-          AND b.block_type = 'task_ref'
+          AND b.block_type IN ('task_ref', 'runbook_ref')
           AND COALESCE((b.properties->>'primary')::boolean, FALSE)
-          AND NULLIF(b.properties->>'taskId', '') IS NOT NULL
+          AND NULLIF(BTRIM(CASE b.block_type
+            WHEN 'task_ref' THEN b.properties->>'taskId'
+            WHEN 'runbook_ref' THEN b.properties->>'runbookId'
+          END), '') IS NOT NULL
       )
       AND (
         ${updatedAt}::text IS NULL
@@ -106,14 +109,22 @@ export async function listTaskRuns(
   const cursorId = cursor?.second ?? "";
   const rows = await sql`
     WITH work_task AS (
-      SELECT b.properties->>'taskId' AS task_id
+      SELECT CASE b.block_type
+               WHEN 'task_ref' THEN NULLIF(BTRIM(b.properties->>'taskId'), '')
+               WHEN 'runbook_ref' THEN NULLIF(BTRIM(b.properties->>'runbookId'), '')
+             END AS task_id
       FROM blocks b
       JOIN pages p ON p.id = b.page_id AND p.archived = FALSE
       WHERE b.page_id = ${pageId}
-        AND b.block_type = 'task_ref'
+        AND b.block_type IN ('task_ref', 'runbook_ref')
         AND COALESCE((b.properties->>'primary')::boolean, FALSE)
-        AND NULLIF(b.properties->>'taskId', '') IS NOT NULL
-      ORDER BY b.position_key, b.id
+        AND NULLIF(BTRIM(CASE b.block_type
+          WHEN 'task_ref' THEN b.properties->>'taskId'
+          WHEN 'runbook_ref' THEN b.properties->>'runbookId'
+        END), '') IS NOT NULL
+      ORDER BY CASE b.block_type WHEN 'task_ref' THEN 0 ELSE 1 END,
+               b.position_key,
+               b.id
       LIMIT 1
     ),
     all_runs AS (

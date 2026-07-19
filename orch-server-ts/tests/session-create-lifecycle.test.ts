@@ -11,6 +11,43 @@ import {
 } from "../src/index.js";
 
 describe("session create lifecycle", () => {
+  it.each([
+    { kind: "runbook", id: "task-a" },
+    { kind: "task" },
+    { kind: "task", id: "" },
+    { kind: "task", id: "   " },
+    { kind: "folder", id: 7 },
+  ])("rejects malformed container %# before access and board resolution", async (container) => {
+    const boardItems = boardItemProvider();
+    const access = accessProvider({ restricted: false, allowedFolderIds: [] });
+    const lifecycle = createSessionCreateLifecycle({
+      resolveCallerInfo: vi.fn(async () => ({ source: "browser" })),
+      boardItems,
+      access,
+    });
+
+    await expect(lifecycle.prepare({
+      request: request(),
+      body: { prompt: "hello", container },
+    })).rejects.toMatchObject({ statusCode: 422, code: "INVALID_REQUEST" });
+    expect(access.resolveAccess).not.toHaveBeenCalled();
+    expect(boardItems.resolveBoardContainerFolderId).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ kind: "folder", id: " folder-a " }, { kind: "folder", id: "folder-a" }],
+    [{ kind: "task", id: " task-a " }, { kind: "task", id: "task-a" }],
+  ])("normalizes valid container %j", async (container, expected) => {
+    const lifecycle = createSessionCreateLifecycle({
+      resolveCallerInfo: vi.fn(async () => ({ source: "browser" })),
+      boardItems: boardItemProvider(),
+      access: accessProvider({ restricted: false, allowedFolderIds: [] }),
+    });
+
+    await expect(lifecycle.prepare({ request: request(), body: { prompt: "hello", container } }))
+      .resolves.toMatchObject({ payload: { container: expected } });
+  });
+
   it("inherits a source session primary task container and removes sourceSessionId", async () => {
     const boardItems = boardItemProvider({
       boardItems: [{

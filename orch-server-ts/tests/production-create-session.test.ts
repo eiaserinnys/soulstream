@@ -29,6 +29,30 @@ type RegisteredTestNode = {
 };
 
 describe("production create-session route", () => {
+  it("rejects malformed task containers before node selection", async () => {
+    const harness = await createProductionHarness();
+    try {
+      for (const container of [
+        {}, { kind: "runbook", id: "task-a" },
+        { kind: "task" }, { kind: "task", id: "" },
+        { kind: "task", id: "   " },
+        { kind: "folder", id: 7 },
+      ]) {
+        const response = await harness.application.app.inject({
+          method: "POST",
+          url: "/api/sessions",
+          headers: harness.authHeaders,
+          payload: { prompt: "hello", profile: "roselin_codex", container },
+        });
+        expect(response.statusCode).toBe(422);
+        expect(response.json()).toMatchObject({ error: { code: "INVALID_REQUEST" } });
+      }
+      expect(harness.nodes).toHaveLength(0);
+    } finally {
+      await closeHarness(harness);
+    }
+  });
+
   it("generates one immutable agentSessionId before dispatching create_session", async () => {
     const harness = await createProductionHarness();
     try {

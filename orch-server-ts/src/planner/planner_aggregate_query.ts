@@ -85,18 +85,26 @@ export async function plannerQuery(
     ),
     mounted_kinds AS (
       SELECT mounted.id AS page_id,
-             task_ref.properties->>'taskId' AS task_id
+             identity.task_id
       FROM mounted_pages mounted
       LEFT JOIN LATERAL (
-        SELECT b.properties
+        SELECT CASE b.block_type
+                 WHEN 'task_ref' THEN NULLIF(BTRIM(b.properties->>'taskId'), '')
+                 WHEN 'runbook_ref' THEN NULLIF(BTRIM(b.properties->>'runbookId'), '')
+               END AS task_id
         FROM blocks b
         WHERE b.page_id = mounted.id
-          AND b.block_type = 'task_ref'
+          AND b.block_type IN ('task_ref', 'runbook_ref')
           AND COALESCE((b.properties->>'primary')::boolean, FALSE)
-          AND NULLIF(b.properties->>'taskId', '') IS NOT NULL
-        ORDER BY b.position_key, b.id
+          AND NULLIF(BTRIM(CASE b.block_type
+            WHEN 'task_ref' THEN b.properties->>'taskId'
+            WHEN 'runbook_ref' THEN b.properties->>'runbookId'
+          END), '') IS NOT NULL
+        ORDER BY CASE b.block_type WHEN 'task_ref' THEN 0 ELSE 1 END,
+                 b.position_key,
+                 b.id
         LIMIT 1
-      ) task_ref ON TRUE
+      ) identity ON TRUE
     ),
     project_pages AS (
       SELECT p.*
@@ -105,11 +113,14 @@ export async function plannerQuery(
         AND p.daily_date IS NULL
         AND NOT EXISTS (
           SELECT 1
-          FROM blocks task_ref
-          WHERE task_ref.page_id = p.id
-            AND task_ref.block_type = 'task_ref'
-            AND COALESCE((task_ref.properties->>'primary')::boolean, FALSE)
-            AND NULLIF(task_ref.properties->>'taskId', '') IS NOT NULL
+          FROM blocks identity
+          WHERE identity.page_id = p.id
+            AND identity.block_type IN ('task_ref', 'runbook_ref')
+            AND COALESCE((identity.properties->>'primary')::boolean, FALSE)
+            AND NULLIF(BTRIM(CASE identity.block_type
+              WHEN 'task_ref' THEN identity.properties->>'taskId'
+              WHEN 'runbook_ref' THEN identity.properties->>'runbookId'
+            END), '') IS NOT NULL
         )
         AND EXISTS (
           SELECT 1
