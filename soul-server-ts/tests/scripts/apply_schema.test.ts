@@ -320,6 +320,9 @@ describe("apply-schema.mjs", () => {
     expect(installer).toContain(
       'node "packages/db-schema/scripts/migrate.mjs" initialize',
     );
+    expect(installer).toContain(
+      '$env:SOULSTREAM_RELEASE_ID = "standalone-install-$installHead"',
+    );
     expect(installer).toContain('Get-PostgresToolMajorVersion "pg_dump"');
     expect(installer).toContain('Get-PostgresToolMajorVersion "pg_restore"');
     expect(installer).toContain("PostgreSQL client 16+ required");

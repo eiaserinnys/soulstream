@@ -424,12 +424,24 @@ Write-Ok "soul-server-ts built."
 
 Write-Step "Initializing the versioned database ledger..."
 
+$installHead = (git -C $monoRepoDir rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($installHead)) {
+    Write-Fail "Could not resolve the installed Soulstream commit for the migration release ID."
+    exit 1
+}
+$previousReleaseId = $env:SOULSTREAM_RELEASE_ID
+$env:SOULSTREAM_RELEASE_ID = "standalone-install-$installHead"
 Push-Location $monoRepoDir
 try {
     node "packages/db-schema/scripts/migrate.mjs" initialize
     $migrationExitCode = $LASTEXITCODE
 } finally {
     Pop-Location
+    if ($null -eq $previousReleaseId) {
+        Remove-Item Env:SOULSTREAM_RELEASE_ID -ErrorAction SilentlyContinue
+    } else {
+        $env:SOULSTREAM_RELEASE_ID = $previousReleaseId
+    }
 }
 if ($migrationExitCode -ne 0) {
     Write-Fail "Database initialization or migration failed. The service was not started."
