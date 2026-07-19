@@ -6,6 +6,15 @@ on:
     paths:
       - 'install/**'
       - '.github/workflows/test-install.yml'
+  pull_request:
+    paths:
+      - 'install/**'
+      - 'packages/db-schema/**'
+      - 'soul-server-ts/scripts/**'
+      - 'soul-server-ts/tests/scripts/**'
+      - 'deploy/release-manifest.json'
+      - 'deploy/tests/**'
+      - '.github/workflows/test-install.yml'
   workflow_dispatch:
 
 jobs:
@@ -19,23 +28,49 @@ jobs:
       PGPASSWORD: soulstream_schema_secret
       PGDATABASE: soulstream_schema_test
       PGPORT: '54329'
+      SOULSTREAM_SOURCE_URL: ${{ github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }}
+      SOULSTREAM_SOURCE_BRANCH: ${{ github.head_ref || github.ref_name }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
+      - name: Install paired Haniel release contract
+        shell: pwsh
+        run: |
+          python -m pip install --force-reinstall `
+            git+https://github.com/eiaserinnys/Haniel.git@c19c06f201b02f3394b6cdec8392c5398803f4bf
+
       - name: Setup Node.js 20
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '20'
 
+      - name: Expose PostgreSQL 16+ client tools
+        shell: pwsh
+        run: |
+          $candidate = Get-ChildItem "C:\Program Files\PostgreSQL" -Directory -ErrorAction SilentlyContinue |
+            Where-Object { [int]$_.Name -ge 16 } |
+            Sort-Object { [int]$_.Name } -Descending |
+            Select-Object -First 1
+          if ($null -eq $candidate) {
+            choco install postgresql16 --yes --no-progress
+            $candidate = Get-Item "C:\Program Files\PostgreSQL\16"
+          }
+          $bin = Join-Path $candidate.FullName "bin"
+          if (-not (Test-Path (Join-Path $bin "pg_dump.exe")) -or
+              -not (Test-Path (Join-Path $bin "pg_restore.exe"))) {
+            throw "PostgreSQL client tools were not installed at $bin"
+          }
+          $bin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Cache pnpm store
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.pnpm-store
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -45,17 +80,20 @@ jobs:
       - name: Start PostgreSQL
         shell: pwsh
         run: |
-          docker run --rm -d `
-            --name soulstream-test-pg `
-            -e POSTGRES_USER=$env:PGUSER `
-            -e POSTGRES_PASSWORD=$env:PGPASSWORD `
-            -e POSTGRES_DB=$env:PGDATABASE `
-            -p "127.0.0.1:${env:PGPORT}:5432" `
-            postgres:16-alpine
+          $dataDir = Join-Path $env:RUNNER_TEMP "soulstream-test-pg"
+          $passwordFile = Join-Path $env:RUNNER_TEMP "soulstream-test-pg-password"
+          $logFile = Join-Path $env:RUNNER_TEMP "soulstream-test-pg.log"
+          $env:PGDATA = $dataDir
+          $env:PGHOST = "127.0.0.1"
+          $env:PGPASSWORD | Set-Content -Path $passwordFile -NoNewline -Encoding utf8
+          initdb -D $dataDir -U $env:PGUSER --pwfile=$passwordFile `
+            --auth-host=scram-sha-256 --encoding=UTF8
+          Remove-Item $passwordFile -Force
+          pg_ctl -D $dataDir -l $logFile -o "-p $env:PGPORT -h 127.0.0.1" start
 
           $ready = $false
           for ($i = 0; $i -lt 30; $i++) {
-            docker exec soulstream-test-pg pg_isready -U $env:PGUSER -d $env:PGDATABASE
+            pg_isready -h 127.0.0.1 -p $env:PGPORT -U $env:PGUSER -d postgres
             if ($LASTEXITCODE -eq 0) {
               $ready = $true
               break
@@ -66,6 +104,7 @@ jobs:
             Write-Error "PostgreSQL did not become ready"
             exit 1
           }
+          createdb -h 127.0.0.1 -p $env:PGPORT -U $env:PGUSER $env:PGDATABASE
 
       - name: Run installer (non-interactive)
         shell: pwsh
@@ -78,7 +117,17 @@ jobs:
             -WorkspaceDir "C:\workspace-test" `
             -Port 3105 `
             -DatabaseUrl $dbUrl `
-            -AuthBearerToken "ci-test-token"
+            -AuthBearerToken "ci-test-token" `
+            -RepositoryUrl $env:SOULSTREAM_SOURCE_URL `
+            -RepositoryBranch $env:SOULSTREAM_SOURCE_BRANCH
+
+      - name: Verify actual release manifest recovery contract
+        shell: pwsh
+        run: |
+          python -m unittest discover `
+            -s deploy/tests `
+            -p "test_haniel_release_contract.py" `
+            -v
 
       - name: Verify service health
         shell: pwsh
@@ -110,7 +159,9 @@ jobs:
       - name: Smoke test — PostgreSQL schema
         shell: pwsh
         run: |
-          $sessionsTable = docker exec soulstream-test-pg psql `
+          $sessionsTable = psql `
+            -h 127.0.0.1 `
+            -p $env:PGPORT `
             -U $env:PGUSER `
             -d $env:PGDATABASE `
             -tAc "SELECT to_regclass('public.sessions')"
@@ -119,7 +170,9 @@ jobs:
             exit 1
           }
 
-          $sessionGet = docker exec soulstream-test-pg psql `
+          $sessionGet = psql `
+            -h 127.0.0.1 `
+            -p $env:PGPORT `
             -U $env:PGUSER `
             -d $env:PGDATABASE `
             -tAc "SELECT to_regprocedure('public.session_get(text)')"
@@ -172,4 +225,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          docker stop soulstream-test-pg 2>$null
+          $dataDir = Join-Path $env:RUNNER_TEMP "soulstream-test-pg"
+          if (Test-Path $dataDir) {
+            pg_ctl -D $dataDir stop -m fast
+          }

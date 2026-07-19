@@ -34,6 +34,12 @@ PROTECTED_READ_COMPATIBILITY_FILES = {
     "orch-server-ts/src/board-yjs/board_yjs_document.ts": {
         'item_type: BoardYjsItemValue["item_type"] | "runbook"',
     },
+    "orch-server-ts/src/planner/planner_aggregate_query.ts": {
+        "WHEN 'runbook_ref' THEN NULLIF(BTRIM(b.properties->>'runbookId'), '')",
+    },
+    "orch-server-ts/src/planner/planner_repository_reads.ts": {
+        "WHEN 'runbook_ref' THEN NULLIF(BTRIM(b.properties->>'runbookId'), '')",
+    },
     "soul-server-ts/src/collaboration/board_container_kind_compat.ts": {
         'value === "runbook"',
     },
@@ -75,6 +81,11 @@ ALLOWLIST = {
     "packages/db-schema/sql/migrations/033_board_seed_primary_membership_guard.sql": "immutable historical migration",
     "packages/db-schema/sql/migrations/037_session_page_bindings.sql": "immutable historical migration",
     "packages/db-schema/sql/migrations/039_checklist_runbook_projection_outbox.sql": "immutable historical migration",
+    "packages/db-schema/migration-manifest.json": "immutable historical migration ID inventory",
+    "packages/db-schema/scripts/migrate.mjs": "versioned runner reports immutable migration IDs",
+    "packages/db-schema/scripts/migration-contract.mjs": "versioned contract classifies immutable migration IDs",
+    "soul-server-ts/tests/scripts/migration_contract.test.ts": "immutable migration ID contract tests",
+    "soul-server-ts/tests/scripts/migration_runner.test.ts": "immutable migration ID integration tests",
     "unified-dashboard/e2e/evidence/pr-ch-post-deploy-defects/after/metrics.json": "immutable E2E evidence",
     "unified-dashboard/e2e/evidence/pr-ch-post-deploy-defects/before/metrics.json": "immutable E2E evidence",
     "unified-dashboard/e2e/evidence/pr-ci-fetch-races/metrics.json": "immutable E2E evidence",
@@ -95,6 +106,8 @@ ALLOWLIST = {
     "orch-server-ts/tests/node-session-event-dispatcher.test.ts": "legacy wire consumer test",
     "orch-server-ts/tests/task-contract-rename.test.ts": "public contract residual assertion",
     "orch-server-ts/tests/task-routes.test.ts": "legacy HTTP compatibility test",
+    "orch-server-ts/tests/production-create-session.test.ts": "legacy container kind rejection test",
+    "orch-server-ts/tests/session-create-lifecycle.test.ts": "legacy container kind rejection test",
     "packages/soul-ui/src/hooks/session-stream-dispatch.test.ts": "legacy wire consumer test",
     "packages/soul-ui/src/hooks/session-stream-dispatch.ts": "legacy wire consumer normalization",
     "packages/soul-ui/src/hooks/useSessionStreamSSE.ts": "production-gated legacy SSE listener",
@@ -111,6 +124,12 @@ ALLOWLIST = {
     "soul-server-ts/src/work-task/task_legacy_http_compat.ts": "explicit 410 for legacy worker writes",
     "soul-server-ts/tests/mcp/task.test.ts": "legacy MCP compatibility test",
     "soul-server-ts/tests/work-task/task_http_route.test.ts": "legacy HTTP 410 test",
+
+    # Production-gated persisted planner readers for legacy v3 runbook_ref pages.
+    "orch-server-ts/src/planner/planner_aggregate_query.ts": "legacy planner mount reader",
+    "orch-server-ts/src/planner/planner_repository_reads.ts": "legacy planner identity reader",
+    "orch-server-ts/tests/planner-repository.test.ts": "legacy planner reader contract test",
+    "orch-server-ts/tests/task-identity-postgres.test.ts": "legacy planner PostgreSQL regression test",
 
     # Production-gated persisted container/Y.Doc readers; every write is canonical Task.
     "orch-server-ts/src/board-yjs/board_container_kind_compat.ts": "legacy container reader",

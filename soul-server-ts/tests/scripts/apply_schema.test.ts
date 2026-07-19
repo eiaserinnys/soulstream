@@ -16,6 +16,13 @@ const PAGE_MODEL_MIGRATION_PATH = fileURLToPath(new URL(
 const YAML_PATH = fileURLToPath(
   new URL("../../../install/haniel-soul-server-ts.example.yaml", import.meta.url),
 );
+const STANDALONE_YAML_PATH = fileURLToPath(
+  new URL("../../../install/haniel-standalone.yaml.template", import.meta.url),
+);
+const INSTALLER_PATH = fileURLToPath(new URL("../../../install/install.ps1", import.meta.url));
+const EIASERINNYS_FIXTURE_PATH = fileURLToPath(
+  new URL("../fixtures/eiaserinnys-haniel-services.yaml", import.meta.url),
+);
 
 const TEST_DB_NAME = "apply_schema_test_db";
 const TEST_USER = "apply_schema_test";
@@ -35,7 +42,7 @@ afterEach(() => {
 });
 
 describe("apply-schema.mjs", () => {
-  itWithDocker("applies schema idempotently to an already-applied database", async () => {
+  itWithDocker("initializes a fresh database and is safe on a current database", async () => {
     const { url } = await startPostgres();
     const cwd = writeEnv(url);
 
@@ -44,12 +51,10 @@ describe("apply-schema.mjs", () => {
     expect(first.stdout).toContain("[apply-schema] schema applied");
     expectNoSecretLeak(first);
 
-    await seedLegacyBoardItem(url);
-
-    const second = runApplySchema(cwd);
-    expect(second.status).toBe(0);
-    expect(second.stdout).toContain("[apply-schema] schema applied");
-    expectNoSecretLeak(second);
+    const repeated = runApplySchema(cwd);
+    expect(repeated.status).toBe(0);
+    expect(repeated.stdout).toContain('"schema_state":"current"');
+    expectNoSecretLeak(repeated);
 
     const notices: Array<{ severity?: string; code?: string }> = [];
     const sql = postgres(url, {
@@ -62,7 +67,7 @@ describe("apply-schema.mjs", () => {
         heartbeat_table: string | null;
         transcript_table: string | null;
         transcript_function_count: string | number;
-        board_yjs_cache_count: string | number;
+        migration_count: string | number;
       }>>`
         SELECT
           to_regclass('public.soulstream_node_heartbeats')::text AS heartbeat_table,
@@ -72,49 +77,15 @@ describe("apply-schema.mjs", () => {
             FROM pg_proc
             WHERE proname = 'claude_transcript_append'
           ) AS transcript_function_count,
-          (
-            SELECT COUNT(*)::int
-            FROM board_yjs_catalog_cache
-            WHERE container_kind = 'folder'
-              AND container_id = 'folder-schema'
-          ) AS board_yjs_cache_count
+          (SELECT COUNT(*)::int FROM schema_migrations) AS migration_count
       `;
 
       expect(rows[0]).toMatchObject({
         heartbeat_table: "soulstream_node_heartbeats",
         transcript_table: "claude_transcript_entries",
         transcript_function_count: 1,
-        board_yjs_cache_count: 1,
+        migration_count: 44,
       });
-      const cacheRows = await sql<Array<{
-        board_items: Array<Record<string, unknown>>;
-        markdown_documents: Array<Record<string, unknown>>;
-      }>>`
-        SELECT board_items, markdown_documents
-        FROM board_yjs_catalog_cache
-        WHERE container_kind = 'folder'
-          AND container_id = 'folder-schema'
-      `;
-      expect(cacheRows[0].board_items).toEqual([
-        expect.objectContaining({
-          id: "markdown:doc-schema",
-          folderId: "folder-schema",
-          containerKind: "folder",
-          containerId: "folder-schema",
-          itemType: "markdown",
-          itemId: "doc-schema",
-          x: 10,
-          y: 20,
-          metadata: expect.objectContaining({ title: "Schema doc" }),
-        }),
-      ]);
-      expect(cacheRows[0].markdown_documents).toEqual([
-        expect.objectContaining({
-          id: "doc-schema",
-          title: "Schema doc",
-          body: "body",
-        }),
-      ]);
 
       const pageModelTables = await sql<Array<{ table_name: string }>>`
         SELECT table_name
@@ -327,10 +298,59 @@ describe("apply-schema.mjs", () => {
     const envConfig = parsed.install.configs["soul-server-ts-env"];
 
     expect(service.hooks.pre_start).toBe(
-      "node src/soulstream/soul-server-ts/scripts/apply-schema.mjs",
+      "node src/soulstream/soul-server-ts/scripts/verify-migrations.mjs",
     );
     expect(service.hooks.post_pull).not.toContain("apply-schema.mjs");
     expect(envConfig.keys.map((entry) => entry.key)).toContain("DATABASE_URL");
+  });
+
+  it("keeps standalone initialization separate from normal service starts", () => {
+    const yaml = readFileSync(STANDALONE_YAML_PATH, "utf8");
+    const parsed = parseYaml(yaml) as HanielStandaloneTemplate;
+    const service = parsed.services["soul-server-ts"];
+    const installer = readFileSync(INSTALLER_PATH, "utf8");
+
+    expect(parsed.repos.soulstream.release_manifest).toBe("deploy/release-manifest.json");
+    expect(service.ready).toBe("http://127.0.0.1:__PORT__/health");
+    expect(service.hooks.pre_start).toBe(
+      "node soul-server-ts/scripts/verify-migrations.mjs",
+    );
+    expect(service.hooks.pre_start).not.toContain("apply-schema.mjs");
+    expect(installer).toContain("Push-Location $monoRepoDir");
+    expect(installer).toContain(
+      'node "packages/db-schema/scripts/migrate.mjs" initialize',
+    );
+    expect(installer).toContain(
+      '$env:SOULSTREAM_RELEASE_ID = "standalone-install-$installHead"',
+    );
+    expect(installer).toContain('Get-PostgresToolMajorVersion "pg_dump"');
+    expect(installer).toContain('Get-PostgresToolMajorVersion "pg_restore"');
+    expect(installer).toContain("PostgreSQL client 16+ required");
+    expect(installer.trimEnd()).toMatch(/exit 0$/);
+    expect(installer).toContain("-AuthBearerToken is required in non-interactive mode");
+    expect(
+      installer.indexOf('node "packages/db-schema/scripts/migrate.mjs" initialize'),
+    ).toBeLessThan(installer.indexOf('Write-Step "Starting Soulstream service..."'));
+  });
+
+  it("pins the eiaserinnys service keys while keeping them out of the repo manifest", () => {
+    const fixture = parseYaml(readFileSync(EIASERINNYS_FIXTURE_PATH, "utf8")) as {
+      services: Record<string, { cwd: string; repo: string; hooks?: { pre_start?: string } }>;
+    };
+    const manifest = JSON.parse(readFileSync(
+      fileURLToPath(new URL("../../../deploy/release-manifest.json", import.meta.url)),
+      "utf8",
+    ));
+
+    expect(Object.keys(fixture.services)).toEqual([
+      "soulstream-orch-server",
+      "soulstream-soul-server-ts",
+    ]);
+    expect(fixture.services["soulstream-orch-server"].cwd).toBe("./services/soulstream");
+    expect(fixture.services["soulstream-orch-server"].hooks?.pre_start).toContain(
+      "apply-schema.mjs",
+    );
+    expect(manifest).not.toHaveProperty("environment_service");
   });
 });
 
@@ -357,6 +377,16 @@ interface HanielSoulServerTsExample {
   };
 }
 
+interface HanielStandaloneTemplate {
+  repos: { soulstream: { release_manifest: string } };
+  services: {
+    "soul-server-ts": {
+      ready: string;
+      hooks: { pre_start: string };
+    };
+  };
+}
+
 function runApplySchema(cwd: string) {
   return spawnSync(process.execPath, [SCRIPT_PATH], {
     cwd,
@@ -377,7 +407,11 @@ function minimalEnv(): NodeJS.ProcessEnv {
 function writeEnv(databaseUrl: string): string {
   const dir = mkdtempSync(join(tmpdir(), "soul-apply-schema-"));
   tempDirs.push(dir);
-  writeFileSync(join(dir, ".env.soul-server-ts"), `DATABASE_URL=${databaseUrl}\n`, "utf8");
+  writeFileSync(
+    join(dir, ".env.soul-server-ts"),
+    `DATABASE_URL=${databaseUrl}\nSOULSTREAM_RELEASE_ID=fresh-install-test\n`,
+    "utf8",
+  );
   return dir;
 }
 
@@ -407,34 +441,6 @@ async function startPostgres(): Promise<{ url: string }> {
     await sql.end({ timeout: 5 });
   }
   return { url };
-}
-
-async function seedLegacyBoardItem(url: string): Promise<void> {
-  const sql = postgres(url, { max: 1, idle_timeout: 1 });
-  try {
-    await sql`
-      INSERT INTO folders (id, name, sort_order)
-      VALUES ('folder-schema', 'Schema folder', 0)
-    `;
-    await sql`
-      INSERT INTO markdown_documents (id, title, body)
-      VALUES ('doc-schema', 'Schema doc', 'body')
-    `;
-    await sql`
-      INSERT INTO board_items (id, folder_id, item_type, item_id, x, y, metadata)
-      VALUES (
-        'markdown:doc-schema',
-        'folder-schema',
-        'markdown',
-        'doc-schema',
-        10,
-        20,
-        '{"title":"Schema doc"}'::jsonb
-      )
-    `;
-  } finally {
-    await sql.end({ timeout: 5 });
-  }
 }
 
 function dockerMappedPort(containerId: string): string {

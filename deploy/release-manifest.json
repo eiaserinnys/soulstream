@@ -1,0 +1,52 @@
+{
+  "schema_version": "haniel.release.v1",
+  "release_id": "soulstream-versioned-migrations-v1",
+  "migration": {
+    "destructive": true,
+    "preflight": {
+      "name": "migration-preflight",
+      "command": "node packages/db-schema/scripts/migrate.mjs preflight",
+      "timeout_seconds": 300
+    },
+    "backup": {
+      "name": "database-backup",
+      "command": "node packages/db-schema/scripts/backup.mjs create",
+      "timeout_seconds": 300
+    },
+    "verify_backup": {
+      "name": "verify-database-backup",
+      "command": "node packages/db-schema/scripts/backup.mjs verify",
+      "timeout_seconds": 300
+    },
+    "apply": {
+      "name": "apply-migrations",
+      "command": "node packages/db-schema/scripts/migrate.mjs apply",
+      "timeout_seconds": 300
+    }
+  },
+  "post_start_verify": [
+    {
+      "name": "verify-migration-ledger",
+      "command": "node packages/db-schema/scripts/migrate.mjs verify",
+      "timeout_seconds": 300
+    },
+    {
+      "name": "verify-release-health",
+      "command": "node soul-server-ts/scripts/verify-release-health.mjs",
+      "timeout_seconds": 300
+    }
+  ],
+  "recovery": {
+    "strategy": "roll_forward",
+    "command": {
+      "name": "recover-migrations",
+      "command": "node packages/db-schema/scripts/migrate.mjs recover",
+      "timeout_seconds": 300
+    },
+    "fallback": {
+      "name": "recover-previous-release-data",
+      "command": "node packages/db-schema/scripts/backup.mjs recover",
+      "timeout_seconds": 300
+    }
+  }
+}

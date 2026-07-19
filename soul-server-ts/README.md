@@ -7,19 +7,33 @@ Soulstream TypeScript execution worker. Orchestrator WebSocket에 등록하고, 
 - `node_register`/health/check command 등 upstream wire 처리
 - task lifecycle, session/event persistence, intervention delivery
 - Fastify `GET /health`와 Streamable HTTP MCP surface
-- schema application helper: `scripts/apply-schema.mjs`
+- fail-closed migration verifier: `scripts/verify-migrations.mjs`
 
 ## 운영
 
 Haniel `haniel.yaml`의 `services.soul-server-ts` 항목으로 자동 시작·재시작.
 운영 cwd는 `./services/soulstream`이고, Haniel repo checkout 기준 모노레포 루트는 `src/soulstream/`이다.
+정상 시작은 migration 상태를 검증만 한다. fresh install은 installer가 versioned migrator의
+`initialize` 모드를 한 번 호출하며, 이후 릴리스는 `deploy/release-manifest.json`을 통해 적용된다.
+
+기존 운영 설정이 `soul-server-ts/scripts/apply-schema.mjs`를 `pre_start`로 호출해도 안전하다.
+이 호환 entrypoint는 빈 DB에서만 canonical `schema.sql`을 실행하고, 이미 current인 DB에서는
+ledger만 멱등 bootstrap한다. destructive pending은 검증된 backup gate 없이는 실패한다.
+
+Haniel migration-aware 배포가 먼저 적용된 뒤의 최초 승인/재시작 pull은 저장소의
+`deploy/release-manifest.json`을 자동 발견해 기존 `repos.soulstream` 설정에 원자적으로
+활성화한다. 운영자가 `haniel.yaml`을 손으로 수정할 필요가 없다. manifest는 특정 환경의
+service key를 고정하지 않으며, Haniel이 repo에 연결된 실제 서비스
+(`soulstream-orch-server`, `soulstream-soul-server-ts` 등)를 사용한다. post-start success는
+HTTP/MCP/DB뿐 아니라 인증된 `/api/nodes`에서 `SOULSTREAM_NODE_ID`가 connected인 경우에만
+성립한다.
 
 ### Haniel 통합 적용
 
-운영 `haniel.yaml`(`/home/eias/haniel-root/haniel.yaml`)에 적용할 yaml 조각의 *정본*은
-**`install/haniel-soul-server-ts.example.yaml`** 에 보관된다. 운영자는 본 파일의
-`services.soul-server-ts` + `install.configs.soul-server-ts-env` 두 항목을 운영 `haniel.yaml`에
-추가하고 `haniel reload`(또는 service restart)하면 된다.
+신규 standalone 설치용 정본은 **`install/haniel-soul-server-ts.example.yaml`** 이다.
+기존 클러스터의 one-time transition은 Haniel migration-aware 배포가 처리한다. 현재 config의
+repo/service key·cwd·ready·pre_start는 유지하고 `repos.soulstream.release_manifest` 한 필드만
+checksum CAS와 backup을 거쳐 자동 활성화한다. 별도 config 편집이나 reload를 요구하지 않는다.
 
 ### 환경 변수
 

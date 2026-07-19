@@ -56,7 +56,7 @@ irm https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/instal
 & ([scriptblock]::Create((irm 'https://raw.githubusercontent.com/eiaserinnys/soulstream/main/install/install.ps1'))) -NonInteractive
 ```
 
-The installer checks prerequisites, installs [Haniel](https://github.com/eiaserinnys/haniel) as the process manager, clones this repo, builds `soul-server-ts`, applies the PostgreSQL schema, builds the dashboard, and registers a Windows service — all in one pass.
+The installer checks prerequisites, installs [Haniel](https://github.com/eiaserinnys/haniel) as the process manager, clones this repo, builds `soul-server-ts`, applies the PostgreSQL schema, builds the dashboard, and registers a Windows service — all in one pass. PostgreSQL 16+ client tools (`pg_dump` and `pg_restore`) must be installed and on `PATH`; download them from the [official PostgreSQL Windows page](https://www.postgresql.org/download/windows/). Release preflight also verifies that their major versions are compatible with the target server and that the configured database role can create and replace the schema objects before any service is stopped.
 
 **Parameters**
 
@@ -66,7 +66,7 @@ The installer checks prerequisites, installs [Haniel](https://github.com/eiaseri
 | `-WorkspaceDir` | `%USERPROFILE%\workspace` | Claude Code workspace directory |
 | `-Port` | `3105` | Server port |
 | `-DatabaseUrl` | *(required in non-interactive mode)* | PostgreSQL connection URL |
-| `-AuthBearerToken` | *(empty)* | Orchestrator bearer token |
+| `-AuthBearerToken` | *(required)* | Orchestrator service bearer token used for authenticated node registration verification |
 | `-NonInteractive` | — | Skip all prompts, use defaults |
 | `-Force` | — | Overwrite existing installation without confirmation |
 | `-SkipDashboard` | — | Skip dashboard build step |

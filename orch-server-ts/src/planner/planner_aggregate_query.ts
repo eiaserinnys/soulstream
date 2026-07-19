@@ -5,6 +5,8 @@ import type {
   ProjectReadInput,
 } from "./planner_aggregate_types.js";
 import { decodeMountCursor } from "./planner_repository_reads.js";
+
+// Production-gated legacy runbook_ref reads: docs/task-read-compatibility.md
 export async function plannerQuery(
   sql: LivePostgresSql,
   kind: PlannerKind,

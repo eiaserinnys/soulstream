@@ -8,6 +8,8 @@ import type {
 } from "./planner_contract.js";
 import type { LivePostgresSql } from "../runtime/live_db_sql.js";
 
+// Production-gated legacy runbook_ref reads: docs/task-read-compatibility.md
+
 export class PlannerCursorError extends Error {
   readonly code = "PLANNER_CURSOR_INVALID";
 }
