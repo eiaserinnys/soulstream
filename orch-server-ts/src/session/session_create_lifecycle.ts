@@ -77,7 +77,9 @@ async function prepareSessionCreate(
   const sourceSessionId = optionalString(body, "sourceSessionId");
   const bodyCallerInfo = optionalObject(body, "caller_info");
   const nodeId = optionalString(body, "nodeId") ?? "";
-  validateOptionalContainer(body);
+  const container = validateOptionalContainer(body);
+  if (container === undefined) delete payload.container;
+  else payload.container = container;
 
   let snapshot: BoardItemCatalogSnapshot | undefined;
   delete payload.sourceSessionId;
@@ -154,8 +156,8 @@ async function resolvePayloadFolderId(
   return folderId;
 }
 
-function validateOptionalContainer(body: JsonObject): void {
-  if (body.container === undefined || body.container === null) return;
+function validateOptionalContainer(body: JsonObject): BoardContainerTarget | undefined {
+  if (body.container === undefined || body.container === null) return undefined;
   if (!isJsonObject(body.container)) {
     throw new SessionCreateLifecycleError(
       "INVALID_REQUEST",
@@ -163,6 +165,23 @@ function validateOptionalContainer(body: JsonObject): void {
       422,
     );
   }
+  const kind = body.container.kind;
+  if (kind !== "folder" && kind !== "task") {
+    throw new SessionCreateLifecycleError(
+      "INVALID_REQUEST",
+      "container.kind must be folder or task",
+      422,
+    );
+  }
+  const id = body.container.id;
+  if (typeof id !== "string" || id.trim().length === 0) {
+    throw new SessionCreateLifecycleError(
+      "INVALID_REQUEST",
+      "container.id must be a non-empty string",
+      422,
+    );
+  }
+  return { kind, id: id.trim() };
 }
 
 function optionalObject(
