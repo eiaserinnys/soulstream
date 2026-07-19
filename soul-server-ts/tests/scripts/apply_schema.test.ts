@@ -326,6 +326,7 @@ describe("apply-schema.mjs", () => {
     expect(installer).toContain('Get-PostgresToolMajorVersion "pg_dump"');
     expect(installer).toContain('Get-PostgresToolMajorVersion "pg_restore"');
     expect(installer).toContain("PostgreSQL client 16+ required");
+    expect(installer.trimEnd()).toMatch(/exit 0$/);
     expect(installer).toContain("-AuthBearerToken is required in non-interactive mode");
     expect(
       installer.indexOf('node "packages/db-schema/scripts/migrate.mjs" initialize'),

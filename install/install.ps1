@@ -524,3 +524,4 @@ Write-Host ""
 Write-Host "  Config: $hanielYamlPath" -ForegroundColor DarkGray
 Write-Host "  Logs  : $installDir\logs\" -ForegroundColor DarkGray
 Write-Host ""
+exit 0
