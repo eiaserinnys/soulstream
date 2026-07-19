@@ -25,6 +25,10 @@ export function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+export function migrationSha256(sql) {
+  return sha256(sql.replace(/\r\n?/g, "\n"));
+}
+
 export function readDatabaseUrl(env = process.env) {
   const value = env.DATABASE_URL?.trim();
   if (!value) throw new Error("DATABASE_URL is required");
@@ -76,7 +80,7 @@ export async function loadMigrationManifest() {
     }
     const path = resolve(migrationDirectory, entry.id);
     const sql = await readFile(path, "utf8");
-    const actual = sha256(sql);
+    const actual = migrationSha256(sql);
     if (actual !== entry.sha256) {
       throw new Error(
         `migration checksum differs for ${entry.id}: expected ${entry.sha256}, got ${actual}`,

@@ -13,6 +13,7 @@ import {
   loadLegacyBackupContract,
   loadMigrationManifest,
   legacyRetirementPending,
+  migrationSha256,
   validateBackupGate,
   validateLedger,
 } from "../../../packages/db-schema/scripts/migration-contract.mjs";
@@ -57,6 +58,13 @@ const legacyPre041 = {
 };
 
 describe("versioned migration contract", () => {
+  it("uses the same migration checksum after a Windows CRLF checkout", () => {
+    const lf = "SELECT 1;\nSELECT 2;\n";
+    const crlf = lf.replaceAll("\n", "\r\n");
+
+    expect(migrationSha256(crlf)).toBe(migrationSha256(lf));
+  });
+
   it("keeps deployment-specific service keys and destructive restore out of the manifest", () => {
     const manifest = JSON.parse(readFileSync(fileURLToPath(
       new URL("../../../deploy/release-manifest.json", import.meta.url),
