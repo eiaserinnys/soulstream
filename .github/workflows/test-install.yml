@@ -71,17 +71,20 @@ jobs:
       - name: Start PostgreSQL
         shell: pwsh
         run: |
-          docker run --rm -d `
-            --name soulstream-test-pg `
-            -e POSTGRES_USER=$env:PGUSER `
-            -e POSTGRES_PASSWORD=$env:PGPASSWORD `
-            -e POSTGRES_DB=$env:PGDATABASE `
-            -p "127.0.0.1:${env:PGPORT}:5432" `
-            postgres:16-alpine
+          $dataDir = Join-Path $env:RUNNER_TEMP "soulstream-test-pg"
+          $passwordFile = Join-Path $env:RUNNER_TEMP "soulstream-test-pg-password"
+          $logFile = Join-Path $env:RUNNER_TEMP "soulstream-test-pg.log"
+          $env:PGDATA = $dataDir
+          $env:PGHOST = "127.0.0.1"
+          $env:PGPASSWORD | Set-Content -Path $passwordFile -NoNewline -Encoding utf8
+          initdb -D $dataDir -U $env:PGUSER --pwfile=$passwordFile `
+            --auth-host=scram-sha-256 --encoding=UTF8
+          Remove-Item $passwordFile -Force
+          pg_ctl -D $dataDir -l $logFile -o "-p $env:PGPORT -h 127.0.0.1" start
 
           $ready = $false
           for ($i = 0; $i -lt 30; $i++) {
-            docker exec soulstream-test-pg pg_isready -U $env:PGUSER -d $env:PGDATABASE
+            pg_isready -h 127.0.0.1 -p $env:PGPORT -U $env:PGUSER -d postgres
             if ($LASTEXITCODE -eq 0) {
               $ready = $true
               break
@@ -92,6 +95,7 @@ jobs:
             Write-Error "PostgreSQL did not become ready"
             exit 1
           }
+          createdb -h 127.0.0.1 -p $env:PGPORT -U $env:PGUSER $env:PGDATABASE
 
       - name: Run installer (non-interactive)
         shell: pwsh
@@ -136,7 +140,9 @@ jobs:
       - name: Smoke test — PostgreSQL schema
         shell: pwsh
         run: |
-          $sessionsTable = docker exec soulstream-test-pg psql `
+          $sessionsTable = psql `
+            -h 127.0.0.1 `
+            -p $env:PGPORT `
             -U $env:PGUSER `
             -d $env:PGDATABASE `
             -tAc "SELECT to_regclass('public.sessions')"
@@ -145,7 +151,9 @@ jobs:
             exit 1
           }
 
-          $sessionGet = docker exec soulstream-test-pg psql `
+          $sessionGet = psql `
+            -h 127.0.0.1 `
+            -p $env:PGPORT `
             -U $env:PGUSER `
             -d $env:PGDATABASE `
             -tAc "SELECT to_regprocedure('public.session_get(text)')"
@@ -198,4 +206,7 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          docker stop soulstream-test-pg 2>$null
+          $dataDir = Join-Path $env:RUNNER_TEMP "soulstream-test-pg"
+          if (Test-Path $dataDir) {
+            pg_ctl -D $dataDir stop -m fast
+          }
