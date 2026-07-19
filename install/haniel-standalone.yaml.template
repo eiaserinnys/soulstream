@@ -1,7 +1,8 @@
 # Soulstream Standalone — Haniel Configuration Template
 #
 # This file is a template. __INSTALL_DIR__, __WORKSPACE_DIR__, __PORT__,
-# __DATABASE_URL__, and __AUTH_BEARER_TOKEN__ are substituted by install.ps1
+# __DATABASE_URL__, __AUTH_BEARER_TOKEN__, __REPOSITORY_URL__, and
+# __REPOSITORY_BRANCH__ are substituted by install.ps1
 # before use.
 #
 # Do not use this file directly with haniel — use the generated
@@ -20,8 +21,8 @@ auto_apply: false
 
 repos:
   soulstream:
-    url: https://github.com/eiaserinnys/soulstream.git
-    branch: main
+    url: __REPOSITORY_URL__
+    branch: __REPOSITORY_BRANCH__
     path: __INSTALL_DIR__/soulstream
     release_manifest: deploy/release-manifest.json
 

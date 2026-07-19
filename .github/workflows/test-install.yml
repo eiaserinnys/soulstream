@@ -27,6 +27,8 @@ jobs:
       PGPASSWORD: soulstream_schema_secret
       PGDATABASE: soulstream_schema_test
       PGPORT: '54329'
+      SOULSTREAM_SOURCE_URL: ${{ github.event.pull_request.head.repo.clone_url || format('{0}/{1}.git', github.server_url, github.repository) }}
+      SOULSTREAM_SOURCE_BRANCH: ${{ github.head_ref || github.ref_name }}
 
     steps:
       - name: Checkout
@@ -108,7 +110,9 @@ jobs:
             -WorkspaceDir "C:\workspace-test" `
             -Port 3105 `
             -DatabaseUrl $dbUrl `
-            -AuthBearerToken "ci-test-token"
+            -AuthBearerToken "ci-test-token" `
+            -RepositoryUrl $env:SOULSTREAM_SOURCE_URL `
+            -RepositoryBranch $env:SOULSTREAM_SOURCE_BRANCH
 
       - name: Verify service health
         shell: pwsh

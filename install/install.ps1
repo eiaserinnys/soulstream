@@ -20,6 +20,8 @@ param(
     [int]$Port               = 0,
     [string]$DatabaseUrl      = "",
     [string]$AuthBearerToken  = "",
+    [string]$RepositoryUrl    = "https://github.com/eiaserinnys/soulstream.git",
+    [string]$RepositoryBranch = "main",
     [switch]$Force,
     [switch]$NonInteractive,
     [switch]$SkipDashboard
@@ -359,6 +361,8 @@ $hanielYaml = $hanielYaml.Replace("__WORKSPACE_DIR__", $workspaceDirFwd)
 $hanielYaml = $hanielYaml.Replace("__PORT__", [string]$port)
 $hanielYaml = $hanielYaml.Replace("__DATABASE_URL__", $databaseUrl)
 $hanielYaml = $hanielYaml.Replace("__AUTH_BEARER_TOKEN__", $authBearerToken)
+$hanielYaml = $hanielYaml.Replace("__REPOSITORY_URL__", $RepositoryUrl)
+$hanielYaml = $hanielYaml.Replace("__REPOSITORY_BRANCH__", $RepositoryBranch)
 
 $hanielYamlPath = Join-Path $installDir "haniel.yaml"
 [System.IO.File]::WriteAllText($hanielYamlPath, $hanielYaml, [System.Text.UTF8Encoding]::new($false))
