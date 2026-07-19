@@ -765,6 +765,9 @@ export interface SSEEventReconnect {
  */
 export interface SSEEventHistorySync {
   type: "history_sync";
+  last_event_id?: number;
+  is_live?: boolean;
+  reset_required?: boolean;
   [k: string]: unknown;
 }
 /**

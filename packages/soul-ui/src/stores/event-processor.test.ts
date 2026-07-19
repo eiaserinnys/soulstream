@@ -111,6 +111,44 @@ describe("processEventsBatch — dedup", () => {
   });
 });
 
+describe("processEventSingle — history_sync reset compatibility", () => {
+  it("reset_required를 모르는 웹도 트리를 바꾸지 않고 baseline marker로 처리", () => {
+    const ctx = createProcessingContext();
+    const initial = processEventSingle(
+      makeUserMessageEvent(7).event,
+      7,
+      ctx,
+      null,
+      "sess-1",
+      null,
+      0,
+    );
+    const root = initial.root;
+
+    const result = processEventSingle(
+      {
+        type: "history_sync",
+        last_event_id: 99,
+        is_live: true,
+        reset_required: true,
+      } as unknown as SoulSSEEvent,
+      0,
+      ctx,
+      root,
+      "sess-1",
+      null,
+      7,
+    );
+
+    expect(result.root).toBe(root);
+    expect(result.updated).toBe(false);
+    expect(result.notify).toBe(false);
+    expect(result.isHistorySync).toBe(true);
+    expect(ctx.historySynced).toBe(true);
+    expect(flattenTree(result.root)).toHaveLength(flattenTree(root).length);
+  });
+});
+
 describe("processEventSingle — prompt_suggestion", () => {
   it("prompt_suggestion 단건: result.promptSuggestion에 sessionId+text가 담긴다", () => {
     const ctx = createProcessingContext();

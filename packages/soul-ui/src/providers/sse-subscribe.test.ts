@@ -298,11 +298,20 @@ describe("createSSESubscribe — 재연결 및 lastEventId 전달", () => {
     // history_sync는 SSE id 필드 없이 (lastEventId=0) payload.last_event_id로 baseline 전달
     instances[0].emit(
       "history_sync",
-      { type: "history_sync", last_event_id: 99, is_live: true },
+      {
+        type: "history_sync",
+        last_event_id: 99,
+        is_live: true,
+        reset_required: true,
+      },
       0,
     );
 
     expect(onEvent).toHaveBeenCalledTimes(1);
+    expect(onEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "history_sync", reset_required: true }),
+      0,
+    );
 
     // 재연결 시 history_sync.last_event_id가 currentLastEventId에 반영되어
     // URL에 ?lastEventId=99로 전송되어야 함

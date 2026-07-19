@@ -246,6 +246,166 @@ class TestAfterIdNStreamsAfterN:
         assert sync_data["last_event_id"] == 7
 
 
+class TestSnapshotCatchupCapability:
+    """명시적으로 opt-in한 클라이언트만 큰 catch-up을 snapshot reset으로 전환."""
+
+    @staticmethod
+    def _events(count: int) -> list[tuple[int, str, str]]:
+        return [
+            (
+                event_id,
+                "tool_result",
+                json.dumps({"type": "tool_result", "tool_use_id": f"tool-{event_id}"}),
+            )
+            for event_id in range(6, 6 + count)
+        ]
+
+    async def test_client_without_capability_keeps_large_replay(
+        self, mock_db, node_manager, session_router, mock_catalog_service, broadcaster,
+    ):
+        _patch_db_stream(mock_db, self._events(201))
+        mock_db.get_session = AsyncMock(return_value=None)
+
+        router = create_sessions_router(
+            db=mock_db,
+            node_manager=node_manager,
+            session_router=session_router,
+            broadcaster=broadcaster,
+            catalog_service=mock_catalog_service,
+        )
+        route = _get_events_route(router)
+        request = _make_request_mock(query={"lastEventId": "5"})
+
+        response = await route.endpoint(session_id="sess-1", request=request)
+        events = await _collect_until_history_sync(response.body_iterator)
+
+        ids_yielded = [event["id"] for event in events if "id" in event]
+        assert len(ids_yielded) == 201
+        sync_data = json.loads(events[-1]["data"])
+        assert "reset_required" not in sync_data
+
+    async def test_opted_in_client_keeps_replay_at_threshold(
+        self, mock_db, node_manager, session_router, mock_catalog_service, broadcaster,
+    ):
+        _patch_db_stream(mock_db, self._events(200))
+        mock_db.get_session = AsyncMock(return_value=None)
+
+        router = create_sessions_router(
+            db=mock_db,
+            node_manager=node_manager,
+            session_router=session_router,
+            broadcaster=broadcaster,
+            catalog_service=mock_catalog_service,
+        )
+        route = _get_events_route(router)
+        request = _make_request_mock(
+            query={"lastEventId": "5", "snapshotCatchup": "1"},
+        )
+
+        response = await route.endpoint(session_id="sess-1", request=request)
+        events = await _collect_until_history_sync(response.body_iterator)
+
+        ids_yielded = [event["id"] for event in events if "id" in event]
+        assert len(ids_yielded) == 200
+        sync_data = json.loads(events[-1]["data"])
+        assert "reset_required" not in sync_data
+
+    async def test_opted_in_client_resets_above_threshold(
+        self, mock_db, node_manager, session_router, mock_catalog_service, broadcaster,
+    ):
+        _patch_db_stream(mock_db, self._events(201))
+        mock_db.read_last_event_id = AsyncMock(return_value=250)
+        mock_db.get_session = AsyncMock(return_value=None)
+
+        router = create_sessions_router(
+            db=mock_db,
+            node_manager=node_manager,
+            session_router=session_router,
+            broadcaster=broadcaster,
+            catalog_service=mock_catalog_service,
+        )
+        route = _get_events_route(router)
+        request = _make_request_mock(
+            query={"lastEventId": "5", "snapshotCatchup": "1"},
+        )
+
+        response = await route.endpoint(session_id="sess-1", request=request)
+        events = await _collect_until_history_sync(response.body_iterator)
+
+        assert [event.get("event") for event in events] == ["init", "history_sync"]
+        sync_data = json.loads(events[-1]["data"])
+        assert sync_data["last_event_id"] == 250
+        assert sync_data["reset_required"] is True
+        mock_db.read_last_event_id.assert_awaited_once_with("sess-1")
+
+    async def test_reset_boundary_drops_covered_queue_events_and_keeps_live_tail(
+        self, mock_db, node_manager, session_router, mock_catalog_service, broadcaster,
+    ):
+        _patch_db_stream(mock_db, self._events(201))
+        mock_db.read_last_event_id = AsyncMock(return_value=210)
+
+        ws = AsyncMock()
+        ws.send_json = AsyncMock()
+        ws.close = AsyncMock()
+        await node_manager.register_node(
+            ws, {"node_id": "test-node", "host": "localhost", "port": 4100},
+        )
+        mock_db.get_session = AsyncMock(
+            return_value={"session_id": "sess-1", "node_id": "test-node"},
+        )
+
+        async def fake_subscribe_events(self, session_id, on_event):
+            await on_event({
+                "eventId": 209,
+                "event": {"type": "text_delta", "text": "covered", "_event_id": 209},
+            })
+            await on_event({
+                "eventId": 211,
+                "event": {"type": "text_delta", "text": "live", "_event_id": 211},
+            })
+            return "sub-1"
+
+        def fake_unsubscribe_events(self, session_id, subscribe_id):
+            return None
+
+        from soulstream_server.nodes.node_connection import NodeConnection
+
+        original_subscribe = NodeConnection.send_subscribe_events
+        original_unsubscribe = NodeConnection.unsubscribe_events
+        NodeConnection.send_subscribe_events = fake_subscribe_events
+        NodeConnection.unsubscribe_events = fake_unsubscribe_events
+
+        try:
+            router = create_sessions_router(
+                db=mock_db,
+                node_manager=node_manager,
+                session_router=session_router,
+                broadcaster=broadcaster,
+                catalog_service=mock_catalog_service,
+            )
+            route = _get_events_route(router)
+            request = _make_request_mock(
+                query={"lastEventId": "5", "snapshotCatchup": "1"},
+            )
+
+            response = await route.endpoint(session_id="sess-1", request=request)
+            events = await _collect_until_history_sync(
+                response.body_iterator,
+                max_extra=1,
+            )
+
+            assert [event.get("event") for event in events] == [
+                "init",
+                "history_sync",
+                "text_delta",
+            ]
+            assert events[-1]["id"] == "211"
+            assert all(event.get("id") != "209" for event in events)
+        finally:
+            NodeConnection.send_subscribe_events = original_subscribe
+            NodeConnection.unsubscribe_events = original_unsubscribe
+
+
 class TestAppServerReplayFiltering:
     """app-server 완료 텍스트의 과거 SSE replay는 raw delta를 다시 타이핑하지 않는다."""
 
