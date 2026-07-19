@@ -23,17 +23,18 @@ repos:
     url: https://github.com/eiaserinnys/soulstream.git
     branch: main
     path: __INSTALL_DIR__/soulstream
+    release_manifest: deploy/release-manifest.json
 
 services:
   soul-server-ts:
     run: node soul-server-ts/dist/main.js
     cwd: __INSTALL_DIR__/soulstream
     repo: soulstream
-    ready: port:__PORT__
+    ready: http://127.0.0.1:__PORT__/health
     restart_delay: 3
     hooks:
       post_pull: pnpm --dir __INSTALL_DIR__/soulstream install --frozen-lockfile --config.strict-dep-builds=false && pnpm --dir __INSTALL_DIR__/soulstream/soul-server-ts run build
-      pre_start: node soul-server-ts/scripts/apply-schema.mjs
+      pre_start: node soul-server-ts/scripts/verify-migrations.mjs
 
 install:
   requirements:
@@ -65,6 +66,12 @@ install:
           default: "__PORT__"
         - key: HOST
           default: "127.0.0.1"
+        - key: MCP_ENABLED
+          default: "true"
+        - key: MCP_PATH
+          default: /mcp
+        - key: MCP_REQUIRE_AUTH
+          default: "false"
         - key: ENVIRONMENT
           default: development
         - key: LOG_LEVEL

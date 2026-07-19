@@ -1,0 +1,16 @@
+{
+  "schema_version": "soulstream.legacy-task-tree-backup.v1",
+  "status": "unresolved",
+  "stored_task_count": 199,
+  "stored_operation_count": 589,
+  "observed_pre_drop_task_count": 199,
+  "observed_pre_drop_operation_count": 592,
+  "missing_operation_count": 3,
+  "stored_combined_sha256": "041758615e4423d06c5e95c130c50c55541884b38a1431264bfadb561314c01c",
+  "evidence": {
+    "backup_index_document_id": "656d6369-f4cf-4596-9eec-498deac99ea3",
+    "recovery_manifest_document_id": "a1dd8178-d7d1-43a6-a9eb-032f24bba9f8",
+    "analysis_document_id": "890aad68-e92b-4354-89e7-1d5370bfee28"
+  },
+  "blocker": "The retained evidence does not identify the three missing operation rows. A complete backup claim is prohibited."
+}

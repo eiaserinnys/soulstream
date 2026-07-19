@@ -7,12 +7,14 @@ Soulstream TypeScript execution worker. Orchestrator WebSocket에 등록하고, 
 - `node_register`/health/check command 등 upstream wire 처리
 - task lifecycle, session/event persistence, intervention delivery
 - Fastify `GET /health`와 Streamable HTTP MCP surface
-- schema application helper: `scripts/apply-schema.mjs`
+- fail-closed migration verifier: `scripts/verify-migrations.mjs`
 
 ## 운영
 
 Haniel `haniel.yaml`의 `services.soul-server-ts` 항목으로 자동 시작·재시작.
 운영 cwd는 `./services/soulstream`이고, Haniel repo checkout 기준 모노레포 루트는 `src/soulstream/`이다.
+정상 시작은 migration 상태를 검증만 한다. fresh install은 installer가 versioned migrator의
+`initialize` 모드를 한 번 호출하며, 이후 릴리스는 `deploy/release-manifest.json`을 통해 적용된다.
 
 ### Haniel 통합 적용
 

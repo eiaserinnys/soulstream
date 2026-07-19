@@ -9,11 +9,16 @@
 #   시 본 파일을 갱신하여 추적한다.
 #
 # 가정:
-# - `repos.soulstream-server-src` 이미 운영 `haniel.yaml`에 정의됨
+# - `repos.soulstream-server-src` 이미 운영 `haniel.yaml`에 정의됨. 아래
+#   `release_manifest` 필드를 같은 repo 항목에 추가해야 migration-aware 계약이 활성화된다.
 # - cwd 경로는 `./services/soulstream`
 # - 모노레포 루트는 `cwd` 기준 `src/soulstream/`
 #
 # 본 노드 ID 패턴: `{기존 노드 ID}-ts` — 예: 노드가 `eias-shopping`이면 `eias-shopping-ts`.
+
+repos:
+  soulstream-server-src:
+    release_manifest: deploy/release-manifest.json
 
 services:
   # 운영 `haniel.yaml`의 `services:` 섹션에 추가
@@ -23,11 +28,11 @@ services:
     repo: soulstream-server-src
     restart_delay: 3
     after: []  # 독립 노드로 orch에 직접 등록
-    ready: port:4205
+    ready: http://127.0.0.1:4205/health
     enabled: true
     hooks:
       post_pull: pnpm --dir src/soulstream install --frozen-lockfile && pnpm --dir src/soulstream/soul-server-ts run build
-      pre_start: node src/soulstream/soul-server-ts/scripts/apply-schema.mjs
+      pre_start: node src/soulstream/soul-server-ts/scripts/verify-migrations.mjs
     reflect: false  # cogito reflection은 TS MCP 자체 구현을 사용하므로 Haniel reflect hook은 비활성.
 
 install:
@@ -49,11 +54,17 @@ install:
           # default 키 *제거* — Haniel install 시 운영자가 직접 입력
         - key: DATABASE_URL
           prompt: "PostgreSQL 연결 URL (운영 .env에서 확인 — public repo에 default 박지 않음)"
-          # default 키 *제거* — soul-server-ts와 apply-schema.mjs가 같은 필수 DB 정본을 사용
+          # default 키 *제거* — soul-server-ts와 versioned migrator가 같은 필수 DB 정본을 사용
         - key: HOST
           default: 127.0.0.1
         - key: PORT
           default: '4205'
+        - key: MCP_ENABLED
+          default: 'true'
+        - key: MCP_PATH
+          default: /mcp
+        - key: MCP_REQUIRE_AUTH
+          default: 'true'
         - key: ENVIRONMENT
           default: production
         - key: LOG_LEVEL

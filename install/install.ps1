@@ -385,6 +385,21 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Ok "soul-server-ts built."
 
+Write-Step "Initializing the versioned database ledger..."
+
+Push-Location $monoRepoDir
+try {
+    node "packages/db-schema/scripts/migrate.mjs" initialize
+    $migrationExitCode = $LASTEXITCODE
+} finally {
+    Pop-Location
+}
+if ($migrationExitCode -ne 0) {
+    Write-Fail "Database initialization or migration failed. The service was not started."
+    exit 1
+}
+Write-Ok "Database schema and migration ledger verified."
+
 Write-Step "Building dashboard..."
 
 if ($SkipDashboard) {
