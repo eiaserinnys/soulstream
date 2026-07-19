@@ -31,7 +31,7 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
     : null;
 
   return (
-    <div className="flex gap-2 px-3 py-1.5" data-tree-node-id={msg.treeNodeId}>
+    <div className="flex gap-2 px-3 py-1.5" data-slot="chat-message-row" data-tree-node-id={msg.treeNodeId}>
       <ProfileAvatar
         role="assistant"
         hasPortrait={hasPortrait}
@@ -40,6 +40,7 @@ export const AssistantMessage = memo(function AssistantMessage({ msg, llmContext
       />
       <div
         ref={bubbleRef}
+        data-slot="chat-message-bubble"
         className="max-w-[86%] rounded-[17px] rounded-bl-[7px] bg-[var(--lg-card)] px-3.5 py-2.5 shadow-[0_6px_20px_-14px_rgb(20_26_40_/_45%)]"
         data-liquid-glass-webgl={webglActive ? "true" : undefined}
       >

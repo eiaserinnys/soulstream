@@ -28,6 +28,7 @@ describe("ProjectNavigationTree expansion", () => {
   it("starts collapsed and restores the shared v1 expansion key", () => {
     render();
     expect(container.textContent).not.toContain("Child");
+    expect(container.querySelectorAll(".v3-project-tree-icon")).toHaveLength(1);
 
     button("Root 펼치기").click();
     expect(container.textContent).toContain("Child");
@@ -38,6 +39,7 @@ describe("ProjectNavigationTree expansion", () => {
     root = createRoot(container);
     render();
     expect(container.textContent).toContain("Child");
+    expect(container.querySelectorAll(".v3-project-tree-icon")).toHaveLength(2);
   });
 
   function render() {

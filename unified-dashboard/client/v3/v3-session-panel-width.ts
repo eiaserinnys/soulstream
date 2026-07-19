@@ -1,5 +1,7 @@
+import { V3_SESSION_PANEL_DEFAULT_WIDTH_PX } from "./v3-layout-metrics";
+
 export const V3_SESSION_PANEL_STORAGE_KEY = "soulstream-v3-session-panel-width";
-export const V3_SESSION_PANEL_DEFAULT_WIDTH = 300;
+export const V3_SESSION_PANEL_DEFAULT_WIDTH = V3_SESSION_PANEL_DEFAULT_WIDTH_PX;
 export const V3_SESSION_PANEL_MAX_WIDTH = 560;
 
 const V3_SESSION_PANEL_MIN_WIDTH = 240;

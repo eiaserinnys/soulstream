@@ -46,7 +46,7 @@ describe("PlannerTaskCard node connectivity", () => {
           status: "in_progress",
           assignee: "담당 미지정",
           contextCount: 3,
-          progress: 50,
+          progress: 0,
           projectPageId: null,
         } as never}
         sessions={[{
@@ -69,6 +69,7 @@ describe("PlannerTaskCard node connectivity", () => {
     expect(html).not.toContain("담당 미지정");
     expect(html).not.toContain("컨텍스트 3");
     expect(html).not.toContain("세션 #1 완료");
+    expect(html).toContain('data-complete="false"');
   });
 
   it("keeps a meaningful assignee and an actively running session", () => {
@@ -136,5 +137,34 @@ describe("PlannerTaskCard node connectivity", () => {
 
     expect(html).toContain("세션 #1 노드 오프라인");
     expect(html).not.toContain('aria-label="실행 중"');
+  });
+
+  it("keeps body, state, and star in fixed columns and marks only 100 percent complete", () => {
+    const html = renderToStaticMarkup(
+      <PlannerTaskCard
+        task={{
+          page: { id: "page-complete", title: "완료된 업무" },
+          taskId: "rb-complete",
+          sessionIds: [],
+          status: "completed",
+          assignee: "로젤린",
+          contextCount: 0,
+          progress: 100,
+          projectPageId: null,
+        } as never}
+        sessions={[]}
+        nodeConnectivity={{ ready: true, connectedNodeIds: new Set() }}
+        isInToday
+        onOpen={() => undefined}
+        onComplete={async () => undefined}
+        onToggleToday={async () => undefined}
+        onMoveToProject={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('class="v3-task-main"');
+    expect(html).toContain('class="v3-task-state"');
+    expect(html).toContain('class="v3-task-star-slot"');
+    expect(html).toContain('data-complete="true"');
   });
 });

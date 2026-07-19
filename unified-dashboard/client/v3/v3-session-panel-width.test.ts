@@ -16,6 +16,7 @@ describe("v3 session panel width", () => {
 
   it("uses a dedicated persisted key and clamps the resize range", () => {
     expect(V3_SESSION_PANEL_STORAGE_KEY).not.toBe("dashboard-sidebar-collapse");
+    expect(V3_SESSION_PANEL_DEFAULT_WIDTH).toBe(500);
     expect(clampV3SessionPanelWidth(100)).toBe(240);
     expect(V3_SESSION_PANEL_MAX_WIDTH).toBe(560);
     expect(clampV3SessionPanelWidth(500)).toBe(500);

@@ -5,7 +5,7 @@ import { cn } from "../../lib/cn";
 /** 단일 tool 메시지 (그룹에 속하지 않는 단독 tool) */
 export const ToolMessage = memo(function ToolMessage({ msg }: { msg: ChatMessage }) {
   return (
-    <div className="flex gap-2 px-3 py-0.5" data-tree-node-id={msg.treeNodeId}>
+    <div className="flex gap-2 px-3 py-0.5" data-slot="chat-tool-row" data-tree-node-id={msg.treeNodeId}>
       <span className="w-8 shrink-0" />
       <div className={cn(
         "flex-1 min-w-0 flex items-center gap-1",

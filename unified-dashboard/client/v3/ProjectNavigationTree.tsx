@@ -11,7 +11,7 @@ import {
   type CatalogFolderReorderItem,
   type FolderDragData,
 } from "@seosoyoung/soul-ui";
-import { GripVertical } from "lucide-react";
+import { Folder, GripVertical } from "lucide-react";
 
 import {
   buildProjectFolderTree,
@@ -164,6 +164,7 @@ function ProjectTreeNode({
         >
           <GripVertical aria-hidden="true" />
         </button>
+        <span className="v3-project-tree-icon" aria-hidden="true"><Folder /></span>
         <button
           type="button"
           className={`v3-project-nav-link${active ? " is-active" : ""}`}
