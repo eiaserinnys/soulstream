@@ -31,6 +31,7 @@ const todayQuery = z.object({ date });
 const starredTasksQuery = z.object({
   cursor: id.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
+  detail: z.enum(["full"]).optional(),
 });
 const dailyHistoryQuery = z.object({
   before: date,

@@ -130,6 +130,36 @@ describe("planner repository", () => {
     expect(runQuery).toContain("ORDER BY updated_at DESC, session_id DESC");
     expect(harness.calls[2]?.values).toContain(2);
   });
+
+  it("returns full starred task aggregates without changing the default page query", async () => {
+    const fullTask = {
+      page: page("task-page"),
+      blocks: [],
+      task_id: "task-id",
+      task: null,
+      project_page_id: "project-page",
+      sessions: [],
+      mounted_documents: [],
+    };
+    const harness = createSqlHarness([[
+      {
+        id: "task-page",
+        updated_at_cursor: "2026-07-14T00:00:00.000Z",
+        payload: fullTask,
+      },
+    ]]);
+    const repository = new PlannerRepository(resolverFor(harness.sql));
+
+    await expect(repository.getStarredTasks({ limit: 50, detail: "full" })).resolves.toEqual({
+      items: [fullTask],
+      next_cursor: null,
+    });
+    const query = normalizeSql(harness.calls[0]?.text);
+    expect(query).toContain("task_summaries AS");
+    expect(query).toContain("task_sessions AS");
+    expect(query).toContain("mounted_documents AS");
+    expect(query).toContain("COALESCE((page.metadata->>'starred')::boolean, FALSE)");
+  });
 });
 
 function createSqlHarness(results: readonly (readonly Record<string, unknown>[])[]) {

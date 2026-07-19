@@ -15,6 +15,7 @@ import {
   listTaskRuns,
   type PlannerMountCursor,
 } from "./planner_repository_reads.js";
+import { listFullStarredTasks } from "./planner_starred_task_reads.js";
 import {
   plannerQuery,
 } from "./planner_aggregate_query.js";
@@ -28,8 +29,11 @@ import type {
 export class PlannerRepository implements PlannerReadProvider {
   constructor(private readonly resolver: LiveDbSqlResolver) {}
 
-  async getStarredTasks(input: { cursor?: string; limit: number }) {
-    return await listStarredTasks(await this.resolver.resolveSql(), input);
+  async getStarredTasks(input: { cursor?: string; limit: number; detail?: "full" }) {
+    const sql = await this.resolver.resolveSql();
+    return input.detail === "full"
+      ? await listFullStarredTasks(sql, input)
+      : await listStarredTasks(sql, input);
   }
 
   async getDailyHistory(input: { before: string; limit: number }) {
