@@ -1793,7 +1793,12 @@
       "description": "SSE: 과거 이력 동기화.",
       "required": ["type"],
       "additionalProperties": true,
-      "properties": { "type": { "const": "history_sync" } }
+      "properties": {
+        "type": { "const": "history_sync" },
+        "last_event_id": { "type": "integer", "minimum": 0 },
+        "is_live": { "type": "boolean" },
+        "reset_required": { "type": "boolean" }
+      }
     },
     "SSEEventTaskUpdated": {
       "type": "object",

@@ -1402,6 +1402,9 @@ class SSEEventHistorySync(TypedDict):
     """
 
     type: Literal['history_sync']
+    last_event_id: NotRequired[int]
+    is_live: NotRequired[bool]
+    reset_required: NotRequired[bool]
 
 
 class SSEEventTaskUpdated(TypedDict):

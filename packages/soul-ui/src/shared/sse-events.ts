@@ -680,6 +680,8 @@ export interface HistorySyncEvent {
   type: "history_sync";
   last_event_id: number;
   is_live: boolean;
+  /** 큰 catch-up 대신 REST snapshot으로 상태를 다시 읽어야 함 */
+  reset_required?: boolean;
   /** 서버가 판정한 현재 세션 상태 (정본) */
   status?: SessionStatus;
 }

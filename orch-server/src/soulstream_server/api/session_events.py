@@ -20,6 +20,8 @@ from soulstream_server.nodes.node_manager import NodeManager
 
 logger = logging.getLogger(__name__)
 
+SNAPSHOT_CATCHUP_THRESHOLD = 200
+
 
 def _parse_event_payload(payload_text: str) -> dict[str, Any] | None:
     try:
@@ -125,12 +127,17 @@ async def create_session_events_response(
             after_id = int(last_event_id_str)
         except ValueError:
             after_id = 0
+        snapshot_catchup_enabled = (
+            request.query_params.get("snapshotCatchup") == "1"
+        )
 
         # 히스토리 phase에서 yield된 event_id를 라이브 dedup에 사용하기 위해
         # seen_event_ids는 history phase 진입 전에 미리 초기화한다.
         seen_event_ids: set[int] = set()
         queued_event_ids: set[int] = set()
         last_stored_id = 0
+        snapshot_boundary_id: int | None = None
+        reset_required = False
 
         # 라이브 이벤트 릴레이 노드 탐색 + 구독은 history/baseline 계산 전에 시도한다.
         # baseline 읽기와 subscribe_events 사이의 이벤트 유실을 막기 위함이다.
@@ -183,7 +190,12 @@ async def create_session_events_response(
             int_id = _extract_event_id(data, event_payload)
             if int_id is not None:
                 queued_event_ids.discard(int_id)
-                if after_id > 0 and int_id <= after_id:
+                replay_floor = (
+                    snapshot_boundary_id
+                    if snapshot_boundary_id is not None
+                    else after_id
+                )
+                if replay_floor > 0 and int_id <= replay_floor:
                     return None
                 if int_id in seen_event_ids:
                     return None
@@ -214,28 +226,49 @@ async def create_session_events_response(
                 # mid-stream disconnect 감지를 위해 cursor 순회 중에도 is_disconnected 체크.
                 try:
                     replay_events: list[tuple[int, str, str]] = []
-                    async for event_id, event_type, payload_text in db.stream_events_raw(
+                    event_stream = db.stream_events_raw(
                         session_id, after_id=after_id,
-                    ):
-                        if await request.is_disconnected():
-                            return
-                        last_stored_id = max(last_stored_id, event_id)
-                        # 필터로 숨기는 raw delta도 클라이언트 커서 관점에서는 이미 처리된
-                        # 이벤트다. 라이브 queue에 같은 id가 들어와도 중복 송출하지 않는다.
-                        seen_event_ids.add(event_id)
-                        replay_events.append((event_id, event_type, payload_text))
-
-                    replay_events = _filter_finalized_app_server_replay_events(
-                        replay_events,
                     )
-                    for event_id, event_type, payload_text in replay_events:
-                        if await request.is_disconnected():
-                            return
-                        yield {
-                            "event": event_type,
-                            "data": payload_text,
-                            "id": str(event_id),
-                        }
+                    try:
+                        async for event_id, event_type, payload_text in event_stream:
+                            if await request.is_disconnected():
+                                return
+                            last_stored_id = max(last_stored_id, event_id)
+                            # 필터로 숨기는 raw delta도 클라이언트 커서 관점에서는 이미
+                            # 처리된 이벤트다. 라이브 queue에 같은 id가 들어와도 중복
+                            # 송출하지 않는다.
+                            seen_event_ids.add(event_id)
+                            replay_events.append((event_id, event_type, payload_text))
+                            if (
+                                snapshot_catchup_enabled
+                                and len(replay_events) > SNAPSHOT_CATCHUP_THRESHOLD
+                            ):
+                                reset_required = True
+                                break
+                    finally:
+                        if reset_required:
+                            close_stream = getattr(event_stream, "aclose", None)
+                            if close_stream is not None:
+                                await close_stream()
+
+                    if reset_required:
+                        # 구독을 먼저 연 뒤 현재 DB 끝을 읽어 snapshot과 live tail의
+                        # authoritative boundary로 삼는다. queue의 boundary 이하 이벤트는
+                        # REST snapshot에 포함되므로 yield_live_event가 버린다.
+                        snapshot_boundary_id = await db.read_last_event_id(session_id)
+                        last_stored_id = snapshot_boundary_id
+                    else:
+                        replay_events = _filter_finalized_app_server_replay_events(
+                            replay_events,
+                        )
+                        for event_id, event_type, payload_text in replay_events:
+                            if await request.is_disconnected():
+                                return
+                            yield {
+                                "event": event_type,
+                                "data": payload_text,
+                                "id": str(event_id),
+                            }
                 except Exception as e:
                     # 명시적 실패 (design-principles §4): 부분 catch-up을 정상 종료로
                     # 위장하면 클라이언트는 누락 구간을 영영 못 읽는다. 스트림을 끊어
@@ -269,6 +302,8 @@ async def create_session_events_response(
                 "last_event_id": last_stored_id,
                 "is_live": node is not None,
             }
+            if reset_required:
+                sync_payload["reset_required"] = True
             yield {
                 "event": "history_sync",
                 "data": json.dumps(sync_payload, ensure_ascii=False),
