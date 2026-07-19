@@ -93,16 +93,7 @@ export function PlannerTaskCard({
           </div>
         ) : null}
       </div>
-      <div className="v3-task-side">
-        <DashboardIconCap
-          className="v3-task-star-toggle"
-          label={`${task.page.title} ${taskStar.starred ? "별표 해제" : "별표 추가"}`}
-          aria-pressed={taskStar.starred}
-          disabled={taskStar.pending}
-          onClick={(event) => { event.stopPropagation(); void taskStar.toggle(); }}
-        >
-          <Star className="h-4 w-4" fill={taskStar.starred ? "currentColor" : "none"} aria-hidden="true" />
-        </DashboardIconCap>
+      <div className="v3-task-state">
         {showRun && run ? (
           <span className="v3-run-line">
             {`세션 #${run.number} ${runState}`}
@@ -112,6 +103,7 @@ export function PlannerTaskCard({
         {task.progress === null ? null : (
           <span
             className="v3-progress"
+            data-complete={task.progress === 100 ? "true" : "false"}
             role="progressbar"
             aria-label="업무 진행률"
             aria-valuenow={task.progress}
@@ -121,6 +113,17 @@ export function PlannerTaskCard({
             <i style={{ width: `${task.progress}%` }} />
           </span>
         )}
+      </div>
+      <div className="v3-task-star-slot">
+        <DashboardIconCap
+          className="v3-task-star-toggle"
+          label={`${task.page.title} ${taskStar.starred ? "별표 해제" : "별표 추가"}`}
+          aria-pressed={taskStar.starred}
+          disabled={taskStar.pending}
+          onClick={(event) => { event.stopPropagation(); void taskStar.toggle(); }}
+        >
+          <Star className="h-4 w-4" fill={taskStar.starred ? "currentColor" : "none"} aria-hidden="true" />
+        </DashboardIconCap>
       </div>
       <V3ContextMenu
         target={contextMenu}

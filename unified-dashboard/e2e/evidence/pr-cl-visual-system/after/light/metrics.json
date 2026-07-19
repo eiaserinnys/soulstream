@@ -1,0 +1,118 @@
+{
+  "theme": "light",
+  "main": {
+    "viewportOverflow": 0,
+    "taskGap": 4,
+    "sessionGap": 4,
+    "leftGap": 16,
+    "rightGap": 16,
+    "outerLeft": 20,
+    "outerRight": 20,
+    "navigationWidth": 336,
+    "plannerWidth": 1140,
+    "sessionWidth": 500,
+    "contentWidth": 960,
+    "taskColumns": "702px 156px 44px",
+    "taskMinHeight": "84px",
+    "starSize": {
+      "width": 44,
+      "height": 44
+    },
+    "runColumns": "28px 344px 64px",
+    "projectColumns": "16px 12px 18px 234px",
+    "typography": {
+      "page": {
+        "size": "21px",
+        "line": "28px",
+        "weight": "680"
+      },
+      "section": {
+        "size": "16px",
+        "line": "24px",
+        "weight": "650"
+      },
+      "card": {
+        "size": "16px",
+        "line": "23px",
+        "weight": "600"
+      },
+      "side": {
+        "size": "14px",
+        "line": "20px",
+        "weight": "600"
+      },
+      "meta": {
+        "size": "12px",
+        "line": "18px",
+        "weight": "500"
+      },
+      "badge": {
+        "size": "11px",
+        "line": "16px",
+        "weight": "600"
+      }
+    }
+  },
+  "detail": {
+    "viewportOverflow": 0,
+    "workspaceColumns": [
+      "1000px",
+      "16px",
+      "664px"
+    ],
+    "detailColumns": "72px 854px",
+    "detailGap": 24,
+    "detailBottomPadding": 28,
+    "detailHeaderHeight": 56,
+    "chatHeaderHeight": 56,
+    "checklistHeight": 135,
+    "checklistMaxHeight": "348px",
+    "composerHeight": 58,
+    "bubble": {
+      "maxWidth": "88%",
+      "paddingTop": "14px",
+      "paddingRight": "16px",
+      "paddingBottom": "14px",
+      "paddingLeft": "16px"
+    },
+    "row": {
+      "paddingTop": "6px",
+      "paddingBottom": "6px"
+    }
+  },
+  "edges": [
+    {
+      "name": "1440x900",
+      "width": 1440,
+      "height": 900,
+      "viewportOverflow": 0,
+      "cardOverflow": 0,
+      "plannerOverflow": 0,
+      "navigationVisible": true,
+      "sessionPanelVisible": true,
+      "mobileTabsVisible": false
+    },
+    {
+      "name": "narrow-1024x800",
+      "width": 1024,
+      "height": 800,
+      "viewportOverflow": 0,
+      "cardOverflow": 0,
+      "plannerOverflow": 0,
+      "navigationVisible": true,
+      "sessionPanelVisible": false,
+      "mobileTabsVisible": false
+    },
+    {
+      "name": "mobile-390x844",
+      "width": 390,
+      "height": 844,
+      "viewportOverflow": 0,
+      "cardOverflow": 0,
+      "plannerOverflow": 0,
+      "navigationVisible": false,
+      "sessionPanelVisible": false,
+      "mobileTabsVisible": true
+    }
+  ]
+}

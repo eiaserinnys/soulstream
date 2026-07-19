@@ -183,7 +183,7 @@ export function TaskWorkspace({
           ref={workspaceRef}
           className="v3-workspace is-chat-open"
           data-mobile-view={mobileMode ? mobileTab : undefined}
-          style={!mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 4px)) 8px minmax(0, 1fr)` } : undefined}
+          style={!mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 8px)) 16px minmax(0, 1fr)` } : undefined}
         >
           <section className="v3-detail-pane border border-glass-border glass-strong glass-chrome lg-rim" data-testid="v3-standalone-task-empty" aria-label="빈 업무 창">
             <header className="v3-workspace-toolbar">
@@ -281,7 +281,7 @@ export function TaskWorkspace({
         ref={workspaceRef}
         className={`v3-workspace${boardOpen ? " is-board-open" : chatOpen ? " is-chat-open" : ""}${boardOpen && (activeBoardDocumentId || activeSessionKey) ? " has-board-selection" : ""}`}
         data-mobile-view={mobileMode ? mobileTab : undefined}
-        style={(chatOpen || boardOpen) && !mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 4px)) 8px minmax(0, 1fr)` } : undefined}
+        style={(chatOpen || boardOpen) && !mobileMode ? { gridTemplateColumns: `minmax(0, calc(${splitPercent}% - 8px)) 16px minmax(0, 1fr)` } : undefined}
       >
         {boardOpen ? (
           <TaskBoardPane

@@ -1,0 +1,486 @@
+.v3-shell {
+  --v3-space-1: var(--v3-card-gap);
+  --v3-space-2: 8px;
+  --v3-space-3: 12px;
+  --v3-space-4: 16px;
+  --v3-space-5: 20px;
+  --v3-space-6: 24px;
+  --v3-space-7: 28px;
+  --v3-space-8: 32px;
+  --v3-type-page: 680 21px/28px;
+  --v3-type-section: 650 16px/24px;
+  --v3-type-card: 600 16px/23px;
+  --v3-type-side-title: 600 14px/20px;
+  --v3-type-body: 450 14px/22px;
+  --v3-type-meta: 500 12px/18px;
+  --v3-type-badge: 600 11px/16px;
+  --v3-font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --v3-text-primary: var(--foreground);
+  --v3-text-secondary: color-mix(in srgb, var(--foreground) 72%, transparent);
+  --v3-text-tertiary: color-mix(in srgb, var(--foreground) 58%, transparent);
+  --v3-text-disabled: color-mix(in srgb, var(--foreground) 40%, transparent);
+  --v3-accent: var(--info);
+  --v3-live: var(--success);
+  --v3-favorite: var(--warning);
+  --v3-error: var(--destructive);
+  --v3-complete: var(--info);
+  --v3-progress-complete: var(--success);
+  --v3-task-state-column: 156px;
+  --v3-action-size: 44px;
+  --v3-session-avatar-size: 28px;
+  --v3-session-meta-column: 64px;
+  --v3-tree-toggle-column: 16px;
+  --v3-tree-drag-column: 12px;
+  --v3-tree-icon-column: 18px;
+  --v3-tree-indent-step: 20px;
+  --v3-detail-nav-column: 72px;
+  --v3-control-height: 56px;
+  --v3-glass-panel: color-mix(in srgb, var(--background) 16%, transparent);
+  --v3-glass-detail: color-mix(in srgb, var(--background) 24%, transparent);
+  --v3-glass-card: color-mix(in srgb, var(--background) 34%, transparent);
+  --v3-glass-dense: color-mix(in srgb, var(--background) 48%, transparent);
+  --v3-stroke-default: color-mix(in srgb, var(--foreground) 12%, transparent);
+  --v3-stroke-hover: color-mix(in srgb, var(--v3-accent) 48%, var(--v3-stroke-default));
+  --v3-stroke-selected: color-mix(in srgb, var(--v3-accent) 72%, transparent);
+  grid-template-columns:
+    calc(var(--v3-navigation-width) + var(--v3-outer-inset))
+    var(--v3-panel-gap)
+    minmax(760px, 1fr)
+    var(--v3-panel-gap)
+    calc(var(--v3-session-panel-width) + var(--v3-outer-inset));
+  font-family: var(--v3-font-family);
+}
+
+.v3-navigation {
+  width: var(--v3-navigation-width);
+  margin: 76px 0 var(--v3-outer-inset) var(--v3-outer-inset);
+  padding: var(--v3-space-4);
+  --glass-chrome-surface-strong: var(--v3-glass-panel);
+}
+
+.v3-planner {
+  height: calc(100dvh - 96px);
+  margin: 76px 0 var(--v3-outer-inset);
+  padding-top: var(--v3-space-5);
+  --glass-chrome-surface-strong: var(--v3-glass-panel);
+}
+
+.v3-session-panel {
+  width: var(--v3-session-panel-width);
+  margin: 76px var(--v3-outer-inset) var(--v3-outer-inset) 0;
+  --glass-chrome-surface-strong: var(--v3-glass-panel);
+}
+
+.v3-main {
+  container-name: v3-main;
+  container-type: inline-size;
+}
+
+.v3-planner-scroll {
+  padding-right: clamp(24px, calc((100% - var(--v3-content-max-width)) / 2), 64px);
+  padding-left: clamp(24px, calc((100% - var(--v3-content-max-width)) / 2), 64px);
+}
+
+.v3-planner-scroll > * {
+  max-width: var(--v3-content-max-width);
+}
+
+.v3-date-head:not(.v3-project-title),
+.v3-date-head:not(.v3-project-title) > div {
+  align-items: baseline;
+}
+
+.v3-date-head h1,
+.v3-detail-title h2,
+.v3-task-title-input {
+  font: var(--v3-type-page) var(--v3-font-family);
+  letter-spacing: -0.02em;
+}
+
+.v3-section-head h2,
+.v3-detail-section-head h3 {
+  font: var(--v3-type-section) var(--v3-font-family);
+  letter-spacing: 0;
+}
+
+.v3-task-card h3 {
+  font: var(--v3-type-card) var(--v3-font-family);
+  letter-spacing: 0;
+}
+
+.v3-nav-list button,
+.v3-session-group h2,
+.v3-run-open strong,
+.v3-chat-header strong,
+.v3-project-head h3 {
+  font: var(--v3-type-side-title) var(--v3-font-family);
+  letter-spacing: 0;
+}
+
+.v3-description-content,
+.v3-description-editor textarea,
+.v3-chat-pane [data-slot="chat-message-bubble"] .text-base,
+.v3-chat-pane [data-slot="chat-message-bubble"] p,
+.v3-chat-pane [data-slot="chat-message-bubble"] li {
+  font: var(--v3-type-body) var(--v3-font-family);
+  letter-spacing: 0;
+}
+
+.v3-date-head p,
+.v3-task-meta,
+.v3-run-agent-line,
+.v3-run-affiliation,
+.v3-run-trailing time,
+.v3-description-empty,
+.v3-detail-empty,
+.v3-chat-header small {
+  color: var(--v3-text-tertiary);
+  font: var(--v3-type-meta) var(--v3-font-family);
+  letter-spacing: 0;
+}
+
+.v3-date-head p {
+  margin-bottom: 0;
+}
+
+.v3-status-chip,
+.v3-run-status-badge,
+.v3-chat-status {
+  font: var(--v3-type-badge) var(--v3-font-family);
+  letter-spacing: 0;
+}
+
+.v3-date-head > div > span {
+  color: var(--v3-text-tertiary);
+  font: var(--v3-type-badge) var(--v3-font-family);
+  letter-spacing: 0.04em;
+}
+
+.v3-navigation h2,
+.v3-memo-label {
+  color: var(--v3-text-tertiary);
+  font: var(--v3-type-meta) var(--v3-font-family);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.v3-date-head h1,
+.v3-date-head p,
+.v3-session-group header > span,
+.v3-run-number,
+.v3-run-trailing time,
+.v3-progress {
+  font-variant-numeric: tabular-nums;
+}
+
+.v3-daily-memo {
+  margin-bottom: var(--v3-space-7);
+}
+
+.v3-section-head {
+  margin: 0 0 var(--v3-space-3);
+}
+
+.v3-project-group {
+  margin-bottom: var(--v3-space-7);
+}
+
+.v3-project-head {
+  padding-bottom: var(--v3-space-2);
+}
+
+.v3-task-list {
+  gap: var(--v3-space-1);
+  padding-top: var(--v3-space-1);
+}
+
+.v3-document-list {
+  gap: var(--v3-space-2);
+}
+
+.v3-session-list {
+  gap: var(--v3-space-1);
+}
+
+.v3-session-group + .v3-session-group {
+  margin-top: var(--v3-space-7);
+}
+
+.v3-session-group > header {
+  padding-bottom: var(--v3-space-3);
+}
+
+.v3-task-card {
+  grid-template-columns: minmax(0, 1fr) var(--v3-task-state-column) var(--v3-action-size);
+  min-height: 84px;
+  gap: var(--v3-space-3);
+  border-color: var(--v3-stroke-default);
+  padding: var(--v3-space-3) var(--v3-space-4);
+  --glass-chrome-surface-strong: var(--v3-glass-card);
+}
+
+.v3-task-card:hover {
+  border-color: var(--v3-stroke-hover);
+}
+
+.v3-task-card h3 {
+  margin-bottom: var(--v3-space-2);
+}
+
+.v3-task-kicker {
+  margin-bottom: var(--v3-space-1);
+}
+
+.v3-task-state {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: var(--v3-space-2);
+}
+
+.v3-task-star-slot {
+  display: grid;
+  width: var(--v3-action-size);
+  place-items: center;
+}
+
+.v3-task-star-toggle {
+  width: var(--v3-action-size);
+  height: var(--v3-action-size);
+  color: var(--v3-text-tertiary);
+}
+
+.v3-task-star-toggle[aria-pressed="true"] {
+  color: var(--v3-favorite);
+}
+
+.v3-progress {
+  width: var(--v3-task-state-column);
+}
+
+.v3-progress > i {
+  background: var(--v3-accent);
+}
+
+.v3-progress[data-complete="true"] > i {
+  background: var(--v3-progress-complete);
+}
+
+.v3-status-chip--in_progress,
+.v3-run-status-badge--running,
+.v3-chat-status--running {
+  color: var(--v3-live);
+}
+
+.v3-status-chip--completed,
+.v3-run-status--completed {
+  color: var(--v3-accent);
+}
+
+.v3-run-status-badge--error,
+.v3-run-status-badge--interrupted,
+.v3-run-status-badge--failed {
+  color: var(--v3-error);
+}
+
+.v3-project-nav-row {
+  grid-template-columns: var(--v3-tree-toggle-column) var(--v3-tree-drag-column) var(--v3-tree-icon-column) minmax(0, 1fr);
+  column-gap: var(--v3-space-1);
+  padding-left: calc(var(--v3-project-depth, 0) * var(--v3-tree-indent-step));
+}
+
+.v3-nav-list .v3-project-tree-toggle,
+.v3-project-tree-toggle-spacer {
+  width: var(--v3-tree-toggle-column);
+}
+
+.v3-nav-list .v3-project-drag-handle {
+  width: var(--v3-tree-drag-column);
+}
+
+.v3-project-tree-icon,
+.v3-project-tree-icon svg {
+  display: block;
+  width: var(--v3-tree-icon-column);
+  height: var(--v3-tree-icon-column);
+  color: var(--v3-text-tertiary);
+}
+
+.v3-nav-list .v3-project-nav-link {
+  padding-left: var(--v3-space-1);
+}
+
+.v3-run-list {
+  gap: var(--v3-space-1);
+}
+
+.v3-run-row {
+  border-color: var(--v3-stroke-default);
+  --glass-chrome-surface-strong: var(--v3-glass-dense);
+}
+
+.v3-run-open {
+  display: grid;
+  grid-template-columns: var(--v3-session-avatar-size) minmax(0, 1fr) var(--v3-session-meta-column);
+  align-items: start;
+  gap: var(--v3-space-2);
+}
+
+.v3-run-avatar,
+.v3-run-skeleton--avatar {
+  width: var(--v3-session-avatar-size);
+  height: var(--v3-session-avatar-size);
+}
+
+.v3-run-trailing,
+.v3-session-row .v3-run-trailing {
+  width: var(--v3-session-meta-column);
+  min-width: var(--v3-session-meta-column);
+  max-width: var(--v3-session-meta-column);
+}
+
+.v3-session-row.is-active .v3-run-row,
+.v3-run-row.is-active {
+  border-width: 2px;
+  border-color: var(--v3-stroke-selected);
+}
+
+.v3-chat-pane {
+  --glass-chrome-surface-strong: var(--v3-glass-dense);
+}
+
+.v3-detail-pane {
+  --glass-chrome-surface-strong: var(--v3-glass-detail);
+}
+
+.v3-task-detail-layout {
+  grid-template-columns: var(--v3-detail-nav-column) minmax(0, 1fr);
+  gap: var(--v3-space-6);
+}
+
+.v3-workspace-divider {
+  min-width: 16px;
+  background: transparent;
+}
+
+.v3-workspace-toolbar,
+.v3-chat-header {
+  min-height: var(--v3-control-height);
+  gap: var(--v3-space-3);
+}
+
+.v3-chat-pane [data-slot="chat-message-row"] {
+  padding-block: 6px;
+}
+
+.v3-chat-pane [data-slot="chat-message-bubble"] {
+  max-width: 88%;
+  padding: 14px 16px;
+}
+
+.v3-chat-pane [data-slot="chat-tool-row"] {
+  padding-top: var(--v3-space-2);
+  padding-bottom: var(--v3-space-3);
+}
+
+.v3-chat-pane [data-slot="chat-input-composer"] {
+  min-height: var(--v3-control-height);
+}
+
+.v3-chat-pane [data-testid="send-button"]:not(:disabled) {
+  color: var(--primary-foreground);
+  background: var(--v3-accent);
+}
+
+.v3-chat-pane [data-testid="send-button"]:disabled {
+  color: var(--v3-text-disabled);
+  background: var(--muted);
+}
+
+.v3-chat-empty,
+.v3-session-list > p,
+.v3-nav-list p {
+  color: var(--v3-text-tertiary);
+}
+
+@container v3-main (max-width: 720px) {
+  .v3-task-card {
+    grid-template-columns: minmax(0, 1fr) var(--v3-action-size);
+  }
+
+  .v3-task-state {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .v3-task-star-slot {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .v3-progress {
+    width: 100%;
+  }
+}
+
+@media (max-width: 1680px) {
+  .v3-shell {
+    grid-template-columns:
+      calc(min(var(--v3-navigation-width), 280px) + var(--v3-outer-inset))
+      var(--v3-panel-gap)
+      minmax(0, 1fr)
+      var(--v3-panel-gap)
+      calc(min(var(--v3-session-panel-width), 400px) + var(--v3-outer-inset));
+  }
+
+  .v3-navigation {
+    width: min(var(--v3-navigation-width), 280px);
+  }
+
+  .v3-session-panel {
+    width: min(var(--v3-session-panel-width), 400px);
+  }
+}
+
+@media (max-width: 1180px) {
+  .v3-shell {
+    grid-template-columns:
+      calc(min(var(--v3-navigation-width), 240px) + var(--v3-outer-inset))
+      var(--v3-panel-gap)
+      minmax(0, 1fr);
+  }
+
+  .v3-navigation {
+    width: min(var(--v3-navigation-width), 240px);
+  }
+
+  .v3-session-panel,
+  .v3-session-panel-resize {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .v3-shell {
+    display: block;
+    font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  .v3-planner {
+    width: calc(100% - 28px);
+    height: calc(100dvh - 146px);
+    margin: 72px auto 12px;
+    padding-top: var(--v3-space-3);
+  }
+
+  .v3-planner-scroll {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .v3-task-detail-layout {
+    display: block;
+  }
+}

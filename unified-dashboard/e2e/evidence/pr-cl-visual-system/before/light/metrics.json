@@ -1,0 +1,109 @@
+{
+  "theme": "light",
+  "main": {
+    "viewportOverflow": 0,
+    "taskGap": 8,
+    "sessionGap": 8,
+    "leftGap": 22,
+    "rightGap": 22,
+    "outerLeft": 22,
+    "outerRight": 22,
+    "navigationWidth": 264,
+    "plannerWidth": 1396,
+    "sessionWidth": 300,
+    "contentWidth": 892,
+    "taskColumns": "688px 150px",
+    "taskMinHeight": "96px",
+    "starSize": {
+      "width": 44,
+      "height": 44
+    },
+    "runColumns": "none",
+    "projectColumns": "18px 18px 184px",
+    "typography": {
+      "page": {
+        "size": "20px",
+        "line": "28px",
+        "weight": "760"
+      },
+      "section": {
+        "size": "20px",
+        "line": "28px",
+        "weight": "700"
+      },
+      "card": {
+        "size": "16px",
+        "line": "21.6px",
+        "weight": "400"
+      },
+      "side": {
+        "size": "14.5px",
+        "line": "21.025px",
+        "weight": "700"
+      },
+      "meta": {
+        "size": "12px",
+        "line": "18px",
+        "weight": "400"
+      },
+      "badge": {
+        "size": "12px",
+        "line": "18px",
+        "weight": "800"
+      }
+    }
+  },
+  "detail": {
+    "viewportOverflow": 0,
+    "workspaceColumns": [
+      "1047.19px",
+      "8px",
+      "696.812px"
+    ],
+    "detailColumns": "58px 921.188px",
+    "detailGap": 18,
+    "detailBottomPadding": 28,
+    "detailHeaderHeight": 54,
+    "chatHeaderHeight": 54,
+    "checklistHeight": 135,
+    "checklistMaxHeight": "348px",
+    "composerHeight": 58,
+    "bubble": null,
+    "row": null
+  },
+  "edges": [
+    {
+      "name": "1440x900",
+      "width": 1440,
+      "height": 900,
+      "viewportOverflow": 0,
+      "cardOverflow": 0,
+      "plannerOverflow": 0,
+      "navigationVisible": true,
+      "sessionPanelVisible": true,
+      "mobileTabsVisible": false
+    },
+    {
+      "name": "narrow-1024x800",
+      "width": 1024,
+      "height": 800,
+      "viewportOverflow": 0,
+      "cardOverflow": 0,
+      "plannerOverflow": 0,
+      "navigationVisible": true,
+      "sessionPanelVisible": true,
+      "mobileTabsVisible": false
+    },
+    {
+      "name": "mobile-390x844",
+      "width": 390,
+      "height": 844,
+      "viewportOverflow": 0,
+      "cardOverflow": 0,
+      "plannerOverflow": 0,
+      "navigationVisible": false,
+      "sessionPanelVisible": false,
+      "mobileTabsVisible": true
+    }
+  ]
+}

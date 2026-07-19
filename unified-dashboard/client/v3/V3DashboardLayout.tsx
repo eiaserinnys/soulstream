@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { DragHandle, LiquidGlassCanvas, LiquidGlassProvider, WallpaperLayer, initTheme, useAuth, useDashboardStore, useInitialCatalogLoad, useReadPositionSync, useSessionProvider, useGlassSurface, useUserPreferencesSync, type SessionSummary } from "@seosoyoung/soul-ui";
-import { clampDashboardLeftSidebarWidth, DASHBOARD_LEFT_SIDEBAR_DEFAULT_WIDTH, readDashboardLeftSidebarWidth, writeDashboardLeftSidebarWidth } from "@seosoyoung/soul-ui/components/dashboard-sidebar-collapse";
+import { clampDashboardLeftSidebarWidth, writeDashboardLeftSidebarWidth } from "@seosoyoung/soul-ui/components/dashboard-sidebar-collapse";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
-import { DASHBOARD_CARD_GAP_PX, DASHBOARD_PANEL_GAP_PX } from "@seosoyoung/soul-ui/components/dashboard-spacing";
+import { V3_CARD_GAP_PX, V3_CONTENT_MAX_WIDTH_PX, V3_NAVIGATION_DEFAULT_WIDTH_PX, V3_OUTER_INSET_PX, V3_PANEL_GAP_PX, readV3NavigationWidth } from "./v3-layout-metrics";
 import { useNodes } from "../hooks/useNodes";
 import { ConfigModal } from "../components/ConfigModal";
 import { SearchModal } from "../components/SearchModal";
@@ -76,7 +76,7 @@ function V3DashboardContent() {
   const [newDocumentOpen, setNewDocumentOpen] = useState(false);
   const [newDocumentTitle, setNewDocumentTitle] = useState("");
   const [sessionDefaults, setSessionDefaults] = useState<PageSessionDefaults | null>(null);
-  const [navigationWidth, setNavigationWidth] = useState(() => readDashboardLeftSidebarWidth());
+  const [navigationWidth, setNavigationWidth] = useState(() => readV3NavigationWidth());
   const plannerSurfaceRef = useRef<HTMLDivElement>(null);
   const plannerWebglActive = useGlassSurface(plannerSurfaceRef, { enabled: true });
   const resizeNavigation = useCallback((deltaPercent: number) => {
@@ -388,9 +388,11 @@ function V3DashboardContent() {
   const { sessions: panelSessions, reviewSessions } = sessionPanel;
   const selectedFolderName = catalog?.folders.find((folder) => folder.id === selectedFolderId)?.name ?? "프로젝트";
   const shellStyle = {
-    "--v3-card-gap": `${DASHBOARD_CARD_GAP_PX}px`,
-    "--v3-panel-gap": `${DASHBOARD_PANEL_GAP_PX}px`,
-    "--v3-navigation-width": `${navigationWidth || DASHBOARD_LEFT_SIDEBAR_DEFAULT_WIDTH}px`,
+    "--v3-card-gap": `${V3_CARD_GAP_PX}px`,
+    "--v3-panel-gap": `${V3_PANEL_GAP_PX}px`,
+    "--v3-outer-inset": `${V3_OUTER_INSET_PX}px`,
+    "--v3-content-max-width": `${V3_CONTENT_MAX_WIDTH_PX}px`,
+    "--v3-navigation-width": `${navigationWidth || V3_NAVIGATION_DEFAULT_WIDTH_PX}px`,
     "--v3-session-panel-width": `${sessionPanel.panelWidth}px`,
   } as CSSProperties;
   const workspaceTask = useMemo(
@@ -423,7 +425,7 @@ function V3DashboardContent() {
       />
       {mobileMode && mobileTab === "projects" && !selectedFolderId ? <MobileProjectList folders={catalog?.folders ?? []} onSelect={(folder) => { void projectSelection.openFolder(api, folder, projects, notify); }} /> : null}
       <div className="v3-navigation-resize" data-testid="v3-navigation-resize-handle" aria-hidden="true">
-        <DragHandle onDrag={resizeNavigation} widthPx={DASHBOARD_PANEL_GAP_PX} />
+        <DragHandle onDrag={resizeNavigation} widthPx={V3_PANEL_GAP_PX} />
       </div>
       <main className="v3-main">
         <div
@@ -444,7 +446,7 @@ function V3DashboardContent() {
         </div>
       </main>
       <div className="v3-session-panel-resize" data-testid="v3-session-panel-resize-handle" aria-hidden="true">
-        <DragHandle onDrag={sessionPanel.resize} widthPx={DASHBOARD_PANEL_GAP_PX} />
+        <DragHandle onDrag={sessionPanel.resize} widthPx={V3_PANEL_GAP_PX} />
       </div>
       <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} boardItems={catalog?.boardItems ?? []} folders={catalog?.folders ?? []} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} onOpenSession={sessionPanel.openSession} onRenameSession={plannerActions.renameSession} onDeleteSessions={plannerActions.deleteSessions} onAcknowledged={acknowledgeReview} />
       {workspaceOpen && (workspaceTask || activeSession) ? (

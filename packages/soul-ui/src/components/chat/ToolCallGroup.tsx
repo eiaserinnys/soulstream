@@ -82,7 +82,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({ messages }: { message
   const allDone = messages.every((m) => m.toolResult !== undefined || m.toolDurationMs !== undefined);
 
   return (
-    <div className="flex gap-2 px-3 py-0.5" data-tree-node-id={messages[0].treeNodeId}>
+    <div className="flex gap-2 px-3 py-0.5" data-slot="chat-tool-row" data-tree-node-id={messages[0].treeNodeId}>
       <span className="w-8 shrink-0" />
       <div className="flex-1 min-w-0">
         <button
