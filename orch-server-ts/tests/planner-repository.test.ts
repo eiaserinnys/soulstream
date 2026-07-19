@@ -46,7 +46,12 @@ describe("planner repository", () => {
     expect(query).not.toContain("board_yjs_documents");
     expect(query).not.toContain("board_yjs_updates");
     expect(query).not.toContain("jsonb_typeof(p.metadata->'starred')");
-    expect(query).toContain("NOT EXISTS ( SELECT 1 FROM blocks task_ref");
+    expect(query).toContain("b.block_type IN ('task_ref', 'runbook_ref')");
+    expect(query).toContain("WHEN 'runbook_ref' THEN NULLIF(BTRIM(b.properties->>'runbookId'), '')");
+    expect(query).toContain("ORDER BY CASE b.block_type WHEN 'task_ref' THEN 0 ELSE 1 END");
+    expect(query).toContain("LEFT JOIN LATERAL");
+    expect(query).toContain("identity.block_type IN ('task_ref', 'runbook_ref')");
+    expect(query).toContain("WHEN 'runbook_ref' THEN identity.properties->>'runbookId'");
     expect(query).toContain("project_link.link_kind = 'mount'");
     expect(query).toContain("folder_task_mounts AS");
     expect(query).toContain("board_item.membership_kind = 'primary'");
@@ -112,12 +117,15 @@ describe("planner repository", () => {
 
     const taskQuery = normalizeSql(harness.calls[0]?.text);
     expect(taskQuery).toContain("COALESCE((p.metadata->>'starred')::boolean, FALSE)");
-    expect(taskQuery).toContain("b.block_type = 'task_ref'");
+    expect(taskQuery).toContain("b.block_type IN ('task_ref', 'runbook_ref')");
     expect(taskQuery).toContain("COALESCE((b.properties->>'primary')::boolean, FALSE)");
-    expect(taskQuery).toContain("NULLIF(b.properties->>'taskId', '') IS NOT NULL");
+    expect(taskQuery).toContain("WHEN 'runbook_ref' THEN b.properties->>'runbookId'");
     expect(taskQuery).toContain("LIMIT ?");
     expect(harness.calls[0]?.values).toContain(2);
     const runQuery = normalizeSql(harness.calls[2]?.text);
+    expect(runQuery).toContain("b.block_type IN ('task_ref', 'runbook_ref')");
+    expect(runQuery).toContain("WHEN 'runbook_ref' THEN NULLIF(BTRIM(b.properties->>'runbookId'), '')");
+    expect(runQuery).toContain("ORDER BY CASE b.block_type WHEN 'task_ref' THEN 0 ELSE 1 END");
     expect(runQuery).toContain("container_kind = 'task'");
     expect(runQuery).toContain("ORDER BY updated_at DESC, session_id DESC");
     expect(harness.calls[2]?.values).toContain(2);

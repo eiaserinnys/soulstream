@@ -212,6 +212,137 @@ describe("Task identity PostgreSQL transaction", () => {
     }
   });
 
+  it("keeps the v3 planner UX policy runbook_ref-only page visible across planner surfaces", async () => {
+    const folderId = "folder-v3-planner-policy";
+    const projectPageId = "page-v3-planner-policy-project";
+    const taskPageId = "6d33e4dd-bda9-403d-bff7-e9d357e73fa3";
+    const taskId = "rb-v3-context-menus-20260714";
+    const taskTitle = "v3 플래너 UX 폴리시";
+    const sessionId = "session-v3-planner-policy";
+    const resolver = createLiveDbSqlResolver({ sql: harness.liveSql });
+    const pages = new PageYjsService({ repository: new PageRepository(resolver) });
+    try {
+      await harness.sql`
+        INSERT INTO folders (id, name) VALUES (${folderId}, 'v3 planner policy project')
+      `;
+      await pages.createPage({
+        page: {
+          id: taskPageId,
+          title: taskTitle,
+          dailyDate: null,
+          metadata: { starred: true },
+        },
+        initialCommand: {
+          type: "batch_operations",
+          operations: [{
+            op: "create_block",
+            tempId: "legacy-runbook-ref",
+            parentId: null,
+            afterBlockId: null,
+            blockType: "runbook_ref",
+            text: "",
+            properties: { primary: true, runbookId: taskId },
+            collapsed: false,
+          }],
+        },
+        actor: { actorKind: "system" },
+        idempotencyKey: "task-identity:v3-planner-policy:task-page",
+      });
+      const project = await pages.createPage({
+        page: {
+          id: projectPageId,
+          title: "v3 planner policy project",
+          dailyDate: null,
+          metadata: { folderId },
+        },
+        initialCommand: {
+          type: "batch_operations",
+          operations: [{
+            op: "create_block",
+            tempId: "legacy-project-mount",
+            parentId: null,
+            afterBlockId: null,
+            blockType: "paragraph",
+            text: `[[${taskTitle}]]`,
+            properties: {},
+            collapsed: false,
+          }],
+        },
+        actor: { actorKind: "system" },
+        idempotencyKey: "task-identity:v3-planner-policy:project-page",
+      });
+      await harness.sql`
+        UPDATE folders SET project_page_id = ${projectPageId} WHERE id = ${folderId}
+      `;
+      await harness.sql`
+        INSERT INTO board_items (
+          id, folder_id, container_kind, container_id, membership_kind,
+          item_type, item_id, metadata
+        ) VALUES (
+          ${`task:${taskId}`}, ${folderId}, 'folder', ${folderId}, 'primary',
+          'task', ${taskId}, ${harness.sql.json({ title: taskTitle })}::jsonb
+        )
+      `;
+      await harness.sql`
+        INSERT INTO tasks (id, board_item_id, task_page_id, title)
+        VALUES (${taskId}, ${`task:${taskId}`}, NULL, ${taskTitle})
+      `;
+      await harness.sql`
+        INSERT INTO sessions (session_id, status) VALUES (${sessionId}, 'completed')
+      `;
+      await harness.sql`
+        INSERT INTO board_items (
+          id, folder_id, container_kind, container_id, membership_kind,
+          item_type, item_id
+        ) VALUES (
+          ${`session:${sessionId}`}, ${folderId}, 'task', ${taskId}, 'primary',
+          'session', ${sessionId}
+        )
+      `;
+      const daily = await pages.getDailyPage({
+        date: "2026-07-18",
+        actor: { actorKind: "system" },
+      });
+      await pages.mutatePage({
+        pageId: daily.page.id,
+        expectedVersion: daily.page.version,
+        command: {
+          type: "create_block",
+          parentId: null,
+          afterBlockId: null,
+          blockType: "paragraph",
+          text: `[[${taskTitle}]]`,
+          properties: {},
+        },
+        actor: { actorKind: "system" },
+        idempotencyKey: "task-identity:v3-planner-policy:daily-mount",
+      });
+
+      const planner = new PlannerRepository(resolver);
+      const projectPlanner = await planner.getProject(project.page.id, { limit: 20 });
+      expect(projectPlanner?.tasks.items).toEqual([
+        expect.objectContaining({
+          page: expect.objectContaining({ id: taskPageId }),
+          task_id: taskId,
+          project_page_id: projectPageId,
+        }),
+      ]);
+      expect(projectPlanner?.documents.items).toEqual([]);
+      expect((await planner.getToday("2026-07-18"))?.tasks).toEqual([
+        expect.objectContaining({ task_id: taskId }),
+      ]);
+      expect((await planner.getStarredTasks({ limit: 50 })).items).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: taskPageId })]),
+      );
+      await expect(planner.getTaskRuns(taskPageId, { limit: 20 })).resolves.toMatchObject({
+        items: [{ agent_session_id: sessionId }],
+        total: 1,
+      });
+    } finally {
+      await pages.close();
+    }
+  });
+
   it("moves the project mount atomically, preserves daily ownership, then removes every mount on archive", async () => {
     const sourceFolderId = "folder-lifecycle-source";
     const targetFolderId = "folder-lifecycle-target";
