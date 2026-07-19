@@ -6,12 +6,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createBackup,
+  recoverPreviousReleaseData,
   validateClusterWriteFence,
   verifyBackup,
 } from "../../../packages/db-schema/scripts/backup.mjs";
 import { assertPostgresBackupPrerequisites } from
   "../../../packages/db-schema/scripts/postgres-backup-tools.mjs";
-import { preflightPendingMigrations } from
+import { assertRollbackUnsafeApplyGates, preflightPendingMigrations } from
   "../../../packages/db-schema/scripts/migrate.mjs";
 
 const tempDirs: string[] = [];
@@ -32,7 +33,7 @@ function backupEnvironment(directory: string) {
 }
 
 describe("pending destructive backup contract", () => {
-  it("skips dump and restore tooling when the actual plan has no destructive pending", async () => {
+  it("skips dump and restore tooling when the actual plan is previous-release safe", async () => {
     const directory = mkdtempSync(join(tmpdir(), "soul-backup-skip-"));
     tempDirs.push(directory);
     const spawn = vi.fn();
@@ -53,34 +54,108 @@ describe("pending destructive backup contract", () => {
     expect(verified.status).toBe("verified_not_required");
     expect(spawn).not.toHaveBeenCalled();
     expect(JSON.parse(readFileSync(join(directory, "database-backup.json"), "utf8")))
-      .toMatchObject({ status: "verified_not_required", destructive_pending: [] });
+      .toMatchObject({
+        status: "verified_not_required",
+        rollback_unsafe_pending: [],
+      });
+
+    const recovered = await recoverPreviousReleaseData({
+      env: backupEnvironment(directory),
+      spawn,
+    });
+    expect(recovered).toMatchObject({
+      status: "verified_not_required",
+      recovery_action: "preserve_data_for_previous_release",
+    });
+    expect(spawn).not.toHaveBeenCalled();
   });
 
   it("does not inspect PostgreSQL CLI tools for a non-destructive pending plan", async () => {
     const backupPreflight = vi.fn();
 
     await preflightPendingMigrations(
-      { pending: [{ id: "043_safe.sql", destructive: false }] },
+      {
+        pending: [{
+          id: "043_safe.sql",
+          destructive: false,
+          rollback_compatibility: "previous_release_safe",
+        }],
+      },
       { backupPreflight },
     );
 
     expect(backupPreflight).not.toHaveBeenCalled();
   });
 
-  it("checks PostgreSQL backup prerequisites for an actual destructive pending plan", async () => {
+  it("checks backup tools and cluster fence for a rollback-unsafe pending plan", async () => {
     const backupPreflight = vi.fn(async () => ({ restore_capability: "verified" }));
+    const fencePreflight = vi.fn(async () => ({ status: "verified" }));
 
     await preflightPendingMigrations(
-      { pending: [{ id: "043_destructive.sql", destructive: true }] },
+      {
+        pending: [{
+          id: "043_destructive.sql",
+          destructive: true,
+          rollback_compatibility: "restore_required",
+        }],
+      },
       {
         env: backupEnvironment("C:/backup"),
         backupPreflight,
+        fencePreflight,
       },
     );
 
     expect(backupPreflight).toHaveBeenCalledWith(expect.objectContaining({
       databaseUrl: expect.stringContaining("release_test"),
     }));
+    expect(fencePreflight).toHaveBeenCalledWith(backupEnvironment("C:/backup"));
+  });
+
+  it("blocks rollback-unsafe DDL before handover when cluster fencing is absent", async () => {
+    const backupPreflight = vi.fn(async () => ({ restore_capability: "verified" }));
+    const fencePreflight = vi.fn(async () => {
+      throw new Error("SOULSTREAM_CLUSTER_WRITE_FENCE_PATH is required");
+    });
+
+    await expect(preflightPendingMigrations(
+      {
+        pending: [{
+          id: "043_contract.sql",
+          destructive: false,
+          rollback_compatibility: "restore_required",
+        }],
+      },
+      {
+        env: backupEnvironment("C:/backup"),
+        backupPreflight,
+        fencePreflight,
+      },
+    )).rejects.toThrow("SOULSTREAM_CLUSTER_WRITE_FENCE_PATH is required");
+    expect(backupPreflight).not.toHaveBeenCalled();
+  });
+
+  it("revalidates the cluster fence before applying rollback-unsafe DDL", async () => {
+    const events: string[] = [];
+    const fenceRead = vi.fn(async () => {
+      events.push("fence");
+      throw new Error("cluster writers are not fully fenced");
+    });
+    const backupGateRead = vi.fn(async () => events.push("backup"));
+
+    await expect(assertRollbackUnsafeApplyGates(
+      {
+        pending: [{
+          id: "043_contract.sql",
+          destructive: false,
+          rollback_compatibility: "restore_required",
+        }],
+      },
+      backupEnvironment("C:/backup"),
+      { fenceRead, backupGateRead },
+    )).rejects.toThrow("cluster writers are not fully fenced");
+    expect(events).toEqual(["fence"]);
+    expect(backupGateRead).not.toHaveBeenCalled();
   });
 
   it("fails before handover when pg_dump is absent on Windows", async () => {

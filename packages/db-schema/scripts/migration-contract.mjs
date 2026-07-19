@@ -78,6 +78,16 @@ export async function loadMigrationManifest() {
     if (typeof entry.destructive !== "boolean") {
       throw new Error(`migration destructive flag missing: ${entry.id}`);
     }
+    if (!new Set([
+      "bootstrap_only",
+      "previous_release_safe",
+      "restore_required",
+    ]).has(entry.rollback_compatibility)) {
+      throw new Error(`migration rollback compatibility missing: ${entry.id}`);
+    }
+    if (entry.destructive && entry.rollback_compatibility !== "restore_required") {
+      throw new Error(`destructive migration must require restore: ${entry.id}`);
+    }
     const path = resolve(migrationDirectory, entry.id);
     const sql = await readFile(path, "utf8");
     const actual = migrationSha256(sql);
@@ -198,6 +208,12 @@ export function destructivePending(plan) {
   return plan.pending.filter((migration) => migration.destructive);
 }
 
+export function rollbackUnsafePending(plan) {
+  return plan.pending.filter(
+    (migration) => migration.rollback_compatibility !== "previous_release_safe",
+  );
+}
+
 export function legacyRetirementPending(plan) {
   const ids = new Set(plan.pending.map((migration) => migration.id));
   return ids.has("041_retire_task_tree.sql") || ids.has("042_runbook_to_task.sql");
@@ -218,7 +234,7 @@ export function assertLegacyBackupResolved(contract) {
   }
 }
 
-export function validateBackupGate(gate, env = process.env, expectedDestructive = null) {
+export function validateBackupGate(gate, env = process.env, expectedRollbackUnsafe = null) {
   if (gate?.schema_version !== "soulstream.database-backup.v1" || gate.status !== "verified") {
     throw new Error("verified database backup gate is required");
   }
@@ -231,8 +247,8 @@ export function validateBackupGate(gate, env = process.env, expectedDestructive 
     throw new Error("backup gate checksum is invalid");
   }
   if (
-    expectedDestructive
-    && JSON.stringify(gate.destructive_pending) !== JSON.stringify(expectedDestructive)
+    expectedRollbackUnsafe
+    && JSON.stringify(gate.rollback_unsafe_pending) !== JSON.stringify(expectedRollbackUnsafe)
   ) {
     throw new Error("backup gate migration plan differs");
   }

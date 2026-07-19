@@ -15,10 +15,14 @@ import {
   loadLegacyBackupContract,
   readDatabaseUrl,
   readReleaseId,
+  rollbackUnsafePending,
   sha256,
 } from "./migration-contract.mjs";
+import { readVerifiedClusterWriteFence } from "./cluster-write-fence.mjs";
 import { readMigrationPlan } from "./migrate.mjs";
 import { postgresCli, runPostgresCommand } from "./postgres-backup-tools.mjs";
+
+export { validateClusterWriteFence } from "./cluster-write-fence.mjs";
 
 const METADATA_NAME = "database-backup.json";
 const DUMP_NAME = "database.dump";
@@ -81,8 +85,9 @@ export async function createBackup(
   await mkdir(deploy.backupDirectory, { recursive: true });
 
   const plan = await planRead(databaseUrl);
-  const pending = destructivePending(plan).map((item) => item.id);
-  if (pending.length === 0) {
+  const destructive = destructivePending(plan).map((item) => item.id);
+  const rollbackUnsafe = rollbackUnsafePending(plan).map((item) => item.id);
+  if (rollbackUnsafe.length === 0) {
     const metadata = {
       schema_version: "soulstream.database-backup.v1",
       status: "not_required",
@@ -90,7 +95,9 @@ export async function createBackup(
       target_head: deploy.targetHead,
       created_at: new Date().toISOString(),
       schema_state: plan.state,
-      destructive_pending: [],
+      pending_migrations: plan.pending.map((item) => item.id),
+      destructive_pending: destructive,
+      rollback_unsafe_pending: [],
     };
     await atomicJson(metadataPath, metadata);
     return metadata;
@@ -116,7 +123,9 @@ export async function createBackup(
     dump_bytes: size,
     dump_sha256: sha256(bytes),
     schema_state: plan.state,
-    destructive_pending: pending,
+    pending_migrations: plan.pending.map((item) => item.id),
+    destructive_pending: destructive,
+    rollback_unsafe_pending: rollbackUnsafe,
   };
   await atomicJson(metadataPath, metadata);
   return metadata;
@@ -144,8 +153,12 @@ export async function verifyBackup(
       throw new Error("backup metadata does not match this release");
     }
     const plan = await planRead(databaseUrl);
-    if (destructivePending(plan).length > 0) {
-      throw new Error("database migration plan became destructive after backup skip");
+    const pending = plan.pending.map((item) => item.id);
+    if (JSON.stringify(pending) !== JSON.stringify(metadata.pending_migrations)) {
+      throw new Error("database migration plan changed after backup skip");
+    }
+    if (rollbackUnsafePending(plan).length > 0) {
+      throw new Error("database migration plan became rollback-unsafe after backup skip");
     }
     const verified = {
       ...metadata,
@@ -169,8 +182,12 @@ export async function verifyBackup(
   const tocEntries = validateBackupArchive(metadata, bytes, toc);
 
   const plan = await planRead(databaseUrl);
-  const pending = destructivePending(plan).map((item) => item.id);
-  if (JSON.stringify(pending) !== JSON.stringify(metadata.destructive_pending)) {
+  const pending = plan.pending.map((item) => item.id);
+  const rollbackUnsafe = rollbackUnsafePending(plan).map((item) => item.id);
+  if (
+    JSON.stringify(pending) !== JSON.stringify(metadata.pending_migrations)
+    || JSON.stringify(rollbackUnsafe) !== JSON.stringify(metadata.rollback_unsafe_pending)
+  ) {
     throw new Error("database migration plan changed after backup");
   }
   if (legacyRetirementPending(plan)) {
@@ -197,14 +214,7 @@ export async function restoreBackup(
   });
   const databaseUrl = readDatabaseUrl(env);
   const deploy = requireDeployEnvironment(env);
-  const fencePath = env.SOULSTREAM_CLUSTER_WRITE_FENCE_PATH?.trim();
-  if (!fencePath) {
-    throw new Error("SOULSTREAM_CLUSTER_WRITE_FENCE_PATH is required for destructive restore");
-  }
-  validateClusterWriteFence(
-    JSON.parse(await readFile(resolve(fencePath), "utf8")),
-    env,
-  );
+  await readVerifiedClusterWriteFence(env);
   const metadataPath = resolve(deploy.backupDirectory, METADATA_NAME);
   const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
   if (!new Set(["verified", "restored"]).has(metadata.status)) {
@@ -242,10 +252,12 @@ export async function restoreBackup(
   );
 
   const plan = await databasePlan(databaseUrl);
-  const pending = destructivePending(plan).map((item) => item.id);
+  const pending = plan.pending.map((item) => item.id);
+  const rollbackUnsafe = rollbackUnsafePending(plan).map((item) => item.id);
   if (
     plan.state !== metadata.schema_state
-    || JSON.stringify(pending) !== JSON.stringify(metadata.destructive_pending)
+    || JSON.stringify(pending) !== JSON.stringify(metadata.pending_migrations)
+    || JSON.stringify(rollbackUnsafe) !== JSON.stringify(metadata.rollback_unsafe_pending)
   ) {
     throw new Error("restored database does not match the recorded migration plan");
   }
@@ -258,29 +270,40 @@ export async function restoreBackup(
   return restored;
 }
 
-export function validateClusterWriteFence(fence, env = process.env) {
-  const writers = Array.isArray(fence?.writer_nodes) ? fence.writer_nodes : [];
-  const fenced = Array.isArray(fence?.fenced_nodes) ? fence.fenced_nodes : [];
-  const writerSet = new Set(writers);
-  const fencedSet = new Set(fenced);
-  const allFenced = writerSet.size > 0
-    && writerSet.size === fencedSet.size
-    && [...writerSet].every((nodeId) => fencedSet.has(nodeId));
+export async function recoverPreviousReleaseData(
+  { env = process.env, cwd = process.cwd(), spawn = spawnSync } = {},
+) {
+  dotenv.config({
+    path: deploymentEnvironmentPath(env, cwd),
+    override: true,
+    processEnv: env,
+  });
+  const deploy = requireDeployEnvironment(env);
+  const metadataPath = resolve(deploy.backupDirectory, METADATA_NAME);
+  const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
   if (
-    fence?.schema_version !== "soulstream.cluster-write-fence.v1"
-    || fence?.status !== "verified"
-    || Number(fence?.active_writer_count) !== 0
-    || !allFenced
+    metadata.release_id !== deploy.releaseId
+    || metadata.target_head !== deploy.targetHead
   ) {
-    throw new Error("cluster writers are not fully fenced");
+    throw new Error("backup metadata does not match this release");
   }
-  if (
-    fence.release_id !== readReleaseId(env)
-    || fence.target_head !== env.HANIEL_TARGET_HEAD
-  ) {
-    throw new Error("cluster write fence does not match this release");
+  if (metadata.status === "verified_not_required") {
+    if (
+      !Array.isArray(metadata.rollback_unsafe_pending)
+      || metadata.rollback_unsafe_pending.length > 0
+    ) {
+      throw new Error("previous release is not compatible with the migrated database");
+    }
+    const preserved = {
+      ...metadata,
+      recovery_action: "preserve_data_for_previous_release",
+      recovered_at: new Date().toISOString(),
+    };
+    await atomicJson(metadataPath, preserved);
+    return preserved;
   }
-  return fence;
+  const restored = await restoreBackup({ env, cwd, spawn });
+  return { ...restored, recovery_action: "restore_backup_for_previous_release" };
 }
 
 export function formatBackupError(error, env = process.env) {
@@ -306,6 +329,8 @@ async function main() {
         ? await verifyBackup()
         : mode === "restore"
           ? await restoreBackup()
+        : mode === "recover"
+          ? await recoverPreviousReleaseData()
         : (() => { throw new Error(`unknown backup mode: ${mode}`); })();
     console.log(JSON.stringify(report));
   } catch (error) {

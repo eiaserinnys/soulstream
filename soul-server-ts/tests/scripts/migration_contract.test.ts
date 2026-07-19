@@ -14,6 +14,7 @@ import {
   loadMigrationManifest,
   legacyRetirementPending,
   migrationSha256,
+  rollbackUnsafePending,
   validateBackupGate,
   validateLedger,
 } from "../../../packages/db-schema/scripts/migration-contract.mjs";
@@ -65,13 +66,16 @@ describe("versioned migration contract", () => {
     expect(migrationSha256(crlf)).toBe(migrationSha256(lf));
   });
 
-  it("keeps deployment-specific service keys and destructive restore out of the manifest", () => {
+  it("keeps deployment-specific service keys out and declares previous-release recovery", () => {
     const manifest = JSON.parse(readFileSync(fileURLToPath(
       new URL("../../../deploy/release-manifest.json", import.meta.url),
     ), "utf8"));
 
     expect(manifest).not.toHaveProperty("environment_service");
-    expect(manifest.recovery).not.toHaveProperty("fallback");
+    expect(manifest.recovery.fallback).toMatchObject({
+      name: "recover-previous-release-data",
+      command: "node packages/db-schema/scripts/backup.mjs recover",
+    });
   });
   it("loads release settings from the declared Haniel service cwd", () => {
     expect(deploymentEnvironmentPath(
@@ -95,6 +99,34 @@ describe("versioned migration contract", () => {
     expect(migrations.filter((item) => item.destructive).map((item) => item.id)).toEqual([
       "041_retire_task_tree.sql",
       "042_runbook_to_task.sql",
+    ]);
+    expect(migrations.slice(0, -2).every(
+      (item) => item.rollback_compatibility === "bootstrap_only",
+    )).toBe(true);
+    expect(migrations.slice(-2).map((item) => item.rollback_compatibility)).toEqual([
+      "restore_required",
+      "restore_required",
+    ]);
+  });
+
+  it("treats only explicit one-release compatibility as data-preserving rollback", () => {
+    const plan = {
+      pending: [
+        {
+          id: "043_expand.sql",
+          destructive: false,
+          rollback_compatibility: "previous_release_safe",
+        },
+        {
+          id: "044_contract.sql",
+          destructive: false,
+          rollback_compatibility: "restore_required",
+        },
+      ],
+    };
+
+    expect(rollbackUnsafePending(plan).map((item) => item.id)).toEqual([
+      "044_contract.sql",
     ]);
   });
 
@@ -167,6 +199,7 @@ describe("versioned migration contract", () => {
       target_head: "abc123",
       dump_sha256: "a".repeat(64),
       destructive_pending: ["041_retire_task_tree.sql"],
+      rollback_unsafe_pending: ["041_retire_task_tree.sql"],
     };
     const env = { HANIEL_RELEASE_ID: "release-1", HANIEL_TARGET_HEAD: "abc123" };
 

@@ -42,6 +42,11 @@
       "name": "recover-migrations",
       "command": "node packages/db-schema/scripts/migrate.mjs recover",
       "timeout_seconds": 300
+    },
+    "fallback": {
+      "name": "recover-previous-release-data",
+      "command": "node packages/db-schema/scripts/backup.mjs recover",
+      "timeout_seconds": 300
     }
   }
 }

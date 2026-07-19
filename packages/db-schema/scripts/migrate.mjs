@@ -19,8 +19,10 @@ import {
   loadMigrationManifest,
   readDatabaseUrl,
   readReleaseId,
+  rollbackUnsafePending,
   validateBackupGate,
 } from "./migration-contract.mjs";
+import { readVerifiedClusterWriteFence } from "./cluster-write-fence.mjs";
 import { assertPostgresBackupPrerequisites } from "./postgres-backup-tools.mjs";
 
 const MODES = new Set([
@@ -133,6 +135,7 @@ function planReport(mode, plan) {
     bootstrap: plan.bootstrap.map((item) => item.id),
     pending: plan.pending.map((item) => item.id),
     destructive_pending: destructivePending(plan).map((item) => item.id),
+    rollback_unsafe_pending: rollbackUnsafePending(plan).map((item) => item.id),
   };
 }
 
@@ -146,20 +149,30 @@ export async function preflightPendingMigrations(
   {
     env = process.env,
     backupPreflight = assertPostgresBackupPrerequisites,
+    fencePreflight = readVerifiedClusterWriteFence,
   } = {},
 ) {
   const destructive = destructivePending(plan);
-  if (destructive.length === 0) {
-    return { destructive_pending: [], backup_prerequisites: "not_required" };
+  const rollbackUnsafe = rollbackUnsafePending(plan);
+  if (rollbackUnsafe.length === 0) {
+    return {
+      destructive_pending: [],
+      rollback_unsafe_pending: [],
+      backup_prerequisites: "not_required",
+      cluster_write_fence: "not_required",
+    };
   }
   await assertDestructivePreflight(plan);
+  const fence = await fencePreflight(env);
   const prerequisites = await backupPreflight({
     databaseUrl: readDatabaseUrl(env),
     env,
   });
   return {
     destructive_pending: destructive.map((migration) => migration.id),
+    rollback_unsafe_pending: rollbackUnsafe.map((migration) => migration.id),
     backup_prerequisites: prerequisites,
+    cluster_write_fence: fence.status,
   };
 }
 
@@ -172,8 +185,28 @@ async function readVerifiedBackupGate(env, plan) {
   return validateBackupGate(
     gate,
     env,
-    destructivePending(plan).map((migration) => migration.id),
+    rollbackUnsafePending(plan).map((migration) => migration.id),
   );
+}
+
+export async function assertRollbackUnsafeApplyGates(
+  plan,
+  env = process.env,
+  {
+    fenceRead = readVerifiedClusterWriteFence,
+    backupGateRead = readVerifiedBackupGate,
+  } = {},
+) {
+  const rollbackUnsafe = rollbackUnsafePending(plan);
+  if (rollbackUnsafe.length === 0) {
+    return { rollback_unsafe_pending: [], gates: "not_required" };
+  }
+  await fenceRead(env);
+  await backupGateRead(env, plan);
+  return {
+    rollback_unsafe_pending: rollbackUnsafe.map((migration) => migration.id),
+    gates: "verified",
+  };
 }
 
 async function applyPending(sql, migrations, releaseId, appliedKind) {
@@ -250,7 +283,7 @@ export async function runMigrations(
       await freshInstall(sql, migrations, releaseId);
     } else {
       await assertDestructivePreflight(initial);
-      if (destructivePending(initial).length > 0) await readVerifiedBackupGate(env, initial);
+      await assertRollbackUnsafeApplyGates(initial, env);
       await applyPending(
         sql,
         migrations,

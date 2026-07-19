@@ -13,6 +13,7 @@ on:
       - 'soul-server-ts/scripts/**'
       - 'soul-server-ts/tests/scripts/**'
       - 'deploy/release-manifest.json'
+      - 'deploy/tests/**'
       - '.github/workflows/test-install.yml'
   workflow_dispatch:
 
@@ -38,6 +39,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Install paired Haniel release contract
+        shell: pwsh
+        run: |
+          python -m pip install --force-reinstall `
+            git+https://github.com/eiaserinnys/Haniel.git@c19c06f201b02f3394b6cdec8392c5398803f4bf
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
@@ -113,6 +120,14 @@ jobs:
             -AuthBearerToken "ci-test-token" `
             -RepositoryUrl $env:SOULSTREAM_SOURCE_URL `
             -RepositoryBranch $env:SOULSTREAM_SOURCE_BRANCH
+
+      - name: Verify actual release manifest recovery contract
+        shell: pwsh
+        run: |
+          python -m unittest discover `
+            -s deploy/tests `
+            -p "test_haniel_release_contract.py" `
+            -v
 
       - name: Verify service health
         shell: pwsh
