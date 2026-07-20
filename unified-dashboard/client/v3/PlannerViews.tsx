@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { PageDto } from "@seosoyoung/soul-ui/page";
 import { Button, DashboardIconCap, retainEqualValue, type SessionSummary } from "@seosoyoung/soul-ui";
-import { ArrowLeft, ChevronsDown, FilePlus2 } from "lucide-react";
+import { ArrowLeft, ChevronsDown, FilePlus2, Plus, Sun } from "lucide-react";
 
 import { DailyMemo } from "./DailyMemo";
 import { PlannerTaskCard } from "./PlannerTaskCard";
@@ -40,6 +40,8 @@ export function DailyPlannerView({
   onCompleteTask,
   onToggleTaskToday,
   onMoveTaskToProject,
+  onOpenRitual,
+  onCreateTask,
 }: {
   state: PlannerLoadState<DailyPlannerData>;
   selectedDate: string;
@@ -53,6 +55,8 @@ export function DailyPlannerView({
   onCompleteTask(task: PlannerTask): Promise<void>;
   onToggleTaskToday(task: PlannerTask): Promise<void>;
   onMoveTaskToProject(task: PlannerTask): void;
+  onOpenRitual(): void;
+  onCreateTask(): void;
 }) {
   const data = state.data;
   const visibleTasks = visibleDailyTasks(data?.tasks ?? [], isTodayView, todayTaskIds);
@@ -76,12 +80,19 @@ export function DailyPlannerView({
       <div className="v3-date-head">
         <div><span>DAILY</span><h1>{formatLongDate(selectedDate)}</h1></div>
         <p>{state.status === "loading" ? "플래너를 불러오는 중…" : `${visibleTasks.length}개의 업무`}</p>
+        <span className="v3-spacer" />
+        <DashboardIconCap className="v3-planner-head-action" label="아침 정리" onClick={onOpenRitual}>
+          <Sun className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
       </div>
       {state.status === "error" ? <LoadError message={state.message} /> : null}
       {data ? <DailyMemo blocks={data.memoBlocks} onSave={onSaveMemo} /> : null}
       <div className="v3-section-head">
         <h2>오늘의 업무</h2><span>{visibleTasks.length}개</span>
-        <span className="v3-spacer" /><small><kbd>C</kbd> 새 업무</small>
+        <span className="v3-spacer" />
+        <DashboardIconCap className="v3-planner-head-action" label="새 업무" onClick={onCreateTask}>
+          <Plus className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
       </div>
       {groups.map((group) => (
         <section className="v3-project-group" key={group.project?.id ?? "unclassified"}>
@@ -136,6 +147,7 @@ export function ProjectPlannerView({
   onToggleNewDocument,
   onNewDocumentTitle,
   onCreateDocument,
+  onCreateTask,
 }: {
   state: PlannerLoadState<ProjectPlannerData>;
   sessions: readonly SessionSummary[];
@@ -157,6 +169,7 @@ export function ProjectPlannerView({
   onToggleNewDocument(): void;
   onNewDocumentTitle(value: string): void;
   onCreateDocument(): void;
+  onCreateTask(): void;
 }) {
   const data = state.data;
   const [documentMenu, setDocumentMenu] = useState<{ target: V3ContextMenuTarget; page: PageDto } | null>(null);
@@ -205,7 +218,7 @@ export function ProjectPlannerView({
   }, [data?.project.id, invalidationKey]);
 
   return (
-    <>
+    <div className="v3-planner-column">
       <div className="v3-date-head v3-project-title">
         <div>
           <DashboardIconCap label="오늘로 돌아가기" onClick={onBack}>
@@ -280,7 +293,13 @@ export function ProjectPlannerView({
           </DashboardIconCap>
         ) : null}
       </section>
-      <div className="v3-section-head"><h2>역대 업무</h2><span>{data?.tasks.length ?? 0}개</span></div>
+      <div className="v3-section-head">
+        <h2>역대 업무</h2><span>{data?.tasks.length ?? 0}개</span>
+        <span className="v3-spacer" />
+        <DashboardIconCap className="v3-planner-head-action" label="새 업무" onClick={onCreateTask}>
+          <Plus className="h-4 w-4" aria-hidden="true" />
+        </DashboardIconCap>
+      </div>
       <div className="v3-task-list">
         {data?.tasks.map((task) => (
           <PlannerTaskCard
@@ -309,7 +328,7 @@ export function ProjectPlannerView({
       {state.status === "ready" && data?.tasks.length === 0 ? (
         <EmptyState text="이 프로젝트에 누적된 업무가 없습니다." />
       ) : null}
-    </>
+    </div>
   );
 }
 

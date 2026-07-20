@@ -173,7 +173,7 @@ for (const theme of ["dark", "light"] as const) {
       await capture(page, outputDir, "08-ritual-in-progress", diagnostics);
       for (let count = 0; count < 6; count += 1) {
         if (await page.locator(".v3-ritual-done").isVisible().catch(() => false)) break;
-        await page.getByRole("button", { name: "미루기" }).click();
+        await page.getByRole("button", { name: "데일리에서 내리기" }).click();
       }
       await expect(page.locator(".v3-ritual-done")).toBeVisible();
       await capture(page, outputDir, "08b-ritual-complete", diagnostics);

@@ -165,10 +165,7 @@ export function useV3DashboardMutations({
 
   const applyRitualAction = useCallback((item: RitualQueueItem, action: RitualAction) => {
     if (action === "today") addTaskToToday(item.task);
-    if (action === "done") {
-      patchPlannerTask(item.task.page.id, (current) => ({ ...current, status: "completed" }));
-    }
-  }, [addTaskToToday, patchPlannerTask]);
+  }, [addTaskToToday]);
 
   return {
     createTask,

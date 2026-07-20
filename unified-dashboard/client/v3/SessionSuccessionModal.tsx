@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
+  FileAttachmentPreview,
   AtomNodeSelector,
   Dialog,
   DialogFooter,
@@ -9,6 +10,8 @@ import {
   DialogPanel,
   DialogPopup,
   DialogTitle,
+  appendAttachmentPathNotes,
+  useFileUpload,
   useDashboardStore,
   type AgentInfo,
   type SessionSummary,
@@ -88,9 +91,10 @@ export function SessionSuccessionModal({
   const [inheritCard, setInheritCard] = useState(true);
   const [inheritSummary, setInheritSummary] = useState(Boolean(predecessorId));
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<Set<string>>(() => new Set());
+  const [pendingSessionId] = useState(() => crypto.randomUUID());
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [atomNodeId, setAtomNodeId] = useState("");
   const [atomNodeTitle, setAtomNodeTitle] = useState("");
-  const [guidance, setGuidance] = useState("");
   const [initialInstruction, setInitialInstruction] = useState("");
   const [selectedNodeId, setSelectedNodeId] = useState(resolvedDefaults.nodeId ?? "");
   const [selectedAgentId, setSelectedAgentId] = useState(resolvedDefaults.agentId ?? "");
@@ -98,6 +102,18 @@ export function SessionSuccessionModal({
   const [preparedPageAnchor, setPreparedPageAnchor] = useState<Awaited<ReturnType<typeof createTaskPageAnchor>> | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const uploadUrl = selectedNodeId
+    ? `/api/attachments/sessions?nodeId=${encodeURIComponent(selectedNodeId)}`
+    : "";
+  const {
+    files,
+    isUploading,
+    addFiles,
+    removeFile,
+    cancel,
+    resetLocal,
+    uploadedPaths,
+  } = useFileUpload({ uploadUrl, sessionId: pendingSessionId });
   const contextSelection = useMemo(() => buildSessionContextSelection({
     inheritCard,
     pageContextSources,
@@ -105,8 +121,8 @@ export function SessionSuccessionModal({
       .filter((document) => selectedDocumentIds.has(document.pageId))
       .map((document) => document.pageId),
     atomNode: atomNodeId ? { nodeId: atomNodeId, title: atomNodeTitle } : null,
-    guidance,
-  }), [atomNodeId, atomNodeTitle, documentOptions, guidance, inheritCard, pageContextSources, selectedDocumentIds]);
+    guidance: "",
+  }), [atomNodeId, atomNodeTitle, documentOptions, inheritCard, pageContextSources, selectedDocumentIds]);
   const handleAssignmentError = useCallback((message: string) => {
     console.error("[v3/session-succession] 실행 대상 조회 실패", message);
     setError(message);
@@ -127,10 +143,12 @@ export function SessionSuccessionModal({
         pageAnchor,
         predecessorSessionId: predecessorId,
       });
+      const attachmentPaths = uploadedPaths.length > 0 ? uploadedPaths : undefined;
       const result = await createDashboardSession({
         queryClient,
         addOptimisticSession: useDashboardStore.getState().addOptimisticSession,
-        initialInstruction,
+        initialInstruction: appendAttachmentPathNotes(initialInstruction, attachmentPaths),
+        attachmentPaths,
         nodeId: selectedNodeId,
         agentId: selectedAgentId,
         agent: selectedAgent,
@@ -140,6 +158,7 @@ export function SessionSuccessionModal({
           : undefined,
         ...succession,
       });
+      resetLocal();
       const now = new Date().toISOString();
       onCreated({
         agentSessionId: result.agentSessionId,
@@ -163,8 +182,15 @@ export function SessionSuccessionModal({
     }
   };
 
+  const close = async () => {
+    if (pending) return;
+    if (uploadUrl) await cancel();
+    else resetLocal();
+    onClose();
+  };
+
   return (
-    <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose(); }}>
+    <Dialog open onOpenChange={(open) => { if (!open && !pending) void close(); }}>
       <DialogPopup
         className="v3-succession-modal max-w-[640px]"
         closeProps={{ "aria-label": "승계 닫기", disabled: pending }}
@@ -273,16 +299,6 @@ export function SessionSuccessionModal({
               </label>
             </section>
             <label>
-              <strong>추가 지침</strong>
-              <textarea
-                value={guidance}
-                disabled={pending}
-                rows={3}
-                placeholder="이 세션에만 적용할 지침…"
-                onChange={(event) => setGuidance(event.target.value)}
-              />
-            </label>
-            <label>
               <strong>초기 지시</strong>
               <textarea
                 value={initialInstruction}
@@ -292,11 +308,46 @@ export function SessionSuccessionModal({
                 onChange={(event) => setInitialInstruction(event.target.value)}
               />
             </label>
+            <div className="flex min-w-0 flex-col gap-2">
+              {files.length > 0 ? (
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {files.map((file) => (
+                    <FileAttachmentPreview
+                      key={file.id}
+                      file={file.file}
+                      status={file.status}
+                      onRemove={() => removeFile(file.id)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={pending || !selectedNodeId}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  파일 첨부
+                </Button>
+                {isUploading ? <small>업로드 중…</small> : null}
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                  if (event.target.files?.length) addFiles(event.target.files);
+                  event.target.value = "";
+                }}
+              />
+            </div>
           </div>
         </DialogPanel>
         <DialogFooter className="v3-succession-footer">
-          <Button variant="ghost" disabled={pending} onClick={onClose}>취소</Button>
-          <Button disabled={pending || contextPending || !selectedNodeId || !selectedAgentId || selectedAgent?.id !== selectedAgentId} onClick={() => { void start(); }}>{pending ? "시작 중…" : contextPending ? "컨텍스트 확인 중…" : "시작"}</Button>
+          <Button variant="ghost" disabled={pending} onClick={() => { void close(); }}>취소</Button>
+          <Button disabled={pending || isUploading || contextPending || !selectedNodeId || !selectedAgentId || selectedAgent?.id !== selectedAgentId} onClick={() => { void start(); }}>{pending ? "시작 중…" : isUploading ? "첨부 중…" : contextPending ? "컨텍스트 확인 중…" : "시작"}</Button>
         </DialogFooter>
       </DialogPopup>
     </Dialog>

@@ -32,6 +32,16 @@ export interface PlannerTask {
   mountedDocuments: MountedTaskDocument[];
 }
 
+export type StarredPlannerTask = PlannerTask | PageDto;
+
+export function isPlannerTask(value: StarredPlannerTask): value is PlannerTask {
+  return "page" in value;
+}
+
+export function starredTaskPage(value: StarredPlannerTask): PageDto {
+  return isPlannerTask(value) ? value.page : value;
+}
+
 export interface MountedTaskDocument {
   blockId: string;
   page: PageDto;
@@ -154,12 +164,16 @@ export async function loadProjectPlanner(
 export async function loadStarredTasks(
   dependencies: PlannerDataDependencies,
   input: { cursor?: string; limit: number },
-): Promise<PlannerPage<PageDto>> {
+): Promise<PlannerPage<PlannerTask>> {
   const query = pageQuery(input.cursor, input.limit);
+  query.set("detail", "full");
   const payload = await dependencies.fetchPlanner(
     `/api/planner/starred-tasks?${query.toString()}`,
-  ) as PageSlicePayload<PageDto>;
-  return plannerPage(payload);
+  ) as PageSlicePayload<PlannerTaskPayload>;
+  return {
+    items: payload.items.map(plannerTask),
+    nextCursor: payload.next_cursor,
+  };
 }
 
 export async function loadDailyHistoryDates(
@@ -219,9 +233,9 @@ export async function loadTaskRunHistory(
 
 export async function loadStarredPlannerTask(
   api: PageApiClient,
-  taskPage: PageDto,
+  task: StarredPlannerTask,
 ): Promise<PlannerTask> {
-  return await loadPlannerTask(api, taskPage.id);
+  return isPlannerTask(task) ? task : await loadPlannerTask(api, task.id);
 }
 
 export async function loadPlannerTask(

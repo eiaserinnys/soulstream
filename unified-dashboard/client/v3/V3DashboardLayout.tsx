@@ -30,7 +30,12 @@ import {
 } from "./mobile-planner-state";
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import { useTaskStarChanges } from "./task-star-store";
-import { createPlannerDataDependencies, loadStarredPlannerTask, type PlannerTask } from "./planner-data";
+import {
+  createPlannerDataDependencies,
+  loadStarredPlannerTask,
+  starredTaskPage,
+  type PlannerTask,
+} from "./planner-data";
 import { fetchPageSessionDefaults, type PageSessionDefaults } from "./task-workspace-api";
 import { activateRunSession, resolveRunSessions } from "./task-workspace-model";
 import { buildMobileTaskOptions, dateKey, errorText, recentDates } from "./v3-dashboard-utils";
@@ -214,7 +219,7 @@ function V3DashboardContent() {
     loading: targetedRunSessionsLoading,
   } = useV3LiveDataPlane({
     sessionIds: plannerSessionIds,
-    pageIds: [daily.data?.daily.page.id, selectedProjectId, ...currentTasks.map((task) => task.page.id), ...starredTasks.map((page) => page.id)],
+    pageIds: [daily.data?.daily.page.id, selectedProjectId, ...currentTasks.map((task) => task.page.id), ...starredTasks.map((task) => starredTaskPage(task).id)],
   });
   const runSessionResolution = useMemo(() => resolveRunSessions({
     sessionIds: plannerSessionIds,
@@ -409,8 +414,6 @@ function V3DashboardContent() {
       <LiquidGlassCanvas />
       <V3GlobalToolbar
         onOpenConfig={() => setConfigOpen(true)}
-        onOpenNewTask={() => setCreateOpen(true)}
-        onOpenRitual={() => setRitualOpen(true)}
         onOpenSearch={() => setSearchOpen(true)}
       />
       <V3Navigation
@@ -436,11 +439,11 @@ function V3DashboardContent() {
           <div className="v3-planner-scroll" data-testid="v3-planner-scroll">
             {createOpen ? <NewTaskForm folders={catalog?.folders ?? []} invalidationKey={projectContextInvalidationKey} initialFolderId={selectedFolderId} pending={createPending} onCreate={createTask} onCancel={() => setCreateOpen(false)} /> : null}
             {selectedProject ? (
-              <ProjectPlannerView state={project} sessions={sessions} nodeConnectivity={nodeConnectivity} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onMoveTaskToProject={taskProjectMove.openTask} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} />
+              <ProjectPlannerView state={project} sessions={sessions} nodeConnectivity={nodeConnectivity} todayTaskIds={todayTaskIds} newDocumentOpen={newDocumentOpen} newDocumentTitle={newDocumentTitle} tasksLoadingMore={projectTasksLoadingMore} documentsLoadingMore={projectDocumentsLoadingMore} invalidationKey={projectContextInvalidationKey} onLoadMoreTasks={() => { void loadMoreProjectTasks(); }} onLoadMoreDocuments={() => { void loadMoreProjectDocuments(); }} onBack={clearProject} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onMoveTaskToProject={taskProjectMove.openTask} onOpenDocument={(page) => openProjectDocument(page.id)} onToggleNewDocument={() => setNewDocumentOpen((value) => !value)} onNewDocumentTitle={setNewDocumentTitle} onCreateDocument={() => { void createDocument(); }} onCreateTask={() => setCreateOpen(true)} />
             ) : selectedFolderId ? (
               <ProjectFolderResolutionView state={resolution} title={selectedFolderName} onRetry={() => { void projectSelection.retry(); }} />
             ) : (
-              <DailyPlannerView state={daily} selectedDate={selectedDate} isTodayView={selectedDate === today} todayTaskIds={todayTaskIds} sessions={sessions} nodeConnectivity={nodeConnectivity} onSaveMemo={saveMemo} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onMoveTaskToProject={taskProjectMove.openTask} />
+              <DailyPlannerView state={daily} selectedDate={selectedDate} isTodayView={selectedDate === today} todayTaskIds={todayTaskIds} sessions={sessions} nodeConnectivity={nodeConnectivity} onSaveMemo={saveMemo} onOpenProject={(pageId) => projectSelection.openProjectPage(pageId, projects, catalog?.folders ?? [])} onOpenTask={openTask} onCompleteTask={plannerActions.completeTask} onToggleTaskToday={plannerActions.toggleTaskToday} onMoveTaskToProject={taskProjectMove.openTask} onOpenRitual={() => setRitualOpen(true)} onCreateTask={() => setCreateOpen(true)} />
             )}
           </div>
         </div>

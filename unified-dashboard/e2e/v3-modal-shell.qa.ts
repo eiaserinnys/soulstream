@@ -67,6 +67,7 @@ async function verifyTheme(browser: Browser, theme: Theme) {
       assertModalContract(theme, "새 업무", newTask);
       assertModalContract(theme, "새 세션", newSession);
       assert(succession.sectionOrder, `${theme}: 새 세션 항목 순서가 다릅니다.`);
+      assert(!succession.hasRemovedGuidance, `${theme}: 삭제한 추가 지침 입력이 남았습니다.`);
       assert(!succession.hasLegacyTerms, `${theme}: 새 세션에 기존 실행/기본 지침 명칭이 남았습니다.`);
       assert(succession.documentOverflowY === "auto", `${theme}: 보드 문서 프리뷰가 내부 스크롤 계약이 아닙니다.`);
       assert(succession.documentMaxHeight !== "none", `${theme}: 보드 문서 프리뷰 높이 제한이 없습니다.`);
@@ -115,7 +116,7 @@ async function readModalMetrics(page: Page, dialog: Locator) {
 
 async function readSuccessionMetrics(page: Page, dialog: Locator) {
   const text = await dialog.textContent() ?? "";
-  const labels = ["노드 / 에이전트", "컨텍스트", "추가 지침", "초기 지시"];
+  const labels = ["노드 / 에이전트", "컨텍스트", "초기 지시"];
   const positions = labels.map((label) => text.indexOf(label));
   const documents = dialog.locator(".v3-succession-document-options");
   const documentStyle = await documents.evaluate((element) => {
@@ -127,6 +128,7 @@ async function readSuccessionMetrics(page: Page, dialog: Locator) {
   ));
   return {
     sectionOrder: positions.every((position, index) => position >= 0 && (index === 0 || positions[index - 1] < position)),
+    hasRemovedGuidance: text.includes("추가 지침"),
     hasLegacyTerms: text.includes("실행 에이전트") || text.includes("실행 노드") || text.includes("기본 지침"),
     documentOverflowY: documentStyle.overflowY,
     documentMaxHeight: documentStyle.maxHeight,

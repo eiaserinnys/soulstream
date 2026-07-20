@@ -15,7 +15,7 @@ import {
   type CatalogFolderReorderItem,
 } from "@seosoyoung/soul-ui";
 import { ChevronsDown, FolderPlus } from "lucide-react";
-import { createPageApiClient, type PageDto } from "@seosoyoung/soul-ui/page";
+import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 
 import { ProjectDialog, type ProjectDialogTarget } from "./ProjectDialog";
 import { ProjectNavigationTree } from "./ProjectNavigationTree";
@@ -31,6 +31,7 @@ import {
   buildProjectContextMenuActions,
   buildTaskContextMenuActions,
 } from "./context-menu-model";
+import { starredTaskPage, type StarredPlannerTask } from "./planner-data";
 import "./v3-project-star.css";
 
 export interface PlannerDateNavItem {
@@ -39,7 +40,7 @@ export interface PlannerDateNavItem {
 }
 
 type MenuState =
-  | { target: V3ContextMenuTarget; kind: "task"; task: PageDto }
+  | { target: V3ContextMenuTarget; kind: "task"; task: StarredPlannerTask }
   | { target: V3ContextMenuTarget; kind: "folder"; folder: CatalogFolder };
 
 export function V3Navigation({
@@ -70,7 +71,7 @@ export function V3Navigation({
   selectedDate: string;
   folders: readonly CatalogFolder[];
   selectedFolderId: string | null;
-  starredTasks: readonly PageDto[];
+  starredTasks: readonly StarredPlannerTask[];
   starredTasksHasMore: boolean;
   starredTasksLoading: boolean;
   todayTaskIds: ReadonlySet<string>;
@@ -78,10 +79,10 @@ export function V3Navigation({
   onLoadMoreStarredTasks(): void;
   onSelectDate(date: string): void;
   onSelectFolder(folder: CatalogFolder): void;
-  onSelectTask(task: PageDto): void;
-  onCompleteTask(task: PageDto): Promise<void>;
-  onToggleTaskToday(task: PageDto): Promise<void>;
-  onMoveTaskToProject(task: PageDto): void;
+  onSelectTask(task: StarredPlannerTask): void;
+  onCompleteTask(task: StarredPlannerTask): Promise<void>;
+  onToggleTaskToday(task: StarredPlannerTask): Promise<void>;
+  onMoveTaskToProject(task: StarredPlannerTask): void;
   onCreateProject(title: string, parentFolderId: string | null): Promise<CatalogFolder>;
   onRenameProject(folder: CatalogFolder, title: string): Promise<void>;
   onDeleteProject(folder: CatalogFolder): Promise<void>;
@@ -131,12 +132,13 @@ export function V3Navigation({
     else void onDeleteProject(folder).catch((cause) => setError(`프로젝트 삭제 실패 · ${errorText(cause)}`));
   }, [onDeleteProject, projectHasContents]);
 
-  const clearTaskStar = async (task: PageDto) => {
+  const clearTaskStar = async (task: StarredPlannerTask) => {
+    const page = starredTaskPage(task);
     if (pendingTaskId) return;
-    setPendingTaskId(task.id);
+    setPendingTaskId(page.id);
     setError(null);
     try {
-      const updated = await setTaskStarred(api, task.id, false);
+      const updated = await setTaskStarred(api, page.id, false);
       publishTaskStarChange({ page: updated, starred: false });
     } catch (cause) {
       setError(`별표 변경 실패 · ${errorText(cause)}`);
@@ -162,29 +164,32 @@ export function V3Navigation({
             className={selectedFolderId === null && selectedDate === item.date ? "is-active" : ""}
             onClick={() => onSelectDate(item.date)}
           >
-            <span className="v3-emoji" aria-hidden="true">{item.date === dates[0]?.date ? "📅" : ""}</span>
+            <span className="v3-emoji" aria-hidden="true">📅</span>
             <span>{item.label}</span>
           </button>
         ))}
       </div>
 
-      <h2>★ 작업</h2>
+      <h2>중요 작업</h2>
       <div className="v3-nav-list" data-testid="v3-starred-tasks">
-        {starredTasks.map((task) => (
-          <button
-            type="button"
-            key={task.id}
-            className="v3-starred-task-link"
-            disabled={pendingTaskId === task.id}
-            onClick={() => onSelectTask(task)}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              setContextMenu({ target: { x: event.clientX, y: event.clientY }, kind: "task", task });
-            }}
-          >
-            <span aria-hidden="true">★</span><span>{task.title}</span>
-          </button>
-        ))}
+        {starredTasks.map((task) => {
+          const page = starredTaskPage(task);
+          return (
+            <button
+              type="button"
+              key={page.id}
+              className="v3-starred-task-link"
+              disabled={pendingTaskId === page.id}
+              onClick={() => onSelectTask(task)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setContextMenu({ target: { x: event.clientX, y: event.clientY }, kind: "task", task });
+              }}
+            >
+              <span aria-hidden="true">★</span><span>{page.title}</span>
+            </button>
+          );
+        })}
         {starredTasks.length === 0 ? <p>{starredTasksLoading ? "업무를 불러오는 중…" : "별표 업무가 없습니다."}</p> : null}
         {starredTasksHasMore ? (
           <DashboardIconCap
@@ -229,12 +234,12 @@ export function V3Navigation({
         target={contextMenu?.target ?? null}
         onClose={() => setContextMenu(null)}
         actions={contextMenu?.kind === "task" ? buildTaskContextMenuActions({
-          starred: taskStarredState(contextMenu.task.id, taskStarChanges, true),
-          completed: completedTaskIds.has(contextMenu.task.id),
-          inToday: todayTaskIds.has(contextMenu.task.id),
+          starred: taskStarredState(starredTaskPage(contextMenu.task).id, taskStarChanges, true),
+          completed: completedTaskIds.has(starredTaskPage(contextMenu.task).id),
+          inToday: todayTaskIds.has(starredTaskPage(contextMenu.task).id),
         }, {
           open: () => onSelectTask(contextMenu.task),
-          copyId: () => navigator.clipboard.writeText(contextMenu.task.id),
+          copyId: () => navigator.clipboard.writeText(starredTaskPage(contextMenu.task).id),
           toggleStar: () => clearTaskStar(contextMenu.task),
           moveToProject: () => onMoveTaskToProject(contextMenu.task),
           complete: () => onCompleteTask(contextMenu.task),

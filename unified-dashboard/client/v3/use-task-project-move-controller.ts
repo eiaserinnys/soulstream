@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import type { CatalogFolder } from "@seosoyoung/soul-ui";
 import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 
-import type { PlannerTask } from "./planner-data";
+import type { PlannerTask, StarredPlannerTask } from "./planner-data";
 import { loadStarredPlannerTask } from "./planner-data";
 import type { TaskProjectMoveDialogProps } from "./TaskProjectMoveDialog";
 import type { TaskProjectMoveTarget } from "./task-project-move";
@@ -26,9 +26,9 @@ export function useTaskProjectMoveController({
     setTask(next);
     setError(null);
   }, []);
-  const openPage = useCallback(async (page: PageDto) => {
+  const openPage = useCallback(async (task: StarredPlannerTask) => {
     try {
-      openTask(await loadStarredPlannerTask(api, page));
+      openTask(await loadStarredPlannerTask(api, task));
     } catch (cause) {
       notify(`업무 불러오기 실패 · ${errorText(cause)}`);
     }

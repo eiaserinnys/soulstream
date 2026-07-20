@@ -9,6 +9,7 @@ import {
   loadProjectDocumentPage,
   loadPlannerTask,
   loadStarredTasks,
+  loadStarredPlannerTask,
   loadProjectPlanner,
   loadProjectTaskPage,
   loadTaskRunHistory,
@@ -69,7 +70,7 @@ describe("planner BFF data", () => {
   it("loads bounded project, daily, task, document, and run pages through dedicated planner routes", async () => {
     const fetchPlanner = vi.fn(async (path: string) => {
       if (path.startsWith("/api/planner/starred-tasks")) {
-        return { items: [page("task-starred", "별표 업무")], next_cursor: "task-next" };
+        return { items: [taskPayload()], next_cursor: "task-next" };
       }
       if (path.startsWith("/api/planner/daily-history")) {
         return { dates: ["2026-07-13", "2026-07-11"] };
@@ -89,7 +90,10 @@ describe("planner BFF data", () => {
     const dependencies = { fetchPlanner } satisfies PlannerDataDependencies;
 
     await expect(loadStarredTasks(dependencies, { cursor: "cursor-a", limit: 50 }))
-      .resolves.toMatchObject({ items: [{ id: "task-starred" }], nextCursor: "task-next" });
+      .resolves.toMatchObject({
+        items: [{ page: { id: "task" }, taskId: "task", status: "in_progress" }],
+        nextCursor: "task-next",
+      });
     await expect(loadDailyHistoryDates(dependencies, "2026-07-14", 2))
       .resolves.toEqual(["2026-07-13", "2026-07-11"]);
     await expect(loadProjectTaskPage(dependencies, "project/a", "cursor-b", 20))
@@ -99,7 +103,7 @@ describe("planner BFF data", () => {
     await expect(loadTaskRunHistory(dependencies, "task/a", "cursor-d", 20))
       .resolves.toEqual({ sessionIds: ["session-a"], nextCursor: "run-next", total: 61 });
 
-    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/starred-tasks?cursor=cursor-a&limit=50");
+    expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/starred-tasks?cursor=cursor-a&limit=50&detail=full");
     expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/daily-history?before=2026-07-14&limit=2");
     expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/tasks?cursor=cursor-b&limit=20");
     expect(fetchPlanner).toHaveBeenCalledWith("/api/planner/projects/project%2Fa/documents?cursor=cursor-c&limit=20");
@@ -123,6 +127,27 @@ describe("planner BFF data", () => {
         headers: { Accept: "application/json" },
       },
     );
+  });
+
+  it("opens a full starred task without the legacy page and backlink fanout", async () => {
+    const fullTask = {
+      page: page("task", "업무"),
+      blocks: [],
+      stateVector: "",
+      taskId: "task",
+      task: null,
+      status: "open" as const,
+      assignee: "담당 미확인",
+      contextCount: 0,
+      progress: null,
+      projectPageId: null,
+      sessionIds: [],
+      mountedDocuments: [],
+    };
+    const api = pageApiThatMustStayIdle();
+
+    await expect(loadStarredPlannerTask(api, fullTask)).resolves.toBe(fullTask);
+    expectNoPageCalls(api);
   });
 
   it("preserves the server detail for the collapsed planner error disclosure", async () => {

@@ -4,6 +4,7 @@ import type { PlannerTask } from "./planner-data";
 
 export interface HistoricalRitualDay {
   date: string;
+  pageId: string;
   tasks: readonly PlannerTask[];
 }
 
@@ -14,15 +15,16 @@ export interface RitualTaskItem {
   description: string;
   agentLabel: string;
   sourceDate: string;
+  sourcePageId: string;
   task: PlannerTask;
 }
 
 export type RitualQueueItem = RitualTaskItem;
-export type RitualAction = "today" | "later" | "done";
+export type RitualAction = "today" | "remove";
 
 export interface RitualActionPort {
   mountToday(input: { taskTitle: string }): Promise<void>;
-  completeTask(input: { taskId: string; expectedVersion: number }): Promise<void>;
+  removeFromDaily(input: { dailyPageId: string; taskTitle: string }): Promise<void>;
 }
 
 export interface BuildMorningRitualQueueInput {
@@ -61,6 +63,7 @@ export function buildMorningRitualQueue(
         description: `${displayDate(day.date)} 플래너에 남아 있는 업무입니다. 오늘로 이월할까요?`,
         agentLabel: task.assignee,
         sourceDate: day.date,
+        sourcePageId: day.pageId,
         task,
       });
     }
@@ -74,22 +77,16 @@ export async function dispatchRitualAction(
   action: RitualAction,
   port: RitualActionPort,
 ): Promise<void> {
-  if (action === "later") return;
-
   if (action === "today") {
     await port.mountToday({
       taskTitle: item.task.page.title,
     });
     return;
   }
-  if (action === "done") {
-    const expectedVersion = item.task.task?.task.version;
-    if (expectedVersion === undefined) {
-      throw new Error("업무를 불러오지 못해 완료 처리할 수 없습니다");
-    }
-    await port.completeTask({
-      taskId: item.task.taskId,
-      expectedVersion,
+  if (action === "remove") {
+    await port.removeFromDaily({
+      dailyPageId: item.sourcePageId,
+      taskTitle: item.task.page.title,
     });
     return;
   }
