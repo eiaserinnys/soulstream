@@ -207,6 +207,39 @@ describe("planner routes", () => {
     }
   });
 
+  it("preserves the default starred page response and opts into full task details explicitly", async () => {
+    const provider = providerDouble();
+    const fullTask = {
+      page: page("task"), blocks: [], task_id: "task-id", task: null,
+      project_page_id: "project", sessions: [], mounted_documents: [],
+    };
+    vi.mocked(provider.getStarredTasks)
+      .mockResolvedValueOnce({ items: [page("task")], next_cursor: null })
+      .mockResolvedValueOnce({ items: [fullTask], next_cursor: null });
+    const app = Fastify({ logger: false });
+    registerPlannerRoutes(app, {
+      provider,
+      dailyPages: dailyPageServiceDouble(),
+      resolveUser: cookieUserResolver(),
+    });
+    try {
+      const headers = { cookie: browserCookie };
+      const legacy = await app.inject({
+        method: "GET", url: "/api/planner/starred-tasks?limit=25", headers,
+      });
+      const full = await app.inject({
+        method: "GET", url: "/api/planner/starred-tasks?limit=25&detail=full", headers,
+      });
+
+      expect(legacy.json()).toMatchObject({ items: [{ id: "task" }] });
+      expect(full.json()).toMatchObject({ items: [{ task_id: "task-id", page: { id: "task" } }] });
+      expect(provider.getStarredTasks).toHaveBeenNthCalledWith(1, { limit: 25 });
+      expect(provider.getStarredTasks).toHaveBeenNthCalledWith(2, { limit: 25, detail: "full" });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("declares every planner read route as authenticated", () => {
     expect(plannerRouteAuthRequirements).toEqual({
       "GET /api/planner/today": true,

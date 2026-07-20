@@ -198,11 +198,11 @@ export function encodeMountCursor(
   return cursor ? encodeCursor(scope, cursor.position, cursor.id) : null;
 }
 
-function encodeCursor(scope: string, first: string, second: string): string {
+export function encodeCursor(scope: string, first: string, second: string): string {
   return Buffer.from(JSON.stringify([scope, first, second]), "utf8").toString("base64url");
 }
 
-function decodeCursor(
+export function decodeCursor(
   value: string,
   expectedScope: string,
 ): { first: string; second: string } {

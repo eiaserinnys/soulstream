@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { PageRepository } from "../src/page/page_repository.js";
 import { PageYjsService } from "../src/page/page_service.js";
+import type { PlannerTaskDto } from "../src/planner/planner_contract.js";
 import { PlannerRepository } from "../src/planner/planner_repository.js";
 import { registerTaskCreateRoute } from "../src/tasks/task_create_route.js";
 import type {
@@ -342,6 +343,158 @@ describe("Task identity PostgreSQL transaction", () => {
       await pages.close();
     }
   });
+
+  it("executes the full starred task query in PostgreSQL with both identities and a two-page cursor", async () => {
+    const resolver = createLiveDbSqlResolver({ sql: harness.liveSql });
+    const pages = new PageYjsService({ repository: new PageRepository(resolver) });
+    const fixtures = [
+      {
+        pageId: "starred-full-page-task-ref-a",
+        taskId: "starred-full-task-ref-a",
+        title: "별표 전체 업무 A",
+        blockType: "task_ref",
+        referenceKey: "taskId",
+        updatedAt: "2030-01-03T00:00:00.000000Z",
+      },
+      {
+        pageId: "starred-full-page-runbook-ref-b",
+        taskId: "starred-full-runbook-ref-b",
+        title: "별표 전체 업무 B",
+        blockType: "runbook_ref",
+        referenceKey: "runbookId",
+        updatedAt: "2030-01-02T00:00:00.000000Z",
+      },
+      {
+        pageId: "starred-full-page-task-ref-c",
+        taskId: "starred-full-task-ref-c",
+        title: "별표 전체 업무 C",
+        blockType: "task_ref",
+        referenceKey: "taskId",
+        updatedAt: "2030-01-01T00:00:00.000000Z",
+      },
+    ] as const;
+    try {
+      // Keep this pagination fixture independent from starred pages created by earlier cases.
+      await harness.sql`
+        UPDATE pages
+        SET metadata = jsonb_set(metadata, '{starred}', 'false'::jsonb, TRUE)
+        WHERE COALESCE((metadata->>'starred')::boolean, FALSE)
+      `;
+      for (const fixture of fixtures) {
+        await pages.createPage({
+          page: {
+            id: fixture.pageId,
+            title: fixture.title,
+            dailyDate: null,
+            metadata: { starred: true },
+          },
+          initialCommand: {
+            type: "batch_operations",
+            operations: [{
+              op: "create_block",
+              tempId: `${fixture.pageId}-identity`,
+              parentId: null,
+              afterBlockId: null,
+              blockType: fixture.blockType,
+              text: "",
+              properties: { primary: true, [fixture.referenceKey]: fixture.taskId },
+              collapsed: false,
+            }],
+          },
+          actor: { actorKind: "system" },
+          idempotencyKey: `task-identity:starred-full:${fixture.pageId}`,
+        });
+        await harness.sql`
+          INSERT INTO board_items (
+            id, folder_id, container_kind, container_id, membership_kind,
+            item_type, item_id, metadata
+          ) VALUES (
+            ${`task:${fixture.taskId}`}, 'folder-a', 'folder', 'folder-a', 'primary',
+            'task', ${fixture.taskId}, ${harness.sql.json({ title: fixture.title })}::jsonb
+          )
+        `;
+        await harness.sql`
+          INSERT INTO tasks (id, board_item_id, task_page_id, title)
+          VALUES (
+            ${fixture.taskId},
+            ${`task:${fixture.taskId}`},
+            ${fixture.blockType === "task_ref" ? fixture.pageId : null},
+            ${fixture.title}
+          )
+        `;
+        await harness.sql`
+          UPDATE pages SET updated_at = ${fixture.updatedAt}::timestamptz
+          WHERE id = ${fixture.pageId}
+        `;
+      }
+      await harness.sql`
+        INSERT INTO task_sections (
+          id, task_id, position_key, assignee_agent_id
+        ) VALUES (
+          'starred-full-section-a', ${fixtures[0].taskId}, 'a', 'roselin_codex'
+        )
+      `;
+      await harness.sql`
+        INSERT INTO task_items (id, section_id, position_key, status)
+        VALUES ('starred-full-item-a', 'starred-full-section-a', 'a', 'review')
+      `;
+
+      const planner = new PlannerRepository(resolver);
+      const first = await planner.getStarredTasks({ detail: "full", limit: 2 });
+      const firstItems = first.items as PlannerTaskDto[];
+      expect(first.items).toHaveLength(2);
+      expect(firstItems.map((item) => item.page.id)).toEqual([
+        fixtures[0].pageId,
+        fixtures[1].pageId,
+      ]);
+      expect(first.next_cursor).toEqual(expect.any(String));
+      expect(firstItems).toEqual([
+        expect.objectContaining({
+          page: expect.objectContaining({ id: fixtures[0].pageId, title: fixtures[0].title }),
+          task_id: fixtures[0].taskId,
+          task: expect.objectContaining({
+            id: fixtures[0].taskId,
+            item_counts: { review: 1 },
+            item_total: 1,
+            assignee: "roselin_codex",
+          }),
+          blocks: expect.arrayContaining([
+            expect.objectContaining({
+              block_type: "task_ref",
+              properties: expect.objectContaining({ taskId: fixtures[0].taskId }),
+            }),
+          ]),
+        }),
+        expect.objectContaining({
+          page: expect.objectContaining({ id: fixtures[1].pageId, title: fixtures[1].title }),
+          task_id: fixtures[1].taskId,
+          task: expect.objectContaining({ id: fixtures[1].taskId }),
+          blocks: expect.arrayContaining([
+            expect.objectContaining({
+              block_type: "runbook_ref",
+              properties: expect.objectContaining({ runbookId: fixtures[1].taskId }),
+            }),
+          ]),
+        }),
+      ]);
+
+      const second = await planner.getStarredTasks({
+        detail: "full",
+        cursor: first.next_cursor!,
+        limit: 2,
+      });
+      const secondItems = second.items as PlannerTaskDto[];
+      expect(second.items).toHaveLength(1);
+      expect(second.next_cursor).toBeNull();
+      expect(secondItems[0]).toEqual(expect.objectContaining({
+        page: expect.objectContaining({ id: fixtures[2].pageId }),
+        task_id: fixtures[2].taskId,
+      }));
+      expect(secondItems.map((item) => item.page.id)).not.toContain(fixtures[1].pageId);
+    } finally {
+      await pages.close();
+    }
+  }, 60_000);
 
   it("moves the project mount atomically, preserves daily ownership, then removes every mount on archive", async () => {
     const sourceFolderId = "folder-lifecycle-source";

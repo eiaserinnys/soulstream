@@ -100,7 +100,11 @@ export interface PlannerTaskRunPageDto extends PlannerPageSlice<{
 }
 
 export interface PlannerReadProvider {
-  getStarredTasks(input: { cursor?: string; limit: number }): Promise<PlannerPageSlice<PlannerPageDto>>;
+  getStarredTasks(input: {
+    cursor?: string;
+    limit: number;
+    detail?: "full";
+  }): Promise<PlannerPageSlice<PlannerPageDto | PlannerTaskDto>>;
   getDailyHistory(input: { before: string; limit: number }): Promise<PlannerDailyHistoryDto>;
   getToday(date: string): Promise<PlannerTodayDto | null>;
   getProject(pageId: string, input: { limit: number }): Promise<PlannerProjectDto | null>;
