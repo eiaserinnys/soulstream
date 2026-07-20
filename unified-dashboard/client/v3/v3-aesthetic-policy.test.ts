@@ -26,6 +26,7 @@ describe("v3 aesthetic policy", () => {
     expect(sectionRule).not.toContain("border-top");
     expect(css).toMatch(/\.v3-context-rows\s*\{[^}]*gap:\s*5px/s);
     expect(css).toMatch(/\.v3-context-row\s*\{[^}]*grid-template-columns:\s*auto minmax\(0,\s*1fr\) auto/s);
+    expect(css).toMatch(/\.v3-context-row\s*\{[^}]*background:\s*color-mix\(in srgb, var\(--muted\) 72%, transparent\)/s);
     expect(css).toMatch(/\.v3-context-add\.dashboard-icon-cap\s*\{[^}]*height:\s*28px/s);
   });
 

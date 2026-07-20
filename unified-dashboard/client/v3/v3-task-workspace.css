@@ -315,7 +315,7 @@
   border-radius: 9px;
   padding: 6px 7px 6px 9px;
   color: var(--muted-foreground);
-  background: color-mix(in srgb, var(--card) 78%, transparent);
+  background: color-mix(in srgb, var(--muted) 72%, transparent);
   font-size: var(--font-size-xs);
 }
 

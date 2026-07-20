@@ -35,9 +35,10 @@ export async function loadMorningRitualData(input: {
   return {
     dailyPageId: todayPlanner.daily.page.id,
     items: buildMorningRitualQueue({
-      historicalDays: historicalDates.map((date, index) => ({
-        date,
-        tasks: historicalPlanners[index]?.tasks ?? [],
+      historicalDays: historicalPlanners.map((planner, index) => ({
+        date: historicalDates[index]!,
+        pageId: planner.daily.page.id,
+        tasks: planner.tasks,
       })),
       todayTaskPageIds: new Set(todayPlanner.tasks.map((task) => task.page.id)),
     }),

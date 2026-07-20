@@ -45,6 +45,17 @@ export function createLiveBoardItemRouteProvider(
       `;
       const folderId = stringValue(rows[0]?.folder_id);
       if (folderId !== null) return folderId;
+      const identityRows = await sql`
+        SELECT board_item.folder_id
+        FROM tasks task
+        JOIN board_items board_item
+          ON board_item.id = task.board_item_id
+        WHERE task.id = ${container.id}
+          AND task.archived = FALSE
+        LIMIT 1
+      `;
+      const identityFolderId = stringValue(identityRows[0]?.folder_id);
+      if (identityFolderId !== null) return identityFolderId;
       throw new BoardItemRouteError(
         "BOARD_CONTAINER_NOT_FOUND",
         "Task board container not found",

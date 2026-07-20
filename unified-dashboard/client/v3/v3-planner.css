@@ -382,6 +382,13 @@
   font-size: var(--font-size-xs);
 }
 
+.v3-planner-head-action.dashboard-icon-cap {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 999px;
+}
+
 .v3-project-group {
   margin-bottom: var(--v3-panel-gap);
 }

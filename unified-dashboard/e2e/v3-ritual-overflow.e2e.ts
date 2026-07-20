@@ -92,9 +92,9 @@ for (const theme of ["dark", "light"] as const) {
     });
 
     for (let attempt = 0; attempt < 5; attempt += 1) {
-      const later = page.getByRole("button", { name: "미루기", exact: true });
-      if (await later.count() === 0) break;
-      await later.click();
+      const remove = page.getByRole("button", { name: "데일리에서 내리기", exact: true });
+      if (await remove.count() === 0) break;
+      await remove.click();
     }
     const finishAction = page.getByRole("button", { name: "플래너 열기", exact: true });
     await expect(finishAction).toBeVisible();

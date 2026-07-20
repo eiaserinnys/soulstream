@@ -1,12 +1,10 @@
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
+import { postTaskStatus } from "@seosoyoung/soul-ui/stores/task-api";
 
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import type { PlannerTask } from "./planner-data";
 import { parseSingleMountTitle } from "./planner-model";
-import {
-  completeRitualTask,
-  mountRitualTaskToday,
-} from "./ritual-browser-port";
+import { mountRitualTaskToday } from "./ritual-browser-port";
 
 type OperationIdFactory = (prefix: string) => string;
 
@@ -17,7 +15,13 @@ export async function completePlannerTask(
   if (expectedVersion === undefined) {
     throw new Error("업무를 불러오지 못해 완료 처리할 수 없습니다");
   }
-  await completeRitualTask({ taskId: task.taskId, expectedVersion });
+  await postTaskStatus({
+    taskId: task.taskId,
+    expectedVersion,
+    idempotencyKey: operationId("task-complete"),
+    status: "completed",
+    reason: "v3 planner task completion",
+  });
 }
 
 export async function togglePlannerTaskToday(

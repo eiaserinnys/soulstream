@@ -21,7 +21,7 @@ describe("v3 icon action cap contract", () => {
   it.each([
     ["../../../packages/soul-ui/src/task/TaskCard.tsx", ["업무 보드 열기"]],
     ["../../../packages/soul-ui/src/task/TaskCompletionAction.tsx", ["actionLabel"]],
-    ["./V3GlobalToolbar.tsx", ["아침 정리", "새 업무"]],
+    ["./V3GlobalToolbar.tsx", ["기존 대시보드 열기"]],
     ["./PlannerTaskCard.tsx", ["별표"]],
     ["./TaskDetailPane.tsx", ["오늘 플래너로 돌아가기", "별표", "업무 보드 열기"]],
     ["./TaskTodayToggle.tsx", ["todayPlannerMenuLabel"]],
@@ -30,7 +30,7 @@ describe("v3 icon action cap contract", () => {
     ["./TaskRunHistory.tsx", ["새 세션", "이전 세션 더 보기"]],
     ["./TaskBoardPane.tsx", ["업무 상세로 돌아가기", "업무 보드 닫기"]],
     ["./TaskWorkspace.tsx", ["업무 창 닫기", "채팅 닫기", "보드로 돌아가기"]],
-    ["./PlannerViews.tsx", ["오늘로 돌아가기", "새 문서", "이전 문서 더 보기", "이전 업무 더 보기"]],
+    ["./PlannerViews.tsx", ["아침 정리", "새 업무", "오늘로 돌아가기", "새 문서", "이전 문서 더 보기", "이전 업무 더 보기"]],
     ["./V3Navigation.tsx", ["별표 업무 더 보기", "새 프로젝트"]],
     ["./V3SessionPanel.tsx", ["확인 처리"]],
     ["./V3SessionReviewBanner.tsx", ["검수 확인"]],
@@ -39,6 +39,11 @@ describe("v3 icon action cap contract", () => {
     const source = read(path);
     expect(source).toContain("DashboardIconCap");
     for (const label of labels) expect(source).toContain(label);
+  });
+
+  it("keeps planner header actions compact without inflating title rows", () => {
+    const css = read("./v3-planner.css");
+    expect(css).toMatch(/\.v3-planner-head-action\.dashboard-icon-cap\s*\{[^}]*width:\s*28px;[^}]*height:\s*28px;/s);
   });
 
   it("keeps star and today controls as pressed-state toggles", () => {

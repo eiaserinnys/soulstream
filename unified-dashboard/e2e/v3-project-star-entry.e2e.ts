@@ -39,7 +39,7 @@ for (const theme of ["dark", "light"] as const) {
     expect(Array.from(firstReviewTitle).length).toBeLessThanOrEqual(80);
     await capture(page, theme, "02-right-panel-six-review-sessions");
 
-    const taskCard = page.getByTestId("v3-task-alpha");
+    const taskCard = page.getByTestId("v3-task-task-alpha");
     await taskCard.getByRole("button", { name: `${fixtureTitles.primaryTask} 별표 해제` }).click();
     await expect(page.getByTestId("v3-starred-tasks")).not.toContainText(fixtureTitles.primaryTask);
     await taskCard.getByRole("button", { name: `${fixtureTitles.primaryTask} 별표 추가` }).click();
@@ -84,9 +84,9 @@ for (const theme of ["dark", "light"] as const) {
     await expect(page.getByRole("dialog", { name: "어제에서 넘어온 것" })).toBeVisible();
     await expect(page.getByText("검수 대기 세션", { exact: true })).toHaveCount(0);
     for (let index = 0; index < 5; index += 1) {
-      const later = page.getByRole("button", { name: "미루기", exact: true });
-      if (await later.count() === 0) break;
-      await later.click();
+      const remove = page.getByRole("button", { name: "데일리에서 내리기", exact: true });
+      if (await remove.count() === 0) break;
+      await remove.click();
     }
     const reviewLink = page.getByRole("button", { name: "검수 대기 6건 → 우측 세션" });
     await expect(reviewLink).toBeVisible();
@@ -138,7 +138,10 @@ async function installModelCorrectionRoutes(page: Page): Promise<{
       return fulfillJson(route, { folders: projectFolders(), sessions: {} });
     }
     if (url.pathname === "/api/planner/starred-tasks" && request.method() === "GET") {
-      return fulfillJson(route, { items: task.metadata.starred ? [task] : [], next_cursor: null });
+      return fulfillJson(route, {
+        items: task.metadata.starred ? [starredTaskPayload(task)] : [],
+        next_cursor: null,
+      });
     }
     if (url.pathname === "/api/atom/nodes" && request.method() === "GET") {
       return fulfillJson(route, { children: [{ id: "new-atom", card_id: "card-new-atom", card: { title: "교정 atom", card_type: "knowledge" } }] });
@@ -250,6 +253,43 @@ function pageDto(id: string, title: string, version: number, metadata: Record<st
 
 function pageRead(value: ReturnType<typeof pageDto>, blocks: ReturnType<typeof guidanceBlock>[] | Array<Record<string, unknown>>) {
   return { page: value, blocks, state_vector: "AA==" };
+}
+
+function starredTaskPayload(task: ReturnType<typeof pageDto>) {
+  const taskBlock = {
+    id: "task",
+    page_id: task.id,
+    parent_id: null,
+    position_key: "a0",
+    block_type: "task_ref",
+    text: "",
+    properties: { primary: true, taskId: "rb-alpha" },
+    collapsed: false,
+  };
+  return {
+    page: task,
+    blocks: [taskBlock],
+    task_id: "rb-alpha",
+    task: {
+      id: "rb-alpha",
+      board_item_id: "board-task-alpha",
+      title: task.title,
+      status: "open",
+      archived: false,
+      version: 1,
+      created_session_id: null,
+      created_event_id: null,
+      created_at: task.created_at,
+      updated_at: task.updated_at,
+      item_counts: {},
+      item_total: 0,
+      completed_item_count: 0,
+      assignee: null,
+    },
+    project_page_id: "project-amber",
+    sessions: [],
+    mounted_documents: [],
+  };
 }
 
 function mutation(value: ReturnType<typeof pageDto>, blocks: Array<Record<string, unknown>>) {

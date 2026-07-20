@@ -36,11 +36,11 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
   try {
     await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
+    await page.getByTestId("v3-task-task-alpha").waitFor({ state: "visible", timeout: 20_000 });
 
     const todayCaps = await auditVisibleCaps(page);
     assert(todayCaps.length >= 8, `오늘 화면 아이콘 캡이 ${todayCaps.length}개뿐입니다.`);
-    await assertPressedToggle(page.getByTestId("v3-task-alpha").locator('[data-slot="dashboard-icon-cap"]'));
+    await assertPressedToggle(page.getByTestId("v3-task-task-alpha").locator('[data-slot="dashboard-icon-cap"]'));
     await capture(page, theme, "01-today-actions");
 
     await page.getByRole("button", { name: fixtureTitles.project, exact: true }).click();
@@ -52,7 +52,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     await capture(page, theme, "02-project-actions");
 
     await page.getByRole("button", { name: "오늘로 돌아가기" }).click();
-    await page.getByTestId("v3-task-alpha").click();
+    await page.getByTestId("v3-task-task-alpha").click();
     const detail = page.locator(".v3-detail-pane").first();
     await detail.getByTestId("v3-task-checklist").waitFor({ state: "visible" });
     await detail.getByTestId("v3-inline-board").waitFor({ state: "visible" });
@@ -85,7 +85,7 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       projectCaps: projectCaps.length,
       detailCaps: detailCaps.length,
       allCapsHaveLabelsAndTooltips: true,
-      allCapsMatch44pxReference: true,
+      allCapsMatchSizePolicy: true,
       pressedStatesPreserved: true,
       browserErrors: errors.length,
     };
@@ -101,9 +101,13 @@ async function auditVisibleCaps(root: Page | ReturnType<Page["locator"]>) {
     const cap = caps.nth(index);
     const data = await cap.evaluate((element) => {
       const style = getComputedStyle(element);
+      const compact = element.classList.contains("v3-planner-head-action");
+      const pill = element.classList.contains("v3-context-add");
       return {
         label: element.getAttribute("aria-label") ?? "",
         tooltip: element.getAttribute("title") ?? "",
+        compact,
+        pill,
         width: element.getBoundingClientRect().width,
         height: element.getBoundingClientRect().height,
         radius: style.borderRadius,
@@ -111,9 +115,11 @@ async function auditVisibleCaps(root: Page | ReturnType<Page["locator"]>) {
     });
     assert(data.label.length > 0, `aria-label 없는 아이콘 캡 #${index}`);
     assert(data.tooltip.length > 0, `툴팁 없는 아이콘 캡: ${data.label}`);
-    assert(Math.abs(data.width - 44) < 0.2, `${data.label} 너비가 ${data.width}px입니다.`);
-    assert(Math.abs(data.height - 44) < 0.2, `${data.label} 높이가 ${data.height}px입니다.`);
-    assert(data.radius === "22px", `${data.label} 라운딩이 ${data.radius}입니다.`);
+    const size = data.compact || data.pill ? 28 : 44;
+    if (data.pill) assert(data.width >= size, `${data.label} 너비가 ${data.width}px입니다.`);
+    else assert(Math.abs(data.width - size) < 0.2, `${data.label} 너비가 ${data.width}px입니다.`);
+    assert(Math.abs(data.height - size) < 0.2, `${data.label} 높이가 ${data.height}px입니다.`);
+    assert(Number.parseFloat(data.radius) >= size / 2, `${data.label} 라운딩이 ${data.radius}입니다.`);
     return data;
   }));
 }

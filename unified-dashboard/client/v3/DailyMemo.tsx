@@ -17,7 +17,6 @@ export function DailyMemo({
       cornerRadius={18}
       className="v3-daily-memo rounded-[18px] border border-white/8 shadow-[0_8px_26px_-18px_rgb(20_26_40_/_45%)]"
     >
-      <span className="v3-memo-label">오늘 메모</span>
       {editable.map((block, index) => (
         <TaskDescriptionPanel
           key={block?.id ?? "empty-memo"}

@@ -135,7 +135,7 @@ export function RitualModal({
                 <div className="v3-ritual-done">
                   <span aria-hidden="true">✓</span>
                   <h3>오늘 준비 완료</h3>
-                  <p>결정한 이월 업무를 오늘 플래너에 반영했습니다.</p>
+                  <p>결정한 업무의 데일리 배치를 오늘 플래너에 반영했습니다.</p>
                   {reviewCount > 0 ? (
                     <Button variant="link" className="v3-ritual-review-link" onClick={focusSessionPanel}>
                       검수 대기 {reviewCount}건 → 우측 세션
@@ -165,7 +165,6 @@ export function RitualModal({
               </Button>
             ) : item ? (
               <RitualActions
-                item={item}
                 processing={processing}
                 onAction={(action) => { void handleAction(action); }}
               />
@@ -192,25 +191,22 @@ function RitualItemCard({
         <p>{item.description}</p>
         <small>◉ {item.agentLabel}</small>
       </article>
-      {error ? <V3ErrorNotice className="v3-ritual-error" message="업무 상태를 바꾸지 못했습니다." detail={error} /> : null}
+      {error ? <V3ErrorNotice className="v3-ritual-error" message="데일리 배치를 바꾸지 못했습니다." detail={error} /> : null}
     </>
   );
 }
 
 function RitualActions({
-  item,
   processing,
   onAction,
 }: {
-  item: RitualQueueItem;
   processing: boolean;
   onAction(action: RitualAction): void;
 }) {
   return (
     <div className="v3-ritual-actions">
-      <Button disabled={processing} onClick={() => onAction("today")}>오늘로</Button>
-      <Button disabled={processing} variant="ghost" onClick={() => onAction("later")}>미루기</Button>
-      <Button disabled={processing} variant="success" onClick={() => onAction("done")}>완료 처리</Button>
+      <Button disabled={processing} onClick={() => onAction("today")}>오늘로 이월</Button>
+      <Button disabled={processing} variant="ghost" onClick={() => onAction("remove")}>데일리에서 내리기</Button>
     </div>
   );
 }

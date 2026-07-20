@@ -9,7 +9,7 @@ import {
   failPlannerLoad,
   loadConfirmedResult,
 } from "./planner-query-state";
-import { applyStarredTaskChanges, type TaskStarChange } from "./task-star-store";
+import type { TaskStarChange } from "./task-star-store";
 import {
   loadDailyPlanner,
   loadProjectDocumentPage,
@@ -22,7 +22,12 @@ import {
   type PlannerPage,
   type PlannerTask,
   type ProjectPlannerData,
+  type StarredPlannerTask,
 } from "./planner-data";
+import {
+  applyStarredPlannerTaskChanges,
+  mergeStarredPlannerTasks,
+} from "./starred-planner-collection";
 import {
   movePlannerSession,
   removePlannerSessions,
@@ -61,7 +66,7 @@ export function usePlannerCollections({
   const [daily, setDaily] = useState<PlannerLoadState<DailyPlannerData>>({ status: "loading", data: null, message: null });
   const [todayTaskIds, setTodayTaskIds] = useState<ReadonlySet<string>>(() => new Set());
   const [project, setProject] = useState<PlannerLoadState<ProjectPlannerData>>({ status: "loading", data: null, message: null });
-  const [starredTaskIndex, setStarredTaskIndex] = useState<PlannerLoadState<PlannerPage<PageDto>>>({ status: "loading", data: null, message: null });
+  const [starredTaskIndex, setStarredTaskIndex] = useState<PlannerLoadState<PlannerPage<StarredPlannerTask>>>({ status: "loading", data: null, message: null });
   const [starredTasksLoadingMore, setStarredTasksLoadingMore] = useState(false);
   const [projectTasksLoadingMore, setProjectTasksLoadingMore] = useState(false);
   const [projectDocumentsLoadingMore, setProjectDocumentsLoadingMore] = useState(false);
@@ -70,7 +75,7 @@ export function usePlannerCollections({
   const projectRef = useRef(project);
   const starredTaskIndexRef = useRef(starredTaskIndex);
   const stableProjectsRef = useRef<PageDto[]>([]);
-  const stableStarredTasksRef = useRef<PageDto[]>([]);
+  const stableStarredTasksRef = useRef<StarredPlannerTask[]>([]);
   dailyRef.current = daily;
   projectRef.current = project;
   starredTaskIndexRef.current = starredTaskIndex;
@@ -156,7 +161,7 @@ export function usePlannerCollections({
     return stableProjectsRef.current;
   }, [daily.data?.projects, selectedProject]);
   const starredTasks = useMemo(() => {
-    const next = applyStarredTaskChanges(starredTaskIndex.data?.items ?? [], taskStarChanges);
+    const next = applyStarredPlannerTaskChanges(starredTaskIndex.data?.items ?? [], taskStarChanges);
     stableStarredTasksRef.current = retainEqualValue(stableStarredTasksRef.current, next);
     return stableStarredTasksRef.current;
   }, [starredTaskIndex.data?.items, taskStarChanges]);
@@ -245,7 +250,7 @@ export function usePlannerCollections({
       const next = await loadStarredTasks(dependencies, { cursor, limit: STARRED_TASK_PAGE_SIZE });
       setStarredTaskIndex((current) => current.data
         ? completePlannerLoad(current, {
-          items: mergePages(current.data.items, next.items),
+          items: mergeStarredPlannerTasks(current.data.items, next.items),
           nextCursor: next.nextCursor,
         })
         : current);

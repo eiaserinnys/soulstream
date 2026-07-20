@@ -96,13 +96,16 @@ describe("live DB board item route provider", () => {
     expect(harness.calls[0]?.values).toEqual(["task", "task-1"]);
   });
 
-  it("resolves a task container folder with one indexed catalog-cache lookup", async () => {
+  it("resolves cached tasks first and new empty tasks through canonical identity", async () => {
     let cacheCalls = 0;
-    const harness = createSqlHarness((text) => {
+    const harness = createSqlHarness((text, values) => {
       if (text.includes("folder_get_all")) return [folderRow()];
       if (text.includes("board_yjs_catalog_cache")) {
         cacheCalls += 1;
         return cacheCalls === 1 ? [{ folder_id: "folder-a" }] : [];
+      }
+      if (text.includes("FROM tasks task")) {
+        return values[0] === "task-new" ? [{ folder_id: "folder-new" }] : [];
       }
       return [];
     });
@@ -123,6 +126,12 @@ describe("live DB board item route provider", () => {
     await expect(
       repository.boardItemRouteProvider.resolveBoardContainerFolderId({
         kind: "task",
+        id: "task-new",
+      }),
+    ).resolves.toBe("folder-new");
+    await expect(
+      repository.boardItemRouteProvider.resolveBoardContainerFolderId({
+        kind: "task",
         id: "missing",
       }),
     ).rejects.toMatchObject(
@@ -135,12 +144,16 @@ describe("live DB board item route provider", () => {
     const taskCalls = harness.calls.filter((call) =>
       call.text.includes("board_yjs_catalog_cache")
     );
-    expect(taskCalls).toHaveLength(2);
+    expect(taskCalls).toHaveLength(3);
     expect(taskCalls[0]?.text).toContain("container_kind = 'task'");
     expect(taskCalls[0]?.text).toContain("container_id =");
     expect(taskCalls[0]?.text).toContain("LIMIT 1");
     expect(taskCalls[0]?.text).not.toContain("board_item_get_all");
     expect(taskCalls[0]?.values).toEqual(["task-1"]);
+    const identityCalls = harness.calls.filter((call) => call.text.includes("FROM tasks task"));
+    expect(identityCalls).toHaveLength(2);
+    expect(identityCalls[0]?.text).toContain("JOIN board_items");
+    expect(identityCalls[0]?.values).toEqual(["task-new"]);
   });
 });
 

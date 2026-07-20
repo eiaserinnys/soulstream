@@ -29,6 +29,7 @@ describe("buildMorningRitualQueue", () => {
       historicalDays: [
         {
           date: yesterday,
+          pageId: "daily-yesterday",
           tasks: [
             task("task-carry", "계속할 업무", "open"),
             task("task-today", "이미 오늘로 온 업무", "open"),
@@ -38,6 +39,7 @@ describe("buildMorningRitualQueue", () => {
         },
         {
           date: older,
+          pageId: "daily-older",
           tasks: [
             task("task-carry", "중복 마운트", "open"),
             task("task-older", "이전 최근 업무", "open"),
@@ -66,10 +68,10 @@ describe("buildMorningRitualQueue", () => {
 });
 
 describe("dispatchRitualAction", () => {
-  it("dispatches today, later, and done for carryover tasks", async () => {
+  it("dispatches today and daily removal as membership-only actions", async () => {
     const port = mockPort();
     const item = buildMorningRitualQueue({
-      historicalDays: [{ date: "2026-07-13", tasks: [task("task-1", "업무", "open")] }],
+      historicalDays: [{ date: "2026-07-13", pageId: "daily-yesterday", tasks: [task("task-1", "업무", "open")] }],
       todayTaskPageIds: new Set(),
     })[0];
 
@@ -78,17 +80,13 @@ describe("dispatchRitualAction", () => {
       taskTitle: "업무",
     });
 
-    await dispatchRitualAction(item, "later", port);
-    expect(port.mountToday).toHaveBeenCalledTimes(1);
-    expect(port.completeTask).not.toHaveBeenCalled();
-
-    await dispatchRitualAction(item, "done", port);
-    expect(port.completeTask).toHaveBeenCalledWith({
-      taskId: "task-task-1",
-      expectedVersion: 7,
+    await dispatchRitualAction(item, "remove", port);
+    expect(port.removeFromDaily).toHaveBeenCalledWith({
+      dailyPageId: "daily-yesterday",
+      taskTitle: "업무",
     });
+    expect(port.mountToday).toHaveBeenCalledTimes(1);
   });
-
 });
 
 function task(pageId: string, title: string, status: string): PlannerTask {
@@ -135,6 +133,6 @@ function task(pageId: string, title: string, status: string): PlannerTask {
 function mockPort(): RitualActionPort {
   return {
     mountToday: vi.fn(async () => undefined),
-    completeTask: vi.fn(async () => undefined),
+    removeFromDaily: vi.fn(async () => undefined),
   };
 }

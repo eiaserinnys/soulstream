@@ -618,7 +618,18 @@ export async function installV3VisualQaRoutes(
     if (path === "/api/sessions" && request.method() === "POST") {
       const payload = request.postDataJSON() as Record<string, unknown>;
       options.onSessionCreate?.(payload);
-      return fulfillJson(route, { agentSessionId: "run-alpha-successor", nodeId: payload.nodeId ?? "eiaserinnys" });
+      const initialInstruction = typeof payload.initial_instruction === "string"
+        ? payload.initial_instruction.trim()
+        : "";
+      const prompt = [
+        "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.",
+        initialInstruction,
+      ].filter(Boolean).join("\n");
+      return fulfillJson(route, {
+        agentSessionId: "run-alpha-successor",
+        nodeId: payload.nodeId ?? "eiaserinnys",
+        prompt,
+      });
     }
     const sessionRenameMatch = /^\/api\/sessions\/([^/]+)\/display-name$/.exec(path);
     if (sessionRenameMatch && request.method() === "PATCH") {
@@ -704,7 +715,10 @@ export async function installV3VisualQaRoutes(
       });
     }
     if (path === "/api/planner/starred-tasks" && request.method() === "GET") {
-      return fulfillJson(route, { items: [pages.taskAlpha], next_cursor: null });
+      return fulfillJson(route, {
+        items: [plannerTaskPayload(pages.taskAlpha, "rb-alpha", alphaRunIds())],
+        next_cursor: null,
+      });
     }
     if (path === "/api/planner/daily-history" && request.method() === "GET") {
       return fulfillJson(route, { dates: ["2026-07-13"] });

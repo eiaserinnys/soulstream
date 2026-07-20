@@ -80,11 +80,12 @@ describe("v3 modal shell contract", () => {
 
   it("orders the new-session sections and exposes the bounded document preview", () => {
     const source = read("./SessionSuccessionModal.tsx");
-    const sectionLabels = ["노드 / 에이전트", "컨텍스트", "추가 지침", "초기 지시"];
+    const sectionLabels = ["노드 / 에이전트", "컨텍스트", "초기 지시"];
 
     expect(sectionLabels.map((label) => source.indexOf(label))).toEqual(
       [...sectionLabels].map((label) => source.indexOf(label)).sort((left, right) => left - right),
     );
+    expect(source).not.toContain("추가 지침");
     expect(source).not.toContain("기본 지침");
     expect(source).not.toContain("실행 에이전트");
     expect(source).toContain("initialInstruction,");

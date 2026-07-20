@@ -12,15 +12,11 @@ export function recentDates(today: string): PlannerDateNavItem[] {
     value.setDate(base.getDate() - offset);
     return {
       date: dateKey(value),
-      label: offset === 0
-        ? "오늘"
-        : offset === 1
-          ? "어제"
-          : new Intl.DateTimeFormat("ko-KR", {
-              month: "numeric",
-              day: "numeric",
-              weekday: "short",
-            }).format(value),
+      label: `${new Intl.DateTimeFormat("ko-KR", {
+        month: "long",
+        day: "numeric",
+        weekday: "long",
+      }).format(value)}${offset === 0 ? " (오늘)" : ""}`,
     };
   });
 }

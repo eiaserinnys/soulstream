@@ -102,7 +102,6 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       "디자인 검수 메모",
       "보드 문서",
       "atom 노드",
-      "추가 지침",
       "초기 지시",
       "이전 세션을 이어 받을 경우 세션을 승계한 것으로 간주됩니다.",
     ]) assert(modalText.includes(required), `필수 문구/컨텍스트가 없습니다: ${required}`);
@@ -114,11 +113,11 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       "업무 카드 본문에 포함",
       "승계 링크로 기록됨",
     ]) assert(!modalText.includes(forbidden), `삭제 대상 문구가 남았습니다: ${forbidden}`);
+    assert(!modalText.includes("추가 지침"), "삭제한 추가 지침 입력이 새 세션 창에 남았습니다.");
 
     await modal.getByRole("checkbox", { name: "PR-O 결정 로그" }).check();
     await modal.locator("label").filter({ hasText: "atom 노드" }).locator("button").click();
     await page.getByRole("button", { name: "QA atom 컨텍스트", exact: true }).click();
-    await modal.getByRole("textbox", { name: "추가 지침" }).fill("결과부터 간결하게 보고한다.");
     await modal.getByRole("textbox", { name: "초기 지시" }).fill("선택한 컨텍스트를 세 문장으로 요약하세요.");
 
     await page.getByRole("combobox", { name: "에이전트 선택" })
@@ -162,13 +161,12 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       ? atomSources.content.nodes?.[0]?.node_id
       : undefined;
     assert(atomNodeId === "qa-atom-node", "선택한 atom 노드가 context source에 없습니다.");
-    assert(extraContextItems.some((item) => (
-      item.key === "session_guidance" && item.content === "결과부터 간결하게 보고한다."
-    )), "추가 지침이 세션 context에 없습니다.");
-    assert(createPayload?.prompt === [
-      "업무 현황을 파악한 후, 사용자의 다음 지시를 이행해주세요.",
-      "선택한 컨텍스트를 세 문장으로 요약하세요.",
-    ].join("\n"), "초기 지시가 세션 prompt 정본으로 조립되지 않았습니다.");
+    assert(!extraContextItems.some((item) => item.key === "session_guidance"), "삭제한 추가 지침 context가 생성 요청에 남았습니다.");
+    assert(
+      createPayload?.initial_instruction === "선택한 컨텍스트를 세 문장으로 요약하세요.",
+      "초기 지시가 initial_instruction으로 전달되지 않았습니다.",
+    );
+    assert(!Object.prototype.hasOwnProperty.call(createPayload, "prompt"), "클라이언트가 서버 prompt 정본을 우회했습니다.");
     assert(typeof createPayload?.pageAnchor === "object", "선택한 보드 문서용 page anchor가 없습니다.");
 
     return {

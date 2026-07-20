@@ -5,7 +5,11 @@ import type { PageApiClient, PageDto } from "@seosoyoung/soul-ui/page";
 import { moveBoardItemToContainer } from "../lib/board-workspace-operations";
 import { deleteSessions as deleteSessionRecords } from "../lib/delete-session";
 import { renameSessionOptimistic } from "../lib/rename-session";
-import { loadStarredPlannerTask, type PlannerTask } from "./planner-data";
+import {
+  loadStarredPlannerTask,
+  type PlannerTask,
+  type StarredPlannerTask,
+} from "./planner-data";
 import {
   runOptimisticTaskProjectMove,
   type TaskProjectMoveTarget,
@@ -90,21 +94,21 @@ export function useV3PlannerActions({
     });
   }, [addTaskToToday, api, notify, notifyWriteFailure, setTaskTodayPresence, todayTaskIds]);
 
-  const resolveStarredTask = useCallback(async (page: PageDto) => {
+  const resolveStarredTask = useCallback(async (task: StarredPlannerTask) => {
     try {
-      return await loadStarredPlannerTask(api, page);
+      return await loadStarredPlannerTask(api, task);
     } catch (error) {
       notify(`별표 업무 불러오기 실패 · ${errorText(error)}`);
       throw error;
     }
   }, [api, notify]);
 
-  const completeStarredTask = useCallback(async (page: PageDto) => {
-    await completeTask(await resolveStarredTask(page));
+  const completeStarredTask = useCallback(async (task: StarredPlannerTask) => {
+    await completeTask(await resolveStarredTask(task));
   }, [completeTask, resolveStarredTask]);
 
-  const toggleStarredTaskToday = useCallback(async (page: PageDto) => {
-    await toggleTaskToday(await resolveStarredTask(page));
+  const toggleStarredTaskToday = useCallback(async (task: StarredPlannerTask) => {
+    await toggleTaskToday(await resolveStarredTask(task));
   }, [resolveStarredTask, toggleTaskToday]);
 
   const renameSession = useCallback(async (sessionId: string, displayName: string | null) => {

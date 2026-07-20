@@ -32,10 +32,10 @@ describe("v3 dashboard utilities", () => {
 
   it("produces stable planner dates and error messages", () => {
     expect(dateKey(new Date(2026, 6, 14))).toBe("2026-07-14");
-    expect(recentDates("2026-07-14").map((item) => item.date)).toEqual([
-      "2026-07-14",
-      "2026-07-13",
-      "2026-07-12",
+    expect(recentDates("2026-07-20")).toEqual([
+      { date: "2026-07-20", label: "7월 20일 월요일 (오늘)" },
+      { date: "2026-07-19", label: "7월 19일 일요일" },
+      { date: "2026-07-18", label: "7월 18일 토요일" },
     ]);
     expect(errorText(new Error("실패"))).toBe("실패");
     expect(errorText("문자열 오류")).toBe("문자열 오류");

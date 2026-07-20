@@ -89,7 +89,7 @@ async function verifyViewport(
     await ritual.waitFor({ state: "visible" });
     for (let index = 0; index < 10; index += 1) {
       if (await ritual.locator(".v3-ritual-done").isVisible().catch(() => false)) break;
-      await ritual.getByRole("button", { name: "미루기", exact: true }).click();
+      await ritual.getByRole("button", { name: "데일리에서 내리기", exact: true }).click();
     }
     await ritual.getByRole("button", { name: /검수 대기/ }).waitFor({ state: "visible" });
     await assertLayer(page, "review-modal", "[data-slot=dialog-viewport]");
