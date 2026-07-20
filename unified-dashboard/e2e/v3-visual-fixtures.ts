@@ -32,6 +32,7 @@ export interface V3VisualQaRouteOptions {
   legacyAtomContext?: boolean;
   emptyPlannerProjectsWhen?: () => boolean;
   emptyProjectPlannerWhen?: () => boolean;
+  excludeSessionIdsFromInitialStream?: readonly string[];
   includeAlphaThirdRunWhen?: () => boolean;
   includeCreatedTaskWhen?: () => boolean;
   onAgentListRequest?: (nodeId: string) => void;
@@ -582,10 +583,19 @@ export async function installV3VisualQaRoutes(
       });
     }
     if (path === "/api/sessions/stream") {
+      const streamedSessions = options.excludeSessionIdsFromInitialStream?.length
+        ? sessions.filter(
+            (session) => !options.excludeSessionIdsFromInitialStream?.includes(session.agentSessionId),
+          )
+        : sessions;
       return route.fulfill({
         status: 200,
         contentType: "text/event-stream",
-        body: `event: session_list\ndata: ${JSON.stringify({ type: "session_list", sessions, total: sessions.length })}\n\n`,
+        body: `event: session_list\ndata: ${JSON.stringify({
+          type: "session_list",
+          sessions: streamedSessions,
+          total: streamedSessions.length,
+        })}\n\n`,
       });
     }
     if (/^\/api\/sessions\/[^/]+\/events$/.test(path)) {

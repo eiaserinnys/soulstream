@@ -1,7 +1,45 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CatalogBoardItem, SessionSummary } from "@seosoyoung/soul-ui";
 
-import { resolveSessionWorkspace } from "./v3-session-workspace";
+import {
+  resolveSessionForOpen,
+  resolveSessionWorkspace,
+} from "./v3-session-workspace";
+
+describe("resolveSessionForOpen", () => {
+  it("reuses a matching summary without fetching", async () => {
+    const known = session("session-a", "folder-a");
+    const fetchSessions = vi.fn();
+
+    await expect(resolveSessionForOpen({
+      sessionId: "session-a",
+      knownSession: known,
+      fetchSessions,
+    })).resolves.toBe(known);
+    expect(fetchSessions).not.toHaveBeenCalled();
+  });
+
+  it("performs one targeted lookup when the search result is outside the loaded v3 sessions", async () => {
+    const target = session("target-session", "folder-a");
+    const fetchSessions = vi.fn(async () => ({ sessions: [target] }));
+
+    await expect(resolveSessionForOpen({
+      sessionId: "target-session",
+      fetchSessions,
+    })).resolves.toBe(target);
+    expect(fetchSessions).toHaveBeenCalledTimes(1);
+    expect(fetchSessions).toHaveBeenCalledWith({ sessionIds: ["target-session"] });
+  });
+
+  it("returns null when the targeted session no longer exists", async () => {
+    const fetchSessions = vi.fn(async () => ({ sessions: [] }));
+
+    await expect(resolveSessionForOpen({
+      sessionId: "missing-session",
+      fetchSessions,
+    })).resolves.toBeNull();
+  });
+});
 
 describe("resolveSessionWorkspace", () => {
   it("uses a cached primary board item without a request", async () => {

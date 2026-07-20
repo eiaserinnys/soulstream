@@ -16,7 +16,11 @@ import {
   readV3SessionPanelWidth,
   writeV3SessionPanelWidth,
 } from "./v3-session-panel-width";
-import { resolveSessionWorkspace } from "./v3-session-workspace";
+import { orchestratorSessionProvider } from "../providers";
+import {
+  resolveSessionForOpen,
+  resolveSessionWorkspace,
+} from "./v3-session-workspace";
 
 export function useV3SessionPanelController({
   api,
@@ -46,6 +50,7 @@ export function useV3SessionPanelController({
   const setActiveSession = useDashboardStore((state) => state.setActiveSession);
   const setActiveSessionSummary = useDashboardStore((state) => state.setActiveSessionSummary);
   const setActiveTab = useDashboardStore((state) => state.setActiveTab);
+  const setFocusEventId = useDashboardStore((state) => state.setFocusEventId);
   const sessions = useMemo(
     () => (catalog?.sessionList ?? []).filter((session) => !acknowledgedReviewIds.has(session.agentSessionId)),
     [acknowledgedReviewIds, catalog?.sessionList],
@@ -106,6 +111,28 @@ export function useV3SessionPanelController({
     setChatOpen(true);
   }, [api, catalog?.boardItems, currentTasks, notify, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen, setSelectedTaskId, setSelectedTaskSnapshot, setWorkspaceOpen]);
 
+  const openSessionById = useCallback(async (
+    sessionId: string,
+    focusEventId: number,
+    knownSession?: SessionSummary,
+  ) => {
+    try {
+      const session = await resolveSessionForOpen({
+        sessionId,
+        knownSession,
+        fetchSessions: (options) => orchestratorSessionProvider.fetchSessions(options),
+      });
+      if (!session) {
+        notify("선택한 세션을 찾을 수 없습니다");
+        return;
+      }
+      await openSession(session);
+      setFocusEventId(focusEventId);
+    } catch (error) {
+      notify(`세션 열기 실패 · ${errorText(error)}`);
+    }
+  }, [notify, openSession, setFocusEventId]);
+
   return {
     panelRef,
     panelWidth,
@@ -114,6 +141,7 @@ export function useV3SessionPanelController({
     focusRequest,
     resize,
     openSession,
+    openSessionById,
     clearFocusRequest,
     acknowledgeFocusRequest,
   };
