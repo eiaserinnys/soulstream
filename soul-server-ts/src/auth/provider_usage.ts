@@ -400,6 +400,34 @@ export function claudeLimitsFromUsageResponse(
     }
   }
 
+  if (Array.isArray(payload.limits)) {
+    for (const entry of payload.limits) {
+      if (!isRecord(entry) || entry.kind !== "weekly_scoped") continue;
+      const scope = isRecord(entry.scope) ? entry.scope : null;
+      const modelScope = scope && isRecord(scope.model) ? scope.model : null;
+      const modelId = modelScope ? optionalString(modelScope.id) : null;
+      const modelLabel = modelScope
+        ? optionalString(modelScope.display_name) ?? modelId
+        : null;
+      if (!modelLabel) continue;
+      const usedPercent = floatPercent(firstPresent(entry.percent, entry.utilization));
+      if (usedPercent === null) continue;
+      const quotaId = `claude:weekly_scoped:${encodeURIComponent(
+        (modelId ?? modelLabel).toLowerCase(),
+      )}`;
+      if (quotas.some((quota) => quota.id === quotaId)) continue;
+      quotas.push(
+        quotaEntry(quotaId, modelLabel, {
+          usedPercent,
+          resetAt: firstPresent(entry.resets_at, entry.reset_at),
+          window: "7d",
+          model: modelLabel,
+          source,
+        }),
+      );
+    }
+  }
+
   quotas.sort((a, b) => claudeQuotaSortKey(a).localeCompare(claudeQuotaSortKey(b)));
   limits.quotas = quotas;
   if (quotas.length === 0) {
@@ -424,24 +452,22 @@ export function codexLimitsFromUsageResponse(
       : {};
   const quotas: ProviderQuota[] = [];
 
-  const primary = firstRecord(rateLimit.primary_window, rateLimit.primary);
-  const primaryQuota = codexWindowQuota("codex:5h", "5시간", primary, source);
-  if (primaryQuota) {
-    quotas.push(primaryQuota);
-    limits.shortUsedPercent = primaryQuota.usedPercent;
-    limits.shortResetAt = primaryQuota.resetAt;
-    const seconds = intValue(firstPresent(primary?.limit_window_seconds, primary?.window_secs));
-    if (seconds) {
-      limits.shortWindowMinutes = Math.floor(seconds / 60);
+  for (const [fallbackId, window] of [
+    ["primary", firstRecord(rateLimit.primary_window, rateLimit.primary)],
+    ["secondary", firstRecord(rateLimit.secondary_window, rateLimit.secondary)],
+  ] as const) {
+    const minutes = codexApiWindowMinutes(window);
+    const identity = codexWindowIdentity(minutes, fallbackId);
+    const quota = codexWindowQuota(
+      `codex:${identity.idSuffix}`,
+      identity.label,
+      window,
+      source,
+    );
+    if (quota) {
+      quotas.push(quota);
+      applyCodexWindowSummary(limits, quota, minutes);
     }
-  }
-
-  const secondary = firstRecord(rateLimit.secondary_window, rateLimit.secondary);
-  const secondaryQuota = codexWindowQuota("codex:7d", "7일", secondary, source);
-  if (secondaryQuota) {
-    quotas.push(secondaryQuota);
-    limits.weeklyUsedPercent = secondaryQuota.usedPercent;
-    limits.weeklyResetAt = secondaryQuota.resetAt;
   }
 
   if (Array.isArray(payload.additional_rate_limits)) {
@@ -575,20 +601,22 @@ function codexRuntimeLimits(homeDir: string): ProviderLimits {
       limits.planType = optionalString(payload.rate_limits.plan_type) ?? null;
 
       const quotas: ProviderQuota[] = [];
-      const primary = isRecord(payload.rate_limits.primary) ? payload.rate_limits.primary : null;
-      const secondary = isRecord(payload.rate_limits.secondary) ? payload.rate_limits.secondary : null;
-      const primaryQuota = codexRuntimeQuota("codex:5h", "5시간", primary, path);
-      if (primaryQuota) {
-        quotas.push(primaryQuota);
-        limits.shortUsedPercent = primaryQuota.usedPercent;
-        limits.shortWindowMinutes = intValue(primary?.window_minutes);
-        limits.shortResetAt = primaryQuota.resetAt;
-      }
-      const secondaryQuota = codexRuntimeQuota("codex:7d", "7일", secondary, path);
-      if (secondaryQuota) {
-        quotas.push(secondaryQuota);
-        limits.weeklyUsedPercent = secondaryQuota.usedPercent;
-        limits.weeklyResetAt = secondaryQuota.resetAt;
+      for (const [fallbackId, window] of [
+        ["primary", isRecord(payload.rate_limits.primary) ? payload.rate_limits.primary : null],
+        ["secondary", isRecord(payload.rate_limits.secondary) ? payload.rate_limits.secondary : null],
+      ] as const) {
+        const minutes = intValue(window?.window_minutes);
+        const identity = codexWindowIdentity(minutes, fallbackId);
+        const quota = codexRuntimeQuota(
+          `codex:${identity.idSuffix}`,
+          identity.label,
+          window,
+          path,
+        );
+        if (quota) {
+          quotas.push(quota);
+          applyCodexWindowSummary(limits, quota, minutes);
+        }
       }
       if (isRecord(payload.info)) {
         limits.sessionTokens = intValue(payload.info.model_context_window);
@@ -638,6 +666,37 @@ function codexWindowQuota(
     model: model ?? null,
     source,
   });
+}
+
+function codexApiWindowMinutes(window: Record<string, unknown> | null): number | null {
+  const seconds = intValue(firstPresent(window?.limit_window_seconds, window?.window_secs));
+  return seconds === null ? null : Math.floor(seconds / 60);
+}
+
+function codexWindowIdentity(
+  minutes: number | null,
+  fallbackId: string,
+): { idSuffix: string; label: string } {
+  if (minutes === 300) return { idSuffix: "5h", label: "5시간" };
+  if (minutes === 10080) return { idSuffix: "7d", label: "7일" };
+  return minutes === null
+    ? { idSuffix: fallbackId, label: "사용량" }
+    : { idSuffix: `${minutes}m`, label: `${minutes}분` };
+}
+
+function applyCodexWindowSummary(
+  limits: ProviderLimits,
+  quota: ProviderQuota,
+  minutes: number | null,
+): void {
+  if (minutes === 300) {
+    limits.shortUsedPercent = quota.usedPercent;
+    limits.shortWindowMinutes = minutes;
+    limits.shortResetAt = quota.resetAt;
+  } else if (minutes === 10080) {
+    limits.weeklyUsedPercent = quota.usedPercent;
+    limits.weeklyResetAt = quota.resetAt;
+  }
 }
 
 function readGeminiAuthType(homeDir: string): string | null {
@@ -999,13 +1058,15 @@ function clampPercent(value: number): number {
 }
 
 function resetEpoch(raw: unknown): number | null {
+  if (typeof raw === "string" && raw.trim() && !/^\d+$/.test(raw.trim())) {
+    const parsed = Date.parse(raw);
+    return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : null;
+  }
   const int = intValue(raw);
   if (int !== null) {
     return int > 1_000_000_000_000 ? Math.floor(int / 1000) : int;
   }
-  if (typeof raw !== "string" || !raw.trim()) return null;
-  const parsed = Date.parse(raw);
-  return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : null;
+  return null;
 }
 
 function optionalString(value: unknown): string | null {

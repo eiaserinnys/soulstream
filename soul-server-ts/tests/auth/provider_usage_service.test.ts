@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   ProviderUsageService,
+  claudeLimitsFromUsageResponse,
+  codexLimitsFromUsageResponse,
   geminiLimitsFromQuotaResponse,
 } from "../../src/auth/provider_usage.js";
 
@@ -19,6 +21,86 @@ function fetchJson(payload: unknown): typeof fetch {
 }
 
 describe("ProviderUsageService", () => {
+  it("normalizes ISO resets and generic weekly_scoped Claude limits", () => {
+    const limits = claudeLimitsFromUsageResponse({
+      five_hour: {
+        utilization: 37,
+        resets_at: "2026-07-20T14:20:00.212584+00:00",
+      },
+      seven_day: {
+        utilization: 18,
+        resets_at: "2026-07-26T22:00:00.212608+00:00",
+      },
+      seven_day_omelette: null,
+      limits: [
+        {
+          kind: "weekly_scoped",
+          group: "weekly",
+          percent: 16,
+          resets_at: "2026-07-26T22:00:00.248331+00:00",
+          scope: {
+            model: {
+              id: null,
+              display_name: "Fable",
+            },
+            surface: null,
+          },
+          is_active: false,
+        },
+      ],
+    });
+
+    expect(limits).toMatchObject({
+      shortUsedPercent: 37,
+      shortResetAt: Math.floor(Date.parse("2026-07-20T14:20:00.212584+00:00") / 1000),
+      weeklyUsedPercent: 18,
+      weeklyResetAt: Math.floor(Date.parse("2026-07-26T22:00:00.212608+00:00") / 1000),
+    });
+    expect(limits.quotas).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "claude:weekly_scoped:fable",
+          label: "Fable",
+          window: "7d",
+          usedPercent: 16,
+          remainingPercent: 84,
+          resetAt: Math.floor(Date.parse("2026-07-26T22:00:00.248331+00:00") / 1000),
+          model: "Fable",
+        }),
+      ]),
+    );
+  });
+
+  it("classifies a single Codex primary window by its seven-day duration", () => {
+    const limits = codexLimitsFromUsageResponse({
+      plan_type: "pro",
+      rate_limit: {
+        primary_window: {
+          used_percent: 80,
+          limit_window_seconds: 604800,
+          reset_after_seconds: 396892,
+          reset_at: 1784951882,
+        },
+        secondary_window: null,
+      },
+    });
+
+    expect(limits).toMatchObject({
+      shortUsedPercent: null,
+      weeklyUsedPercent: 80,
+      weeklyResetAt: 1784951882,
+      quotas: [
+        expect.objectContaining({
+          id: "codex:7d",
+          label: "7일",
+          window: "168h",
+          usedPercent: 80,
+          remainingPercent: 20,
+        }),
+      ],
+    });
+  });
+
   it("reads Codex OAuth credentials and normalizes 5h/7d usage windows", async () => {
     const home = await mkdtemp(join(tmpdir(), "provider-usage-"));
     try {
@@ -115,6 +197,52 @@ describe("ProviderUsageService", () => {
         shortUsedPercent: 21,
         weeklyUsedPercent: 34,
         sessionTokens: 262144,
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("classifies a single local Codex primary window from window_minutes", async () => {
+    const home = await mkdtemp(join(tmpdir(), "provider-usage-"));
+    try {
+      const sessionDir = join(home, ".codex", "sessions", "2026", "07", "20");
+      await mkdir(sessionDir, { recursive: true });
+      await writeFile(
+        join(sessionDir, "rollout-live-shape.jsonl"),
+        `${JSON.stringify({
+          payload: {
+            type: "token_count",
+            rate_limits: {
+              plan_type: "pro",
+              primary: {
+                used_percent: 80,
+                resets_at: 1784951882,
+                window_minutes: 10080,
+              },
+              secondary: null,
+            },
+          },
+        })}\n`,
+      );
+
+      const service = new ProviderUsageService({
+        homeDir: home,
+        fetchImpl: fetchJson({}),
+      });
+      const result = await service.fetchUsage("req-live", "provider_usage_get", "codex");
+
+      expect(result.data).toMatchObject({
+        shortUsedPercent: null,
+        weeklyUsedPercent: 80,
+        weeklyResetAt: 1784951882,
+        quotas: [
+          expect.objectContaining({
+            id: "codex:7d",
+            label: "7일",
+            remainingPercent: 20,
+          }),
+        ],
       });
     } finally {
       await rm(home, { recursive: true, force: true });
