@@ -102,6 +102,7 @@ describe("orch-server-ts config scaffold", () => {
       environment: "production",
       claude_oauth_client_id: "claude-client",
       claude_oauth_callback_url: "https://example.com/claude/callback",
+      usage_summary_poll_interval_seconds: 300,
     });
 
     expect(toOrchServerTsConfig(config)).toEqual({
@@ -140,7 +141,19 @@ describe("orch-server-ts config scaffold", () => {
       cors_allowed_origins: [],
       google_client_id: "",
       jwt_secret: "",
+      usage_summary_poll_interval_seconds: 300,
     });
+  });
+
+  it("accepts a positive usage summary polling interval override", () => {
+    expect(loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      USAGE_SUMMARY_POLL_INTERVAL_SECONDS: "120",
+    }).usage_summary_poll_interval_seconds).toBe(120);
+    expect(() => loadOrchServerEnvironment({
+      ...minimalEnvironment(),
+      USAGE_SUMMARY_POLL_INTERVAL_SECONDS: "0",
+    })).toThrow(/USAGE_SUMMARY_POLL_INTERVAL_SECONDS/);
   });
 
   it.each([

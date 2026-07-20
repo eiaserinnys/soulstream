@@ -45,6 +45,7 @@ import { createLiveSupervisorIngestRepository } from "./runtime/live_supervisor_
 import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js";
 import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_config_route_provider.js";
 import { SupervisorIngestService } from "./supervisor/supervisor_ingest.js";
+import { UsageSummaryService } from "./usage/usage_summary_service.js";
 
 export type ProductionApplication = {
   readonly app: FastifyInstance;
@@ -240,11 +241,18 @@ export async function createLiveProductionApplication(
     configProvider,
     systemPortraitAssets: createSystemPortraitAssets(),
   };
+  const usageSummaryService = new UsageSummaryService({
+    registry: runtimeServices.registry,
+    bridge: runtimeServices.sessionBridge,
+    pollIntervalMs: config.usage_summary_poll_interval_seconds * 1_000,
+    onWarning: (message, error) => context.warn(warningMessage(message, error)),
+  });
 
   try {
     providers = createLiveOrchestratorProviderBundle({
       dependencies,
       runtimeServices,
+      usageSummaryRoutes: { service: usageSummaryService },
     });
   } catch (error) {
     await dbCatalogRepository.close();
@@ -275,10 +283,11 @@ export async function createLiveProductionApplication(
   let resourcesClosed = false;
   return {
     app,
-    startBackground: async () => {},
+    startBackground: async () => usageSummaryService.start(),
     async closeResources() {
       if (resourcesClosed) return;
       resourcesClosed = true;
+      await usageSummaryService.stop();
       await pushNotifier.close();
       await supervisorIngest.close();
       await dbCatalogRepository.close();
@@ -363,6 +372,7 @@ export function buildProductionRouteOptions(
     systemConfigRoutes: providers.systemConfigRoutes,
     userBackgroundRoutes: providers.userBackgroundRoutes,
     userPreferencesRoutes: providers.userPreferencesRoutes,
+    usageSummaryRoutes: providers.usageSummaryRoutes,
   };
 }
 

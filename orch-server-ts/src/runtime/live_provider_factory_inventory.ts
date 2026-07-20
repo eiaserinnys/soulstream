@@ -85,6 +85,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "tasks", path: "taskRoutes.accessProvider" },
   { owner: "tasks", path: "taskRoutes.httpClient" },
   { owner: "tasks", path: "taskRoutes.provider" },
+  { owner: "usage.summary", path: "usageSummaryRoutes.service" },
   { owner: "user.background", path: "userBackgroundRoutes.repository" },
   {
     owner: "user.background",

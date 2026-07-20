@@ -26,6 +26,7 @@ import { sseReplayRouteAuthRequirements } from "../sse/sse_replay_routes.js";
 import { systemConfigRouteAuthRequirements } from "../system/system_config_routes.js";
 import { userBackgroundRouteAuthRequirements } from "../user/user_background_routes.js";
 import { userPreferencesRouteAuthRequirements } from "../user/user_preferences_routes.js";
+import { usageSummaryRouteAuthRequirements } from "../usage/usage_summary_routes.js";
 import { pageYjsRouteAuthRequirements } from "../page/page_yjs_route.js";
 import { pageBrowserRouteAuthRequirements } from "../page/page_browser_routes.js";
 import { plannerRouteAuthRequirements } from "../planner/planner_routes.js";
@@ -66,4 +67,5 @@ export const routeCoverageOwners = [
   { owner: "system.config", authRequirements: systemConfigRouteAuthRequirements },
   { owner: "user.background", authRequirements: userBackgroundRouteAuthRequirements },
   { owner: "user.preferences", authRequirements: userPreferencesRouteAuthRequirements },
+  { owner: "usage.summary", authRequirements: usageSummaryRouteAuthRequirements },
 ] as const satisfies readonly RouteCoverageOwner[];

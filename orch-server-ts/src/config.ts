@@ -57,6 +57,7 @@ export type OrchServerEnvironmentConfig = {
   readonly environment: string;
   readonly claude_oauth_client_id: string;
   readonly claude_oauth_callback_url: string;
+  readonly usage_summary_poll_interval_seconds: number;
 };
 
 export type EnvironmentSource = Readonly<Record<string, string | undefined>>;
@@ -67,6 +68,7 @@ export type EnvironmentConfigProvider = {
 };
 
 export const DEFAULT_ORCH_SERVER_PORT = 5200;
+export const DEFAULT_USAGE_SUMMARY_POLL_INTERVAL_SECONDS = 300;
 
 export function parseOrchServerConfig(input: unknown): OrchServerTsConfig {
   return ConfigSchema.parse(input);
@@ -111,6 +113,11 @@ export function loadOrchServerEnvironment(
     environment,
     claude_oauth_client_id: requiredString(env, "CLAUDE_OAUTH_CLIENT_ID"),
     claude_oauth_callback_url: requiredString(env, "CLAUDE_OAUTH_CALLBACK_URL"),
+    usage_summary_poll_interval_seconds: parsePositiveInteger(
+      env.USAGE_SUMMARY_POLL_INTERVAL_SECONDS,
+      "USAGE_SUMMARY_POLL_INTERVAL_SECONDS",
+      DEFAULT_USAGE_SUMMARY_POLL_INTERVAL_SECONDS,
+    ),
   };
 }
 
@@ -168,6 +175,20 @@ function parsePort(value: string | undefined): number {
     throw new Error("PORT must be an integer between 0 and 65535");
   }
   return port;
+}
+
+function parsePositiveInteger(
+  value: string | undefined,
+  key: string,
+  defaultValue: number,
+): number {
+  if (value === undefined || value.trim().length === 0) return defaultValue;
+  if (!/^\d+$/.test(value)) throw new Error(`${key} must be a positive integer`);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error(`${key} must be a positive integer`);
+  }
+  return parsed;
 }
 
 function parseBoolean(
