@@ -126,6 +126,7 @@ type ProviderCall =
   | ["user"]
   | ["overview", unknown]
   | ["snapshot", string]
+  | ["userStatus", unknown]
   | ["findNode", string]
   | ["listNodes"];
 
@@ -722,6 +723,164 @@ describe("task route harness", () => {
       },
       target: ownerNode,
     }));
+
+    await app.close();
+  });
+
+  it("mutates a task without session provenance as the authenticated user", async () => {
+    const userStatusMutation = vi.fn(async () => ({
+      ok: true as const,
+      taskId: "rb-1",
+      boardItemId: "task:rb-1",
+      eventId: 0 as const,
+      idempotent: false,
+      operation: {
+        id: "operation-user",
+        actor_kind: "user",
+        actor_session_id: null,
+        actor_event_id: null,
+        actor_user_id: "user@example.com",
+      },
+      snapshot: {
+        task: {
+          id: "rb-1",
+          board_item_id: "task:rb-1",
+          folder_id: "folder-a",
+          version: 2,
+          status: "completed",
+          created_session_id: null,
+          completed_session_id: null,
+          completed_user_id: "user@example.com",
+        },
+        sections: [],
+        items: [],
+      },
+    }));
+    const httpClient: TaskMutationHttpClient = vi.fn();
+    const { app } = createAppWithTasks(
+      { restricted: false },
+      {
+        async getTaskSnapshot() {
+          return {
+            task: {
+              id: "rb-1",
+              board_item_id: "task:rb-1",
+              folder_id: "folder-a",
+              version: 1,
+              created_session_id: null,
+              completed_session_id: null,
+            },
+            sections: [],
+            items: [],
+          };
+        },
+        setTaskStatusAsUser: userStatusMutation,
+      },
+      httpClient,
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tasks/rb-1/status",
+      payload: {
+        status: "completed",
+        expectedVersion: 1,
+        idempotencyKey: "user-complete",
+        reason: "finished in dashboard",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      ok: true,
+      taskId: "rb-1",
+      eventId: 0,
+      idempotent: false,
+      operation: {
+        actor_kind: "user",
+        actor_session_id: null,
+        actor_user_id: "user@example.com",
+      },
+      snapshot: {
+        task: {
+          status: "completed",
+          completed_session_id: null,
+          completed_user_id: "user@example.com",
+        },
+      },
+    });
+    expect(userStatusMutation).toHaveBeenCalledWith({
+      taskId: "rb-1",
+      status: "completed",
+      expectedVersion: 1,
+      idempotencyKey: "user-complete",
+      reason: "finished in dashboard",
+      userId: "user@example.com",
+    });
+    expect(httpClient).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("preserves structured version conflicts for a sessionless user mutation", async () => {
+    const userStatusMutation = vi.fn(async () => {
+      throw new TaskRouteError(
+        "TASK_VERSION_CONFLICT",
+        "task version conflict: rb-1 expected 1, actual 2",
+        409,
+        {
+          targetKind: "task",
+          targetId: "rb-1",
+          expectedVersion: 1,
+          actualVersion: 2,
+        },
+      );
+    });
+    const { app } = createAppWithTasks(
+      { restricted: false },
+      {
+        async getTaskSnapshot() {
+          return {
+            task: {
+              id: "rb-1",
+              folder_id: "folder-a",
+              version: 2,
+              created_session_id: null,
+              completed_session_id: null,
+            },
+            sections: [],
+            items: [],
+          };
+        },
+        setTaskStatusAsUser: userStatusMutation,
+      },
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/tasks/rb-1/status",
+      payload: {
+        status: "completed",
+        expectedVersion: 1,
+        idempotencyKey: "stale-user-complete",
+      },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      detail: {
+        error: {
+          code: "TASK_VERSION_CONFLICT",
+          message: "task version conflict: rb-1 expected 1, actual 2",
+          details: {
+            targetKind: "task",
+            targetId: "rb-1",
+            expectedVersion: 1,
+            actualVersion: 2,
+          },
+        },
+      },
+    });
 
     await app.close();
   });

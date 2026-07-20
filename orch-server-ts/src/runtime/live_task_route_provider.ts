@@ -13,6 +13,13 @@ import type {
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
 import type { LiveNodeHttpClientBoundary } from "./live_provider_dependencies.js";
+import {
+  createTaskUserStatusMutation,
+} from "../tasks/task_user_status_mutation.js";
+import type {
+  InMemorySseReplayBroadcaster,
+  SessionStreamEvent,
+} from "../sse/replay_broadcaster.js";
 
 export type LiveTaskNodeHttpClient = Pick<
   LiveNodeHttpClientBoundary,
@@ -26,6 +33,7 @@ export type CreateLiveTaskRouteProviderOptions = {
 export type CreateLiveTaskRouteProvidersOptions =
   CreateLiveTaskRouteProviderOptions & {
     readonly provider: TaskRouteProvider;
+    readonly broadcaster?: InMemorySseReplayBroadcaster<SessionStreamEvent>;
   };
 
 export type CreateLiveTaskDbRouteProviderOptions = {
@@ -41,9 +49,12 @@ export type LiveTaskRouteProviderBundle = {
 export function createLiveTaskRouteProviders(
   options: CreateLiveTaskRouteProvidersOptions,
 ): LiveTaskRouteProviderBundle {
+  const provider = options.broadcaster === undefined
+    ? options.provider
+    : withTaskMutationBroadcasts(options.provider, options.broadcaster);
   return {
     taskRoutes: {
-      provider: options.provider,
+      provider,
       httpClient: createLiveTaskMutationHttpClient(options),
     },
   };
@@ -52,7 +63,7 @@ export function createLiveTaskRouteProviders(
 export function createLiveTaskRouteProvider(
   options: CreateLiveTaskDbRouteProviderOptions,
 ): TaskRouteProvider {
-  return {
+  const provider: TaskRouteProvider = {
     listFolders: () => options.folderProvider.listFolders(),
     async getTaskOverview(input) {
       const sql = await options.sqlResolver.resolveSql();
@@ -280,6 +291,35 @@ export function createLiveTaskRouteProvider(
     },
     listConnectedNodes() {
       return options.registry?.listConnectedNodes().map(mutationNode) ?? [];
+    },
+  };
+  provider.setTaskStatusAsUser = createTaskUserStatusMutation({
+    sqlResolver: options.sqlResolver,
+    async loadSnapshot(taskId) {
+      return await provider.getTaskSnapshot?.(taskId);
+    },
+  });
+  return provider;
+}
+
+function withTaskMutationBroadcasts(
+  provider: TaskRouteProvider,
+  broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
+): TaskRouteProvider {
+  const setTaskStatusAsUser = provider.setTaskStatusAsUser;
+  if (setTaskStatusAsUser === undefined) return provider;
+  return {
+    ...provider,
+    async setTaskStatusAsUser(input) {
+      const result = await setTaskStatusAsUser(input);
+      if (!result.idempotent) {
+        broadcaster.append({
+          type: "task_updated",
+          taskId: result.taskId,
+          boardItemId: result.boardItemId,
+        });
+      }
+      return result;
     },
   };
 }
