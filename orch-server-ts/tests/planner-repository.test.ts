@@ -53,6 +53,8 @@ describe("planner repository", () => {
     expect(query).toContain("identity.block_type IN ('task_ref', 'runbook_ref')");
     expect(query).toContain("WHEN 'runbook_ref' THEN identity.properties->>'runbookId'");
     expect(query).toContain("project_link.link_kind = 'mount'");
+    expect(query).toContain("SELECT DISTINCT ON (target.id)");
+    expect(query).toContain("ORDER BY target.id, source.position_key, source.id, link.ordinal");
     expect(query).toContain("folder_task_mounts AS");
     expect(query).toContain("board_item.membership_kind = 'primary'");
     expect(query).toContain("task.task_page_id IS NOT NULL");

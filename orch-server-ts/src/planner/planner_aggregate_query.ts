@@ -40,7 +40,7 @@ export async function plannerQuery(
       JOIN root_page root ON root.id = b.page_id
     ),
     physical_root_mounts AS (
-      SELECT DISTINCT ON (source.id)
+      SELECT DISTINCT ON (target.id)
              source.id AS source_block_id,
              source.position_key,
              target.id AS page_id
@@ -51,7 +51,7 @@ export async function plannerQuery(
       JOIN pages target
         ON target.id = link.target_page_id
        AND target.archived = FALSE
-      ORDER BY source.id, link.ordinal
+      ORDER BY target.id, source.position_key, source.id, link.ordinal
     ),
     folder_task_mounts AS (
       SELECT board_item.id AS source_block_id,

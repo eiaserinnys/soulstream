@@ -77,12 +77,14 @@ describe("dispatchRitualAction", () => {
 
     await dispatchRitualAction(item, "today", port);
     expect(port.mountToday).toHaveBeenCalledWith({
+      taskPageId: "task-1",
       taskTitle: "업무",
     });
 
     await dispatchRitualAction(item, "remove", port);
     expect(port.removeFromDaily).toHaveBeenCalledWith({
       dailyPageId: "daily-yesterday",
+      taskPageId: "task-1",
       taskTitle: "업무",
     });
     expect(port.mountToday).toHaveBeenCalledTimes(1);

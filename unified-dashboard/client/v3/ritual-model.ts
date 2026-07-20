@@ -23,8 +23,12 @@ export type RitualQueueItem = RitualTaskItem;
 export type RitualAction = "today" | "remove";
 
 export interface RitualActionPort {
-  mountToday(input: { taskTitle: string }): Promise<void>;
-  removeFromDaily(input: { dailyPageId: string; taskTitle: string }): Promise<void>;
+  mountToday(input: { taskPageId: string; taskTitle: string }): Promise<void>;
+  removeFromDaily(input: {
+    dailyPageId: string;
+    taskPageId: string;
+    taskTitle: string;
+  }): Promise<void>;
 }
 
 export interface BuildMorningRitualQueueInput {
@@ -79,6 +83,7 @@ export async function dispatchRitualAction(
 ): Promise<void> {
   if (action === "today") {
     await port.mountToday({
+      taskPageId: item.task.page.id,
       taskTitle: item.task.page.title,
     });
     return;
@@ -86,6 +91,7 @@ export async function dispatchRitualAction(
   if (action === "remove") {
     await port.removeFromDaily({
       dailyPageId: item.sourcePageId,
+      taskPageId: item.task.page.id,
       taskTitle: item.task.page.title,
     });
     return;
