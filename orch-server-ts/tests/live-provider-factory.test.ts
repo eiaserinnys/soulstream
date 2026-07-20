@@ -80,6 +80,7 @@ describe("live provider factory boundary", () => {
     const bundle = createLiveOrchestratorProviderBundle({
       dependencies,
       runtimeServices,
+      usageSummaryRoutes: createUsageSummaryRoutes(),
     });
 
     expect(bundle.implementedProviderPaths).toEqual(
@@ -104,6 +105,7 @@ describe("live provider factory boundary", () => {
     const bundle = createLiveOrchestratorProviderBundle({
       dependencies,
       runtimeServices,
+      usageSummaryRoutes: createUsageSummaryRoutes(),
       inventory: implementedOnly,
     });
 
@@ -424,6 +426,18 @@ describe("live provider factory boundary", () => {
     });
   });
 });
+
+function createUsageSummaryRoutes() {
+  return {
+    service: {
+      getSummary: () => ({
+        generatedAt: "2026-07-20T10:00:00.000Z",
+        collectedAt: null,
+        nodes: [],
+      }),
+    },
+  };
+}
 
 function createRuntimeServices(dependencies: LiveProviderDependencies) {
   return createOrchestratorRuntimeServices({

@@ -128,6 +128,10 @@ import {
   registerProductionLogging,
   type ProductionLogDestination,
 } from "./runtime/production_logging.js";
+import {
+  registerUsageSummaryRoutes,
+  type UsageSummaryRouteOptions,
+} from "./usage/usage_summary_routes.js";
 
 export type CreateAppOptions = {
   config: OrchServerTsConfig;
@@ -166,6 +170,7 @@ export type CreateAppOptions = {
   cogitoRoutes?: CogitoRouteOptions;
   markdownDocumentRoutes?: MarkdownDocumentRouteOptions;
   taskRoutes?: TaskRouteOptions;
+  usageSummaryRoutes?: UsageSummaryRouteOptions;
 };
 
 export function createApp(options: CreateAppOptions): FastifyInstance {
@@ -285,6 +290,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.taskRoutes !== undefined) {
     registerTaskRoutes(app, options.taskRoutes);
+  }
+  if (options.usageSummaryRoutes !== undefined) {
+    registerUsageSummaryRoutes(app, options.usageSummaryRoutes);
   }
 
   return app;

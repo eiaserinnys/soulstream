@@ -147,6 +147,13 @@ type TypeScriptAdditiveRoute = Omit<RouteDefinition, "order"> & {
 const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   {
     methods: ["GET"],
+    path: "/api/usage/summary",
+    name: "get_usage_summary",
+    authRequired: true,
+    family: "node_proxy",
+  },
+  {
+    methods: ["GET"],
     path: "/api/pages/search",
     name: "search_pages",
     authRequired: true,
@@ -453,6 +460,7 @@ export function classifyRouteFamily(path: string): RouteFamily {
   if (path.startsWith("/api/tasks/")) return "task";
   if (path.startsWith("/api/sessions")) return "session";
   if (path.startsWith("/api/nodes/")) return "node_proxy";
+  if (path.startsWith("/api/usage/")) return "node_proxy";
   if (path.startsWith("/api/config/settings") || path.startsWith("/api/dashboard/config")) {
     return "node_proxy";
   }

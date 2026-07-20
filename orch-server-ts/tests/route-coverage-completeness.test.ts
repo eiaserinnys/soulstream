@@ -189,6 +189,7 @@ function createAllOptInRouteApp() {
     systemConfigRoutes: inert,
     userBackgroundRoutes: inert,
     userPreferencesRoutes: inert,
+    usageSummaryRoutes: inert,
   } as unknown as CreateAppOptions);
 }
 

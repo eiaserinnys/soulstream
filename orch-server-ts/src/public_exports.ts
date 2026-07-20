@@ -107,3 +107,5 @@ export * from "./system/system_config_routes.js";
 export * from "./supervisor/supervisor_ingest.js";
 export * from "./user/user_background_routes.js";
 export * from "./user/user_preferences_routes.js";
+export * from "./usage/usage_summary_routes.js";
+export * from "./usage/usage_summary_service.js";

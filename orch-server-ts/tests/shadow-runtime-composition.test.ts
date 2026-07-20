@@ -164,6 +164,7 @@ function createInertShadowProviders(): ShadowOrchestratorProviderBundle {
     systemConfigRoutes: createInertProvider(),
     userBackgroundRoutes: createInertProvider(),
     userPreferencesRoutes: createInertProvider(),
+    usageSummaryRoutes: createInertProvider(),
   };
 }
 

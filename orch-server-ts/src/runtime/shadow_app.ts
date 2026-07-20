@@ -34,6 +34,7 @@ import type { SessionStreamSnapshot } from "../sse/sse_replay_routes.js";
 import type { SystemConfigRouteOptions } from "../system/system_config_routes.js";
 import type { UserBackgroundRouteOptions } from "../user/user_background_routes.js";
 import type { UserPreferencesRouteOptions } from "../user/user_preferences_routes.js";
+import type { UsageSummaryRouteOptions } from "../usage/usage_summary_routes.js";
 import {
   createOrchestratorRuntimeServices,
   type OrchestratorRuntimeServices,
@@ -93,6 +94,7 @@ export type ShadowOrchestratorProviderBundle = {
   systemConfigRoutes: SystemConfigRouteOptions;
   userBackgroundRoutes: UserBackgroundRouteOptions;
   userPreferencesRoutes: UserPreferencesRouteOptions;
+  usageSummaryRoutes: UsageSummaryRouteOptions;
 };
 
 export type CreateShadowOrchestratorAppOptions = {
@@ -134,6 +136,7 @@ export type ShadowOrchestratorRouteOptions = Required<
     | "systemConfigRoutes"
     | "userBackgroundRoutes"
     | "userPreferencesRoutes"
+    | "usageSummaryRoutes"
   >
 >;
 
@@ -270,6 +273,7 @@ export const shadowRouteCompositionRequirements = [
       "userPreferencesRoutes.resolveAuthenticatedEmail",
     ],
   },
+  { owner: "usage.summary", paths: ["usageSummaryRoutes.service"] },
 ] as const satisfies readonly ShadowRouteProviderRequirement[];
 
 export const shadowRouteCompositionOwners =
@@ -402,6 +406,7 @@ function buildShadowRouteOptions(
     systemConfigRoutes: providers.systemConfigRoutes,
     userBackgroundRoutes: providers.userBackgroundRoutes,
     userPreferencesRoutes: providers.userPreferencesRoutes,
+    usageSummaryRoutes: providers.usageSummaryRoutes,
   };
 }
 

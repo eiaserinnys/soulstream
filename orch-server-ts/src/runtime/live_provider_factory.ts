@@ -29,6 +29,7 @@ import type { PushRouteOptions } from "../push/push_routes.js";
 import type { UserPreferencesRouteOptions } from "../user/user_preferences_routes.js";
 import type { UserBackgroundRouteOptions } from "../user/user_background_routes.js";
 import type { TaskRouteOptions } from "../tasks/task_route_types.js";
+import type { UsageSummaryRouteOptions } from "../usage/usage_summary_routes.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
 import { createLiveDashboardAccessProvider } from "./live_dashboard_access_provider.js";
 import { createLiveExecuteProxyRouteProvider } from "./live_execute_proxy_route_provider.js";
@@ -174,12 +175,14 @@ export type LiveOrchestratorProviderBundle = {
     & LiveTaskRouteProviderBundle["taskRoutes"]
     & Pick<TaskRouteOptions, "accessProvider" | "resolveDashboardUserId">;
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
+  readonly usageSummaryRoutes: UsageSummaryRouteOptions;
   readonly implementedProviderPaths: readonly LiveProviderPath[];
 };
 
 export type CreateLiveOrchestratorProviderBundleOptions = {
   readonly dependencies: LiveProviderDependencies;
   readonly runtimeServices: OrchestratorRuntimeServices;
+  readonly usageSummaryRoutes: UsageSummaryRouteOptions;
   readonly inventory?: readonly LiveProviderWiringInventoryEntry[];
   readonly factoryProviderPaths?: readonly LiveProviderPath[];
 };
@@ -401,6 +404,7 @@ export function createLiveOrchestratorProviderBundle(
       resolveDashboardUserId: authenticatedUserResolvers.resolveEmail,
     },
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
+    usageSummaryRoutes: options.usageSummaryRoutes,
     implementedProviderPaths: alignment.factoryProviderPaths,
   };
 }
