@@ -69,6 +69,11 @@ function makeCatalog(session: SessionSummary): CatalogState {
 function renderSearchModal(options: {
   sessions?: SessionSummary[];
   onOpenChange?: (open: boolean) => void;
+  onOpenSession?: (
+    sessionId: string,
+    focusEventId: number,
+    session?: SessionSummary,
+  ) => void;
 } = {}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -80,6 +85,7 @@ function renderSearchModal(options: {
       open: true,
       onOpenChange,
       sessions: options.sessions ?? [],
+      onOpenSession: options.onOpenSession,
     }));
   });
 
@@ -177,5 +183,40 @@ describe("SearchModal", () => {
     expect(state.activeBoardDocumentId).toBeNull();
     expect(state.activeRightTab).toBe("chat");
     expect(state.focusEventId).toBe(88);
+  });
+
+  it("delegates a selected result to the host session opener when one is provided", () => {
+    const current = makeSession("current-session", "current-folder");
+    const target = makeSession("target-session", "target-folder");
+    const onOpenSession = vi.fn();
+    useDashboardStore.getState().setCatalog(makeCatalog(target));
+    useDashboardStore.getState().selectFolder("current-folder");
+    useDashboardStore.getState().setActiveSessionSummary(current);
+    useDashboardStore.getState().setActiveSession("current-session");
+    searchHarness.results = [
+      {
+        session_id: "target-session",
+        event_id: 91,
+        score: 1,
+        preview: "Delegated preview",
+        event_type: "user_message",
+      },
+    ];
+
+    ({ container, root } = renderSearchModal({ onOpenSession }));
+
+    clickResult("Delegated preview");
+
+    expect(onOpenSession).toHaveBeenCalledWith(
+      "target-session",
+      91,
+      expect.objectContaining({
+        agentSessionId: "target-session",
+        folderId: "target-folder",
+      }),
+    );
+    expect(useDashboardStore.getState().selectedFolderId).toBe("current-folder");
+    expect(useDashboardStore.getState().activeSessionKey).toBe("current-session");
+    expect(useDashboardStore.getState().focusEventId).toBeNull();
   });
 });

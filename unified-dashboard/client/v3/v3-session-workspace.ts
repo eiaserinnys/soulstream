@@ -11,6 +11,22 @@ export interface ResolvedSessionWorkspace {
   folderId?: string;
 }
 
+export async function resolveSessionForOpen({
+  sessionId,
+  knownSession,
+  fetchSessions,
+}: {
+  sessionId: string;
+  knownSession?: SessionSummary;
+  fetchSessions(options: { sessionIds: readonly string[] }): Promise<{
+    sessions: SessionSummary[];
+  }>;
+}): Promise<SessionSummary | null> {
+  if (knownSession?.agentSessionId === sessionId) return knownSession;
+  const result = await fetchSessions({ sessionIds: [sessionId] });
+  return result.sessions.find((session) => session.agentSessionId === sessionId) ?? null;
+}
+
 export async function resolveSessionWorkspace({
   session,
   boardItems,

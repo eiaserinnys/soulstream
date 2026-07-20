@@ -120,6 +120,11 @@ interface SearchModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessions?: SessionSummary[];
+  onOpenSession?: (
+    sessionId: string,
+    focusEventId: number,
+    session?: SessionSummary,
+  ) => void | Promise<void>;
 }
 
 // === Main Component ===
@@ -128,6 +133,7 @@ export function SearchModal({
   open,
   onOpenChange,
   sessions = [],
+  onOpenSession,
 }: SearchModalProps) {
   const catalog = useDashboardStore((s) => s.catalog);
   const activeSessionSummary = useDashboardStore((s) => s.activeSessionSummary);
@@ -200,19 +206,23 @@ export function SearchModal({
             displayName: assignment.displayName,
           }
         : summary;
-    const targetFolderId = assignment
-      ? assignment.folderId
-      : targetSummary?.folderId;
+    if (onOpenSession) {
+      void onOpenSession(result.session_id, result.event_id, targetSummary);
+    } else {
+      const targetFolderId = assignment
+        ? assignment.folderId
+        : targetSummary?.folderId;
 
-    if (targetFolderId !== undefined) {
-      selectFolder(targetFolderId);
+      if (targetFolderId !== undefined) {
+        selectFolder(targetFolderId);
+      }
+      if (targetSummary) {
+        setActiveSessionSummary(targetSummary);
+      }
+      setActiveSession(result.session_id);
+      setFocusEventId(result.event_id);
+      setActiveTab("chat");
     }
-    if (targetSummary) {
-      setActiveSessionSummary(targetSummary);
-    }
-    setActiveSession(result.session_id);
-    setFocusEventId(result.event_id);
-    setActiveTab("chat");
     onOpenChange(false);
   };
 

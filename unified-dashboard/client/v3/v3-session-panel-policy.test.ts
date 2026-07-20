@@ -30,4 +30,12 @@ describe("v3 right session panel policy", () => {
     expect(styles).toContain("@media (max-width: 760px)");
     expect(styles).toMatch(/\.v3-session-panel,[\s\S]*display:\s*none/);
   });
+
+  it("routes global search selection through the canonical session panel opener", () => {
+    const layout = read("./V3DashboardLayout.tsx");
+    const controller = read("./use-v3-session-panel-controller.ts");
+
+    expect(layout).toContain("onOpenSession={sessionPanel.openSessionById}");
+    expect(controller).toContain("await openSession(session)");
+  });
 });
