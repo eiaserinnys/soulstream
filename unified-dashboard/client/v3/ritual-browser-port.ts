@@ -1,5 +1,4 @@
 import type { PageApiClient } from "@seosoyoung/soul-ui/page";
-import { postTaskStatus } from "@seosoyoung/soul-ui/stores/task-api";
 
 import { BrowserPlannerMutationPort } from "./planner-browser-port";
 import { parseSingleMountTitle } from "./planner-model";
@@ -53,19 +52,6 @@ export async function removeRitualTaskFromDaily(
     idempotencyKey: idFactory(),
     reason: "v3 morning ritual daily unmount",
     operations: [{ op: "delete_block_subtree", block_id: mount.id }],
-  });
-}
-
-export async function completeRitualTask(input: {
-  taskId: string;
-  expectedVersion: number;
-}): Promise<void> {
-  await postTaskStatus({
-    taskId: input.taskId,
-    expectedVersion: input.expectedVersion,
-    idempotencyKey: ritualOperationId("task-complete"),
-    status: "completed",
-    reason: "v3 morning ritual completion",
   });
 }
 
